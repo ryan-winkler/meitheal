@@ -1,3 +1,5 @@
+import { scopePermits, type BoardScope } from "@domains/tasks"
+import { gamificationClient, gamificationRead } from "./scoped-gamification"
 /**
  * Gamification Domain — Streak Tracker
  *
@@ -21,7 +23,7 @@
 import {
   ensureSchema,
   getPersistenceClient,
-} from "@domains/tasks/persistence/store"
+} from "@domains/tasks"
 
 /**
  * XP points awarded per priority level.
@@ -59,8 +61,6 @@ export interface DailyRecord {
 }
 
 type DailyProgress = { currentStreak: number; points: number }
-const progressByRequest = new WeakMap<object, Promise<DailyProgress>>()
-
 function statsDayKey(now: Date, offset = 0): string {
   if (offset === 0) return now.toISOString().slice(0, 10)
   const day = new Date(now)
@@ -69,25 +69,18 @@ function statsDayKey(now: Date, offset = 0): string {
 }
 
 /** Today and the sidebar read the same two indexed days for the current request. */
-export function getDailyProgress(scope: object, now = new Date()): Promise<DailyProgress> {
-  const previous = progressByRequest.get(scope)
-  if (previous) return previous
-  const pending = readDailyProgress(now).catch(error => {
-    progressByRequest.delete(scope)
-    throw error
-  })
-  progressByRequest.set(scope, pending)
-  return pending
+export function getDailyProgress(scope: BoardScope, now = new Date()): Promise<DailyProgress> {
+  return readDailyProgress(scope, now)
 }
 
-async function readDailyProgress(now: Date): Promise<DailyProgress> {
+async function readDailyProgress(scope: BoardScope, now: Date): Promise<DailyProgress> {
   await ensureGamificationSchema()
   const today = statsDayKey(now)
   const yesterday = statsDayKey(now, -1)
-  const result = await getPersistenceClient().execute({
-    sql: "SELECT date, streak_count, points FROM gamification_stats WHERE date IN (?, ?)",
+  const result = await (await gamificationClient(scope)).execute(gamificationRead(scope, {
+    sql: "SELECT date, streak_count, points FROM board_stats WHERE date IN (?, ?)",
     args: [today, yesterday],
-  })
+  }))
   const current = result.rows.find(row => row.date === today)
   const prior = result.rows.find(row => row.date === yesterday)
   return {
@@ -96,72 +89,51 @@ async function readDailyProgress(now: Date): Promise<DailyProgress> {
   }
 }
 
-let schemaEnsured = false
-
-/**
- * Ensure gamification schema exists.
- * Creates the gamification_stats table if it doesn't exist.
- */
-export async function ensureGamificationSchema(): Promise<void> {
-  if (schemaEnsured) return
-  await ensureSchema()
-  const client = getPersistenceClient()
-
-  await client.execute(`
-    CREATE TABLE IF NOT EXISTS gamification_stats (
-      date TEXT PRIMARY KEY,
-      completed_count INTEGER NOT NULL DEFAULT 0,
-      streak_count INTEGER NOT NULL DEFAULT 0,
-      points INTEGER NOT NULL DEFAULT 0
-    )
-  `)
-
-  schemaEnsured = true
-}
+export async function ensureGamificationSchema(): Promise<void> { await ensureSchema() }
 
 /**
  * Record a task completion. Increments today's count and updates streak.
  * @param points - XP points to award (default: 0, Phase 5 adds weighted points)
  */
-export async function recordTaskCompletion(points = 0, now = new Date()): Promise<GamificationStats> {
+export async function recordTaskCompletion(scope: BoardScope, points = 0, now = new Date()): Promise<GamificationStats | null> {
   await ensureGamificationSchema()
-  const client = getPersistenceClient()
+  const client = await gamificationClient(scope, true)
   const today = statsDayKey(now)
 
   // Get yesterday's streak
   const yesterday = statsDayKey(now, -1)
 
-  const prevResult = await client.execute({
-    sql: "SELECT streak_count FROM gamification_stats WHERE date = ? LIMIT 1",
+  const prevResult = await client.execute(gamificationRead(scope, {
+    sql: "SELECT streak_count FROM board_stats WHERE date = ? LIMIT 1",
     args: [yesterday],
-  })
+  }))
   const prevStreak = prevResult.rows.length > 0
     ? Number((prevResult.rows[0] as Record<string, unknown>).streak_count)
     : 0
 
   // Atomic increments avoid losing simultaneous completions from different callers.
   await client.execute({
-    sql: `INSERT INTO gamification_stats(date, completed_count, streak_count, points)
-          VALUES(?, 1, ?, ?)
-          ON CONFLICT(date) DO UPDATE SET
+    sql: `INSERT INTO gamification_stats(board_id, date, completed_count, streak_count, points)
+          VALUES(?, ?, 1, ?, ?)
+          ON CONFLICT(board_id,date) DO UPDATE SET
             completed_count = completed_count + 1,
             points = points + excluded.points`,
-    args: [today, prevStreak > 0 ? prevStreak + 1 : 1, points],
+    args: [scope.boardId, today, prevStreak > 0 ? prevStreak + 1 : 1, points],
   })
 
-  return getStats(now)
+  return scopePermits(scope, { resource: "task", action: "read" }) ? getStats(scope, now) : null
 }
 
 /**
  * Get current gamification stats via a single aggregate query.
  */
-export async function getStats(now = new Date()): Promise<GamificationStats> {
+export async function getStats(scope: BoardScope, now = new Date()): Promise<GamificationStats> {
   await ensureGamificationSchema()
-  const client = getPersistenceClient()
+  const client = await gamificationClient(scope)
   const today = statsDayKey(now)
   const yesterday = statsDayKey(now, -1)
 
-  const agg = await client.execute({
+  const agg = await client.execute(gamificationRead(scope, {
     sql: `SELECT
             COALESCE(MAX(CASE WHEN date = ? THEN completed_count END), 0) AS today_completed,
             MAX(CASE WHEN date = ? THEN streak_count END) AS today_streak,
@@ -169,9 +141,9 @@ export async function getStats(now = new Date()): Promise<GamificationStats> {
             COALESCE(MAX(streak_count), 0) AS max_streak,
             COALESCE(SUM(completed_count), 0) AS total_completed,
             COALESCE(SUM(points), 0) AS total_points
-          FROM gamification_stats`,
+          FROM board_stats`,
     args: [today, today, yesterday],
-  })
+  }))
 
   const row = (agg.rows[0] ?? {}) as Record<string, unknown>
   const todayCompleted = row.today_streak != null ? Number(row.today_completed ?? 0) : 0
@@ -194,9 +166,9 @@ export async function getStats(now = new Date()): Promise<GamificationStats> {
 /**
  * Get weekly data for the last 7 days via a single GROUP BY date query.
  */
-export async function getWeeklyData(now = new Date()): Promise<DailyRecord[]> {
+export async function getWeeklyData(scope: BoardScope, now = new Date()): Promise<DailyRecord[]> {
   await ensureGamificationSchema()
-  const client = getPersistenceClient()
+  const client = await gamificationClient(scope)
 
   const dateKeys: string[] = []
   for (let i = 6; i >= 0; i--) {
@@ -205,16 +177,16 @@ export async function getWeeklyData(now = new Date()): Promise<DailyRecord[]> {
 
   const startStr = dateKeys[0]!
   const endStr = dateKeys[dateKeys.length - 1]!
-  const result = await client.execute({
+  const result = await client.execute(gamificationRead(scope, {
     sql: `SELECT date,
                  COALESCE(SUM(completed_count), 0) AS completed_count,
                  COALESCE(MAX(streak_count), 0) AS streak_count,
                  COALESCE(SUM(points), 0) AS points
-          FROM gamification_stats
+          FROM board_stats
           WHERE date >= ? AND date <= ?
           GROUP BY date`,
     args: [startStr, endStr],
-  })
+  }))
 
   const byDate = new Map<string, DailyRecord>()
   for (const raw of result.rows) {
@@ -238,5 +210,5 @@ export async function getWeeklyData(now = new Date()): Promise<DailyRecord[]> {
 
 /** Reset for tests */
 export function resetGamificationForTests(): void {
-  schemaEnsured = false
+  // No shared schema or audience cache remains.
 }

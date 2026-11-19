@@ -1,7 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process"
-import { createHash } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import { once } from "node:events"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { get as httpGet } from "node:http"
 import { createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
@@ -35,6 +36,8 @@ async function standalone(work: string) {
   delete env.SUPERVISOR_TOKEN
   delete env.MEITHEAL_STARTUP_BACKUP_HANDLED
   delete env.INGRESS_PATH
+  delete env.HA_BASE_URL
+  delete env.HA_TOKEN
   const child = spawn(process.execPath, ["scripts/serve.mjs"], { cwd: web, env, stdio: ["ignore", "pipe", "pipe"] })
   let log = ""
   const collect = (bytes: Buffer) => { log = (log + bytes.toString()).slice(-32_768) }
@@ -77,7 +80,7 @@ async function evidence(info: TestInfo, value: unknown) {
   await info.attach("standalone-startup", { path, contentType: "application/json" })
 }
 
-test("standalone fresh creation publishes continuity before HTTP capture and retains it on restart", async ({}, info) => {
+test("standalone fresh startup keeps both Board capture receipts across restart", async ({}, info) => {
   const work = await mkdtemp(join(tmpdir(), "continuity-standalone-fresh-"))
   let app: Awaited<ReturnType<typeof standalone>> | undefined
   const logs: string[] = []
@@ -85,26 +88,162 @@ test("standalone fresh creation publishes continuity before HTTP capture and ret
     app = await standalone(work)
     const initial = state(work)
     expect(initial).toEqual({ epoch: expect.stringMatching(/^[a-f0-9-]{36}$/), tasks: [] })
-    const marker = await readFile(join(work, "grants.json"))
-    expect(JSON.parse(marker.toString())).toEqual({ epoch: initial.epoch })
+    expect(JSON.parse(await readFile(join(work, "grants.json"), "utf8"))).toEqual({ epoch: initial.epoch })
     const health = await fetch(app.origin + "/api/health", { signal: AbortSignal.timeout(5_000) })
     expect(health.status).toBe(200)
-    const created = await fetch(app.origin + "/api/tasks", { method: "POST", signal: AbortSignal.timeout(5_000),
-      headers: { origin: app.origin, "content-type": "application/json" }, body: JSON.stringify({ title: "Standalone retained capture" }) })
-    expect(created.status, await created.clone().text()).toBe(201)
-    const task = await created.json()
-    expect(task.id).toEqual(expect.any(String))
+    expect((await health.json()).schema_version).toBe(26)
+    const directory = await fetch(app.origin + "/api/boards", { signal: AbortSignal.timeout(5_000) })
+    expect(directory.status).toBe(200)
+    const proof = directory.headers.get("x-meitheal-board-session")
+    expect(Boolean(proof && /^[a-f0-9]{64}$/.test(proof))).toBe(true)
+    const post = { origin: app.origin, "content-type": "application/json", "x-meitheal-board-session": proof! }
+    const board = await fetch(app.origin + "/api/boards", { method: "POST", headers: post,
+      signal: AbortSignal.timeout(5_000), body: JSON.stringify({ name: "Standalone second Board" }) })
+    expect(board.status, await board.clone().text()).toBe(201)
+    const { id: secondId } = await board.json()
+    expect(secondId).toEqual(expect.any(String))
+    expect(secondId).not.toBe("household")
+
+    const attempt = randomUUID()
+    const receipts = []
+    for (const [id, path, title] of [
+      ["household", "/api/tasks", "Standalone first capture"],
+      [secondId, "/api//boards/" + encodeURIComponent(secondId) + "/tickets", "Standalone second capture"],
+    ]) {
+      const created = await fetch(app.origin + path, { method: "POST", redirect: "manual", signal: AbortSignal.timeout(5_000),
+        headers: { ...post, "x-meitheal-board-id": id, "x-meitheal-capture-attempt": attempt }, body: JSON.stringify({ title }) })
+      expect(created.status, await created.clone().text()).toBe(201)
+      expect(created.headers.get("cache-control")).toBe("private, no-store")
+      const task = await created.json()
+      expect(task).toMatchObject({ id: expect.any(String), board_id: id, title })
+      receipts.push({ boardId: id, id: task.id, ticket_key: task.ticket_key, task_kind: task.task_kind })
+    }
+    expect(new Set(receipts.map(receipt => receipt.id)).size).toBe(2)
+    const committed = state(work)
+    expect(committed.tasks).toHaveLength(2)
+    const marker = await readFile(join(work, "grants.json"))
+    expect(JSON.parse(marker.toString())).toEqual({ epoch: committed.epoch })
     logs.push(app.logs())
     await app.close()
     app = await standalone(work)
-    expect(state(work)).toEqual({ epoch: initial.epoch, tasks: [{ id: task.id, title: "Standalone retained capture" }] })
+    expect(state(work)).toEqual(committed)
     expect(await readFile(join(work, "grants.json"))).toEqual(marker)
-    const retained = await fetch(app.origin + `/api/tasks/${task.id}`, { signal: AbortSignal.timeout(5_000) })
-    expect(retained.status).toBe(200)
-    expect(await retained.json()).toMatchObject({ id: task.id, title: "Standalone retained capture" })
+    for (const { boardId, ...record } of receipts) {
+      const retained = await fetch(app.origin + "/api/tasks/" + encodeURIComponent(record.id), {
+        headers: { "x-meitheal-board-id": boardId }, signal: AbortSignal.timeout(5_000),
+      })
+      expect(retained.status).toBe(200)
+      expect(await retained.json()).toMatchObject({ id: record.id, board_id: boardId })
+      const headers = { "x-meitheal-board-id": boardId, "x-meitheal-capture-attempt": attempt, referer: app.origin + "/today" }
+      for (const path of ["/api/tasks?captureReceipt=1", "/api//tasks?captureReceipt=1"]) {
+        const response = await fetch(app.origin + path, { headers, redirect: "manual", signal: AbortSignal.timeout(5_000) })
+        expect(response.status, await response.clone().text()).toBe(200)
+        expect(response.headers.get("cache-control")).toBe("private, no-store")
+        expect(await response.json()).toEqual(record)
+      }
+      const head = await fetch(app.origin + "/api/tasks?captureReceipt=1", { method: "HEAD", headers, signal: AbortSignal.timeout(5_000) })
+      expect(head.status).toBe(200)
+      expect(head.headers.get("cache-control")).toBe("private, no-store")
+      expect(await head.text()).toBe("")
+    }
     logs.push(app.logs())
-    await evidence(info, { fresh: initial, retained: state(work), markerSha256: createHash("sha256").update(marker).digest("hex"), logs })
+    expect(logs.every(log => !log.includes(attempt))).toBe(true)
+    await evidence(info, { taskCount: state(work).tasks.length, recoveredBoards: receipts.length,
+      markerSha256: createHash("sha256").update(marker).digest("hex") })
   } finally { if (app) await app.close(); await rm(work, { recursive: true, force: true }) }
+})
+
+test("standalone wrapper keeps receipt routing private before task handlers", async () => {
+  const work = await mkdtemp(join(tmpdir(), "receipt-wrapper-"))
+  let app: Awaited<ReturnType<typeof standalone>> | undefined
+  try {
+    app = await standalone(work)
+    const before = state(work)
+    const db = new DatabaseSync(join(work, "standalone.db"), { readOnly: true })
+    const schemaVersion = db.prepare("SELECT value FROM app_settings WHERE key = 'schema_version'").get()?.value
+    expect(schemaVersion).toBe("26")
+    db.close()
+    const captureHeaders = {
+      "x-meitheal-capture-attempt": randomUUID(),
+      "x-meitheal-board-id": "fixture-board",
+    }
+    const origin = app.origin
+    // Fetch strips fragments before sending; pass the raw health target through Node.
+    const malformedTarget = await new Promise<{ status: number | undefined; cacheControl: string | undefined }>((done, reject) => {
+      const { hostname, port } = new URL(origin)
+      httpGet({ hostname, port, path: "/api/health#fragment", signal: AbortSignal.timeout(5_000) }, response => {
+        response.once("error", reject)
+        response.once("end", () => done({ status: response.statusCode, cacheControl: response.headers["cache-control"] }))
+        response.resume()
+      }).once("error", reject)
+    })
+    expect(malformedTarget).toEqual({ status: 400, cacheControl: "private, no-store" })
+    const encodedValue = await fetch(origin + "/api/health?reference=qa%23note", { signal: AbortSignal.timeout(5_000) })
+    expect(encodedValue.status).toBe(200)
+    const send = (path: string, method = "GET", title = "Receipt wrapper fixture", withAttempt = true) => fetch(origin + path, {
+      method, redirect: "manual", signal: AbortSignal.timeout(5_000),
+      headers: {
+        ...(withAttempt ? captureHeaders : {}), referer: origin + "/today",
+        ...(method === "POST" ? { origin, "content-type": "application/json" } : {}),
+      },
+      ...(method === "POST" ? { body: JSON.stringify({ title }) } : {}),
+    })
+    const privateResponse = (response: Response) => {
+      expect(response.headers.get("cache-control")).toBe("private, no-store")
+      expect(response.headers.has("location")).toBe(false)
+    }
+
+    for (const selector of ["1", "invalid"]) {
+      const search = "?captureReceipt=" + selector + "&limit=17"
+      const canonical = await send("/api/tasks" + search)
+      const repeatedSeparators = await send("/api//tasks" + search)
+      const head = await send("/api/tasks" + search, "HEAD")
+      for (const response of [canonical, repeatedSeparators, head]) privateResponse(response)
+      expect([400, 403, 404]).toContain(canonical.status)
+      expect(canonical.headers.get("content-type")).toMatch(/^application\/(?:problem\+)?json/)
+      expect(repeatedSeparators.status).toBe(canonical.status)
+      expect(head.status).toBe(canonical.status)
+      expect(await head.text()).toBe("")
+      const body = await canonical.json()
+      expect(await repeatedSeparators.json()).toEqual(body)
+    }
+    for (const [canonicalPath, normalizedPath] of [
+      ["/api/tasks", "/api//tasks"],
+      ["/api/boards/fixture-board/tickets", "/api//boards/fixture-board/tickets"],
+    ] as const) {
+      const canonical = await send(canonicalPath, "POST", "")
+      const repeatedSeparators = await send(normalizedPath, "POST", "")
+      expect([400, 403, 404]).toContain(canonical.status)
+      expect(canonical.headers.get("content-type")).toMatch(/^application\/(?:problem\+)?json/)
+      privateResponse(canonical)
+      privateResponse(repeatedSeparators)
+      expect(repeatedSeparators.status).toBe(canonical.status)
+      const body = await canonical.json()
+      expect(await repeatedSeparators.json()).toEqual(body)
+    }
+    for (const [method, path] of [
+      ["GET", "/api/tasks/?captureReceipt=1"],
+      ["HEAD", "/api/tasks/?captureReceipt=1"],
+      ["GET", "/api/%74asks?captureReceipt=invalid"],
+      ["POST", "/api/tasks/"],
+      ["POST", "/api/boards/fixture-board/tickets/"],
+      ["POST", "/api/boards/fixture%2Dboard/tickets"],
+    ] as const) {
+      const response = await send(path, method)
+      expect(response.status).toBe(404)
+      privateResponse(response)
+    }
+    for (const selector of ["1", "invalid"]) {
+      const response = await send("/api/tasks?captureReceipt=" + selector, "POST", "Receipt wrapper fixture", false)
+      expect(response.status).toBe(405)
+      expect(response.headers.get("allow")).toBe("GET, HEAD")
+      privateResponse(response)
+    }
+    expect(state(work)).toEqual(before)
+  } finally {
+    await app?.close()
+    await rm(work, { recursive: true, force: true })
+  }
 })
 
 for (const predecessor of ["empty", "sqlite"] as const) {

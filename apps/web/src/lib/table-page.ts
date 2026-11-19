@@ -212,7 +212,7 @@ export function getTablePage(
         priority: String(task.priority),
         rice: task.rice === null ? "" : String(task.rice),
         assigned: task.assigned_to ?? "",
-        area: task.area_id,
+        area: task.area_id ?? "",
         taskType: task.task_type,
         epicGroup,
         taskKind: task.task_kind ?? "standard_action",

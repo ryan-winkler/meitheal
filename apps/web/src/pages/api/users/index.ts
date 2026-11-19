@@ -1,20 +1,21 @@
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { customUserKind, UserRepository } from "@domains/tasks"
+import { customUserKind, UserRepository, IdentityRepository } from "@domains/tasks"
 import { listHAUserDirectory, type MeithealUser } from "@domains/ha"
 
 /**
  * GET /api/users — Merged list of HA users + custom users.
  * No auth required — uses existing SUPERVISOR_TOKEN for HA discovery.
  */
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async (_context, scope) => {
   await ensureSchema()
-  const repo = new UserRepository(getPersistenceClient())
+  const repo = new IdentityRepository(getPersistenceClient())
 
   const [{ users: haUsers, verified }, customRows, defaultAssignee] = await Promise.all([
     listHAUserDirectory(),
     repo.listCustomUsersMinimal(),
-    repo.getDefaultAssigneeSetting(),
+    new UserRepository(getPersistenceClient(), scope).getDefaultAssigneeSetting(),
   ])
   const haUserList: MeithealUser[] = haUsers.map((u) => ({
     id: `ha_${u.id}`,
@@ -50,4 +51,4 @@ export const GET: APIRoute = async () => {
       "cache-control": "private, max-age=30, no-store",
     },
   })
-}
+})

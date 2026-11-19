@@ -1,3 +1,4 @@
+import { currentBoardScope, fixturePrincipal } from "../helpers/current-board-scope"
 import { execFileSync } from "../helpers/isolated-process"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -71,7 +72,7 @@ legacyTest("verified current legacy enrollment and runtime/CLI reconcile the sch
     expect(getSchemaVersion()).toBe(DATABASE_SCHEMA_VERSION)
     expect(migrate()).toContain("No migrations to apply")
     expect(migrate("--check")).toContain("Migration check passed")
-    expect((await new TaskRepository(getPersistenceClient()).findById("retained"))?.is_favorite).toBe(1)
+    expect((await new TaskRepository(getPersistenceClient(), await currentBoardScope(getPersistenceClient())).findById("retained"))?.is_favorite).toBe(1)
   } finally { await rm(proof.custodyDirectory, { recursive: true, force: true }) }
 })
 
@@ -88,39 +89,41 @@ test("the migration check rejects a pin index with the wrong sort order", async 
 
 test("pins are private, idempotent and consistently paginated", async ({ db }) => {
   await ensureSchema()
-  const pins = new TaskPinRepository(db)
+  const pinsA = new TaskPinRepository(db, await currentBoardScope(db, "household", fixturePrincipal("user-a", false)))
+  const pinsB = new TaskPinRepository(db, await currentBoardScope(db, "household", fixturePrincipal("user-b", false)))
   for (let i = 1; i <= 26; i++) {
     const id = `card-${i}`
     await seed(db, id)
-    await pins.set("user-a", id, true, i)
+    await pinsA.set("user-a", id, true, i)
   }
-  await pins.set("user-b", "card-26", true, 101)
-  expect(await pins.get("user-b", "card-25")).toEqual({ id: "card-25", pinned: false, pinned_at: null })
-  const retries = await Promise.all([pins.set("user-a", "card-26", true, 200), pins.set("user-a", "card-26", true, 201)])
+  await pinsB.set("user-b", "card-26", true, 101)
+  expect(await pinsB.get("user-b", "card-25")).toEqual({ id: "card-25", pinned: false, pinned_at: null })
+  const retries = await Promise.all([pinsA.set("user-a", "card-26", true, 200), pinsA.set("user-a", "card-26", true, 201)])
   expect(retries).toEqual(Array(2).fill({ id: "card-26", pinned: true, pinned_at: 26 }))
-  const first = await pins.list("user-a", 1)
+  const first = await pinsA.list("user-a", 1)
   expect(first).toMatchObject({ page: 1, total: 26 })
   expect(first.items).toHaveLength(25)
   expect(first.items[0]).toMatchObject({ id: "card-26", pinned_at: 26 })
-  expect(await pins.list("user-a", 10)).toMatchObject({ page: 2, total: 26, items: [{ id: "card-1" }] })
-  expect(await pins.list("user-b", 1)).toMatchObject({ page: 1, total: 1, items: [{ id: "card-26" }] })
-  expect(await pins.set("user-a", "missing", true)).toBeNull()
-  expect(await pins.set("user-a", "card-26", false)).toMatchObject({ pinned: false })
-  expect(await pins.get("user-b", "card-26")).toMatchObject({ pinned: true, pinned_at: 101 })
-  expect(await pins.list("user-a", 2)).toMatchObject({ page: 1, total: 25 })
+  expect(await pinsA.list("user-a", 10)).toMatchObject({ page: 2, total: 26, items: [{ id: "card-1" }] })
+  expect(await pinsB.list("user-b", 1)).toMatchObject({ page: 1, total: 1, items: [{ id: "card-26" }] })
+  expect(await pinsA.set("user-a", "missing", true)).toBeNull()
+  expect(await pinsA.set("user-a", "card-26", false)).toMatchObject({ pinned: false })
+  expect(await pinsB.get("user-b", "card-26")).toMatchObject({ pinned: true, pinned_at: 101 })
+  expect(await pinsA.list("user-a", 2)).toMatchObject({ page: 1, total: 25 })
 })
 
 test("deletion, retention and purge physically cascade for every owner", async ({ db }) => {
   await ensureSchema()
-  const pins = new TaskPinRepository(db)
-  const tasks = new TaskRepository(db)
+  const pinsA = new TaskPinRepository(db, await currentBoardScope(db, "household", fixturePrincipal("user-a", false)))
+  const pinsB = new TaskPinRepository(db, await currentBoardScope(db, "household", fixturePrincipal("user-b", false)))
+  const tasks = new TaskRepository(db, await currentBoardScope(db))
   for (const [id, status] of [["normal", "pending"], ["retention", "complete"], ["keep", "pending"]] as const) {
     await seed(db, id, status)
-    await pins.set("user-a", id, true)
-    await pins.set("user-b", id, true)
+    await pinsA.set("user-a", id, true)
+    await pinsB.set("user-b", id, true)
   }
   await db.execute("UPDATE tasks SET status = 'active', deferred_at = 5 WHERE id = 'keep'")
-  expect(await pins.list("user-a", 1)).toMatchObject({ items: expect.arrayContaining([{ id: "keep", title: "keep", status: "active", ticket_number: null, deferred_at: 5, pinned_at: expect.any(Number) }]) })
+  expect(await pinsA.list("user-a", 1)).toMatchObject({ items: expect.arrayContaining([{ id: "keep", title: "keep", status: "active", ticket_number: null, ticket_key: null, deferred_at: 5, pinned_at: expect.any(Number) }]) })
   await tasks.deleteTask("normal")
   expect(await tasks.deleteCompletedBefore(2)).toBe(1)
   expect((await db.execute("SELECT task_id FROM task_pins ORDER BY owner_id")).rows).toEqual([{ task_id: "keep" }, { task_id: "keep" }])

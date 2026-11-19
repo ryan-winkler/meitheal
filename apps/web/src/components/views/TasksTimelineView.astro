@@ -1,4 +1,6 @@
 ---
+import type { BoardScope } from "@domains/tasks/board-scope"
+const scope: BoardScope = Astro.props.scope
 /**
  * TasksTimelineView — Native SVG GANTT chart view.
  *
@@ -60,12 +62,12 @@ let fetchError = false;
 try {
   await ensureSchema();
   const client = getPersistenceClient();
-  const repo = new TaskRepository(client);
+  const repo = new TaskRepository(client, scope);
   tasks = (await repo.getTimelineTasks()) as unknown as TaskRecord[];
   const projectId = Astro.url.searchParams.get("project")
   if (projectId) tasks = tasks.filter(task => task.project_id === projectId)
   // Resolve labels from the scoped catalog even when task filters change.
-  const hierarchy = new HierarchyRepository(client)
+  const hierarchy = new HierarchyRepository(client, scope)
   const [areas, projects] = await Promise.allSettled([
     isOrganizationFeatureAvailable("groups") ? repo.getAreas() : undefined,
     isOrganizationFeatureAvailable("projects") ? hierarchy.findProjectGroups() : undefined,

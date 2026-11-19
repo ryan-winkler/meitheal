@@ -1,10 +1,11 @@
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { z } from "zod"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import { deleteLabel, isWellFormedLabelName, LabelMutationError, updateLabel } from "@domains/labels"
 import { ensureSchema } from "@domains/tasks"
 import { readWithinLimit } from "@lib/bounded-body"
-import { labelMutationContextFailure, labelMutationFailure as failure, labelMutationHeaders, requireLabelMutationAdministrator } from "@lib/label-mutation-access"
+import { labelMutationContextFailure, labelMutationFailure as failure, labelMutationHeaders, requireLabelBoardManager } from "@lib/label-mutation-access"
 import { stripHtml } from "@lib/strip-html"
 
 const logger = createLogger({ service: "meitheal-web", env: process.env.NODE_ENV ?? "development", minLevel: "info",
@@ -25,8 +26,8 @@ function problem(error: unknown, action: "put" | "delete") {
   return unavailable()
 }
 
-export const PUT: APIRoute = async ({ params, request, locals }) => {
-  const denied = labelMutationContextFailure(request, locals)
+export const PUT: APIRoute = withBoardScope({ resource: "label", action: "edit" }, async ({ params, request, locals }, scope) => {
+  const denied = labelMutationContextFailure(request, locals, scope)
   if (denied) return denied
   const id = Number(params.id)
   if (!Number.isSafeInteger(id) || id < 1) return failure(400, "invalid", "Use a positive safe integer label ID.")
@@ -55,20 +56,20 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     if (request.signal.aborted) return cancelled()
     await ensureSchema()
     if (request.signal.aborted) return cancelled()
-    const current = await requireLabelMutationAdministrator(request, locals)
+    const current = await requireLabelBoardManager(request, locals, scope)
     if (current) return current
     if (request.signal.aborted) return cancelled()
-    const label = await updateLabel(id, {
+    const label = await updateLabel(scope, id, {
       ...(title === undefined ? {} : { title }),
       ...(parsed.data.hex_color === undefined ? {} : { hexColor: parsed.data.hex_color }),
     })
     if (!label) return failure(404, "missing", "The label is no longer available. Reload Labels.")
     return Response.json({ id: label.id, title: label.title, hex_color: label.hexColor }, { headers: labelMutationHeaders })
   } catch (error) { return problem(error, "put") }
-}
+})
 
-export const DELETE: APIRoute = async ({ params, request, locals }) => {
-  const denied = labelMutationContextFailure(request, locals)
+export const DELETE: APIRoute = withBoardScope({ resource: "label", action: "delete" }, async ({ params, request, locals }, scope) => {
+  const denied = labelMutationContextFailure(request, locals, scope)
   if (denied) return denied
   const id = Number(params.id)
   if (!Number.isSafeInteger(id) || id < 1) return failure(400, "invalid", "Use a positive safe integer label ID.")
@@ -82,10 +83,10 @@ export const DELETE: APIRoute = async ({ params, request, locals }) => {
     if (request.signal.aborted) return cancelled()
     await ensureSchema()
     if (request.signal.aborted) return cancelled()
-    const current = await requireLabelMutationAdministrator(request, locals)
+    const current = await requireLabelBoardManager(request, locals, scope)
     if (current) return current
     if (request.signal.aborted) return cancelled()
-    if (!await deleteLabel(id)) return failure(404, "missing", "The label is no longer available. Reload Labels.")
+    if (!await deleteLabel(scope, id)) return failure(404, "missing", "The label is no longer available. Reload Labels.")
     return Response.json({ ok: true, deleted: id }, { headers: labelMutationHeaders })
   } catch (error) { return problem(error, "delete") }
-}
+})

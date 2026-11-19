@@ -8,6 +8,7 @@
         import { applyAppearancePreferences, bindAppearanceNavigation, readAppearancePreferences } from "@lib/appearance-preferences"
         import { initIngressNavigation, safeIngressHref, syncIngressDestination } from "@lib/ingress-navigation"
         import { hasPriorityOverlay, initShortcutModal } from "@lib/layout-shortcuts-controller"
+        import { currentTaskApiContext } from "@lib/task-api"
         import { boardNavigationLinks, readBoardNavigationContext } from "@lib/board-workspace"
         import { taskViewUrl, type TaskView } from "@lib/task-view-route"
         import { pageLifecycle } from "@lib/page-lifecycle";
@@ -122,9 +123,8 @@
             const url = new URL(location.href)
             const ingress = window.__ingress_path || ""
             if (ingress && url.pathname.startsWith(ingress + "/")) url.pathname = url.pathname.slice(ingress.length)
-            const context = readBoardNavigationContext(url)
-            if (!context) return view === "kanban" ? "/tasks#kanban" : view === "table" ? "/table" : view === "calendar" ? "/calendar" : "/boards/household"
-            if (context.boardId !== "household" && view && view !== "kanban") return
+            const context = readBoardNavigationContext(url) ?? currentTaskApiContext()
+            if (!context) return "/boards"
             const tasks = new URL(boardNavigationLinks(context).tasks, url)
             if (view) {
               const selected = taskViewUrl(tasks, view, true)
@@ -148,12 +148,14 @@
             kanban: () => openTasks("kanban"),
             table: () => openTasks("table"),
             today: () => {
-              syncIngressDestination("/today")
-              window.location.assign(safeIngressHref("/today"))
+              const destination = currentTaskApiContext()?.boardId ? `/today?board_id=${encodeURIComponent(currentTaskApiContext()!.boardId)}` : "/boards"
+              syncIngressDestination(destination)
+              window.location.assign(safeIngressHref(destination))
             },
             upcoming: () => {
-              syncIngressDestination("/upcoming")
-              window.location.assign(safeIngressHref("/upcoming"))
+              const destination = currentTaskApiContext()?.boardId ? `/upcoming?board_id=${encodeURIComponent(currentTaskApiContext()!.boardId)}` : "/boards"
+              syncIngressDestination(destination)
+              window.location.assign(safeIngressHref(destination))
             },
             calendar: () => openTasks("calendar"),
           } as const

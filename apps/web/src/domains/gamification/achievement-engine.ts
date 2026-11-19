@@ -1,3 +1,5 @@
+import type { BoardScope } from "@domains/tasks"
+import { gamificationClient, gamificationRead } from "./scoped-gamification"
 /**
  * Achievement Engine — Gamification Domain
  *
@@ -20,7 +22,7 @@
 import {
   ensureSchema,
   getPersistenceClient,
-} from "../../domains/tasks/persistence/store"
+} from "@domains/tasks"
 
 import type { GamificationStats } from "./streak-tracker"
 
@@ -179,25 +181,7 @@ const CONDITIONS: Record<string, (stats: GamificationStats) => boolean> = {
 
 // ── Schema ──────────────────────────────────────────────────────
 
-let achievementSchemaEnsured = false
-
-/**
- * Ensure achievement table exists.
- */
-export async function ensureAchievementSchema(): Promise<void> {
-  if (achievementSchemaEnsured) return
-  await ensureSchema()
-  const client = getPersistenceClient()
-
-  await client.execute(`
-    CREATE TABLE IF NOT EXISTS gamification_achievements (
-      id TEXT PRIMARY KEY,
-      unlocked_at TEXT NOT NULL
-    )
-  `)
-
-  achievementSchemaEnsured = true
-}
+export async function ensureAchievementSchema(): Promise<void> { await ensureSchema() }
 
 // ── Public API ──────────────────────────────────────────────────
 
@@ -211,14 +195,15 @@ export async function ensureAchievementSchema(): Promise<void> {
  * Called after every task completion via the gamification API.
  */
 export async function checkAchievements(
+  scope: BoardScope,
   stats: GamificationStats,
 ): Promise<AchievementCheckResult> {
   await ensureAchievementSchema()
-  const client = getPersistenceClient()
+  const client = await gamificationClient(scope, true)
 
   // Get already-unlocked IDs
   const existing = await client.execute(
-    "SELECT id, unlocked_at FROM gamification_achievements",
+    gamificationRead(scope, "SELECT id, unlocked_at FROM board_achievements"),
   )
   const unlockedMap = new Map<string, string>()
   for (const row of existing.rows) {
@@ -239,8 +224,8 @@ export async function checkAchievements(
 
     // Unlock!
     await client.execute({
-      sql: "INSERT OR IGNORE INTO gamification_achievements(id, unlocked_at) VALUES(?, ?)",
-      args: [achievement.id, now],
+      sql: "INSERT OR IGNORE INTO gamification_achievements(board_id, id, unlocked_at) VALUES(?, ?, ?)",
+      args: [scope.boardId, achievement.id, now],
     })
 
     newlyUnlocked.push({ ...achievement, unlockedAt: now })
@@ -256,16 +241,16 @@ export async function checkAchievements(
 /**
  * Get all achievements with their unlock status.
  */
-export async function getAllAchievements(): Promise<{
+export async function getAllAchievements(scope: BoardScope): Promise<{
   achievements: (Achievement & { unlockedAt: string | null })[]
   total: number
   unlocked: number
 }> {
   await ensureAchievementSchema()
-  const client = getPersistenceClient()
+  const client = await gamificationClient(scope)
 
   const existing = await client.execute(
-    "SELECT id, unlocked_at FROM gamification_achievements",
+    gamificationRead(scope, "SELECT id, unlocked_at FROM board_achievements"),
   )
   const unlockedMap = new Map<string, string>()
   for (const row of existing.rows) {
@@ -289,18 +274,18 @@ export async function getAllAchievements(): Promise<{
  * Get yearly data for heatmap (365 days).
  * Returns daily completion counts for the specified year.
  */
-export async function getYearlyHeatmapData(year?: number): Promise<{ date: string, count: number }[]> {
+export async function getYearlyHeatmapData(scope: BoardScope, year?: number): Promise<{ date: string, count: number }[]> {
   await ensureAchievementSchema()
-  const client = getPersistenceClient()
+  const client = await gamificationClient(scope)
 
   const targetYear = year ?? new Date().getFullYear()
   const startDate = `${targetYear}-01-01`
   const endDate = `${targetYear}-12-31`
 
-  const result = await client.execute({
-    sql: "SELECT date, completed_count FROM gamification_stats WHERE date >= ? AND date <= ? ORDER BY date",
+  const result = await client.execute(gamificationRead(scope, {
+    sql: "SELECT date, completed_count FROM board_stats WHERE date >= ? AND date <= ? ORDER BY date",
     args: [startDate, endDate],
-  })
+  }))
 
   // Build full 365-day map
   const dataMap = new Map<string, number>()
@@ -324,5 +309,5 @@ export async function getYearlyHeatmapData(year?: number): Promise<{ date: strin
 
 /** Reset for tests */
 export function resetAchievementForTests(): void {
-  achievementSchemaEnsured = false
+  // No shared schema or audience cache remains.
 }

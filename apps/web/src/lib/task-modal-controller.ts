@@ -60,6 +60,19 @@
           pending: number
           queued?: () => void
         } | undefined
+        let boardWithheld = false
+        document.addEventListener("meitheal:board-hidden", () => {
+          boardWithheld = true
+          tdOverlay.hidden = true
+          tdOverlay.inert = true
+          _modalAbortController?.abort()
+          closeTaskReferences()
+        }, { signal: __signal })
+        document.addEventListener("meitheal:board-verified", () => {
+          boardWithheld = false
+          tdOverlay.hidden = false
+          tdOverlay.inert = false
+        }, { signal: __signal })
         let detailGeneration = 0
         const deferral = initModalDeferral(tdOverlay, __signal)
         const pins = initModalTaskPin(tdOverlay, __signal, () => { if (pinnedSession) pinnedSession.dirty = true })
@@ -78,6 +91,7 @@
         const commentError = document.getElementById("td-comment-error")
         let currentTaskId: string | null = null;
         let sessionTicketId: string | null = null
+        let currentTicketKey: string | null = null
         let currentTicketNumber: number | null = null
         let pendingDescriptionSave: Promise<boolean> | undefined
         let queuedDescriptionTransition: (() => void) | undefined
@@ -333,6 +347,7 @@
           currentTaskId = null;
           document.dispatchEvent(new CustomEvent("meitheal:ha-location-task"))
           sessionTicketId = null
+          currentTicketKey = null
           currentTicketNumber = null
           pendingDescriptionSave = undefined
           queuedDescriptionTransition = undefined
@@ -421,6 +436,7 @@
         }, { signal: __signal })
 
         async function openTaskDetail(taskId: string, commentTarget: string | null = null, search?: SearchDetailHandoff, updateLocation = true) {
+          if (boardWithheld) return
           if (!tdOverlay?.isConnected || __signal.aborted) return
           const newSession = !tdOverlay.classList.contains("active")
           if (search && !newSession) {
@@ -451,7 +467,8 @@
           currentTaskId = taskId
           if (!sameTicket) {
             sessionTicketId = null
-            currentTicketNumber = null
+            currentTicketKey = null
+          currentTicketNumber = null
             pendingDescriptionSave = undefined
           }
           taskLoaded = false
@@ -552,6 +569,7 @@
             currentTaskId = taskId
             document.dispatchEvent(new CustomEvent("meitheal:ha-location-task", { detail: taskId }))
             sessionTicketId = taskId
+            currentTicketKey = typeof t.ticket_key === "string" ? t.ticket_key : null
             currentTicketNumber = typeof t.ticket_number === "number" ? t.ticket_number : null
             setTaskLocation(taskId, true, commentTarget)
 
@@ -992,7 +1010,7 @@
             const trackedInput = document.getElementById("td-time-tracked") as HTMLInputElement
             trackedInput.value = String(t.time_tracked ?? 0)
             if (areaField && areas) {
-              const savedArea = String(t.area_id ?? "default")
+              const savedArea = String(t.area_id ?? "")
               try {
                 const response = await areas
                 if (!response.ok) throw new Error("Groups unavailable")
@@ -1001,15 +1019,14 @@
                 if (!Array.isArray(choices) || choices.some(area => typeof area?.id !== "string" || !area.id || typeof area.name !== "string")) {
                   throw new Error("Invalid Groups")
                 }
-                areaField.replaceChildren(...choices.map(({ id, name }) => new Option(name, id)))
-                if (!choices.some(area => area.id === savedArea)) {
-                  const label = savedArea === "default" ? "Default" :
-                    window.mI18n?.get("task_detail.unavailable_group_selection") ?? "Saved selection unavailable"
+                areaField.replaceChildren(new Option("Without an Area", ""), ...choices.map(({ id, name }) => new Option(name, id)))
+                if (savedArea && !choices.some(area => area.id === savedArea)) {
+                  const label = window.mI18n?.get("task_detail.unavailable_group_selection") ?? "Saved selection unavailable"
                   const unavailable = new Option(label, savedArea)
                   unavailable.disabled = true
                   areaField.add(unavailable)
                 }
-                areaFieldReady = choices.length > 0
+                areaFieldReady = true
               } catch {
                 if (modalSignal.aborted) return
                 areaField.replaceChildren(new Option(window.mI18n?.get("task_detail.group_options_load_failed") ?? "Options could not load", savedArea))
@@ -1544,11 +1561,11 @@
           const taskId = currentTaskId
           const areaId = select.value
           const previous = select.dataset.savedArea
-          if (!taskId || !modalSignal || select.disabled || !areaId || areaId === previous) return
-          const ticketKey = formatTicketKey(currentTicketNumber)
+          if (!taskId || !modalSignal || select.disabled || areaId === previous) return
+          const ticketKey = currentTicketKey
           const hadFocus = document.activeElement === select
           select.disabled = true
-          const write = saveTaskField("area_id", areaId).then(saved => saved ? areaId : null).finally(() => {
+          const write = saveTaskField("area_id", areaId || null).then(saved => saved ? areaId : null).finally(() => {
             if (pendingAreaWrites.get(taskId) === write) pendingAreaWrites.delete(taskId)
             if (ticketKey && pendingAreaWrites.get(ticketKey) === write) pendingAreaWrites.delete(ticketKey)
           })

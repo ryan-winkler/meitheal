@@ -1,8 +1,5 @@
 ---
-import HouseholdBoardWorkspace from "../../components/boards/HouseholdBoardWorkspace.astro"
-import NamedBoardWorkspace from "../../components/boards/NamedBoardWorkspace.astro"
-import { HOUSEHOLD_BOARD_ID } from "@lib/board-workspace"
-
+import BoardWorkspace from "../../components/boards/NamedBoardWorkspace.astro"
 const boardId = Astro.params.id!
 ---
-{boardId === HOUSEHOLD_BOARD_ID ? <HouseholdBoardWorkspace /> : <NamedBoardWorkspace boardId={boardId} />}
+<BoardWorkspace {boardId} />

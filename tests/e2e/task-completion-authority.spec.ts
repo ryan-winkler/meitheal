@@ -1,3 +1,4 @@
+import { currentBoardScope } from "../helpers/current-board-scope"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -29,7 +30,19 @@ const test = base.extend<{ completion: CompletionFixture; timeZone: string }>({
     try {
       const [info] = await once(child, "message", { signal: AbortSignal.timeout(10000) })
       const origin = `http://127.0.0.1:${info.port}`
-      api = await playwright.request.newContext({ baseURL: origin, extraHTTPHeaders: { cookie: "feedback-fixture=admin", origin } })
+      const auth = { cookie: "feedback-fixture=admin", origin }
+      const bootstrap = await playwright.request.newContext({ baseURL: origin, extraHTTPHeaders: auth })
+      try {
+        const boards = await bootstrap.get(info.configuredPath + "/api/boards")
+        expect(boards.ok()).toBe(true)
+        const session = boards.headers()["x-meitheal-board-session"]
+        if (!session) throw new Error("Board session was not issued to the fixture owner")
+        api = await playwright.request.newContext({ baseURL: origin, extraHTTPHeaders: {
+          ...auth, "x-meitheal-board-id": "household", "x-meitheal-board-session": session,
+        } })
+      } finally {
+        await bootstrap.dispose()
+      }
       const databaseFile = join(work, "pins.db")
       db = new DatabaseSync(databaseFile)
       process.env.TZ = timeZone
@@ -137,10 +150,13 @@ test("a failed recurrence insert rolls back guarded completion and an identical 
   const addedStep = { id: "recurrence-added-step", text: "File the receipt", done: false }
   const checklists = JSON.stringify([firstStep])
   const completedChecklists = JSON.stringify([{ ...firstStep, done: true }, { ...addedStep, done: true }])
+  const user = await api.post(path("/api/users/custom"), { data: { name: "Recurrence fixture owner", kind: "human" } })
+  expect(user.status()).toBe(201)
+  const { id: assigneeId } = await user.json()
   const task = await createTask(completion, title, {
     area_id: areaId,
     project_id: projectId,
-    assigned_to: "recurrence_fixture_owner",
+    assigned_to: assigneeId,
     due_date: friday,
     recurrence_rule: weekdayRule,
     checklists,
@@ -209,7 +225,7 @@ test("a failed recurrence insert rolls back guarded completion and an identical 
     due_date: monday,
     project_id: projectId,
     area_id: areaId,
-    assigned_to: "recurrence_fixture_owner",
+    assigned_to: assigneeId,
     recurrence_rule: weekdayRule,
     checklists: JSON.stringify([firstStep, addedStep]),
   })
@@ -259,9 +275,10 @@ test("completion retries acquisition after a competing writer releases its lock"
   const { db, databaseFile } = completion
   const task = await createTask(completion, "Recurring completion after a writer lock", { due_date: friday, recurrence_rule: weekdayRule })
   const client = await openDatabaseForStartup(pathToFileURL(databaseFile).href, { markerPath: join(dirname(databaseFile), "meitheal-board-grants.json") })
+  const scope = await currentBoardScope(client)
   db.exec("BEGIN IMMEDIATE")
   try {
-    const repo = new TaskRepository(client)
+    const repo = new TaskRepository(client, scope)
     const completionWrite = repo.updateTask(task.id, { status: "complete" }, { version: { updatedAt: task.updated_at } })
     db.exec("ROLLBACK")
     const result = await completionWrite
@@ -282,7 +299,7 @@ test("native recurrence completion leaves the writer available for another task 
   const other = await createTask(completion, "Independent task edit")
   const client = await openDatabaseForStartup(pathToFileURL(completion.databaseFile).href, { markerPath: join(dirname(completion.databaseFile), "meitheal-board-grants.json") })
   try {
-    const repo = new TaskRepository(client)
+    const repo = new TaskRepository(client, await currentBoardScope(client))
     const [completed, updated] = await Promise.all([
       repo.updateTask(task.id, { status: "complete" }),
       repo.updateTask(other.id, { title: "Independent task edited" }),

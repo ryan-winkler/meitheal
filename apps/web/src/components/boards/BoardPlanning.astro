@@ -1,4 +1,5 @@
 ---
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
 import type { readNamedBoardPlanning } from "@domains/tasks/persistence/named-board-planning-repository"
@@ -22,6 +23,9 @@ interface Props {
   tickets: { id: string; title: string }[]
 }
 const { boardId, areaId, projectId, planning, canManage, canComplete, routinesEnabled, tickets } = Astro.props
+const resolved = await resolveBoardPageScope(Astro, { boardId })
+if (!resolved.ok) return boardScopeResponse(resolved.errorCode)
+const workScope = resolved.scope
 const label = await organizationLabelsFor(Astro)
 const newLabel = (name: Parameters<typeof label>[0], fallback?: string) => newOrganizationLabel(label(name, false, fallback), organizationLocale(Astro))
 const section = readBoardPlanningSection(Astro.url.searchParams)
@@ -39,7 +43,7 @@ let goalProgress: SharedGoalProgress[] = []
 let progressUnavailable = false
 if (showGoals && available("goals")) {
   try {
-    goalProgress = await listSharedGoals(getPersistenceClient(), Astro.locals, Astro.request.signal, {
+    goalProgress = await listSharedGoals(getPersistenceClient(), workScope, {
       ...(projectId ? { projectId } : selectedAreaId ? { areaId: selectedAreaId } : {}),
     })
   } catch { progressUnavailable = true }
@@ -211,7 +215,7 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
         <span>{share.areaName || "Unavailable Area"}</span>
         <input type="hidden" name="action" value="goal-share" />
         <input type="hidden" name="id" value={goal.id} />
-        <input type="hidden" name="areaId" value={share.areaId} />
+        <input type="hidden" name="target" value={JSON.stringify(share.areaId ? { kind: "area", boardId: share.boardId, areaId: share.areaId } : share.projectId ? { kind: "project", boardId: share.boardId, projectId: share.projectId } : { kind: "board", boardId: share.boardId })} />
         <input type="hidden" name="enabled" value="false" />
         <button type="submit" class="btn btn-ghost">Stop sharing</button>
         <p role="status" data-board-feedback></p>
@@ -220,12 +224,15 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
         <input type="hidden" name="action" value="goal-share" />
         <input type="hidden" name="id" value={goal.id} />
         <input type="hidden" name="enabled" value="true" />
-        <label>Share with <select name="areaId" required>
-          <option value="">Choose an Area</option>
-          {planning.destinations.filter(area => !planning.shares.some(share => share.goalId === goal.id && share.areaId === area.id))
-            .map(area => <option value={area.id}>{area.board} · {area.name}</option>)}
+        <label>Share with <select name="target" required>
+          <option value="">Choose a Board, Area or Project</option>
+          {planning.destinations.filter(destination => !planning.shares.some(share => share.goalId === goal.id && share.boardId === destination.boardId &&
+            (destination.kind === "board" ? share.areaId === null && share.projectId === null : destination.kind === "area" ? share.areaId === destination.id : share.projectId === destination.id)))
+            .map(destination => <option value={JSON.stringify(destination.kind === "board" ? { kind: "board", boardId: destination.boardId }
+              : destination.kind === "area" ? { kind: "area", boardId: destination.boardId, areaId: destination.id } : { kind: "project", boardId: destination.boardId, projectId: destination.id })}>
+              {destination.kind === "board" ? destination.name : `${destination.board} / ${destination.name} (${destination.kind})`}</option>)}
         </select></label>
-        <p class="board-note">People in the selected Area can see this title and progress from Projects they can access.</p>
+        <p class="board-note">People with access to the selected destination can see this title and progress from Projects they can access.</p>
         <p role="status" data-board-feedback></p>
         <button type="submit" class="btn btn-ghost">Share Goal</button>
       </form>

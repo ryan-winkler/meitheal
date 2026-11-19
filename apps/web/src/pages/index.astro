@@ -1,4 +1,6 @@
 ---
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+
 import GamificationWidget from "../components/gamification/GamificationWidget.astro"
 import StreakBadge from "../components/gamification/StreakBadge.astro"
 import UnifiedBar from "../components/layout/UnifiedBar.astro"
@@ -24,6 +26,10 @@ import { taskSurface } from "../lib/task-surface"
 import { STATUS_LABELS as statusLabels } from "../lib/status-config"
 import { DASHBOARD_SECTIONS } from "../lib/dashboard-registry"
 import { calendarDaysFromToday, calendarToday } from "../lib/date"
+const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
+if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
+const workScope = workScopeResult.scope
+
 
 const dashboardTimeZone = Astro.locals.timezone || "Europe/Dublin"
 
@@ -70,7 +76,7 @@ let areaMap: Record<string, { name: string; color: string }> = {
 
 try {
   await ensureSchema()
-  const repo = new TaskRepository(getPersistenceClient())
+  const repo = new TaskRepository(getPersistenceClient(), workScope)
   const [recentRead, favoritesRead, openRead, statsRead, overdueRead, areaRead] = await Promise.allSettled([
     repo.getRecentTasks(10),
     repo.getFavoriteTasks(5),
@@ -109,9 +115,9 @@ try {
 }
 
 try {
-  gamificationStats = await getGamificationStats()
-  gamificationWeekly = await getGamificationWeekly()
-  achievementData = await getAllAchievements()
+  gamificationStats = await getGamificationStats(workScope)
+  gamificationWeekly = await getGamificationWeekly(workScope)
+  achievementData = await getAllAchievements(workScope)
 } catch {
   // Gamification is optional - keep the dashboard available without it.
 }

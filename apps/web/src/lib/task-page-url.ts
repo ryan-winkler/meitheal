@@ -1,3 +1,5 @@
+import { currentTaskApiContext } from "./task-api"
+
 export const TASK_VIEW_LOCATION_EVENT = "meitheal:task-view-location-changed"
 
 export function taskDetailPath(taskId: string, commentId?: number): string {
@@ -15,7 +17,8 @@ export function ticketIdFromPath(pathname: string, ingressPath = ""): string | n
 export function taskBackgroundUrl(current = new URL(location.href)): URL {
   if (ticketIdFromPath(current.pathname, window.__ingress_path) === null) return new URL(current)
   const returnTo = history.state?.ticketDrawer?.returnTo
-  const fallback = `${window.__ingress_path || ""}/tasks#kanban`
+  const boardId = currentTaskApiContext()?.boardId
+  const fallback = `${window.__ingress_path || ""}${boardId ? `/boards/${encodeURIComponent(boardId)}` : "/boards"}`
   const url = new URL(typeof returnTo === "string" ? returnTo : fallback, current.origin)
   return url.origin === current.origin && url.pathname.startsWith(`${window.__ingress_path || ""}/`)
     ? url : new URL(fallback, current.origin)

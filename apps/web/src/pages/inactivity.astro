@@ -1,4 +1,6 @@
 ---
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+import { boardWorkspaceHref } from "@lib/board-workspace"
 import Layout from "../layouts/Layout.astro"
 import Icon from "../components/ui/Icon.astro"
 import { t } from "../i18n/translations"
@@ -6,11 +8,13 @@ import "../styles/work-queue.css"
 
 const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
 const text = (key: string) => t(`inactivity.${key}`, locale)
+const scoped = await resolveBoardPageScope(Astro)
+if (!scoped.ok) return boardScopeResponse(scoped.errorCode)
 const area = Astro.url.searchParams.get("area") ?? ""
-const boardHref = `/tasks?${new URLSearchParams({ area })}#kanban`
+const boardHref = boardWorkspaceHref(scoped.scope.boardId, area ? { area } : {})
 ---
 
-<Layout title={text("title")} hideSearchHub hideGlobalSearch privatePageShell suppressTaskUrlOpen>
+<Layout title={text("title")} hideSearchHub hideGlobalSearch suppressTaskUrlOpen>
   <section class="work-queue" data-inactivity-page data-locale={locale} data-timezone={Astro.locals.timezone} aria-labelledby="inactivity-heading">
     <header class="work-queue-header">
       <a href={boardHref} class="btn btn-outline" data-inactivity-back data-astro-prefetch="false">

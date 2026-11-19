@@ -12,6 +12,8 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
+from homeassistant.loader import async_get_integration
 
 from .const import DOMAIN
 from .coordinator import MeithealCoordinator
@@ -25,7 +27,7 @@ async def async_get_config_entry_diagnostics(
 
     # Task stats (no PII — just counts and metadata)
     task_stats: dict[str, Any] = {"available": False}
-    if coordinator.data:
+    if coordinator.data and coordinator.shared_entity_delivery and coordinator.last_update_success:
         data = coordinator.data
         statuses: dict[str, int] = {}
         priorities: dict[int, int] = {}
@@ -59,6 +61,8 @@ async def async_get_config_entry_diagnostics(
         "base_url_configured": bool(coordinator.api.origin),
         "session_open": not coordinator.api.session.closed,
         "last_update_success": coordinator.last_update_success,
+        "board_configured": coordinator.api.board_id is not None,
+        "shared_entity_delivery": coordinator.shared_entity_delivery,
         "update_interval_seconds": coordinator.update_interval.total_seconds()
         if coordinator.update_interval
         else None,
@@ -69,13 +73,16 @@ async def async_get_config_entry_diagnostics(
 
     # Entity info
     entities = []
-    for state in hass.states.async_all():
-        if state.entity_id.startswith("sensor.meitheal_") or state.entity_id.startswith("todo.meitheal"):
-            entities.append({
-                "entity_id": state.entity_id,
-                "state": state.state,
-                "attributes_count": len(state.attributes),
-            })
+    if coordinator.shared_entity_delivery and coordinator.last_update_success:
+        registry = er.async_get(hass)
+        for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
+            state = hass.states.get(entity.entity_id)
+            if state is not None:
+                entities.append({
+                    "entity_id": entity.entity_id,
+                    "state": state.state,
+                    "attributes_count": len(state.attributes),
+                })
 
     return {
         "entry": {
@@ -86,5 +93,5 @@ async def async_get_config_entry_diagnostics(
         "connection": connection_info,
         "services": services,
         "entities": entities,
-        "integration_version": "0.3.0",
+        "integration_version": str((await async_get_integration(hass, DOMAIN)).version),
     }

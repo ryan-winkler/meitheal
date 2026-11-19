@@ -48,10 +48,13 @@ from .api import (
     MeithealApi,
     MeithealConnectionError,
     async_validate_transport,
+    async_credential_context,
+    human_request_scope,
     connection_origin,
 )
 from .const import (
     CONF_API_TOKEN,
+    CONF_BOARD_ID,
     DOMAIN,
     PLATFORMS,
     SERVICE_COMPLETE_TASK,
@@ -287,9 +290,37 @@ def _install_custom_sentences(src_base: str, dst_base: str) -> bool:
     return changed
 
 
+async def async_migrate_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> bool:
+    """Bind an old credential only to its unambiguous current server enrollment."""
+    if entry.version > 2:
+        return False
+    if entry.version == 2:
+        return True
+    token = entry.data.get(CONF_API_TOKEN)
+    if not token:
+        return False
+    try:
+        origin = connection_origin(entry.data)
+        await async_validate_transport(hass, origin, token)
+        session = async_create_clientsession(hass, cookie_jar=DummyCookieJar())
+        metadata = await async_credential_context(MeithealApi(session, origin, token))
+        board_id = metadata["enrollmentBoardId"]
+        if not isinstance(board_id, str) or not board_id:
+            return False
+    except (ValueError, MeithealConnectionError, HomeAssistantError):
+        return False
+    hass.config_entries.async_update_entry(
+        entry, data={**entry.data, CONF_BOARD_ID: board_id}, version=2
+    )
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> bool:
     """Set up Meitheal from a config entry."""
     token = entry.data.get(CONF_API_TOKEN)
+    board_id = entry.data.get(CONF_BOARD_ID)
+    if not isinstance(board_id, str) or not board_id:
+        raise ConfigEntryError("Reconfigure Meitheal and select its credential Board")
     try:
         origin = connection_origin(entry.data)
         await async_validate_transport(hass, origin, token)
@@ -299,7 +330,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
         raise ConfigEntryNotReady(str(err)) from None
 
     session = async_create_clientsession(hass, cookie_jar=DummyCookieJar())
-    coordinator = MeithealCoordinator(hass, MeithealApi(session, origin, token))
+    coordinator = MeithealCoordinator(hass, MeithealApi(session, origin, token, board_id))
     coordinator.config_entry = entry
     await coordinator.async_config_entry_first_refresh()
 
@@ -416,9 +447,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
 
     async def handle_get_overdue_tasks(call: ServiceCall) -> ServiceResponse:
         """Handle meitheal.get_overdue_tasks service call."""
-        if not coordinator.data:
-            return {"tasks": []}
-
+        data = await coordinator.async_data_for_context()
         results = [
             {
                 "id": task.id,
@@ -428,32 +457,39 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
                 "due_date": task.due_date,
                 "description": task.description,
             }
-            for task in coordinator.data.tasks
+            for task in data.tasks
             if task.is_overdue
         ]
 
         return {"tasks": results}
 
+    def scoped_service(handler):
+        """Keep the actual caller and the configured credential as separate limits."""
+        async def scoped(call: ServiceCall):
+            async with human_request_scope(hass, coordinator.api, call.context):
+                return await handler(call)
+        return scoped
+
     # ── Register services ────────────────────────────────────────────────
 
     hass.services.async_register(
-        DOMAIN, SERVICE_CREATE_TASK, handle_create_task, schema=CREATE_TASK_SCHEMA
+        DOMAIN, SERVICE_CREATE_TASK, scoped_service(handle_create_task), schema=CREATE_TASK_SCHEMA
     )
     hass.services.async_register(
-        DOMAIN, SERVICE_COMPLETE_TASK, handle_complete_task, schema=COMPLETE_TASK_SCHEMA
+        DOMAIN, SERVICE_COMPLETE_TASK, scoped_service(handle_complete_task), schema=COMPLETE_TASK_SCHEMA
     )
-    hass.services.async_register(DOMAIN, SERVICE_SYNC_TODO, handle_sync_todo)
+    hass.services.async_register(DOMAIN, SERVICE_SYNC_TODO, scoped_service(handle_sync_todo))
     hass.services.async_register(
         DOMAIN,
         SERVICE_SEARCH_TASKS,
-        handle_search_tasks,
+        scoped_service(handle_search_tasks),
         schema=SEARCH_TASKS_SCHEMA,
         supports_response=SupportsResponse.ONLY,
     )
     hass.services.async_register(
         DOMAIN,
         SERVICE_GET_OVERDUE_TASKS,
-        handle_get_overdue_tasks,
+        scoped_service(handle_get_overdue_tasks),
         supports_response=SupportsResponse.ONLY,
     )
 
@@ -485,7 +521,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
     hass.services.async_register(
         DOMAIN,
         SERVICE_COMPLETE_TASK_BY_TAG,
-        handle_complete_task_by_tag,
+        scoped_service(handle_complete_task_by_tag),
         schema=COMPLETE_TASK_BY_TAG_SCHEMA,
     )
 
@@ -537,10 +573,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
     # meitheal.notify_overdue — pushes overdue task alerts through HA notify
     async def handle_notify_overdue(call: ServiceCall) -> None:
         """Push overdue task notifications through HA persistent_notification."""
-        if not coordinator.data or not coordinator.data.overdue_count:
+        data = await coordinator.async_data_for_context()
+        if not data.overdue_count:
             return
-
-        overdue = [t for t in coordinator.data.tasks if t.is_overdue]
+        if not await coordinator.async_can_publish_shared():
+            raise HomeAssistantError("This Board cannot publish task details to shared Home Assistant notifications")
+        overdue = [t for t in data.tasks if t.is_overdue]
         titles = ", ".join(t.title for t in overdue[:5])
         extra = f" (+{len(overdue) - 5} more)" if len(overdue) > 5 else ""
 
@@ -555,7 +593,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: MeithealConfigEntry) -> 
         )
 
     hass.services.async_register(
-        DOMAIN, "notify_overdue", handle_notify_overdue
+        DOMAIN, "notify_overdue", scoped_service(handle_notify_overdue)
     )
 
     return True

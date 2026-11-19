@@ -1,3 +1,4 @@
+import type { BoardScope } from "../tasks/board-scope"
 import { isOrganizationFeatureAvailable } from "../../lib/organization-request-context"
 import {
   AreaRepository,
@@ -19,9 +20,9 @@ import type {
   SearchResultSection,
 } from "./search-types"
 
-function buildTaskSearchItem(row: TaskCatalogRow): SearchResultItem {
+function buildTaskSearchItem(row: TaskCatalogRow, scope: BoardScope): SearchResultItem {
   const taskId = String(row.id ?? "")
-  const ticketKey = row.ticket_number ? `MTH-${row.ticket_number}` : taskId.slice(0, 8)
+  const ticketKey = row.ticket_ref ?? taskId.slice(0, 8)
   const status = String(row.status ?? "pending")
   const priority = Number(row.priority ?? 3)
   const matchedFields: string[] = []
@@ -36,6 +37,7 @@ function buildTaskSearchItem(row: TaskCatalogRow): SearchResultItem {
     id: taskId,
     kind: "task",
     taskId,
+    href: `/tasks?board_id=${encodeURIComponent(scope.boardId)}&task=${encodeURIComponent(taskId)}`,
     title: String(row.title ?? "Untitled task"),
     subtitle: `${ticketKey} · ${status} · P${priority}`,
     ...(row.excerpt ? { description: row.excerpt } : {}),
@@ -63,11 +65,12 @@ function filterByQuery<T extends SearchResultItem>(items: T[], query: string): T
 
 export async function searchMeithealCatalog(
   options: SearchQueryOptions,
+  scope: BoardScope,
   organization?: (term: OrganizationTerm, plural: boolean, fallback: string) => string,
 ): Promise<SearchResponse> {
   const client = getPersistenceClient()
-  const taskRepo = new TaskRepository(client)
-  const areaRepo = new AreaRepository(client)
+  const taskRepo = new TaskRepository(client, scope)
+  const areaRepo = new AreaRepository(client, scope)
   const settingsRepo = new SettingsRepository(client)
 
   const sections: SearchResultSection[] = []
@@ -87,7 +90,7 @@ export async function searchMeithealCatalog(
 
     const rows = await taskRepo.searchCatalog(searchOptions)
 
-    const taskItems = rows.map(buildTaskSearchItem)
+    const taskItems = rows.map(row => buildTaskSearchItem(row, scope))
 
     if (taskItems.length > 0) {
       sections.push({
@@ -106,7 +109,7 @@ export async function searchMeithealCatalog(
         kind: "area" as const,
         title: String(area.name ?? "Untitled area"),
         subtitle: "Open in Kanban",
-        href: `/tasks?area=${encodeURIComponent(String(area.id))}`,
+        href: `/tasks?board_id=${encodeURIComponent(scope.boardId)}&area=${encodeURIComponent(String(area.id))}`,
         icon: typeof area.icon === "string" ? area.icon : "📋",
         color: typeof area.color === "string" ? area.color : null,
       })),
@@ -121,12 +124,12 @@ export async function searchMeithealCatalog(
       })
     }
 
-    const filters = await settingsRepo.listFilters()
+    const filters = await settingsRepo.listFilters(scope)
     const savedFilterItems = filterByQuery(
       filters.flatMap((row) => {
         const state = normalizeSavedFilter(row.query_json)
         if (!state) return []
-        const params = new URLSearchParams()
+        const params = new URLSearchParams({ board_id: scope.boardId })
         writeTableFilterParams(params, state)
         const icon = typeof row.icon === "string" ? row.icon : "🔍"
         return [{

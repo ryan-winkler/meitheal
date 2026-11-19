@@ -1,3 +1,5 @@
+import { currentBoardScope, fixturePrincipal } from "../helpers/current-board-scope"
+import { scopeCommentOwnerKey } from "../../apps/web/src/domains/tasks/board-scope"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -16,7 +18,7 @@ import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "..
 type Client = ReturnType<typeof getPersistenceClient>
 
 const task = (id: string): TaskCreationData => ({ id, title: id, description: "", status: "pending", priority: 3,
-  due_date: null, labels: "[]", framework_payload: "{}", parent_id: null, area_id: "default", custom_fields: "{}",
+  due_date: null, labels: "[]", framework_payload: "{}", parent_id: null, area_id: null, custom_fields: "{}",
   start_date: null, end_date: null, progress: 0, color: null, is_favorite: 0, task_type: "task", assigned_to: null })
 
 test("current marker loss closes direct task reads, count, export and writes; epochless never grants authority", async () => {
@@ -28,22 +30,23 @@ test("current marker loss closes direct task reads, count, export and writes; ep
   try {
     await ensureSchema({ markerPath: marker })
     const db = getPersistenceClient()
-    const tasks = new TaskRepository(db)
+    const scope = await currentBoardScope(db)
+    const tasks = new TaskRepository(db, scope)
     await tasks.createTask(task("retained"))
     expect((await tasks.findAll({})).total).toBe(1)
     const valid = await readFile(marker)
     await rm(marker)
-    await expect(tasks.findAll({})).rejects.toThrow("continuity")
-    await expect(new TaskPinRepository(db).hasAny("owner")).rejects.toThrow("continuity")
-    await expect(new TaskPinRepository(db).set("owner", "retained", true)).rejects.toThrow("continuity")
-    await expect(new TaskReactionRepository(db).countCards(["retained"])).rejects.toThrow("continuity")
-    await expect(new TaskReactionRepository(db).add({ taskId: "retained", commentId: null }, "+", "Owner", "owner")).rejects.toThrow("continuity")
-    await expect(new CommentMentionRepository(db).create("retained", "Denied", "Owner", "owner", [], { key: "c".repeat(32), issuedAt: Date.now(), rawContent: "Denied", cutoff: 0 })).rejects.toThrow("continuity")
-    await expect(new TaskInactivityRepository(db).preview({ areaId: null, page: 1, filter: "all", now: Date.now() })).rejects.toThrow("continuity")
-    await expect(tasks.exportAll()).rejects.toThrow("continuity")
-    await expect(tasks.createTask(task("denied"))).rejects.toThrow("continuity")
+    await expect(tasks.findAll({})).rejects.toMatchObject({ name: "BoardOperationError", errorCode: "stale" })
+    await expect(new TaskPinRepository(db, scope).hasAny("owner")).rejects.toMatchObject({ name: "BoardOperationError", errorCode: "stale" })
+    await expect(new TaskPinRepository(db, scope).set("owner", "retained", true)).rejects.toMatchObject({ name: "ContinuityLockedError", status: 503 })
+    await expect(new TaskReactionRepository(db, scope).countCards(["retained"])).rejects.toMatchObject({ name: "BoardOperationError", errorCode: "stale" })
+    await expect(new TaskReactionRepository(db, scope).add({ taskId: "retained", commentId: null }, "+", "Owner", scopeCommentOwnerKey(scope)!)).rejects.toMatchObject({ name: "BoardOperationError", errorCode: "stale" })
+    await expect(new CommentMentionRepository(db, scope).create("retained", "Denied", "Owner", scopeCommentOwnerKey(scope)!, [], { key: "c".repeat(32), issuedAt: Date.now(), rawContent: "Denied", cutoff: 0 })).rejects.toMatchObject({ name: "BoardOperationError", errorCode: "stale" })
+    await expect(new TaskInactivityRepository(db, scope).preview({ areaId: null, page: 1, filter: "all", now: Date.now() })).rejects.toMatchObject({ name: "BoardOperationError", errorCode: "stale" })
+    await expect(tasks.exportAll()).rejects.toMatchObject({ name: "BoardOperationError", errorCode: "stale" })
+    await expect(tasks.createTask(task("denied"))).rejects.toMatchObject({ name: "BoardOperationError", errorCode: "stale" })
     // Count readers with historical graceful-error behavior must reveal no count.
-    expect(await tasks.getOpenTaskCount()).toBe(0)
+    await expect(tasks.getOpenTaskCount()).rejects.toMatchObject({ name: "BoardOperationError", errorCode: "stale" })
     expect((await db.execute("SELECT id FROM tasks")).rows).toEqual([{ id: "retained" }])
     expect(await new OrganizationAccessRepository(db).policies("feature", "")).toEqual({ status: "locked" })
     await writeFile(marker, valid)
@@ -53,9 +56,9 @@ test("current marker loss closes direct task reads, count, export and writes; ep
     expect(await new OrganizationAccessRepository(db).policies("feature", "")).toEqual({ status: "locked" })
     expect(await new OrganizationAccessRepository(db).change({ scope: "feature", id: "goals", boardId: "" }, null,
       { audience: "nobody", users: [] })).toEqual({ status: "locked" })
-    expect(await new NamedBoardRepository(db).changeLifecycle({ kind: "ha_user", id: "owner" }, "household", "retired", 1, true))
+    expect(await new NamedBoardRepository(db).changeLifecycle(fixturePrincipal(), "household", "retired", 1, true))
       .toEqual({ status: "locked" })
-    await expect(tasks.createTask(task("epochless-denied"))).rejects.toThrow("continuity")
+    await expect(tasks.createTask(task("epochless-denied"))).rejects.toMatchObject({ name: "BoardOperationError", errorCode: "stale" })
     expect((await db.execute("SELECT state FROM task_boards WHERE id = 'household'")).rows).toEqual([{ state: "active" }])
   } finally {
     resetPersistenceForTests()
@@ -74,6 +77,7 @@ test("a worker writer loses admission before commit when the current marker disa
   try {
     await ensureSchema({ markerPath: marker })
     const db = getPersistenceClient()
+    const scope = await currentBoardScope(db)
     const worker = guardClientContinuity(db)
     const tx = await worker.transaction("write")
     try {
@@ -111,8 +115,9 @@ test(`an open ${readMode} snapshot cannot publish old pins while a committed ret
   try {
     await ensureSchema({ markerPath: marker })
     const db = getPersistenceClient()
-    await new TaskRepository(db).createTask(task("private-pinned-title"))
-    await new TaskPinRepository(db).set("owner", "private-pinned-title", true)
+    const scope = await currentBoardScope(db)
+    await new TaskRepository(db, scope).createTask(task("private-pinned-title"))
+    await new TaskPinRepository(db, scope).set("owner", "private-pinned-title", true)
     const markerBefore = await readFile(marker, "utf8")
     const reader = new Proxy(db, {
       get(target, property) {
@@ -136,7 +141,7 @@ test(`an open ${readMode} snapshot cannot publish old pins while a committed ret
         return typeof value === "function" ? value.bind(target) : value
       },
     }) as Client
-    read = readMode === "read" ? new TaskPinRepository(reader).list("owner", 1) : (async () => {
+    read = readMode === "read" ? new TaskPinRepository(reader, scope).list("owner", 1) : (async () => {
       const tx = await guardClientContinuity(reader).transaction("deferred")
       try { return await tx.execute("SELECT COUNT(*) AS total FROM task_pins") }
       finally { tx.close() }
@@ -185,6 +190,7 @@ test("an explicitly read-only governed batch cannot write through its continuity
   try {
     await ensureSchema({ markerPath: join(work, "grants.json") })
     const db = getPersistenceClient()
+    const scope = await currentBoardScope(db)
     const reader = guardClientContinuity(db)
     expect((await reader.batch(["SELECT COUNT(*) AS total FROM tasks"], "read"))[0]?.rows[0]?.total).toBe(0)
     await expect(reader.batch(["INSERT INTO settings(key, value) VALUES ('read-only-batch', 'must not persist')"], "read"))

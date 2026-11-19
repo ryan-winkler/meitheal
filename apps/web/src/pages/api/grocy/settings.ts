@@ -1,3 +1,5 @@
+import { verifiedBoardRequestPrincipal } from "@lib/board-request-context"
+import { currentSettingsAccess } from "@lib/current-settings-access"
 /**
  * Grocy Settings API — Persist Grocy Integration Config
  *
@@ -8,7 +10,7 @@
  * @bounded-context integration
  */
 import type { APIRoute } from "astro"
-import { ensureSchema, getPersistenceClient, SettingsRepository } from "@domains/tasks"
+import { ensureSchema, getPersistenceClient, SettingsRepository, saveWorkIntegrationSettings } from "@domains/tasks"
 import { validateGrocyBaseUrl } from "@meitheal/integration-core"
 import { logApiError } from "../../../lib/api-logger"
 import { isLegacySupervisorIngressUrl, resolveSupervisorGrocyAddon } from "../../../lib/grocy-client"
@@ -45,7 +47,7 @@ export const GET: APIRoute = async ({ locals, request }) => {
       const detected = await resolveSupervisorGrocyAddon(settings.grocy_url)
       if (detected) {
         settings.grocy_url = detected.url
-        await repo.upsert("grocy_url", JSON.stringify(detected.url))
+
       } else {
         delete settings.grocy_url
       }
@@ -216,7 +218,12 @@ export const PUT: APIRoute = async ({ locals, request }) => {
       }
     }
 
-    await repo.importBatch(pendingWrites)
+    const access = await currentSettingsAccess(request, locals, true)
+    if (access instanceof Response) return access
+    const principal = await verifiedBoardRequestPrincipal({ request, locals }, true)
+    if (!principal || !await saveWorkIntegrationSettings(getPersistenceClient(), principal, pendingWrites)) {
+      return Response.json({ ok: false, error: "Review the current Grocy destinations and management access for all affected Boards." }, { status: 409 })
+    }
     const saved = pendingWrites.map((entry) => entry.key)
 
     return new Response(

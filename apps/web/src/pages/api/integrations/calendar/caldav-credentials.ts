@@ -1,3 +1,5 @@
+import { verifiedBoardRequestPrincipal } from "@lib/board-request-context"
+import { currentSettingsAccess } from "@lib/current-settings-access"
 /**
  * CalDAV Credentials API — Encrypted credential management
  *
@@ -21,7 +23,7 @@ import { homedir } from "node:os"
 import path from "node:path"
 import type { APIRoute } from "astro"
 import { testConnection } from "@domains/calendar/caldav-client"
-import { ensureSchema, getLocalDataDirectory, getPersistenceClient, SettingsRepository } from "@domains/tasks"
+import { ensureSchema, getLocalDataDirectory, getPersistenceClient, SettingsRepository, saveWorkIntegrationSettings } from "@domains/tasks"
 import { logApiError, logApiWarn } from "../../../../lib/api-logger"
 import { requireSystemSettingsAdmin } from "../../../../lib/settings-security"
 
@@ -273,11 +275,14 @@ export const POST: APIRoute = async ({ locals, request }) => {
     await repo.ensureSettingsTable()
     const encryptedPassword = encrypt(password)
 
-    await repo.importBatch([
+    const access = await currentSettingsAccess(request, locals, true)
+    if (access instanceof Response) return access
+    const principal = await verifiedBoardRequestPrincipal({ request, locals }, true)
+    if (!principal || !await saveWorkIntegrationSettings(getPersistenceClient(), principal, [
       { key: "caldav_url", value: url },
       { key: "caldav_username", value: username },
       { key: "caldav_password_enc", value: encryptedPassword },
-    ])
+    ])) return Response.json({ ok: false, error: "Review management access for every CalDAV destination Board before changing this profile." }, { status: 409 })
 
     return new Response(JSON.stringify({
       ok: true, message: "CalDAV credentials saved securely",
@@ -302,7 +307,12 @@ export const DELETE: APIRoute = async ({ locals, request }) => {
     const repo = new SettingsRepository(getPersistenceClient())
     await repo.ensureSettingsTable()
 
-    await repo.deleteByKeys([...CALDAV_KEYS])
+    const access = await currentSettingsAccess(request, locals, true)
+    if (access instanceof Response) return access
+    const principal = await verifiedBoardRequestPrincipal({ request, locals }, true)
+    if (!principal || !await saveWorkIntegrationSettings(getPersistenceClient(), principal, CALDAV_KEYS.map(key => ({ key, value: "" })))) {
+      return Response.json({ ok: false, error: "Review management access for every CalDAV destination Board before removing this profile." }, { status: 409 })
+    }
 
     return new Response(JSON.stringify({
       ok: true, message: "CalDAV credentials removed",

@@ -38,7 +38,7 @@ from custom_components.meitheal.api import (
     MeithealConnectionError,
     MeithealResponseError,
 )
-from custom_components.meitheal.const import CONF_API_TOKEN, DOMAIN
+from custom_components.meitheal.const import CONF_API_TOKEN, CONF_BOARD_ID, DOMAIN
 from custom_components.meitheal.coordinator import (
     MeithealCoordinator,
     MeithealCoordinatorData,
@@ -57,12 +57,16 @@ STATS = {"stats": {"currentStreak": 4, "totalPoints": 60, "todayCompleted": 2}}
 
 
 def task(id, **fields):
-    return {"id": id, "title": id, "status": "pending", **fields}
+    return {"id": id, "title": id, "status": "pending", "board_id": "work", **fields}
 
 
 @pytest.fixture
 def coordinator(hass):
-    return MeithealCoordinator(hass, SimpleNamespace(async_request=AsyncMock(), origin="https://tasks.example.test"))
+    coordinator = MeithealCoordinator(hass, SimpleNamespace(async_request=AsyncMock(), origin="https://tasks.example.test", board_id="work", cache_key="work-credential-fixture", configured=True))
+    coordinator._async_board_metadata = AsyncMock(return_value={"sharedEntityDelivery": True})
+    coordinator._shared_entity_delivery = True
+    coordinator.async_data_for_context = AsyncMock(side_effect=lambda: coordinator.data if coordinator.data is not None else MeithealCoordinatorData([]))
+    return coordinator
 
 
 async def test_all_pages_and_native_metadata(coordinator):
@@ -287,19 +291,21 @@ def test_runtime_schemas_metadata_and_auth_translations_agree():
     assert "api_token" in strings["config"]["step"]["reauth_confirm"]["data"]
 
 
-async def test_real_intent_dispatch_never_deletes_an_ambiguous_title(coordinator, hass, hass_owner_user):
+async def test_real_intent_dispatch_never_deletes_an_ambiguous_title(coordinator, hass, hass_owner_user, native_human_transport):
     from custom_components.meitheal import intents
     from homeassistant.core import Context
     from homeassistant.helpers import intent
 
     coordinator.data = MeithealCoordinatorData([MeithealTask(task("a", title="Milk")), MeithealTask(task("b", title="Milk"))])
+    coordinator.api = native_human_transport.api
+    coordinator._cache_key = coordinator.api.cache_key
     intents.async_register_intents(hass)
     with patch.object(intents, "_get_coordinator", return_value=coordinator):
         result = await intent.async_handle(hass, "conversation", intents.INTENT_DELETE_TASK,
             {"item": {"value": "milk"}}, context=Context(user_id=hass_owner_user.id))
     assert "Multiple" in result.speech["plain"]["speech"]
     assert "Deleted" not in result.speech["plain"]["speech"]
-    coordinator.api.async_request.assert_not_awaited()
+    assert native_human_transport.supervisor.ingress.create_session.await_count == 1
 
 
 @pytest.mark.parametrize("labels", ["{", "{}", '["Home", {}, 27]', None])
@@ -594,7 +600,8 @@ async def test_setup_service_errors_and_optional_bootstrap_warnings(hass):
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="Meitheal",
-        data={CONF_HOST: "tasks.example.test", CONF_PORT: 443, CONF_SSL: True, CONF_API_TOKEN: "mth_" + "a" * 64},
+        version=2,
+        data={CONF_HOST: "tasks.example.test", CONF_PORT: 443, CONF_SSL: True, CONF_API_TOKEN: "mth_" + "a" * 64, CONF_BOARD_ID: "work"},
     )
     entry.add_to_hass(hass)
 

@@ -12,12 +12,7 @@ interface Props {
 }
 
 const { locale, variant, scopes } = Astro.props
-const context = readBoardNavigationContext(Astro.url)
-const named = variant === "dialog" && context && context.boardId !== "household"
-const groups = keyboardShortcutGroups(scopes).filter(group => !named || group.scope !== "tasks").map(group => ({
-  ...group,
-  shortcuts: group.shortcuts.filter(shortcut => !named || !["settings.shortcut_table", "settings.shortcut_calendar"].includes(shortcut.labelKey)),
-}))
+const groups = keyboardShortcutGroups(scopes)
 ---
 
 {variant === "dialog" ? (

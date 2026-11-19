@@ -1,151 +1,109 @@
-/**
- * Grocy Sync API — Manual Sync Trigger & Status
- *
- * POST /api/grocy/sync — trigger manual sync or enable/disable
- * GET  /api/grocy/sync — get sync status
- *
- * Mirrors /api/todo/sync pattern for API consistency.
- *
- * @domain grocy
- * @bounded-context integration
- */
-import type { APIRoute } from "astro";
+import type { APIRoute } from "astro"
 import {
   syncFromGrocy,
   getGrocySyncStatus,
   startGrocySync,
   stopGrocySync,
-} from "@domains/grocy";
-import { createGrocyClient } from "../../../lib/grocy-client";
-import { logApiError } from "../../../lib/api-logger";
+  getActiveGrocySyncConfig
+} from "@domains/grocy"
+import { withBoardScope, boardScopeErrorResponse } from "@lib/board-http"
+import { requestIntegrationBinding } from "@lib/integration-binding-access"
+import { currentSettingsAccess } from "@lib/current-settings-access"
+import { createGrocyClient } from "@lib/grocy-client"
+import { apiJson, apiError } from "@lib/api-response"
 
-/**
- * GET /api/grocy/sync — returns current sync status
- */
-export const GET: APIRoute = async () => {
-  try {
-    const status = getGrocySyncStatus();
-    return new Response(JSON.stringify({ ok: true, sync: status }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (err) {
-    logApiError("grocy-sync", "GET failed", err);
-    return new Response(JSON.stringify({ ok: false, error: "Internal server error" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-};
-
-/**
- * POST /api/grocy/sync
- * Body: { action: "sync" | "enable" | "disable", sync_mode?, interval_ms? }
- */
-export const POST: APIRoute = async ({ request }) => {
-  try {
-    let body: {
-      action?: "sync" | "enable" | "disable";
-      sync_mode?: "import" | "export" | "bidirectional";
-      interval_ms?: number;
-    };
-
-    try {
-      body = await request.json();
-    } catch {
-      return new Response(JSON.stringify({ ok: false, error: "Invalid JSON body" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    const action = body.action ?? "sync";
-
-    switch (action) {
-      case "sync": {
-        // Auto-start if not already active
-        const currentStatus = getGrocySyncStatus();
-        if (!currentStatus.active) {
-          const adapter = await createGrocyClient();
-          if (!adapter) {
-            return new Response(
-              JSON.stringify({ ok: false, error: "Grocy not configured — set URL and API key in Settings" }),
-              { status: 400, headers: { "Content-Type": "application/json" } },
-            );
-          }
-          startGrocySync(
+export const GET: APIRoute = withBoardScope(
+  { resource: "task", action: "read" },
+  async (_context, scope) => apiJson({ ok: true, sync: await getGrocySyncStatus(scope) })
+)
+export const POST: APIRoute = async (context) => {
+  const raw: unknown = await context.request.json().catch(() => null)
+  if (!raw || typeof raw !== "object" || Array.isArray(raw))
+    return apiError("Choose a Grocy action and approved destination.", 400)
+  const body = raw as Record<string, unknown>
+  if (Object.hasOwn(body, "board_id"))
+    return apiError("Select the Board using the request context.", 400)
+  const action = body.action ?? "sync"
+  if (!["sync", "enable", "disable"].includes(String(action)))
+    return apiError("Choose sync, enable or disable.", 400)
+  return withBoardScope(
+    { resource: "board", action: "manage" },
+    async (requestContext, scope) => {
+      try {
+        if (action !== "sync") {
+          const access = await currentSettingsAccess(
+            requestContext.request,
+            requestContext.locals,
+            true
+          )
+          if (access instanceof Response) return access
+        }
+        const approved = await requestIntegrationBinding(scope, "grocy", "grocy.sync", body, {
+          resource: "board",
+          action: "manage"
+        })
+        if (!approved?.ok)
+          return apiError("Choose a current approved Grocy destination in this Board.", 404)
+        const { binding } = approved.value
+        if (action === "disable") {
+          stopGrocySync(binding.id, binding.generation)
+          return apiJson({ ok: true, message: "Grocy sync disabled for this destination." })
+        }
+        if (action === "enable") {
+          const mode = body.sync_mode ?? "bidirectional",
+            interval = body.interval_ms ?? 900000
+          if (
+            !["import", "export", "bidirectional"].includes(String(mode)) ||
+            typeof interval !== "number" ||
+            !Number.isSafeInteger(interval) ||
+            interval < 0 ||
+            interval > 2147483647
+          )
+            return apiError("Choose a valid Grocy mode and interval.", 400)
+          const adapter = await createGrocyClient()
+          if (!adapter)
+            return apiError(
+              "Grocy configuration is unavailable. Check its URL and API key in Settings.",
+              409
+            )
+          await startGrocySync(
             {
+              bindingId: binding.id,
+              generation: binding.generation,
               syncEnabled: true,
-              syncMode: body.sync_mode ?? "bidirectional",
-              intervalMs: body.interval_ms ?? 15 * 60 * 1000,
+              syncMode: mode as "import" | "export" | "bidirectional",
+              intervalMs: interval
             },
             adapter,
-          );
+            approved.value
+          )
+          return apiJson({ ok: true, message: "Grocy sync enabled for this destination." })
         }
-
-        const result = await syncFromGrocy();
-        const status = getGrocySyncStatus();
-
-        const total = result.chores + result.tasks + result.shopping;
-        return new Response(
-          JSON.stringify({
-            ok: true,
-            status,
-            ...result,
-            message:
-              total > 0
-                ? `Synced ${result.chores} chores, ${result.tasks} tasks, ${result.shopping} shopping`
-                : result.errors > 0
-                  ? "Sync encountered errors"
-                  : "No items to sync",
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
-      }
-
-      case "enable": {
-        const adapter = await createGrocyClient();
-        if (!adapter) {
-          return new Response(
-            JSON.stringify({ ok: false, error: "Grocy not configured — set URL and API key in Settings" }),
-            { status: 400, headers: { "Content-Type": "application/json" } },
-          );
-        }
-
-        startGrocySync(
+        const active = getActiveGrocySyncConfig(binding.id)
+        if (!active || active.generation !== binding.generation)
+          return apiError("Enable this approved Grocy destination before syncing.", 409)
+        const result = await syncFromGrocy(binding.id, scope, {
+          resource: "board",
+          action: "manage"
+        })
+        return apiJson(
           {
-            syncEnabled: true,
-            syncMode: body.sync_mode ?? "bidirectional",
-            intervalMs: body.interval_ms ?? 15 * 60 * 1000,
+            ok: result.errors === 0,
+            ...result,
+            status: await getGrocySyncStatus(scope),
+            message: result.errors
+              ? "Grocy sync was incomplete. Check this destination and retry."
+              : "Grocy sync completed."
           },
-          adapter,
-        );
-
-        return new Response(
-          JSON.stringify({ ok: true, message: "Grocy sync enabled" }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
+          result.errors ? 409 : 200
+        )
+      } catch (error) {
+        return (
+          boardScopeErrorResponse(error) ??
+          apiError("Grocy sync is unavailable. Check this destination and retry.", 503)
+        )
       }
-
-      case "disable": {
-        stopGrocySync();
-        return new Response(
-          JSON.stringify({ ok: true, message: "Grocy sync disabled" }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
-      }
-
-      default:
-        return new Response(JSON.stringify({ ok: false, error: "Unknown action" }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        });
-    }
-  } catch (err) {
-    logApiError("grocy-sync", "POST failed", err);
-    return new Response(JSON.stringify({ ok: false, error: "Internal server error" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-};
+    },
+    { write: true }
+  )(context)
+}

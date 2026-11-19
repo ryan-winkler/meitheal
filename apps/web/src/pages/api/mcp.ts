@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from "node:fs"
 import { resolve } from "node:path"
-import type { APIRoute } from "astro"
+import type { APIContext, APIRoute } from "astro"
 import { parse } from "yaml"
 import { hasScope, resolveAgentRouteAccess, type AgentScope } from "@meitheal/domain-auth"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
@@ -11,20 +11,22 @@ import {
   MCP_SUPPORTED_VERSIONS,
   resolveMcpSchema,
 } from "@domains/agents"
-import { listHAUsers } from "@domains/ha"
 import {
   ensureSchema,
   getPersistenceClient,
   hasBoardSelection,
   isBoardTaskApiPath,
   unavailableBoardResponse,
-  UserRepository,
+  IdentityRepository,
+  TaskRepository,
 } from "@domains/tasks"
 import { apiJson, apiError, apiProblem } from "@lib/api-response"
+import { resolveBoardRequestScope } from "@lib/board-request-context"
 import { readWithinLimit } from "@lib/bounded-body"
+import { dispatchTaskEvent } from "@lib/webhook-dispatcher"
 import { isClosedStatus, isDoneStatus } from "@lib/status-config"
 import type { ResolvedAgent } from "@lib/agent-token-guard"
-import precompiledMcpCatalog from "../../generated/mcp-tools.json"
+import precompiledMcpCatalog from "../../generated/mcp-tools.json" with { type: "json" }
 
 const mcpLogger = createLogger({
   service: "meitheal-web",
@@ -75,12 +77,14 @@ type CustomToolHandler = (
   args: Record<string, unknown>,
   requestApi: (path: string, init?: RequestInit) => Promise<Response>,
   agent: ResolvedAgent,
+  context: APIContext,
 ) => Promise<Record<string, unknown>>
 
 // ─── OpenAPI → MCP Tool Discovery ────────────────────────────────────────────
 
 /** Operations to exclude from MCP tools (internal/system endpoints) */
 const EXCLUDED_OPS = new Set([
+  "getAgentContext", "getWorkDestinations", "saveWorkDestination", // Credential bootstrap and human Board configuration
   "reviewTaskProposal", "acceptTaskProposal", // Human-only proposal decisions
   "createRule", "replaceRules", "updateRule", "deleteRule", "restoreRuleDefaults",
   "createFramework", "updateFramework", "deleteFramework", // Human administrator settings mutations
@@ -134,9 +138,9 @@ function loadOpenAPISpec(): { tools: McpTool[], routes: Map<string, RouteMapping
   }
 
   if (usePrecompiled) {
-    const tools = (precompiledMcpCatalog.tools ?? []) as McpTool[]
+    const tools = ((precompiledMcpCatalog.tools ?? []) as McpTool[]).filter(tool => !EXCLUDED_OPS.has(tool.name))
     const routes = new Map<string, RouteMapping>(
-      Object.entries((precompiledMcpCatalog.routes ?? {}) as Record<string, RouteMapping>)
+      Object.entries((precompiledMcpCatalog.routes ?? {}) as Record<string, RouteMapping>).filter(([name]) => !EXCLUDED_OPS.has(name))
     )
     _toolCache = tools
     _routeCache = routes
@@ -301,7 +305,7 @@ interface McpLoopbackContext {
   traceparent?: string | null | undefined
 }
 
-function scopedApi(authorization: string, traceContext?: McpLoopbackContext) {
+function scopedApi(authorization: string, boardId: string | undefined, traceContext?: McpLoopbackContext) {
   const port = process.env.PORT ?? (import.meta.env.DEV ? "4321" : "3000")
   const origin = `http://127.0.0.1:${port}`
   return async (path: string, init?: RequestInit): Promise<Response> => {
@@ -313,6 +317,7 @@ function scopedApi(authorization: string, traceContext?: McpLoopbackContext) {
       authorization,
       "x-automation-source": "mcp",
     }
+    if (boardId) headers["x-meitheal-board-id"] = boardId
     if (traceContext?.requestId) headers["x-request-id"] = traceContext.requestId
     if (traceContext?.traceparent) headers["traceparent"] = traceContext.traceparent
 
@@ -421,7 +426,7 @@ const NO_ASSIGNEE = "This token is not linked to an agent assignee. Ask a Home A
 async function agentAssignee(agent: ResolvedAgent): Promise<{ id: string, name: string } | null> {
   if (!agent.assigneeId) return null
   await ensureSchema()
-  const assignee = await new UserRepository(getPersistenceClient()).getCustomUser(agent.assigneeId)
+  const assignee = await new IdentityRepository(getPersistenceClient()).getCustomUser(agent.assigneeId)
   return assignee?.kind === "agent" ? { id: assignee.id, name: assignee.name } : null
 }
 
@@ -478,145 +483,26 @@ customHandlers.set("listMyTasks", async (args, requestApi, agent) => {
   return { assignee, assignee_id: assignee.id, tasks, count: tasks.length }
 })
 
-async function isValidHandbackTarget(
-  target: string,
-  history: Record<string, unknown>[],
-  users: UserRepository,
-): Promise<boolean> {
-  if (target.startsWith("custom_")) {
-    return Boolean(await users.getCustomUser(target))
-  }
-  const haUsers = await listHAUsers()
-  if (haUsers.length > 0) {
-    return haUsers.some(u => `ha_${u.id}` === target)
-  }
-  const knownInHistory = history.some(
-    entry => entry.field === "assigned_to" && (entry.old_value === target || entry.new_value === target),
-  )
-  return knownInHistory || target === await users.getDefaultAssigneeSetting()
-}
-
-customHandlers.set("handBackTask", async (args, requestApi, agent) => {
-  if (typeof args.id !== "string" || !args.id.trim()) return { error: "Provide the task id" }
-  const idSeg = validateMcpPathSegment(args.id.trim())
-  if (!idSeg.ok) throw new McpInvalidParamsError("Invalid params: unsafe task id")
-  const assignee = await agentAssignee(agent)
-  if (!assignee) return { error: NO_ASSIGNEE }
-  if (args.note !== undefined && (typeof args.note !== "string" || !args.note.trim() || args.note.length > 10000)) {
-    return { error: "note must be 1 to 10000 characters" }
-  }
-  if (args.to !== undefined && args.to !== null && (typeof args.to !== "string" || !/^(ha|custom)_[\w-]{1,128}$/.test(args.to))) {
-    return { error: "to must be an assignee ID from the task history, or omitted" }
-  }
-  if (args.request_id !== undefined && (typeof args.request_id !== "string" || !args.request_id.trim() || args.request_id.trim().length > 128)) {
-    return { error: "request_id must be a non-empty string (max 128 characters)" }
-  }
-  const requestId = typeof args.request_id === "string" ? args.request_id.trim() : null
-  const task = await checkedJson(await requestApi(`/api/tasks/${idSeg.encoded}`))
-  // Later calls use the stored ID: the history is keyed by it, not by the ticket key.
-  const taskId = String(task.id)
-  const taskSeg = validateMcpPathSegment(taskId)
-  if (!taskSeg.ok) throw new McpInvalidParamsError("Invalid params: unsafe task id")
-  const taskVersion = typeof task.task_version === "number" ? task.task_version : task.updated_at
-  const expectedVersion = typeof taskVersion === "number" && Number.isSafeInteger(taskVersion) && taskVersion >= 0
-    ? taskVersion
-    : undefined
-  const path = `/api/tasks/${taskSeg.encoded}`
-  const db = getPersistenceClient()
-  const receiptKey = requestId ? `${agent.tokenId}:${taskId}:${requestId}` : null
-  let existingAttempt: { status: string; response_payload: string | null } | null = null
-  if (receiptKey) {
-    await ensureSchema()
-    const lookup = await db.execute({
-      sql: "SELECT status, response_payload FROM integration_attempts WHERE integration = 'mcp.handback' AND idempotency_key = ? LIMIT 1",
-      args: [receiptKey],
-    })
-    const row = lookup.rows[0]
-    if (row) {
-      existingAttempt = {
-        status: String(row.status),
-        response_payload: row.response_payload != null ? String(row.response_payload) : null,
-      }
-      if (existingAttempt.status === "completed" && existingAttempt.response_payload) {
-        return JSON.parse(existingAttempt.response_payload) as Record<string, unknown>
-      }
-    }
-  }
-  if (task.assigned_to !== assignee.id) return { error: "This task is not assigned to you", assigned_to: task.assigned_to ?? null }
-
-  const users = new UserRepository(db)
-  let to = typeof args.to === "string" ? args.to : null
-  if (args.to === undefined) {
-    const historyRes = await checkedJson(await requestApi(`${path}/activity?limit=200`))
-    const history = Array.isArray(historyRes.activity) ? historyRes.activity.filter(isRecord) : []
-    // Default to whoever held the task before it was given to this agent, if they still exist.
-    const handoff = history.find(entry => entry.field === "assigned_to" && entry.new_value === assignee.id)
-    const previous = typeof handoff?.old_value === "string" ? handoff.old_value : ""
-    if (/^(ha|custom)_[\w-]{1,128}$/.test(previous) && previous !== assignee.id && await isValidHandbackTarget(previous, history, users)) {
-      to = previous
-    }
-    // A task created for the agent (or whose prior holder was removed) goes to the household's default assignee.
-    if (!to) {
-      const fallback = await users.getDefaultAssigneeSetting()
-      if (fallback && fallback !== assignee.id && await isValidHandbackTarget(fallback, history, users)) to = fallback
-    }
-  }
-  if (typeof args.to === "string" && args.to !== assignee.id) {
-    const historyRes = await checkedJson(await requestApi(`${path}/activity?limit=200`))
-    const history = Array.isArray(historyRes.activity) ? historyRes.activity.filter(isRecord) : []
-    if (!await isValidHandbackTarget(args.to, history, users)) {
-      return { error: "to must be an assignee ID from the task history, or omitted" }
-    }
-  }
-  if (to === assignee.id) return { error: "Choose someone else to hand the task back to" }
-
-  // The note goes first: once the task is reassigned an assigned-only token can no longer comment on it.
-  const hasNote = typeof args.note === "string"
-  let notePosted = existingAttempt?.status === "note_posted"
-  if (hasNote && !notePosted) {
-    await checkedJson(await requestApi(`${path}/comments`, { method: "POST", body: JSON.stringify({ content: String(args.note).trim() }) }))
-    notePosted = true
-    if (receiptKey && requestId) {
-      const now = Date.now()
-      await db.execute({
-        sql: `INSERT INTO integration_attempts (attempt_id, task_id, integration, request_id, idempotency_key, status, created_at, updated_at)
-              VALUES (?, ?, 'mcp.handback', ?, ?, 'note_posted', ?, ?)
-              ON CONFLICT(idempotency_key, integration) DO NOTHING`,
-        args: [crypto.randomUUID(), taskId, requestId, receiptKey, now, now],
-      }).catch(() => {})
-    }
-  }
-  let updated: Record<string, unknown>
-  try {
-    updated = await checkedJson(await requestApi(path, {
-      method: "PUT",
-      body: JSON.stringify({
-        assigned_to: to,
-        ...(expectedVersion !== undefined ? { updated_at: expectedVersion } : {}),
-        ...(requestId ? { request_id: requestId } : {}),
-      }),
-    }))
-    if ((updated.assigned_to ?? null) !== to) throw new Error("Task hand back returned an invalid acknowledgement")
-  } catch (error) {
-    if (!notePosted) throw error
-    // The note is already on the task. Say so, or a retry without the same request_id posts it twice.
-    return {
-      error: "Your note was posted, but the task could not be reassigned. Call handBackTask again without a note.",
-      note_posted: true,
-      still_assigned_to: assignee.id,
-    }
-  }
-  const receipt = { id: updated.id, ticket_key: updated.ticket_key ?? null, handed_back_to: to, note_posted: hasNote || notePosted }
-  if (receiptKey && requestId) {
-    const now = Date.now()
-    await db.execute({
-      sql: `INSERT INTO integration_attempts (attempt_id, task_id, integration, request_id, idempotency_key, status, response_payload, created_at, updated_at)
-            VALUES (?, ?, 'mcp.handback', ?, ?, 'completed', ?, ?, ?)
-            ON CONFLICT(idempotency_key, integration) DO UPDATE SET status = 'completed', response_payload = excluded.response_payload, updated_at = excluded.updated_at`,
-      args: [crypto.randomUUID(), taskId, requestId, receiptKey, JSON.stringify(receipt), now, now],
-    }).catch(() => {})
-  }
-  return receipt
+customHandlers.set("handBackTask", async (args, _requestApi, agent, context) => {
+  if (typeof args.id !== "string" || !args.id.trim() || !validateMcpPathSegment(args.id.trim()).ok) throw new McpInvalidParamsError("Provide a safe task id or ticket key")
+  if (!await agentAssignee(agent)) return { error: NO_ASSIGNEE }
+  if (args.note !== undefined && (typeof args.note !== "string" || !args.note.trim() || args.note.length > 10000)) throw new McpInvalidParamsError("note must be 1 to 10000 characters")
+  if (args.to !== undefined && args.to !== null && (typeof args.to !== "string" || !/^(ha|custom)_[\w-]{1,128}$/.test(args.to))) throw new McpInvalidParamsError("Choose a current assignee or null")
+  if (args.request_id !== undefined && (typeof args.request_id !== "string" || !args.request_id.trim() || args.request_id.trim().length > 128)) throw new McpInvalidParamsError("request_id must be a non-empty string up to 128 characters")
+  // Resolve the selected Board without a task-read preflight. The common command
+  // authorizes the actual assignment target or its same-actor minimal receipt.
+  const resolved = await resolveBoardRequestScope(context, { operation: { resource: "task", action: "assign" }, write: true })
+  if (!resolved.ok) return { error: "This handback is unavailable" }
+  const result = await new TaskRepository(getPersistenceClient(), resolved.scope).handBackTaskCommand(args.id.trim(), {
+    ...(args.to !== undefined ? { to: args.to as string | null } : {}),
+    ...(typeof args.note === "string" ? { note: args.note.trim() } : {}),
+    ...(typeof args.request_id === "string" ? { requestId: args.request_id.trim() } : {}),
+  })
+  if (!result.ok) return { error: result.errorCode === "conflict" ? "This handback changed. Use its original request or refresh before trying again." : "This handback is unavailable" }
+  await dispatchTaskEvent("task.updated", { id: result.id, assigned_to: result.assigned_to },
+    typeof args.request_id === "string" ? args.request_id.trim() : undefined,
+    undefined, result.eventId, undefined, resolved.scope).catch(() => {})
+  return { id: result.id, ticket_key: result.ticket_key, handed_back_to: result.assigned_to, note_posted: result.note_posted }
 })
 
 /** Custom tools are granted by scope. "write" accepts either task write grant. */
@@ -625,7 +511,7 @@ const customToolScopes: ReadonlyMap<string, AgentScope | "write" | "read_and_wri
   ["searchTasks", "search:read"],
   ["whoAmI", "mcp:execute"],
   ["listMyTasks", "tasks:read"],
-  ["handBackTask", "read_and_write"],
+  ["handBackTask", "write"],
 ])
 
 function toolAllowed(toolName: string, route: RouteMapping | undefined, scopes: AgentScope[]): boolean {
@@ -645,7 +531,8 @@ async function executeTool(
   args: Record<string, unknown>,
   authorization: string,
   agent: ResolvedAgent,
-  traceContext?: McpLoopbackContext,
+  traceContext: McpLoopbackContext,
+  context: APIContext,
 ): Promise<Record<string, unknown>> {
   const { routes } = loadOpenAPISpec()
   const route = routes.get(toolName)
@@ -653,8 +540,15 @@ async function executeTool(
   if ((custom || (route && isBoardTaskApiPath(route.path))) && hasBoardSelection(args)) {
     return checkedJson(unavailableBoardResponse())
   }
-  const requestApi = scopedApi(authorization, traceContext)
-  if (custom) return custom(args, requestApi, agent)
+  const values = new URL(context.request.url).searchParams.getAll("board_id")
+  const selected = context.request.headers.get("x-meitheal-board-id")
+  const boardId = selected ?? values[0]
+  if (toolName !== "whoAmI" && (!boardId || boardId.length > 150 || values.length > 1 ||
+    (selected !== null && values.some(value => value !== selected)))) {
+    throw new McpInvalidParamsError("Select one Board with X-Meitheal-Board-Id or board_id")
+  }
+  const requestApi = scopedApi(authorization, boardId, traceContext)
+  if (custom) return custom(args, requestApi, agent, context)
 
   if (!route) {
     return { error: `Unknown tool: ${toolName}`, available: routes.size }
@@ -703,13 +597,13 @@ async function executeTool(
 async function acknowledgedCompletion(response: Response, expectedId: string): Promise<Record<string, unknown>> {
   const task = await checkedJson(response)
   const exactId = task.id === expectedId
-  const exactTicket = /^MTH-\d+$/i.test(expectedId) && typeof task.ticket_key === "string" &&
+  const exactTicket = /^[a-z0-9]+-\d+$/i.test(expectedId) && typeof task.ticket_key === "string" &&
     task.ticket_key.toUpperCase() === expectedId.toUpperCase()
   if (typeof task.id !== "string" || !task.id || (!exactId && !exactTicket) ||
     typeof task.status !== "string" || !isDoneStatus(task.status)) {
     throw new Error("Task completion returned an invalid acknowledgement")
   }
-  return { ...task, status: "completed" }
+  return { id: task.id, ticket_key: task.ticket_key ?? null, status: "completed" }
 }
 
 async function checkedJson(response: Response): Promise<Record<string, unknown>> {
@@ -792,7 +686,8 @@ export const GET: APIRoute = async ({ request, locals }) => {
 }
 export const HEAD = GET
 
-export const POST: APIRoute = async ({ request, locals }) => {
+export const POST: APIRoute = async context => {
+  const { request, locals } = context
   const access = await checkMcpTransport(request, locals)
   if (access instanceof Response) return access
   const { agent, authorization } = access
@@ -921,7 +816,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
         if (!toolAllowed(toolName, loadOpenAPISpec().routes.get(toolName), agent.scopes)) {
           return rpcError(reqId, modern ? -32602 : -32603, "Tool is unavailable to this token")
         }
-        const output = await executeTool(toolName, args, authorization, agent, traceContext)
+        const output = await executeTool(toolName, args, authorization, agent, traceContext, context)
         const durationMs = Date.now() - callStartedAt
         mcpLogger.log("info", {
           event: "mcp.tool_call",
@@ -981,7 +876,7 @@ function getCustomToolDescription(name: string): string {
     searchTasks: "Search tasks by query text, status, priority, or assignee. Returns a clean list of matching tasks.",
     whoAmI: "Identify this connection: the token name, its scopes, the agent assignee it acts as, and whether it may change any task or only its assigned tasks. Call this first.",
     listMyTasks: "List the tasks assigned to you, the agent assignee linked to this token. Open tasks only unless include_completed is true or a status is given.",
-    handBackTask: "Hand a task assigned to you back to a person. Posts your note as a comment, then reassigns the task to whoever held it before you (or to `to`, or leaves it unassigned). The household is notified.",
+    handBackTask: "Hand a task assigned to you back to a person. Posts your note as a comment, then reassigns the task to whoever held it before you (or to `to`, or leaves it unassigned). Approved Board notification channels apply.",
   }
   return descriptions[name] ?? `Custom tool: ${name}`
 }
@@ -1018,7 +913,7 @@ function getCustomToolSchema(name: string): McpTool["inputSchema"] {
     handBackTask: {
       type: "object",
       properties: {
-        id: { type: "string", description: "Task ID or ticket key (MTH-12)" },
+        id: { type: "string", description: "Task ID or this Board’s ticket key" },
         note: { type: "string", description: "What you did, what is left, or what you need. Posted as a comment." },
         to: { type: ["string", "null"], description: "Assignee ID to hand back to. Omit to return it to the previous assignee; null leaves it unassigned." },
         request_id: { type: "string", description: "Optional idempotency key so retrying the same hand back returns the original receipt without duplicating your note." },

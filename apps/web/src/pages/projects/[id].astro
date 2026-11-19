@@ -1,4 +1,8 @@
 ---
+import BoardWorkspaceNav from "../../components/boards/BoardWorkspaceNav.astro"
+import { scopeBoardAccess } from "@domains/tasks/board-scope"
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import { organizationLabelsFor } from "@lib/organization-labels"
 /**
@@ -20,10 +24,14 @@ import {
 import { HierarchyRepository, type AreaRow, type GoalRow } from "@domains/tasks/persistence/hierarchy-repository"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository";
 import { PRIORITY_COLORS } from "../../lib/priority-config";
-import { boardWorkspaceHref, HOUSEHOLD_BOARD_ID } from "@lib/board-workspace"
+import { boardWorkspaceHref } from "@lib/board-workspace"
 import { isClosedStatus, STATUS_LABELS } from "../../lib/status-config";
 import { mapEntityEmojiToTabler } from "../../lib/tabler-svg"
 import { isIconName, type IconName } from "../../generated/icon-registry"
+const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId, record: { resource: "project", id: Astro.props.workspaceProjectId ?? Astro.params.id! } })
+if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
+const workScope = workScopeResult.scope
+
 
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
@@ -45,8 +53,8 @@ let areas: AreaRow[] = []
 try {
   await ensureSchema();
   const client = getPersistenceClient();
-  const repo = new HierarchyRepository(client);
-  const taskRepo = new TaskRepository(client);
+  const repo = new HierarchyRepository(client, workScope);
+  const taskRepo = new TaskRepository(client, workScope);
 
   project = await repo.findProjectById(projectId) as Record<string, unknown> | null;
 
@@ -91,7 +99,7 @@ const progress = tasks.length > 0 ? Math.round((completedCount / tasks.length) *
 const { timezone, dateFormat } = Astro.locals;
 
 const organization = await organizationLabelsFor(Astro)
-const tasksHref = boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { project: projectId, fromArea })
+const tasksHref = boardWorkspaceHref(workScope.boardId, { project: projectId, fromArea })
 const tasksPath = `${Astro.locals.ingressPath || ""}${tasksHref}#kanban`
 const tabs: { id: string; label: string; icon: IconName }[] = [
   { id: "overview", label: "Overview", icon: "chart-bar" },
@@ -100,7 +108,7 @@ const tabs: { id: string; label: string; icon: IconName }[] = [
 ]
 ---
 
-{!workspaceProjectId ? <LegacyBoardBridge href={boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { project: projectId })} kind="project"
+{!workspaceProjectId ? <LegacyBoardBridge href={boardWorkspaceHref(workScope.boardId, { project: projectId })} kind="project"
   fragments={{ overview: "overview", tasks: "tasks", settings: "project-settings", fields: "fields" }} /> : <Layout title={`Meitheal — ${projTitle}`}>
   <span slot="page-title" class="inline-flex max-w-full items-center gap-1.5 align-middle">
     <span class="shrink-0" aria-hidden="true" style={`color: ${projColor}`}>
@@ -109,9 +117,9 @@ const tabs: { id: string; label: string; icon: IconName }[] = [
     <span class="truncate">{projTitle}</span>
   </span>
   <div slot="actions" class="flex gap-2">
-    <a href={workspaceProjectId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID, fromArea ? { area: fromArea } : {}) : "/projects"} class="btn btn-ghost">
+    <a href={workspaceProjectId ? boardWorkspaceHref(workScope.boardId, fromArea ? { area: fromArea } : {}) : "/projects"} class="btn btn-ghost">
       <Icon name="arrow-down" size={16} class="rotate-90 shrink-0" sprite />
-      {workspaceProjectId ? (fromArea ? String(area?.name) : "Household") : "Projects"}
+      {workspaceProjectId ? (fromArea ? String(area?.name) : scopeBoardAccess(workScope).name) : "Projects"}
     </a>
     <a href={tasksHref + "&capture=1#kanban"} class="btn btn-primary" id="add-task-to-project-btn">
       <Icon name="plus" size={16} class="shrink-0" sprite />
@@ -120,6 +128,7 @@ const tabs: { id: string; label: string; icon: IconName }[] = [
   </div>
 
   {/* Sub-menu tab bar */}
+  <BoardWorkspaceNav boardId={workScope.boardId} boardName={scopeBoardAccess(workScope).name} project={{ id: String(project.id), name: String(project.title) }} active="planning" />
   <nav class="project-tabs" aria-label="Project sections">
     <a href={tasksHref + "#kanban"} class="project-tab" data-astro-reload>
       <Icon name="checkbox" size={14} class="shrink-0" sprite />
@@ -148,14 +157,14 @@ const tabs: { id: string; label: string; icon: IconName }[] = [
   <section id="section-overview" class="project-section active" data-section="overview" role="tabpanel" aria-labelledby="project-tab-overview">
     {/* Breadcrumb */}
     <nav class="project-breadcrumb" aria-label="Project breadcrumb">
-      <a href={workspaceProjectId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID) : "/projects"}>{workspaceProjectId ? "Household" : organization("project", true)}</a>
+      <a href={workspaceProjectId ? boardWorkspaceHref(workScope.boardId) : "/projects"}>{"Board"}</a>
       {area && <>
         <Icon name="chevron-down" size={12} class="bc-sep -rotate-90 shrink-0" sprite />
-        <a href={workspaceProjectId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { area: String(area.id) }) : `/areas/${String(area.id)}`}>{String(area.name)}</a>
+        <a href={workspaceProjectId ? boardWorkspaceHref(workScope.boardId, { area: String(area.id) }) : `/areas/${String(area.id)}`}>{String(area.name)}</a>
       </>}
       {goal && <>
         <Icon name="chevron-down" size={12} class="bc-sep -rotate-90 shrink-0" sprite />
-        <a class="inline-flex items-center gap-1" href={`/progress?project_id=${encodeURIComponent(projectId)}#goals`}>
+        <a class="inline-flex items-center gap-1" href={`/progress?board_id=${encodeURIComponent(workScope.boardId)}&project_id=${encodeURIComponent(projectId)}#goals`}>
           <Icon name="target" size={12} class="shrink-0" sprite />
           {String(goal.title)}
         </a>

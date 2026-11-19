@@ -1,4 +1,8 @@
 ---
+import BoardWorkspaceNav from "../../components/boards/BoardWorkspaceNav.astro"
+import { scopeBoardAccess } from "@domains/tasks/board-scope"
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+
 import { newOrganizationLabel, organizationLabelsFor, organizationLocale } from "@lib/organization-labels"
 /**
  * Area Detail — shows area metadata + tabbed sections for Goals, Projects, Settings.
@@ -19,12 +23,16 @@ import { listSharedGoals, type SharedGoalProgress } from "@domains/tasks/persist
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { TemplateRepository, type RoutineTemplateRow } from "@domains/tasks/persistence/template-repository"
 import GoalsTab from "../../components/progress/GoalsTab.astro"
-import { boardWorkspaceHref, HOUSEHOLD_BOARD_ID } from "@lib/board-workspace"
+import { boardWorkspaceHref } from "@lib/board-workspace"
 import { isFeatureEnabled } from "../../lib/feature-flags"
+const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId, record: { resource: "area", id: Astro.props.workspaceAreaId ?? Astro.params.id! } })
+if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
+const workScope = workScopeResult.scope
+
 
 const workspaceAreaId = Astro.props.workspaceAreaId as string | undefined
 const areaId = workspaceAreaId ?? Astro.params.id
-const areasPath = `${Astro.locals.ingressPath || ""}${workspaceAreaId ? "/boards/household?view=groups" : "/planning#spaces"}`
+const areasPath = `${Astro.locals.ingressPath || ""}${workspaceAreaId ? boardWorkspaceHref(workScope.boardId, { groups: true }) : "/planning#spaces"}`
 if (!areaId) {
   return Astro.redirect(areasPath)
 }
@@ -41,8 +49,8 @@ let taskCountByProject: Map<string, { total: number; completed: number }>
 try {
   await ensureSchema()
   const client = getPersistenceClient()
-  const repo = new HierarchyRepository(client)
-  const taskRepo = new TaskRepository(client)
+  const repo = new HierarchyRepository(client, workScope)
+  const taskRepo = new TaskRepository(client, workScope)
 
   area = await repo.findAreaById(areaId)
   if (!area) {
@@ -52,14 +60,14 @@ try {
   const [areaGoals, areaProjects, receivedGoals] = await Promise.all([
     available("goals") ? repo.findAllGoals({ area_id: areaId }) : [],
     available("projects") ? repo.findProjectsByArea(areaId) : [],
-    available("goals") ? listSharedGoals(client, Astro.locals, Astro.request.signal, { areaId }) : [],
+    available("goals") ? listSharedGoals(client, workScope, { areaId }, Astro.request.signal) : [],
   ])
   sharedGoals = receivedGoals
   householdGoalCount = areaGoals.length
   goalCount = new Set([...areaGoals, ...receivedGoals].map(goal => goal.id)).size
   projects = areaProjects
   routinesEnabled = await isFeatureEnabled("habits")
-  if (routinesEnabled) routines = await new TemplateRepository(client).findRoutines(areaId)
+  if (routinesEnabled) routines = await new TemplateRepository(client, workScope).findRoutines(areaId)
   taskCountByProject = projects.length ? await taskRepo.getProjectTaskCounts() : new Map()
 } catch (error) {
   logApiError("areas", "Could not load Area details", error)
@@ -74,11 +82,11 @@ const formColor = /^#[0-9a-fA-F]{3}$/.test(areaColor)
   ? `#${[...areaColor.slice(1)].map(channel => channel.repeat(2)).join("")}`
   : areaColor
 
-const routinesPath = `/habits?area_id=${encodeURIComponent(areaId)}`
+const routinesPath = `/habits?board_id=${encodeURIComponent(workScope.boardId)}&area_id=${encodeURIComponent(areaId)}`
 
 const settingsTab = workspaceAreaId ? "group-settings" : "settings"
 const organization = await organizationLabelsFor(Astro)
-const tasksHref = boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { area: areaId }) + "#kanban"
+const tasksHref = boardWorkspaceHref(workScope.boardId, { area: areaId }) + "#kanban"
 const tabs = [
   { id: "overview", label: "Overview", icon: "📊" },
   ...(available("goals") ? [{ id: "goals", label: organization("goal", true), icon: "🎯" }] : []),
@@ -88,17 +96,18 @@ const tabs = [
 ];
 ---
 
-{!workspaceAreaId ? <LegacyBoardBridge href={boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { area: areaId })} kind="group"
+{!workspaceAreaId ? <LegacyBoardBridge href={boardWorkspaceHref(workScope.boardId, { area: areaId })} kind="group"
   fragments={{ overview: "overview", tasks: "tasks", goals: "goals", projects: "projects", routines: "routines", settings: "group-settings" }} /> : <Layout title={`Meitheal — ${areaName}`}>
   <span slot="page-title">
     <span style={`color: ${areaColor}; margin-right: 6px;`}>{areaIcon}</span>
     {areaName}
   </span>
   <div slot="actions" class="flex gap-2">
-    <a href={workspaceAreaId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { groups: true }) : "/planning#spaces"} class="btn btn-ghost" id="back-to-areas">← {organization("group", true, workspaceAreaId ? "Household Areas" : "Areas")}</a>
+    <a href={workspaceAreaId ? boardWorkspaceHref(workScope.boardId, { groups: true }) : "/planning#spaces"} class="btn btn-ghost" id="back-to-areas">← {organization("group", true, "Areas")}</a>
   </div>
 
   {/* Sub-menu tab bar */}
+  <BoardWorkspaceNav boardId={workScope.boardId} boardName={scopeBoardAccess(workScope).name} area={{ id: area.id, name: area.name }} active="planning" />
   <nav class="area-tabs" aria-label={`${organization("group")} sections`} data-household-tasks-href={tasksHref}>
     {workspaceAreaId && <a href={tasksHref} class="area-tab" data-astro-reload>
       <span class="tab-icon" aria-hidden="true">✅</span>
@@ -177,7 +186,7 @@ const tabs = [
           const projColor = String(proj.color ?? "#146C4E");
           const projIcon = String(proj.icon ?? "📋");
           return (
-            <a href={workspaceAreaId ? boardWorkspaceHref(HOUSEHOLD_BOARD_ID, { project: String(proj.id), fromArea: areaId }) : `/projects/${String(proj.id)}`} class="project-card" style={`--project-accent: ${projColor};`}>
+            <a href={workspaceAreaId ? boardWorkspaceHref(workScope.boardId, { project: String(proj.id), fromArea: areaId }) : `/projects/${String(proj.id)}`} class="project-card" style={`--project-accent: ${projColor};`}>
               <div class="project-card-header">
                 <span class="project-card-icon">{projIcon}</span>
                 <h4 class="project-card-name">{String(proj.title)}</h4>

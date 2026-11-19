@@ -1,3 +1,4 @@
+import { currentBoardScope } from "../helpers/current-board-scope"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -20,7 +21,7 @@ test("an intake decision uses the live version and status inside the write trans
   try {
     await ensureSchema()
     const client = getPersistenceClient()
-    const repo = new TaskRepository(client)
+    const repo = new TaskRepository(client, await currentBoardScope(client))
     async function add(id: string, version: number | string = now, parent: string | null = null) {
       await client.execute({
         sql: `INSERT INTO tasks (id, title, request_id, idempotency_key, status, created_at, updated_at, parent_id)
@@ -103,9 +104,7 @@ test("an intake decision uses the live version and status inside the write trans
       ok: false, errorCode: "conflict", updatedAt: now,
     })
     await expect(repo.updateTask("future", { title: "legacy future version" }, { version: { updatedAt: now + 100 } })).resolves.toMatchObject({ ok: true })
-    await expect(repo.updateTask("missing", { status: "pending" }, { version: guard })).resolves.toEqual({
-      ok: false, errorCode: "unavailable",
-    })
+    await expect(repo.updateTask("missing", { status: "pending" }, { version: guard })).rejects.toMatchObject({ errorCode: "unavailable" })
     await add("project")
     await expect(repo.updateTask("project", { project_id: "missing-project" }, { version: guard })).resolves.toEqual({
       ok: false, errorCode: "unavailable",

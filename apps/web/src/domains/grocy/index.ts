@@ -12,11 +12,9 @@ export {
   pushNewTaskToGrocy,
   getGrocySyncStatus,
   getActiveGrocySyncConfig,
-  type GrocySyncConfig,
-} from "./grocy-bridge";
+  getGrocyAdapter,
+  type GrocySyncStatusEntity,
+  type GrocySyncConfig
+} from "./grocy-bridge"
 
-export {
-  choreToTask,
-  taskToTask,
-  shoppingListToTask,
-} from "./grocy-mapper";
+export { choreToTask, taskToTask, shoppingListToTask } from "./grocy-mapper"

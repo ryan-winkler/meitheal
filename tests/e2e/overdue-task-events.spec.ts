@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { mkdtemp, rm } from "node:fs/promises"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
@@ -9,6 +10,32 @@ import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "..
 import { SettingsRepository } from "../../apps/web/src/domains/tasks/persistence/settings-repository"
 import { resetWebhookCacheForTests } from "../../apps/web/src/lib/webhook-dispatcher"
 import { checkDueDates, invalidateSettingsCache, stopDueDateReminders } from "../../apps/web/src/domains/notifications/due-date-reminders"
+
+import { readWorkDestinations } from "../../apps/web/src/domains/tasks/integration-destinations"
+import { resolveIntegrationScope } from "../../apps/web/src/domains/tasks/board-automation"
+import { registerVerifiedPrincipal } from "../../apps/web/src/domains/tasks/board-scope"
+import { saveWorkBinding } from "../../apps/web/src/domains/tasks/work-binding-manager"
+
+async function observer() {
+  const db = getPersistenceClient()
+  const binding = (await readWorkDestinations(db))?.bindings.find(item => item.purpose === "builtin.overdue.observe")
+  if (!binding) throw new Error("Expected enrolled overdue observer")
+  const result = await resolveIntegrationScope(db, binding.id, binding.generation, { resource: "task", action: "read" })
+  if (!result.ok) throw new Error(result.errorCode)
+  return result.value
+}
+async function checkpointKey() { return `${OVERDUE_CHECKPOINT_KEY}:${(await observer()).scope.boardId}` }
+async function approveN8n() {
+  const db = getPersistenceClient()
+  const configuration = await readWorkDestinations(db)
+  if (!configuration) throw new Error("Expected destination enrollment")
+  const principal = registerVerifiedPrincipal({ kind: "ha_user", id: "fixture-owner" }, { administrator: true, expiresAt: Date.now() + 60_000 })
+  const saved = await saveWorkBinding(db, principal, configuration.revision, {
+    id: randomUUID(), generation: 1, integration: "webhook", sourceId: "n8n-webhook", purpose: "webhook.delivery", enabled: true,
+    destination: { boardId: (await observer()).scope.boardId }, allowedOperations: [{ resource: "task", action: "read" }],
+  })
+  if (!saved.ok) throw new Error("Expected approved n8n receiver")
+}
 
 const START = Date.parse("2026-11-10T12:00:00Z")
 let directory: string
@@ -25,7 +52,7 @@ async function addTask(id: string, due: string, status = "pending", updated = ST
 }
 
 async function tick(now: number, delivery = dispatch) {
-  return checkOverdueTaskEvents(getPersistenceClient(), delivery, now)
+  return checkOverdueTaskEvents(getPersistenceClient(), delivery, now, await observer())
 }
 
 async function ledgerCount() {
@@ -56,8 +83,8 @@ test("fresh schema establishes a durable baseline without replaying historical o
   expect(await tick(START)).toEqual({ observed: 0, dispatchFailed: 0, baselineCreated: true })
   expect(await tick(START + 300_000)).toMatchObject({ observed: 0 })
   expect(await ledgerCount()).toBe(0)
-  expect((await getPersistenceClient().execute({ sql: "SELECT value FROM app_settings WHERE key = ?", args: [OVERDUE_CHECKPOINT_KEY] })).rows[0]?.value).toBe(String(START + 300_000))
-  expect((await getPersistenceClient().execute("SELECT key FROM settings")).rows).toHaveLength(0)
+  expect((await getPersistenceClient().execute({ sql: "SELECT value FROM app_settings WHERE key = ?", args: [await checkpointKey()] })).rows[0]?.value).toBe(String(START + 300_000))
+  expect((await getPersistenceClient().execute("SELECT key FROM settings WHERE key = 'work-destinations'")).rows).toHaveLength(1)
 })
 
 test("ISO, date-only, offset and epoch deadlines cross once; terminal and invalid tasks are skipped", async () => {
@@ -145,6 +172,7 @@ test("the scheduler routes task.overdue to a configured n8n webhook even when re
     await settings.upsert("notification_preferences", JSON.stringify({ due_date_reminders: false }))
     await settings.upsert("n8n_webhook_url", JSON.stringify(`http://127.0.0.1:${(server.address() as AddressInfo).port}/overdue`))
     await settings.upsert("n8n_events", JSON.stringify(["task.overdue"]))
+    await approveN8n()
     await addTask("n8n-task", new Date(START + 1_000).toISOString())
     await checkDueDates(START)
     await checkDueDates(START + 2_000)
@@ -164,7 +192,7 @@ test("parallel cold-start callers share one schema bootstrap before the first sc
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "cold-start.db")}`
   await Promise.all(Array.from({ length: 8 }, () => ensureSchema()))
   await checkDueDates(START)
-  expect((await getPersistenceClient().execute({ sql: "SELECT value FROM app_settings WHERE key = ?", args: [OVERDUE_CHECKPOINT_KEY] })).rows[0]?.value).toBe(String(START))
+  expect((await getPersistenceClient().execute({ sql: "SELECT value FROM app_settings WHERE key = ?", args: [await checkpointKey()] })).rows[0]?.value).toBe(String(START))
   expect((await getPersistenceClient().execute("PRAGMA integrity_check")).rows[0]?.integrity_check).toBe("ok")
 })
 
@@ -183,6 +211,7 @@ test("explicit empty n8n event selection delivers nothing while absent selection
     await settings.upsert("notification_preferences", JSON.stringify({ due_date_reminders: false }))
     await settings.upsert("n8n_webhook_url", JSON.stringify(`http://127.0.0.1:${(server.address() as AddressInfo).port}/overdue`))
     await settings.upsert("n8n_events", JSON.stringify([]))
+    await approveN8n()
     await addTask("unselected-task", new Date(START + 1000).toISOString())
     await checkDueDates(START)
     await checkDueDates(START + 2000)

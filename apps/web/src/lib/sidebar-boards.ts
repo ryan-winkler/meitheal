@@ -169,7 +169,16 @@ export function bindSidebarBoards(signal: AbortSignal) {
           groups.append(child)
           if (!projects.hidden) void loadGroups(child, boardId, null, group.id)
         } else {
-          child.append(link)
+          const controls = document.createElement("div")
+          controls.className = "sidebar-board-row"
+          const manage = document.createElement("a")
+          manage.className = "btn btn-ghost sidebar-board-toggle"
+          manage.href = safeIngressHref(boardWorkspaceHref(boardId, { project: group.id, fromArea: areaId, groups: true }))
+          manage.textContent = "⋯"
+          manage.setAttribute("aria-label", `Manage Project ${group.name}`)
+          manage.title = "Manage Project"
+          controls.append(link, manage)
+          child.append(controls)
           groups.append(child)
         }
       }
@@ -282,7 +291,7 @@ export function bindSidebarBoards(signal: AbortSignal) {
     const request = new AbortController()
     directoryRequest = request
     let boards: BoardShortcut[] = []
-    let key = "household"
+    let key = ""
     let session = ""
     try {
       const response = await fetch("/api/boards", {
@@ -290,15 +299,13 @@ export function bindSidebarBoards(signal: AbortSignal) {
         signal: AbortSignal.any([signal, request.signal, AbortSignal.timeout(4_000)]),
       })
       if (response.ok) {
-        const data = await response.json() as { boards?: BoardShortcut[]; household?: { state: string } }
-        const household = document.querySelector<HTMLElement>("[data-sidebar-household]")
-        if (household && data.household) household.hidden = data.household.state !== "active"
+        const data = await response.json() as { boards?: BoardShortcut[] }
         boards = (data.boards ?? []).filter(board => !board.hidden && board.state === "active")
         key = response.headers.get("x-meitheal-board-view") ?? key
         session = response.headers.get("x-meitheal-board-session") ?? ""
       }
     } catch {
-      // The shared Board is available even without a private Home Assistant session.
+      // No cached Board is shown while the current directory cannot be verified.
     }
     if (request.signal.aborted || signal.aborted || document.hidden) return
     if (key !== directoryKey) {

@@ -1,3 +1,5 @@
+import { boardScopeErrorResponse } from "@lib/board-http"
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { isCurrentActiveHAUser } from "@domains/ha/ha-users"
 import { CommentMentionRepository } from "@domains/tasks/persistence/comment-mention-repository"
@@ -12,7 +14,7 @@ function validId(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0
 }
 
-export const POST: APIRoute = async ({ locals, request, url }) => {
+export const POST: APIRoute = withBoardScope({ resource: "task", action: "read" }, async ({ locals, request, url }, scope) => {
   const user = verifiedIngressUser(locals)
   if (!user || !isSameIngressMentionRequest(request, locals.ingressPath)) {
     return commentMentionProblem("Open the inbox through your verified Home Assistant session.", 403)
@@ -43,7 +45,7 @@ export const POST: APIRoute = async ({ locals, request, url }) => {
 
   try {
     await ensureSchema()
-    const repo = new CommentMentionRepository(getPersistenceClient())
+    const repo = new CommentMentionRepository(getPersistenceClient(), scope)
     const recipient = commentPersonKey(user.id)
     if (mark) {
       if (!await repo.mark(recipient, id, read)) return commentMentionProblem("This notification is unavailable.", 404)
@@ -57,4 +59,4 @@ export const POST: APIRoute = async ({ locals, request, url }) => {
   } catch {
     return commentMentionProblem("Could not load or update the inbox. Try again.", 503)
   }
-}
+}, { write: true })

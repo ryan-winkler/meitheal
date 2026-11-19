@@ -1,15 +1,20 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto"
-import { verifyCurrentHAParticipant } from "@domains/ha/current-admin"
-import { getPillarById } from "@domains/pillars/pillar-service"
+import { personalPillarScope, personalPillarOwnerId, type PersonalPillarScope, type PillarOwnerScope } from "@domains/pillars"
+import { verifiedBoardRequestPrincipal, resolveBoardRequestScope } from "./board-request-context"
+import { boardScopeResponse } from "./board-http"
+import { ensureSchema, getPersistenceClient } from "@domains/tasks"
+import type { WorkAction } from "@domains/tasks/board-scope"
+import { getPillarById } from "@domains/pillars"
 import { apiError } from "./api-response"
 import { readWithinLimit } from "./bounded-body"
-import { verifiedIngressUser } from "./verified-ingress-user"
 
-/** The immutable owner key comes from Home Assistant, never the request body. */
-export async function resolvePersonalPillarOwner(locals: App.Locals, signal: AbortSignal): Promise<string | undefined> {
-  const actor = verifiedIngressUser(locals)
-  if (!actor || signal.aborted || await verifyCurrentHAParticipant(actor.id, signal) !== "allowed") return
-  return createHash("sha256").update("pillar-owner:" + actor.id).digest("hex")
+type PillarRequestContext = { request: Request, locals: App.Locals }
+
+/** The immutable Personal owner comes only from a current verified request principal. */
+export async function resolvePersonalPillarOwner(context: PillarRequestContext, write = false): Promise<PersonalPillarScope | undefined> {
+  const principal = await verifiedBoardRequestPrincipal(context, write)
+  if (!principal || !["ha_user", "local_operator"].includes(principal.kind)) return
+  return personalPillarScope(principal) ?? undefined
 }
 
 const signingKey = randomBytes(32)
@@ -19,12 +24,14 @@ function signature(owner: string, expiresAt: number): string {
   return createHmac("sha256", signingKey).update(JSON.stringify([owner, expiresAt])).digest("base64url")
 }
 
-export function issuePersonalPillarForm(owner: string): string {
+export function issuePersonalPillarForm(scope: PersonalPillarScope): string {
+  const owner = personalPillarOwnerId(scope)
   const expiresAt = Date.now() + formLifetimeMs
   return expiresAt + "." + signature(owner, expiresAt)
 }
 
-export function matchesPersonalPillarForm(token: unknown, owner: string): boolean {
+export function matchesPersonalPillarForm(token: unknown, scope: PersonalPillarScope): boolean {
+  const owner = personalPillarOwnerId(scope)
   const match = typeof token === "string" && /^([1-9]\d{0,14})\.([\w-]{43})$/.exec(token)
   if (!match) return false
   const expiresAt = Number(match[1])
@@ -33,11 +40,23 @@ export function matchesPersonalPillarForm(token: unknown, owner: string): boolea
     && timingSafeEqual(Buffer.from(match[2]!), Buffer.from(signature(owner, expiresAt)))
 }
 
-export async function getVisiblePillar(id: string, locals: App.Locals, signal: AbortSignal) {
-  const household = await getPillarById(id)
-  if (household) return household
-  const owner = await resolvePersonalPillarOwner(locals, signal)
-  return owner ? getPillarById(id, owner) : null
+export async function getVisiblePillar(id: string, context: PillarRequestContext, action: WorkAction = "read") {
+  await ensureSchema()
+  // Ownership-only locator. No foreign Pillar title or policy is projected here.
+  const { rows: [owner] } = await getPersistenceClient().execute({ sql: "SELECT user_id FROM pillars WHERE id = ?", args: [id] })
+  if (!owner) return null
+  let ownerScope: PillarOwnerScope
+  if (owner.user_id !== "default") {
+    const personal = await resolvePersonalPillarOwner(context, action !== "read")
+    if (!personal || personalPillarOwnerId(personal) !== owner.user_id) return null
+    ownerScope = personal
+  } else {
+    const result = await resolveBoardRequestScope(context, { operation: { resource: "pillar", action }, record: { resource: "pillar", id } })
+    if (!result.ok) return boardScopeResponse(result.errorCode)
+    ownerScope = result.scope
+  }
+  const pillar = await getPillarById(ownerScope, id)
+  return pillar ? { pillar, ownerScope } : null
 }
 
 export async function readPillarBody(request: Request): Promise<Record<string, unknown> | Response> {

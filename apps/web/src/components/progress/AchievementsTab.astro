@@ -1,4 +1,5 @@
 ---
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
 import { organizationLabelsFor } from "@lib/organization-labels"
 const organization = await organizationLabelsFor(Astro)
 /**
@@ -27,6 +28,10 @@ import {
 } from "@domains/gamification"
 import { isFeatureEnabled } from "../../lib/feature-flags"
 
+const scoped = await resolveBoardPageScope(Astro)
+if (!scoped.ok) return boardScopeResponse(scoped.errorCode)
+const workScope = scoped.scope
+
 const gamificationEnabled = await isFeatureEnabled("gamification")
 
 // Ensure schema exists
@@ -49,11 +54,11 @@ let heatmapData: { date: string; count: number }[] = []
 try {
   if (gamificationEnabled) {
     [stats, weekly, achievementData] = await Promise.all([
-      getStats(),
-      getWeeklyData(),
-      getAllAchievements(),
+      getStats(workScope),
+      getWeeklyData(workScope),
+      getAllAchievements(workScope),
     ])
-    heatmapData = await getYearlyHeatmapData()
+    heatmapData = await getYearlyHeatmapData(workScope)
   }
 } catch { /* graceful fallback */ }
 

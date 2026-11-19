@@ -1,3 +1,4 @@
+import { currentBoardScope } from "../helpers/current-board-scope"
 import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -43,10 +44,10 @@ const test = base.extend<{ databaseUrl: string; db: Database }>({
   db: ({ databaseUrl }, use) => withTicketDatabase(databaseUrl, use),
 })
 
-function createTask(db: Database, id: string) {
-  return new TaskRepository(db).createTask({
+async function createTask(db: Database, id: string) {
+  return new TaskRepository(db, await currentBoardScope(db)).createTask({
     id, title: id, description: "", status: "pending", priority: 3, due_date: null,
-    labels: '["fixture"]', framework_payload: "{}", parent_id: null, area_id: "default",
+    labels: '["fixture"]', framework_payload: "{}", parent_id: null, area_id: null,
     custom_fields: "{}", start_date: null, end_date: null, progress: 0, color: null,
     is_favorite: 0, task_type: "task", assigned_to: null,
   })

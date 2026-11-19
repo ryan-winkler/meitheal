@@ -4,6 +4,7 @@ import { mkdir, open, readdir, rename, rm } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { acquireWriteTransaction } from "./database-client.mjs"
 import { boardGrantPath, consumeDatabaseCreation, getBoardGrantPath, unwrapBoardGrantClient } from "./board-grant-context.mjs"
+import { consumeOperatorAdmission, registerStartupBoardAdmission } from "./startup-board-admission.mjs"
 
 export { boardGrantPath, getBoardGrantPath }
 const revisionPattern = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/
@@ -90,6 +91,27 @@ export async function currentBoardGrantRevision(db, path = getBoardGrantPath(db)
 export async function initializeBoardGrantContinuity(client, tx) {
   if (!consumeDatabaseCreation(client)) return null
   return prepareInitialBoardGrant(tx, getBoardGrantPath(client))
+}
+
+/** Prove conversion authority on the same startup writer, then prepare its next excluded journal. */
+export async function admitStartupBoardTransition(client, tx, operatorAdmission) {
+  const path = getBoardGrantPath(client)
+  const revision = await databaseRevision(tx)
+  const created = consumeDatabaseCreation(client)
+  const operator = consumeOperatorAdmission(operatorAdmission)
+  if (!revision) {
+    if (!created && !operator) return null
+    const next = await prepareInitialBoardGrant(tx, path)
+    return { admission: registerStartupBoardAdmission(tx), revision: next }
+  }
+  if (operator) throw new Error("Legacy enrollment cannot replace an existing authority revision")
+  // A committed journal may be recovered, but arbitrary database bytes never
+  // manufacture the independently retained current marker.
+  if (!await publishCommittedMarker(path, revision) || !await boardGrantStillCurrent(tx, revision, path)) return null
+  const next = randomUUID()
+  await prepareGrantMarker(path, next)
+  await tx.execute({ sql: "UPDATE board_access_epoch SET revision = ? WHERE singleton = 1 AND revision = ?", args: [next,revision] })
+  return { admission: registerStartupBoardAdmission(tx), revision: next }
 }
 
 /** Called only by exclusive creation or independently verified offline operator enrollment. */

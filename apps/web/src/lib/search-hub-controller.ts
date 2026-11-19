@@ -1,3 +1,4 @@
+import { currentTaskApiContext } from "@lib/task-api"
 import { createFocusTrap } from "@lib/focus-trap"
 import { safeIngressHref, syncIngressDestination } from "@lib/ingress-navigation"
 import { hasPriorityOverlay } from "@lib/layout-shortcuts-controller"
@@ -344,12 +345,16 @@ pageLifecycle.onPageLoad((signal) => {
       if (isSafeUrl(target)) {
         const url = new URL(target, window.location.href)
         if (url.origin !== window.location.origin) return
+        const ingress = window.__ingress_path || ""
+        const path = ingress && url.pathname.startsWith(ingress + "/") ? url.pathname.slice(ingress.length) : url.pathname
+        const board = currentTaskApiContext()?.boardId
+        if (board && /^\/(?:tasks|kanban|table|calendar|timeline|today|upcoming|progress|habits|planning|eisenhower|triage|review|pinned|inactivity|activity|mention-inbox|gamification)(?:\/|$)/.test(path) && !url.searchParams.has("board_id")) url.searchParams.set("board_id", board)
         const settingsShell = document.getElementById("settings-shell")
         if (item.kind === "setting" && settingsShell && url.href === window.location.href) {
           settingsShell.dispatchEvent(new Event("meitheal:settings-jump"))
           return
         }
-        syncIngressDestination(item.href)
+        syncIngressDestination(url.pathname + url.search + url.hash)
         window.location.href = url.pathname + url.search + url.hash // nosemgrep
       }
     }

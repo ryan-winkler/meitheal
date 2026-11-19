@@ -4,6 +4,10 @@ import { hasScope } from "@meitheal/domain-auth"
 import { A2A_ERRORS, A2A_PROTOCOL_VERSION, A2A_TASK_SEARCH_SKILL } from "@meitheal/integration-core"
 import { A2A_RESPONSE_HEADERS, checkA2aAvailability, getA2ALinkOrigin } from "@domains/agents"
 import { searchMeithealCatalog } from "@domains/search"
+import { resolveBoardRequestScope } from "@lib/board-request-context"
+import { boardScopeResponse } from "@lib/board-http"
+import { validateBoardScope, type BoardScope } from "@domains/tasks/board-scope"
+import { getPersistenceClient } from "@domains/tasks"
 import { ensureSchema } from "@domains/tasks"
 import { getA2aTask, listA2aTasks } from "@lib/a2a-tasks"
 import { apiProblem } from "@lib/api-response"
@@ -120,9 +124,14 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       case "CancelTask": {
         const wanted = taskRequest.safeParse(rpc.data.params)
         if (!wanted.success) return rpcError(id, A2A_ERRORS.INVALID_PARAMS, "Provide an A2A task id.")
-        const task = await getA2aTask(token, wanted.data.id, linkBase)
+        const selected = await resolveBoardRequestScope({ request, locals }, { operation: { resource: "task", action: "read" }, record: { resource: "task", id: wanted.data.id }, write: false })
+        if (!selected.ok) return selected.errorCode === "unavailable" || selected.errorCode === "denied"
+          ? rpcError(id, A2A_ERRORS.TASK_NOT_FOUND, taskNotFound) : boardScopeResponse(selected.errorCode)
+        const task = await getA2aTask(token, wanted.data.id, linkBase, selected.scope)
+        const current = await validateBoardScope(selected.scope, getPersistenceClient(), { resource: "task", action: "read" })
+        if (!current.ok) return boardScopeResponse(current.errorCode)
         if (!task) return rpcError(id, A2A_ERRORS.TASK_NOT_FOUND, taskNotFound)
-        // A household task is finished or handed back in Meitheal, never cancelled by a remote agent.
+        // A task is finished or handed back in Meitheal, never cancelled by a remote agent.
         return rpc.data.method === "GetTask" ? rpcResult(id, task)
           : rpcError(id, A2A_ERRORS.TASK_NOT_CANCELABLE, "Meitheal tasks cannot be cancelled over A2A.")
       }
@@ -137,14 +146,18 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
           }
           statusTimestampAfterMs = Date.parse(ts.data)
         }
-        return rpcResult(id, await listA2aTasks(token, linkBase, {
+        const selected = await resolveBoardRequestScope({ request, locals }, { operation: { resource: "task", action: "read" }, write: false })
+        if (!selected.ok) return boardScopeResponse(selected.errorCode)
+        const listed = await listA2aTasks(token, linkBase, {
           pageSize: list.data.pageSize ?? 50,
           offset: Number(list.data.pageToken || 0),
           includeArtifacts: list.data.includeArtifacts ?? false,
           state: list.data.status,
           contextId: list.data.contextId,
           statusTimestampAfterMs,
-        }))
+        }, selected.scope)
+        const current = await validateBoardScope(selected.scope, getPersistenceClient(), { resource: "task", action: "read" })
+        return current.ok ? rpcResult(id, listed) : boardScopeResponse(current.errorCode)
       }
       case "SendStreamingMessage":
       case "SubscribeToTask":
@@ -155,8 +168,13 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       case "ListTaskPushNotificationConfigs":
       case "DeleteTaskPushNotificationConfig":
         return rpcError(id, A2A_ERRORS.PUSH_NOT_SUPPORTED, "A2A push notifications are unavailable.")
-      case "SendMessage":
-        return await searchTasks(id, rpc.data.params, linkBase)
+      case "SendMessage": {
+        const selected = await resolveBoardRequestScope({ request, locals }, { operation: { resource: "task", action: "read" }, write: false })
+        if (!selected.ok) return boardScopeResponse(selected.errorCode)
+        const response = await searchTasks(id, rpc.data.params, linkBase, selected.scope)
+        const current = await validateBoardScope(selected.scope, getPersistenceClient(), { resource: "task", action: "read" })
+        return current.ok ? response : boardScopeResponse(current.errorCode)
+      }
       default:
         return rpcError(id, A2A_ERRORS.METHOD_NOT_FOUND, "Method not found.")
     }
@@ -166,7 +184,7 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   }
 }
 
-async function searchTasks(id: RequestId, input: unknown, base: string): Promise<Response> {
+async function searchTasks(id: RequestId, input: unknown, base: string, scope: BoardScope): Promise<Response> {
   const parsed = messageRequest.safeParse(input)
   if (!parsed.success) return rpcError(id, A2A_ERRORS.INVALID_PARAMS, "Send a user message with a messageId and one search part.")
 
@@ -204,10 +222,10 @@ async function searchTasks(id: RequestId, input: unknown, base: string): Promise
     includeArchived: false,
     sort: "relevance",
     taskFields: ["title"],
-  })
+  }, scope)
   const tasks = sections.flatMap(section => section.items)
     .filter(item => item.kind === "task" && item.taskId)
-    .map(item => ({ id: item.taskId, title: item.title, url: `${base}/tasks?open=${encodeURIComponent(item.taskId!)}` }))
+    .map(item => ({ id: item.taskId, title: item.title, url: `${base}/boards/${encodeURIComponent(scope.boardId)}?open=${encodeURIComponent(item.taskId!)}` }))
   return rpcResult(id, {
     message: {
       role: "ROLE_AGENT",

@@ -1,3 +1,5 @@
+import { boardScopeErrorResponse } from "@lib/board-http"
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { rejectBoardSelectionInJson } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
@@ -15,13 +17,13 @@ function parseCommentId(value: string | undefined): number | null {
   return Number.isSafeInteger(id) ? id : null
 }
 
-export const GET: APIRoute = async ({ params, locals, request }) => {
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async ({ params, locals, request }, scope) => {
   const id = parseCommentId(params.commentId)
   if (id === null) return apiError("Comment not found", 404)
 
   try {
     await ensureSchema()
-    const comment = await new TaskRepository(getPersistenceClient()).getComment(params.id!, id)
+    const comment = await new TaskRepository(getPersistenceClient(), scope).getComment(params.id!, id)
     if (!comment) return apiError("Comment not found", 404)
     const content = String(comment.content)
     if (locals.behindIngress && !locals.agentToken && hasCommentMentionSelector(content) &&
@@ -32,9 +34,9 @@ export const GET: APIRoute = async ({ params, locals, request }) => {
   } catch {
     return commentFailure("get", "Failed to load comment")
   }
-}
+})
 
-export const PATCH: APIRoute = async ({ params, request, locals }) => {
+export const PATCH: APIRoute = withBoardScope({ resource: "task", action: "edit" }, async ({ params, request, locals }, scope) => {
   const actor = resolveCommentAuthor(locals)
   if (!actor) return activeParticipantRequired()
   const { owner } = actor
@@ -55,18 +57,18 @@ export const PATCH: APIRoute = async ({ params, request, locals }) => {
     if (prepared instanceof Response) return prepared
     await ensureSchema()
     const client = getPersistenceClient()
-    const repo = new TaskRepository(client)
-    const resolved = await repo.resolveTaskId(params.id!)
+    const repo = new TaskRepository(client, scope)
+    const resolved = await repo.resolveTaskId(params.id!, "edit")
     if (!resolved) return apiError("Task not found", 404)
     const taskId = resolved.id
     const denied = await requireAssignedTaskWriteAccess(
       locals.agentToken,
-      (targetId) => repo.findById(targetId),
+      (targetId) => repo.findTaskForCommand(targetId, "edit"),
       [taskId],
       "Agent can only comment on tasks assigned to it",
     )
     if (denied) return denied
-    const edited = await new CommentMentionRepository(client).editChecked(
+    const edited = await new CommentMentionRepository(client, scope).editChecked(
       taskId, id, owner, prepared.content, prepared.recipients, restrictedAssigneeId(locals.agentToken),
     )
     if (edited.state === "assignee_mismatch") return apiError("Agent can only comment on tasks assigned to it", 403)
@@ -74,9 +76,9 @@ export const PATCH: APIRoute = async ({ params, request, locals }) => {
   } catch {
     return commentFailure("patch", "Failed to update comment")
   }
-}
+})
 
-export const DELETE: APIRoute = async ({ params, request, locals }) => {
+export const DELETE: APIRoute = withBoardScope({ resource: "task", action: "edit" }, async ({ params, request, locals }, scope) => {
   const actor = resolveCommentAuthor(locals)
   if (!actor) return activeParticipantRequired()
   const { owner } = actor
@@ -90,12 +92,12 @@ export const DELETE: APIRoute = async ({ params, request, locals }) => {
     const boardSelection = await rejectBoardSelectionInJson(request)
     if (boardSelection) return boardSelection
     if (!await hasCurrentTaskParticipant(locals, request.signal, true)) return activeParticipantRequired()
-    const repo = new TaskRepository(getPersistenceClient())
-    const resolved = await repo.resolveTaskId(params.id!)
+    const repo = new TaskRepository(getPersistenceClient(), scope)
+    const resolved = await repo.resolveTaskId(params.id!, "edit")
     if (!resolved) return apiError("Comment not found", 404)
     const deleted = await repo.deleteComment(resolved.id, id, owner)
     return deleted ? new Response(null, { status: 204 }) : apiError("Comment not found", 404)
   } catch {
     return commentFailure("delete", "Failed to delete comment")
   }
-}
+})

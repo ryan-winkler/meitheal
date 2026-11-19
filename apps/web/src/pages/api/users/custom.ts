@@ -1,6 +1,7 @@
+import { currentSettingsAccess } from "@lib/current-settings-access"
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { customUserKind, UserRepository } from "@domains/tasks"
+import { customUserKind, IdentityRepository } from "@domains/tasks"
 import { sanitize } from "../../../lib/sanitize"
 
 /**
@@ -9,9 +10,11 @@ import { sanitize } from "../../../lib/sanitize"
  * POST /api/users/custom — Create custom user { name, color?, kind? }
  *   kind "agent" marks an AI agent assignee that works through a linked agent token.
  */
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = async ({ request, locals }) => {
+  const access = await currentSettingsAccess(request, locals, false)
+  if (access instanceof Response) return access
   await ensureSchema()
-  const repo = new UserRepository(getPersistenceClient())
+  const repo = new IdentityRepository(getPersistenceClient())
   const rows = await repo.listCustomUsers()
   const users = rows.map((row) => {
     const r = row as Record<string, unknown>
@@ -33,9 +36,11 @@ export const GET: APIRoute = async () => {
   })
 }
 
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = async ({ request, locals }) => {
+  const access = await currentSettingsAccess(request, locals, true)
+  if (access instanceof Response) return access
   await ensureSchema()
-  const repo = new UserRepository(getPersistenceClient())
+  const repo = new IdentityRepository(getPersistenceClient())
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
 
   const rawName = typeof body.name === "string" ? body.name.trim() : ""
@@ -76,9 +81,11 @@ export const POST: APIRoute = async ({ request }) => {
   })
 }
 
-export const DELETE: APIRoute = async ({ request }) => {
+export const DELETE: APIRoute = async ({ request, locals }) => {
+  const access = await currentSettingsAccess(request, locals, true)
+  if (access instanceof Response) return access
   await ensureSchema()
-  const repo = new UserRepository(getPersistenceClient())
+  const repo = new IdentityRepository(getPersistenceClient())
   const url = new URL(request.url)
   const id = url.searchParams.get("id")?.trim() ?? ""
 

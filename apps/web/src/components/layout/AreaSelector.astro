@@ -10,6 +10,7 @@
  * @see implementation_plan.md Phase 16.2
  */
 
+import { resolveBoardPageScope } from "@lib/board-http"
 import { organizationLabelsFor, organizationLocale } from "@lib/organization-labels"
 import Icon from "../ui/Icon.astro"
 import { mapEntityEmojiToTabler } from "../../lib/tabler-svg"
@@ -29,7 +30,9 @@ interface Props {
   initialId?: string | undefined
 }
 
-const { areas = [], catalogReady = true, endpoint = "/api/boards/household?view=groups", storageKey, initialId } = Astro.props
+const { areas = [], catalogReady = true, endpoint: suppliedEndpoint, storageKey, initialId } = Astro.props
+const selected = suppliedEndpoint ? null : await resolveBoardPageScope(Astro)
+const endpoint = suppliedEndpoint ?? (selected?.ok ? `/api/boards/${encodeURIComponent(selected.scope.boardId)}?view=groups` : undefined)
 const organization = await organizationLabelsFor(Astro)
 const allAreas = organizationLocale(Astro) === "ga" ? `${organization("group", true)} ar fad` : `All ${organization("group", true)}`
 const unavailableArea = `${organization("group")} unavailable`

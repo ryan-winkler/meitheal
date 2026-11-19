@@ -18,6 +18,7 @@ export interface HabitChecklistItem {
 
 export interface HabitData {
   areaId?: string | undefined
+  projectId?: string | undefined
   id: string
   name: string
   icon: string
@@ -122,6 +123,7 @@ function createHabitCard(habit: HabitData): HTMLElement {
   const completeButton = document.createElement("button")
   completeButton.type = "button"
   completeButton.className = "habit-card__check"
+  completeButton.disabled = document.getElementById("habits-shell")?.dataset.canComplete === "false"
   completeButton.dataset.action = "complete"
   completeButton.dataset.id = habit.id
   completeButton.setAttribute("aria-label", `Complete ${habit.name} today`)
@@ -171,10 +173,11 @@ function createHabitCard(habit: HabitData): HTMLElement {
 
   const actions = document.createElement("div")
   actions.className = "habit-card__actions"
-  actions.append(
-    createIconButton("edit", habit.id, `Edit ${habit.name}`, "pencil"),
-    createIconButton("delete", habit.id, `Delete ${habit.name}`, "trash"),
-  )
+  const edit = createIconButton("edit", habit.id, `Edit ${habit.name}`, "pencil")
+  const remove = createIconButton("delete", habit.id, `Delete ${habit.name}`, "trash")
+  edit.disabled = document.getElementById("habits-shell")?.dataset.canEdit === "false"
+  remove.disabled = document.getElementById("habits-shell")?.dataset.canDelete === "false"
+  actions.append(edit, remove)
 
   top.append(completeButton, icon, info, actions)
   card.append(top)

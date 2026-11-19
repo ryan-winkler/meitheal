@@ -1,4 +1,9 @@
 ---
+import { createHash } from "node:crypto"
+import { getPersistenceClient, scopeBoardAccess } from "@domains/tasks"
+import { resolveBoardRequestScope } from "@lib/board-request-context"
+import { boardScopeAuthorityKey } from "@lib/board-view"
+import { boardSessionProof } from "@lib/named-board-request"
 import { taskViewUrl } from "../lib/task-view-route"
 import { boardNavigationLinks, readBoardNavigationContext } from "../lib/board-workspace"
 import { organizationNeedsVerification } from "../lib/organization-request-context"
@@ -43,11 +48,7 @@ const organizationSettings = Astro.url.pathname === "/settings"
 const organizationProof = organizationUser && organizationState &&
   (organizationSettings || Object.keys(organizationState.forms).length > 0 || organizationNeedsVerification()) ? renderedLabelsProof(organizationUser.id, locale, organizationState, organizationSettings) : null
 if (organizationProof) Astro.response.headers.set("Cache-Control", "private, no-store")
-const mobileBoardContext = readBoardNavigationContext(Astro.url)
-const mobileTaskHref = mobileBoardContext ? boardNavigationLinks(mobileBoardContext).tasks : "/boards/household"
-const mobileCalendar = taskViewUrl(new URL(mobileTaskHref, Astro.url), "calendar", true)
-const mobileCalendarHref = mobileCalendar.pathname + mobileCalendar.search + mobileCalendar.hash
-const mobileNamedBoard = mobileBoardContext && mobileBoardContext.boardId !== "household"
+
 const featureFlagsJson = JSON.stringify(featureFlags);
 const showConfetti = !!featureFlags.confetti;
 const showPomodoro = !!featureFlags.pomodoro;
@@ -61,6 +62,8 @@ const {
 } = Astro.locals;
 
 export interface Props {
+  boardContext?: { boardId: string; session: string; boardName?: string; actorKey?: string };
+  scopeGuard?: boolean;
   title?: string;
   description?: string;
   hideSearchHub?: boolean;
@@ -83,6 +86,36 @@ const {
   jsonLd,
 } = Astro.props;
 
+let boardContext = Astro.props.boardContext
+let layoutAuthority: string | undefined
+if (!privatePageShell) {
+  const boardMatch = /^\/boards\/([^/]+)\/?$/.exec(Astro.url.pathname)
+  const recordMatch = /^\/(areas|projects|goals|task|tickets)\/([^/]+)\/?$/.exec(Astro.url.pathname)
+  const resources = { areas: "area", projects: "project", goals: "goal", task: "task", tickets: "task" } as const
+  const result = await resolveBoardRequestScope(Astro, {
+    operation: { resource: "task", action: "read" },
+    ...(boardContext?.boardId || boardMatch ? { boardId: boardContext?.boardId ?? decodeURIComponent(boardMatch![1]!) } : {}),
+    ...(recordMatch ? { record: { resource: resources[recordMatch[1] as keyof typeof resources], id: decodeURIComponent(recordMatch[2]!) } } : {}),
+  }).catch(() => null)
+  if (result?.ok) {
+    layoutAuthority = boardScopeAuthorityKey(result.scope)
+    const { rows: [installation] } = await getPersistenceClient().execute({ sql: "SELECT value FROM app_settings WHERE key = 'work_installation_id'", args: [] })
+    const actorKey = typeof installation?.value === "string" && installation.value
+      ? createHash("sha256").update(JSON.stringify(["offline-v1", installation.value, result.scope.principal.kind, result.scope.principal.id])).digest("hex") : undefined
+    boardContext = { boardId: result.scope.boardId, session: boardSessionProof(result.scope.principal.id),
+      boardName: scopeBoardAccess(result.scope).name, ...(actorKey ? { actorKey } : {}),
+    }
+  }
+}
+
+const mobileBoardContext = readBoardNavigationContext(Astro.url) ?? (boardContext ? { boardId: boardContext.boardId } : undefined)
+const mobileLinks = mobileBoardContext ? boardNavigationLinks(mobileBoardContext) : undefined
+const mobileTaskHref = mobileLinks?.tasks ?? "/boards"
+const mobileCalendar = taskViewUrl(new URL(mobileTaskHref, Astro.url), "calendar", true)
+const mobileCalendarHref = mobileCalendar.pathname + mobileCalendar.search + mobileCalendar.hash
+
+const protectWorkMain = Astro.props.scopeGuard !== false && Boolean(boardContext && layoutAuthority) && /^\/(?:$|boards\/|tasks|today|upcoming|planning|progress|habits|areas|projects|task\/|deferred|inactivity|triage|eisenhower|review|activity|pinned|mention-inbox|gamification)/.test(Astro.url.pathname)
+
 // Security headers are set by middleware.ts — no duplicates here.
 // IMPORTANT: Do NOT set Strict-Transport-Security or upgrade-insecure-requests
 // in HA ingress environments — the addon serves HTTP internally.
@@ -92,6 +125,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
 <!doctype html>
 <html lang={locale} dir="ltr" data-custom-theme-admin={canManageSystemSettings(Astro.request, Astro.locals) ? "" : undefined}>
   <head>
+    {boardContext && <><meta name="meitheal-work-board" content={boardContext.boardId} /><meta name="meitheal-work-session" content={boardContext.session} /><meta name="meitheal-work-actor" content={boardContext.actorKey} /><meta name="meitheal-work-board-name" content={boardContext.boardName} /></>}
     <!-- Scroll-lock guard: prevent external tools from locking body scroll (P0) -->
     <script is:inline>
       (function () {
@@ -595,21 +629,28 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       )}
       <main
         class="content"
+        data-board-scope-root={protectWorkMain || undefined}
+        data-board-id={protectWorkMain ? boardContext?.boardId : undefined}
+        data-board-key={protectWorkMain ? layoutAuthority : undefined}
+        data-board-authority={protectWorkMain ? layoutAuthority : undefined}
+        data-board-session={protectWorkMain ? boardContext?.session : undefined}
+        data-board-verify={protectWorkMain ? `/api/boards/${encodeURIComponent(boardContext!.boardId)}?view=authority` : undefined}
         role="main"
         id="main-content"
         style="padding: 0 24px 24px;"
       >
         <slot />
       </main>
+      {protectWorkMain && <p data-layout-board-expired hidden role="status">Board access changed. <button type="button" class="btn btn-ghost" data-board-refresh>Refresh Board</button></p>}
     </div>
 
     <!-- PRA-16: Mobile bottom tab bar — thumb-zone navigation for HA Companion App -->
     <nav class="mobile-tab-bar" id="mobile-tab-bar" aria-label="Mobile navigation">
-      <a href="/" class="mobile-tab-bar__item" data-page="dashboard">
+      <a href={mobileLinks?.dashboard ?? "/"} class="mobile-tab-bar__item" data-page="dashboard">
         <span class="mobile-tab-bar__icon" aria-hidden="true"><Icon name="home" size={20} sprite={true} /></span>
         <span class="mobile-tab-bar__label">Home</span>
       </a>
-      <a href="/today" class="mobile-tab-bar__item" data-page="today">
+      <a href={mobileLinks?.today ?? "/today"} class="mobile-tab-bar__item" data-page="today">
         <span class="mobile-tab-bar__icon" aria-hidden="true"><Icon name="today" size={20} sprite={true} /></span>
         <span class="mobile-tab-bar__label">Today</span>
       </a>
@@ -617,7 +658,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         <span class="mobile-tab-bar__icon" aria-hidden="true"><Icon name="tasks" size={20} sprite={true} /></span>
         <span class="mobile-tab-bar__label">Tasks</span>
       </a>
-      <a href={mobileCalendarHref} hidden={mobileNamedBoard || undefined} data-astro-prefetch="false" class="mobile-tab-bar__item" data-page="calendar">
+      <a href={mobileCalendarHref} data-astro-prefetch="false" class="mobile-tab-bar__item" data-page="calendar">
         <span class="mobile-tab-bar__icon" aria-hidden="true"><Icon name="calendar" size={20} sprite={true} /></span>
         <span class="mobile-tab-bar__label">Calendar</span>
       </a>
@@ -652,7 +693,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
             target.hash = "kanban";
             taskLink.href = target.href;
             if (calendarLink) {
-              calendarLink.hidden = board[1] !== "household";
+              calendarLink.hidden = false;
               if (!calendarLink.hidden) {
                 var calendarTarget = new URL(target.href);
                 calendarTarget.searchParams.set("view", "calendar"); calendarTarget.hash = "calendar";
@@ -699,6 +740,13 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     </script>
 
     <script>
+      import "@lib/task-api";
+      import { bindBoardPage } from "@lib/boards-page"
+      import { pageLifecycle } from "@lib/page-lifecycle"
+      pageLifecycle.onPageLoad(signal => {
+        const root = document.querySelector<HTMLElement>("[data-board-scope-root]")
+        if (root) bindBoardPage(signal, root)
+      })
       import "@lib/search-hub-controller";
       import "@lib/webmcp-controller";
     </script>
@@ -714,7 +762,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       </>}
       <AskAssistModal />
     </>}
-    {!hideSearchHub && <SearchHub locale={locale} />}
+    {!hideSearchHub && <SearchHub locale={locale} boardId={boardContext?.boardId} />}
     <!-- Sync status announcer for screen readers (Persona #25) -->
     <div
       id="sync-announcer"

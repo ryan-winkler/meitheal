@@ -7,13 +7,18 @@
  * @domain notifications
  */
 import { expect, test } from "@playwright/test"
+import { currentBoardScope } from "../helpers/current-board-scope"
+import { readWorkDestinations, saveWorkBinding, IdentityRepository } from "../../apps/web/src/domains/tasks"
+import { generateAgentToken } from "../../packages/domain-auth/src/index"
+import { createAgentToken, ensureAgentTokenSchema } from "../../apps/web/src/domains/auth/agent-token-store"
+import { resolveAgentAuth } from "../../apps/web/src/lib/agent-token-guard"
 import { createRequire } from "node:module"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 const appRequire = createRequire(new URL("../../apps/web/package.json", import.meta.url))
-const { WebSocketServer } = appRequire("ws")
+const { WebSocketServer, WebSocket } = appRequire("ws")
 
 type ServiceCall = { domain: string; service: string; service_data: Record<string, any> }
 type Socket = { send(data: string): void; on(event: string, callback: (data: Buffer) => void): void; terminate(): void }
@@ -22,6 +27,8 @@ test("agent comments and task notifications are delivered through Home Assistant
   const directory = await mkdtemp(join(tmpdir(), "meitheal-agent-notify-"))
   const keys = ["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_BASE_URL", "HA_TOKEN"] as const
   const originalEnv = Object.fromEntries(keys.map(key => [key, process.env[key]]))
+  const originalSocket = globalThis.WebSocket
+  const originalFetch = globalThis.fetch
   const calls: ServiceCall[] = []
   const failing = new Set<string>()
   const server = new WebSocketServer({ port: 0, host: "127.0.0.1" })
@@ -32,6 +39,7 @@ test("agent comments and task notifications are delivered through Home Assistant
     socket.on("message", raw => {
       const message = JSON.parse(raw.toString())
       if (message.type === "auth") return send({ type: "auth_ok", ha_version: "2026.11.1" })
+      if (message.type === "config/auth/list") return send({ id: message.id, type: "result", success: true, result: ["owner", "niamh", "aoife"].map(id => ({ id, name: id === "owner" ? "Owner" : id === "niamh" ? "Niamh" : "Aoife", is_active: true, system_generated: false, is_owner: id === "owner", group_ids: [] })) })
       if (message.type === "ping") return send({ id: message.id, type: "pong" })
       if (message.type === "call_service") {
         calls.push({ domain: message.domain, service: message.service, service_data: message.service_data })
@@ -59,10 +67,41 @@ test("agent comments and task notifications are delivered through Home Assistant
     await settings.ensureSettingsTable()
     await settings.upsert("ha_url", JSON.stringify(`http://127.0.0.1:${server.address().port}`))
     await settings.upsert("ha_token", JSON.stringify("fixture-token"))
+    const fixturePort = server.address().port
+    globalThis.WebSocket = class extends WebSocket {
+      constructor(url: string | URL, options?: unknown) {
+        super(String(url) === "ws://supervisor/core/api/websocket" ? `ws://127.0.0.1:${fixturePort}` : url, options)
+      }
+    } as typeof globalThis.WebSocket
+    globalThis.fetch = async (input, init) => {
+      if (String(input) === "http://supervisor/addons/self/info") return new Response("{}", { status: 404 })
+      return originalFetch(input, init)
+    }
+    process.env.SUPERVISOR_TOKEN = "fixture-core-notification"
     expect(await ha.getHAConnection()).not.toBeNull()
 
+    const scope = () => currentBoardScope(client)
+    for (const target of ["persistent_notification", "notify.mobile_app_phone", "notify.mobile_app_tablet"]) {
+      const configuration = await readWorkDestinations(client)
+      if (!configuration) throw new Error("Expected configuration")
+      const approved = await saveWorkBinding(client, (await scope()).principal, configuration.revision, { id: crypto.randomUUID(), generation: 1, enabled: true,
+        integration: "notification", purpose: "notify.delivery", sourceId: target, destination: { boardId: "household" },
+        allowedOperations: [{ resource: "task", action: "read" }], ...(target.startsWith("notify.") ? { recipientUserIds: ["owner"] } : {}) })
+      if (!approved.ok) throw new Error("Expected notification approval")
+    }
+    const configuration = await readWorkDestinations(client)
+    if (!configuration) throw new Error("Expected configuration")
+    expect((await saveWorkBinding(client, (await scope()).principal, configuration.revision, { id: crypto.randomUUID(), generation: 1, enabled: true,
+      integration: "notification_action", purpose: "notify.task.complete", sourceId: "notify.mobile_app_phone", destination: { boardId: "household" },
+      allowedOperations: [{ resource: "task", action: "read" }, { resource: "task", action: "complete" }], recipientUserIds: ["owner"] })).ok).toBe(true)
+    await new IdentityRepository(client).createCustomUser("custom_agent_claude", "Claude", "#123456", "agent")
+    await ensureAgentTokenSchema()
+    const credential = generateAgentToken()
+    await createAgentToken({ id: "tok-notify", name: "Claude", tokenHash: credential.tokenHash, tokenPrefix: credential.tokenPrefix,
+      scopes: ["tasks:read", "tasks:write"], assigneeId: "custom_agent_claude" }, await scope())
+
     const { TaskRepository } = await import("../../apps/web/src/domains/tasks/persistence/task-repository")
-    const repo = new TaskRepository(client)
+    const repo = new TaskRepository(client, await scope())
     const now = Date.now()
     await client.execute({
       sql: "INSERT INTO tasks (id, title, status, idempotency_key, request_id, created_at, updated_at) VALUES (?, ?, 'pending', ?, ?, ?, ?)",
@@ -73,7 +112,7 @@ test("agent comments and task notifications are delivered through Home Assistant
     const { sendTaskNotification } = await import("../../apps/web/src/domains/notifications/task-notifications")
 
     // Default preferences: the sidebar hears about the comment, as plain text.
-    await notifyAgentComment("task-notify-1", "Automation: Claude", `<p>Ordered <b>500 litres</b>.</p><script>alert(1)</script> ${"Delivery on Friday. ".repeat(30)}`)
+    await notifyAgentComment("task-notify-1", "Automation: Claude", await scope(), `<p>Ordered <b>500 litres</b>.</p><script>alert(1)</script> ${"Delivery on Friday. ".repeat(30)}`)
     expect(calls).toHaveLength(1)
     expect(calls[0]).toMatchObject({ domain: "persistent_notification", service: "create" })
     const sidebar = calls[0]!.service_data
@@ -86,7 +125,7 @@ test("agent comments and task notifications are delivered through Home Assistant
 
     // A short comment is passed through whole, and a newer comment reuses the notification.
     calls.length = 0
-    await notifyAgentComment("task-notify-1", "Codex", "Done.")
+    await notifyAgentComment("task-notify-1", "Codex", await scope(), "Done.")
     expect(calls[0]!.service_data).toMatchObject({
       title: "💬 Codex commented: Order the oil",
       message: "Done.",
@@ -95,7 +134,7 @@ test("agent comments and task notifications are delivered through Home Assistant
 
     // An unknown task sends nothing and does not throw.
     calls.length = 0
-    await notifyAgentComment("task-missing", "Claude", "Hello")
+    await notifyAgentComment("task-missing", "Claude", await scope(), "Hello")
     expect(calls).toEqual([])
 
     // Push only: the sidebar is skipped, malformed targets are ignored, the rest get plain text.
@@ -104,7 +143,7 @@ test("agent comments and task notifications are delivered through Home Assistant
       channels: { sidebar: false, mobile_push: true },
       mobile_targets: ["notify.mobile_app_phone", "broken", "notify.mobile_app_tablet"],
     }))
-    await notifyAgentComment("task-notify-1", "Claude", "Booked for <i>Friday</i>.")
+    await notifyAgentComment("task-notify-1", "Claude", await scope(), "Booked for <i>Friday</i>.")
     expect(calls.map(call => `${call.domain}.${call.service}`)).toEqual(["notify.mobile_app_phone", "notify.mobile_app_tablet"])
     expect(calls[0]!.service_data).toMatchObject({
       title: "💬 Claude commented: Order the oil",
@@ -113,8 +152,9 @@ test("agent comments and task notifications are delivered through Home Assistant
         tag: "meitheal_agent_comment_task-notify-1",
         group: "meitheal",
         channel: "meitheal_tasks",
+        color: "#69E3B2",
         push: { "interruption-level": "active" },
-        actions: [],
+        actions: [{ action: expect.stringMatching(/^MEITHEAL_DONE_V1:/), title: "Mark Done" }],
       },
     })
     expect(calls[0]!.service_data.data).not.toHaveProperty("importance")
@@ -123,7 +163,7 @@ test("agent comments and task notifications are delivered through Home Assistant
     // Notifications switched off: nothing is sent.
     calls.length = 0
     await settings.upsert("notification_preferences", JSON.stringify({ enabled: false }))
-    await notifyAgentComment("task-notify-1", "Claude", "Quiet")
+    await notifyAgentComment("task-notify-1", "Claude", await scope(), "Quiet")
     expect(calls).toEqual([])
 
     // An urgent task notification inside the Home Assistant App carries links, actions and a badge.
@@ -141,15 +181,14 @@ test("agent comments and task notifications are delivered through Home Assistant
       taskId: "task-notify-1",
       isUrgent: true,
       badgeCount: 3,
-    })
+    }, await scope())
     const sidebarCall = calls.find(call => call.domain === "persistent_notification")!
     const pushCall = calls.find(call => call.domain === "notify")!
     expect(calls).toHaveLength(2)
     expect(sidebarCall.service_data.message).toContain("[Open MTH-1 in Meitheal →](/api/hassio_ingress/abc/kanban)")
     expect(pushCall.service_data.message).toBe("Claude handed MTH-1 back.\n\nOpen MTH-1 in Meitheal →")
+    expect(pushCall.service_data.data).not.toHaveProperty("url")
     expect(pushCall.service_data.data).toEqual({
-      clickAction: "/api/hassio_ingress/abc/kanban",
-      url: "/api/hassio_ingress/abc/kanban",
       tag: "meitheal_assigned_task-notify-1",
       group: "meitheal",
       channel: "meitheal_urgent",
@@ -157,8 +196,7 @@ test("agent comments and task notifications are delivered through Home Assistant
       importance: "high",
       push: { "interruption-level": "time-sensitive", badge: 3 },
       actions: [
-        { action: "URI", title: "Open Task", uri: "/api/hassio_ingress/abc/kanban" },
-        { action: "MEITHEAL_TASK_DONE_task-notify-1", title: "✅ Mark Done" },
+        { action: expect.stringMatching(/^MEITHEAL_DONE_V1:/), title: "Mark Done" },
       ],
     })
 
@@ -170,7 +208,8 @@ test("agent comments and task notifications are delivered through Home Assistant
       message: "MTH-1 has been assigned to Niamh.",
       notificationId: "meitheal_assigned_task-notify-1",
       ingress: null,
-    })).resolves.toBeUndefined()
+      taskId: "task-notify-1",
+    }, await scope())).resolves.toBeUndefined()
     expect(calls.map(call => call.domain).sort()).toEqual(["notify", "persistent_notification"])
 
     // Push enabled with no targets sends the sidebar notification only.
@@ -180,7 +219,8 @@ test("agent comments and task notifications are delivered through Home Assistant
       message: "MTH-1 has been assigned to Niamh.",
       notificationId: "meitheal_assigned_task-notify-1",
       ingress: null,
-    })
+      taskId: "task-notify-1",
+    }, await scope())
     expect(calls.map(call => call.domain)).toEqual(["persistent_notification"])
     expect(await repo.findById("task-notify-1")).toBeTruthy()
 
@@ -193,14 +233,15 @@ test("agent comments and task notifications are delivered through Home Assistant
     const { PUT: putTask } = await import("../../apps/web/src/pages/api/tasks/[id]")
     const noopRes = await putTask({
       params: { id: "task-notify-1" },
+      url: new URL("http://localhost/api/tasks/task-notify-1"),
       request: new Request("http://localhost/api/tasks/task-notify-1", {
         method: "PUT",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", authorization: `Bearer ${credential.token}`, "x-meitheal-board-id": "household" },
         body: JSON.stringify({ assigned_to: null }),
       }),
       locals: {
         requestId: "req-unassigned-noop",
-        agentToken: { id: "tok-notify", name: "Claude", tokenPrefix: "mth_test", scopes: ["tasks:write"], assigneeId: null },
+        agentToken: await resolveAgentAuth(new Request("http://localhost", { headers: { authorization: `Bearer ${credential.token}` } })),
       },
     } as unknown as Parameters<typeof putTask>[0])
     expect(noopRes.status).toBe(200)
@@ -215,13 +256,14 @@ test("agent comments and task notifications are delivered through Home Assistant
     // "Handed back" is only for a task the agent held. Reassigning someone else's task is an ordinary assignment.
     const agentLocals = {
       requestId: "req-agent-reassign",
-      agentToken: { tokenId: "tok-notify", tokenName: "Claude", scopes: ["tasks:write"], assigneeId: "custom_agent_claude" },
+      agentToken: await resolveAgentAuth(new Request("http://localhost", { headers: { authorization: `Bearer ${credential.token}` } })),
     }
     const reassign = (id: string, assignedTo: string) => putTask({
       params: { id },
+      url: new URL(`http://localhost/api/tasks/${id}`),
       request: new Request(`http://localhost/api/tasks/${id}`, {
         method: "PUT",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", authorization: `Bearer ${credential.token}`, "x-meitheal-board-id": "household" },
         body: JSON.stringify({ assigned_to: assignedTo }),
       }),
       locals: agentLocals,
@@ -238,6 +280,8 @@ test("agent comments and task notifications are delivered through Home Assistant
     expect((await reassign("task-notify-1", "ha_niamh")).status).toBe(200)
     await expect.poll(sidebarTitles).toEqual(["↩️ Handed back by Claude: Order the oil"])
   } finally {
+    globalThis.WebSocket = originalSocket
+    globalThis.fetch = originalFetch
     entities.stopEntitySubscription()
     ha.closeHAConnection()
     for (const socket of server.clients) socket.terminate()

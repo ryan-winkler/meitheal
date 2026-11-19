@@ -1,3 +1,4 @@
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
@@ -12,13 +13,13 @@ import { apiProblem } from "../../../lib/api-response"
  * Downloads all server-side tasks as a formatted JSON file.
  * Filename format: meitheal-tasks-YYYY-MM-DD.json
  */
-export const GET: APIRoute = async ({ locals }) => {
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async ({ locals }, scope) => {
     if (!locals.hassIsAdmin || locals.agentToken) {
         return apiProblem({ status: 403, title: "Admin Required", detail: "Task export requires admin access" })
     }
     try {
         await ensureSchema()
-        const repo = new TaskRepository(getPersistenceClient())
+        const repo = new TaskRepository(getPersistenceClient(), scope)
         const allRows = await repo.exportAll()
 
         const allTasks = allRows.map(row => {
@@ -44,4 +45,4 @@ export const GET: APIRoute = async ({ locals }) => {
             headers: { "Content-Type": "application/json" },
         })
     }
-}
+})

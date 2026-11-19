@@ -1,42 +1,12 @@
-/**
- * Principle Domain — Service
- *
- * @domain pillars
- * @bounded-context pillars
- *
- * Manages Principles / Non-Negotiables — behavioral boundaries within a Pillar.
- * Principles are the absolute rules governing behavior: "No screens after 9 PM."
- *
- * @kcs Principles with `isNonNegotiable = true` are injected into AI system prompts.
- * @kcs Principle violations trigger toast warnings, NEVER hard-blocks.
- *
- * @see docs/decisions/ADR-017-pillars-domain.md
- */
-
-import { principleTableSql } from "../../../drizzle/migrations/pillar-storage-schema.mjs"
+import type { Client } from "@libsql/client"
 import { randomUUID } from "node:crypto"
-import { getPersistenceClient } from "../tasks/persistence/store"
-import { ensurePillarSchema, HOUSEHOLD_PILLAR_OWNER } from "./pillar-service"
-
-// ── Schema ──────────────────────────────────────────────────────
-
-let principleSchemaEnsured = false
-
+import { getPersistenceClient, sql, sourceSql, joinSql } from "@domains/tasks"
+import { ensurePillarSchema } from "./pillar-service"
+import { pillarOperationClient, pillarOwnedBy, type PillarOwnerScope } from "./pillar-owner"
 export async function ensurePrincipleSchema(): Promise<void> {
-  if (principleSchemaEnsured) return
   await ensurePillarSchema()
-  const client = getPersistenceClient()
-
-  await client.execute(principleTableSql)
-
-  await client.execute("CREATE INDEX IF NOT EXISTS principles_pillar_idx ON principles(pillar_id)")
-  await client.execute("CREATE INDEX IF NOT EXISTS principles_non_neg_idx ON principles(is_non_negotiable)")
-
-  principleSchemaEnsured = true
 }
-
-// ── Types ───────────────────────────────────────────────────────
-
+export function resetPrincipleSchemaForTests(): void {}
 export interface Principle {
   id: string
   pillarId: string
@@ -48,10 +18,6 @@ export interface Principle {
 
 // ── Helpers ─────────────────────────────────────────────────────
 
-function generateId(): string {
-  return `princ_${Date.now()}_${randomUUID().slice(0, 8)}`
-}
-
 function toPrinciple(row: Record<string, unknown>): Principle {
   return {
     id: String(row.id),
@@ -59,143 +25,117 @@ function toPrinciple(row: Record<string, unknown>): Principle {
     statement: String(row.statement),
     isNonNegotiable: Number(row.is_non_negotiable) === 1,
     position: Number(row.position),
-    createdAt: Number(row.created_at),
+    createdAt: Number(row.created_at)
   }
 }
 
-// ── CRUD ────────────────────────────────────────────────────────
-
-export async function createPrinciple(data: {
-  pillarId: string
-  statement: string
-  isNonNegotiable?: boolean
-}, owner = HOUSEHOLD_PILLAR_OWNER): Promise<Principle> {
-  await ensurePrincipleSchema()
-  const client = getPersistenceClient()
-  const id = generateId()
-  const now = Date.now()
-
-  const result = await client.execute({
-    sql: `INSERT INTO principles (id, pillar_id, statement, is_non_negotiable, position, created_at)
-          SELECT ?, parent.id, ?, ?,
-            (SELECT COALESCE(MAX(position), -1) + 1 FROM principles WHERE pillar_id = parent.id), ?
-          FROM pillars parent WHERE parent.id = ? AND parent.owner_board_id IS NULL AND (parent.user_id <> 'default' OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND parent.user_id = ?
-          RETURNING position`,
-    args: [id, data.statement, data.isNonNegotiable ? 1 : 0, now, data.pillarId, owner],
-  })
-  if (!result.rows[0]) throw new Error("Pillar is no longer available")
-
-  return {
-    id,
-    pillarId: data.pillarId,
-    statement: data.statement,
-    isNonNegotiable: data.isNonNegotiable ?? false,
-    position: Number(result.rows[0].position),
-    createdAt: now,
-  }
+export async function createPrinciple(
+  owner: PillarOwnerScope,
+  data: { pillarId: string; statement: string; isNonNegotiable?: boolean },
+  database?: Client
+): Promise<Principle> {
+  if (!database) await ensurePrincipleSchema()
+  const id = `principle_${randomUUID()}`,
+    now = Date.now()
+  const {
+    rows: [row]
+  } = await pillarOperationClient(database ?? getPersistenceClient(), owner, "edit", "principles")
+    .execute(sql`INSERT INTO principles(id,pillar_id,statement,is_non_negotiable,position,created_at)
+    SELECT ${id},parent.id,${data.statement},${data.isNonNegotiable ? 1 : 0},(SELECT COALESCE(MAX(position),-1)+1 FROM principles WHERE pillar_id=parent.id),${now}
+    FROM pillars AS parent WHERE parent.id=${data.pillarId} AND ${pillarOwnedBy(owner, "parent")} RETURNING *`)
+  if (!row) throw new Error("Pillar is unavailable")
+  return toPrinciple(row)
 }
-
-export async function getPrinciplesForPillar(pillarId: string, owner = HOUSEHOLD_PILLAR_OWNER): Promise<Principle[]> {
-  await ensurePrincipleSchema()
-  const client = getPersistenceClient()
-
-  const result = await client.execute({
-    sql: `SELECT p.* FROM principles p JOIN pillars parent ON parent.id = p.pillar_id
-          WHERE p.pillar_id = ? AND parent.owner_board_id IS NULL AND (parent.user_id <> 'default' OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND parent.user_id = ? ORDER BY p.position ASC`,
-    args: [pillarId, owner],
-  })
-
-  return result.rows.map(row => toPrinciple(row as Record<string, unknown>))
+export async function getPrinciplesForPillar(
+  owner: PillarOwnerScope,
+  pillarId: string,
+  database?: Client
+): Promise<Principle[]> {
+  if (!database) await ensurePrincipleSchema()
+  const { rows } = await pillarOperationClient(
+    database ?? getPersistenceClient(),
+    owner,
+    "read",
+    "principles"
+  )
+    .execute(sql`SELECT principle.* FROM principles AS principle JOIN pillars AS parent ON parent.id=principle.pillar_id
+    WHERE parent.id=${pillarId} AND ${pillarOwnedBy(owner, "parent")} ORDER BY principle.position,principle.id`)
+  return rows.map(toPrinciple)
 }
-
-/**
- * Batch-fetch all principles, grouped by pillar ID.
- * Avoids N+1 queries when rendering multiple PillarCards.
- *
- * @returns Map<pillarId, Principle[]> sorted by position within each pillar
- */
-export async function getAllPrinciples(personalOwner?: string): Promise<Map<string, Principle[]>> {
-  await ensurePrincipleSchema()
-  const client = getPersistenceClient()
-
-  const result = await client.execute({
-    sql: `SELECT p.* FROM principles p JOIN pillars pl ON pl.id = p.pillar_id
-          WHERE pl.owner_board_id IS NULL AND (pl.user_id <> 'default' OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND pl.user_id IN (?, ?) ORDER BY p.pillar_id, p.position ASC`,
-    args: [HOUSEHOLD_PILLAR_OWNER, personalOwner ?? HOUSEHOLD_PILLAR_OWNER],
-  })
-
+export async function getAllPrinciples(
+  owner: PillarOwnerScope,
+  database?: Client
+): Promise<Map<string, Principle[]>> {
+  if (!database) await ensurePrincipleSchema()
+  const { rows } = await pillarOperationClient(
+    database ?? getPersistenceClient(),
+    owner,
+    "read",
+    "principles"
+  )
+    .execute(sql`SELECT principle.* FROM principles AS principle JOIN pillars AS parent ON parent.id=principle.pillar_id
+    WHERE ${pillarOwnedBy(owner, "parent")} ORDER BY principle.pillar_id,principle.position,principle.id`)
   const map = new Map<string, Principle[]>()
-  for (const row of result.rows) {
-    const p = toPrinciple(row as Record<string, unknown>)
-    const list = map.get(p.pillarId) ?? []
-    list.push(p)
-    map.set(p.pillarId, list)
+  for (const row of rows) {
+    const value = toPrinciple(row)
+    const list = map.get(value.pillarId) ?? []
+    list.push(value)
+    map.set(value.pillarId, list)
   }
   return map
 }
-
-export async function getNonNegotiablePrinciples(): Promise<Principle[]> {
-  await ensurePrincipleSchema()
-  const client = getPersistenceClient()
-
-  const result = await client.execute({
-    sql: `SELECT p.* FROM principles p JOIN pillars pl ON pl.id = p.pillar_id
-          WHERE p.is_non_negotiable = 1 AND pl.is_active = 1 AND pl.owner_board_id IS NULL AND (pl.user_id <> 'default' OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND pl.user_id = ?
-          ORDER BY pl.weight DESC, p.position ASC LIMIT 15`,
-    args: [HOUSEHOLD_PILLAR_OWNER],
-  })
-
-  return result.rows.map(row => toPrinciple(row as Record<string, unknown>))
+export async function getNonNegotiablePrinciples(
+  owner: PillarOwnerScope,
+  database?: Client
+): Promise<Principle[]> {
+  if (!database) await ensurePrincipleSchema()
+  const { rows } = await pillarOperationClient(
+    database ?? getPersistenceClient(),
+    owner,
+    "read",
+    "principles"
+  )
+    .execute(sql`SELECT principle.* FROM principles AS principle JOIN pillars AS parent ON parent.id=principle.pillar_id
+    WHERE principle.is_non_negotiable=1 AND parent.is_active=1 AND ${pillarOwnedBy(owner, "parent")} ORDER BY parent.weight DESC,principle.position LIMIT 15`)
+  return rows.map(toPrinciple)
 }
-
 export async function updatePrinciple(
+  owner: PillarOwnerScope,
   id: string,
-  data: Partial<{
-    statement: string
-    isNonNegotiable: boolean
-    position: number
-  }>,
+  data: Partial<{ statement: string; isNonNegotiable: boolean; position: number }>,
   pillarId?: string,
-  owner = HOUSEHOLD_PILLAR_OWNER,
+  database?: Client
 ): Promise<boolean> {
-  await ensurePrincipleSchema()
-  const client = getPersistenceClient()
-
-  const sets: string[] = []
-  const args: any[] = []
-
-  if (data.statement !== undefined) { sets.push("statement = ?"); args.push(data.statement) }
-  if (data.isNonNegotiable !== undefined) { sets.push("is_non_negotiable = ?"); args.push(data.isNonNegotiable ? 1 : 0) }
-  if (data.position !== undefined) { sets.push("position = ?"); args.push(data.position) }
-
-  if (sets.length === 0) return false
-
-  args.push(id)
-  if (pillarId !== undefined) args.push(pillarId)
-  args.push(owner)
-  const result = await client.execute({
-    sql: `UPDATE principles SET ${sets.join(", ")} WHERE id = ?${pillarId === undefined ? "" : " AND pillar_id = ?"}
-          AND EXISTS (SELECT 1 FROM pillars WHERE pillars.id = principles.pillar_id AND owner_board_id IS NULL AND (user_id <> 'default' OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND user_id = ?)`,
-    args,
-  })
-
-  return (result.rowsAffected ?? 0) > 0
+  if (!database) await ensurePrincipleSchema()
+  const sets = []
+  if (data.statement !== undefined) sets.push(sql`statement=${data.statement}`)
+  if (data.isNonNegotiable !== undefined)
+    sets.push(sql`is_non_negotiable=${data.isNonNegotiable ? 1 : 0}`)
+  if (data.position !== undefined) sets.push(sql`position=${data.position}`)
+  if (!sets.length) return false
+  const result = await pillarOperationClient(
+    database ?? getPersistenceClient(),
+    owner,
+    "edit",
+    "principles"
+  ).execute(sql`UPDATE principles SET ${joinSql(sets)} WHERE id=${id}
+    ${pillarId === undefined ? sourceSql("") : sql`AND pillar_id=${pillarId}`} AND EXISTS(SELECT 1 FROM pillars AS parent WHERE parent.id=principles.pillar_id AND ${pillarOwnedBy(owner, "parent")})`)
+  return result.rowsAffected > 0
 }
-
-export async function deletePrinciple(id: string, pillarId?: string, owner = HOUSEHOLD_PILLAR_OWNER): Promise<boolean> {
-  await ensurePrincipleSchema()
-  const client = getPersistenceClient()
-
-  const result = await client.execute({
-    sql: `DELETE FROM principles WHERE id = ?${pillarId === undefined ? "" : " AND pillar_id = ?"}
-          AND EXISTS (SELECT 1 FROM pillars WHERE pillars.id = principles.pillar_id AND owner_board_id IS NULL AND (user_id <> 'default' OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND user_id = ?)`,
-    args: pillarId === undefined ? [id, owner] : [id, pillarId, owner],
-  })
-
-  return (result.rowsAffected ?? 0) > 0
-}
-
-/** Reset for tests */
-export function resetPrincipleSchemaForTests(): void {
-  principleSchemaEnsured = false
+export async function deletePrinciple(
+  owner: PillarOwnerScope,
+  id: string,
+  pillarId?: string,
+  database?: Client
+): Promise<boolean> {
+  if (!database) await ensurePrincipleSchema()
+  const result = await pillarOperationClient(
+    database ?? getPersistenceClient(),
+    owner,
+    "delete",
+    "principles"
+  )
+    .execute(sql`DELETE FROM principles WHERE id=${id} ${pillarId === undefined ? sourceSql("") : sql`AND pillar_id=${pillarId}`}
+    AND EXISTS(SELECT 1 FROM pillars AS parent WHERE parent.id=principles.pillar_id AND ${pillarOwnedBy(owner, "parent")})`)
+  return result.rowsAffected > 0
 }

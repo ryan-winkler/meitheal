@@ -1,3 +1,5 @@
+import { integrationRoute } from "../helpers/ordinary-integration-fixture"
+import { currentBoardScope } from "../helpers/current-board-scope"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -36,20 +38,17 @@ async function seed(db: Database, id: string, position: number | null = null, cr
 }
 
 function list(query = "") {
-  return listTasks({ url: new URL(`http://localhost/api/tasks?${query}`) } as Parameters<typeof listTasks>[0])
+  return integrationRoute(listTasks, `/api/tasks?board_id=household&${query}`, undefined, "GET")
 }
 
 function detail(id: string) {
-  return getTask({ params: { id }, url: new URL(`http://localhost/api/tasks/${id}`) } as unknown as Parameters<typeof getTask>[0])
+  return integrationRoute(context => getTask({ ...context, params: { id } }), `/api/tasks/${id}`, undefined, "GET")
 }
 
 function write(body: unknown, id?: string) {
-  const request = new Request(`http://localhost/api/tasks${id ? `/${id}` : ""}`, {
-    method: id ? "PUT" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
-  })
   return id
-    ? updateTask({ params: { id }, request, locals: {} } as unknown as Parameters<typeof updateTask>[0])
-    : createTask({ request, locals: {} } as unknown as Parameters<typeof createTask>[0])
+    ? integrationRoute(context => updateTask({ ...context, params: { id } }), `/api/tasks/${id}`, body, "PUT")
+    : integrationRoute(createTask, "/api/tasks?board_id=household", body)
 }
 
 test("stored planning, effort, NFC and ordering fields survive canonical reads", async ({ db }) => {
@@ -64,7 +63,7 @@ test("stored planning, effort, NFC and ordering fields survive canonical reads",
     id: "saved", urgency: 0, importance: 5, eisenhower_override: 1,
     effort_minutes: 45, effort_type: "deep", blocked_by: "waiting for delivery", nfc_tag_id: "fixture-tag", kanban_position: 2.5,
   }
-  const repo = new TaskRepository(db)
+  const repo = new TaskRepository(db, await currentBoardScope(db))
   expect(await repo.findById("saved")).toMatchObject(expected)
   expect((await repo.findAll({})).tasks).toEqual(expect.arrayContaining([expect.objectContaining(expected)]))
   expect(await repo.getKanbanCards(["saved"], 0, db)).toEqual([expect.objectContaining(expected)])
@@ -96,7 +95,7 @@ test("native board-position sorting has stable ID ties, nulls last and consisten
 test("task creation rejects oversized descriptions and stores the exact accepted boundary", async ({ db }) => {
   const tooLong = await write({ title: "Too long", description: "x".repeat(10001) })
   expect(tooLong.status).toBe(400)
-  expect(await tooLong.json()).toEqual({ error: "description must be 10000 characters or less" })
+  expect(await tooLong.json()).toMatchObject({ status: 400, error: "description must be 10000 characters or less" })
   expect((await db.execute("SELECT COUNT(*) AS count FROM tasks")).rows[0]?.count).toBe(0)
   const description = "x".repeat(10000)
   const accepted = await write({ title: "Boundary", description })
@@ -108,7 +107,7 @@ test("task creation rejects oversized descriptions and stores the exact accepted
 
 test("an oversized description rejects the entire update without losing prior text or version", async ({ db }) => {
   await seed(db, "preserve")
-  const repo = new TaskRepository(db)
+  const repo = new TaskRepository(db, await currentBoardScope(db))
   const before = await repo.findById("preserve")
   const rejected = await write({ title: "Must not save", description: "x".repeat(10001) }, "preserve")
   expect(rejected.status).toBe(400)

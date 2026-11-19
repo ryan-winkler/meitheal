@@ -4,7 +4,8 @@ import { mkdir, open } from "node:fs/promises"
 import { dirname, isAbsolute, relative, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import { openDatabaseForStartup, withStartupWriteTransaction } from "./database-client.mjs"
-import { applyStartupTaskSchema } from "./task-schema-startup.mjs"
+import { applyStartupTaskSchema, applyStartupBoardSchema } from "./task-schema-startup.mjs"
+import { registerConsumedOperatorAdmission } from "./startup-board-admission.mjs"
 import { currentBoardGrantRevision, prepareInitialBoardGrant, syncDirectory } from "./board-grant-journal.mjs"
 
 const digest = bytes => createHash("sha256").update(bytes).digest("hex")
@@ -124,7 +125,9 @@ export async function enrollLegacyContinuity({ database, markerPath, custodyDire
         const integrity = await tx.execute("PRAGMA integrity_check(1)")
         const foreign = await tx.execute("PRAGMA foreign_key_check")
         if (integrity.rows[0]?.integrity_check !== "ok" || foreign.rows.length) denied("database integrity check failed")
-        revision = await prepareInitialBoardGrant(tx, markerPath)
+        const admitted = await applyStartupBoardSchema(client, tx, undefined, { operatorAdmission: registerConsumedOperatorAdmission() })
+        if (admitted.state !== "ready") denied("consumed current custody did not admit ordinary Board conversion")
+        revision = admitted.revision
       })
       if (await currentBoardGrantRevision(client, markerPath) !== revision) denied("committed publication pending")
       await receipt.writeFile(JSON.stringify({ status: "enrolled", revision }) + "\n")

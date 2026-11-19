@@ -21,18 +21,19 @@ from .api import (
     MeithealConnectionError,
     MeithealResponseError,
     async_validate_transport,
+    async_credential_context,
     connection_origin,
 )
-from .const import CONF_API_TOKEN, DEFAULT_HOST, DEFAULT_PORT, DOMAIN
+from .const import CONF_API_TOKEN, CONF_BOARD_ID, DEFAULT_HOST, DEFAULT_PORT, DOMAIN
 
 _TOKEN_SELECTOR = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
-_TOKEN_FORM = vol.Schema({vol.Required(CONF_API_TOKEN): _TOKEN_SELECTOR})
+_TOKEN_FORM = vol.Schema({vol.Required(CONF_API_TOKEN): _TOKEN_SELECTOR, vol.Required(CONF_BOARD_ID): str})
 
 
 class MeithealConfigFlow(ConfigFlow, domain=DOMAIN):
     """Configure a single Meitheal connection."""
 
-    VERSION = 1
+    VERSION = 2
 
     async def async_step_hassio(
         self, discovery_info: HassioServiceInfo
@@ -58,7 +59,7 @@ class MeithealConfigFlow(ConfigFlow, domain=DOMAIN):
         """Validate a token for the discovered App before saving it."""
         errors = {}
         if user_input is not None:
-            data = {**self._discovered, CONF_API_TOKEN: user_input[CONF_API_TOKEN]}
+            data = {**self._discovered, CONF_API_TOKEN: user_input[CONF_API_TOKEN], CONF_BOARD_ID: user_input[CONF_BOARD_ID]}
             if error := await self._async_test_connection(data):
                 errors["base"] = error
             else:
@@ -127,6 +128,7 @@ class MeithealConfigFlow(ConfigFlow, domain=DOMAIN):
                     CONF_HOST: entry.data.get(CONF_HOST, DEFAULT_HOST),
                     CONF_PORT: entry.data.get(CONF_PORT, DEFAULT_PORT),
                     CONF_SSL: entry.data.get(CONF_SSL, False),
+                    CONF_BOARD_ID: entry.data.get(CONF_BOARD_ID, ""),
                 },
             ),
             errors=errors,
@@ -146,14 +148,14 @@ class MeithealConfigFlow(ConfigFlow, domain=DOMAIN):
         errors = {}
         if user_input is not None:
             previous_data = entry.data
-            data = {**previous_data, CONF_API_TOKEN: user_input[CONF_API_TOKEN]}
+            data = {**previous_data, CONF_API_TOKEN: user_input[CONF_API_TOKEN], CONF_BOARD_ID: user_input[CONF_BOARD_ID]}
             if error := await self._async_test_connection(data):
                 errors["base"] = error
             elif entry.data is not previous_data:
                 return self.async_abort(reason="configuration_changed")
             else:
                 return self.async_update_reload_and_abort(
-                    entry, data_updates={CONF_API_TOKEN: data[CONF_API_TOKEN]}
+                    entry, data_updates={CONF_API_TOKEN: data[CONF_API_TOKEN], CONF_BOARD_ID: data[CONF_BOARD_ID]}
                 )
         return self.async_show_form(
             step_id="reauth_confirm",
@@ -166,8 +168,11 @@ class MeithealConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> str | None:
         """Validate the exact origin and test protected task access."""
         token = data.get(CONF_API_TOKEN, "").strip()
-        if require_token and not token:
+        if not token:
             return "invalid_auth"
+        board_id = data.get(CONF_BOARD_ID)
+        if not isinstance(board_id, str) or not board_id:
+            return "board_required"
         try:
             origin = connection_origin(data)
         except ValueError:
@@ -183,14 +188,18 @@ class MeithealConfigFlow(ConfigFlow, domain=DOMAIN):
             self.hass, auto_cleanup=False, cookie_jar=DummyCookieJar()
         )
         try:
-            response = await MeithealApi(session, origin, token).async_request(
+            api = MeithealApi(session, origin, token, board_id)
+            metadata = await async_credential_context(api)
+            if not any(board["id"] == board_id for board in metadata["boards"]):
+                return "invalid_board"
+            response = await api.async_request(
                 "GET", "/api/tasks", params={"limit": "1"}, read_json=True
             )
         except MeithealResponseError as err:
             if err.status in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
                 return "invalid_auth"
             return "cannot_connect"
-        except MeithealConnectionError:
+        except (MeithealConnectionError, ValueError):
             return "cannot_connect"
         finally:
             session.detach()
@@ -213,10 +222,12 @@ def _connection_form(*, require_token: bool) -> vol.Schema:
             vol.Required(CONF_PORT, default=443): int,
             vol.Required(CONF_SSL, default=True): bool,
             vol.Required(CONF_API_TOKEN): _TOKEN_SELECTOR,
+            vol.Required(CONF_BOARD_ID): str,
         })
     return vol.Schema({
         vol.Required(CONF_HOST): str,
         vol.Required(CONF_PORT): int,
         vol.Required(CONF_SSL): bool,
         vol.Optional(CONF_API_TOKEN): _TOKEN_SELECTOR,
+        vol.Required(CONF_BOARD_ID): str,
     })

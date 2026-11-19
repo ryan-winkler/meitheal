@@ -1,3 +1,4 @@
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { z } from "zod"
 import { isCsrfAllowed } from "@domains/auth"
@@ -16,7 +17,7 @@ const inputSchema = z.strictObject({
 })
 const headers = { "Cache-Control": "no-store" }
 
-export const POST: APIRoute = async ({ request, locals, params }) => {
+export const POST: APIRoute = withBoardScope({ resource: "task", action: "edit" }, async ({ request, locals, params }, scope) => {
   if (locals.hassIsAdmin !== true || locals.agentToken) {
     return apiProblem({ status: 403, detail: "A Home Assistant administrator must review the proposal.", extraHeaders: headers })
   }
@@ -42,18 +43,18 @@ export const POST: APIRoute = async ({ request, locals, params }) => {
     detail: authority === "unavailable" ? "Home Assistant could not verify administrator access. Try again." : "A current Home Assistant administrator must review the proposal.", extraHeaders: headers })
   if (request.signal.aborted) return apiProblem({ status: 499, detail: "Review request cancelled.", extraHeaders: headers })
   const client = getPersistenceClient()
-  const result = await new TaskHandoff(client).decide(params.id!, input.data.proposal_hash, input.data.action, resolveRecentActivityActor(locals, request), request.signal)
+  const result = await new TaskHandoff(client, scope).decide(params.id!, input.data.proposal_hash, input.data.action, resolveRecentActivityActor(locals, request), request.signal)
   if (!result.ok) return apiProblem({ status: result.status, detail: result.error, extraHeaders: headers })
 
   // Record the activity and dispatch the usual task update event.
   if (result.changes) {
-    const repo = new TaskRepository(client)
+    const repo = new TaskRepository(client, scope)
     await repo.logActivity(result.id, Object.entries(result.changes).flatMap(([field, change]) =>
       change ? [{ field, oldValue: change.from, newValue: change.to }] : [],
     )).catch(() => {})
     void repo.findById(result.id).then(task => {
-      if (task) return dispatchTaskEvent("task.updated", { ...task, ticket_key: formatTicketKey(Number(task.ticket_number) || null) })
+      if (task) return dispatchTaskEvent("task.updated", { ...task, ticket_key: formatTicketKey(Number(task.ticket_number) || null) }, undefined, undefined, undefined, undefined, scope)
     }).catch(() => {})
   }
   return Response.json({ ok: true, id: result.id, action: input.data.action }, { headers })
-}
+})

@@ -1,3 +1,5 @@
+import { runWithIngressTransport } from "../../apps/web/scripts/ingress-transport.mjs"
+import { currentBoardScope } from "../helpers/current-board-scope"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -52,7 +54,7 @@ const test = base.extend<{ db: Database }>({
 })
 
 test("findAll preserves stored Eisenhower scores, overrides, and schema defaults", async ({ db }) => {
-  const { tasks, total } = await new TaskRepository(db).findAll({ sort: "title", order: "ASC" })
+  const { tasks, total } = await new TaskRepository(db, await currentBoardScope(db)).findAll({ sort: "title", order: "ASC" })
   expect(total).toBe(scores.length)
   expect(tasks.map(({ id, urgency, importance, eisenhower_override }) => ({
     id, urgency, importance, eisenhower_override,
@@ -62,9 +64,8 @@ test("findAll preserves stored Eisenhower scores, overrides, and schema defaults
 test("task list API derives each quadrant from stored scores across pages", async ({ db }) => {
   expect(db.closed).toBe(false)
   for (let offset = 0; offset < scores.length; offset += 2) {
-    const response = await GET({
-      url: new URL(`http://localhost/api/tasks?sort=title&order=asc&limit=2&offset=${offset}`),
-    } as Parameters<typeof GET>[0])
+    const url = new URL(`http://localhost/api/tasks?board_id=household&sort=title&order=asc&limit=2&offset=${offset}`)
+    const response = await runWithIngressTransport({ peer: "127.0.0.1", fromSupervisor: false, identityHeadersSafe: true, configuredPath: undefined }, () => GET({ url, request: new Request(url), locals: {}, params: {} } as Parameters<typeof GET>[0]))
     expect(response.status).toBe(200)
     const body = await response.json()
     expect(body).toMatchObject({ total: scores.length, limit: 2, offset })

@@ -1,3 +1,5 @@
+import { boardScopeErrorResponse } from "@lib/board-http"
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
@@ -20,10 +22,10 @@ const logger = createLogger({
  *
  * Competitive parity: GitHub issue timeline, Linear activity feed.
  */
-export const GET: APIRoute = async ({ params, url }) => {
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async ({ params, url }, scope) => {
   try {
     await ensureSchema()
-    const repo = new TaskRepository(getPersistenceClient())
+    const repo = new TaskRepository(getPersistenceClient(), scope)
 
     const taskId = params.id
     if (!taskId || taskId.length > 255) {
@@ -54,6 +56,8 @@ export const GET: APIRoute = async ({ params, url }) => {
 
     return apiJson(timeline)
   } catch (err) {
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
     logger.log("error", {
       event: "api.timeline.get.failed",
       domain: "tasks",
@@ -63,4 +67,4 @@ export const GET: APIRoute = async ({ params, url }) => {
     })
     return apiError("Failed to fetch timeline")
   }
-}
+})

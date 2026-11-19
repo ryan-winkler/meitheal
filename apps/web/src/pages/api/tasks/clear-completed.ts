@@ -1,3 +1,6 @@
+import { boardScopeErrorResponse } from "@lib/board-http"
+import { withBoardScope } from "@lib/board-http"
+import { TaskRepository } from "@domains/tasks"
 /**
  * POST /api/tasks/clear-completed — Archive tasks completed today
  *
@@ -20,7 +23,7 @@ import { calendarToday, isValidTimezone } from "../../../lib/date"
 import { readStoredHouseholdTimezone, todayCompletionFilter, todayScopeProblem } from "../../../lib/task-queries"
 import { apiLogger, logApiError } from "../../../lib/api-logger"
 
-export const POST: APIRoute = async ({ request, url, locals }) => {
+export const POST: APIRoute = withBoardScope({ resource: "task", action: "delete" }, async ({ request, url, locals }, scope) => {
   try {
     const boardSelection = await rejectBoardSelectionInJson(request)
     if (boardSelection) return boardSelection
@@ -30,12 +33,7 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
     const today = calendarToday(timezone)
     const problem = todayScopeProblem(url.searchParams, timezone, today)
     if (problem) return apiError(problem.error, problem.status)
-    const filter = todayCompletionFilter(today, timezone)
-    const result = await client.execute({
-      sql: `UPDATE tasks SET status = 'archived', updated_at = ? WHERE ${filter.sql}`,
-      args: [Date.now(), ...filter.args],
-    })
-    const count = result.rowsAffected
+    const count = await new TaskRepository(client, scope).archiveCompletedForDay(today, timezone)
 
     apiLogger.log("info", {
       event: "clear-completed.success",
@@ -60,4 +58,4 @@ export const POST: APIRoute = async ({ request, url, locals }) => {
       { status: 500, headers: { "content-type": "application/json" } },
     )
   }
-}
+})

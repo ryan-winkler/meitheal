@@ -1,4 +1,3 @@
-export const HOUSEHOLD_BOARD_ID = "household"
 export const DEFAULT_GROUP_COLOR = "#64748b"
 
 export interface BoardWorkspaceSelection {
@@ -57,7 +56,7 @@ export function readBoardPlanningSection(params: URLSearchParams): BoardPlanning
 export function readBoardNavigationContext(url: URL) {
   const match = /^\/boards\/([^/]+)\/?$/.exec(url.pathname)
   let boardId: string | undefined
-  try { boardId = match ? decodeURIComponent(match[1]!) : url.pathname === "/tasks" || url.searchParams.get("board") === HOUSEHOLD_BOARD_ID ? HOUSEHOLD_BOARD_ID : undefined } catch { return }
+  try { boardId = match ? decodeURIComponent(match[1]!) : url.searchParams.get("board_id") ?? url.searchParams.get("board") ?? undefined } catch { return }
   if (!boardId || boardId.length > 150) return
   return {
     boardId,
@@ -70,13 +69,19 @@ export function readBoardNavigationContext(url: URL) {
 export function boardNavigationLinks(context: { boardId: string; area?: string | undefined; project?: string | undefined; fromArea?: string | undefined }) {
   const { boardId, area, project, fromArea } = context
   const placement = { area: project ? undefined : area, project, fromArea }
-  const progress = new URLSearchParams({ board: HOUSEHOLD_BOARD_ID })
+  const progress = new URLSearchParams({ board_id: boardId })
   if (project) progress.set("project_id", project)
   else if (area) progress.set("area_id", area)
   return {
+    dashboard: `/?board_id=${encodeURIComponent(boardId)}`,
+    today: `/today?board_id=${encodeURIComponent(boardId)}`,
+    upcoming: `/upcoming?board_id=${encodeURIComponent(boardId)}`,
+    activity: `/activity?board_id=${encodeURIComponent(boardId)}`,
+    mentionInbox: `/mention-inbox?board_id=${encodeURIComponent(boardId)}`,
+    pinned: `/pinned?board_id=${encodeURIComponent(boardId)}`,
+    review: `/review?board_id=${encodeURIComponent(boardId)}`,
     tasks: boardWorkspaceHref(boardId, placement, "kanban"),
     planning: boardWorkspaceHref(boardId, { ...placement, groups: true }, "groups"),
-    progress: boardId === HOUSEHOLD_BOARD_ID ? `/progress?${progress}#goals`
-      : boardWorkspaceHref(boardId, { ...placement, groups: true, section: "goals" }, "groups"),
+    progress: `/progress?${progress}#goals`,
   }
 }

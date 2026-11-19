@@ -1,3 +1,6 @@
+import { currentBoardScope, fixturePrincipal } from "../helpers/current-board-scope"
+import { startCoreRosterFixture } from "../helpers/core-roster-fixture"
+import { runWithIngressTransport } from "../../apps/web/scripts/ingress-transport.mjs"
 import { createHash } from "node:crypto"
 import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -56,9 +59,11 @@ test("real current policy and Household lifecycle remain closed after actual col
     const policies = new OrganizationAccessRepository(db)
     expect(await policies.change({ scope: "feature", id: "goals", boardId: "" }, null, { audience: "nobody", users: [] }))
       .toMatchObject({ status: "committed", result: "saved" })
-    expect(await new NamedBoardRepository(db).changeLifecycle({ kind: "ha_user", id: "owner" }, "household", "retired", 1, true))
+    const owner = fixturePrincipal()
+    const scope = await currentBoardScope(db, "household", owner)
+    expect(await new NamedBoardRepository(db).changeLifecycle(owner, "household", "retired", 1, true))
       .toMatchObject({ status: "committed", result: "saved" })
-    expect(await new TaskRepository(db).exportAll()).toEqual([])
+    await expect(new TaskRepository(db, scope).exportAll()).rejects.toMatchObject({ errorCode: "stale" })
     const currentMarker = await readFile(markerPath)
     await db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     resetPersistenceForTests()
@@ -73,15 +78,24 @@ test("real current policy and Household lifecycle remain closed after actual col
       await ensureSchema({ markerPath })
       db = getPersistenceClient()
       expect(await new OrganizationAccessRepository(db).policies("feature", "")).toEqual({ status: "locked" })
-      const tasks = new TaskRepository(db)
-      await expect(tasks.findAll({})).rejects.toThrow("continuity")
-      await expect(tasks.exportAll()).rejects.toThrow("continuity")
-      expect(await tasks.getOpenTaskCount()).toBe(0)
-      await expect(tasks.createTask(task("forbidden-write"))).rejects.toThrow("continuity")
-      await expect(tasks.createTask({ ...task("dangling-project"), project_id: "missing" })).rejects.toThrow("continuity")
-      const response = await getTasks({ url: new URL("http://synthetic.invalid/api/tasks"), locals: {} } as never)
-      expect(response.status).toBeGreaterThanOrEqual(500)
-      expect(await response.json()).toEqual({ error: "Failed to list tasks" })
+      const tasks = new TaskRepository(db, scope)
+      await expect(tasks.findAll({})).rejects.toMatchObject({ errorCode: "stale" })
+      await expect(tasks.exportAll()).rejects.toMatchObject({ errorCode: "stale" })
+      await expect(tasks.getOpenTaskCount()).rejects.toMatchObject({ errorCode: "stale" })
+      await expect(tasks.createTask(task("forbidden-write"))).rejects.toMatchObject({ errorCode: "stale" })
+      await expect(tasks.createTask({ ...task("dangling-project"), project_id: "missing" })).rejects.toMatchObject({ errorCode: "stale" })
+      const stopCore = await startCoreRosterFixture(["owner"])
+      try {
+        const url = new URL("http://localhost/api/tasks?board_id=household")
+        const transport = { peer: "172.30.32.2", fromSupervisor: true, identityHeadersSafe: true, configuredPath: "/api/hassio_ingress/test" }
+        const response = await runWithIngressTransport(transport, () => getTasks({
+          request: new Request(url), url, params: {}, locals: { behindIngress: true, hassUserId: "owner" },
+        } as Parameters<typeof getTasks>[0]))
+        expect(response.status).toBe(503)
+        expect(await response.json()).toMatchObject({ status: 503, detail: "Current work access is unavailable." })
+      } finally {
+        await stopCore()
+      }
       expect((await db.execute("SELECT id FROM tasks")).rows).toEqual([{ id: "retained" }])
       expect((await db.execute("SELECT state FROM task_boards WHERE id = 'household'")).rows).toEqual([{ state: "active" }])
       resetPersistenceForTests()

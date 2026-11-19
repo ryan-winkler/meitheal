@@ -1,79 +1,39 @@
 import type { APIRoute } from "astro"
-import { apiJson, apiError } from "../../../../lib/api-response"
-import { logApiError } from "../../../../lib/api-logger"
-import { getPillarById } from "@domains/pillars/pillar-service"
-import {
-  linkEntity,
-  unlinkEntity,
-  getAssociationsForPillar,
-  VALID_PILLAR_ENTITY_TYPES,
-  type PillarEntityType,
-} from "@domains/pillars/pillar-association-service"
+import { getVisiblePillar, readPillarBody } from "@lib/personal-pillar-access"
+import { resolveBoardRequestScope } from "@lib/board-request-context"
+import { boardScopeResponse } from "@lib/board-http"
+import { apiJson, apiError } from "@lib/api-response"
+import { isPersonalPillarScope, linkEntity, unlinkEntity, getAssociationsForPillar, VALID_PILLAR_ENTITY_TYPES, type PillarEntityType } from "@domains/pillars"
 
-/**
- * Pillar Associations API — Link/Unlink entities
- *
- * GET  /api/pillars/:id/associations — List entities linked to a Pillar
- * POST /api/pillars/:id/associations — Link or unlink an entity
- *
- * @domain pillars
- * @kcs M2M associations for cross-cutting Pillar relationships.
- * @kcs Direct FK on entities is the primary mechanism; M2M is secondary.
- */
-
-export const GET: APIRoute = async ({ params }) => {
-  try {
-    const pillarId = params.id
-    if (!pillarId) return apiError("Pillar ID is required", 400)
-
-    const pillar = await getPillarById(pillarId)
-    if (!pillar) return apiError("Pillar not found", 404)
-
-    const associations = await getAssociationsForPillar(pillarId)
-    return apiJson({ associations })
-  } catch (error) {
-    logApiError("pillars", "GET associations error", error)
-    return apiError("Failed to get associations")
-  }
+export const GET: APIRoute = async context => {
+  const id = context.params.id
+  if (!id) return apiError("Pillar unavailable", 404)
+  const visible = await getVisiblePillar(id, context)
+  if (visible instanceof Response) return visible
+  if (!visible) return apiError("Pillar unavailable", 404)
+  const selected = isPersonalPillarScope(visible.ownerScope)
+    ? await resolveBoardRequestScope(context, { operation: { resource: "task", action: "read" } }) : { ok: true as const, scope: visible.ownerScope }
+  if (!selected.ok) return boardScopeResponse(selected.errorCode)
+  const associations = await getAssociationsForPillar(visible.ownerScope, id, selected.scope)
+  return apiJson({ associations })
 }
 
-export const POST: APIRoute = async ({ params, request }) => {
-  try {
-    const pillarId = params.id
-    if (!pillarId) return apiError("Pillar ID is required", 400)
-
-    const pillar = await getPillarById(pillarId)
-    if (!pillar) return apiError("Pillar not found", 404)
-
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
-    const action = String(body.action || "link")
-
-    const entityType = String(body.entityType || "") as PillarEntityType
-    if (!VALID_PILLAR_ENTITY_TYPES.includes(entityType)) {
-      return apiError(`entityType must be one of: ${VALID_PILLAR_ENTITY_TYPES.join(", ")}`, 400)
-    }
-
-    const entityId = String(body.entityId || "")
-    if (!entityId) return apiError("entityId is required", 400)
-
-    switch (action) {
-      case "link": {
-        const association = await linkEntity(pillarId, entityType, entityId)
-        if (!association) return apiError("Association target unavailable", 404)
-        return apiJson({ association }, 201)
-      }
-
-      case "unlink": {
-        const removed = await unlinkEntity(pillarId, entityType, entityId)
-        if (!removed) return apiError("Association not found", 404)
-        return apiJson({ ok: true })
-      }
-
-      default:
-        return apiError("Invalid action. Use: link, unlink", 400)
-    }
-  } catch (error) {
-    logApiError("pillars", "POST associations error", error)
-    return apiError("Failed to manage association")
+export const POST: APIRoute = async context => {
+  const id = context.params.id
+  if (!id) return apiError("Pillar unavailable", 404)
+  const visible = await getVisiblePillar(id, context, "edit")
+  if (visible instanceof Response) return visible
+  if (!visible) return apiError("Pillar unavailable", 404)
+  const body = await readPillarBody(context.request)
+  if (body instanceof Response) return body
+  const kind = body.entityType as PillarEntityType
+  if (!VALID_PILLAR_ENTITY_TYPES.includes(kind) || typeof body.entityId !== "string" || !body.entityId || !["link", "unlink"].includes(String(body.action ?? "link"))) return apiError("Choose an existing target and a link action.", 400)
+  const selected = await resolveBoardRequestScope(context, { operation: { resource: kind, action: "edit" }, record: { resource: kind, id: body.entityId }, write: true })
+  if (!selected.ok) return boardScopeResponse(selected.errorCode)
+  if (body.action === "unlink") {
+    const removed = await unlinkEntity(visible.ownerScope, id, kind, body.entityId, selected.scope)
+    return removed ? apiJson({ ok: true }) : apiError("Association unavailable", 404)
   }
+  const association = await linkEntity(visible.ownerScope, id, kind, body.entityId, selected.scope)
+  return association ? apiJson({ association }, 201) : apiError("Association target unavailable", 404)
 }

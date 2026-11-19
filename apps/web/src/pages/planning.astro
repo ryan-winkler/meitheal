@@ -1,4 +1,6 @@
 ---
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+
 import { organizationLabelsFor } from "@lib/organization-labels"
 /**
  * /planning — Parent page for Planning views
@@ -21,11 +23,15 @@ import TriageIntake from "../components/planning/TriageIntake.astro"
 import PlanningRice from "../components/planning/PlanningRice.astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
+const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
+if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
+const workScope = workScopeResult.scope
+
 
 let taskRepo: TaskRepository | undefined
 try {
   await ensureSchema()
-  taskRepo = new TaskRepository(getPersistenceClient())
+  taskRepo = new TaskRepository(getPersistenceClient(), workScope)
 } catch { /* the task list renders its existing unavailable state */ }
 
 const label = await organizationLabelsFor(Astro)
@@ -37,7 +43,7 @@ const { tasks } = await getTasksForView({
   descriptionPreviewChars: 240,
   excludeStatuses: ["complete", "archived"],
   timezone: Astro.locals.timezone || "Europe/Dublin",
-})
+}, workScope)
 
 // Derive Eisenhower quadrant counts
 let q1 = 0, q2 = 0, q3 = 0, q4 = 0
@@ -68,7 +74,7 @@ for (const task of tasks) {
     {/* ─── Eisenhower ─── */}
     <section data-parent-section="eisenhower" id="planning-section-eisenhower" hidden>
       <SectionHubCard
-        href="/eisenhower"
+        href={`/eisenhower?board_id=${encodeURIComponent(workScope.boardId)}`}
         icon="🎯"
         title="Eisenhower Matrix"
         description="Prioritise by urgency × importance — classify tasks into Do, Schedule, Delegate, or Eliminate quadrants."

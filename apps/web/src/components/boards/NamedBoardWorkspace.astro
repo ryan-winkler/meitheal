@@ -1,35 +1,49 @@
 ---
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
 import { readHomeAssistantAreaFilter } from "@lib/home-assistant-area-access"
 import HomeAssistantAreaField from "../tasks/HomeAssistantAreaField.astro"
 import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
 import TaskWorkspace from "../TaskWorkspace.astro"
+import AreaWorkspace from "../../pages/areas/[id].astro"
+import ProjectWorkspace from "../../pages/projects/[id].astro"
 import BoardPlanning from "./BoardPlanning.astro"
+import BoardIntegrationDestinations from "./BoardIntegrationDestinations.astro"
 import BoardWorkspaceNav from "./BoardWorkspaceNav.astro"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import Layout from "../../layouts/Layout.astro"
 import "../../styles/boards.css"
-import { permitsBoardTaskAction } from "@domains/tasks/persistence/named-board-repository"
+import { scopePermits } from "@domains/tasks/board-scope"
 import { boardWorkspaceHref, readBoardWorkspaceSelection, readBoardPlanningSection } from "@lib/board-workspace"
 import { boardAuthorityKey, boardViewKey, readBoardView } from "@lib/board-view"
-import { boardSessionProof, currentBoardUser } from "@lib/named-board-request"
+import { boardSessionProof, currentBoardContext } from "@lib/named-board-request"
 import { isFeatureEnabled } from "@lib/feature-flags"
 import { isDoneStatus } from "@lib/status-config"
 
 const label = await organizationLabelsFor(Astro)
 const newLabel = (name: Parameters<typeof label>[0], fallback?: string) => newOrganizationLabel(label(name, false, fallback), organizationLocale(Astro))
 const boardId: string = Astro.props.boardId
+const resolved = await resolveBoardPageScope(Astro, { boardId })
+if (!resolved.ok) return boardScopeResponse(resolved.errorCode)
+const workScope = resolved.scope
 const selection = readBoardWorkspaceSelection(Astro.url.searchParams)
-const user = await currentBoardUser(Astro.locals, Astro.request.signal)
+const section = readBoardPlanningSection(Astro.url.searchParams)
+if (selection.planning && section !== "planning") {
+  const query = new URLSearchParams({ board_id: boardId })
+  if (selection.areaId) query.set("area_id", selection.areaId)
+  if (selection.projectId) query.set("project_id", selection.projectId)
+  return Astro.redirect(`${Astro.locals.ingressPath || ""}/${section === "routines" ? "habits" : "progress"}?${query}${section === "routines" ? "" : `#${section}`}`)
+}
+const user = await currentBoardContext(Astro)
 const rawOffset = Number(Astro.url.searchParams.get("offset") ?? 0)
 const offset = Number.isSafeInteger(rawOffset) && rawOffset >= 0 ? rawOffset : 0
 const homeFilter = await readHomeAssistantAreaFilter(Astro, Astro.url.searchParams)
 const taskWorkspace = !selection.planning && Boolean(boardId && user)
-const view = !taskWorkspace && boardId && user ? await readBoardView(user.actor, boardId, offset, selection, homeFilter) : null
+const view = !taskWorkspace && boardId && user ? await readBoardView(workScope, user.actor, boardId, offset, selection, homeFilter) : null
 if (!boardId || !user || (!view && !taskWorkspace)) Astro.response.status = 404
-const policy = view?.board.policy
-const canEdit = view && permitsBoardTaskAction(view.board, "edit")
-const canDelete = view && permitsBoardTaskAction(view.board, "delete")
-const canComplete = view && permitsBoardTaskAction(view.board, "complete")
+const canManage = scopePermits(workScope, { resource: "board", action: "manage" })
+const policy = canManage ? view?.board.policy : undefined
+const canCreate = scopePermits(workScope, { resource: "task", action: "create" })
+const canComplete = scopePermits(workScope, { resource: "task", action: "complete" })
 const routinesEnabled = view ? await isFeatureEnabled("habits") : false
 const verify = new URLSearchParams(Astro.url.searchParams)
 if (!homeFilter) verify.delete("home_assistant_area_id")
@@ -43,14 +57,17 @@ const grouping = { area: scope?.project ? undefined : scope?.area?.id, project: 
 const title = scope?.project?.title ?? scope?.area?.name ?? view?.board.name ?? "Board"
 const nextAction = view?.summary?.next
 ---
-{taskWorkspace ? <TaskWorkspace namedBoardId={boardId} /> : <Layout title={label("board")} suppressHouseholdTaskModals>
+{taskWorkspace ? <TaskWorkspace {boardId} />
+  : selection.projectId ? <ProjectWorkspace workspaceProjectId={selection.projectId} {boardId} />
+  : selection.areaId ? <AreaWorkspace workspaceAreaId={selection.areaId} {boardId} />
+  : <Layout title={label("board")} scopeGuard={false}>
   <span slot="page-title">{label("board")}</span>
   <div class="boards-workspace">
     {!view || !boardId || !user ? <p>This Board is unavailable.</p> :
       <div data-board-directory data-board-verify={verifyPath} data-board-key={boardViewKey(view, user.actor.id)}
         data-board-authority={boardAuthorityKey(view, user.actor.id)}
         data-board-session={boardSessionProof(user.actor.id)} data-board-id={boardId}
-        data-board-can-create={String(Boolean(canEdit) && (!scope?.project || scope.project.status === "active"))}>
+        data-board-can-create={String(Boolean(canCreate) && (!scope?.project || scope.project.status === "active"))}>
         <BoardWorkspaceNav {boardId} boardName={view.board.name}
           area={scope?.area ? { id: scope.area.id, name: scope.area.name } : undefined}
           project={scope?.project ? { id: scope.project.id, name: scope.project.title } : undefined}
@@ -64,32 +81,45 @@ const nextAction = view?.summary?.next
             </p>}
             {view.board.state === "archived" && <p>Archived Board</p>}
           </div>
-          {canEdit && (!scope?.project || scope.project.status === "active") && !selection.ticketId && <details class="board-add">
-            <summary class="btn btn-primary">{newLabel("task", organizationLocale(Astro) === "en" ? "task" : undefined)}</summary>
-            <form data-board-form="task-create" class="board-form">
-              <label>Title <input name="title" maxlength="500" required autocomplete="off" /></label>
-              <label>Details <textarea name="description" maxlength="10000" rows="3"></textarea></label>
-              <label>Column <select name="laneId">
-                {view.lanes.filter(lane => canComplete || !isDoneStatus(lane.key)).map(lane => <option value={lane.id}>{lane.label}</option>)}
-              </select></label>
-              <label>Shared due date <input type="date" name="due_date" /></label>
-              <HomeAssistantAreaField />
-              {scope?.area && <input type="hidden" name="areaId" value={scope.area.id} />}
-              {scope?.project && <input type="hidden" name="projectId" value={scope.project.id} />}
-              <p class="board-note">{scope?.project?.title ?? scope?.area?.name ?? "Unfiled"}</p>
-              <p role="status" data-board-feedback></p>
-              <button type="submit" class="btn btn-primary">Create task</button>
-            </form>
-          </details>}
+          {canCreate && (!scope?.project || scope.project.status === "active") && <button type="button" class="btn btn-primary" data-board-new-task>{newLabel("task")}</button>}
         </header>
 
         {scope?.area && !scope.project && !selection.planning && <p>
           <a href={boardWorkspaceHref(boardId, { area: scope.area.id, groups: true }, "projects")}>{label("project", true)} in {scope.area.name}</a>
         </p>}
-        {view.planning && <BoardPlanning boardId={boardId} areaId={scope?.area?.id} projectId={scope?.project?.id} planning={view.planning} canManage={Boolean(policy) && view.board.state === "active"} canComplete={Boolean(canComplete)} routinesEnabled={routinesEnabled} tickets={view.tasks} />}
+        {view.planning && <BoardPlanning boardId={boardId} areaId={scope?.area?.id} projectId={scope?.project?.id} planning={view.planning} canManage={canManage && view.board.state === "active"} canComplete={Boolean(canComplete)} routinesEnabled={routinesEnabled} tickets={view.tasks} />}
         {policy && !scope?.area && !scope?.project && !selection.ticketId && <details id="settings" class="named-boards board-settings">
           <summary>{label("board")} settings</summary>
           <div class="board-settings-grid">
+            <form data-board-form="rename" class="board-form">
+              <h2>Board name</h2>
+              <input type="hidden" name="revision" value={view.board.revision} />
+              <label>Name <input name="name" value={view.board.name} required maxlength="100" autocomplete="off" /></label>
+              <p class="board-note">Choose a name that fits your work, such as House, Work, or Church.</p>
+              <p role="status" aria-live="polite" data-board-feedback></p>
+              <button type="submit" class="btn btn-ghost">Save name</button>
+              <button type="button" class="btn btn-ghost" data-board-form-refresh hidden>Refresh Board</button>
+            </form>
+            <form data-board-form="sharing" class="board-form">
+              <h2>Visibility and sharing</h2>
+              <input type="hidden" name="revision" value={view.board.revision} />
+              <label>Who can access this Board? <select name="visibility">
+                <option value="restricted" selected={policy.visibility === "restricted"}>People you add</option>
+                <option value="shared" selected={policy.visibility === "shared"}>All active Home Assistant users</option>
+              </select></label>
+              <fieldset data-board-shared-settings hidden={policy.visibility !== "shared"}>
+                <legend>Access for Home Assistant users</legend>
+                <label>Default role <select name="sharedRole">
+                  <option value="viewer" selected={policy.sharedRole === "viewer"}>Viewer</option>
+                  <option value="member" selected={policy.sharedRole === "member"}>Member</option>
+                </select></label>
+                <label class="check"><input type="checkbox" name="sharedAdminManagement" checked={policy.sharedAdminManagement} /> Allow Home Assistant administrators to manage this Board</label>
+              </fieldset>
+              <p class="board-note">Viewers can read work. Members can create and update it, subject to ticket permissions. Manage individual roles below.</p>
+              <p role="status" aria-live="polite" data-board-feedback></p>
+              <button type="submit" class="btn btn-ghost">Save sharing</button>
+              <button type="button" class="btn btn-ghost" data-board-form-refresh hidden>Refresh Board</button>
+            </form>
             <form data-board-form="policy" class="board-form">
               <h2>Ticket permissions</h2>
               <label class="check"><input type="checkbox" name="denyCompletion" checked={policy.denyCompletion} /> Block marking tickets done or reopening them</label>
@@ -167,6 +197,7 @@ const nextAction = view?.summary?.next
                 <button type="submit" class="btn btn-ghost">Create destination</button>
               </form>
             </section>
+            <BoardIntegrationDestinations scope={workScope} session={boardSessionProof(user.actor.id)} people={view.members.map(member => ({ id: member.id, name: user.roster.get(member.id) ?? "Inactive user" }))} />
             {!view.board.denyDeletion && <form data-board-form="lifecycle" class="board-form">
               <h2>Delete Board</h2>
               <p>Keep its saved work in Deleted Boards. Incoming work and Routines pause until you restore it.</p>
@@ -185,10 +216,9 @@ const nextAction = view?.summary?.next
 
 <script>
   import { pageLifecycle } from "@lib/page-lifecycle"
-  import { bindNamedBoardPlanningCapture } from "@lib/named-board-kanban-controller"
   import { bindBoardPage } from "@lib/boards-page"
   pageLifecycle.onPageLoad(signal => {
     bindBoardPage(signal)
-    bindNamedBoardPlanningCapture(signal)
+    document.querySelector("[data-board-new-task]")?.addEventListener("click", () => window.openNewTaskModal?.(), { signal })
   })
 </script>

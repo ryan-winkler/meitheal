@@ -1,3 +1,7 @@
+import { captureAttempt } from "@lib/task-capture-attempt"
+import { taskHttpProjection } from "@lib/task-http-projection"
+import { scopePermits } from "@domains/tasks/board-scope"
+import { withBoardScope } from "@lib/board-http"
 import { organizationPlacementAvailable } from "@lib/organization-placement-access"
 import { readHomeAssistantAreaPolicyRevision, setTaskHomeAssistantArea } from "@domains/tasks/persistence/home-assistant-task-area"
 import { readHomeAssistantAreaFilter, resolveHomeAssistantAreaSelection } from "@lib/home-assistant-area-access"
@@ -6,7 +10,7 @@ import { parseBoardPlacement } from "@lib/board-workspace"
 import type { APIRoute } from "astro"
 import type { ResultSet } from "@libsql/client"
 import { deriveEisenhowerQuadrant, VALID_TASK_TYPES, type TaskType } from "@meitheal/domain-tasks"
-import { normalizeLabelTitle, taskLabelInsert } from "@domains/labels"
+import { normalizeLabelTitle } from "@domains/labels"
 import {
   dispatchTaskCreation,
   ensureSchema,
@@ -29,16 +33,23 @@ import { normalizeStatus } from "../../../lib/status-config"
 import { isValidTimezone } from "../../../lib/date"
 import { readStoredHouseholdTimezone } from "../../../lib/task-queries"
 import { resolveRecentActivityActor } from "../../../lib/recent-activity-actor"
-import { taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
+import { dispatchTaskEvent, taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
 
 /** GET /api/tasks — list all tasks, POST /api/tasks — create a task */
 
-export const GET: APIRoute = async context => {
-  const { url, locals } = context
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async( context, scope) => {
+  const { url, locals, request } = context
   try {
   await ensureSchema()
-  const repo = new TaskRepository(getPersistenceClient())
+  const repo = new TaskRepository(getPersistenceClient(), scope)
 
+  if (url.searchParams.has("captureReceipt")) {
+    if (url.searchParams.get("captureReceipt") !== "1") return apiError("Invalid capture receipt request.", 400)
+    const attempt = captureAttempt(request, scope, true)
+    if (!attempt.ok) return apiError(attempt.error, 400)
+    const receipt = await repo.findCaptureReceipt(attempt.digest!)
+    return receipt ? Response.json(receipt) : apiError("Capture receipt unavailable.", 404)
+  }
   const sort = url.searchParams.get("sort") ?? "created_at"
   const order = url.searchParams.get("order") === "asc" ? "ASC" as const : "DESC" as const
   const limit = Math.min(500, Math.max(1, Number(url.searchParams.get("limit")) || 100))
@@ -99,9 +110,11 @@ export const GET: APIRoute = async context => {
   const tasks = rawTasks.map((r) => {
     const ticketNum = r.ticket_number != null ? Number(r.ticket_number) : null
     return {
+      ...taskHttpProjection(r, scope.boardId),
       id: r.id,
       ticket_number: ticketNum,
-      ticket_key: formatTicketKey(ticketNum),
+      ticket_key: r.ticket_key ?? r.ticket_ref ?? formatTicketKey(ticketNum),
+      board_id: scope.boardId,
       title: r.title,
       description: r.description ?? "",
       status: normalizeStatus(r.status),
@@ -112,7 +125,7 @@ export const GET: APIRoute = async context => {
       calendar_sync_state: r.calendar_sync_state ?? "pending",
       parent_id: r.parent_id ?? null,
       time_tracked: Number(r.time_tracked ?? 0),
-      area_id: r.area_id ?? "default",
+      area_id: r.area_id ?? null,
       custom_fields: typeof r.custom_fields === "string" ? r.custom_fields : "{}",
       start_date: r.start_date ?? null,
       end_date: r.end_date ?? null,
@@ -156,58 +169,35 @@ export const GET: APIRoute = async context => {
       headers: { "content-type": "application/json" },
     })
   }
-}
+})
 
-export const POST: APIRoute = async (context) => {
+export const POST: APIRoute = withBoardScope({ resource: "task", action: "create" }, async (context, scope) => {
   const { request, locals } = context
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+  if (!body || typeof body !== "object" || Array.isArray(body)) return apiError("Send a task object.", 400)
   if (!organizationPlacementAvailable(body)) return apiError("This organizing feature is unavailable.", 404)
-  if (hasBoardSelection(body)) return unavailableBoardResponse()
-  await ensureSchema()
-  const client = getPersistenceClient()
-  const repo = new TaskRepository(client)
-  // Attribution comes only from verified identity. Unauthenticated X-Agent-Id headers and
-  // body fields are claims, so a caller cannot record a task as created by an agent or person.
-  const effectiveSource = locals.agentToken
-    ? "agent"
-    : (request.headers.has("X-Automation-Source") ? locals.automationSource : "user")
-  const effectiveCreatedBy = locals.agentToken ? locals.agentToken.tokenName : null
-
+  if (hasBoardSelection(body)) return apiError("Select the Board using the request context.", 400)
+  const attempt = captureAttempt(request, scope)
+  if (!attempt.ok) return apiError(attempt.error, 400)
+  const clientKey = request.headers.get("Idempotency-Key")
+  if (clientKey !== null && (!clientKey.trim() || clientKey.length > 255)) return apiError("Use a valid Idempotency-Key.", 400)
+  const repo = new TaskRepository(getPersistenceClient(), scope)
   const placement = parseBoardPlacement(body.placement)
   if (body.placement !== undefined && (!placement || body.project_id !== undefined || body.area_id !== undefined)) {
-    return apiError("Choose a valid Household group and Project.", 400)
+    return apiError("Choose valid Area and Project placement.", 400)
   }
-  const hierarchy = new HierarchyRepository(client)
-  const project = placement?.projectId ? await hierarchy.findProjectById(placement.projectId) : null
-  if (placement?.projectId && (!project || project.status !== "active" || (placement.areaId && placement.areaId !== project.area_id))) {
-    return apiError("Household placement unavailable", 404)
-  }
-  const placementArea = project?.area_id ?? placement?.areaId ?? "default"
-  const guard = placement ? {
-    sql: `(? = 'default' OR EXISTS (
-      SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NULL AND retired_at IS NULL
-    )) AND (? IS NULL OR EXISTS (
-      SELECT 1 FROM projects WHERE id = ? AND owner_board_id IS NULL AND retired_at IS NULL
-        AND status = 'active' AND COALESCE(area_id, 'default') = ?
-    ))`,
-    args: [placementArea, placementArea, placement.projectId, placement.projectId, placementArea],
-  } : undefined
-
   const homeLocation = await resolveHomeAssistantAreaSelection(context, body.home_assistant_area_id)
   if (!homeLocation.ok) return apiError(homeLocation.detail, homeLocation.status)
-
-  const taskBody = {
+  const effectiveSource = locals.agentToken ? "agent"
+    : (request.headers.has("X-Automation-Source") ? locals.automationSource : "user")
+  const effectiveCreatedBy = locals.agentToken ? locals.agentToken.tokenName : scope.principal.id
+  const prepared = await prepareTaskCreation(repo, {
     ...body,
-    ...(placement ? { area_id: placementArea, project_id: placement.projectId } : {}),
-    source: effectiveSource,
-    created_by: effectiveCreatedBy,
-  }
-  const prepared = await prepareTaskCreation(repo, taskBody)
-  if (!prepared.ok) return Response.json({ error: prepared.error }, { status: 400 })
-
-  const now = Date.now()
-  const activity = taskAddedActivity(prepared.task.id, resolveRecentActivityActor(locals, request), now)
-  const statements = [taskInsertStatement(prepared.task, now, guard ? { guard } : {}), activity]
+    ...(placement ? { area_id: placement.areaId, project_id: placement.projectId } : {}),
+    source: effectiveSource, created_by: effectiveCreatedBy,
+  })
+  if (!prepared.ok) return apiError(prepared.error, 400)
+  let newLabels: string[] | undefined
   if (body.new_labels !== undefined) {
     if (locals.agentToken) return apiError("Creating labels with a task requires a browser session.", 403)
     const labels: unknown = body.new_labels
@@ -215,38 +205,31 @@ export const POST: APIRoute = async (context) => {
     if (!Array.isArray(labels) || labels.length > 32 || !labels.every(
       name => typeof name === "string" && name && normalizeLabelTitle(name) === name && selected.includes(name),
     )) return apiError("Provide the new labels selected for this task.", 400)
-
-    const requestId = crypto.randomUUID()
-    statements[0] = taskInsertStatement(prepared.task, now, { requestId, ...(guard ? { guard } : {}) })
-    statements.push(...[...new Set<string>(labels)].map(name => taskLabelInsert(name, prepared.task.id, requestId)))
+    newLabels = [...new Set<string>(labels)]
   }
-  const result = await runWriteTransaction(
-    client,
-    function* () {
-      if (homeLocation.selection) {
-        const [policy]: ResultSet[] = yield [readHomeAssistantAreaPolicyRevision(homeLocation.selection.revision)]
-        if (!policy?.rows.length) return { allowed: false } as const
-      }
-      const [inserted]: ResultSet[] = yield statements
-      const ticket = inserted?.rows[0]
-      if (ticket && homeLocation.selection?.id) {
-        yield [setTaskHomeAssistantArea(prepared.task.id, homeLocation.selection.id)]
-      }
-      return { allowed: true, ticket } as const
-    },
-    { signal: locals.writeAbortSignal },
-  )
-  if (!result.allowed) return apiError("Home Assistant Area access changed. Refresh the form and try again.", 403)
-  const ticket = result.ticket
-  if (!ticket) return placement ? apiError("Household placement unavailable", 404) : apiError("Choose available task relationships", 400)
-  const ticketNumber = Number(ticket.ticket_number)
-  const payload = taskCreationPayload(prepared.task, ticketNumber, now)
-  const authority = await taskEventAuthorityHeaders(["task.created"])
-  dispatchTaskCreation(payload, typeof body.request_id === "string" ? body.request_id : undefined, undefined, authority)
-  return Response.json(payload, { status: 201, headers: authority })
-}
+  const result = await repo.createWorkCommand(prepared.task, {
+    ...(attempt.digest ? { captureAttemptDigest: attempt.digest } : {}),
+    ...(clientKey ? { clientIdempotencyKey: clientKey } : {}),
+    activityActor: resolveRecentActivityActor(locals, request),
+    ...(typeof body.laneId === "string" ? { laneId: body.laneId, deriveStatusFromLane: body.status === undefined } : {}),
+    ...(newLabels ? { newLabels } : {}),
+    ...(homeLocation.selection ? { homeLocation: homeLocation.selection } : {}),
+    ...(locals.writeAbortSignal ? { signal: locals.writeAbortSignal } : {}),
+  })
+  if (!result.ok) {
+    const status = ["capture_conflict", "conflict", "legacy_key_owner_unverified"].includes(result.errorCode) ? 409
+      : result.errorCode === "unavailable" ? 404 : result.errorCode === "denied" ? 403 : 400
+    return Response.json({ error: result.errorCode === "capture_conflict" ? "Capture already submitted. Check its receipt before retrying."
+      : "This task could not be created.", errorCode: result.errorCode }, { status })
+  }
+  const payload = taskHttpProjection(result.task, scope.boardId)
+  const authority = await taskEventAuthorityHeaders(["task.created"], scope)
+  if (!result.replayed) dispatchTaskCreation(payload as ReturnType<typeof taskCreationPayload>, typeof body.request_id === "string" ? body.request_id : undefined, undefined, authority, scope)
+  return Response.json(scopePermits(scope, { resource: "task", action: "read" }) ? payload
+    : { id: String(result.task.id), ticket_key: payload.ticket_key }, { status: 201, headers: authority })
+})
 
-export const DELETE: APIRoute = async ({ request, url }) => {
+export const DELETE: APIRoute = withBoardScope({ resource: "task", action: "delete" }, async ({ request, url }, scope) => {
   try {
     const purge = url.searchParams.get("purge")
     if (purge !== "all") {
@@ -258,8 +241,10 @@ export const DELETE: APIRoute = async ({ request, url }) => {
     const boardSelection = await rejectBoardSelectionInJson(request, 400)
     if (boardSelection) return boardSelection
     await ensureSchema()
-    const repo = new TaskRepository(getPersistenceClient())
-    await repo.purgeAll()
+    const repo = new TaskRepository(getPersistenceClient(), scope)
+    const receipts = await repo.purgeWorkCommand()
+    const authority = await taskEventAuthorityHeaders(["task.deleted"], scope)
+    for (const receipt of receipts) dispatchTaskEvent("task.deleted", { id: receipt.id }, undefined, undefined, receipt.eventId, authority, scope).catch(() => {})
     return new Response(JSON.stringify({ purged: true }), {
       status: 200,
       headers: { "content-type": "application/json" },
@@ -271,4 +256,4 @@ export const DELETE: APIRoute = async ({ request, url }) => {
       headers: { "content-type": "application/json" },
     })
   }
-}
+})

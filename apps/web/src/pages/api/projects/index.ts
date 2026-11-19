@@ -1,3 +1,5 @@
+import { boardScopeErrorResponse } from "@lib/board-http"
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
@@ -18,10 +20,10 @@ import { logApiError } from "../../../lib/api-logger"
  * @see docs/decisions/ADR-007-hierarchy-model.md
  */
 
-export const GET: APIRoute = async ({ url }) => {
+export const GET: APIRoute = withBoardScope({ resource: "project", action: "read" }, async ({ url }, scope) => {
   try {
     await ensureSchema()
-    const repo = new HierarchyRepository(getPersistenceClient())
+    const repo = new HierarchyRepository(getPersistenceClient(), scope)
     const filters: { goal_id?: string; area_id?: string; status?: string } = {}
     const goal_id = url.searchParams.get("goal_id")
     const area_id = url.searchParams.get("area_id")
@@ -32,15 +34,17 @@ export const GET: APIRoute = async ({ url }) => {
     const projects = await repo.findAllProjects(filters)
     return apiJson({ projects })
   } catch (error) {
+    const scopeFailure = boardScopeErrorResponse(error)
+    if (scopeFailure) return scopeFailure
     logApiError("projects", "GET error", error)
     return apiError("Failed to list projects")
   }
-}
+})
 
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = withBoardScope({ resource: "project", action: "create" }, async ({ request }, scope) => {
   try {
     await ensureSchema()
-    const repo = new HierarchyRepository(getPersistenceClient())
+    const repo = new HierarchyRepository(getPersistenceClient(), scope)
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
 
     const title = stripHtml(String(body.title ?? "").trim())
@@ -75,7 +79,9 @@ export const POST: APIRoute = async ({ request }) => {
       created_at: Date.now(), updated_at: Date.now(),
     }, 201)
   } catch (error) {
+    const scopeFailure = boardScopeErrorResponse(error)
+    if (scopeFailure) return scopeFailure
     logApiError("projects", "POST error", error)
     return apiError("Failed to create project")
   }
-}
+})

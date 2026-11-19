@@ -32,12 +32,16 @@ from urllib.parse import unquote
 from aiohttp import web
 from homeassistant.components.http import (
     KEY_HASS,
+    KEY_HASS_USER,
     HomeAssistantView,
     require_admin,
 )
 from homeassistant.config_entries import ConfigEntryState
+from homeassistant.core import Context
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.loader import async_get_integration
 
+from .api import human_request_scope
 from .const import DOMAIN
 from .coordinator import MeithealCoordinator
 
@@ -336,7 +340,7 @@ async def handle_mcp_request(
                 "capabilities": {"tools": {"listChanged": False}},
                 "serverInfo": {
                     "name": "meitheal",
-                    "version": "0.3.0",
+                    "version": str((await async_get_integration(coordinator.hass, DOMAIN)).version),
                 },
             },
         }
@@ -496,6 +500,11 @@ async def _execute_tool(
         if unknown_fields:
             raise ValueError(f"{tool_name} received unsupported fields: {', '.join(unknown_fields)}")
 
+    data = await coordinator.async_data_for_context() if tool_name in {
+        "getTask", "getOverdueTasks", "getTodaysTasks", "getTaskSummary", "dailyBriefing",
+        "getCalendarEvents", "getUpcoming", "batchComplete",
+    } else None
+
     if tool_name == "createTask":
         title = _require_str(args, "title", "createTask")
         description = _optional_str(args, "description", "createTask")
@@ -579,9 +588,9 @@ async def _execute_tool(
 
     elif tool_name == "getTask":
         task_id = _require_str(args, "id", "getTask")
-        if not coordinator.data:
+        if not data:
             raise ValueError("No task data available")
-        for t in coordinator.data.tasks:
+        for t in data.tasks:
             if t.id == task_id:
                 return {
                     "id": t.id, "title": t.title, "status": t.status,
@@ -593,20 +602,20 @@ async def _execute_tool(
         raise ValueError(f"Task {task_id} not found")
 
     elif tool_name == "getOverdueTasks":
-        if not coordinator.data:
+        if not data:
             return {"tasks": [], "count": 0}
         overdue = [
             {"id": t.id, "title": t.title, "due_date": t.due_date, "priority": t.priority}
-            for t in coordinator.data.tasks if t.is_overdue
+            for t in data.tasks if t.is_overdue
         ]
         return {"tasks": overdue, "count": len(overdue)}
 
     elif tool_name == "getTodaysTasks":
-        if not coordinator.data:
+        if not data:
             return {"tasks": [], "count": 0}
         today_str = datetime.now().astimezone().strftime("%Y-%m-%d")
         results = []
-        for t in coordinator.data.tasks:
+        for t in data.tasks:
             if t.status == "done":
                 continue
             if t.is_overdue or (t.due_date and t.due_date.startswith(today_str)):
@@ -617,9 +626,8 @@ async def _execute_tool(
         return {"tasks": results, "count": len(results)}
 
     elif tool_name == "getTaskSummary":
-        if not coordinator.data:
+        if not data:
             return {"total": 0, "active": 0, "overdue": 0, "done": 0}
-        data = coordinator.data
         done = sum(1 for t in data.tasks if t.status == "done")
         return {
             "total": data.total_count, "active": data.active_count,
@@ -627,13 +635,12 @@ async def _execute_tool(
         }
 
     elif tool_name == "dailyBriefing":
-        if not coordinator.data:
+        if not data:
             return {"greeting": "Hello", "tasks": {"active": 0, "overdue": 0, "total": 0}}
         now = datetime.now().astimezone()
         today_str = now.strftime("%Y-%m-%d")
         hour = now.hour
         greeting = "Good morning" if hour < 12 else ("Good afternoon" if hour < 17 else "Good evening")
-        data = coordinator.data
         today_tasks = [
             {"title": t.title, "priority": t.priority}
             for t in data.tasks
@@ -658,14 +665,14 @@ async def _execute_tool(
 
     elif tool_name == "getCalendarEvents":
         days_ahead = _parse_days_ahead(args, "getCalendarEvents")
-        if not coordinator.data:
+        if not data:
             return {"events": [], "count": 0}
         now = datetime.now(UTC)
         cutoff = now + timedelta(days=days_ahead)
         today_str = now.strftime("%Y-%m-%d")
         cutoff_str = cutoff.strftime("%Y-%m-%d")
         events = []
-        for t in coordinator.data.tasks:
+        for t in data.tasks:
             sync_state = getattr(t, "calendar_sync_state", None)
             if sync_state not in ("synced", "confirmed"):
                 continue
@@ -679,14 +686,14 @@ async def _execute_tool(
 
     elif tool_name == "getUpcoming":
         days_ahead = _parse_days_ahead(args, "getUpcoming")
-        if not coordinator.data:
+        if not data:
             return {"items": [], "count": 0}
         now = datetime.now(UTC)
         cutoff = now + timedelta(days=days_ahead)
         today_str = now.strftime("%Y-%m-%d")
         cutoff_str = cutoff.strftime("%Y-%m-%d")
         items = []
-        for t in coordinator.data.tasks:
+        for t in data.tasks:
             if t.status == "done" or not t.due_date:
                 continue
             due_str = t.due_date[:10]
@@ -718,19 +725,19 @@ async def _execute_tool(
         titles = args.get("titles", [])
         if not isinstance(titles, list) or not all(isinstance(x, str) for x in titles):
             raise ValueError("batchComplete titles must be a list of strings")
-        if not coordinator.data:
+        if not data:
             raise ValueError("No task data available")
 
         if action == "list_completed":
             done = [
                 {"title": t.title, "updated": t.updated_at}
-                for t in coordinator.data.tasks if t.status == "done"
+                for t in data.tasks if t.status == "done"
             ]
             return {"completed_tasks": done[:10], "total_done": len(done)}
 
         title_set = {x.lower() for x in titles}
         targets = []
-        for t in coordinator.data.tasks:
+        for t in data.tasks:
             if t.status == "done":
                 continue
             if title_set and t.title.lower() not in title_set:
@@ -847,15 +854,26 @@ class MeithealMcpView(HomeAssistantView):
                 status=503,
             )
 
-        response = await handle_mcp_request(
-            coordinator,
-            body,
-            origin_kind="mcp",
-            # Clients percent-encode UTF-8 names (see the agent automation guide); decode once
-            # so build_origin_headers does not encode the "%" a second time.
-            origin_name=unquote(request.headers.get("X-Meitheal-Origin-Name") or "") or "Home Assistant MCP",
-            origin_target=request.headers.get("X-Meitheal-Origin-Target"),
-        )
+        async def execute() -> dict[str, Any] | None:
+            return await handle_mcp_request(
+                coordinator,
+                body,
+                origin_kind="mcp",
+                # Clients percent-encode UTF-8 names (see the agent automation guide); decode once
+                # so build_origin_headers does not encode the "%" a second time.
+                origin_name=unquote(request.headers.get("X-Meitheal-Origin-Name") or "") or "Home Assistant MCP",
+                origin_target=request.headers.get("X-Meitheal-Origin-Target"),
+            )
+        try:
+            if body.get("method") == "tools/call":
+                user = request[KEY_HASS_USER]
+                async with human_request_scope(request.app[KEY_HASS], coordinator.api, Context(user_id=user.id)):
+                    response = await execute()
+            else:
+                response = await execute()
+        except HomeAssistantError:
+            return web.json_response({"jsonrpc": "2.0", "id": safe_id,
+                "error": {"code": -32000, "message": "Current Home Assistant Board access could not be verified"}}, status=403)
         if response is None:
             return web.Response(status=202)
         return web.json_response(response)

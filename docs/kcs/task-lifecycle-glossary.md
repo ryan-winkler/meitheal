@@ -51,7 +51,7 @@ These shared changes require a currently verified Home Assistant administrator, 
 
 Open **Settings → Tasks & Boards → Labels**, then choose **Review unused labels** with a current Home Assistant administrator account. Select labels on the displayed page and choose **Remove selected labels**. The confirmation names every selected label. Changing pages clears the selection.
 
-An unused label definition has no remaining task association or matching saved label name. Cleanup checks tasks in every Area, including deferred and completed work, plus private draft and template selections. It removes selected definitions only. Tasks, drafts and templates are preserved. A label that becomes used or changes after the preview requires another review before removal. Planned labels remain available until deliberately selected.
+An unused label definition has no remaining task association or matching saved label name. Cleanup checks published tasks in every Area of the selected Board, including deferred and completed work, plus templates and your own draft selections. Other people’s private drafts remain untouched and do not affect the preview. If a label in another person’s draft has changed or been removed, their next save or publication asks them to review the retained selection. It removes selected definitions only. Tasks, drafts and templates are preserved. A label that becomes used or changes after the preview requires another review before removal. Planned labels remain available until deliberately selected.
 
 ### Link to another task
 

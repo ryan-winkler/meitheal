@@ -1,3 +1,5 @@
+import { requireLabelBoardManager } from "@lib/label-mutation-access"
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { z } from "zod"
 import { verifyCurrentHAAdministrator } from "@domains/ha/current-admin"
@@ -33,12 +35,10 @@ function sameOrigin(request: Request, ingress: string | undefined): boolean {
 
 export const ALL: APIRoute = () => failure(405, "method", "Review label cleanup with a POST request.", { allow: "POST" })
 
-export const POST: APIRoute = async ({ request, locals }) => {
-  const user = verifiedIngressUser(locals)
-  if (!canManageSystemSettings(request, locals) || locals.agentToken ||
-      (process.env.SUPERVISOR_TOKEN && (!user || !locals.ingressPath)) || !sameOrigin(request, locals.ingressPath)) {
-    return failure(403, "denied", "Open Labels in an administrator browser session.")
-  }
+export const POST: APIRoute = withBoardScope({ resource: "label", action: "manage" }, async ({ request, locals }, scope) => {
+  const denied = await requireLabelBoardManager(request, locals, scope)
+  if (denied) return denied
+  if (!sameOrigin(request, locals.ingressPath)) return failure(403, "denied", "Open Labels in this Board before reviewing cleanup.")
   if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
     return failure(415, "media", "Send label cleanup requests as application/json.")
   }
@@ -56,17 +56,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
     return failure(400, "invalid", "Send a valid UTF-8 label cleanup action.")
   }
   if (!parsed.success) return failure(400, "invalid", "Preview unused labels before selecting up to 25 distinct labels.")
-  if (user) {
-    const current = await verifyCurrentHAAdministrator(user.id, request.signal)
-    if (request.signal.aborted) return failure(499, "cancelled", "The cleanup request was cancelled.")
-    if (current === "unavailable") return failure(503, "unavailable", "Home Assistant could not verify administrator access. Try again.")
-    if (current !== "allowed") return failure(403, "denied", "Only a current Home Assistant administrator can clean up labels.")
-  }
   if (request.signal.aborted) return failure(499, "cancelled", "The cleanup request was cancelled.")
   try {
     await ensureSchema()
     if (request.signal.aborted) return failure(499, "cancelled", "The cleanup request was cancelled.")
-    const repository = new UnusedLabelRepository(getPersistenceClient())
+    const repository = new UnusedLabelRepository(getPersistenceClient(), scope)
     const action = parsed.data
     const result = action.action === "preview" ? await repository.preview(action.afterId) : await repository.remove(action.labels)
     if (!result.ok) {
@@ -78,4 +72,4 @@ export const POST: APIRoute = async ({ request, locals }) => {
   } catch {
     return failure(503, "unavailable", "Could not complete label cleanup. Review the current labels before trying again.")
   }
-}
+})

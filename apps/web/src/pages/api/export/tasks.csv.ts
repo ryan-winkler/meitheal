@@ -1,3 +1,4 @@
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
@@ -6,13 +7,13 @@ import { exportFilename } from "../../../lib/export-filename"
 import { logApiError } from "../../../lib/api-logger"
 import { apiProblem } from "../../../lib/api-response"
 
-export const GET: APIRoute = async ({ locals }) => {
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async ({ locals }, scope) => {
     if (!locals.hassIsAdmin || locals.agentToken) {
         return apiProblem({ status: 403, title: "Admin Required", detail: "Task export requires admin access" })
     }
     try {
         await ensureSchema()
-        const repo = new TaskRepository(getPersistenceClient())
+        const repo = new TaskRepository(getPersistenceClient(), scope)
         const allTasks = await repo.exportAll()
 
         if (allTasks.length === 0) {
@@ -73,4 +74,4 @@ export const GET: APIRoute = async ({ locals }) => {
         logApiError("export-tasks-csv", "Failed to export tasks as CSV", error)
         return new Response(JSON.stringify({ error: "Export failed" }), { status: 500, headers: { "content-type": "application/json" } })
     }
-}
+})

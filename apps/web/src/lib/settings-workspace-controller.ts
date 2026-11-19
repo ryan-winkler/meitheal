@@ -728,7 +728,7 @@ function initPeopleAndNotifications(signal: AbortSignal): void {
   document.getElementById("save-default-assignee")?.addEventListener(
     "click",
     () => {
-      if (!select) return
+      if (!select || select.disabled) return
       fetch("/api/users/default", {
         method: "PUT",
         headers: { "content-type": "application/json" },

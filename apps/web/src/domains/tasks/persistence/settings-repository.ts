@@ -10,6 +10,11 @@
 import type { Client, InStatement, InValue, ResultSet } from "@libsql/client"
 import { runWriteTransaction } from "../../../../scripts/database-client.mjs"
 import { STATUS } from "../../../lib/status-config"
+import type { BoardScope } from "../board-scope"
+import { boardOperationClient } from "./board-operation-client"
+import { taskOwnedBy } from "./board-storage"
+import { scopedTaskRead } from "./board-work-query"
+import { sql } from "./sql-fragment"
 
 export const AI_HANDOFF_SETTING_KEYS = ["ai-provider", "ai-custom-url", "ai-custom-url-approved"]
 
@@ -174,72 +179,64 @@ export class SettingsRepository {
   // ── Reminders ──────────────────────────────────────────────────────
 
   /** Get tasks with pending reminders (reminder_at <= now, not completed) */
-  async getPendingReminders(): Promise<{ reminders: unknown[]; checked_at: string }> {
+  async getPendingReminders(scope: BoardScope): Promise<{ reminders: unknown[]; checked_at: string }> {
     const now = new Date().toISOString()
-    const result = await this.client.execute({
-      sql: `SELECT id, title, due_date, reminder_at, priority, status
-            FROM tasks
-            WHERE task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND reminder_at IS NOT NULL
-              AND reminder_at <= ?
-              AND status NOT IN (?)
+    const client = boardOperationClient(this.client as Client, scope, { resource: "task", action: "read" })
+    const result = await client.execute(scopedTaskRead(scope, sql`SELECT id, title, due_date, reminder_at, priority, status
+            FROM scoped_tasks
+            WHERE reminder_at IS NOT NULL
+              AND reminder_at <= ${now}
+              AND status NOT IN (${STATUS.COMPLETE})
             ORDER BY reminder_at ASC
-            LIMIT 50`,
-      args: [now, STATUS.COMPLETE],
-    })
+            LIMIT 50`))
     return { reminders: result.rows, checked_at: now }
   }
 
   /** Snooze a reminder to a future time */
-  async snoozeReminder(taskId: string, snoozeTime: string): Promise<void> {
-    await this.client.execute({
-      sql: "UPDATE tasks SET reminder_at = ?, updated_at = ? WHERE id = ? AND task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')",
-      args: [snoozeTime, Date.now(), taskId],
-    })
+  async snoozeReminder(scope: BoardScope, taskId: string, snoozeTime: string): Promise<void> {
+    const client = boardOperationClient(this.client as Client, scope, { resource: "task", action: "edit" }, [taskId])
+    await client.execute(sql`UPDATE tasks SET reminder_at = ${snoozeTime}, updated_at = ${Date.now()}
+      WHERE id = ${taskId} AND ${taskOwnedBy(scope)}`)
   }
 
   /** Dismiss a reminder (clear reminder_at) */
-  async dismissReminder(taskId: string): Promise<void> {
-    await this.client.execute({
-      sql: "UPDATE tasks SET reminder_at = NULL, updated_at = ? WHERE id = ? AND task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')",
-      args: [Date.now(), taskId],
-    })
+  async dismissReminder(scope: BoardScope, taskId: string): Promise<void> {
+    const client = boardOperationClient(this.client as Client, scope, { resource: "task", action: "edit" }, [taskId])
+    await client.execute(sql`UPDATE tasks SET reminder_at = NULL, updated_at = ${Date.now()}
+      WHERE id = ${taskId} AND ${taskOwnedBy(scope)}`)
   }
 
   // ── Saved Filters ──────────────────────────────────────────────────
 
   /** List all saved filters ordered by position */
-  async listFilters() {
-    const result = await this.client.execute(
-      "SELECT * FROM saved_filters ORDER BY position ASC, created_at ASC"
-    )
+  async listFilters(scope: BoardScope) {
+    const client = boardOperationClient(this.client as Client, scope, { resource: "task", action: "read" })
+    const result = await client.execute(sql`SELECT id, name, query_json, icon, position, created_at, updated_at
+      FROM saved_filters WHERE board_id = ${scope.boardId} ORDER BY position ASC, created_at ASC`)
     return result.rows
   }
 
   /** Get next available filter position */
-  async getNextFilterPosition(): Promise<number> {
-    const result = await this.client.execute(
-      "SELECT COALESCE(MAX(position), -1) + 1 AS next_pos FROM saved_filters"
-    )
+  async getNextFilterPosition(scope: BoardScope): Promise<number> {
+    const client = boardOperationClient(this.client as Client, scope, { resource: "task", action: "read" })
+    const result = await client.execute(sql`SELECT COALESCE(MAX(position), -1) + 1 AS next_pos
+      FROM saved_filters WHERE board_id = ${scope.boardId}`)
     return Number((result.rows[0] as Record<string, unknown>)?.next_pos ?? 0)
   }
 
   /** Create a saved filter */
-  async createFilter(data: {
+  async createFilter(scope: BoardScope, data: {
     id: string; name: string; queryJson: string; icon: string; position: number
   }): Promise<void> {
     const now = Date.now()
-    await this.client.execute({
-      sql: `INSERT INTO saved_filters (id, name, query_json, icon, position, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      args: [data.id, data.name, data.queryJson, data.icon, data.position, now, now],
-    })
+    const client = boardOperationClient(this.client as Client, scope, { resource: "task", action: "edit" })
+    await client.execute(sql`INSERT INTO saved_filters (id, board_id, name, query_json, icon, position, created_at, updated_at)
+      VALUES (${data.id}, ${scope.boardId}, ${data.name}, ${data.queryJson}, ${data.icon}, ${data.position}, ${now}, ${now})`)
   }
 
   /** Delete a saved filter by ID */
-  async deleteFilter(id: string): Promise<void> {
-    await this.client.execute({
-      sql: "DELETE FROM saved_filters WHERE id = ?",
-      args: [id],
-    })
+  async deleteFilter(scope: BoardScope, id: string): Promise<void> {
+    const client = boardOperationClient(this.client as Client, scope, { resource: "task", action: "edit" })
+    await client.execute(sql`DELETE FROM saved_filters WHERE id = ${id} AND board_id = ${scope.boardId}`)
   }
 }

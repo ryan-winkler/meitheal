@@ -1,3 +1,4 @@
+import { currentBoardScope } from "../helpers/current-board-scope"
 /**
  * Task-Project Association Tests
  *
@@ -11,7 +12,26 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { test, expect } from "@playwright/test"
+import { test as base, expect } from "@playwright/test"
+
+const test = base.extend({
+  request: async ({ request, playwright, baseURL }, use) => {
+    if (process.env.MEITHEAL_TEST_BROWSER !== "1") {
+      await use(request)
+      return
+    }
+    if (!baseURL) throw new Error("Missing disposable fixture origin")
+    const board = await request.get("/api/boards")
+    expect(board.ok()).toBe(true)
+    const session = board.headers()["x-meitheal-board-session"]
+    if (!session) throw new Error("Fixture operator did not receive a Board session")
+    const scoped = await playwright.request.newContext({ baseURL, extraHTTPHeaders: {
+      origin: baseURL, "x-meitheal-board-id": "household", "x-meitheal-board-session": session,
+    } })
+    try { await use(scoped) }
+    finally { await scoped.dispose() }
+  },
+})
 
 function createTestDb() {
   const dbUrl = `file:${join(tmpdir(), `task-project-${Date.now()}-${Math.random().toString(36).slice(2)}.db`)}`
@@ -30,7 +50,8 @@ async function getRepos() {
   const { TaskRepository } = await import("../../apps/web/src/domains/tasks/persistence/task-repository")
   const { HierarchyRepository } = await import("../../apps/web/src/domains/tasks/persistence/hierarchy-repository")
   const client = getPersistenceClient()
-  return { client, taskRepo: new TaskRepository(client), hierRepo: new HierarchyRepository(client) }
+  const scope = await currentBoardScope(client)
+  return { client, taskRepo: new TaskRepository(client, scope), hierRepo: new HierarchyRepository(client, scope) }
 }
 
 test("Household Project groups keep visible Areas and exclude unavailable Projects", async () => {
@@ -61,7 +82,7 @@ test("Household Project groups keep visible Areas and exclude unavailable Projec
 
     const groups = await hierRepo.findProjectGroups()
     expect(groups.filter(group => group.id.startsWith("catalog-"))).toEqual([
-      { id: "catalog-inherited", title: "Inherited Area", area_id: "utility" },
+      { id: "catalog-inherited", title: "Inherited Area", area_id: null },
       { id: "catalog-direct", title: "Direct Area", area_id: "workshop" },
       { id: "catalog-hidden-goal", title: "Moved Goal", area_id: null },
     ])
@@ -92,7 +113,7 @@ test("createTask persists project_id and findByProjectId returns it", async () =
     labels: "[]",
     framework_payload: "{}",
     parent_id: null,
-    area_id: "default",
+    area_id: null,
     custom_fields: "{}",
     project_id: "proj-test-1",
     start_date: null,
@@ -157,7 +178,10 @@ for (const { label, rule, nextDueDate } of [
     expect(project.status()).toBe(201)
     const { id: projectId } = await project.json()
     const title = `Recurring project checklist (${label})`
-    const assignment = { area_id: areaId, assigned_to: "custom_recurring_fixture" }
+    const user = await request.post("/api/users/custom", { data: { name: `Recurring fixture ${label}`, kind: "human" } })
+    expect(user.status()).toBe(201)
+    const { id: assigneeId } = await user.json()
+    const assignment = { area_id: areaId, assigned_to: assigneeId }
     const rawChecklist = JSON.stringify([
       { id: "first-step", text: "Check supplies", done: true },
       "Keep the receipt",
@@ -242,7 +266,7 @@ test("recurrence clones an empty checklist from unusable historical values", asy
   for (const [index, value] of sources.entries()) {
     const id = `historical-recurrence-${index}`
     await client.execute({
-      sql: "INSERT INTO tasks (id, title, checklists, idempotency_key, request_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, 1)",
+      sql: "INSERT INTO tasks (id, title, checklists, idempotency_key, request_id, created_at, updated_at, recurrence_rule) VALUES (?, ?, ?, ?, ?, 1, 1, 'FREQ=DAILY')",
       args: [id, "Historical recurrence", value ?? "[]", id, id],
     })
     const source = await taskRepo.getRecurrenceData(id)
@@ -263,7 +287,7 @@ test("task detail reassigns projects, rejects a deleted destination, and preserv
   const sourceId = (await source.json()).id as string
   const destinationId = (await destination.json()).id as string
   const created = await request.post("/api/tasks", {
-    data: { title: "Reassign this task", project_id: sourceId, status: "active", area_id: "default" },
+    data: { title: "Reassign this task", project_id: sourceId, status: "active", area_id: null },
   })
   expect(created.status()).toBe(201)
   const task = await created.json()
@@ -286,12 +310,18 @@ test("task detail reassigns projects, rejects a deleted destination, and preserv
   await openTask()
   await expect(project).toHaveValue(sourceId)
 
-  const projectUpdate = () => page.waitForResponse(response =>
-    response.request().method() === "PUT" && new URL(response.url()).pathname === taskPath)
+  const projectUpdate = () => page.waitForResponse(response => {
+    const operation = response.request()
+    const pathname = new URL(response.url()).pathname
+    return ["PATCH", "PUT"].includes(operation.method()) &&
+      (pathname === taskPath || pathname === `/api/tasks/${task.ticket_key}`) &&
+      operation.postDataJSON()?.project_id !== undefined
+  })
   const moved = projectUpdate()
   await project.selectOption(destinationId)
-  expect(await (await moved).json()).toMatchObject({ ...properties, project_id: destinationId })
+  expect((await moved).status()).toBe(200)
   await expect(project).toBeEnabled()
+  expect(await (await request.get(taskPath)).json()).toMatchObject({ ...properties, project_id: destinationId })
   await reloadTask()
   await expect(project).toHaveValue(destinationId)
 
@@ -315,7 +345,7 @@ test("task detail reassigns projects, rejects a deleted destination, and preserv
   await project.selectOption("")
   const detached = await detach
   expect(detached.status()).toBe(200)
-  expect(await detached.json()).toMatchObject({ ...properties, project_id: null })
+  expect(await (await request.get(taskPath)).json()).toMatchObject({ ...properties, project_id: null })
   await reloadTask()
   await expect(project).toHaveValue("")
 

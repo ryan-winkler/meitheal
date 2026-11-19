@@ -1,4 +1,6 @@
 ---
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+
 /**
  * SidebarHierarchyTree — Area → Project sidebar navigation
  *
@@ -31,10 +33,15 @@ import { EMOJI_CATEGORIES } from "../../lib/emoji-picker-data"
 import { DEFAULT_ACCENT, DEFAULT_ICON, HOME_ICON, COLOR_SWATCHES } from "../../lib/design-tokens"
 import { mapEntityEmojiToTabler } from "../../lib/tabler-svg"
 import type { IconName } from "../../generated/icon-registry"
+const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
+if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
+const workScope = workScopeResult.scope
+
 
 export interface Props {
   locale: Locale
   label?: string
+  boardId?: string
   boardName?: string
 }
 const { locale, label, boardName } = Astro.props
@@ -45,7 +52,7 @@ const goalAreas = new Map<string, string>()
 
 try {
   await ensureSchema()
-  const repo = new HierarchyRepository(getPersistenceClient())
+  const repo = new HierarchyRepository(getPersistenceClient(), workScope)
   const [allAreas, allProjects, goals] = await Promise.all([
     repo.findAllAreas(), available("projects") ? repo.findAllProjects() : [], available("goals") && available("projects") ? repo.findAllGoals() : [],
   ])
@@ -71,24 +78,8 @@ for (const p of projects) {
   }
 }
 
-// Synthesize "Home" area if no default exists
-let defaultArea = areas.find((a) => a.id === "default")
-if (!defaultArea && ungroupedProjects.length > 0) {
-  defaultArea = { id: "default", name: "Home", icon: HOME_ICON, color: DEFAULT_ACCENT, position: -1 }
-  areas = [defaultArea, ...areas]
-}
-if (defaultArea) {
-  defaultArea.name = "Home"
-  defaultArea.icon = HOME_ICON
-  if (ungroupedProjects.length > 0) {
-    const existing = projectsByArea.get("default") ?? []
-    projectsByArea.set("default", [...existing, ...ungroupedProjects])
-  }
-}
-
-const rawPath = Astro.url.pathname
-const currentPath = rawPath.replace(/\/$/, "") || "/"
-const hasContent = projects.length > 0 || areas.length > 0
+const currentPath = Astro.url.pathname
+const hasContent = areas.length > 0 || projects.length > 0
 const visibleAreas = areas
 const areasLabel = label || t("sidebar.areas_header", locale) || "Areas"
 
@@ -107,7 +98,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
     <details id="sidebar-areas-group" open>
     <summary class="stree__header" id="project-nav-group-toggle" aria-label={boardName ? `${areasLabel} in ${boardName}` : areasLabel} title={t("sidebar.collapse_navigation", locale, { label: areasLabel })} data-collapse-title={t("sidebar.collapse_navigation", locale, { label: areasLabel })} data-expand-title={t("sidebar.expand_navigation", locale, { label: areasLabel })}>
       {boardName ? <>
-        <a class="nav-link sidebar-household-link" href="/boards/household" aria-current={currentPath === "/boards/household" ? "page" : undefined}>{boardName}</a>
+        <a class="nav-link sidebar-household-link" href={`/boards/${encodeURIComponent(workScope.boardId)}`} aria-current={currentPath === `/boards/${workScope.boardId}` ? "page" : undefined}>{boardName}</a>
         <span class="stree__group-chevron" aria-hidden="true"><Icon name="chevron-down" size={12} /></span>
       </> : <span class="stree__group-heading"><span class="stree__group-chevron" aria-hidden="true"><Icon name="chevron-down" size={12} /></span><span class="stree__label">{areasLabel}</span></span>}
     </summary>
@@ -1538,7 +1529,7 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
       const manageLink = areaMenuDropdown.querySelector<HTMLAnchorElement>("[data-action='manage']")
       if (manageLink) manageLink.href = safeIngressHref(`/areas/${encodeURIComponent(activeEntityId)}#settings`)
       const deletion = areaMenuDropdown.querySelector<HTMLButtonElement>("[data-action='delete']")
-      if (deletion) deletion.style.display = activeEntityId === "default" ? "none" : ""
+      if (deletion) deletion.style.display = ""
       ctrl.show(areaMenuDropdown, btn)
       if (focusManage) manageLink?.focus()
     }

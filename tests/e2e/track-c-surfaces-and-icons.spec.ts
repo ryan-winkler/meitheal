@@ -1,3 +1,4 @@
+import { integrationFixture } from "../helpers/ordinary-integration-fixture"
 import { createRequire } from "node:module"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -76,7 +77,9 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
 
     try {
       expect(await getHAConnection()).not.toBeNull()
-      startCalendarSync({
+      const approved = await integrationFixture({ integration: "calendar", sourceId: "calendar.household", purpose: "calendar.sync" })
+      await startCalendarSync({
+        bindingId: approved.binding.id, generation: approved.binding.generation,
         entityId: "calendar.household",
         syncEnabled: true,
         syncMode: "bidirectional",
@@ -91,12 +94,12 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
         args: [Date.now(), Date.now()],
       })
 
+      await db.execute({ sql: "UPDATE tasks SET description=?, checklists=? WHERE id='task-cal-1'", args: ["Check glycol loop pressure\n\nRecord manifold reading", JSON.stringify([{ text: "Inspect strainer", done: true }, { text: "Flush air separator", done: false }])] })
       const pushed = await pushTaskToCalendar(
-        "task-cal-1",
+        approved.context, "task-cal-1",
         "Service heat pump",
         "2026-11-20",
         "Check glycol loop pressure\n\nRecord manifold reading",
-        "calendar.household",
         {
           ticketKey: "MTH-42",
           status: "active",
@@ -130,7 +133,7 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
           end: "2026-11-22",
         },
       ]
-      const loopCounts = await syncFromHA("calendar.household")
+      const loopCounts = await syncFromHA(approved.binding.id)
       expect(loopCounts.created).toBe(0)
       expect(loopCounts.updated).toBe(0)
 
@@ -144,7 +147,7 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
           end: "2026-11-22",
         },
       ]
-      const counts = await syncFromHA("calendar.household")
+      const counts = await syncFromHA(approved.binding.id)
       expect(counts.updated).toBe(1)
 
       const updated = await db.execute({

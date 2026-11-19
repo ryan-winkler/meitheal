@@ -1,4 +1,6 @@
 ---
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+
 import Layout from "../layouts/Layout.astro"
 import Icon from "../components/ui/Icon.astro"
 import { AreaRepository, type AreaRow } from "@domains/tasks/persistence/area-repository"
@@ -8,6 +10,10 @@ import { formatTicketKey } from "@lib/ticket-key"
 import { getStatusDef } from "@lib/status-config"
 import { t } from "../i18n/translations"
 import "../styles/work-queue.css"
+const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
+if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
+const workScope = workScopeResult.scope
+
 
 Astro.response.headers.set("cache-control", "no-store")
 const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
@@ -19,8 +25,8 @@ try {
   await ensureSchema()
   const client = getPersistenceClient()
   const [result, availableAreas] = await Promise.all([
-    new TaskRepository(client).findDeferredPage(/^[1-9]\d*$/.test(rawPage) ? Number(rawPage) : 1, area),
-    new AreaRepository(client).findAll(),
+    new TaskRepository(client, workScope).findDeferredPage(/^[1-9]\d*$/.test(rawPage) ? Number(rawPage) : 1, area),
+    new AreaRepository(client, workScope).findAll(),
   ])
   queue = result
   areas = availableAreas

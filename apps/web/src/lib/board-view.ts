@@ -1,6 +1,8 @@
+import { scopeBoardAccess, type BoardScope, type VerifiedPrincipal } from "@domains/tasks/board-scope"
+import { currentBoardGrantRevision } from "@domains/tasks/persistence/board-grant-fence"
 import { createHash } from "node:crypto"
 import { BoardIntakeRepository } from "@domains/tasks/persistence/board-intake-repository"
-import { NamedBoardRepository, readHouseholdBoardState, type BoardActor } from "@domains/tasks/persistence/named-board-repository"
+import { NamedBoardRepository, type BoardActor } from "@domains/tasks/persistence/named-board-repository"
 import { NamedBoardTaskRepository } from "@domains/tasks/persistence/named-board-task-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import type { HomeAssistantAreaFilter } from "./home-assistant-area-access"
@@ -32,22 +34,25 @@ export function boardViewResponse(value: unknown, actorId: string, payload = val
   return response
 }
 
-export async function readBoardDirectory(actor: BoardActor, householdAdmin = false) {
+export async function readBoardDirectory(actor: VerifiedPrincipal) {
   await ensureSchema()
   const client = getPersistenceClient()
   const repository = new NamedBoardRepository(client)
-  const [boards, destinations, deletedBoards, householdState] = await Promise.all([
+  const [boards, destinations, deletedBoards, authorityRevision] = await Promise.all([
     repository.findDirectory(actor),
-    new BoardIntakeRepository(client).findDestinations(actor),
+    new BoardIntakeRepository(client, actor).findDestinations(actor),
     repository.findDeleted(actor),
-    readHouseholdBoardState(client),
+    currentBoardGrantRevision(client),
   ])
-  const { rows: [household] } = await client.execute("SELECT revision FROM task_boards WHERE id = 'household'")
-  return { boards, destinations, household: { state: householdState, revision: Number(household?.revision) },
-    deletedBoards: [...(householdAdmin && householdState === "retired" ? [{ id: "household", name: "Household", revision: Number(household?.revision) }] : []), ...deletedBoards] }
+  return { boards, destinations, deletedBoards, authorityRevision }
+
 }
 
-export async function readBoardView(actor: BoardActor, id: string, offset: number, selection?: BoardWorkspaceSelection, location?: HomeAssistantAreaFilter, kanban?: { params: URLSearchParams; timezone?: string }) {
+export async function readBoardView(scope: BoardScope, actor: BoardActor, id: string, offset: number, selection?: BoardWorkspaceSelection, location?: HomeAssistantAreaFilter, kanban?: { params: URLSearchParams; timezone?: string }) {
   await ensureSchema()
-  return new NamedBoardTaskRepository(getPersistenceClient()).view(actor, id, offset, selection, location, kanban)
+  return new NamedBoardTaskRepository(getPersistenceClient(), scope).view(actor, id, offset, selection, location, kanban)
+}
+
+export function boardScopeAuthorityKey(scope: BoardScope): string {
+  return boardViewKey({ epoch: scope.authorityRevision, board: scopeBoardAccess(scope), capabilities: scope.capabilities }, scope.principal.id)
 }

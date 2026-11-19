@@ -1,3 +1,4 @@
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { ensureSchema } from "@domains/tasks"
 import {
@@ -39,7 +40,7 @@ function parseTaskFields(value: string | null): TaskSearchField[] {
   return fields.length > 0 ? fields : DEFAULT_FIELDS
 }
 
-export const GET: APIRoute = async (context) => {
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async (context, scope) => {
   const { url } = context
   const rawLimit = url.searchParams.get("limit")
   const parsedLimit = Number(rawLimit ?? 8)
@@ -78,7 +79,7 @@ export const GET: APIRoute = async (context) => {
     if (assignedTo) options.assignedTo = assignedTo
     if (parsedPriority != null) options.priority = parsedPriority
 
-    const result = await searchMeithealCatalog(options, await organizationLabelsFor(context))
+    const result = await searchMeithealCatalog(options, scope, await organizationLabelsFor(context))
     const response = apiJson(result)
     response.headers.set("cache-control", "private, no-store")
     return response
@@ -86,4 +87,4 @@ export const GET: APIRoute = async (context) => {
     logApiError("search", "GET error", error)
     return apiError("Failed to search Meitheal", 500)
   }
-}
+})

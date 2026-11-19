@@ -8,6 +8,7 @@ import { exportFilename } from "../../../lib/export-filename"
 import { logApiError } from "../../../lib/api-logger"
 import { apiProblem } from "../../../lib/api-response"
 import { isSecretSetting } from "../../../lib/settings-security"
+import { isPrivateWorkSetting } from "@domains/tasks/integration-destinations"
 
 export const GET: APIRoute = async ({ request, locals }) => {
     if (!locals.hassIsAdmin || locals.agentToken) {
@@ -25,7 +26,8 @@ export const GET: APIRoute = async ({ request, locals }) => {
         // Credentials and household AI sharing approval are local to the installation.
         const settingsObject: Record<string, unknown> = Object.create(null)
         for (const row of rows) {
-            if (row.key && row.key !== "ai-custom-url-approved" && row.value !== null && !isSecretSetting(row.key as string)) {
+            if (row.key && row.key !== "ai-custom-url-approved" && row.value !== null &&
+                !isSecretSetting(row.key as string) && !isPrivateWorkSetting(String(row.key))) {
                 try { settingsObject[row.key as string] = JSON.parse(String(row.value)) }
                 catch { settingsObject[row.key as string] = row.value }
             }

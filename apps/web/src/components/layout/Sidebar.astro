@@ -4,9 +4,9 @@ import "../../styles/_sidebar-reorder.css"
 import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
 import Icon from "../ui/Icon.astro";
-import SidebarHierarchyTree from "./SidebarHierarchyTree.astro"
 import SidebarNavList from "./SidebarNavList.astro";
-import { householdBoardIsActive } from "@domains/tasks/persistence/named-board-repository"
+import { currentBoardContext } from "@lib/named-board-request"
+import { resolveBoardPageScope } from "@lib/board-http"
 import TaskCreationMenu from "./TaskCreationMenu.astro";
 import NavOverflowMore from "./NavOverflowMore.astro";
 import SidebarFooter from "./SidebarFooter.astro";
@@ -21,7 +21,8 @@ import { boardNavigationLinks, readBoardNavigationContext } from "@lib/board-wor
 import { getFeatureFlags } from "../../lib/feature-flags";
 
 const currentPath = Astro.url.pathname;
-const boardContext = readBoardNavigationContext(Astro.url)
+const selectedScope = await resolveBoardPageScope(Astro).catch(() => null)
+const boardContext = readBoardNavigationContext(Astro.url) ?? (selectedScope?.ok ? { boardId: selectedScope.scope.boardId } : undefined)
 const boardLinks = boardContext ? boardNavigationLinks(boardContext) : undefined
 export interface Props {
   locale?: Locale;
@@ -48,7 +49,7 @@ const NAV_ITEMS: Record<string, NavItemDef> = {
   today: { href: "/today", i18nKey: "nav.today", icon: "today" },
   upcoming: { href: "/upcoming", i18nKey: "nav.upcoming", icon: "upcoming" },
   tasks: {
-    href: "/boards/household",
+    href: "/tasks",
     i18nKey: "nav.tasks",
     icon: "kanban",
   },
@@ -107,7 +108,6 @@ interface SidebarConfig {
 
 
 let showNamedBoardShortcuts = false
-let householdActive = true
 let sidebarConfig: SidebarConfig = {
   dashboard: true,
   today: true,
@@ -126,9 +126,9 @@ const hierarchyEnabled = ff.hierarchy !== false && ff.organizer !== false;
 
 /** Fetch streak data for sidebar badge */
 let currentStreak = 0;
-if (gamificationEnabled) {
+if (gamificationEnabled && selectedScope?.ok) {
   try {
-    const stats = await getDailyProgress(Astro.locals);
+    const stats = await getDailyProgress(selectedScope.scope);
     currentStreak = stats.currentStreak;
   } catch {
     /* gamification schema may not exist yet */
@@ -138,11 +138,7 @@ if (gamificationEnabled) {
 try {
   await ensureSchema();
   const c = getPersistenceClient();
-  householdActive = await householdBoardIsActive(c)
-  if (hierarchyEnabled && verifiedIngressUser(Astro.locals)) {
-    const epoch = await c.execute("SELECT 1 FROM board_access_epoch LIMIT 1")
-    showNamedBoardShortcuts = epoch.rows.length > 0
-  }
+  showNamedBoardShortcuts = hierarchyEnabled && Boolean(await currentBoardContext(Astro))
   const res = await c.execute(
     "SELECT value FROM settings WHERE key = 'sidebar_config'",
   );
@@ -232,12 +228,10 @@ const navItems = order
 const tasksIndex = navItems.findIndex(item => item.key === "tasks")
 const pinIndex = tasksIndex >= 0 ? tasksIndex + 1 : navItems.findIndex(item => item.key === "today") + 1
 navItems.splice(pinIndex, 0, {
-  key: "system-pinned", href: "/pinned", defaultHref: "/pinned", label: t("pins.title", locale), i18nKey: "pins.title",
+  key: "system-pinned", href: boardLinks?.pinned ?? "/pinned", defaultHref: "/pinned", label: t("pins.title", locale), i18nKey: "pins.title",
   icon: "pin", isActive: currentPath === "/pinned", matchExact: true,
 })
 
-const householdGroups = householdActive && hierarchyEnabled && sidebarConfig.areas !== false && ff.groups !== false
-const householdGroupLabel = resolveLabel("group", true, labels.areas)
 const sidebarDefaultOrder = navItems.map(item => item.key)
 
 ---
@@ -330,11 +324,7 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
           data-sidebar-boards={showNamedBoardShortcuts ? "" : undefined} data-board-group-label={resolveLabel("group", true)}
           data-board-project-label={resolveLabel("project", true)} data-projects-enabled={String(ff.projects !== false)}
           data-areas-enabled={String(ff.groups !== false)} aria-label={resolveLabel("board", true)}>
-          {householdActive && <li class="sidebar-household" data-sidebar-household>
-            {householdGroups ? <div id="sidebar-hierarchy-panel"><SidebarHierarchyTree locale={locale} label={householdGroupLabel} boardName="Household" /></div> : <div class="sidebar-board-row">
-              <a class="nav-link sidebar-household-link" href="/boards/household" aria-current={currentPath === "/boards/household" ? "page" : undefined}>Household</a>
-            </div>}
-          </li>}
+
 
         </ul>
       </SidebarNavList>

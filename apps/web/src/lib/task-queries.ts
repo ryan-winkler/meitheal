@@ -1,3 +1,7 @@
+import type { BoardScope } from "../domains/tasks/board-scope"
+import { boardOperationClient } from "../domains/tasks/persistence/board-operation-client"
+import { scopedTaskRead } from "../domains/tasks/persistence/board-work-query"
+import { sourceSql } from "../domains/tasks/persistence/sql-fragment"
 /**
  * Shared Task Data Loading — Server-side utilities for task view pages
  *
@@ -33,7 +37,7 @@ export interface TaskViewItem {
   labels: string[];
   rice: number | null;
   calendar_sync_state: string | null;
-  area_id: string;
+  area_id: string | null;
   project_id: string | null
   custom_fields: Record<string, unknown>;
   start_date: string | null;
@@ -45,6 +49,7 @@ export interface TaskViewItem {
   task_kind: string | null;
   parent_id: string | null;
   ticket_number: number | null;
+  ticket_key: string | null;
   assigned_to: string | null;
   checklists: string | null;
   checklist_total?: number | undefined;
@@ -133,7 +138,7 @@ const TASK_VIEW_COLUMNS = `
   id, title, description, status, priority, due_date, labels,
   framework_payload, calendar_sync_state, area_id, project_id, custom_fields,
   start_date, end_date, progress, color, is_favorite, task_type, task_kind,
-  parent_id, ticket_number, assigned_to, checklists, created_at, updated_at, deferred_at,
+  parent_id, ticket_number, ticket_ref AS ticket_key, assigned_to, checklists, created_at, updated_at, deferred_at,
   urgency, importance, eisenhower_override,
   effort_minutes, effort_type, blocked_by
 `;
@@ -143,7 +148,7 @@ const TASK_VIEW_COLUMNS = `
  * Supports optional SQL pushdown predicates and `slim: true` checklist scalar projection
  * while preserving global unfiltered header badge counts.
  */
-export async function getTasksForView(options: TaskViewOptions = {}): Promise<TaskViewResult> {
+export async function getTasksForView(options: TaskViewOptions = {}, scope: BoardScope): Promise<TaskViewResult> {
   const {
     requireAvailable = false,
     statuses,
@@ -165,7 +170,7 @@ export async function getTasksForView(options: TaskViewOptions = {}): Promise<Ta
 
   try {
     await ensureSchema();
-    const client = getPersistenceClient();
+    const client = boardOperationClient(getPersistenceClient(), scope, { resource: "task", action: "read" });
 
     const selectArgs: InValue[] = [];
     const previewChars =
@@ -187,7 +192,7 @@ export async function getTasksForView(options: TaskViewOptions = {}): Promise<Ta
         status, priority, due_date, labels,
         framework_payload, calendar_sync_state, area_id, project_id, custom_fields,
         start_date, end_date, progress, color, is_favorite, task_type, task_kind,
-        parent_id, ticket_number, assigned_to,
+        parent_id, ticket_number, ticket_ref AS ticket_key, assigned_to,
         NULL AS checklists,
         CASE WHEN json_valid(checklists) THEN json_array_length(checklists) ELSE 0 END AS checklist_total,
         (SELECT COUNT(*) FROM json_each(CASE WHEN json_valid(tasks.checklists) THEN tasks.checklists ELSE '[]' END) WHERE json_extract(value, '$.done') = 1) AS checklist_done,
@@ -203,13 +208,13 @@ export async function getTasksForView(options: TaskViewOptions = {}): Promise<Ta
         status, priority, due_date, labels,
         framework_payload, calendar_sync_state, area_id, project_id, custom_fields,
         start_date, end_date, progress, color, is_favorite, task_type, task_kind,
-        parent_id, ticket_number, assigned_to, checklists, created_at, updated_at, deferred_at,
+        parent_id, ticket_number, ticket_ref AS ticket_key, assigned_to, checklists, created_at, updated_at, deferred_at,
         urgency, importance, eisenhower_override,
         effort_minutes, effort_type, blocked_by
       `;
     }
 
-    const whereClauses = ["task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')"];
+    const whereClauses = ["1"];
     if (Array.isArray(statuses) && statuses.length > 0) {
       whereClauses.push(`status IN (${statuses.map(() => "?").join(", ")})`);
       selectArgs.push(...statuses);
@@ -243,10 +248,7 @@ export async function getTasksForView(options: TaskViewOptions = {}): Promise<Ta
       selectArgs.push(Math.floor(limit));
     }
 
-    const result = await client.execute({
-      sql: `SELECT ${columnsSql} FROM tasks${whereSql} ORDER BY created_at DESC${limitSql}`,
-      args: selectArgs,
-    });
+    const result = await client.execute(scopedTaskRead(scope, sourceSql(`SELECT ${columnsSql} FROM scoped_tasks AS tasks${whereSql} ORDER BY created_at DESC${limitSql}`, selectArgs)));
     const rows = result.rows as Record<string, unknown>[];
 
     // Load custom field definitions
@@ -268,29 +270,23 @@ export async function getTasksForView(options: TaskViewOptions = {}): Promise<Ta
       const resolvedToday = calendarToday(timezone);
       const upperBound = shiftCalendarDay(resolvedToday, 2);
       const [countRes, overdueRes] = await Promise.all([
-        client.execute({
-          sql: `
+        client.execute(scopedTaskRead(scope, sourceSql(`
             SELECT COUNT(*) AS total,
                    COUNT(*) FILTER (WHERE status = 'complete') AS complete,
                    COUNT(*) FILTER (WHERE status != 'complete' AND deferred_at IS NULL) AS open,
                    COUNT(*) FILTER (WHERE status = 'active' AND deferred_at IS NULL) AS active,
                    COUNT(*) FILTER (WHERE status != 'complete' AND status != 'active' AND deferred_at IS NULL) AS pending
-            FROM tasks WHERE task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')
-          `,
-          args: [],
-        }),
-        client.execute({
-          sql: `
+            FROM scoped_tasks AS tasks WHERE 1
+          `, []))),
+        client.execute(scopedTaskRead(scope, sourceSql(`
             SELECT due_date
-            FROM tasks
-            WHERE task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND status != 'complete'
+            FROM scoped_tasks AS tasks
+            WHERE 1 AND status != 'complete'
               AND deferred_at IS NULL
               AND due_date IS NOT NULL
               AND due_date != ''
               AND substr(due_date, 1, 10) < ?
-          `,
-          args: [upperBound],
-        }),
+          `, [upperBound]))),
       ]);
       const cr = (countRes.rows[0] ?? {}) as Record<string, unknown>;
       counts.total = Number(cr.total ?? 0);
@@ -347,7 +343,7 @@ function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "
     labels: safeParseLabels(row.labels),
     rice,
     calendar_sync_state: row.calendar_sync_state ? String(row.calendar_sync_state) : null,
-    area_id: String(row.area_id ?? "default"),
+    area_id: typeof row.area_id === "string" ? row.area_id : null,
     project_id: row.project_id == null ? null : String(row.project_id),
     custom_fields: safeParseJson<Record<string, unknown>>(row.custom_fields, {}),
     start_date: row.start_date ? String(row.start_date) : null,
@@ -358,6 +354,7 @@ function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "
     task_type: String(row.task_type ?? "task"),
     task_kind: row.task_kind ? String(row.task_kind) : null,
     parent_id: row.parent_id ? String(row.parent_id) : null,
+    ticket_key: typeof row.ticket_key === "string" ? row.ticket_key : null,
     ticket_number: row.ticket_number ? Number(row.ticket_number) : null,
     assigned_to: row.assigned_to ? String(row.assigned_to) : null,
     checklists: slim ? null : (row.checklists ? String(row.checklists) : null),
@@ -385,14 +382,11 @@ function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "
   return item;
 }
 
-function completedTodayQuery(filter: ReturnType<typeof todayCompletionFilter>) {
-  return {
-    sql: `SELECT id, title FROM tasks WHERE ${filter.sql}
+function completedTodayQuery(scope: BoardScope, filter: ReturnType<typeof todayCompletionFilter>) {
+  return scopedTaskRead(scope, sourceSql(`SELECT id, title FROM scoped_tasks AS tasks WHERE ${filter.sql}
           ORDER BY CASE WHEN typeof(updated_at) = 'text' AND updated_at NOT LIKE '%T%' AND updated_at NOT LIKE '%:%'
             THEN ? ELSE ${taskTimestampMs("updated_at")} END DESC, rowid DESC
-          LIMIT 20`,
-    args: [...filter.args, filter.firstInstant],
-  }
+          LIMIT 20`, [...filter.args, filter.firstInstant]))
 }
 
 function completedTodaySummaries(rows: Row[]) {
@@ -432,7 +426,7 @@ export function todayCompletionFilter(today: string, timezone = "Europe/Dublin")
     ranges.map(() => `(${column} >= ? AND ${column} < ?)`).join(" OR ") || "0"
   const bounds = ranges.flat()
   const filter: TodayCompletionFilter = {
-    sql: `task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND status = 'complete'
+    sql: `1 AND status = 'complete'
       AND (
         (typeof(updated_at) IN ('integer', 'real') AND (${matchesDay("updated_at")}))
         OR (typeof(updated_at) = 'text' AND (
@@ -481,24 +475,25 @@ export async function getTodayTaskRows(
   includeUnscheduled: boolean,
   timezone = "Europe/Dublin",
   now = new Date(),
+  scope: BoardScope,
 ) {
   await ensureSchema()
   const resolvedTimezone = resolveTimezone(timezone)
-  const client = getPersistenceClient()
+  const client = boardOperationClient(getPersistenceClient(), scope, { resource: "task", action: "read" })
   const completionFilter = todayCompletionFilter(today, resolvedTimezone)
   const tasksQuery = {
     sql: `
-      WITH totals AS (
+      totals AS (
         SELECT COUNT(*) FILTER (WHERE ${completionFilter.sql}) AS completed_today,
                COUNT(*) FILTER (
                  WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND (due_date IS NULL OR due_date = '')
                ) AS open_unscheduled
-        FROM tasks WHERE task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')
+        FROM scoped_tasks AS tasks WHERE 1
       )
       SELECT ${TASK_VIEW_COLUMNS}, completed_today, open_unscheduled
       FROM totals
-      LEFT JOIN tasks
-        ON tasks.task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND status IS NOT 'complete' AND status IS NOT 'archived'
+      LEFT JOIN scoped_tasks AS tasks
+        ON 1 AND status IS NOT 'complete' AND status IS NOT 'archived'
         AND deferred_at IS NULL
         AND (
           ? = 1
@@ -510,7 +505,7 @@ export async function getTodayTaskRows(
     `,
     args: [...completionFilter.args, includeUnscheduled ? 1 : 0],
   }
-  const [taskResult, completed] = await client.batch([tasksQuery, completedTodayQuery(completionFilter)], "read")
+  const [taskResult, completed] = await client.batch([scopedTaskRead(scope, sourceSql(tasksQuery.sql, tasksQuery.args), "with"), completedTodayQuery(scope, completionFilter)], "read")
   const rows = taskResult?.rows ?? []
 
   return {
@@ -543,33 +538,33 @@ export async function readStoredHouseholdTimezone(): Promise<string> {
 }
 
 /** Refresh visible counters, with the bounded completed list when requested. */
-export async function getTodayTaskCounts(now = new Date(), timezone?: string, includeCompleted = false): Promise<TodayTaskCounts> {
+export async function getTodayTaskCounts(now = new Date(), timezone: string | undefined, includeCompleted = false, scope: BoardScope): Promise<TodayTaskCounts> {
   await ensureSchema()
   const trimmedTz = typeof timezone === "string" ? timezone.trim() : ""
   const resolvedTimezone = trimmedTz && isValidTimezone(trimmedTz)
     ? trimmedTz
     : await readStoredHouseholdTimezone()
   const today = calendarToday(resolvedTimezone, now)
-  const client = getPersistenceClient()
+  const client = boardOperationClient(getPersistenceClient(), scope, { resource: "task", action: "read" })
   const completionFilter = todayCompletionFilter(today, resolvedTimezone)
   const countsQuery = {
     sql: `
       SELECT NULL AS due_date, COUNT(*) FILTER (WHERE ${completionFilter.sql}) AS completed_today,
              COUNT(*) FILTER (WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND is_favorite NOT IN (0, '')) AS pinned_count,
              0 AS dated_count
-      FROM tasks WHERE task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')
+      FROM scoped_tasks AS tasks WHERE 1
       UNION ALL
       SELECT due_date, 0, 0, COUNT(*)
-      FROM tasks
-      WHERE task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND COALESCE(is_favorite, 0) IN (0, '')
+      FROM scoped_tasks AS tasks
+      WHERE 1 AND status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND COALESCE(is_favorite, 0) IN (0, '')
         AND due_date IS NOT NULL AND due_date <> ''
       GROUP BY due_date
     `,
     args: [...completionFilter.args],
   }
   const [countResult, completed] = includeCompleted
-    ? await client.batch([countsQuery, completedTodayQuery(completionFilter)], "read")
-    : [await client.execute(countsQuery)]
+    ? await client.batch([scopedTaskRead(scope, sourceSql(countsQuery.sql, countsQuery.args)), completedTodayQuery(scope, completionFilter)], "read")
+    : [await client.execute(scopedTaskRead(scope, sourceSql(countsQuery.sql, countsQuery.args)))]
   const rows = countResult?.rows ?? []
 
   let dueToday = 0

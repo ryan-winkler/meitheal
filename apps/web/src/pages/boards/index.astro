@@ -7,23 +7,20 @@ import Layout from "../../layouts/Layout.astro"
 import "../../styles/boards.css"
 import { boardViewKey, readBoardDirectory } from "@lib/board-view"
 import { boardNavigationLinks } from "@lib/board-workspace"
-import { boardSessionProof, currentBoardUser } from "@lib/named-board-request"
+import { boardSessionProof, currentBoardContext } from "@lib/named-board-request"
 
 const label = await organizationLabelsFor(Astro)
 const newLabel = (name: Parameters<typeof label>[0], fallback?: string) => newOrganizationLabel(label(name, false, fallback), organizationLocale(Astro))
-const user = await currentBoardUser(Astro.locals, Astro.request.signal)
-const directory = user ? await readBoardDirectory(user.actor, Boolean(user.isAdmin)) : null
-const submissions = user ? await new BoardIntakeRepository(getPersistenceClient()).findSubmissions(user.actor) : []
+const user = await currentBoardContext(Astro)
+const directory = user ? await readBoardDirectory(user.actor) : null
+const submissions = user ? await new BoardIntakeRepository(getPersistenceClient(), user.principal).findSubmissions(user.actor) : []
 const snapshot = user && directory ? boardViewKey(directory, user.actor.id) : undefined
-const boards = [
-  ...(!directory || directory.household.state === "active" ? [{ id: "household", name: "Household", role: "Shared household work", state: "active", hidden: false, household: true }] : []),
-  ...(directory?.boards.map(board => ({ ...board, household: false })) ?? []),
-]
+const boards = directory?.boards ?? []
 ---
-<Layout title={label("board", true)}>
+<Layout title={label("board", true)} scopeGuard={false}>
   <span slot="page-title">{label("board", true)}</span>
   <div class="boards-workspace">
-    {!user && <p>Open Meitheal through Home Assistant to use private Boards.</p>}
+    {!user && <p>Your Board access is unavailable. Reload after opening your current session.</p>}
     <div data-board-directory={user && directory ? "" : undefined} data-board-verify="/api/boards" data-board-key={snapshot}
       data-board-session={user ? boardSessionProof(user.actor.id) : undefined}>
       <section class="named-boards board-directory" aria-labelledby="private-heading">
@@ -38,6 +35,7 @@ const boards = [
               <label>{label("board")} <input name="name" required maxlength="100" autocomplete="off" /></label>
               <p role="status" data-board-feedback></p>
               <button type="submit" class="btn btn-primary">{organizationLocale(Astro) === "en" ? `Create ${label("board")}` : newLabel("board")}</button>
+              <button type="button" class="btn btn-ghost" data-board-form-refresh hidden>Refresh Boards</button>
             </form>
           </details>}
         </header>
@@ -45,14 +43,14 @@ const boards = [
           {boards.map(board => <article class="board-tile board-directory-card" data-board-card={board.id}>
             <div>
               <a class="board-name" href={`/boards/${encodeURIComponent(board.id)}`}>{board.name}</a>
-              <p class="board-note">{board.household ? "Shared household work" : board.state === "archived" ? "Archived" : board.role}</p>
+              <p class="board-note">{board.state === "archived" ? "Archived" : board.role}</p>
             </div>
             <nav class="board-card-actions" aria-label={`${board.name} workspace`}>
               {available("organizer") && (available("groups") || available("projects")) &&
                 <a href={boardNavigationLinks({ boardId: board.id }).planning}>{label("group", true)} &amp; {label("project", true)}</a>}
-              {board.household && user?.isAdmin && <a href="#household-settings">Settings</a>}
+              {board.role === "owner" && <a href={`/boards/${encodeURIComponent(board.id)}?view=groups#settings`}>Settings</a>}
             </nav>
-            {!board.household && <form data-board-form="sidebar" data-board-id={board.id} class="board-preference">
+            {<form data-board-form="sidebar" data-board-id={board.id} class="board-preference">
               <input type="hidden" name="hidden" value={board.hidden ? "false" : "true"} />
               <button type="submit" class="btn btn-ghost">{board.hidden ? "Show in my sidebar" : "Hide from my sidebar"}</button>
               <span role="status" data-board-feedback></span>
@@ -63,18 +61,6 @@ const boards = [
       </section>
 
       {user && directory && <>
-      {directory.household.state === "active" && user.isAdmin && <details id="household-settings" class="named-boards board-settings">
-        <summary>Household Board settings</summary>
-        <p>Deleting Household pauses shared capture, Routines and Home Assistant task syncing. Existing work stays saved. Named Boards remain available.</p>
-        <form data-board-form="lifecycle" data-board-id="household" class="board-form">
-          <input type="hidden" name="action" value="retire" />
-          <input type="hidden" name="revision" value={directory.household.revision} />
-          <input type="hidden" name="boardName" value="Household" />
-          <p role="status" data-board-feedback></p>
-          <button type="submit" class="btn btn-danger">Delete Board</button>
-        </form>
-      </details>}
-      {directory.household.state === "retired" && <p class="board-empty">Household is deleted. Shared capture and Home Assistant task syncing are paused until an administrator restores it.</p>}
       {directory.deletedBoards.length > 0 && <section class="named-boards" aria-labelledby="deleted-boards-heading">
         <h2 id="deleted-boards-heading">Deleted Boards</h2>
         <p>Restore a Board to resume its saved work and destinations.</p>

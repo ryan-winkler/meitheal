@@ -1,3 +1,4 @@
+import { withBoardScope } from "@lib/board-http"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
 import { organizationPlacementAvailable } from "@lib/organization-placement-access"
 import type { APIRoute } from "astro"
@@ -77,19 +78,17 @@ export const ALL: APIRoute = () => new Response(null, {
   status: 405, headers: { ...noStore, allow: "POST, PUT, HEAD" },
 })
 
-export const HEAD: APIRoute = async ({ locals, request }) => {
+export const HEAD: APIRoute = withBoardScope({ resource: "task", action: "edit" }, async ({ locals, request }, scope) => {
   const ownerId = await authorize(locals, request)
-  if (ownerId && request.headers.has(boardDraftHeader)) return unavailableBoardResponse(404, true)
   return new Response(null, {
-    status: !ownerId ? 403 : matchesTaskDraftContext(ownerId, request.headers.get(taskDraftContextHeader)) ? 204 : 409,
+    status: !ownerId ? 403 : matchesTaskDraftContext(ownerId, scope.boardId, request.headers.get(taskDraftContextHeader)) ? 204 : 409,
     headers: noStore,
   })
-}
+})
 
-export const POST: APIRoute = async ({ locals, request }) => {
+export const POST: APIRoute = withBoardScope({ resource: "task", action: "edit" }, async ({ locals, request }, scope) => {
   const ownerId = await authorize(locals, request)
   if (!ownerId) return denied()
-  if (request.headers.has(boardDraftHeader)) return unavailableBoardResponse()
   const body = await readBody(request)
   if (body instanceof Response) return body
   if (hasBoardSelection(body.data)) return unavailableBoardResponse()
@@ -98,19 +97,18 @@ export const POST: APIRoute = async ({ locals, request }) => {
 
   try {
     await ensureSchema()
-    const drafts = new TaskDraftRepository(getPersistenceClient())
-    return json({ context: taskDraftContext(ownerId), ...await drafts.read(ownerId, action.data.resolve) })
+    const drafts = new TaskDraftRepository(getPersistenceClient(), scope)
+    return json({ context: taskDraftContext(ownerId, scope.boardId), ...await drafts.read(ownerId, action.data.resolve) })
   } catch {
     return problem(500, "Could not read your draft.")
   }
-}
+})
 
-export const PUT: APIRoute = async context => {
+export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }, async( context, scope) => {
   const { locals, request } = context
   const ownerId = await authorize(locals, request)
   if (!ownerId) return denied()
-  if (request.headers.has(boardDraftHeader)) return unavailableBoardResponse()
-  if (!matchesTaskDraftContext(ownerId, request.headers.get(taskDraftContextHeader))) return contextChanged()
+  if (!matchesTaskDraftContext(ownerId, scope.boardId, request.headers.get(taskDraftContextHeader))) return contextChanged()
   const body = await readBody(request)
   if (body instanceof Response) return body
   if (hasBoardSelection(body.data)) return unavailableBoardResponse()
@@ -121,7 +119,7 @@ export const PUT: APIRoute = async context => {
   try {
     await ensureSchema()
     const client = getPersistenceClient()
-    const drafts = new TaskDraftRepository(client)
+    const drafts = new TaskDraftRepository(client, scope)
     if (action.action === "save") {
       const draft = await drafts.save(ownerId, action)
       return draft ? json({ draft }) : revisionConflict()
@@ -138,15 +136,15 @@ export const PUT: APIRoute = async context => {
     if (replay) return json({ receipt: replay })
     const { task } = action
     if (!organizationPlacementAvailable(task)) return problem(404, "This organizing feature is unavailable.")
-    const hierarchy = new HierarchyRepository(client)
+    const hierarchy = new HierarchyRepository(client, scope)
     const project = task.placement?.projectId ? await hierarchy.findProjectById(task.placement.projectId) : null
     if (task.placement?.projectId && (!project || project.status !== "active" || (task.placement.areaId && task.placement.areaId !== project.area_id))) {
       return problem(404, "Household placement unavailable. Keep the draft and choose an available Area or Project.")
     }
-    const placementArea = project?.area_id ?? task.placement?.areaId ?? "default"
+    const placementArea = project?.area_id ?? task.placement?.areaId ?? null
     const area = await resolveHomeAssistantAreaSelection(context, task.home_assistant_area_id)
     if (!area.ok) return problem(area.status, area.detail)
-    const repo = new TaskRepository(client)
+    const repo = new TaskRepository(client, scope)
     const prepared = await prepareTaskCreation(repo, {
       ...task,
       ...(task.placement ? { area_id: placementArea, project_id: task.placement.projectId } : {}),
@@ -157,24 +155,25 @@ export const PUT: APIRoute = async context => {
     const assignee = task.assigned_to?.trim() || null
     const assigneeValid = assignee?.startsWith("ha_")
       ? await isCurrentActiveHAUser(assignee.slice(3))
-      : !assignee || await new UserRepository(client).customUserExists(assignee)
+      : !assignee || await new UserRepository(client, scope).customUserExists(assignee)
     await new SettingsRepository(client).ensureSettingsTable()
     const now = Date.now()
     const data = prepared.ok && assigneeValid ? prepared.task : null
     const result = await drafts.publish(ownerId, action, data, now, area.selection)
     if (result.receipt) {
       if (data && result.eventId && result.ticketNumber !== null) {
-        dispatchTaskCreation(taskCreationPayload(data, result.ticketNumber, now), result.eventId, result.eventId)
+        dispatchTaskCreation(taskCreationPayload(data, result.ticketNumber, now), result.eventId, result.eventId, undefined, scope)
       }
       return json({ receipt: result.receipt }, result.eventId ? 201 : 200)
     }
     if (result.conflict) return revisionConflict()
     return problem(422, "Check the title, lane, goal, assignee and labels before publishing.")
   } catch (error) {
+    if (error && typeof error === "object" && "errorCode" in error && error.errorCode === "STALE_LABELS") return json({ error: "Stored labels changed. Review the draft labels before publishing.", errorCode: "STALE_LABELS" }, 409)
     if (isDraftWriterBusy(error)) return apiProblem({
       status: 503, detail: "Meitheal is busy saving. Retry the same draft action.",
       extraHeaders: { ...noStore, "retry-after": "1" },
     })
     return problem(500, "The draft action did not finish. Check its saved state before trying again.")
   }
-}
+})

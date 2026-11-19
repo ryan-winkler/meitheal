@@ -1,6 +1,6 @@
 ---
 import type { TaskRepository } from "@domains/tasks/persistence/task-repository"
-import { formatTicketKey } from "@lib/ticket-key"
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
 import { formatCalendarDay } from "@lib/calendar-day"
 import type { Locale } from "@lib/locale"
 import type { TriageMode } from "@lib/triage-mode"
@@ -12,6 +12,11 @@ interface Props {
   queue?: Awaited<ReturnType<TaskRepository["findBacklogPage"]>> | undefined
 }
 
+const scoped = await resolveBoardPageScope(Astro)
+if (!scoped.ok) return boardScopeResponse(scoped.errorCode)
+const boardId = scoped.scope.boardId
+const planningHref = `/planning?board_id=${encodeURIComponent(boardId)}#triage`
+const tableHref = `/boards/${encodeURIComponent(boardId)}?view=table`
 const { locale, mode, queue } = Astro.props
 const embedded = mode === undefined
 const Heading = embedded ? "h2" : "h1"
@@ -23,7 +28,7 @@ const first = (page - 1) * 25 + 1
 const last = first + tasks.length - 1
 
 function pageHref(target: number, open?: string): string {
-  const query = new URLSearchParams()
+  const query = new URLSearchParams({ board_id: boardId })
   if (target > 1) query.set("page", String(target))
   if (open) query.set("open", open)
   return query.size ? `/triage?${query}` : "/triage"
@@ -33,7 +38,7 @@ function pageHref(target: number, open?: string): string {
 
   <section class="intake" data-triage-root data-triage-embedded={embedded || undefined} aria-labelledby="triage-heading">
     <header class="intake-header">
-      {!embedded && <a href="/planning#triage" data-astro-prefetch="false">{t("triage.planning", locale)}</a>}
+      {!embedded && <a href={planningHref} data-astro-prefetch="false">{t("triage.planning", locale)}</a>}
       <Heading id="triage-heading" tabindex="-1">{t("triage.title", locale)}</Heading>
       <p>{t("triage.description", locale)}</p>
     </header>
@@ -55,7 +60,7 @@ function pageHref(target: number, open?: string): string {
                 return (
                   <li class="intake-card" data-triage-card={task.id} data-triage-version={task.updated_at}>
                     <div class="intake-card-main">
-                      <p class="intake-ticket">{formatTicketKey(task.ticket_number)}</p>
+                      <p class="intake-ticket">{task.ticket_key}</p>
                       <CardHeading>{task.title}</CardHeading>
                       {task.description && <p>{task.description.slice(0, 240)}</p>}
                       {due && <p>{t("triage.due", locale, { date: due })}</p>}
@@ -83,8 +88,8 @@ function pageHref(target: number, open?: string): string {
       ) : (
         <section data-triage-mode-message={mode}>
           <p>{t(`triage.mode_${mode}`, locale)}</p>
-          {mode === "hidden" && <a href="/tasks?view=table#table" class="btn btn-outline" data-astro-prefetch="false">{t("triage.table", locale)}</a>}
-          {mode === "disabled" && <a href="/planning#triage" class="btn btn-outline" data-astro-prefetch="false">{t("triage.planning", locale)}</a>}
+          {mode === "hidden" && <a href={tableHref} class="btn btn-outline" data-astro-prefetch="false">{t("triage.table", locale)}</a>}
+          {mode === "disabled" && <a href={planningHref} class="btn btn-outline" data-astro-prefetch="false">{t("triage.planning", locale)}</a>}
           {mode === "unavailable" && <a href={pageHref(page)} class="btn btn-outline" data-astro-prefetch="false">{t("triage.reload", locale)}</a>}
         </section>
       )}

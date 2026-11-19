@@ -9,7 +9,6 @@ export {
   listLabels,
   createLabel,
   normalizeLabelTitle,
-  taskLabelInsert,
   updateLabel,
   deleteLabel,
   getLabelColorMap,

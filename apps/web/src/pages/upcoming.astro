@@ -1,4 +1,6 @@
 ---
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+
 import Layout from "../layouts/Layout.astro";
 import UnifiedBar from "../components/layout/UnifiedBar.astro";
 import EmptyState from "../components/ui/EmptyState.astro";
@@ -19,12 +21,16 @@ interface DayGroup {
   tasks: Record<string, unknown>[];
 }
 
+const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
+if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
+const workScope = workScopeResult.scope
+
 const days: DayGroup[] = [];
 const upcomingTimeZone = Astro.locals.timezone || "Europe/Dublin";
 
 try {
   await ensureSchema();
-  const repo = new TaskRepository(getPersistenceClient());
+  const repo = new TaskRepository(getPersistenceClient(), workScope);
   const todayStr = calendarToday(upcomingTimeZone);
 
   // Persona 9: Single query for all 7 days instead of 7 sequential queries
@@ -75,6 +81,8 @@ import StatusBadge from "../components/ui/StatusBadge.astro";
 import { STATUS_LABELS, normalizeStatus } from "../lib/status-config";
 import { UPCOMING_SECTIONS } from "../lib/upcoming-registry";
 import { buildTaskPath } from "../lib/task-detail-handoff"
+
+
 
 const typeIcons: Record<string, string> = {
   epic: "🎯",

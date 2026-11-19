@@ -61,6 +61,30 @@ const pinState = { id: { type: "string" }, pinned: { type: "boolean" }, pinned_a
 const pinContextParameter = { name: "X-Meitheal-Pin-Context", in: "header", required: true, schema: pinContext }
 
 const schemas = {
+  WorkBinding: {
+    type: "object", additionalProperties: false,
+    required: ["id", "generation", "integration", "sourceId", "purpose", "enabled", "destination", "allowedOperations"],
+    properties: {
+      id: { type: "string" }, generation: { type: "integer", minimum: 1 },
+      integration: { type: "string", enum: ["todo", "calendar", "caldav", "grocy", "calendar_reminder", "webhook", "ha_events", "notification", "notification_action", "builtin", "routine", "recurrence"] },
+      retired: { const: true, readOnly: true, description: "Replaced receiver identity; cannot be re-enabled." },
+      sourceId: { type: "string" }, purpose: { type: "string" }, enabled: { type: "boolean" },
+      destination: { type: "object", additionalProperties: false, required: ["boardId"], properties: {
+        boardId: { type: "string" }, areaId: { type: "string" }, projectId: { type: "string" },
+      } },
+      allowedOperations: { type: "array", items: { type: "object", additionalProperties: false, required: ["resource", "action"], properties: {
+        resource: { const: "task" }, action: { type: "string", enum: ["read", "create", "edit", "complete", "reopen", "delete"] },
+      } } }, recipientUserIds: { type: "array", uniqueItems: true, items: { type: "string" } },
+    },
+  },
+  AgentContext: {
+    type: "object", required: ["boards", "enrollmentBoardId"], properties: {
+      enrollmentBoardId: { type: ["string", "null"], description: "Only an unambiguous current credential enrollment. Never a browser capture default." },
+      boards: { type: "array", items: { type: "object", required: ["id", "name", "sharedEntityDelivery"], properties: {
+        id: { type: "string" }, name: { type: "string" }, sharedEntityDelivery: { type: "boolean", description: "Current approved broad HA receiver and unrestricted readable audience; private task data is not returned." },
+      } } },
+    },
+  },
   TaskReaction: {
     type: "object",
     required: ["id", "content", "author", "can_manage"],
@@ -621,6 +645,18 @@ const boardKanbanParams = [
 ]
 
 const paths = {
+  "/api/agent-context": {
+    get: { operationId: "getAgentContext", tags: ["Agents"], summary: "Read the current credential's Board enrollment metadata",
+      security: [{ bearerAuth: [] }], description: "Requires tasks:read. Genuine Supervisor ingress also intersects the current HA caller. No task fields or capture default are returned. A verified human ingress response can provide the existing Board session header.",
+      responses: { 200: { description: "Credential and current caller metadata", content: { "application/json": { schema: { $ref: "#/components/schemas/AgentContext" } } } }, 403: { description: "Credential or current caller unavailable" }, 409: { description: "Current access changed" } },
+    },
+  },
+  "/api/integrations/work-destinations": {
+    get: boardOperation("getWorkDestinations", "Read approved sources for the selected Board", [], { 200: { description: "Current configuration revision and this Board's bindings" }, 403: boardUnavailable }),
+    put: boardOperation("saveWorkDestination", "Review an integration source and its selected Board destination", [boardSessionParam], {
+      200: { description: "Committed binding receipt. Refresh work access after the journal revision changes." }, 400: { description: "Invalid source or destination" }, 403: boardUnavailable, 409: { description: "Approval changed or a required Board is unavailable" },
+    }, boardJson({ revision: { type: "string" }, binding: { $ref: "#/components/schemas/WorkBinding" } })),
+  },
   "/api/boards": {
     get: boardOperation("listPrivateBoards", "List Boards and send destinations for the current Home Assistant user", [], {
       200: { description: "Accessible Boards, personal sidebar preferences, and authorized send destinations. Response includes the Board session header." },

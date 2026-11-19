@@ -10,13 +10,14 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
 from .api import (
     MeithealApi,
     MeithealConnectionError,
     MeithealResponseError,
+    async_credential_context,
     resolve_origin_headers,
     task_matches_identifier,
     task_path,
@@ -53,6 +54,8 @@ class MeithealTask:
     def __init__(self, data: dict[str, Any]) -> None:
         """Initialize a Meitheal task from raw API payload data."""
         self.id: str = str(data.get("id", ""))
+        self.board_id: str | None = data.get("board_id")
+        self.ticket_key: str | None = data.get("ticket_key")
         self.title: str = data.get("title", "")
         status = data.get("status", STATUS_TODO)
         self.status: str = _TASK_STATUS_ALIASES.get(status, status)
@@ -139,38 +142,68 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         self._previous_data: MeithealCoordinatorData | None = None
         # IQS rule: log-when-unavailable — log once on state transitions
         self._was_available: bool = True
+        self._cache_key = api.cache_key
+        self._shared_entity_delivery = False
 
     # ── Event Bus Helpers ─────────────────────────────────────────────
 
-    def fire_event(self, event_type: str, data: dict[str, Any]) -> None:
+    async def fire_event(self, event_type: str, data: dict[str, Any]) -> None:
         """Fire a Meitheal event on the HA event bus."""
-        self._fire_event(event_type, data)
+        await self._fire_event(event_type, data)
 
-    def fire_logbook(self, name: str, message: str, entity_id: str | None = None) -> None:
+    async def fire_logbook(self, name: str, message: str, entity_id: str | None = None) -> None:
         """Fire a logbook entry so Meitheal actions appear in HA history."""
-        self._fire_logbook(name, message, entity_id)
+        await self._fire_logbook(name, message, entity_id)
 
-    def _fire_event(self, event_type: str, data: dict[str, Any]) -> None:
+    async def _fire_event(self, event_type: str, data: dict[str, Any]) -> None:
         """Fire a Meitheal event on the HA event bus.
 
         Source identifies the standalone/App-disabled fallback producer.
         Mutation responses decide authority before calling this helper.
         """
+        if not await self.async_can_publish_shared():
+            return
         self.hass.bus.async_fire(
             event_type,
-            {**data, "source": "component", "domain": DOMAIN},
+            {**data, "board_id": self.api.board_id, "source": "component", "domain": DOMAIN},
         )
 
-    def _fire_logbook(self, name: str, message: str, entity_id: str | None = None) -> None:
+    async def _fire_logbook(self, name: str, message: str, entity_id: str | None = None) -> None:
         """Fire a logbook entry so Meitheal actions appear in HA history."""
+        if not await self.async_can_publish_shared():
+            return
         logbook_data: dict[str, Any] = {
             "name": name,
             "message": message,
             "domain": DOMAIN,
+            "board_id": self.api.board_id,
         }
         if entity_id:
             logbook_data["entity_id"] = entity_id
         self.hass.bus.async_fire("logbook_entry", logbook_data)
+
+    @property
+    def shared_entity_delivery(self) -> bool:
+        """Only a current approved shared sink may expose cached Board content in HA."""
+        return self._shared_entity_delivery and self.api.configured and self.api.cache_key == self._cache_key
+
+    async def _async_board_metadata(self) -> dict[str, Any]:
+        if not self.api.configured or self.api.cache_key != self._cache_key:
+            raise MeithealResponseError(401)
+        key = self.api.cache_key
+        metadata = await async_credential_context(self.api)
+        board = next((board for board in metadata["boards"] if board["id"] == self.api.board_id), None)
+        if board is None or self.api.cache_key != key:
+            raise MeithealResponseError(403)
+        return board
+
+    async def async_can_publish_shared(self) -> bool:
+        """Recheck server-approved global HA disclosure immediately before dispatch."""
+        try:
+            self._shared_entity_delivery = (await self._async_board_metadata())["sharedEntityDelivery"]
+        except (MeithealConnectionError, MeithealResponseError):
+            self._shared_entity_delivery = False
+        return self.shared_entity_delivery
 
     async def _async_fetch_tasks(self) -> list[MeithealTask]:
         """Read the complete board or fail without publishing partial counts."""
@@ -205,6 +238,8 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
                     or not item["id"] or not isinstance(item.get("title", ""), str)
                     or not isinstance(item.get("status", STATUS_TODO), str)):
                     raise UpdateFailed("Meitheal returned an invalid task")
+                if item.get("board_id") != self.api.board_id:
+                    raise UpdateFailed("Meitheal returned work outside the configured Board")
                 task = MeithealTask(item)
                 if task.id in seen:
                     raise UpdateFailed("Task pagination repeated an item; retry required")
@@ -235,12 +270,21 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
     async def _async_update_data(self) -> MeithealCoordinatorData:
         """Fetch tasks from Meitheal REST API."""
         try:
+            metadata = await self._async_board_metadata()
+            self._shared_entity_delivery = metadata["sharedEntityDelivery"]
+            if not self.shared_entity_delivery:
+                self._previous_data = None
+                return MeithealCoordinatorData([])
             tasks = await self._async_fetch_tasks()
         except MeithealResponseError as err:
+            self._shared_entity_delivery = False
+            self._previous_data = None
             if err.status in (HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN):
                 raise ConfigEntryAuthFailed("Meitheal rejected task access") from None
             raise UpdateFailed(str(err)) from None
         except MeithealConnectionError as err:
+            self._shared_entity_delivery = False
+            self._previous_data = None
             if self._was_available:
                 _LOGGER.warning("Cannot reach Meitheal at %s", self.api.origin)
                 self._was_available = False
@@ -249,9 +293,15 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
                         self.hass, self.config_entry, str(err)
                     )
             raise UpdateFailed(str(err)) from None
+        except UpdateFailed:
+            self._shared_entity_delivery = False
+            raise
 
         new_data = MeithealCoordinatorData(tasks)
         await self._async_fetch_gamification(new_data)
+        if not await self.async_can_publish_shared():
+            self._previous_data = None
+            return MeithealCoordinatorData([])
 
         if not self._was_available:
             _LOGGER.info("Meitheal is available again at %s", self.api.origin)
@@ -263,14 +313,25 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
             or prev.overdue_count != new_data.overdue_count
             or prev.active_count != new_data.active_count
         ):
-            self._fire_event("meitheal_board_updated", {
+            await self._fire_event("meitheal_board_updated", {
                 "total": new_data.total_count,
                 "active": new_data.active_count,
                 "overdue": new_data.overdue_count,
                 "previous_total": prev.total_count,
             })
+        if not self.shared_entity_delivery:
+            self._previous_data = None
+            return MeithealCoordinatorData([])
         self._previous_data = new_data
         return new_data
+
+    async def async_data_for_context(self) -> MeithealCoordinatorData:
+        """Read fresh selected-Board work for the current caller without global caching."""
+        if not self.api.configured or self.api.cache_key != self._cache_key:
+            raise MeithealResponseError(401)
+        data = MeithealCoordinatorData(await self._async_fetch_tasks())
+        await self._async_fetch_gamification(data)
+        return data
 
     async def async_resolve_assignee(self, candidate: str) -> str:
         """Resolve a user name or canonical ID to a single canonical assignee ID."""
@@ -316,7 +377,7 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
     ) -> None:
         """Create a task through the authenticated native flat-response API.
 
-        Without assigned_to, Meitheal applies the household's default assignee.
+        Without assigned_to, Meitheal applies the selected Board's default assignee.
         """
         resolved_assignee = (
             await self.async_resolve_assignee(assigned_to)
@@ -342,15 +403,17 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         if not isinstance(result, dict) or not isinstance(result.get("id"), str) or not result["id"] or result.get("error"):
             raise UpdateFailed("Meitheal did not acknowledge the created task")
         if "meitheal_task_created" not in authority:
-            self._fire_event("meitheal_task_created", {"task_id": result["id"], "title": title})
-        self._fire_logbook("Meitheal", f"created task: {title}")
+            await self._fire_event("meitheal_task_created", {"task_id": result["id"], "title": title})
+        await self._fire_logbook("Meitheal", f"created task: {title}")
         await self.async_request_refresh()
 
-    def resolve_task_title(self, title: str) -> str:
+    def resolve_task_title(self, title: str, tasks: list[MeithealTask] | None = None) -> str:
         """Require one exact case-insensitive match before destructive actions."""
-        if not self.data:
-            raise UpdateFailed("No task data available")
-        matches = [task for task in self.data.tasks if task.title.casefold() == title.strip().casefold()]
+        if tasks is None:
+            if not self.data:
+                raise UpdateFailed("No task data available")
+            tasks = self.data.tasks
+        matches = [task for task in tasks if task.title.casefold() == title.strip().casefold()]
         if not matches:
             raise UpdateFailed("Task not found; provide a task ID")
         if len(matches) != 1:
@@ -365,7 +428,8 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         """Mark a task as done."""
         resolved_title = title
         if not task_id and title:
-            task_id = self.resolve_task_title(title)
+            data = await self.async_data_for_context()
+            task_id = self.resolve_task_title(title, data.tasks)
         if not task_id:
             raise UpdateFailed("Task not found")
         if self.data:
@@ -401,10 +465,10 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
 
         label = resolved_title or task_id
         if "meitheal_task_completed" not in authority:
-            self._fire_event("meitheal_task_completed", {
+            await self._fire_event("meitheal_task_completed", {
                 "task_id": task_id, "title": label,
             })
-        self._fire_logbook("Meitheal", f"completed task: {label}")
+        await self._fire_logbook("Meitheal", f"completed task: {label}")
         await self.async_request_refresh()
 
     async def async_complete_task_by_tag(
@@ -435,10 +499,10 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
                 or task.get("status") not in (STATUS_DONE, "complete")):
                 raise UpdateFailed("Meitheal did not confirm NFC task completion")
             if "meitheal_task_completed" not in authority:
-                self._fire_event("meitheal_task_completed", {
+                await self._fire_event("meitheal_task_completed", {
                     "task_id": task_id, "trigger": "nfc", "tag_id": tag_id,
                 })
-            self._fire_logbook("Meitheal", f"completed task via NFC tag: {tag_id}")
+            await self._fire_logbook("Meitheal", f"completed task via NFC tag: {tag_id}")
         await self.async_request_refresh()
         return result
 
@@ -517,10 +581,10 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         await self.api.async_request("DELETE", task_path(task_id), **request_kwargs)
 
         if "meitheal_task_deleted" not in authority:
-            self._fire_event("meitheal_task_deleted", {
+            await self._fire_event("meitheal_task_deleted", {
                 "task_id": task_id, "title": task_title,
             })
-        self._fire_logbook("Meitheal", f"deleted task: {task_title}")
+        await self._fire_logbook("Meitheal", f"deleted task: {task_title}")
         await self.async_request_refresh()
 
     async def async_update_task(
@@ -574,15 +638,15 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
 
         changed_fields = ", ".join(updates.keys())
         if "meitheal_task_updated" not in authority:
-            self._fire_event("meitheal_task_updated", {
+            await self._fire_event("meitheal_task_updated", {
                 "task_id": task_id, "title": task_title,
                 "fields": changed_fields,
             })
         if completing and not was_done and "meitheal_task_completed" not in authority:
-            self._fire_event("meitheal_task_completed", {
+            await self._fire_event("meitheal_task_completed", {
                 "task_id": task_id, "title": result.get("title") or task_title,
             })
-        self._fire_logbook("Meitheal", f"updated task: {task_title} ({changed_fields})")
+        await self._fire_logbook("Meitheal", f"updated task: {task_title} ({changed_fields})")
         await self.async_request_refresh()
 
     async def async_reorder_tasks(self, ordered_ids: list[str]) -> None:
@@ -641,3 +705,11 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         """
         await super().async_shutdown()
         self._previous_data = None
+
+
+class MeithealBoardEntity(CoordinatorEntity[MeithealCoordinator]):
+    """Shared availability boundary for native globally readable HA state."""
+
+    @property
+    def available(self) -> bool:
+        return super().available and self.coordinator.shared_entity_delivery

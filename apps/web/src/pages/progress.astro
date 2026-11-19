@@ -1,4 +1,6 @@
 ---
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
 /**
@@ -27,16 +29,23 @@ import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
 import { isFeatureEnabled } from "../lib/feature-flags"
 import { issuePersonalPillarForm, resolvePersonalPillarOwner } from "../lib/personal-pillar-access"
-import { HOUSEHOLD_PILLAR_OWNER, getPillars } from "@domains/pillars/pillar-service"
-import { getAllPrinciples } from "@domains/pillars/principle-service"
-import { getAssociationsForPillar } from "@domains/pillars/pillar-association-service"
+import { personalPillarOwnerId, getPillars } from "@domains/pillars"
+import { getAllPrinciples } from "@domains/pillars"
+import { getAssociationsForPillar } from "@domains/pillars"
+const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
+if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
+const workScope = workScopeResult.scope
 
-const boardScoped = Astro.url.searchParams.get("board") === "household"
+
+const boardScoped = true
+const boardId = workScope.boardId
+const { rows: [boardRecord] } = await getPersistenceClient().execute({ sql: "SELECT name FROM task_boards WHERE id = ?", args: [boardId] })
+const boardName = String(boardRecord?.name ?? "Board")
 let boardArea: { id: string; name: string } | undefined
 let boardProject: { id: string; name: string } | undefined
 if (boardScoped) {
   await ensureSchema()
-  const hierarchy = new HierarchyRepository(getPersistenceClient())
+  const hierarchy = new HierarchyRepository(getPersistenceClient(), workScope)
   const projectId = Astro.url.searchParams.get("project_id")
   const project = projectId ? await hierarchy.findProjectById(projectId) : null
   const areaId = project?.area_id ?? Astro.url.searchParams.get("area_id")
@@ -44,8 +53,9 @@ if (boardScoped) {
   if (project) boardProject = { id: project.id, name: project.title }
   if (area) boardArea = { id: area.id, name: area.name }
 }
-const routineParams = new URLSearchParams(boardScoped ? { board: "household" } : {})
+const routineParams = new URLSearchParams({ board_id: boardId })
 if (boardArea) routineParams.set("area_id", boardArea.id)
+if (boardProject) routineParams.set("project_id", boardProject.id)
 const routinesHref = "/habits" + (routineParams.size ? "?" + routineParams : "")
 const newRoutineParams = new URLSearchParams(routineParams)
 newRoutineParams.set("new", "1")
@@ -68,16 +78,16 @@ let enrichedPillars: Array<{
   personal: boolean
 }> = []
 
-const personalOwner = await resolvePersonalPillarOwner(Astro.locals, Astro.request.signal)
+const personalOwner = await resolvePersonalPillarOwner(Astro)
 const personalForm = personalOwner ? issuePersonalPillarForm(personalOwner) : undefined
 
 try {
-  const pillarsData = available("pillars") ? await getPillars({ includeInactive: false, personalOwner }) : []
-  const allPrinciplesMap = available("principles") ? await getAllPrinciples(personalOwner) : new Map()
+  const pillarsData = available("pillars") ? [...await getPillars(workScope, { includeInactive: false }), ...(personalOwner ? await getPillars(personalOwner, { includeInactive: false }) : [])] : []
+  const allPrinciplesMap = available("principles") ? new Map([...await getAllPrinciples(workScope), ...(personalOwner ? await getAllPrinciples(personalOwner) : [])]) : new Map()
   enrichedPillars = await Promise.all(
-    pillarsData.filter(p => !boardScoped || p.userId === HOUSEHOLD_PILLAR_OWNER).map(async (p) => {
-      const personal = p.userId !== HOUSEHOLD_PILLAR_OWNER
-      const associations = personal ? [] : await getAssociationsForPillar(p.id)
+    pillarsData.map(async (p) => {
+      const personal = Boolean(personalOwner && p.userId === personalPillarOwnerId(personalOwner))
+      const associations = await getAssociationsForPillar(personal && personalOwner ? personalOwner : workScope, p.id, workScope)
       const linkedGoalCount = associations.filter((a: { entityType: string }) => a.entityType === "goal").length
       return {
         ...p,
@@ -96,7 +106,7 @@ const routinesEnabled = await isFeatureEnabled("habits")
 <Layout title={`Meitheal — ${label("progress", false, t("nav.progress", locale))}`} hideSearchHub={true} hideGlobalSearch={true}>
   {/* Suppress TopNavigation — ParentPageShell provides its own UnifiedBar */}
   <Fragment slot="custom-header" />
-  {boardScoped && <BoardWorkspaceNav boardId="household" boardName="Household" area={boardArea} project={boardProject} active="goals" />}
+  {boardScoped && <BoardWorkspaceNav {boardId} {boardName} area={boardArea} project={boardProject} active="goals" />}
   <ParentPageShell pageId="progress">
 
     {/* ─── Pillars (full inline content) ─── */}
@@ -117,7 +127,7 @@ const routinesEnabled = await isFeatureEnabled("habits")
 
         <InlineHelper helperId="pillars-explainer" title="What are Pillars?" icon="🏛️">
           <p><strong>Pillars</strong> are permanent, identity-based motivational anchors. They answer the question <em>"Who am I, and what do I stand for?"</em></p>
-          <p>Each Pillar can have <strong>Principles</strong> — behavioral boundaries you won't compromise on. <strong>Non-Negotiable</strong> principles from Household Pillars can guide AI recommendations.</p>
+          <p>Each Pillar can have <strong>Principles</strong> — behavioral boundaries you won't compromise on. <strong>Non-Negotiable</strong> principles from Board Pillars can guide AI recommendations.</p>
           <p>Research suggests 3-5 active Pillars is optimal for focus. Press <kbd>?</kbd> to restore this helper if dismissed.</p>
         </InlineHelper>
 

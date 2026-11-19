@@ -58,10 +58,7 @@ export function guardClientContinuity(client: Client): Client {
         (live === raw || await boardGrantStillCurrent(live, revision!, marker))) return
       const current = await databaseRevision(live)
       if (current && await readBoardGrantRevision(marker) === current) {
-        const { rows: [household] } = await live.execute("SELECT state FROM task_boards WHERE id = 'household'")
-        const error = new Error(household?.state === "retired"
-          ? "Household Board is deleted. Restore it from Boards to resume shared work."
-          : "Current permissions changed. Retry the operation with current authority.")
+        const error = new Error("Current permissions changed. Retry the operation with current authority.")
         Object.assign(error, { status: 409 })
         throw error
       }
@@ -70,7 +67,11 @@ export function guardClientContinuity(client: Client): Client {
     try { await check() } catch (error) { raw.close(); settle(); throw error }
     return new Proxy(raw, {
       get(target, property) {
-        if (property === Symbol.for("meitheal.boardGrantClient")) return raw
+        // An already guarded transaction may expose this non-configurable
+        // descriptor through another authorization proxy. Preserve its actual
+        // value rather than substituting that proxy (which violates JS Proxy
+        // invariants); both resolve to the same pinned transaction context.
+        if (property === Symbol.for("meitheal.boardGrantClient")) return Reflect.get(raw, property) ?? raw
         if (property === "execute" || property === "batch" || property === "executeMultiple") {
           return async (...args: unknown[]) => {
             await check()

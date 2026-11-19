@@ -274,45 +274,19 @@ export async function getHAConnection(): Promise<Connection | null> {
       })
     }
 
-    // Phase 52: Subscribe to actionable notifications from Companion Apps
+    // Only the current trusted Core subscription can supply a notification actor.
     subscribeEvent((event: unknown) => {
-      const ev = event as { data?: { action?: string } };
-      const action: string | undefined = ev?.data?.action;
-      if (action && action.startsWith("MEITHEAL_TASK_DONE_")) {
-        const taskId = action.replace("MEITHEAL_TASK_DONE_", "");
-        // F14: Validate taskId format (UUID or hex) before using in fetch
-        if (!taskId || taskId.length > 64 || !/^[a-zA-Z0-9_-]+$/.test(taskId)) {
-          logger.log("warn", {
-            event: "ha.notification.action_invalid", domain: "ha", component: "ha-connection",
-            request_id: SYS_REQ, message: `Rejected invalid taskId from notification action: ${taskId.slice(0, 20)}`,
-          });
-          return;
-        }
-        logger.log("info", {
-          event: "ha.notification.action", domain: "ha", component: "ha-connection",
-          request_id: SYS_REQ, message: `Received actionable notification to mark task done: ${taskId}`,
-        });
-
-        // Dispatch to internal API
-        fetch(`http://127.0.0.1:${process.env.PORT || 3000}/api/tasks/${encodeURIComponent(taskId)}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: "complete" })
-        }).then(response => {
-          void response.body?.cancel().catch(() => {})
-          if (!response.ok) {
-            const retryAfter = response.headers.get("retry-after")
-            const retry = retryAfter ? ` (Retry-After: ${retryAfter})` : ""
-            throw new Error(`Task completion returned HTTP ${response.status}${retry}`)
-          }
-        }).catch((err: unknown) => {
-          logger.log("error", {
-            event: "ha.notification.action_failed", domain: "ha", component: "ha-connection",
-            request_id: SYS_REQ, message: `Failed to execute task done action from HA event: ${String(err)}`,
-          });
-        });
-      }
-    }, "mobile_app_notification_action");
+      const current = () => connection === establishedConnection && connectionGeneration === attemptGeneration && establishedConnection.connected
+      if (!current()) return
+      void import("../../lib/task-notification-action").then(({ handleTaskNotificationAction }) =>
+        handleTaskNotificationAction(event, current),
+      ).catch(() => {
+        logger.log("warn", {
+          event: "ha.notification.action_failed", domain: "ha", component: "ha-connection",
+          request_id: SYS_REQ, message: "A notification action could not be verified",
+        })
+      })
+    }, "mobile_app_notification_action")
 
     // Phase 62b: Subscribe to component-fired meitheal events
     // The custom component fires these on hass.bus with source='component'.

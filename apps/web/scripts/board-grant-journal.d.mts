@@ -11,3 +11,4 @@ export function currentBoardGrantRevision(db: Pick<Client, "execute" | "transact
 export function initializeBoardGrantContinuity(client: Client, tx: Transaction): Promise<string | null>
 export function prepareInitialBoardGrant(tx: Transaction, markerPath: string): Promise<string>
 export function finalizeStartupBoardGrant(client: Client, revision: string | null): Promise<void>
+export function admitStartupBoardTransition(client: Client, tx: Transaction, operatorAdmission?: object): Promise<{ admission: object, revision: string } | null>

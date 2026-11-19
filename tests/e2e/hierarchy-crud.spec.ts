@@ -1,3 +1,4 @@
+import { currentBoardScope } from "../helpers/current-board-scope"
 /**
  * Hierarchy CRUD API Tests
  *
@@ -26,7 +27,8 @@ async function setupDb() {
 async function getRepo() {
   const { getPersistenceClient } = await import("../helpers/persistence-fixture")
   const { HierarchyRepository } = await import("../../apps/web/src/domains/tasks/persistence/hierarchy-repository")
-  return new HierarchyRepository(getPersistenceClient())
+  const db = getPersistenceClient()
+  return new HierarchyRepository(db, await currentBoardScope(db))
 }
 
 // ── Areas ────────────────────────────────────────────────────────
@@ -84,7 +86,7 @@ test("can delete an area", async () => {
   const deleted = await repo.deleteArea("area-del")
   expect(deleted).toBe(true)
 
-  const area = await repo.findAreaById("area-del")
+  const area = await (await getRepo()).findAreaById("area-del")
   expect(area).toBeNull()
 })
 
@@ -172,7 +174,7 @@ test("can delete a goal", async () => {
   await repo.createGoal({ id: "goal-del", title: "Delete Me" })
   const deleted = await repo.deleteGoal("goal-del")
   expect(deleted).toBe(true)
-  expect(await repo.findGoalById("goal-del")).toBeNull()
+  expect(await (await getRepo()).findGoalById("goal-del")).toBeNull()
 })
 
 // ── Projects ─────────────────────────────────────────────────────
@@ -279,7 +281,8 @@ test("Area and Project goal scopes follow direct and project associations", asyn
   await repo.createProject({ id: "work-project", title: "Directly Work", area_id: "work", goal_id: "project-goal" })
 
   expect((await repo.findProjectsByArea("work")).map(project => project.id).sort())
-    .toEqual(["old-project", "work-project"])
+    .toEqual(["work-project"])
+  expect(await repo.findProjectById("old-project")).toMatchObject({ goal_id: "work-goal", area_id: null })
   expect((await repo.findProjectsByArea("home")).map(project => project.id)).toEqual(["shared-goal-project"])
   expect((await repo.findAllGoals({ area_id: "work" })).map(goal => goal.id).sort())
     .toEqual(["project-goal", "work-goal"])
@@ -312,12 +315,12 @@ test("can delete a project", async () => {
   await repo.createProject({ id: "proj-del", title: "Delete Me" })
   const deleted = await repo.deleteProject("proj-del")
   expect(deleted).toBe(true)
-  expect(await repo.findProjectById("proj-del")).toBeNull()
+  expect(await (await getRepo()).findProjectById("proj-del")).toBeNull()
 })
 
 // ── Cross-entity relationships ───────────────────────────────────
 
-test("deleting an area cascades to set goal area_id to NULL", async () => {
+test("retiring an Area with an active Goal is blocked and preserves its association", async () => {
   createTestDb()
   await setupDb()
   const repo = await getRepo()
@@ -329,16 +332,14 @@ test("deleting an area cascades to set goal area_id to NULL", async () => {
   let goal = await repo.findGoalById("goal-cascade")
   expect(goal!.area_id).toBe("area-cascade")
 
-  // Delete area
-  await repo.deleteArea("area-cascade")
-
-  // Goal should still exist but area_id should be NULL
+  expect(await repo.retireAreaCommand("area-cascade")).toEqual({ ok: false, errorCode: "children" })
+  expect(await repo.findAreaById("area-cascade")).not.toBeNull()
   goal = await repo.findGoalById("goal-cascade")
   expect(goal).not.toBeNull()
-  expect(goal!.area_id).toBeNull()
+  expect(goal!.area_id).toBe("area-cascade")
 })
 
-test("deleting a goal cascades to set project goal_id to NULL", async () => {
+test("retiring a Goal preserves the Project and hides the retired association", async () => {
   createTestDb()
   await setupDb()
   const repo = await getRepo()
@@ -346,11 +347,10 @@ test("deleting a goal cascades to set project goal_id to NULL", async () => {
   await repo.createGoal({ id: "goal-cascade2", title: "Cascade Goal" })
   await repo.createProject({ id: "proj-cascade2", title: "Linked Project", goal_id: "goal-cascade2" })
 
-  // Delete goal
-  await repo.deleteGoal("goal-cascade2")
-
-  // Project should still exist but goal_id should be NULL
-  const project = await repo.findProjectById("proj-cascade2")
+  expect(await repo.deleteGoal("goal-cascade2")).toBe(true)
+  const current = await getRepo()
+  expect(await current.findGoalById("goal-cascade2")).toBeNull()
+  const project = await current.findProjectById("proj-cascade2")
   expect(project).not.toBeNull()
   expect(project!.goal_id).toBeNull()
 })

@@ -9,16 +9,18 @@ import Icon from "../ui/Icon.astro"
 
 interface Props {
   locale: Locale
+  boardId?: string | undefined
 }
 
-const { locale } = Astro.props
+const { locale, boardId } = Astro.props
+const workRoot = boardId ? `/boards/${encodeURIComponent(boardId)}` : "/boards"
 
 const [organization, flags] = await Promise.all([organizationLabelsFor(Astro), getFeatureFlags()])
 const visible = visibleOrganizationTerms(flags)
 const shortcuts = [
   { term: "board", id: "boards", href: "/boards", plural: true },
-  { term: "group", id: "groups", href: "/boards/household?view=groups", plural: true },
-  { term: "project", id: "projects", href: "/boards/household?view=groups#unfiled-projects", plural: true },
+  { term: "group", id: "groups", href: `${workRoot}?view=groups`, plural: true },
+  { term: "project", id: "projects", href: `${workRoot}?view=groups#unfiled-projects`, plural: true },
   { term: "planning", id: "planning", href: "/planning" },
   { term: "progress", id: "progress", href: "/progress" },
   { term: "goal", id: "goals", href: "/progress#goals", plural: true },

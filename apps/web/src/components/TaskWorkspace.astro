@@ -1,12 +1,10 @@
 ---
-import { verifiedIngressUser } from "@lib/verified-ingress-user"
-import { boardAuthorityKey, boardViewKey, readBoardView } from "@lib/board-view"
-import { boardSessionProof, currentBoardUser } from "@lib/named-board-request"
-import { boardWorkspaceHref, readBoardWorkspaceSelection } from "@lib/board-workspace"
-import { permitsBoardTaskAction } from "@domains/tasks/persistence/named-board-repository"
-import TaskDetailModal from "./tasks/TaskDetailModal.astro"
+import { boardScopeAuthorityKey } from "@lib/board-view"
+import { boardScopeResponse, resolveBoardPageScope } from "@lib/board-http"
+import { scopePermits } from "@domains/tasks/board-scope"
+import { boardSessionProof } from "@lib/named-board-request"
+import { boardWorkspaceHref } from "@lib/board-workspace"
 import "../styles/boards.css"
-import NamedBoardInspector from "./boards/NamedBoardInspector.astro"
 import BoardWorkspaceNav from "./boards/BoardWorkspaceNav.astro"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import HomeAssistantAreaField from "../components/tasks/HomeAssistantAreaField.astro"
@@ -62,11 +60,18 @@ const {
 // i18n: resolve locale from cookie
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
-const householdWorkspace = Astro.props.householdWorkspace === true
-const namedBoardId: string | undefined = Astro.props.namedBoardId
-const namedSelection = readBoardWorkspaceSelection(Astro.url.searchParams)
-const namedUser = namedBoardId ? await currentBoardUser(Astro.locals, Astro.request.signal) : null
-const renderedView = namedBoardId ? "kanban" : requestedTaskView(Astro.url.searchParams) ?? "kanban"
+const explicitBoardId = Astro.props.boardId ?? Astro.props.namedBoardId
+const resolvedScope = await resolveBoardPageScope(Astro, explicitBoardId ? { boardId: explicitBoardId } : {})
+if (!resolvedScope.ok) return boardScopeResponse(resolvedScope.errorCode)
+const scope = resolvedScope.scope
+const boardId = scope.boardId
+const session = boardSessionProof(scope.principal.id)
+const authorityKey = boardScopeAuthorityKey(scope)
+const canEdit = scopePermits(scope, { resource: "task", action: "edit" })
+const canCreate = scopePermits(scope, { resource: "task", action: "create" })
+const canComplete = scopePermits(scope, { resource: "task", action: "complete" })
+const canDelete = scopePermits(scope, { resource: "task", action: "delete" })
+const renderedView = requestedTaskView(Astro.url.searchParams) ?? "kanban"
 const organization = await organizationLabelsFor(Astro)
 const heading = renderedView === "kanban" ? organization("task", true, t("kanban.title", locale))
   : renderedView === "table" ? "Table View" : TASK_VIEW_LABELS[renderedView]
@@ -75,22 +80,7 @@ const homeAreaFilter = renderedView === "kanban" ? await readHomeAssistantAreaFi
 if (!homeAreaFilter) currentUrl.searchParams.delete("home_assistant_area_id")
 if (homeAreaFilter) Astro.response.headers.set("cache-control", "private, no-store")
 // The HTML ingress rewriter adds the mount path to these root-relative links.
-currentUrl.pathname = namedBoardId ? `/boards/${encodeURIComponent(namedBoardId)}` : householdWorkspace ? "/boards/household" : "/tasks"
-const namedView = namedBoardId && namedUser ? await readBoardView(namedUser.actor, namedBoardId, 0, namedSelection, homeAreaFilter, { params: currentUrl.searchParams, timezone }) : null
-if (namedBoardId && !namedView) {
-  Astro.response.status = 404
-  Astro.response.headers.set("Cache-Control", "private, no-store")
-  return "Board unavailable"
-}
-const namedEdit = namedView ? permitsBoardTaskAction(namedView.board, "edit") : false
-const namedCreate = namedEdit && (!namedView?.context?.project || namedView.context.project.status === "active")
-const namedComplete = namedView ? permitsBoardTaskAction(namedView.board, "complete") : false
-const namedDelete = namedView ? permitsBoardTaskAction(namedView.board, "delete") : false
-const namedSession = namedUser ? boardSessionProof(namedUser.actor.id) : undefined
-const verifyParams = new URLSearchParams(currentUrl.searchParams)
-verifyParams.set("view", "tasks")
-verifyParams.set("kanban", "1")
-const namedVerify = namedBoardId ? `/api/boards/${encodeURIComponent(namedBoardId)}?${verifyParams}` : undefined
+currentUrl.pathname = `/boards/${encodeURIComponent(boardId)}`
 if (currentUrl.searchParams.has("boardRefresh") ||
     (renderedView === "table" && currentUrl.searchParams.has("tableRefresh"))) {
   currentUrl.searchParams.delete("boardRefresh")
@@ -101,17 +91,19 @@ if (currentUrl.searchParams.has("boardRefresh") ||
 
 await ensureSchema();
 const db = getPersistenceClient();
-const repo = new TaskRepository(db);
-const hierarchyRepo = new HierarchyRepository(db);
-const householdProjectId = !namedBoardId ? currentUrl.searchParams.get("project") : null
-const householdProject = householdProjectId ? await hierarchyRepo.findProjectById(householdProjectId).catch(() => null) : null
+const repo = new TaskRepository(db, scope);
+const hierarchyRepo = new HierarchyRepository(db, scope);
+const { rows: [boardMetadata] } = await db.execute({ sql: "SELECT name FROM task_boards WHERE id = ?", args: [boardId] })
+const boardName = String(boardMetadata?.name ?? "Board")
+const selectedProjectId = currentUrl.searchParams.get("project")
+const selectedProject = selectedProjectId ? await hierarchyRepo.findProjectById(selectedProjectId).catch(() => null) : null
 
 // Completed task auto-hide: read retention setting (default 30 days, 0 = never hide)
 let completedAutoHideDays = 30;
 // Backlog mode: visible (default) | hidden | disabled
 let backlogMode = "visible";
 try {
-  const settings = renderedView === "kanban" && !namedBoardId ? await repo.getSettings([
+  const settings = renderedView === "kanban" ? await repo.getSettings([
     "completed_auto_hide_days",
     "backlog_mode",
   ]) : {};
@@ -141,8 +133,7 @@ let columns: {
 }[] = [];
 let workflowColumnsUnavailable = false
 try {
-  if (namedView) columns = namedView.lanes.map(lane => ({ ...lane, icon: "", includes: [lane.key], builtIn: true, wipLimit: 0 }))
-  else if (renderedView === "kanban" || renderedView === "table") columns = await repo.getKanbanLanes()
+  if (renderedView === "kanban" || renderedView === "table") columns = await repo.getKanbanLanes()
 } catch {
   workflowColumnsUnavailable = true
 }
@@ -165,7 +156,7 @@ let tableCreationTimezone: string | undefined
 let tableReadFailed = false
 if (tableFilters && !workflowResultsUnavailable) {
   try {
-    tableTasks = (await getTasksForView({ requireAvailable: true, slim: true, timezone, projectId: currentUrl.searchParams.get("project") || undefined })).tasks
+    tableTasks = (await getTasksForView({ requireAvailable: true, slim: true, timezone, projectId: currentUrl.searchParams.get("project") || undefined }, scope)).tasks
     if (tableFilters.createdFrom || tableFilters.createdThrough) {
       const { timezone } = await new SettingsRepository(db).getByKeys(["timezone"])
       if (typeof timezone === "string") tableCreationTimezone = timezone
@@ -253,21 +244,12 @@ const typeConfig: Record<string, { label: string; color: string }> = {
 };
 const kanbanFilters = readKanbanFilters(currentUrl.searchParams)
 type KanbanPages = Awaited<ReturnType<typeof loadKanbanBoard>>
-const namedPages = namedView?.kanbanPages ? new Map(namedView.kanbanPages.map(page => [page.key, {
-  ...page, epicsByCard: new Map(), cards: page.ids.flatMap(id => {
-    const task = namedView.tasks.find(task => task.id === id)
-    return task ? [{ ...task, ticket_ref: task.ticket, assigned_to: task.assignedTo, due_date: task.dueDate,
-      task_version: task.version, area_id: task.placement?.areaId ?? "", project_id: task.placement?.projectId ?? null,
-      task_type: "task", task_kind: task.routine ? "routine_instance" : "standard_action", priority: 3,
-      framework_payload: "{}", labels: "[]" }] : []
-  }),
-}])) as unknown as KanbanPages : undefined
-const kanbanPages = namedPages ?? (renderedView === "kanban"
+const kanbanPages = renderedView === "kanban"
   ? await loadKanbanBoard(repo, columns, completedCutoffMs, currentUrl.searchParams, timezone, homeAreaFilter).catch(() => null)
-  : null)
-const inactivityEnabled = !namedBoardId && renderedView === "kanban" &&
-  await new TaskInactivityRepository(db).hasEnabledPolicy(kanbanFilters.area || null).catch(() => false)
-const boardAreaQuery = kanbanFilters.area ? `?area=${encodeURIComponent(kanbanFilters.area)}` : ""
+  : null
+const inactivityEnabled = renderedView === "kanban" &&
+  await new TaskInactivityRepository(db, scope).hasEnabledPolicy(kanbanFilters.area || null).catch(() => false)
+const boardAreaQuery = `?${new URLSearchParams({ board_id: boardId, ...(kanbanFilters.area ? { area: kanbanFilters.area } : {}) })}`
 const kanbanTaskCount = Array.from(kanbanPages?.values() ?? []).reduce((sum, lane) => sum + lane.matches, 0)
 
 function lanePageHref(key: string, page: number) {
@@ -280,7 +262,7 @@ function lanePageHref(key: string, page: number) {
 let areas: { id: string; name: string; icon: string; color: string }[] = [];
 let areaCatalogReady = false
 try {
-  const rawAreas = !namedBoardId && available("groups") ? await hierarchyRepo.findAllAreas() : [];
+  const rawAreas = available("groups") ? await hierarchyRepo.findAllAreas() : [];
   areas = rawAreas.map((a) => ({
     id: String(a.id ?? ""),
     name: String(a.name ?? ""),
@@ -292,7 +274,7 @@ try {
   /* areas table may not exist yet */
 }
 const kanbanAreas = new Map(areas.map(area => [area.id, area]))
-const groupByProject = !namedBoardId && renderedView === "kanban" && kanbanFilters.groupBy === "project" && available("projects")
+const groupByProject = renderedView === "kanban" && kanbanFilters.groupBy === "project" && available("projects")
 const projectFallbacks = { none: t("kanban.no_project", locale), unknown: t("kanban.unknown_project", locale) }
 let projectLabels = getHouseholdProjectLabels([], Object.fromEntries(areas.map(area => [area.id, area.name])), undefined, projectFallbacks)
 let projectCatalogUnavailable = false
@@ -310,10 +292,10 @@ if (groupByProject) {
 
 ---
 
-<Layout title={`Meitheal — ${householdWorkspace ? "Household · " : ""}${heading}`} suppressHouseholdTaskModals={Boolean(namedBoardId)}>
+<Layout title={`Meitheal — ${boardName} · ${heading}`} boardContext={{ boardId, session }} scopeGuard={false}>
 
   <UnifiedBar
-    title={namedView ? namedView.board.name : "Household"}
+    title={boardName}
     newTaskLabel={newOrganizationLabel(organization("task"), locale)}
     titleIcon={TASK_VIEW_ICONS[renderedView]}
     tabs={[]}
@@ -321,36 +303,24 @@ if (groupByProject) {
     searchScope="all"
     barId="kanban-bar"
     slot="custom-header"
-    viewTabs={(namedBoardId ? ["kanban" as const] : TASK_VIEWS).map(view => {
+    viewTabs={TASK_VIEWS.map(view => {
       const url = taskViewUrl(currentUrl, view, true)
       return { id: view, href: url.pathname + url.search + url.hash, label: TASK_VIEW_LABELS[view], icon: TASK_VIEW_ICONS[view], active: view === renderedView }
     })}
   >
     <Fragment slot="context">
-      {!namedBoardId && available("groups") && <AreaSelector areas={areas} catalogReady={areaCatalogReady} initialId={householdProjectId ? householdProject?.area_id ?? "" : undefined} />}
+      {available("groups") && <AreaSelector areas={areas} catalogReady={areaCatalogReady} endpoint={`/api/boards/${encodeURIComponent(boardId)}?view=groups`} initialId={selectedProjectId ? selectedProject?.area_id ?? "" : undefined} storageKey={`meitheal-selected-area:${authorityKey}`} />}
       {renderedView === "kanban" && <HomeAssistantAreaField mode="filter" initialId={homeAreaFilter?.id ?? ""} />}
     </Fragment>
   </UnifiedBar>
-  <div data-task-workspace data-board-directory={namedView ? "" : undefined}
-    data-board-verify={namedVerify} data-board-key={namedView && namedUser ? boardViewKey(namedView, namedUser.actor.id) : undefined}
-    data-board-authority={namedView && namedUser ? boardAuthorityKey(namedView, namedUser.actor.id) : undefined}
-    data-board-session={namedSession} data-board-id={namedBoardId}
-    data-named-can-create={String(namedCreate)} data-named-can-edit={String(namedEdit)} data-named-can-complete={String(namedComplete)} data-named-can-delete={String(namedDelete)}>
-  {namedView && (namedView.context?.project || namedView.context?.area) && <h1>{namedView.context.project?.title ?? namedView.context.area?.name}</h1>}
-  {namedView && <BoardWorkspaceNav boardId={namedBoardId!} boardName={namedView.board.name}
-    area={namedView.context?.area ? { id: namedView.context.area.id, name: namedView.context.area.name } : undefined}
-    project={namedView.context?.project ? { id: namedView.context.project.id, name: namedView.context.project.title } : undefined}
-    fromArea={namedSelection.fromArea ?? undefined}
-    settingsHref={namedView.board.policy ? boardWorkspaceHref(namedBoardId!, { groups: true }, "settings") : undefined} />}
-  {namedView && available("groups") && <AreaSelector areas={[]} catalogReady={false}
-    endpoint={`/api/boards/${encodeURIComponent(namedBoardId!)}?view=groups`}
-    storageKey={`meitheal-selected-area:${namedBoardId}`}
-    initialId={namedView.context?.area?.id} />}
-  {!namedBoardId && <BoardWorkspaceNav boardId="household" boardName="Household"
-    area={(householdProject?.area_id ?? kanbanFilters.area) ? { id: householdProject?.area_id ?? kanbanFilters.area!, name: areas.find(area => area.id === (householdProject?.area_id ?? kanbanFilters.area))?.name ?? organization("group") } : undefined}
-    project={householdProject ? { id: householdProject.id, name: householdProject.title } : undefined}
+  <div data-task-workspace data-board-directory data-board-key={authorityKey} data-board-authority={authorityKey}
+    data-board-verify={`/api/boards/${encodeURIComponent(boardId)}?view=authority`} data-board-session={session} data-board-id={boardId}
+    data-can-create={String(canCreate)} data-can-edit={String(canEdit)} data-can-complete={String(canComplete)} data-can-delete={String(canDelete)}>
+  <BoardWorkspaceNav {boardId} {boardName}
+    area={(selectedProject?.area_id ?? kanbanFilters.area) ? { id: selectedProject?.area_id ?? kanbanFilters.area!, name: areas.find(area => area.id === (selectedProject?.area_id ?? kanbanFilters.area))?.name ?? organization("group") } : undefined}
+    project={selectedProject ? { id: selectedProject.id, name: selectedProject.title } : undefined}
     fromArea={Astro.url.searchParams.get("from") ?? undefined}
-    settingsHref={verifiedIngressUser(Astro.locals)?.isAdmin ? "/boards#household-settings" : undefined} />}
+    settingsHref={scopePermits(scope, { resource: "board", action: "manage" }) ? boardWorkspaceHref(boardId, { groups: true }, "settings") : undefined} />
 
 
   {renderedView === "kanban" && <>
@@ -358,15 +328,15 @@ if (groupByProject) {
   <div class="tasks-filter-row" id="tasks-filter-row">
     <FilterToolbar
       view="kanban"
-      showGroupBy={!namedBoardId}
+      showGroupBy
       showSearch
       hideAreaSelect
-      showUserFilter={!namedBoardId}
-      showStatusFilter={Boolean(namedBoardId)}
-      showSortBy={!namedBoardId}
+      showUserFilter
+      showStatusFilter
+      showSortBy
       showUserPills={false}
     />
-    {!namedBoardId && <button id="kanban-tools-toggle" class="btn btn-sm kanban-tools-toggle" type="button" aria-controls="kanban-toolbar-actions" aria-expanded="false">
+    {<button id="kanban-tools-toggle" class="btn btn-sm kanban-tools-toggle" type="button" aria-controls="kanban-toolbar-actions" aria-expanded="false">
       <Icon name="adjustments-horizontal" size={16} /> Board actions
     </button>
     <div class="kanban-toolbar-right" id="kanban-toolbar-actions" role="group" aria-label="Kanban board actions">
@@ -593,10 +563,10 @@ if (groupByProject) {
               {colTasks.map((task) => {
                 const epicGroup = lane?.epicsByCard.get(task.id)
                 const p = Number(task.priority ?? 3);
-                const ticketKey = namedBoardId ? String(task.ticket_ref ?? "") : formatTicketKey(Number(task.ticket_number));
+                const ticketKey = String(task.ticket_key ?? task.ticket_ref ?? formatTicketKey(Number(task.ticket_number)));
                 const tt = String(task.task_type ?? "task");
                 const tc = (typeConfig[tt] || typeConfig.task)!;
-                const areaId = String(task.area_id ?? "default")
+                const areaId = String(task.area_id ?? "")
                 const cardArea = kanbanAreas?.get(areaId)
                 const promoted = Number(task.is_promoted) === 1
                 const fp =
@@ -646,10 +616,10 @@ if (groupByProject) {
                   <div
                     class={`kanban-card flat-card`}
                     {...surface}
-                    draggable={!namedBoardId || namedEdit}
+                    draggable={canEdit}
                     data-id={String(task.id)}
-                    data-version={namedBoardId ? String(task.task_version) : undefined}
-                    data-named-ticket={namedBoardId ? String(task.id) : undefined}
+                    data-version={String(task.task_version)}
+
                     data-title={String(task.title)}
                     data-desc={
                       task.description
@@ -681,8 +651,8 @@ if (groupByProject) {
                     <div class="kanban-card-header">
                       <div class="kanban-card-title">
                         <a
-                          href={namedBoardId ? boardWorkspaceHref(namedBoardId, { ...{ area: namedSelection.areaId ?? undefined, project: namedSelection.projectId ?? undefined }, ticket: String(task.id) }) : buildTaskPath(String(task.id))}
-                          data-task-detail-link={namedBoardId ? undefined : String(task.id)}
+                          href={buildTaskPath(String(task.id)) + `?board_id=${encodeURIComponent(boardId)}`}
+                          data-task-detail-link={String(task.id)}
                           class="card-open-btn"
                           data-id={String(task.id)}
                           aria-label={`Task: ${String(task.title)}, Priority: ${priorityLabels[p]}${ticketKey ? `, ${ticketKey}` : ""}${promoted ? `, ${t("kanban.promoted", locale)}` : ""}`}
@@ -708,7 +678,7 @@ if (groupByProject) {
                         </span>
                       )}
                       <span class="kanban-reaction-count" data-kanban-reaction-count role="img" hidden></span>
-                      {!namedBoardId && <button
+                      {<button
                         type="button"
                         class="card-action-btn card-more-btn"
                         data-id={String(task.id)}
@@ -815,7 +785,7 @@ if (groupByProject) {
                                       {task.assigned_to && (
                         <span class="kanban-assignee-badge" title={t("tasks.assignee_loading", locale)}>
                           <Icon name="user" size={14} />
-                          <span class="kanban-assignee-name" dir="auto" data-task-assignee={String(task.assigned_to)}>{namedUser ? namedUser.roster.get(String(task.assigned_to).replace(/^ha_/, "")) || "Assignee unavailable" : t("tasks.assignee_loading", locale)}</span>
+                          <span class="kanban-assignee-name" dir="auto" data-task-assignee={String(task.assigned_to)}>{t("tasks.assignee_loading", locale)}</span>
                         </span>
                       )}
                       <BotBadge
@@ -894,12 +864,12 @@ if (groupByProject) {
                       <button
                         class="card-action-btn card-edit-btn"
                         data-id={String(task.id)}
-                        title={namedBoardId && !namedEdit ? "View task" : t("kanban.edit_task", locale)}
-                        aria-label={`${namedBoardId && !namedEdit ? "View" : "Edit"} task: ${String(task.title ?? "").slice(0, 50)}`}
+                        title={!canEdit ? "View task" : t("kanban.edit_task", locale)}
+                        aria-label={`${!canEdit ? "View" : "Edit"} task: ${String(task.title ?? "").slice(0, 50)}`}
                       >
                         <Icon name="pencil" size={14} />
                       </button>
-                      {!namedBoardId && <><button
+                      {<><button
                         class="card-action-btn card-ai-btn"
                         data-title={String(task.title)}
                         data-desc={
@@ -981,8 +951,8 @@ if (groupByProject) {
             <button
               class="kanban-add-btn"
               data-status={col.key}
-              disabled={Boolean(namedBoardId) && (!namedCreate || (!namedComplete && col.key === "complete"))}
-              aria-label={`Add task to ${col.label}`} 
+              disabled={!canCreate || (!canComplete && col.key === "complete")}
+              aria-label={`Add task to ${col.label}`}
             >
               {t("kanban.add_task", locale)}
             </button>
@@ -1012,16 +982,12 @@ if (groupByProject) {
     workflowColumns={workflowColumnsUnavailable ? [] : columns}
     workflowColumnsUnavailable={workflowColumnsUnavailable}
   />}
-  {renderedView === "calendar" && <TasksCalendarView />}
-  {renderedView === "timeline" && <TasksTimelineView />}
+  {renderedView === "calendar" && <TasksCalendarView {scope} />}
+  {renderedView === "timeline" && <TasksTimelineView {scope} />}
 
-  {namedView && namedUser && <TaskDetailModal namedBoard>
-    <NamedBoardInspector boardId={namedBoardId!} view={namedView} selection={namedSelection} session={namedSession!} roster={namedUser.roster} />
-  </TaskDetailModal>}
   </div>
-  {namedView && <p class="boards-workspace" data-board-expired hidden>Board access or content changed. <button type="button" class="btn btn-ghost" data-board-refresh>Refresh Board</button></p>}
+  <p class="boards-workspace" data-board-expired hidden>Board access changed. <button type="button" class="btn btn-ghost" data-board-refresh>Refresh Board</button></p>
   <script>
-    import { bindNamedBoardKanban } from "@lib/named-board-kanban-controller"
     import { bindBoardPage } from "@lib/boards-page"
     import { initTasksViewSwitcher } from "@lib/tasks-view-controller"
     import { initAreaSelector } from "@lib/area-selector-controller"
@@ -1037,17 +1003,13 @@ if (groupByProject) {
     let fieldsPanelAbort: AbortController | null = null
 
     pageLifecycle.onPageLoad((signal) => {
+      bindBoardPage(signal)
       const view = parseTaskView(document.querySelector<HTMLElement>("[data-task-view]")?.dataset.taskView ?? null)
       if (!view) return
 
       // Each init block is isolated with try/catch to prevent cascade failures.
       // If one controller throws (import failure, missing DOM, etc.), the rest still register.
 
-      if (document.querySelector("[data-board-directory][data-task-workspace]")) {
-        bindBoardPage(signal)
-        bindNamedBoardKanban(signal)
-        return
-      }
       try {
         // Phase 16.1: Unified view switcher (kanban/table/calendar/timeline)
         initTasksViewSwitcher(view, signal)
@@ -1206,7 +1168,7 @@ if (groupByProject) {
     position: relative;
     z-index: 25;
   }
-  
+
   /* View-specific toolbar actions: see <style is:global> block above */
   .kanban-fields-panel {
     margin-bottom: 12px;

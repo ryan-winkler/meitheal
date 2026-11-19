@@ -240,7 +240,7 @@ async def test_concurrent_native_requests_bind_authority_to_their_own_receipts(a
     server_app.router.add_delete("/api/tasks/fallback", response)
     server = await aiohttp_server(server_app)
     async with ClientSession() as session:
-        api = MeithealApi(session, server.make_url("").origin(), None)
+        api = MeithealApi(session, server.make_url("").origin(), "mth_" + "a" * 64, "work")
         owned, fallback = set(), set()
         await asyncio.gather(
             api.async_request("PUT", "/api/tasks/owned", payload={"title": "Owned"}, event_authority=owned),
@@ -465,7 +465,7 @@ async def test_todo_completion_rejects_an_unmatched_successful_receipt(hass, aio
     actions, detaches = await attach_actions(hass)
     try:
         async with ClientSession() as session:
-            coordinator = MeithealCoordinator(hass, MeithealApi(session, server.make_url("").origin(), token))
+            coordinator = MeithealCoordinator(hass, MeithealApi(session, server.make_url("").origin(), token, "work"))
             coordinator.async_request_refresh = AsyncMock()
             todo = MeithealTodoListEntity(coordinator, SimpleNamespace(entry_id="event-todo"))
             with pytest.raises(UpdateFailed, match="did not acknowledge task completion"):

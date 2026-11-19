@@ -1,6 +1,7 @@
 import { taskReactionStorageSql } from "./task-reaction-schema.mjs"
 import { matchesSql } from "./board-storage-schema.mjs"
 import { lifecycleHouseholdIdentitySql } from "./task-board-household.mjs"
+import { ordinaryRetirementTriggers } from "./0016_ordinary_boards.mjs"
 
 export const BOARD_LIFECYCLE_SCHEMA_VERSION = 25
 export const BOARD_LIFECYCLE_MIGRATION = "0015_board_lifecycle.mjs"
@@ -59,10 +60,11 @@ export const householdRetirementTriggers = Object.entries(scoped).flatMap(([tabl
 export async function readBoardLifecycleMigrationState(db) {
   const { rows: [version] } = await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")
   const { rows: ledger } = await db.execute({ sql: "SELECT name FROM __meitheal_migrations WHERE name = ? COLLATE NOCASE", args: [BOARD_LIFECYCLE_MIGRATION] })
-  const { rows } = await db.execute("SELECT name, sql FROM sqlite_schema WHERE type = 'trigger' AND name LIKE 'household_retired_%'")
+  const { rows } = await db.execute("SELECT name, sql FROM sqlite_schema WHERE type = 'trigger' AND (name LIKE 'household_retired_%' OR name LIKE 'board_retired_%')")
   const current = Number(version?.value) >= BOARD_LIFECYCLE_SCHEMA_VERSION
+  const expected = Number(version?.value) >= 26 ? ordinaryRetirementTriggers : householdRetirementTriggers
   if ((current ? 1 : 0) !== ledger.length || (current && (ledger[0]?.name !== BOARD_LIFECYCLE_MIGRATION ||
-    rows.length !== householdRetirementTriggers.length || householdRetirementTriggers.some(([name, sql]) =>
+    rows.length !== expected.length || expected.some(([name, sql]) =>
       !rows.some(row => row.name === name && matchesSql(row.sql, sql))))) || (!current && rows.length)) {
     throw new Error("The Meitheal Board lifecycle schema markers disagree")
   }

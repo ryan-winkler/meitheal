@@ -1,5 +1,5 @@
 import { guardClientContinuity } from "../tasks/persistence/continuity-client"
-import { readHouseholdBoardState } from "../tasks/persistence/named-board-repository"
+import { readWorkDestinations, currentBoardGrantRevision } from "@domains/tasks"
 /**
  * HA Startup — Server-Side Integration Initialization
  *
@@ -89,7 +89,7 @@ function withStartupCap(task: Promise<unknown>, timeoutMs: number): Promise<void
  *   0. Verify/ensure local SQLite schema once
  *   1. Start local due-date reminder scheduler & establish WebSocket connection to HA Core
  *   2. Subscribe to scoped entity state changes
- *   3. Auto-start Todo sync -> title cleanup -> Calendar sync -> Grocy sync -> Webhook validation sequentially
+ *   3. Auto-start Todo sync -> Calendar sync -> Grocy sync -> Webhook validation sequentially
  */
 export async function initHAIntegrations(): Promise<void> {
   if (initialized || initializing) return;
@@ -98,7 +98,7 @@ export async function initHAIntegrations(): Promise<void> {
   try {
     // Ensure schema verification completes once before background schedulers or WS frames run.
     const client = await getDB()
-    if (await readHouseholdBoardState(client) === "locked") return
+    if (!await currentBoardGrantRevision(client)) return
     const settingsRevision = _getSettingsRevision!()
     const environmentFingerprint = startupEnvironmentFingerprint()
     // Unconfigured standalone requests need no repeated settings DDL or startup logs.
@@ -150,9 +150,6 @@ export async function initHAIntegrations(): Promise<void> {
 
     // Step 3: Read saved todo sync settings and auto-start
     await autoStartTodoSync();
-
-    // Step 3.1: One-time cleanup of corrupt task titles from HA todo sync
-    await cleanupCorruptTitleData();
 
     // Step 4: Read saved calendar sync settings and auto-start
     await autoStartCalendarSync();
@@ -249,12 +246,12 @@ async function autoStartTodoSync(): Promise<void> {
     const { startTodoSync } = await import("@domains/todo");
     await withStartupCap(
       startTodoSync(
-        entityIds.map((entityId) => ({
-          entityId,
+        (await readWorkDestinations(client))?.bindings.filter(binding => binding.enabled && binding.integration === "todo" && binding.purpose === "todo.sync" && entityIds.includes(binding.sourceId)).map((binding) => ({
+          bindingId: binding.id, generation: binding.generation, entityId: binding.sourceId,
           syncEnabled: true,
           writeBack: direction === "outbound" || direction === "bidirectional",
           syncDirection: direction,
-        })),
+        })) ?? [],
       ),
       5_000,
     );
@@ -316,22 +313,6 @@ async function autoStartCalendarSync(): Promise<void> {
 
     const entityIds = configuredCalendarEntityIds(settings)
 
-    // Backward-compat migration: copy legacy key to canonical
-    if (entityIds.length > 0 && !settings.calendar_entity && (settings.cal_entity || settings["calendar-entity"])) {
-      try {
-        await client.execute({
-          sql: `INSERT INTO settings (key, value, updated_at) VALUES ('calendar_entity', ?, ?)
-                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-          args: [JSON.stringify(entityIds[0]), Date.now()],
-        });
-        logger.log("info", {
-          event: "ha.startup.calendar_sync.key_migrated",
-          domain: "calendar", component: "ha-startup",
-          request_id: SYS_REQ, message: `Migrated legacy calendar key to calendar_entity: ${entityIds[0]}`,
-        });
-      } catch { /* non-critical */ }
-    }
-
     if (entityIds.length === 0 && !settings.caldav_url) {
       logger.log("info", {
         event: "ha.startup.calendar_sync.skipped",
@@ -369,10 +350,12 @@ async function autoStartCalendarSync(): Promise<void> {
     const globalMode: CalSyncMode =
       (settings.calendar_sync_mode as CalSyncMode) ?? "bidirectional";
 
-    const configs = entityIds.map((entityId) => {
+    const approvedBindings = (await readWorkDestinations(client))?.bindings.filter(binding => binding.enabled && binding.purpose === "calendar.sync") ?? []
+    const configs = approvedBindings.filter(binding => binding.integration === "calendar" && entityIds.includes(binding.sourceId)).map((binding) => {
+      const entityId = binding.sourceId
       const mode = perEntityModes[entityId] ?? globalMode;
       return {
-        entityId,
+        bindingId: binding.id, generation: binding.generation, entityId,
         syncEnabled: true,
         syncMode: mode,
         writeBack: mode !== "import" ? writeBack : false,
@@ -385,7 +368,9 @@ async function autoStartCalendarSync(): Promise<void> {
     }
 
     if (settings.caldav_url) {
-      await startCalDAVSync(settings.caldav_url, syncIntervalMs);
+      for (const binding of approvedBindings.filter(binding => binding.integration === "caldav" && binding.sourceId === "configured-caldav")) {
+        await startCalDAVSync(settings.caldav_url, syncIntervalMs, { bindingId: binding.id, generation: binding.generation })
+      }
     }
 
     logger.log("info", {
@@ -513,7 +498,7 @@ export async function autoStartGrocySync(
     // Validate & migrate Grocy URL through createGrocyClient before starting sync bridge
     const { createGrocyClient, isLegacySupervisorIngressUrl } = await import("../../lib/grocy-client")
 
-    if (retryAttempt > 0 && getGrocySyncStatus().active) {
+    if (retryAttempt > 0 && (await getGrocySyncStatus()).active) {
       resetGrocyStartupRetryTimer()
       return
     }
@@ -547,10 +532,10 @@ export async function autoStartGrocySync(
     }
 
     resetGrocyStartupRetryTimer()
-    startGrocySync(
-      { syncEnabled: true, syncMode, intervalMs },
-      adapter,
-    )
+    for (const binding of (await readWorkDestinations(client))?.bindings ?? []) {
+      if (!binding.enabled || binding.integration !== "grocy" || binding.purpose !== "grocy.sync" || binding.sourceId !== "configured-grocy") continue
+      await startGrocySync({ bindingId: binding.id, generation: binding.generation, syncEnabled: true, syncMode, intervalMs }, adapter)
+    }
 
     logger.log("info", {
       event: "ha.startup.grocy.started",
@@ -680,34 +665,3 @@ async function autoStartDueDateReminders(): Promise<void> {
     });
   }
 }
-
-/**
- * One-time cleanup of corrupt task titles from HA todo sync.
- * Strips recursive MTH-NN prefixes and trailing DUE repetitions.
- * Idempotent — safe to call multiple times (no-ops on clean data).
- */
-async function cleanupCorruptTitleData(): Promise<void> {
-  try {
-    const { cleanupCorruptTitles } = await import("@lib/cleanup-corrupt-titles");
-    const cleaned = await cleanupCorruptTitles();
-    if (cleaned > 0) {
-      logger.log("info", {
-        event: "ha.startup.title_cleanup.complete",
-        domain: "tasks",
-        component: "ha-startup",
-        request_id: SYS_REQ,
-        message: `Cleaned ${cleaned} corrupt task titles`,
-        metadata: { cleaned },
-      });
-    }
-  } catch (err) {
-    logger.log("error", {
-      event: "ha.startup.title_cleanup.failed",
-      domain: "tasks",
-      component: "ha-startup",
-      request_id: SYS_REQ,
-      message: `Title cleanup failed: ${err}`,
-    });
-  }
-}
-

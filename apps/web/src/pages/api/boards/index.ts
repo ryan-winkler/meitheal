@@ -4,13 +4,13 @@ import { NamedBoardRepository } from "@domains/tasks/persistence/named-board-rep
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { boardViewResponse, readBoardDirectory } from "@lib/board-view"
 import { apiError, apiJson } from "@lib/api-response"
-import { boardSessionProof, currentBoardUser, readBoardRequest } from "@lib/named-board-request"
+import { boardSessionProof, currentBoardContext, readBoardRequest } from "@lib/named-board-request"
 import { stripHtml } from "@lib/strip-html"
 
-export const GET: APIRoute = async ({ locals, request }) => {
-  const user = await currentBoardUser(locals, request.signal)
-  if (!user) return apiError("Open Meitheal through Home Assistant to view your Boards.", 403)
-  const directory = await readBoardDirectory(user.actor, Boolean(user.isAdmin))
+export const GET: APIRoute = async context => {
+  const user = await currentBoardContext(context)
+  if (!user) return apiError("Use your current authenticated session to view Boards.", 403)
+  const directory = await readBoardDirectory(user.actor)
   const response = boardViewResponse(directory, user.actor.id)
   response.headers.set("x-meitheal-board-session", boardSessionProof(user.actor.id))
   response.headers.set("cache-control", "private, no-store")
@@ -19,17 +19,18 @@ export const GET: APIRoute = async ({ locals, request }) => {
 
 export const HEAD = GET
 
-export const POST: APIRoute = async ({ locals, request }) => {
+export const POST: APIRoute = async context => {
+  const { request } = context
   const body = await readBoardRequest(request)
   const name = typeof body?.name === "string" ? stripHtml(body.name.trim()) : ""
   if (!name || name.length > 100) return apiError("Enter a Board name of 1 to 100 characters.", 400)
   if (!available("organizer")) return apiError("The Boards organizer is unavailable.", 404)
-  const user = await currentBoardUser(locals, request.signal, request)
-  if (!user) return apiError("Open Meitheal through Home Assistant to create a Board.", 403)
+  const user = await currentBoardContext(context, true)
+  if (!user) return apiError("Use your current authenticated session to create a Board.", 403)
   await ensureSchema()
   const repository = new NamedBoardRepository(getPersistenceClient())
-  const result = await repository.create(user.actor.id, name)
+  const result = await repository.create(user.principal, name)
   if (result.status === "committed") return apiJson(result.result, 201)
   if (result.status === "committed-locked") return apiJson({ ...result.result, accessPending: true }, 202)
-  return apiError("Named Board access is temporarily locked.", 503)
+  return apiError("Board access is temporarily locked.", 503)
 }

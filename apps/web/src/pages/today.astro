@@ -1,4 +1,6 @@
 ---
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+
 import BoardRoutineCheckins from "../components/boards/BoardRoutineCheckins.astro"
 /**
  * Today Page — Smart Daily Cockpit
@@ -39,6 +41,10 @@ import { isOrganizationFeatureAvailable } from "../lib/organization-request-cont
 import { TODAY_SECTIONS } from "../lib/today-registry"
 import { verifiedIngressUser } from "../lib/verified-ingress-user"
 import { getUnscheduledPage, requestedUnscheduledPage, setUnscheduledPage } from "../lib/today-list"
+const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
+if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
+const workScope = workScopeResult.scope
+
 
 let carriedForwardTasks: TaskViewItem[] = []
 let pinnedTasks: TaskViewItem[] = []
@@ -69,7 +75,7 @@ function focusDueLabel(task: TaskViewItem): string | undefined {
 try {
   const todayStr = todayIsoDate
   const includeUnscheduled = requestedUnscheduledPage(Astro.url.searchParams) !== null
-  const { tasks, completedTodayCount: completed, openUnscheduledCount, completedTasks } = await getTodayTaskRows(todayStr, includeUnscheduled, todayTimeZone, todayDate)
+  const { tasks, completedTodayCount: completed, openUnscheduledCount, completedTasks } = await getTodayTaskRows(todayStr, includeUnscheduled, todayTimeZone, todayDate, workScope)
   completedTodayCount = completed
   completedTaskSummaries = completedTasks
 
@@ -155,7 +161,7 @@ if (verifiedIngressUser(Astro.locals)) {
 // G36: Fetch gamification stats for streak/XP display.
 if (isOrganizationFeatureAvailable("achievements")) try {
   const { getDailyProgress } = await import("@domains/gamification")
-  const progress = await getDailyProgress(Astro.locals, todayDate)
+  const progress = await getDailyProgress(workScope, todayDate)
   currentStreak = progress.currentStreak
   todayXP = progress.points
 } catch { /* gamification may not be initialized */ }
@@ -164,7 +170,7 @@ if (isOrganizationFeatureAvailable("achievements")) try {
 try {
   habitsEnabled = await isFeatureEnabled("habits")
   if (habitsEnabled) {
-    const repo = new TemplateRepository(getPersistenceClient())
+    const repo = new TemplateRepository(getPersistenceClient(), workScope)
     habits = await repo.getHabitsWithStats()
   }
 } catch { /* habits may not be available */ }

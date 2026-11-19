@@ -1,5 +1,7 @@
 # Architecture and product decisions
 
+- [One Board model](0027-ordinary-board-workspaces.md) - User-defined peer Boards, one work engine, scoped planning and connected-work authority.
+
 - [Shared Board workspace and recoverable removal](0025-board-workspace-lifecycle.md) - Records the shared Kanban, Area terminology and Board deletion and restoration behavior.
 
 - [ADR 0001: Legal and Naming Strategy](0001-legal-and-naming-strategy.md) - Records the product naming and legal strategy.

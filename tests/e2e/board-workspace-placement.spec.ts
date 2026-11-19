@@ -1,3 +1,4 @@
+import { currentBoardScope } from "../helpers/current-board-scope"
 import { expect, test } from "@playwright/test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -39,8 +40,9 @@ test("Household filing preserves task identity and lists every group task across
   try {
     await ensureSchema()
     const db = getPersistenceClient()
-    const tasks = new TaskRepository(db)
-    const hierarchy = new HierarchyRepository(db)
+    const scope = await currentBoardScope(db)
+    const tasks = new TaskRepository(db, scope)
+    const hierarchy = new HierarchyRepository(db, scope)
     await db.batch([
       "INSERT INTO areas (id, name, created_at, updated_at) VALUES ('kitchen', 'Kitchen', 1, 1)",
       "INSERT INTO areas (id, name, created_at, updated_at) VALUES ('yard', 'Yard', 1, 1)",
@@ -63,8 +65,8 @@ test("Household filing preserves task identity and lists every group task across
     const placed = await tasks.fileHouseholdTask("task-0", 1000000000000, { projectId: "renovate" })
     expect(placed).toMatchObject({ ok: true, task: { id: "task-0", area_id: "kitchen", project_id: "renovate" } })
     if (!placed.ok) throw new Error("Expected filing")
-    const unfiled = await tasks.fileHouseholdTask("task-0", Number(placed.task.task_version), { areaId: null, projectId: null })
-    expect(unfiled).toMatchObject({ ok: true, task: { area_id: "default", project_id: null } })
+    const unfiled = await tasks.fileHouseholdTask("task-0", Number(placed.task.updated_at), { areaId: null, projectId: null })
+    expect(unfiled).toMatchObject({ ok: true, task: { area_id: null, project_id: null } })
     const page = await hierarchy.findAreaPage(null)
     expect(page.items.map(group => group.id)).toContain("kitchen")
     expect(await hierarchy.findAreaPage("missing")).toEqual({ items: [], next_cursor: null })

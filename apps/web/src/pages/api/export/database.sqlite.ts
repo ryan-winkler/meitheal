@@ -134,8 +134,8 @@ export const POST: APIRoute = async ({ locals, request }) => {
     try {
       // Pin one WAL snapshot so writes on other connections cannot restart the copy.
       source.exec("BEGIN")
-      if (source.prepare("SELECT 1 FROM task_boards WHERE id <> 'household' LIMIT 1").get()) {
-        return backupProblem(403, "Download is unavailable for databases with named Boards. Use the Home Assistant backup controls.")
+      if (source.prepare("SELECT 1 FROM task_boards WHERE visibility = 'restricted' OR (SELECT COUNT(*) FROM task_boards) > 1 LIMIT 1").get()) {
+        return backupProblem(403, "Download is unavailable for databases with multiple or restricted Boards. Use the Home Assistant backup controls.")
       }
       if (source.prepare("SELECT 1 FROM app_settings WHERE key = 'private_organization_data' LIMIT 1").get()) {
         return backupProblem(403, "Use Home Assistant backups for databases containing personal labels or restricted organization data.")

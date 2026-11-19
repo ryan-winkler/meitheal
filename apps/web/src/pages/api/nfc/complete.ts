@@ -1,3 +1,4 @@
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
@@ -8,7 +9,7 @@ import { PUT as updateTask } from "../tasks/[id]"
 import { HA_EVENT_AUTHORITY_HEADER } from "../../../lib/webhook-dispatcher"
 
 /** Complete the uniquely assigned task through the ordinary task mutation path. */
-export const POST: APIRoute = async (context) => {
+export const POST: APIRoute = withBoardScope({ resource: "task", action: "complete" }, async (context, scope) => {
   if (!(await isFeatureEnabled("nfc"))) return apiError("NFC completion is disabled", 404)
   let body: unknown
   try {
@@ -22,7 +23,7 @@ export const POST: APIRoute = async (context) => {
     return apiError("tag_id must be 1-255 characters", 400)
   }
   await ensureSchema()
-  const repo = new TaskRepository(getPersistenceClient())
+  const repo = new TaskRepository(getPersistenceClient(), scope)
   const matches = await repo.findByNfcTag(input.tag_id.trim())
   if (!matches.length) return apiError("No task is assigned to this NFC tag", 404)
   if (matches.length > 1) return apiError("NFC tag is assigned to multiple tasks; remove duplicate assignments", 409)
@@ -42,4 +43,4 @@ export const POST: APIRoute = async (context) => {
   const authority = response.headers.get(HA_EVENT_AUTHORITY_HEADER)
   if (authority) result.headers.set(HA_EVENT_AUTHORITY_HEADER, authority)
   return result
-}
+})

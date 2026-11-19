@@ -1,92 +1,34 @@
-import { calendarSyncResult } from "@domains/calendar/calendar-sync-result"
-import { resolveCalendarEntities } from "@domains/calendar/resolve-calendar-entities"
-/**
- * HA Calendar API Endpoints
- *
- * GET /api/ha/calendars — list available HA calendar entities
- * GET /api/ha/calendars?entity_id=X&start=Y&end=Z — get events
- * POST /api/ha/calendars — trigger manual sync
- *
- * @domain calendar
- * @bounded-context integration
- */
-import type { APIRoute } from "astro";
-import { getCalendarEntities, listCalendarEvents } from "../../../domains/ha";
-import { getCalendarSyncStatus, syncFromHA } from "../../../domains/calendar/calendar-bridge";
+import type { APIRoute } from "astro"
+import { getCalendarEntities, listCalendarEvents } from "@domains/ha"
+import { getCalendarSyncStatus } from "@domains/calendar"
+import { canReadBoardAggregate, getPersistenceClient, validateIntegrationScope } from "@domains/tasks"
+import { withBoardScope } from "@lib/board-http"
+import { currentSettingsAccess } from "@lib/current-settings-access"
+import { requestIntegrationBinding, visibleIntegrationBindings } from "@lib/integration-binding-access"
+import { apiJson, apiError } from "@lib/api-response"
+import { POST as syncCalendar } from "../integrations/calendar/sync"
 
-export const GET: APIRoute = async ({ url }) => {
-  try {
-    if (url.searchParams.get("configured") === "1") {
-      return Response.json({ entities: await resolveCalendarEntities(true) }, {
-        headers: { "Cache-Control": "private, no-store" },
-      })
-    }
-    const entityId = url.searchParams.get("entity_id");
-    const start = url.searchParams.get("start");
-    const end = url.searchParams.get("end");
-
-    if (entityId && start && end) {
-      // Get events for a specific calendar
-      const events = await listCalendarEvents(entityId, start, end);
-      return new Response(JSON.stringify({ entity_id: entityId, events }), {
-        status: 200, headers: { "content-type": "application/json" },
-      });
-    }
-
-    // List all calendar entities
-    const entities = getCalendarEntities().map((e) => ({
-      entity_id: e.entity_id,
-      friendly_name: e.attributes?.friendly_name ?? e.entity_id,
-      state: e.state,
-    }));
-
-    const syncStatus = getCalendarSyncStatus();
-
-    return new Response(JSON.stringify({ calendars: entities, sync: syncStatus }), {
-      status: 200, headers: { "content-type": "application/json" },
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Calendar API error";
-    return new Response(JSON.stringify({ error: message }), {
-      status: 500, headers: { "content-type": "application/json" },
-    });
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async ({ request, url, locals }, scope) => {
+  const bindings = await visibleIntegrationBindings(scope, ["calendar"])
+  const ids = new Set(bindings.map(binding => binding.sourceId))
+  if (url.searchParams.get("configured") === "1") return apiJson({ entities: [...ids] })
+  const entityId = url.searchParams.get("entity_id"), start = url.searchParams.get("start"), end = url.searchParams.get("end")
+  if (entityId && start && end) {
+    const access = await currentSettingsAccess(request, locals, true)
+    if (access instanceof Response) return access
+    const approved = await requestIntegrationBinding(scope, "calendar", "calendar.sync", { entity_id: entityId }, { resource: "task", action: "read" })
+    const db = getPersistenceClient()
+    if (!approved?.ok || !await canReadBoardAggregate(db, scope)) return apiError("This Calendar source is unavailable.", 404)
+    const operationAllowed = async () => (await validateIntegrationScope(approved.value, db, { resource: "task", action: "read" })).ok && await canReadBoardAggregate(db, scope)
+    const events = await listCalendarEvents(entityId, start, end, { operationAllowed })
+    if (!await operationAllowed()) return apiError("Calendar access changed.", 409)
+    return apiJson({ entity_id: entityId, events })
   }
-};
+  const access = await currentSettingsAccess(request, locals, false)
+  const calendars = getCalendarEntities().filter(entity => !(access instanceof Response) && access.admin || ids.has(entity.entity_id)).map(entity => ({
+    entity_id: entity.entity_id, friendly_name: entity.attributes?.friendly_name ?? entity.entity_id,
+  }))
+  return apiJson({ calendars, sync: await getCalendarSyncStatus(scope) })
+})
 
-export const POST: APIRoute = async ({ request }) => {
-  try {
-    let entityId: string | undefined;
-    let resolvedEntities: string[] = [];
-    try {
-      const body = await request.json() as { entity_id?: string };
-      entityId = body.entity_id;
-    } catch { /* no body or invalid JSON — will resolve from settings */ }
-
-    if (entityId) {
-      resolvedEntities = [entityId];
-    } else {
-      // Resolve via shared helper (uses SettingsRepository)
-      resolvedEntities = await resolveCalendarEntities();
-    }
-
-    if (resolvedEntities.length === 0) {
-      return new Response(JSON.stringify({ ok: false, error: "No calendar entities configured" }), {
-        status: 400, headers: { "content-type": "application/json" },
-      });
-    }
-
-    // Sync each entity individually — bypasses activeSyncs guard
-    const results = await Promise.allSettled(
-      resolvedEntities.map((eid) => syncFromHA(eid)),
-    );
-    const outcome = calendarSyncResult(resolvedEntities, results)
-    return new Response(JSON.stringify(outcome), {
-      status: outcome.ok ? 200 : 502, headers: { "Content-Type": "application/json" },
-    })
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Calendar sync failed";
-    return new Response(JSON.stringify({ ok: false, error: message }), {
-      status: 500, headers: { "content-type": "application/json" },
-    });
-  }
-};
+export const POST: APIRoute = syncCalendar

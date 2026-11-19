@@ -33,6 +33,8 @@ import {
   applyTaskSchemaPrerequisites, seedHouseholdTaskPrerequisites, validateTaskSchemaPrerequisites,
 } from "../drizzle/migrations/task-schema-prerequisites.mjs"
 import { splitSqlStatements } from "./split-sql-statements.mjs"
+import { applyOrdinaryBoardMigration, readOrdinaryBoardMigrationState, ORDINARY_BOARD_MIGRATION } from "../drizzle/migrations/0016_ordinary_boards.mjs"
+import { admitStartupBoardTransition } from "./board-grant-journal.mjs"
 
 /** @typedef {import("@libsql/client").Transaction} Transaction */
 
@@ -112,6 +114,7 @@ export async function validateStartupTaskSchema(tx, { allowPending = false } = {
   const organizationAccessReady = await readOrganizationAccessMigrationState(tx)
   const featuresReady = await readOrganizationFeatureMigrationState(tx)
   const lifecycleReady = await readBoardLifecycleMigrationState(tx)
+  const ordinaryReady = await readOrdinaryBoardMigrationState(tx)
   if (!allowPending) {
     const pending = [
       !personalReady && PERSONAL_PILLAR_MIGRATION,
@@ -120,6 +123,7 @@ export async function validateStartupTaskSchema(tx, { allowPending = false } = {
       !organizationAccessReady && ORGANIZATION_ACCESS_MIGRATION,
       !featuresReady && ORGANIZATION_FEATURE_MIGRATION,
       !lifecycleReady && BOARD_LIFECYCLE_MIGRATION,
+      !ordinaryReady && ORDINARY_BOARD_MIGRATION,
     ].filter(Boolean)
     if (pending.length) throw new Error(`Pending migrations: ${pending.join(", ")}`)
   }
@@ -134,7 +138,8 @@ export async function validateStartupTaskSchema(tx, { allowPending = false } = {
 export async function applyStartupTaskSchema(tx, prepareRuntime) {
   if (await readTaskBoardMigrationState(tx) === "household-v19") {
     await validateCommittedTaskSchema(tx)
-    await seedHouseholdTaskPrerequisites(tx)
+    const { rows: [version] } = await tx.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")
+    if (Number(version?.value) < 26) await seedHouseholdTaskPrerequisites(tx)
     await prepareRuntime?.(tx)
     const applied = []
     if (await applyPersonalPillarMigration(tx)) applied.push(PERSONAL_PILLAR_MIGRATION)
@@ -188,4 +193,21 @@ export async function applyStartupTaskSchema(tx, prepareRuntime) {
   await applyOrganizationFeatureMigration(tx)
   await applyBoardLifecycleMigration(tx)
   return [...pending, TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION, ORGANIZATION_FEATURE_MIGRATION, BOARD_LIFECYCLE_MIGRATION]
+}
+
+/** One startup entrypoint for the server, migrator and consumed cold operator flow. */
+export async function applyStartupBoardSchema(client, tx, prepareRuntime, { operatorAdmission } = {}) {
+  const applied = await applyStartupTaskSchema(tx, prepareRuntime)
+  if (await readOrdinaryBoardMigrationState(tx)) {
+    // Do not acquire a nested writer while this startup writer is held.
+    const { boardGrantStillCurrent, databaseRevision, getBoardGrantPath, publishCommittedMarker } = await import("./board-grant-journal.mjs")
+    const revision = await databaseRevision(tx)
+    const path = getBoardGrantPath(client)
+    const ready = revision && await publishCommittedMarker(path, revision) && await boardGrantStillCurrent(tx, revision, path)
+    return { applied, state: ready ? "ready" : "continuity_locked", pending: [], revision: ready ? revision : null }
+  }
+  const transition = await admitStartupBoardTransition(client, tx, operatorAdmission)
+  if (!transition) return { applied, state: "continuity_locked", pending: [ORDINARY_BOARD_MIGRATION], revision: null }
+  await applyOrdinaryBoardMigration(tx, transition.admission)
+  return { applied: [...applied, ORDINARY_BOARD_MIGRATION], state: "ready", pending: [], revision: transition.revision }
 }

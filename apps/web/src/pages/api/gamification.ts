@@ -1,3 +1,5 @@
+import { boardScopeErrorResponse } from "@lib/board-http"
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import {
   getStats,
@@ -26,15 +28,15 @@ const featureGuard = async () => {
   return null
 }
 
-export const GET: APIRoute = async ({ url }) => {
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async ({ url }, scope) => {
   const guardResult = await featureGuard()
   if (guardResult) return guardResult
   try {
     const includeHeatmap = url.searchParams.get("heatmap") === "true"
     const [stats, weekly, achievementData] = await Promise.all([
-      getStats(),
-      getWeeklyData(),
-      getAllAchievements(),
+      getStats(scope),
+      getWeeklyData(scope),
+      getAllAchievements(scope),
     ])
 
     const level = getLevel(stats.totalPoints)
@@ -56,14 +58,16 @@ export const GET: APIRoute = async ({ url }) => {
       const year = url.searchParams.get("year")
         ? Number(url.searchParams.get("year"))
         : undefined
-      result.heatmap = await getYearlyHeatmapData(year)
+      result.heatmap = await getYearlyHeatmapData(scope, year)
     }
 
     return apiJson(result)
   } catch (err) {
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
     return apiError("Failed to get gamification stats")
   }
-}
+})
 
 /** Legacy client-side recording cannot prove a task transition and would double count. */
 export const POST: APIRoute = async () => apiError("Complete a task through /api/tasks/{id}; completion statistics are recorded automatically", 410)

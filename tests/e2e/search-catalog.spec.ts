@@ -1,3 +1,5 @@
+import { currentBoardScope } from "../helpers/current-board-scope"
+import { runWithIngressTransport } from "../../apps/web/scripts/ingress-transport.mjs"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -48,11 +50,10 @@ async function addTask(db: Database, id: string, fields: {
   })
 }
 
-const search = (params: string) => GET({
-  url: new URL("http://localhost/api/search?" + params),
-  cookies: { get: () => undefined },
-  locals: {},
-} as unknown as Parameters<typeof GET>[0])
+const search = (params: string) => runWithIngressTransport({ peer: "127.0.0.1", fromSupervisor: false, identityHeadersSafe: true, configuredPath: undefined }, () => {
+  const url = new URL("http://localhost/api/search?board_id=household&" + params)
+  return GET({ url, request: new Request(url), cookies: { get: () => undefined }, locals: {}, params: {} } as unknown as Parameters<typeof GET>[0])
+})
 
 async function results(params: Record<string, string>) {
   const response = await search(new URLSearchParams({ scope: "tasks", ...params }).toString())
@@ -153,7 +154,7 @@ test("SQLite reads comments only when selected and uses the task index", async (
       }
       return Reflect.get(target, property, receiver)
     },
-  }))
+  }), await currentBoardScope(db))
   for (const [query, fields, comments] of [
     ["", ["comments"], false],
     ["missing", ["title"], false],

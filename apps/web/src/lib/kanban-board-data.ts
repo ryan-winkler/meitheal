@@ -18,6 +18,7 @@ export async function loadKanbanBoard(
       [...new Set(lanes.flatMap(lane => lane.includes))], cutoff,
       {
         matchText: Boolean(filters.search || filters.labels?.length || filters.advancedFilter),
+        search: filters.search,
         matchOverdue: filters.status === "overdue",
         timezone, location, projectId: params.get("project") || undefined,
       },
@@ -34,13 +35,13 @@ export async function loadKanbanBoard(
       if (filters.promoted && task.is_promoted !== 1) continue
       const dataset = {
         title: task.title ?? "",
-        search: task.title?.toLowerCase() ?? "",
+        search: task.description_matches === 1 ? (filters.search ?? "").toLowerCase() : task.title?.toLowerCase() ?? "",
         status: task.status,
         overdue: task.overdue === 1 ? "true" : undefined,
         priority: String(task.priority ?? 3),
         taskType: task.task_type ?? "task",
         taskKind: task.task_kind ?? "standard_action",
-        area: task.area_id ?? "default",
+        area: task.area_id ?? "",
         assigned: task.assigned_to ?? "",
         labels: task.labels ?? "[]",
       }

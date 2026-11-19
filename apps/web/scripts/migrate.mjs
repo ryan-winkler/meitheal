@@ -2,8 +2,8 @@ import { mkdir } from "node:fs/promises"
 import path from "node:path"
 import { openDatabaseForStartup, withStartupWriteTransaction } from "./database-client.mjs"
 import { autoBackupDb } from "./startup-backup.mjs"
-import { applyStartupTaskSchema, validateStartupTaskSchema } from "./task-schema-startup.mjs"
-import { finalizeStartupBoardGrant, initializeBoardGrantContinuity } from "./board-grant-journal.mjs"
+import { applyStartupBoardSchema, validateStartupTaskSchema } from "./task-schema-startup.mjs"
+import { finalizeStartupBoardGrant } from "./board-grant-journal.mjs"
 
 const dbUrl = process.env.MEITHEAL_DB_URL ?? "file:./.data/meitheal.db"
 const checkOnly = process.argv.includes("--check")
@@ -28,13 +28,14 @@ async function main() {
     await autoBackupDb(client)
     let initialRevision = null
     const applied = await withStartupWriteTransaction(client, async tx => {
-      const applied = await applyStartupTaskSchema(tx)
-      initialRevision = await initializeBoardGrantContinuity(client, tx)
-      return applied
+      const result = await applyStartupBoardSchema(client, tx)
+      initialRevision = result.revision
+      return result
     })
     await finalizeStartupBoardGrant(client, initialRevision)
-    for (const file of applied) console.log(`Applied migration: ${file}`)
-    if (applied.length === 0) console.log("No migrations to apply.")
+    for (const file of applied.applied) console.log(`Applied migration: ${file}`)
+    if (applied.state === "continuity_locked") console.log(`Current continuity verification required; pending: ${applied.pending.join(", ") || "authority marker"}. Governed work remains locked.`)
+    else if (applied.applied.length === 0) console.log("No migrations to apply.")
   } finally {
     client.close()
   }

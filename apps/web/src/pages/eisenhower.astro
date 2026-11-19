@@ -1,4 +1,6 @@
 ---
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+
 /**
  * Eisenhower Matrix — Schema-driven urgency × importance prioritisation view
  *
@@ -26,6 +28,10 @@ import { getTasksForView, type TaskViewItem } from "../lib/task-queries"
 import { EISENHOWER_SECTIONS } from "../lib/eisenhower-registry"
 import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
+const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
+if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
+const workScope = workScopeResult.scope
+
 
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
@@ -38,7 +44,7 @@ const { tasks } = await getTasksForView({
   includeDeferred: false,
   excludeCompletedBeforeMs: todayStartMs,
   timezone: Astro.locals.timezone || "Europe/Dublin",
-})
+}, workScope)
 const openTasks = tasks.filter((t) => !t.is_done && t.deferred_at === null)
 
 // ── Schema-driven quadrant partitioning ────────────────────────

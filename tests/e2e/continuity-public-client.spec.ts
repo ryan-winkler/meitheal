@@ -1,3 +1,5 @@
+import { currentBoardScope, fixturePrincipal } from "../helpers/current-board-scope"
+import type { BoardScope } from "../../apps/web/src/domains/tasks/board-scope"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -14,11 +16,12 @@ import {
 import { ensureSchema, getPersistenceClient as getFixtureClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 import { GET as getHealth } from "../../apps/web/src/pages/api/health"
 
+let scope: BoardScope
 let work: string
 let marker: string
 let previousDb: string | undefined
 const task = (id: string): TaskCreationData => ({ id, title: id, description: "", status: "pending", priority: 3,
-  due_date: null, labels: "[]", framework_payload: "{}", parent_id: null, area_id: "default", custom_fields: "{}",
+  due_date: null, labels: "[]", framework_payload: "{}", parent_id: null, area_id: null, custom_fields: "{}",
   start_date: null, end_date: null, progress: 0, color: null, is_favorite: 0, task_type: "task", assigned_to: null })
 
 test.beforeEach(async () => {
@@ -29,7 +32,8 @@ test.beforeEach(async () => {
   resetPomodoroForTests()
   resetPersistenceForTests()
   await ensureSchema({ markerPath: marker })
-  await new TaskRepository(getPublicClient()).createTask(task("retained"))
+  scope = await currentBoardScope(getPublicClient())
+  await new TaskRepository(getPublicClient(), scope).createTask(task("retained"))
 })
 
 test.afterEach(async () => {
@@ -53,21 +57,25 @@ test("the public client protects direct SQL and Pomodoro services while diagnost
   expect(getPublicClient()).toBe(client)
   expect(client).not.toBe(getFixtureClient())
   expect((await client.execute("SELECT id FROM tasks")).rows).toEqual([{ id: "retained" }])
-  expect(await startTimeEntryForTask("retained")).toMatchObject({ ok: true, entry: { taskId: "retained" } })
-  expect(await stopTimeEntryForTask("retained")).toMatchObject({ ok: true, entry: { taskId: "retained" } })
-  expect(await getTimeEntries("retained")).toHaveLength(1)
+  expect(await startTimeEntryForTask(scope, "retained")).toMatchObject({ ok: true, entry: { taskId: "retained" } })
+  expect(await stopTimeEntryForTask(scope, "retained")).toMatchObject({ ok: true, entry: { taskId: "retained" } })
+  expect(await getTimeEntries(scope, "retained")).toHaveLength(1)
   const before = await timerRecords()
   const valid = await readFile(marker)
   await rm(marker)
   for (const operation of [
     () => client.execute("SELECT id FROM tasks"),
     () => client.execute("UPDATE tasks SET title = 'must not persist' WHERE id = 'retained'"),
-    () => startTimeEntryForTask("retained"),
-    () => stopTimeEntryForTask("retained"),
-    () => startFocus("retained"),
-    () => getTimeEntries("retained"),
-    () => getSessionHistory(),
-  ]) await expect(operation()).rejects.toMatchObject({ name: "ContinuityLockedError", status: 503 })
+    () => startTimeEntryForTask(scope, "retained"),
+    () => stopTimeEntryForTask(scope, "retained"),
+    () => startFocus(scope, "retained"),
+    () => getTimeEntries(scope, "retained"),
+    () => getSessionHistory(scope),
+  ]) {
+    const error = await operation().then(() => null, error => error)
+    expect(error).not.toBeNull()
+    expect(error.name === "ContinuityLockedError" && error.status === 503 || error.name === "BoardOperationError" && error.errorCode === "stale").toBe(true)
+  }
   await expect(probeDatabaseConnectivity()).resolves.toBeUndefined()
   const previousSupervisor = process.env.SUPERVISOR_TOKEN
   try {
@@ -84,7 +92,7 @@ test("the public client protects direct SQL and Pomodoro services while diagnost
   expect(await timerRecords()).toEqual(before)
   expect((await getFixtureClient().execute("SELECT title FROM tasks WHERE id = 'retained'")).rows).toEqual([{ title: "retained" }])
   await writeFile(marker, valid)
-  expect(await startTimeEntryForTask("retained")).toMatchObject({ ok: true })
+  expect(await startTimeEntryForTask(scope, "retained")).toMatchObject({ ok: true })
 })
 
 test("a public task-time writer rolls back its staged mutation when continuity disappears before commit", async () => {
@@ -119,7 +127,7 @@ test("an admitted real task-time service cannot commit after losing continuity a
     return tx
   }
   const before = await timerRecords()
-  const operation = startTimeEntryForTask("retained")
+  const operation = startTimeEntryForTask(scope, "retained")
   const denied = expect(operation).rejects.toMatchObject({ name: "ContinuityLockedError", status: 503 })
   try {
     await entered
@@ -138,13 +146,15 @@ test("an already running real Pomodoro timer cannot publish focus completion aft
     return originalInterval(() => {}, 60_000)
   }) as typeof setInterval
   try {
-    await startFocus("retained")
+    await startFocus(scope, "retained")
     const before = await timerRecords()
+    const remaining = (await getTimerState(scope)).remaining
     await rm(marker)
     const countdown = tick!
-    const remaining = getTimerState().remaining
     for (let second = 0; second <= remaining; second++) countdown()
-    await expect.poll(() => getTimerState().phase).toBe("short_break")
+    await expect.poll(async () => {
+      try { return (await getTimerState(scope)).phase } catch { return "withheld" }
+    }).toBe("withheld")
     expect(await timerRecords()).toEqual(before)
   } finally { resetPomodoroForTests(); globalThis.setInterval = originalInterval }
 })
@@ -152,12 +162,12 @@ test("an already running real Pomodoro timer cannot publish focus completion aft
 test("journal authority writers still create Boards, restrict access and retire/restore Household through the public client", async () => {
   const client = getPublicClient()
   const boards = new NamedBoardRepository(client)
-  const owner = { kind: "ha_user", id: "owner" } as const
-  const created = await boards.create(owner.id, "Current named Board")
+  const owner = fixturePrincipal()
+  const created = await boards.create(owner, "Current named Board")
   expect(created.status).toBe("committed")
   if (created.status !== "committed") throw new Error("Expected a committed named Board")
   expect(await boards.findAccess(owner, created.result.id)).toMatchObject({ role: "owner", state: "active" })
-  expect(await boards.updateRestrictions(owner.id, created.result.id, { denyCompletion: true, denyDeletion: false, denyAgentDeletion: true }))
+  expect(await boards.updateRestrictions(owner, created.result.id, { denyCompletion: true, denyDeletion: false, denyAgentDeletion: true }))
     .toMatchObject({ status: "committed", result: true })
   expect(await new OrganizationAccessRepository(client).change({ scope: "feature", id: "goals", boardId: "" }, null, { audience: "nobody", users: [] }))
     .toMatchObject({ status: "committed", result: "saved" })
@@ -179,6 +189,6 @@ test("only an actual registered guard is unwrapped; a journal transaction proxy 
     return typeof value === "function" ? value.bind(target) : value
   } })
   expect(unwrapRegisteredContinuityClient(instrumented)).toBe(instrumented)
-  expect(await new NamedBoardRepository(instrumented).create("owner", "Barrier preserved")).toMatchObject({ status: "committed" })
+  expect(await new NamedBoardRepository(instrumented).create(fixturePrincipal(), "Barrier preserved")).toMatchObject({ status: "committed" })
   expect(writers).toBe(2)
 })

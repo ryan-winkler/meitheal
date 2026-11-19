@@ -42,6 +42,7 @@ function parseTemplatePayload(templateJson: unknown): {
   priority: number
   checklists: HabitChecklistItem[]
   areaId?: string | undefined
+  projectId?: string | undefined
 } {
   if (typeof templateJson !== "string" || !templateJson.trim()) {
     return {
@@ -58,6 +59,7 @@ function parseTemplatePayload(templateJson: unknown): {
       priority: Number(parsed.priority ?? 3) || 3,
       checklists: normalizeChecklistItems(parsed.checklists),
       areaId: typeof parsed.area_id === "string" ? parsed.area_id : undefined,
+      projectId: typeof parsed.project_id === "string" ? parsed.project_id : undefined,
     }
   } catch {
     return {
@@ -99,6 +101,7 @@ function normalizeHabitData(raw: unknown): HabitData | null {
     description: templatePayload.description,
     priority: templatePayload.priority,
     areaId: templatePayload.areaId,
+    projectId: templatePayload.projectId,
     checklists: topLevelChecklists.length > 0 ? topLevelChecklists : templatePayload.checklists,
   }
 }
@@ -132,8 +135,11 @@ async function readErrorMessage(response: Response): Promise<string> {
 }
 
 async function refreshHabits(): Promise<void> {
-  const area = document.getElementById("habits-shell")?.dataset.areaId
-  const response = await fetch(area ? "/api/habits?area_id=" + encodeURIComponent(area) : "/api/habits", {
+  const shell = document.getElementById("habits-shell")
+  const query = new URLSearchParams()
+  if (shell?.dataset.areaId) query.set("area_id", shell.dataset.areaId)
+  if (shell?.dataset.projectId) query.set("project_id", shell.dataset.projectId)
+  const response = await fetch("/api/habits?" + query, {
     signal: pageLifecycle.signal,
   })
   if (!response.ok) {
@@ -222,6 +228,7 @@ function initHabitsCrud(): void {
   const cadenceSelect = document.getElementById("habit-cadence") as HTMLSelectElement | null
   const prioritySelect = document.getElementById("habit-priority") as HTMLSelectElement | null
   const areaSelect = document.querySelector<HTMLSelectElement>("#habit-area")
+  const projectSelect = document.querySelector<HTMLSelectElement>("#habit-project")
   const shell = document.getElementById("habits-shell")
   const descInput = document.getElementById("habit-description") as HTMLTextAreaElement | null
   const checklistContainer = document.getElementById("checklist-items")
@@ -238,6 +245,7 @@ function initHabitsCrud(): void {
     !save ||
     !form ||
     !areaSelect ||
+    !projectSelect ||
     !editIdInput ||
     !nameInput ||
     !iconInput ||
@@ -252,11 +260,13 @@ function initHabitsCrud(): void {
   }
   const trap = createFocusTrap(dialog)
   pageLifecycle.signal.addEventListener("abort", () => trap.deactivate(false), { once: true })
-  let initialArea = "default"
+  let initialArea = ""
+  let initialProject = ""
   const initialScope = shell?.dataset.areaId
-  const returnPath = shell?.dataset.openNew
-    ? initialScope ? "/areas/" + encodeURIComponent(initialScope) + "#routines" : "/progress#routines"
-    : undefined
+  const returnQuery = new URLSearchParams({ board_id: shell?.dataset.boardId ?? "" })
+  if (initialScope) returnQuery.set("area_id", initialScope)
+  if (shell?.dataset.projectId) returnQuery.set("project_id", shell.dataset.projectId)
+  const returnPath = shell?.dataset.openNew ? "/progress?" + returnQuery + "#routines" : undefined
 
   function resetChecklistBuilder(): void {
     checklistContainer!.replaceChildren()
@@ -279,7 +289,9 @@ function initHabitsCrud(): void {
     iconInput!.value = "✅"
     cadenceSelect!.value = "daily"
     prioritySelect!.value = "3"
-    areaSelect!.value = shell?.dataset.areaId ?? "default"
+    areaSelect!.value = shell?.dataset.areaId ?? ""
+    projectSelect!.value = shell?.dataset.projectId ?? ""
+    projectSelect!.disabled = Boolean(shell?.dataset.projectId)
     areaSelect!.disabled = Boolean(shell?.dataset.areaId)
     descInput!.value = ""
     resetChecklistBuilder()
@@ -298,8 +310,11 @@ function initHabitsCrud(): void {
     iconInput!.value = habit.icon
     cadenceSelect!.value = habit.cadence
     prioritySelect!.value = String(habit.priority)
-    areaSelect!.value = habit.areaId ?? "default"
-    initialArea = habit.areaId ?? "default"
+    areaSelect!.value = habit.areaId ?? ""
+    initialArea = habit.areaId ?? ""
+    projectSelect!.value = habit.projectId ?? ""
+    initialProject = habit.projectId ?? ""
+    projectSelect!.disabled = false
     areaSelect!.disabled = false
     descInput!.value = habit.description
 
@@ -386,7 +401,8 @@ function initHabitsCrud(): void {
           title: name,
           description: descInput!.value.trim(),
           priority: Number(prioritySelect!.value),
-          ...(areaSelect.value !== initialArea ? { area_id: areaSelect.value } : {}),
+          ...(areaSelect.value !== initialArea ? { area_id: areaSelect.value || null } : {}),
+          ...(projectSelect.value !== initialProject ? { project_id: projectSelect.value || null } : {}),
           checklists,
         }
 
@@ -420,7 +436,8 @@ function initHabitsCrud(): void {
             cadence: cadenceSelect!.value,
             priority: Number(prioritySelect!.value),
             description: descInput!.value.trim(),
-            area_id: areaSelect.value,
+            area_id: areaSelect.value || null,
+            project_id: projectSelect.value || null,
             checklists: checklists.length > 0 ? checklists : undefined,
           }),
           signal: pageLifecycle.signal,

@@ -1,5 +1,7 @@
 import { guardClientContinuity } from "./persistence/continuity-client"
-import { householdBoardIsActive } from "./persistence/named-board-repository"
+import { currentBoardGrantRevision } from "./persistence/board-grant-fence"
+import { readWorkDestinations } from "./integration-destinations"
+import { resolveIntegrationScope, validateIntegrationScope } from "./board-automation"
 import type { Client } from "@libsql/client"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import { ensureSchema, getPersistenceClient } from "./persistence/store"
@@ -21,24 +23,32 @@ let timer: ReturnType<typeof setInterval> | undefined
 let sweeping = false
 
 export async function sweepInactiveTasks(client: Client, now: number): Promise<number> {
-  if (!await householdBoardIsActive(client)) return 0
-  const inactivity = new TaskInactivityRepository(guardClientContinuity(client))
-  if (!await inactivity.hasEnabledPolicy()) return 0
-  const candidates = await inactivity.candidates(now)
-  const tasks = new TaskRepository(client)
-  const actor = { id: inactivityRuleActor, type: "system", requestId: crypto.randomUUID() } as const
+  const db = guardClientContinuity(client)
+  if (!await currentBoardGrantRevision(db)) return 0
+  const configuration = await readWorkDestinations(db)
   let moved = 0
-  for (const candidate of candidates) {
-    if (!await householdBoardIsActive(client)) break
-    const result = await tasks.setDeferral(candidate.id, true, { ...candidate, inactivityNow: now }, actor)
-    if (result.ok && result.task.deferred_at === now) moved++
+  for (const binding of configuration?.bindings ?? []) {
+    if (!binding.enabled || binding.purpose !== "builtin.inactivity.defer") continue
+    const resolved = await resolveIntegrationScope(db, binding.id, binding.generation, { resource: "task", action: "edit" })
+    if (!resolved.ok) continue
+    const context = resolved.value
+    const inactivity = new TaskInactivityRepository(db, context.scope)
+    if (!await inactivity.hasEnabledPolicy()) continue
+    const candidates = await inactivity.candidates(now)
+    const tasks = new TaskRepository(db, context.scope)
+    const actor = { id: inactivityRuleActor, type: "system", requestId: crypto.randomUUID() } as const
+    for (const candidate of candidates) {
+      if (!(await validateIntegrationScope(context, db, { resource: "task", action: "edit" })).ok) break
+      const result = await tasks.setDeferral(candidate.id, true, { ...candidate, inactivityNow: now }, actor)
+      if (result.ok && result.task.deferred_at === now) moved++
+    }
   }
   return moved
 }
 
 export async function startInactivityScheduler() {
   await ensureSchema()
-  if (!await householdBoardIsActive(getPersistenceClient())) return
+  if (!await currentBoardGrantRevision(getPersistenceClient())) return
   if (timer) return
   timer = setInterval(async () => {
     if (sweeping) return
