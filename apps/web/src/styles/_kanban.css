@@ -166,11 +166,6 @@
   border-color: var(--border-focus);
 }
 
-.kanban-column.drag-over {
-  border-color: var(--accent);
-  background: rgb(var(--accent-rgb) / 0.05);
-}
-
 .kanban-card.dragging {
   @apply bg-bg-card;
   opacity: 0.85;

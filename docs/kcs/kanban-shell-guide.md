@@ -61,6 +61,8 @@ The board remains usable when reaction counts are unavailable. A denied request 
 
 ### Page through a large board
 
+The destination lane displays **Moving task…** while a move is being saved. Board loading and retry use the existing status line. The drop highlight fits within the lane so it keeps the same scrollable area while you drag.
+
 Each lane shows up to 25 cards. Its count includes every task matching the current area and filters. The range below the lane shows which cards are loaded. Use **Previous** or **Next** to page within that lane. Use **Filter by text** or the filter builder to find a task anywhere in the board, including other pages. Changing the area or filters returns the lanes to their first page.
 
 To move a task to another Board Group, open its **Details** and choose the destination in **Group**. When the save succeeds, the card appears in its new group after Details closes. If the destination group is collapsed, focus returns to its heading. If the board is filtered to the original group, the card leaves the results and the filter stays selected. A failed save restores the previous selection. Use the **Home Assistant Area** control in Details to edit the task's location when it is available.
