@@ -1,3 +1,4 @@
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { expect, test } from "@playwright/test"
 import { calendarToday, shiftCalendarDay } from "../../apps/web/src/lib/date"
 
@@ -5,6 +6,7 @@ test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Me
 test.use({ serviceWorkers: "block" })
 
 test("Knight Rider keeps the completed Today state and saved theme truthful", async ({ page, request }, testInfo) => {
+  const boardHeaders = await currentBoardWriteHeaders(request, "household", {})
   const saved = await request.put("/api/settings", { data: { key: "theme", value: "knight-rider" } })
   expect(saved.ok()).toBe(true)
   await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" })
@@ -20,12 +22,12 @@ test("Knight Rider keeps the completed Today state and saved theme truthful", as
   await empty.getByRole("button", { name: "Add a task" }).click()
   await expect(page.locator("#new-task-title-input")).toBeFocused()
 
-  const create = await request.post("/api/tasks", { data: {
+  const create = await request.post("/api/tasks", { headers: boardHeaders, data: {
     title: "Put the spare valves away", due_date: shiftCalendarDay(calendarToday(), -1), is_favorite: 1,
   } })
   expect(create.status()).toBe(201)
   const { id } = await create.json()
-  const complete = await request.put(`/api/tasks/${id}`, { data: { status: "complete" } })
+  const complete = await request.put(`/api/tasks/${id}`, { headers: boardHeaders, data: { status: "complete" } })
   expect(complete.ok()).toBe(true)
   await page.reload()
   await expect(empty.getByRole("heading")).toHaveText("Today’s tasks are complete")
@@ -75,14 +77,15 @@ test("Knight Rider keeps the completed Today state and saved theme truthful", as
   }
   await expect(page.locator("#dashboard-stat-open-count")).toHaveText("0")
   await expect(page.locator("#stat-overdue .stat-value")).toHaveText("0")
-  await request.delete(`/api/tasks/${id}`, { data: {} })
+  await request.delete(`/api/tasks/${id}`, { headers: boardHeaders, data: {} })
 })
 
 test("Today reflects task detail completion and reopening without a reload", async ({ page, request }) => {
+  const boardHeaders = await currentBoardWriteHeaders(request, "household", {})
   await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
   await page.emulateMedia({ reducedMotion: "reduce" })
   const title = "Schedule the heating service"
-  const response = await request.post("/api/tasks", { data: { title, status: "active", due_date: calendarToday() } })
+  const response = await request.post("/api/tasks", { headers: boardHeaders, data: { title, status: "active", due_date: calendarToday() } })
   expect(response.status()).toBe(201)
   const { id } = await response.json()
   try {
@@ -130,15 +133,16 @@ test("Today reflects task detail completion and reopening without a reload", asy
     await expect(focus).toBeVisible()
     await expect(completed).toBeHidden()
   } finally {
-    await request.delete(`/api/tasks/${id}`, { data: {} })
+    await request.delete(`/api/tasks/${id}`, { headers: boardHeaders, data: {} })
   }
 })
 
 test("docked Details shares the Today status lock and reflects a row save", async ({ page, request }) => {
+  const boardHeaders = await currentBoardWriteHeaders(request, "household", {})
   await page.setViewportSize({ width: 1600, height: 900 })
   await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
   const title = "Check the boiler schedule"
-  const response = await request.post("/api/tasks", { data: { title, status: "active", due_date: calendarToday() } })
+  const response = await request.post("/api/tasks", { headers: boardHeaders, data: { title, status: "active", due_date: calendarToday() } })
   expect(response.status()).toBe(201)
   const { id } = await response.json()
   let release = () => {}
@@ -169,15 +173,16 @@ test("docked Details shares the Today status lock and reflects a row save", asyn
     await expect(done).toHaveText("Mark as Undone")
   } finally {
     release()
-    await request.delete(`/api/tasks/${id}`, { data: {} })
+    await request.delete(`/api/tasks/${id}`, { headers: boardHeaders, data: {} })
   }
 })
 
 test("Unscheduled and Refresh Today keep their route with Details docked", async ({ page, request }) => {
+  const boardHeaders = await currentBoardWriteHeaders(request, "household", {})
   await page.setViewportSize({ width: 1600, height: 900 })
   await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
   const title = "Check the unscheduled work"
-  const response = await request.post("/api/tasks", { data: { title } })
+  const response = await request.post("/api/tasks", { headers: boardHeaders, data: { title } })
   expect(response.status()).toBe(201)
   const { id } = await response.json()
   try {
@@ -225,7 +230,7 @@ test("Unscheduled and Refresh Today keep their route with Details docked", async
     await expect(page).toHaveURL(url => url.pathname === "/today" && url.searchParams.get("unscheduledPage") === "1")
     await expect(page.locator("#task-detail-overlay")).toBeHidden()
   } finally {
-    await request.delete(`/api/tasks/${id}`, { data: {} })
+    await request.delete(`/api/tasks/${id}`, { headers: boardHeaders, data: {} })
   }
 })
 
@@ -296,10 +301,11 @@ test("Today keeps focus on a completion during polling and recovers when it disa
 })
 
 test("keyboard completion keeps a focus target when the Active filter removes a row", async ({ page, request }) => {
+  const boardHeaders = await currentBoardWriteHeaders(request, "household", {})
   const due_date = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin", dateStyle: "short" }).format(new Date())
   const tasks = []
   for (const title of ["Replace the pump filter before the spring irrigation check", "Replace the pump filter before the autumn irrigation check"]) {
-    const response = await request.post("/api/tasks", { data: { title, due_date, status: "active" } })
+    const response = await request.post("/api/tasks", { headers: boardHeaders, data: { title, due_date, status: "active" } })
     expect(response.status(), await response.text()).toBe(201)
     const { id } = await response.json()
     tasks.push(String(id))
@@ -324,16 +330,17 @@ test("keyboard completion keeps a focus target when the Active filter removes a 
     await expect(other!.locator(".tli__checkbox")).toBeFocused()
   } finally {
     release?.()
-    for (const id of tasks) await request.delete(`/api/tasks/${id}`, { data: {} })
+    for (const id of tasks) await request.delete(`/api/tasks/${id}`, { headers: boardHeaders, data: {} })
   }
 })
 
 test("Today keeps the newer Tab position after a pending task completion", async ({ page, request }) => {
+  const boardHeaders = await currentBoardWriteHeaders(request, "household", {})
   const ids: string[] = []
   let release: (() => void) | undefined
   try {
     for (const title of ["Close the first inspection", "Open the second inspection"]) {
-      const response = await request.post("/api/tasks", { data: { title, due_date: calendarToday(), status: "active" } })
+      const response = await request.post("/api/tasks", { headers: boardHeaders, data: { title, due_date: calendarToday(), status: "active" } })
       expect(response.status()).toBe(201)
       ids.push((await response.json()).id)
     }
@@ -355,20 +362,21 @@ test("Today keeps the newer Tab position after a pending task completion", async
     await expect(detail).toBeFocused()
   } finally {
     release?.()
-    for (const id of ids) await request.delete(`/api/tasks/${id}`, { data: {} })
+    for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers: boardHeaders, data: {} })
   }
 })
 
 
 test("reopening a completed Today task restores its due row and focus", async ({ page, request }) => {
+  const boardHeaders = await currentBoardWriteHeaders(request, "household", {})
   await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
   await page.emulateMedia({ reducedMotion: "reduce" })
   const title = "Reopen a due task from Completed today"
-  const created = await request.post("/api/tasks", { data: { title, due_date: calendarToday() } })
+  const created = await request.post("/api/tasks", { headers: boardHeaders, data: { title, due_date: calendarToday() } })
   expect(created.status()).toBe(201)
   const { id } = await created.json()
   try {
-    const finished = await request.put(`/api/tasks/${id}`, { data: { status: "complete" } })
+    const finished = await request.put(`/api/tasks/${id}`, { headers: boardHeaders, data: { status: "complete" } })
     expect(finished.ok()).toBe(true)
     await page.goto("/today#today-work")
     const due = page.locator(`#today-due-list .tli[data-id="${id}"]`)
@@ -390,6 +398,6 @@ test("reopening a completed Today task restores its due row and focus", async ({
     await expect(due.getByRole("link", { name: title })).toBeFocused()
     await expect(page).toHaveURL(url => url.pathname === "/today" && url.hash === "#today-work")
   } finally {
-    await request.delete(`/api/tasks/${id}`)
+    await request.delete(`/api/tasks/${id}`, { headers: boardHeaders })
   }
 })

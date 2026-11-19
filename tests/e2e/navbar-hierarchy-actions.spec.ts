@@ -1,5 +1,6 @@
 import { writeFile } from "node:fs/promises"
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 // These tests create and remove their own data in the disposable local fixture.
@@ -14,7 +15,8 @@ test.use({
 type Placement = "primary" | "More" | "phone"
 
 async function removeFixtureEntity(request: APIRequestContext, path: string) {
-  const deleted = await request.delete(path, { data: {} })
+  const headers = await currentBoardWriteHeaders(request, "household", {})
+  const deleted = await request.delete(path, { headers, data: {} })
   expect(deleted.status()).toBe(200)
 }
 
@@ -88,10 +90,11 @@ for (const placement of ["primary", "More", "phone"] as const) {
       const suffix = crypto.randomUUID().slice(0, 8)
       areaName = `Navbar action Area ${suffix}`
       projectName = `Navbar action Project ${suffix}`
-      const area = await request.post("/api/areas", { data: { name: areaName } })
+      const headers = await currentBoardWriteHeaders(request, "household", {})
+      const area = await request.post("/api/areas", { headers, data: { name: areaName } })
       expect(area.status()).toBe(201)
       areaId = (await area.json()).id
-      const project = await request.post("/api/projects", { data: { title: projectName, area_id: areaId } })
+      const project = await request.post("/api/projects", { headers, data: { title: projectName, area_id: areaId } })
       expect(project.status()).toBe(201)
       projectId = (await project.json()).id
       await page.goto("/today")
@@ -495,7 +498,8 @@ for (const placement of ["primary", "More", "phone"] as const) {
     test("keyboard Unpin preserves the remaining pinned row or the original Project context", async ({ page, request }) => {
       let secondProjectId: string | undefined
       try {
-        const second = await request.post("/api/projects", { data: { title: projectName + " second", area_id: areaId } })
+        const headers = await currentBoardWriteHeaders(request, "household", {})
+        const second = await request.post("/api/projects", { headers, data: { title: projectName + " second", area_id: areaId } })
         expect(second.status()).toBe(201)
         secondProjectId = (await second.json()).id
         const original = (id: string) => page.locator(`#project-nav-list [data-project-id="${id}"]`)

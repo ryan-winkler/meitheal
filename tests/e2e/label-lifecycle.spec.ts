@@ -6,6 +6,7 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import AxeBuilder from "@axe-core/playwright"
 import { expect, test, type Browser, type Page, type Route } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, pinRequest, startCoreFixture } from "../scripts/task-pins-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires built app and simulated Core roster")
@@ -191,12 +192,13 @@ test("retained admin pages and a partially streamed write cannot outlive current
     expect(created.status).toBe(201)
     const path = prefix + "/api/labels/" + created.body.id
     const ca = await readFile(join(work, "fixture-cert.pem"))
+    const headers = await currentBoardWriteHeaders(page.request, "household", { origin }, origin + prefix)
     let finish!: () => void
     let cancel!: () => void
     const started = bodyStarted()
     const result = new Promise<{ status: number, body: string }>((resolve, reject) => {
       const request = httpsRequest(origin + path, { method: "PUT", ca,
-        headers: { origin, referer: page.url(), cookie: "feedback-fixture=admin", "content-type": "application/json",
+        headers: { ...headers, referer: page.url(), cookie: "feedback-fixture=admin", "content-type": "application/json",
           "sec-fetch-mode": "same-origin", "sec-fetch-site": "same-origin", "x-meitheal-fixture-held-body": "1" } }, response => {
         let body = ""
         response.on("data", chunk => { body += chunk })
@@ -323,7 +325,7 @@ test("label editor handles long multilingual names and white/black colours in na
     const db = new DatabaseSync(join(work, "pins.db"), { timeout: 5000 })
     const names = ['Roof <img src=x onerror="window.labelInjected=1"> & attic', "Cothabháil an tí agus sábháilteacht an teaghlaigh · حديقة المنزل", "家のメンテナンスと防災準備 🏡", "X"]
     try {
-      const insert = db.prepare("INSERT INTO vikunja_labels (title,hex_color) VALUES (?,?)")
+      const insert = db.prepare("INSERT INTO vikunja_labels (title,hex_color,board_id) VALUES (?,?,'household')")
       for (const [index, name] of names.entries()) insert.run(name, index % 2 ? "#000000" : "#ffffff")
     } finally { db.close() }
     await page.reload()

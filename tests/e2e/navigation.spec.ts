@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { readScopedNavigation, shouldSkipBrowserSpecs } from "./_helpers";
 
 test.describe("Responsive Navigation", () => {
@@ -55,30 +56,40 @@ test.describe("Responsive Navigation", () => {
     await expect(sidebar).toHaveCSS("pointer-events", "none");
   });
 
-  test("renaming a sidebar area also updates its accessible controls", async ({ page }) => {
+  test("renaming a sidebar area also updates its accessible controls", async ({ page, request }) => {
+    const headers = await currentBoardWriteHeaders(request, "household", {})
+    const created = await request.post("/api/areas", { headers, data: { name: "Sidebar rename fixture" } })
+    expect(created.status()).toBe(201)
+    const { id: areaId } = await created.json()
     await page.setViewportSize({ width: 1440, height: 960 })
     await page.goto("/")
-    const row = page.locator(".stree__area-row").first()
-    const toggle = row.locator("[data-area-toggle]")
-    const menu = row.locator("[data-area-menu]")
-    const name = "Renamed fixture area"
-    const areaId = await toggle.getAttribute("data-area-toggle")
-    expect(areaId).toBeTruthy()
-    await page.route("**/api/areas/" + areaId, route => route.fulfill({ json: { name } }))
-    const initiallyExpanded = await toggle.getAttribute("aria-expanded") === "true"
-    await row.hover()
-    await menu.click()
-    await page.locator('#area-menu-dropdown [data-action="rename"]').click()
-    const input = row.locator(".stree__inline-input")
-    await input.fill(name)
-    await input.press("Enter")
-    await expect(toggle).toHaveAccessibleName(name)
-    await expect(toggle).toHaveAttribute("data-area-name-label", name)
-    await expect(menu).toHaveAccessibleName(new RegExp(name + "$"))
-    await expect(row.locator("[data-area-add]")).toHaveAccessibleName(`New project in ${name}`)
-    await expect(toggle).toHaveAttribute("title", (initiallyExpanded ? "Collapse " : "Expand ") + name)
-    await toggle.click()
-    await expect(toggle).toHaveAttribute("title", (initiallyExpanded ? "Expand " : "Collapse ") + name)
+    const household = page.locator('[data-named-board-shortcut="household"]')
+    const boardsToggle = page.locator("[data-sidebar-boards-toggle]")
+    if (await boardsToggle.getAttribute("aria-expanded") === "false") await boardsToggle.click()
+    const areasToggle = household.locator(".sidebar-board-toggle")
+    if (await areasToggle.getAttribute("aria-expanded") === "false") await areasToggle.click()
+    try {
+      const row = household.locator(`[data-area-group="${areaId}"] .stree__area-row`)
+      const toggle = row.locator("[data-area-toggle]")
+      const menu = row.locator("[data-area-menu]")
+      const name = "Renamed fixture area"
+      const initiallyExpanded = await toggle.getAttribute("aria-expanded") === "true"
+      await row.hover()
+      await menu.click()
+      await page.locator('#area-menu-dropdown [data-action="rename"]').click()
+      const input = row.locator(".stree__inline-input")
+      await input.fill(name)
+      await input.press("Enter")
+      await expect(toggle).toHaveAccessibleName(`Projects in ${name}`)
+      await expect(toggle).toHaveAttribute("data-area-name-label", name)
+      await expect(menu).toHaveAccessibleName(new RegExp(name + "$"))
+      await expect(row.locator("[data-area-add]")).toHaveAccessibleName(`New project in ${name}`)
+      await expect(toggle).toHaveAttribute("title", (initiallyExpanded ? "Collapse " : "Expand ") + name)
+      await toggle.click()
+      await expect(toggle).toHaveAttribute("title", (initiallyExpanded ? "Expand " : "Collapse ") + name)
+    } finally {
+      await request.delete(`/api/areas/${areaId}`, { headers })
+    }
   })
 
   test("Mobile: sidebar hierarchy actions are discoverable touch targets when opened", async ({ page }) => {
@@ -126,10 +137,10 @@ test.describe("Responsive Navigation", () => {
     await page.goto("/", { waitUntil: "domcontentloaded" })
 
     const calendarTab = page.locator('#mobile-tab-bar [data-page="calendar"]');
-    await expect(calendarTab).toHaveAttribute("href", "/tasks?view=calendar#calendar");
+    await expect(calendarTab).toHaveAttribute("href", "/boards/household?view=calendar#calendar");
 
     await calendarTab.click();
-    await expect(page).toHaveURL(/\/tasks\?view=calendar#calendar$/);
+    await expect(page).toHaveURL(/\/boards\/household\?view=calendar#calendar$/);
     await expect(calendarTab).toHaveClass(/active/);
     await expect(calendarTab).toHaveAttribute("aria-current", "page");
   });
@@ -221,7 +232,7 @@ test.describe("Responsive Navigation", () => {
   });
 
   test('Desktop: "Every Day" project label in Areas tree is not prematurely truncated', async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin };
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const areaRes = await request.post("/api/areas", {
       headers,
       data: { name: `Routine Area ${crypto.randomUUID().slice(0, 8)}` },
@@ -241,13 +252,19 @@ test.describe("Responsive Navigation", () => {
       await page.setViewportSize({ width: 1440, height: 960 });
       await page.goto("/", { waitUntil: "networkidle" });
 
+      const household = page.locator('[data-named-board-shortcut="household"]')
+      const boardsToggle = page.locator("[data-sidebar-boards-toggle]")
+      if (await boardsToggle.getAttribute("aria-expanded") === "false") await boardsToggle.click()
+      const areasToggle = household.locator(".sidebar-board-toggle")
+      if (await areasToggle.getAttribute("aria-expanded") === "false") await areasToggle.click()
+
       const area = page.locator(`[data-area-group="${areaId}"]`);
       const toggle = area.locator(".stree__area-toggle");
       if ((await toggle.getAttribute("aria-expanded")) === "false") {
         await toggle.click();
       }
 
-      const label = area.locator(`.stree__project-link[href="/projects/${projectId}"] .stree__project-name`);
+      const label = area.locator(`.stree__project-link[data-project-id="${projectId}"] .stree__project-name`);
       await expect(label).toHaveText("Every Day");
       const metrics = await label.evaluate((el) => ({
         scrollWidth: el.scrollWidth,

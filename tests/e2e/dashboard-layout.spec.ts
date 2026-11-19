@@ -115,7 +115,7 @@ test.describe("Dashboard layout", () => {
     await expect(page.getByRole("heading", { name: "Your dashboard is empty" })).toBeVisible()
     await expect(page.locator("#dashboard-bar-switcher-btn")).toBeDisabled()
     await expect(page.locator("#dashboard-bar-tabs")).toBeHidden()
-    await expect(page.getByRole("link", { name: "Open Tasks" })).toHaveAttribute("href", "/tasks")
+    await expect(page.getByRole("link", { name: "Open Tasks" })).toHaveAttribute("href", "/boards/household")
     await page.reload()
     await expect(page.getByRole("heading", { name: "Your dashboard is empty" })).toBeVisible()
     await expect(page.locator("#dashboard-empty .empty")).toHaveCSS("text-align", "center")

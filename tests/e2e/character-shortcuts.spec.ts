@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test"
 import { FILTER_STORAGE_KEY } from "../../apps/web/src/lib/filter-state"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
@@ -100,7 +101,7 @@ test("K selects Kanban after Table and the numbered keys select each Tasks view"
   await expect(switcher).toHaveAttribute("data-switcher-ready", "true")
 
   await page.keyboard.press("k")
-  await expect(page).toHaveURL(/\/tasks#kanban$/)
+  await expect(page).toHaveURL(/\/boards\/household#kanban$/)
   await expect(view).toHaveAttribute("data-task-view", "kanban")
   await expect(switcher).toHaveAttribute("data-switcher-ready", "true")
 
@@ -259,7 +260,7 @@ test("character shortcuts leave Board Area names editable", async ({ page }) => 
 })
 
 test("disabling shortcuts covers sidebar capture, the Kanban board, task details and numeric Tasks views", async ({ page, request, baseURL }) => {
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const project = await request.post("/api/projects", { headers, data: { title: "Shortcut fixture project" } })
   expect(project.status()).toBe(201)
   const { id: projectId } = await project.json()
@@ -321,7 +322,7 @@ test("disabling shortcuts covers sidebar capture, the Kanban board, task details
 
 const datedShortcutTest = test.extend<{ datedTasks: { ids: string[]; query: string } }>({
   datedTasks: async ({ request, baseURL }, use) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const now = Date.now()
     const query = `shortcut dated task ${crypto.randomUUID()}`
     const ids: string[] = []
@@ -455,7 +456,7 @@ datedShortcutTest("Today and Timeline keep arrows and Enter while letter and pun
 test("pressing lowercase c on a grouped board collapses and expands swimlanes without navigating to Calendar", async ({ page, request, baseURL }) => {
   // Earlier cases in this file share one server and its 300/min API budget.
   test.setTimeout(100_000)
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const createTask = async (data: Record<string, string>) => {
     const response = await request.post("/api/tasks", { headers, data })
     if (response.status() !== 429) return response
@@ -516,7 +517,7 @@ test("pressing lowercase c on a grouped board collapses and expands swimlanes wi
 test("pressing c on an ungrouped board opens Calendar like everywhere else", async ({ page, request, baseURL }) => {
   // Earlier cases in this file share one server and its 300/min API budget.
   test.setTimeout(100_000)
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const data = { title: "Ungrouped board task" }
   let created = await request.post("/api/tasks", { headers, data })
   if (created.status() === 429) {

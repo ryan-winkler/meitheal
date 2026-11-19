@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.describe("Native navigation overflow", () => {
@@ -124,7 +125,7 @@ test.describe("Native navigation overflow", () => {
   })
 
   test("a long saved Areas label expands under Boards Household while More and Settings stay reachable at 769px", async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const previous = (await (await request.get("/api/settings")).json()).sidebar_config
     const longLabel = "HouseholdAreas_".repeat(48)
     const created = await request.post("/api/areas", { headers, data: { name: "Navbar label fixture" } })

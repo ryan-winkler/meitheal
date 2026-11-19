@@ -1,3 +1,4 @@
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { expect, test } from "@playwright/test"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
@@ -6,7 +7,8 @@ test.use({ serviceWorkers: "block" })
 
 for (const action of ["review", "complete-q4", "triage"] as const) {
   test(`repeated page loads keep one ${action} task mutation`, async ({ page, request, baseURL }) => {
-    const created = await request.post("/api/tasks", { data: {
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+    const created = await request.post("/api/tasks", { headers, data: {
       title: `Eisenhower lifecycle ${action}`,
       urgency: action === "triage" ? 0 : 1, importance: action === "triage" ? 0 : 1,
     } })
@@ -60,14 +62,15 @@ for (const action of ["review", "complete-q4", "triage"] as const) {
       await expect.poll(async () => (await (await request.get(taskPath)).json()).status).toBe("complete")
       expect(statusWrites).toEqual(["complete"])
     } finally {
-      const removed = await request.delete(taskPath, { headers: { origin: new URL(baseURL!).origin }, data: {} })
+      const removed = await request.delete(taskPath, { headers, data: {} })
       expect(removed.status()).toBe(204)
     }
   })
 }
 
 test("aborted page ownership retires actions and review listeners before the next setup", async ({ page, request, baseURL }) => {
-  const created = await request.post("/api/tasks", { data: {
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+  const created = await request.post("/api/tasks", { headers, data: {
     title: "Eisenhower lifecycle navigation", urgency: 1, importance: 1,
   } })
   expect(created.status(), await created.text()).toBe(201)
@@ -101,7 +104,7 @@ test("aborted page ownership retires actions and review listeners before the nex
     await expect(page.locator(`.tli[data-id="${task.id}"]`)).toHaveCount(0)
     expect(statusWrites).toEqual(["complete"])
   } finally {
-    const removed = await request.delete(taskPath, { headers: { origin: new URL(baseURL!).origin }, data: {} })
+    const removed = await request.delete(taskPath, { headers, data: {} })
     expect(removed.status()).toBe(204)
   }
 })
@@ -111,7 +114,7 @@ for (const [action, otherAction, status] of [
   ["defer-q4", "complete-q4", "backlog"],
 ] as const) {
   test(`Q4 ${status} keeps unconfirmed tasks visible and retries only those tasks`, async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const initialStatus = status === "backlog" ? "active" : "pending"
     const ids: string[] = []
     const writes: Array<{ id: string; status: string }> = []
@@ -205,7 +208,7 @@ for (const [action, quadrantName, urgency, importance, field, value] of [
   ["assign-q3", "delegate", 5, 1, "assigned_to", "Eisenhower fixture assignee"],
 ] as const) {
   test(`${action} distinguishes a failed batch from a mixed result`, async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const ids: string[] = []
     let rejectAll = true
     try {

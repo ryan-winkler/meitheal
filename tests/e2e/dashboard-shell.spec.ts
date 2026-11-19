@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.describe("Dashboard Shell", () => {
@@ -42,7 +43,9 @@ test.describe("Dashboard Shell", () => {
 
     // Noon UTC is the same Dublin calendar day in both winter (UTC+0) and summer (UTC+1).
     const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin" }).format(new Date())
+    const headers = await currentBoardWriteHeaders(request, "household", {})
     const createRes = await request.post("/api/tasks", {
+      headers,
       data: { title: "Timed ISO due today task", due_date: `${today}T12:00:00Z` },
     })
     expect(createRes.status()).toBe(201)
@@ -74,7 +77,7 @@ test.describe("Dashboard Shell", () => {
       await expect(card).toHaveAttribute("title", /—/)
       await expect(card).toContainText(/\S/)
     } finally {
-      await request.delete("/api/tasks/" + encodeURIComponent(id))
+      await request.delete("/api/tasks/" + encodeURIComponent(id), { headers })
     }
   })
 })

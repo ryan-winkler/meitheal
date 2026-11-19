@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 async function arrowTo(page: Page, destination: Locator) {
@@ -14,7 +15,7 @@ test.describe("More disclosure keyboard candidates", () => {
   test.use({ serviceWorkers: "block" })
 
   test("a crowded hierarchy skips collapsed links and keeps continuous More keyboard navigation visible", async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const previous = (await (await request.get("/api/settings")).json()).sidebar_config
     const areaResponse = await request.post("/api/areas", { headers, data: { name: "Keyboard Area" } })
     expect(areaResponse.status()).toBe(201)
