@@ -116,7 +116,8 @@ test.describe("A2A Route Availability", () => {
       const origin = `http://127.0.0.1:${info.port}`
       const ingress = origin + info.configuredPath
       const cards = ["/.well-known/agent-card.json", "/.well-known/agent.json", "/api/a2a/agent-card"] as const
-      const admin = await currentBoardWriteHeaders(api, "household", { origin, cookie: "feedback-fixture=admin" }, ingress)
+      const adminSession = { origin, cookie: "feedback-fixture=admin" }
+      const admin = await currentBoardWriteHeaders(api, "household", adminSession, ingress)
       const enroll = async (...scopes: string[]) => {
         const response = await api.post(ingress + "/api/agent-tokens", {
           headers: admin,
@@ -178,7 +179,7 @@ test.describe("A2A Route Availability", () => {
       expect(await (await call("/api/a2a/message", "POST")).json()).toMatchObject({ jsonrpc: "2.0", error: { code: -32600 } })
       expect((await call("/api/a2a/tasks/unknown", "GET")).status()).toBe(400)
       const unknown = await call("/api/a2a/tasks/unknown", "GET", {
-        ...authorized, cookie: admin.cookie, "x-meitheal-board-id": "household", "A2A-Version": "1.0",
+        ...authorized, ...adminSession, "x-meitheal-board-id": "household", "A2A-Version": "1.0",
       })
       expect(unknown.status()).toBe(404)
       expect(unknown.headers()["cache-control"]).toBe("private, no-store")
