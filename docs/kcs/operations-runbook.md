@@ -642,6 +642,8 @@ The public runtime database client guards direct services and timers as well as 
 
 Use the same journey on a renamed example Board and a newly created Board. Verify the Board remains selected across all four task views, Today, planning, progress and capture. Check a Project without an Area and a Project under a private Area. A Project's parent Area policy still applies when the task has no direct Area field.
 
+With a remembered Household Area and an unavailable Area list, Kanban must keep the unfiltered cards hidden while waiting for verification. When **Retry** succeeds, the active Area appears in the URL and only its cards are shown. An Area or Project in the original URL takes precedence over the remembered Area.
+
 Restart through the actual runtime startup path, including runtime table/trigger validation. Migration-only read checks are a separate gate. Schema26 expects the exact version-aware trigger definitions and must preserve Board IDs, revisions and existing tasks. Do not replace a failed definition or publish a journal from database contents to make startup pass.
 
 Review integrations in Board settings. A denied or retired destination pauses its job. Never retarget it to another Board as a repair. Changing a global provider profile requires management of every affected Board. Verify an old in-flight request cannot send or commit after the binding generation changes.

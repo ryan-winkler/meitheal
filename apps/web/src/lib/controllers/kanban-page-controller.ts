@@ -325,7 +325,14 @@ export function initKanbanPage(signal: AbortSignal): void {
     if (new URLSearchParams(location.search).has("home_assistant_area_id")) void refresh()
   }, { signal })
   document.addEventListener("meitheal:area-catalog-ready", () => {
-    if (board.style.visibility === "hidden") void refresh()
+    if (board.style.visibility !== "hidden" && board.dataset.available === "true") return
+    const current = taskBackgroundUrl().searchParams
+    if (current.has("area") || current.has("project")) { void refresh(); return }
+    const url = new URL(desired)
+    const area = getRememberedAreaId()
+    const reset = updateKanbanFilters(url, { ...readKanbanFilters(url.searchParams), area }, true)
+    syncAreaLinks(area)
+    void load(url, undefined, reset)
   }, { signal })
   document.addEventListener("meitheal:area-changed", () => {
     syncAreaLinks(getSelectedAreaId())
