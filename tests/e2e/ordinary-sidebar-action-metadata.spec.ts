@@ -33,7 +33,7 @@ test.afterEach(async () => {
 })
 async function read(boardId: string, user: string, features: OrganizationFeature[] = ["organizer", "groups", "projects"]) {
   const url = new URL(`http://localhost/api/boards/${boardId}?view=groups`)
-  const context = { url, request: new Request(url), params: { id: boardId }, locals: { behindIngress: true, hassUserId: user, hassIsAdmin: user === "owner" } } as Parameters<typeof hierarchyPage>[0]
+  const context = { url, request: new Request(url), params: { id: boardId }, locals: { behindIngress: true, hassUserId: user, hassIsAdmin: user === "owner" } } as unknown as Parameters<typeof hierarchyPage>[0]
   return runWithIngressTransport(transport, () => withOrganizationAvailability({ locked: false, needsVerification: false,
     includes: feature => features.includes(feature), revision: () => null,
   }, () => hierarchyPage(context)))
@@ -44,7 +44,7 @@ for (const encoding of ["legacy", "scoped"] as const) {
     const made = await boards.create(owner, "Editable example")
     if (made.status !== "committed") throw new Error("Board setup failed")
     const boardId = encoding === "legacy" ? "household" : made.result.id
-    expect((await boards.updateMember(owner, boardId, "owner", { role: "owner", denyCompletion: false, denyDeletion: false }, ["owner", "viewer"])).result).toBe("saved")
+    expect(await boards.updateMember(owner, boardId, "owner", { role: "owner", denyCompletion: false, denyDeletion: false }, ["owner", "viewer"])).toMatchObject({ result: "saved" })
     const access = scopeBoardAccess(await currentBoardScope(db, boardId, owner))
     expect((await boards.updateSharing(owner, boardId, { visibility: "shared", sharedRole: "viewer", sharedAdminManagement: false }, access.revision, ["owner", "viewer"])).status).toBe("committed")
     const hierarchy = new HierarchyRepository(db, await currentBoardScope(db, boardId, owner))
@@ -71,7 +71,7 @@ for (const encoding of ["legacy", "scoped"] as const) {
     if (made.status !== "committed") throw new Error("Board setup failed")
     const boardId = encoding === "legacy" ? "household" : made.result.id
     let access = scopeBoardAccess(await currentBoardScope(db, boardId, owner))
-    expect((await boards.updateSharing(owner, boardId, { visibility: "shared", sharedRole: "member", sharedAdminManagement: true }, access.revision, ["owner", "viewer"])).result).toBe("saved")
+    expect(await boards.updateSharing(owner, boardId, { visibility: "shared", sharedRole: "member", sharedAdminManagement: true }, access.revision, ["owner", "viewer"])).toMatchObject({ result: "saved" })
     // Model a current migrated/imported Board with only the deliberately enabled
     // administrator fallback, using the genuine current journal in a fresh fixture.
     await changeBoardGrants(db, owner, async writer => {
@@ -79,11 +79,11 @@ for (const encoding of ["legacy", "scoped"] as const) {
       return { next: true }
     })
     access = scopeBoardAccess(await currentBoardScope(db, boardId, owner))
-    expect((await boards.updateSharing(owner, boardId, { visibility: "shared", sharedRole: "viewer", sharedAdminManagement: false }, access.revision, ["owner", "viewer"])).result).toBe("last-owner")
+    expect(await boards.updateSharing(owner, boardId, { visibility: "shared", sharedRole: "viewer", sharedAdminManagement: false }, access.revision, ["owner", "viewer"])).toMatchObject({ result: "last-owner" })
     expect(scopeBoardAccess(await currentBoardScope(db, boardId, owner)).policy?.sharedAdminManagement).toBe(true)
-    expect((await boards.updateMember(owner, boardId, "owner", { role: "owner", denyCompletion: false, denyDeletion: false }, ["owner", "viewer"])).result).toBe("saved")
+    expect(await boards.updateMember(owner, boardId, "owner", { role: "owner", denyCompletion: false, denyDeletion: false }, ["owner", "viewer"])).toMatchObject({ result: "saved" })
     access = scopeBoardAccess(await currentBoardScope(db, boardId, owner))
-    expect((await boards.updateSharing(owner, boardId, { visibility: "shared", sharedRole: "viewer", sharedAdminManagement: false }, access.revision, ["owner", "viewer"])).result).toBe("saved")
+    expect(await boards.updateSharing(owner, boardId, { visibility: "shared", sharedRole: "viewer", sharedAdminManagement: false }, access.revision, ["owner", "viewer"])).toMatchObject({ result: "saved" })
     expect(scopeBoardAccess(await currentBoardScope(db, boardId, owner)).role).toBe("owner")
   })
 }
