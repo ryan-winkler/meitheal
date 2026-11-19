@@ -25,7 +25,10 @@ test("task labels round-trip without escaping the timeline data block", async ({
     if (data === undefined) throw new Error("Timeline data block missing")
     expect(data.includes("<")).toBe(false)
     const tasks = JSON.parse(data) as Array<{ id: string; labels: string }>
-    expect(tasks.find(task => task.id === id)?.labels).toBe(labels)
+    const task = tasks.find(task => task.id === id)
+    expect(task?.labels).toBe(labels)
+    expect(task).not.toHaveProperty("start_date")
+    expect(task).not.toHaveProperty("assigned_to")
   } finally {
     const removed = await request.delete(`/api/tasks/${id}`, { headers })
     expect(removed.status()).toBe(204)

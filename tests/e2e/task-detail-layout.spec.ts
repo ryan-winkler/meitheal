@@ -46,8 +46,11 @@ test("ticket and Settings share a real section and field order, and reset restor
   await expect(sections.locator("#td-status")).toBeVisible()
 
   const toggle = page.getByRole("button", { name: "Task detail layout", exact: true })
-  await toggle.click()
   const editor = page.locator("#td-layout-panel")
+  const editorRows = editor.locator('ol[data-layout-order="sections"] > [data-layout-item]')
+  await expect(editorRows).toHaveCount(0)
+  await toggle.click()
+  expect(await ids(editor.locator('ol[data-layout-order="sections"]'))).toEqual(initial)
   const moveDescription = editor.getByRole("button", { name: /Move down · Description/ })
   await moveDescription.press("Enter")
   await expect(moveDescription).toBeFocused()

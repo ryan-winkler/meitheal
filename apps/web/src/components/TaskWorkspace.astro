@@ -5,6 +5,7 @@ import { boardSessionProof, currentBoardUser } from "@lib/named-board-request"
 import { boardWorkspaceHref, readBoardWorkspaceSelection } from "@lib/board-workspace"
 import { permitsBoardTaskAction } from "@domains/tasks/persistence/named-board-repository"
 import TaskDetailModal from "./tasks/TaskDetailModal.astro"
+import TaskRefreshShell from "./tasks/TaskRefreshShell.astro"
 import "../styles/boards.css"
 import NamedBoardInspector from "./boards/NamedBoardInspector.astro"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
@@ -15,7 +16,7 @@ import Layout from "../layouts/Layout.astro";
 
 import UnifiedBar from "../components/layout/UnifiedBar.astro";
 import SignalBar from "../components/layout/SignalBar.astro";
-import { requestedTaskView, taskViewUrl, TASK_VIEWS, TASK_VIEW_LABELS, TASK_VIEW_ICONS } from "../lib/task-view-route"
+import { requestedTaskView, taskViewUrl, TASK_VIEWS, TASK_VIEW_LABELS, TASK_VIEW_ICONS, TASK_REFRESH_FRAGMENT_HEADER } from "../lib/task-view-route"
 import { loadKanbanBoard } from "../lib/kanban-board-data"
 import { getHouseholdProjectGroup, getHouseholdProjectLabels } from "../lib/household-project-grouping"
 import { readKanbanFilters, setKanbanPage } from "../lib/kanban-query"
@@ -90,6 +91,13 @@ const verifyParams = new URLSearchParams(currentUrl.searchParams)
 verifyParams.set("view", "tasks")
 verifyParams.set("kanban", "1")
 const namedVerify = namedBoardId ? `/api/boards/${encodeURIComponent(namedBoardId)}?${verifyParams}` : undefined
+// Keep ordinary navigation and old clients on the full document. A refresh still
+// goes through the same workspace and authorization as its corresponding page.
+const compactRefresh = !namedBoardId && Astro.request.method === "GET" &&
+  Astro.request.headers.get(TASK_REFRESH_FRAGMENT_HEADER) === "1" &&
+  ((renderedView === "kanban" && currentUrl.searchParams.has("boardRefresh")) ||
+   (renderedView === "table" && currentUrl.searchParams.has("tableRefresh")))
+const WorkspaceShell = compactRefresh ? TaskRefreshShell : Layout
 if (currentUrl.searchParams.has("boardRefresh") ||
     (renderedView === "table" && currentUrl.searchParams.has("tableRefresh"))) {
   currentUrl.searchParams.delete("boardRefresh")
@@ -309,7 +317,7 @@ if (groupByProject) {
 
 ---
 
-<Layout title={`Meitheal — ${householdWorkspace ? "Household · " : ""}${heading}`} suppressHouseholdTaskModals={Boolean(namedBoardId)}>
+<WorkspaceShell title={`Meitheal — ${householdWorkspace ? "Household · " : ""}${heading}`} suppressHouseholdTaskModals={Boolean(namedBoardId)}>
 
   <UnifiedBar
     title={householdWorkspace ? "Household" : heading}
@@ -517,6 +525,7 @@ if (groupByProject) {
     data-default-area-label={t("kanban.default_area", locale)}
     data-unavailable-area-label={t("kanban.unavailable_area", locale)}
     data-backlog-mode={backlogMode}
+    data-kanban-moving={t("kanban.moving_task", locale)}
     data-reaction-count-label={t("reactions.card_count", locale)}
     style={`padding: 0 0 8px; grid-template-columns: repeat(${columns.length}, 1fr);`}
   >
@@ -554,6 +563,7 @@ if (groupByProject) {
                 )}
                 <span class="kanban-count">{matches}</span>
               </span>
+              {!namedBoardId && <span class="kanban-move-status" data-kanban-move-status role="status"></span>}
             </div>
             <div class="kanban-cards">
               {/* Swimlane group containers (hidden by default, JS-driven grouping) */}
@@ -753,6 +763,7 @@ if (groupByProject) {
                           <Icon
                             name={dueStatus === "overdue" ? "alert-triangle" : "calendar-event"}
                             size={12}
+                            sprite
                           />{" "}
                           {formatRegionalDate(String(task.due_date), {
                             format: dateFormat,
@@ -776,7 +787,7 @@ if (groupByProject) {
                           class="kanban-sync-badge"
                           title={t("kanban.calendar_synced", locale)}
                         >
-                          <Icon name="calendar-event" size={13} />
+                          <Icon name="calendar-event" size={13} sprite />
                         </span>
                       )}
                       {task.recurrence_rule && (
@@ -784,7 +795,7 @@ if (groupByProject) {
                           class="kanban-meta-recurrence"
                           title="Recurring task"
                         >
-                          <Icon name="repeat" size={13} />
+                          <Icon name="repeat" size={13} sprite />
                         </span>
                       )}
                       {(() => {
@@ -817,12 +828,12 @@ if (groupByProject) {
                           class="kanban-meta-comments"
                           title={`${Number(task.comment_count ?? 0)} comments`}
                         >
-                          <Icon name="message-circle" size={12} /> {Number(task.comment_count ?? 0)}
+                          <Icon name="message-circle" size={12} sprite /> {Number(task.comment_count ?? 0)}
                         </span>
                       )}
                                       {task.assigned_to && (
                         <span class="kanban-assignee-badge" title={t("tasks.assignee_loading", locale)}>
-                          <Icon name="user" size={14} />
+                          <Icon name="user" size={14} sprite />
                           <span class="kanban-assignee-name" dir="auto" data-task-assignee={String(task.assigned_to)}>{namedUser ? namedUser.roster.get(String(task.assigned_to).replace(/^ha_/, "")) || "Assignee unavailable" : t("tasks.assignee_loading", locale)}</span>
                         </span>
                       )}
@@ -905,7 +916,7 @@ if (groupByProject) {
                         title={namedBoardId && !namedEdit ? "View task" : t("kanban.edit_task", locale)}
                         aria-label={`${namedBoardId && !namedEdit ? "View" : "Edit"} task: ${String(task.title ?? "").slice(0, 50)}`}
                       >
-                        <Icon name="pencil" size={14} />
+                        <Icon name="pencil" size={14} sprite />
                       </button>
                       {!namedBoardId && <><button
                         class="card-action-btn card-ai-btn"
@@ -918,7 +929,7 @@ if (groupByProject) {
                         title={t("tasks.ask_ai", locale)}
                         aria-label={`AI assist for: ${String(task.title ?? "").slice(0, 50)}`}
                       >
-                        <Icon name="sparkles" size={14} />
+                        <Icon name="sparkles" size={14} sprite />
                       </button>
                       <button
                         class="card-action-btn card-dup-btn"
@@ -926,7 +937,7 @@ if (groupByProject) {
                         title={t("kanban.duplicate", locale)}
                         aria-label={`Duplicate task: ${String(task.title ?? "").slice(0, 50)}`}
                       >
-                        <Icon name="clipboard-list" size={14} />
+                        <Icon name="clipboard-list" size={14} sprite />
                       </button>
                       <button
                         class="card-action-btn card-child-btn"
@@ -1132,7 +1143,7 @@ if (groupByProject) {
       // Lanes panel toggle handled by kanban-controller (inside initKanbanArea)
     })
   </script>
-</Layout>
+</WorkspaceShell>
 
 <style>
   @reference "../../src/styles/global.css";
@@ -1273,9 +1284,6 @@ if (groupByProject) {
     display: flex;
     flex-direction: column;
     max-height: 100%;
-    transition:
-      background 200ms,
-      border-color 200ms;
     border: 2px solid transparent;
     padding: 12px;
   }
@@ -1288,22 +1296,25 @@ if (groupByProject) {
   }
   .kanban-column.drag-over {
     border-color: var(--accent);
-    background: rgba(99, 102, 241, 0.05);
   }
-  .kanban-column.drag-over .kanban-cards::after {
-    content: "";
-    display: block;
-    height: 80px;
-    border: 2px dashed var(--accent);
-    border-radius: 6px;
-    background: rgba(99, 102, 241, 0.05);
-    margin-top: 8px;
-    transition:
-      background 0.2s,
-      color 0.2s,
-      border-color 0.2s,
-      opacity 0.2s,
-      transform 0.2s;
+  .kanban-column-header {
+    position: relative;
+  }
+  .kanban-move-status {
+    position: absolute;
+    inset-block-start: 100%;
+    inset-inline-end: 0;
+    max-inline-size: 100%;
+    pointer-events: none;
+  }
+  .kanban-move-status:not(:empty) {
+    z-index: 2;
+    padding: 4px 8px;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-sm);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-size: 0.75rem;
   }
   /* kanban-column-header, kanban-count, kanban-header-right, kanban-cards, kanban-card
      are defined in _kanban.css @layer components — removed duplicates here */
@@ -1337,6 +1348,13 @@ if (groupByProject) {
       opacity 200ms cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     overflow: hidden;
+  }
+
+  @supports (content-visibility: auto) and (contain-intrinsic-block-size: auto 10rem) {
+    :where([data-task-workspace]:not([data-board-directory])) .kanban-card {
+      content-visibility: auto;
+      contain-intrinsic-block-size: auto var(--kanban-card-block-size, 10rem);
+    }
   }
 
   :global([data-theme="knight-rider"]) .kanban-card {

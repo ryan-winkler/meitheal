@@ -375,7 +375,9 @@ test.describe("Tasks Shell (Kanban)", () => {
             return box.left >= bounds.left && box.right <= bounds.right && box.bottom <= bounds.bottom
           })
       })
-      await expect(card).toBeVisible()
+      // Offscreen cards reserve space before their controls are laid out.
+      await card.scrollIntoViewIfNeeded()
+      await expect(card).toBeInViewport()
       await expect(card).toHaveCSS("opacity", "1")
       await expect(card.locator(".kanban-title-text")).toHaveText(title)
       await expect(actions).toHaveCSS("opacity", "1")

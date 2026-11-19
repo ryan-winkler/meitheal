@@ -182,7 +182,9 @@ Open **Task detail layout** from the ticket toolbar or from **Settings →
 Tasks & Boards**. Drag a section by its grip or move it using the arrows. Open
 **Fields** next to Properties, Scheduling or Metadata to arrange the fields in
 that group. **Reset layout** restores the original order from either entry
-point.
+point. The inspector builds the editor rows the first time you open **Task
+detail layout**. The controls use the page's existing labels and field access,
+so opening the editor does not make another request.
 
 The layout applies to all tickets in the current browser storage context.
 Another browser profile, a direct app address, or an embedded Home Assistant

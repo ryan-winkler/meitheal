@@ -22,7 +22,7 @@ Choose **Group → By Area** to group the current page of cards within each lane
 
 - Select the card's task key, such as **MTH-42**, to open the full task. With a task key focused, use Up and Down within a lane, Left and Right between lanes, and Enter or Space to open. Press N to open quick capture in that lane.
 - Open **⋯** at the top of a card and pick a lane under **Move to**. This works with keyboard, mouse, or touch. Escape closes the actions and returns focus to the card. To reverse a move, choose the previous lane.
-- You can also drag the card. On touch, hold the card body briefly before moving it. The card stays in its current lane while Meitheal saves. A rejected move leaves it in place.
+- You can also drag the card. On touch, swipe to scroll the board, or hold the card body until it lifts, then drag it to the destination lane. The card stays in its current lane while Meitheal saves. A rejected move leaves it in place.
 
 The task key is part of the card button’s accessible name. When one quick action replaces another, only the current dialog accepts keyboard input.
 
@@ -61,7 +61,11 @@ The board remains usable when reaction counts are unavailable. A denied request 
 
 ### Page through a large board
 
+The destination lane displays **Moving task…** while a move is being saved. Board loading and retry use the existing status line. The drop highlight fits within the lane so it keeps the same scrollable area while you drag.
+
 Each lane shows up to 25 cards. Its count includes every task matching the current area and filters. The range below the lane shows which cards are loaded. Use **Previous** or **Next** to page within that lane. Use **Filter by text** or the filter builder to find a task anywhere in the board, including other pages. Changing the area or filters returns the lanes to their first page.
+
+Household Kanban reloads its results in place. The refresh requests the same scoped page with `boardRefresh` and `X-Meitheal-Task-Fragment: 1`, so the response skips the shared page shell. Ordinary navigation still includes the shell. If a refresh fails, use **Retry board** to retain your last visible results until a new response succeeds.
 
 To move a task to another Board Group, open its **Details** and choose the destination in **Group**. When the save succeeds, the card appears in its new group after Details closes. If the destination group is collapsed, focus returns to its heading. If the board is filtered to the original group, the card leaves the results and the filter stays selected. A failed save restores the previous selection. Use the **Home Assistant Area** control in Details to edit the task's location when it is available.
 
@@ -94,6 +98,8 @@ On wide screens **New Task**, **Search Meitheal**, and **Ask Home Assistant** si
 Use Tab to move between visible task views. If a view moves into **More**, open that control and use the arrow keys to choose it.
 
 Open **Timeline** to narrow the chart by text, status, priority, task type, or area. Use **Group by** to organize dated tasks. The URL keeps these choices when you reload or move between task views. On phones, open **Filters** to adjust the chart. The task pane starts closed unless you saved a preference. Select **Task pane** to open or close it. The control becomes available when tasks match the filters.
+
+Timeline omits empty optional values from its initial task data to reduce download and parsing work. Missing dates still place the task in the undated work list when applicable. The Area field keeps the distinction between Default and unavailable Areas.
 
 When you group by **Project**, each project has its own section. If project names match, the heading adds the project's Area when available. A project with no direct Area inherits its linked Goal's available Area. If a direct Area reference is unavailable, its group uses a stable qualifier until that reference is repaired. **No Project** contains unassigned tasks. **Unknown Project** contains tasks whose assigned project is unavailable. Open **Task pane** to see the groups. Use Tab to reach a group button and Space or Enter to collapse or expand it. Use the Up and Down arrows to move between bars and group buttons. Collapsed groups stay collapsed while you filter the chart.
 
@@ -131,6 +137,8 @@ The existing cards stay visible while Meitheal loads the requested page or appli
 
 **Assign User** shows **No users configured** when the directory is empty, including standalone installations without a Home Assistant connection. If the Home Assistant roster could not be verified, check the connection in **Settings → Connected Services** and use **Retry**. Standalone connections need both a URL and a token. Any custom users and cached names from that Home Assistant connection remain available while the roster recovers. Table resolves the same display names after a page or filter change. If a name is unavailable, open Details to check the assignment.
 
+In Details, you can edit the task while the assignee directory loads. The **Assignee** field stays locked until the directory loads successfully. If loading fails, the saved assignment is preserved. Reopen Details to try again.
+
 ### A task stays in its original lane
 
 Check the message after the move. If the destination is at its work-in-progress limit, free a place before retrying. If dependencies are blocking progress, open the task and check its linked work. If the connection failed, refresh to confirm the saved lane before trying again.
@@ -159,6 +167,8 @@ Cards keep their full height in a busy lane. The lane scrolls instead of
 compressing the cards. At widths from 769 to 1024 CSS px the sidebar narrows to
 200 px, and the page content starts at the sidebar edge. Both read
 `--sidebar-width`, so a change to one width moves the other.
+
+The browser can skip laying out Household cards outside the viewport and reuse measured card sizes during an in-place refresh.
 
 An unreadable card assignment no longer interrupts grouping for the board. Check the assignment in Details if its group is unexpected. If an assignee group disappears after a refresh, keyboard focus returns to its workflow lane heading.
 

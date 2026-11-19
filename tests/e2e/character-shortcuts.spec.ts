@@ -304,7 +304,7 @@ test("disabling shortcuts covers sidebar capture, the Kanban board, task details
     await expect(help).toBeHidden()
     await expect(detail).toBeVisible()
     await expect(detailClose).toBeFocused()
-    await expect(page.locator("#td-assigned-to")).toBeVisible()
+    await expect(page.locator("#td-assigned-to")).toBeEnabled()
     await detailClose.press("a")
     await expect(page.locator("#td-assigned-to")).toBeFocused()
     await page.keyboard.press("Escape")

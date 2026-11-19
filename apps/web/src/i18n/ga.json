@@ -269,6 +269,7 @@
     "task_singular": "tasc thar",
     "task_plural": "tasc thar",
     "lanes": "lána",
+    "moving_task": "Tasc á bhogadh…",
     "board_loading": "An clár á lódáil…",
     "board_load_failed": "Níorbh fhéidir an clár a lódáil.",
     "retry_board": "Bain triail eile as",

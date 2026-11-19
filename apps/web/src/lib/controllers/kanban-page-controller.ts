@@ -1,5 +1,6 @@
 import { getRememberedAreaId, getSelectedAreaId } from "@lib/area-selector-controller"
 import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "@lib/task-page-url"
+import { TASK_REFRESH_FRAGMENT_HEADER } from "@lib/task-view-route"
 import { findKanbanDetailFocus } from "@lib/task-detail-handoff"
 import { DEFERRAL_RECONCILED, type DeferralReconciliation } from "@lib/deferral-client"
 import { initKanbanArea } from "@lib/kanban-controller"
@@ -13,7 +14,7 @@ export interface KanbanRefreshFocus {
   lane?: string | undefined
   taskId?: string | undefined
   firstPage?: boolean
-  afterSave?: "status" | "epic" | "board-group"
+  afterSave?: "status" | "lane-move" | "epic" | "board-group"
 }
 
 function findGroupFocus(board: HTMLElement, group: HTMLElement) {
@@ -24,6 +25,26 @@ function findGroupFocus(board: HTMLElement, group: HTMLElement) {
     .find(candidate => candidate.dataset.swimlaneType === key)
   return (target && target.querySelector<HTMLElement>(".swimlane-header")) ||
     (lane || board).querySelector<HTMLElement>(".kanban-column-header")
+}
+
+function carryCardBlockSizes(current: HTMLElement, replacement: HTMLElement): void {
+  const cards = current.querySelectorAll<HTMLElement>(".kanban-card[data-id]")
+  const first = cards[0]
+  if (!first || getComputedStyle(first).contentVisibility !== "auto") return
+
+  const sizes = new Map<string, number>()
+  for (const card of cards) {
+    const height = card.offsetHeight
+    if (!height || !card.dataset.id) continue
+    const style = getComputedStyle(card)
+    const blockSize = height - parseFloat(style.paddingBlockStart) - parseFloat(style.paddingBlockEnd)
+      - parseFloat(style.borderBlockStartWidth) - parseFloat(style.borderBlockEndWidth)
+    if (blockSize > 0) sizes.set(card.dataset.id, blockSize)
+  }
+  for (const card of replacement.querySelectorAll<HTMLElement>(".kanban-card[data-id]")) {
+    const blockSize = sizes.get(card.dataset.id ?? "")
+    if (blockSize !== undefined) card.style.setProperty("--kanban-card-block-size", `${blockSize}px`)
+  }
 }
 
 export function initKanbanPage(signal: AbortSignal): void {
@@ -91,6 +112,11 @@ export function initKanbanPage(signal: AbortSignal): void {
     queueMicrotask(resumeBackgroundRead)
   }
 
+  function queueMoveRefresh(focus?: KanbanRefreshFocus) {
+    if (signal.aborted || (!focus && queuedBackgroundRead?.focus?.taskId)) return
+    queueBackgroundRead({ ...focus, afterSave: "lane-move" })
+  }
+
   async function load(url: URL, focus?: KanbanRefreshFocus, reset = false, dataOnly = false): Promise<void> {
     pending?.abort()
     const request = new AbortController()
@@ -99,8 +125,9 @@ export function initKanbanPage(signal: AbortSignal): void {
     lastFocus = focus
     resetScroll = reset
     const origin = location.href
+    const statusSaved = focus?.afterSave === "status" || focus?.afterSave === "lane-move"
     board.setAttribute("aria-busy", "true")
-    renderStatus(window.mI18n?.get("kanban.board_loading") ?? "Loading board…")
+    if (!dataOnly) renderStatus(window.mI18n?.get("kanban.board_loading") ?? "Loading board…")
 
     try {
       const requestUrl = new URL(url)
@@ -108,6 +135,7 @@ export function initKanbanPage(signal: AbortSignal): void {
       // Older installed service workers can serve cached HTML to fetch(), even with no-store.
       requestUrl.searchParams.set("boardRefresh", `${performance.timeOrigin}-${++requestNumber}`)
       const response = await fetch(requestUrl, { // nosemgrep
+        headers: { [TASK_REFRESH_FRAGMENT_HEADER]: "1" },
         signal: AbortSignal.any([signal, request.signal, AbortSignal.timeout(10_000)]),
         redirect: "error",
         cache: "no-store",
@@ -131,10 +159,14 @@ export function initKanbanPage(signal: AbortSignal): void {
       const grouping = board.dataset.groupBy
       const activeGroup = (grouping === "assigned" || grouping === "status" || grouping === "project") && board.contains(active) &&
         active?.matches("button.swimlane-header") ? active.closest<HTMLElement>(".swimlane-group") : null
-      const shouldFocus = active === retry || board.contains(active) ||
-        (focus && (!focus.afterSave || focus.afterSave === "status") && active === document.body)
-      const previousControl = (focus?.afterSave || grouping === "project") &&
-        active instanceof HTMLElement && board.contains(active) ? active : null
+      const activeInBoard = active instanceof HTMLElement && board.contains(active)
+      const laneMove = focus?.afterSave === "lane-move"
+      const focusMovedCard = laneMove && focus.taskId &&
+        (active === document.body || (activeInBoard && active.closest<HTMLElement>(".kanban-card")?.dataset.id === focus.taskId))
+      const shouldFocus = active === retry || (laneMove
+        ? focusMovedCard
+        : activeInBoard || (focus && (!focus.afterSave || statusSaved) && active === document.body))
+      const previousControl = activeInBoard && !focusMovedCard && (focus?.afterSave || grouping === "project") ? active : null
       const scroll = new Map(Array.from(board.querySelectorAll<HTMLElement>(".kanban-column"), lane =>
         [lane.dataset.status, lane.querySelector(".kanban-cards")?.scrollTop ?? 0] as const))
       const horizontal = board.scrollLeft
@@ -142,11 +174,16 @@ export function initKanbanPage(signal: AbortSignal): void {
         if (cssClass.startsWith("density-") || cssClass.startsWith("hide-field-")) replacement.classList.add(cssClass)
       }
 
+      if (!reset && (window.scrollY > 0 || [...scroll.values()].some(top => top > 0))) {
+        // A replacement loses each card's remembered intrinsic height. Seed matching cards
+        // with the current size so they keep their place when results refresh while scrolled.
+        carryCardBlockSizes(board, replacement)
+      }
       boardLifetime.abort()
       board.replaceWith(replacement)
       board = replacement
       boardLifetime = new AbortController()
-      initKanbanArea(boardLifetime.signal, refresh)
+      initKanbanArea(boardLifetime.signal, refresh, queueMoveRefresh)
       void hydrateTaskAssignees(board, boardLifetime.signal)
       initKanbanReactionCounts(board, boardLifetime.signal)
       initKanbanInactivity(board, boardLifetime.signal)
@@ -164,7 +201,8 @@ export function initKanbanPage(signal: AbortSignal): void {
       for (const lane of board.querySelectorAll<HTMLElement>(".kanban-column")) {
         if (lane.dataset.status) setKanbanPage(url, lane.dataset.status, Number(lane.dataset.page))
         const list = lane.querySelector(".kanban-cards")
-        if (list && !reset && lane.dataset.status !== focus?.lane) list.scrollTop = scroll.get(lane.dataset.status) ?? 0
+        const revealDestination = lane.dataset.status === focus?.lane && (!laneMove || focusMovedCard)
+        if (list && !reset && !revealDestination) list.scrollTop = scroll.get(lane.dataset.status) ?? 0
       }
       // A view or task-detail navigation can change the hash while a board request is in flight.
       url.hash = taskBackgroundUrl().hash
@@ -175,7 +213,8 @@ export function initKanbanPage(signal: AbortSignal): void {
       const retainedControl = previousControl && findKanbanDetailFocus(board, previousControl)
       if (activeGroup && board.dataset.groupBy === grouping) {
         findGroupFocus(board, activeGroup)?.focus({ preventScroll: true })
-      } else if (shouldFocus && (retainedControl || (!dataOnly && (focus || active === retry)))) {
+      } else if ((shouldFocus || (laneMove && retainedControl)) &&
+        (retainedControl || (!dataOnly && (focus || active === retry)))) {
         const lane = focus?.lane ? board.querySelector<HTMLElement>(`.kanban-column[data-status="${CSS.escape(focus.lane)}"]`) : null
         const card = focus?.taskId ? (lane || board).querySelector<HTMLElement>(
           `.kanban-card[data-id="${CSS.escape(focus.taskId)}"] .card-more-btn`,
@@ -186,12 +225,12 @@ export function initKanbanPage(signal: AbortSignal): void {
         const range = lane && (lane.querySelector<HTMLElement>("[data-kanban-range]") ??
           lane.querySelector<HTMLElement>(".kanban-column-header"))
         const destination = control || range || board.querySelector<HTMLElement>(".kanban-column-header")
-        destination?.focus()
+        destination?.focus({ preventScroll: Boolean(laneMove && retainedControl) })
       }
     } catch {
       if (!request.signal.aborted && !signal.aborted) {
         const message = window.mI18n?.get("kanban.board_load_failed") ?? "Couldn’t load the board."
-        renderStatus(focus?.afterSave === "status" ? `Status saved. ${message}` : message, true)
+        renderStatus(statusSaved ? `Status saved. ${message}` : message, true)
       }
     } finally {
       if (pending === request) {
@@ -223,7 +262,7 @@ export function initKanbanPage(signal: AbortSignal): void {
     toolsToggle.setAttribute("aria-expanded", String(toolsToggle.getAttribute("aria-expanded") !== "true"))
   }, { signal })
   initLaneManagementPanel()
-  initKanbanArea(boardLifetime.signal, refresh)
+  initKanbanArea(boardLifetime.signal, refresh, queueMoveRefresh)
   void hydrateTaskAssignees(board, boardLifetime.signal)
   initKanbanReactionCounts(board, boardLifetime.signal)
 

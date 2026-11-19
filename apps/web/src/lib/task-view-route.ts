@@ -3,6 +3,7 @@ import { readKanbanRules } from "./kanban-query"
 
 export const TASK_VIEWS = ["kanban", "table", "calendar", "timeline"] as const
 export type TaskView = (typeof TASK_VIEWS)[number]
+export const TASK_REFRESH_FRAGMENT_HEADER = "X-Meitheal-Task-Fragment"
 
 export const TASK_VIEW_LABELS = {
   kanban: "Kanban",

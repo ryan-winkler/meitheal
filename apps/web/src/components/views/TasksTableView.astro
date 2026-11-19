@@ -52,7 +52,7 @@ const { rows, page, pageCount, offset, stats, active, overdue } = getTablePage(
 
 function tableLink(next: number, open?: string) {
   const query = new URLSearchParams(params)
-  for (const key of ["tableRefresh", "open", "comment", "tp"]) query.delete(key)
+  for (const key of ["boardRefresh", "tableRefresh", "open", "comment", "tp"]) query.delete(key)
   query.set("view", "table")
   if (next > 1) query.set("tp", String(next))
   if (open) query.set("open", open)
@@ -380,11 +380,11 @@ const priorityClasses: Record<number, string> = {
                     <td class="cell-center col-calendar">
                       {task.calendar_sync_state === "confirmed" ? (
                         <span title="Calendar synced" class="text-accent" role="img" aria-label="Calendar synced">
-                          <Icon name="check" size={16} />
+                          <Icon name="check" size={16} sprite />
                         </span>
                       ) : task.calendar_sync_state === "pending" ? (
                         <span title="Sync pending" class="text-warning" role="img" aria-label="Sync pending">
-                          <Icon name="clock" size={16} />
+                          <Icon name="clock" size={16} sprite />
                         </span>
                       ) : (
                         <span title="Not synced" class="text-muted">
@@ -417,7 +417,7 @@ const priorityClasses: Record<number, string> = {
                         title={t("tasks.delete", locale)}
                         aria-label={`Delete ${task.title}`}
                       >
-                        <Icon name="trash" size={16} />
+                        <Icon name="trash" size={16} sprite />
                       </button>
                     </td>
                   </tr>

@@ -20,6 +20,8 @@ The selected Tabler outline paths retain their MIT notice in `apps/web/scripts/g
 
 `apps/web/scripts/generate-icons.mjs` extracts inner SVG geometry for the curated Tabler outline icons (`24x24` `viewBox`, `stroke-width="1.75"`, `vector-effect="non-scaling-stroke"`) plus 17 legacy `Icon.astro` aliases from `@tabler/icons` (`devDependency`) into `apps/web/src/generated/icon-registry.ts` during `generate:codegen`. Repeated `<Icon sprite={true} />` and `<TaskTypeIcon />` elements register icon names on `Astro.locals.usedIcons` and reference `<symbol id="mt-icon-...">` definitions emitted once per SSR response by `<IconSpriteDefs />` before `</body>` in `Layout.astro`.
 
+Kanban card and Table row icons reference this shared sprite. When a Tasks view replaces its results with a server-rendered fragment, the current document supplies the symbols from `CLIENT_DYNAMIC_ICON_NAMES`. Keep any icon introduced by a fragment in that list so it renders even when the initial results never used it.
+
 UI emoji handling follows five explicit buckets:
 1. **Bucket 1 (Untouched)**: Bidirectional Home Assistant calendar/todo attribution markers (`calendar-bridge.ts`) and corrupt-title cleanup parsers (`cleanup-corrupt-titles.ts`).
 2. **Bucket 2 (Untouched)**: User-selected Area, Project, and Kanban lane icons, emoji/reaction pickers, SQLite defaults, client translation swap mechanics, and native HTML `<select><option>` text (`settings.cal_sync_bidirectional`, `FrameworkWizard.astro` badge colors, priority/category options).
@@ -36,3 +38,5 @@ Pin creation shortcuts from **New task → Task types**. Pin Calendar, Kanban, T
 ## Verification
 
 Run `tabler-settings-recovery.spec.ts` against a disposable local Astro dev server to check section navigation, outline rendering, keyboard help, icon and security-link contrast in Light and Dark, mobile navigation, disclosure text and shared card spacing. Verified feedback capture and queue operations retain their separate `feedback-ingress.spec.ts` fixture checks; standalone mode intentionally does not expose those controls.
+
+On a disposable Tasks board, page or filter into Kanban cards with due dates and Table rows with pending or confirmed calendar sync. Check that the new icons display after each refresh without a full page load, including when the initial results lack that icon.

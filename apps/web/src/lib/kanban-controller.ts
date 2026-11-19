@@ -48,11 +48,29 @@ const log = createClientLogger("kanban");
 export function initKanbanArea(
   __signal: AbortSignal,
   refreshBoard: (focus?: KanbanRefreshFocus) => Promise<void>,
+  queueMoveRefresh: (focus?: KanbanRefreshFocus) => void,
 ): void {
     const boardElement = document.querySelector<HTMLElement>("#kanban-board")
     if (!boardElement) return
     const board = boardElement
     const pendingMoves = new Map<HTMLElement, HTMLElement>()
+    let hoveredLane: HTMLElement | null = null
+
+    function setHoveredLane(lane: HTMLElement | null) {
+      if (hoveredLane === lane) return
+      hoveredLane?.classList.remove("drag-over")
+      lane?.classList.add("drag-over")
+      hoveredLane = lane
+    }
+
+    function syncMoveStatus(lane: HTMLElement) {
+      const status = lane.querySelector<HTMLElement>("[data-kanban-move-status]")
+      if (!status) return
+      const pending = !__signal.aborted && [...pendingMoves].some(([card, destination]) =>
+        destination === lane && card.getAttribute("aria-busy") === "true")
+      const message = pending ? board.dataset.kanbanMoving ?? "" : ""
+      if (status.textContent !== message) status.textContent = message
+    }
 
     function buildTaskApiUrl(taskId: string | number | null, suffix = "") {
       const normalizedTaskId = String(taskId ?? "").trim()
@@ -75,7 +93,8 @@ export function initKanbanArea(
 
       const laneName = lane.querySelector(".kanban-column-title")?.textContent?.trim() || status
       const limit = Number(lane.dataset.wipLimit) || 0
-      const incoming = Array.from(pendingMoves.values()).filter(destination => destination === lane).length
+      const incoming = [...pendingMoves].filter(([movingCard, destination]) =>
+        destination === lane && movingCard.closest(".kanban-column") !== lane).length
       if (source !== lane && limit > 0 && Number(lane.dataset.total) + incoming >= limit) {
         const message = window.mI18n?.get("kanban.lane_full") ?? "{lane} has reached its work-in-progress limit ({limit})."
         showToast(message.replace("{limit}", String(limit)).replace("{lane}", laneName), "warning")
@@ -86,13 +105,19 @@ export function initKanbanArea(
       const wasDone = isDoneStatus(card.dataset.status ?? "")
       pendingMoves.set(card, lane)
       card.setAttribute("aria-busy", "true")
+      syncMoveStatus(lane)
+      let saved = false
       try {
         const res = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ status, task_type: typeChanged ? newType : undefined }),
         })
-        if (__signal.aborted) return
+        saved = res.ok
+        if (__signal.aborted) {
+          if (saved) queueMoveRefresh()
+          return
+        }
         if (!res.ok) {
           const problem = res.status === 409 ? await res.json().catch(() => null) : null
           const message = problem?.blocked_by?.length
@@ -104,15 +129,21 @@ export function initKanbanArea(
 
         const moved = window.mI18n?.get("kanban.moved_to") ?? "Moved to {lane}"
         showToast(moved.replace("{lane}", laneName))
-        if (!wasDone && isDoneStatus(status)) recordCompletion(card, restoreFocus, await res.json())
-        await refreshBoard(restoreFocus ? { taskId, lane: status } : undefined)
+        queueMoveRefresh(restoreFocus ? { taskId, lane: status } : undefined)
+        if (!wasDone && isDoneStatus(status)) {
+          const completed = await res.json().catch(() => null)
+          if (completed && !__signal.aborted) recordCompletion(card, restoreFocus, completed)
+        }
       } catch (error) {
         if (__signal.aborted) return
         log.warn("Could not update the Kanban lane", error)
         showToast(window.mI18n?.get("kanban.move_failed") ?? "Couldn’t move the task. Try again.", "error")
       } finally {
-        pendingMoves.delete(card)
+        // An accepted move still reserves space until the Board replaces its older totals.
+        if (saved) card.draggable = false
+        else pendingMoves.delete(card)
         card.removeAttribute("aria-busy")
+        syncMoveStatus(lane)
       }
     }
 
@@ -133,7 +164,7 @@ export function initKanbanArea(
     function handleDrop(event: DragEvent) {
       event.preventDefault()
       const lane = event.currentTarget as HTMLElement
-      lane.classList.remove("drag-over")
+      setHoveredLane(null)
       const id = event.dataTransfer?.getData("text/plain")
       if (!id) return
       const card = board.querySelector<HTMLElement>(`.kanban-card[data-id="${CSS.escape(id)}"]`)
@@ -141,17 +172,22 @@ export function initKanbanArea(
       if (card) void moveTask(card, lane, targetGroup)
     }
 
-    // ── Drag-and-drop event listeners (migrated from inline handlers for CSP) ──
+    board.addEventListener("dragover", event => {
+      const lane = (event.target as Element | null)?.closest<HTMLElement>(".kanban-column") ?? null
+      setHoveredLane(lane)
+      if (lane) event.preventDefault()
+    }, { signal: __signal })
+    board.addEventListener("dragleave", event => {
+      const next = event.relatedTarget ?? document.elementFromPoint(event.clientX, event.clientY)
+      if (!(next instanceof Node) || !board.contains(next)) setHoveredLane(null)
+    }, { signal: __signal })
+    __signal.addEventListener("abort", () => {
+      setHoveredLane(null)
+      for (const status of board.querySelectorAll("[data-kanban-move-status]")) status.textContent = ""
+    }, { once: true })
+
     board.querySelectorAll<HTMLElement>(".kanban-column").forEach((col) => {
-      // Column-level: drop, dragover, dragleave
-      col.addEventListener("drop", handleDrop as unknown as EventListener, { signal: __signal });
-      col.addEventListener("dragover", ((e: Event) => {
-        e.preventDefault();
-        (col as HTMLElement).classList.add("drag-over");
-      }) as EventListener, { signal: __signal });
-      col.addEventListener("dragleave", () => {
-        col.classList.remove("drag-over");
-      }, { signal: __signal });
+      col.addEventListener("drop", handleDrop, { signal: __signal })
 
       const cardsContainer = col.querySelector<HTMLElement>(".kanban-cards");
       if (!cardsContainer) return;
@@ -170,7 +206,7 @@ export function initKanbanArea(
           card.classList.remove("dragging");
           board.querySelector(".reorder-indicator")?.remove()
           document.querySelectorAll(".drag-ghost").forEach(g => g.remove());
-          document.querySelectorAll(".drag-over").forEach(c => c.classList.remove("drag-over"));
+          setHoveredLane(null)
         }, { signal: __signal });
       });
 
@@ -207,7 +243,7 @@ export function initKanbanArea(
         if (!card || card.parentElement !== targetList || pendingMoves.has(card)) return
 
         drag.stopPropagation()
-        col.classList.remove("drag-over")
+        setHoveredLane(null)
         const position = getReorderPosition(targetList, card, drag)
         if (!id || !position?.anchor.dataset.id) return
 
@@ -279,7 +315,7 @@ export function initKanbanArea(
         e.preventDefault()
         if (titleSpan.contentEditable === "true") return
 
-        const card = titleSpan.closest(".kanban-card")
+        const card = titleSpan.closest<HTMLElement>(".kanban-card")
         const taskId = titleSpan.dataset.taskId
         if (!taskId || card?.hasAttribute("data-title-saving")) return
 
@@ -304,7 +340,7 @@ export function initKanbanArea(
         async function saveEdit() {
           const newTitle = titleSpan.textContent?.trim() ?? ""
           titleSpan.contentEditable = "false"
-          if (card) card.setAttribute("draggable", "true")
+          if (card) card.draggable = !pendingMoves.has(card)
 
           // Remove listeners
           titleSpan.removeEventListener("blur", saveEdit)
@@ -340,7 +376,7 @@ export function initKanbanArea(
           } else if (ev.key === "Escape") {
             titleSpan.textContent = originalText
             titleSpan.contentEditable = "false"
-            if (card) card.setAttribute("draggable", "true")
+            if (card) card.draggable = !pendingMoves.has(card)
             titleSpan.removeEventListener("blur", saveEdit)
             titleSpan.removeEventListener("keydown", handleKeys)
           }
