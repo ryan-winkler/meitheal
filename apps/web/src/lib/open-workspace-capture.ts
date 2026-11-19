@@ -4,7 +4,7 @@ import { readWorkspacePreferences } from "./workspace-preferences"
 
 const ordinaryPages = new Set(["/", "/today", "/upcoming", "/tasks"])
 
-export function openWorkspaceQuickAdd(trigger?: HTMLElement): boolean {
+export function openWorkspaceQuickAdd(trigger: HTMLElement | undefined, openTaskForm: () => void): boolean {
   const path = stripIngressPrefix(location.pathname).replace(/\/$/, "") || "/"
   if (!ordinaryPages.has(path) || readWorkspacePreferences().capture !== "quick" ||
     (window.__activeArea && window.__activeArea !== "all" && window.__activeArea !== "default")) return false
@@ -14,6 +14,6 @@ export function openWorkspaceQuickAdd(trigger?: HTMLElement): boolean {
   const signal = pageLifecycle.signal
   void import("./preferred-quick-add")
     .then(({ openQuickAdd }) => openQuickAdd(trigger, signal))
-    .catch(() => { if (!signal.aborted) window.openNewTaskModal?.() })
+    .catch(() => { if (!signal.aborted) openTaskForm() })
   return true
 }

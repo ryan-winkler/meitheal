@@ -3,6 +3,7 @@ import { deferred, shouldSkipBrowserSpecs } from "./_helpers"
 
 test.describe("workspace setup", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
+  test.use({ serviceWorkers: "block" })
 
   test("Skip restores focus and preserves existing choices", async ({ page }) => {
     await page.goto("/")
@@ -12,9 +13,11 @@ test.describe("workspace setup", () => {
     const dialog = page.getByRole("dialog", { name: "Skip setup?" })
     await skip.click()
     await expect(dialog.getByRole("button", { name: "Keep setting up" })).toBeFocused()
+    await expect(page.locator("body")).toHaveCSS("overflow", "hidden")
     await page.keyboard.press("Escape")
     await expect(dialog).toBeHidden()
     await expect(skip).toBeFocused()
+    await expect(page.locator("body")).not.toHaveCSS("overflow", "hidden")
     await skip.click()
     await dialog.click({ position: { x: 4, y: 4 } })
     await expect(dialog).toBeHidden()
@@ -55,7 +58,13 @@ test.describe("workspace setup", () => {
     await expect(page.locator("#new-task-title-input")).toHaveValue("Remember the groceries")
 
     await page.goto("/settings#app-pwa-settings")
-    await page.getByRole("link", { name: "Run setup again" }).click()
+    await page.locator("#settings-bar-search-launcher").click()
+    await page.locator("#search-hub-input").fill("Run setup again")
+    await page.locator(".search-hub-item").filter({ hasText: "Run setup again" }).first().click()
+    await expect(page).toHaveURL(/\/settings#run-setup-again$/)
+    const rerun = page.getByRole("link", { name: "Run setup again" })
+    await expect(rerun).toBeFocused()
+    await rerun.press("Enter")
     await page.getByText("Advanced", { exact: true }).click()
     await expect(page.getByRole("combobox", { name: "Theme" })).toHaveValue("dark")
     await page.getByText("AI Setup", { exact: true }).click()
@@ -99,6 +108,19 @@ test.describe("workspace setup", () => {
     await expect(quick.getByRole("button", { name: "Add task", exact: true })).toBeDisabled()
     await expect(quick.getByRole("button", { name: "Open full task form" })).toBeDisabled()
     expect(submits).toBe(1)
+  })
+
+  test("a failed Quick Add bundle opens the full form or reports that capture is unavailable", async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem("meitheal-workspace-v1:browser", JSON.stringify({ capture: "quick" })))
+    await page.route(/\/preferred-quick-add[^/]*\.(?:js|ts)(?:\?|$)/, route => route.abort())
+    await page.goto("/?view=dashboard")
+    const newTask = page.locator("#dashboard-bar-new-task")
+    await newTask.click()
+    await expect(page.locator("#new-task-title-input")).toBeVisible()
+    await page.locator("#close-new-task-modal").click()
+    await page.evaluate(() => Reflect.deleteProperty(window, "openNewTaskModal"))
+    await newTask.click()
+    await expect(page.locator("#toast-container").getByRole("alert")).toContainText("Task modal not ready")
   })
 
   test("setup keeps the selected theme when browser storage rejects the save", async ({ page }) => {

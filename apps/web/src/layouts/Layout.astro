@@ -112,7 +112,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
           if (confirmOverlay && !confirmOverlay.classList.contains("hidden")) return true;
           // Mobile sidebar open is legitimate
           if (document.body.classList.contains("sidebar-open") && window.innerWidth <= 768) return true;
-          return false;
+          return Boolean(document.querySelector("[data-meitheal-tabler-modal].show"));
         }
         // MutationObserver: undo external overflow:hidden on body when no modal is open
         var observer = new MutationObserver(function (mutations) {

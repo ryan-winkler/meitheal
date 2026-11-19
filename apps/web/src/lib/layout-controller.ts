@@ -152,14 +152,17 @@
 
           // The New Task modal ships in Layout, so open it directly. Clicking a page
           // button by id pattern used to match the modal's own Cancel button instead.
-          function openNewTaskAction() {
-            if (openWorkspaceQuickAdd(document.activeElement instanceof HTMLElement ? document.activeElement : undefined)) return
+          function openTaskFormOrTasks() {
             const modalFn = (window as { openNewTaskModal?: () => void }).openNewTaskModal
             if (typeof modalFn === "function") {
               modalFn()
               return
             }
             SHORTCUT_NAV.tasks()
+          }
+          function openNewTaskAction() {
+            const trigger = document.activeElement
+            if (!openWorkspaceQuickAdd(trigger instanceof HTMLElement ? trigger : undefined, openTaskFormOrTasks)) openTaskFormOrTasks()
           }
 
           // Collapsed-rail quick action + floating tooltips

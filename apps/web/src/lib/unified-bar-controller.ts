@@ -135,14 +135,15 @@ export function initUnifiedBarNewTaskButton({
   const button = document.getElementById(`${barId}-new-task`) as HTMLButtonElement | null
   if (!button) return
 
-  pageLifecycle.on(button, "click", () => {
-    if (openWorkspaceQuickAdd(button)) return
+  function openTaskForm() {
     if (typeof window.openNewTaskModal === "function") {
       window.openNewTaskModal()
       return
     }
 
+    const signal = pageLifecycle.signal
     requestAnimationFrame(() => {
+      if (signal.aborted) return
       if (typeof window.openNewTaskModal === "function") {
         window.openNewTaskModal()
         return
@@ -150,6 +151,10 @@ export function initUnifiedBarNewTaskButton({
 
       showToast(fallbackMessage, "error")
     })
+  }
+
+  pageLifecycle.on(button, "click", () => {
+    if (!openWorkspaceQuickAdd(button, openTaskForm)) openTaskForm()
   })
 }
 
