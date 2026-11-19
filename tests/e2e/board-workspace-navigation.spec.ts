@@ -116,6 +116,8 @@ for (const kind of ["Household", "named"] as const) {
     const heading = epicGroup.locator(".swimlane-header")
     await expect(epicGroup.locator(".swimlane-label")).toHaveText(epicLabel)
     await expect(epicGroup.locator(`.kanban-card[data-id="${child.id}"]`)).toBeVisible()
+    await expect(group("epic:none").locator(".swimlane-label")).toHaveText("No Epic")
+    await expect(group("epic:none").locator(`.kanban-card[data-id="${other.id}"]`)).toBeVisible()
     await heading.press("Enter")
     await expect(heading).toBeFocused()
     await expect(childCard).toBeHidden()
@@ -156,6 +158,23 @@ test("a committed Goal share returns a receipt and appears in the receiving Boar
   const receiving = await boards.member.request.get(`${boards.app}/api/goals?board_id=${target.id}&area_id=${area.id}`)
   expect(receiving.ok()).toBe(true)
   expect((await receiving.json()).goals).toEqual([expect.objectContaining({ id: goal.id, title, shared: true })])
+})
+
+test("creating and closing a Board intake return their committed receipts", async ({ boards }) => {
+  const board = await post(boards, "/boards", { name: "Receipt Board" })
+  const path = `/boards/${board.id}`
+  const model = await (await boards.member.request.get(`${boards.app}/api${path}`)).json()
+  const lane = model.lanes.find((item: { key: string; id: string }) => item.key === "pending")
+  const sender = model.people.find((person: { id: string }) => person.id === "fixture-member-two")
+  expect(lane?.id).toBeTruthy()
+  expect(sender?.id).toBeTruthy()
+  const receipt = await post(boards, `${path}/intakes`, { label: "Fixture intake", laneId: lane.id, senderIds: [sender.id] })
+  expect(receipt).toEqual({ id: expect.any(String), accessPending: false })
+  const closed = await boards.member.request.patch(`${boards.app}/api${path}/intakes`, {
+    headers: boards.headers, data: { id: receipt.id, enabled: false },
+  })
+  expect(closed.status()).toBe(200)
+  expect(await closed.json()).toEqual({ ok: true, accessPending: false })
 })
 
 test("Household is a peer Board and every scoped workspace destination retains the selected Board and Project", async ({ boards }, info) => {

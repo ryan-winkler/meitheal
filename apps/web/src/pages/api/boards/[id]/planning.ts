@@ -109,7 +109,7 @@ export const POST: APIRoute = withBoardScope(planningOperation, async (context, 
     const outcome = await repository.saveVisibility(user.actor.id, params.id, change)
     if (outcome.status === "locked") return apiError("Named Board access is temporarily locked.", 503)
     if (outcome.result !== "saved") return apiError("Board or planning selection unavailable", 404)
-    if (outcome.status === "committed") return journaledBoardCommandAck(scope, planningOperation, true)
+    if (outcome.status === "committed") return journaledBoardCommandAck(scope, planningOperation, { accessPending: false })
     return apiJson({ ok: true, accessPending: outcome.status === "committed-locked" })
   }
   if (!await repository.save(user.actor.id, params.id, change)) return apiError("Board or planning selection unavailable", 404)

@@ -1,4 +1,4 @@
-import { withBoardScope } from "@lib/board-http"
+import { journaledBoardCommandAck, withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { BoardIntakeRepository } from "@domains/tasks/persistence/board-intake-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
@@ -6,7 +6,9 @@ import { apiError, apiJson } from "@lib/api-response"
 import { currentBoardContext, readBoardRequest } from "@lib/named-board-request"
 import { stripHtml } from "@lib/strip-html"
 
-export const POST: APIRoute = withBoardScope({ resource: "board", action: "manage" }, async (context, scope) => {
+const intakeManagement = { resource: "board", action: "manage" } as const
+
+export const POST: APIRoute = withBoardScope(intakeManagement, async (context, scope) => {
   const { request, params } = context
   const body = await readBoardRequest(request)
   const user = await currentBoardContext(context, true)
@@ -28,10 +30,11 @@ export const POST: APIRoute = withBoardScope({ resource: "board", action: "manag
   })
   if (result.status === "locked") return apiError("Board access is temporarily locked.", 503)
   if (!result.result) return apiError("Board or intake destination unavailable", 404)
+  if (result.status === "committed") return journaledBoardCommandAck(scope, intakeManagement, { id: result.result.id })
   return apiJson({ ...result.result, accessPending: result.status === "committed-locked" }, 201)
 }, { boardParam: "id" })
 
-export const PATCH: APIRoute = withBoardScope({ resource: "board", action: "manage" }, async (context, scope) => {
+export const PATCH: APIRoute = withBoardScope(intakeManagement, async (context, scope) => {
   const { request, params } = context
   const body = await readBoardRequest(request)
   const user = await currentBoardContext(context, true)
@@ -42,5 +45,6 @@ export const PATCH: APIRoute = withBoardScope({ resource: "board", action: "mana
   const result = await repository.setEnabled(user.actor.id, params.id, body.id, body.enabled)
   if (result.status === "locked") return apiError("Board access is temporarily locked.", 503)
   if (!result.result) return apiError("Intake destination unavailable or already set", 404)
+  if (result.status === "committed") return journaledBoardCommandAck(scope, intakeManagement, { accessPending: false })
   return apiJson({ ok: true, accessPending: result.status === "committed-locked" })
 }, { boardParam: "id" })

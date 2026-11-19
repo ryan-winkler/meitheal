@@ -36,6 +36,8 @@ Completion and deletion are separate. A child can be allowed to move and update 
 
 An owner can create a send-only destination with allowed senders, a triage column and an optional recipient. The sender uses **Send a task** without receiving access to other tasks, Board counts or private planning content. Keep the original submission when retrying after a timeout. A receipt confirms that submission; it does not grant task read.
 
+After a Goal share or intake change, the API confirms the committed change against the new access revision. The confirmation contains only the outcome, or the new intake's ID for a creation. If publication is still pending, refresh the Board before retrying.
+
 **Delete Board** keeps its saved work in Deleted Boards and pauses incoming work. **Restore Board** uses current permissions and returns the same identities. Personal hiding and Board deletion are different actions.
 
 ## Integrations and automation
