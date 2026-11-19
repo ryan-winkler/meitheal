@@ -52,7 +52,7 @@ test.describe("Theme accent and keyboard focus", () => {
       await expect(page).toHaveURL(/\/today$/)
       await expect.poll(tokens).toEqual({ accent: surface, focus: baseline.focus })
       await page.getByRole("link", { name: "Settings", exact: true }).first().click()
-      await expect(page).toHaveURL(/\/settings(?:#.*)?$/)
+      await expect(page).toHaveURL(url => url.pathname === "/settings" && url.searchParams.get("board_id") === "household")
       await expect(page.locator("#look-and-feel-settings")).toBeVisible()
       await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
       await expect(picker).toHaveValue(surface)

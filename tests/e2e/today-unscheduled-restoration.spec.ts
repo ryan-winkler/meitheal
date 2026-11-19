@@ -1,17 +1,19 @@
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal browser fixture")
 test.use({ serviceWorkers: "block" })
 
-test("reopening from Completed today restores Unscheduled without a reload", async ({ page, request }) => {
+test("reopening from Completed today restores Unscheduled without a reload", async ({ page, request, baseURL }) => {
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
   await page.emulateMedia({ reducedMotion: "reduce" })
   const title = "Restore completed task to Unscheduled"
-  const created = await request.post("/api/tasks", { data: { title } })
+  const created = await request.post("/api/tasks", { headers, data: { title } })
   expect(created.status()).toBe(201)
   const { id } = await created.json()
   try {
-    const completed = await request.put(`/api/tasks/${id}`, { data: { status: "complete" } })
+    const completed = await request.put(`/api/tasks/${id}`, { headers, data: { status: "complete" } })
     expect(completed.ok()).toBe(true)
     await page.goto("/today#today-work")
     const section = page.locator("#section-unscheduled")
@@ -33,6 +35,6 @@ test("reopening from Completed today restores Unscheduled without a reload", asy
     await section.getByRole("button", { name: /^Unscheduled/ }).click()
     await expect(row).toHaveAttribute("data-work-active", "")
   } finally {
-    await request.delete(`/api/tasks/${id}`, { data: {} })
+    await request.delete(`/api/tasks/${id}`, { headers, data: {} })
   }
 })

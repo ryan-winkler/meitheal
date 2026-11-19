@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.describe("Today Shell", () => {
@@ -66,7 +67,7 @@ test.describe("Today Shell", () => {
   })
 
   test("clicking a today task opens the shared task detail surface", async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const due_date = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin", dateStyle: "short" }).format(new Date())
     const response = await request.post("/api/tasks", { headers, data: { title: "Verify Today details", due_date } })
     expect(response.status()).toBe(201)
@@ -76,7 +77,7 @@ test.describe("Today Shell", () => {
       await page.locator(`.tli[data-id="${id}"]`).click()
       await expect(page.locator("#td-title")).toHaveValue("Verify Today details")
     } finally {
-      await request.delete(`/api/tasks/${id}`, { headers })
+      await request.delete(`/api/tasks/${id}`, { headers, data: {} })
     }
   })
 })
