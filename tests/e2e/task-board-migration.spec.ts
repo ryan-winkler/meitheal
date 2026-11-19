@@ -13,6 +13,7 @@ import {
   applyTaskBoardUpgrade, readTaskBoardMigrationState, TASK_BOARD_MIGRATION, validateTaskBoardUpgrade,
 } from "../../apps/web/drizzle/migrations/task-board-upgrade.mjs"
 import { openDatabase, openDatabaseForStartup } from "../../apps/web/scripts/database-client.mjs"
+import { enrollCurrentOwnedLegacyFixture } from "../helpers/current-legacy-fixture"
 import { prepareTaskBoardPredecessor, predecessorMigrationNames } from "../scripts/task-board-predecessor"
 
 type Client = ReturnType<typeof openDatabase>
@@ -65,16 +66,20 @@ const test = base.extend<{ predecessor: Client, databaseUrl: string }>({
   },
 })
 
-async function predecessorRows(db: Client) {
+async function predecessorRows(db: Client, predecessor?: ReadonlyArray<{ table: string, columns: string[] }>) {
   return Promise.all(["boards", "areas", "tasks", "kanban_lanes"].map(async table => {
-    const { rows: columns } = await db.execute({ sql: "SELECT name FROM pragma_table_info(?) ORDER BY cid", args: [table] })
-    const projection = columns.map(column => String(column.name)).filter(name =>
-      name !== "owner_board_id" && (table !== "areas" || name !== "retired_at") && (table === "tasks"
-        ? !["task_board_id", "board_column_id", "ticket_ref"].includes(name)
-        : table !== "kanban_lanes" || name !== "board_id"),
-    ).map(name => `"${name.replaceAll('"', '""')}"`).join(", ")
+    let columns = predecessor?.find(snapshot => snapshot.table === table)?.columns
+    if (!columns) {
+      const schema = await db.execute({ sql: "SELECT name FROM pragma_table_info(?) ORDER BY cid", args: [table] })
+      columns = schema.rows.map(column => String(column.name)).filter(name =>
+        name !== "owner_board_id" && (table !== "areas" || name !== "retired_at") && (table === "tasks"
+          ? !["task_board_id", "board_column_id", "ticket_ref"].includes(name)
+          : table !== "kanban_lanes" || name !== "board_id"),
+      )
+    }
+    const projection = columns.map(name => `"${name.replaceAll('"', '""')}"`).join(", ")
     const { rows } = await db.execute(`SELECT rowid AS fixture_rowid, ${projection} FROM ${table} ORDER BY rowid`)
-    return { table, count: rows.length, hash: createHash("sha256").update(JSON.stringify(rows)).digest("hex") }
+    return { table, columns, count: rows.length, hash: createHash("sha256").update(JSON.stringify(rows)).digest("hex") }
   }))
 }
 
@@ -321,16 +326,32 @@ test("the startup CLI upgrades 2,000 historical tasks and preserves draft public
     cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
   })
   expect(run()).toContain("Applied migration: 0009_task_boards.mjs")
-  expect(run("--check")).toContain("Migration check passed")
+  expect(() => run("--check")).toThrow(/Pending migrations:.*0016_ordinary_boards/)
   expect(await predecessorRows(db)).toEqual(before)
-  expect((await db.execute("SELECT COUNT(*) AS count FROM areas WHERE owner_board_id IS NOT NULL OR retired_at IS NOT NULL")).rows)
-    .toEqual([{ count: 0 }])
-  expect((await db.execute("SELECT board_id, draft_id, revision FROM task_drafts")).rows)
-    .toEqual([{ board_id: "household", draft_id: "draft", revision: 4 }])
-  expect((await db.execute("SELECT board_id, task_id, published_seq FROM task_draft_receipts")).rows)
-    .toEqual([{ board_id: "household", task_id: "already-deleted", published_seq: 2 }])
-  expect((await db.execute("SELECT seq FROM sqlite_sequence WHERE name = 'task_draft_receipts'")).rows)
-    .toEqual([{ seq: 9 }])
+  db.close()
+  const database = databaseUrl.slice("file:".length)
+  const markerPath = database + ".board-grants.json"
+  const proof = await enrollCurrentOwnedLegacyFixture({ database, markerPath,
+    provenance: "created-in-this-test-and-never-restored" })
+  try {
+    expect(run("--check")).toContain("Migration check passed")
+    const current = await openDatabaseForStartup(databaseUrl, { readOnly: true, markerPath })
+    try {
+      expect(await predecessorRows(current, before)).toEqual(before)
+      expect((await current.execute("SELECT COUNT(*) AS count FROM areas WHERE owner_board_id IS NOT NULL OR retired_at IS NOT NULL")).rows)
+        .toEqual([{ count: 0 }])
+      expect((await current.execute("SELECT board_id, draft_id, revision FROM task_drafts")).rows)
+        .toEqual([{ board_id: "household", draft_id: "draft", revision: 4 }])
+      expect((await current.execute("SELECT board_id, task_id, published_seq FROM task_draft_receipts")).rows)
+        .toEqual([{ board_id: "household", task_id: "already-deleted", published_seq: 2 }])
+      expect((await current.execute("SELECT seq FROM sqlite_sequence WHERE name = 'task_draft_receipts'")).rows)
+        .toEqual([{ seq: 9 }])
+    } finally {
+      current.close()
+    }
+  } finally {
+    await rm(proof.custodyDirectory, { recursive: true, force: true })
+  }
 })
 
 test("the Board upgrade commits both markers, preserves receipts and keeps named rows unavailable", async ({ predecessor: db, databaseUrl }) => {

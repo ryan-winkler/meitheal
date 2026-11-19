@@ -1,4 +1,5 @@
 import { BOARD_LIFECYCLE_MIGRATION } from "../../apps/web/drizzle/migrations/0015_board_lifecycle.mjs"
+import { ORDINARY_BOARD_MIGRATION } from "../../apps/web/drizzle/migrations/0016_ordinary_boards.mjs"
 import { execFile } from "../helpers/isolated-process"
 import { createHash } from "node:crypto"
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises"
@@ -16,13 +17,15 @@ import { ORGANIZATION_FEATURE_MIGRATION } from "../../apps/web/drizzle/migration
 import { TASK_BOARD_MIGRATION } from "../../apps/web/drizzle/migrations/task-board-upgrade.mjs"
 import { DATABASE_SCHEMA_VERSION, openDatabase } from "../../apps/web/scripts/database-client.mjs"
 import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
+import { enrollCurrentOwnedLegacyFixture } from "../helpers/current-legacy-fixture"
 import { prepareTaskBoardPredecessor } from "../scripts/task-board-predecessor"
 
-const upgradeMigrations = new Set<string>([TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION, ORGANIZATION_FEATURE_MIGRATION, BOARD_LIFECYCLE_MIGRATION])
+const upgradeMigrations = new Set<string>([TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION, ORGANIZATION_FEATURE_MIGRATION, BOARD_LIFECYCLE_MIGRATION, ORDINARY_BOARD_MIGRATION])
 
 const execFileAsync = promisify(execFile)
 const webRoot = fileURLToPath(new URL("../../apps/web", import.meta.url))
 const generation = /^[0-9a-f]{32}$/
+const ordinaryTriggerDigest = "d6238a68f54285d8e0b40b45cf3bf894df0bcd2698e23cda0bdf2bf72f169df1"
 const triggerNames = [
   "areas_inactivity_generation",
   "comments_inactivity_delete",
@@ -51,6 +54,17 @@ function migrate(databasePath: string, ...args: string[]) {
     env: { ...process.env, MEITHEAL_DB_URL: `file:${databasePath}` },
     timeout: 20_000,
   })
+}
+
+async function qualifyOwnedPredecessor(databasePath: string) {
+  await expect(migrate(databasePath, "--check")).rejects.toThrow(/Pending migrations:.*0016_ordinary_boards/)
+  const proof = await enrollCurrentOwnedLegacyFixture({ database: databasePath, markerPath: databasePath + ".board-grants.json",
+    provenance: "created-in-this-test-and-never-restored" })
+  try {
+    await migrate(databasePath, "--check")
+  } finally {
+    await rm(proof.custodyDirectory, { recursive: true, force: true })
+  }
 }
 
 async function bootstrapRuntime(databasePath: string) {
@@ -92,6 +106,12 @@ function readTriggers(database: DatabaseSync) {
     AND (name GLOB '*_inactivity_*' OR name GLOB '*_stall_*') ORDER BY name`).all()
 }
 
+function expectOrdinaryActivityTriggers(database: DatabaseSync) {
+  const triggers = readTriggers(database)
+  expect(triggers.map(trigger => trigger.name)).toEqual(triggerNames)
+  expect(createHash("sha256").update(JSON.stringify(triggers)).digest("hex")).toBe(ordinaryTriggerDigest)
+}
+
 function readMarker(database: DatabaseSync) {
   return database.prepare("SELECT value FROM app_settings WHERE key = 'schema_version'").get()?.value
 }
@@ -101,8 +121,8 @@ function readLedger(database: DatabaseSync) {
 }
 
 function enablePolicy(database: DatabaseSync) {
-  database.exec(`INSERT INTO task_inactivity_policy (scope, days, revision)
-    VALUES ('default', 30, '0123456789abcdef0123456789abcdef')`)
+  database.exec(`INSERT INTO task_inactivity_policy (board_id, scope, days, revision)
+    VALUES ('household', 'default', 30, '0123456789abcdef0123456789abcdef')`)
 }
 
 function insertTask(database: DatabaseSync, id: string, status: string) {
@@ -116,11 +136,7 @@ test("the standalone CLI installs working activity triggers before web startup",
   await migrate(databasePath, "--check")
   withDatabase(databasePath, database => {
     expect(readMarker(database)).toBe(String(DATABASE_SCHEMA_VERSION))
-    const triggers = readTriggers(database)
-    expect(triggers.map(trigger => trigger.name)).toEqual(triggerNames)
-    // Existing version-18 databases store these definitions verbatim.
-    expect(createHash("sha256").update(JSON.stringify(triggers)).digest("hex"))
-      .toBe("630b0f9d0f1f3f7c43fe9f6df81f300698ae3faf9faced671f6dac5a4c83d2ec")
+    expectOrdinaryActivityTriggers(database)
     database.exec("INSERT INTO areas (id, name, created_at, updated_at) VALUES ('new', 'New Area', 1, 1)")
     const areas = database.prepare("SELECT inactivity_generation FROM areas ORDER BY id").all()
     expect(areas).toEqual([{ inactivity_generation: expect.stringMatching(generation) }, {
@@ -207,7 +223,7 @@ test("startup preserves non-null imported Area generations accepted by the prede
     return rows
   })
   await migrate(databasePath)
-  await migrate(databasePath, "--check")
+  await qualifyOwnedPredecessor(databasePath)
   await bootstrapRuntime(databasePath)
   expect(withDatabase(databasePath, readGenerations)).toEqual(before)
 })
@@ -363,9 +379,10 @@ test("CLI check detects a missing predecessor activity trigger and apply restore
   expect((await readdir(directory)).sort()).toEqual(beforeFiles)
 
   await migrate(databasePath)
-  await migrate(databasePath, "--check")
+  withDatabase(databasePath, database => expect(readTriggers(database)).toEqual(triggers))
+  await qualifyOwnedPredecessor(databasePath)
   withDatabase(databasePath, database => {
-    expect(readTriggers(database)).toEqual(triggers)
+    expectOrdinaryActivityTriggers(database)
     expect(readLedger(database).filter(entry => !upgradeMigrations.has(String(entry.name)))).toEqual(ledger)
     expect(readMarker(database)).toBe(String(DATABASE_SCHEMA_VERSION))
   })
@@ -401,9 +418,10 @@ test("a malformed stall column preserves predecessor activity state through both
 
   withDatabase(databasePath, database => database.exec("ALTER TABLE comments DROP COLUMN inactivity_spike_human"))
   await migrate(databasePath)
-  await migrate(databasePath, "--check")
+  withDatabase(databasePath, database => expect(readTriggers(database)).toEqual(triggers))
+  await qualifyOwnedPredecessor(databasePath)
   withDatabase(databasePath, database => {
-    expect(readTriggers(database)).toEqual(triggers)
+    expectOrdinaryActivityTriggers(database)
     expect(readLedger(database).filter(entry => !upgradeMigrations.has(String(entry.name)) && entry.name !== "0008_task_stall.mjs"))
       .toEqual(ledger)
     expect(database.prepare("SELECT inactivity_generation FROM areas WHERE id = 'default'").get()).toEqual({
