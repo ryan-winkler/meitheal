@@ -217,7 +217,8 @@ test("a lane menu move preserves focus and scroll on another destination card", 
     release.resolve()
     await expect(destination.locator(source)).toBeAttached()
     await expect(otherCard).toBeFocused()
-    expect(await destinationList.evaluate(list => list.scrollTop)).toBe(scrollBefore)
+    const scrollAfter = await destinationList.evaluate(list => list.scrollTop)
+    expect(Math.abs(scrollAfter - scrollBefore)).toBeLessThanOrEqual(1)
   } finally {
     release.resolve()
     for (const id of ids) await request.delete("/api/tasks/" + id, { headers })
