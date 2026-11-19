@@ -43,8 +43,8 @@ test.describe("Progress Parent Page — /progress", () => {
     const section = page.locator("#progress-section-routines")
     await expect(section).toBeVisible()
 
-    await expect(section.getByRole("link", { name: "New Routine" })).toHaveAttribute("href", "/habits?new=1")
-    await expect(section.getByRole("link", { name: "View Routines" })).toHaveAttribute("href", "/habits")
+    await expect(section.getByRole("link", { name: "New Routine" })).toHaveAttribute("href", "/habits?board_id=household&new=1")
+    await expect(section.getByRole("link", { name: "View Routines" })).toHaveAttribute("href", "/habits?board_id=household")
   })
 
   test("navigating to goals hash shows goals section", async ({ page }) => {

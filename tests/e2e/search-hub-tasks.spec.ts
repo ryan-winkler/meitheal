@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite"
 import { expect, test, type Page } from "@playwright/test"
 import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
+import { deferred } from "./_helpers"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Run with MEITHEAL_TEST_BROWSER=1 and a built web app")
 
@@ -135,7 +136,7 @@ test("Search-owned confirmation is cancelled on history to the same task", async
   }
 })
 
-test("Search-owned Details handles DELETE rejection and a delayed receipt across ingress history", async () => {
+test("Search-owned Details handles DELETE rejection and cancels a pending receipt on ingress history", async () => {
   await withSearchIngress(async (page, root, prefix) => {
     const title = "Search delete ingress fixture"
     const { id, ticket_key: ticket } = await seedIngressTask(page, prefix, title)
@@ -145,11 +146,11 @@ test("Search-owned Details handles DELETE rejection and a delayed receipt across
       if (path.endsWith("/api/search")) searchPaths.push(path)
     })
     let deleteCount = 0
-    let startDelayed!: () => void
-    let releaseDelayed!: () => void
-    const started = new Promise<void>(resolve => { startDelayed = resolve })
-    const held = new Promise<void>(resolve => { releaseDelayed = resolve })
-    await page.route(url => url.pathname === prefix + "/api/tasks/" + id, async route => {
+    const deletePath = prefix + "/api/tasks/" + id
+    const started = deferred<void>()
+    const held = deferred<void>()
+    const finished = deferred<void>()
+    await page.route(url => url.pathname === deletePath, async route => {
       if (route.request().method() !== "DELETE") {
         await route.fallback()
         return
@@ -158,9 +159,13 @@ test("Search-owned Details handles DELETE rejection and a delayed receipt across
         await route.fulfill({ status: 403, json: { detail: "Fixture rejection" } })
         return
       }
-      startDelayed()
-      await held
-      await route.fulfill({ status: 204 })
+      started.resolve()
+      await held.promise
+      try {
+        await route.fulfill({ status: 204 })
+      } finally {
+        finished.resolve()
+      }
     })
 
     await page.goto(root + "/settings#theme-select")
@@ -191,14 +196,24 @@ test("Search-owned Details handles DELETE rejection and a delayed receipt across
     await recovery.getByRole("button", { name: "Reload saved task" }).click()
     await expect(recovery).toBeHidden()
 
-    await confirmDelete()
-    await started
-    await page.goBack()
-    await expect(page).toHaveURL(older)
-    await expect(page.locator("#td-title")).toHaveValue(title)
-    const receipt = page.waitForResponse(response => response.request().method() === "DELETE" && response.status() === 204)
-    releaseDelayed()
-    await receipt
+    try {
+      await confirmDelete()
+      await started.promise
+      const [cancelled] = await Promise.all([
+        page.waitForEvent("requestfailed", {
+          predicate: outgoing => outgoing.method() === "DELETE" && new URL(outgoing.url()).pathname === deletePath,
+          timeout: 5_000,
+        }),
+        page.goBack(),
+      ])
+      expect(cancelled.failure()?.errorText).toBe("net::ERR_ABORTED")
+      await expect(page).toHaveURL(older)
+      await expect(page.locator("#td-title")).toHaveValue(title)
+    } finally {
+      held.resolve()
+    }
+    await finished.promise
+    expect(deleteCount).toBe(2)
     await expect(page.getByRole("button", { name: "Close detail" })).toBeFocused()
     await expect(page.locator("#search-hub-overlay")).toBeHidden()
     expect(searchPaths.length).toBeGreaterThan(0)

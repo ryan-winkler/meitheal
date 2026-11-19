@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
 const predecessorHash = "21bed59f3a8f3bb401f7ee9fede5e2d6c3b64e6a68cdfb27fb2af225486059ff"
@@ -63,20 +64,21 @@ test("saved filters wait for the scoped worker and stay unavailable offline", as
         navigator.serviceWorker.controller?.postMessage({ type: "MEITHEAL_SEARCH_NETWORK_ONLY" }, [channel.port2])
       }))).toBe(true)
     }
-    const seeded = await page.evaluate(async ({ prefix, endpoint, variants }) => {
-      const created = await fetch(endpoint, {
-        method: "POST", headers: { "content-type": "application/json" },
-        mode: "same-origin", cache: "no-store", redirect: "error", referrerPolicy: "same-origin",
-        body: JSON.stringify({ name: "Scoped fixture preset", query_json: { status: "active" } }),
-      })
-      if (!created.ok) throw new Error("Preset fixture could not be created")
+    const headers = await currentBoardWriteHeaders(page.request, "household", { origin }, origin + prefix)
+    const created = await page.request.post(origin + endpoint, {
+      headers,
+      data: { name: "Scoped fixture preset", query_json: { status: "active" } },
+    })
+    expect(created.status(), await created.text()).toBe(201)
+    const { id } = await created.json()
+    const cacheVersion = await page.evaluate(async ({ prefix, variants }) => {
       const { version } = await (await fetch(prefix + "/version.json")).json()
       const cache = await caches.open(`meitheal-api-v${version}`)
       for (const path of [...variants, prefix + "/unrelated-preset-fixture"]) {
         await cache.put(path, new Response("Synthetic cached entry", { headers: { date: new Date().toUTCString() } }))
       }
-      return { version: String(version), id: (await created.json()).id }
-    }, { prefix, endpoint, variants })
+      return String(version)
+    }, { prefix, variants })
 
     const reads: string[] = []
     const escaped: string[] = []
@@ -112,7 +114,7 @@ test("saved filters wait for the scoped worker and stay unavailable offline", as
         stale: await Promise.all(variants.map(async path => Boolean(await cache.match(path)))),
         unrelated: Boolean(await cache.match(prefix + "/unrelated-preset-fixture")),
       }
-    }, { prefix, variants, version: seeded.version })
+    }, { prefix, variants, version: cacheVersion })
     expect(cached).toEqual({ stale: [false, false, false], unrelated: true })
 
     await apply.press("Enter")
@@ -122,15 +124,21 @@ test("saved filters wait for the scoped worker and stay unavailable offline", as
     await expect(apply).toBeVisible()
     await panel.getByRole("button", { name: "Delete Scoped fixture preset" }).press("Enter")
     await expect(page.getByRole("alertdialog")).toBeVisible()
+    const requestsBeforeOffline = reads.length
     await context.setOffline(true)
     await expect(page.getByRole("alertdialog")).toBeHidden()
-    await expect(panel).toContainText("unavailable offline")
+    const recovery = page.getByRole("status").filter({ hasText: "This Board is hidden until access can be verified." })
+    await expect(recovery.getByRole("button", { name: "Retry verification" })).toBeVisible()
+    await expect(panel).toHaveCount(0)
+    await expect(toggle).toHaveCount(0)
     await expect(apply).toHaveCount(0)
-    await expect(toggle).toBeFocused()
+    expect(reads).toHaveLength(requestsBeforeOffline)
     await context.setOffline(false)
+    await expect(recovery).toBeHidden()
     await expect(apply).toBeVisible()
+    await expect(toggle).toBeFocused()
     const after = await page.request.get(origin + endpoint)
-    expect((await after.json()).filters).toContainEqual(expect.objectContaining({ id: seeded.id }))
+    expect((await after.json()).filters).toContainEqual(expect.objectContaining({ id }))
   } finally {
     await browser?.close()
     if (child.exitCode === null && child.signalCode === null) {
