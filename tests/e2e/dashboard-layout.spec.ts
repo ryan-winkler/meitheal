@@ -157,6 +157,21 @@ test.describe("Dashboard layout", () => {
     expect(await sections.evaluateAll(nodes => nodes.map(node => node.id))).toEqual([momentum, overview, capture, focus, recent])
   })
 
+  test("loads customization only when needed, including the first save in another tab", async ({ page, context }) => {
+    const customizationAsset = /\/dashboard-widget-controller[^/]*\.js(?:\?|$)/
+    expect(await page.evaluate(source => performance.getEntriesByType("resource")
+      .some(entry => new RegExp(source).test(entry.name)), customizationAsset.source)).toBe(false)
+
+    const writer = await context.newPage()
+    await writer.goto("/?view=dashboard")
+    const request = page.waitForRequest(request => customizationAsset.test(request.url()))
+    await writer.evaluate(({ key, id }) => {
+      localStorage.setItem(key, JSON.stringify([{ id, visible: false }]))
+    }, { key: layoutKey, id: recent })
+    await request
+    await expect(page.locator("#dashboard-recent")).toBeHidden()
+  })
+
   test("submits inline Quick Add when Recent is absent", async ({ page }) => {
     await page.route("**/api/tasks", async route => {
       if (route.request().method() !== "POST") return route.continue()

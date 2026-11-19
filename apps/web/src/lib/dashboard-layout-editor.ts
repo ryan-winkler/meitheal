@@ -1,5 +1,6 @@
+import { DASHBOARD_LAYOUT_PREFIX, workspaceStorageKey } from "./workspace-preferences"
 import "../styles/dashboard-layout-editor.css"
-import { applyDashboardOrder, dashboardLayoutStorageKey, normalizeDashboardLayout, readDashboardLayout, type DashboardWidgetPreference } from "./dashboard-layout"
+import { applyDashboardOrder, normalizeDashboardLayout, readDashboardLayout, type DashboardWidgetPreference } from "./dashboard-layout"
 import { closeTablerModal, openTablerModal } from "./tabler-modal"
 import { showToast } from "./toast"
 
@@ -90,7 +91,7 @@ export function bindDashboardLayoutEditor(
   }
 
   function open(control: HTMLElement): void {
-    if (dashboardLayoutStorageKey() !== key || dialog.classList.contains("show") || opening) return
+    if (workspaceStorageKey(DASHBOARD_LAYOUT_PREFIX) !== key || dialog.classList.contains("show") || opening) return
     opening = true
     trigger = control
     const saved = readDashboardLayout(key)
@@ -104,7 +105,7 @@ export function bindDashboardLayoutEditor(
   }
 
   function save(): void {
-    if (dashboardLayoutStorageKey() !== key) {
+    if (workspaceStorageKey(DASHBOARD_LAYOUT_PREFIX) !== key) {
       feedback("Your session changed. Reload the dashboard to edit your layout.")
       return
     }

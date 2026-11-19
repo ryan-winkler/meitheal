@@ -12,6 +12,7 @@ const execFileAsync = promisify(execFile);
 
 const defaultBudgets = {
   clientBytesMax: 100 * 1024,
+  commonClientBytesMax: undefined,
   workspaceUiBytesMax: 50_000,
   rssKbMax: 220 * 1024,
   p95MsMax: 250
@@ -50,6 +51,7 @@ async function loadBudgets(scriptDir) {
       if (fromFile) {
         budgets = {
           clientBytesMax: parsePositiveInteger(String(fromFile.clientBytesMax)) ?? budgets.clientBytesMax,
+          commonClientBytesMax: parsePositiveInteger(String(fromFile.commonClientBytesMax)),
           workspaceUiBytesMax: parsePositiveInteger(String(fromFile.workspaceUiBytesMax)) ?? budgets.workspaceUiBytesMax,
           rssKbMax: parsePositiveInteger(String(fromFile.rssKbMax)) ?? budgets.rssKbMax,
           p95MsMax: parsePositiveNumber(String(fromFile.p95MsMax)) ?? budgets.p95MsMax
@@ -85,10 +87,9 @@ async function sizeOfDirectoryBytes(dir) {
   return total;
 }
 
-// These route or interaction entry points are loaded on Setup, Quick Add, or
-// Customize Dashboard. Keep the existing common-assets ceiling independent.
+// Setup, Quick Add and Dashboard customization load these assets on demand.
 async function workspaceUiBytes(dir) {
-  const optional = /^(?:dashboard-layout-editor|modal|tabler-modal|tabler-styles|tabler-surface|preferred-quick-add|setup(?:\.astro_astro_type_script_index_0_lang)?)\.[\w-]+\.(?:js|css)$/
+  const optional = /^(?:dashboard-layout(?:-editor)?|dashboard-widget-controller|modal|tabler-modal|tabler-styles|tabler-surface|preferred-quick-add|setup(?:\.astro_astro_type_script_index_0_lang)?)\.[\w-]+\.(?:js|css)$/
   const files = (await fs.readdir(dir)).filter(filename => optional.test(filename))
   const sizes = await Promise.all(files.map(filename => fs.stat(path.join(dir, filename))))
   return sizes.reduce((bytes, file) => bytes + file.size, 0)
@@ -292,8 +293,11 @@ async function main() {
     latenciesMs.sort((a, b) => a - b);
     const p95Ms = percentile(latenciesMs, 0.95);
     const failures = [];
-    if (commonBytes > budgets.clientBytesMax) {
-      failures.push(`Common generated client assets too large: ${commonBytes} bytes > ${budgets.clientBytesMax}`);
+    if (clientBytes > budgets.clientBytesMax) {
+      failures.push(`Client assets too large: ${clientBytes} bytes > ${budgets.clientBytesMax}`);
+    }
+    if (budgets.commonClientBytesMax !== undefined && commonBytes > budgets.commonClientBytesMax) {
+      failures.push(`Common generated client assets too large: ${commonBytes} bytes > ${budgets.commonClientBytesMax}`);
     }
     if (optionalBytes > budgets.workspaceUiBytesMax) {
       failures.push(`Optional workspace assets too large: ${optionalBytes} bytes > ${budgets.workspaceUiBytesMax}`);

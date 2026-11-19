@@ -1,5 +1,5 @@
 import type { DashboardSectionId } from "@lib/dashboard-registry"
-import { initDashboardWidgets } from "@lib/dashboard-widget-controller"
+import { DASHBOARD_LAYOUT_PREFIX, workspaceStorageKey } from "@lib/workspace-preferences"
 import { initPageShellSectionTracking } from "@lib/page-shell-controller"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { quickAddPayload } from "@lib/quick-add"
@@ -62,7 +62,11 @@ function initDashboardTabsKeyboard(): void {
   })
 }
 
-function initDashboardShell(widgets: ReturnType<typeof initDashboardWidgets>): () => void {
+function initDashboardShell(shell: HTMLElement, reveal: ((id: DashboardSectionId) => void) | undefined): (revealAnchor?: boolean) => void {
+  function firstVisible(): DashboardSectionId | undefined {
+    return shell.querySelector("[data-dashboard-section]:not([hidden])")?.id as DashboardSectionId | undefined
+  }
+
   const trackLinkedSection = initPageShellSectionTracking(
     document.querySelectorAll<HTMLElement>("[data-dashboard-section]"),
     resolveDashboardSectionId,
@@ -74,7 +78,7 @@ function initDashboardShell(widgets: ReturnType<typeof initDashboardWidgets>): (
     if (!target) return
 
     const sectionId = resolveDashboardSectionId(anchorId)
-    if (sectionId) widgets.reveal(sectionId)
+    if (sectionId) reveal?.(sectionId)
     trackLinkedSection(sectionId)
     target.scrollIntoView({ block: "start" })
     history.replaceState(history.state, "", `#${anchorId}`)
@@ -93,7 +97,7 @@ function initDashboardShell(widgets: ReturnType<typeof initDashboardWidgets>): (
     }
     const target = sectionId ? document.getElementById(sectionId) : null
     const linked = target && !target.hidden ? sectionId : null
-    const active = linked ?? widgets.firstVisible()
+    const active = linked ?? firstVisible()
     trackLinkedSection(active ?? null, linked !== null)
     updateActiveSectionState(active)
   }
@@ -126,7 +130,7 @@ function initDashboardShell(widgets: ReturnType<typeof initDashboardWidgets>): (
     pageLifecycle.on(window, "scroll", updateVisibility, { passive: true })
     pageLifecycle.on(button, "click", () => {
       history.replaceState(history.state, "", `${window.location.pathname}${window.location.search}`)
-      const first = widgets.firstVisible()
+      const first = firstVisible()
       trackLinkedSection(first ?? null)
       window.scrollTo({ top: 0 })
       updateActiveSectionState(first)
@@ -163,10 +167,10 @@ function initDashboardShell(widgets: ReturnType<typeof initDashboardWidgets>): (
       if (!signal.aborted && window.location.href === initialUrl) scrollToDashboardAnchor(hash)
     })
   }
-  return () => {
+  return (revealAnchor = false) => {
     closeSwitcher?.()
     recalcOverflow?.()
-    syncDashboardSectionFromHash()
+    syncDashboardSectionFromHash(revealAnchor)
   }
 }
 
@@ -383,15 +387,61 @@ function initTaskDetailLaunchers(): void {
   })
 }
 
+function initDashboardCustomization(shell: HTMLElement, syncShell: (revealAnchor?: boolean) => void) {
+  const key = workspaceStorageKey(DASHBOARD_LAYOUT_PREFIX)
+  const launcher = document.querySelector<HTMLButtonElement>("#dashboard-bar [data-dashboard-edit]")
+  if (!key || !launcher) return
+
+  const signal = pageLifecycle.signal
+  let widgets: ReturnType<typeof import("@lib/dashboard-widget-controller").initDashboardWidgets> | undefined
+  launcher.hidden = false
+  const loadWidgets = () =>
+    import("@lib/dashboard-widget-controller").then(({ initDashboardWidgets }) => {
+      if (signal.aborted || workspaceStorageKey(DASHBOARD_LAYOUT_PREFIX) !== key) return
+      if (!widgets) {
+        widgets = initDashboardWidgets(shell, launcher, key, signal, syncShell)
+        syncShell(true)
+      }
+      return widgets
+    })
+
+  pageLifecycle.on(document, "click", async event => {
+    const control = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-dashboard-edit]") : null
+    if (!control) return
+    try {
+      const customization = await loadWidgets()
+      await customization?.openEditor(control)
+    } catch {
+      if (!signal.aborted) showToast("Dashboard editor couldn’t open. Try again.", "error")
+    }
+  })
+
+  // Profiles using the default layout keep the server-rendered Dashboard.
+  try {
+    if (localStorage.getItem(key) !== null) void loadWidgets().catch(() => {
+      if (!signal.aborted) showToast("Your saved Dashboard layout couldn’t load. Refresh to try again.", "error")
+    })
+  } catch {
+    // The default layout is usable with storage disabled.
+  }
+  pageLifecycle.on(window, "storage", event => {
+    if (!widgets && (event.key === key || event.key === null) && event.storageArea === localStorage) {
+      void loadWidgets().catch(() => {})
+    }
+  })
+
+  return (id: DashboardSectionId) => widgets?.reveal(id)
+}
+
 function bootDashboardPage(): void {
   const shell = document.getElementById("dashboard-shell")
   if (!shell || shell.dataset.dashboardBooted === "true") return
 
   shell.dataset.dashboardBooted = "true"
 
-  let syncShell = () => {}
-  const widgets = initDashboardWidgets(shell, pageLifecycle.signal, () => syncShell())
-  syncShell = initDashboardShell(widgets)
+  let syncShell: (revealAnchor?: boolean) => void
+  const reveal = initDashboardCustomization(shell, revealAnchor => syncShell(revealAnchor))
+  syncShell = initDashboardShell(shell, reveal)
   initQuickAddForm()
   const updateOpenQueue = initOpenTaskFilter()
   initTaskDetailLaunchers()

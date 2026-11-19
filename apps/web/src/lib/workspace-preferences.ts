@@ -1,4 +1,5 @@
 export const WORKSPACE_PREFERENCES_PREFIX = "meitheal-workspace-v1:"
+export const DASHBOARD_LAYOUT_PREFIX = "meitheal:dashboard-layout:v1:"
 export const WORKSPACE_THEMES = ["auto", "light", "dark"] as const
 export type WorkspaceTheme = (typeof WORKSPACE_THEMES)[number]
 
@@ -30,22 +31,26 @@ export function parseWorkspacePreferences(raw: string | null): WorkspacePreferen
   }
 }
 
+export function workspaceStorageKey(prefix: string): string | null {
+  const { workspaceScope, workspaceFrozen } = document.documentElement.dataset
+  return workspaceScope && !workspaceFrozen ? prefix + workspaceScope : null
+}
+
 export function readWorkspacePreferences(): WorkspacePreferences {
-  const { workspaceScope: scope, workspaceFrozen } = document.documentElement.dataset
-  if (!scope || workspaceFrozen) return {}
+  const key = workspaceStorageKey(WORKSPACE_PREFERENCES_PREFIX)
+  if (!key) return {}
   try {
-    return parseWorkspacePreferences(localStorage.getItem(WORKSPACE_PREFERENCES_PREFIX + scope))
+    return parseWorkspacePreferences(localStorage.getItem(key))
   } catch {
     return {}
   }
 }
 
 export async function saveWorkspacePreferences(changes: WorkspacePreferences, clearTheme = false): Promise<boolean> {
-  const { workspaceScope: scope, workspaceFrozen } = document.documentElement.dataset
-  if (!scope || workspaceFrozen) return false
-  const key = WORKSPACE_PREFERENCES_PREFIX + scope
+  const key = workspaceStorageKey(WORKSPACE_PREFERENCES_PREFIX)
+  if (!key) return false
   const save = () => {
-    if (document.documentElement.dataset.workspaceScope !== scope || document.documentElement.dataset.workspaceFrozen) return false
+    if (workspaceStorageKey(WORKSPACE_PREFERENCES_PREFIX) !== key) return false
     const current = parseWorkspacePreferences(localStorage.getItem(key))
     const next = { ...current, ...changes, acknowledged: changes.acknowledged ?? current.acknowledged }
     if (clearTheme) delete next.theme

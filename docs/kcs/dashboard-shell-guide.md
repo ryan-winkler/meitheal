@@ -61,7 +61,9 @@ its up and down buttons. Use **Show widget** to add or remove it, choose
 Half-width widgets share a row when the Dashboard has room and stack on narrow
 screens. Select **Save dashboard** to apply changes or **Cancel** to leave the
 current layout. **Restore defaults**, followed by **Save dashboard**, restores
-the five widgets and their original order.
+the five widgets and their original order. The standard Dashboard renders without
+its customization code. A saved layout or the customization button loads that
+code when needed.
 
 The layout is saved in this browser for the current Home Assistant account.
 Standalone mode stores it in the current browser profile. Existing tasks and

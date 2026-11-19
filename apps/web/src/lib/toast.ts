@@ -12,19 +12,45 @@
 import { createSpriteIconElement } from "../generated/icon-registry"
 
 const MAX_VISIBLE_TOASTS = 5;
+type ToastType = "success" | "error" | "warning" | "info"
+
+function toastContainer(): HTMLElement {
+    let container = document.getElementById("toast-container")
+    if (!container) {
+        container = document.createElement("div")
+        container.id = "toast-container"
+        container.className = "toast-container"
+        document.body.appendChild(container)
+    }
+    while (container.children.length >= MAX_VISIBLE_TOASTS) {
+        container.firstElementChild?.remove()
+    }
+    return container
+}
+
+function createToast(type: ToastType): HTMLDivElement {
+    const toast = document.createElement("div")
+    toast.className = `toast ${type}`
+    toast.setAttribute("role", "alert")
+    toast.setAttribute("aria-live", type === "error" ? "assertive" : "polite")
+    return toast
+}
+
+function addDismissButton(toast: HTMLElement): void {
+    const dismiss = document.createElement("button")
+    dismiss.className = "toast-dismiss"
+    dismiss.setAttribute("aria-label", "Dismiss notification")
+    dismiss.replaceChildren(createSpriteIconElement("x", { size: 16 }))
+    dismiss.addEventListener("click", () => removeToast(toast))
+    toast.appendChild(dismiss)
+}
 
 /** Show a toast notification */
 export function showToast(
     message: string,
-    type: "success" | "error" | "warning" | "info" = "success",
+    type: ToastType = "success",
 ): void {
-    let container = document.getElementById("toast-container");
-    if (!container) {
-        container = document.createElement("div");
-        container.id = "toast-container";
-        container.className = "toast-container";
-        document.body.appendChild(container);
-    }
+    const container = toastContainer()
 
     let displayMessage = message;
     // Attempt local i18n resolution mapped via Layout.astro <script is:inline>
@@ -35,15 +61,7 @@ export function showToast(
         }
     }
 
-    // Enforce max visible toasts — remove oldest first
-    while (container.children.length >= MAX_VISIBLE_TOASTS) {
-        container.firstElementChild?.remove();
-    }
-
-    const toast = document.createElement("div");
-    toast.className = `toast ${type}`;
-    toast.setAttribute("role", "alert");
-    toast.setAttribute("aria-live", type === "error" ? "assertive" : "polite");
+    const toast = createToast(type)
 
     // Add visual icon based on type
     const iconSpan = document.createElement("span");
@@ -64,13 +82,7 @@ export function showToast(
     text.textContent = displayMessage;
     toast.appendChild(text);
 
-    // Dismiss button for keyboard/assistive tech users
-    const dismiss = document.createElement("button");
-    dismiss.className = "toast-dismiss";
-    dismiss.setAttribute("aria-label", "Dismiss notification");
-    dismiss.replaceChildren(createSpriteIconElement("x", { size: 16 }));
-    dismiss.addEventListener("click", () => removeToast(toast));
-    toast.appendChild(dismiss);
+    addDismissButton(toast)
 
     container.appendChild(toast);
 
@@ -102,23 +114,10 @@ export function showUndoToast(
     onCommit?: () => void,
     timeout = 5000,
 ): void {
-    let container = document.getElementById("toast-container");
-    if (!container) {
-        container = document.createElement("div");
-        container.id = "toast-container";
-        container.className = "toast-container";
-        document.body.appendChild(container);
-    }
-
-    while (container.children.length >= MAX_VISIBLE_TOASTS) {
-        container.firstElementChild?.remove();
-    }
+    const container = toastContainer()
 
     let undone = false;
-    const toast = document.createElement("div");
-    toast.className = "toast success";
-    toast.setAttribute("role", "alert");
-    toast.setAttribute("aria-live", "polite");
+    const toast = createToast("success")
 
     const text = document.createElement("span");
     text.textContent = message;
@@ -155,22 +154,9 @@ export function showRetryToast(
     message: string,
     onRetry: () => void,
 ): void {
-    let container = document.getElementById("toast-container");
-    if (!container) {
-        container = document.createElement("div");
-        container.id = "toast-container";
-        container.className = "toast-container";
-        document.body.appendChild(container);
-    }
+    const container = toastContainer()
 
-    while (container.children.length >= MAX_VISIBLE_TOASTS) {
-        container.firstElementChild?.remove();
-    }
-
-    const toast = document.createElement("div");
-    toast.className = "toast error";
-    toast.setAttribute("role", "alert");
-    toast.setAttribute("aria-live", "assertive");
+    const toast = createToast("error")
 
     const text = document.createElement("span");
     text.textContent = message;
@@ -186,12 +172,7 @@ export function showRetryToast(
     });
     toast.appendChild(retryBtn);
 
-    const dismiss = document.createElement("button");
-    dismiss.className = "toast-dismiss";
-    dismiss.setAttribute("aria-label", "Dismiss notification");
-    dismiss.replaceChildren(createSpriteIconElement("x", { size: 16 }));
-    dismiss.addEventListener("click", () => removeToast(toast));
-    toast.appendChild(dismiss);
+    addDismissButton(toast)
 
     container.appendChild(toast);
 
@@ -212,22 +193,9 @@ export function showTaskCreatedToast(
     taskId: string,
     title: string,
 ): void {
-    let container = document.getElementById("toast-container");
-    if (!container) {
-        container = document.createElement("div");
-        container.id = "toast-container";
-        container.className = "toast-container";
-        document.body.appendChild(container);
-    }
+    const container = toastContainer()
 
-    while (container.children.length >= MAX_VISIBLE_TOASTS) {
-        container.firstElementChild?.remove();
-    }
-
-    const toast = document.createElement("div");
-    toast.className = "toast success";
-    toast.setAttribute("role", "alert");
-    toast.setAttribute("aria-live", "polite");
+    const toast = createToast("success")
 
     // Checkmark icon
     const iconSpan = document.createElement("span");
@@ -264,13 +232,7 @@ export function showTaskCreatedToast(
 
     toast.appendChild(msgSpan);
 
-    // Dismiss button
-    const dismiss = document.createElement("button");
-    dismiss.className = "toast-dismiss";
-    dismiss.setAttribute("aria-label", "Dismiss notification");
-    dismiss.replaceChildren(createSpriteIconElement("x", { size: 16 }));
-    dismiss.addEventListener("click", () => removeToast(toast));
-    toast.appendChild(dismiss);
+    addDismissButton(toast)
 
     container.appendChild(toast);
 

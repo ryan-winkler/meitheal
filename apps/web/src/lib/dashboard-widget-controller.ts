@@ -1,17 +1,13 @@
+import { DASHBOARD_LAYOUT_PREFIX, workspaceStorageKey } from "./workspace-preferences"
 import {
-  dashboardLayoutStorageKey,
   readDashboardLayout,
   applyDashboardOrder,
 } from "./dashboard-layout"
 import type { DashboardSectionId } from "./dashboard-registry"
-import { showToast } from "./toast"
 
-interface DashboardWidgets {
-  reveal(id: DashboardSectionId): void
-  firstVisible(): DashboardSectionId | undefined
-}
-
-export function initDashboardWidgets(shell: HTMLElement, signal: AbortSignal, onChange: () => void): DashboardWidgets {
+export function initDashboardWidgets(
+  shell: HTMLElement, launcher: HTMLButtonElement, key: string, signal: AbortSignal, onChange: () => void,
+) {
   const widgets = new Map(Array.from(shell.querySelectorAll<HTMLElement>("[data-dashboard-section]"), item => [item.id, item]))
   const empty = document.getElementById("dashboard-empty")
   const pageHeading = document.getElementById("dashboard-accessible-title")
@@ -20,13 +16,8 @@ export function initDashboardWidgets(shell: HTMLElement, signal: AbortSignal, on
     group,
     entries: new Map(Array.from(group.querySelectorAll<HTMLElement>("[data-section-id]"), item => [item.dataset.sectionId ?? "", item])),
   }))
-  const currentKey = dashboardLayoutStorageKey()
   const revealed = new Set<DashboardSectionId>()
-  let layout = readDashboardLayout(currentKey)
-
-  function firstVisible(): DashboardSectionId | undefined {
-    return layout.find(({ id }) => widgets.get(id)?.hidden === false)?.id
-  }
+  let layout = readDashboardLayout(key)
 
   function applyLayout(): void {
     for (const { id, visible, width, collapsed } of layout) {
@@ -39,7 +30,7 @@ export function initDashboardWidgets(shell: HTMLElement, signal: AbortSignal, on
       widget.querySelector<HTMLElement>("[data-dashboard-widget-collapsed]")?.toggleAttribute("hidden", !folded)
     }
     applyDashboardOrder(shell, widgets, layout)
-    const hasWidgets = Boolean(firstVisible())
+    const hasWidgets = Array.from(widgets.values()).some(widget => !widget.hidden)
     if (empty) {
       empty.hidden = hasWidgets
       if (!hasWidgets) void import("./tabler-styles").then(({ ensureTablerStyles }) => ensureTablerStyles()).catch(() => {})
@@ -68,40 +59,30 @@ export function initDashboardWidgets(shell: HTMLElement, signal: AbortSignal, on
 
   applyLayout()
   applyNavigation()
-  const launcher = document.querySelector<HTMLButtonElement>("#dashboard-bar [data-dashboard-edit]")
-  if (!currentKey || !launcher) return { reveal, firstVisible }
-
-  const key = currentKey
-  launcher.hidden = false
   let edit: ((control: HTMLElement) => void) | undefined
-  document.addEventListener("click", async event => {
-    const control = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-dashboard-edit]") : null
-    if (!control || dashboardLayoutStorageKey() !== key) return
-    try {
-      if (!edit) {
-        const { bindDashboardLayoutEditor } = await import("./dashboard-layout-editor")
-        if (signal.aborted) return
-        edit ??= bindDashboardLayoutEditor(key, launcher, signal, draft => {
-          layout = draft
-          revealed.clear()
-          applyLayout()
-          applyNavigation()
-          onChange()
-        })
-      }
-      edit?.(control)
-    } catch {
-      if (!signal.aborted) showToast("Dashboard editor couldn’t open. Try again.", "error")
+  async function openEditor(control: HTMLElement): Promise<void> {
+    if (workspaceStorageKey(DASHBOARD_LAYOUT_PREFIX) !== key) return
+    if (!edit) {
+      const { bindDashboardLayoutEditor } = await import("./dashboard-layout-editor")
+      if (signal.aborted) return
+      edit ??= bindDashboardLayoutEditor(key, launcher, signal, draft => {
+        layout = draft
+        revealed.clear()
+        applyLayout()
+        applyNavigation()
+        onChange()
+      })
     }
-  }, { signal })
+    edit?.(control)
+  }
 
   window.addEventListener("storage", event => {
-    if (event.storageArea !== localStorage || (event.key !== key && event.key !== null) || dashboardLayoutStorageKey() !== key) return
+    if (event.storageArea !== localStorage || (event.key !== key && event.key !== null) || workspaceStorageKey(DASHBOARD_LAYOUT_PREFIX) !== key) return
     layout = readDashboardLayout(key)
     applyLayout()
     applyNavigation()
     onChange()
   }, { signal })
 
-  return { reveal, firstVisible }
+  return { reveal, openEditor }
 }

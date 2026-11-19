@@ -9,8 +9,6 @@ export interface DashboardWidgetPreference {
   collapsed: boolean
 }
 
-export const dashboardLayoutKey = "meitheal:dashboard-layout:v1"
-
 export function normalizeDashboardLayout(value: unknown): DashboardWidgetPreference[] {
   const saved = new Map<unknown, Record<string, unknown>>()
   if (Array.isArray(value)) {
@@ -33,11 +31,6 @@ export function normalizeDashboardLayout(value: unknown): DashboardWidgetPrefere
       collapsed: preferences?.collapsed === true,
     }]
   })
-}
-
-export function dashboardLayoutStorageKey(): string | null {
-  const { workspaceScope, workspaceFrozen } = document.documentElement.dataset
-  return workspaceScope && !workspaceFrozen ? `${dashboardLayoutKey}:${workspaceScope}` : null
 }
 
 export function readDashboardLayout(key: string | null): DashboardWidgetPreference[] {
