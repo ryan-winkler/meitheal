@@ -1,3 +1,4 @@
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { currentBoardScope } from "../helpers/current-board-scope"
 /**
  * Task-Project Association Tests
@@ -21,13 +22,8 @@ const test = base.extend({
       return
     }
     if (!baseURL) throw new Error("Missing disposable fixture origin")
-    const board = await request.get("/api/boards")
-    expect(board.ok()).toBe(true)
-    const session = board.headers()["x-meitheal-board-session"]
-    if (!session) throw new Error("Fixture operator did not receive a Board session")
-    const scoped = await playwright.request.newContext({ baseURL, extraHTTPHeaders: {
-      origin: baseURL, "x-meitheal-board-id": "household", "x-meitheal-board-session": session,
-    } })
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: baseURL })
+    const scoped = await playwright.request.newContext({ baseURL, extraHTTPHeaders: headers })
     try { await use(scoped) }
     finally { await scoped.dispose() }
   },
@@ -82,9 +78,9 @@ test("Household Project groups keep visible Areas and exclude unavailable Projec
 
     const groups = await hierRepo.findProjectGroups()
     expect(groups.filter(group => group.id.startsWith("catalog-"))).toEqual([
-      { id: "catalog-inherited", title: "Inherited Area", area_id: null },
-      { id: "catalog-direct", title: "Direct Area", area_id: "workshop" },
-      { id: "catalog-hidden-goal", title: "Moved Goal", area_id: null },
+      { id: "catalog-inherited", title: "Inherited Area", area_id: null, label_area_id: "utility" },
+      { id: "catalog-direct", title: "Direct Area", area_id: "workshop", label_area_id: "workshop" },
+      { id: "catalog-hidden-goal", title: "Moved Goal", area_id: null, label_area_id: null },
     ])
   } finally {
     resetPersistenceForTests()
@@ -332,8 +328,16 @@ test("task detail reassigns projects, rejects a deleted destination, and preserv
   const rejected = projectUpdate()
   await project.selectOption(sourceId)
   expect((await rejected).status()).toBe(409)
-  await expect(project).toHaveValue(destinationId)
+  const conflict = detail.getByRole("alert").filter({ hasText: "Reload the saved task" })
+  await expect(conflict).toBeVisible()
+  await expect(project).toHaveValue(sourceId)
+  await expect(project).toHaveAttribute("data-saved-project", destinationId)
+  expect(await (await request.get(taskPath)).json()).toMatchObject({ ...properties, project_id: destinationId })
+  await conflict.getByRole("button", { name: "Reload saved task" }).click()
+  await expect(conflict).toBeHidden()
   await expect(project).toBeEnabled()
+  await expect(project).toHaveValue(destinationId)
+  await expect(project.locator(`option[value="${sourceId}"]`)).toHaveCount(0)
 
   const invalid = await request.patch(taskPath, { data: { project_id: 123, status: "complete" } })
   expect(invalid.status()).toBe(400)

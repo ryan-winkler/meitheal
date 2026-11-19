@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import AxeBuilder from "@axe-core/playwright"
 import { expect, test, type Browser, type Page } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, pinRequest, startCoreFixture } from "../scripts/task-pins-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the built app and HTTPS ingress fixture")
@@ -22,7 +23,7 @@ async function withIngress(run: (page: Page, root: string, prefix: string, child
     const root = origin + prefix
     browser = await launchPinBrowser(work)
     const context = await browser.newContext({
-      extraHTTPHeaders: {}, viewport: { width: 320, height: 700 },
+      extraHTTPHeaders: {}, ignoreHTTPSErrors: true, viewport: { width: 320, height: 700 },
       isMobile: true, hasTouch: true, reducedMotion: "reduce",
     })
     await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
@@ -41,7 +42,9 @@ async function withIngress(run: (page: Page, root: string, prefix: string, child
 }
 
 async function seedTask(page: Page, prefix: string, title: string, description = "") {
-  const created = await pinRequest(page, prefix + "/api/tasks", "POST", { title, description })
+  const origin = new URL(page.url()).origin
+  const headers = await currentBoardWriteHeaders(page.request, "household", { origin }, origin + prefix)
+  const created = await pinRequest(page, prefix + "/api/tasks", "POST", { title, description }, undefined, headers)
   expect(created.status).toBe(201)
   return created.body as { id: string, ticket_key: string }
 }
@@ -153,16 +156,21 @@ test("task references preserve text editing and open the saved task through HTTP
       const cachesWithRequests = await Promise.all((await caches.keys()).map(async key => (await caches.open(key)).keys()))
       return cachesWithRequests.flat().some(request => new URL(request.url).pathname.endsWith("/api/search"))
     })).toBe(false)
-    await page.context().setOffline(true)
     await composer.fill("Offline #orchard")
-    await expect(page.locator("#td-task-reference-picker").getByRole("status")).toHaveText("Could not find tasks. Edit your search to try again.")
+    await expect(list.getByRole("option", { name: /Independent orchard fixture/ })).toBeVisible()
+    const lookupsBeforeOffline = lookups.length
+    await page.context().setOffline(true)
+    await expect(page.getByRole("button", { name: "Retry verification" })).toBeVisible()
+    await expect(page.getByRole("dialog", { name: "Task detail: Reference source" })).toBeHidden()
     await expect(list).toBeHidden()
-    await composer.press("Escape")
-    await expect(composer).toHaveValue("Offline #orchard")
-    await expect(page.getByRole("dialog", { name: "Task detail: Reference source" })).toBeVisible()
+    expect(lookups).toHaveLength(lookupsBeforeOffline)
     await page.context().setOffline(false)
+    await expect(page.getByRole("dialog", { name: "Task detail: Reference source" })).toBeVisible()
+    await expect(composer).toHaveValue("Offline #orchard")
 
-    const renamed = await pinRequest(page, prefix + "/api/tasks/" + target.id, "PUT", { title: "Renamed reference target" })
+    const origin = new URL(root).origin
+    const headers = await currentBoardWriteHeaders(page.request, "household", { origin }, root)
+    const renamed = await pinRequest(page, prefix + "/api/tasks/" + target.id, "PUT", { title: "Renamed reference target" }, undefined, headers)
     expect(renamed.status).toBe(200)
     await page.reload()
     await expect(descriptionLink).toHaveAttribute("href", root + "/tickets/" + target.id)
