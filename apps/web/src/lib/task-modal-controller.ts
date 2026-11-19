@@ -24,7 +24,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         import { initCustomFields } from "@lib/controllers/modal-custom-fields";
         import { initRelatedLinks } from "@lib/controllers/modal-related-links";
         import { initCommandPalette } from "@lib/controllers/modal-command-palette";
-        import { pendingChecklistSave, showTaskChecklist } from "@lib/controllers/modal-checklist"
+        import { pendingChecklistSave, pendingChecklistTextSave, showTaskChecklist } from "@lib/controllers/modal-checklist"
         import { notifyInactivityTaskChanged } from "@lib/inactivity-client"
         import { isActiveParticipantProblem } from "@lib/task-participant-problem"
         import { mountReactions } from "@lib/controllers/modal-reactions"
@@ -388,12 +388,26 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           return true
         }
 
+        function waitForChecklistTextWrite(next: () => void): boolean {
+          if (!currentTaskId) return false
+          const active = document.activeElement
+          if (active instanceof HTMLTextAreaElement && active.closest("#td-checklists")) active.blur()
+          const write = pendingChecklistTextSave(currentTaskId)
+          if (!write) return false
+          const generation = detailGeneration
+          void write.then(saved => {
+            if (saved && !__signal.aborted && !boardWithheld && generation === detailGeneration) next()
+          })
+          return true
+        }
+
         function closeTD(reason: SearchDetailDismissal = "dismiss", updateLocation = true) {
           const search = searchSession
           const immediate = reason === "history" && Boolean(search)
           if (!tdOverlay?.classList.contains("active") || (!immediate && tdOverlay.classList.contains("closing"))) return
           if (!immediate && waitForDetailWrites(() => closeTD(reason, updateLocation))) return
           if (waitForDescriptionWrite(() => closeTD(reason, updateLocation))) return
+          if (!immediate && waitForChecklistTextWrite(() => closeTD(reason, updateLocation))) return
           const closing = ++detailGeneration
           const previousCard = _previouslyFocused?.closest<HTMLElement>(".kanban-card")
           const previousDay = _previouslyFocused?.closest<HTMLElement>(".cal-cell")?.dataset.date
@@ -538,6 +552,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             return openTaskDetail(taskId, commentTarget, search, updateLocation)
           }
           if (waitForDetailWrites(() => { void openTaskDetail(taskId, commentTarget, search, updateLocation) })) return
+          if (waitForChecklistTextWrite(() => { void openTaskDetail(taskId, commentTarget, search, updateLocation) })) return
           if (search) searchSession = { handoff: search, lifetime: new AbortController(), dirty: false, pending: 0 }
           detailGeneration++
           const loadedGeneration = detailGeneration

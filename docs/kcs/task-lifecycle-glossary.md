@@ -88,7 +88,7 @@ In Details, select a checklist item's checkbox to mark it done. Long items wrap 
 
 Task detail saves checklist changes against the version it loaded. Independent changes to different identified steps and new steps can be combined automatically. If a newer save changes the same step differently or the editor cannot identify the changed steps safely, it keeps your draft visible. Choose **Load latest checklist** to review the saved version alongside your draft, then make any remaining edits.
 
-Checklist and field saves from the same Details session are applied in order. If another session edits the task, your independent checklist change can still save. A stale description stays open for you to review alongside the saved task.
+Checklist and field saves from the same Details session are applied in order. Closing Details or opening a different task waits for edited checklist text to save. If the save fails, Details stays open so you can retry or review the conflicting checklist. If another session edits the task, your independent checklist change can still save. A stale description stays open for you to review alongside the saved task.
 
 Older text-only items open unchecked. If a concurrent edit conflicts on a step without an ID, Meitheal keeps your draft for review.
 

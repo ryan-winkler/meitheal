@@ -5,11 +5,17 @@ import { formatTicketKey, parseTicketKey } from "@lib/ticket-key"
 
 type Item = { id?: string; text: string; done: boolean }
 
-const pendingChecklistSaves = new Map<string, Promise<void>>()
+type ChecklistSave = { done: Promise<boolean>; textEdit: boolean }
+const pendingChecklistSaves = new Map<string, ChecklistSave>()
 
-export function pendingChecklistSave(taskId: string): Promise<void> | undefined {
+export function pendingChecklistSave(taskId: string): Promise<boolean> | undefined {
   const ticketKey = formatTicketKey(parseTicketKey(taskId))
-  return pendingChecklistSaves.get(taskId) ?? (ticketKey ? pendingChecklistSaves.get(ticketKey) : undefined)
+  return (pendingChecklistSaves.get(taskId) ?? (ticketKey ? pendingChecklistSaves.get(ticketKey) : undefined))?.done
+}
+
+export function pendingChecklistTextSave(taskId: string): Promise<boolean> | undefined {
+  const pending = pendingChecklistSaves.get(taskId)
+  return pending?.textEdit ? pending.done : undefined
 }
 
 function parseChecklist(raw: string | null): Item[] | null {
@@ -105,6 +111,7 @@ export function showTaskChecklist(
   let saved = loaded ?? []
   let items = saved.slice()
   let problem: "retry" | "conflict" | null = null
+  let textEditPending = false
   let rendering = false
 
   add.disabled = loaded === null
@@ -171,7 +178,8 @@ export function showTaskChecklist(
         if (!current || next === current.text) return
         items[index] = { ...current, text: next }
         checkbox.setAttribute("aria-label", next || "Checklist item " + (index + 1))
-        void save()
+        textEditPending = true
+        save()
       }, { signal })
       text.addEventListener("keydown", event => {
         if (event.key !== "Enter" || event.isComposing) return
@@ -202,16 +210,29 @@ export function showTaskChecklist(
   }
 
   function save() {
-    if (pendingChecklistSaves.has(taskId) || problem || equal(saved, items)) return
-    const pending = persist().finally(() => {
+    if (problem) return
+    const existing = pendingChecklistSaves.get(taskId)
+    if (existing) {
+      existing.textEdit ||= textEditPending
+      return
+    }
+    if (equal(saved, items)) {
+      textEditPending = false
+      return
+    }
+    const done = persist().then(saved => {
+      if (saved) textEditPending = false
+      return saved
+    }).finally(() => {
       pendingChecklistSaves.delete(taskId)
       if (ticketKey && pendingChecklistSaves.get(ticketKey) === pending) pendingChecklistSaves.delete(ticketKey)
     })
+    const pending = { done, textEdit: textEditPending }
     pendingChecklistSaves.set(taskId, pending)
     if (ticketKey) pendingChecklistSaves.set(ticketKey, pending)
   }
 
-  async function persist() {
+  async function persist(): Promise<boolean> {
     let rebased = false
     try {
       while (!equal(saved, items)) {
@@ -232,9 +253,9 @@ export function showTaskChecklist(
         const latestRaw = conflict?.checklists
         if (conflict?.code !== "checklist_conflict" || (latestRaw !== null && typeof latestRaw !== "string")) {
           report("retry")
-          return
+          return false
         }
-        if (signal.aborted) return
+        if (signal.aborted) return false
         const latest = parseChecklist(latestRaw)
         const active = document.activeElement
         const row = active?.closest<HTMLElement>("[data-checklist-row]")
@@ -243,7 +264,7 @@ export function showTaskChecklist(
         const merged = latest && !rebased ? rebaseChecklist(saved, items, latest) : null
         if (!latest || !merged) {
           report("conflict")
-          return
+          return false
         }
         let focusedIndex = focusedItem ? merged.indexOf(focusedItem) : -1
         if (focusedIndex < 0 && focusedItem?.id &&
@@ -260,7 +281,7 @@ export function showTaskChecklist(
         const typedValue = typing && focusedItem && active.value !== focusedItem.text ? active.value : undefined
         if (typedValue !== undefined && merged[focusedIndex]?.text !== focusedItem?.text) {
           report("conflict")
-          return
+          return false
         }
         rebased = true
         savedRaw = latestRaw
@@ -277,8 +298,10 @@ export function showTaskChecklist(
           restored.setSelectionRange(selection.start, selection.end, selection.direction)
         }
       }
+      return true
     } catch {
       report("retry")
+      return false
     }
   }
 
@@ -318,6 +341,7 @@ export function showTaskChecklist(
       savedRaw = latestRaw
       saved = latest
       items = latest.slice()
+      textEditPending = false
       problem = null
       message.textContent = "Latest checklist loaded. Your unsaved draft is below."
       recover.hidden = true

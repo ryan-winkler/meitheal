@@ -52,6 +52,33 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
     })
     expect(created.status()).toBe(201)
     const { id } = await created.json()
+    const checklistDraft = "Unsaved checklist item draft"
+    let appendStarted = false
+    let renameAttempts = 0
+    let releaseAppend!: () => void
+    let releaseRename!: () => void
+    let releaseRetry!: () => void
+    const holdAppend = new Promise<void>(resolve => { releaseAppend = resolve })
+    const holdRename = new Promise<void>(resolve => { releaseRename = resolve })
+    const holdRetry = new Promise<void>(resolve => { releaseRetry = resolve })
+    await page.route(`**/api/tasks/${id}`, async route => {
+      if (route.request().method() !== "PUT") return route.continue()
+      const { checklists } = route.request().postDataJSON()
+      if (typeof checklists !== "string") return route.continue()
+      const [item] = JSON.parse(checklists) as Array<{ text: string }>
+      if (item?.text === "New Item") {
+        appendStarted = true
+        await holdAppend
+      } else if (item?.text === checklistDraft) {
+        renameAttempts++
+        if (renameAttempts === 1) {
+          await holdRename
+          return route.fulfill({ status: 503, json: { error: "Checklist write unavailable" } })
+        }
+        await holdRetry
+      }
+      await route.continue()
+    })
 
     try {
       await page.setViewportSize({ width: 1600, height: 900 })
@@ -107,7 +134,8 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       await descInput.fill("Unsaved docked markdown body")
       await page.locator("#td-add-checklist-item").click()
       await expect(checklistInput).toBeVisible()
-      await checklistInput.fill("Unsaved checklist item draft")
+      await checklistInput.fill(checklistDraft)
+      await expect.poll(() => appendStarted).toBe(true)
 
       // Resize 1600px -> 1200px (transitions to modal dialog without unmounting or losing drafts)
       await page.setViewportSize({ width: 1200, height: 900 })
@@ -124,7 +152,7 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       expect(modalState.draftToken).toBe("same-dom-node")
       await expect(titleInput).toHaveValue("Unsaved docked draft title")
       await expect(descInput).toHaveValue("Unsaved docked markdown body")
-      await expect(checklistInput).toHaveValue("Unsaved checklist item draft")
+      await expect(checklistInput).toHaveValue(checklistDraft)
 
       // Resize 1200px -> 1600px (transitions back to docked rail preserving drafts)
       await page.setViewportSize({ width: 1600, height: 900 })
@@ -133,18 +161,35 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       await expect(panel).not.toHaveAttribute("aria-modal")
       await expect(titleInput).toHaveValue("Unsaved docked draft title")
       await expect(descInput).toHaveValue("Unsaved docked markdown body")
-      await expect(checklistInput).toHaveValue("Unsaved checklist item draft")
+      await expect(checklistInput).toHaveValue(checklistDraft)
 
       // Escape closes docked inspector when focus resides inside #task-detail-panel
       await commentsDisclosure.focus()
       await page.keyboard.press("Escape")
+      await expect(page.locator("#td-desc-edit-container")).toHaveAttribute("aria-busy", "true")
+      releaseAppend()
+      await expect(descInput).toBeHidden()
+      await expect(overlay).toHaveClass(/active/)
+      await expect.poll(() => renameAttempts).toBe(1)
+      releaseRename()
+      const retry = page.getByRole("button", { name: "Retry checklist save", exact: true })
+      await expect(retry).toBeVisible()
+      await expect(overlay).toHaveClass(/active/)
+      await expect(checklistInput).toHaveValue(checklistDraft)
+
+      await retry.click()
+      await expect.poll(() => renameAttempts).toBe(2)
+      await commentsDisclosure.focus()
+      await page.keyboard.press("Escape")
+      await expect(overlay).toHaveClass(/active/)
+      releaseRetry()
       await expect(overlay).not.toHaveClass(/active/)
       await expect(page.locator("body")).not.toHaveClass(/has-docked-inspector/)
       const saved = await request.get(`/api/tasks/${id}`)
       expect(saved.status()).toBe(200)
       const savedTask = await saved.json()
       expect(savedTask).toMatchObject({ title: "Unsaved docked draft title", description: "Unsaved docked markdown body" })
-      expect(JSON.parse(savedTask.checklists)).toMatchObject([{ text: "Unsaved checklist item draft" }])
+      expect(JSON.parse(savedTask.checklists)).toMatchObject([{ text: checklistDraft }])
 
       await page.goto(`/tickets/${id}`)
       await expect(titleInput).toHaveValue(savedTask.title)
@@ -163,6 +208,9 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       await expect(descInput).toHaveValue("Local draft after another session edits")
       expect((await (await request.get(`/api/tasks/${id}`)).json()).description).toBe(externalDescription)
     } finally {
+      releaseAppend()
+      releaseRename()
+      releaseRetry()
       await request.delete(`/api/tasks/${id}`, { headers })
     }
   })
