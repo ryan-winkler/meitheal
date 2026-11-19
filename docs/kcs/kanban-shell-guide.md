@@ -133,6 +133,8 @@ The existing cards stay visible while Meitheal loads the requested page or appli
 
 **Assign User** shows **No users configured** when the directory is empty, including standalone installations without a Home Assistant connection. If the Home Assistant roster could not be verified, check the connection in **Settings → Connected Services** and use **Retry**. Standalone connections need both a URL and a token. Any custom users and cached names from that Home Assistant connection remain available while the roster recovers. Table resolves the same display names after a page or filter change. If a name is unavailable, open Details to check the assignment.
 
+In Details, you can edit the task while the assignee directory loads. The **Assignee** field stays locked until the directory loads successfully. If loading fails, the saved assignment is preserved. Reopen Details to try again.
+
 ### A task stays in its original lane
 
 Check the message after the move. If the destination is at its work-in-progress limit, free a place before retrying. If dependencies are blocking progress, open the task and check its linked work. If the connection failed, refresh to confirm the saved lane before trying again.

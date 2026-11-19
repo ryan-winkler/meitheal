@@ -13,8 +13,6 @@
         import { saveAttachment } from "@domains/offline/offline-store";
         import { confirmDialog } from "@lib/confirm-dialog";
         import { pageLifecycle } from "@lib/page-lifecycle";
-        import { marked } from "marked";
-        import { sanitizeClient } from "@lib/sanitize-client";
         import { onTaskCompleted } from "@lib/gamification-hook";
         import { renderTypeIconSvg } from "@lib/type-icon-config";
         import { escapeHtml } from "@lib/safe-html";
@@ -36,7 +34,7 @@
         import { resolveDescriptionTaskReferences } from "@lib/task-references"
         import { saveNavigationState } from "@lib/ingress-state-persistence"
         import { hasPriorityOverlay } from "@lib/layout-shortcuts-controller"
-        import { lockTaskStatusWrite, taskApi } from "@lib/task-api-client"
+        import { lockTaskStatusWrite, taskApi, type AssigneeDirectory } from "@lib/task-api-client"
         import { initTaskDetailLayoutEditor, initTicketSectionOrder } from "@lib/task-detail-layout-controller"
         import { assigneeFallback } from "@lib/task-assignee-display"
 
@@ -477,6 +475,9 @@
           const projectField = document.querySelector<HTMLSelectElement>("#td-project")
           let projectFieldReady = false
           if (projectField) projectField.disabled = true
+          const assignSelect = document.querySelector<HTMLSelectElement>("#td-assigned-to")
+          let assigneeReady = false
+          if (assignSelect) assignSelect.disabled = true
           if (!sameTicket) {
             focusMode = false
             tdOverlay.removeAttribute("data-focus-used")
@@ -562,16 +563,30 @@
             const areas = areaField ? fetch("/api/areas", requestOptions) : null
             const projectRead = projectField ? fetch("/api/projects", requestOptions) : null
             const pillars = fetch("/api/pillars", requestOptions)
-            const assignSelect = document.querySelector<HTMLSelectElement>("#td-assigned-to")
-            const assigned = String(t.assigned_to ?? "")
             if (assignSelect) {
+              const assigned = String(t.assigned_to ?? "")
               assignSelect.replaceChildren(new Option("Unassigned", ""))
               if (assigned) assignSelect.add(new Option("Loading assignee…", assigned, true, true))
+              const renderAssignees = (directory: AssigneeDirectory | null) => {
+                if (modalSignal.aborted || currentTaskId !== taskId) return
+                const options = [new Option(directory ? "Unassigned" : "Could not load assignees", "")]
+                for (const user of directory?.users ?? []) {
+                  const name = user.display_name || user.name || user.id
+                  options.push(new Option(name + (user.kind === "agent" ? " (AI agent)" : ""), user.id))
+                }
+                if (assigned && !options.some(option => option.value === assigned)) {
+                  options.push(new Option(assigneeFallback(assigned, directory), assigned))
+                }
+                assignSelect.replaceChildren(...options)
+                assignSelect.value = assigned
+                assigneeReady = directory !== null
+                assignSelect.disabled = _isPopulating || !assigneeReady
+              }
+              void taskApi.listUserDirectory(modalSignal).then(renderAssignees).catch(() => renderAssignees(null))
             }
-            const users = assignSelect ? taskApi.listUserDirectory(modalSignal).catch(() => null) : null
             const settings = fetch("/api/settings", requestOptions)
             // Observe rejections immediately. Field handlers consume the original promises in order.
-            void Promise.allSettled([lanes, backlogModeSetting, areas, projectRead, pillars, users, settings])
+            void Promise.allSettled([lanes, backlogModeSetting, areas, projectRead, pillars, settings])
 
             // Populate status dropdown from lanes API
             try {
@@ -892,12 +907,6 @@
             setDescriptionSaving(false)
             if (descSaveBtn) descSaveBtn.disabled = true
             if (descSavedIndicator) descSavedIndicator.style.display = "none"
-            try {
-              renderTaskDescription(description)
-            } catch (error) {
-              descPreview?.replaceChildren()
-              log.warn("markdown-preview error", error)
-            }
             _descOriginalValue = description
             if (!keepDescriptionDraft) {
               tdDescription.value = description
@@ -1119,20 +1128,6 @@
               }
             }
 
-            if (assignSelect && users) {
-              const directory = await users
-              if (modalSignal.aborted) return
-              assignSelect.replaceChildren(new Option(directory ? "Unassigned" : "Could not load assignees", ""))
-              for (const user of directory?.users ?? []) {
-                const name = user.display_name || user.name || user.id
-                assignSelect.add(new Option(name + (user.kind === "agent" ? " (AI agent)" : ""), user.id))
-              }
-              if (assigned && !Array.from(assignSelect.options).some(option => option.value === assigned)) {
-                assignSelect.add(new Option(assigneeFallback(assigned, directory), assigned))
-              }
-              assignSelect.value = assigned
-            }
-
             const isFav = Number(t.is_favorite ?? 0);
             const favBtn = document.getElementById("td-fav-btn");
             if (favBtn)
@@ -1279,6 +1274,7 @@
             taskLoaded = true
             syncInspectorDockMode()
             tdLoaded?.classList.remove("hidden")
+            void renderTaskDescription(description)
             resizeTitle()
             setTimeout(() => {
               if (modalSignal.aborted) return
@@ -1288,6 +1284,7 @@
               if (areaField) areaField.disabled = !areaFieldReady
               if (unlinkParentButton) unlinkParentButton.disabled = false
               if (projectField) projectField.disabled = !projectFieldReady
+              if (assignSelect) assignSelect.disabled = !assigneeReady
               deferral.loaded(taskId, typeof t.project_id === "string" ? t.project_id : null, t.deferred_at != null, modalSignal, Boolean(searchSession))
               pins.loaded(taskId, modalSignal)
               const transition = queuedDescriptionTransition
@@ -1369,13 +1366,41 @@
 
         let _descOriginalValue = "";
         let _descSavedTimer: number | null = null;
+        let descriptionRenderSequence = 0
 
-        function renderTaskDescription(markdown: string) {
-          if (!descPreview) return
-          const sanitized = sanitizeClient(String(marked.parse(markdown || "*No description provided.*")))
-          const parsedDoc = new DOMParser().parseFromString(sanitized, "text/html")
-          descPreview.replaceChildren(...Array.from(parsedDoc.body.childNodes))
-          resolveDescriptionTaskReferences(descPreview)
+        async function renderTaskDescription(markdown: string): Promise<void> {
+          if (!descPreview || __signal.aborted) return
+          const generation = detailGeneration
+          const sequence = ++descriptionRenderSequence
+          const fallback = document.createElement("p")
+
+          if (!markdown) {
+            const placeholder = document.createElement("em")
+            placeholder.textContent = "No description provided."
+            fallback.append(placeholder)
+            descPreview.replaceChildren(fallback)
+            return
+          }
+
+          fallback.className = "whitespace-pre-wrap"
+          fallback.textContent = markdown
+          descPreview.replaceChildren(fallback)
+
+          try {
+            const [{ marked }, { sanitizeClient }] = await Promise.all([
+              import("marked"),
+              import("@lib/sanitize-client"),
+            ])
+            if (__signal.aborted || generation !== detailGeneration ||
+                sequence !== descriptionRenderSequence || !descPreview.isConnected) return
+
+            const sanitized = sanitizeClient(marked.parse(markdown, { async: false }))
+            const parsedDoc = new DOMParser().parseFromString(sanitized, "text/html")
+            resolveDescriptionTaskReferences(parsedDoc.body)
+            descPreview.replaceChildren(...Array.from(parsedDoc.body.childNodes))
+          } catch (error) {
+            log.warn("Could not render task description Markdown", error)
+          }
         }
 
         function enterDescEdit() {
@@ -1413,7 +1438,7 @@
               return false
             }
             _descOriginalValue = raw
-            renderTaskDescription(raw)
+            void renderTaskDescription(raw)
             if (descSavedIndicator) {
               descSavedIndicator.style.display = ""
               if (_descSavedTimer) clearTimeout(_descSavedTimer)
@@ -1611,9 +1636,10 @@
         document
           .getElementById("td-assigned-to")
           ?.addEventListener("change", async (e) => {
-            const val = (e.target as HTMLSelectElement).value || null;
-            saveTD("assigned_to", val);
-            const sel = e.target as HTMLSelectElement;
+            const sel = e.target as HTMLSelectElement
+            if (sel.disabled || _isPopulating || !currentTaskId) return
+            const val = sel.value || null
+            saveTD("assigned_to", val)
             const label = val
               ? (sel.options[sel.selectedIndex]?.textContent ?? val)
               : "Unassigned";
