@@ -133,6 +133,8 @@ test("hover sidebar remains expanded for its body popups and collapses when focu
   const popover = page.locator("body > #color-icon-popover")
   await expect(popover).toBeVisible()
   await expect(popover.locator("[data-emoji-tab]").first()).toBeFocused()
+  await page.mouse.move(1100, 700)
+  await expect.poll(() => page.locator("#sidebar").evaluate(sidebar => sidebar.matches(":hover"))).toBe(false)
   await expect(body).not.toHaveClass(/sidebar-collapsed/)
   const mainText = page.getByRole("textbox", { name: "Filter by text", exact: true })
   await expect(mainText).toBeVisible()
