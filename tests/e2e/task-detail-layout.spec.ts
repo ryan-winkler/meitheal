@@ -419,7 +419,10 @@ test("a slow assignee directory leaves the ticket editable and ignores a superse
 
     await page.getByRole("button", { name: "Close detail" }).click()
     await expect(page.locator("#task-detail-overlay")).toBeHidden()
+    await expect(page).toHaveURL(url => url.pathname === "/tasks" && url.searchParams.get("view") === "calendar")
     await page.evaluate(id => { void window.openTaskDetail?.(id) }, other)
+    await expect.poll(() => directories).toBe(3)
+    await expect(page.locator("#td-loaded-content")).toBeVisible()
     await expect(assignee.locator("option:checked")).toHaveText("Could not load assignee")
     await expect(assignee).toBeDisabled()
     await expect(assignee).toHaveValue(secondAssignee)
