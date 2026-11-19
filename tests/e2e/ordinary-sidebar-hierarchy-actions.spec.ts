@@ -152,7 +152,7 @@ async function browser(page: Page, board: string, query = "", widget = false) {
       if (!/^\/(lib|generated|components|domains|i18n)\/[\w/.-]+$/.test(url.pathname)) return route.fulfill({ status: 404 })
       if (url.pathname.endsWith(".json")) return route.fulfill({ contentType: "application/json", body: await readFile(resolve(source, url.pathname.slice(1)), "utf8") })
       const raw = url.pathname === "/components/layout/sidebar-nav-inline"
-        ? (await readFile(resolve(source, "components/layout/SidebarNavList.astro"), "utf8")).match(/<script>([\s\S]*?)<\/script>/)![1]!
+        ? (await readFile(resolve(source, "components/layout/SidebarNavList.astro"), "utf8")).match(/<script>([\s\S]*?)<\/script>/i)![1]!
         : await readFile(resolve(source, url.pathname.slice(1) + ".ts"), "utf8")
       const compiled = ts.transpileModule(raw, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText
         .replaceAll('"@lib/', '"/lib/').replaceAll('"@domains/', '"/domains/')

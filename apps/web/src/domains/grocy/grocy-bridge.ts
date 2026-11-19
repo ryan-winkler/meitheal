@@ -192,10 +192,12 @@ export async function startGrocySync(
   }
   states.set(config.bindingId, state)
   void syncFromGrocy(config.bindingId).catch(() => logFailure("grocy.sync.initial_failed"))
-  if (config.intervalMs > 0)
-    state.timer = setInterval(() => {
-      void syncFromGrocy(config.bindingId).catch(() => logFailure("grocy.sync.poll_failed"))
-    }, config.intervalMs)
+  const poll = () => {
+    void syncFromGrocy(state.config.bindingId).catch(() => logFailure("grocy.sync.poll_failed"))
+  }
+  const interval = state.config.intervalMs
+  if (Number.isFinite(interval) && interval > 0)
+    state.timer = setInterval(poll, interval)
 }
 export function onGrocySyncStopped(listener: () => void): () => void {
   stopListeners.add(listener)

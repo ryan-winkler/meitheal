@@ -191,11 +191,16 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
   const fragment = location.hash.slice(1)
   const initialSection = document.getElementById(fragment)
   if (initialSection instanceof HTMLDetailsElement) initialSection.open = true
-  const leavePage = (destination?: string) => {
+  const leavePage = (boardId?: string | null) => {
     navigating = true
     for (const button of root!.querySelectorAll<HTMLButtonElement>('button[type="submit"]')) button.disabled = true
-    if (destination) window.location.href = safeIngressHref(destination)
-    else window.location.reload()
+    if (boardId === undefined) {
+      window.location.reload()
+      return
+    }
+    const path = boardId === null ? "/boards" : `/boards/${encodeURIComponent(boardId)}`
+    const target = new URL(safeIngressHref(path), location.origin)
+    if (target.origin === location.origin) window.location.assign(target.href)
   }
   for (const button of root.querySelectorAll<HTMLButtonElement>("[data-board-form-refresh]")) {
     button.addEventListener("click", () => { if (!expired && root.isConnected) leavePage() }, { signal })
@@ -322,7 +327,7 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
           const id = result?.id
           if (status === 201 && typeof id === "string" &&
             /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) && !result?.accessPending) {
-            leavePage(`/boards/${encodeURIComponent(id)}`)
+            leavePage(id)
             return
           }
           if (status !== 202 || result?.accessPending !== true) throw new Error("Board creation unconfirmed")
@@ -336,7 +341,7 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
             keepPendingSave(form, feedback, "Board saved. Access is still being verified. Your input is kept here. Refresh Boards to check the result.")
             return
           }
-          leavePage("/boards")
+          leavePage(null)
           return
         }
         case "sidebar":

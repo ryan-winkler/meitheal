@@ -19,10 +19,10 @@ export const PUT: APIRoute = async context => {
   const input = body as Record<string, unknown>
   const candidate = parseWorkDestinations({ version: 1, revision: input.revision, bindings: [input.binding] })
   const binding = candidate?.bindings[0]
-  if (!binding || binding.destination.boardId !== selected.scope.boardId) return apiError("Choose this Board as the destination.", 400)
+  if (!candidate || !binding || binding.destination.boardId !== selected.scope.boardId) return apiError("Choose this Board as the destination.", 400)
   const access = await currentSettingsAccess(context.request, context.locals, binding.integration !== "builtin")
   if (access instanceof Response) return access
-  const saved = await saveWorkBinding(getPersistenceClient(), selected.scope.principal, candidate!.revision, binding)
+  const saved = await saveWorkBinding(getPersistenceClient(), selected.scope.principal, candidate.revision, binding)
   if (!saved.ok) return apiError("Approval changed or this destination is unavailable. Refresh before saving.", 409)
   // This receipt reports the committed configuration only. The changed epoch
   // intentionally requires the client to refresh its work access before reuse.

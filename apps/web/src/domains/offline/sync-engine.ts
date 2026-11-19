@@ -68,7 +68,7 @@ export function getSyncState(): SyncState {
 /**
  * Process the sync queue — call this from SW sync event or periodic timer.
  */
-export async function processSyncQueue(baseUrl = ""): Promise<SyncResult> {
+export async function processSyncQueue(): Promise<SyncResult> {
   const result: SyncResult = { processed: 0, succeeded: 0, failed: 0, conflicts: 0 }
   const partition = currentOfflinePartition()
   if (!partition || !navigator.onLine || syncState === "syncing") return result
@@ -85,7 +85,7 @@ export async function processSyncQueue(baseUrl = ""): Promise<SyncResult> {
       }
       result.processed++
       try {
-        const response = await executeOperation(op, baseUrl)
+        const response = await executeOperation(op)
         assertOfflinePartition(partition)
         if (!response.ok) {
           result.failed++
@@ -135,23 +135,20 @@ export async function processSyncQueue(baseUrl = ""): Promise<SyncResult> {
   return result
 }
 
-async function executeOperation(op: PendingSyncOperation, baseUrl: string): Promise<Response> {
+async function executeOperation(op: PendingSyncOperation): Promise<Response> {
   assertOfflinePartition(op.partition)
   const context = currentTaskApiContext()
   if (!context || context.actorKey !== op.partition.actorKey || context.boardId !== op.partition.boardId) {
     throw new Error("The original offline account and Board are unavailable.")
   }
   if (op.table !== "tasks") return new Response(null, { status: 404 })
-  const origin = baseUrl ? new URL(baseUrl, location.href) : new URL(location.origin)
-  if (origin.origin !== location.origin) throw new Error("Offline work cannot be sent to another origin.")
-  const url = `${baseUrl}/api/tasks`
-  const entityId = encodeURIComponent(op.entityId)
+  const url = op.operation === "create" ? "/api/tasks" : `/api/tasks/${encodeURIComponent(op.entityId)}`
   const headers = taskApiHeaders(context, { "content-type": "application/json" })
   if (op.operation === "create") headers.set("Idempotency-Key", op.id)
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
   try {
-    return await fetch(op.operation === "create" ? url : `${url}/${entityId}`, {
+    return await fetch(url, {
       method: op.operation === "create" ? "POST" : op.operation === "update" ? "PUT" : "DELETE",
       headers, ...(op.operation === "delete" ? {} : { body: op.payload }),
       signal: controller.signal, cache: "no-store", redirect: "error", mode: "same-origin",

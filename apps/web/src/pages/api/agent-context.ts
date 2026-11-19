@@ -32,7 +32,7 @@ export const GET: APIRoute = async context => {
     scopes.push(result.scope)
   }
   for (const scope of scopes) if (!(await validateBoardScope(scope, db, { resource: "task", action: "read" })).ok) return apiError("Credential access changed.", 409)
-  const response = apiJson({ boards, enrollmentBoardId: boards.length === 1 ? boards[0]!.id : null })
+  const response = apiJson({ boards, enrollmentBoardId: boards.length === 1 ? boards[0]?.id ?? null : null })
   if (human) response.headers.set("X-Meitheal-Board-Session", boardSessionProof(human.id))
   response.headers.set("Cache-Control", "private, no-store")
   return response
