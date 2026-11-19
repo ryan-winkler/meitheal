@@ -7,6 +7,7 @@ import { organizationLocale } from "../lib/organization-labels"
 import { isOrganizationFeatureAvailable } from "../lib/organization-request-context"
 import { verifiedIngressUser } from "../lib/verified-ingress-user"
 import { boardSessionProof } from "../lib/named-board-request"
+import tablerStylesHref from "../styles/tabler-surface.scss?url"
 
 const locale = organizationLocale(Astro)
 const copy = (key: string) => t(`setup.${key}`, locale)
@@ -28,6 +29,7 @@ const community = [
 Astro.response.headers.set("Cache-Control", "private, no-store")
 ---
 <Layout title={copy("title")} hideGlobalSearch privatePageShell>
+  <link slot="head" id="meitheal-tabler-styles" rel="stylesheet" href={tablerStylesHref} />
   <div class="tabler-surface workspace-setup" data-workspace-setup>
     <section class="card" aria-labelledby="workspace-setup-title">
       <div class="card-body">
@@ -150,7 +152,6 @@ Astro.response.headers.set("Cache-Control", "private, no-store")
 <script>
   import { pageLifecycle } from "@lib/page-lifecycle"
   import { bindSetup } from "@lib/setup-controller"
-  import "@lib/tabler-styles"
   pageLifecycle.onPageLoad(bindSetup)
 </script>
 

@@ -1,5 +1,6 @@
 import type Modal from "@tabler/core/js/src/bootstrap/modal"
 import { pageLifecycle } from "./page-lifecycle"
+import { ensureTablerStyles } from "./tabler-styles"
 
 const openModals = new WeakMap<HTMLElement, Modal>()
 
@@ -7,7 +8,7 @@ export async function openTablerModal(dialog: HTMLElement, trigger?: HTMLElement
   const signal = pageLifecycle.signal
   const [{ default: TablerModal }] = await Promise.all([
     import("@tabler/core/js/src/bootstrap/modal"),
-    import("./tabler-styles"),
+    ensureTablerStyles(),
   ])
   if (signal.aborted || !dialog.isConnected || openModals.has(dialog) ||
     document.querySelector("[data-meitheal-tabler-modal].show")) return

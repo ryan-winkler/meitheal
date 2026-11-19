@@ -45,7 +45,7 @@ export function stripIngressPrefix(
   }
   if (value === prefix) return "/"
   if (value.startsWith(`${prefix}/`)) {
-    return value.slice(prefix.length) || "/"
+    return value.slice(prefix.length).replace(/^\/+/, "/")
   }
   if (value.startsWith(`${prefix}?`) || value.startsWith(`${prefix}#`)) {
     return `/${value.slice(prefix.length)}`

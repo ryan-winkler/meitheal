@@ -196,10 +196,11 @@ test("a reflected panel route expires on account change but an opened bookmark s
     const bookmark = hostPath + "?meitheal=" + encodeURIComponent("/today")
     await page.route(hostPath + "**", route => route.fulfill({
       contentType: "text/html",
-      body: `<home-assistant></home-assistant><iframe title="Meitheal" src="${prefix}/" style="width:100%;height:900px;border:0"></iframe>`,
+      body: `<home-assistant></home-assistant><iframe title="Meitheal" src="${prefix}//" style="width:100%;height:900px;border:0"></iframe>`,
     }))
     await page.goto(hostPath)
     const app = page.frameLocator("iframe")
+    await expect(app.getByRole("link", { name: "Set up Meitheal" })).toBeVisible()
     await app.locator("#sidebar").getByRole("link", { name: "Today", exact: true }).click()
     await expect(app.locator("#today-overview")).toBeVisible()
     await expect(page).toHaveURL(bookmark)

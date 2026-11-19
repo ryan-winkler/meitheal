@@ -42,7 +42,7 @@ export function initDashboardWidgets(shell: HTMLElement, signal: AbortSignal, on
     const hasWidgets = Boolean(firstVisible())
     if (empty) {
       empty.hidden = hasWidgets
-      if (!hasWidgets) void import("./tabler-styles").catch(() => {})
+      if (!hasWidgets) void import("./tabler-styles").then(({ ensureTablerStyles }) => ensureTablerStyles()).catch(() => {})
     }
     const overviewHeading = shell.querySelector("#dashboard-overview h1")
     if (pageHeading) pageHeading.hidden = !hasWidgets || Boolean(overviewHeading && !overviewHeading.closest("[hidden]"))

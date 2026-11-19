@@ -205,7 +205,9 @@ export function bindBoardPage(signal: AbortSignal) {
           const id = data?.id
           if (status === 201 && typeof id === "string" &&
             /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) && !data?.accessPending) {
-            window.location.href = safeIngressHref(`/boards/${id}`)
+            const boardUrl = new URL(window.location.origin)
+            boardUrl.pathname = safeIngressHref(`/boards/${id}`)
+            window.location.assign(boardUrl)
             return
           }
           if (status !== 202 || data?.accessPending !== true) throw new Error("Board creation unconfirmed")

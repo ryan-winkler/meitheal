@@ -87,7 +87,7 @@ async function sizeOfDirectoryBytes(dir) {
 // These route or interaction entry points are loaded on Setup, Quick Add, or
 // Customize Dashboard. Keep the existing common-assets ceiling independent.
 async function workspaceUiBytes(dir) {
-  const optional = /^(?:dashboard-layout-editor|modal|tabler-modal|tabler-styles|preferred-quick-add|setup(?:\.astro_astro_type_script_index_0_lang)?)\.[\w-]+\.(?:js|css)$/
+  const optional = /^(?:dashboard-layout-editor|modal|tabler-modal|tabler-styles|tabler-surface|preferred-quick-add|setup(?:\.astro_astro_type_script_index_0_lang)?)\.[\w-]+\.(?:js|css)$/
   const files = (await fs.readdir(dir)).filter(filename => optional.test(filename))
   const sizes = await Promise.all(files.map(filename => fs.stat(path.join(dir, filename))))
   return sizes.reduce((bytes, file) => bytes + file.size, 0)

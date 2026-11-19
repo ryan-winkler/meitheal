@@ -240,7 +240,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
           pathname === prefix
             ? "/"
             : pathname.startsWith(prefix + "/")
-              ? pathname.slice(prefix.length) || "/"
+              ? pathname.slice(prefix.length).replace(/^\/+/, "/")
               : pathname;
         if (current !== "/" || location.search || location.hash ||
           performance.getEntriesByType("navigation").some(entry => entry.type === "back_forward")) return;
@@ -497,6 +497,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         },
       };
     </script>
+    <slot name="head" />
   </head>
   <body>
     <!-- Page transition loading indicator -->

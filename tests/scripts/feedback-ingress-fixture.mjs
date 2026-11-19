@@ -208,7 +208,7 @@ const handle = (request, response) => {
   }
   const user = /(?:^|;\s*)feedback-fixture=(admin|member|member-two|old)(?:;|$)/.exec(request.headers.cookie ?? "")?.[1]
   if (fromSupervisor) {
-    request.url = request.url.slice(configuredPath.length)
+    request.url = request.url.slice(configuredPath.length).replace(/^\/+/, "/")
     delete request.headers["x-remote-user-id"]
     delete request.headers["x-remote-user-groups"]
     if (user) request.headers["x-remote-user-id"] = `fixture-${user}`
