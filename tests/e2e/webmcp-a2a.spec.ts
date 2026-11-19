@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run A2A/WebMCP checks");
@@ -98,6 +99,7 @@ test.describe("A2A Route Availability", () => {
       PATH: process.env.PATH,
       NODE_ENV: "production",
       MEITHEAL_DB_URL: `file:${join(work, "meitheal.db")}`,
+      MEITHEAL_BOARD_GRANT_PATH: join(work, "meitheal-board-grants.json"),
       MEITHEAL_TEST_CORE_USER_LOOKUP: "1",
     }
     const api = await playwright.request.newContext()
@@ -114,9 +116,10 @@ test.describe("A2A Route Availability", () => {
       const origin = `http://127.0.0.1:${info.port}`
       const ingress = origin + info.configuredPath
       const cards = ["/.well-known/agent-card.json", "/.well-known/agent.json", "/api/a2a/agent-card"] as const
+      const admin = await currentBoardWriteHeaders(api, "household", { origin, cookie: "feedback-fixture=admin" }, ingress)
       const enroll = async (...scopes: string[]) => {
         const response = await api.post(ingress + "/api/agent-tokens", {
-          headers: { origin, cookie: "feedback-fixture=admin" },
+          headers: admin,
           data: { name: "A2A availability fixture", scopes },
         })
         expect(response.status()).toBe(201)
@@ -174,9 +177,12 @@ test.describe("A2A Route Availability", () => {
       expect((await call(cards[0], "GET")).status()).toBe(200)
       expect(await (await call("/api/a2a/message", "POST")).json()).toMatchObject({ jsonrpc: "2.0", error: { code: -32600 } })
       expect((await call("/api/a2a/tasks/unknown", "GET")).status()).toBe(400)
-      const unknown = await call("/api/a2a/tasks/unknown", "GET", { ...authorized, "A2A-Version": "1.0" })
+      const unknown = await call("/api/a2a/tasks/unknown", "GET", {
+        ...authorized, cookie: admin.cookie, "x-meitheal-board-id": "household", "A2A-Version": "1.0",
+      })
       expect(unknown.status()).toBe(404)
-      expect(await unknown.json()).toMatchObject({ status: 404, detail: "A2A task not found." })
+      expect(unknown.headers()["cache-control"]).toBe("private, no-store")
+      expect(await unknown.json()).toMatchObject({ status: 404, detail: "This work is unavailable." })
       const unknownCancel = await call("/api/a2a/tasks/unknown:cancel", "POST")
       expect(await unknownCancel.json()).toMatchObject({ status: 404, detail: "A2A task not found." })
     } finally {
@@ -224,6 +230,7 @@ test.describe("MCP Discovery", () => {
       PATH: process.env.PATH,
       NODE_ENV: "production",
       MEITHEAL_DB_URL: `file:${join(work, "meitheal.db")}`,
+      MEITHEAL_BOARD_GRANT_PATH: join(work, "meitheal-board-grants.json"),
       MEITHEAL_TEST_CORE_USER_LOOKUP: "1",
     }
     const api = await playwright.request.newContext()
@@ -244,10 +251,11 @@ test.describe("MCP Discovery", () => {
       const card = await discovery.json()
       expect(card.documentationUrl).toBe(origin + info.configuredPath + "/openapi.yaml")
       expect((await api.get(card.documentationUrl)).ok()).toBe(true)
-      const adminPath = origin + info.configuredPath + "/api/agent-tokens"
+      const admin = await currentBoardWriteHeaders(api, "household", { origin, cookie: "feedback-fixture=admin" }, ingress)
+      const adminPath = ingress + "/api/agent-tokens"
       const issueToken = async (scopes: string[]) => {
         const enrollment = await api.post(adminPath, {
-          headers: { origin, cookie: "feedback-fixture=admin" },
+          headers: admin,
           data: { name: "MCP discovery fixture", scopes },
         })
         expect(enrollment.status()).toBe(201)
@@ -377,7 +385,7 @@ test.describe("MCP Discovery", () => {
       const list = await modern("tools/list")
       expect(await list.json()).toMatchObject({ result: { resultType: "complete", tools: readTools } })
       const params = { name: "listTasks", arguments: { limit: 1 } }
-      const tool = await modern("tools/call", params, { "mcp-name": "listTasks", origin })
+      const tool = await modern("tools/call", params, { "mcp-name": "listTasks", "x-meitheal-board-id": "household", origin })
       expect(tool.status()).toBe(200)
       expect(tool.headers()["ratelimit"]).toBeDefined()
       expect(await tool.json()).toMatchObject({
