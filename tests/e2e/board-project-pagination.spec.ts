@@ -86,6 +86,7 @@ test.afterAll(async () => {
 const projects = () => page.locator(`[data-board-projects="${areaId}"]`)
 const projectRow = () => projects().locator("..")
 const links = () => projects().locator(":scope > [data-group-choice]")
+const projectLinks = () => links().locator("a[data-project-id]")
 const pager = () => projects().getByRole("button", { name: "Show more Projects", exact: true })
 const projectRequest = (url: string) => {
   const parsed = new URL(url)
@@ -150,11 +151,11 @@ test("retains the first Project page and retries the failed cursor with keyboard
   await expect(links()).toHaveCount(60)
   expect(attempted).toHaveLength(2)
   expect(attempted[1]).toBe(attempted[0])
-  await expect(links().nth(30).locator("a.nav-link")).toBeFocused()
+  await expect(projectLinks().nth(30)).toBeFocused()
   await page.screenshot({ path: test.info().outputPath("pagination-focus-after.png"), fullPage: true })
   await expect(projects().locator("img")).toHaveCount(0)
-  await expect(links().first().locator("a.nav-link")).toContainText("<img src=x onerror=alert(1)>")
-  await expect(links().first().locator("a.nav-link")).toHaveAttribute("href", `${new URL(app).pathname}/boards/${boardId}?project=paging-0&from=${areaId}`)
+  await expect(projectLinks().first()).toContainText("<img src=x onerror=alert(1)>")
+  await expect(projectLinks().first()).toHaveAttribute("href", `${new URL(app).pathname}/boards/${boardId}?project=paging-0&from=${areaId}`)
 })
 
 test("hands focus to new Projects only while the replaced pager still owns focus", async () => {
@@ -162,7 +163,7 @@ test("hands focus to new Projects only while the replaced pager still owns focus
   await expect(links()).toHaveCount(30)
   await pager().press("Enter")
   await expect(links()).toHaveCount(60)
-  await expect(links().nth(30).locator("a.nav-link")).toBeFocused()
+  await expect(projectLinks().nth(30)).toBeFocused()
   const held = deferred<void>()
   const release = deferred<void>()
   let requests = 0
@@ -177,9 +178,11 @@ test("hands focus to new Projects only while the replaced pager still owns focus
     await held.promise
     await page.keyboard.press("Enter")
     await page.keyboard.press("Shift+Tab")
-    await expect(links().nth(59).getByRole("link", { name: "Manage Project Project 59", exact: true })).toBeFocused()
+    await expect(links().nth(59).getByRole("button", { name: "Add task to Project 59", exact: true })).toBeFocused()
     await page.keyboard.press("Shift+Tab")
-    const previous = links().nth(59).locator("a.nav-link")
+    await expect(links().nth(59).getByRole("button", { name: "Project options - Project 59", exact: true })).toBeFocused()
+    await page.keyboard.press("Shift+Tab")
+    const previous = projectLinks().nth(59)
     await expect(previous).toBeFocused()
     release.resolve()
     await expect(links()).toHaveCount(65)
@@ -207,7 +210,7 @@ test("an empty initial failure retries from the first Project page", async () =>
   await retry.press("Enter")
   await expect(links()).toHaveCount(30)
   expect(cursors).toEqual([null, null])
-  await expect(links().first().locator("a.nav-link")).toBeFocused()
+  await expect(projectLinks().first()).toBeFocused()
 })
 
 for (const level of ["Area", "Project"] as const) {

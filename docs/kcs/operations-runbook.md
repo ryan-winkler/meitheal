@@ -138,6 +138,8 @@ For hover navigation, open Area and Project actions with the pointer outside the
 
 While a changed Area draft has focus, change font or navigation style from another tab. The same draft must stay visible and focused without sending a save request. Escape must still cancel it; a deliberate outside-click save keeps its normal behavior.
 
+In the Board sidebar, a screen reader must distinguish an Area link from its **Projects in [Area name]** disclosure, including after an inline rename. If retrying an empty page removes the focused retry button, return focus to the disclosure. Leave focus where the user moved it if they left the list while the retry was loading.
+
 Run `e2e/navigation-overflow-recovery.spec.ts`, `e2e/nav-overflow-hidden-links.spec.ts`, `e2e/navbar-hierarchy-actions.spec.ts`, `e2e/sidebar-popup-layouts.spec.ts`, `e2e/sidebar-appearance-edit.spec.ts` and `e2e/appearance-preferences.spec.ts` for these journeys.
 
 ## Task Link Verification

@@ -150,7 +150,7 @@ export function bindSidebarBoards(signal: AbortSignal) {
           link.href = safeIngressHref(boardWorkspaceHref(boardId, { area: group.id }))
           link.append(...toggle.querySelectorAll(".stree__area-icon, .stree__area-name"))
           if (current.pathname.endsWith(boardWorkspaceHref(boardId)) && current.searchParams.get("area") === group.id) link.setAttribute("aria-current", "page")
-          toggle.setAttribute("aria-label", group.name)
+          toggle.setAttribute("aria-label", `${projectLabel} in ${group.name}`)
           controls.insertBefore(link, toggle)
           firstNewLink ??= link
           const projects = document.createElement("ul")
@@ -197,7 +197,7 @@ export function bindSidebarBoards(signal: AbortSignal) {
       }
       if (moveFocus) (firstNewLink
         ?? groups.querySelector<HTMLButtonElement>(":scope > [data-board-group-status] button")
-        ?? row.querySelector<HTMLButtonElement>(":scope > .sidebar-board-row > button"))?.focus()
+        ?? row.querySelector<HTMLButtonElement>(areaId ? "[data-peer-area-toggle]" : ":scope > .sidebar-board-row > .sidebar-board-toggle"))?.focus()
     } catch {
       if (!request.signal.aborted && !signal.aborted && row.isConnected && !groups.hidden) {
         const moveFocus = previousStatus?.contains(document.activeElement)

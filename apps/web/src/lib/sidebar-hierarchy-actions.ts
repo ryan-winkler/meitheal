@@ -637,7 +637,8 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
               if (res.ok) {
                 nameEl.textContent = newName
                 toggle.dataset.areaNameLabel = newName
-                toggle.setAttribute("aria-label", newName)
+                const projectLabel = nav.dataset.boardProjectLabel ?? "Projects"
+                toggle.setAttribute("aria-label", toggle.hasAttribute("data-peer-area-toggle") ? `${projectLabel} in ${newName}` : newName)
                 setAreaCollapsed(toggle, toggle.getAttribute("aria-expanded") === "false")
                 const menu = container.querySelector<HTMLButtonElement>("[data-area-menu]")
                 if (menu) {

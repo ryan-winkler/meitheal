@@ -99,6 +99,13 @@ test("Area options open the editor and save within Home Assistant ingress", asyn
     if (await projectToggle.getAttribute("aria-expanded") !== "true") await projectToggle.press("Enter")
     const projectLink = group.getByRole("link", { name: "Tool storage", exact: true })
     await expect(projectLink).toBeVisible()
+    await group.getByRole("button", { name: "Area options - Workshop renamed", exact: true }).press("Enter")
+    await page.locator("#area-menu-dropdown").getByRole("button", { name: "Rename", exact: true }).press("Enter")
+    const inlineName = group.getByPlaceholder("Area name…")
+    await inlineName.fill("Workshop tools")
+    await inlineName.press("Enter")
+    await expect(group.getByRole("link", { name: "Workshop tools", exact: true })).toBeVisible()
+    await expect(group.getByRole("button", { name: "Projects in Workshop tools", exact: true })).toHaveAttribute("aria-expanded", "true")
     await projectLink.press("Enter")
     await expect(page).toHaveURL(url => url.pathname === prefix + "/boards/household" &&
       url.searchParams.get("project") === projectId && url.searchParams.get("from") === areaId)
