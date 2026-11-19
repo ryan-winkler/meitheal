@@ -194,7 +194,7 @@ async function bind(
       allowedOperations,
       purpose: "grocy.sync"
     }
-  await changeBoardGrants(db, async (tx) => {
+  await changeBoardGrants(db, parent(), async (tx) => {
     const {
       rows: [setting]
     } = await tx.execute("SELECT value FROM settings WHERE key='work-destinations'")
@@ -296,7 +296,7 @@ test("a read-only Grocy receiver still intersects actual completion rights", asy
     shopping = items.find((item) => item.title.startsWith("🛒"))!
   expect(await repo.updateTask(item.id, { status: "complete" })).toMatchObject({ ok: true })
   expect(await repo.updateTask(shopping.id, { status: "complete" })).toMatchObject({ ok: true })
-  await changeBoardGrants(db, async (tx) => {
+  await changeBoardGrants(db, parent(), async (tx) => {
     const {
       rows: [setting]
     } = await tx.execute("SELECT value FROM settings WHERE key='work-destinations'")

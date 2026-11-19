@@ -8,6 +8,8 @@ export function agentBoardOperations(scopes: readonly string[]): WorkOperation[]
   const operations: WorkOperation[] = []
   if (scopes.includes("tasks:read"))
     operations.push({ resource: "board", action: "read" }, { resource: "task", action: "read" })
+  if (scopes.includes("search:read") || scopes.includes("tasks:read"))
+    operations.push({ resource: "task", action: "search" })
   if (scopes.includes("tasks:write")) {
     operations.push(
       ...(["create", "edit", "move", "assign", "complete", "reopen"] as const).map((action) => ({
@@ -43,7 +45,7 @@ export async function createBoardAgentCredential<T>(
   input: { tokenId: string; scopes: readonly string[]; assigneeId: string | null },
   persistCredential: (tx: Transaction) => Promise<T>
 ) {
-  return changeBoardGrants(db, async (tx) => {
+  return changeBoardGrants(db, scope.principal, async (tx) => {
     const current = await validateBoardScope(scope, tx, { resource: "board", action: "manage" })
     if (!current.ok || !["ha_user", "local_operator"].includes(scope.principal.kind)) {
       throw new BoardOperationError(current.ok ? "denied" : current.errorCode)

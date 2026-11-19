@@ -241,7 +241,7 @@ export class HierarchyRepository {
     return result.rowsAffected > 0
   }
   private async retirePlanning(table: "areas" | "goals" | "projects", resource: WorkResource, id: string) {
-    const result = await changeBoardGrants<"saved" | "children" | "unavailable">(this.rawClient, async tx => {
+    const result = await changeBoardGrants<"saved" | "children" | "unavailable">(this.rawClient, this.scope.principal, async tx => {
       const allowed = await validateBoardScope(this.scope, tx, { resource, action: "delete" })
       if (!allowed.ok) throw new BoardOperationError(allowed.errorCode)
       const { rows: [current] } = await tx.execute(sql`SELECT retired_at FROM ${sourceSql(table)} WHERE id = ${id}

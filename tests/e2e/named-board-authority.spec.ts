@@ -159,7 +159,7 @@ test("a restored, absent, or replaced grant marker fails closed", async () => {
   await writeFile(marker, previous)
   expect(await repo.findAccess(actor, id)).toBeNull()
   let called = false
-  const result = await changeBoardGrants(db, async () => { called = true; return { next: "" } }, marker)
+  const result = await changeBoardGrants(db, actor, async () => { called = true; return { next: "" } }, marker)
   expect(result).toEqual({ status: "locked" })
   expect(called).toBe(false)
 

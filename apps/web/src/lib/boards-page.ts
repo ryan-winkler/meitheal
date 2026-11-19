@@ -1,6 +1,7 @@
 import { browserUuid } from "./browser-uuid"
 import { confirmDialog, type ConfirmOptions } from "./confirm-dialog"
 import { safeIngressHref, syncIngressDestination } from "./ingress-navigation"
+import { stripIngressPrefix } from "./ingress-state-persistence"
 import { safeFetch } from "./safe-fetch"
 
 class BoardRequestError extends Error {
@@ -60,6 +61,8 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
     const owned = holdsFocus()
     expired = true
     root.dataset.boardExpired = "true"
+    // Verification may already have detached root, so publication must not rely on bubbling.
+    document.dispatchEvent(new CustomEvent("meitheal:board-revoked", { detail: { boardId: root.dataset.boardId } }))
     detach(owned)
     root.replaceChildren()
     recovery.hidden = true
@@ -179,7 +182,8 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
   }
 
   const current = new URL(location.href)
-  if (root.dataset.boardId && ["groups", "projects", "goals", "routines", "group-settings", "project-settings"].includes(fragment)
+  if (/^\/boards\/[^/]+\/?$/.test(stripIngressPrefix(current.pathname)) && root.dataset.boardId &&
+      ["groups", "projects", "goals", "routines", "group-settings", "project-settings"].includes(fragment)
       && current.searchParams.get("view") !== "groups") {
     current.searchParams.set("view", "groups")
     const target = current.pathname + current.search + current.hash

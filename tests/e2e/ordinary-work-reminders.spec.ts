@@ -106,7 +106,7 @@ test("private parent Area work is absent from reminder queries and overdue ledge
   expect(await hierarchy.createProject({ id: "private-garden", title: "Private garden", area_id: "private-yard" })).toBe(true)
   const hidden = await task(boardId, "Private garden deadline", now + 1_000, "private-garden")
   const visible = await task(boardId, "Visible unfiled deadline", now + 1_000)
-  await changeBoardGrants(db, async tx => {
+  await changeBoardGrants(db, (await scope(boardId)).principal, async tx => {
     await tx.execute({ sql: "INSERT INTO organization_access_policies(scope,scope_id,board_id,audience,selected_users,revision) VALUES ('group','private-yard',?,'selected','[\"parent\"]',1)", args: [boardId] })
     return { next: true }
   })

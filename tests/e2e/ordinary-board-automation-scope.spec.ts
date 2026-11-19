@@ -69,7 +69,7 @@ test("a broader automation ceiling cannot complete for a restricted child, and s
       { resource: "task", action: "complete" }
     ]
   }
-  const enrolled = await changeBoardGrants(db, async (tx) => {
+  const enrolled = await changeBoardGrants(db, owner, async (tx) => {
     if (!(await validateBoardScope(manager.scope, tx, { resource: "board", action: "manage" })).ok)
       throw new Error("Manager changed")
     await tx.execute({
@@ -277,7 +277,7 @@ test("source, purpose, destination and provider endpoints retire identities with
       version.taskVersion
     )
   ).toBe(true)
-  await changeBoardGrants(db, async (tx) => {
+  await changeBoardGrants(db, owner, async (tx) => {
     await tx.execute({
       sql: "UPDATE board_access_grants SET deny_deletion=1 WHERE principal_type='service' AND principal_id=?",
       args: [first.binding.id]

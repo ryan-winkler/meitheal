@@ -737,7 +737,7 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
 })
 
 export const DELETE: APIRoute = withBoardScope({ resource: "task", action: "delete" }, async ({ params, request, locals }, scope) => {
-  const boardSelection = await rejectBoardSelectionInJson(request)
+  const boardSelection = await rejectBoardSelectionInJson(request.clone())
   if (boardSelection) return boardSelection
   await ensureSchema()
   const repo = new TaskRepository(getPersistenceClient(), scope)

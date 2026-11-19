@@ -1,5 +1,5 @@
 ---
-import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+import { resolveBoardPageScope } from "@lib/board-http"
 import { organizationLabelsFor } from "@lib/organization-labels"
 const organization = await organizationLabelsFor(Astro)
 /**
@@ -29,8 +29,7 @@ import {
 import { isFeatureEnabled } from "../../lib/feature-flags"
 
 const scoped = await resolveBoardPageScope(Astro)
-if (!scoped.ok) return boardScopeResponse(scoped.errorCode)
-const workScope = scoped.scope
+const workScope = scoped.ok ? scoped.scope : null
 
 const gamificationEnabled = await isFeatureEnabled("gamification")
 
@@ -47,12 +46,13 @@ let stats = {
   totalCompleted: 0,
   totalPoints: 0,
 }
+let dataUnavailable = false
 let weekly: Awaited<ReturnType<typeof getWeeklyData>> = []
 let achievementData = { achievements: [] as any[], total: 0, unlocked: 0 }
 let heatmapData: { date: string; count: number }[] = []
 
 try {
-  if (gamificationEnabled) {
+  if (workScope && gamificationEnabled) {
     [stats, weekly, achievementData] = await Promise.all([
       getStats(workScope),
       getWeeklyData(workScope),
@@ -60,7 +60,7 @@ try {
     ])
     heatmapData = await getYearlyHeatmapData(workScope)
   }
-} catch { /* graceful fallback */ }
+} catch { dataUnavailable = true }
 
 const level = getLevel(stats.totalPoints)
 const progress = getProgressToNextLevel(stats.totalPoints)
@@ -157,7 +157,7 @@ const categories: readonly { key: string; label: string; icon: IconName }[] = [
 ]
 ---
 
-{!gamificationEnabled ? (
+{!workScope || dataUnavailable ? <p role="status">Achievements are unavailable. Reload to try again.</p> : !gamificationEnabled ? (
   <div class="achievements-tab__disabled">
     <div class="achievements-tab__disabled-icon"><Icon name="trophy" size={48} sprite={true} /></div>
     <h2>Gamification is disabled</h2>

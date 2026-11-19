@@ -1,5 +1,5 @@
 ---
-import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+import { resolveBoardPageScope } from "@lib/board-http"
 
 /**
  * SidebarHierarchyTree — Area → Project sidebar navigation
@@ -34,8 +34,7 @@ import { DEFAULT_ACCENT, DEFAULT_ICON, HOME_ICON, COLOR_SWATCHES } from "../../l
 import { mapEntityEmojiToTabler } from "../../lib/tabler-svg"
 import type { IconName } from "../../generated/icon-registry"
 const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
-if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
-const workScope = workScopeResult.scope
+const workScope = workScopeResult.ok ? workScopeResult.scope : null
 
 
 export interface Props {
@@ -51,6 +50,7 @@ let projects: ProjectRow[] = []
 const goalAreas = new Map<string, string>()
 
 try {
+  if (!workScope) throw new Error("Work unavailable")
   await ensureSchema()
   const repo = new HierarchyRepository(getPersistenceClient(), workScope)
   const [allAreas, allProjects, goals] = await Promise.all([
@@ -92,6 +92,8 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
   { kind: "quick_capture", icon: "bolt", labelKey: "sidebar.task_kind_quick_capture" },
 ]
 ---
+{!workScope ? <p role="status">Navigation is unavailable. Reload to try again.</p> : <>
+
 
 {(hasContent || boardName) && (
   <div class:list={["stree", { "stree--board": Boolean(boardName) }]} id="project-nav" data-projects-enabled={String(available("projects"))} role="navigation" aria-label={t("sidebar.navigation_label", locale, { label: areasLabel })}>
@@ -308,6 +310,8 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
   </div>
 </template>
 
+
+</>}
 <style is:global>
   /* ══════════════════════════════════════════════
      Sidebar Hierarchy Tree — ClickUp-inspired

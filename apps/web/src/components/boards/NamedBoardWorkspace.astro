@@ -1,5 +1,4 @@
 ---
-import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
 import { readHomeAssistantAreaFilter } from "@lib/home-assistant-area-access"
 import HomeAssistantAreaField from "../tasks/HomeAssistantAreaField.astro"
 import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
@@ -12,7 +11,7 @@ import BoardWorkspaceNav from "./BoardWorkspaceNav.astro"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import Layout from "../../layouts/Layout.astro"
 import "../../styles/boards.css"
-import { scopePermits } from "@domains/tasks/board-scope"
+import { scopePermits, type BoardScope } from "@domains/tasks/board-scope"
 import { boardWorkspaceHref, readBoardWorkspaceSelection, readBoardPlanningSection } from "@lib/board-workspace"
 import { boardAuthorityKey, boardViewKey, readBoardView } from "@lib/board-view"
 import { boardSessionProof, currentBoardContext } from "@lib/named-board-request"
@@ -21,24 +20,15 @@ import { isDoneStatus } from "@lib/status-config"
 
 const label = await organizationLabelsFor(Astro)
 const newLabel = (name: Parameters<typeof label>[0], fallback?: string) => newOrganizationLabel(label(name, false, fallback), organizationLocale(Astro))
-const boardId: string = Astro.props.boardId
-const resolved = await resolveBoardPageScope(Astro, { boardId })
-if (!resolved.ok) return boardScopeResponse(resolved.errorCode)
-const workScope = resolved.scope
+interface Props { boardId: string; workScope: BoardScope }
+const { boardId, workScope } = Astro.props
 const selection = readBoardWorkspaceSelection(Astro.url.searchParams)
-const section = readBoardPlanningSection(Astro.url.searchParams)
-if (selection.planning && section !== "planning") {
-  const query = new URLSearchParams({ board_id: boardId })
-  if (selection.areaId) query.set("area_id", selection.areaId)
-  if (selection.projectId) query.set("project_id", selection.projectId)
-  return Astro.redirect(`${Astro.locals.ingressPath || ""}/${section === "routines" ? "habits" : "progress"}?${query}${section === "routines" ? "" : `#${section}`}`)
-}
 const user = await currentBoardContext(Astro)
 const rawOffset = Number(Astro.url.searchParams.get("offset") ?? 0)
 const offset = Number.isSafeInteger(rawOffset) && rawOffset >= 0 ? rawOffset : 0
 const homeFilter = await readHomeAssistantAreaFilter(Astro, Astro.url.searchParams)
 const taskWorkspace = !selection.planning && Boolean(boardId && user)
-const view = !taskWorkspace && boardId && user ? await readBoardView(workScope, user.actor, boardId, offset, selection, homeFilter) : null
+const view = !taskWorkspace && boardId && user ? await readBoardView(workScope, user.actor, boardId, offset, selection, homeFilter).catch(() => null) : null
 if (!boardId || !user || (!view && !taskWorkspace)) Astro.response.status = 404
 const canManage = scopePermits(workScope, { resource: "board", action: "manage" })
 const policy = canManage ? view?.board.policy : undefined
@@ -57,13 +47,13 @@ const grouping = { area: scope?.project ? undefined : scope?.area?.id, project: 
 const title = scope?.project?.title ?? scope?.area?.name ?? view?.board.name ?? "Board"
 const nextAction = view?.summary?.next
 ---
-{taskWorkspace ? <TaskWorkspace {boardId} />
-  : selection.projectId ? <ProjectWorkspace workspaceProjectId={selection.projectId} {boardId} />
-  : selection.areaId ? <AreaWorkspace workspaceAreaId={selection.areaId} {boardId} />
+{taskWorkspace ? <TaskWorkspace {boardId} {workScope} />
+  : selection.projectId ? <ProjectWorkspace workspaceProjectId={selection.projectId} {boardId} {workScope} />
+  : selection.areaId ? <AreaWorkspace workspaceAreaId={selection.areaId} {boardId} {workScope} />
   : <Layout title={label("board")} scopeGuard={false}>
   <span slot="page-title">{label("board")}</span>
   <div class="boards-workspace">
-    {!view || !boardId || !user ? <p>This Board is unavailable.</p> :
+    {!view || !boardId || !user ? <p role="status">This Board is unavailable. Reload to try again.</p> :
       <div data-board-directory data-board-verify={verifyPath} data-board-key={boardViewKey(view, user.actor.id)}
         data-board-authority={boardAuthorityKey(view, user.actor.id)}
         data-board-session={boardSessionProof(user.actor.id)} data-board-id={boardId}
@@ -87,7 +77,7 @@ const nextAction = view?.summary?.next
         {scope?.area && !scope.project && !selection.planning && <p>
           <a href={boardWorkspaceHref(boardId, { area: scope.area.id, groups: true }, "projects")}>{label("project", true)} in {scope.area.name}</a>
         </p>}
-        {view.planning && <BoardPlanning boardId={boardId} areaId={scope?.area?.id} projectId={scope?.project?.id} planning={view.planning} canManage={canManage && view.board.state === "active"} canComplete={Boolean(canComplete)} routinesEnabled={routinesEnabled} tickets={view.tasks} />}
+        {view.planning && <BoardPlanning {workScope} boardId={boardId} areaId={scope?.area?.id} projectId={scope?.project?.id} planning={view.planning} canManage={canManage && view.board.state === "active"} canComplete={Boolean(canComplete)} routinesEnabled={routinesEnabled} tickets={view.tasks} />}
         {policy && !scope?.area && !scope?.project && !selection.ticketId && <details id="settings" class="named-boards board-settings">
           <summary>{label("board")} settings</summary>
           <div class="board-settings-grid">

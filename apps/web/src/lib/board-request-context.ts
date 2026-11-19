@@ -147,10 +147,14 @@ async function loadPrincipal(
 function selector(request: Request, pathId?: string): { ok: true; id?: string } | { ok: false } {
   const url = new URL(request.url)
   const queryIds = url.searchParams.getAll("board_id")
-  if (queryIds.length > 1) return { ok: false }
-  const values = [pathId, request.headers.get("x-meitheal-board-id"), queryIds[0]].filter(
-    (value) => value !== undefined && value !== null
-  )
+  const aliasIds = url.searchParams.getAll("board")
+  if (queryIds.length > 1 || aliasIds.length > 1) return { ok: false }
+  const values = [
+    pathId,
+    request.headers.get("x-meitheal-board-id"),
+    queryIds[0],
+    aliasIds[0]
+  ].filter((value) => value !== undefined && value !== null)
   if (
     values.some((value) => !value || value.length > 150 || value.includes("\0")) ||
     new Set(values).size > 1

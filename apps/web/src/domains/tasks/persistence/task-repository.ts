@@ -80,6 +80,18 @@ type RecurrenceSuccessor = {
 }
 type RecurrenceOutcome = RecurrenceSuccessor | "invalid" | undefined
 
+type TaskCatalogOptions = {
+  query?: string
+  status?: string
+  priority?: number
+  assignedTo?: string
+  includeCompleted?: boolean
+  includeArchived?: boolean
+  fields?: readonly string[]
+  sort?: "relevance" | "updated"
+  limit?: number
+}
+
 export type TaskCatalogRow = Pick<TaskRow, "id" | "ticket_number" | "title" | "status" | "priority" | "deferred_at"> & {
   ticket_ref: string | null
   score: number
@@ -109,6 +121,7 @@ export interface TaskRow {
   readonly public_area_id?: string | null
   readonly public_project_id?: string | null
   readonly public_goal_id?: string | null
+  readonly public_parent_id?: string | null
 
   [key: string]: unknown
   // ── Core (CREATE TABLE) ──
@@ -527,7 +540,7 @@ export interface SyncChunkCommitResult {
 }
 
 const CALENDAR_FILTER_COLUMNS = `status, title, priority, task_type, task_kind,
-  ${planningProjection("areas", "tasks.area_id")} AS area_id, ${planningProjection("projects", "tasks.project_id")} AS project_id, assigned_to, is_promoted, labels, deferred_at, framework_payload`
+  tasks.public_area_id AS area_id, tasks.public_project_id AS project_id, assigned_to, is_promoted, labels, deferred_at, framework_payload`
 
 export class TaskRepository {
   private readonly client: Client
@@ -704,7 +717,7 @@ export class TaskRepository {
   /** Readable Epic ancestry can extend outside the current lane and filters. */
   async getHouseholdEpicLinks(reader: Pick<Client, "execute">): Promise<TaskEpicLink[]> {
     const result = await this.readFromSnapshot(reader,
-      scopedTaskRead(this.scope, sourceSql("SELECT id, parent_id, task_type,\n              CASE WHEN task_type = 'epic' THEN title END AS title,\n              CASE WHEN task_type = 'epic' THEN ticket_number END AS ticket_number\n       FROM scoped_tasks AS tasks WHERE 1"), "select"),
+      scopedTaskRead(this.scope, sourceSql("SELECT id, public_parent_id AS parent_id, task_type,\n              CASE WHEN task_type = 'epic' THEN title END AS title,\n              CASE WHEN task_type = 'epic' THEN ticket_number END AS ticket_number\n       FROM scoped_tasks AS tasks WHERE 1"), "select"),
     )
     return result.rows as unknown as TaskEpicLink[]
   }
@@ -959,7 +972,7 @@ export class TaskRepository {
   /** All tasks with date fields for Timeline/GANTT chart rendering */
   async getTimelineTasks(): Promise<TaskRow[]> {
     const result = await this.forOperation("read").execute(
-      scopedTaskRead(this.scope, sourceSql(`SELECT id, title, status, priority, due_date, start_date, end_date, color, task_type, task_kind, project_id, assigned_to, progress, ticket_number, ticket_ref, ticket_ref AS ticket_key, parent_id, blocked_by, effort_minutes, labels, area_id, public_area_id, public_project_id, public_goal_id, deferred_at, updated_at, ${taskTimestampMs("tasks.updated_at")} AS task_version
+      scopedTaskRead(this.scope, sourceSql(`SELECT id, title, status, priority, due_date, start_date, end_date, color, task_type, task_kind, project_id, assigned_to, progress, ticket_number, ticket_ref, ticket_ref AS ticket_key, parent_id, public_parent_id, blocked_by, effort_minutes, labels, area_id, public_area_id, public_project_id, public_goal_id, deferred_at, updated_at, ${taskTimestampMs("tasks.updated_at")} AS task_version
        FROM scoped_tasks AS tasks WHERE 1 ORDER BY start_date ASC NULLS LAST, created_at DESC`), "select"),
     );
     return this.normalizeTaskRows(result.rows);
@@ -1088,9 +1101,9 @@ export class TaskRepository {
   async exportAll(): Promise<TaskRow[]> {
     const result = await this.forOperation("read").execute(
       scopedTaskRead(this.scope, sourceSql(`SELECT id, title, description, status, priority, due_date, labels,
-              framework_payload, calendar_sync_state, ${planningProjection("areas", "tasks.area_id")} AS area_id, custom_fields,
-              parent_id, time_tracked, start_date, end_date, progress, color,
-              is_favorite, task_type, task_kind, ${planningProjection("projects", "tasks.project_id")} AS project_id, owner, handoff_state,
+              framework_payload, calendar_sync_state, tasks.public_area_id AS area_id, custom_fields,
+              public_parent_id AS parent_id, time_tracked, start_date, end_date, progress, color,
+              is_favorite, task_type, task_kind, tasks.public_project_id AS project_id, owner, handoff_state,
               ticket_number, recurrence_rule,
               checklists, reminder_at, created_at, updated_at
        FROM scoped_tasks AS tasks WHERE 1 ORDER BY updated_at DESC`), "select")
@@ -1226,15 +1239,10 @@ export class TaskRepository {
       args.push(...filter.args)
     }
     if (opts.priority != null) { conditions.push("priority = ?"); args.push(opts.priority); }
-    if (opts.areaId) { conditions.push(`(${planningProjection("areas", "tasks.area_id")}) = ?`); args.push(opts.areaId); }
-    if (opts.workspaceAreaId) {
-      conditions.push(`(CASE
-        WHEN EXISTS (SELECT 1 FROM scoped_projects AS projects WHERE id = tasks.project_id AND retired_at IS NULL)
-        THEN (SELECT area_id FROM scoped_projects AS projects WHERE id = tasks.project_id)
-        ELSE (${planningProjection("areas", "tasks.area_id")})
-      END) = ?`)
-      args.push(opts.workspaceAreaId)
-    }
+    // Public Area filters use the same logical visible placement as responses,
+    // including a Project's inherited Area; physical refs remain writer-owned.
+    if (opts.areaId) { conditions.push("tasks.public_area_id = ?"); args.push(opts.areaId) }
+    if (opts.workspaceAreaId) { conditions.push("tasks.public_area_id = ?"); args.push(opts.workspaceAreaId) }
     if (opts.projectId) { conditions.push(`(${planningProjection("projects", "tasks.project_id")}) = ?`); args.push(opts.projectId); }
     if (opts.taskType) { conditions.push("task_type = ?"); args.push(opts.taskType); }
     if (opts.parentId) { conditions.push("parent_id = ?"); args.push(opts.parentId); }
@@ -1280,17 +1288,16 @@ export class TaskRepository {
   }
 
   /** Advanced catalog search used by the universal search hub and HA search bridges. */
-  async searchCatalog(opts: {
-    query?: string
-    status?: string
-    priority?: number
-    assignedTo?: string
-    includeCompleted?: boolean
-    includeArchived?: boolean
-    fields?: readonly string[]
-    sort?: "relevance" | "updated"
-    limit?: number
-  }): Promise<TaskCatalogRow[]> {
+  async searchCatalog(opts: TaskCatalogOptions): Promise<TaskCatalogRow[]> {
+    return this.searchCatalogWithOperation(opts, "read")
+  }
+
+  async searchTaskTitles(opts: { query: string, limit?: number }): Promise<Array<{ id: string, title: string, ticket_key: string | null }>> {
+    const rows = await this.searchCatalogWithOperation({ query: opts.query, fields: ["id", "title"], ...(opts.limit === undefined ? {} : { limit: opts.limit }) }, "search")
+    return rows.map(row => ({ id: row.id, title: row.title, ticket_key: typeof row.ticket_ref === "string" ? row.ticket_ref : null }))
+  }
+
+  private async searchCatalogWithOperation(opts: TaskCatalogOptions, operation: "read" | "search"): Promise<TaskCatalogRow[]> {
     const query = (opts.query ?? "").trim().toLowerCase()
     const fields = new Set((opts.fields ?? ["id", "title", "description", "labels", "custom_fields", "comments"])
       .map(field => field.toLowerCase()))
@@ -1322,7 +1329,7 @@ export class TaskRepository {
     const projection = "tasks.id, tasks.ticket_number, tasks.ticket_ref, tasks.title, tasks.status, tasks.priority, tasks.deferred_at"
     const updatedAt = taskTimestampMs("tasks.updated_at")
     if (!query) {
-      const result = await this.forOperation("read").execute(scopedTaskRead(this.scope, sourceSql(`SELECT ${projection}, 0 AS score
+      const result = await this.forOperation(operation).execute(scopedTaskRead(this.scope, sourceSql(`SELECT ${projection}, 0 AS score
               FROM scoped_tasks AS tasks ${where}
               ORDER BY ${updatedAt} DESC, tasks.priority ASC, tasks.id ASC
               LIMIT ?`, [...args, limit]), "select"))
@@ -1354,7 +1361,7 @@ export class TaskRepository {
     const excerpt = snippets.length ? `CASE ${snippets.join("\n")} END` : "NULL"
     const orderBy = opts.sort === "updated" ? "" : "score DESC, "
 
-    const result = await this.forOperation("read").execute(scopedTaskRead(this.scope, sourceSql(`needle(value, ticket) AS (VALUES (?, ?)),
+    const result = await this.forOperation(operation).execute(scopedTaskRead(this.scope, sourceSql(`needle(value, ticket) AS (VALUES (?, ?)),
             hits AS MATERIALIZED (
               SELECT tasks.id, tasks.priority, ${updatedAt} AS updated_at_ms,
                 ${selected("id", `lower(tasks.id) = needle.value OR coalesce(tasks.ticket_number = needle.ticket, 0)`)} AS exact_id,
@@ -1843,6 +1850,7 @@ export class TaskRepository {
     | { ok: false; errorCode: "conflict"; updatedAt: number }
     | { ok: false; errorCode: "blocked"; blockers: TaskBlocker[] }
   > {
+    signal?.throwIfAborted()
     let commandClient = this.forOperation("edit", [id])
     if (typeof fields.status === "string" && isDoneStatus(fields.status)) commandClient = boardOperationClient(commandClient, this.scope, { resource: "task", action: "complete" })
     else if (typeof fields.status === "string") commandClient = boardOperationClient(commandClient, this.scope, { resource: "task", action: "edit" }, [id], async reader => {
@@ -1993,12 +2001,17 @@ export class TaskRepository {
       }
       const tx = existingWriter ?? await acquireWriteTransaction(commandClient, { signal })
       try {
+        signal?.throwIfAborted()
+        // Retain cancellation through any borrowed compound writer's precommit
+        // checks as well as this command's own awaited effect loop.
+        if (signal) await requireBoardWriterCheck(tx, this.scope, async () => { signal.throwIfAborted() })
         const { rows: [original] } = await tx.execute(scopedTaskRead(this.scope, sql`SELECT * FROM scoped_tasks AS tasks WHERE id = ${id}`))
         if (!original || !await validateTaskOperation(tx, this.scope, id, { resource: "task", action: "edit" })) return { ok: false, errorCode: "unavailable" }
         const statusIntent: WorkAction[] = typeof fields.status !== "string" ? [] : isDoneStatus(fields.status) ? ["complete"] : isDoneStatus(String(original.status)) ? ["reopen"] : []
         const intents: WorkAction[] = ["edit", ...statusIntent,
           ...(reassigning ? ["assign" as const] : []), ...(placementChanged || targetLaneId ? ["move" as const] : [])]
         for (const action of intents) {
+          signal?.throwIfAborted()
           await requireBoardWriterIntent(tx, this.scope, { resource: "task", action })
           if (integrationContext) await this.requireIntegrationWriter(tx, integrationContext, action, id)
         }
@@ -2024,10 +2037,15 @@ export class TaskRepository {
         }
         if (typeof fields.parent_id === "string") {
           if (fields.parent_id === id || !await validateTaskOperation(tx, this.scope, fields.parent_id, { resource: "task", action: "read" })) return { ok: false, errorCode: "unavailable" }
-          const cycle = await tx.execute(scopedTaskRead(this.scope, sql`ancestors(id, parent_id) AS (
-            SELECT id, parent_id FROM scoped_tasks WHERE id = ${fields.parent_id}
-            UNION SELECT t.id, t.parent_id FROM scoped_tasks t JOIN ancestors a ON a.parent_id = t.id
-          ) SELECT 1 FROM ancestors WHERE id = ${id}`, "recursive"))
+          // This internal boolean invariant traverses the Board's physical
+          // ancestry, including hidden ancestors. It returns no identifiers or
+          // content and never expands the actor's parent read permission.
+          const cycle = await tx.execute(sql`WITH RECURSIVE ancestors(id, parent_id) AS (
+            SELECT ancestor.id, ancestor.parent_id FROM tasks AS ancestor
+              WHERE ancestor.id = ${fields.parent_id} AND ancestor.task_board_id IS ${storageBoardId(this.scope)}
+            UNION SELECT ancestor.id, ancestor.parent_id FROM tasks AS ancestor JOIN ancestors AS previous ON previous.parent_id = ancestor.id
+              WHERE ancestor.task_board_id IS ${storageBoardId(this.scope)}
+          ) SELECT 1 FROM ancestors WHERE id = ${id} LIMIT 1`)
           if (cycle.rows.length) return { ok: false, errorCode: "unavailable" }
         }
         const assignmentDigest = reassignmentReceipt ? createHash("sha256").update(JSON.stringify(Object.entries(fields).sort(([a], [b]) => a.localeCompare(b)))).digest("hex") : undefined
@@ -2045,14 +2063,22 @@ export class TaskRepository {
         }
         const iterator = steps()
         let step = iterator.next()
-        while (!step.done) step = iterator.next(await tx.batch(step.value))
+        while (!step.done) {
+          signal?.throwIfAborted()
+          const batch = await tx.batch(step.value)
+          signal?.throwIfAborted()
+          step = iterator.next(batch)
+        }
         const completion = step.value
         if (completing && completion.results[writeIndex]?.rows[0] && !isDoneStatus(String(original.status))) {
+          signal?.throwIfAborted()
           completion.recurrence = await this.createRecurrenceSuccessor(tx, id, new Date().toISOString().slice(0, 10), recurrenceAssignment)
+          signal?.throwIfAborted()
         }
         results = completion.results
         recurrence = completion.recurrence
         const written = completion.results[writeIndex]?.rows[0]
+        signal?.throwIfAborted()
         if (written && activity) {
           const actor = this.scope.principal.kind === "agent" ? stripHtml(activity.provenance?.tokenName ?? "Agent").trim().slice(0, 80) || "Agent" : "user"
           const actorType = this.scope.principal.kind === "agent" ? "agent" : this.scope.principal.kind === "service" ? "system" : "user"
@@ -2061,6 +2087,7 @@ export class TaskRepository {
           if (changed.length) await tx.execute(sql`INSERT INTO task_activity_log(task_id, field, old_value, new_value, actor, actor_type, correlation_id, created_at)
             VALUES ${joinSql(changed.map(([field, value]) => sql`(${id}, ${field}, ${original[field] == null ? null : String(original[field])}, ${value == null ? "" : String(value)}, ${actor}, ${actorType}, ${activityRequestId ?? reassignmentReceipt?.requestId ?? null}, ${Number(written.updated_at)})`))}`)
         }
+        signal?.throwIfAborted()
         if (written && reassignmentReceipt && assignmentEventId) {
           const task = { ...projectPublicTaskFields(written), id, board_id: this.scope.boardId, ticket_key: written.ticket_ref }
           const bindingRefs = ((await readWorkDestinations(tx))?.bindings ?? []).filter(binding => binding.enabled && binding.destination.boardId === this.scope.boardId &&
@@ -2073,6 +2100,7 @@ export class TaskRepository {
             VALUES (${assignmentEventId}, ${id}, 'task.reassignment', ${reassignmentReceipt.requestId}, ${reassignmentReceipt.key}, 'completed', ${JSON.stringify(payload)}, ${Date.now()}, ${Number(written.updated_at)})
             ON CONFLICT(idempotency_key,integration) DO UPDATE SET status='completed', response_payload=excluded.response_payload, updated_at=excluded.updated_at`)
         }
+        signal?.throwIfAborted()
         if (!existingWriter) await tx.commit()
       } finally { if (!existingWriter) tx.close() }
     }

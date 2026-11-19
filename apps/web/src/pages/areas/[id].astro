@@ -1,6 +1,6 @@
 ---
 import BoardWorkspaceNav from "../../components/boards/BoardWorkspaceNav.astro"
-import { scopeBoardAccess } from "@domains/tasks/board-scope"
+import { scopeBoardAccess, type BoardScope } from "@domains/tasks/board-scope"
 import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
 
 import { newOrganizationLabel, organizationLabelsFor, organizationLocale } from "@lib/organization-labels"
@@ -25,28 +25,32 @@ import { TemplateRepository, type RoutineTemplateRow } from "@domains/tasks/pers
 import GoalsTab from "../../components/progress/GoalsTab.astro"
 import { boardWorkspaceHref } from "@lib/board-workspace"
 import { isFeatureEnabled } from "../../lib/feature-flags"
-const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId, record: { resource: "area", id: Astro.props.workspaceAreaId ?? Astro.params.id! } })
-if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
-const workScope = workScopeResult.scope
-
-
 const workspaceAreaId = Astro.props.workspaceAreaId as string | undefined
-const areaId = workspaceAreaId ?? Astro.params.id
-const areasPath = `${Astro.locals.ingressPath || ""}${workspaceAreaId ? boardWorkspaceHref(workScope.boardId, { groups: true }) : "/planning#spaces"}`
-if (!areaId) {
+const admittedScope = Astro.props.workScope as BoardScope | undefined
+const workScopeResult = admittedScope ? { ok: true as const, scope: admittedScope }
+  : await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId, record: { resource: "area", id: workspaceAreaId ?? Astro.params.id! } })
+if (!workScopeResult.ok && !workspaceAreaId) return boardScopeResponse(workScopeResult.errorCode)
+const workScope = workScopeResult.ok ? workScopeResult.scope : null
+let unavailable = !workScope
+
+
+const areaId = workspaceAreaId ?? Astro.params.id ?? ""
+const areasPath = `${Astro.locals.ingressPath || ""}${workspaceAreaId ? boardWorkspaceHref((workScope?.boardId ?? ""), { groups: true }) : "/planning#spaces"}`
+if (!areaId && !workspaceAreaId) {
   return Astro.redirect(areasPath)
 }
 
-let area: AreaRow | null
+let area: AreaRow | null = null
 let goalCount = 0
 let householdGoalCount = 0
 let sharedGoals: SharedGoalProgress[] = []
-let projects: ProjectRow[]
+let projects: ProjectRow[] = []
 let routines: RoutineTemplateRow[] = []
 let routinesEnabled = false
-let taskCountByProject: Map<string, { total: number; completed: number }>
+let taskCountByProject: Map<string, { total: number; completed: number }> = new Map()
 
 try {
+  if (!workScope || !areaId) throw new Error("Work unavailable")
   await ensureSchema()
   const client = getPersistenceClient()
   const repo = new HierarchyRepository(client, workScope)
@@ -54,7 +58,8 @@ try {
 
   area = await repo.findAreaById(areaId)
   if (!area) {
-    return Astro.redirect(areasPath)
+    if (!workspaceAreaId) return Astro.redirect(areasPath)
+    throw new Error("Work unavailable")
   }
 
   const [areaGoals, areaProjects, receivedGoals] = await Promise.all([
@@ -71,22 +76,23 @@ try {
   taskCountByProject = projects.length ? await taskRepo.getProjectTaskCounts() : new Map()
 } catch (error) {
   logApiError("areas", "Could not load Area details", error)
-  return new Response("Could not load this Area. Try again or check the Meitheal app log.", {
+  unavailable = true
+  if (!workspaceAreaId) return new Response("Could not load this Area. Try again or check the Meitheal app log.", {
     status: 503,
     headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "private, no-store" },
   })
 }
 
-const { name: areaName, icon: areaIcon, color: areaColor } = area
+const { name: areaName, icon: areaIcon, color: areaColor } = area ?? { name: "", icon: "", color: "" }
 const formColor = /^#[0-9a-fA-F]{3}$/.test(areaColor)
   ? `#${[...areaColor.slice(1)].map(channel => channel.repeat(2)).join("")}`
   : areaColor
 
-const routinesPath = `/habits?board_id=${encodeURIComponent(workScope.boardId)}&area_id=${encodeURIComponent(areaId)}`
+const routinesPath = `/habits?board_id=${encodeURIComponent((workScope?.boardId ?? ""))}&area_id=${encodeURIComponent(areaId)}`
 
 const settingsTab = workspaceAreaId ? "group-settings" : "settings"
 const organization = await organizationLabelsFor(Astro)
-const tasksHref = boardWorkspaceHref(workScope.boardId, { area: areaId }) + "#kanban"
+const tasksHref = boardWorkspaceHref((workScope?.boardId ?? ""), { area: areaId }) + "#kanban"
 const tabs = [
   { id: "overview", label: "Overview", icon: "📊" },
   ...(available("goals") ? [{ id: "goals", label: organization("goal", true), icon: "🎯" }] : []),
@@ -96,18 +102,18 @@ const tabs = [
 ];
 ---
 
-{!workspaceAreaId ? <LegacyBoardBridge href={boardWorkspaceHref(workScope.boardId, { area: areaId })} kind="group"
+{(!workScope || !area || unavailable) ? <p role="status">This Area is unavailable. Reload to try again.</p> : !workspaceAreaId ? <LegacyBoardBridge href={boardWorkspaceHref((workScope?.boardId ?? ""), { area: areaId })} kind="group"
   fragments={{ overview: "overview", tasks: "tasks", goals: "goals", projects: "projects", routines: "routines", settings: "group-settings" }} /> : <Layout title={`Meitheal — ${areaName}`}>
   <span slot="page-title">
     <span style={`color: ${areaColor}; margin-right: 6px;`}>{areaIcon}</span>
     {areaName}
   </span>
   <div slot="actions" class="flex gap-2">
-    <a href={workspaceAreaId ? boardWorkspaceHref(workScope.boardId, { groups: true }) : "/planning#spaces"} class="btn btn-ghost" id="back-to-areas">← {organization("group", true, "Areas")}</a>
+    <a href={workspaceAreaId ? boardWorkspaceHref((workScope?.boardId ?? ""), { groups: true }) : "/planning#spaces"} class="btn btn-ghost" id="back-to-areas">← {organization("group", true, "Areas")}</a>
   </div>
 
   {/* Sub-menu tab bar */}
-  <BoardWorkspaceNav boardId={workScope.boardId} boardName={scopeBoardAccess(workScope).name} area={{ id: area.id, name: area.name }} active="planning" />
+  <BoardWorkspaceNav boardId={(workScope?.boardId ?? "")} boardName={scopeBoardAccess(workScope).name} area={{ id: area.id, name: area.name }} active="planning" />
   <nav class="area-tabs" aria-label={`${organization("group")} sections`} data-household-tasks-href={tasksHref}>
     {workspaceAreaId && <a href={tasksHref} class="area-tab" data-astro-reload>
       <span class="tab-icon" aria-hidden="true">✅</span>
@@ -151,7 +157,7 @@ const tabs = [
   </section>
 
   {available("goals") && <section id="section-goals" class="area-section" data-section="goals" role="tabpanel" aria-labelledby="area-tab-goals" tabindex="0">
-    <GoalsTab {areaId} {sharedGoals} />
+    <GoalsTab boardId={workScope.boardId} {areaId} {sharedGoals} />
   </section>}
 
   {routinesEnabled && (
@@ -186,7 +192,7 @@ const tabs = [
           const projColor = String(proj.color ?? "#146C4E");
           const projIcon = String(proj.icon ?? "📋");
           return (
-            <a href={workspaceAreaId ? boardWorkspaceHref(workScope.boardId, { project: String(proj.id), fromArea: areaId }) : `/projects/${String(proj.id)}`} class="project-card" style={`--project-accent: ${projColor};`}>
+            <a href={workspaceAreaId ? boardWorkspaceHref((workScope?.boardId ?? ""), { project: String(proj.id), fromArea: areaId }) : `/projects/${String(proj.id)}`} class="project-card" style={`--project-accent: ${projColor};`}>
               <div class="project-card-header">
                 <span class="project-card-icon">{projIcon}</span>
                 <h4 class="project-card-name">{String(proj.title)}</h4>

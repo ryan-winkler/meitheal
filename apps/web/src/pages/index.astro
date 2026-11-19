@@ -391,7 +391,7 @@ function relativeTime(dueDate: string): string {
             >
               <option value="all">All users</option>
             </select>
-            <a href="/kanban" class="btn btn-ghost" id="kanban-link" style="font-size: 12px;">
+            <a href={contextHref("/tasks")} class="btn btn-ghost" id="kanban-link" style="font-size: 12px;">
               Kanban →
             </a>
           </div>
@@ -573,7 +573,7 @@ function relativeTime(dueDate: string): string {
       <p class="empty-subtitle">Add widgets to see tasks, capture work, and track progress here.</p>
       <div class="empty-action">
         <button type="button" class="btn btn-primary" data-dashboard-edit>Add widgets</button>
-        <a href="/tasks" class="btn btn-ghost">Open Tasks</a>
+        <a href={contextHref("/tasks")} class="btn btn-ghost">Open Tasks</a>
       </div>
     </div>
   </div>

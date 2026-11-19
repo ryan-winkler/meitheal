@@ -114,7 +114,7 @@ for (const encoding of ["legacy", "scoped"] as const) {
       }
       expect(Object.keys(publicTask).some(key => key.startsWith("public_"))).toBe(false)
       // Retirement does not erase the old Area audience or historical references.
-      await changeBoardGrants(db, async tx => {
+      await changeBoardGrants(db, principal, async tx => {
         await tx.execute({ sql: "INSERT INTO organization_access_policies(scope,scope_id,board_id,audience,selected_users,revision) VALUES ('group',?,?,'nobody','[]',1)", args: [areaId, boardId] })
         return { next: true }
       })
@@ -206,7 +206,7 @@ test("known-current25 foreign planning references stay physical and never become
     if (!principal) throw new Error("Actual current operator required")
     // The synthetic current operator is explicitly enrolled in this test's Work
     // Board before exercising the actual HTTP projection. No scope is fabricated.
-    await changeBoardGrants(db, async tx => {
+    await changeBoardGrants(db, principal, async tx => {
       await tx.execute({ sql: "INSERT INTO board_access_grants(board_id,principal_type,principal_id,role) VALUES('old-work',?,?,'owner')", args: [principal.kind, principal.id] })
       return { next: true }
     })
@@ -275,7 +275,7 @@ for (const encoding of ["legacy", "scoped"] as const) {
       expect(await hierarchy.createGoal({ id: hiddenGoal, title: "SECRET GOAL TITLE", description: "SECRET GOAL DESCRIPTION", area_id: areaId, status: "active", metric_type: "currency", metric_target: 78231, metric_current: 3456 })).toBe(true)
       expect(await hierarchy.createGoal({ id: visibleGoal, title: "Visible Goal", area_id: visibleArea, status: "active" })).toBe(true)
       expect(await hierarchy.createProject({ id: visibleProject, title: "Visible association cannot bypass Goal privacy", area_id: visibleArea, goal_id: hiddenGoal })).toBe(true)
-      await changeBoardGrants(db, async tx => {
+      await changeBoardGrants(db, principal, async tx => {
         await tx.execute({ sql: "INSERT INTO organization_access_policies(scope,scope_id,board_id,audience,selected_users,revision) VALUES ('group',?,?,'selected',?,1)", args: [areaId, boardId, JSON.stringify(["included"])] })
         return { next: true }
       })
@@ -292,7 +292,7 @@ for (const encoding of ["legacy", "scoped"] as const) {
         expect(JSON.stringify(planning).includes("SECRET GOAL TITLE")).toBe(allowed)
       }
       for (const included of [false, true]) {
-        if (included) await changeBoardGrants(db, async tx => {
+        if (included) await changeBoardGrants(db, principal, async tx => {
           await tx.execute({ sql: "UPDATE organization_access_policies SET audience='everyone',selected_users='[]',revision=revision+1 WHERE scope='group' AND scope_id=? AND board_id=?", args: [areaId, boardId] })
           return { next: true }
         })

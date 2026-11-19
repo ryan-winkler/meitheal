@@ -2,6 +2,7 @@ import { createHash } from "node:crypto"
 import { ownedPlanning } from "./persistence/board-storage"
 import { sql } from "./persistence/sql-fragment"
 import { parseWorkDestinations } from "./integration-destinations"
+import { featureAudienceAllowed } from "./board-feature-policy"
 import type { Client } from "@libsql/client"
 import { boardGrantStillCurrent, currentBoardGrantRevision } from "./persistence/board-grant-fence"
 import {
@@ -33,6 +34,7 @@ const resources: WorkResource[] = [
 ]
 const actions: WorkAction[] = [
   "read",
+  "search",
   "create",
   "edit",
   "propose",
@@ -79,6 +81,8 @@ function tokenAllows(scopes: readonly string[], operation: WorkOperation): boole
   // Existing token vocabulary intentionally does not expose arbitrary planning,
   // policy or Pillar commands just because a token has a Board grant.
   if (operation.resource !== "task") return false
+  if (operation.action === "search")
+    return scopes.includes("search:read") || scopes.includes("tasks:read")
   if (operation.action === "propose") return scopes.includes("tasks:propose")
   const required =
     operation.action === "read"
@@ -108,21 +112,10 @@ async function featureAllowed(
   db: Pick<Client, "execute">,
   feature: string
 ): Promise<boolean> {
-  const { rows: policies } = await db.execute({
-    sql: "SELECT audience, selected_users FROM organization_access_policies WHERE scope = 'feature' AND scope_id = ? AND board_id = ''",
-    args: [feature]
-  })
-  if (policies.length) return policies.every((row) => audienceAllows(row, principal))
-  if (feature === "home_assistant_area") return false
-  const legacyKeys: Record<string, string> = { routines: "habits", achievements: "gamification" }
-  const key = legacyKeys[feature] ?? feature
   const {
-    rows: [setting]
-  } = await db.execute({
-    sql: "SELECT value FROM settings WHERE key = ?",
-    args: [`feature_${key}`]
-  })
-  return setting?.value !== "false" && setting?.value !== '"false"'
+    rows: [row]
+  } = await db.execute(sql`SELECT ${featureAudienceAllowed(principal, feature)} AS allowed`)
+  return row?.allowed === 1
 }
 
 export async function validateBoardFeature(
@@ -395,10 +388,11 @@ export class BoardAccessService {
       )
     )
     const allowed = (intent: WorkOperation) => {
+      if (intent.action === "search" && intent.resource !== "task") return false
       if (
         principal.kind === "agent" &&
         intent.resource === "task" &&
-        intent.action !== "read" &&
+        !["read", "search"].includes(intent.action) &&
         assignedTo === null
       )
         return false
@@ -408,7 +402,7 @@ export class BoardAccessService {
         !(intent.resource === "board" && ["read", "restore"].includes(intent.action))
       )
         return false
-      if (intent.action !== "read" && role === "viewer") return false
+      if (!["read", "search"].includes(intent.action) && role === "viewer") return false
       if (
         (management.has(intent.action) ||
           (intent.resource === "board" && intent.action !== "read")) &&
@@ -429,7 +423,12 @@ export class BoardAccessService {
         return false
       if (
         principal.kind === "agent" &&
-        (!tokenAllows(tokenScopes!, intent) || !includesOperation(limits?.operations, intent))
+        (!tokenAllows(tokenScopes!, intent) ||
+          !(
+            includesOperation(limits?.operations, intent) ||
+            (intent.action === "search" &&
+              includesOperation(limits?.operations, { resource: "task", action: "read" }))
+          ))
       )
         return false
       if (

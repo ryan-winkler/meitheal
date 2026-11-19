@@ -350,11 +350,12 @@ function clearToastTimers() {
 // ── PATCH Helper ───────────────────────────────────────────────────────────
 
 let timelineSignal: AbortSignal | undefined
+let timelineWithheld = false
 const pendingTimelineEdits = new Map<string, { task: TimelineTask; fields: Record<string, unknown>; context: TaskApiContext }>()
 
 function renderPendingTimelineEdits() {
   document.getElementById("timeline-pending-edits")?.remove()
-  if (!pendingTimelineEdits.size) return
+  if (!pendingTimelineEdits.size || timelineWithheld) return
   const panel = document.createElement("section")
   panel.id = "timeline-pending-edits"
   panel.className = "alert alert-warning"
@@ -2844,10 +2845,26 @@ export function initTimelineController(signal: AbortSignal) {
   }
 
   timelineSignal = signal
+  timelineWithheld = false
   const clearPendingEdits = () => { pendingTimelineEdits.clear(); document.getElementById("timeline-pending-edits")?.remove() }
   clearPendingEdits()
   signal.addEventListener("abort", clearPendingEdits, { once: true })
-  document.addEventListener("meitheal:board-hidden", clearPendingEdits, { signal })
+  // A focus check hides private content before it knows whether authority changed.
+  // Keep original actor/Board-bound proposals until verification proves otherwise.
+  document.addEventListener("meitheal:board-hidden", () => { timelineWithheld = true; document.getElementById("timeline-pending-edits")?.remove() }, { signal })
+  document.addEventListener("meitheal:board-revoked", event => {
+    const boardId = (event as CustomEvent<{ boardId?: string }>).detail?.boardId
+    if (!boardId || boardId === currentTaskApiContext()?.boardId) clearPendingEdits()
+  }, { signal })
+  document.addEventListener("meitheal:board-verified", () => {
+    timelineWithheld = false
+    const current = currentTaskApiContext()
+    for (const [id, entry] of pendingTimelineEdits) {
+      if (!current || current.boardId !== entry.context.boardId || current.actorKey !== entry.context.actorKey) pendingTimelineEdits.delete(id)
+      else entry.context = current
+    }
+    renderPendingTimelineEdits()
+  }, { signal })
   window.addEventListener("pagehide", clearPendingEdits, { signal })
   container.dataset.timelineReady = "true"
   const { dated: allBars, undated: allUndated } = mapTasks(tasks)

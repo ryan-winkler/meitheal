@@ -174,7 +174,9 @@ const server = http.createServer((req, res) => {
     }
     // Keep scoped aliases inside ingress and let the normal middleware authorize them.
     let routedPath = normalizedPath
-    if (search && canonical && boardRouteSelection(canonical, new URLSearchParams(search))) {
+    const boardSelectors = new URLSearchParams(search)
+    if (search && canonical && (boardSelectors.has("board") || boardSelectors.has("board_id") ||
+        boardRouteSelection(canonical, boardSelectors))) {
       const parsedPath = new URL("http://localhost" + normalizedPath).pathname
       if (parsedPath.endsWith("/")) routedPath = parsedPath.slice(0, -1)
     }

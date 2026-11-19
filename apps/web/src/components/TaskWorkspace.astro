@@ -1,7 +1,6 @@
 ---
 import { boardScopeAuthorityKey } from "@lib/board-view"
-import { boardScopeResponse, resolveBoardPageScope } from "@lib/board-http"
-import { scopePermits } from "@domains/tasks/board-scope"
+import { scopePermits, type BoardScope } from "@domains/tasks/board-scope"
 import { boardSessionProof } from "@lib/named-board-request"
 import { boardWorkspaceHref } from "@lib/board-workspace"
 import TaskRefreshShell from "./tasks/TaskRefreshShell.astro"
@@ -61,10 +60,8 @@ const {
 // i18n: resolve locale from cookie
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
-const explicitBoardId = Astro.props.boardId ?? Astro.props.namedBoardId
-const resolvedScope = await resolveBoardPageScope(Astro, explicitBoardId ? { boardId: explicitBoardId } : {})
-if (!resolvedScope.ok) return boardScopeResponse(resolvedScope.errorCode)
-const scope = resolvedScope.scope
+interface Props { workScope: BoardScope; boardId?: string; namedBoardId?: string }
+const scope = Astro.props.workScope
 const boardId = scope.boardId
 const session = boardSessionProof(scope.principal.id)
 const authorityKey = boardScopeAuthorityKey(scope)

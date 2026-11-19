@@ -296,7 +296,7 @@ test("composite publication and writer rechecks reject epoch changes and token r
     args: [tokenId]
   })
   const current = await nativeScope()
-  await changeBoardGrants(getPersistenceClient(), async (tx) => {
+  await changeBoardGrants(getPersistenceClient(), parent(), async (tx) => {
     await tx.execute("UPDATE board_permissions SET deny_completion=1 WHERE board_id='household'")
     return { next: true }
   })
@@ -308,7 +308,7 @@ test("composite publication and writer rechecks reject epoch changes and token r
 
 test("selected human audiences never widen primary-agent task or feature policies", async () => {
   const work = await nativeScope()
-  await changeBoardGrants(getPersistenceClient(), async (tx) => {
+  await changeBoardGrants(getPersistenceClient(), parent(), async (tx) => {
     await tx.execute({
       sql: "INSERT INTO organization_access_policies(scope,scope_id,board_id,audience,selected_users,revision) VALUES ('feature','routines','','selected',?,1)",
       args: [JSON.stringify(["child"])]
@@ -321,7 +321,7 @@ test("selected human audiences never widen primary-agent task or feature policie
     name: "Selected Area"
   })
   const task = await createTask(await ownerScope(), { area_id: areaId })
-  await changeBoardGrants(getPersistenceClient(), async (tx) => {
+  await changeBoardGrants(getPersistenceClient(), parent(), async (tx) => {
     await tx.execute({
       sql: "INSERT INTO organization_access_policies(scope,scope_id,board_id,audience,selected_users,revision) VALUES ('group',?,'household','selected',?,1)",
       args: [areaId, JSON.stringify(["child"])]
@@ -344,7 +344,7 @@ test("selected human audiences never widen primary-agent task or feature policie
   expect(await validateBoardScope(work, getPersistenceClient(), operation)).toMatchObject({
     ok: false
   })
-  await changeBoardGrants(getPersistenceClient(), async (tx) => {
+  await changeBoardGrants(getPersistenceClient(), parent(), async (tx) => {
     await tx.execute({
       sql: "INSERT INTO organization_access_policies(scope,scope_id,board_id,audience,selected_users,revision) VALUES ('household','','household','selected',?,1)",
       args: [JSON.stringify(["child"])]
@@ -420,7 +420,7 @@ test("native send-only intake intersects its human sender without exposing Board
   if (created.status !== "committed") throw new Error("Board fixture")
   const workId = created.result.id
   const intakeId = randomUUID()
-  await changeBoardGrants(getPersistenceClient(), async (tx) => {
+  await changeBoardGrants(getPersistenceClient(), parent(), async (tx) => {
     const {
       rows: [lane]
     } = await tx.execute({
@@ -445,7 +445,7 @@ test("native send-only intake intersects its human sender without exposing Board
   expect(
     await new BoardIntakeRepository(getPersistenceClient(), principal!).findDestinations(actor)
   ).toEqual([])
-  await changeBoardGrants(getPersistenceClient(), async (tx) => {
+  await changeBoardGrants(getPersistenceClient(), parent(), async (tx) => {
     await tx.execute({
       sql: "INSERT INTO board_intake_senders(intake_id,sender_kind,sender_id) VALUES(?,'ha_user','child')",
       args: [intakeId]
@@ -479,7 +479,7 @@ test("native send-only intake intersects its human sender without exposing Board
   const accepted = await repository.retry(actor, resumeId, [])
   expect(accepted).toMatchObject({ ok: true })
   if (accepted.ok) expect(Object.keys(accepted.value)).toEqual(["acknowledgement"])
-  await changeBoardGrants(getPersistenceClient(), async (tx) => {
+  await changeBoardGrants(getPersistenceClient(), parent(), async (tx) => {
     await tx.execute({ sql: "UPDATE board_intakes SET enabled=0 WHERE id=?", args: [intakeId] })
     return { next: true }
   })
@@ -495,7 +495,7 @@ test("native send-only intake intersects its human sender without exposing Board
   ])
   expect(await closed.retry(actor, resumeId, [])).toEqual(accepted)
   expect(await closed.issue(actor, intakeId)).toMatchObject({ ok: false })
-  await changeBoardGrants(getPersistenceClient(), async (tx) => {
+  await changeBoardGrants(getPersistenceClient(), parent(), async (tx) => {
     await tx.execute({
       sql: "DELETE FROM board_intake_senders WHERE intake_id=? AND sender_kind='ha_user' AND sender_id='child'",
       args: [intakeId]

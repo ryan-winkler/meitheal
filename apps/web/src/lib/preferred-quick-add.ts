@@ -1,9 +1,13 @@
+import { currentTaskApiContext, type TaskApiContext } from "./task-api"
+import { taskCapturePlacement } from "./task-capture-placement"
 import { quickAddPayload } from "./quick-add"
-import { taskApi, TaskApiError } from "./task-api-client"
+import { taskApi, TaskApiError, sameTaskApiContext } from "./task-api-client"
 import { closeTablerModal, openTablerModal } from "./tabler-modal"
 import { showToast } from "./toast"
 
-export async function openQuickAdd(trigger: HTMLElement | undefined, signal: AbortSignal): Promise<void> {
+export async function openQuickAdd(trigger: HTMLElement | undefined, signal: AbortSignal,
+  capture: { context: TaskApiContext | null; placement: ReturnType<typeof taskCapturePlacement> } = { context: currentTaskApiContext(), placement: taskCapturePlacement() }): Promise<void> {
+  if (!sameTaskApiContext(capture.context, currentTaskApiContext())) return
   const template = document.querySelector<HTMLTemplateElement>("#preferred-quick-add-template")
   const clone = template?.content.firstElementChild?.cloneNode(true)
   if (!(clone instanceof HTMLElement) || signal.aborted || document.getElementById("workspace-quick-add")) return
@@ -16,7 +20,6 @@ export async function openQuickAdd(trigger: HTMLElement | undefined, signal: Abo
   const full = clone.querySelector<HTMLButtonElement>("[data-quick-add-full]")!
   const controller = new AbortController()
   const active = AbortSignal.any([signal, controller.signal])
-  const areaId = window.__activeArea
   const remove = () => {
     controller.abort()
     clone.remove()
@@ -41,8 +44,8 @@ export async function openQuickAdd(trigger: HTMLElement | undefined, signal: Abo
     status.hidden = false
     const { payload } = quickAddPayload(text)
     try {
-      await taskApi.createTask({ ...payload, area_id: !areaId || areaId === "all" ? "default" : areaId },
-        AbortSignal.any([active, AbortSignal.timeout(10_000)]))
+      await taskApi.createTask({ ...payload, area_id: capture.placement?.areaId ?? null, project_id: capture.placement?.projectId ?? null },
+        AbortSignal.any([active, AbortSignal.timeout(10_000)]), capture.context!)
       if (signal.aborted) return
       status.hidden = true
       document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "quick-add" } }))
@@ -59,6 +62,11 @@ export async function openQuickAdd(trigger: HTMLElement | undefined, signal: Abo
     }
   }, { signal: active })
   full.addEventListener("click", () => {
+    if (!sameTaskApiContext(capture.context, currentTaskApiContext())) {
+      error.textContent = error.dataset.uncertain ?? "The selected Board changed. Your input is kept."
+      error.hidden = false
+      return
+    }
     const draft = input.value
     closeTablerModal(modal)
     window.openNewTaskModal?.()

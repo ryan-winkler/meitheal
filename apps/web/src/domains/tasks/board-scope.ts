@@ -12,6 +12,7 @@ export type WorkResource =
   | "label"
 export type WorkAction =
   | "read"
+  | "search"
   | "create"
   | "edit"
   | "propose"

@@ -139,7 +139,7 @@ const TASK_VIEW_COLUMNS = `
   id, title, description, status, priority, due_date, labels,
   framework_payload, calendar_sync_state, area_id, project_id, public_area_id, public_project_id, public_goal_id, custom_fields,
   start_date, end_date, progress, color, is_favorite, task_type, task_kind,
-  parent_id, ticket_number, ticket_ref AS ticket_key, assigned_to, checklists, created_at, updated_at, deferred_at,
+  parent_id, public_parent_id, ticket_number, ticket_ref AS ticket_key, assigned_to, checklists, created_at, updated_at, deferred_at,
   urgency, importance, eisenhower_override,
   effort_minutes, effort_type, blocked_by
 `;
@@ -193,7 +193,7 @@ export async function getTasksForView(options: TaskViewOptions = {}, scope: Boar
         status, priority, due_date, labels,
         framework_payload, calendar_sync_state, area_id, project_id, public_area_id, public_project_id, public_goal_id, custom_fields,
         start_date, end_date, progress, color, is_favorite, task_type, task_kind,
-        parent_id, ticket_number, ticket_ref AS ticket_key, assigned_to,
+        parent_id, public_parent_id, ticket_number, ticket_ref AS ticket_key, assigned_to,
         NULL AS checklists,
         CASE WHEN json_valid(checklists) THEN json_array_length(checklists) ELSE 0 END AS checklist_total,
         (SELECT COUNT(*) FROM json_each(CASE WHEN json_valid(tasks.checklists) THEN tasks.checklists ELSE '[]' END) WHERE json_extract(value, '$.done') = 1) AS checklist_done,
@@ -209,7 +209,7 @@ export async function getTasksForView(options: TaskViewOptions = {}, scope: Boar
         status, priority, due_date, labels,
         framework_payload, calendar_sync_state, area_id, project_id, public_area_id, public_project_id, public_goal_id, custom_fields,
         start_date, end_date, progress, color, is_favorite, task_type, task_kind,
-        parent_id, ticket_number, ticket_ref AS ticket_key, assigned_to, checklists, created_at, updated_at, deferred_at,
+        parent_id, public_parent_id, ticket_number, ticket_ref AS ticket_key, assigned_to, checklists, created_at, updated_at, deferred_at,
         urgency, importance, eisenhower_override,
         effort_minutes, effort_type, blocked_by
       `;
@@ -232,7 +232,7 @@ export async function getTasksForView(options: TaskViewOptions = {}, scope: Boar
       selectArgs.push(excludeCompletedBeforeMs);
     }
     if (typeof areaId === "string" && areaId.length > 0) {
-      whereClauses.push("area_id = ?");
+      whereClauses.push("public_area_id = ?");
       selectArgs.push(areaId);
     }
     if (typeof projectId === "string" && projectId.length > 0) {
@@ -355,7 +355,7 @@ function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "
     is_favorite: Boolean(row.is_favorite),
     task_type: String(row.task_type ?? "task"),
     task_kind: row.task_kind ? String(row.task_kind) : null,
-    parent_id: row.parent_id ? String(row.parent_id) : null,
+    parent_id: typeof publicTask.parent_id === "string" ? publicTask.parent_id : null,
     ticket_key: typeof row.ticket_key === "string" ? row.ticket_key : null,
     ticket_number: row.ticket_number ? Number(row.ticket_number) : null,
     assigned_to: row.assigned_to ? String(row.assigned_to) : null,

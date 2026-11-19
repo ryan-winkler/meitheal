@@ -185,7 +185,7 @@ export async function saveWorkIntegrationSettings(
     JSON.stringify([...entries.map((entry) => entry.key)].sort()) !== JSON.stringify(proof.keys)
   )
     return false
-  const result = await changeBoardGrants(db, async (tx) => {
+  const result = await changeBoardGrants(db, principal, async (tx) => {
     if (!(await validateWorkIntegrationSettingsApproval(tx, admitted))) return { unchanged: false }
     const current = await readWorkDestinations(tx)
     if (!current) return { unchanged: false }
@@ -390,7 +390,7 @@ export async function saveWorkBinding(
     if (!scope.ok) return { ok: false }
     owners.push(scope.scope)
   }
-  const result = await changeBoardGrants(db, async (tx) => {
+  const result = await changeBoardGrants(db, principal, async (tx) => {
     if ((await readWorkDestinations(tx))?.revision !== expectedRevision) return { unchanged: false }
     for (const scope of owners)
       if (!(await validateBoardScope(scope, tx, { resource: "board", action: "manage" })).ok)

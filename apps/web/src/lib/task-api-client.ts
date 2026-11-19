@@ -62,6 +62,26 @@ export async function saveVersionedTask(id: string, fields: Record<string, unkno
   }
 }
 
+/** Browser deletion uses the same loaded-version and original-context preconditions as edits. */
+export async function deleteVersionedTask(id: string, version: number | null,
+  context = currentTaskApiContext(), signal?: AbortSignal): Promise<{ ok: true } | Exclude<VersionedTaskSave, { ok: true }>> {
+  if (version === null || !Number.isSafeInteger(version) || version < 0 || !sameTaskApiContext(context, currentTaskApiContext())) {
+    return { ok: false, status: 0, errorCode: "unavailable" }
+  }
+  let status = 0
+  try {
+    const response = await safeFetch(`/api/tasks/${encodeURIComponent(id)}`, {
+      method: "DELETE", headers: taskApiHeaders(context!, { "content-type": "application/json" }),
+      body: JSON.stringify({ version }), ...(signal ? { signal } : {}),
+    })
+    status = response.status
+    if (!sameTaskApiContext(context, currentTaskApiContext()) || signal?.aborted) return { ok: false, status, errorCode: "unavailable" }
+    return response.ok ? { ok: true } : { ok: false, status, errorCode: status === 409 ? "conflict" : "unavailable" }
+  } catch {
+    return { ok: false, status, errorCode: "unconfirmed" }
+  }
+}
+
 const pendingStatusWrites = new Set<string>()
 
 export function lockTaskStatusWrite(id: string): (() => void) | null {
@@ -109,7 +129,7 @@ export interface TaskCreatePayload {
   status?: string
   priority?: number
   due_date?: string | null
-  area_id?: string
+  area_id?: string | null
   project_id?: string | null
   task_type?: string
   assigned_to?: string | null
@@ -242,14 +262,17 @@ export const taskApi = {
   },
 
   /** POST /api/tasks — create a task */
-  async createTask(payload: TaskCreatePayload, signal?: AbortSignal): Promise<any> {
+  async createTask(payload: TaskCreatePayload, signal?: AbortSignal, context?: TaskApiContext): Promise<any> {
+    if (context && !sameTaskApiContext(context, currentTaskApiContext())) throw new Error("The selected Board changed. Your input is kept.")
     const res = await safeFetch("/api/tasks", {
       method: "POST",
-      headers: JSON_HEADERS,
+      headers: context ? taskApiHeaders(context, JSON_HEADERS) : JSON_HEADERS,
       body: JSON.stringify(payload),
       ...(signal ? { signal } : {}),
     })
-    return parseResponse<any>(res)
+    const task = await parseResponse<any>(res)
+    if (context && !sameTaskApiContext(context, currentTaskApiContext())) throw new Error("The save could not be confirmed in the original Board. Your input is kept.")
+    return task
   },
 
   /** POST /api/tasks/create — alternative create endpoint */

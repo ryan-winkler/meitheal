@@ -42,7 +42,7 @@ export function boardOperationClient(client: Client, scope: BoardScope, operatio
   const intents = [...(prior?.intents ?? []), ...(writerIntents ? [writerIntents] : [])]
   const checks = [...(prior?.checks ?? []), ...(writerCheck ? [writerCheck] : [])]
   const db = guardClientContinuity(source)
-  const write = operations.some(item => item.action !== "read")
+  const write = operations.some(item => item.action !== "read" && item.action !== "search")
   const targets = [...new Set([...(prior?.targets ?? []), ...taskIds])]
   const check = async (reader: Pick<Client, "execute">, requestedOperations: readonly WorkOperation[] = operations) => {
     for (const requested of requestedOperations) {

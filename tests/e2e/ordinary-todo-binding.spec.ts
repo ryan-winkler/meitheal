@@ -55,7 +55,7 @@ async function installBinding(boardId: string, options: { complete?: boolean, re
   const binding: WorkBinding = { id: randomUUID(), generation: 1, enabled: true, integration: "todo", sourceId: "todo.shared", purpose: "todo.sync", destination: { boardId },
     allowedOperations: [{ resource: "task", action: "read" }, ...(!options.readOnly ? [{ resource: "task", action: "create" }, { resource: "task", action: "edit" }] as const : []),
       ...(options.complete ? [{ resource: "task", action: "complete" }, { resource: "task", action: "reopen" }] as const : [])] }
-  const enrolled = await changeBoardGrants(db, async tx => {
+  const enrolled = await changeBoardGrants(db, owner, async tx => {
     await tx.execute({ sql: "INSERT INTO board_access_grants(board_id,principal_type,principal_id,role,authority_limits) VALUES (?,'service',?,'service',?)", args: [boardId, binding.id, JSON.stringify({ operations: binding.allowedOperations, purpose: binding.purpose })] })
     await tx.execute({ sql: "UPDATE settings SET value=? WHERE key='work-destinations'", args: [JSON.stringify({ ...configuration, revision: randomUUID(), bindings: [...configuration.bindings, binding] })] })
     return { next: true }
@@ -105,7 +105,7 @@ test("stale generation cannot create an external task or adopt another destinati
   const oldContext = await admitted(binding)
   const db = getPersistenceClient()
   const config = await readWorkDestinations(db)
-  const changed = await changeBoardGrants(db, async tx => {
+  const changed = await changeBoardGrants(db, owner, async tx => {
     await tx.execute({ sql: "UPDATE settings SET value=? WHERE key='work-destinations'", args: [JSON.stringify({ ...config, revision: randomUUID(), bindings: config!.bindings.map(value => value.id === binding.id ? { ...value, generation: 2 } : value) })] })
     return { next: true }
   })
@@ -232,7 +232,7 @@ test("Todo registration cannot replace current origin management with a wider se
   if (!manager.ok) throw new Error("Actual manager proof required")
   const resolved = await resolveIntegrationScope(db, binding.id, binding.generation, { resource: "task", action: "read" }, manager.scope, { resource: "board", action: "manage" })
   if (!resolved.ok) throw new Error(resolved.errorCode)
-  const changed = await changeBoardGrants(db, async tx => {
+  const changed = await changeBoardGrants(db, owner, async tx => {
     await tx.execute({ sql: "UPDATE board_access_grants SET role='viewer' WHERE board_id=? AND principal_type=? AND principal_id=?", args: [workBoard, owner.kind, owner.id] })
     return { next: true }
   })

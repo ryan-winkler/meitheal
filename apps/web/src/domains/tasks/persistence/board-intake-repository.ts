@@ -237,6 +237,7 @@ export class BoardIntakeRepository {
     if (ownerId !== this.principal.id) return { status: "unchanged", result: null } as const
     return changeBoardGrants(
       this.db,
+      this.principal,
       async (tx, revision) => {
         if (!revision) return { unchanged: null }
         const owner = await selectNamedBoardAccess(tx, this.principal, revision, boardId)
@@ -269,6 +270,7 @@ export class BoardIntakeRepository {
     if (ownerId !== this.principal.id) return { status: "unchanged", result: false } as const
     return changeBoardGrants(
       this.db,
+      this.principal,
       async (tx, revision) => {
         if (!revision) return { unchanged: false }
         const owner = await selectNamedBoardAccess(tx, this.principal, revision, boardId)

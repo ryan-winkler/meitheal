@@ -101,6 +101,7 @@ test("example rename, directory, sidebar and lifecycle use the same Board polici
     // An old or independently changed deletion ceiling cannot strand durable work.
     await changeBoardGrants(
       db,
+      human("parent", true),
       async (tx) => {
         await tx.execute({
           sql: "UPDATE board_permissions SET deny_deletion=1 WHERE board_id=?",
@@ -146,6 +147,7 @@ test("copied principals/scopes fail and stale writer authority cannot be reused"
   ).rejects.toThrow("verified BoardScope")
   await changeBoardGrants(
     db,
+    human("parent", true),
     async (tx) => {
       await tx.execute(
         "UPDATE board_permissions SET deny_completion = 1 WHERE board_id = 'household'"
@@ -236,6 +238,7 @@ test("resource Nobody policies remain writer-time ceilings and capabilities refl
   await initialize()
   await changeBoardGrants(
     db,
+    human("parent", true),
     async (tx) => {
       await tx.execute({
         sql: `INSERT INTO organization_access_policies(scope,scope_id,board_id,audience,selected_users,revision)
@@ -282,6 +285,7 @@ test("send-only intake grants create alone and revoke without creating membershi
   const sender = human("sender")
   await changeBoardGrants(
     db,
+    human("parent", true),
     async (tx) => {
       const {
         rows: [lane]
@@ -322,6 +326,7 @@ test("send-only intake grants create alone and revoke without creating membershi
   ).toEqual([])
   await changeBoardGrants(
     db,
+    human("parent", true),
     async (tx) => {
       await tx.execute("UPDATE board_intakes SET enabled=0 WHERE id='intake'")
       return { next: true }

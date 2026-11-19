@@ -7,7 +7,7 @@
         import { containTabFocus } from "@lib/focus-trap"
         import { applyAppearancePreferences, bindAppearanceNavigation, readAppearancePreferences } from "@lib/appearance-preferences"
         import { safeIngressHref, syncIngressDestination } from "@lib/ingress-navigation"
-        import { bindWorkspaceEntry, DASHBOARD_PATH } from "@lib/workspace-entry"
+        import { bindWorkspaceEntry } from "@lib/workspace-entry"
         import { openWorkspaceQuickAdd } from "@lib/open-workspace-capture"
         import { hasPriorityOverlay, initShortcutModal } from "@lib/layout-shortcuts-controller"
         import { currentTaskApiContext } from "@lib/task-api"
@@ -122,13 +122,18 @@
             }
           }, { signal })
 
-          const taskDestination = (view?: TaskView) => {
+          const navigationContext = () => {
             const url = new URL(location.href)
             const ingress = window.__ingress_path || ""
             if (ingress && url.pathname.startsWith(ingress + "/")) url.pathname = url.pathname.slice(ingress.length)
-            const context = readBoardNavigationContext(url) ?? currentTaskApiContext()
+            const context = currentTaskApiContext()
+            const selected = readBoardNavigationContext(url)
+            return context ? { ...selected, boardId: context.boardId } : undefined
+          }
+          const taskDestination = (view?: TaskView) => {
+            const context = navigationContext()
             if (!context) return "/boards"
-            const tasks = new URL(boardNavigationLinks(context).tasks, url)
+            const tasks = new URL(boardNavigationLinks(context).tasks, location.href)
             if (view) {
               const selected = taskViewUrl(tasks, view, true)
               return selected.pathname + selected.search + selected.hash
@@ -144,19 +149,23 @@
 
           const SHORTCUT_NAV = {
             dashboard: () => {
-              syncIngressDestination(DASHBOARD_PATH)
-              window.location.assign(safeIngressHref(DASHBOARD_PATH))
+              const context = navigationContext()
+              const destination = context ? boardNavigationLinks(context).dashboard : "/boards"
+              syncIngressDestination(destination)
+              window.location.assign(safeIngressHref(destination))
             },
             tasks: () => openTasks(),
             kanban: () => openTasks("kanban"),
             table: () => openTasks("table"),
             today: () => {
-              const destination = currentTaskApiContext()?.boardId ? `/today?board_id=${encodeURIComponent(currentTaskApiContext()!.boardId)}` : "/boards"
+              const context = navigationContext()
+              const destination = context ? boardNavigationLinks(context).today : "/boards"
               syncIngressDestination(destination)
               window.location.assign(safeIngressHref(destination))
             },
             upcoming: () => {
-              const destination = currentTaskApiContext()?.boardId ? `/upcoming?board_id=${encodeURIComponent(currentTaskApiContext()!.boardId)}` : "/boards"
+              const context = navigationContext()
+              const destination = context ? boardNavigationLinks(context).upcoming : "/boards"
               syncIngressDestination(destination)
               window.location.assign(safeIngressHref(destination))
             },

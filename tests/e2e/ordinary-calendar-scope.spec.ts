@@ -152,7 +152,7 @@ async function bind(
     allowedOperations,
     purpose: "calendar.sync"
   }
-  await changeBoardGrants(db, async (tx) => {
+  await changeBoardGrants(db, parent(), async (tx) => {
     const {
       rows: [setting]
     } = await tx.execute("SELECT value FROM settings WHERE key='work-destinations'")
@@ -257,7 +257,7 @@ for (const encoding of ["legacy", "scoped"] as const) {
     expect((await repository.findAll({ limit: 500 })).tasks).toHaveLength(1)
     if (encoding === "scoped") expect(ha.firedEvents).toEqual([])
     const before = ha.serviceCalls.filter((call) => call.service === "get_events").length
-    await changeBoardGrants(db, async (tx) => {
+    await changeBoardGrants(db, parent(), async (tx) => {
       const {
         rows: [setting]
       } = await tx.execute("SELECT value FROM settings WHERE key='work-destinations'")
@@ -517,7 +517,7 @@ test("manual Calendar reconciliation cannot complete work through a child's serv
   ])
   const ownerWork = await scope(owner, id),
     item = (await new TaskRepository(db, ownerWork).findAll({ limit: 500 })).tasks[0]!
-  await changeBoardGrants(db, async (tx) => {
+  await changeBoardGrants(db, parent(), async (tx) => {
     await tx.execute({
       sql: "INSERT INTO board_access_grants(board_id,principal_type,principal_id,role,deny_completion) VALUES (?,'ha_user','child','member',1)",
       args: [id]

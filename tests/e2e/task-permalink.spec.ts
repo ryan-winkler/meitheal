@@ -5,12 +5,13 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, test, type Page } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { deferred } from "./_helpers"
 
 test("copies a stable task link and returns from a deleted task to the task view", async ({ page, request, baseURL }) => {
   test.skip(!process.env.E2E_BASE_URL, "Requires a disposable local Meitheal server")
   const origin = new URL(baseURL!).origin
-  const headers = { origin, "content-type": "application/json" }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin, "content-type": "application/json" })
   const title = "Task permalink round trip"
   const created = await request.post("/api/tasks", { headers, data: { title, status: "active" } })
   expect(created.status(), await created.text()).toBe(201)
@@ -22,7 +23,7 @@ test("copies a stable task link and returns from a deleted task to the task view
   await page.goto(taskPage)
   const card = page.getByRole("link", { name: /^Task: Task permalink round trip,/ })
     .and(page.locator(`[data-id="${id}"]`))
-  await expect(card).toHaveAttribute("href", `/tickets/${id}`)
+  await expect(card).toHaveAttribute("href", `/tickets/${id}?board_id=household`)
   await card.click()
   const detail = page.getByRole("dialog", { name: `Task detail: ${title}` })
   await detail.getByRole("button", { name: "Copy task link" }).click()
@@ -60,7 +61,8 @@ test("Table keyboard controls retain their actions beside the task detail shortc
   test.skip(!process.env.E2E_BASE_URL, "Requires a disposable local Meitheal server")
   const origin = new URL(baseURL!).origin
   const title = "Table keyboard task"
-  const created = await request.post("/api/tasks", { headers: { origin }, data: { title, status: "active" } })
+  const headers = await currentBoardWriteHeaders(request, "household", { origin })
+  const created = await request.post("/api/tasks", { headers, data: { title, status: "active" } })
   expect(created.status(), await created.text()).toBe(201)
   const { id } = await created.json()
 
@@ -97,7 +99,8 @@ test.describe(() => {
     test.skip(!process.env.E2E_BASE_URL, "Requires a disposable local Meitheal server")
     const origin = new URL(baseURL!).origin
     const title = "Task detail keyboard boundaries"
-    const created = await request.post("/api/tasks", { headers: { origin }, data: { title, status: "active" } })
+    const headers = await currentBoardWriteHeaders(request, "household", { origin })
+    const created = await request.post("/api/tasks", { headers, data: { title, status: "active" } })
     expect(created.status(), await created.text()).toBe(201)
     const { id } = await created.json()
     const detailResponse = deferred<void>()
@@ -148,7 +151,7 @@ test.describe(() => {
       await expect(card).toBeFocused()
     } finally {
       detailResponse.resolve()
-      await request.delete(`/api/tasks/${id}`, { headers: { origin } })
+      await request.delete(`/api/tasks/${id}`, { headers })
     }
   })
 })
@@ -156,7 +159,12 @@ test.describe(() => {
 test("a task link preserves simulated ingress and opens in another authorized context", async ({ browser }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built app and the ingress fixture")
   const work = await mkdtemp(join(tmpdir(), "meitheal-task-permalink-"))
-  const env = { PATH: process.env.PATH, NODE_ENV: "production", MEITHEAL_DB_URL: `file:${join(work, "meitheal.db")}` }
+  const env = {
+    PATH: process.env.PATH,
+    NODE_ENV: "production",
+    MEITHEAL_DB_URL: `file:${join(work, "meitheal.db")}`,
+    MEITHEAL_TEST_CORE_USER_LOOKUP: "1",
+  }
   const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
   const fixture = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
   let server: ReturnType<typeof fork> | undefined
@@ -175,9 +183,8 @@ test("a task link preserves simulated ingress and opens in another authorized co
     await source.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
     await recipient.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
     const title = "Ingress task permalink round trip"
-    const created = await source.request.post(entry + "/api/tasks", {
-      headers: { origin }, data: { title, status: "active" },
-    })
+    const headers = await currentBoardWriteHeaders(source.request, "household", { origin }, entry)
+    const created = await source.request.post(entry + "/api/tasks", { headers, data: { title, status: "active" } })
     expect(created.status(), await created.text()).toBe(201)
     const { id } = await created.json()
     const sourcePage = await source.newPage()
@@ -243,9 +250,11 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     ])
     const origin = `http://127.0.0.1:${info.port}`
     const entry = origin + info.configuredPath
-    const headers = { origin, "sec-fetch-site": "same-origin" }
+    const sameOrigin = { origin, "sec-fetch-site": "same-origin" }
     await source.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
     await recipient.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+    const headers = await currentBoardWriteHeaders(source.request, "household", sameOrigin, entry)
+    const recipientHeaders = await currentBoardWriteHeaders(recipient.request, "household", sameOrigin, entry)
     const createTask = async (title: string) => {
       const result = await source.request.post(entry + "/api/tasks", { headers, data: { title, status: "active" } })
       expect(result.status()).toBe(201)
@@ -292,7 +301,7 @@ test("a comment link focuses the edited comment through ingress and recovers aft
 
     const denied = await request.get(origin + commentApiPath)
     expect(denied.status()).toBe(401)
-    const forbiddenEdit = await recipient.request.patch(entry + commentApiPath, { headers, data: { content: "Wrong author" } })
+    const forbiddenEdit = await recipient.request.patch(entry + commentApiPath, { headers: recipientHeaders, data: { content: "Wrong author" } })
     expect(forbiddenEdit.status()).toBe(404)
 
     await edit.press("Enter")
@@ -343,7 +352,7 @@ test("a comment link focuses the edited comment through ingress and recovers aft
       await editStarted.promise
       await sourcePage.getByRole("button", { name: "Close detail" }).press("Enter")
       await expect(sourcePage.locator("#task-detail-overlay")).not.toHaveClass(/active/)
-      await expect(sourcePage).toHaveURL(entry + "/tasks#kanban")
+      await expect(sourcePage).toHaveURL(entry + "/boards/household")
       await sourcePage.goto(taskUrl)
       await expect(authorRow).toContainText("Edited linked comment")
     } finally {
@@ -413,7 +422,7 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     const started = deferred<void>()
     const release = deferred<void>()
     const search = "Comment link task"
-    await page.route(url => url.searchParams.has("boardRefresh") && url.searchParams.get("search") === search, async route => {
+    await recipient.route(url => url.searchParams.has("boardRefresh") && url.searchParams.get("search") === search, async route => {
       started.resolve()
       await release.promise
       await route.continue()
@@ -447,7 +456,7 @@ test("a comment link focuses the edited comment through ingress and recovers aft
 test("ticket scoring keeps other lenses and retries a failed save", async ({ page, request, baseURL }) => {
   test.skip(!process.env.E2E_BASE_URL, "Requires a disposable local Meitheal server")
   const origin = new URL(baseURL!).origin
-  const headers = { origin, "content-type": "application/json" }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin })
   const created = await request.post("/api/tasks", {
     headers, data: { title: "Ticket scoring retry", framework_payload: JSON.stringify({ ice: { impact: 7, confidence: 8, ease: 9 } }) },
   })

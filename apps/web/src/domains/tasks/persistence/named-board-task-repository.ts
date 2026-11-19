@@ -184,7 +184,7 @@ export class NamedBoardTaskRepository {
       if (!template) return unavailable
       if (requestedPeriod && requestedPeriod !== namedRoutinePeriod(String(template.cadence ?? "daily"))) return stale
       const result = await templates.completeRoutine(routineId)
-      return result ? { ok: true, value: { id: result.taskId } } : unavailable
+      return result?.completed ? { ok: true, value: { id: result.taskId } } : unavailable
     })
   }
   async edit(actor: BoardActor, boardId: string, id: string, version: number, content: Partial<NamedTaskContent>) {

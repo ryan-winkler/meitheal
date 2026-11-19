@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite"
 import { expect, test as base, type APIRequestContext, type APIResponse, type Page } from "@playwright/test"
 import { taskRetryKey } from "../../apps/web/src/lib/idempotent-task-request"
 import type { TaskDraftSnapshot } from "../../apps/web/src/lib/task-draft-state"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
 const noStore = "private, no-store"
@@ -29,6 +30,7 @@ type BoardFixture = {
   origin: string
   ingress: string
   request: APIRequestContext
+  act: (path: string, options?: SendOptions) => Promise<APIResponse>
   send: (path: string, options?: SendOptions) => Promise<APIResponse>
 }
 
@@ -48,8 +50,15 @@ const test = base.extend<{ board: BoardFixture }>({
         extraHTTPHeaders: { cookie: "feedback-fixture=admin" },
       })
       request = api
+      const current = await currentBoardWriteHeaders(api, "household", { origin }, ingress)
+      const authority = { origin, "sec-fetch-site": "same-origin", "x-meitheal-board-session": current["x-meitheal-board-session"]! }
       await use({
         work, origin, ingress, request: api,
+        act: (path, options) => api.fetch(ingress + path, {
+          maxRedirects: 0, ...options,
+          headers: { ...authority, ...(options?.method && options.method !== "GET" && options.method !== "HEAD" && options.data === undefined
+            ? { "content-type": "application/json" } : {}), ...options?.headers },
+        }),
         send: (path, options) => api.fetch(ingress + path, { maxRedirects: 0, ...options }),
       })
     } finally {
@@ -71,10 +80,13 @@ test("the packaged wrapper keeps selected trailing-slash and dot aliases on the 
   expect(page.status()).toBe(404)
   expect(page.headers()["cache-control"]).toBe(noStore)
   expect(page.headers().location).toBeUndefined()
+  const origin = new URL(baseURL!).origin
+  const current = await currentBoardWriteHeaders(request, "household", { origin })
   const purge = await request.delete("/api/tasks/?purge=all&board_id=unavailable-board", {
-    maxRedirects: 0, headers: { "sec-fetch-site": "same-origin" },
+    maxRedirects: 0, headers: { origin, "sec-fetch-site": "same-origin",
+      "x-meitheal-board-session": current["x-meitheal-board-session"]! },
   })
-  await expectUnavailable(purge, "trailing-slash scoped purge", 400)
+  await expectUnavailable(purge, "trailing-slash scoped purge")
   expect(purge.headers().location).toBeUndefined()
   const rawDot = await new Promise<{
     status: number | undefined, cache: string | undefined, location: string | undefined,
@@ -112,19 +124,20 @@ test("the keyed mutation reader refuses a stalled body with a private timeout", 
   }
 })
 
-async function expectUnavailable(response: APIResponse, path: string, status = 404) {
+async function expectUnavailable(response: APIResponse, path: string, status = 404, expectedDetail?: string) {
   const payload = await response.text()
   expect(response.status(), `${path} returned ${payload}`).toBe(status)
   expect(response.headers()["cache-control"], path).toBe(noStore)
   expect(response.headers()["idempotency-key-status"], path).toBeUndefined()
   expect(JSON.parse(payload), path).toMatchObject({
     status,
-    detail: status === 400 ? "Named Boards cannot be purged here." : "Board not found.",
+    detail: expectedDetail ?? (status === 400 ? "Named Boards cannot be purged here."
+      : expect.stringMatching(/^(?:Board not found|This work is unavailable)\.$/)),
   })
 }
 
 async function createTask(board: BoardFixture, title: string, status = "pending") {
-  const response = await board.send("/api/tasks", { method: "POST", data: { title, status } })
+  const response = await board.act("/api/tasks", { method: "POST", data: { title, status } })
   expect(response.status()).toBe(201)
   return (await response.json()).id as string
 }
@@ -163,7 +176,13 @@ test("named Board selectors refuse Household data at API and page entry points",
     const scoped = await board.send(`${path}?board=&board=${namedBoard}`)
     expect(scoped.status(), path).toBe(404)
     expect(scoped.headers()["cache-control"], path).toBe(noStore)
-    expect(await scoped.text(), path).toBe("Board not found.")
+    const safe = await scoped.text()
+    expect(safe, path).not.toContain(taskTitle)
+    if (scoped.headers()["content-type"]?.includes("application/problem+json")) {
+      expect(JSON.parse(safe), path).toMatchObject({ status: 404, detail: "This work is unavailable." })
+    } else {
+      expect(safe, path).toMatch(/Board not found\.|data-unavailable-ticket/)
+    }
     expect((await board.send(`${path}?board_id=${namedBoard}`)).status(), path).toBe(404)
   }
 
@@ -179,18 +198,18 @@ test("named Board mutations preserve existing tasks, lanes and unscoped idempote
   const key = { "Idempotency-Key": "household-create-fixture" }
   const task = { title: taskTitle }
   const warm = { method: "POST", headers: key, data: task }
-  const created = await board.send("/api/tasks", warm)
+  const created = await board.act("/api/tasks", warm)
   expect(created.status()).toBe(201)
   expect(created.headers()["idempotency-key-status"]).toBe("processed")
   const id = (await created.json()).id as string
-  const replay = await board.send("/api/tasks", warm)
+  const replay = await board.act("/api/tasks", warm)
   expect(replay.headers()["idempotency-key-status"]).toBe("cached")
   expect(await replay.json()).toMatchObject({ id })
 
   const second = await createTask(board, "Retained reorder anchor")
   const old = await createTask(board, "Retained old completion", "complete")
   const today = await createTask(board, "Retained recent completion", "complete")
-  const lane = await board.send("/api/lanes", { method: "POST", data: { label: "Retained Household lane" } })
+  const lane = await board.act("/api/lanes", { method: "POST", data: { label: "Retained Household lane" } })
   expect(lane.status()).toBe(201)
   const laneId = (await lane.json()).id as string
   const database = new DatabaseSync(join(board.work, "pins.db"))
@@ -207,15 +226,15 @@ test("named Board mutations preserve existing tasks, lanes and unscoped idempote
     const before = readStored()
     const retention = "/api/tasks/delete-completed?months=3"
     const confirmed = retention + "&confirm=true"
-    const preview = await board.send(retention)
+    const preview = await board.act(retention)
     expect(preview.status()).toBe(200)
     expect(await preview.json()).toMatchObject({ count: 1 })
 
     const selected = { board_id: namedBoard }
-    const mutations: [string, SendOptions, number?][] = [
+    const mutations: [string, SendOptions, number?, string?][] = [
       [`/api/tasks?board_id=${namedBoard}`, warm],
-      ["/api/tasks", { ...warm, data: { ...task, board_id: null } }],
-      ["/api/tasks/create", { method: "POST", data: { ...task, board_name: namedBoard } }],
+      ["/api/tasks", { ...warm, data: { ...task, board_id: null } }, 400, "Select the Board using the request context."],
+      ["/api/tasks/create", { method: "POST", data: { ...task, board_name: namedBoard } }, 400, "Select the Board using the request context."],
       [`/api/tasks/${id}`, { method: "PUT", data: { title: "Changed title", ...selected } }],
       [`/api/tasks/${id}`, { method: "PATCH", data: { title: "Changed title", ...selected } }],
       [`/api/tasks/${id}/time`, { method: "POST", data: { action: "start", ...selected } }],
@@ -235,12 +254,12 @@ test("named Board mutations preserve existing tasks, lanes and unscoped idempote
       [confirmed, { method: "DELETE", data: selected }],
       [`/api/tasks/clear-completed?board_id=${namedBoard}`, { method: "POST" }],
       ["/api/tasks/clear-completed", { method: "POST", data: selected }],
-      [`/api/tasks?purge=all&board_id=${namedBoard}`, { method: "DELETE" }, 400],
+      [`/api/tasks?purge=all&board_id=${namedBoard}`, { method: "DELETE" }],
       ["/api/tasks?purge=all", { method: "DELETE", data: selected }, 400],
     ]
-    for (const [path, options, status] of mutations) {
-      const response = await board.send(path, options)
-      await expectUnavailable(response, `${options.method} ${path}`, status)
+    for (const [path, options, status, detail] of mutations) {
+      const response = await board.act(path, options)
+      await expectUnavailable(response, `${options.method} ${path}`, status, detail)
       expect(await response.json(), path).not.toHaveProperty("count")
     }
     for (const [data, mediaType, status] of [
@@ -250,19 +269,19 @@ test("named Board mutations preserve existing tasks, lanes and unscoped idempote
       [JSON.stringify(JSON.stringify(selected)), "application/json", 400],
       [JSON.stringify({ text: "x".repeat(64 * 1024) }), "application/json", 413],
     ] as const) {
-      const response = await board.send("/api/tasks?purge=all", {
+      const response = await board.act("/api/tasks?purge=all", {
         method: "DELETE", data: Buffer.from(data), headers: { "content-type": mediaType },
       })
       expect(response.status(), mediaType).toBe(status)
       expect(response.headers()["cache-control"], mediaType).toBe(noStore)
       expect(await response.json(), mediaType).not.toHaveProperty("purged")
     }
-    const structuredJson = await board.send("/api/tasks?purge=all", {
+    const structuredJson = await board.act("/api/tasks?purge=all", {
       method: "DELETE", data: Buffer.from(JSON.stringify(selected)),
       headers: { "content-type": "application/vnd.meitheal+json; charset=utf-8" },
     })
     await expectUnavailable(structuredJson, "structured JSON scoped purge", 400)
-    const keyedOversize = await board.send("/api/tasks?purge=all", {
+    const keyedOversize = await board.act("/api/tasks?purge=all", {
       method: "DELETE",
       data: { board_id: namedBoard, padding: "x".repeat(64 * 1024) },
       headers: { "idempotency-key": "keyed-oversized-board" },
@@ -271,17 +290,17 @@ test("named Board mutations preserve existing tasks, lanes and unscoped idempote
     expect(keyedOversize.headers()["cache-control"]).toBe(noStore)
     expect(readStored()).toEqual(before)
 
-    const repeated = await board.send("/api/tasks", warm)
+    const repeated = await board.act("/api/tasks", warm)
     expect(repeated.headers()["idempotency-key-status"]).toBe("cached")
     expect(await repeated.json()).toMatchObject({ id })
-    const clear = await board.send("/api/tasks/clear-completed", { method: "POST" })
+    const clear = await board.act("/api/tasks/clear-completed", { method: "POST" })
     expect(clear.status()).toBe(200)
     expect(await clear.json()).toMatchObject({ cleared: 1 })
-    const deletion = await board.send(confirmed, { method: "DELETE" })
+    const deletion = await board.act(confirmed, { method: "DELETE" })
     expect(deletion.status()).toBe(200)
     expect(await deletion.json()).toMatchObject({ deleted: 1 })
     expect(database.prepare("SELECT id FROM tasks WHERE id = ?").get(id)).toMatchObject({ id })
-    const purge = await board.send("/api/tasks?purge=all", { method: "DELETE" })
+    const purge = await board.act("/api/tasks?purge=all", { method: "DELETE" })
     expect(purge.status()).toBe(200)
     expect(await purge.json()).toMatchObject({ purged: true })
     expect(database.prepare("SELECT id FROM tasks").all()).toEqual([])
@@ -312,16 +331,18 @@ test("named draft selectors preserve the Household draft and context through HTT
 
   const browser = await launchPinBrowser(board.work)
   try {
-    const context = await browser.newContext({ serviceWorkers: "block", extraHTTPHeaders: {} })
+    const context = await browser.newContext({ ignoreHTTPSErrors: true, serviceWorkers: "block", extraHTTPHeaders: {} })
     await context.addCookies([{ name: "feedback-fixture", value: "member", url: board.origin }])
     const page = await context.newPage()
     expect((await page.goto(board.ingress + "/fixture"))?.ok()).toBe(true)
     const path = new URL(board.ingress).pathname + draftPath
+    const current = await currentBoardWriteHeaders(context.request, "household", { origin: board.origin }, board.ingress)
+    const memberProof = { "x-meitheal-board-session": current["x-meitheal-board-session"]! }
     const read = { action: "read" }
-    const initial = await draftRequest(page, path, "POST", read)
+    const initial = await draftRequest(page, path, "POST", read, memberProof)
     expect(initial).toMatchObject({ status: 200, cache: noStore })
     const draftContext = JSON.parse(initial.text).context as string
-    const lease = { "X-Meitheal-Draft-Context": draftContext }
+    const lease = { ...memberProof, "X-Meitheal-Draft-Context": draftContext }
     const save = { action: "save", expected: null, attemptId: crypto.randomUUID(), snapshot }
     const saved = await draftRequest(page, path, "PUT", save, lease)
     expect(saved.status).toBe(200)
@@ -334,9 +355,9 @@ test("named draft selectors preserve the Household draft and context through HTT
     const head = await draftRequest(page, path, "HEAD", undefined, selected)
     const responses = [
       head,
-      await draftRequest(page, path, "POST", read, { [boardDraftHeader]: "" }),
+      await draftRequest(page, path, "POST", read, { ...memberProof, [boardDraftHeader]: "" }),
       await draftRequest(page, path, "PUT", discard, selected),
-      await draftRequest(page, path, "POST", { ...read, board_id: namedBoard }),
+      await draftRequest(page, path, "POST", { ...read, board_id: namedBoard }, memberProof),
       await draftRequest(page, path, "PUT", { ...discard, board_id: namedBoard }, lease),
     ]
     for (const response of responses) {
@@ -346,7 +367,7 @@ test("named draft selectors preserve the Household draft and context through HTT
       if (response.text) expect(JSON.parse(response.text)).not.toHaveProperty("draft")
     }
     expect(head.text).toBe("")
-    const retained = await draftRequest(page, path, "POST", read)
+    const retained = await draftRequest(page, path, "POST", read, memberProof)
     expect(retained.status).toBe(200)
     expect(JSON.parse(retained.text)).toMatchObject({
       context: draftContext, draft: { draftId, revision, snapshot: { title: draftTitle } },

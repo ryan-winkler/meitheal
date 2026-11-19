@@ -8,7 +8,7 @@
       :root { color-scheme: light dark; font-family: system-ui, sans-serif; color: #19382d; background: #f7f6f1 }
       body { min-height: 100svh; margin: 0; display: grid; place-items: center; padding: 24px; box-sizing: border-box }
       main { width: min(100%, 420px); padding: 32px; box-sizing: border-box; border: 1px solid #ced8d2; border-radius: 16px; background: #fff }
-      .brand { color: #07573d; font-weight: 700; letter-spacing: -.04em; font-size: 24px }
+      .brand { display: flex; align-items: center; gap: 12px; color: #07573d; font-weight: 700; letter-spacing: -.04em; font-size: 24px }
       h1 { margin: 28px 0 12px; font-size: 26px; letter-spacing: -.025em }
       p { line-height: 1.6; color: #465f54 }
       a { display: inline-block; margin-top: 12px; padding: 12px 20px; border-radius: 8px; background: #07573d; color: #fff; font-weight: 600; text-decoration: none }
@@ -24,7 +24,14 @@
   </head>
   <body>
     <main>
-      <div class="brand">meitheal</div>
+      <div class="brand">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="56" height="56" aria-hidden="true">
+          <rect width="64" height="64" rx="13" fill="#10231b"></rect>
+          <path d="M15 41V25m0 6c0-5 3-8 7-8s7 3 7 8v10m0-10c0-5 3-8 7-8s7 3 7 8v10" fill="none" stroke="#edf5ef" stroke-linecap="round" stroke-width="5"></path>
+          <circle cx="52" cy="40" r="3.5" fill="#69e3b2"></circle>
+        </svg>
+        meitheal
+      </div>
       <h1>You're offline</h1>
       <p>Reconnect to check access and sync changes saved on this device.</p>
       <a href="">Try again</a>

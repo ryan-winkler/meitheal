@@ -382,7 +382,8 @@ function isExternal(href: string): boolean {
       else if (isFilteredShortcut(url)) active = link === typedLink
       else if (context && link.closest("[data-sidebar-board-children]") && href === backgroundPath) {
         const selected = readBoardNavigationContext(new URL(href + url.search, url))
-        active = Boolean(selected && selected.project === context.project && selected.area === context.area)
+        active = Boolean(selected && selected.boardId === context.boardId &&
+          (context.project ? selected.project === context.project : !selected.project && selected.area === context.area))
       }
       else active = (href === backgroundPath && (!url.hash || url.hash === background.hash)) ||
         (href !== "/" && backgroundPath.startsWith(href + "/"))

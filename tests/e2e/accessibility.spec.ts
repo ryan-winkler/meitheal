@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers";
 
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs");
@@ -25,7 +26,7 @@ for (const theme of ["light", "dark"]) {
 
   test(`completed dashboard cards remain readable in ${theme} theme`, async ({ page, request, baseURL }) => {
     test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const created = await request.post("/api/tasks", {
       headers, data: { title: "Checked the air filter", status: "complete" },
     })

@@ -123,7 +123,6 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
       labels: r.labels ? String(r.labels) : "[]",
       framework_payload: typeof r.framework_payload === "string" ? r.framework_payload : "{}",
       calendar_sync_state: r.calendar_sync_state ?? "pending",
-      parent_id: r.parent_id ?? null,
       time_tracked: Number(r.time_tracked ?? 0),
       custom_fields: typeof r.custom_fields === "string" ? r.custom_fields : "{}",
       start_date: r.start_date ?? null,
@@ -225,7 +224,9 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "create
   const authority = await taskEventAuthorityHeaders(["task.created"], scope)
   if (!result.replayed) dispatchTaskCreation(payload as ReturnType<typeof taskCreationPayload>, typeof body.request_id === "string" ? body.request_id : undefined, undefined, authority, scope)
   return Response.json(scopePermits(scope, { resource: "task", action: "read" }) ? payload
-    : { id: String(result.task.id), ticket_key: payload.ticket_key }, { status: 201, headers: authority })
+    : { id: String(result.task.id), ticket_key: payload.ticket_key }, { status: 201, headers: {
+      ...authority, ...(clientKey ? { "idempotency-key-status": result.replayed ? "cached" : "processed" } : {}),
+    } })
 })
 
 export const DELETE: APIRoute = withBoardScope({ resource: "task", action: "delete" }, async ({ request, url }, scope) => {

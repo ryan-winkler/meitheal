@@ -46,7 +46,7 @@ test("a reader missing a private Area cannot read unattributed historical totals
   const db = getPersistenceClient(), original = await scope("household")
   await new HierarchyRepository(db, original).createArea({ id: "private-area", name: "Private work" })
   await recordTaskCompletion(original, 50)
-  await changeBoardGrants(db, async tx => {
+  await changeBoardGrants(db, original.principal, async tx => {
     await tx.execute("INSERT INTO organization_access_policies(scope,scope_id,board_id,audience,selected_users,revision) VALUES ('group','private-area','household','selected','[\"parent\"]',1)")
     return { next: true }
   })

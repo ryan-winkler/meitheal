@@ -258,7 +258,7 @@ export async function changeGoalShare(
     action: "manage"
   })
   if (!recipient.ok) return { status: "unchanged", result: "unavailable" } as const
-  return changeBoardGrants(db, async (tx, epoch) => {
+  return changeBoardGrants(db, source.principal, async (tx, epoch) => {
     if (epoch !== source.authorityRevision || epoch !== recipient.scope.authorityRevision)
       return { unchanged: "stale" as const }
     for (const [scope, resource, action] of [

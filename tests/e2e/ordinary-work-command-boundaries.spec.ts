@@ -204,7 +204,7 @@ test("Project placement intersects its parent Area audience before creation or m
   await hierarchy.createArea({ id: "private-parent", name: "Private Area" })
   await hierarchy.createProject({ id: "private-project", title: "Private Project", area_id: "private-parent" })
   const { changeBoardGrants } = await import("../../apps/web/src/domains/tasks/persistence/board-grant-fence")
-  await changeBoardGrants(db, async tx => {
+  await changeBoardGrants(db, owner(), async tx => {
     await tx.execute("INSERT INTO organization_access_policies(scope,scope_id,board_id,audience,selected_users,revision) VALUES ('group','private-parent','household','selected','[\"parent\"]',1)")
     return { next: true }
   })
@@ -224,7 +224,7 @@ test("digit-first persisted Board prefixes resolve their own keys without a fore
   const { changeBoardGrants } = await import("../../apps/web/src/domains/tasks/persistence/board-grant-fence")
   // A fixed synthetic initial identity exercises the legitimate digit-first
   // encoding without mutating the production-immutable Board prefix.
-  await changeBoardGrants(db, async tx => {
+  await changeBoardGrants(db, owner(), async tx => {
     await tx.execute({ sql: "INSERT INTO task_boards(id,name,visibility,ticket_prefix,created_at,updated_at) VALUES (?,'Digit prefix fixture','restricted','6OSYDSDD',1,1)", args: [board] })
     await tx.execute({ sql: "INSERT INTO board_permissions(board_id) VALUES (?)", args: [board] })
     await tx.execute({ sql: "INSERT INTO board_access_grants(board_id,principal_type,principal_id,role) VALUES (?,'ha_user','parent','owner')", args: [board] })
@@ -254,7 +254,7 @@ test("deletion receipts preserve the old effective Area when their Project later
   expect((await readTaskDeletionReceipt(db, work, deleted.eventId, original.id))?.placement).toEqual({ areaId: "old-private-area", projectId: "moving-project" })
   expect(await hierarchy.updateProject("moving-project", { area_id: "later-public-area" })).toBe(true)
   const { changeBoardGrants } = await import("../../apps/web/src/domains/tasks/persistence/board-grant-fence")
-  await changeBoardGrants(db, async tx => {
+  await changeBoardGrants(db, owner(), async tx => {
     await tx.execute("INSERT INTO organization_access_policies(scope,scope_id,board_id,audience,selected_users,revision) VALUES ('group','old-private-area','household','nobody','[]',1)")
     return { next: true }
   })

@@ -79,7 +79,7 @@ for (const encoding of ["legacy", "scoped"] as const) {
     expect((await repo.findById(completeA))?.status).toBe("archived")
     expect((await repo.findAll({})).tasks.filter(task => task.status === "complete")).toHaveLength(1)
     expect(await repo.archiveCompletedForDay(today, "UTC", { projectId: projectA })).toBe(0)
-    await changeBoardGrants(db, async tx => {
+    await changeBoardGrants(db, owner, async tx => {
       await tx.execute({ sql: "INSERT INTO organization_access_policies(scope,scope_id,board_id,audience,selected_users,revision) VALUES('group',?,?,'nobody','[]',1)", args: [areaA, board] })
       return { next: true }
     })

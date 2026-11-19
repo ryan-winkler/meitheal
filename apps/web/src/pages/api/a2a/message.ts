@@ -3,11 +3,10 @@ import { z } from "zod"
 import { hasScope } from "@meitheal/domain-auth"
 import { A2A_ERRORS, A2A_PROTOCOL_VERSION, A2A_TASK_SEARCH_SKILL } from "@meitheal/integration-core"
 import { A2A_RESPONSE_HEADERS, checkA2aAvailability, getA2ALinkOrigin } from "@domains/agents"
-import { searchMeithealCatalog } from "@domains/search"
 import { resolveBoardRequestScope } from "@lib/board-request-context"
 import { boardScopeResponse } from "@lib/board-http"
 import { validateBoardScope, type BoardScope } from "@domains/tasks/board-scope"
-import { getPersistenceClient } from "@domains/tasks"
+import { TaskRepository, getPersistenceClient } from "@domains/tasks"
 import { ensureSchema } from "@domains/tasks"
 import { getA2aTask, listA2aTasks } from "@lib/a2a-tasks"
 import { apiProblem } from "@lib/api-response"
@@ -20,44 +19,56 @@ const rpcRequest = z.object({
   jsonrpc: z.literal("2.0"),
   method: z.string().min(1),
   id: z.union([z.string(), z.number().int(), z.null()]).optional(),
-  params: z.unknown().optional(),
+  params: z.unknown().optional()
 })
 const rfc3339Timestamp = z.string().datetime({ offset: true })
-const taskRequest = z.object({ id: z.string().min(1), historyLength: z.number().int().nonnegative().optional() })
+const taskRequest = z.object({
+  id: z.string().min(1),
+  historyLength: z.number().int().nonnegative().optional()
+})
 const listRequest = z.object({
   pageSize: z.number().int().min(1).max(100).optional(),
-  pageToken: z.string().regex(/^\d{0,6}$/).optional(),
+  pageToken: z
+    .string()
+    .regex(/^\d{0,6}$/)
+    .optional(),
   historyLength: z.number().int().nonnegative().optional(),
   includeArtifacts: z.boolean().optional(),
   contextId: z.string().optional(),
   status: z.string().optional(),
-  statusTimestampAfter: z.string().optional(),
+  statusTimestampAfter: z.string().optional()
 })
 const messageRequest = z.object({
   message: z.object({
     messageId: z.string().min(1).max(200),
     role: z.literal("ROLE_USER"),
-    parts: z.array(z.object({
-      text: z.string().optional(),
-      data: z.unknown().optional(),
-      mediaType: z.string().optional(),
-      raw: z.unknown().optional(),
-      url: z.unknown().optional(),
-    })).length(1),
+    parts: z
+      .array(
+        z.object({
+          text: z.string().optional(),
+          data: z.unknown().optional(),
+          mediaType: z.string().optional(),
+          raw: z.unknown().optional(),
+          url: z.unknown().optional()
+        })
+      )
+      .length(1),
     contextId: z.string().max(200).optional(),
     taskId: z.string().optional(),
-    referenceTaskIds: z.array(z.string()).optional(),
+    referenceTaskIds: z.array(z.string()).optional()
   }),
-  configuration: z.object({
-    acceptedOutputModes: z.array(z.string()).optional(),
-    taskPushNotificationConfig: z.unknown().optional(),
-    historyLength: z.number().int().nonnegative().optional(),
-    returnImmediately: z.boolean().optional(),
-  }).optional(),
+  configuration: z
+    .object({
+      acceptedOutputModes: z.array(z.string()).optional(),
+      taskPushNotificationConfig: z.unknown().optional(),
+      historyLength: z.number().int().nonnegative().optional(),
+      returnImmediately: z.boolean().optional()
+    })
+    .optional()
 })
 const dataQuery = z.object({
   query: z.string(),
-  skill: z.string().optional(),
+  skill: z.string().optional()
 })
 
 const noStore = A2A_RESPONSE_HEADERS
@@ -76,21 +87,33 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
     return apiProblem({
       status: 401,
       detail: "Use a valid, active Meitheal agent token.",
-      extraHeaders: { ...noStore, "WWW-Authenticate": "Bearer" },
+      extraHeaders: { ...noStore, "WWW-Authenticate": "Bearer" }
     })
   }
   if (!hasScope(token.scopes, "a2a:execute") || !hasScope(token.scopes, "search:read")) {
-    return apiProblem({ status: 403, detail: "A2A task search requires a2a:execute and search:read.", extraHeaders: noStore })
+    return apiProblem({
+      status: 403,
+      detail: "A2A task search requires a2a:execute and search:read.",
+      extraHeaders: noStore
+    })
   }
 
   let id: RequestId = null
   try {
     const unavailable = await checkA2aAvailability()
     if (unavailable) return unavailable
-    if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
-      return apiProblem({ status: 415, detail: "Send A2A JSON-RPC requests as application/json.", extraHeaders: noStore })
+    if (
+      request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !==
+      "application/json"
+    ) {
+      return apiProblem({
+        status: 415,
+        detail: "Send A2A JSON-RPC requests as application/json.",
+        extraHeaders: noStore
+      })
     }
-    const tooLarge = () => apiProblem({ status: 413, detail: "The A2A request exceeds 16 KiB.", extraHeaders: noStore })
+    const tooLarge = () =>
+      apiProblem({ status: 413, detail: "The A2A request exceeds 16 KiB.", extraHeaders: noStore })
     if (Number(request.headers.get("content-length")) > MAX_BODY_BYTES) return tooLarge()
 
     let body: unknown
@@ -104,18 +127,27 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
 
     const rpc = rpcRequest.safeParse(body)
     if (!rpc.success) return rpcError(null, A2A_ERRORS.INVALID_REQUEST, "Invalid JSON-RPC request.")
-    if ((rpc.data.method === "GetTask" || rpc.data.method === "ListTasks" || rpc.data.method === "CancelTask") && !hasScope(token.scopes, "tasks:read")) {
+    if (
+      (rpc.data.method === "GetTask" ||
+        rpc.data.method === "ListTasks" ||
+        rpc.data.method === "CancelTask") &&
+      !hasScope(token.scopes, "tasks:read")
+    ) {
       return apiProblem({
         status: 403,
         detail: `A2A ${rpc.data.method} requires tasks:read.`,
-        extraHeaders: noStore,
+        extraHeaders: noStore
       })
     }
     if (rpc.data.id === undefined) return new Response(null, { status: 204, headers: noStore })
     id = rpc.data.id
     const version = request.headers.get("A2A-Version") ?? url.searchParams.get("A2A-Version")
     if ((version?.trim() || "0.3") !== A2A_PROTOCOL_VERSION) {
-      return rpcError(id, A2A_ERRORS.VERSION_NOT_SUPPORTED, `Use A2A-Version: ${A2A_PROTOCOL_VERSION}.`)
+      return rpcError(
+        id,
+        A2A_ERRORS.VERSION_NOT_SUPPORTED,
+        `Use A2A-Version: ${A2A_PROTOCOL_VERSION}.`
+      )
     }
 
     const linkBase = getA2ALinkOrigin(request, url) + (locals.ingressPath ?? "")
@@ -123,56 +155,104 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
       case "GetTask":
       case "CancelTask": {
         const wanted = taskRequest.safeParse(rpc.data.params)
-        if (!wanted.success) return rpcError(id, A2A_ERRORS.INVALID_PARAMS, "Provide an A2A task id.")
-        const selected = await resolveBoardRequestScope({ request, locals }, { operation: { resource: "task", action: "read" }, record: { resource: "task", id: wanted.data.id }, write: false })
-        if (!selected.ok) return selected.errorCode === "unavailable" || selected.errorCode === "denied"
-          ? rpcError(id, A2A_ERRORS.TASK_NOT_FOUND, taskNotFound) : boardScopeResponse(selected.errorCode)
+        if (!wanted.success)
+          return rpcError(id, A2A_ERRORS.INVALID_PARAMS, "Provide an A2A task id.")
+        const selected = await resolveBoardRequestScope(
+          { request, locals },
+          {
+            operation: { resource: "task", action: "read" },
+            record: { resource: "task", id: wanted.data.id },
+            write: false
+          }
+        )
+        if (!selected.ok)
+          return selected.errorCode === "unavailable" || selected.errorCode === "denied"
+            ? rpcError(id, A2A_ERRORS.TASK_NOT_FOUND, taskNotFound)
+            : boardScopeResponse(selected.errorCode)
         const task = await getA2aTask(token, wanted.data.id, linkBase, selected.scope)
-        const current = await validateBoardScope(selected.scope, getPersistenceClient(), { resource: "task", action: "read" })
+        const current = await validateBoardScope(selected.scope, getPersistenceClient(), {
+          resource: "task",
+          action: "read"
+        })
         if (!current.ok) return boardScopeResponse(current.errorCode)
         if (!task) return rpcError(id, A2A_ERRORS.TASK_NOT_FOUND, taskNotFound)
         // A task is finished or handed back in Meitheal, never cancelled by a remote agent.
-        return rpc.data.method === "GetTask" ? rpcResult(id, task)
-          : rpcError(id, A2A_ERRORS.TASK_NOT_CANCELABLE, "Meitheal tasks cannot be cancelled over A2A.")
+        return rpc.data.method === "GetTask"
+          ? rpcResult(id, task)
+          : rpcError(
+              id,
+              A2A_ERRORS.TASK_NOT_CANCELABLE,
+              "Meitheal tasks cannot be cancelled over A2A."
+            )
       }
       case "ListTasks": {
         const list = listRequest.safeParse(rpc.data.params ?? {})
-        if (!list.success) return rpcError(id, A2A_ERRORS.INVALID_PARAMS, "Invalid task list parameters.")
+        if (!list.success)
+          return rpcError(id, A2A_ERRORS.INVALID_PARAMS, "Invalid task list parameters.")
         let statusTimestampAfterMs: number | undefined
         if (list.data.statusTimestampAfter !== undefined) {
           const ts = rfc3339Timestamp.safeParse(list.data.statusTimestampAfter)
           if (!ts.success) {
-            return rpcError(id, A2A_ERRORS.INVALID_PARAMS, "Invalid statusTimestampAfter timestamp.")
+            return rpcError(
+              id,
+              A2A_ERRORS.INVALID_PARAMS,
+              "Invalid statusTimestampAfter timestamp."
+            )
           }
           statusTimestampAfterMs = Date.parse(ts.data)
         }
-        const selected = await resolveBoardRequestScope({ request, locals }, { operation: { resource: "task", action: "read" }, write: false })
+        const selected = await resolveBoardRequestScope(
+          { request, locals },
+          { operation: { resource: "task", action: "read" }, write: false }
+        )
         if (!selected.ok) return boardScopeResponse(selected.errorCode)
-        const listed = await listA2aTasks(token, linkBase, {
-          pageSize: list.data.pageSize ?? 50,
-          offset: Number(list.data.pageToken || 0),
-          includeArtifacts: list.data.includeArtifacts ?? false,
-          state: list.data.status,
-          contextId: list.data.contextId,
-          statusTimestampAfterMs,
-        }, selected.scope)
-        const current = await validateBoardScope(selected.scope, getPersistenceClient(), { resource: "task", action: "read" })
+        const listed = await listA2aTasks(
+          token,
+          linkBase,
+          {
+            pageSize: list.data.pageSize ?? 50,
+            offset: Number(list.data.pageToken || 0),
+            includeArtifacts: list.data.includeArtifacts ?? false,
+            state: list.data.status,
+            contextId: list.data.contextId,
+            statusTimestampAfterMs
+          },
+          selected.scope
+        )
+        const current = await validateBoardScope(selected.scope, getPersistenceClient(), {
+          resource: "task",
+          action: "read"
+        })
         return current.ok ? rpcResult(id, listed) : boardScopeResponse(current.errorCode)
       }
       case "SendStreamingMessage":
       case "SubscribeToTask":
       case "GetExtendedAgentCard":
-        return rpcError(id, A2A_ERRORS.UNSUPPORTED_OPERATION, "This operation is unavailable on Meitheal.")
+        return rpcError(
+          id,
+          A2A_ERRORS.UNSUPPORTED_OPERATION,
+          "This operation is unavailable on Meitheal."
+        )
       case "CreateTaskPushNotificationConfig":
       case "GetTaskPushNotificationConfig":
       case "ListTaskPushNotificationConfigs":
       case "DeleteTaskPushNotificationConfig":
-        return rpcError(id, A2A_ERRORS.PUSH_NOT_SUPPORTED, "A2A push notifications are unavailable.")
+        return rpcError(
+          id,
+          A2A_ERRORS.PUSH_NOT_SUPPORTED,
+          "A2A push notifications are unavailable."
+        )
       case "SendMessage": {
-        const selected = await resolveBoardRequestScope({ request, locals }, { operation: { resource: "task", action: "read" }, write: false })
+        const selected = await resolveBoardRequestScope(
+          { request, locals },
+          { operation: { resource: "task", action: "search" }, write: false }
+        )
         if (!selected.ok) return boardScopeResponse(selected.errorCode)
         const response = await searchTasks(id, rpc.data.params, linkBase, selected.scope)
-        const current = await validateBoardScope(selected.scope, getPersistenceClient(), { resource: "task", action: "read" })
+        const current = await validateBoardScope(selected.scope, getPersistenceClient(), {
+          resource: "task",
+          action: "search"
+        })
         return current.ok ? response : boardScopeResponse(current.errorCode)
       }
       default:
@@ -184,25 +264,51 @@ export const POST: APIRoute = async ({ request, locals, url }) => {
   }
 }
 
-async function searchTasks(id: RequestId, input: unknown, base: string, scope: BoardScope): Promise<Response> {
+async function searchTasks(
+  id: RequestId,
+  input: unknown,
+  base: string,
+  scope: BoardScope
+): Promise<Response> {
   const parsed = messageRequest.safeParse(input)
-  if (!parsed.success) return rpcError(id, A2A_ERRORS.INVALID_PARAMS, "Send a user message with a messageId and one search part.")
+  if (!parsed.success)
+    return rpcError(
+      id,
+      A2A_ERRORS.INVALID_PARAMS,
+      "Send a user message with a messageId and one search part."
+    )
 
   const { message, configuration } = parsed.data
-  if (message.taskId || message.referenceTaskIds?.length) return rpcError(id, A2A_ERRORS.TASK_NOT_FOUND, taskNotFound)
-  if (configuration?.taskPushNotificationConfig) return rpcError(id, A2A_ERRORS.PUSH_NOT_SUPPORTED, "A2A push notifications are unavailable.")
+  if (message.taskId || message.referenceTaskIds?.length)
+    return rpcError(id, A2A_ERRORS.TASK_NOT_FOUND, taskNotFound)
+  if (configuration?.taskPushNotificationConfig)
+    return rpcError(id, A2A_ERRORS.PUSH_NOT_SUPPORTED, "A2A push notifications are unavailable.")
 
   const part = message.parts[0]!
   const modes = configuration?.acceptedOutputModes
   const outputJson = !modes?.length || modes.includes("application/json")
   if (!outputJson && !modes?.includes("text/plain")) {
-    return rpcError(id, A2A_ERRORS.CONTENT_TYPE_NOT_SUPPORTED, "Accept application/json or text/plain.")
+    return rpcError(
+      id,
+      A2A_ERRORS.CONTENT_TYPE_NOT_SUPPORTED,
+      "Accept application/json or text/plain."
+    )
   }
 
-  const isText = part.text !== undefined && !("data" in part) && (!part.mediaType || part.mediaType === "text/plain")
-  const isData = part.text === undefined && "data" in part && (!part.mediaType || part.mediaType === "application/json")
-  if (("raw" in part) || ("url" in part) || (!isText && !isData)) {
-    return rpcError(id, A2A_ERRORS.CONTENT_TYPE_NOT_SUPPORTED, "Send one text/plain or application/json search part.")
+  const isText =
+    part.text !== undefined &&
+    !("data" in part) &&
+    (!part.mediaType || part.mediaType === "text/plain")
+  const isData =
+    part.text === undefined &&
+    "data" in part &&
+    (!part.mediaType || part.mediaType === "application/json")
+  if ("raw" in part || "url" in part || (!isText && !isData)) {
+    return rpcError(
+      id,
+      A2A_ERRORS.CONTENT_TYPE_NOT_SUPPORTED,
+      "Send one text/plain or application/json search part."
+    )
   }
   const data = isData ? dataQuery.safeParse(part.data) : null
   if (data?.success && data.data.skill && data.data.skill !== A2A_TASK_SEARCH_SKILL) {
@@ -210,30 +316,38 @@ async function searchTasks(id: RequestId, input: unknown, base: string, scope: B
   }
   const query = (isText ? part.text : data?.success ? data.data.query : "")?.trim()
   if (!query || query.length > 160) {
-    return rpcError(id, A2A_ERRORS.INVALID_PARAMS, "Provide a task title search term of 1 to 160 characters.")
+    return rpcError(
+      id,
+      A2A_ERRORS.INVALID_PARAMS,
+      "Provide a task title search term of 1 to 160 characters."
+    )
   }
 
   await ensureSchema()
-  const { sections } = await searchMeithealCatalog({
+  const rows = await new TaskRepository(getPersistenceClient(), scope).searchTaskTitles({
     query,
-    scope: "tasks",
-    limit: 8,
-    includeCompleted: false,
-    includeArchived: false,
-    sort: "relevance",
-    taskFields: ["title"],
-  }, scope)
-  const tasks = sections.flatMap(section => section.items)
-    .filter(item => item.kind === "task" && item.taskId)
-    .map(item => ({ id: item.taskId, title: item.title, url: `${base}/boards/${encodeURIComponent(scope.boardId)}?open=${encodeURIComponent(item.taskId!)}` }))
+    limit: 8
+  })
+  const tasks = rows.map((item) => ({
+    id: item.id,
+    title: item.title,
+    url: `${base}/boards/${encodeURIComponent(scope.boardId)}?open=${encodeURIComponent(item.id)}`
+  }))
   return rpcResult(id, {
     message: {
       role: "ROLE_AGENT",
       messageId: crypto.randomUUID(),
       contextId: message.contextId || crypto.randomUUID(),
-      parts: [outputJson
-        ? { data: { tasks }, mediaType: "application/json" }
-        : { text: tasks.map(task => `${task.title} — ${task.url}`).join("\n") || "No matching tasks.", mediaType: "text/plain" }],
-    },
+      parts: [
+        outputJson
+          ? { data: { tasks }, mediaType: "application/json" }
+          : {
+              text:
+                tasks.map((task) => `${task.title} — ${task.url}`).join("\n") ||
+                "No matching tasks.",
+              mediaType: "text/plain"
+            }
+      ]
+    }
   })
 }

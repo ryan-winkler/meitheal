@@ -17,7 +17,11 @@ import {
   currentBoardGrantRevision,
   readBoardGrantRevision
 } from "./board-grant-fence"
-import { NAMED_BOARD_PRESETS, isNamedBoardPreset, type NamedBoardPreset } from "../named-board-presets"
+import {
+  NAMED_BOARD_PRESETS,
+  isNamedBoardPreset,
+  type NamedBoardPreset
+} from "../named-board-presets"
 
 export type BoardActor = { kind: VerifiedPrincipal["kind"]; id: string }
 export type BoardRole = "owner" | "member" | "viewer" | "service"
@@ -87,7 +91,10 @@ export class NamedBoardRepository {
     const revision = await currentBoardGrantRevision(this.db, this.markerPath)
     if (!revision) return null
     const access = await selectNamedBoardAccess(this.db, actor, revision, id)
-    return (await boardGrantStillCurrent(this.db, revision, this.markerPath)) ? access : null
+    return (await boardGrantStillCurrent(this.db, revision, this.markerPath)) &&
+      principalProof(actor as VerifiedPrincipal)
+      ? access
+      : null
   }
 
   async findDirectory(actor: BoardActor) {
@@ -107,18 +114,23 @@ export class NamedBoardRepository {
       })
       directory.push({ ...access, hidden: preference.length > 0 })
     }
-    return (await boardGrantStillCurrent(this.db, revision, this.markerPath)) ? directory : []
+    return (await boardGrantStillCurrent(this.db, revision, this.markerPath)) &&
+      principalProof(actor as VerifiedPrincipal)
+      ? directory
+      : []
   }
 
   /** The caller verifies that the creator is the current active Home Assistant user. */
   async create(owner: VerifiedPrincipal, name: string, preset?: NamedBoardPreset) {
-    if (preset !== undefined && !isNamedBoardPreset(preset)) throw new Error("Choose an available Board preset.")
+    if (preset !== undefined && !isNamedBoardPreset(preset))
+      throw new Error("Choose an available Board preset.")
     const labels = preset === undefined ? undefined : NAMED_BOARD_PRESETS[preset]
     if (!["ha_user", "local_operator"].includes(owner.kind) || !principalProof(owner))
       return { status: "locked" } as const
     const boardId = randomUUID()
     return changeBoardGrants(
       this.db,
+      owner,
       async (tx) => {
         if (!principalProof(owner)) throw new Error("Current Board creator proof expired")
         const now = Date.now()
@@ -183,12 +195,16 @@ export class NamedBoardRepository {
         result.push({ id: board.id, name: board.name, revision: board.revision })
       }
     }
-    return (await boardGrantStillCurrent(this.db, revision, this.markerPath)) ? result : []
+    return (await boardGrantStillCurrent(this.db, revision, this.markerPath)) &&
+      principalProof(actor as VerifiedPrincipal)
+      ? result
+      : []
   }
 
   async rename(actor: VerifiedPrincipal, id: string, name: string, expected: number) {
     return changeBoardGrants(
       this.db,
+      actor,
       async (tx, epoch) => {
         const owner = await this.getOwner(tx, actor, id, epoch)
         if (!owner) return { unchanged: "unavailable" as const }
@@ -217,6 +233,7 @@ export class NamedBoardRepository {
   ) {
     return changeBoardGrants(
       this.db,
+      actor,
       async (tx, epoch) => {
         const owner = await this.getOwner(tx, actor, id, epoch)
         if (!owner) return { unchanged: "unavailable" as const }
@@ -257,6 +274,7 @@ export class NamedBoardRepository {
       return { status: "unchanged", result: "unavailable" } as const
     return changeBoardGrants(
       this.db,
+      actor as VerifiedPrincipal,
       async (tx, epoch) => {
         if (!epoch) return { unchanged: "unavailable" as const }
         const access = await new BoardAccessService(this.db).resolveInTransaction(
@@ -297,6 +315,7 @@ export class NamedBoardRepository {
   ) {
     return changeBoardGrants(
       this.db,
+      ownerId,
       async (tx, revision) => {
         const owner = await this.getOwner(tx, ownerId, id, revision)
         if (!owner) return { unchanged: false }
@@ -332,6 +351,7 @@ export class NamedBoardRepository {
   ) {
     return changeBoardGrants(
       this.db,
+      ownerId,
       async (tx, revision) => {
         const owner = await this.getOwner(tx, ownerId, id, revision)
         if (!owner) return { unchanged: "unavailable" as const }
@@ -380,6 +400,7 @@ export class NamedBoardRepository {
   ) {
     return changeBoardGrants(
       this.db,
+      ownerId,
       async (tx, revision) => {
         const owner = await this.getOwner(tx, ownerId, boardId, revision)
         if (!owner || owner.state !== "active") return { unchanged: false }

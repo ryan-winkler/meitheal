@@ -12,7 +12,7 @@ Open **Boards** to choose or create a workspace. All your Boards appear together
 
 When creating a Board, you can choose workflow labels. Presets change labels on its four existing task statuses; they do not change task behavior, permissions or Routine completion. The choice applies to that Board for all members. [First-time setup](first-time-setup.md) controls personal preferences.
 
-The selected Board stays with Dashboard, Today, Upcoming, Tasks, planning and progress. Use Kanban, Table, Calendar or Timeline for the same work. Task capture keeps the selected Area or Project. Check the visible Board name before saving. An unfiled Project can hold tasks without an Area.
+The selected Board stays with Dashboard, Today, Upcoming, Tasks, planning and progress. Use Kanban, Table, Calendar or Timeline for the same work. Task capture, including Quick Add, keeps the selected Area or Project. With no selected Area or Project, new work stays unfiled; no Area is invented. Keyboard shortcuts and the Dashboard queue keep the same Board and placement. Check the visible Board name before saving. An unfiled Project can hold tasks without an Area.
 
 ## Organize and connect work
 
@@ -46,10 +46,18 @@ Home Assistant integration credentials select an explicit Board. Global HA entit
 
 ## Refresh, offline work and recovery
 
-A concurrent change asks you to refresh rather than overwriting another person's work. Temporary verification failures hide private content and retain eligible drafts. Revoked access clears private content. A switched account cannot inherit another person's offline queue.
+A concurrent change asks you to refresh rather than overwriting another person's work. Inspector deletion uses the loaded task version too. Page entrypoints handle access failures and planning redirects before rendering their embedded views. If access fails later, embedded panels show an unavailable/retry message. A deleted or unavailable task permalink opens an empty recovery shell with the shared inspector; closing it returns to task navigation without showing another Board's work. Proposed Timeline dates stay available after an unchanged focus verification; review or explicitly discard them. Temporary verification failures hide private content and retain eligible drafts. Revoked access clears private content. A switched account cannot inherit another person's offline queue.
 
 Offline editing uses the existing actor/installation/Board queue. Work pages, APIs and capture receipts require current network verification. The static offline screen contains no personal tasks. A missing capture acknowledgement remains unconfirmed: check the original attempt when connected before creating another task.
 
 Use Home Assistant App backups for the complete instance. The separately retained current grant journal is excluded from those archives. Never reconstruct authority from restored rows or an old matching database/marker pair. Follow [Home Assistant backups and restore](home-assistant-backup-and-restore.md) and the release runbook for current custody, stopped-App verification and recovery.
 
 Retiring an Area, Project or Goal preserves historical associations in storage. Public task responses omit unavailable planning references; they do not expose a private or retired destination as an active selection. A successful retirement acknowledges its own committed change while stale readers must refresh.
+
+A Board directory retains the same verified person and grant revision across its Boards, send-only destinations and Deleted Boards. If authority changes or that identity proof expires while the page loads, the entire directory is withheld and asks for a refresh; a newer current revision cannot admit older private names. The final HTTP boundary also completes asynchronous directory rendering before admitting its content.
+
+Existing `?board=` bookmarks and `?board_id=` links select the same workspace. If both appear they must agree with each other, the Board header and any Board path. Empty, repeated, conflicting or unavailable selectors show an unavailable response rather than selecting the capture default.
+
+Task references to Areas, Projects and Goals also respect each feature's current visibility. Hiding a feature removes its public reference IDs without erasing stored task associations or granting planning permissions to task-only agents.
+
+Grant and lifecycle changes retain their originating verified identity through durable journal preparation. An expired identity rolls back the change and its proposed epoch. An intentional removal of the caller's old Board entitlement can still succeed while the independently verified identity remains current; refreshing an old permission is not a substitute for either check.

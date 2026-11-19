@@ -1,4 +1,5 @@
-import { saveVersionedTask, taskRecordVersion } from "./task-api-client"
+import { currentTaskApiContext } from "./task-api"
+import { deleteVersionedTask, saveVersionedTask, taskRecordVersion } from "./task-api-client"
         import { askAIForTask } from "@domains/ai/ai-context-service";
         import { createClientLogger } from "@lib/client-logger";
         import { copyToClipboard } from "@lib/clipboard"
@@ -2034,9 +2035,12 @@ import { saveVersionedTask, taskRecordVersion } from "./task-api-client"
           ?.addEventListener("click", async () => {
             const taskId = currentTaskId
             if (!taskId) return
+            if (taskSaveConflict) { showTaskWriteConflict(); return }
+            const version = currentTaskVersion
+            const context = currentTaskApiContext()
             const search = searchSession
             const generation = detailGeneration
-            const stale = () => search && generation !== detailGeneration
+            const stale = () => generation !== detailGeneration
             const ok = await confirmDialog({
               message: "This task will be permanently deleted.",
               variant: "danger",
@@ -2047,28 +2051,21 @@ import { saveVersionedTask, taskRecordVersion } from "./task-api-client"
             if (!ok || stale() || taskId !== currentTaskId) return
             const scopedWrite = beginScopedWrite()
             try {
-              const res = await fetch(
-                `${window.__ingress_path || ""}/api/tasks/${taskId}`,
-                {
-                  method: "DELETE",
-                  ...(scopedWrite ? { signal: scopedWrite.signal } : {}),
-                },
-              );
+              const result = await deleteVersionedTask(taskId, version, context,
+                scopedWrite?.signal ?? AbortSignal.any([__signal, AbortSignal.timeout(7_000)]))
               if (stale()) return
-              // Treat 204 (deleted) and 404 (already gone) as success
-              if (res.ok || res.status === 404) {
+              if (result.ok) {
                 const deferred = deferral.removing(taskId)
                 closeTD("discard")
-                if (!deferred && !scopedWrite) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-deleted" } }));
-              } else if (search) {
-                const { showToast } = await import("@lib/toast")
-                if (!stale()) showToast("Couldn’t delete the task.", "error")
+                if (!deferred && !scopedWrite) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-deleted" } }))
+              } else {
+                taskSaveConflict = true
+                showTaskWriteConflict()
               }
             } catch {
               if (stale()) return
-              // Network error — still close and refresh to re-sync
-              closeTD("discard")
-              if (!scopedWrite) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-delete-fallback" } }));
+              taskSaveConflict = true
+              showTaskWriteConflict()
             } finally {
               scopedWrite?.finish()
             }

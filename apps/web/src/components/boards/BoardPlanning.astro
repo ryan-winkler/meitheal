@@ -1,7 +1,8 @@
 ---
-import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+import { resolveBoardPageScope } from "@lib/board-http"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
+import type { BoardScope } from "@domains/tasks/board-scope"
 import type { readNamedBoardPlanning } from "@domains/tasks/persistence/named-board-planning-repository"
 
 import { boardWorkspaceHref, DEFAULT_GROUP_COLOR, readBoardPlanningSection } from "@lib/board-workspace"
@@ -13,6 +14,7 @@ import { listSharedGoals, type SharedGoalProgress } from "@domains/tasks/persist
 import { getPersistenceClient } from "@domains/tasks/persistence/store"
 
 interface Props {
+  workScope?: BoardScope
   boardId: string
   areaId?: string | undefined
   projectId?: string | undefined
@@ -23,9 +25,8 @@ interface Props {
   tickets: { id: string; title: string }[]
 }
 const { boardId, areaId, projectId, planning, canManage, canComplete, routinesEnabled, tickets } = Astro.props
-const resolved = await resolveBoardPageScope(Astro, { boardId })
-if (!resolved.ok) return boardScopeResponse(resolved.errorCode)
-const workScope = resolved.scope
+const resolved = Astro.props.workScope ? { ok: true as const, scope: Astro.props.workScope } : await resolveBoardPageScope(Astro, { boardId })
+const workScope = resolved.ok ? resolved.scope : null
 const label = await organizationLabelsFor(Astro)
 const newLabel = (name: Parameters<typeof label>[0], fallback?: string) => newOrganizationLabel(label(name, false, fallback), organizationLocale(Astro))
 const section = readBoardPlanningSection(Astro.url.searchParams)
@@ -41,7 +42,7 @@ const selectedAreaId = areaId ?? selectedProject?.areaId ?? undefined
 const visibleAreas = selectedAreaId ? planning.areas.filter(area => area.id === selectedAreaId) : planning.areas
 let goalProgress: SharedGoalProgress[] = []
 let progressUnavailable = false
-if (showGoals && available("goals")) {
+if (workScope && showGoals && available("goals")) {
   try {
     goalProgress = await listSharedGoals(getPersistenceClient(), workScope, {
       ...(projectId ? { projectId } : selectedAreaId ? { areaId: selectedAreaId } : {}),
@@ -55,7 +56,7 @@ const formColor = (color: string) => /^#[0-9a-f]{6}$/i.test(color) ? color : DEF
 const ownedAreaIds = new Set(planning.areas.map(area => area.id))
 ---
 
-<section class="named-boards board-settings" id="groups" aria-labelledby="board-planning-title">
+{!workScope ? <p role="status">Planning is unavailable. Reload to try again.</p> : <section class="named-boards board-settings" id="groups" aria-labelledby="board-planning-title">
   <h2 id="board-planning-title">{section !== "planning" ? label(section === "goals" ? "goal" : section === "routines" ? "routine" : "pillar", true) : projectId ? `${label("project")} planning` : areaId ? `${label("group")} planning` : label("group", true)}</h2>
   {showPlanning && !areaId && planning.projects.some(project => !project.areaId) && <section aria-labelledby="unfiled-projects">
     <h3 id="unfiled-projects">Unfiled Projects</h3>
@@ -63,7 +64,7 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
       .map(project => <li><a href={boardWorkspaceHref(boardId, { project: project.id })}>{project.title}</a></li>)}</ul>
   </section>}
   {showPlanning && canManage && available("groups") && planning.areas.length === 0 && <p class="board-empty">Choose “{newLabel("group")}” to organize related work.</p>}
-  {section === "goals" && projectId && <GoalsTab {projectId} />}
+  {section === "goals" && projectId && <GoalsTab {projectId} {boardId} />}
   <div class="board-settings-grid" hidden={section === "pillars" || (section === "goals" && Boolean(projectId))}>
     {visibleAreas.map(area => <section class="board-tile">
       <h3 class="board-name"><a href={boardWorkspaceHref(boardId, { area: area.id })}>{area.icon} {area.name}</a></h3>
@@ -333,4 +334,4 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
       </form>
     </details>}
   </section>
-</section>
+</section>}

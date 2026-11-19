@@ -1,4 +1,12 @@
 ---
 import TaskWorkspace from "../components/TaskWorkspace.astro"
+import { boardScopeResponse, resolveBoardPageScope } from "../lib/board-http"
+import type { BoardScope } from "@domains/tasks/board-scope"
+
+const admittedScope = Astro.props.workScope as BoardScope | undefined
+const explicitBoardId = Astro.props.boardId ?? Astro.props.namedBoardId
+const resolvedScope = admittedScope ? { ok: true as const, scope: admittedScope }
+  : await resolveBoardPageScope(Astro, explicitBoardId ? { boardId: explicitBoardId } : {})
+if (!resolvedScope.ok) return boardScopeResponse(resolvedScope.errorCode)
 ---
-<TaskWorkspace {...Astro.props} />
+<TaskWorkspace {...Astro.props} workScope={resolvedScope.scope} />

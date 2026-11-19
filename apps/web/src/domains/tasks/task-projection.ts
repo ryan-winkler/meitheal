@@ -14,7 +14,7 @@ export const TASK_PUBLIC_FIELDS = [
 export function projectPublicTaskFields(row: Record<string, unknown>): Record<string, unknown> {
   const task: Record<string, unknown> = {}
   for (const field of TASK_PUBLIC_FIELDS) if (Object.hasOwn(row, field)) task[field] = row[field]
-  for (const field of ["area_id", "project_id", "goal_id"] as const) {
+  for (const field of ["area_id", "project_id", "goal_id", "parent_id"] as const) {
     const visible = `public_${field}`
     if (Object.hasOwn(row, visible)) task[field] = row[visible]
   }

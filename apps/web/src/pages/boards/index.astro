@@ -1,4 +1,5 @@
 ---
+import { boardScopeErrorResponse } from "@lib/board-http"
 import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
 import { NAMED_BOARD_PRESETS } from "@domains/tasks"
 import { BoardIntakeRepository } from "@domains/tasks/persistence/board-intake-repository"
@@ -6,17 +7,19 @@ import { getPersistenceClient } from "@domains/tasks/persistence/store"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import Layout from "../../layouts/Layout.astro"
 import "../../styles/boards.css"
-import { boardViewKey, readBoardDirectory } from "@lib/board-view"
+import { assertBoardDirectoryCurrent, boardViewKey, readBoardDirectory } from "@lib/board-view"
 import { boardNavigationLinks } from "@lib/board-workspace"
 import { boardSessionProof, currentBoardContext } from "@lib/named-board-request"
 
 const label = await organizationLabelsFor(Astro)
 const newLabel = (name: Parameters<typeof label>[0], fallback?: string) => newOrganizationLabel(label(name, false, fallback), organizationLocale(Astro))
 const user = await currentBoardContext(Astro)
-const directory = user ? await readBoardDirectory(user.actor) : null
+const directory = user ? await readBoardDirectory(user.actor, Astro.request).catch(error => { const failure=boardScopeErrorResponse(error);if(failure)return failure;throw error }) : null
+if (directory instanceof Response) return directory
 const submissions = user ? await new BoardIntakeRepository(getPersistenceClient(), user.principal).findSubmissions(user.actor) : []
 const snapshot = user && directory ? boardViewKey(directory, user.actor.id) : undefined
 const boards = directory?.boards ?? []
+if (directory) { try { await assertBoardDirectoryCurrent(directory) } catch(error) { const failure=boardScopeErrorResponse(error);if(failure)return failure;throw error } }
 ---
 <Layout title={label("board", true)} scopeGuard={false}>
   <span slot="page-title">{label("board", true)}</span>

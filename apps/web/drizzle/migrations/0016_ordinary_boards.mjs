@@ -338,6 +338,7 @@ async function captureLegacyTokenCeilings(tx, boardId) {
       add("board", "read")
       add("task", "read")
     }
+    if (scopes.includes("search:read") || scopes.includes("tasks:read")) add("task", "search")
     if (scopes.includes("tasks:write"))
       add("task", "create", "edit", "move", "assign", "complete", "reopen")
     else if (scopes.includes("tasks:write:assigned"))

@@ -1,3 +1,4 @@
+import { admitBoardDirectoryResponse } from "./lib/board-view"
 import { continuityRequestAllowed } from "./lib/continuity-request-policy"
 import { currentBoardGrantRevision } from "./domains/tasks/persistence/board-grant-fence"
 import { getOrganizationAvailability } from "./lib/organization-availability"
@@ -636,6 +637,8 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     // without relying solely on window.__ingress_path injection.
     response.headers.set("x-ingress-path", ingressPath);
   }
+
+  response = await admitBoardDirectoryResponse(request, response, url.pathname === "/boards")
 
   // Service-Worker-Allowed: let SW claim scope broader than its script path.
   // Required for ingress: SW at /api/hassio_ingress/{token}/sw.js needs to

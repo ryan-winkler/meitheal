@@ -1,6 +1,6 @@
 ---
 import type { TaskRepository } from "@domains/tasks/persistence/task-repository"
-import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+import { resolveBoardPageScope } from "@lib/board-http"
 import { formatCalendarDay } from "@lib/calendar-day"
 import type { Locale } from "@lib/locale"
 import type { TriageMode } from "@lib/triage-mode"
@@ -13,8 +13,7 @@ interface Props {
 }
 
 const scoped = await resolveBoardPageScope(Astro)
-if (!scoped.ok) return boardScopeResponse(scoped.errorCode)
-const boardId = scoped.scope.boardId
+const boardId = scoped.ok ? scoped.scope.boardId : ""
 const planningHref = `/planning?board_id=${encodeURIComponent(boardId)}#triage`
 const tableHref = `/boards/${encodeURIComponent(boardId)}?view=table`
 const { locale, mode, queue } = Astro.props
@@ -36,7 +35,7 @@ function pageHref(target: number, open?: string): string {
 
 ---
 
-  <section class="intake" data-triage-root data-triage-embedded={embedded || undefined} aria-labelledby="triage-heading">
+  {!scoped.ok ? <p role="status">Triage is unavailable. Reload to try again.</p> : <section class="intake" data-triage-root data-triage-embedded={embedded || undefined} aria-labelledby="triage-heading">
     <header class="intake-header">
       {!embedded && <a href={planningHref} data-astro-prefetch="false">{t("triage.planning", locale)}</a>}
       <Heading id="triage-heading" tabindex="-1">{t("triage.title", locale)}</Heading>
@@ -96,6 +95,7 @@ function pageHref(target: number, open?: string): string {
     </template>}
   </section>
 
+}
 <script>
   import "@lib/triage-controller"
 </script>

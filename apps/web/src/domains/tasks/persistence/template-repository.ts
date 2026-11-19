@@ -8,7 +8,7 @@ import {
 } from "../board-scope"
 import { validateBoardPlacement } from "../board-access-service"
 import { prepareTaskCreation } from "../task-creation-service"
-import { boardOperationClient } from "./board-operation-client"
+import { boardOperationClient, requireBoardWriterIntent, requireBoardWriterCheck, BoardOperationError } from "./board-operation-client"
 import { ownedPlanning, storageBoardId } from "./board-storage"
 import { sql, sourceSql } from "./sql-fragment"
 import { TaskRepository } from "./task-repository"
@@ -196,7 +196,11 @@ export class TemplateRepository {
       } = await tx.execute(
         sql`SELECT * FROM task_templates AS template WHERE id=${id} AND ${ownedPlanning(this.scope, "template")} AND retired_at IS NULL`
       )
-      if (!fresh) return false
+      if (!fresh || !await this.visible(tx, fresh)) return false
+      await requireBoardWriterIntent(tx, this.scope, { resource: fresh.is_routine ? "routine" : "task", action: "edit" })
+      await requireBoardWriterCheck(tx, this.scope, async () => {
+        if (!await this.visible(tx, fresh)) throw new BoardOperationError("unavailable")
+      })
       let template = templateObject(data.templateJson ?? String(fresh.template_json))
       if (data.templatePatch !== undefined)
         template = { ...template, ...templateObject(data.templatePatch) }
@@ -226,12 +230,15 @@ export class TemplateRepository {
   async delete(id: string): Promise<void> {
     const current = await this.findById(id)
     if (!current) return
-    const result = await changeBoardGrants(this.client, async (tx) => {
+    const result = await changeBoardGrants(this.client, this.scope.principal, async (tx) => {
+      const { rows: [fresh] } = await tx.execute(sql`SELECT * FROM task_templates AS template
+        WHERE id=${id} AND ${ownedPlanning(this.scope, "template")} AND retired_at IS NULL`)
+      if (!fresh || !await this.visible(tx, fresh)) return { unchanged: false }
       const allowed = await validateBoardScope(this.scope, tx, {
-        resource: current.is_routine ? "routine" : "task",
+        resource: fresh.is_routine ? "routine" : "task",
         action: "delete"
       })
-      if (!allowed.ok) throw new Error("Template deletion is unavailable")
+      if (!allowed.ok) throw new BoardOperationError(allowed.errorCode)
       const changed = await tx.execute(
         sql`UPDATE task_templates SET retired_at=${Date.now()},updated_at=${Date.now()} WHERE id=${id} AND ${ownedPlanning(this.scope, "task_templates")} AND retired_at IS NULL`
       )

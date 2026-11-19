@@ -333,7 +333,7 @@ test("service scopes retain exact current destination and reject binding changes
     allowedOperations: [operation],
     purpose: "todo.sync"
   }
-  await changeBoardGrants(db, async (tx) => {
+  await changeBoardGrants(db, parent(), async (tx) => {
     const {
       rows: [setting]
     } = await tx.execute("SELECT value FROM settings WHERE key='work-destinations'")

@@ -38,7 +38,7 @@ async function install(recipients = ["parent"]) {
     destination: { boardId: board }, allowedOperations: [read], recipientUserIds: recipients }
   actionBinding = { id: crypto.randomUUID(), generation: 1, enabled: true, integration: "notification_action", purpose: "notify.task.complete", sourceId: target,
     destination: { boardId: board }, allowedOperations: [read, { resource: "task", action: "complete" }], recipientUserIds: ["parent", "child"] }
-  const installed = await changeBoardGrants(db, async tx => {
+  const installed = await changeBoardGrants(db, owner.principal, async tx => {
     for (const binding of [delivery, actionBinding]) await tx.execute({
       sql: "INSERT INTO board_access_grants(board_id,principal_type,principal_id,role,authority_limits) VALUES (?,'service',?,'service',?)",
       args: [board, binding.id, JSON.stringify({ operations: binding.allowedOperations, purpose: binding.purpose })],
@@ -51,7 +51,7 @@ async function install(recipients = ["parent"]) {
 async function modifyBinding(id: string) {
   const db = getPersistenceClient()
   const config = await readWorkDestinations(db)
-  const changed = await changeBoardGrants(db, async tx => {
+  const changed = await changeBoardGrants(db, owner.principal, async tx => {
     await tx.execute({ sql: "UPDATE settings SET value=? WHERE key='work-destinations'", args: [JSON.stringify({ ...config, revision: crypto.randomUUID(), bindings: config!.bindings.map(binding => binding.id === id ? { ...binding, enabled: false, generation: binding.generation + 1 } : binding) })] })
     return { next: true }
   })
@@ -92,7 +92,7 @@ test.beforeEach(async ({}, testInfo) => {
     if (!task.ok) throw new Error(task.errorCode)
     taskId = task.task.id
   })
-  const enrolled = await changeBoardGrants(getPersistenceClient(), async tx => {
+  const enrolled = await changeBoardGrants(getPersistenceClient(), owner.principal, async tx => {
     for (const user of ["parent", "child"]) await tx.execute({ sql: "INSERT INTO board_access_grants(board_id,principal_type,principal_id,role) VALUES (?,'ha_user',?,?)", args: [board, user, user === "parent" ? "owner" : "member"] })
     return { next: true }
   })
@@ -191,7 +191,7 @@ test("a child cannot use a broader completion binding after their completion gra
   await install(["child"])
   const value = await createTaskNotificationDoneAction(board, target, taskId)
   expect(value).not.toBeNull()
-  const changed = await changeBoardGrants(getPersistenceClient(), async tx => {
+  const changed = await changeBoardGrants(getPersistenceClient(), owner.principal, async tx => {
     await tx.execute({ sql: "UPDATE board_access_grants SET deny_completion=1 WHERE board_id=? AND principal_type='ha_user' AND principal_id='child'", args: [board] })
     return { next: true }
   })
@@ -279,7 +279,7 @@ test("a public notification action cannot complete an edited or reopened task sn
 test("a restrictive writer callback cannot grant a child completion permission", async () => {
   await modifyBinding(delivery.id)
   await install(["child"])
-  const changed = await changeBoardGrants(getPersistenceClient(), async tx => {
+  const changed = await changeBoardGrants(getPersistenceClient(), owner.principal, async tx => {
     await tx.execute({ sql: "UPDATE board_access_grants SET deny_completion=1 WHERE board_id=? AND principal_type='ha_user' AND principal_id='child'", args: [board] })
     return { next: true }
   })

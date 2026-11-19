@@ -22,9 +22,11 @@ test("recreated sidebar restores pinned links and binds Tasks controls once", as
   await creationMenu.click()
 
   await page.evaluate(() => Reflect.set(window, "sidebarReplacementProbe", true))
-  await page.locator("[data-inactivity-link]").click()
+  await page.locator('#sidebar a[data-page="dashboard"]').click()
+  await page.locator('[data-setup-invite] a[href="/setup"]').click()
+  await expect(page).toHaveURL(/\/setup$/)
   await expect(page.locator("#sidebar")).toHaveCount(0)
-  await page.locator("[data-inactivity-back]").click()
+  await page.goBack()
 
   await expect(pinnedView).toBeVisible()
   await expect(pinnedType).toBeVisible()
@@ -78,7 +80,8 @@ test("sidebar can close again in desktop hover mode and on a phone", async ({ pa
   await expect(body).toHaveClass(/sidebar-collapsed/)
   await edge.hover()
   await expect(body).toHaveClass(/sidebar-collapsed/)
-  await sidebar.locator('a[data-page="dashboard"]').hover()
+  const dashboardLink = sidebar.locator('a[data-page="dashboard"]')
+  await dashboardLink.hover()
   await expect(body).not.toHaveClass(/sidebar-collapsed/)
   const unpin = sidebar.locator('[data-task-view-pinned-item="table"]').getByRole("button", { name: "Unpin Table from navigation" })
   await unpin.focus()
@@ -88,11 +91,15 @@ test("sidebar can close again in desktop hover mode and on a phone", async ({ pa
   await edge.click()
   await expect(body).toHaveClass(/sidebar-collapsed/)
 
-  await page.setViewportSize({ width: 390, height: 844 })
   const menu = page.locator("#menu-toggle")
   const close = sidebar.getByRole("button", { name: "Close sidebar" })
-  // Resizing with Sidebar focus now opens the drawer without moving that focus.
+  await expect(menu).toHaveAttribute("data-drawer-ready", "true")
+  // The desktop edge toggle disappears on a phone. Focus a link present at both widths.
+  await dashboardLink.focus()
+  await expect(dashboardLink).toBeFocused()
+  await page.setViewportSize({ width: 390, height: 844 })
   await expect(menu).toHaveAttribute("aria-expanded", "true")
+  await expect(dashboardLink).toBeFocused()
   await close.click()
   await expect(menu).toHaveAttribute("aria-expanded", "false")
   await expect(menu).toBeFocused()

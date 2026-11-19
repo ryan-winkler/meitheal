@@ -359,3 +359,70 @@ test("a markerless existing schema26 fixture cannot inherit access or bootstrap 
   expect(snapshot()).toEqual(lost)
   await expect(readFile(marker)).rejects.toMatchObject({ code: "ENOENT" })
 })
+
+
+test("unknown work selectors fail at page entrypoints without nested Astro responses", async ({ boards }) => {
+  const { member, app } = boards
+  for (const path of ["/tasks?board=unavailable-board", "/boards/unavailable-board", "/progress?board_id=unavailable-board", "/planning?board_id=unavailable-board", "/triage?board_id=unavailable-board"]) {
+    const response = await member.request.get(app + path, { maxRedirects: 0 })
+    expect(response.status(), path + ": " + await response.text()).toBe(404)
+    expect(response.headers()["cache-control"]).toBe("private, no-store")
+    expect(response.headers().location).toBeUndefined()
+    expect(await response.text()).not.toContain("AstroResponseSentError")
+  }
+})
+
+test("Board planning redirects and nested Area/Project management keep their admitted scope", async ({ boards }) => {
+  const { member, page, app, origin } = boards
+  const directory = await member.request.get(app + "/api/boards")
+  const proof = directory.headers()["x-meitheal-board-session"]!
+  const created = await member.request.post(app + "/api/boards", { headers: { origin, "x-meitheal-board-session": proof }, data: { name: "Nested scope Board" } })
+  expect(created.status(), await created.text()).toBe(201)
+  const boardId = (await created.json()).id
+  const headers = { origin, "x-meitheal-board-session": proof, "x-meitheal-board-id": boardId }
+  for (const section of ["goals", "pillars", "routines"]) {
+    const response = await member.request.get(app + `/boards/${boardId}?view=groups&section=${section}`, { maxRedirects: 0 })
+    expect(response.status(), await response.text()).toBe(302)
+    const destination = new URL(response.headers().location!, app)
+    expect(destination.pathname).toBe(new URL(app).pathname + (section === "routines" ? "/habits" : "/progress"))
+    expect(destination.searchParams.get("board_id")).toBe(boardId)
+    expect(destination.hash).toBe(section === "routines" ? "" : "#" + section)
+  }
+  const area = await member.request.post(app + "/api/areas", { headers, data: { name: "Nested Area" } })
+  expect(area.status(), await area.text()).toBe(201)
+  const areaId = (await area.json()).id
+  const project = await member.request.post(app + "/api/projects", { headers, data: { title: "Nested Project", area_id: areaId } })
+  expect(project.status(), await project.text()).toBe(201)
+  const projectId = (await project.json()).id
+  for (const [selector, id, title] of [["area", areaId, "Nested Area"], ["project", projectId, "Nested Project"]]) {
+    const response = await page.goto(app + `/boards/${boardId}?view=groups&${selector}=${id}`)
+    expect(response?.status()).toBe(200)
+    await expect(page.getByRole("heading", { name: title, exact: true }).first()).toBeVisible()
+    await expect(page.locator("body")).not.toContainText("AstroResponseSentError")
+  }
+})
+
+test("a deleted ordinary Board ticket uses the shared unavailable inspector and Close/Escape recovery", async ({ boards }) => {
+  const { member, page, app, origin } = boards
+  const directory = await member.request.get(app + "/api/boards")
+  const proof = directory.headers()["x-meitheal-board-session"]!
+  const board = await member.request.post(app + "/api/boards", { headers: { origin, "x-meitheal-board-session": proof }, data: { name: "Private deleted permalink Board" } })
+  expect(board.status(), await board.text()).toBe(201)
+  const boardId = (await board.json()).id
+  const headers = { origin, "x-meitheal-board-session": proof, "x-meitheal-board-id": boardId }
+  const response = await member.request.post(app + "/api/tasks", { headers, data: { title: "Deleted private permalink title", area_id: null } })
+  expect(response.status(), await response.text()).toBe(201)
+  const task = await response.json()
+  const removed = await member.request.delete(app + "/api/tasks/" + task.id, { headers, data: { version: task.task_version } })
+  expect(removed.status(), await removed.text()).toBe(204)
+  const unavailable = await page.goto(app + `/tickets/${task.id}?board_id=${boardId}`)
+  expect(unavailable?.status()).toBe(404)
+  await expect(page.getByRole("alert").filter({ hasText: "This task is unavailable." })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Copy task link" })).toBeHidden()
+  await expect(page.getByRole("button", { name: "Close detail" })).toBeFocused()
+  await expect(page.locator("body")).not.toContainText("Deleted private permalink title")
+  await expect(page.locator(".kanban-card")).toHaveCount(0)
+  await page.keyboard.press("Escape")
+  await expect(page).toHaveURL(app + "/tasks#kanban")
+  await expect(page.getByRole("navigation", { name: "Task views" }).getByRole("link", { name: "Kanban" })).toBeFocused()
+})
