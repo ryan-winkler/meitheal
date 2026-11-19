@@ -33,21 +33,38 @@ export function bindBoardPage(signal: AbortSignal) {
   let expired = false
   let checking: AbortController | undefined
   const placeholder = document.createComment("")
-  const detach = () => {
+  // Hiding the Board removes the focused control (or an open confirmation), so
+  // hand keyboard focus to whichever recovery control is now visible.
+  const holdsFocus = () => {
+    const active = document.activeElement
+    return !!active && active !== document.body &&
+      (root.contains(active) || recovery.contains(active) || !!active.closest('[role="dialog"], [role="alertdialog"]'))
+  }
+  const focusRecovery = (owned: boolean) => {
+    // Hiding the focused Retry control does not move focus until the next frame, so it counts as lost.
+    const active = document.activeElement
+    if (!owned || (active && active !== document.body && active.isConnected && !(expired && recovery.contains(active)))) return
+    const target = expired ? status.querySelector<HTMLElement>("[data-board-refresh]") : retry
+    target?.focus({ preventScroll: true })
+  }
+  const detach = (owned = holdsFocus()) => {
     root.dispatchEvent(new Event("meitheal:board-hidden"))
     if (root.isConnected) root.replaceWith(placeholder)
     recovery.hidden = expired
+    if (!expired) focusRecovery(owned)
   }
   const restore = () => {
     if (placeholder.isConnected) placeholder.replaceWith(root)
     recovery.hidden = true
   }
   const expire = () => {
+    const owned = holdsFocus()
     expired = true
-    detach()
+    detach(owned)
     root.replaceChildren()
     recovery.hidden = true
     status.hidden = false
+    focusRecovery(owned)
   }
   async function recheck(beforeRevealing = false) {
     if (expired || signal.aborted) return

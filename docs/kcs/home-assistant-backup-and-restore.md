@@ -38,6 +38,7 @@ The snapshot includes committed WAL data. Meitheal publishes the completed file 
 2. Select the installed Meitheal app, name the backup and choose an approved location. Confirm the app and version in the completed backup details.
 3. Keep an off-device copy and its emergency kit available to the operator. App data and options can include private household information or credentials.
 4. If the app was running, confirm it returns to service. Open the Meitheal ingress page and confirm `GET /api/health` reports a healthy database.
+5. If the installation has named Boards, the archive alone cannot restore Board access because it excludes the published grant marker. Capture and retain a current operator checkpoint as described in [Capture and refresh](#capture-and-refresh) before you treat the backup as complete.
 
 ## Checkpoint a legacy installation before upgrading
 
@@ -51,6 +52,8 @@ An installed app can still use the former hot backup configuration even when the
 ## Restore and verify
 
 Restore only the matching Meitheal app from the selected Home Assistant backup. The stable and canary apps have separate data volumes. For a version rollback, restore the prior image and its pre-upgrade data together.
+
+An archive created before the App excluded `meitheal-board-grants.json` can hold an older database together with its matching marker. Restoring it can reopen a Board grant that was revoked later, and Supervisor starts the App if it was running when the archive was made. Do not restore such an archive over an installation that has named Boards. Restore it only into a disposable, isolated Home Assistant instance to recover historical data, or follow [Restore without reopening historical permissions](#restore-without-reopening-historical-permissions) with startup prevented.
 
 1. Wait for Supervisor to finish and verify the exact restored app version and image.
 2. Start the app if it was stopped at backup time, then check ingress and `GET /api/health`.

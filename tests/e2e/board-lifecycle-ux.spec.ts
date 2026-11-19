@@ -228,7 +228,7 @@ for (const mode of ["offline", "revoked"] as const) {
     await expect(page.locator("body")).not.toContainText(name)
     expect(await disconnectedTrigger!.evaluate(button => button.isConnected)).toBe(false)
     const recovery = page.getByRole("button", { name: mode === "offline" ? "Retry verification" : "Refresh Board", exact: true })
-    await recovery.focus()
+    await expect(recovery).toBeFocused()
     // A queued click on the removed native button must have no remaining listener.
     await staleConfirmation!.evaluate(button => (button as HTMLButtonElement).click())
     await expect(recovery).toBeFocused()
