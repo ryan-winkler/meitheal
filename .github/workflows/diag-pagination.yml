@@ -1,0 +1,32 @@
+name: Diagnose sidebar Project paging
+
+on:
+  push:
+    branches:
+      - claude/project-thread-hn8f67
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 12.21.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @meitheal/web build
+      - run: pnpm --filter @meitheal/tests exec playwright install chromium
+      - name: Diagnose
+        env:
+          MEITHEAL_TEST_BROWSER: "1"
+        run: pnpm --filter @meitheal/tests exec playwright test e2e/zz-diag.spec.ts e2e/board-project-pagination.spec.ts:93 --reporter=list --trace off || true
