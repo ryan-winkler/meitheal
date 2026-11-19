@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import AxeBuilder from "@axe-core/playwright"
 import { expect, test, type Browser, type Route } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, pinRequest, startCoreFixture } from "../scripts/task-pins-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the built application and Core roster fixture")
@@ -63,7 +64,7 @@ test("a current admin reviews labels across pages, safely confirms and clears on
     const long = "Cothabháil an tí agus iniúchadh sábháilteachta don teaghlach · حديقة المنزل"
     try {
       database.exec("PRAGMA busy_timeout=3000")
-      const insert = database.prepare("INSERT INTO vikunja_labels (title,hex_color) VALUES (?, '317c61')")
+      const insert = database.prepare("INSERT INTO vikunja_labels (board_id,title,hex_color) VALUES ('household', ?, '317c61')")
       insert.run(unsafe)
       insert.run(long)
       for (let index = 1; index <= 26; index++) insert.run("Unused household " + String(index).padStart(2, "0"))
@@ -117,8 +118,10 @@ test("a current admin reviews labels across pages, safely confirms and clears on
       inputs.map(input => (input as HTMLInputElement).value))).not.toContain(unsafe)
 
     const headers = { origin, referer: page.url(), "sec-fetch-site": "same-origin", "sec-fetch-mode": "same-origin" }
-    expect((await page.request.post(origin + api, { headers: { ...headers, cookie: "feedback-fixture=member" },
-      data: { action: "preview", afterId: null } })).status()).toBe(403)
+    const memberHeaders = await currentBoardWriteHeaders(page.request, "household", { ...headers, cookie: "feedback-fixture=member" }, origin + prefix)
+    const memberDenied = await page.request.post(origin + api, { headers: memberHeaders,
+      data: { action: "preview", afterId: null } })
+    expect(memberDenied.status(), await memberDenied.text()).toBe(403)
     const credential = await pinRequest(page, prefix + "/api/agent-tokens", "POST", {
       name: "Synthetic label cleanup denial", scopes: ["tasks:read", "tasks:write"],
     })
@@ -171,19 +174,42 @@ test("a current admin reviews labels across pages, safely confirms and clears on
     expect((await page.request.get(origin + prefix + "/api/labels")).ok()).toBe(true)
     await expect((await page.request.get(origin + prefix + "/api/labels")).json().then(labels =>
       labels.some((label: { title: string }) => label.title === "Shared maintenance"))).resolves.toBe(false)
+    const adminHeaders = await currentBoardWriteHeaders(page.request, "household", headers, origin + prefix)
     for (const data of [{ action: "preview", afterId: null, extra: true }, { action: "remove", labels: [] },
       { action: "preview", afterId: 1.5 }]) {
-      expect((await page.request.post(origin + api, { headers, data })).status()).toBe(400)
+      const invalid = await page.request.post(origin + api, { headers: adminHeaders, data })
+      expect(invalid.status(), await invalid.text()).toBe(400)
     }
-    expect((await page.request.post(origin + api, { headers: { ...headers, origin: "https://other.invalid" },
+    expect((await page.request.post(origin + api, { headers: { ...adminHeaders, origin: "https://other.invalid" },
       data: { action: "preview", afterId: null } })).status()).toBe(403)
-    expect((await page.request.post(origin + api, { headers, data: { action: "preview", afterId: null, padding: "x".repeat(9000) } })).status()).toBe(413)
-    expect((await page.request.post(origin + api, { headers: { ...headers, "content-type": "text/plain" },
+    expect((await page.request.post(origin + api, { headers: adminHeaders, data: { action: "preview", afterId: null, padding: "x".repeat(9000) } })).status()).toBe(413)
+    expect((await page.request.post(origin + api, { headers: { ...adminHeaders, "content-type": "text/plain" },
       data: "not JSON" })).status()).toBe(415)
+    // The first Core read admits the Board request and the second rechecks the administrator role.
+    const armed = once(child, "message", { signal: AbortSignal.timeout(3000) })
+    child.send({ type: "fixture-core-hold", ordinal: 2 })
+    expect((await armed)[0]).toEqual({ participantLookupArmed: true })
+    const heldRecheck = once(child, "message", { signal: AbortSignal.timeout(3000) })
+    const verifying = page.request.post(origin + api, { headers: adminHeaders, data: { action: "preview", afterId: null } })
+    expect((await heldRecheck)[0]).toEqual({ participantLookupHeld: true })
+    const invalidCore = once(child, "message", { signal: AbortSignal.timeout(3000) })
+    child.send({ type: "fixture-core", result: {} })
+    await invalidCore
+    child.send({ type: "fixture-core-release" })
+    const unavailableAfterAdmission = await verifying
+    expect(unavailableAfterAdmission.status()).toBe(503)
+    expect(await unavailableAfterAdmission.json()).toMatchObject({ ok: false, errorCode: "unavailable" })
+
     const unavailable = once(child, "message", { signal: AbortSignal.timeout(3000) })
     child.send({ type: "fixture-core", unavailable: true })
     await unavailable
-    expect((await pinRequest(page, api, "POST", { action: "preview", afterId: null })).status).toBe(503)
+    const admission = page.waitForResponse(response => response.url() === origin + api && response.request().method() === "POST")
+    await review.click()
+    const unverified = await admission
+    expect(unverified.status()).toBe(403)
+    expect(unverified.headers()["cache-control"]).toBe("private, no-store")
+    await expect(checkboxes).toHaveCount(0)
+    await expect(cleanup.locator("[data-cleanup-status]")).toHaveText("Open Labels with a current Home Assistant administrator account.")
     const available = once(child, "message", { signal: AbortSignal.timeout(3000) })
     child.send({ type: "fixture-core", unavailable: false })
     await available
@@ -283,17 +309,19 @@ async function verifyWorkerUpdate(control: "toast" | "settings" | "force", timeO
     await cleanup.locator("[data-cleanup-review]").click()
     await expect(cleanup.getByRole("checkbox")).toHaveCount(1)
     const variants = [prefix + "/api/labels/cleanup", prefix + "/api/%256cabels/cleanup/", prefix + "/api/labels/%2563leanup"]
-    const ordinary = prefix + "/api/ordinary-label-fixture"
+    const ordinaryApi = prefix + "/api/ordinary-label-fixture"
+    const publicAsset = prefix + "/icons/label-cleanup-fixture.svg"
     const version = await page.evaluate(async prefix => (await (await fetch(prefix + "/version.json")).json()).version as string, prefix)
     const names = ["api", "nav", "static", "precache"].map(kind => `meitheal-${kind}-v${version}`)
-    await page.evaluate(async ({ names, variants, ordinary }) => {
+    await page.evaluate(async ({ names, variants, ordinaryApi, publicAsset }) => {
       const headers = { date: new Date().toUTCString() }
       for (const name of names) {
         const cache = await caches.open(name)
         for (const url of variants) await cache.put(url, new Response("Stale private cleanup fixture", { headers }))
-        await cache.put(ordinary, new Response("Ordinary offline fixture", { headers }))
+        await cache.put(ordinaryApi, new Response("Stale Board API fixture", { headers }))
+        await cache.put(publicAsset, new Response("Public offline fixture", { headers }))
       }
-    }, { names, variants, ordinary })
+    }, { names, variants, ordinaryApi, publicAsset })
     await context.setOffline(true)
     await expect(cleanup.getByRole("checkbox")).toHaveCount(0)
     await expect(cleanup.locator("[data-cleanup-review]")).toBeDisabled()
@@ -415,10 +443,14 @@ async function verifyWorkerUpdate(control: "toast" | "settings" | "force", timeO
     await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
     expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem("fixture-worker-at-reload") ?? "null")))
       .toEqual({ state: "activated", controls: true })
-    await expect.poll(() => page.evaluate(async ({ names, variants, ordinary }) => Promise.all(names.map(async name => {
+    const apiPaths = [...variants, ordinaryApi]
+    await expect.poll(() => page.evaluate(async ({ names, apiPaths, publicAsset }) => Promise.all(names.map(async name => {
       const cache = await caches.open(name)
-      return Promise.all([...variants, ordinary].map(async url => Boolean(await cache.match(url))))
-    })), { names, variants, ordinary })).toEqual(names.map(() => [false, false, false, true]))
+      const cachedApiPaths = await Promise.all(apiPaths.map(async url => Boolean(await cache.match(url))))
+      return { cachedApiPaths, publicAsset: await (await cache.match(publicAsset))?.text() }
+    })), { names, apiPaths, publicAsset })).toEqual(names.map(() => ({
+      cachedApiPaths: apiPaths.map(() => false), publicAsset: "Public offline fixture",
+    })))
     await expect.poll(() => page.evaluate(() => new Promise<boolean>(resolve => {
       const channel = new MessageChannel()
       const timer = setTimeout(() => { channel.port1.close(); resolve(false) }, 500)
@@ -430,9 +462,12 @@ async function verifyWorkerUpdate(control: "toast" | "settings" | "force", timeO
       navigator.serviceWorker.controller?.postMessage({ type: "COMMENT_MENTIONS_NETWORK_ONLY" }, [channel.port2])
     }))).toBe(true)
     await context.setOffline(true)
-    const offline = await page.evaluate(async variants => Promise.all(variants.map(url =>
-      fetch(url).then(response => response.text()).catch(() => null))), variants)
-    expect(offline).toEqual([null, null, null])
+    const offline = await page.evaluate(async paths => Promise.all(paths.map(async url => {
+      const response = await fetch(url)
+      return { status: response.status, cache: response.headers.get("cache-control"), body: await response.json() }
+    })), apiPaths)
+    expect(offline).toEqual(apiPaths.map(() => ({ status: 503, cache: "private, no-store", body: { error: "offline" } })))
+    expect(await page.evaluate(url => fetch(url).then(response => response.text()), publicAsset)).toBe("Public offline fixture")
   } finally {
     await browser?.close()
     if (child.exitCode === null && child.signalCode === null) {
