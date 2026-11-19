@@ -47,7 +47,7 @@ import { getNextOccurrence, parseRRule } from "../recurrence"
 import { routinePeriod } from "../routine-period"
 import type { TaskEpicLink } from "../task-epic-groups"
 import { deferralTerminalStatusesSql, isDeferralTerminalStatus } from "./task-deferral-status"
-import { discardUnappliedTaskActivity, taskAddedActivity, taskChangedActivity, type RecentTaskActor } from "./recent-activity"
+import { discardUnappliedTaskActivity, sanitizeOriginName, taskAddedActivity, taskChangedActivity, type RecentTaskActor } from "./recent-activity"
 import { canAdvanceTaskTimestampMs, nextTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
 import { inactivityRuleActor, inactivityWriteGuard } from "./task-inactivity-query"
 import { openTaskDependencies } from "./task-dependencies"
@@ -1967,12 +1967,13 @@ export class TaskRepository {
     }
 
     const writeIndex = diagnostics.length + (activity ? 1 : 0)
+    let writerActivity = activity
     const buildBatch = (txNow: number): { update: InStatement; statements: InStatement[] } => {
       const eventId = activity ? crypto.randomUUID() : null
       const update: InStatement = scopedTaskRead(this.scope, sourceSql(updateSql, [...args, txNow, ...whereArgs]), "select")
       const statements: InStatement[] = [...diagnostics]
       // Capture the old state and commit the event and update in the same writer batch.
-      if (activity && eventId) statements.push(taskChangedActivity(this.scope, fields, where, whereArgs, activity, txNow, eventId))
+      if (writerActivity && eventId) statements.push(taskChangedActivity(this.scope, fields, where, whereArgs, writerActivity, txNow, eventId))
       statements.push(update)
       if (eventId) statements.push(discardUnappliedTaskActivity(eventId))
       return { update, statements }
@@ -2081,6 +2082,14 @@ export class TaskRepository {
             assignmentEventId = String(priorReceipt.attempt_id)
           } else assignmentEventId = crypto.randomUUID()
         }
+        if (activity && this.scope.principal.kind === "agent") {
+          const { rows: [token] } = await tx.execute(sql`SELECT name FROM agent_tokens WHERE id=${this.scope.principal.tokenId} AND revoked=0`)
+          if (!token) throw new BoardOperationError("denied")
+          const tokenName = sanitizeOriginName(stripHtml(String(token.name)))?.slice(0, 80) || "Agent"
+          // A displayed token identity comes from this writer's current verified
+          // credential row, never caller origin headers or a supplied actor name.
+          writerActivity = { ...activity, kind: "agent", provenance: { ...activity.provenance, tokenName } }
+        }
         const iterator = steps()
         let step = iterator.next()
         while (!step.done) {
@@ -2100,12 +2109,12 @@ export class TaskRepository {
         const written = completion.results[writeIndex]?.rows[0]
         signal?.throwIfAborted()
         if (written && activity) {
-          const actor = this.scope.principal.kind === "agent" ? stripHtml(activity.provenance?.tokenName ?? "Agent").trim().slice(0, 80) || "Agent" : "user"
+          const actor = this.scope.principal.kind === "agent" ? writerActivity?.provenance?.tokenName ?? "Agent" : "user"
           const actorType = this.scope.principal.kind === "agent" ? "agent" : this.scope.principal.kind === "service" ? "system" : "user"
           const changed = Object.entries({ ...fields, ...(reassigning ? { owner: written.owner ?? original.owner } : {}) }).filter(([field, value]) =>
             String(original[field] ?? "") !== String(value ?? ""))
-          if (changed.length) await tx.execute(sql`INSERT INTO task_activity_log(task_id, field, old_value, new_value, actor, actor_type, correlation_id, created_at)
-            VALUES ${joinSql(changed.map(([field, value]) => sql`(${id}, ${field}, ${original[field] == null ? null : String(original[field])}, ${value == null ? "" : String(value)}, ${actor}, ${actorType}, ${activityRequestId ?? reassignmentReceipt?.requestId ?? null}, ${Number(written.updated_at)})`))}`)
+          if (changed.length) await tx.execute(sql`INSERT INTO task_activity_log(task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at)
+            VALUES ${joinSql(changed.map(([field, value]) => sql`(${id}, ${field}, ${original[field] == null ? null : String(original[field])}, ${value == null ? "" : String(value)}, ${actor}, ${actorType}, ${field === "status" ? "status_change" : "field_change"}, ${`${field}: ${original[field] == null ? "(empty)" : String(original[field])} → ${value == null ? "" : String(value)}`}, ${activityRequestId ?? reassignmentReceipt?.requestId ?? null}, ${Number(written.updated_at)})`))}`)
         }
         signal?.throwIfAborted()
         if (written && reassignmentReceipt && assignmentEventId) {

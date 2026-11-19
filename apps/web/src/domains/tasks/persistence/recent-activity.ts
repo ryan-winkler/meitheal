@@ -217,7 +217,13 @@ export function taskChangedActivity(
   eventId: string,
 ): InStatement {
   const summary = serializeProvenanceSummary(actor)
-  const args: InValue[] = [actor.kind, actor.kind, summary, eventId, at]
+  const display = actor.kind === "agent" ? sanitizeOriginName(actor.provenance?.tokenName) ?? "Agent" : actor.kind
+  const eventType = typeof fields.status === "string"
+    ? `CASE WHEN ${statusMatches(fields.status)} THEN 'field_change' ELSE 'status_change' END`
+    : "'field_change'"
+  const args: InValue[] = [display, actor.kind]
+  if (typeof fields.status === "string") args.push(...statusValues(fields.status))
+  args.push(summary, eventId, at)
   let action = "'edited'"
   if (typeof fields.status === "string") {
     action = fields.status === STATUS.COMPLETE
@@ -240,7 +246,7 @@ export function taskChangedActivity(
   return {
     sql: `INSERT INTO task_activity_log
             (task_id, field, actor, actor_type, event_type, summary, correlation_id, created_at, feed_action, feed_person_key)
-          SELECT id, 'activity', ?, ?, 'field_change', ?, ?, ?, ${action}, ?
+          SELECT id, 'activity', ?, ?, ${eventType}, ?, ?, ?, ${action}, ?
           FROM tasks ${where} AND ${ownership.sql} AND (${changes.join(" OR ")})`,
     args,
   }

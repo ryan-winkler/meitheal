@@ -1,23 +1,21 @@
-import type { BoardScope } from "../tasks/board-scope"
 import { isOrganizationFeatureAvailable } from "../../lib/organization-request-context"
 import {
+  scopePermits,
+  type BoardScope,
   AreaRepository,
   getPersistenceClient,
   SettingsRepository,
   TaskRepository,
-  type TaskCatalogRow,
+  type TaskCatalogRow
 } from "@domains/tasks"
 import type { OrganizationTerm } from "@lib/organization-labels"
 import { normalizeSavedFilter, writeTableFilterParams } from "@lib/filter-state"
-import {
-  SETTINGS_SECTIONS,
-  searchSettingsRegistry,
-} from "@lib/settings-registry"
+import { SETTINGS_SECTIONS, searchSettingsRegistry } from "@lib/settings-registry"
 import type {
   SearchQueryOptions,
   SearchResponse,
   SearchResultItem,
-  SearchResultSection,
+  SearchResultSection
 } from "./search-types"
 
 function buildTaskSearchItem(row: TaskCatalogRow, scope: BoardScope): SearchResultItem {
@@ -46,8 +44,8 @@ function buildTaskSearchItem(row: TaskCatalogRow, scope: BoardScope): SearchResu
       score: row.score,
       status,
       priority,
-      deferred: row.deferred_at != null,
-    },
+      deferred: row.deferred_at != null
+    }
   }
 }
 
@@ -59,17 +57,52 @@ function filterByQuery<T extends SearchResultItem>(items: T[], query: string): T
       .filter(Boolean)
       .join(" ")
       .toLowerCase()
-      .includes(needle),
+      .includes(needle)
   )
 }
 
 export async function searchMeithealCatalog(
   options: SearchQueryOptions,
   scope: BoardScope,
-  organization?: (term: OrganizationTerm, plural: boolean, fallback: string) => string,
+  organization?: (term: OrganizationTerm, plural: boolean, fallback: string) => string
 ): Promise<SearchResponse> {
   const client = getPersistenceClient()
   const taskRepo = new TaskRepository(client, scope)
+  // Search-only credentials use the existing title lookup, never the rich catalog
+  // or planning/settings sources. Task read remains a separate capability.
+  if (!scopePermits(scope, { resource: "task", action: "read" })) {
+    const rows =
+      options.scope === "all" || options.scope === "tasks"
+        ? await taskRepo.searchTaskTitles({ query: options.query, limit: options.limit })
+        : []
+    return {
+      query: options.query,
+      sections: rows.length
+        ? [
+            {
+              id: "tasks",
+              label: "Tasks",
+              items: rows.map((row) => ({
+                id: row.id,
+                kind: "task",
+                taskId: row.id,
+                title: row.title,
+                href: `/tasks?board_id=${encodeURIComponent(scope.boardId)}&task=${encodeURIComponent(row.id)}`,
+                ...(row.ticket_key ? { subtitle: row.ticket_key } : {})
+              }))
+            }
+          ]
+        : [],
+      meta: {
+        scope: "tasks",
+        limit: options.limit,
+        include_completed: false,
+        include_archived: false,
+        sort: "relevance",
+        task_fields: ["id", "title"]
+      }
+    }
+  }
   const areaRepo = new AreaRepository(client, scope)
   const settingsRepo = new SettingsRepository(client)
 
@@ -82,7 +115,7 @@ export async function searchMeithealCatalog(
       includeArchived: options.includeArchived,
       fields: options.taskFields,
       sort: options.sort,
-      limit: options.limit,
+      limit: options.limit
     }
     if (options.status) searchOptions.status = options.status
     if (options.priority != null) searchOptions.priority = options.priority
@@ -90,13 +123,15 @@ export async function searchMeithealCatalog(
 
     const rows = await taskRepo.searchCatalog(searchOptions)
 
-    const taskItems = rows.map(row => buildTaskSearchItem(row, scope))
+    const taskItems = rows.map((row) => buildTaskSearchItem(row, scope))
 
     if (taskItems.length > 0) {
       sections.push({
         id: "tasks",
-        label: organization?.("task", true, options.query ? "Tasks" : "Recent tasks") ?? (options.query ? "Tasks" : "Recent tasks"),
-        items: taskItems,
+        label:
+          organization?.("task", true, options.query ? "Tasks" : "Recent tasks") ??
+          (options.query ? "Tasks" : "Recent tasks"),
+        items: taskItems
       })
     }
   }
@@ -111,16 +146,16 @@ export async function searchMeithealCatalog(
         subtitle: "Open in Kanban",
         href: `/tasks?board_id=${encodeURIComponent(scope.boardId)}&area=${encodeURIComponent(String(area.id))}`,
         icon: typeof area.icon === "string" ? area.icon : "📋",
-        color: typeof area.color === "string" ? area.color : null,
+        color: typeof area.color === "string" ? area.color : null
       })),
-      options.query,
+      options.query
     ).slice(0, Math.min(6, options.limit))
 
     if (areaItems.length > 0) {
       sections.push({
         id: "areas",
         label: organization?.("group", true, "Areas") ?? "Areas",
-        items: areaItems,
+        items: areaItems
       })
     }
 
@@ -132,39 +167,43 @@ export async function searchMeithealCatalog(
         const params = new URLSearchParams({ board_id: scope.boardId })
         writeTableFilterParams(params, state)
         const icon = typeof row.icon === "string" ? row.icon : "🔍"
-        return [{
-          id: String(row.id ?? ""),
-          kind: "saved_filter" as const,
-          title: String(row.name ?? "Saved filter"),
-          subtitle: "Open smart view",
-          description: icon,
-          href: `/table?${params}`,
-          icon,
-        }]
+        return [
+          {
+            id: String(row.id ?? ""),
+            kind: "saved_filter" as const,
+            title: String(row.name ?? "Saved filter"),
+            subtitle: "Open smart view",
+            description: icon,
+            href: `/table?${params}`,
+            icon
+          }
+        ]
       }),
-      options.query,
+      options.query
     ).slice(0, Math.min(6, options.limit))
 
     if (savedFilterItems.length > 0) {
       sections.push({
         id: "saved_filters",
         label: "Saved filters",
-        items: savedFilterItems,
+        items: savedFilterItems
       })
     }
   }
 
   if (options.scope === "all" || options.scope === "settings") {
-    const settingsItems = (options.query
-      ? searchSettingsRegistry(options.query)
-      : SETTINGS_SECTIONS.slice(0, 4).map((section) => ({
-          id: section.id,
-          label: section.label,
-          description: section.description,
-          anchorId: section.id,
-          sectionId: section.id,
-          type: "section" as const,
-        })))
+    const settingsItems = (
+      options.query
+        ? searchSettingsRegistry(options.query)
+        : SETTINGS_SECTIONS.slice(0, 4).map((section) => ({
+            id: section.id,
+            label: section.label,
+            description: section.description,
+            anchorId: section.id,
+            sectionId: section.id,
+            type: "section" as const
+          }))
+    )
       .map((item) => ({
         id: item.id,
         kind: "setting" as const,
@@ -174,8 +213,8 @@ export async function searchMeithealCatalog(
         href: `/settings#${encodeURIComponent(item.anchorId)}`,
         meta: {
           section_id: item.sectionId,
-          anchor_id: item.anchorId,
-        },
+          anchor_id: item.anchorId
+        }
       }))
       .slice(0, options.limit)
 
@@ -183,7 +222,7 @@ export async function searchMeithealCatalog(
       sections.push({
         id: "settings",
         label: "Settings",
-        items: settingsItems,
+        items: settingsItems
       })
     }
   }
@@ -197,7 +236,7 @@ export async function searchMeithealCatalog(
       include_completed: options.includeCompleted,
       include_archived: options.includeArchived,
       sort: options.sort,
-      task_fields: options.taskFields,
-    },
+      task_fields: options.taskFields
+    }
   }
 }
