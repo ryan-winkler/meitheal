@@ -248,8 +248,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: MEITHEAL_DB_URL=file:./.data/ci-migrations.db pnpm --filter @meitheal/web db:migrate
-      - run: MEITHEAL_DB_URL=file:./.data/ci-migrations.db pnpm --filter @meitheal/web db:migrate:check
+      - run: MEITHEAL_DB_URL=file:./.data/ci-migrations.db MEITHEAL_BOARD_GRANT_PATH=./.data/ci-migrations-grants.json pnpm --filter @meitheal/web db:migrate
+      - run: MEITHEAL_DB_URL=file:./.data/ci-migrations.db MEITHEAL_BOARD_GRANT_PATH=./.data/ci-migrations-grants.json pnpm --filter @meitheal/web db:migrate:check
 
   schema-drift:
     runs-on: ubuntu-latest

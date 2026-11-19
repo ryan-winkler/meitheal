@@ -90,6 +90,7 @@ async def app_core(hass, aiohttp_server, tmp_path, *, mode="app", enabled=None):
     protocol.router.add_get("/core", core)
     core_server = await aiohttp_server(protocol)
     env = {**os.environ, "MEITHEAL_DB_URL": f"file:{tmp_path / 'tasks.db'}",
+           "MEITHEAL_BOARD_GRANT_PATH": str(tmp_path / "meitheal-board-grants.json"),
            "MEITHEAL_EVENT_CORE_WS": str(core_server.make_url("/core")).replace("http:", "ws:"),
            "SUPERVISOR_TOKEN": "event-authority-fixture", "NODE_ENV": "production",
            "TZ": "Europe/Dublin"}
@@ -97,10 +98,15 @@ async def app_core(hass, aiohttp_server, tmp_path, *, mode="app", enabled=None):
         env.pop("SUPERVISOR_TOKEN", None)
     for key in ["HA_BASE_URL", "HA_TOKEN", "MEITHEAL_DEV_USER_ID"]:
         env.pop(key, None)
-    with sqlite3.connect(tmp_path / "tasks.db") as db:
-        db.execute("CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at INTEGER NOT NULL)")
-        if enabled is not None:
-            db.execute("INSERT INTO settings(key,value,updated_at) VALUES(?,?,0)", ("n8n_events", json.dumps(enabled)))
+    migrate = await asyncio.create_subprocess_exec(
+        "node", str(ROOT / "apps/web/scripts/migrate.mjs"),
+        cwd=ROOT / "apps/web", env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    _, migrate_err = await asyncio.wait_for(migrate.communicate(), 15)
+    assert migrate.returncode == 0, migrate_err.decode()
+    if enabled is not None:
+        with closing(sqlite3.connect(tmp_path / "tasks.db")) as db:
+            db.execute("INSERT OR REPLACE INTO settings(key,value,updated_at) VALUES(?,?,0)", ("n8n_events", json.dumps(enabled)))
+            db.commit()
     log_path = tmp_path / "app.log"
     with log_path.open("wb") as log:
         process = await asyncio.create_subprocess_exec(
