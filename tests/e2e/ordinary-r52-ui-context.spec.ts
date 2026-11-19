@@ -29,10 +29,41 @@ type APIContext = Parameters<typeof createTask>[0]
 const transport = { peer: "127.0.0.1", fromSupervisor: false, identityHeadersSafe: true, configuredPath: undefined }
 const origin = "http://127.0.0.1:8930"
 const source = resolve(import.meta.dirname, "../../apps/web/src")
-const ts = createRequire(import.meta.url)("../../apps/web/node_modules/typescript/lib/typescript.js")
 const requireRuntime = createRequire(new URL("../../apps/web/package.json", import.meta.url))
 const { WebSocket, WebSocketServer } = requireRuntime("ws") as typeof import("../../apps/web/node_modules/@types/ws")
-const esbuild = createRequire(import.meta.url)("../../node_modules/.pnpm/esbuild@0.28.2/node_modules/esbuild/lib/main.js")
+const vite = createRequire(requireRuntime.resolve("astro/package.json")).resolve("vite")
+const esbuild = createRequire(vite)("esbuild")
+const modules = new Map<string, Promise<string>>()
+
+async function compileBrowserModule(pathname: string): Promise<string> {
+  // Bundle the real dependency graph, including workspace exports, aliases and
+  // mixed TypeScript/JavaScript modules. Only Astro's inline script and Vite's
+  // stylesheet URL import need adaptation for a synthetic browser document.
+  const sidebar = pathname === "/components/layout/sidebar-nav-inline"
+  const entry = resolve(source, pathname.slice(1) + ".ts")
+  const inline = sidebar && (await readFile(resolve(source, "components/layout/SidebarNavList.astro"), "utf8")).match(/<script>([\s\S]*?)<\/script>/i)?.[1]
+  if (sidebar && !inline) throw new Error("SidebarNavList inline script missing")
+  const bundled = await esbuild.build({
+    ...(inline ? { stdin: { contents: inline, resolveDir: resolve(source, "components/layout"), loader: "ts" } } : { entryPoints: [entry] }),
+    absWorkingDir: resolve(source, ".."),
+    bundle: true,
+    platform: "browser",
+    format: "esm",
+    define: { "import.meta.env.DEV": "false", "import.meta.env.PROD": "true" },
+    write: false,
+    plugins: [{
+      name: "tabler-stylesheet-url",
+      setup(build: {
+        onResolve(options: { filter: RegExp }, callback: () => { path: string, namespace: string }): void
+        onLoad(options: { filter: RegExp, namespace: string }, callback: () => { contents: string }): void
+      }) {
+        build.onResolve({ filter: /tabler-surface\.scss\?url$/ }, () => ({ path: "tabler.css", namespace: "fixture-css-url" }))
+        build.onLoad({ filter: /.*/, namespace: "fixture-css-url" }, () => ({ contents: 'export default "/fixture-tabler.css"' }))
+      },
+    }],
+  })
+  return bundled.outputFiles[0].text
+}
 let directory: string, session: string, work: string
 let markup = ""
 let actor: "local" | "owner" | "viewer" = "local"
@@ -97,6 +128,9 @@ test.afterEach(async () => {
   await rm(directory, { recursive: true, force: true })
 })
 async function browser(page: Page, board: string, query = "", widget = false) {
+  // This fixture has its own origin. Keep the runner's App Origin header out of
+  // requests so Chromium can issue same-origin module and API requests here.
+  await page.context().setExtraHTTPHeaders({})
   await page.route(origin + "/**", async route => {
     const request = route.request(), url = new URL(request.url())
     if (url.pathname.startsWith("/api/")) {
@@ -116,39 +150,14 @@ async function browser(page: Page, board: string, query = "", widget = false) {
       const response = await runWithIngressTransport(actor === "local" ? transport : { ...transport, fromSupervisor: true }, () => handler(context(webRequest, { ...(taskMatch ? { id: taskMatch[1] } : {}), ...(boardMatch ? { id: boardMatch[1] } : {}), ...(verifyMatch ? { id: verifyMatch[1] } : {}) })))
       return route.fulfill({ status: response.status, headers: Object.fromEntries(response.headers), body: await response.text() })
     }
-    if (url.pathname === "/package-date") return route.fulfill({ contentType: "text/javascript", body: esbuild.buildSync({ entryPoints: [resolve(requireRuntime.resolve("date-fns-tz/package.json"), "../dist/esm/index.js")], bundle: true, write: false, platform: "browser", format: "esm" }).outputFiles[0].text })
-    if (url.pathname.startsWith("/package-task/")) {
-      const filename = url.pathname.slice("/package-task/".length)
-      if (!/^[\w-]+$/.test(filename)) return route.fulfill({ status: 404 })
-      const packageRoot = resolve(import.meta.dirname, "../../packages/domain-tasks/src")
-      if (filename === "browser-values") return route.fulfill({ contentType: "text/javascript", body: ts.transpileModule(
-        (await readFile(join(packageRoot, "task.ts"), "utf8")) + "\n" + (await readFile(join(packageRoot, "domain-model.ts"), "utf8")),
-        { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText })
-      const raw = await readFile(join(packageRoot, filename === "status-values" ? "task-status-values.mjs" : filename + ".ts"), "utf8")
-      return route.fulfill({ contentType: "text/javascript", body: ts.transpileModule(raw, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText })
-    }
-    if (url.pathname === "/styles/tabler-surface.scss") return route.fulfill({ contentType: "text/javascript", body: 'export default "/fixture-tabler.css"' })
     if (url.pathname === "/fixture-tabler.css") return route.fulfill({ contentType: "text/css", body: await readFile(resolve(source, "../node_modules/@tabler/core/dist/css/tabler.min.css"), "utf8") })
-    if (url.pathname.startsWith("/tabler/")) {
-      const filename = url.pathname.slice("/tabler/".length).replace(/\.js$/, "")
-      if (!/^[\w/-]+$/.test(filename)) return route.fulfill({ status: 404 })
-      const raw = await readFile(resolve(source, "../node_modules/@tabler/core/js/src/bootstrap", filename + ".ts"), "utf8")
-      return route.fulfill({ contentType: "text/javascript", body: ts.transpileModule(raw, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText })
-    }
-    if (/^\/(lib|generated|components|domains|i18n)\//.test(url.pathname)) {
-      if (!/^\/(lib|generated|components|domains|i18n)\/[\w/.-]+$/.test(url.pathname)) return route.fulfill({ status: 404 })
-      if (url.pathname.endsWith(".json")) return route.fulfill({ contentType: "application/json", body: await readFile(resolve(source, url.pathname.slice(1)), "utf8") })
-      const raw = url.pathname === "/components/layout/sidebar-nav-inline"
-        ? (await readFile(resolve(source, "components/layout/SidebarNavList.astro"), "utf8")).match(/<script>([\s\S]*?)<\/script>/i)![1]!
-        : await readFile(resolve(source, url.pathname.slice(1) + ".ts"), "utf8")
-      const compiled = ts.transpileModule(raw, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText
-        .replaceAll('"@lib/', '"/lib/').replaceAll('"@domains/', '"/domains/')
-        .replaceAll('"@meitheal/domain-tasks/status-values"', '"/package-task/status-values"')
-        .replaceAll('"@meitheal/domain-tasks"', '"/package-task/browser-values"')
-        .replaceAll('"date-fns-tz"', '"/package-date"')
-        .replaceAll('"@tabler/core/js/src/bootstrap/modal"', '"/tabler/modal"')
-        .replaceAll("import.meta.env", '{ DEV: false, PROD: true }')
-      return route.fulfill({ contentType: "text/javascript", body: compiled })
+    if (/^\/lib\/[\w/-]+$/.test(url.pathname) || url.pathname === "/components/layout/sidebar-nav-inline") {
+      let compiled = modules.get(url.pathname)
+      if (!compiled) {
+        compiled = compileBrowserModule(url.pathname)
+        modules.set(url.pathname, compiled)
+      }
+      return route.fulfill({ contentType: "text/javascript", body: await compiled })
     }
     const placement = new URLSearchParams(query)
     placement.set("board_id", board)
@@ -224,7 +233,7 @@ for (const encoding of ["legacy", "ordinary"] as const) {
       await page.getByRole("button", { name: "19", exact: true }).click()
       await expect(page.locator("#day-drawer-task-items")).toContainText("Selected Calendar work")
       await expect(page.locator("#day-drawer-task-items")).not.toContainText("Other Calendar work")
-      expect(calls.find(call => call.path === "/api/calendar/agenda")?.board).toBe(board)
+      expect(calls.find(call => call.path === "/api/calendar/agenda")).toMatchObject({ method: "POST", board })
     })
   }
 }
@@ -277,7 +286,10 @@ for (const encoding of ["legacy", "ordinary"] as const) {
     await page.locator(`.table-row[data-id="${deleteTask.id}"] .delete-row`).click()
     await page.getByRole("alertdialog").getByRole("button", { name: "Delete", exact: true }).click()
     await expect(page.locator("#table-pending-edits")).toContainText("Deletion not confirmed")
-    expect(calls.find(call => call.method === "DELETE")?.body).toEqual({ version: deleteTask.task_version })
+    expect(calls.filter(call => call.method === "PUT" || call.method === "DELETE")).toMatchObject([
+      { method: "PUT", path: `/api/tasks/${titleTask.id}`, board },
+      { method: "DELETE", path: `/api/tasks/${deleteTask.id}`, board, body: { version: deleteTask.task_version } },
+    ])
     expect((await load(titleTask.id, board)).title).toBe("Newer server " + titleTask.id)
     expect((await load(deleteTask.id, board)).title).toBe("Newer server " + deleteTask.id)
   })
@@ -418,7 +430,9 @@ for (const encoding of ["legacy", "ordinary"] as const) {
         expect(backlog?.total).toBe(1)
         expect(backlog?.tasks.map(task => task.id)).toEqual([id])
         const links = boardNavigationLinks({ boardId: board, ...(placement.area ? { area: placement.area.id } : {}), ...(placement.project ? { project: placement.project.id } : {}) })
-        expect(new URL(links.tasks, origin).searchParams.get(query.split("=")[0]!.replace("_id", ""))).toBe(query.split("=")[1])
+        const tasksLink = new URL(links.tasks, origin)
+        expect(tasksLink.pathname).toBe(`/boards/${board}`)
+        expect(tasksLink.searchParams.get(query.split("=")[0]!.replace("_id", ""))).toBe(query.split("=")[1])
       }
     })
   })
