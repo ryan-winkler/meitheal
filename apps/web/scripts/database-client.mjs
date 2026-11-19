@@ -871,9 +871,9 @@ export function openDatabase(url, { readOnly = false } = {}) {
   return createClient({ url })
 }
 
-/** Retry lock acquisition only. Once a write transaction starts, its work runs once. */
+/** Retry startup lock acquisition and read-only verification. An acquired writer runs once. */
 /** @template T @param {() => Promise<T>} operation @returns {Promise<T>} */
-async function retryStartupLock(operation) {
+export async function retryStartupLock(operation) {
   const deadline = performance.now() + 2_500
   for (;;) {
     try {

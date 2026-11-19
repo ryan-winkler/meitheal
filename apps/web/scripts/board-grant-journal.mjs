@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import { constants, lstatSync } from "node:fs"
 import { mkdir, open, readdir, rename, rm } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
-import { acquireWriteTransaction } from "./database-client.mjs"
+import { acquireWriteTransaction, retryStartupLock } from "./database-client.mjs"
 import { boardGrantPath, consumeDatabaseCreation, getBoardGrantPath, unwrapBoardGrantClient } from "./board-grant-context.mjs"
 import { consumeOperatorAdmission, registerStartupBoardAdmission } from "./startup-board-admission.mjs"
 
@@ -74,10 +74,12 @@ export async function boardGrantStillCurrent(db, revision, path = getBoardGrantP
   return await readBoardGrantRevision(path) === revision && await databaseRevision(db) === revision
 }
 
-export async function currentBoardGrantRevision(db, path = getBoardGrantPath(db)) {
+async function inspectBoardGrantRevision(db, path, retryRead = read => read()) {
   db = unwrapBoardGrantClient(db)
-  const marker = await readBoardGrantRevision(path)
-  const revision = await databaseRevision(db)
+  const { marker, revision } = await retryRead(async () => ({
+    marker: await readBoardGrantRevision(path),
+    revision: await databaseRevision(db),
+  }))
   if (revision === marker) return revision
   if (!revision || await readBoardGrantRevision(pendingFile(path, revision)) !== revision) return null
   const tx = await acquireWriteTransaction(db)
@@ -85,6 +87,10 @@ export async function currentBoardGrantRevision(db, path = getBoardGrantPath(db)
     if (await databaseRevision(tx) !== revision) return null
     return await publishCommittedMarker(path, revision) ? revision : null
   } finally { tx.close() }
+}
+
+export function currentBoardGrantRevision(db, path = getBoardGrantPath(db)) {
+  return inspectBoardGrantRevision(db, path)
 }
 
 /** Only the creator's process-local capability may admit an empty epoch at startup. */
@@ -135,5 +141,8 @@ export async function prepareInitialBoardGrant(tx, markerPath) {
 
 export async function finalizeStartupBoardGrant(client, revision) {
   if (!revision) return
-  if (await currentBoardGrantRevision(client) !== revision) throw new Error("Board continuity publication is pending; governed access remains locked")
+  // Re-read the marker on each database read attempt. Publication and mismatch
+  // handling stay outside the bounded startup retry.
+  const current = await inspectBoardGrantRevision(client, getBoardGrantPath(client), retryStartupLock)
+  if (current !== revision) throw new Error("Board continuity publication is pending; governed access remains locked")
 }

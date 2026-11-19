@@ -314,8 +314,15 @@ async function replaceSmallTable(tx, name, definition, columns, boardId) {
 
 async function captureLegacyTokenCeilings(tx, boardId) {
   if (!(await exists(tx, "agent_tokens"))) return
+  const { rows: [assignmentColumn] } = await tx.execute(
+    "SELECT 1 FROM pragma_table_info('agent_tokens') WHERE lower(name) = 'assignee_id'"
+  )
+  // Schema 18 stored tokens without any assignee identity. Capture that
+  // absence before the runtime's token bootstrap adds the nullable column.
   const { rows: tokens } = await tx.execute(
-    "SELECT id, scopes, assignee_id, expires_at FROM agent_tokens WHERE revoked = 0"
+    assignmentColumn
+      ? "SELECT id, scopes, assignee_id, expires_at FROM agent_tokens WHERE revoked = 0"
+      : "SELECT id, scopes, NULL AS assignee_id, expires_at FROM agent_tokens WHERE revoked = 0"
   )
   for (const token of tokens) {
     if (

@@ -114,8 +114,9 @@ function seedSchemaMarker(value: string, inWal = false) {
 }
 
 const fixtureToken = `mth_${"b".repeat(64)}`
+const assignedOnlyFixtureToken = `mth_${"c".repeat(64)}`
 
-async function seedBoardPredecessor({ token = false, unsupported = false, ledger = true } = {}) {
+async function seedBoardPredecessor({ token = false, assignedOnly = false, unsupported = false, ledger = true } = {}) {
   const client = await openDatabaseForStartup(`file:${dbPath}`, {
     markerPath: dbPath + ".board-grants.json"
   })
@@ -152,6 +153,13 @@ async function seedBoardPredecessor({ token = false, unsupported = false, ledger
         ],
         "write"
       )
+    }
+    if (assignedOnly) {
+      await client.execute({
+        sql: `INSERT INTO agent_tokens (id, name, token_hash, token_prefix, scopes, created_at)
+          VALUES ('fixture-assigned', 'Imported assigned-only token', ?, 'mth_cccc', '["tasks:write:assigned"]', '2026-01-01T00:00:00.000Z')`,
+        args: [createHash("sha256").update(assignedOnlyFixtureToken).digest("hex")],
+      })
     }
     if (!unsupported) {
       let revision: string | null = null
@@ -529,6 +537,44 @@ for (const lock of ["reader", "writer"]) {
   })
 }
 
+test("startup verifies a committed Board grant after a competing rollback-journal writer releases", async () => {
+  await seedBoardPredecessor()
+  await migrate()
+  const markerPath = dbPath + ".board-grants.json"
+  const client = await openDatabaseForStartup(`file:${dbPath}`, { markerPath })
+  const writer = new DatabaseSync(dbPath)
+  let sawBusyRevision = false
+  const execute = client.execute.bind(client)
+  client.execute = async statement => {
+    try {
+      return await execute(statement)
+    } catch (error) {
+      if (String(statement).includes("SELECT revision FROM board_access_epoch") &&
+        error instanceof Error && "code" in error && error.code === "SQLITE_BUSY") sawBusyRevision = true
+      throw error
+    }
+  }
+
+  const revision = await readBoardGrantRevision(markerPath)
+  expect(revision).not.toBeNull()
+  try {
+    writer.exec("BEGIN EXCLUSIVE")
+    const finalization = finalizeStartupBoardGrant(client, revision).then(() => undefined, (error: unknown) => error)
+    try {
+      await expect.poll(() => sawBusyRevision, { timeout: 1_000 }).toBe(true)
+    } finally {
+      writer.exec("ROLLBACK")
+    }
+    await expect(finalization).resolves.toBeUndefined()
+    await writeFile(markerPath, JSON.stringify({ epoch: "00000000-0000-0000-0000-000000000000" }))
+    await expect(finalizeStartupBoardGrant(client, revision))
+      .rejects.toThrow(/continuity publication is pending/)
+  } finally {
+    writer.close()
+    client.close()
+  }
+})
+
 test("current startup preserves a deliberately empty or custom Board lane catalog", async () => {
   await migrate()
   const db = new DatabaseSync(dbPath)
@@ -637,14 +683,47 @@ test("the built runtime refuses a first agent request before touching incompatib
 
 test("a first authenticated request adopts a runtime-first predecessor and waits for the full upgrade", async () => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the built Astro runtime")
-  await seedBoardPredecessor({ token: true, ledger: false })
+  await seedBoardPredecessor({ token: true, assignedOnly: true, ledger: false })
+  const prior = new DatabaseSync(dbPath, { readOnly: true })
+  try {
+    expect(prior.prepare("SELECT name FROM pragma_table_info('agent_tokens') WHERE name = 'assignee_id'").get()).toBeUndefined()
+  } finally {
+    prior.close()
+  }
   await withBuiltApp(async (origin) => {
     const tasks = await fetch(`${origin}/api/tasks`, {
-      headers: { authorization: `Bearer ${fixtureToken}` },
+      headers: { authorization: `Bearer ${fixtureToken}`, "x-meitheal-board-id": "household" },
       signal: AbortSignal.timeout(8_000)
     })
-    expect(tasks.status).toBe(200)
-    expect(await tasks.text()).toContain("Retained startup task")
+    expect(tasks.status, await tasks.clone().text()).toBe(200)
+    expect(await tasks.json()).toMatchObject({ tasks: [{ id: "original", title: "Retained startup task" }] })
+    for (const token of [fixtureToken, assignedOnlyFixtureToken]) {
+      const denied = await fetch(`${origin}/api/tasks/original`, {
+        method: "PUT",
+        headers: { authorization: `Bearer ${token}`, "x-meitheal-board-id": "household", "content-type": "application/json" },
+        body: JSON.stringify({ title: "Denied fixture mutation" }),
+        signal: AbortSignal.timeout(5_000)
+      })
+      expect(denied.status).toBe(403)
+      await denied.body?.cancel()
+    }
+    const current = new DatabaseSync(dbPath, { readOnly: true })
+    try {
+      const access = current.prepare(`SELECT board_id, principal_id, authority_limits FROM board_access_grants
+        WHERE principal_type='agent' ORDER BY principal_id`).all()
+      expect(access.map(grant => [grant.board_id, grant.principal_id])).toEqual([
+        ["household", "fixture-agent"], ["household", "fixture-assigned"]
+      ])
+      expect(JSON.parse(String(access[0]?.authority_limits))).toEqual({ operations: [
+        { resource: "board", action: "read" }, { resource: "task", action: "read" }, { resource: "task", action: "search" }
+      ] })
+      expect(JSON.parse(String(access[1]?.authority_limits))).toMatchObject({ assignedTo: null })
+      expect(current.prepare("SELECT title, assigned_to FROM tasks WHERE id='original'").get()).toEqual({
+        title: "Retained startup task", assigned_to: null
+      })
+    } finally {
+      current.close()
+    }
     const health = await fetch(`${origin}/api/health`, { signal: AbortSignal.timeout(5_000) })
     expect(health.status).toBe(200)
     expect(await health.json()).toMatchObject({ schema_version: DATABASE_SCHEMA_VERSION })
