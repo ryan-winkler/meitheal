@@ -424,11 +424,11 @@ function initDashboardCustomization(shell: HTMLElement, syncShell: (revealAnchor
   } catch {
     // The default layout is usable with storage disabled.
   }
-  pageLifecycle.on(window, "storage", event => {
+  window.addEventListener("storage", event => {
     if (!widgets && (event.key === key || event.key === null) && event.storageArea === localStorage) {
       void loadWidgets().catch(() => {})
     }
-  })
+  }, { signal })
 
   return (id: DashboardSectionId) => widgets?.reveal(id)
 }
