@@ -301,7 +301,6 @@ test("retry after a lost checklist write response keeps only one new step", asyn
   expect(created.status()).toBe(201)
   const { id } = await created.json()
   const taskPath = "/api/tasks/" + encodeURIComponent(id)
-  await page.goto("/tasks?open=" + encodeURIComponent(id))
   let loseResponse = true
   await page.route("**" + taskPath, async route => {
     if (route.request().method() !== "PUT" || !loseResponse) {
@@ -313,6 +312,9 @@ test("retry after a lost checklist write response keeps only one new step", asyn
     expect(persisted.status()).toBe(200)
     await route.abort("failed")
   })
+  await page.goto("/tasks")
+  await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+  await page.getByRole("link", { name: /^Task: Checklist write response lost,/ }).click()
   await page.getByRole("button", { name: "Add Item" }).click()
   const retry = page.getByRole("button", { name: "Retry checklist save" })
   await expect(retry).toBeVisible()
