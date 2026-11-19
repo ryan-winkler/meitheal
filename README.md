@@ -48,7 +48,7 @@ Meitheal sits naturally between **Home Assistant automations** and **everyday ho
 | **Kanban & Promoted Cards** | **Look & Feel & Theme Matching** |
 | ![Meitheal Kanban board showing Backlog, Todo, In Progress, and Done columns with color-tinted Promoted cards](docs/screenshots/kanban.png) | ![Meitheal Look and Feel Settings showing Emerald Isle, Match Home Assistant theme toggle, accent swatches, and appearance controls](docs/screenshots/settings.png) |
 
-Additional views include structured [Table planning](docs/screenshots/table.png), month-grid [Calendar scheduling with day agenda drawer](docs/screenshots/calendar.png), **Timeline (Gantt)** bars, distraction-free **Focus Mode**, and Urgent-vs-Important **Eisenhower** prioritization. Contributors can regenerate screenshots and local demos via the [screenshot and media capture runbook](docs/kcs/screenshot-and-media-capture.md).
+Additional views include structured [Table planning](docs/screenshots/table.png), month-grid [Calendar scheduling with day agenda drawer](docs/screenshots/calendar.png), **Timeline (Gantt)** bars, distraction-free **Focus Mode**, and Urgent-vs-Important **Eisenhower** prioritization.
 
 ## Ubiquitous Language
 

@@ -33,7 +33,6 @@ okf_version: "0.2"
 - [Home Assistant publishing checklist](kcs/ha-publishing-checklist.md) - Check App packaging and installation.
 - [Release runbook](kcs/releasing.md) - Understand release channels and how to verify builds.
 - [Dependency pinning and code scanning](kcs/dependency-pinning.md) - Update pinned build inputs and review security alerts.
-- [Screenshot and media capture](kcs/screenshot-and-media-capture.md) - Regenerate README screenshots and local feature demos from a clean production build.
 - [Licensing guide](kcs/licensing.md) - Find the license boundaries for source, integrations, and distribution.
 
 # Browse the bundle
