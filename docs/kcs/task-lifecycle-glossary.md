@@ -94,7 +94,7 @@ A task API client can use the same protection by sending `expected_checklists` w
 
 ### Defer and Resume Open Work
 
-Choose **Defer** in a Kanban card menu or in Details to set open work aside. Open **Tasks → Deferred** to see the queue and choose **Resume**. Deferral preserves the task's status, position, dates, relationships, and history. The task leaves active work and stays available through search, Table, and scheduled or historical views.
+Choose **Defer** in a Kanban card menu or in Details to set open work aside. Open **Tasks → Deferred** to see the queue and choose **Resume**. On a named Board, changing the Area, opening a queued task, or returning to Tasks keeps you in that Board. Deferral preserves the task's status, position, dates, relationships, and history. The task leaves active work and stays available through search, Table, and scheduled or historical views.
 
 Resuming returns the task to its existing workflow. An Active task with an open prerequisite stays deferred until the dependency is resolved. Completion clears deferral. Reopening a completed task makes it eligible for active views again.
 

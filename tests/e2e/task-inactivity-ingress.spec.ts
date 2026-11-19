@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { expect, test, type Browser, type Request, type Route } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, pinRequest, startCoreFixture } from "../scripts/task-pins-fixture"
 
 const noStore = "private, no-store"
@@ -513,6 +514,65 @@ test("a legacy GET-only worker can cache only the empty shell", async () => {
     await browser?.close()
     if (child && child.exitCode === null && child.signalCode === null) {
       const closed = once(child, "exit", { signal: AbortSignal.timeout(3000) })
+      child.kill("SIGKILL")
+      await closed
+    }
+    await rm(work, { recursive: true, force: true })
+  }
+})
+
+test("Deferred keeps the named Board through Area filtering, Details and Back to Tasks", async () => {
+  const work = await mkdtemp(join(tmpdir(), "meitheal-deferred-board-"))
+  const child = startCoreFixture(work)
+  child.stdout?.resume()
+  child.stderr?.resume()
+  let browser: Browser | undefined
+  try {
+    const [fixture] = await once(child, "message", { signal: AbortSignal.timeout(10_000) })
+    const origin = `https://127.0.0.1:${fixture.port}`
+    const root = origin + fixture.configuredPath
+    browser = await launchPinBrowser(work)
+    const context = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {}, serviceWorkers: "block" })
+    await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+    const householdProof = await currentBoardWriteHeaders(context.request, "household", { origin }, root)
+    const board = await context.request.post(root + "/api/boards", {
+      headers: householdProof, data: { name: "Deferred work Board" },
+    })
+    expect(board.status(), await board.text()).toBe(201)
+    const { id: boardId } = await board.json()
+    const headers = await currentBoardWriteHeaders(context.request, boardId, { origin }, root)
+    const area = await context.request.post(root + "/api/areas", { headers, data: { name: "Board workshop" } })
+    expect(area.status(), await area.text()).toBe(201)
+    const { id: areaId } = await area.json()
+    const task = await context.request.post(root + "/api/tasks", {
+      headers, data: { title: "Deferred workshop task", area_id: areaId, status: "pending" },
+    })
+    expect(task.status(), await task.text()).toBe(201)
+    const { id, task_version: version } = await task.json()
+    const deferred = await context.request.patch(root + "/api/tasks/" + id + "/deferral", {
+      headers, data: { deferred: true, updated_at: version, deferral_revision: null },
+    })
+    expect(deferred.status(), await deferred.text()).toBe(200)
+
+    const page = await context.newPage()
+    const queuePath = `/deferred?board_id=${boardId}`
+    await page.goto(root + queuePath)
+    await page.getByRole("combobox", { name: "Area", exact: true }).selectOption(areaId)
+    await page.getByRole("button", { name: "Apply area" }).click()
+    await expect(page).toHaveURL(root + queuePath + "&area=" + areaId)
+    const row = page.locator(`[data-deferred-card="${id}"]`)
+    await expect(row.getByRole("heading")).toHaveText("Deferred workshop task")
+    const details = row.getByRole("link", { name: "Details" })
+    await expect(details).toHaveAttribute("href", fixture.configuredPath + queuePath + "&area=" + areaId + "&open=" + id)
+    await details.click()
+    await expect(page.locator("#td-title")).toHaveValue("Deferred workshop task")
+    await page.getByRole("button", { name: "Close detail" }).click()
+    await page.getByRole("link", { name: "Back to Tasks" }).click()
+    await expect(page).toHaveURL(root + `/boards/${boardId}?area=${areaId}#kanban`)
+  } finally {
+    await browser?.close()
+    if (child.exitCode === null && child.signalCode === null) {
+      const closed = once(child, "exit", { signal: AbortSignal.timeout(3_000) })
       child.kill("SIGKILL")
       await closed
     }

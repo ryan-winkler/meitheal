@@ -1,5 +1,6 @@
 ---
 import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+import { boardWorkspaceHref } from "@lib/board-workspace"
 
 import Layout from "../layouts/Layout.astro"
 import Icon from "../components/ui/Icon.astro"
@@ -38,7 +39,10 @@ const tasks = queue?.tasks ?? []
 const first = (page - 1) * 25 + 1
 const last = first + tasks.length - 1
 const total = queue?.total ?? 0
-const boardHref = `/tasks?${new URLSearchParams({ area })}#kanban`
+const namedBoardId = workScope.boardId !== "household" ? workScope.boardId : undefined
+const boardHref = namedBoardId
+  ? boardWorkspaceHref(namedBoardId, { area }, "kanban")
+  : `/tasks?${new URLSearchParams({ area })}#kanban`
 const dateOptions = { dateStyle: "medium", timeStyle: "short" } as const
 let dateFormat: Intl.DateTimeFormat
 try {
@@ -49,6 +53,7 @@ try {
 
 function pageHref(target: number, open?: string) {
   const params = new URLSearchParams()
+  if (namedBoardId) params.set("board_id", namedBoardId)
   if (area) params.set("area", area)
   if (target > 1) params.set("page", String(target))
   if (open) params.set("open", open)
@@ -78,6 +83,7 @@ function pageHref(target: number, open?: string) {
         <>
           <div class="work-queue-panel work-queue-scope">
             <form method="get" action="/deferred" class="work-queue-controls">
+              {namedBoardId && <input type="hidden" name="board_id" value={namedBoardId} />}
               <label>
                 <span class="form-label">{t("inactivity.area", locale)}</span>
                 <select class="form-select" name="area">
