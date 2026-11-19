@@ -315,7 +315,7 @@ export function initKanbanArea(
         e.preventDefault()
         if (titleSpan.contentEditable === "true") return
 
-        const card = titleSpan.closest(".kanban-card")
+        const card = titleSpan.closest<HTMLElement>(".kanban-card")
         const taskId = titleSpan.dataset.taskId
         if (!taskId || card?.hasAttribute("data-title-saving")) return
 
