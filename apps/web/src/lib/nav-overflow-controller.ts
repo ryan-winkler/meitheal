@@ -30,9 +30,8 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     .filter(item => !item.hidden).flatMap(item => item.matches("a[href]") ? [item]
     : [...item.querySelectorAll<HTMLElement>("a[href]")].filter(link => !link.closest("[data-nav-overflow-submenu]")))
   let sources = primaries.map(primary => ({ primary, items: [...primary.children] as HTMLElement[] }))
-  let items = sources.flatMap(source => source.items)
-  let links = collectLinks(items)
-  const originalTabs = new Map(links.map(link => [link, link.getAttribute("tabindex")]))
+  let links: HTMLElement[] = []
+  const originalTabs = new Map<HTMLElement, string | null>()
   let frame = 0
   let lastWidth = -1
   let sourcesChanged = true
@@ -41,36 +40,51 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
 
   function refreshSources() {
     sources = primaries.map(primary => ({ primary, items: [...primary.children] as HTMLElement[] }))
-    items = sources.flatMap(source => source.items)
+  }
+
+  function refreshLinks() {
+    const items = sources.flatMap(source => source.items)
     links = collectLinks(items)
     for (const link of links) {
       if (!originalTabs.has(link)) originalTabs.set(link, link.getAttribute("tabindex"))
     }
+    return items
   }
 
-  const resetTab = (link: HTMLElement) => {
-    const value = originalTabs.get(link)
-    if (value === null || value === undefined) link.removeAttribute("tabindex")
+  const setTab = (link: HTMLElement, value: string | null) => {
+    if (link.getAttribute("tabindex") === value) return
+    if (value === null) link.removeAttribute("tabindex")
     else link.setAttribute("tabindex", value)
   }
+  const resetTab = (link: HTMLElement) => setTab(link, originalTabs.get(link) ?? null)
   const currentItem = (item: HTMLElement) => item.matches("[aria-current=page], [aria-selected=true]")
     || Boolean(item.querySelector("[aria-current=page], [aria-selected=true]"))
   // Keep the inventory intact while disclosures change what can receive focus.
   // Keep scrollport-offscreen links eligible, but exclude hidden disclosure ancestors.
   const canFocus = (element: HTMLElement) => {
-    if (!element.getClientRects().length || getComputedStyle(element).visibility !== "visible" || element.closest("[hidden], [inert]")) return false
+    if (element.closest("[hidden], [inert]")) return false
     const closed = element.closest("details:not([open])")
-    return !closed || (element.matches("summary") && element.parentElement === closed && !closed.parentElement?.closest("details:not([open])"))
+    if (closed && (!element.matches("summary") || element.parentElement !== closed || closed.parentElement?.closest("details:not([open])"))) return false
+    return element.getClientRects().length > 0 && getComputedStyle(element).visibility === "visible"
   }
   const primaryLinks = () => links.filter(link => !menu.contains(link))
-  const menuLinks = () => links.filter(link => menu.contains(link) && canFocus(link))
-  function syncTabStops(focused = document.activeElement) {
-    // Visible links keep native Tab stops. Only the More menu uses a roving stop.
-    for (const link of primaryLinks()) resetTab(link)
-    const overflow = menuLinks()
-    const selectedOverflow = overflow.find(link => link === focused) ?? overflow.find(link => link.tabIndex === 0)
-      ?? overflow.find(currentItem) ?? overflow[0]
-    for (const link of links.filter(link => menu.contains(link))) link.tabIndex = link === selectedOverflow ? 0 : -1
+  const menuLinks = () => more.open && !more.hidden ? links.filter(link => menu.contains(link) && canFocus(link)) : []
+  function syncTabStops() {
+    // Keep primary Tab stops and skip visibility checks while More is closed.
+    const menuHasItems = menu.childElementCount > 0
+    const menuOpen = more.open && !more.hidden
+    const overflow: HTMLElement[] = []
+    for (const link of links) {
+      if (!menuHasItems || !menu.contains(link)) resetTab(link)
+      else if (menuOpen) overflow.push(link)
+      else setTab(link, "-1")
+    }
+    if (!overflow.length) return
+    const focused = document.activeElement
+    const eligible = overflow.filter(canFocus)
+    const selected = eligible.find(link => link === focused) ?? eligible.find(link => link.tabIndex === 0)
+      ?? eligible.find(currentItem) ?? eligible[0]
+    for (const link of overflow) setTab(link, link === selected ? "0" : "-1")
   }
   function restoreItems() {
     for (const source of sources) {
@@ -83,8 +97,6 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
         for (const item of source.items) primary.append(item)
       }
     }
-    items = sources.flatMap(source => source.items)
-    links = collectLinks(items)
   }
   function focusDestination(target: HTMLElement | undefined) {
     if (!target) return
@@ -130,8 +142,8 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
       refreshSources()
       sourcesChanged = false
     }
+    const availableItems = refreshLinks().filter(item => !item.hidden)
     root.toggleAttribute("data-nav-overflow-active", enabled)
-    const availableItems = items.filter(item => !item.hidden)
     let visible = new Set(availableItems)
     if (enabled && availableItems.length) {
       // Width is constrained by the parent, independently of the links or menu.
@@ -144,29 +156,42 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
       const fixedWidth = fixed.reduce((sum, child) => sum + child.getBoundingClientRect().width, 0)
       const widths = new Map(availableItems.map(item => [item, item.getBoundingClientRect().width]))
       const moreWidth = more.getBoundingClientRect().width
+      const measuredSources = sources.map(({ primary, items }) => ({
+        items,
+        gap: Number.parseFloat(getComputedStyle(primary).columnGap) || 0,
+      }))
       const required = (selection: Set<HTMLElement>, showMore: boolean) => {
         let width = fixedWidth + (showMore ? moreWidth : 0)
         let groups = fixed.length + Number(showMore)
-        for (const { primary, items: sourceItems } of sources) {
-          const selected = sourceItems.filter(item => selection.has(item))
-          if (!selected.length) continue
+        for (const { items: sourceItems, gap: itemGap } of measuredSources) {
+          let itemCount = 0
+          let itemWidth = 0
+          for (const item of sourceItems) {
+            if (!selection.has(item)) continue
+            itemCount += 1
+            itemWidth += widths.get(item) ?? 0
+          }
+          if (itemCount === 0) continue
           groups += 1
-          const itemGap = Number.parseFloat(getComputedStyle(primary).columnGap) || 0
-          width += selected.reduce((sum, item) => sum + (widths.get(item) ?? 0), 0) + itemGap * (selected.length - 1)
+          width += itemWidth + itemGap * (itemCount - 1)
         }
         return width + gap * Math.max(0, groups - 1)
       }
       if (required(visible, false) > available + 0.5) {
         visible = new Set()
+        const tryKeep = (item: HTMLElement) => {
+          if (visible.has(item)) return true
+          visible.add(item)
+          if (required(visible, true) <= available + 0.5) return true
+          visible.delete(item)
+          return false
+        }
         // Keep the route and the focused destination visible whenever they fit.
         for (const item of [availableItems.find(currentItem), availableItems.find(item => focused && item.contains(focused))]) {
-          if (item && required(new Set([...visible, item]), true) <= available + 0.5) visible.add(item)
+          if (item) tryKeep(item)
         }
-        let overflowing = false
         for (const item of availableItems) {
-          if (visible.has(item) || overflowing) continue
-          if (required(new Set([...visible, item]), true) <= available + 0.5) visible.add(item)
-          else overflowing = true
+          if (!tryKeep(item)) break
         }
         for (const item of availableItems) if (!visible.has(item)) menu.append(item)
       }
@@ -177,10 +202,14 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     if (focused) {
       if (menu.contains(focused)) more.open = true
       if (!portalOwner) {
-        const context = focused.closest("[data-sidebar-group]")
-        const contextualLink = context ? [...context.querySelectorAll<HTMLElement>("a[href]")].find(canFocus) : undefined
-        const visibleLinks = primaryLinks().filter(canFocus)
-        focusDestination(canFocus(focused) ? focused : contextualLink ?? visibleLinks.find(currentItem) ?? visibleLinks[0])
+        if (canFocus(focused)) {
+          focusDestination(focused)
+        } else {
+          const context = focused.closest("[data-sidebar-group]")
+          const contextualLink = context ? [...context.querySelectorAll<HTMLElement>("a[href]")].find(canFocus) : undefined
+          const visibleLinks = contextualLink ? [] : primaryLinks().filter(canFocus)
+          focusDestination(contextualLink ?? visibleLinks.find(currentItem) ?? visibleLinks[0])
+        }
       }
     }
     syncTabStops()
@@ -230,10 +259,11 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
       return
     }
     const inMenu = menu.contains(target)
-    const candidates = inMenu ? menuLinks() : [...primaryLinks().filter(canFocus), ...(!more.hidden ? [toggle] : [])]
     const keys = inMenu ? ["ArrowDown", "ArrowUp", "Home", "End"] : ["ArrowRight", "ArrowLeft", "Home", "End"]
+    if (!keys.includes(event.key) || !root.hasAttribute("data-nav-overflow-active")) return
+    const candidates = inMenu ? menuLinks() : [...primaryLinks().filter(canFocus), ...(!more.hidden ? [toggle] : [])]
     const areaToggle = inMenu && target.matches(".stree__area-toggle") && canFocus(target)
-    if (!keys.includes(event.key) || (!candidates.includes(target) && !areaToggle) || !root.hasAttribute("data-nav-overflow-active")) return
+    if (!candidates.includes(target) && !areaToggle) return
     event.preventDefault()
     if (areaToggle && ["ArrowDown", "ArrowUp"].includes(event.key)) {
       const following = candidates.findIndex(candidate => Boolean(target.compareDocumentPosition(candidate) & Node.DOCUMENT_POSITION_FOLLOWING))
@@ -248,7 +278,9 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     focusDestination(candidates[next])
   }, { signal })
   root.addEventListener("focusin", () => syncTabStops(), { signal })
-  root.addEventListener("toggle", () => syncTabStops(), { capture: true, signal })
+  root.addEventListener("toggle", event => {
+    if (event.target !== more) syncTabStops()
+  }, { capture: true, signal })
   more.addEventListener("toggle", () => {
     if (!more.open && menu.contains(document.activeElement)) toggle.focus({ preventScroll: true })
     syncTabStops()
@@ -267,7 +299,10 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     if (event.target instanceof Element && event.target.closest("a[href]")) closeMenu(true)
   }, { signal })
   root.addEventListener(sidebarOrderChanged, () => {
-    if (!menu.childElementCount) refreshSources()
+    if (!menu.childElementCount) {
+      refreshSources()
+      refreshLinks()
+    }
     schedule()
   }, { signal })
   if (sidebar) window.addEventListener("storage", event => {
@@ -287,6 +322,7 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     content.disconnect()
     cancelAnimationFrame(frame)
     restoreItems()
+    refreshLinks()
     for (const link of links) resetTab(link)
     more.hidden = true
     more.open = false
