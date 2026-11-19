@@ -445,6 +445,13 @@ export const SETTINGS_FIELDS: SettingsFieldDescriptor[] = [
     keywords: ["webhooks", "zapier", "ifttt", "n8n", "node-red", "endpoint", "signing secret"],
   },
   {
+    id: "field-workspace-setup",
+    label: "Run setup again",
+    anchorId: "run-setup-again",
+    sectionId: "app-pwa-settings",
+    keywords: ["setup", "wizard", "onboarding", "first page", "quick add"],
+  },
+  {
     id: "field-pwa",
     label: "PWA & Version Status",
     anchorId: "pwa-status-compact",

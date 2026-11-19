@@ -117,7 +117,7 @@ export function initSettingsShell(): void {
       else link.removeAttribute("aria-current")
     })
     if (narrow.matches) setDirectoryOpen(false)
-    if (!moveFocus || !section || !target) return
+    if (!moveFocus || !target || (!section && !target.closest("#settings-bar"))) return
 
     // Reveal parent disclosures in outer-to-inner order before moving focus.
     const integration = target.closest(".integration-card")
@@ -135,7 +135,7 @@ export function initSettingsShell(): void {
           : target
     const focusTarget = destination && !destination.matches(":disabled") && destination.getClientRects().length
       ? destination
-      : section.querySelector<HTMLElement>("h2")
+      : section?.querySelector<HTMLElement>("h2")
     if (!focusTarget) return
 
     if (!focusTarget.matches("a[href], button, input, select, summary, textarea, [tabindex]")) {

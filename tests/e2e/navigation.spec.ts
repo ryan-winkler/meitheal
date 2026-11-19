@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { shouldSkipBrowserSpecs } from "./_helpers";
+import { readScopedNavigation, shouldSkipBrowserSpecs } from "./_helpers";
 
 test.describe("Responsive Navigation", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs");
@@ -209,17 +209,14 @@ test.describe("Responsive Navigation", () => {
     await expect(page.locator("#settings-shell")).toBeVisible();
 
     await page.locator('.sidebar .nav-link[data-page="dashboard"]').click();
-    await expect(page).toHaveURL(new RegExp(`${ingressPrefix}/?$`));
+    const dashboard = `${origin}${ingressPrefix}/?view=dashboard`;
+    await expect(page).toHaveURL(dashboard);
     await expect(page.locator("#main-content")).toBeVisible();
 
     // Wait past any delayed restore scripts and ensure we did not bounce back to /settings
     await page.waitForTimeout(400);
-    await expect(page).toHaveURL(new RegExp(`${ingressPrefix}/?$`));
-    const storedPath = await page.evaluate(() => {
-      const raw = sessionStorage.getItem("meitheal-navigation-state");
-      return raw ? JSON.parse(raw).path : null;
-    });
-    expect(storedPath).toBe("/");
+    await expect(page).toHaveURL(dashboard);
+    expect(await readScopedNavigation(page)).toMatchObject({ path: "/?view=dashboard" });
     await page.unrouteAll({ behavior: "ignoreErrors" });
   });
 

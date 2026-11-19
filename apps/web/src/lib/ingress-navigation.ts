@@ -6,6 +6,24 @@ function ingressPrefix(): string {
   return (window.__ingress_path ?? "").replace(/\/+$/, "")
 }
 
+// Layout also runs this before its inline ingress restoration.
+export function readIngressPanelRoute(): string | null {
+  try {
+    if (!window.__ingress_path || window.parent === window ||
+      window.parent.location.origin !== location.origin || !window.parent.document.querySelector("home-assistant")) return null
+    const value = new URL(window.parent.location.href).searchParams.get("meitheal")
+    if (!value?.startsWith("/") || value.startsWith("//") || value.includes("\\")) return null
+    const reflected = window.parent.history.state?.meithealReflection
+    const { workspaceScope, workspaceFrozen } = document.documentElement.dataset
+    if (reflected?.route === value &&
+      (!workspaceScope || workspaceFrozen || reflected.scope !== workspaceScope)) return null
+    const target = new URL(value, location.origin)
+    return target.origin === location.origin ? target.pathname + target.search + target.hash : null
+  } catch {
+    return null
+  }
+}
+
 /**
  * Normalize an app route + optional ingress prefix into a safe same-origin path.
  * Blocks scheme-relative (`//`), backslash (`\`), and cross-origin/scripted URLs.
@@ -55,15 +73,26 @@ function normalizeDestinationRoute(appPath: string, prefix: string): string {
   }
 }
 
-function reflectHostRoute(route: string): void {
-  if (window.parent === window) return
+function reflectHostRoute(route: string | null, panelPath?: string): void {
+  const { workspaceScope, workspaceFrozen } = document.documentElement.dataset
+  if (!ingressPrefix() || !workspaceScope || workspaceFrozen || window.parent === window) return
   const host = window.parent
   try {
-    if (host.location.origin !== location.origin || !host.document.querySelector("home-assistant")) return
+    if (host.location.origin !== location.origin || !host.document.querySelector("home-assistant") ||
+      (panelPath && host.location.pathname !== panelPath)) return
     const url = new URL(host.location.href)
-    if (url.searchParams.get(ROUTE_PARAM) === route) return
-    url.searchParams.set(ROUTE_PARAM, route)
-    host.history.replaceState(host.history.state, "", url)
+    const current = url.searchParams.get(ROUTE_PARAM)
+    const state = { ...host.history.state }
+    if (route) {
+      if (current === route && readIngressPanelRoute()) return
+      url.searchParams.set(ROUTE_PARAM, route)
+      state.meithealReflection = { route, scope: workspaceScope }
+    } else {
+      if (!current || state.meithealReflection?.route !== current) return
+      url.searchParams.delete(ROUTE_PARAM)
+      delete state.meithealReflection
+    }
+    host.history.replaceState(state, "", url)
   } catch {
     // Cross-origin or sandboxed hosts keep using native iframe navigation.
   }
@@ -96,32 +125,11 @@ export function initIngressNavigation(signal: AbortSignal): void {
     return appRouteFromUrl(url, prefix)
   }
 
-  function hostRoute(): string | null {
-    try {
-      if (host.location.pathname !== panelPath) return null
-      const route = new URL(host.location.href).searchParams.get(ROUTE_PARAM)
-      if (!route?.startsWith("/") || route.startsWith("//") || route.includes("\\")) return null
-      const url = new URL(route, location.origin)
-      return url.origin === location.origin ? url.pathname + url.search + url.hash : null
-    } catch {
-      return null
-    }
-  }
-
   function reflect(route = appRoute(new URL(location.href))): void {
-    if (!route) return
-    try {
-      if (host.location.pathname !== panelPath) return
-      const url = new URL(host.location.href)
-      if (url.searchParams.get(ROUTE_PARAM) === route) return
-      url.searchParams.set(ROUTE_PARAM, route)
-      host.history.replaceState(host.history.state, "", url)
-    } catch {
-      // Cross-origin or sandboxed hosts keep using native iframe navigation.
-    }
+    if (route) reflectHostRoute(route, panelPath)
   }
 
-  const saved = hostRoute()
+  const saved = readIngressPanelRoute()
   const current = appRoute(new URL(location.href))
   if (saved && current === "/" && saved !== "/") {
     const nextUrl = new URL(safeIngressHref(saved, prefix), location.origin)
@@ -130,7 +138,7 @@ export function initIngressNavigation(signal: AbortSignal): void {
     }
     return
   }
-  reflect()
+  reflectHostRoute(current === "/" && !saved ? null : current, panelPath)
 
   const push = history.pushState
   const replace = history.replaceState

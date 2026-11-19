@@ -628,8 +628,9 @@ const paths = {
     }),
     head: boardOperation("verifyBoardDirectory", "Verify the current Board directory projection", [], { 200: { description: "The current projection hash and session are in the response headers" } }),
     post: boardOperation("createPrivateBoard", "Create a Board owned by the current Home Assistant user", [boardSessionParam], {
-      201: { description: "The owned Board ID" }, 202: { description: "The Board was saved, and access verification is pending" }, 503: { description: "Board access is locked" },
-    }, boardJson({ name: boardString })),
+      201: { description: "The owned Board ID" }, 202: { description: "The Board was saved, and access verification is pending" },
+      400: { description: "Invalid Board name or preset" }, 503: { description: "Board access is locked" },
+    }, boardJson({ name: boardString, preset: { type: "string", enum: ["standard", "project", "chores"], default: "standard" } })),
   },
   "/api/boards/routines": {
     get: boardOperation("listPrivateBoardRoutines", "List eligible named Board Routine check-ins for the current period", [], { 200: { description: "Up to 100 current actor-scoped Routines and whether there are more" } }),

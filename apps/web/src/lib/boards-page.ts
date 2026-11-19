@@ -103,12 +103,12 @@ export function bindBoardPage(signal: AbortSignal) {
       headers: { "Content-Type": "application/json", "X-Meitheal-Board-Session": boardSession! },
       mode: "same-origin", redirect: "error", timeoutMs: 10_000, signal,
     })
-    const data = await response.json().catch(() => ({})) as Record<string, unknown>
+    const data = await response.json().catch(() => null) as Record<string, unknown> | null
     if (!response.ok) {
-      const message = typeof data.error === "string" ? data.error : (typeof data.detail === "string" ? data.detail : "")
+      const message = typeof data?.error === "string" ? data.error : (typeof data?.detail === "string" ? data.detail : "")
       throw new BoardRequestError(message || "Could not save. Refresh your Board and try again.", response.status)
     }
-    return data
+    return { status: response.status, data }
   }
 
   const fragment = location.hash.slice(1)
@@ -189,7 +189,7 @@ export function bindBoardPage(signal: AbortSignal) {
     const ticket = ticketId ? `${api}/tickets/${encodeURIComponent(ticketId)}` : api
     const feedback = form.querySelector<HTMLElement>("[data-board-feedback]")
     const button = form.querySelector<HTMLButtonElement>('[type="submit"]')
-    if (!button || button.disabled) return
+    if (!button || button.disabled || button.hidden) return
     if (boardForm === "task-delete" && !await confirmDialog({ message: "Delete this task?" })) return
     if (boardForm === "planning" && value("action") === "retire" && !await confirmDialog({ message: "Remove this item from active planning?" })) return
     if (boardForm === "lifecycle" && value("action") === "retire" && !await confirmDialog({
@@ -201,17 +201,23 @@ export function bindBoardPage(signal: AbortSignal) {
     try {
       switch (boardForm) {
         case "create": {
-          const result = await jsonRequest(api, "POST", { name: value("name") })
-          if (typeof result.id === "string" && !result.accessPending) {
-            window.location.href = safeIngressHref(`/boards/${encodeURIComponent(result.id)}`)
+          const { status, data } = await jsonRequest(api, "POST", { name: value("name"), preset: value("preset") || undefined })
+          const id = data?.id
+          if (status === 201 && typeof id === "string" &&
+            /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) && !data?.accessPending) {
+            const boardUrl = new URL(window.location.origin)
+            boardUrl.pathname = safeIngressHref(`/boards/${id}`)
+            window.location.assign(boardUrl)
             return
           }
-          if (feedback) feedback.textContent = "Board saved. Its access is still being verified."
+          if (status !== 202 || data?.accessPending !== true) throw new Error("Board creation unconfirmed")
+          if (feedback) feedback.textContent = "Board saved. Its access is still being verified. Refresh Boards to check the result."
+          button.hidden = true
           return
         }
         case "lifecycle": {
-          const result = await jsonRequest(api, "PATCH", { action: value("action"), revision: Number(value("revision")) })
-          if (result.accessPending) {
+          const { data } = await jsonRequest(api, "PATCH", { action: value("action"), revision: Number(value("revision")) })
+          if (data?.accessPending) {
             if (feedback) feedback.textContent = "Board saved. Access is still being verified. Refresh Boards to check the result."
             return
           }
@@ -274,7 +280,7 @@ export function bindBoardPage(signal: AbortSignal) {
             ...(data.has("projectId") ? { projectId: value("projectId") || null } : {}),
             ...(data.has("period") ? { period: value("period") } : {}),
           })
-          if (result.accessPending && feedback) {
+          if (result.data?.accessPending && feedback) {
             feedback.textContent = "Saved. Board access is still being verified."
             return
           }
@@ -306,12 +312,12 @@ export function bindBoardPage(signal: AbortSignal) {
           submission = undefined
           form.reset()
           showAssignment()
-          if (feedback) feedback.textContent = "Task sent. Receipt " + String(result.acknowledgement)
+          if (feedback) feedback.textContent = "Task sent. Receipt " + String(result.data?.acknowledgement)
           return
         }
         case "retry-send": {
           const result = await jsonRequest("board-intake", "POST", { action: "retry", resumeId: value("resumeId") })
-          if (feedback) feedback.textContent = "Task sent. Receipt " + String(result.acknowledgement)
+          if (feedback) feedback.textContent = "Task sent. Receipt " + String(result.data?.acknowledgement)
           button.hidden = true
           return
         }
@@ -321,7 +327,12 @@ export function bindBoardPage(signal: AbortSignal) {
       if (!signal.aborted) window.location.reload()
     } catch (error) {
       if (!signal.aborted && feedback) {
-        feedback.textContent = error instanceof Error ? error.message : "Could not save. Your input is still here."
+        const message = error instanceof Error ? error.message : "Could not save. Your input is still here."
+        const unknownCreation = boardForm === "create" && (!(error instanceof BoardRequestError) || error.status >= 500)
+        feedback.textContent = unknownCreation
+          ? "Could not confirm whether the Board was created. Refresh Boards to check before trying again."
+          : message
+        if (unknownCreation) button.hidden = true
       }
     } finally {
       button.disabled = false

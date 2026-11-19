@@ -18,7 +18,7 @@ The selected Tabler outline paths retain their MIT notice in `apps/web/scripts/g
 
 ## Build-Extracted 64-Icon Catalog, Sprites, and 5-Bucket Emoji Policy
 
-`apps/web/scripts/generate-icons.mjs` extracts inner SVG geometry for 69 canonical Tabler outline icons (`24x24` `viewBox`, `stroke-width="1.75"`, `vector-effect="non-scaling-stroke"`) plus 17 legacy `Icon.astro` aliases from `@tabler/icons` (`devDependency`) into `apps/web/src/generated/icon-registry.ts` during `generate:codegen`. Repeated `<Icon sprite={true} />` and `<TaskTypeIcon />` elements register icon names on `Astro.locals.usedIcons` and reference `<symbol id="mt-icon-...">` definitions emitted once per SSR response by `<IconSpriteDefs />` before `</body>` in `Layout.astro`.
+`apps/web/scripts/generate-icons.mjs` extracts inner SVG geometry for the curated Tabler outline icons (`24x24` `viewBox`, `stroke-width="1.75"`, `vector-effect="non-scaling-stroke"`) plus 17 legacy `Icon.astro` aliases from `@tabler/icons` (`devDependency`) into `apps/web/src/generated/icon-registry.ts` during `generate:codegen`. Repeated `<Icon sprite={true} />` and `<TaskTypeIcon />` elements register icon names on `Astro.locals.usedIcons` and reference `<symbol id="mt-icon-...">` definitions emitted once per SSR response by `<IconSpriteDefs />` before `</body>` in `Layout.astro`.
 
 Kanban card and Table row icons reference this shared sprite. When a Tasks view replaces its results with a server-rendered fragment, the current document supplies the symbols from `CLIENT_DYNAMIC_ICON_NAMES`. Keep any icon introduced by a fragment in that list so it renders even when the initial results never used it.
 

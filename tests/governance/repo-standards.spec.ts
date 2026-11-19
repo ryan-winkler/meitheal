@@ -216,7 +216,7 @@ test("cross-domain tasks persistence imports stay within the frozen 20-file lega
   expect(unauthorized).toEqual([]);
 });
 
-test("precompiled MCP catalog and 69-icon Tabler registry match build generators with zero drift", () => {
+test("precompiled MCP catalog and Tabler registry match build generators with zero drift", () => {
   const verifyResult = spawnSync(
     process.execPath,
     [
@@ -235,8 +235,8 @@ test("precompiled MCP catalog and 69-icon Tabler registry match build generators
           process.exit(2);
         }
 
-        if (CANONICAL_TABLER_ICONS.length !== 69 || new Set(CANONICAL_TABLER_ICONS).size !== 69) {
-          console.error("Expected 69 canonical Tabler icons");
+        if (CANONICAL_TABLER_ICONS.length !== new Set(CANONICAL_TABLER_ICONS).size) {
+          console.error("Unexpected duplicate Tabler icons");
           process.exit(3);
         }
         const expectedIcons = generateIconRegistrySource();

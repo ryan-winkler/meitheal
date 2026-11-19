@@ -133,8 +133,12 @@ test.describe("Sidebar and Today follow-through", () => {
     await expect(page.locator(".sidebar-footer a")).toHaveAccessibleDescription("Meitheal ready")
     expect(await page.locator(".sidebar-footer").evaluate(footer => footer.getBoundingClientRect().height)).toBeLessThan(70)
 
-    await page.setViewportSize({ width: 320, height: 812 })
     const mobileMenu = page.locator("#menu-toggle")
+    await expect(mobileMenu).toHaveAttribute("data-drawer-ready", "true")
+    const todayLink = page.locator("#sidebar").getByRole("link", { name: "Today", exact: true })
+    await todayLink.focus()
+    await expect(todayLink).toBeFocused()
+    await page.setViewportSize({ width: 320, height: 812 })
     await expect(mobileMenu).toHaveAttribute("aria-expanded", "true")
     await page.locator("#sidebar").getByRole("button", { name: "Close sidebar", exact: true }).click()
     await expect(mobileMenu).toHaveAttribute("aria-expanded", "false")
