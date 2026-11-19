@@ -77,7 +77,13 @@ function rebaseChecklist(before: Item[], proposed: Item[], latest: Item[]): Item
   return [...current.values()]
 }
 
-export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal: AbortSignal, ticketKey?: string) {
+export function showTaskChecklist(
+  taskId: string,
+  rawChecklist: unknown,
+  signal: AbortSignal,
+  write: (send: (version: number | null) => Promise<Response>) => Promise<Response>,
+  ticketKey?: string,
+) {
   const container = document.getElementById("td-checklists")
   const add = document.querySelector<HTMLButtonElement>("#td-add-checklist-item")
   const progress = document.getElementById("td-checklist-progress")
@@ -210,12 +216,12 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
     try {
       while (!equal(saved, items)) {
         const pending = JSON.stringify(items)
-        const response = await fetch(path, { // nosemgrep
+        const response = await write(version => fetch(path, { // nosemgrep
           method: "PUT",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ checklists: pending, expected_checklists: savedRaw }),
+          body: JSON.stringify({ checklists: pending, expected_checklists: savedRaw, ...(version === null ? {} : { updated_at: version }) }),
           signal: AbortSignal.timeout(10_000),
-        })
+        }))
         if (response.ok) {
           notifyInactivityTaskChanged(taskId)
           savedRaw = pending

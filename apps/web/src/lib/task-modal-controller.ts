@@ -93,7 +93,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           resumeLoadedTask = undefined
           pendingDescriptionSave = undefined
           queuedDescriptionTransition = undefined
-          fieldSaveQueue = Promise.resolve(false)
+          taskSaveQueues.clear()
           pendingAreaWrites.clear()
           commentAttempt = undefined
           _descOriginalValue = ""
@@ -147,7 +147,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         let currentTaskVersion: number | null = null
         const currentTaskActions = new Set<string>()
         let taskSaveConflict = false
-        let fieldSaveQueue: Promise<boolean> = Promise.resolve(false)
+        const taskSaveQueues = new Map<string, Promise<void>>()
         let sessionTicketId: string | null = null
         let currentTicketKey: string | null = null
         let currentTicketNumber: number | null = null
@@ -1359,7 +1359,8 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               tdUpdated.textContent =
                 "Last updated " +
                 new Date(Number(t.updated_at)).toLocaleString();
-            showTaskChecklist(taskId, t.checklists, modalSignal, typeof t.ticket_key === "string" ? t.ticket_key : undefined)
+            showTaskChecklist(taskId, t.checklists, modalSignal, send => saveTaskChecklist(taskId, send),
+              typeof t.ticket_key === "string" ? t.ticket_key : undefined)
             const taskReactions = document.getElementById("td-task-reactions")
             if (taskReactions) {
               taskReactions.replaceChildren()
@@ -1435,12 +1436,39 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           document.getElementById("td-loaded-content")?.prepend(notice)
         }
 
+        function queueTaskWrite<T>(taskId: string, write: () => T | Promise<T>): Promise<T> {
+          const queued = (taskSaveQueues.get(taskId) ?? Promise.resolve()).then(write)
+          const release = () => {
+            if (taskSaveQueues.get(taskId) === drained) taskSaveQueues.delete(taskId)
+          }
+          const drained = queued.then(release, release)
+          taskSaveQueues.set(taskId, drained)
+          return queued
+        }
+
+        function saveTaskChecklist(taskId: string, send: (version: number | null) => Promise<Response>) {
+          const generation = detailGeneration
+          const context = currentTaskApiContext()
+          const stillCurrent = () => generation === detailGeneration && currentTaskId === taskId &&
+            !boardWithheld && currentTaskActions.has("edit") && sameTaskApiContext(context, currentTaskApiContext())
+          return queueTaskWrite(taskId, async () => {
+            if (!stillCurrent()) throw new Error("Task access changed")
+            const version = currentTaskVersion
+            const response = await send(version)
+            if (version === null || !stillCurrent() || (!response.ok && response.status !== 409)) return response
+            const saved = await response.clone().json().catch(() => null)
+            if (!stillCurrent()) return response
+            // Preserve independent checklist edits without silently adopting an external change to other fields.
+            if (response.status === 409 && saved?.errorCode === "TASK_VERSION_CONFLICT") return send(null)
+            if (response.ok && saved?.id === taskId) currentTaskVersion = taskRecordVersion(saved) ?? version
+            return response
+          })
+        }
+
         function saveTaskField(field: string, value: unknown, updatedAt?: number): Promise<boolean> {
           if (!currentTaskId || _isPopulating || boardWithheld || !currentTaskActions.has("edit")) return Promise.resolve(false)
           const generation = detailGeneration
-          const queued = fieldSaveQueue.then(() => generation === detailGeneration ? saveTaskFieldNow(field, value, updatedAt) : false)
-          fieldSaveQueue = queued.catch(() => false)
-          return queued
+          return queueTaskWrite(currentTaskId, () => generation === detailGeneration ? saveTaskFieldNow(field, value, updatedAt) : false)
         }
 
         async function saveTaskFieldNow(field: string, value: unknown, updatedAt?: number): Promise<boolean> {
