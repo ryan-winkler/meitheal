@@ -1868,7 +1868,7 @@ export class TaskRepository {
     integrationContext?: IntegrationScope,
   ): Promise<
     { ok: true; task: TaskRow; previousStatus?: string; successor?: RecurrenceSuccessor; assignmentEventId?: string }
-    | { ok: false; errorCode: "unavailable" }
+    | { ok: false; errorCode: "unavailable"; reason?: "routine-date" }
     | { ok: false; errorCode: "assignee_mismatch" }
     | { ok: false; errorCode: "checklist_conflict"; checklists: string | null }
     | { ok: false; errorCode: "conflict"; updatedAt: number }
@@ -2046,7 +2046,10 @@ export class TaskRepository {
         if (Object.hasOwn(fields, "assigned_to") && fields.assigned_to !== original.assigned_to) await requireBoardWriterCheck(tx, this.scope, async () => {
           if (!await this.validateAssignmentTarget(tx, fields.assigned_to as string | null, assignmentProof)) throw new BoardOperationError("denied")
         })
-        if (original.routine_occurrence === 1 && (fields.due_date !== undefined && fields.due_date !== original.due_date || fields.task_kind !== undefined && fields.task_kind !== original.task_kind) ||
+        if (original.routine_occurrence === 1 && fields.due_date !== undefined && fields.due_date !== original.due_date) {
+          return { ok: false, errorCode: "unavailable", reason: "routine-date" }
+        }
+        if (original.routine_occurrence === 1 && fields.task_kind !== undefined && fields.task_kind !== original.task_kind ||
           fields.task_kind === "routine_instance" && original.task_kind !== "routine_instance") return { ok: false, errorCode: "unavailable" }
         if (placementChanged && !await validateBoardPlacement(this.scope, tx, {
           areaId: fields.area_id === undefined ? original.area_id as string | null : fields.area_id as string | null,

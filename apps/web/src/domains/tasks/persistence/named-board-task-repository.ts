@@ -186,8 +186,18 @@ export class NamedBoardTaskRepository {
   }
   async edit(actor: BoardActor, boardId: string, id: string, version: number, content: Partial<NamedTaskContent>) {
     if (!this.matches(actor, boardId)) return unavailable
-    return this.outcome(async () => { const result = await this.repo().updateTask(id, { ...(content.title === undefined ? {} : { title: content.title }), ...(content.description === undefined ? {} : { description: content.description }), ...(content.dueDate === undefined ? {} : { due_date: content.dueDate }) }, { version: { updatedAt: version } });
-      return result.ok ? { ok: true, value: { version: Number(result.task.task_version ?? result.task.updated_at) } } : stale })
+    return this.outcome(async () => {
+      const result = await this.repo().updateTask(id, {
+        ...(content.title === undefined ? {} : { title: content.title }),
+        ...(content.description === undefined ? {} : { description: content.description }),
+        ...(content.dueDate === undefined ? {} : { due_date: content.dueDate }),
+      }, { version: { updatedAt: version } })
+      if (result.ok) return { ok: true, value: { version: Number(result.task.task_version ?? result.task.updated_at) } }
+      if (result.errorCode === "unavailable" && result.reason === "routine-date") {
+        return { ok: false, errorCode: "stale", reason: result.reason }
+      }
+      return stale
+    })
   }
   async move(actor: BoardActor, boardId: string, id: string, laneId: string, version: number) {
     if (!this.matches(actor, boardId)) return unavailable

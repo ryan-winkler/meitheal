@@ -24,7 +24,7 @@ Open an Area or Project for its tasks, Goals, Routines and settings. Contextual 
 
 Goals can associate with Boards, Areas and Projects. A Goal shared into Home shows the progress from Projects each reader can access. Private Work Projects, their names and their contribution to totals remain hidden from Home readers without Work access. Share into the receiving contexts where the Goal should appear; sharing into a whole Board does not automatically associate it with every Area and Project.
 
-Routines use the same templates and occurrence history on every Board. They can be Board-only, associated with an Area, or associated with an unfiled Project. Completing a Routine follows task creation and completion permissions. Existing generated chores remain ordinary tasks; changing Routine configuration does not erase their history. A retry for an already completed occurrence retains its original task.
+Routines use the same templates and occurrence history on every Board. They can be Board-only, associated with an Area, or associated with an unfiled Project. Completing a Routine follows task creation and completion permissions. Existing generated chores remain ordinary tasks; changing Routine configuration does not erase their history. A retry for an already completed occurrence retains its original task. If you try to change its date through a Board ticket, the response explains that the generated task keeps its original occurrence date.
 
 Pillars can belong to a Board or remain personal. **Only me** keeps a personal Pillar private to its verified owner. Board-owned Pillars and Principles follow the selected Board and its audience controls.
 
