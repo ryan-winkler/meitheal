@@ -232,7 +232,8 @@ Changes **must** be verified in the correct environment tier before completion.
 ## KCS Rules
 
 - New behavior requires updated docs and a runbook touchpoint
-- ADRs capture architectural and legal/security decisions
+- Commit only durable Architecture Decision Records (ADRs) to `docs/decisions/` for lasting architectural, product, security, licensing, or bounded policy decisions; state technical rationale directly without citing individual agent runs
+- Keep non-ADR decision records, individual agent run logs, persona audits, review receipts, and working progress notes outside Git under `.planning/` — never inside `docs/`
 - Error messages should support self-service debugging
 
 ## Licensing Boundaries

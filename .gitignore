@@ -42,8 +42,56 @@ egm_*.md
 *persona-audit*.md
 *persona-loop*.md
 *.review-receipt*
+NOTES.md
+PROGRESS.md
+SCRATCH.md
+TODO.md
+notes.md
+progress.md
+scratch.md
+design-doc.md
+launch-checklist.md
+*-notes.md
+*_notes.md
+*-progress.md
+*_progress.md
+/notes/
+/progress/
 /.claude/
 /.codex/
+
+# Local agent workspaces, gstack state, and non-ADR run directories
+.gstack/
+/agent-runs/
+/ceo-plans/
+/decisions/
+/decision-records/
+
+# Non-ADR decision records, individual agent run logs, reports, and transcripts
+DECISIONS.md
+decisions.md
+*decision-record*.md
+*decision-log*.md
+*review-receipt*.md
+*review-receipt*.json
+*review-report*.md
+*review-report*.json
+*review-report*.html
+*audit-report*.md
+*audit-report*.json
+*audit-report*.html
+*audit-report*.sarif
+*agent-run*.md
+*agent-run*.json
+*agent-run*.jsonl
+*agent-run*.log
+*agent-run*.txt
+*transcript*.jsonl
+
+# Keep curated ADRs and the ADR index under docs/decisions/ tracked
+!docs/decisions/index.md
+!docs/decisions/[0-9][0-9][0-9][0-9]-*.md
+!docs/decisions/[aA][dD][rR]-[0-9]*.md
 
 __pycache__/
 *.pyc

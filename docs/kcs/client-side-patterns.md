@@ -65,6 +65,8 @@ Page-shell section labels use `--accent-text` on populated and empty pages. Run 
 
 The sidebar area button controls the project list named by its `aria-controls` attribute. Keep the action buttons alongside the disclosure. Update `aria-expanded` and the list's `inert` state together so collapsed project links stay out of keyboard navigation. Sidebar area actions are delegated to the persisted navigation. Dispose that listener on hot reload so Astro page swaps can keep using the existing navigation element.
 
+Read each navigation group's gap once per overflow reflow. While **More** is closed, set its links to `tabindex="-1"` without measuring their visibility. When it opens, give one eligible link a Tab stop and preserve the original Tab stops in the primary navigation. Check resize, focus recovery, and nested disclosures with `e2e/navigation-overflow-recovery.spec.ts` and `e2e/nav-overflow-hidden-links.spec.ts`.
+
 Use `--accent-text` for accent-colored labels on surfaces and keep the accent fill token for backgrounds. Keep the CSS and Tailwind text color channels aligned across themes. Use `--floating-action-bottom` for the Dashboard, Settings, and Habits scroll-to-top buttons. The mobile offset includes the tab bar and device safe area. Keyboard shortcut help is available with `?` and through **Settings → Navigation & Shortcuts → Keyboard shortcuts**. Both render from `apps/web/src/lib/keyboard-shortcuts.ts`. Turn off **Enable letter, number and symbol shortcuts on this device** to disable shortcuts such as `/`, `?`, and the numbered Tasks views. The choice is stored in this browser. Tab, arrow keys, Enter, Space, and shortcuts such as Ctrl or Cmd + K still work.
 
 Tailwind scans `apps/web/src` for complete utility class names. Keep new utility names in application templates or client code. Headings and body text use self-hosted `Geist Variable` (`Outfit` stays self-hosted for optional appearance customization). The font stack can use an installed Inter font or the system fallback. The app bundles only its primary and selectable fonts. Keep the `Layout.astro` font preload and `@font-face` pointed at the same `geist-latin-wght-normal.woff2` asset, and check both standalone and Home Assistant ingress when changing font assets.
@@ -106,6 +108,10 @@ Use the server sanitizer for rich text accepted by the task API. Use text nodes 
 When Astro embeds JSON in a script element, use `serializeForScript` from `lib/safe-html.ts` and read the element's `textContent` with `JSON.parse`. This preserves values such as labels while preventing them from closing the script element. Apply it even when values already passed write-time validation, since storage and HTML have different boundaries. Escape user-defined labels and identifiers before interpolating them into the Kanban lane markup.
 
 For a regression check, run `pnpm --filter @meitheal/tests test e2e/sanitize.spec.ts e2e/timeline-bootstrap.spec.ts` with `E2E_BASE_URL` pointed at a disposable Meitheal instance and SQLite database. The timeline check creates and deletes a synthetic task.
+
+The Household ticket inspector displays the description as text while it loads Markdown rendering and sanitization. It keeps the text if rich rendering fails. The renderer loads for nonempty descriptions on ticket open or after a successful save. Rich previews still use sanitized DOM nodes and ingress-aware task links. Only the latest description render can update the current drawer.
+
+To troubleshoot an unformatted preview, check the browser console for `Could not render task description Markdown` and check whether the Markdown modules loaded. Use `task-references.spec.ts` to verify rich previews and task links through ingress and `task-detail-layout.spec.ts` to check description editing and saving.
 
 ## Custom Fields Rendering
 

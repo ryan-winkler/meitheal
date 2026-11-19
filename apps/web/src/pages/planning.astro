@@ -77,13 +77,13 @@ for (const task of tasks) {
         href={`/eisenhower?board_id=${encodeURIComponent(workScope.boardId)}`}
         icon="🎯"
         title="Eisenhower Matrix"
-        description="Prioritise by urgency × importance — classify tasks into Do, Schedule, Delegate, or Eliminate quadrants."
+        description="Prioritise by urgency × importance — classify tasks into Do First, Schedule, Delegate, or Not Now quadrants."
         id="planning-eisenhower-link"
       >
-        <div slot="stats" class="stat-card stat-card--do"><span class="stat-value">{q1}</span><span class="stat-label">🔴 Do Now</span></div>
+        <div slot="stats" class="stat-card stat-card--do"><span class="stat-value">{q1}</span><span class="stat-label">🔴 Do First</span></div>
         <div slot="stats" class="stat-card stat-card--schedule"><span class="stat-value">{q2}</span><span class="stat-label">🔵 Schedule</span></div>
         <div slot="stats" class="stat-card stat-card--delegate"><span class="stat-value">{q3}</span><span class="stat-label">🟡 Delegate</span></div>
-        <div slot="stats" class="stat-card stat-card--eliminate"><span class="stat-value">{q4}</span><span class="stat-label">⚫ Eliminate</span></div>
+        <div slot="stats" class="stat-card stat-card--eliminate"><span class="stat-value">{q4}</span><span class="stat-label">⚫ Not Now</span></div>
       </SectionHubCard>
     </section>
 

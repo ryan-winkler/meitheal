@@ -82,14 +82,18 @@ try {
   fetchError = true;
 }
 
-const timelineTasks = tasks.map(({ area_id, project_id, ...task }) => ({
-  ...task,
-  // Keep unassigned tasks in Default and omit references outside the visible catalog.
-  area_id: area_id && !Object.hasOwn(areaMap, area_id) ? undefined : area_id,
-  project_group: getHouseholdProjectGroup(project_id, projectMap),
-}))
-const datedTasks = tasks.filter(t => t.start_date || t.due_date);
-const taskCount = datedTasks.length;
+let taskCount = 0
+const timelineTasks = tasks.map(task => {
+  if (task.start_date || task.due_date) taskCount++
+  const item: Record<string, unknown> = {}
+  for (const field in task) {
+    if (field !== "area_id" && field !== "project_id" && task[field] !== null) item[field] = task[field]
+  }
+  // A null Area means Default. An absent Area means the catalog cannot reveal it.
+  if (!task.area_id || Object.hasOwn(areaMap, task.area_id)) item.area_id = task.area_id
+  item.project_group = getHouseholdProjectGroup(task.project_id, projectMap)
+  return item
+})
 const totalTasks = tasks.length;
 ---
 

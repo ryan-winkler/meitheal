@@ -22,10 +22,13 @@ type HandleDropFn = (e: any) => void
 // ── Public API ────────────────────────────────────────────────────────────
 
 export function initTouchDrag(handleDrop: HandleDropFn, signal?: AbortSignal): void {
+  const board = document.querySelector<HTMLElement>(".kanban-board")
+  if (!board) return
+  const sigOpt = signal ? { signal } : {}
+
   let dragCard: HTMLElement | null = null
   let ghost: HTMLElement | null = null
   let holdTimer: ReturnType<typeof setTimeout> | null = null
-  let isDragging = false
   let startX = 0
   let startY = 0
   let touchId: number | null = null
@@ -40,7 +43,6 @@ export function initTouchDrag(handleDrop: HandleDropFn, signal?: AbortSignal): v
 
   function activateDrag(card: HTMLElement) {
     const rect = card.getBoundingClientRect()
-    isDragging = true
     dragCard = card
     card.classList.add("dragging")
     card.style.opacity = "0.3"
@@ -54,8 +56,9 @@ export function initTouchDrag(handleDrop: HandleDropFn, signal?: AbortSignal): v
     if (navigator.vibrate) navigator.vibrate(30)
   }
 
-  function cleanup() {
+  const cleanup = () => {
     cancelHold()
+    board.removeEventListener("touchmove", moveDrag)
     if (dragCard) {
       dragCard.classList.remove("dragging")
       dragCard.style.opacity = ""
@@ -68,28 +71,41 @@ export function initTouchDrag(handleDrop: HandleDropFn, signal?: AbortSignal): v
     highlightedLane = null
     dragCard = null
     touchId = null
-    isDragging = false
   }
 
-  // Use event delegation on the board container
-  const board = document.querySelector(".kanban-board")
-  if (!board) return
-  const sigOpt = signal ? { signal } : {}
+  function moveDrag(e: TouchEvent) {
+    const t = e.touches[0]
+    if (!t || t.identifier !== touchId || e.touches.length !== 1) {
+      cleanup()
+      return
+    }
 
-  board.addEventListener(
+    if (e.cancelable) e.preventDefault()
+    if (ghost) ghost.style.transform = `translate3d(${t.clientX - startX}px, ${t.clientY - startY}px, 0)`
+    const lane = document.elementFromPoint(t.clientX, t.clientY)?.closest(".kanban-column") ?? null
+    if (lane !== highlightedLane) {
+      highlightedLane?.classList.remove("drag-over")
+      lane?.classList.add("drag-over")
+      highlightedLane = lane
+    }
+  }
+
+  // Watch the page so a second finger outside the board can cancel the drag.
+  document.addEventListener(
     "touchstart",
     function (e) {
-      const te = e as TouchEvent
-      if (te.touches.length !== 1) {
-        cleanup()
+      if (e.touches.length !== 1) {
+        if (touchId !== null) cleanup()
         return
       }
-      const card = (te.target as HTMLElement).closest('.kanban-card[draggable="true"]') as HTMLElement | null
+      const target = e.target
+      if (!(target instanceof Element) || !board.contains(target)) return
+      const card = target.closest<HTMLElement>('.kanban-card[draggable="true"]')
       if (!card || card.getAttribute("aria-busy") === "true") return
       // Don't interfere with action button taps
-      if ((te.target as HTMLElement).closest("button, a, .card-action-btn")) return
+      if (target.closest("button, a, .card-action-btn")) return
 
-      const t = te.touches[0]
+      const t = e.touches[0]
       if (!t) return
       touchId = t.identifier
       startX = t.clientX
@@ -99,58 +115,40 @@ export function initTouchDrag(handleDrop: HandleDropFn, signal?: AbortSignal): v
       cancelHold()
       holdTimer = setTimeout(function () {
         holdTimer = null
+        if (!board.contains(card) || !card.draggable || card.getAttribute("aria-busy") === "true") {
+          cleanup()
+          return
+        }
         activateDrag(card)
+        board.addEventListener("touchmove", moveDrag, { passive: false, ...sigOpt })
       }, 300)
     },
-    { passive: true, ...sigOpt },
+    { capture: true, passive: true, ...sigOpt },
   )
 
   board.addEventListener(
     "touchmove",
     function (e) {
-      const te = e as TouchEvent
-      const t = te.touches[0]
-      if (!t || t.identifier !== touchId || te.touches.length !== 1) {
+      if (holdTimer === null) return
+      const t = e.touches[0]
+      if (!t || t.identifier !== touchId || e.touches.length !== 1 ||
+          Math.abs(t.clientX - startX) > 8 || Math.abs(t.clientY - startY) > 8) {
         cleanup()
-        return
-      }
-
-      // If hold timer is still active, cancel if finger moves too much (scrolling)
-      if (holdTimer) {
-        const dx = Math.abs(t.clientX - startX)
-        const dy = Math.abs(t.clientY - startY)
-        if (dx > 8 || dy > 8) {
-          cancelHold() // user is scrolling, not holding
-        }
-        return
-      }
-
-      if (!isDragging || !dragCard) return
-      e.preventDefault() // prevent scroll during drag
-
-      if (ghost) ghost.style.transform = `translate3d(${t.clientX - startX}px, ${t.clientY - startY}px, 0)`
-      const lane = document.elementFromPoint(t.clientX, t.clientY)?.closest(".kanban-column") ?? null
-      if (lane !== highlightedLane) {
-        highlightedLane?.classList.remove("drag-over")
-        lane?.classList.add("drag-over")
-        highlightedLane = lane
       }
     },
-    { passive: false, ...sigOpt },
+    { passive: true, ...sigOpt },
   )
 
   board.addEventListener(
     "touchend",
     function (e) {
-      cancelHold()
-      if (!isDragging || !dragCard) {
+      if (!dragCard) {
         cleanup()
         return
       }
 
       e.preventDefault()
-      const te = e as TouchEvent
-      const t = Array.from(te.changedTouches).find(touch => touch.identifier === touchId)
+      const t = Array.from(e.changedTouches).find(touch => touch.identifier === touchId)
       if (!t) {
         cleanup()
         return
