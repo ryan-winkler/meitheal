@@ -138,6 +138,7 @@ test.describe(() => {
       await expect(first).toBeFocused()
 
       const remove = detail.getByRole("button", { name: "Delete Task" })
+      await expect(remove).toBeEnabled()
       await remove.press("Enter")
       const confirm = page.getByRole("alertdialog", { name: "Delete Task" })
       await expect(confirm.getByRole("button", { name: "Cancel" })).toBeFocused()
