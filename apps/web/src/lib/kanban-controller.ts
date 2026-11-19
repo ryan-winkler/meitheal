@@ -362,7 +362,7 @@ export function initKanbanArea(
             if (!__signal.aborted) await refreshBoard()
           } catch {
             titleSpan.textContent = originalText
-            if (window.showToast) window.showToast("Failed to save title", "error")
+            showToast("Failed to save title", "error")
           } finally {
             card?.removeAttribute("data-title-saving")
           }

@@ -976,7 +976,6 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
                 navigator.clipboard.writeText(
                   t.ticket_key ? String(t.ticket_key) : String(t.id),
                 );
-                const { showToast } = await import("@lib/toast");
                 showToast("common.id_copied", "success");
               };
             }
@@ -1532,7 +1531,6 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           }
           const sessionBound = search || field === "description"
           if (sessionBound && generation !== detailGeneration) return false
-          const { showToast } = await import("@lib/toast")
           if (!sessionBound || generation === detailGeneration) showToast("common.failed_update", "error")
           return false
         }
@@ -1692,7 +1690,6 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
                 loadAttachments(currentTaskId!);
               } catch (err) {
                 log.error("Failed to save attachment", err);
-                const { showToast } = await import("@lib/toast");
                 showToast(
                   "Failed to save attachment due to storage limits or error.",
                   "error",
@@ -1834,7 +1831,6 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             const label = val
               ? (sel.options[sel.selectedIndex]?.textContent ?? val)
               : "Unassigned";
-            const { showToast } = await import("@lib/toast");
             showToast(val ? `Assigned to ${label}` : "Unassigned");
           }, { signal: __signal });
         // UX2: Keyboard shortcut 'A' to focus assignee dropdown in detail panel
@@ -2045,8 +2041,6 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             const generation = detailGeneration
             const write = search ? beginScopedWrite() : undefined
             const stale = () => search && generation !== detailGeneration
-            const toast = document.createElement("div");
-            toast.className = "toast";
             try {
               const res = await fetch(
                 `${window.__ingress_path || ""}/api/tasks/${currentTaskId}/duplicate`,
@@ -2057,25 +2051,16 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               );
               if (stale()) return
               if (!res.ok) {
-                toast.className = "toast error";
-                toast.textContent = "Failed to duplicate";
-                document.querySelector(".toast-container")?.appendChild(toast);
-                setTimeout(() => toast.remove(), 2500);
+                showToast("Failed to duplicate", "error")
                 return;
               }
               const data = await res.json();
               if (stale()) return
-              toast.className = "toast success";
-              toast.textContent = `Duplicated → ${data.title}`;
-              document.querySelector(".toast-container")?.appendChild(toast);
-              setTimeout(() => toast.remove(), 2500);
+              showToast(`Duplicated → ${data.title}`, "success")
               if (!search?.queued) void openTaskDetail(data.id)
             } catch {
               if (stale()) return
-              toast.className = "toast error";
-              toast.textContent = "Network error";
-              document.querySelector(".toast-container")?.appendChild(toast);
-              setTimeout(() => toast.remove(), 2500);
+              showToast("common.network_error", "error")
             } finally {
               write?.finish()
             }
@@ -2159,8 +2144,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
                 loadAttachments(currentTaskId!);
               } catch (err) {
                 log.error("Attachment failed", err);
-                const { showToast: toast } = await import("@lib/toast");
-                toast("Failed to save attachment.", "error");
+                showToast("Failed to save attachment.", "error")
               } finally {
                 input.value = ""; // reset
               }
@@ -2277,7 +2261,6 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           if (__signal.aborted || currentTaskId !== taskId) return
           if (copied) {
             copyFallback?.setAttribute("hidden", "")
-            const { showToast } = await import("@lib/toast")
             showToast("task_modal.link_copied", "success")
           } else if (copyFallback && copyValue) {
             copyFallback.removeAttribute("hidden")

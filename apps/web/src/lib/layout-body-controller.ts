@@ -5,6 +5,7 @@ import { TASK_COUNTS_CHANGED } from "./deferral-client"
 import { initIngressNavigation } from "./ingress-navigation"
 import { initStatePersistence } from "./ingress-state-persistence"
 import { pageLifecycle } from "./page-lifecycle"
+import { showToast } from "./toast"
 
 pageLifecycle.onPageLoad(initIngressNavigation)
 
@@ -40,13 +41,11 @@ window.addEventListener("meitheal-tasks-changed", () =>
 
 // ───── Sync Notifications ─────
 // ⚠️ Intentionally permanent: app-wide sync notification handler.
-window.addEventListener("meitheal-sync", async (e: Event) => {
+window.addEventListener("meitheal-sync", (e: Event) => {
   const ce = e as CustomEvent
   if (ce.detail?.type === "conflict-resolved") {
-    const { showToast } = await import("@lib/toast")
     showToast("common.sync_conflict_merged", "success")
   } else if (ce.detail?.type === "sync-error" && ce.detail.error) {
-    const { showToast } = await import("@lib/toast")
     showToast(ce.detail.error, "error")
   }
 })

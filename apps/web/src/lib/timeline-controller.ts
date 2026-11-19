@@ -7,6 +7,7 @@ import { getSelectedAreaId, initAreaSelector } from "@lib/area-selector-controll
 import { hasPriorityOverlay } from "@lib/layout-shortcuts-controller"
 import { isDisabledCharacterShortcut } from "@lib/single-key-shortcuts"
 import { createClientLogger } from "@lib/client-logger"
+import { showToast } from "@lib/toast"
 import { FieldPickerPanel, TASK_FIELD_DEFS, loadVisibleFields } from "./field-picker-panel"
 import { loadFilterState } from "./filter-state"
 import { isDoneStatus as isComplete, normalizeStatus } from "./status-config"
@@ -316,35 +317,6 @@ function svgEl<K extends keyof SVGElementTagNameMap>(
     el.setAttribute(k, String(v))
   }
   return el
-}
-
-// ── Toast Helper ───────────────────────────────────────────────────────────
-
-// M3: Track toast timers for cleanup on abort
-let toastTimers: ReturnType<typeof setTimeout>[] = []
-
-function showToast(message: string, type: "success" | "error" = "success") {
-  const existing = document.querySelector(".gantt-toast")
-  if (existing) existing.remove()
-
-  const toast = document.createElement("div")
-  toast.className = `gantt-toast gantt-toast--${type}`
-  toast.textContent = message
-  document.body.appendChild(toast)
-
-  requestAnimationFrame(() => toast.classList.add("gantt-toast--visible"))
-  const hideTimer = setTimeout(() => {
-    toast.classList.remove("gantt-toast--visible")
-    const removeTimer = setTimeout(() => toast.remove(), 300)
-    toastTimers.push(removeTimer)
-  }, 2500)
-  toastTimers.push(hideTimer)
-}
-
-function clearToastTimers() {
-  toastTimers.forEach(t => clearTimeout(t))
-  toastTimers = []
-  document.querySelectorAll(".gantt-toast").forEach(t => t.remove())
 }
 
 // ── PATCH Helper ───────────────────────────────────────────────────────────
@@ -3128,6 +3100,5 @@ export function initTimelineController(signal: AbortSignal) {
     delete container.dataset.timelineReady
     container.replaceChildren()
     hideTooltip()
-    clearToastTimers() // M3: Clean up toast timers
   })
 }

@@ -270,10 +270,10 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
 <script>
   import { currentTaskApiContext, taskApiHeaders, type TaskApiContext } from "@lib/task-api"
   import { taskCapturePlacement } from "@lib/task-capture-placement"
-  import { showToast, showTaskCreatedToast } from "@lib/toast";
+  import { showTaskCreatedToast, showToast } from "@lib/toast"
   import { renderSpriteIconSvg, type IconName } from "../../generated/icon-registry";
   import { InlineDatePicker } from "../shared/InlineDatePicker"
-  import { createTablerSvgElement, renderIconOrCustomEmoji, type TablerIconName } from "@lib/tabler-svg";
+  import { renderIconOrCustomEmoji, type TablerIconName } from "@lib/tabler-svg"
   import { checklistLines, createChecklistItem } from "@lib/checklist-items"
   import { createClientLogger } from "@lib/client-logger";
   import { pageLifecycle } from "@lib/page-lifecycle";
@@ -1648,7 +1648,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
           if (created.task_kind !== "quick_capture") queueCreatedTask(created.id)
           submitting = false
           closeNewTaskModal()
-          showTaskCreatedToast(created.ticket_key ?? null, created.id, title)
+          showTaskCreatedToast(created.ticket_key ?? null, created.id, finalTitle)
         } catch {
           if (session !== captureSession || signal.aborted) return
           if (confirmed) {

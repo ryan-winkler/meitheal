@@ -371,15 +371,6 @@
     min-height: 44px;
   }
 
-  .toast-dismiss,
-  .toast-undo {
-    min-width: 44px;
-    min-height: 44px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-
   /* Ensure action buttons in task cards/rows are tappable */
   .task-action-btn,
   .task-fav-btn {

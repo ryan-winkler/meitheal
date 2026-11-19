@@ -30,6 +30,7 @@ import QuickAddDialog from "../components/tasks/QuickAddDialog.astro"
 import TaskDetailModal from "../components/tasks/TaskDetailModal.astro";
 import AskAssistModal from "../components/ha/AskAssistModal.astro";
 import PwaInstallBanner from "../components/pwa/PwaInstallBanner.astro";
+import ToastRegion from "../components/ui/ToastRegion.astro";
 import JsonLd from "../components/seo/JsonLd.astro";
 import { APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY } from "../lib/appearance-preferences"
 import { applyPersonalAccent } from "../lib/accent-colors"
@@ -153,7 +154,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     <!-- Scroll-lock guard: prevent external tools from locking body scroll (P0) -->
     <script is:inline>
       (function () {
-        // Meitheal modals that legitimately lock scroll set data-scroll-lock="true"
+        // Meitheal modals that legitimately lock scroll
         function isRealModalOpen() {
           var overlay = document.getElementById("task-detail-overlay");
           if (
@@ -162,13 +163,15 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
             !document.body.classList.contains("has-docked-inspector")
           )
             return true;
-          var ntModal = document.getElementById("new-task-modal");
-          if (ntModal && ntModal.classList.contains("active")) return true;
-          var confirmOverlay = document.getElementById("confirm-dialog-overlay");
-          if (confirmOverlay && !confirmOverlay.classList.contains("hidden")) return true;
+          if (
+            document.querySelector(
+              'dialog[open], #new-task-overlay.active, #meitheal-confirm-overlay, #meitheal-prompt-overlay, #search-hub-overlay:not(.hidden), #shortcut-modal:not(.hidden), #ask-ha-overlay.active, #ask-ha-overlay:not(.modal-overlay):not(.hidden), .habit-modal-overlay:not(.hidden), [data-meitheal-tabler-modal].show',
+            )
+          )
+            return true;
           // Mobile sidebar open is legitimate
           if (document.body.classList.contains("sidebar-open") && window.innerWidth <= 768) return true;
-          return Boolean(document.querySelector("[data-meitheal-tabler-modal].show"));
+          return false;
         }
         // MutationObserver: undo external overflow:hidden on body when no modal is open
         var observer = new MutationObserver(function (mutations) {
@@ -242,14 +245,9 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
               // Guard: don't reload more than once per 10 seconds
               if (!lastReload || now - Number(lastReload) > 10000) {
                 sessionStorage.setItem(reloadKey, String(now));
-                var tc = document.querySelector(".toast-container");
-                if (tc) {
-                  var t = document.createElement("div");
-                  t.className = "toast warning";
-                  t.textContent = "Session expired. Reloading...";
-                  t.setAttribute("role", "alert");
-                  tc.appendChild(t);
-                }
+                var sessionMsg = window.mI18n?.get("toast.session_expired")
+                if (!sessionMsg || sessionMsg === "toast.session_expired") sessionMsg = "Session expired. Reloading…"
+                enqueueToast({ id: "ingress-session-expired", message: sessionMsg, type: "warning", icon: "refresh", duration: 2000 })
                 setTimeout(function () {
                   window.location.reload();
                 }, 800);
@@ -260,17 +258,11 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
               if (headers.get("X-Meitheal-Local-Conflict") !== "1") {
                 response.clone().json().then(function (body) {
                   if (body?.errorCode !== "TASK_VERSION_CONFLICT") return
-                  var message = window.mI18n?.get("common.task_version_conflict") ??
-                    "This task changed in another session. Reload to see the latest version."
-                  var container = document.querySelector(".toast-container")
-                  if (container) {
-                    var toast = document.createElement("div")
-                    toast.className = "toast warning"
-                    toast.textContent = message
-                    toast.setAttribute("role", "alert")
-                    container.appendChild(toast)
-                    setTimeout(function () { toast.remove() }, 6000)
-                  } else {
+                  var message = window.mI18n?.get("common.task_version_conflict")
+                  if (!message || message === "common.task_version_conflict") {
+                    message = "This task changed in another session. Reload to see the latest version."
+                  }
+                  if (!enqueueToast({ id: "task-version-conflict", message: message, type: "warning", duration: 6000 })) {
                     var live = document.getElementById("sync-announcer")
                     if (live) live.textContent = message
                   }
@@ -280,6 +272,15 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
             return response;
           });
         };
+        function enqueueToast(payload) {
+          if (typeof window.__meithealToast === "function") {
+            window.__meithealToast(payload)
+            return true
+          }
+          var queue = window.__meithealToastQueue || (window.__meithealToastQueue = [])
+          queue.push(payload)
+          return false
+        }
       })();
     </script>
 
@@ -639,6 +640,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     <a href="#main-content" class="skip-to-content"
       >{t("nav.skip_to_content", locale)}</a
     >
+    <PwaInstallBanner locale={locale} />
     {!privatePageShell && <div class="layout-navigation" transition:persist="sidebar">
       <Sidebar locale={locale} workNavigation={workNavigation} />
     </div>}
@@ -756,7 +758,8 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       })();
     </script>
 
-    <!-- Toast notifications are handled by the shared showToast() system (see @lib/toast) -->
+    <!-- Unified Toast & Growler Region (single root mount) -->
+    <ToastRegion locale={locale} />
 
     <script>
       import "@lib/mobile-sidebar-controller"
@@ -765,6 +768,8 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       import "@lib/layout-controller";
       import { initHAThemeBridge } from "@lib/ha-theme-bridge";
       import { initGlobalErrorHandler } from "@lib/global-error-handler";
+      import { initToastSystem } from "@lib/toast"
+      initToastSystem()
       initHAThemeBridge();
       initGlobalErrorHandler();
     </script>
@@ -803,14 +808,12 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       role="status"
     >
     </div>
-    <!-- PWA Install Banner -->
-    <PwaInstallBanner />
     <!-- PWA: Service Worker Registration + Install Prompt + Update Handler -->
     <script>
       import "@lib/layout-pwa-controller";
     </script>
     {showConfetti && <Confetti />}
-    {!privatePageShell && <PomodoroTimer enabled={showPomodoro} />}
+    {!privatePageShell && showPomodoro && <PomodoroTimer />}
     <script define:vars={{ featureFlagsJson }}>
       window.__featureFlags = JSON.parse(featureFlagsJson);
     </script>

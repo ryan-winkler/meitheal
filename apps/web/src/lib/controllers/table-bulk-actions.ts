@@ -167,6 +167,8 @@ export function updateBulkBar(): void {
 
   if (bulkBar) {
     bulkBar.style.display = selected.length > 0 ? "flex" : "none"
+    if (selected.length > 0) bulkBar.dataset.bulkOpen = "true"
+    else delete bulkBar.dataset.bulkOpen
   }
   if (selectedCountEl) {
     selectedCountEl.textContent = `${selected.length} selected`

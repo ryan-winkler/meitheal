@@ -30,6 +30,12 @@ Opening work pages, refreshing task lists, verifying access, checking receipts, 
 
 The app manifest provides the Meitheal icon and Today, Calendar and Settings shortcuts. The sync indicator distinguishes pending operations, an active upload, confirmed saves and offline state. A confirmed local save and a confirmed server acknowledgement are different states.
 
+## Install and Service Worker updates
+
+Meitheal prompts for PWA installation through `apps/web/src/components/pwa/PwaInstallBanner.astro` (triggered by `beforeinstallprompt` on secure origins) and **Settings → App & Companion**. Behind Home Assistant ingress, `apps/web/public/sw.js` derives its `ingressPath` scope from `self.registration.scope` and precaches `/offline.html`, `/manifest.webmanifest`, and `/icon-192.png`.
+
+When an updated Service Worker waits to activate, `#toast-container` shows a persistent update prompt (`#sw-update-btn`), and **Settings → App & Companion** exposes **Update & reload** (`#pwa-update-settings-btn`) and **Force App Update** (`#pwa-force-update-btn`). Clicking any of those controls sets `aria-disabled="true"` and `aria-busy="true"`, announces status via `#sync-announcer` (`announceStatus()`), and clears state on failure or timeout so the user can retry. If activation completes elsewhere (`update-activated`), the persistent toast and idle Settings update prompt clear automatically. See [Toast Notifications Reference](toast-notifications.md) for banner suppression and Top-Layer stacking rules.
+
 ## Verification
 
 Test an account switch during an IndexedDB read, a Board switch during capture, offline receipt checks, permission revocation and replay of an unchanged attempt. After building the exact candidate, run the worker cache-policy and offline-context browser suites. A source-worker check does not qualify the minified package or the installed Home Assistant ingress/PWA scope.
