@@ -456,7 +456,7 @@ datedShortcutTest("Today and Timeline keep arrows and Enter while letter and pun
 test("pressing lowercase c on a grouped board collapses and expands swimlanes without navigating to Calendar", async ({ page, request, baseURL }) => {
   // Earlier cases in this file share one server and its 300/min API budget.
   test.setTimeout(100_000)
-  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin }, "", true)
   const createTask = async (data: Record<string, string>) => {
     const response = await request.post("/api/tasks", { headers, data })
     if (response.status() !== 429) return response
@@ -517,7 +517,7 @@ test("pressing lowercase c on a grouped board collapses and expands swimlanes wi
 test("pressing c on an ungrouped board opens Calendar like everywhere else", async ({ page, request, baseURL }) => {
   // Earlier cases in this file share one server and its 300/min API budget.
   test.setTimeout(100_000)
-  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin }, "", true)
   const data = { title: "Ungrouped board task" }
   let created = await request.post("/api/tasks", { headers, data })
   if (created.status() === 429) {
