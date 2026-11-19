@@ -2563,9 +2563,10 @@ paths:
       tags:
         - Tasks
       summary: Create a new task
-      description: Create a task with optional calendar sync, assignment, and framework payload. Authenticated callers can
-        retry an identical request with the Idempotency-Key header. Use this when a user or agent wants to capture a new
-        action item.
+      description: "Compatibility capture envelope over the canonical scoped task command. Calendar timestamps create an Event
+        task; outbound calendar work follows approved Board source bindings. The events array contains no synchronous
+        integration receipts. Retry an identical request with Idempotency-Key; successful replays retain HTTP 201 and
+        idempotency-key-status: cached."
       parameters:
         - name: Idempotency-Key
           in: header
@@ -2599,6 +2600,8 @@ paths:
                   properties:
                     entityId:
                       type: string
+                      deprecated: true
+                      description: Does not retarget a provider. Configure an approved Board integration source.
                     startDateTime:
                       type: string
                       format: date-time
@@ -2607,56 +2610,15 @@ paths:
                       format: date-time
                     durationMinutes:
                       type: integer
+                      deprecated: true
+                      description: Use an explicit endDateTime for Event task dates.
                     timezone:
                       type: string
+                      deprecated: true
+                      description: Provide offsets in the Event timestamps; the approved integration owns its timezone.
                   additionalProperties: false
               additionalProperties: false
       responses:
-        "200":
-          description: Idempotent replay — task already existed
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - task
-                  - events
-                  - integration
-                  - requestId
-                properties:
-                  task:
-                    $ref: "#/components/schemas/Task"
-                  events:
-                    type: array
-                    items:
-                      type: object
-                  integration:
-                    type: object
-                    properties:
-                      calendarSyncState:
-                        type: string
-                      confirmationId:
-                        type:
-                          - string
-                          - "null"
-                      errorCode:
-                        type:
-                          - string
-                          - "null"
-                      retryAfterSeconds:
-                        type:
-                          - integer
-                          - "null"
-                    additionalProperties: false
-                  requestId:
-                    type: string
-                  idempotencyKey:
-                    type:
-                      - string
-                      - "null"
-                  idempotentReplay:
-                    type: boolean
-                additionalProperties: false
         "201":
           description: Task created
           content:
@@ -2667,10 +2629,23 @@ paths:
                   - task
                   - events
                   - integration
-                  - requestId
                 properties:
                   task:
-                    $ref: "#/components/schemas/Task"
+                    oneOf:
+                      - $ref: "#/components/schemas/Task"
+                      - type: object
+                        required:
+                          - id
+                        additionalProperties: false
+                        properties:
+                          id:
+                            type: string
+                          ticket_key:
+                            type:
+                              - string
+                              - "null"
+                    description: The full task requires current task-read authority; create-only callers receive their minimal
+                      acknowledgement.
                   events:
                     type: array
                     items:
@@ -2693,14 +2668,6 @@ paths:
                           - integer
                           - "null"
                     additionalProperties: false
-                  requestId:
-                    type: string
-                  idempotencyKey:
-                    type:
-                      - string
-                      - "null"
-                  idempotentReplay:
-                    type: boolean
                 additionalProperties: false
         "400": *a30
         "404":

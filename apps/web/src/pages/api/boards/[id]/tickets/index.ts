@@ -3,12 +3,33 @@ import { withBoardScope } from "@lib/board-http"
 import { apiError } from "@lib/api-response"
 import { GET as listTasks, POST as createTask } from "../../../tasks/index"
 
+/** Keep the earlier receipt aliases without adding fields withheld by canonical authorization. */
+async function ticketResponse(response: Response): Promise<Response> {
+  if (!response.ok) return response
+  const payload: unknown = await response.json()
+  const aliases = (value: unknown) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return value
+    const task = value as Record<string, unknown>
+    return { ...task,
+      ...(typeof task.ticket_key === "string" ? { ticket: task.ticket_key } : {}),
+      ...(typeof task.task_version === "number" && Number.isSafeInteger(task.task_version)
+        ? { version: task.task_version } : {}),
+    }
+  }
+  const result = payload && typeof payload === "object" && !Array.isArray(payload) &&
+    "tasks" in payload && Array.isArray(payload.tasks)
+    ? { ...payload, tasks: payload.tasks.map(aliases) } : aliases(payload)
+  const headers = new Headers(response.headers)
+  headers.delete("content-length")
+  return new Response(JSON.stringify(result), { status: response.status, headers })
+}
+
 // The old tickets URL shares the rich command. Private receipt lookup stays canonical.
 export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async (context, scope) => {
   if (context.url.searchParams.has("captureReceipt") || context.request.headers.has("X-Meitheal-Capture-Attempt")) return apiError("Use the canonical task receipt lookup.", 400)
   const headers = new Headers(context.request.headers)
   headers.set("X-Meitheal-Board-Id", scope.boardId)
-  return listTasks({ ...context, request: new Request(context.request, { headers }) })
+  return ticketResponse(await listTasks({ ...context, request: new Request(context.request, { headers }) }))
 }, { boardParam: "id" })
 
 export const POST: APIRoute = withBoardScope({ resource: "task", action: "create" }, async (context, scope) => {
@@ -27,5 +48,5 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "create
   const headers = new Headers(context.request.headers)
   headers.set("X-Meitheal-Board-Id", scope.boardId)
   const request = new Request(context.request, { headers, body: JSON.stringify(translated) })
-  return createTask({ ...context, request })
+  return ticketResponse(await createTask({ ...context, request }))
 }, { boardParam: "id" })

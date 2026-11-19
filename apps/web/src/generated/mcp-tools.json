@@ -115,7 +115,7 @@
     },
     {
       "name": "createTask",
-      "description": "Create a task with optional calendar sync, assignment, and framework payload. Authenticated callers can retry an identical request with the Idempotency-Key header. Use this when a user or agent wants to capture a new action item.",
+      "description": "Compatibility capture envelope over the canonical scoped task command. Calendar timestamps create an Event task; outbound calendar work follows approved Board source bindings. The events array contains no synchronous integration receipts. Retry an identical request with Idempotency-Key; successful replays retain HTTP 201 and idempotency-key-status: cached.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -140,7 +140,9 @@
             "type": "object",
             "properties": {
               "entityId": {
-                "type": "string"
+                "type": "string",
+                "deprecated": true,
+                "description": "Does not retarget a provider. Configure an approved Board integration source."
               },
               "startDateTime": {
                 "type": "string",
@@ -151,10 +153,14 @@
                 "format": "date-time"
               },
               "durationMinutes": {
-                "type": "integer"
+                "type": "integer",
+                "deprecated": true,
+                "description": "Use an explicit endDateTime for Event task dates."
               },
               "timezone": {
-                "type": "string"
+                "type": "string",
+                "deprecated": true,
+                "description": "Provide offsets in the Event timestamps; the approved integration owns its timezone."
               }
             },
             "additionalProperties": false

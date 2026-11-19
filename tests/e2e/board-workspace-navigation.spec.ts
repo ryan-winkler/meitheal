@@ -4,23 +4,32 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test as base, type BrowserContext, type Page } from "@playwright/test"
 import { boardNavigationLinks, readBoardNavigationContext } from "../../apps/web/src/lib/board-workspace"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
 base("Board navigation preserves placement and never maps a named workspace to Household", () => {
   const context = readBoardNavigationContext(new URL("https://example.test/boards/work?project=lighting&from=study&view=groups&section=goals"))!
   const links = boardNavigationLinks(context)
-  for (const href of Object.values(links)) {
+  for (const href of [links.tasks, links.planning]) {
     const url = new URL(href, "https://example.test")
     expect(url.pathname).toBe("/boards/work")
     expect(url.searchParams.get("project")).toBe("lighting")
     expect(url.searchParams.get("from")).toBe("study")
   }
+  for (const href of [links.dashboard, links.today, links.upcoming, links.progress, links.pillars, links.routines]) {
+    const url = new URL(href, "https://example.test")
+    expect(url.searchParams.get("board_id")).toBe("work")
+    expect(url.searchParams.get("project_id")).toBe("lighting")
+  }
+  for (const href of [links.activity, links.mentionInbox, links.pinned, links.review]) {
+    expect(new URL(href, "https://example.test").searchParams.get("board_id")).toBe("work")
+  }
   expect(new URL(links.tasks, "https://example.test").searchParams.has("section")).toBe(false)
-  expect(new URL(links.progress, "https://example.test").searchParams.get("section")).toBe("goals")
+  expect(new URL(links.progress, "https://example.test").hash).toBe("#goals")
   expect(readBoardNavigationContext(new URL("https://example.test/boards"))).toBeUndefined()
   const household = boardNavigationLinks({ boardId: "household", area: "study", project: "lighting" })
-  expect(household.progress).toBe("/progress?board=household&project_id=lighting#goals")
+  expect(household.progress).toBe("/progress?board_id=household&project_id=lighting#goals")
 })
 
 type Fixture = { page: Page; member: BrowserContext; app: string; origin: string; headers: Record<string, string> }
@@ -85,58 +94,79 @@ test("Household is a peer Board and every scoped workspace destination retains t
   await expect(grid.locator(':scope > [data-board-card="household"]')).toHaveCount(1)
   await expect(grid.locator(`:scope > [data-board-card="${board.id}"]`)).toHaveCount(1)
   await expect(page.getByRole("navigation", { name: "Planning", exact: true })).toHaveCount(0)
-  await expect(page.locator('[data-sidebar-household] .stree')).toHaveClass(/stree--board/)
-  await expect(page.locator('[data-sidebar-household] .stree')).toHaveCSS("border-top-width", "0px")
+  const sameSidebarRows = page.locator("[data-sidebar-boards] > [data-named-board-shortcut]")
+  await expect(sameSidebarRows).toHaveCount(2)
+  for (const id of ["household", board.id]) {
+    const row = sameSidebarRows.and(page.locator(`[data-named-board-shortcut="${id}"]`))
+    await expect(row.locator(".sidebar-board-row")).toHaveCSS("border-top-width", "0px")
+    await expect(row.getByRole("button", { name: /^Areas in / })).toBeVisible()
+  }
   await page.screenshot({ path: info.outputPath("one-board-collection.png"), fullPage: true })
 
   await page.goto(app + `/boards/${board.id}?project=${project.id}&from=${area.id}#kanban`)
   const workspace = page.getByRole("navigation", { name: "Board workspace", exact: true })
   const main = (key: string) => page.locator(`.sidebar [data-page="${key}"]`).first()
-  await expect(page.locator("#tasks-submenu-toggle")).toBeHidden()
-  for (const key of ["dashboard", "today", "upcoming"]) await expect(main(key)).toContainText("Household")
-  for (const key of ["tasks", "planning", "progress"]) {
-    const href = await main(key).getAttribute("href")
-    const url = new URL(href!, app)
+  await expect(page.locator("#tasks-submenu-toggle")).toBeVisible()
+  for (const key of ["dashboard", "today", "upcoming", "progress"]) {
+    await expect.poll(async () => {
+      const href = (await main(key).getAttribute("href"))!
+      const url = new URL(href, app)
+      return [url.searchParams.get("board_id"), url.searchParams.get("project_id")]
+    }).toEqual([board.id, project.id])
+  }
+  for (const key of ["tasks", "planning"]) {
+    const url = new URL((await main(key).getAttribute("href"))!, app)
     expect(url.pathname).toContain("/boards/" + board.id)
     expect(url.searchParams.get("project")).toBe(project.id)
   }
   await workspace.getByRole("link", { name: "Goals", exact: true }).click()
   await expect(page.locator("#goals-tab-root")).toContainText("Better lighting")
-  expect(new URL(page.url()).searchParams.get("project")).toBe(project.id)
-  expect(new URL(page.url()).searchParams.get("section")).toBe("goals")
+  expect(new URL(page.url()).searchParams.get("project_id")).toBe(project.id)
+  expect(new URL(page.url()).hash).toBe("#goals")
   await workspace.getByRole("link", { name: "Routines", exact: true }).click()
-  await expect(page.getByRole("heading", { name: "Check desk", exact: true })).toBeVisible()
-  expect(new URL(page.url()).searchParams.get("project")).toBe(project.id)
+  await expect(page.locator("#habits-shell")).toContainText("Check desk")
+  expect(new URL(page.url()).searchParams.get("project_id")).toBe(project.id)
   await main("planning").click()
   await expect(page.getByRole("heading", { name: "Desk light", exact: true, level: 1 })).toBeVisible()
   expect(new URL(page.url()).searchParams.get("project")).toBe(project.id)
   await main("tasks").click()
   await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
-  expect(new URL(page.url()).pathname).toContain("/boards/" + board.id)
-  const namedUrl = page.url()
+  const inProjectView = (view: string) => page.waitForURL(url => url.pathname.endsWith("/boards/" + board.id) &&
+    url.searchParams.get("project") === project.id && (url.searchParams.get("view") === view || url.hash === "#" + view))
   await page.keyboard.press("c")
+  await inProjectView("calendar")
   await page.keyboard.press("t")
-  await expect(page).toHaveURL(namedUrl)
+  await inProjectView("table")
   await page.keyboard.press("?")
   await expect(page.locator("#shortcut-modal")).toBeVisible()
-  await expect(page.locator("#shortcut-modal .shortcut-label").filter({ hasText: /^(Table|Calendar|Timeline)(?:\s|$)/ })).toHaveCount(0)
+  await expect(page.locator('#shortcut-modal [data-shortcut-scope="tasks"]')).toHaveText([
+    "Kanban view", "Table view", "Calendar view", "Timeline view",
+  ])
   await page.keyboard.press("Escape")
   await page.keyboard.press("n")
-  await expect(page.locator('#task-detail-overlay[data-named-board]')).toHaveClass(/active/)
-  await expect(page.locator("#new-task-modal")).toHaveCount(0)
-  await expect(page.locator('[data-named-inspector-create] input[name="projectId"]')).toHaveValue(project.id)
-  await expect(page.locator('[data-named-inspector-create] input[name="areaId"]')).toHaveValue(area.id)
-  await page.keyboard.press("Escape")
-  await page.locator('[data-sidebar-household] .sidebar-household-link').click()
-  await expect(page).toHaveURL(app + "/boards/household")
+  const title = page.locator("#new-task-title-input")
+  await expect(title).toBeVisible()
+  await title.fill("Project keyboard capture")
+  const written = page.waitForResponse(response => response.request().method() === "POST" &&
+    new URL(response.url()).pathname.endsWith("/api/tasks"))
+  await page.locator("#submit-new-task-btn").click()
+  const receipt = await written
+  expect(receipt.status()).toBe(201)
+  expect(await receipt.json()).toMatchObject({ title: "Project keyboard capture", area_id: area.id, project_id: project.id })
+  const inspector = page.getByRole("dialog", { name: "Task detail: Project keyboard capture", exact: true })
+  await expect(inspector).toBeVisible()
+  await inspector.getByRole("button", { name: "Close detail", exact: true }).press("Enter")
+  await expect(inspector).toBeHidden()
+  await page.locator('[data-named-board-shortcut="household"]').getByRole("link", { name: "Household", exact: true }).click()
+  await expect(page).toHaveURL(url => url.pathname.endsWith("/boards/household"))
   await expect(page.locator("#tasks-submenu-toggle")).toBeVisible()
-  await expect(main("today")).not.toContainText("Household")
+  await expect.poll(async () => new URL((await main("today").getAttribute("href"))!, app).searchParams.get("board_id")).toBe("household")
   await main("planning").click()
   await expect(page).toHaveURL(app + "/boards/household?view=groups#groups")
   await page.goto(app + `/boards/${board.id}?project=${project.id}#kanban`)
-  await expect(page.locator("#tasks-submenu-toggle")).toBeHidden()
+  await expect(page.locator("#tasks-submenu-toggle")).toBeVisible()
   await page.reload()
-  expect(new URL((await main("progress").getAttribute("href"))!, app).pathname).toContain("/boards/" + board.id)
+  await expect.poll(async () => new URL((await main("progress").getAttribute("href"))!, app).searchParams.get("board_id")).toBe(board.id)
 })
 
 test("Household Goals and Routines consume the Area scope and scoped navigation stays usable on phones and navbar", async ({ boards }, info) => {
@@ -176,7 +206,8 @@ test("Household Goals and Routines consume the Area scope and scoped navigation 
 
 base("real Household Astro swaps retain the sidebar and update its scoped destinations", async ({ page, request, baseURL }) => {
   base.skip(shouldSkipBrowserSpecs(), "Requires the direct local Astro app")
-  const response = await request.post("/api/areas", { data: { name: "Direct study" } })
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+  const response = await request.post("/api/areas", { headers, data: { name: "Direct study" } })
   expect(response.status()).toBe(201)
   const area = await response.json()
   await page.goto(`/boards/household?area=${area.id}#kanban`)

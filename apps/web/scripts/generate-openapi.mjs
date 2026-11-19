@@ -1009,7 +1009,7 @@ const paths = {
       operationId: "createTask",
       tags: ["Tasks"],
       summary: "Create a new task",
-      description: "Create a task with optional calendar sync, assignment, and framework payload. Authenticated callers can retry an identical request with the Idempotency-Key header. Use this when a user or agent wants to capture a new action item.",
+      description: "Compatibility capture envelope over the canonical scoped task command. Calendar timestamps create an Event task; outbound calendar work follows approved Board source bindings. The events array contains no synchronous integration receipts. Retry an identical request with Idempotency-Key; successful replays retain HTTP 201 and idempotency-key-status: cached.",
       parameters: [
         { name: "Idempotency-Key", in: "header", schema: { type: "string" }, description: "Prevents duplicate creation on retry" },
       ],
@@ -1028,11 +1028,11 @@ const paths = {
                 calendar: {
                   type: "object",
                   properties: {
-                    entityId: { type: "string" },
+                    entityId: { type: "string", deprecated: true, description: "Does not retarget a provider. Configure an approved Board integration source." },
                     startDateTime: { type: "string", format: "date-time" },
                     endDateTime: { type: "string", format: "date-time" },
-                    durationMinutes: { type: "integer" },
-                    timezone: { type: "string" },
+                    durationMinutes: { type: "integer", deprecated: true, description: "Use an explicit endDateTime for Event task dates." },
+                    timezone: { type: "string", deprecated: true, description: "Provide offsets in the Event timestamps; the approved integration owns its timezone." },
                   },
                 },
               },
@@ -1043,9 +1043,9 @@ const paths = {
       responses: {
         201: jsonContent({
           type: "object",
-          required: ["task", "events", "integration", "requestId"],
+          required: ["task", "events", "integration"],
           properties: {
-            task: ref("Task"),
+            task: { oneOf: [ref("Task"), { type: "object", required: ["id"], additionalProperties: false, properties: { id: { type: "string" }, ticket_key: { type: ["string", "null"] } } }], description: "The full task requires current task-read authority; create-only callers receive their minimal acknowledgement." },
             events: { type: "array", items: { type: "object" } },
             integration: {
               type: "object",
@@ -1056,31 +1056,8 @@ const paths = {
                 retryAfterSeconds: { type: ["integer", "null"] },
               },
             },
-            requestId: { type: "string" },
-            idempotencyKey: { type: ["string", "null"] },
-            idempotentReplay: { type: "boolean" },
           },
         }, "Task created"),
-        200: jsonContent({
-          type: "object",
-          required: ["task", "events", "integration", "requestId"],
-          properties: {
-            task: ref("Task"),
-            events: { type: "array", items: { type: "object" } },
-            integration: {
-              type: "object",
-              properties: {
-                calendarSyncState: { type: "string" },
-                confirmationId: { type: ["string", "null"] },
-                errorCode: { type: ["string", "null"] },
-                retryAfterSeconds: { type: ["integer", "null"] },
-              },
-            },
-            requestId: { type: "string" },
-            idempotencyKey: { type: ["string", "null"] },
-            idempotentReplay: { type: "boolean" },
-          },
-        }, "Idempotent replay — task already existed"),
         400: err400,
         404: problemContent("Requested Board unavailable"),
         500: err500,
