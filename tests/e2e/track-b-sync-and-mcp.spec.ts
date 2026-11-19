@@ -85,7 +85,8 @@ test("B3: commitSyncMutationChunks commits 60 items in 25/25/10 chunks, isolates
       }
     })
 
-    const result = await commitSyncMutationChunks(mutations, todo.context, { chunkSize: 25 })
+    const result = await test.step("Commit the 60 inbound items and roll back the failed confirmation", () =>
+      commitSyncMutationChunks(mutations, todo.context, { chunkSize: 25 }))
     expect(result.chunksCommitted).toBe(3)
     expect(result.created).toBe(59)
     expect(result.errors).toHaveLength(1)
@@ -95,20 +96,10 @@ test("B3: commitSyncMutationChunks commits 60 items in 25/25/10 chunks, isolates
     expect(persisted.rows).toHaveLength(59)
     const ticketNumbers = persisted.rows.map(r => Number(r.ticket_number))
     expect(ticketNumbers).toEqual(Array.from({ length: 59 }, (_, i) => i + 1))
+    expect(persisted.rows.map(row => row.title)).not.toContain("Inbound Todo 23")
+    const failedConfirmation = await client.execute("SELECT 1 FROM todo_sync_confirmations WHERE ha_todo_uid = 'uid-23'")
+    expect(failedConfirmation.rows).toEqual([])
 
-    // Add calendar (scoped across 2 entity_ids) + grocy confirmations + >200 todo IDs to verify multi-chunk lookup
-    const extraTodoMutations: SyncTaskMutation[] = Array.from({ length: 210 }, (_, idx) => ({
-      kind: "create",
-      title: `Bulk Todo ${idx}`,
-      status: "pending",
-      idempotencyKey: `bulk-todo:${idx}`,
-      confirmation: {
-        source: "ha_todo",
-        entityId: "todo.bulk",
-        externalId: `bulk-uid-${idx}`,
-        payload: JSON.stringify({ uid: `bulk-uid-${idx}` }),
-      },
-    }))
     const calAndGrocyMutations: SyncTaskMutation[] = [
       {
         kind: "create",
@@ -158,11 +149,31 @@ test("B3: commitSyncMutationChunks commits 60 items in 25/25/10 chunks, isolates
       if (!current.ok) throw new Error("Current retained sync fixture required")
       fixture.context = current.value
     }
-    await commitSyncMutationChunks(extraTodoMutations, bulk.context)
+    await test.step("Seed 210 stored Todo mappings for the scoped lookup batch", async () => {
+      const version = Date.now()
+      const statements = Array.from({ length: 210 }, (_, index) => {
+        const id = `bulk-task-${index}`
+        const externalId = `bulk-uid-${index}`
+        return [
+          {
+            sql: `INSERT INTO tasks(id,title,status,idempotency_key,request_id,created_at,updated_at)
+              VALUES (?,?,'pending',?,?,?,?)`,
+            args: [id, `Bulk Todo ${index}`, id, id, version, version],
+          },
+          {
+            sql: `INSERT INTO todo_sync_confirmations(confirmation_id,task_id,request_id,ha_entity_id,ha_todo_uid,payload,created_at,updated_at,binding_id)
+              VALUES (?,?,?,'todo.bulk',?,?,?,?,?)`,
+            args: [id, id, id, externalId, JSON.stringify({ uid: externalId }), version, version, bulk.binding.id],
+          },
+        ]
+      }).flat()
+      // The previous step exercises the live writer. These rows isolate the read-side batch boundary.
+      await client.batch(statements, "write")
+    })
     for (const [index, context] of [family.context, workCalendar.context, grocy.context].entries()) {
       const mutation = calAndGrocyMutations[index]
       if (!mutation) throw new Error("Expected retained provider fixture")
-      await commitSyncMutationChunks([mutation], context)
+      expect(await commitSyncMutationChunks([mutation], context)).toMatchObject({ created: 1, errors: [] })
     }
 
     const repo = new TaskRepository(client, await currentBoardScope(client))
