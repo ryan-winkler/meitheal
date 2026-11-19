@@ -1,3 +1,4 @@
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { expect, test, type Route } from "@playwright/test"
 import { calendarToday, shiftCalendarDay } from "../../apps/web/src/lib/date"
 
@@ -5,6 +6,7 @@ test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Me
 test.use({ serviceWorkers: "block" })
 
 test("reopening from Completed today restores a due task evicted from the preview", async ({ page, request }) => {
+  const headers = await currentBoardWriteHeaders(request, "household", {})
   await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
   await page.emulateMedia({ reducedMotion: "reduce" })
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -12,11 +14,11 @@ test("reopening from Completed today restores a due task evicted from the previe
   const title = "Restore a due task after preview eviction"
   const ids: string[] = []
   async function completeTask(taskTitle: string) {
-    const created = await request.post("/api/tasks", { data: { title: taskTitle, due_date: calendarToday() } })
+    const created = await request.post("/api/tasks", { headers, data: { title: taskTitle, due_date: calendarToday() } })
     expect(created.status()).toBe(201)
     const { id } = await created.json()
     ids.push(id)
-    const completed = await request.put(`/api/tasks/${id}`, { data: { status: "complete" } })
+    const completed = await request.put(`/api/tasks/${id}`, { headers, data: { status: "complete" } })
     expect(completed.ok()).toBe(true)
     return id
   }
@@ -42,18 +44,19 @@ test("reopening from Completed today restores a due task evicted from the previe
     await expect(due.getByRole("link", { name: title })).toBeFocused()
   } finally {
     for (const id of ids) {
-      const deleted = await request.delete(`/api/tasks/${id}`, { data: {} })
+      const deleted = await request.delete(`/api/tasks/${id}`, { headers, data: {} })
       expect(deleted.status()).toBe(204)
     }
   }
 })
 
 test("reopening from Completed today moves a rescheduled task out of its old list", async ({ page, request }) => {
+  const headers = await currentBoardWriteHeaders(request, "household", {})
   await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
   await page.emulateMedia({ reducedMotion: "reduce" })
   const title = "Review tomorrow’s inspection"
   const tomorrow = shiftCalendarDay(calendarToday(), 1)
-  const created = await request.post("/api/tasks", { data: { title, due_date: calendarToday(), priority: 2 } })
+  const created = await request.post("/api/tasks", { headers, data: { title, due_date: calendarToday(), priority: 2 } })
   expect(created.status()).toBe(201)
   const { id } = await created.json()
   try {
@@ -91,16 +94,18 @@ test("reopening from Completed today moves a rescheduled task out of its old lis
     await page.getByRole("button", { name: "Close detail" }).press("Enter")
     await expect(suggested.getByRole("link", { name: title })).toBeFocused()
   } finally {
-    await request.delete(`/api/tasks/${id}`, { data: {} })
+    await request.delete(`/api/tasks/${id}`, { headers, data: {} })
   }
 })
 
 test("reopening a due favorite keeps its original Focus Stack card", async ({ page, request }) => {
+  const headers = await currentBoardWriteHeaders(request, "household", {})
   await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
   await page.emulateMedia({ reducedMotion: "reduce" })
   const title = "Review a favorite due today"
   const today = calendarToday()
   const created = await request.post("/api/tasks", {
+    headers,
     data: { title, due_date: today, priority: 1, is_favorite: true },
   })
   expect(created.status()).toBe(201)
@@ -164,23 +169,24 @@ test("reopening a due favorite keeps its original Focus Stack card", async ({ pa
       await page.getByRole("button", { name: "Close detail" }).press("Enter")
     }
   } finally {
-    await request.delete(`/api/tasks/${id}`, { data: {} })
+    await request.delete(`/api/tasks/${id}`, { headers, data: {} })
   }
 })
 
 test("a failed Today refresh keeps the expanded Unscheduled rows", async ({ page, request }) => {
+  const headers = await currentBoardWriteHeaders(request, "household", {})
   await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
   const reopenedTitle = "Reopen while Unscheduled is expanded"
   const retainedTitle = "Keep this Unscheduled row"
   const ids: string[] = []
   try {
     for (const title of [reopenedTitle, retainedTitle]) {
-      const created = await request.post("/api/tasks", { data: { title } })
+      const created = await request.post("/api/tasks", { headers, data: { title } })
       expect(created.status()).toBe(201)
       ids.push((await created.json()).id)
     }
     const [reopenedId] = ids
-    const completed = await request.put(`/api/tasks/${reopenedId}`, { data: { status: "complete" } })
+    const completed = await request.put(`/api/tasks/${reopenedId}`, { headers, data: { status: "complete" } })
     expect(completed.ok()).toBe(true)
     await page.goto("/today?unscheduledPage=1#today-work")
     const section = page.locator("#section-unscheduled")
@@ -210,7 +216,7 @@ test("a failed Today refresh keeps the expanded Unscheduled rows", async ({ page
     await expect(section.getByRole("button", { name: "Retry" })).toBeVisible()
     await expect(retained).toBeVisible()
   } finally {
-    for (const id of ids) await request.delete(`/api/tasks/${id}`, { data: {} })
+    for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
   }
 })
 
@@ -220,14 +226,15 @@ for (const { name, sectionId, task } of [
   { name: "Shared favorites", sectionId: "section-pinned", task: { is_favorite: true } },
 ]) {
   test(`reopening from Completed today restores ${name} without a reload`, async ({ page, request }) => {
+  const headers = await currentBoardWriteHeaders(request, "household", {})
     await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
     await page.emulateMedia({ reducedMotion: "reduce" })
     const title = `Restore completed task to ${name}`
-    const created = await request.post("/api/tasks", { data: { title, ...task } })
+    const created = await request.post("/api/tasks", { headers, data: { title, ...task } })
     expect(created.status()).toBe(201)
     const { id } = await created.json()
     try {
-      const completed = await request.put(`/api/tasks/${id}`, { data: { status: "complete" } })
+      const completed = await request.put(`/api/tasks/${id}`, { headers, data: { status: "complete" } })
       expect(completed.ok()).toBe(true)
       await page.goto("/today#today-work")
       const section = page.locator(`#${sectionId}`)
@@ -250,7 +257,7 @@ for (const { name, sectionId, task } of [
       await expect(row).toHaveAttribute("data-work-active", "")
       if (sectionId === "section-carried") await expect(page.locator("[data-today-carried-empty]")).toBeHidden()
     } finally {
-      await request.delete(`/api/tasks/${id}`, { data: {} })
+      await request.delete(`/api/tasks/${id}`, { headers, data: {} })
     }
   })
 }
