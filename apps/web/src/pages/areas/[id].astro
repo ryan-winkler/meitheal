@@ -105,7 +105,7 @@ const tabs = [
 {(!workScope || !area || unavailable) ? <p role="status">This Area is unavailable. Reload to try again.</p> : !workspaceAreaId ? <LegacyBoardBridge href={boardWorkspaceHref((workScope?.boardId ?? ""), { area: areaId })} kind="group"
   fragments={{ overview: "overview", tasks: "tasks", goals: "goals", projects: "projects", routines: "routines", settings: "group-settings" }} /> : <Layout title={`Meitheal — ${areaName}`}>
   <span slot="page-title">
-    <span style={`color: ${areaColor}; margin-right: 6px;`}>{areaIcon}</span>
+    <span style={`color: ${areaColor}; margin-right: 6px;`} aria-hidden="true">{areaIcon}</span>
     {areaName}
   </span>
   <div slot="actions" class="flex gap-2">

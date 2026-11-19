@@ -279,6 +279,7 @@ function relativeTime(dueDate: string): string {
       <div class="dashboard-shell__stack">
         {gamificationLoaded ? <div class="card dashboard-card dashboard-card--flush">
           <GamificationWidget
+            achievementsHref={contextHref("/progress#achievements")}
             stats={gamificationStats}
             weekly={gamificationWeekly}
             level={gamLevel}

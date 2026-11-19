@@ -1,5 +1,7 @@
 ---
 import type { TaskRepository } from "@domains/tasks/persistence/task-repository"
+import { readBoardPagePlacement } from "@lib/board-page-placement"
+import { boardContextHref } from "@lib/board-workspace"
 import { resolveBoardPageScope } from "@lib/board-http"
 import { formatCalendarDay } from "@lib/calendar-day"
 import type { Locale } from "@lib/locale"
@@ -14,8 +16,10 @@ interface Props {
 
 const scoped = await resolveBoardPageScope(Astro)
 const boardId = scoped.ok ? scoped.scope.boardId : ""
-const planningHref = `/planning?board_id=${encodeURIComponent(boardId)}#triage`
-const tableHref = `/boards/${encodeURIComponent(boardId)}?view=table`
+const placement = scoped.ok ? await readBoardPagePlacement(scoped.scope, Astro.url) : undefined
+const context = { boardId, ...(placement?.ok && placement.area ? { area: placement.area.id } : {}), ...(placement?.ok && placement.project ? { project: placement.project.id } : {}) }
+const planningHref = boardContextHref(context, "/planning#triage")
+const tableHref = boardContextHref(context, "/tasks?view=table#table")
 const { locale, mode, queue } = Astro.props
 const embedded = mode === undefined
 const Heading = embedded ? "h2" : "h1"
@@ -27,7 +31,8 @@ const first = (page - 1) * 25 + 1
 const last = first + tasks.length - 1
 
 function pageHref(target: number, open?: string): string {
-  const query = new URLSearchParams({ board_id: boardId })
+  const destination = new URL(boardContextHref(context, "/triage"), Astro.url)
+  const query = destination.searchParams
   if (target > 1) query.set("page", String(target))
   if (open) query.set("open", open)
   return query.size ? `/triage?${query}` : "/triage"
@@ -35,7 +40,7 @@ function pageHref(target: number, open?: string): string {
 
 ---
 
-  {!scoped.ok ? <p role="status">Triage is unavailable. Reload to try again.</p> : <section class="intake" data-triage-root data-triage-embedded={embedded || undefined} aria-labelledby="triage-heading">
+  {!scoped.ok || !placement?.ok ? <p role="status">Triage is unavailable. Reload to try again.</p> : <section class="intake" data-triage-root data-triage-embedded={embedded || undefined} aria-labelledby="triage-heading">
     <header class="intake-header">
       {!embedded && <a href={planningHref} data-astro-prefetch="false">{t("triage.planning", locale)}</a>}
       <Heading id="triage-heading" tabindex="-1">{t("triage.title", locale)}</Heading>

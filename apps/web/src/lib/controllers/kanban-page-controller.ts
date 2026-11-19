@@ -17,12 +17,12 @@ export interface KanbanRefreshFocus {
   afterSave?: "status" | "lane-move" | "epic" | "board-group"
 }
 
-function findGroupFocus(board: HTMLElement, group: HTMLElement) {
+export function findGroupFocus(board: HTMLElement, group: HTMLElement) {
   const laneId = group.closest<HTMLElement>(".kanban-column")?.dataset.laneId
   const key = group.dataset.swimlaneType
   const lane = laneId && board.querySelector(`.kanban-column[data-lane-id="${CSS.escape(laneId)}"]`)
-  const target = lane && [...lane.querySelectorAll<HTMLElement>(".dynamic-group")]
-    .find(candidate => candidate.dataset.swimlaneType === key)
+  const target = lane && [...lane.querySelectorAll<HTMLElement>(".swimlane-group")]
+    .find(candidate => key !== undefined && candidate.dataset.swimlaneType === key)
   return (target && target.querySelector<HTMLElement>(".swimlane-header")) ||
     (lane || board).querySelector<HTMLElement>(".kanban-column-header")
 }

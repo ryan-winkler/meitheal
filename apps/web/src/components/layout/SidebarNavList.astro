@@ -289,6 +289,7 @@ function isExternal(href: string): boolean {
 
 <script>
   import { boardNavigationLinks, readBoardNavigationContext } from "../../lib/board-workspace"
+  import { currentTaskApiContext } from "../../lib/task-api"
   import { safeIngressHref } from "../../lib/ingress-navigation"
   import { pageLifecycle } from "../../lib/page-lifecycle"
   import {
@@ -319,9 +320,13 @@ function isExternal(href: string): boolean {
     if (!view) return
     const logical = new URL(background)
     logical.pathname = appPath(background.pathname)
-    const context = readBoardNavigationContext(logical)
-    const fromTasks = logical.pathname === "/tasks" || Boolean(context)
-    const tasks = fromTasks ? background : new URL(`${window.__ingress_path || ""}/tasks`, background)
+    const selected = currentTaskApiContext()
+    const context = readBoardNavigationContext(logical) ?? (selected ? { boardId: selected.boardId,
+      area: logical.searchParams.get("area") ?? logical.searchParams.get("area_id") ?? undefined,
+      project: logical.searchParams.get("project") ?? logical.searchParams.get("project_id") ?? undefined } : undefined)
+    const fromTasks = logical.pathname === "/tasks" || Boolean(context && /^\/boards\//.test(logical.pathname) && logical.searchParams.get("view") !== "groups" && !logical.searchParams.has("planning"))
+    const tasks = fromTasks ? background : new URL(safeIngressHref(context ? boardNavigationLinks(context).tasks : "/boards"), background)
+    if (context && appPath(tasks.pathname) === "/tasks") tasks.searchParams.set("board_id", context.boardId)
     const href = taskViewUrl(tasks, view, true).href
     if (link.href !== href) link.href = href
   }

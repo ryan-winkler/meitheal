@@ -9,6 +9,7 @@
  * and the floating bulk action bar.
  */
 
+import type { TableTaskWrites } from "../table-task-writes"
 import { showToast } from "@lib/toast"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { onTaskCompleted } from "@lib/gamification-hook"
@@ -20,6 +21,7 @@ import { reconcileTableDeferral } from "./table-deferral"
 interface BulkDeps {
   signal: AbortSignal
   onTasksChanged: () => void
+  writes: TableTaskWrites
 }
 
 // ── Public API ────────────────────────────────────────────────────────────
@@ -83,27 +85,32 @@ export function setupBulkActions(deps: BulkDeps): void {
     const ids = getSelectedIds()
     if (ids.length === 0) return
 
+    const intents = ids.flatMap(id => {
+      const row = table?.querySelector<HTMLElement>(`.table-row[data-id="${CSS.escape(id)}"]`)
+      const intent = row && deps.writes.capture(row)
+      return row && intent ? [{ row, intent }] : []
+    })
+    if (intents.length !== ids.length) return
     const confirmed = await confirmDialog({
       title: `Delete ${ids.length} task${ids.length > 1 ? "s" : ""}?`,
       message: "This action cannot be undone.",
       confirmText: "Delete",
       variant: "danger",
-      signal: deps.signal,
+      signal: intents[0]!.intent.signal,
     })
-    if (!confirmed || deps.signal.aborted) return
+    if (!confirmed || intents.some(({ intent }) => !deps.writes.current(intent))) return
 
     let deleted = 0
     const projects: Array<string | undefined> = []
-    for (const id of ids) {
-      try {
-        const res = await fetch(`/api/tasks/${id}`, { method: "DELETE", signal: deps.signal })
-        if (res.ok) {
-          const row = table?.querySelector<HTMLElement>(`.table-row[data-id="${CSS.escape(id)}"]`)
-          projects.push(row?.dataset.projectId)
-          deleted++
-        }
-      } catch { /* continue */ }
+    for (const { row, intent } of intents) {
+      if (!deps.writes.current(intent)) break
+      if (await deps.writes.remove(row, intent)) {
+        projects.push(row.dataset.projectId)
+        row.remove()
+        deleted++
+      }
     }
+    updateBulkBar()
 
     if (deps.signal.aborted) return
     showToast(`Deleted ${deleted} task${deleted === 1 ? "" : "s"}`, deleted > 0 ? "success" : "error")
@@ -172,15 +179,11 @@ async function bulkUpdateField(field: string, value: unknown, ids: string[], dep
   let updated = 0
   for (const id of ids) {
     try {
-      const res = await fetch(`/api/tasks/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [field]: value }),
-        signal: deps.signal,
-      })
-      if (res.ok) {
+      const row = document.querySelector<HTMLElement>(`#task-table .table-row[data-id="${CSS.escape(id)}"]`)
+      if (!row) continue
+      const updatedTask = await deps.writes.edit(row, { [field]: value })
+      if (updatedTask) {
         updated++
-        const row = document.querySelector<HTMLElement>(`#task-table .table-row[data-id="${CSS.escape(id)}"]`)
         if (row) {
           if (field === "status") {
             row.dataset.status = String(value)
@@ -188,7 +191,7 @@ async function bulkUpdateField(field: string, value: unknown, ids: string[], dep
             void reconcileTableDeferral(row, String(value), deps.signal)
             // Gamification + confetti on completion
             if (value === "complete") {
-              onTaskCompleted(await res.json())
+              onTaskCompleted(updatedTask)
             }
             // Update inline select
             const sel = row.querySelector<HTMLSelectElement>(`select[data-field="status"]`)

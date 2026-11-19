@@ -28,7 +28,7 @@ function rulesUseRice(group: FilterGroup): boolean {
 /** Share month and agenda matching. Connected calendar feeds are a separate source. */
 export function createCalendarTaskFilter(params: URLSearchParams, timezone: string) {
   const filters = readCalendarTaskFilters(params)
-  const projectId = params.get("project")
+  const projectId = params.get("project") ?? params.get("project_id")
   const includeCompletedInCounts = Boolean(filters.status || filters.advancedFilter?.conditions.length)
   const matchRice = Boolean(filters.rice || (filters.advancedFilter && rulesUseRice(filters.advancedFilter)))
   const today = calendarToday(timezone)

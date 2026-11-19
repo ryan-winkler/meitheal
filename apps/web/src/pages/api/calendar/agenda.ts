@@ -12,7 +12,7 @@ import { readStoredHouseholdTimezone } from "../../../lib/task-queries"
 
 const filtersLimit = 20_000
 
-export const POST: APIRoute = withBoardScope({ resource: "task", action: "create" }, async ({ request, locals }, scope) => {
+export const POST: APIRoute = withBoardScope({ resource: "task", action: "read" }, async ({ request, locals }, scope) => {
   if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
     return apiError("Send the Calendar query as JSON", 415)
   }
@@ -66,4 +66,4 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "create
     logApiError("calendar-agenda", "Could not load scheduled work", error)
     return apiError("Could not load scheduled work")
   }
-})
+}, { write: false })

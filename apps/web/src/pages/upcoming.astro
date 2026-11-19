@@ -174,7 +174,7 @@ function dayLabelClass(day: DayGroup): string {
             title="No upcoming tasks"
             description="Your schedule is clear for the next 7 days."
             actionText="Plan something"
-            actionHref="/table"
+            actionHref={contextHref("/tasks?view=table#table")}
           />
         )
       }

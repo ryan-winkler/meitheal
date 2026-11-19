@@ -17,18 +17,21 @@ import { verifiedIngressUser } from "@lib/verified-ingress-user"
 import Layout from "../layouts/Layout.astro"
 import { t } from "../i18n/translations"
 const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
-if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
-const workScope = workScopeResult.scope
+const workScope = workScopeResult.ok ? workScopeResult.scope : null
+if (!workScopeResult.ok) {
+  const failure = boardScopeResponse(workScopeResult.errorCode)
+  Astro.response.status = failure.status
+  for (const [name, value] of failure.headers) if (name !== "content-type") Astro.response.headers.set(name, value)
+}
 
 
 const headers = { "cache-control": "private, no-store" }
 Astro.response.headers.set("cache-control", headers["cache-control"])
 const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
 const user = verifiedIngressUser(Astro.locals)
-const roster = user ? await getCurrentHAUserRoster(user.id, Astro.request.signal) : undefined
-if (!roster) {
-  return new Response(t("recent_activity.denied", locale), { status: 403, headers })
-}
+const roster = workScope && user ? await getCurrentHAUserRoster(user.id, Astro.request.signal) : undefined
+const denied = !workScope || !roster
+if (workScope && !roster) Astro.response.status = 403
 
 const areaId = Astro.url.searchParams.get("area") || undefined
 const personKey = Astro.url.searchParams.get("person") || undefined
@@ -44,7 +47,7 @@ let page: Awaited<ReturnType<typeof readRecentActivity>> = { items: [], next: nu
 let haBaseUrl: string | null = null
 let unavailable = false
 
-if (!invalid) {
+if (!invalid && workScope && roster) {
   try {
     await ensureSchema()
     const client = getPersistenceClient()
@@ -66,10 +69,11 @@ if (!invalid) {
     unavailable = true
   }
 }
-if (invalid) Astro.response.status = 400
-if (unavailable) Astro.response.status = 503
+if (!denied && invalid) Astro.response.status = 400
+if (!denied && unavailable) Astro.response.status = 503
 
 function pageHref(cursor?: NonNullable<typeof page.next>): string {
+  if (!workScope) return Astro.url.pathname + Astro.url.search
   const params = new URLSearchParams({ board_id: workScope.boardId })
   if (areaId) params.set("area", areaId)
   if (personKey) params.set("person", personKey)
@@ -81,14 +85,19 @@ const timeZone = Astro.locals.timezone ?? "Europe/Dublin"
 const date = new Intl.DateTimeFormat(locale === "ga" ? "ga-IE" : "en-IE", { dateStyle: "medium", timeStyle: "short", timeZone })
 ---
 
-<Layout title={t("recent_activity.title", locale)} suppressTaskUrlOpen>
+<Layout title={t("recent_activity.title", locale)} suppressTaskUrlOpen privatePageShell={denied} hideSearchHub={denied}>
   <section class="recent-activity" data-recent-activity aria-labelledby="recent-activity-heading">
     <header>
       <h1 id="recent-activity-heading">{t("recent_activity.title", locale)}</h1>
       <p>{t("recent_activity.description", locale)}</p>
     </header>
 
-    {invalid || unavailable ? (
+    {denied ? (
+      <div role="alert">
+        <p>{t(Astro.response.status === 403 ? "recent_activity.denied" : "recent_activity.unavailable", locale)}</p>
+        <a href={Astro.url.pathname + Astro.url.search} class="btn btn-secondary" data-astro-prefetch="false" data-astro-reload>{t("recent_activity.refresh", locale)}</a>
+      </div>
+    ) : invalid || unavailable ? (
       <div role="status">
         <p>{t(invalid ? "recent_activity.invalid" : "recent_activity.unavailable", locale)}</p>
         <a href={invalid ? "/activity" : pageHref()} class="btn btn-secondary" data-astro-prefetch="false" data-astro-reload>

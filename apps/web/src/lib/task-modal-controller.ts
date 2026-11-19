@@ -1,5 +1,5 @@
 import { currentTaskApiContext } from "./task-api"
-import { deleteVersionedTask, saveVersionedTask, taskRecordVersion } from "./task-api-client"
+import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordVersion } from "./task-api-client"
         import { askAIForTask } from "@domains/ai/ai-context-service";
         import { createClientLogger } from "@lib/client-logger";
         import { copyToClipboard } from "@lib/clipboard"
@@ -61,6 +61,7 @@ import { deleteVersionedTask, saveVersionedTask, taskRecordVersion } from "./tas
           queued?: () => void
         } | undefined
         let boardWithheld = false
+        let boardRevoked = false
         document.addEventListener("meitheal:board-hidden", () => {
           boardWithheld = true
           tdOverlay.hidden = true
@@ -68,8 +69,24 @@ import { deleteVersionedTask, saveVersionedTask, taskRecordVersion } from "./tas
           _modalAbortController?.abort()
           closeTaskReferences()
         }, { signal: __signal })
+        document.addEventListener("meitheal:board-revoked", event => {
+          const boardId = (event as CustomEvent<{ boardId?: string }>).detail?.boardId
+          if (boardId && boardId !== currentTaskApiContext()?.boardId) return
+          boardRevoked = true
+          boardWithheld = true
+          _modalAbortController?.abort()
+          tdOverlay.hidden = true
+          tdOverlay.inert = true
+        }, { signal: __signal })
         document.addEventListener("meitheal:board-verified", () => {
+          if (boardRevoked) return
           boardWithheld = false
+          // A new confirmation after unchanged verification gets a fresh lifetime;
+          // the cancelled confirmation and its original request remain aborted.
+          if (currentTaskId && taskLoaded && _modalAbortController?.signal.aborted) {
+            _modalAbortController = new AbortController()
+            resumeLoadedTask?.()
+          }
           tdOverlay.hidden = false
           tdOverlay.inert = false
         }, { signal: __signal })
@@ -134,6 +151,7 @@ import { deleteVersionedTask, saveVersionedTask, taskRecordVersion } from "./tas
         let layoutScrollTop = 0
         let focusMode = false
         let taskLoaded = false
+        let resumeLoadedTask: (() => void) | undefined
 
         function setInspectorAriaLabel(label: string) {
           tdOverlay.setAttribute("aria-label", label)
@@ -271,8 +289,9 @@ import { deleteVersionedTask, saveVersionedTask, taskRecordVersion } from "./tas
               saveNavigationState()
               return
             }
-            const legacy = url.searchParams.has("open") || getLegacyTaskId(url.hash) !== null
+            const legacy = url.searchParams.has("open") || url.searchParams.has("ticket") || getLegacyTaskId(url.hash) !== null
             url.searchParams.delete("open")
+            url.searchParams.delete("ticket")
             url.searchParams.delete("comment")
             if (getLegacyTaskId(url.hash) !== null) url.hash = ""
             const state = { ...history.state, ticketDrawer: { returnTo: url.href, session: drawerSession, pushed: !legacy && !replace } }
@@ -289,8 +308,9 @@ import { deleteVersionedTask, saveVersionedTask, taskRecordVersion } from "./tas
               history.replaceState(history.state, "", taskBackgroundUrl(url))
               saveNavigationState()
             }
-          } else if (url.searchParams.has("open") || getLegacyTaskId(url.hash) !== null) {
+          } else if (url.searchParams.has("open") || url.searchParams.has("ticket") || getLegacyTaskId(url.hash) !== null) {
             url.searchParams.delete("open")
+            url.searchParams.delete("ticket")
             url.searchParams.delete("comment")
             if (getLegacyTaskId(url.hash) !== null) url.hash = ""
             history.replaceState(history.state, "", url)
@@ -355,6 +375,7 @@ import { deleteVersionedTask, saveVersionedTask, taskRecordVersion } from "./tas
           pendingDescriptionSave = undefined
           queuedDescriptionTransition = undefined
           taskLoaded = false
+          resumeLoadedTask = undefined
           currentCommentTarget = null
           delete tdOverlay.dataset.openTaskId
           if (updateLocation) setTaskLocation(null)
@@ -461,6 +482,8 @@ import { deleteVersionedTask, saveVersionedTask, taskRecordVersion } from "./tas
           if (waitForDetailWrites(() => { void openTaskDetail(taskId, commentTarget, search, updateLocation) })) return
           if (search) searchSession = { handoff: search, lifetime: new AbortController(), dirty: false, pending: 0 }
           detailGeneration++
+          const loadedGeneration = detailGeneration
+          resumeLoadedTask = undefined
           closeTaskReferences()
           deferral.opening(newSession)
           pins.opening()
@@ -1302,8 +1325,9 @@ import { deleteVersionedTask, saveVersionedTask, taskRecordVersion } from "./tas
             tdLoaded?.classList.remove("hidden")
             void renderTaskDescription(description)
             resizeTitle()
-            setTimeout(() => {
-              if (modalSignal.aborted) return
+            const finishLoadedTask = () => {
+              const liveSignal = _modalAbortController?.signal
+              if (!liveSignal || liveSignal.aborted || currentTaskId !== taskId || detailGeneration !== loadedGeneration) return
               _isPopulating = false
               if (descSaveBtn && !pendingDescriptionSave) descSaveBtn.disabled = false
               setStatusLoading(false)
@@ -1311,12 +1335,14 @@ import { deleteVersionedTask, saveVersionedTask, taskRecordVersion } from "./tas
               if (unlinkParentButton) unlinkParentButton.disabled = false
               if (projectField) projectField.disabled = !projectFieldReady
               if (assignSelect) assignSelect.disabled = !assigneeReady
-              deferral.loaded(taskId, typeof t.project_id === "string" ? t.project_id : null, t.deferred_at != null, modalSignal, Boolean(searchSession))
-              pins.loaded(taskId, modalSignal)
+              deferral.loaded(taskId, typeof t.project_id === "string" ? t.project_id : null, t.deferred_at != null, liveSignal, Boolean(searchSession))
+              pins.loaded(taskId, liveSignal)
               const transition = queuedDescriptionTransition
               queuedDescriptionTransition = undefined
               transition?.()
-            }, 100)
+            }
+            resumeLoadedTask = finishLoadedTask
+            setTimeout(finishLoadedTask, 100)
           } catch (e) {
             if (modalSignal.aborted) return
             log.error("Failed to load task detail", e);
@@ -2034,25 +2060,27 @@ import { deleteVersionedTask, saveVersionedTask, taskRecordVersion } from "./tas
           .getElementById("td-delete")
           ?.addEventListener("click", async () => {
             const taskId = currentTaskId
-            if (!taskId) return
+            if (!taskId || boardWithheld || !_modalAbortController || _modalAbortController.signal.aborted) return
             if (taskSaveConflict) { showTaskWriteConflict(); return }
             const version = currentTaskVersion
             const context = currentTaskApiContext()
             const search = searchSession
             const generation = detailGeneration
-            const stale = () => generation !== detailGeneration
+            const lifetime = _modalAbortController.signal
+            const confirmationSignal = AbortSignal.any([__signal, lifetime, ...(search ? [search.lifetime.signal] : [])])
+            const stale = () => generation !== detailGeneration || boardWithheld || confirmationSignal.aborted || !sameTaskApiContext(context, currentTaskApiContext())
             const ok = await confirmDialog({
               message: "This task will be permanently deleted.",
               variant: "danger",
               confirmText: "Delete Task",
               title: "Delete Task",
-              ...(search ? { signal: search.lifetime.signal } : {}),
+              signal: confirmationSignal,
             });
             if (!ok || stale() || taskId !== currentTaskId) return
             const scopedWrite = beginScopedWrite()
             try {
               const result = await deleteVersionedTask(taskId, version, context,
-                scopedWrite?.signal ?? AbortSignal.any([__signal, AbortSignal.timeout(7_000)]))
+                AbortSignal.any([confirmationSignal, ...(scopedWrite ? [scopedWrite.signal] : []), AbortSignal.timeout(7_000)]))
               if (stale()) return
               if (result.ok) {
                 const deferred = deferral.removing(taskId)
@@ -2158,7 +2186,7 @@ import { deleteVersionedTask, saveVersionedTask, taskRecordVersion } from "./tas
             saveNavigationState()
           }
           const url = new URL(window.location.href)
-          const taskId = ticketIdFromPath(url.pathname, window.__ingress_path) ?? getLegacyTaskId(url.hash) ?? url.searchParams.get("open")
+          const taskId = ticketIdFromPath(url.pathname, window.__ingress_path) ?? getLegacyTaskId(url.hash) ?? url.searchParams.get("open") ?? url.searchParams.get("ticket")
           const commentTarget = url.searchParams.get("comment")
           if (taskId === null) closeTD("discard", false)
           else if (tdOverlay.dataset.suppressUrlOpen !== "true" &&

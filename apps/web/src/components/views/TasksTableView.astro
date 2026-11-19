@@ -1,5 +1,6 @@
 ---
 
+import { taskRecordVersion } from "../../lib/task-api-client"
 import SignalBar from "../layout/SignalBar.astro";
 import EmptyState from "../ui/EmptyState.astro";
 import Icon from "../ui/Icon.astro"
@@ -211,6 +212,7 @@ const priorityClasses: Record<number, string> = {
                 return (
                   <tr
                     data-id={task.id}
+                    data-task-version={taskRecordVersion({ ...(task.task_version !== undefined ? { task_version: task.task_version } : {}), updated_at: task.updated_at }) ?? undefined}
                     data-rice={task.rice !== null ? String(task.rice) : ""}
                     data-area={task.area_id}
                     data-project-id={task.project_id ?? ""}
