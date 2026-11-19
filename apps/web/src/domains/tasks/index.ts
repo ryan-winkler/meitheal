@@ -108,3 +108,5 @@ export { prepareWorkIntegrationSettings, validateWorkIntegrationSettingsApproval
   type WorkIntegrationSettingsApproval } from "./work-binding-manager"
 
 export { parseRRule } from "./recurrence"
+
+export { taskActionHints, type TaskActionHint } from "./task-action-hints"
