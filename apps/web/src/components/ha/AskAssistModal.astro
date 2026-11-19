@@ -138,7 +138,14 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   pageLifecycle.onPageLoad((pageSignal) => {
   const overlay = document.getElementById("ask-ha-overlay");
   if (!overlay) return
-  const runtime = window as unknown as { __meithealAskAssist?: AbortController }
+  const runtime = window as unknown as {
+    __meithealAskAssist?: AbortController
+    __meithealAskAssistBinding?: { overlay: HTMLElement; pageSignal: AbortSignal }
+  }
+  // Keep one binding during both initial lifecycle callbacks and HMR reevaluation.
+  const binding = runtime.__meithealAskAssistBinding
+  if (binding?.overlay === overlay && binding.pageSignal === pageSignal) return
+  runtime.__meithealAskAssistBinding = { overlay, pageSignal }
   runtime.__meithealAskAssist?.abort()
   runtime.__meithealAskAssist = new AbortController()
   const signal = AbortSignal.any([pageSignal, runtime.__meithealAskAssist.signal])

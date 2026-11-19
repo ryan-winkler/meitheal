@@ -214,7 +214,8 @@ while preserving the last selection. This failure is separate from the app's
 own connection to its server. The compact app status beside Settings remains reachable through its accessible description. Operator logs distinguish static `invalid_agent_payload` and `websocket_request_failed` reasons without recording the HA payload.
 
 Ask Home Assistant keeps its chat and HA conversation ID when closed and
-reopened on the same page. Changing the selected agent starts a new conversation.
+reopened on the same page. The first reply can continue while the page finishes
+loading. Changing the selected agent starts a new conversation.
 The Settings default is persistent; the most recent Ask selection is stored for
 the browser session. Saving a new Settings default clears that session override.
 

@@ -3,6 +3,7 @@ import { validateBoardScope, type BoardScope, type ScopeFailure, type WorkOperat
 import { BoardAccessService, getPersistenceClient } from "@domains/tasks"
 import { resolveBoardRequestScope } from "./board-request-context"
 import { apiProblem } from "./api-response"
+import { db503Response, isDbUnavailable } from "./db-fallback"
 
 const journaledAcknowledgements = new WeakMap<Response, { scope: BoardScope, operation: WorkOperation }>()
 
@@ -42,6 +43,8 @@ export function boardScopeResponse(code: ScopeFailure): Response {
 
 /** Preserve authorization/continuity failures when an adapter has a generic error boundary. */
 export function boardScopeErrorResponse(error: unknown): Response | undefined {
+  const code = error && typeof error === "object" && "code" in error ? error.code : undefined
+  if (code === "TRANSACTION_ACTIVE" || isDbUnavailable(error)) return db503Response("board-work", error)
   if (error && typeof error === "object" && "errorCode" in error && ["unavailable", "denied", "continuity_locked", "stale"].includes(String(error.errorCode))) return boardScopeResponse(error.errorCode as ScopeFailure)
 }
 
@@ -62,13 +65,13 @@ export function withBoardScope(
   options: ScopeOptions = {},
 ): APIRoute {
   return async context => {
-    const result = await resolveBoardRequestScope(context, {
-      operation, ...(options.boardParam && context.params[options.boardParam] ? { boardId: context.params[options.boardParam] } : {}),
-      ...(recordSelection(context, options) ? { record: recordSelection(context, options) } : {}),
-      write: options.write ?? operation.action !== "read",
-    })
-    if (!result.ok) return boardScopeResponse(result.errorCode)
     try {
+      const result = await resolveBoardRequestScope(context, {
+        operation, ...(options.boardParam && context.params[options.boardParam] ? { boardId: context.params[options.boardParam] } : {}),
+        ...(recordSelection(context, options) ? { record: recordSelection(context, options) } : {}),
+        write: options.write ?? operation.action !== "read",
+      })
+      if (!result.ok) return boardScopeResponse(result.errorCode)
       const response = await handler(context, result.scope)
       const acknowledgement = response instanceof Response ? journaledAcknowledgements.get(response) : undefined
       if (acknowledgement?.scope === result.scope && acknowledgement.operation.resource === operation.resource && acknowledgement.operation.action === operation.action) {
@@ -84,10 +87,8 @@ export function withBoardScope(
       if (response instanceof Response) response.headers.set("Cache-Control", "private, no-store")
       return response
     } catch (error) {
-      if (error && typeof error === "object" && "errorCode" in error &&
-        ["unavailable", "denied", "continuity_locked", "stale"].includes(String(error.errorCode))) {
-        return boardScopeResponse(error.errorCode as ScopeFailure)
-      }
+      const failure = boardScopeErrorResponse(error)
+      if (failure) return failure
       throw error
     }
   }

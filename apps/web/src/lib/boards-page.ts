@@ -34,10 +34,22 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
   let navigating = false
   let checking: AbortController | undefined
   const placeholder = document.createComment("")
-  const detach = () => {
+  const holdsFocus = () => {
+    const active = document.activeElement
+    return !!active && active !== document.body &&
+      (root.contains(active) || recovery.contains(active) || !!active.closest('[role="dialog"], [role="alertdialog"]'))
+  }
+  const focusRecovery = (owned: boolean) => {
+    const active = document.activeElement
+    if (!owned || (active && active !== document.body && active.isConnected && !(expired && recovery.contains(active)))) return
+    const target = expired ? status.querySelector<HTMLElement>("[data-board-refresh]") : retry
+    target?.focus({ preventScroll: true })
+  }
+  const detach = (owned = holdsFocus()) => {
     root.dispatchEvent(new Event("meitheal:board-hidden", { bubbles: true }))
     if (root.isConnected) root.replaceWith(placeholder)
     recovery.hidden = expired
+    if (!expired) focusRecovery(owned)
   }
   const restore = () => {
     if (placeholder.isConnected) placeholder.replaceWith(root)
@@ -45,12 +57,14 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
     root.dispatchEvent(new Event("meitheal:board-verified", { bubbles: true }))
   }
   const expire = () => {
+    const owned = holdsFocus()
     expired = true
     root.dataset.boardExpired = "true"
-    detach()
+    detach(owned)
     root.replaceChildren()
     recovery.hidden = true
     status.hidden = false
+    focusRecovery(owned)
   }
   async function recheck(beforeRevealing = false) {
     if (expired || signal.aborted) return

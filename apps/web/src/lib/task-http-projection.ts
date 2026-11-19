@@ -4,6 +4,13 @@ import { formatTicketKey } from "./ticket-key"
 /** Explicit allowlist: adding a private database column can never add it to HTTP. */
 export function taskHttpProjection(row: Record<string, unknown>, boardId: string): Record<string, unknown> {
   const task = projectPublicTaskFields(row)
+  // Successful create/update writers return their actual integer timestamp.
+  // Read queries supply the normalized version explicitly for retained ISO rows.
+  if (!Object.hasOwn(task, "task_version")) {
+    const version = typeof row.updated_at === "number" ? row.updated_at
+      : typeof row.updated_at === "string" && /^\d+$/.test(row.updated_at) ? Number(row.updated_at) : NaN
+    if (Number.isSafeInteger(version) && version >= 0) task.task_version = version
+  }
   task.board_id = boardId
   task.ticket_key = row.ticket_key ?? row.ticket_ref ?? formatTicketKey(row.ticket_number == null ? null : Number(row.ticket_number))
   return task

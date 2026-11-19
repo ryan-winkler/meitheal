@@ -125,7 +125,6 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
       calendar_sync_state: r.calendar_sync_state ?? "pending",
       parent_id: r.parent_id ?? null,
       time_tracked: Number(r.time_tracked ?? 0),
-      area_id: r.area_id ?? null,
       custom_fields: typeof r.custom_fields === "string" ? r.custom_fields : "{}",
       start_date: r.start_date ?? null,
       end_date: r.end_date ?? null,

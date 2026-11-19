@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { constants, lstatSync } from "node:fs"
-import { mkdir, open } from "node:fs/promises"
+import { mkdir, open, rmdir } from "node:fs/promises"
 import { dirname, isAbsolute, relative, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import { openDatabaseForStartup, withStartupWriteTransaction } from "./database-client.mjs"
@@ -64,6 +64,42 @@ async function databaseFamily(database) {
 
 const sameFamily = (left, right) => right && Object.keys(left).every(name => left[name] === right[name]) && Object.keys(right).length === 4
 
+// The independent checkpoint publisher uses this same no-clobber lease when
+// replacing or superseding current.json. Interrupted leases require operator
+// reconciliation; this helper never guesses that another operation is stale.
+async function custodyOperation(custodyDirectory) {
+  const path = resolve(custodyDirectory, ".continuity-operation")
+  await mkdir(path, { mode: 0o700 })
+  const identity = lstatSync(path)
+  const assertHeld = () => {
+    const current = lstatSync(path, { throwIfNoEntry: false })
+    if (
+      !current?.isDirectory() ||
+      current.isSymbolicLink() ||
+      current.dev !== identity.dev ||
+      current.ino !== identity.ino ||
+      (current.mode & 0o077) !== 0 ||
+      current.uid !== identity.uid
+    )
+      denied("custody operation lease changed")
+  }
+  try {
+    await syncDirectory(custodyDirectory)
+  } catch (error) {
+    assertHeld()
+    await rmdir(path)
+    throw error
+  }
+  return {
+    assertHeld,
+    async release() {
+      assertHeld()
+      await rmdir(path)
+      await syncDirectory(custodyDirectory)
+    }
+  }
+}
+
 /**
  * Offline operator trust boundary. This tool does not mint or establish currency.
  * The protected external current.json is supplied by the independent current-checkpoint procedure.
@@ -78,7 +114,9 @@ export async function enrollLegacyContinuity({ database, markerPath, custodyDire
   if (!custodyStats.isDirectory() || (custodyStats.mode & 0o077) !== 0 || ![0, process.getuid?.()].includes(custodyStats.uid)) denied("custody directory must be private and operator-owned")
   const manifestBytes = await privateFile(manifestPath)
   const manifest = JSON.parse(manifestBytes.toString("utf8"))
-  const current = JSON.parse((await privateFile(resolve(custodyDirectory, "current.json"))).toString("utf8"))
+  const currentPath = resolve(custodyDirectory, "current.json")
+  const currentBytes = await privateFile(currentPath)
+  const current = JSON.parse(currentBytes.toString("utf8"))
   if (manifest.kind !== "meitheal-current-legacy-checkpoint-v1" || current.kind !== "meitheal-current-continuity-attestation-v1") denied("unsupported proof contract")
   if (!/^[a-zA-Z0-9-]{1,100}$/.test(manifest.checkpointId ?? "") || current.checkpointId !== manifest.checkpointId || current.manifestSha256 !== digest(manifestBytes)) denied("current proof does not bind exact manifest")
   if (current.state !== "current" || current.coreOwnerVerified !== true || current.appStopped !== true || current.noNewerGrantOrLifecycleChange !== true || typeof current.verificationId !== "string" || current.verificationId.length < 8) denied("independent current cold-checkpoint attestation required")
@@ -95,46 +133,59 @@ export async function enrollLegacyContinuity({ database, markerPath, custodyDire
   const pending = resolve(dirname(markerPath), "meitheal-board-grants-pending")
   if (lstatSync(pending, { throwIfNoEntry: false })) denied("pending journal must be absent")
 
-  // Durable no-clobber consumption precedes opening SQLite, migrations and any grant publication.
-  // A failed or interrupted attempt is deliberately not reusable.
-  const consumedDirectory = resolve(custodyDirectory, "consumed")
-  await mkdir(consumedDirectory, { mode: 0o700 }) .catch(error => { if (error?.code !== "EEXIST") throw error })
-  assertNoSymlinks(consumedDirectory)
-  const consumedStats = lstatSync(consumedDirectory)
-  if (!consumedStats.isDirectory() || (consumedStats.mode & 0o077) !== 0 || ![0, process.getuid?.()].includes(consumedStats.uid)) denied("consumed proofs directory must be private and operator-owned")
-  const receipt = await open(resolve(consumedDirectory, manifest.checkpointId + ".json"), "wx", 0o600)
+  const lease = await custodyOperation(custodyDirectory)
   try {
-    await receipt.writeFile(JSON.stringify({ status: "consumed-before-enrollment", checkpointId: manifest.checkpointId, manifestSha256: digest(manifestBytes) }) + "\n")
-    await receipt.sync()
-    await syncDirectory(consumedDirectory)
-    await syncDirectory(custodyDirectory)
-    const client = await openDatabaseForStartup("file:" + database, { markerPath })
+    const assertCurrent = async () => {
+      lease.assertHeld()
+      if (!(await privateFile(manifestPath)).equals(manifestBytes) || !(await privateFile(currentPath)).equals(currentBytes)) denied("independent current custody changed or was superseded")
+      lease.assertHeld()
+    }
+    // All long archive/database scans precede irreversible proof consumption.
+    await assertCurrent()
+
+    // Durable no-clobber consumption precedes opening SQLite, migrations and any grant publication.
+    // A failed or interrupted attempt is deliberately not reusable.
+    const consumedDirectory = resolve(custodyDirectory, "consumed")
+    await mkdir(consumedDirectory, { mode: 0o700 }) .catch(error => { if (error?.code !== "EEXIST") throw error })
+    assertNoSymlinks(consumedDirectory)
+    const consumedStats = lstatSync(consumedDirectory)
+    if (!consumedStats.isDirectory() || (consumedStats.mode & 0o077) !== 0 || ![0, process.getuid?.()].includes(consumedStats.uid)) denied("consumed proofs directory must be private and operator-owned")
+    const receipt = await open(resolve(consumedDirectory, manifest.checkpointId + ".json"), "wx", 0o600)
     try {
-      let revision
-      await withStartupWriteTransaction(client, async tx => {
-        // SQLite rebuilds/updates SHM as it opens and acquires the writer. Its original
-        // bytes were checked before opening; only persistent DB/WAL bytes must remain
-        // identical under the writer before the first schema/enrollment mutation.
-        const lockedFamily = await databaseFamily(database)
-        const walUnchanged = lockedFamily.wal === before.wal || (before.wal === null && lockedFamily.wal === digest(Buffer.alloc(0)))
-        if (lockedFamily.database !== before.database || !walUnchanged || lockedFamily.journal) denied("cold persistent files changed before enrollment")
-        await applyStartupTaskSchema(tx)
-        const named = await tx.execute("SELECT 1 FROM task_boards WHERE id <> 'household' LIMIT 1")
-        const policies = await tx.execute("SELECT 1 FROM organization_access_policies LIMIT 1")
-        if (named.rows.length || policies.rows.length) denied("only verified legacy pre-grant data can enroll")
-        const integrity = await tx.execute("PRAGMA integrity_check(1)")
-        const foreign = await tx.execute("PRAGMA foreign_key_check")
-        if (integrity.rows[0]?.integrity_check !== "ok" || foreign.rows.length) denied("database integrity check failed")
-        const admitted = await applyStartupBoardSchema(client, tx, undefined, { operatorAdmission: registerConsumedOperatorAdmission() })
-        if (admitted.state !== "ready") denied("consumed current custody did not admit ordinary Board conversion")
-        revision = admitted.revision
-      })
-      if (await currentBoardGrantRevision(client, markerPath) !== revision) denied("committed publication pending")
-      await receipt.writeFile(JSON.stringify({ status: "enrolled", revision }) + "\n")
+      await receipt.writeFile(JSON.stringify({ status: "consumed-before-enrollment", checkpointId: manifest.checkpointId, manifestSha256: digest(manifestBytes) }) + "\n")
       await receipt.sync()
-      return { status: "enrolled", revision }
-    } finally { client.close() }
-  } finally { await receipt.close() }
+      await syncDirectory(consumedDirectory)
+      await syncDirectory(custodyDirectory)
+      const client = await openDatabaseForStartup("file:" + database, { markerPath })
+      try {
+        let revision
+        await withStartupWriteTransaction(client, async tx => {
+          // SQLite rebuilds/updates SHM as it opens and acquires the writer. Its original
+          // bytes were checked before opening; only persistent DB/WAL bytes must remain
+          // identical under the writer before the first schema/enrollment mutation.
+          const lockedFamily = await databaseFamily(database)
+          const walUnchanged = lockedFamily.wal === before.wal || (before.wal === null && lockedFamily.wal === digest(Buffer.alloc(0)))
+          if (lockedFamily.database !== before.database || !walUnchanged || lockedFamily.journal) denied("cold persistent files changed before enrollment")
+          await assertCurrent()
+          await applyStartupTaskSchema(tx)
+          const named = await tx.execute("SELECT 1 FROM task_boards WHERE id <> 'household' LIMIT 1")
+          const policies = await tx.execute("SELECT 1 FROM organization_access_policies LIMIT 1")
+          if (named.rows.length || policies.rows.length) denied("only verified legacy pre-grant data can enroll")
+          const integrity = await tx.execute("PRAGMA integrity_check(1)")
+          const foreign = await tx.execute("PRAGMA foreign_key_check")
+          if (integrity.rows[0]?.integrity_check !== "ok" || foreign.rows.length) denied("database integrity check failed")
+          await assertCurrent()
+          const admitted = await applyStartupBoardSchema(client, tx, undefined, { operatorAdmission: registerConsumedOperatorAdmission() })
+          if (admitted.state !== "ready") denied("consumed current custody did not admit ordinary Board conversion")
+          revision = admitted.revision
+        })
+        if (await currentBoardGrantRevision(client, markerPath) !== revision) denied("committed publication pending")
+        await receipt.writeFile(JSON.stringify({ status: "enrolled", revision }) + "\n")
+        await receipt.sync()
+        return { status: "enrolled", revision }
+      } finally { client.close() }
+    } finally { await receipt.close() }
+  } finally { await lease.release() }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

@@ -2329,23 +2329,6 @@
       }
     },
     {
-      "name": "getA2ATask",
-      "description": "Requires a token with a2a:execute, search:read, and tasks:read, plus A2A-Version: 1.0.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Task UUID or ticket key (e.g., MTH-42)"
-          }
-        },
-        "required": [
-          "id"
-        ]
-      }
-    },
-    {
       "name": "createAgentToken",
       "description": "Issue a zero-trust agent token with fine-grained scopes. The plaintext token is returned ONCE in the response — store it securely. Requires Home Assistant admin access.\n\n**For n8n/Node-RED**: Create a token with only the scopes your workflow needs, then set it as Bearer token in your HTTP Request node.",
       "inputSchema": {
@@ -3448,15 +3431,6 @@
       "path": "/api/unfurl",
       "hasBody": true,
       "pathParams": [],
-      "queryParams": []
-    },
-    "getA2ATask": {
-      "method": "GET",
-      "path": "/api/a2a/tasks/{id}",
-      "hasBody": false,
-      "pathParams": [
-        "id"
-      ],
       "queryParams": []
     },
     "createAgentToken": {
