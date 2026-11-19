@@ -124,11 +124,12 @@ async function getRssKb(pid) {
   return rssKb;
 }
 
-async function createTask(baseUrl, title) {
+async function createTask(baseUrl, title, session) {
   const start = performance.now();
   const response = await fetch(`${baseUrl}/api/tasks`, { // nosemgrep
     method: "POST",
-    headers: { "content-type": "application/json", origin: baseUrl },
+    headers: { "content-type": "application/json", origin: baseUrl,
+      "x-meitheal-board-id": "household", "x-meitheal-board-session": session },
     body: JSON.stringify({ title }),
     signal: AbortSignal.timeout(5_000),
   });
@@ -186,10 +187,13 @@ async function main() {
   const dbUrl = `file:${dbPath}`;
   // Ask the kernel for a free port and read it from this child only.
   const server = spawn(process.execPath, ["--max-old-space-size=128", "--input-type=module", "--eval", `
-    const { startServer } = await import("./dist/server/entry.mjs")
-    const { server, done } = startServer()
-    server.server.once("listening", () => process.send(server.server.address().port))
-    await done
+    const { Server } = await import("node:http")
+    const listen = Server.prototype.listen
+    Server.prototype.listen = function (...args) {
+      this.once("listening", () => process.send(this.address().port))
+      return Reflect.apply(listen, this, args)
+    }
+    await import("./scripts/serve.mjs")
   `], {
     cwd: appRoot,
     env: {
@@ -218,16 +222,20 @@ async function main() {
     }
     const baseUrl = `http://127.0.0.1:${port}`
     await waitForHealth(`${baseUrl}/api/health`, version);
+    const boardAccess = await fetch(`${baseUrl}/api/boards`, { signal: AbortSignal.timeout(5_000) });
+    const boardSession = boardAccess.headers.get("x-meitheal-board-session");
+    await boardAccess.body?.cancel();
+    if (!boardAccess.ok || !boardSession) throw new Error("Benchmark requires the current fixture operator's Board session");
     const warmups = 5;
     const requests = 100;
     for (let index = 0; index < warmups; index += 1) {
-      await createTask(baseUrl, `perf-warmup-${index}`);
+      await createTask(baseUrl, `perf-warmup-${index}`, boardSession);
     }
     const rssKb = await getRssKb(server.pid);
 
     const latenciesMs = [];
     for (let index = 0; index < requests; index += 1) {
-      latenciesMs.push(await createTask(baseUrl, `perf-check-${index}`));
+      latenciesMs.push(await createTask(baseUrl, `perf-check-${index}`, boardSession));
     }
 
     let kanbanWarm2000;

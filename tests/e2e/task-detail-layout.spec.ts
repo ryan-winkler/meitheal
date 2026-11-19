@@ -5,8 +5,17 @@ import { normalizeTaskDetailOrder, taskDetailDefaultOrder } from "../../apps/web
 
 const layoutKey = "meitheal:task-detail-layout:v1"
 
+async function taskHeaders(request: APIRequestContext) {
+  const access = await request.get("/api/boards")
+  expect(access.status()).toBe(200)
+  const session = access.headers()["x-meitheal-board-session"]
+  expect(session).toBeTruthy()
+  return { "x-meitheal-board-session": session!, "x-meitheal-board-id": "household" }
+}
+
 async function createTicket(request: APIRequestContext, title: string): Promise<string> {
   const response = await request.post("/api/tasks", {
+    headers: await taskHeaders(request),
     data: { title, description: "Description for the task detail layout fixture." },
   })
   expect(response.status()).toBe(201)
@@ -205,7 +214,7 @@ test("activity retries and remains mounted across Focus and collapse", async ({ 
 
 test("Description locks during Save, retains a failed draft, and resets for a blank ticket", async ({ page, request }) => {
   const id = await createTicket(request, "Description save fixture")
-  const blank = await request.post("/api/tasks", { data: { title: "Blank description fixture" } })
+  const blank = await request.post("/api/tasks", { headers: await taskHeaders(request), data: { title: "Blank description fixture" } })
   expect(blank.status()).toBe(201)
   const blankId = (await blank.json()).id
   let finish!: () => void
