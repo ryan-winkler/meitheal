@@ -7,7 +7,7 @@ import { expect, test } from "@playwright/test"
 import { validateFrameworkOverrides } from "@meitheal/domain-strategy"
 import { parseRuleInput } from "../../apps/web/src/domains/strategy/rule-input"
 import { findAllRules, replaceRules } from "../../apps/web/src/domains/strategy/rule-repository"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 import { POST as importSettings } from "../../apps/web/src/pages/api/import/settings"
 import { startCoreFixture } from "../scripts/task-pins-fixture"
 

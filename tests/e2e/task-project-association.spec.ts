@@ -6,7 +6,7 @@
  *
  * @domain domain-tasks (project association)
  */
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../helpers/isolated-process"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -20,13 +20,13 @@ function createTestDb() {
 }
 
 async function setupDb() {
-  const { resetPersistenceForTests, ensureSchema } = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const { resetPersistenceForTests, ensureSchema } = await import("../helpers/persistence-fixture")
   resetPersistenceForTests()
   await ensureSchema()
 }
 
 async function getRepos() {
-  const { getPersistenceClient } = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const { getPersistenceClient } = await import("../helpers/persistence-fixture")
   const { TaskRepository } = await import("../../apps/web/src/domains/tasks/persistence/task-repository")
   const { HierarchyRepository } = await import("../../apps/web/src/domains/tasks/persistence/hierarchy-repository")
   const client = getPersistenceClient()
@@ -35,7 +35,7 @@ async function getRepos() {
 
 test("Household Project groups keep visible Areas and exclude unavailable Projects", async () => {
   const directory = await mkdtemp(join(tmpdir(), "meitheal-project-groups-"))
-  const { resetPersistenceForTests } = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const { resetPersistenceForTests } = await import("../helpers/persistence-fixture")
   const previous = process.env.MEITHEAL_DB_URL
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
   try {

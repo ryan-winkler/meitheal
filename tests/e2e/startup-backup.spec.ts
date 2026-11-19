@@ -1,5 +1,5 @@
 import { BOARD_LIFECYCLE_MIGRATION } from "../../apps/web/drizzle/migrations/0015_board_lifecycle.mjs"
-import { execFile, fork } from "node:child_process"
+import { execFile, fork } from "../helpers/isolated-process"
 import { createHash } from "node:crypto"
 import { once } from "node:events"
 import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, stat, utimes, writeFile } from "node:fs/promises"
@@ -25,7 +25,7 @@ import { readSharedGoals } from "../../apps/web/src/domains/tasks/persistence/sh
 import { searchMeithealCatalog } from "../../apps/web/src/domains/search/search-service"
 import { TaskInactivityRepository } from "../../apps/web/src/domains/tasks/persistence/task-inactivity-repository"
 import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 import { prepareTaskBoardPredecessor, predecessorMigrationNames } from "../scripts/task-board-predecessor"
 
 const execFileAsync = promisify(execFile)
@@ -601,7 +601,7 @@ test("Household task reads and cleanup exclude a named Board even by exact ID", 
     "INSERT INTO projects (id, goal_id, area_id, title, owner_board_id, created_at, updated_at) VALUES ('work-project', 'work-goal', 'work-area', 'Work project', 'work-fixture', 1, 1)",
     "INSERT INTO pillars (id, name, slug, owner_board_id, created_at, updated_at) VALUES ('work-pillar', 'Work pillar', '~work-pillar', 'work-fixture', 1, 1)",
   ], "write")
-  const markerPath = join(directory, "meitheal-board-grants.json")
+  const markerPath = dbPath + ".board-grants.json"
   const hierarchy = new HierarchyRepository(db, markerPath)
   expect(await hierarchy.findAreaById("work-area")).toBeNull()
   expect(await hierarchy.findProjectById("work-project")).toBeNull()
@@ -623,7 +623,7 @@ test("Household task reads and cleanup exclude a named Board even by exact ID", 
   let revision = "99999999-9999-4999-8999-999999999999"
   await writeFile(markerPath, JSON.stringify({ epoch: revision }))
   await db.batch([
-    { sql: "INSERT INTO board_access_epoch (singleton, revision) VALUES (1, ?)", args: [revision] },
+    { sql: "INSERT INTO board_access_epoch (singleton, revision) VALUES (1, ?) ON CONFLICT(singleton) DO UPDATE SET revision = excluded.revision", args: [revision] },
     "INSERT INTO board_goal_shares VALUES ('work-goal', 'default', 'household')",
     "INSERT INTO projects (id, goal_id, area_id, title, status, created_at, updated_at) VALUES ('home-project', 'work-goal', 'default', 'Home project', 'completed', 1, 1)",
     "INSERT INTO board_access_grants (board_id, principal_type, principal_id, role) VALUES ('work-fixture', 'ha_user', 'work-user', 'member')",

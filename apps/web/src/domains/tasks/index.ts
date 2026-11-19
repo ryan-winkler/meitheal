@@ -67,3 +67,5 @@ export {
   rejectBoardSelectionInUrl,
   unavailableBoardResponse,
 } from "./board-availability"
+
+export { householdBoardIsActive } from "./persistence/named-board-repository"

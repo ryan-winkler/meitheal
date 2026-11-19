@@ -1,3 +1,4 @@
+import { householdBoardIsActive } from "@domains/tasks/persistence/named-board-repository"
 /**
  * Webhook Dispatcher — Unified Event Pipeline
  *
@@ -47,7 +48,7 @@ export const HA_EVENT_AUTHORITY_HEADER = "X-Meitheal-HA-Event-Authority"
  * This only reads local policy; it never waits for a HA connection.
  */
 export async function taskEventAuthorityHeaders(eventTypes: string[]): Promise<Record<string, string>> {
-  if (!process.env.SUPERVISOR_TOKEN) return {}
+  if (!process.env.SUPERVISOR_TOKEN || !await householdBoardIsActive(getPersistenceClient())) return {}
   const enabled = await getN8nAutoEvents()
   const owned = eventTypes.filter(type => HA_EVENT_MAP[type] && (enabled.includes(type) || enabled.includes("*")))
     .map(type => HA_EVENT_MAP[type]!)
@@ -131,6 +132,7 @@ export function resetWebhookCacheForTests(): void {
 
 export async function dispatchTaskEvent(eventType: string, payload: Record<string, unknown>, requestId?: string, traceId?: string, eventId?: string, responseAuthority?: Record<string, string>) {
   try {
+    if (!await householdBoardIsActive(getPersistenceClient())) return
     // ── 1. HA Event Bus (Addon mode — Node-RED/n8n auto) ──
     // Fire meitheal_task_* events on the HA event bus so Node-RED/n8n
     // can trigger on them via the HA WebSocket integration.
@@ -157,7 +159,8 @@ export async function dispatchTaskEvent(eventType: string, payload: Record<strin
         };
 
         // Fire the mapped event type
-        fireHAEvent(haEventType, eventData).catch(() => {});
+        if (!await householdBoardIsActive(getPersistenceClient())) return
+        fireHAEvent(haEventType, eventData, { operationAllowed: () => householdBoardIsActive(getPersistenceClient()) }).catch(() => {});
 
         logger.log("info", {
           event: "integration.ha_event.dispatched",
@@ -219,7 +222,8 @@ export async function dispatchTaskEvent(eventType: string, payload: Record<strin
         subscribers
           .filter(s => s.events.includes("*") || s.events.includes(eventType))
           .map(async (s) => {
-            const res = await emitWebhook(event, s);
+            if (!await householdBoardIsActive(getPersistenceClient())) return
+            const res = await emitWebhook(event, s, { operationAllowed: () => householdBoardIsActive(getPersistenceClient()) });
             
             // Save last n8n delivery result for the UI
             if (s.id === "n8n-webhook") {
@@ -257,7 +261,8 @@ export async function dispatchTaskEvent(eventType: string, payload: Record<strin
     // ── 3. Outbound Sync (Todo + Calendar push) ──
     // Push task mutations to active sync targets (fire-and-forget).
     // Handles loop prevention and no-sync labels internally.
-    import("./sync-outbound").then(({ pushToActiveSyncs }) => {
+    import("./sync-outbound").then(async ({ pushToActiveSyncs }) => {
+      if (!await householdBoardIsActive(getPersistenceClient())) return
       pushToActiveSyncs(eventType, payload).catch(() => {});
     }).catch(() => {});
   } catch (err) {

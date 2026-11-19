@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto"
 import type { Client, Transaction } from "@libsql/client"
 import { readBoardPillars, saveBoardPillarChange, type BoardPillarChange } from "../../pillars/named-board-pillar-service"
 import { acquireWriteTransaction } from "../../../../scripts/database-client.mjs"
+import { getBoardGrantPath } from "../../../../scripts/board-grant-journal.mjs"
 import { changeBoardGrants, readBoardGrantRevision } from "./board-grant-fence"
 import { selectNamedBoardAccess, type BoardActor } from "./named-board-repository"
 
@@ -141,7 +142,7 @@ export async function readNamedBoardPlanning(tx: Transaction, actor: BoardActor,
 }
 
 export class NamedBoardPlanningRepository {
-  constructor(private readonly db: Client, private readonly markerPath?: string) {}
+  constructor(private readonly db: Client, private readonly markerPath = getBoardGrantPath(db)) {}
 
   async save(ownerId: string, boardId: string, input: Change): Promise<boolean> {
     if (((input.action === "project-goal" || input.action === "project" && input.goalId !== null) && !available("goals")) ||

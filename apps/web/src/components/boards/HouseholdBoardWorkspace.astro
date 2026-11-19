@@ -2,6 +2,7 @@
 import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
 import { isOrganizationFeatureAvailable as availableFeature } from "@lib/organization-request-context"
 import Layout from "../../layouts/Layout.astro"
+import BoardWorkspaceNav from "./BoardWorkspaceNav.astro"
 import HouseholdGroup from "../../pages/areas/[id].astro"
 import HouseholdProject from "../../pages/projects/[id].astro"
 import Tasks from "../../pages/tasks.astro"
@@ -49,7 +50,7 @@ if (!available) Astro.response.status = 404
   : <Layout title="Household Areas">
     <span slot="page-title">Household</span>
     <div class="boards-workspace">
-      <nav class="board-back" aria-label="Board navigation"><a href="/boards">{label("board", true)}</a> › <a href={household}>Household</a></nav>
+      <BoardWorkspaceNav boardId="household" boardName="Household" active="planning" />
       <header class="boards-heading">
         <div><h1>{label("group", true)}</h1><p>Organize Projects and related work within Household.</p></div>
         {availableFeature("groups") && <details class="board-add">

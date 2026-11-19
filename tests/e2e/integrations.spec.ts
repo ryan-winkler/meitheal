@@ -3,7 +3,7 @@ import * as http from "node:http";
 import { createHmac } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store";
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture";
 import { dispatchTaskEvent, resetWebhookCacheForTests } from "../../apps/web/src/lib/webhook-dispatcher";
 
 function makeDbUrl(label: string): string {

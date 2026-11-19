@@ -29,6 +29,7 @@ export function startCoreFixture(work: string, plainHttp = false, restartPort?: 
     PATH: process.env.PATH,
     NODE_ENV: "production",
     MEITHEAL_DB_URL: `file:${join(work, "pins.db")}`,
+    MEITHEAL_BOARD_GRANT_PATH: join(boardDataDirectory ?? work, "meitheal-board-grants.json"),
     MEITHEAL_PIN_FIXTURE: "1",
     MEITHEAL_PIN_FIXTURE_HTTP: plainHttp ? "1" : "0",
     ...(restartPort ? { MEITHEAL_INGRESS_FIXTURE_PORT: String(restartPort) } : {}),

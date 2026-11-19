@@ -1,3 +1,5 @@
+import { isCurrentRetiredHouseholdResult } from "./retired-household-result"
+import { guardClientContinuity } from "./continuity-client"
 import type { Client, Row } from "@libsql/client"
 
 export interface ReactionTarget {
@@ -19,7 +21,11 @@ function toReaction(row: Row, canManage: boolean): TaskReaction {
 }
 
 export class TaskReactionRepository {
-  constructor(private readonly client: Client) {}
+  private readonly client: Client
+
+  constructor(private readonly sourceClient: Client) {
+    this.client = guardClientContinuity(sourceClient)
+  }
 
   async list({ taskId, commentId }: ReactionTarget, cursor: number, owner: string | null) {
     const result = await this.client.execute({
@@ -41,30 +47,40 @@ export class TaskReactionRepository {
   }
 
   async add({ taskId, commentId }: ReactionTarget, content: string, author: string, owner: string) {
-    // Return the existing row on a duplicate while keeping the original display author.
-    const result = await this.client.execute({
-      sql: `INSERT INTO task_reactions (task_id, comment_id, owner_key, content, author)
-            SELECT id, ?, ?, ?, ? FROM tasks
-            WHERE id = ? AND (task_board_id IS NOT NULL OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND (? IS NULL OR EXISTS (
-              SELECT 1 FROM comments WHERE id = ? AND task_id = tasks.id
-            ))
-            ON CONFLICT (task_id, COALESCE(comment_id, 0), owner_key, content)
-            DO UPDATE SET content = excluded.content
-            RETURNING id, content, author`,
-      args: [commentId, owner, content, author, taskId, commentId, commentId],
-    })
-    const row = result.rows[0]
-    return row ? toReaction(row, true) : null
+    try {
+      // Return the existing row on a duplicate while keeping the original display author.
+      const result = await this.client.execute({
+        sql: `INSERT INTO task_reactions (task_id, comment_id, owner_key, content, author)
+              SELECT id, ?, ?, ?, ? FROM tasks
+              WHERE id = ? AND (task_board_id IS NOT NULL OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')) AND (? IS NULL OR EXISTS (
+                SELECT 1 FROM comments WHERE id = ? AND task_id = tasks.id
+              ))
+              ON CONFLICT (task_id, COALESCE(comment_id, 0), owner_key, content)
+              DO UPDATE SET content = excluded.content
+              RETURNING id, content, author`,
+        args: [commentId, owner, content, author, taskId, commentId, commentId],
+      })
+      const row = result.rows[0]
+      return row ? toReaction(row, true) : null
+      } catch (error) {
+      if (await isCurrentRetiredHouseholdResult(this.sourceClient, error, taskId)) return null
+      throw error
+    }
   }
 
   async remove({ taskId, commentId }: ReactionTarget, reactionId: number, owner: string) {
-    const result = await this.client.execute({
-      sql: `DELETE FROM task_reactions WHERE id = ? AND task_id = ? AND comment_id IS ? AND owner_key = ?
-            AND EXISTS (SELECT 1 FROM tasks WHERE tasks.id = task_reactions.task_id
-              AND (task_board_id IS NOT NULL OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')))`,
-      args: [reactionId, taskId, commentId, owner],
-    })
-    return result.rowsAffected > 0
+    try {
+      const result = await this.client.execute({
+        sql: `DELETE FROM task_reactions WHERE id = ? AND task_id = ? AND comment_id IS ? AND owner_key = ?
+              AND EXISTS (SELECT 1 FROM tasks WHERE tasks.id = task_reactions.task_id
+                AND (task_board_id IS NOT NULL OR EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')))`,
+        args: [reactionId, taskId, commentId, owner],
+      })
+      return result.rowsAffected > 0
+      } catch (error) {
+      if (await isCurrentRetiredHouseholdResult(this.sourceClient, error, taskId)) return false
+      throw error
+    }
   }
 
   async countCards(taskIds: string[]) {

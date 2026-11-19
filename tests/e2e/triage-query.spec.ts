@@ -6,7 +6,7 @@ import {
   ensureSchema,
   getPersistenceClient,
   resetPersistenceForTests,
-} from "../../apps/web/src/domains/tasks/persistence/store"
+} from "../helpers/persistence-fixture"
 import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
 
 test("Backlog page clamps its range and orders current and legacy tasks in one read", async () => {

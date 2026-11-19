@@ -183,7 +183,8 @@ async function main() {
       PORT: "0",
       ASTRO_NODE_AUTOSTART: "disabled",
       MEITHEAL_VERSION: version,
-      MEITHEAL_DB_URL: dbUrl
+      MEITHEAL_DB_URL: dbUrl,
+      MEITHEAL_BOARD_GRANT_PATH: path.join(scratchDir, "meitheal-board-grants.json")
     },
     stdio: ["ignore", "ignore", "inherit", "ipc"]
   })

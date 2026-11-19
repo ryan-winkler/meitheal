@@ -8,6 +8,8 @@
         import { applyAppearancePreferences, bindAppearanceNavigation, readAppearancePreferences } from "@lib/appearance-preferences"
         import { initIngressNavigation, safeIngressHref, syncIngressDestination } from "@lib/ingress-navigation"
         import { hasPriorityOverlay, initShortcutModal } from "@lib/layout-shortcuts-controller"
+        import { boardNavigationLinks, readBoardNavigationContext } from "@lib/board-workspace"
+        import { taskViewUrl, type TaskView } from "@lib/task-view-route"
         import { pageLifecycle } from "@lib/page-lifecycle";
         import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
         import { attachShortcutTooltips, injectShortcutStyles } from "@lib/shortcut-tooltip";
@@ -116,23 +118,35 @@
             }
           }, { signal })
 
+          const taskDestination = (view?: TaskView) => {
+            const url = new URL(location.href)
+            const ingress = window.__ingress_path || ""
+            if (ingress && url.pathname.startsWith(ingress + "/")) url.pathname = url.pathname.slice(ingress.length)
+            const context = readBoardNavigationContext(url)
+            if (!context) return view === "kanban" ? "/tasks#kanban" : view === "table" ? "/table" : view === "calendar" ? "/calendar" : "/boards/household"
+            if (context.boardId !== "household" && view && view !== "kanban") return
+            const tasks = new URL(boardNavigationLinks(context).tasks, url)
+            if (view) {
+              const selected = taskViewUrl(tasks, view, true)
+              return selected.pathname + selected.search + selected.hash
+            }
+            return tasks.pathname + tasks.search + tasks.hash
+          }
+          const openTasks = (view?: TaskView) => {
+            const href = taskDestination(view)
+            if (!href) return
+            syncIngressDestination(href)
+            window.location.assign(safeIngressHref(href))
+          }
+
           const SHORTCUT_NAV = {
             dashboard: () => {
               syncIngressDestination("/")
               window.location.assign(safeIngressHref("/"))
             },
-            tasks: () => {
-              syncIngressDestination("/tasks")
-              window.location.assign(safeIngressHref("/tasks"))
-            },
-            kanban: () => {
-              syncIngressDestination("/tasks#kanban")
-              window.location.assign(safeIngressHref("/tasks#kanban"))
-            },
-            table: () => {
-              syncIngressDestination("/table")
-              window.location.assign(safeIngressHref("/table"))
-            },
+            tasks: () => openTasks(),
+            kanban: () => openTasks("kanban"),
+            table: () => openTasks("table"),
             today: () => {
               syncIngressDestination("/today")
               window.location.assign(safeIngressHref("/today"))
@@ -141,10 +155,7 @@
               syncIngressDestination("/upcoming")
               window.location.assign(safeIngressHref("/upcoming"))
             },
-            calendar: () => {
-              syncIngressDestination("/calendar")
-              window.location.assign(safeIngressHref("/calendar"))
-            },
+            calendar: () => openTasks("calendar"),
           } as const
 
           // The New Task modal ships in Layout, so open it directly. Clicking a page

@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { expect, test as base } from "@playwright/test"
 import {
   ensureSchema, getPersistenceClient, resetPersistenceForTests,
-} from "../../apps/web/src/domains/tasks/persistence/store"
+} from "../helpers/persistence-fixture"
 import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
 import { GET } from "../../apps/web/src/pages/api/tasks/index"
 

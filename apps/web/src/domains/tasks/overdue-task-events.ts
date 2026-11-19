@@ -1,3 +1,5 @@
+import { guardClientContinuity } from "./persistence/continuity-client"
+import { householdBoardIsActive } from "./persistence/named-board-repository"
 import type { Client } from "@libsql/client"
 
 export const OVERDUE_CHECKPOINT_KEY = "system.overdue-events.checked-at"
@@ -21,10 +23,12 @@ const OPEN_TASK_LEGACY_COMPAT = "status NOT IN ('complete', 'done', 'archived', 
  * observation, not receipt by HA or a webhook subscriber.
  */
 export async function checkOverdueTaskEvents(
-  client: Pick<Client, "execute">,
+  sourceClient: Client,
   dispatch: Dispatch,
   now = Date.now(),
 ): Promise<{ observed: number; dispatchFailed: number; baselineCreated: boolean }> {
+  if (!await householdBoardIsActive(sourceClient)) return { observed: 0, dispatchFailed: 0, baselineCreated: false }
+  const client = guardClientContinuity(sourceClient)
   const initialized = await client.execute({
     sql: "INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO NOTHING",
     args: [OVERDUE_CHECKPOINT_KEY, String(now), now],
@@ -77,6 +81,7 @@ export async function checkOverdueTaskEvents(
   )
   if (tasks.length > OVERDUE_BATCH_LIMIT) batchFull = true
   for (const task of tasks.slice(0, OVERDUE_BATCH_LIMIT)) {
+    if (!await householdBoardIsActive(client)) break
     const eventId = String(task.overdue_event_id)
     const { overdue_due_ms: _dueMs, overdue_event_id: _eventId, ...payload } = task
     const recorded = await client.execute({
@@ -92,6 +97,7 @@ export async function checkOverdueTaskEvents(
     if (recorded.rowsAffected === 0) continue
     observed++
     try {
+      if (!await householdBoardIsActive(client)) break
       await dispatch("task.overdue", payload, eventId)
     } catch {
       dispatchFailed++

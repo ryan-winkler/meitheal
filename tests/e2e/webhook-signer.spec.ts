@@ -420,9 +420,10 @@ test.describe("Private URL Guard", () => {
       await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve))
       const port = (server.address() as AddressInfo).port
 
-      const { ensureSchema, getPersistenceClient, resetPersistenceForTests } = await import(
+      const { getPersistenceClient, resetPersistenceForTests } = await import(
         "../../apps/web/src/domains/tasks"
       )
+      const { ensureSchema } = await import("../helpers/persistence-fixture")
       resetPersistence = resetPersistenceForTests
       const {
         createGrocyClient,
@@ -440,6 +441,7 @@ test.describe("Private URL Guard", () => {
       process.env.MEITHEAL_DB_URL = `file:${join(dir, "tasks.db")}`
       process.env.SUPERVISOR_TOKEN = "sup-token-test"
       resetPersistenceForTests()
+      await ensureSchema()
 
       dns.lookup = ((hostname: string, options: unknown, cb?: unknown) => {
         const done = (typeof options === "function" ? options : cb) as (
@@ -585,7 +587,7 @@ test.describe("Private URL Guard", () => {
         }),
       } as unknown as Parameters<typeof postAutoKey>[0])
       const autoJson = (await autoRes.json()) as { ok: boolean; url?: string }
-      expect(autoJson.ok).toBe(true)
+      expect(autoJson.ok, JSON.stringify(autoJson)).toBe(true)
       expect(autoJson.url).toBe(`http://a0d7b954-grocy:${port}`)
       expect(supervisorProxyHits).toEqual([
         "http://supervisor/addons/a0d7b954_grocy/proxy/api/objects/api_keys",

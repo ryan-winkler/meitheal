@@ -33,8 +33,10 @@ for (const revoked of [false, true]) {
       await cdp.send("Page.enable")
       let historyDiagnostic: unknown
       cdp.on("Page.backForwardCacheNotUsed", event => { historyDiagnostic = event.notRestoredExplanationsTree })
-      // Isolate history restoration from the ordinary event stream.
+      // Unrelated no-store fetches can make Chromium discard the history entry.
+      // Keep the actual activity document and its permission refresh in the test.
       await page.route(/\/api\/sse(?:[/?]|$)/, route => route.fulfill({ status: 204 }))
+      await page.route(/\/api\/boards$/, route => route.fulfill({ json: { boards: [] } }))
       const prefixMessage = "activity-history-snapshot:"
       let snapshot: unknown
       page.on("console", message => {

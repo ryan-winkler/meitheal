@@ -214,7 +214,7 @@ test("starts with remote transports unloaded and sends remote requests through l
 
     const script = fileURLToPath(new URL("../../apps/web/scripts/migrate.mjs", import.meta.url))
     const migrate = (...args: string[]) => execFileAsync(process.execPath, [script, ...args], {
-      env: { PATH: process.env.PATH, MEITHEAL_DB_URL: url }, timeout: 10_000,
+      env: { PATH: process.env.PATH, MEITHEAL_DB_URL: url, MEITHEAL_BOARD_GRANT_PATH: join(tmpdir(), `meitheal-remote-${address.port}-board-grants.json`) }, timeout: 10_000,
     })
     const takeStatements = () => requests.splice(0).map(({ baton, stmt }) => [baton, stmt.sql])
     const markerReads = [

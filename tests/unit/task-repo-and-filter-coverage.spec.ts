@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../helpers/isolated-process"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -238,7 +238,7 @@ test("TaskRepository and SettingsRepository AI handoff persistence cover full CR
     env: { ...process.env, MEITHEAL_DB_URL: dbUrl },
   })
 
-  const store = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const store = await import("../helpers/persistence-fixture")
   await store.ensureSchema()
   const client = store.getPersistenceClient()
 
@@ -486,7 +486,7 @@ test("Kanban groups visible Household descendants under an Epic outside the lane
   const directory = mkdtempSync(path.join(tmpdir(), "meitheal-kanban-epic-repo-"))
   const previousDb = process.env.MEITHEAL_DB_URL
   const { ensureSchema, getPersistenceClient, resetPersistenceForTests } =
-    await import("../../apps/web/src/domains/tasks/persistence/store")
+    await import("../helpers/persistence-fixture")
   const { TaskRepository } = await import("../../apps/web/src/domains/tasks/persistence/task-repository")
   const { loadKanbanBoard } = await import("../../apps/web/src/lib/kanban-board-data")
   process.env.MEITHEAL_DB_URL = `file:${path.join(directory, "epic.db")}`

@@ -1,3 +1,5 @@
+import { isCurrentRetiredHouseholdResult } from "./retired-household-result"
+import { guardClientContinuity } from "./continuity-client"
 import { createHash } from "node:crypto"
 import type { Client, InValue, Row } from "@libsql/client"
 import {
@@ -64,7 +66,11 @@ function filterSql(filter: InactivityFilter) {
 }
 
 export class TaskInactivityRepository {
-  constructor(private readonly client: Client) {}
+  private readonly client: Client
+
+  constructor(private readonly sourceClient: Client) {
+    this.client = guardClientContinuity(sourceClient)
+  }
 
   async preview({ areaId, proposed, page, filter, now }: {
     areaId: InactivityScope
@@ -125,38 +131,43 @@ export class TaskInactivityRepository {
     areaGeneration: string | null
     expectedAreaCatalogRevision: string | null
   }) {
-    const scope = selectedScope(areaId)
-    const mutation = {
-      sql: `INSERT INTO task_inactivity_policy (scope, area_id, days, revision)
-        SELECT ?, ?, ?, lower(hex(randomblob(16)))
-        WHERE EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND (SELECT revision FROM task_inactivity_policy WHERE scope = ?) IS ?
-          AND (? IS NULL OR (EXISTS (SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND retired_at IS NULL AND inactivity_generation IS ?)
-            AND (SELECT revision FROM task_inactivity_policy WHERE scope = 'default') IS ?))
-        ON CONFLICT(scope) DO UPDATE SET days = excluded.days, revision = excluded.revision
-        RETURNING days, revision`,
-      args: [scope, areaId, days, scope, expectedRevision, areaId, areaId, areaGeneration, expectedDefaultRevision],
-    }
-    if (areaId === null) {
-      const tx = await this.client.transaction("write")
-      try {
-        const current = await tx.execute(areaCatalogSql)
-        if (areaCatalogRevision(current.rows) !== expectedAreaCatalogRevision) return { status: "stale" } as const
-        const result = await tx.execute(mutation)
-        const saved = result.rows[0]
-        if (!saved) return { status: "stale" } as const
-        const policy = readPolicy(saved, days)
-        await tx.commit()
-        return { status: "saved", policy } as const
-      } finally {
-        tx.close()
+    try {
+      const scope = selectedScope(areaId)
+      const mutation = {
+        sql: `INSERT INTO task_inactivity_policy (scope, area_id, days, revision)
+          SELECT ?, ?, ?, lower(hex(randomblob(16)))
+          WHERE EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND (SELECT revision FROM task_inactivity_policy WHERE scope = ?) IS ?
+            AND (? IS NULL OR (EXISTS (SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND retired_at IS NULL AND inactivity_generation IS ?)
+              AND (SELECT revision FROM task_inactivity_policy WHERE scope = 'default') IS ?))
+          ON CONFLICT(scope) DO UPDATE SET days = excluded.days, revision = excluded.revision
+          RETURNING days, revision`,
+        args: [scope, areaId, days, scope, expectedRevision, areaId, areaId, areaGeneration, expectedDefaultRevision],
       }
+      if (areaId === null) {
+        const tx = await this.client.transaction("write")
+        try {
+          const current = await tx.execute(areaCatalogSql)
+          if (areaCatalogRevision(current.rows) !== expectedAreaCatalogRevision) return { status: "stale" } as const
+          const result = await tx.execute(mutation)
+          const saved = result.rows[0]
+          if (!saved) return { status: "stale" } as const
+          const policy = readPolicy(saved, days)
+          await tx.commit()
+          return { status: "saved", policy } as const
+        } finally {
+          tx.close()
+        }
+      }
+      const [saved, area] = await this.client.batch([
+        mutation,
+        { sql: "SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND retired_at IS NULL", args: [areaId] },
+      ], "write")
+      if (saved!.rows[0]) return { status: "saved", policy: readPolicy(saved!.rows[0], days) } as const
+      return { status: !area!.rows.length ? "missing" : "stale" } as const
+    } catch (error) {
+      if (await isCurrentRetiredHouseholdResult(this.sourceClient, error)) return { status: "stale" } as const
+      throw error
     }
-    const [saved, area] = await this.client.batch([
-      mutation,
-      { sql: "SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND retired_at IS NULL", args: [areaId] },
-    ], "write")
-    if (saved!.rows[0]) return { status: "saved", policy: readPolicy(saved!.rows[0], days) } as const
-    return { status: !area!.rows.length ? "missing" : "stale" } as const
   }
 
   async hasEnabledPolicy(areaId?: InactivityScope) {

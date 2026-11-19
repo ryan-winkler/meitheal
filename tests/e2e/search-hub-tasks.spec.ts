@@ -260,6 +260,7 @@ test("All selects an exact task ahead of a static match and keeps the active opt
     expect(health).toBe(200)
     const db = new DatabaseSync(join(work, "pins.db"))
     try {
+      db.exec("PRAGMA busy_timeout = 3000")
       const insert = db.prepare("INSERT INTO tasks (id,title,idempotency_key,request_id,created_at,updated_at) VALUES (?,?,?,?,?,?)")
       insert.run("calendar", title, "calendar", "calendar", 1, 1)
       db.prepare("INSERT INTO comments (task_id, content) VALUES (?,?)").run("calendar", "Bellflower comment fixture")

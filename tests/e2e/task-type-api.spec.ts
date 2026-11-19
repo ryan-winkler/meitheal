@@ -5,7 +5,7 @@ import {
   ensureSchema,
   getPersistenceClient,
   resetPersistenceForTests,
-} from "../../apps/web/src/domains/tasks/persistence/store";
+} from "../helpers/persistence-fixture";
 
 function makeDbUrl(label: string): string {
   return `file:${path.join(os.tmpdir(), `meitheal-${label}-${Date.now()}-${Math.random()}.db`)}`;

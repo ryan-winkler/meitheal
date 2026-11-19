@@ -12,7 +12,7 @@ import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/tas
 import { TemplateRepository } from "../../apps/web/src/domains/tasks/persistence/template-repository"
 import { readSharedGoals } from "../../apps/web/src/domains/tasks/persistence/shared-goal-repository"
 import { NamedBoardTaskRepository } from "../../apps/web/src/domains/tasks/persistence/named-board-task-repository"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 
 let directory: string
 let marker: string
@@ -22,7 +22,7 @@ test.beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), "meitheal-board-authority-"))
   marker = join(directory, "meitheal-board-grants.json")
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "meitheal.db")}`
-  await ensureSchema()
+  await ensureSchema({ markerPath: marker })
 })
 
 test.afterEach(async () => {
@@ -145,8 +145,30 @@ test("a restored, absent, or replaced grant marker fails closed", async () => {
 
 test("failed grant-marker publication can recover the one committed change", async () => {
   const db = getPersistenceClient()
-  const repo = new NamedBoardRepository(db, marker)
-  await mkdir(marker)
+  let interrupted = false
+  const interruptionClient = new Proxy(db, {
+    get(target, property, receiver) {
+      if (property !== "transaction") return Reflect.get(target, property, receiver)
+      return async (...args: Parameters<typeof db.transaction>) => {
+        const tx = await db.transaction(...args)
+        return new Proxy(tx, {
+          get(transaction, operation) {
+            if (operation === "commit") return async () => {
+              await transaction.commit()
+              if (!interrupted) {
+                interrupted = true
+                await rm(marker)
+                await mkdir(marker)
+              }
+            }
+            const value = Reflect.get(transaction, operation)
+            return typeof value === "function" ? value.bind(transaction) : value
+          },
+        })
+      }
+    },
+  })
+  const repo = new NamedBoardRepository(interruptionClient, marker)
   const creation = await repo.create("owner", "Work")
   expect(creation.status).toBe("committed-locked")
   if (creation.status !== "committed-locked") throw new Error("Expected a durable Board with work still locked")
@@ -571,4 +593,47 @@ test("named Kanban filters the authorized index before per-lane paging and keeps
   await boards.updateMember(parent.id, id, child.id, null, [parent.id, child.id])
   expect(await tasks.view(child, id, 0, selection, undefined, { params: new URLSearchParams() })).toBeNull()
   expect(await tasks.edit(child, id, task.id, moved.ok ? moved.value.version : task.version, { title: "Revoked overwrite" })).toMatchObject({ ok: false, errorCode: "unavailable" })
+})
+
+test("omitted named repository markers use the explicit startup context for planning, Goal tickets, sidebar and intake", async () => {
+  const db = getPersistenceClient()
+  // Route adapters construct these repositories without a marker argument.
+  const boards = new NamedBoardRepository(db)
+  const planning = new NamedBoardPlanningRepository(db)
+  const tasks = new NamedBoardTaskRepository(db)
+  const intake = new BoardIntakeRepository(db)
+  const owner = { kind: "ha_user", id: "context-owner" } as const
+  const sender = { kind: "ha_user", id: "context-sender" } as const
+  const created = await boards.create(owner.id, "Explicit context")
+  if (created.status !== "committed") throw new Error("Expected current explicit-context Board")
+  const board = created.result.id
+  expect(await boards.findAccess(owner, board)).toMatchObject({ role: "owner", state: "active" })
+  expect(await planning.save(owner.id, board, { action: "area", title: "Context Area" })).toBe(true)
+  const area = (await tasks.view(owner, board))!.planning!.areas[0]!.id
+  expect(await planning.save(owner.id, board, { action: "goal", title: "Context Goal", description: "", areaId: area })).toBe(true)
+  const goal = (await tasks.view(owner, board))!.planning!.goals[0]!.id
+  expect(await planning.save(owner.id, board, { action: "project", title: "Context Project", description: "", areaId: area, goalId: goal })).toBe(true)
+  const project = (await tasks.view(owner, board))!.planning!.projects[0]!.id
+  const ticket = await tasks.create(owner, board, { title: "Context Goal ticket", description: "" }, { areaId: area, projectId: project, goalId: goal })
+  if (!ticket.ok) throw new Error("Expected a named ticket through the route's omitted-marker adapter")
+  expect((await db.execute({ sql: "SELECT area_id, project_id, goal_id FROM board_task_planning WHERE task_id = ?", args: [ticket.value.id] })).rows)
+    .toEqual([{ area_id: area, project_id: project, goal_id: goal }])
+  expect(await tasks.edit(owner, board, ticket.value.id, ticket.value.version, { title: "Updated context ticket", description: "" })).toMatchObject({ ok: true })
+  expect(await boards.setSidebarHidden(owner, board, true)).toBe(true)
+  expect((await db.execute({ sql: "SELECT board_id FROM board_sidebar_preferences WHERE ha_user_id = ?", args: [owner.id] })).rows).toEqual([{ board_id: board }])
+  const lane = String((await db.execute({ sql: "SELECT id FROM kanban_lanes WHERE board_id = ? AND key = 'pending'", args: [board] })).rows[0]!.id)
+  const destination = await intake.create(owner.id, board, { label: "Context intake", laneId: lane, senders: [sender] })
+  if (destination.status !== "committed" || !destination.result) throw new Error("Expected context intake")
+  const permit = await intake.issue(sender, destination.result.id)
+  if (!permit.ok) throw new Error("Expected context-bound sender permit")
+  expect(await intake.submit(sender, permit.value.token, { title: "Context receipt", description: "", assignToRecipient: false }, []))
+    .toMatchObject({ ok: true })
+  expect(await new NamedBoardPlanningRepository(db, join(directory, "foreign-marker.json")).save(owner.id, board, { action: "area", title: "Denied foreign path" })).toBe(false)
+
+  await rm(marker)
+  expect(await planning.save(owner.id, board, { action: "area", title: "Denied after marker loss" })).toBe(false)
+  expect(await tasks.create(owner, board, { title: "Denied ticket", description: "" }, { goalId: goal })).toEqual({ ok: false, errorCode: "unavailable" })
+  expect(await boards.setSidebarHidden(owner, board, false)).toBe(false)
+  expect(await intake.issue(sender, destination.result.id)).toEqual({ ok: false, errorCode: "unavailable" })
+  expect(await tasks.view(owner, board)).toBeNull()
 })

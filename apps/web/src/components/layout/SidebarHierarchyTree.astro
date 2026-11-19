@@ -35,8 +35,9 @@ import type { IconName } from "../../generated/icon-registry"
 export interface Props {
   locale: Locale
   label?: string
+  boardName?: string
 }
-const { locale, label } = Astro.props
+const { locale, label, boardName } = Astro.props
 
 let areas: Pick<AreaRow, "id" | "name" | "icon" | "color" | "position">[] = []
 let projects: ProjectRow[] = []
@@ -101,11 +102,14 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
 ]
 ---
 
-{hasContent && (
-  <div class="stree" id="project-nav" data-projects-enabled={String(available("projects"))} role="navigation" aria-label={t("sidebar.navigation_label", locale, { label: areasLabel })}>
+{(hasContent || boardName) && (
+  <div class:list={["stree", { "stree--board": Boolean(boardName) }]} id="project-nav" data-projects-enabled={String(available("projects"))} role="navigation" aria-label={t("sidebar.navigation_label", locale, { label: areasLabel })}>
     <details id="sidebar-areas-group" open>
-    <summary class="stree__header" id="project-nav-group-toggle" aria-label={areasLabel} title={t("sidebar.collapse_navigation", locale, { label: areasLabel })} data-collapse-title={t("sidebar.collapse_navigation", locale, { label: areasLabel })} data-expand-title={t("sidebar.expand_navigation", locale, { label: areasLabel })}>
-      <span class="stree__group-heading"><span class="stree__group-chevron" aria-hidden="true"><Icon name="chevron-down" size={12} /></span><span class="stree__label">{areasLabel}</span></span>
+    <summary class="stree__header" id="project-nav-group-toggle" aria-label={boardName ? `${areasLabel} in ${boardName}` : areasLabel} title={t("sidebar.collapse_navigation", locale, { label: areasLabel })} data-collapse-title={t("sidebar.collapse_navigation", locale, { label: areasLabel })} data-expand-title={t("sidebar.expand_navigation", locale, { label: areasLabel })}>
+      {boardName ? <>
+        <a class="nav-link sidebar-household-link" href="/boards/household" aria-current={currentPath === "/boards/household" ? "page" : undefined}>{boardName}</a>
+        <span class="stree__group-chevron" aria-hidden="true"><Icon name="chevron-down" size={12} /></span>
+      </> : <span class="stree__group-heading"><span class="stree__group-chevron" aria-hidden="true"><Icon name="chevron-down" size={12} /></span><span class="stree__label">{areasLabel}</span></span>}
     </summary>
     <div id="project-nav-content">
 
@@ -336,6 +340,11 @@ const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
     font-size: 13px;
     position: relative;
   }
+  .stree--board { padding: 0; border: 0; border-radius: 0; background: transparent; margin: 0; font-size: inherit; }
+  .stree--board > details > .stree__header { padding: 0; min-height: 0; gap: 0.25rem; }
+  .stree--board > details > .stree__header .nav-link { flex: 1; min-width: 0; }
+  .stree--board #project-nav-content { padding-inline-start: 1rem; }
+  .stree--board .stree__group-chevron { width: 28px; height: 28px; border: 0; background: transparent; }
   .stree :is(a[href], button, summary, input),
   .stree__dropdown :is(a[href], button, input),
   .stree__popover :is(a[href], button, input) { scroll-margin: 2px; }

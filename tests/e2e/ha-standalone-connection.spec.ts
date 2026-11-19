@@ -29,7 +29,7 @@ test("saved standalone credentials connect and changes replace the authenticated
       }
     })
   })
-  const store = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const store = await import("../helpers/persistence-fixture")
   const ha = await import("../../apps/web/src/domains/ha/ha-connection")
   const entities = await import("../../apps/web/src/domains/ha/ha-entities")
   try {
@@ -71,7 +71,7 @@ test("unconfigured startup pauses repeated settings bootstrap and immediately ad
   const directory = await mkdtemp(join(tmpdir(), "meitheal-ha-startup-"))
   const originalEnv = Object.fromEntries(["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_BASE_URL", "HA_TOKEN"].map(key => [key, process.env[key]]))
   const fixture = await startHAWebSocketFixture()
-  const store = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const store = await import("../helpers/persistence-fixture")
   const ha = await import("../../apps/web/src/domains/ha/ha-connection")
   const { initHAIntegrations, clearGrocyStartupRetry } = await import("../../apps/web/src/domains/ha/ha-startup")
   const { SettingsRepository } = await import("../../apps/web/src/domains/tasks/persistence/settings-repository")

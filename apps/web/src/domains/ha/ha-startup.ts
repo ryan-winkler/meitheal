@@ -1,3 +1,5 @@
+import { guardClientContinuity } from "../tasks/persistence/continuity-client"
+import { readHouseholdBoardState } from "../tasks/persistence/named-board-repository"
 /**
  * HA Startup — Server-Side Integration Initialization
  *
@@ -44,7 +46,7 @@ async function getDB() {
     _getSettingsRevision = mod.getSettingsRevision
     _dbReady = true
   }
-  return _getPersistenceClient!()
+  return guardClientContinuity(_getPersistenceClient!())
 }
 
 let initialized = false;
@@ -96,6 +98,7 @@ export async function initHAIntegrations(): Promise<void> {
   try {
     // Ensure schema verification completes once before background schedulers or WS frames run.
     const client = await getDB()
+    if (await readHouseholdBoardState(client) === "locked") return
     const settingsRevision = _getSettingsRevision!()
     const environmentFingerprint = startupEnvironmentFingerprint()
     // Unconfigured standalone requests need no repeated settings DDL or startup logs.
@@ -382,7 +385,7 @@ async function autoStartCalendarSync(): Promise<void> {
     }
 
     if (settings.caldav_url) {
-      startCalDAVSync(settings.caldav_url, syncIntervalMs);
+      await startCalDAVSync(settings.caldav_url, syncIntervalMs);
     }
 
     logger.log("info", {

@@ -3,10 +3,13 @@ import { isOrganizationFeatureAvailable as available } from "@lib/organization-r
 import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
 import type { readNamedBoardPlanning } from "@domains/tasks/persistence/named-board-planning-repository"
 
-import { boardWorkspaceHref, DEFAULT_GROUP_COLOR } from "@lib/board-workspace"
+import { boardWorkspaceHref, DEFAULT_GROUP_COLOR, readBoardPlanningSection } from "@lib/board-workspace"
 
 import RetirePlanningForm from "./RetirePlanningForm.astro"
 import ProjectSettings from "./ProjectSettings.astro"
+import GoalsTab from "../progress/GoalsTab.astro"
+import { listSharedGoals, type SharedGoalProgress } from "@domains/tasks/persistence/shared-goal-repository"
+import { getPersistenceClient } from "@domains/tasks/persistence/store"
 
 interface Props {
   boardId: string
@@ -21,24 +24,46 @@ interface Props {
 const { boardId, areaId, projectId, planning, canManage, canComplete, routinesEnabled, tickets } = Astro.props
 const label = await organizationLabelsFor(Astro)
 const newLabel = (name: Parameters<typeof label>[0], fallback?: string) => newOrganizationLabel(label(name, false, fallback), organizationLocale(Astro))
-const goalHref = (filter: string, id: string) => `/progress?${filter}=${encodeURIComponent(id)}#goals`
-const showRoutines = routinesEnabled && (canManage || planning.routines.length > 0)
-const visibleAreas = areaId ? planning.areas.filter(area => area.id === areaId) : planning.areas
+const section = readBoardPlanningSection(Astro.url.searchParams)
+const showPlanning = section === "planning"
+const showGoals = section === "planning" || section === "goals"
+const showPillars = section === "planning" || section === "pillars"
+const goalHref = (filter: string, id: string) => boardWorkspaceHref(boardId, {
+  ...(filter === "project_id" ? { project: id } : { area: id }), groups: true, section: "goals",
+}, "groups")
+const showRoutines = routinesEnabled && (canManage || planning.routines.length > 0) && (section === "planning" || section === "routines")
+const selectedProject = projectId ? planning.projects.find(project => project.id === projectId) : undefined
+const selectedAreaId = areaId ?? selectedProject?.areaId ?? undefined
+const visibleAreas = selectedAreaId ? planning.areas.filter(area => area.id === selectedAreaId) : planning.areas
+let goalProgress: SharedGoalProgress[] = []
+let progressUnavailable = false
+if (showGoals && available("goals")) {
+  try {
+    goalProgress = await listSharedGoals(getPersistenceClient(), Astro.locals, Astro.request.signal, {
+      ...(projectId ? { projectId } : selectedAreaId ? { areaId: selectedAreaId } : {}),
+    })
+  } catch { progressUnavailable = true }
+}
+const visibleOwnedGoals = planning.goals.filter(goal => (!selectedAreaId || goal.areaId === selectedAreaId) && (!projectId || goal.id === selectedProject?.goalId))
+const ownedGoalIds = new Set(planning.goals.map(goal => goal.id))
+const progressByGoal = new Map(goalProgress.map(goal => [goal.id, goal]))
 const formColor = (color: string) => /^#[0-9a-f]{6}$/i.test(color) ? color : DEFAULT_GROUP_COLOR
 const ownedAreaIds = new Set(planning.areas.map(area => area.id))
 ---
 
 <section class="named-boards board-settings" id="groups" aria-labelledby="board-planning-title">
-  <h2 id="board-planning-title">{projectId ? `${label("project")} planning` : areaId ? `${label("group")} planning` : label("group", true)}</h2>
-  {!areaId && planning.projects.some(project => !project.areaId) && <section aria-labelledby="unfiled-projects">
+  <h2 id="board-planning-title">{section !== "planning" ? label(section === "goals" ? "goal" : section === "routines" ? "routine" : "pillar", true) : projectId ? `${label("project")} planning` : areaId ? `${label("group")} planning` : label("group", true)}</h2>
+  {showPlanning && !areaId && planning.projects.some(project => !project.areaId) && <section aria-labelledby="unfiled-projects">
     <h3 id="unfiled-projects">Unfiled Projects</h3>
     <ul>{planning.projects.filter(project => !project.areaId && (!projectId || projectId === project.id))
       .map(project => <li><a href={boardWorkspaceHref(boardId, { project: project.id })}>{project.title}</a></li>)}</ul>
   </section>}
-  {planning.areas.length === 0 && <p class="board-empty">Add an Area to organize Projects and Goals on this Board.</p>}
-  <div class="board-settings-grid">
+  {showPlanning && canManage && available("groups") && planning.areas.length === 0 && <p class="board-empty">Choose “{newLabel("group")}” to organize related work.</p>}
+  {section === "goals" && projectId && <GoalsTab {projectId} />}
+  <div class="board-settings-grid" hidden={section === "pillars" || (section === "goals" && Boolean(projectId))}>
     {visibleAreas.map(area => <section class="board-tile">
       <h3 class="board-name"><a href={boardWorkspaceHref(boardId, { area: area.id })}>{area.icon} {area.name}</a></h3>
+      <div hidden={!showPlanning}>
       {canManage && available("groups") && <details id={areaId === area.id && !projectId ? "group-settings" : undefined}>
         <summary>{label("group")} settings</summary>
         <form data-board-form="planning" class="board-form">
@@ -79,8 +104,11 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
           <button type="submit" class="btn btn-ghost">Create Project</button>
         </form>
       </details>}
-      {planning.goals.filter(goal => goal.areaId === area.id).map(goal => <article class="board-tile">
+      </div>
+      <div hidden={!showGoals}>
+      {visibleOwnedGoals.filter(goal => goal.areaId === area.id).map(goal => <article class="board-tile">
         <h4 class="board-name">{goal.title}</h4>
+        {progressUnavailable ? <p class="board-note" role="status">Progress is unavailable. Try again when access can be verified.</p> : progressByGoal.has(goal.id) && <p class="board-note">{progressByGoal.get(goal.id)!.completed_project_count} of {progressByGoal.get(goal.id)!.project_count} accessible Projects complete</p>}
         {goal.description && <p>{goal.description}</p>}
         {canManage && available("goals") && <details>
         <summary>Edit Goal</summary>
@@ -96,6 +124,10 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
           <RetirePlanningForm entity="goal" id={goal.id} />
         </details>}
       </article>)}
+      {goalProgress.filter(goal => goal.area_id === area.id && !ownedGoalIds.has(goal.id)).map(goal => <article class="board-tile">
+        <h4 class="board-name">{goal.title}</h4>
+        <p class="board-note">Shared Goal · {goal.completed_project_count} of {goal.project_count} accessible Projects complete</p>
+      </article>)}
       {canManage && available("goals") && <details>
         <summary>{newLabel("goal")}</summary>
         <form data-board-form="planning" class="board-form">
@@ -107,6 +139,7 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
           <button type="submit" class="btn btn-ghost">Create Goal</button>
         </form>
       </details>}
+      </div>
       {showRoutines && <div class="named-boards">
         {planning.routines.filter(routine => routine.areaId === area.id && (!projectId || routine.projectId === projectId)).map(routine => <article class="board-tile">
           <h4 class="board-name">{routine.name}</h4>
@@ -149,6 +182,7 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
         </details>}
       </div>}
     </section>)}
+    <div hidden={!showPlanning}>
     {planning.projects.filter(project => (!projectId || project.id === projectId) && (!project.areaId || !ownedAreaIds.has(project.areaId))).map(project => <article class="board-tile">
       <h3 class="board-name">{project.title}</h3>
       {project.description && <p>{project.description}</p>}
@@ -167,10 +201,11 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
         <button type="submit" class="btn btn-ghost">Create Area</button>
       </form>
     </details>}
+    </div>
   </div>
-  {canManage && planning.goals.length > 0 && <details class="board-tile">
+  {showGoals && canManage && visibleOwnedGoals.length > 0 && <details class="board-tile">
     <summary>Goal sharing</summary>
-    {planning.goals.map(goal => <section class="board-form">
+    {visibleOwnedGoals.map(goal => <section class="board-form">
       <h3 class="board-name">{goal.title}</h3>
       {planning.shares.filter(share => share.goalId === goal.id).map(share => <form data-board-form="planning" class="board-move">
         <span>{share.areaName || "Unavailable Area"}</span>
@@ -196,7 +231,7 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
       </form>
     </section>)}
   </details>}
-  <section class="named-boards" aria-labelledby="board-pillars-title">
+  <section class="named-boards" aria-labelledby="board-pillars-title" hidden={!showPillars}>
     <h2 id="board-pillars-title">{label("board")} {label("pillar", true)}</h2>
     <div class="boards-list">
       {planning.pillars.map(pillar => <article class="board-tile">

@@ -28,7 +28,7 @@ export function bindNamedBoardPlanningCapture(signal: AbortSignal) {
   const create = () => {
     if (!canCreate || !root.isConnected || !root.childElementCount) return
     const url = new URL(location.href)
-    for (const key of ["view", "planning", "ticket"]) url.searchParams.delete(key)
+    for (const key of ["view", "planning", "section", "ticket"]) url.searchParams.delete(key)
     if (!url.searchParams.has("area") && !url.searchParams.has("project")) url.searchParams.set("area", "")
     url.searchParams.set("capture", "1")
     url.hash = "kanban"

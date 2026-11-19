@@ -2,9 +2,11 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
-import { openDatabase } from "../../apps/web/scripts/database-client.mjs"
+import { openDatabaseForStartup, withStartupWriteTransaction } from "../../apps/web/scripts/database-client.mjs"
+import { applyStartupTaskSchema } from "../../apps/web/scripts/task-schema-startup.mjs"
+import { finalizeStartupBoardGrant, initializeBoardGrantContinuity } from "../../apps/web/scripts/board-grant-journal.mjs"
 import { createLabel } from "../../apps/web/src/domains/labels"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 import { GET, POST } from "../../apps/web/src/pages/api/labels"
 
 let directory: string
@@ -24,7 +26,7 @@ test.afterEach(async () => {
 })
 
 test("the native API reads earlier labels and keeps their IDs and colours", async () => {
-  const client = openDatabase(`file:${join(directory, "labels.db")}`)
+  const client = await openDatabaseForStartup(`file:${join(directory, "labels.db")}`, { markerPath: join(directory, "labels.db.board-grants.json") })
   try {
     await client.execute(
       "CREATE TABLE vikunja_labels (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL UNIQUE, hex_color TEXT NOT NULL)",
@@ -33,6 +35,14 @@ test("the native API reads earlier labels and keeps their IDs and colours", asyn
       sql: "INSERT INTO vikunja_labels (id, title, hex_color) VALUES (?, ?, ?)",
       args: [17, "Home", "abcdef"],
     })
+    // Seed earlier label records during a genuinely fresh, exclusively created
+    // installation. An unknown existing file must not gain fixture authority.
+    let initial: string | null = null
+    await withStartupWriteTransaction(client, async tx => {
+      await applyStartupTaskSchema(tx)
+      initial = await initializeBoardGrantContinuity(client, tx)
+    })
+    await finalizeStartupBoardGrant(client, initial)
   } finally {
     client.close()
   }
@@ -59,6 +69,7 @@ test("concurrent case variants resolve to one label", async () => {
 })
 
 test("HTML stripping and API validation retain an idempotent trimmed label title", async () => {
+  await ensureSchema()
   const request = (title: string) => new Request("http://localhost/api/labels", { method: "POST", body: JSON.stringify({ title }) })
   const created = await POST({ request: request(" home <b>") } as Parameters<typeof POST>[0])
   expect(created.status).toBe(201)

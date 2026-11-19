@@ -14,13 +14,17 @@ const organization = await organizationLabelsFor(Astro)
 import ProgressRing from "../ui/ProgressRing.astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { listSharedGoals, readNamedGoalScope, sharedGoalProjectionKey, type SharedGoalProgress } from "@domains/tasks/persistence/shared-goal-repository"
+import { boardWorkspaceHref, readBoardNavigationContext } from "@lib/board-workspace"
 import { HierarchyRepository, type AreaRow } from "@domains/tasks/persistence/hierarchy-repository"
 
-interface Props { areaId?: string; sharedGoals?: SharedGoalProgress[] }
+interface Props { areaId?: string; projectId?: string; sharedGoals?: SharedGoalProgress[] }
 
+const boardContext = readBoardNavigationContext(Astro.url)
+const allGoalsHref = boardContext ? boardContext.boardId === "household" ? "/progress?board=household#goals"
+  : boardWorkspaceHref(boardContext.boardId, { groups: true, section: "goals" }, "groups") : "/progress#goals"
 const embeddedArea = Astro.props.areaId
 const areaId = available("groups") ? embeddedArea ?? Astro.url.searchParams.get("area_id") ?? undefined : undefined
-const projectId = embeddedArea || !available("projects") ? undefined : Astro.url.searchParams.get("project_id") ?? undefined
+const projectId = embeddedArea || !available("projects") ? undefined : Astro.props.projectId ?? Astro.url.searchParams.get("project_id") ?? undefined
 let scopedAreaName: string | undefined
 let scopedProjectName: string | undefined
 let unavailable = false
@@ -142,7 +146,7 @@ const statusLabels: Record<string, string> = {
     <div class="goals-tab__header-left">
       {!unavailable && !scopeMissing && <span class="goals-tab__count" data-board-goal-projection={projectionKey ? "" : undefined}>{goals.length} goal{goals.length !== 1 ? "s" : ""}{scopeName && ` · ${scopeName}`}</span>}
       {projectionKey && <span class="goals-tab__count" data-board-goal-fallback hidden>{householdGoalCount} goal{householdGoalCount !== 1 ? "s" : ""}{!protectionIncludesScopeLabels && scopeName && ` · ${scopeName}`}</span>}
-      {(areaId !== undefined || projectId !== undefined) && <a href="/progress#goals">All Goals</a>}
+      {(areaId !== undefined || projectId !== undefined) && <a href={allGoalsHref}>All Goals</a>}
     </div>
     {canCreate && <button type="button" class="btn btn-primary" id="goals-tab-new-btn">+ {newOrganizationLabel(organization("goal"), organizationLocale(Astro))}</button>}
   </header>

@@ -4,11 +4,12 @@ import HomeAssistantAreaField from "../tasks/HomeAssistantAreaField.astro"
 import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
 import TaskWorkspace from "../TaskWorkspace.astro"
 import BoardPlanning from "./BoardPlanning.astro"
+import BoardWorkspaceNav from "./BoardWorkspaceNav.astro"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import Layout from "../../layouts/Layout.astro"
 import "../../styles/boards.css"
 import { permitsBoardTaskAction } from "@domains/tasks/persistence/named-board-repository"
-import { boardWorkspaceHref, readBoardWorkspaceSelection } from "@lib/board-workspace"
+import { boardWorkspaceHref, readBoardWorkspaceSelection, readBoardPlanningSection } from "@lib/board-workspace"
 import { boardAuthorityKey, boardViewKey, readBoardView } from "@lib/board-view"
 import { boardSessionProof, currentBoardUser } from "@lib/named-board-request"
 import { isFeatureEnabled } from "@lib/feature-flags"
@@ -50,11 +51,11 @@ const nextAction = view?.summary?.next
         data-board-authority={boardAuthorityKey(view, user.actor.id)}
         data-board-session={boardSessionProof(user.actor.id)} data-board-id={boardId}
         data-board-can-create={String(Boolean(canEdit) && (!scope?.project || scope.project.status === "active"))}>
-        <nav class="board-back" aria-label="Board navigation">
-          <a href="/boards">{label("board", true)}</a>
-          <span aria-hidden="true">›</span><a href={boardWorkspaceHref(boardId)}>{view.board.name}</a>
-          {scope?.area && (!scope.project || fromArea) && <><span aria-hidden="true">›</span><a href={boardWorkspaceHref(boardId, { area: scope.area.id })}>{scope.area.name}</a></>}
-        </nav>
+        <BoardWorkspaceNav {boardId} boardName={view.board.name}
+          area={scope?.area ? { id: scope.area.id, name: scope.area.name } : undefined}
+          project={scope?.project ? { id: scope.project.id, name: scope.project.title } : undefined}
+          {fromArea} active={readBoardPlanningSection(Astro.url.searchParams)}
+          settingsHref={policy ? boardWorkspaceHref(boardId, { groups: true }, "settings") : undefined} />
         <header class="boards-heading">
           <div>
             <h1>{title}</h1>
@@ -82,11 +83,6 @@ const nextAction = view?.summary?.next
           </details>}
         </header>
 
-        {!selection.ticketId && <nav class="board-context-tabs" aria-label="Board workspace">
-          <a class="btn btn-ghost" aria-current={!selection.planning ? "page" : undefined} href={boardWorkspaceHref(boardId, { ...grouping, groups: false })}>{label("task", true)}</a>
-          {available("organizer") && <a class="btn btn-ghost" aria-current={selection.planning ? "page" : undefined} href={boardWorkspaceHref(boardId, { ...grouping, groups: true }, scope?.project ? "project-settings" : scope?.area ? "group-settings" : "groups")}>{scope?.project ? `${label("project")} settings` : scope?.area ? `${label("group")} planning` : label("group", true)}</a>}
-          {!scope?.area && !scope?.project && policy && <a class="btn btn-ghost" href="#settings">{label("board")} settings</a>}
-        </nav>}
         {scope?.area && !scope.project && !selection.planning && <p>
           <a href={boardWorkspaceHref(boardId, { area: scope.area.id, groups: true }, "projects")}>{label("project", true)} in {scope.area.name}</a>
         </p>}

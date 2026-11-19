@@ -1,4 +1,4 @@
-import { execFileSync, fork } from "node:child_process"
+import { execFileSync, fork } from "../helpers/isolated-process"
 import { createHash } from "node:crypto"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
@@ -8,6 +8,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, test } from "@playwright/test"
 import { openDatabase } from "../../apps/web/scripts/database-client.mjs"
+import { enrollCurrentOwnedLegacyFixture } from "../helpers/current-legacy-fixture"
 import { prepareTaskBoardPredecessor } from "../scripts/task-board-predecessor"
 
 // This spec injects a failed comment response with Playwright request routing.
@@ -47,6 +48,7 @@ test("verified comment owners can edit and delete without claiming other comment
   const id = "legacy-comment-task"
   const legacyAuthor = `Home Assistant member · ${createHash("sha256").update("comment-author:fixture-member").digest("hex").slice(0, 10)}`
   let server: ReturnType<typeof fork> | undefined
+  let custodyDirectory: string | undefined
   try {
     const predecessor = openDatabase(env.MEITHEAL_DB_URL)
     try {
@@ -70,6 +72,10 @@ test("verified comment owners can edit and delete without claiming other comment
       })
       client.close()
     `, id, legacyAuthor], { cwd: web, env })
+    custodyDirectory = (await enrollCurrentOwnedLegacyFixture({
+      database: env.MEITHEAL_DB_URL.slice(5), markerPath: env.MEITHEAL_DB_URL.slice(5) + ".board-grants.json",
+      provenance: "created-in-this-test-and-never-restored",
+    })).custodyDirectory
     server = fork(fixture, { cwd: web, env, stdio: ["ignore", "ignore", "inherit", "ipc"] })
     const child = server
     const [info] = await Promise.race([
@@ -271,6 +277,7 @@ test("verified comment owners can edit and delete without claiming other comment
       server.kill()
       await exited
     }
+    if (custodyDirectory) await rm(custodyDirectory, { recursive: true, force: true })
     await rm(work, { recursive: true, force: true })
   }
 })

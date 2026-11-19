@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../helpers/isolated-process"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -10,7 +10,7 @@ import {
   getPersistenceClient,
   getSchemaVersion,
   resetPersistenceForTests,
-} from "../../apps/web/src/domains/tasks/persistence/store"
+} from "../helpers/persistence-fixture"
 import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
 import { HierarchyRepository } from "../../apps/web/src/domains/tasks/persistence/hierarchy-repository"
 import { applyInboundTodoUpdate } from "../../apps/web/src/domains/todo/todo-inbound-update"

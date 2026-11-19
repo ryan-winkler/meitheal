@@ -17,9 +17,12 @@ import {
 } from "@domains/tasks/persistence/store";
 import { getDailyProgress } from "@domains/gamification";
 import { verifiedIngressUser } from "../../lib/verified-ingress-user"
+import { boardNavigationLinks, readBoardNavigationContext } from "@lib/board-workspace"
 import { getFeatureFlags } from "../../lib/feature-flags";
 
 const currentPath = Astro.url.pathname;
+const boardContext = readBoardNavigationContext(Astro.url)
+const boardLinks = boardContext ? boardNavigationLinks(boardContext) : undefined
 export interface Props {
   locale?: Locale;
 }
@@ -45,7 +48,7 @@ const NAV_ITEMS: Record<string, NavItemDef> = {
   today: { href: "/today", i18nKey: "nav.today", icon: "today" },
   upcoming: { href: "/upcoming", i18nKey: "nav.upcoming", icon: "upcoming" },
   tasks: {
-    href: "/tasks",
+    href: "/boards/household",
     i18nKey: "nav.tasks",
     icon: "kanban",
   },
@@ -224,12 +227,12 @@ const navItems = order
     const isActive = def.matchExact
       ? currentPath === def.href
       : currentPath.startsWith(def.href);
-    return { key, label, isActive, ...def };
+    return { key, label, isActive, ...def, defaultHref: def.href, href: boardLinks && key in boardLinks ? boardLinks[key as keyof typeof boardLinks] : def.href };
   });
 const tasksIndex = navItems.findIndex(item => item.key === "tasks")
 const pinIndex = tasksIndex >= 0 ? tasksIndex + 1 : navItems.findIndex(item => item.key === "today") + 1
 navItems.splice(pinIndex, 0, {
-  key: "system-pinned", href: "/pinned", label: t("pins.title", locale), i18nKey: "pins.title",
+  key: "system-pinned", href: "/pinned", defaultHref: "/pinned", label: t("pins.title", locale), i18nKey: "pins.title",
   icon: "pin", isActive: currentPath === "/pinned", matchExact: true,
 })
 
@@ -328,8 +331,9 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
           data-board-project-label={resolveLabel("project", true)} data-projects-enabled={String(ff.projects !== false)}
           data-areas-enabled={String(ff.groups !== false)} aria-label={resolveLabel("board", true)}>
           {householdActive && <li class="sidebar-household" data-sidebar-household>
-            <a class="nav-link sidebar-household-link" href="/boards/household" aria-current={currentPath === "/boards/household" ? "page" : undefined}>Household</a>
-            {householdGroups && <div id="sidebar-hierarchy-panel"><SidebarHierarchyTree locale={locale} label={householdGroupLabel} /></div>}
+            {householdGroups ? <div id="sidebar-hierarchy-panel"><SidebarHierarchyTree locale={locale} label={householdGroupLabel} boardName="Household" /></div> : <div class="sidebar-board-row">
+              <a class="nav-link sidebar-household-link" href="/boards/household" aria-current={currentPath === "/boards/household" ? "page" : undefined}>Household</a>
+            </div>}
           </li>}
 
         </ul>
@@ -405,6 +409,7 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
   .sidebar-board-children :global(.sidebar-board-row .nav-link) { flex: 1; min-width: 0; }
   .sidebar-board-children :global(.sidebar-board-toggle[aria-expanded="true"]) { transform: rotate(90deg); }
   .sidebar-board-children :global([data-board-groups]), .sidebar-board-children :global([data-board-projects]) { list-style: none; padding-left: 1rem; }
+  .sidebar-board-children :global([data-board-group-notice]) { padding-inline-start: 1rem; margin: 0; }
   .sidebar-household[hidden] { display: none; }
 
   .sidebar {

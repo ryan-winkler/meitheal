@@ -24,3 +24,5 @@
 - [ADR 0021: Hardware, Memory, and UI Surface Architecture](0021-hardware-memory-and-ui-architecture.md) - Scopes Home Assistant entity state, streams Ingress HTML, bounds SQLite concurrency, standardizes Evergreen Carbon surfaces and Tabler sprites, and virtualizes the timeline.
 - [ADR 0022: AGPL-3.0-only Source License with Commercial Licensing](0022-agpl-source-license.md) - Replaces the custom source-available license with AGPL-3.0-only, keeps commercial licensing through the contributor agreement, and keeps the OpenSSF FLOSS criteria met.
 - [Temporary build-only Picomatch audit exception](0023-temporary-build-only-picomatch-audit.md) - Bounds GHSA-fc5q-39xc-vjpf handling to verified build dependencies through November 23, 2026.
+
+- [Trusted Board continuity at startup and recovery](0026-board-continuity-enrollment.md) - First enrollment, current operator custody and fail-closed recovery.

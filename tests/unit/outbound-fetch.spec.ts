@@ -29,7 +29,7 @@ import {
   getLocalDataDirectory,
   getPersistenceClient,
   resetPersistenceForTests,
-} from "../../apps/web/src/domains/tasks/persistence/store"
+} from "../helpers/persistence-fixture"
 import {
   decryptCalDAVPassword,
   POST as saveCredentials,
@@ -395,6 +395,7 @@ test.describe("CalDAV credential key initialization and legacy migration", () =>
     process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
     resetPersistenceForTests()
     try {
+      await ensureSchema()
       expect(getLocalDataDirectory()).toBe(directory)
 
       // Concurrent saves race on first key initialization and must converge on one 0600 key file

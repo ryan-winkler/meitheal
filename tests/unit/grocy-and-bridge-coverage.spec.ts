@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../helpers/isolated-process"
 import { mkdtempSync, rmSync } from "node:fs"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
@@ -27,7 +27,7 @@ test("GrocyAdapter, GrocyBridge sync/push, webhook dispatcher, outbound sync, an
     env: { ...process.env, MEITHEAL_DB_URL: dbUrl },
   })
 
-  const store = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const store = await import("../helpers/persistence-fixture")
   await store.ensureSchema()
   const client = store.getPersistenceClient()
 

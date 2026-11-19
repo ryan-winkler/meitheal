@@ -6,7 +6,7 @@ import { startHAWebSocketFixture } from "../scripts/ha-websocket-fixture"
 import { fireHAEvent } from "../../apps/web/src/domains/ha/ha-events"
 import { closeHAConnection } from "../../apps/web/src/domains/ha/ha-connection"
 import { stopEntitySubscription } from "../../apps/web/src/domains/ha/ha-entities"
-import { resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, resetPersistenceForTests } from "../helpers/persistence-fixture"
 
 test("App WebSocket events match the native Core device trigger contract", async () => {
   const contract = JSON.parse(await readFile(new URL("../../integrations/home-assistant/tests/fixtures/app-task-overdue.json", import.meta.url), "utf8"))
@@ -20,6 +20,7 @@ test("App WebSocket events match the native Core device trigger contract", async
     process.env.HA_TOKEN = "event-fixture"
     process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
     resetPersistenceForTests()
+    await ensureSchema()
     expect(await fireHAEvent(contract.event_type, {
       task_id: contract.event_data.task_id, title: contract.event_data.title,
     })).toBe(true)

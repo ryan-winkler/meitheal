@@ -1,3 +1,4 @@
+import { householdBoardIsActive } from "../../../domains/tasks/persistence/named-board-repository"
 import { organizationPlacementAvailable } from "@lib/organization-placement-access"
 import type { APIRoute } from "astro"
 import type { InValue } from "@libsql/client"
@@ -630,7 +631,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
         callHAService(domain, service, {
           message: "clear_notification",
           data: { tag: notifTag },
-        }).catch(() => {})
+        }, undefined, { operationAllowed: () => householdBoardIsActive(getPersistenceClient()) }).catch(() => {})
       }
     }
   }
@@ -716,9 +717,9 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     dismissMobileNotification(`meitheal_due_${resolvedId}`)
     if (notifPrefs.channels.sidebar !== false) {
       haServicesImport.then(({ callHAService }) => {
-        callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_urgent_${resolvedId}` }).catch(() => {})
-        callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_assigned_${resolvedId}` }).catch(() => {})
-        callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_due_${resolvedId}` }).catch(() => {})
+        callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_urgent_${resolvedId}` }, undefined, { operationAllowed: () => householdBoardIsActive(getPersistenceClient()) }).catch(() => {})
+        callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_assigned_${resolvedId}` }, undefined, { operationAllowed: () => householdBoardIsActive(getPersistenceClient()) }).catch(() => {})
+        callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_due_${resolvedId}` }, undefined, { operationAllowed: () => householdBoardIsActive(getPersistenceClient()) }).catch(() => {})
       }).catch(() => {})
     }
   }

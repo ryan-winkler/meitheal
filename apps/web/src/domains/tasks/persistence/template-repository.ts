@@ -1,3 +1,4 @@
+import { guardClientContinuity } from "./continuity-client"
 import { householdBoardIsActive } from "./named-board-repository"
 /**
  * TemplateRepository — domain service for task template database queries.
@@ -49,7 +50,9 @@ export interface RoutineWithStats extends RoutineTemplateRow {
 export type HabitWithStats = RoutineWithStats
 
 export class TemplateRepository {
-  constructor(private client: Client) {}
+  private client: Client
+
+  constructor(client: Client) { this.client = guardClientContinuity(client) }
 
   /** List all templates ordered by position */
   async findAll() {
@@ -291,7 +294,7 @@ export class TemplateRepository {
    * @returns { taskId, alreadyExisted }
    */
   async instantiateRoutineTask(templateId: string): Promise<{ taskId: string; alreadyExisted: boolean }> {
-    if (!await householdBoardIsActive(this.client)) throw new Error("Household Board is deleted. Restore it from Boards to resume Routines.")
+    if (!await householdBoardIsActive(this.client)) throw new Error("Household work is unavailable. Check installation continuity and Board state.")
     const today = new Date().toISOString().split("T")[0]!
 
     const findToday = {

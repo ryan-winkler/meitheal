@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test as base } from "@playwright/test"
 import { createLabel, updateLabel, UnusedLabelRepository, type CleanupLabel } from "../../apps/web/src/domains/labels"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 import { openDatabase } from "../../apps/web/scripts/database-client.mjs"
 import { POST as cleanupPost } from "../../apps/web/src/pages/api/labels/cleanup"
 

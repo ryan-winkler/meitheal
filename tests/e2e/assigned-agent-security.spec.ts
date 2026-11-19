@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test, type APIRequestContext } from "@playwright/test"
-import { getPersistenceClient, ensureSchema, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { getPersistenceClient, ensureSchema, resetPersistenceForTests } from "../helpers/persistence-fixture"
 import { TaskRepository, type TaskCreationData } from "../../apps/web/src/domains/tasks/persistence/task-repository"
 import { CommentMentionRepository } from "../../apps/web/src/domains/tasks/persistence/comment-mention-repository"
 import { startTimeEntryForTask } from "../../apps/web/src/domains/pomodoro"
@@ -48,6 +48,8 @@ const dbTest = test.extend<DbFixture>({
     process.env.MEITHEAL_DB_URL = `file:${join(dir, "test.db")}`
     resetPersistenceForTests()
     await ensureSchema()
+    // The synthetic task factory names this real Household Area.
+    await getPersistenceClient().execute("INSERT INTO areas (id, name, created_at, updated_at) VALUES ('general', 'General', 1, 1)")
     try {
       await use(new TaskRepository(getPersistenceClient()))
     } finally {
@@ -635,19 +637,49 @@ dbTest.describe("Assigned-Agent Authorization & Repository Guards", () => {
 
     const id2 = crypto.randomUUID()
     await repo.createTask(makeTaskData({ id: id2, assigned_to: "custom_agent_a" }))
-    const [handoff, concurrentEdit] = await Promise.all([
-      reassign(id2, "race-2"),
-      putTask({
-        params: { id: id2 },
-        request: new Request(`http://localhost/api/tasks/${id2}`, {
-          method: "PUT",
-          body: JSON.stringify({ title: "Should fail assignee_mismatch" }),
-        }),
-        locals: agentLocals("custom_agent_a"),
-      } as unknown as Parameters<typeof putTask>[0]),
-    ])
-    expect(handoff.status).toBe(200)
-    expect(concurrentEdit.status).toBe(403)
+    let signalEditAtWriter!: () => void
+    let resumeEdit!: () => void
+    const editAtWriter = new Promise<void>(resolve => { signalEditAtWriter = resolve })
+    const releaseEdit = new Promise<void>(resolve => { resumeEdit = resolve })
+    const originalUpdate = TaskRepository.prototype.updateTask
+    let guardedResult: Awaited<ReturnType<TaskRepository["updateTask"]>> | undefined
+    TaskRepository.prototype.updateTask = async function (...args: Parameters<TaskRepository["updateTask"]>) {
+      if (args[0] === id2 && args[1].title === "Should fail assignee_mismatch") {
+        // The route has admitted the old assignee. Hold only this edit before
+        // its real SQL writer, allowing the normal handoff to commit first.
+        expect(args[2]?.expectedAssignedTo).toBe("custom_agent_a")
+        signalEditAtWriter()
+        await releaseEdit
+        guardedResult = await originalUpdate.apply(this, args)
+        return guardedResult
+      }
+      return originalUpdate.apply(this, args)
+    }
+    const concurrentEdit = Promise.resolve(putTask({
+      params: { id: id2 },
+      request: new Request(`http://localhost/api/tasks/${id2}`, {
+        method: "PUT",
+        body: JSON.stringify({ title: "Should fail assignee_mismatch" }),
+      }),
+      locals: agentLocals("custom_agent_a"),
+    } as unknown as Parameters<typeof putTask>[0]))
+    try {
+      await Promise.race([
+        editAtWriter,
+        concurrentEdit.then(() => { throw new Error("Edit completed before entering the expected guarded writer") }),
+      ])
+      const handoff = await reassign(id2, "race-2")
+      expect(handoff.status).toBe(200)
+      expect((await repo.findById(id2))?.assigned_to).toBe("ha_person_1")
+      resumeEdit()
+      expect((await concurrentEdit).status).toBe(403)
+      expect(guardedResult).toEqual({ ok: false, errorCode: "assignee_mismatch" })
+      expect((await repo.findById(id2))?.title).toBe("Assigned agent security task")
+    } finally {
+      resumeEdit()
+      await concurrentEdit.catch(() => {})
+      TaskRepository.prototype.updateTask = originalUpdate
+    }
   })
 
   dbTest("atomic sub-route guards reject mismatched assignees in SQL without TOCTOU", async ({ repo }) => {

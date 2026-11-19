@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { expect, test as base } from "@playwright/test"
 import { goalProgress, isValidGoalProgress } from "../../packages/domain-tasks/src/index"
 import { HierarchyRepository } from "../../apps/web/src/domains/tasks/persistence/hierarchy-repository"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 import { GET as listGoals, POST as createGoal } from "../../apps/web/src/pages/api/goals/index"
 import { GET as getGoal, PUT as updateGoal } from "../../apps/web/src/pages/api/goals/[id]"
 

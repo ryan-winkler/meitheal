@@ -5,7 +5,7 @@ import { expect, test as base } from "@playwright/test"
 import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
 import {
   ensureSchema, getPersistenceClient, resetPersistenceForTests,
-} from "../../apps/web/src/domains/tasks/persistence/store"
+} from "../helpers/persistence-fixture"
 import type { SearchResponse } from "../../apps/web/src/domains/search/search-types"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "../../apps/web/src/lib/task-search-score"
 import { GET } from "../../apps/web/src/pages/api/search"
@@ -130,21 +130,39 @@ test("recent search handles mixed clocks and accepts only positive safe decimal 
 })
 
 test("SQLite reads comments only when selected and uses the task index", async ({ db }) => {
-  type Statement = { sql: string; args?: Parameters<Database["execute"]>[1] }
-  const observed: { statement?: Statement } = {}
-  const repo = new TaskRepository({
-    execute: (statement: Statement) => {
-      observed.statement = statement
-      return db.execute(statement.sql, statement.args)
+  type Execute = Database["execute"]
+  type Args = Parameters<Execute>[1]
+  type Statement = { sql: string, args?: NonNullable<Args> }
+  const statements: Statement[] = []
+  const observe = (execute: Execute): Execute => (statement: string | Statement, args?: Args) => {
+    if (typeof statement === "string") return execute(statement, args)
+    if (/FROM tasks\b/.test(statement.sql)) statements.push(statement)
+    return execute(statement)
+  }
+  const repo = new TaskRepository(new Proxy(db, {
+    get(target, property, receiver) {
+      if (property === "execute") return observe(target.execute.bind(target))
+      if (property === "transaction") return async (mode: "read" | "write" | "deferred" = "write") => {
+        const transaction = await target.transaction(mode)
+        return new Proxy(transaction, {
+          get(tx, key, txReceiver) {
+            if (key === "execute") return observe(tx.execute.bind(tx))
+            return Reflect.get(tx, key, txReceiver)
+          },
+        })
+      }
+      return Reflect.get(target, property, receiver)
     },
-  } as Database)
+  }))
   for (const [query, fields, comments] of [
     ["", ["comments"], false],
     ["missing", ["title"], false],
     ["missing", ["comments"], true],
   ] as const) {
+    statements.length = 0
     await repo.searchCatalog({ query, fields })
-    const { statement } = observed
+    expect(statements).toHaveLength(1)
+    const [statement] = statements
     if (!statement) throw new Error("Expected a bound SQL statement")
     expect(statement.sql).not.toContain("GROUP_CONCAT")
     const explanation = await db.execute({ sql: "EXPLAIN QUERY PLAN " + statement.sql, args: statement.args ?? [] })

@@ -1,4 +1,4 @@
-import { fork } from "node:child_process"
+import { fork } from "../helpers/isolated-process"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { request as httpRequest } from "node:http"
@@ -36,7 +36,7 @@ test("reaction API protects identity, bounds requests, and keeps task and commen
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and the ingress fixture")
   const work = await mkdtemp(join(tmpdir(), "meitheal-reactions-"))
   const file = join(work, "meitheal.db")
-  const db = new DatabaseSync(file)
+  let db!: DatabaseSync
   const env = {
     PATH: process.env.PATH,
     NODE_ENV: "production",
@@ -56,6 +56,9 @@ test("reaction API protects identity, bounds requests, and keeps task and commen
     ])
     const origin = `http://127.0.0.1:${info.port}`
     const ingress = origin + info.configuredPath
+    const ready = await request.get(ingress + "/api/health", { headers: { origin } })
+    expect(ready.status(), await ready.text()).toBe(200)
+    db = new DatabaseSync(file)
     const session = (role: string) => ({ ...sessionCookie(role), origin, "sec-fetch-site": "same-origin" })
     const member = session("member")
     const admin = session("admin")
@@ -226,7 +229,7 @@ test("reaction API protects identity, bounds requests, and keeps task and commen
       child.kill()
       await exited
     }
-    db.close()
+    db?.close()
     await rm(work, { recursive: true, force: true })
   }
 })

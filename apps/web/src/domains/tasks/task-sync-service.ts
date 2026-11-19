@@ -6,6 +6,8 @@ import {
   type IntegrationOutcome
 } from "@meitheal/domain-tasks";
 import type { CalendarIntegrationAdapter } from "@meitheal/integration-core";
+import { ContinuityLockedError, guardClientContinuity } from "./persistence/continuity-client"
+import { readHouseholdBoardState } from "./persistence/named-board-repository"
 import {
   ensureSchema,
   findByIdempotencyKey,
@@ -80,17 +82,29 @@ function isIdempotencyConflict(error: unknown): boolean {
   );
 }
 
+/** Validate the destination immediately before handing work to an external adapter. */
+async function assertHouseholdSyncAvailable(): Promise<void> {
+  const state = await readHouseholdBoardState(getPersistenceClient())
+  if (state === "locked") throw new ContinuityLockedError()
+  if (state === "retired") {
+    const error = new Error("Household Board is deleted. Restore it from Boards to resume shared work.")
+    Object.assign(error, { status: 409 })
+    throw error
+  }
+}
+
 export async function createTaskAndSyncCalendar(
   input: CreateTaskAndSyncInput,
   adapter: CalendarIntegrationAdapter
 ): Promise<CreateTaskAndSyncResult> {
   await ensureSchema();
+  await assertHouseholdSyncAvailable()
 
   const existing = await findByIdempotencyKey(input.idempotencyKey);
   if (existing) {
     // Even on replay, apply assigned_to if changed (P0 audit fix)
     if (input.assignedTo) {
-      const client = getPersistenceClient();
+      const client = guardClientContinuity(getPersistenceClient());
       await client.execute({
         sql: "UPDATE tasks SET assigned_to = ?, updated_at = ? WHERE id = ?",
         args: [input.assignedTo, Date.now(), existing.task.id],
@@ -126,7 +140,7 @@ export async function createTaskAndSyncCalendar(
 
   // Apply assigned_to if provided (domain-tasks package is assignment-unaware)
   if (input.assignedTo) {
-    const client = getPersistenceClient();
+    const client = guardClientContinuity(getPersistenceClient());
     await client.execute({
       sql: "UPDATE tasks SET assigned_to = ?, updated_at = ? WHERE id = ?",
       args: [input.assignedTo, Date.now(), plan.aggregate.task.id],
@@ -158,6 +172,7 @@ export async function createTaskAndSyncCalendar(
     endDateTime: plan.calendarRequest.endDateTime,
     ...(plan.calendarRequest.description ? { description: plan.calendarRequest.description } : {})
   };
+  await assertHouseholdSyncAvailable()
   const calendarResult = await adapter.createEvent(calendarCreateInput);
 
   const persisted = await persistCalendarIntegrationResult({

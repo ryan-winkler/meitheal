@@ -5,7 +5,7 @@ import { expect, test } from "@playwright/test"
 import { getExpiredLockClause, HANDOFF_CLAIM_TTL_MS } from "../../packages/domain-tasks/src/index"
 import { TaskHandoff } from "../../apps/web/src/domains/tasks/persistence/task-handoff"
 import { readHandoffRequest } from "../../apps/web/src/lib/handoff-request"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 
 let directory: string
 let previous: string | undefined

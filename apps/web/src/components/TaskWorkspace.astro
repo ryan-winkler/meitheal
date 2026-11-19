@@ -7,6 +7,7 @@ import { permitsBoardTaskAction } from "@domains/tasks/persistence/named-board-r
 import TaskDetailModal from "./tasks/TaskDetailModal.astro"
 import "../styles/boards.css"
 import NamedBoardInspector from "./boards/NamedBoardInspector.astro"
+import BoardWorkspaceNav from "./boards/BoardWorkspaceNav.astro"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import HomeAssistantAreaField from "../components/tasks/HomeAssistantAreaField.astro"
 import { readHomeAssistantAreaFilter } from "@lib/home-assistant-area-access"
@@ -312,7 +313,7 @@ if (groupByProject) {
 <Layout title={`Meitheal — ${householdWorkspace ? "Household · " : ""}${heading}`} suppressHouseholdTaskModals={Boolean(namedBoardId)}>
 
   <UnifiedBar
-    title={householdWorkspace ? "Household" : heading}
+    title={namedView ? namedView.board.name : "Household"}
     newTaskLabel={newOrganizationLabel(organization("task"), locale)}
     titleIcon={TASK_VIEW_ICONS[renderedView]}
     tabs={[]}
@@ -335,31 +336,22 @@ if (groupByProject) {
     data-board-authority={namedView && namedUser ? boardAuthorityKey(namedView, namedUser.actor.id) : undefined}
     data-board-session={namedSession} data-board-id={namedBoardId}
     data-named-can-create={String(namedCreate)} data-named-can-edit={String(namedEdit)} data-named-can-complete={String(namedComplete)} data-named-can-delete={String(namedDelete)}>
-  {namedView && <h1>{namedView.context?.project?.title ?? namedView.context?.area?.name ?? namedView.board.name}</h1>}
-  {namedView && <nav class="board-context-tabs" aria-label="Board workspace">
-    <a class="btn btn-ghost" href="/boards">{organization("board", true)}</a>
-    <a class="btn btn-ghost" href={boardWorkspaceHref(namedBoardId!)}>{namedView.board.name}</a>
-    {namedView.context?.area && <a class="btn btn-ghost" href={boardWorkspaceHref(namedBoardId!, { area: namedView.context.area.id })}>{namedView.context.area.name}</a>}
-    {namedView.context?.project && <strong>{namedView.context.project.title}</strong>}
-    <a class="btn btn-ghost" href={boardWorkspaceHref(namedBoardId!, { area: namedSelection.areaId ?? undefined, project: namedSelection.projectId ?? undefined, groups: true })}>{organization("group", true)} &amp; settings</a>
-  </nav>}
+  {namedView && (namedView.context?.project || namedView.context?.area) && <h1>{namedView.context.project?.title ?? namedView.context.area?.name}</h1>}
+  {namedView && <BoardWorkspaceNav boardId={namedBoardId!} boardName={namedView.board.name}
+    area={namedView.context?.area ? { id: namedView.context.area.id, name: namedView.context.area.name } : undefined}
+    project={namedView.context?.project ? { id: namedView.context.project.id, name: namedView.context.project.title } : undefined}
+    fromArea={namedSelection.fromArea ?? undefined}
+    settingsHref={namedView.board.policy ? boardWorkspaceHref(namedBoardId!, { groups: true }, "settings") : undefined} />}
   {namedView && available("groups") && <AreaSelector areas={[]} catalogReady={false}
     endpoint={`/api/boards/${encodeURIComponent(namedBoardId!)}?view=groups`}
     storageKey={`meitheal-selected-area:${namedBoardId}`}
     initialId={namedView.context?.area?.id} />}
-  {householdWorkspace && <nav class="board-context-tabs" aria-label="Board workspace">
-    <a class="btn btn-ghost" href="/boards">Boards</a>
-    {householdProject && <strong>{householdProject.title}</strong>}
-    {householdProject?.area_id && Astro.url.searchParams.get("from") === householdProject.area_id &&
-      <a class="btn btn-ghost" href={boardWorkspaceHref("household", { area: householdProject.area_id })}>← {areas.find(area => area.id === householdProject.area_id)?.name ?? organization("group")}</a>}
-    <a class="btn btn-ghost" href="/boards/household" aria-current="page">Tasks</a>
-    <a class="btn btn-ghost" href="/boards/household?view=groups" data-astro-reload>{organization("group", true)}</a>
-    {(householdProjectId || kanbanFilters.area) && <a class="btn btn-ghost" href={boardWorkspaceHref("household", {
-      area: householdProjectId ? undefined : kanbanFilters.area,
-      project: householdProjectId ?? undefined, fromArea: Astro.url.searchParams.get("from") ?? undefined, groups: true,
-    }, householdProjectId ? "project-settings" : "group-settings")}>{householdProjectId ? organization("project") : organization("group")} planning</a>}
-    {verifiedIngressUser(Astro.locals)?.isAdmin && <a class="btn btn-ghost" href="/boards#household-settings">{organization("board")} settings</a>}
-  </nav>}
+  {!namedBoardId && <BoardWorkspaceNav boardId="household" boardName="Household"
+    area={(householdProject?.area_id ?? kanbanFilters.area) ? { id: householdProject?.area_id ?? kanbanFilters.area!, name: areas.find(area => area.id === (householdProject?.area_id ?? kanbanFilters.area))?.name ?? organization("group") } : undefined}
+    project={householdProject ? { id: householdProject.id, name: householdProject.title } : undefined}
+    fromArea={Astro.url.searchParams.get("from") ?? undefined}
+    settingsHref={verifiedIngressUser(Astro.locals)?.isAdmin ? "/boards#household-settings" : undefined} />}
+
 
   {renderedView === "kanban" && <>
   <!-- Kanban controls and board are rendered only for the selected view. -->

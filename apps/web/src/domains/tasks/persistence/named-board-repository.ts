@@ -2,6 +2,7 @@ import { randomInt, randomUUID } from "node:crypto"
 import type { Client, Transaction } from "@libsql/client"
 import { isActiveAgentToken } from "@domains/auth"
 import { acquireWriteTransaction } from "../../../../scripts/database-client.mjs"
+import { getBoardGrantPath } from "../../../../scripts/board-grant-journal.mjs"
 import { boardGrantStillCurrent, changeBoardGrants, currentBoardGrantRevision, readBoardGrantRevision } from "./board-grant-fence"
 
 export type BoardActor = { kind: "ha_user" | "agent"; id: string }
@@ -76,9 +77,17 @@ export async function selectNamedBoardAccess(
   }
 }
 
-export async function readHouseholdBoardState(db: Pick<Client, "execute">): Promise<"active" | "retired"> {
-  const { rows: [row] } = await db.execute("SELECT state FROM task_boards WHERE id = 'household'")
-  return row?.state === "active" ? "active" : "retired"
+/** Continuity failure is separate from an operator-retired Household. */
+export async function readHouseholdBoardState(db: Pick<Client, "execute"> & Partial<Pick<Client, "transaction">>): Promise<"active" | "retired" | "locked"> {
+  try {
+    const revision = await currentBoardGrantRevision(db as Pick<Client, "execute" | "transaction">)
+    if (!revision) return "locked"
+    const { rows: [row] } = await db.execute("SELECT state FROM task_boards WHERE id = 'household'")
+    if (!await boardGrantStillCurrent(db, revision)) return "locked"
+    return row?.state === "active" ? "active" : "retired"
+  } catch {
+    return "locked"
+  }
 }
 
 export async function householdBoardIsActive(db: Pick<Client, "execute">): Promise<boolean> {
@@ -86,7 +95,7 @@ export async function householdBoardIsActive(db: Pick<Client, "execute">): Promi
 }
 
 export class NamedBoardRepository {
-  constructor(private readonly db: Client, private readonly markerPath?: string) {}
+  constructor(private readonly db: Client, private readonly markerPath = getBoardGrantPath(db)) {}
 
   /** Read a scope without inheriting permissions from Home Assistant administration. */
   async findAccess(actor: BoardActor, id: string) {
@@ -189,7 +198,7 @@ export class NamedBoardRepository {
       if (Number(board.revision) !== revision) return { unchanged: "stale" as const }
       await tx.execute({ sql: "UPDATE task_boards SET state = ?, revision = revision + 1, updated_at = ? WHERE id = ?", args: [state, Date.now(), id] })
       return { next: "saved" as const }
-    }, this.markerPath, { keepUninitialized: id === "household" })
+    }, this.markerPath)
   }
 
   async updateRestrictions(ownerId: string, id: string, policy: {

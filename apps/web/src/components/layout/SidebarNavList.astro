@@ -1,9 +1,12 @@
 ---
 import Icon from "../ui/Icon.astro"
+import { readBoardNavigationContext } from "../../lib/board-workspace"
 import SidebarReorderHandle from "./SidebarReorderHandle.astro"
 import { t } from "../../i18n/translations"
 import { TASK_VIEW_ICONS, TASK_VIEW_LABELS, taskViewUrl, type TaskView } from "../../lib/task-view-route"
 
+const initialBoard = readBoardNavigationContext(Astro.url)
+const initialNamedBoard = initialBoard && initialBoard.boardId !== "household"
 const views = (["calendar", "kanban", "timeline", "table"] as const satisfies readonly TaskView[]).map(id => {
   const href = taskViewUrl(new URL("/tasks", Astro.url), id, true)
   return { id, href: href.pathname + href.search + href.hash, icon: TASK_VIEW_ICONS[id], label: TASK_VIEW_LABELS[id] }
@@ -15,6 +18,7 @@ export interface Props {
     label: string
     isActive: boolean
     href: string
+    defaultHref?: string
     icon: string
   }[]
 }
@@ -41,6 +45,7 @@ function isExternal(href: string): boolean {
                   href={item.href}
                   class={`nav-link flex-1 min-w-0 ${item.isActive ? "active" : ""}`}
                   data-page={item.key}
+                  data-board-nav-default={item.defaultHref ?? item.href}
                   title={item.label}
                   data-tooltip={item.label}
                   data-astro-prefetch="viewport"
@@ -56,6 +61,7 @@ function isExternal(href: string): boolean {
                   type="button"
                   class="task-view-disclosure"
                   id="tasks-submenu-toggle"
+                  hidden={initialNamedBoard || undefined}
                   aria-expanded="false"
                   aria-controls="tasks-nav-submenu"
                   aria-label="Task views"
@@ -115,6 +121,7 @@ function isExternal(href: string): boolean {
             href={item.href}
             class={`nav-link flex-1 min-w-0 ${item.isActive ? "active" : ""} ${external ? "nav-link--external" : ""}`}
             data-page={item.key}
+            data-board-nav-default={item.defaultHref ?? item.href}
             title={item.label}
             data-tooltip={item.label}
             data-astro-prefetch={item.key === "system-pinned" || item.key === "activity" || item.key === "mentionInbox" ? "false" : external ? undefined : "viewport"}
@@ -152,6 +159,8 @@ function isExternal(href: string): boolean {
   .nav-link--external:hover .nav-external-icon {
     opacity: 1;
   }
+
+  .task-view-disclosure[hidden], :global([data-task-view-pinned-item][hidden]) { display: none !important; }
 
   .task-view-disclosure,
   .task-view-pin {
@@ -280,6 +289,8 @@ function isExternal(href: string): boolean {
 </style>
 
 <script>
+  import { boardNavigationLinks, readBoardNavigationContext } from "../../lib/board-workspace"
+  import { safeIngressHref } from "../../lib/ingress-navigation"
   import { pageLifecycle } from "../../lib/page-lifecycle"
   import {
     TASK_NAV_PREFS_EVENT,
@@ -307,7 +318,11 @@ function isExternal(href: string): boolean {
   function refreshTaskViewLink(link: HTMLAnchorElement, background: URL) {
     const view = parseTaskView(link.dataset.taskViewLink ?? null)
     if (!view) return
-    const fromTasks = appPath(background.pathname) === "/tasks"
+    const logical = new URL(background)
+    logical.pathname = appPath(background.pathname)
+    const context = readBoardNavigationContext(logical)
+    if (context && context.boardId !== "household") return
+    const fromTasks = logical.pathname === "/tasks" || context?.boardId === "household"
     const tasks = fromTasks ? background : new URL(`${window.__ingress_path || ""}/tasks`, background)
     const href = taskViewUrl(tasks, view, true).href
     if (link.href !== href) link.href = href
@@ -315,6 +330,21 @@ function isExternal(href: string): boolean {
 
   function updateActiveNavLink() {
     const background = taskBackgroundUrl()
+    const logical = new URL(background)
+    logical.pathname = appPath(background.pathname)
+    const context = readBoardNavigationContext(logical)
+    const scoped = context ? boardNavigationLinks(context) : undefined
+    const named = Boolean(context && context.boardId !== "household")
+    for (const link of document.querySelectorAll<HTMLAnchorElement>(".sidebar [data-page][data-board-nav-default]")) {
+      const key = link.dataset.page
+      const href = scoped && key && key in scoped ? scoped[key as keyof typeof scoped] : link.dataset.boardNavDefault
+      if (href) link.href = safeIngressHref(href)
+    }
+    const disclosure = document.getElementById("tasks-submenu-toggle")
+    if (disclosure) disclosure.hidden = named
+    const submenu = document.getElementById("tasks-nav-submenu")
+    if (named && submenu) submenu.hidden = true
+    for (const item of document.querySelectorAll<HTMLElement>("[data-task-view-pinned-item]")) item.hidden = named
     const taskPath = (url: URL) => {
       const path = appPath(url.pathname)
       return parseTaskView(path.slice(1)) ? "/tasks" : path
@@ -323,7 +353,7 @@ function isExternal(href: string): boolean {
       requestedTaskView(url.searchParams, url.hash) ?? "kanban"
     const view = viewFrom(background)
     const backgroundPath = taskPath(background)
-    const taskContext = backgroundPath === "/tasks"
+    const taskContext = backgroundPath === "/tasks" || Boolean(context && /^\/boards\//.test(logical.pathname) && !logical.searchParams.has("planning") && logical.searchParams.get("view") !== "groups")
     const isFilteredShortcut = (url: URL) => url.searchParams.has("types") ||
       (taskPath(url) === "/tasks" && url.searchParams.has("task_type"))
     const navLinks = [...document.querySelectorAll<HTMLAnchorElement>(".sidebar .nav-link:not(.nav-link--external)")]
@@ -340,7 +370,7 @@ function isExternal(href: string): boolean {
       matchedCriteria = criteria
       typedLink = link
     }
-    const activeViewLink = document.querySelector(`[data-task-view-pinned-item="${view}"] .nav-link`)
+    const activeViewLink = named ? null : document.querySelector(`[data-task-view-pinned-item="${view}"] .nav-link`)
       ?? document.querySelector(`#tasks-nav-submenu:not([hidden]) [data-task-view-link="${view}"]`)
     navLinks.forEach(link => {
       const child = link.dataset.taskViewLink
@@ -351,7 +381,13 @@ function isExternal(href: string): boolean {
       let active: boolean
       if (child) active = taskContext && child === view && !typedLink
       else if (isTasksLink) active = taskContext && !typedLink
+      else if (context && link.dataset.page === "planning") active = logical.searchParams.get("view") === "groups" && !["goals", "routines", "pillars"].includes(logical.searchParams.get("section") ?? "")
+      else if (context && link.dataset.page === "progress") active = logical.pathname === "/progress" || logical.pathname === "/habits" || (logical.searchParams.get("view") === "groups" && ["goals", "routines", "pillars"].includes(logical.searchParams.get("section") ?? ""))
       else if (isFilteredShortcut(url)) active = link === typedLink
+      else if (context && link.closest("[data-sidebar-board-children]") && href === backgroundPath) {
+        const selected = readBoardNavigationContext(new URL(href + url.search, url))
+        active = Boolean(selected && selected.project === context.project && selected.area === context.area)
+      }
       else active = (href === backgroundPath && (!url.hash || url.hash === background.hash)) ||
         (href !== "/" && backgroundPath.startsWith(href + "/"))
       link.classList.toggle("active", active)

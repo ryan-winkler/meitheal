@@ -2,12 +2,13 @@ import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test as base } from "@playwright/test"
+import { enrollCurrentOwnedLegacyFixture } from "../helpers/current-legacy-fixture"
 import { openDatabase } from "../../apps/web/scripts/database-client.mjs"
 import {
   ensureSchema,
   getPersistenceClient,
   resetPersistenceForTests,
-} from "../../apps/web/src/domains/tasks/persistence/store"
+} from "../helpers/persistence-fixture"
 import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
 import { formatTicketKey, parseTicketKey } from "../../apps/web/src/lib/ticket-key"
 
@@ -89,14 +90,18 @@ test("legacy backfill assigns tickets from rowids before Household issuance star
   } finally {
     predecessor.close()
   }
-  await withTicketDatabase(databaseUrl, async db => {
-    const result = await db.execute("SELECT id, ticket_number FROM tasks ORDER BY rowid")
-    expect(result.rows).toEqual([
-      { id: "old-first", ticket_number: 4 },
-      { id: "old-last", ticket_number: 9 },
-    ])
-    expect(await createTask(db, "new")).toBe(10)
-  })
+  const database = databaseUrl.slice(5)
+  const proof = await enrollCurrentOwnedLegacyFixture({ database, markerPath: database + ".board-grants.json", provenance: "created-in-this-test-and-never-restored" })
+  try {
+    await withTicketDatabase(databaseUrl, async db => {
+      const result = await db.execute("SELECT id, ticket_number FROM tasks ORDER BY rowid")
+      expect(result.rows).toEqual([
+        { id: "old-first", ticket_number: 4 },
+        { id: "old-last", ticket_number: 9 },
+      ])
+      expect(await createTask(db, "new")).toBe(10)
+    })
+  } finally { await rm(proof.custodyDirectory, { recursive: true, force: true }) }
 })
 
 test("formatTicketKey produces MTH-N format", () => {

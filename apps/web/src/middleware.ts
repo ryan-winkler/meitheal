@@ -1,4 +1,5 @@
-import { householdBoardIsActive } from "./domains/tasks/persistence/named-board-repository"
+import { continuityRequestAllowed } from "./lib/continuity-request-policy"
+import { householdBoardIsActive, readHouseholdBoardState } from "./domains/tasks/persistence/named-board-repository"
 import { householdWorkRoute } from "./lib/household-work-route"
 import { getOrganizationAvailability } from "./lib/organization-availability"
 import { withOrganizationAvailability } from "./lib/organization-request-context"
@@ -508,8 +509,18 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     databaseAvailable = false
   }
 
-  if (databaseAvailable && (householdWorkRoute(url.pathname, method) || householdWorkRoute(routePattern, method)) &&
-      !await householdBoardIsActive(getPersistenceClient())) {
+  // Unknown continuity cannot expose restored Household data through route aliases,
+  // search, exports, agents or cached deliveries. Only bounded diagnostics survive.
+  const householdState = databaseAvailable ? await readHouseholdBoardState(getPersistenceClient()) : "locked"
+  if (databaseAvailable && householdState === "locked" &&
+      !continuityRequestAllowed(url.pathname, routePattern)) {
+    return apiProblem({ status: 503,
+      detail: "Installation continuity is locked. Use the current operator checkpoint recovery procedure.",
+      extraHeaders: { "cache-control": "private, no-store" } })
+  }
+
+  if (databaseAvailable && householdState === "retired" &&
+      (householdWorkRoute(url.pathname, method) || householdWorkRoute(routePattern, method))) {
     const detail = "Household Board is deleted. Restore it from Boards to resume shared work."
     if (!url.pathname.startsWith("/api/") && (method === "GET" || method === "HEAD")) {
       return new Response(null, { status: 303, headers: {
@@ -520,9 +531,9 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
   }
 
   // Lazy-init only after accepting the caller. Do not block on the HA connection.
-  if (databaseAvailable) {
+  if (databaseAvailable && householdState !== "locked") {
     initHAIntegrations().catch(() => {})
-    if (method === "GET" && (!isHealthCheck || !supervisorMode || trustedLocalCaller)) startInactivityScheduler()
+    if (method === "GET" && (!isHealthCheck || !supervisorMode || trustedLocalCaller)) startInactivityScheduler().catch(() => {})
   }
 
   // Load regional settings for SSR (cached for 60s to avoid DB per-request)
@@ -614,11 +625,23 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     }
   }
 
+  // A request admitted while current must not return governed data after authority
+  // changes or disappears during an asynchronous handler.
+  if (databaseAvailable && !continuityRequestAllowed(url.pathname, routePattern) &&
+      await readHouseholdBoardState(getPersistenceClient()) === "locked") {
+    response = apiProblem({ status: 503,
+      detail: "Installation continuity is locked. Use the current operator checkpoint recovery procedure.",
+      extraHeaders: { "cache-control": "private, no-store" } })
+  }
+
   // Retirement may have committed while an already-admitted legacy mutation was running.
   if (databaseAvailable && response.status >= 400 && url.pathname.startsWith("/api/") &&
       (householdWorkRoute(url.pathname, method) || householdWorkRoute(routePattern, method)) &&
       !await householdBoardIsActive(getPersistenceClient())) {
-    response = apiProblem({ status: 409, detail: "Household Board is deleted. Restore it from Boards to resume shared work.",
+    const state = await readHouseholdBoardState(getPersistenceClient())
+    response = apiProblem({ status: state === "locked" ? 503 : 409,
+      detail: state === "locked" ? "Installation continuity is locked. Use the current operator checkpoint recovery procedure." :
+        "Household Board is deleted. Restore it from Boards to resume shared work.",
       extraHeaders: { "cache-control": "private, no-store" } })
   }
 

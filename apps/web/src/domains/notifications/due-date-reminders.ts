@@ -1,3 +1,4 @@
+import { guardClientContinuity } from "../tasks/persistence/continuity-client"
 import { householdBoardIsActive } from "../tasks/persistence/named-board-repository"
 /**
  * Due-Date Reminder Scheduler
@@ -109,7 +110,7 @@ async function getCachedSettings(): Promise<CachedNotifSettings> {
   }
 
   const { getPersistenceClient } = await import("@domains/tasks/persistence/store");
-  const client = getPersistenceClient();
+  const client = guardClientContinuity(getPersistenceClient());
 
   let enabled = true;
   let channels = { sidebar: true, mobile_push: false };
@@ -171,7 +172,10 @@ function parseNotifyTarget(target: string): { domain: string; service: string } 
  * Idempotent — calling multiple times is safe. The returned promise settles when
  * the immediate first check finishes; it never rejects.
  */
-export function startDueDateReminders(): Promise<void> {
+export async function startDueDateReminders(): Promise<void> {
+  const { ensureSchema, getPersistenceClient } = await import("@domains/tasks/persistence/store")
+  await ensureSchema()
+  if (!await householdBoardIsActive(getPersistenceClient())) return
   if (intervalHandle !== null) return Promise.resolve();
 
   logger.log("info", {
@@ -228,7 +232,8 @@ export async function checkDueDates(now = Date.now()): Promise<void> {
     }
 
     const { getPersistenceClient } = await import("@domains/tasks/persistence/store");
-    const client = getPersistenceClient();
+    const client = guardClientContinuity(getPersistenceClient());
+    if (!await householdBoardIsActive(client)) return
 
     // Domain transitions are independent of notification preferences and HA
     // connectivity. Reuse this timer rather than creating a second scheduler.
@@ -366,7 +371,7 @@ export async function checkDueDates(now = Date.now()): Promise<void> {
           title: `⏰ Due ${timeLabel}: ${title}`,
           message: `${ticketKey} is due ${timeLabel}.${sidebarLink}`,
           notification_id: notifId,
-        }).catch(() => {});
+        }, undefined, { operationAllowed: () => householdBoardIsActive(client) }).catch(() => {});
       }
 
       // Mobile push with enrichments
@@ -389,7 +394,7 @@ export async function checkDueDates(now = Date.now()): Promise<void> {
                   { action: `MEITHEAL_TASK_DONE_${taskId}`, title: "✅ Mark Done" },
                 ],
               },
-            }).catch(() => {});
+            }, undefined, { operationAllowed: () => householdBoardIsActive(client) }).catch(() => {});
           }
         }
       }
@@ -403,7 +408,7 @@ export async function checkDueDates(now = Date.now()): Promise<void> {
           start_date_time: startIso,
           end_date_time: endIso,
           description: `Task ${ticketKey} is due. ${fullDeepLink ? `Open in Meitheal: ${fullDeepLink}` : ""}`,
-        }, { entity_id: settings.calendarEntity }).catch(() => {});
+        }, { entity_id: settings.calendarEntity }, { operationAllowed: () => householdBoardIsActive(client) }).catch(() => {});
       }
 
       logger.log("info", {

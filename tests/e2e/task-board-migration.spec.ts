@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from "node:child_process"
+import { execFileSync, spawn } from "../helpers/isolated-process"
 import { createHash } from "node:crypto"
 import { once } from "node:events"
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises"

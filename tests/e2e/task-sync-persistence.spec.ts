@@ -9,7 +9,7 @@ import {
   getPersistenceClient,
   persistManualCalendarConfirmation,
   resetPersistenceForTests
-} from "../../apps/web/src/domains/tasks/persistence/store";
+} from "../helpers/persistence-fixture";
 import { calendarConfirmations, integrationAttempts, tasks } from "../../apps/web/drizzle/schema";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/libsql";

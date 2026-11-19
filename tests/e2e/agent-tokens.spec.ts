@@ -1,4 +1,4 @@
-import { execFileSync, fork } from "node:child_process"
+import { execFileSync, fork } from "../helpers/isolated-process"
 import { once } from "node:events"
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -17,7 +17,7 @@ import {
   type AgentTokenRecord,
 } from "../../packages/domain-auth/src/agent-tokens"
 import { GET, POST, PATCH, DELETE } from "../../apps/web/src/pages/api/agent-tokens/index"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 import { UserRepository } from "../../apps/web/src/domains/tasks/persistence/user-repository"
 
 /**

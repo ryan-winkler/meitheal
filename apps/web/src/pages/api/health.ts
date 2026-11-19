@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { APIRoute } from "astro";
-import { ensureSchema, getPersistenceClient, getDbIntegrityStatus, getSchemaVersion } from "@domains/tasks/persistence/store";
+import { ensureSchema, probeDatabaseConnectivity, getDbIntegrityStatus, getSchemaVersion } from "@domains/tasks/persistence/store";
 import { getHAConnectionStatus } from "@domains/ha/ha-connection";
 import { apiJson } from "../../lib/api-response";
 import { supervisorFetch } from "../../lib/supervisor-fetch";
@@ -49,9 +49,8 @@ export const GET: APIRoute = async () => {
 
   try {
     await ensureSchema();
-    const client = getPersistenceClient();
     // Simple connectivity check
-    await client.execute("SELECT 1");
+    await probeDatabaseConnectivity();
 
     // PRA-14: Supervisor API connectivity probe (cached 60s on HTTP 200 only)
     const supervisorToken = process.env.SUPERVISOR_TOKEN;

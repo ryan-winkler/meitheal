@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
 import { db503Response } from "../../apps/web/src/lib/db-fallback"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 import { GET as listTasks } from "../../apps/web/src/pages/api/tasks/index"
 import { GET as previewCompleted, DELETE as deleteCompleted } from "../../apps/web/src/pages/api/tasks/delete-completed"
 

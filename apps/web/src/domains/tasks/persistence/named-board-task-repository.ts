@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto"
 import type { Client, Transaction } from "@libsql/client"
 import { isActiveAgentToken } from "@domains/auth"
 import { acquireWriteTransaction } from "../../../../scripts/database-client.mjs"
+import { getBoardGrantPath } from "../../../../scripts/board-grant-journal.mjs"
 import type { HomeAssistantAreaFilter, HomeAssistantAreaSelection } from "../../../lib/home-assistant-area-access"
 import type { BoardWorkspaceSelection } from "../../../lib/board-workspace"
 import { isClosedStatus, isDoneStatus, normalizeStatus, STATUS, STATUS_CONFIG } from "../../../lib/status-config"
@@ -64,7 +65,7 @@ export async function insertNamedTask(tx: Transaction, input: {
 
 /** Named ticket writes keep the Board grant, placement and task version in the same transaction. */
 export class NamedBoardTaskRepository {
-  constructor(private readonly db: Client, private readonly markerPath?: string) {}
+  constructor(private readonly db: Client, private readonly markerPath = getBoardGrantPath(db)) {}
 
   async routineLibrary(actor: BoardActor) {
     if (actor.kind !== "ha_user" || !available("routines")) return []

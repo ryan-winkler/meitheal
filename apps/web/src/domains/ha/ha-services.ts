@@ -689,10 +689,12 @@ export async function callHAService(
   domain: string, service: string,
   serviceData?: Record<string, unknown>,
   target?: { entity_id?: string | string[]; device_id?: string | string[] },
+  options?: HAServiceOperationOptions,
 ): Promise<unknown> {
   const conn = await getHAConnection();
   if (!conn) return null;
   try {
+    if (!await permitsServiceOperation(options)) return null
     const result = await callService(conn, domain, service, serviceData, target);
     logger.log("debug", {
       event: "ha.service.called", domain: "ha", component: "ha-services",

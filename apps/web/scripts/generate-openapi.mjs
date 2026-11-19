@@ -2304,8 +2304,8 @@ const paths = {
     post: {
       operationId: "exportDatabase",
       tags: ["Export"],
-      summary: "Download a consistent SQLite snapshot as a verified Home Assistant administrator",
-      description: "Submit the native form from the administrator's Meitheal Settings page. The form token is valid for 15 minutes and bound to the verified user. Includes committed writes in the write-ahead log. Contains private household data and local feedback. Use the database host's backup tools for remote databases.",
+      summary: "Download a consistent SQLite snapshot as the verified current Home Assistant owner",
+      description: "Submit the native form from the current owner's Meitheal Settings page. The form token is valid for 15 minutes and bound to the verified user. Includes committed writes in the write-ahead log. Databases containing protected organization data require Home Assistant backups instead. The download remains bound to its admitted access revision: loss before publication returns unavailable, and loss after headers aborts the remaining stream. Use the database host's backup tools for remote databases.",
       security: ingressSession,
       requestBody: {
         required: true,
@@ -2318,12 +2318,12 @@ const paths = {
       responses: {
         200: { description: "SQLite snapshot", content: { "application/x-sqlite3": { schema: { type: "string", format: "binary" } } } },
         400: { description: "The form could not be read or the app uses a remote database" },
-        403: { description: "Current administrator access and a valid same-origin download form are required" },
+        403: { description: "Current Home Assistant owner access, an eligible database and a valid same-origin download form are required" },
         404: { description: "Local database or download path unavailable" },
         409: { description: "Another database download is in progress" },
         413: { description: "The form exceeds 256 bytes" },
         415: { description: "The form must use application/x-www-form-urlencoded" },
-        503: { description: "Home Assistant Core could not verify current administrator access" },
+        503: { description: "Current owner or installation continuity could not be verified before response publication" },
         507: { description: "Insufficient free space for a snapshot on the database volume" },
       },
     },

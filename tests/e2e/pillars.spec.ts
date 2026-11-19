@@ -18,7 +18,7 @@ function createTestDb() {
 }
 
 async function setupDb() {
-  const { resetPersistenceForTests, ensureSchema } = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const { resetPersistenceForTests, ensureSchema } = await import("../helpers/persistence-fixture")
   resetPersistenceForTests()
   await ensureSchema()
   // Also ensure Pillars domain schemas are created
@@ -190,7 +190,7 @@ test("can link and unlink entities to a pillar", async () => {
   const { linkEntity, unlinkEntity, getAssociationsForPillar } = await import("../../apps/web/src/domains/pillars/pillar-association-service")
 
   const pillar = await createPillar({ name: "Growth", weight: 8 })
-  const { getPersistenceClient } = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const { getPersistenceClient } = await import("../helpers/persistence-fixture")
   await getPersistenceClient().execute(`INSERT INTO goals (id, title, created_at, updated_at)
     VALUES ('goal-123', 'First Goal', 1, 1), ('goal-456', 'Second Goal', 1, 1)`)
   expect(await linkEntity(pillar.id, "goal", "missing-goal")).toBeNull()
@@ -216,7 +216,7 @@ test("linkEntity is idempotent", async () => {
 
   const pillar = await createPillar({ name: "Focus", weight: 6 })
 
-  const { getPersistenceClient } = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const { getPersistenceClient } = await import("../helpers/persistence-fixture")
   await getPersistenceClient().execute(`INSERT INTO task_templates (id, name, template_json, is_routine, created_at, updated_at)
     VALUES ('routine-1', 'Routine', '{}', 1, 1, 1)`)
   const first = await linkEntity(pillar.id, "routine", "routine-1")

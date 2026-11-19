@@ -1,3 +1,4 @@
+import { guardClientContinuity } from "./continuity-client"
 /**
  * HierarchyRepository — domain service for Area, Goal, and Project CRUD.
  * @domain Task Management (Hierarchy context)
@@ -74,7 +75,9 @@ const householdProjectProjection = `projects.*, (${householdAreaLink("projects.a
 export class PlanningAccessLockedError extends Error {}
 
 export class HierarchyRepository {
-  constructor(private client: Client, private markerPath?: string) {}
+  private client: Client
+
+  constructor(private rawClient: Client, private markerPath?: string) { this.client = guardClientContinuity(rawClient) }
 
   // ── Areas ────────────────────────────────────────────────────────
 
@@ -276,7 +279,7 @@ export class HierarchyRepository {
   }
 
   private async retireHouseholdPlanning(table: "areas" | "goals", id: string) {
-    const outcome = await changeBoardGrants(this.client, async tx => {
+    const outcome = await changeBoardGrants(this.rawClient, async tx => {
       const now = Date.now()
       const result = await tx.execute({
         sql: `UPDATE ${table} SET retired_at = ?, updated_at = ?
@@ -284,7 +287,7 @@ export class HierarchyRepository {
         args: [now, now, id],
       })
       return result.rowsAffected ? { next: true } : { unchanged: false }
-    }, this.markerPath, { keepUninitialized: true })
+    }, this.markerPath)
     if (outcome.status === "locked") throw new PlanningAccessLockedError("Named Board access is temporarily locked")
     return outcome.result
   }

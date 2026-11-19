@@ -6,7 +6,7 @@ import {
   ensureSchema,
   getPersistenceClient,
   resetPersistenceForTests,
-} from "../../apps/web/src/domains/tasks/persistence/store"
+} from "../helpers/persistence-fixture"
 import { getTasksForView, getTodayTaskCounts, getTodayTaskRows, todayDueSection } from "../../apps/web/src/lib/task-queries"
 import { calendarToday, formatRelativeDue } from "../../apps/web/src/lib/date"
 

@@ -43,7 +43,7 @@ test("agent comments and task notifications are delivered through Home Assistant
     })
   })
 
-  const store = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const store = await import("../helpers/persistence-fixture")
   const ha = await import("../../apps/web/src/domains/ha/ha-connection")
   const entities = await import("../../apps/web/src/domains/ha/ha-entities")
   try {

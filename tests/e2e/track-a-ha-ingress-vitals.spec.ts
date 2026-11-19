@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process"
+import { execFile, spawn } from "../helpers/isolated-process"
 import { once } from "node:events"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import http from "node:http"
@@ -102,7 +102,7 @@ test("A1/A2: scopes 3,000-entity HA state to calendar/todo/watched IDs, decodes 
     },
   })
 
-  const store = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const store = await import("../helpers/persistence-fixture")
   const haConn = await import("../../apps/web/src/domains/ha/ha-connection")
   const haEntities = await import("../../apps/web/src/domains/ha/ha-entities")
   const haServices = await import("../../apps/web/src/domains/ha/ha-services")
@@ -672,7 +672,7 @@ test("A8: logger bypasses category filter on warn/error, health.ts caches only H
 
   // 2. health.ts Supervisor cache: do NOT cache 502/504, DO cache 200 for 60s
   const healthWork = await mkdtemp(join(tmpdir(), "meitheal-health-cache-"))
-  const store = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const store = await import("../helpers/persistence-fixture")
   const prevSupToken = process.env.SUPERVISOR_TOKEN
   const prevDbUrl = process.env.MEITHEAL_DB_URL
   const origFetch = globalThis.fetch

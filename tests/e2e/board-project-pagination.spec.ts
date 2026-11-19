@@ -32,7 +32,7 @@ test.beforeAll(async () => {
   origin = `https://127.0.0.1:${fixture.port}`
   app = origin + fixture.configuredPath
   browser = await launchPinBrowser(work)
-  const owner = await browser.newContext({ ignoreHTTPSErrors: true })
+  const owner = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {} })
   await owner.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
   const directory = await owner.request.get(app + "/api/boards")
   expect(directory.ok()).toBe(true)
@@ -57,7 +57,7 @@ test.beforeAll(async () => {
 })
 
 test.beforeEach(async () => {
-  context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 1240, height: 900 }, serviceWorkers: "block" })
+  context = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {}, viewport: { width: 1240, height: 900 }, serviceWorkers: "block" })
   await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
   page = await context.newPage()
   page.setDefaultTimeout(8_000)
@@ -79,6 +79,7 @@ test.afterAll(async () => {
 })
 
 const projects = () => page.locator(`[data-board-projects="${areaId}"]`)
+const projectRow = () => projects().locator("..")
 const links = () => projects().locator(":scope > [data-group-choice]")
 const pager = () => projects().getByRole("button", { name: "Show more Projects", exact: true })
 const projectRequest = (url: string) => {
@@ -102,10 +103,12 @@ test("announces initial Project loading and cancels a closed disclosure", async 
     await openProjects()
     await held.promise
     await expect(projects()).toHaveAttribute("aria-busy", "true")
-    await expect(projects().getByRole("status")).toHaveText("Loading Projects…")
+    await expect(projectRow().locator(':scope > [role="status"]')).toHaveText("Loading Projects…")
+    await expect(projects().locator('[role="status"]')).toHaveCount(0)
     await page.getByRole("button", { name: "Projects in Workbench", exact: true }).press("Enter")
     release.resolve()
     await expect(projects()).toBeHidden()
+    await expect(projectRow().locator(':scope > [role="status"]')).toHaveCount(0)
     await expect(links()).toHaveCount(0)
     await page.unrouteAll({ behavior: "wait" })
     await openProjects()
@@ -133,7 +136,8 @@ test("retains the first Project page and retries the failed cursor with keyboard
   await expect(retry).toBeVisible()
   await expect(links()).toHaveCount(30)
   await expect(retry).toBeFocused()
-  await expect(projects().getByRole("status")).toContainText("Could not load Projects")
+  await expect(projectRow().locator(':scope > [role="status"]')).toContainText("Could not load Projects")
+  await expect(projects().locator('[role="status"]')).toHaveCount(0)
   await page.screenshot({ path: test.info().outputPath("pagination-retry-after.png"), fullPage: true })
   const saved = page.waitForResponse(response => projectRequest(response.url()) && response.status() === 200 && new URL(response.url()).searchParams.has("after"))
   await retry.press("Enter")
@@ -199,6 +203,67 @@ test("an empty initial failure retries from the first Project page", async () =>
   await expect(links().first().getByRole("link")).toBeFocused()
 })
 
+for (const level of ["Area", "Project"] as const) {
+  for (const moveOutside of [false, true]) {
+    test(`an empty ${level} retry ${moveOutside ? "preserves outside focus" : "returns focus to its disclosure"}`, async () => {
+      const board = page.locator(`[data-named-board-shortcut="${boardId}"]`)
+      const toggle = board.getByRole("button", { name: level === "Area" ? "Areas in Pagination Board" : "Projects in Workbench", exact: true })
+      await expect(board.getByRole("button", { name: "Projects in Workbench", exact: true })).toBeVisible()
+      if (level === "Area") await toggle.press("Enter")
+      const groups = level === "Area" ? board.locator(":scope > [data-board-groups]") : projects()
+      const initialHeld = deferred<void>()
+      const failInitial = deferred<void>()
+      const retryHeld = deferred<void>()
+      const emptyRetry = deferred<void>()
+      const cursors: (string | null)[] = []
+      await page.route(url => url.pathname.endsWith(`/api/boards/${boardId}`)
+        && url.searchParams.get("view") === "groups"
+        && (level === "Area" ? !url.searchParams.has("area") : url.searchParams.get("area") === areaId), async route => {
+        cursors.push(new URL(route.request().url()).searchParams.get("after"))
+        if (cursors.length === 1) {
+          initialHeld.resolve()
+          await failInitial.promise
+          await route.fulfill({ status: 503, contentType: "application/json", body: "{}" })
+        } else {
+          retryHeld.resolve()
+          await emptyRetry.promise
+          await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [], selected: null, next_cursor: null }) })
+        }
+      })
+      try {
+        await toggle.press("Enter")
+        await initialHeld.promise
+        await expect(groups).toHaveAttribute("aria-busy", "true")
+        failInitial.resolve()
+        const retry = groups.getByRole("button", { name: `Try loading ${level}s again`, exact: true })
+        await expect(retry).toBeVisible()
+        await expect(groups.locator(":scope > [data-group-choice]")).toHaveCount(0)
+        await retry.press("Enter")
+        await retryHeld.promise
+        const outside = board.locator(":scope > .sidebar-board-row > a")
+        if (moveOutside) {
+          await outside.focus()
+          await expect(outside).toBeFocused()
+        }
+        emptyRetry.resolve()
+        await expect(groups).toHaveAttribute("aria-busy", "false")
+        await expect(groups).toContainText(`No ${level}s yet`)
+        await expect(groups.locator(":scope > [data-group-choice]")).toHaveCount(0)
+        await expect(retry).toHaveCount(0)
+        expect(cursors).toEqual([null, null])
+        await test.info().attach("empty-retry-focus.json", {
+          body: JSON.stringify(await page.evaluate(() => ({ tag: document.activeElement?.tagName, label: document.activeElement?.getAttribute("aria-label"), text: document.activeElement?.textContent }))),
+          contentType: "application/json",
+        })
+        await expect(moveOutside ? outside : toggle).toBeFocused()
+      } finally {
+        failInitial.resolve()
+        emptyRetry.resolve()
+      }
+    })
+  }
+}
+
 for (const status of [401, 403, 404]) {
   test(`clears private sidebar projections after a ${status} Project response`, async () => {
     await openProjects()
@@ -213,7 +278,7 @@ for (const status of [401, 403, 404]) {
 }
 
 test("a real account revocation removes the loaded private Project projection", async () => {
-  const owner = await browser.newContext({ ignoreHTTPSErrors: true })
+  const owner = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {} })
   try {
     await owner.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
     const membership = `${app}/api/boards/${boardId}`

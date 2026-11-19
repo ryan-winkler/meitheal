@@ -44,7 +44,8 @@ function classifyWebhookError(status: number): { retryable: boolean } {
 
 export async function emitWebhook(
   event: DomainEvent,
-  subscriber: WebhookSubscriberConfig
+  subscriber: WebhookSubscriberConfig,
+  options?: { operationAllowed?: () => boolean | Promise<boolean> },
 ): Promise<WebhookDeliveryResult> {
   const deliveryId = crypto.randomUUID()
   const payload = JSON.stringify(event)
@@ -92,6 +93,10 @@ export async function emitWebhook(
         body: payload,
       }
 
+      if (options?.operationAllowed && !await options.operationAllowed()) {
+        lastError = "Delivery authority is unavailable"
+        break
+      }
       const response = await fetchOutbound(subscriber.url, fetchOpts)
       await response.body?.cancel().catch(() => undefined)
 

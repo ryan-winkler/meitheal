@@ -1,3 +1,4 @@
+import { guardClientContinuity } from "../tasks/persistence/continuity-client"
 import { householdBoardIsActive } from "../tasks/persistence/named-board-repository"
 /**
  * Todo Bridge — Bidirectional Sync with HA Todo Entities
@@ -104,7 +105,7 @@ async function getStoreModule() {
 async function getClient() {
   const mod = await getStoreModule();
   await mod.ensureSchema();
-  const client = mod.getPersistenceClient();
+  const client = guardClientContinuity(mod.getPersistenceClient());
   if (!_todoTableEnsured) {
     await client.execute({
       sql: `CREATE TABLE IF NOT EXISTS todo_sync_confirmations (
@@ -139,7 +140,8 @@ async function getClient() {
  * Deduplicates initial hydration by awaiting the first `todo/item/subscribe` snapshot
  * (falling back to `syncTodoFromHA` only if no WS snapshot arrives within 3,000 ms).
  */
-export function startTodoSync(configs: TodoSyncConfig | TodoSyncConfig[]): Promise<void> {
+export async function startTodoSync(configs: TodoSyncConfig | TodoSyncConfig[]): Promise<void> {
+  if (!await householdBoardIsActive(await getClient())) return
   const configList = Array.isArray(configs) ? configs : [configs];
   const initialHydrations: Promise<void>[] = [];
 

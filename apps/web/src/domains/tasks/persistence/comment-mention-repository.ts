@@ -1,3 +1,5 @@
+import { isCurrentRetiredHouseholdResult } from "./retired-household-result"
+import { guardClientContinuity } from "./continuity-client"
 import type { Client, Transaction } from "@libsql/client"
 import { createHash } from "node:crypto"
 
@@ -67,7 +69,11 @@ function commentDigest(content: string) {
 }
 
 export class CommentMentionRepository {
-  constructor(private readonly client: Client) {}
+  private readonly client: Client
+
+  constructor(private readonly sourceClient: Client) {
+    this.client = guardClientContinuity(sourceClient)
+  }
 
   replay(taskId: string, owner: string, key: string, rawContent: string) {
     return readAttempt(this.client, taskId, owner, key, commentDigest(rawContent))
@@ -110,36 +116,41 @@ export class CommentMentionRepository {
     recipients: string[],
     expectedAssignedTo?: string,
   ): Promise<{ state: "ok"; comment: Record<string, unknown> } | { state: "not_found" } | { state: "assignee_mismatch" }> {
-    const tx = await this.client.transaction("write")
     try {
-      const assigneeSql = expectedAssignedTo === undefined
-        ? ""
-        : " AND EXISTS (SELECT 1 FROM tasks WHERE id = ? AND assigned_to = ?)"
-      const assigneeArgs = expectedAssignedTo === undefined ? [] : [taskId, expectedAssignedTo]
-      const result = await tx.execute({
-        sql: `UPDATE comments SET content = ? WHERE task_id = ? AND id = ? AND owner_key = ? AND ${availableParent("comments.task_id")}${assigneeSql}
-              RETURNING ${commentColumns}`,
-        args: [content, taskId, commentId, owner, ...assigneeArgs],
-      })
-      const comment = result.rows[0] as Record<string, unknown> | undefined
-      if (!comment) {
-        if (expectedAssignedTo !== undefined) {
-          const taskRow = await tx.execute({ sql: `SELECT assigned_to FROM tasks WHERE id = ? AND ${availableParent("tasks.id")}`, args: [taskId] })
-          if (taskRow.rows.length > 0 && (taskRow.rows[0] as Record<string, unknown>).assigned_to !== expectedAssignedTo) {
-            return { state: "assignee_mismatch" }
+      const tx = await this.client.transaction("write")
+      try {
+        const assigneeSql = expectedAssignedTo === undefined
+          ? ""
+          : " AND EXISTS (SELECT 1 FROM tasks WHERE id = ? AND assigned_to = ?)"
+        const assigneeArgs = expectedAssignedTo === undefined ? [] : [taskId, expectedAssignedTo]
+        const result = await tx.execute({
+          sql: `UPDATE comments SET content = ? WHERE task_id = ? AND id = ? AND owner_key = ? AND ${availableParent("comments.task_id")}${assigneeSql}
+                RETURNING ${commentColumns}`,
+          args: [content, taskId, commentId, owner, ...assigneeArgs],
+        })
+        const comment = result.rows[0] as Record<string, unknown> | undefined
+        if (!comment) {
+          if (expectedAssignedTo !== undefined) {
+            const taskRow = await tx.execute({ sql: `SELECT assigned_to FROM tasks WHERE id = ? AND ${availableParent("tasks.id")}`, args: [taskId] })
+            if (taskRow.rows.length > 0 && (taskRow.rows[0] as Record<string, unknown>).assigned_to !== expectedAssignedTo) {
+              return { state: "assignee_mismatch" }
+            }
           }
+          return { state: "not_found" }
         }
-        return { state: "not_found" }
+        if (recipients.length) {
+          await reconcile(tx, taskId, commentId, recipients)
+        } else {
+          await tx.execute({ sql: "UPDATE comment_mentions SET withdrawn = 1 WHERE comment_id = ? AND withdrawn = 0", args: [commentId] })
+        }
+        await tx.commit()
+        return { state: "ok", comment }
+      } finally {
+        tx.close()
       }
-      if (recipients.length) {
-        await reconcile(tx, taskId, commentId, recipients)
-      } else {
-        await tx.execute({ sql: "UPDATE comment_mentions SET withdrawn = 1 WHERE comment_id = ? AND withdrawn = 0", args: [commentId] })
-      }
-      await tx.commit()
-      return { state: "ok", comment }
-    } finally {
-      tx.close()
+      } catch (error) {
+      if (await isCurrentRetiredHouseholdResult(this.sourceClient, error, taskId)) return { state: "not_found" }
+      throw error
     }
   }
 

@@ -1,4 +1,4 @@
-import { fork } from "node:child_process"
+import { fork } from "../helpers/isolated-process"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -16,7 +16,7 @@ test("task promotion is shared, typed, and independent of the stored manual orde
 
   const work = await mkdtemp(join(tmpdir(), "meitheal-prominence-"))
   const file = join(work, "meitheal.db")
-  const db = new DatabaseSync(file)
+  let db!: DatabaseSync
   let child: ReturnType<typeof fork> | undefined
   const browserSessions = []
 
@@ -40,6 +40,9 @@ test("task promotion is shared, typed, and independent of the stored manual orde
     ])
     const origin = `http://127.0.0.1:${info.port}`
     const ingress = origin + info.configuredPath
+    const ready = await request.get(ingress + "/api/health", { headers: { origin } })
+    expect(ready.status(), await ready.text()).toBe(200)
+    db = new DatabaseSync(file)
     const session = (role: string) => ({
       cookie: `feedback-fixture=${role}`, origin, "sec-fetch-site": "same-origin",
     })
@@ -182,7 +185,7 @@ test("task promotion is shared, typed, and independent of the stored manual orde
       child.kill("SIGTERM")
       await exited
     }
-    db.close()
+    db?.close()
     await rm(work, { recursive: true, force: true })
   }
 })

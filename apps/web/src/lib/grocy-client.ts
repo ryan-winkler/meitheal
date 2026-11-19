@@ -1,6 +1,6 @@
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import { GrocyAdapter, validateGrocyBaseUrl } from "@meitheal/integration-core"
-import { getPersistenceClient, SettingsRepository } from "@domains/tasks"
+import { getPersistenceClient, householdBoardIsActive, SettingsRepository } from "@domains/tasks"
 import { supervisorFetch } from "./supervisor-fetch"
 
 const logger = createLogger({
@@ -229,6 +229,7 @@ export async function createGrocyClient(): Promise<GrocyAdapter | null> {
       baseUrl: urlCheck.normalizedUrl,
       apiKey,
       timeoutMs: 5000,
+      operationAllowed: async () => householdBoardIsActive(getPersistenceClient()),
     })
   } catch (err) {
     logger.log("error", {

@@ -6,7 +6,7 @@ import { boardWorkspaceHref, parseBoardPlacement, readBoardWorkspaceSelection } 
 import { boardGroupCursor, readBoardGroupCursor } from "../../apps/web/src/lib/named-board-request"
 import { HierarchyRepository } from "../../apps/web/src/domains/tasks/persistence/hierarchy-repository"
 import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 
 test("workspace links preserve context and reject mixed placement and foreign cursors", () => {
   expect(readBoardWorkspaceSelection(new URLSearchParams("area=a&project=p&ticket=t&from=a&view=groups"))).toEqual({

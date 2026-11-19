@@ -1,4 +1,4 @@
-import { execFileSync, fork, type ChildProcess } from "node:child_process"
+import { execFileSync, fork, type ChildProcess } from "../helpers/isolated-process"
 import { randomUUID } from "node:crypto"
 import { once } from "node:events"
 import { copyFile, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"

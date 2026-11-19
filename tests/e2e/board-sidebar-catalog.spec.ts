@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { expect, test } from "@playwright/test"
 import { NamedBoardRepository } from "../../apps/web/src/domains/tasks/persistence/named-board-repository"
 import { NamedBoardTaskRepository } from "../../apps/web/src/domains/tasks/persistence/named-board-task-repository"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 import { defaultOrganizationLabel, organizationLabelResolver } from "../../apps/web/src/lib/organization-labels"
 import { withOrganizationAvailability } from "../../apps/web/src/lib/organization-request-context"
 
@@ -24,9 +24,9 @@ test("named sidebar Project pages stay inside their Board and Area, include sele
   process.env.MEITHEAL_DB_URL = "file:" + join(folder, "tasks.db")
   resetPersistenceForTests()
   try {
-    await ensureSchema()
-    const db = getPersistenceClient()
     const marker = join(folder, "grants.json")
+    await ensureSchema({ markerPath: marker })
+    const db = getPersistenceClient()
     const boards = new NamedBoardRepository(db, marker)
     const created = await boards.create("owner", "Workshop")
     if (created.status !== "committed") throw new Error("Expected a new Board")

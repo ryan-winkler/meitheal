@@ -18,13 +18,13 @@ function createTestDb() {
 }
 
 async function setupDb() {
-  const { resetPersistenceForTests, ensureSchema } = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const { resetPersistenceForTests, ensureSchema } = await import("../helpers/persistence-fixture")
   resetPersistenceForTests()
   await ensureSchema()
 }
 
 async function getRepo() {
-  const { getPersistenceClient } = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const { getPersistenceClient } = await import("../helpers/persistence-fixture")
   const { HierarchyRepository } = await import("../../apps/web/src/domains/tasks/persistence/hierarchy-repository")
   return new HierarchyRepository(getPersistenceClient())
 }

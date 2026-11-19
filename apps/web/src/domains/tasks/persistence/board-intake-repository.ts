@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 import type { Client, Transaction } from "@libsql/client"
 import { acquireWriteTransaction } from "../../../../scripts/database-client.mjs"
+import { getBoardGrantPath } from "../../../../scripts/board-grant-journal.mjs"
 import { normalizeStatus, STATUS } from "../../../lib/status-config"
 import { boardGrantStillCurrent, changeBoardGrants, currentBoardGrantRevision, readBoardGrantRevision } from "./board-grant-fence"
 import { selectNamedBoardAccess, type BoardActor } from "./named-board-repository"
@@ -21,7 +22,7 @@ interface Submission {
 }
 
 export class BoardIntakeRepository {
-  constructor(private readonly db: Client, private readonly markerPath?: string) {}
+  constructor(private readonly db: Client, private readonly markerPath = getBoardGrantPath(db)) {}
 
   async findDestinations(actor: BoardActor) {
     const revision = await currentBoardGrantRevision(this.db, this.markerPath)

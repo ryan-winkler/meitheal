@@ -1,4 +1,6 @@
 ---
+import BoardWorkspaceNav from "../components/boards/BoardWorkspaceNav.astro"
+import "../styles/boards.css"
 import BoardRoutineCheckins from "../components/boards/BoardRoutineCheckins.astro"
 import { newOrganizationLabel, organizationLabelsFor } from "@lib/organization-labels"
 /**
@@ -166,6 +168,9 @@ const habitsBootstrap = serializeForScript({ habits })
       <span class="unified-bar__new-task-label">{newRoutine}</span>
     </button>
   </UnifiedBar>
+  {Astro.url.searchParams.get("board") === "household" && <BoardWorkspaceNav boardId="household" boardName="Household"
+    area={area ? { id: area.id, name: area.name } : undefined} active="routines" />}
+
 
   <div id="habits-shell" class="habits-shell" data-area-id={area?.id} data-household-active={String(householdActive)} data-open-new={openNew && !loadFailed && householdActive ? "true" : undefined}>
     {area && <div class="flex flex-wrap gap-2">

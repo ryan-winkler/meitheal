@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test"
 import {
   allowsOrganizationAudience, organizationAudienceContains, OrganizationAccessRepository,
 } from "../../apps/web/src/domains/tasks/persistence/organization-access-repository"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 
 test("access policy snapshots fail closed when restored separately from the grant journal", async () => {
   const work = await mkdtemp(join(tmpdir(), "organization-policy-"))
@@ -14,7 +14,7 @@ test("access policy snapshots fail closed when restored separately from the gran
   const url = process.env.MEITHEAL_DB_URL
   process.env.MEITHEAL_DB_URL = `file:${join(work, "policy.db")}`
   try {
-    await ensureSchema()
+    await ensureSchema({ markerPath: marker })
     const db = getPersistenceClient()
     const repository = new OrganizationAccessRepository(db, marker)
     await db.execute(`INSERT INTO tasks (id, title, status, task_kind, source_template_id, due_date,
@@ -28,8 +28,10 @@ test("access policy snapshots fail closed when restored separately from the gran
 
     const feature = { scope: "feature", id: "goals", boardId: "" } as const
     expect(await repository.policies("feature", "")).toEqual({ status: "current", policies: [] })
+    const initialMarker = await (await import("node:fs/promises")).readFile(marker)
+    const initialRevision = JSON.parse(initialMarker.toString()).epoch
     const orphanRevision = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-    await db.execute({ sql: "INSERT INTO board_access_epoch (singleton, revision) VALUES (1, ?)", args: [orphanRevision] })
+    await db.execute({ sql: "UPDATE board_access_epoch SET revision = ? WHERE singleton = 1", args: [orphanRevision] })
     expect(await repository.policies("feature", "")).toEqual({ status: "locked" })
     await db.execute("DELETE FROM board_access_epoch")
 
@@ -44,16 +46,24 @@ test("access policy snapshots fail closed when restored separately from the gran
     await writeFile(marker, JSON.stringify({ epoch: orphanRevision }))
     expect(await repository.policies("feature", "")).toEqual({ status: "locked" })
     await rm(marker)
-    expect(await repository.policies("feature", "")).toEqual({ status: "current", policies: [] })
+    expect(await repository.policies("feature", "")).toEqual({ status: "locked" })
+    await db.execute({ sql: "INSERT INTO board_access_epoch(singleton, revision) VALUES (1, ?)", args: [initialRevision] })
+    await writeFile(marker, initialMarker)
 
-    const racingClient = new Proxy(db, {
+    let raced = false
+    const racingClient = new Proxy({} as typeof db, {
       get(target, property, receiver) {
-        if (property !== "execute") return Reflect.get(target, property, receiver)
+        // This adapter deliberately observes the epoch read to place the race.
+        if (property === Symbol.for("meitheal.boardGrantClient")) return undefined
+        if (property !== "execute") {
+          const value = Reflect.get(db, property, db)
+          return typeof value === "function" ? value.bind(db) : value
+        }
         return async (...args: Parameters<typeof db.execute>) => {
           const snapshot = await db.execute(...args)
           const statement: unknown = args[0]
-          if (statement && typeof statement === "object" && "sql" in statement &&
-              typeof statement.sql === "string" && statement.sql.includes("organization_access_policies")) {
+          if (!raced && typeof statement === "string" && statement.includes("SELECT revision FROM board_access_epoch")) {
+            raced = true
             expect(await repository.change(feature, null, { audience: "selected", users: ["alex", "blake", "alex"] }))
               .toMatchObject({ status: "committed", result: "saved" })
           }

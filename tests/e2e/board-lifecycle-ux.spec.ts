@@ -18,13 +18,13 @@ const test = base.extend<{ boards: { page: Page; member: BrowserContext; admin: 
       const [fixture] = await once(child, "message", { signal: AbortSignal.timeout(10_000) })
       const origin = `https://127.0.0.1:${fixture.port}`
       browser = await launchPinBrowser(work)
-      const contexts = await Promise.all(["member", "admin"].map(async user => {
+      const createContext = async (user: string) => {
         const context = await browser!.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {}, serviceWorkers: "block" })
         context.setDefaultTimeout(6_000)
         await context.addCookies([{ name: "feedback-fixture", value: user, url: origin }])
         return context
-      }))
-      const [member, admin] = contexts
+      }
+      const [member, admin] = await Promise.all([createContext("member"), createContext("admin")])
       await use({ page: await member.newPage(), member, admin, app: origin + fixture.configuredPath, origin, work })
     } finally {
       await browser?.close()
@@ -89,8 +89,11 @@ test("Delete Board defaults to Cancel and restores two distinctly named Boards",
   await page.screenshot({ path: testInfo.outputPath("distinct-restore-actions.png"), fullPage: true })
   for (const [index, name] of ["Workshop", "Garden"].entries()) {
     const restored = page.waitForResponse(response => response.url() === app + "/api/boards/" + ids[index] && response.request().method() === "PATCH")
+    const navigated = page.waitForEvent("domcontentloaded")
     await deleted.getByRole("button", { name: "Restore Board " + name, exact: true }).click()
     expect((await restored).status()).toBe(200)
+    await navigated
+    await expect(page.locator("[data-board-directory]")).toHaveAttribute("data-bound", "true")
     await expect(page.locator("[data-board-directory]").getByRole("link", { name, exact: true })).toBeVisible()
     await expect(page.getByRole("button", { name: "Restore Board " + name, exact: true })).toHaveCount(0)
     expect((await (await member.request.get(app + "/api/boards/" + ids[index])).json()).board.state).toBe("active")
@@ -128,7 +131,11 @@ test("Household creation keeps default, personalized and Irish Area labels consi
   await form.locator("..").locator("summary").click()
   await page.screenshot({ path: testInfo.outputPath("personalized-area-submit.png"), fullPage: true })
   await form.getByRole("textbox", { name: "Name", exact: true }).fill("Reading room")
+  const navigation = page.waitForURL(url => Boolean(url.searchParams.get("area")), { timeout: 5_000 })
+  const created = page.waitForResponse(response => response.url() === app + "/api/areas" && response.request().method() === "POST")
   await form.getByRole("button", { name: "Create Room", exact: true }).click()
+  expect((await created).status()).toBe(201)
+  await navigation
   await expect(page).toHaveURL(url => Boolean(url.searchParams.get("area")))
   const id = new URL(page.url()).searchParams.get("area")
   expect((await (await member.request.get(app + "/api/areas/" + id)).json()).name).toBe("Reading room")

@@ -8,7 +8,7 @@ import {
   ensureSchema,
   getPersistenceClient,
   resetPersistenceForTests,
-} from "../../apps/web/src/domains/tasks/persistence/store"
+} from "../helpers/persistence-fixture"
 import { closeHAConnection, getHAConnection } from "../../apps/web/src/domains/ha/ha-connection"
 import { stopEntitySubscription } from "../../apps/web/src/domains/ha/ha-entities"
 import {

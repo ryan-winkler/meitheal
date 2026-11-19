@@ -1,25 +1,28 @@
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../helpers/isolated-process"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, test as base } from "@playwright/test"
 import { DATABASE_SCHEMA_VERSION, openDatabase } from "../../apps/web/scripts/database-client.mjs"
-import { ensureSchema, getPersistenceClient, getSchemaVersion, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient, getSchemaVersion, resetPersistenceForTests } from "../helpers/persistence-fixture"
 import { TaskPinRepository } from "../../apps/web/src/domains/tasks/persistence/task-pin-repository"
 import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
+import { enrollCurrentOwnedLegacyFixture } from "../helpers/current-legacy-fixture"
 import { prepareTaskBoardPredecessor } from "../scripts/task-board-predecessor"
 
 const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
 type Database = ReturnType<typeof getPersistenceClient>
 
-const test = base.extend<{ db: Database }>({
-  db: async ({}, use) => {
+const test = base.extend<{ db: Database; legacyPredecessor: boolean }>({
+  legacyPredecessor: [false, { option: true }],
+  db: async ({ legacyPredecessor }, use) => {
     const previous = process.env.MEITHEAL_DB_URL
     const dir = await mkdtemp(join(tmpdir(), "meitheal-pins-"))
     process.env.MEITHEAL_DB_URL = `file:${join(dir, "tasks.db")}`
     resetPersistenceForTests()
-    const db = openDatabase(process.env.MEITHEAL_DB_URL)
+    if (!legacyPredecessor) await ensureSchema()
+    const db = legacyPredecessor ? openDatabase(process.env.MEITHEAL_DB_URL) : getPersistenceClient()
     try {
       await use(db)
     } finally {
@@ -46,7 +49,9 @@ async function seed(db: Database, id: string, status = "pending") {
   })
 }
 
-test("runtime-first and CLI-first paths reconcile the schema and preserve task data", async ({ db }) => {
+const legacyTest = test.extend({ legacyPredecessor: true })
+
+legacyTest("verified current legacy enrollment and runtime/CLI reconcile the schema and preserve task data", async ({ db }) => {
   await prepareTaskBoardPredecessor(db)
   await db.execute("ALTER TABLE tasks ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0")
   await seed(db, "retained")
@@ -58,11 +63,16 @@ test("runtime-first and CLI-first paths reconcile the schema and preserve task d
     "INSERT INTO app_settings (key, value, updated_at) VALUES ('schema_version', '13', 1)",
   ], "write")
   expect(() => migrate("--check")).toThrow(/Pending migrations: 0005_task_pins.mjs/)
-  await ensureSchema()
-  expect(getSchemaVersion()).toBe(DATABASE_SCHEMA_VERSION)
-  expect(migrate()).toContain("No migrations to apply")
-  expect(migrate("--check")).toContain("Migration check passed")
-  expect((await new TaskRepository(getPersistenceClient()).findById("retained"))?.is_favorite).toBe(1)
+  db.close()
+  const database = process.env.MEITHEAL_DB_URL!.slice(5)
+  const proof = await enrollCurrentOwnedLegacyFixture({ database, markerPath: database + ".board-grants.json", provenance: "created-in-this-test-and-never-restored" })
+  try {
+    await ensureSchema()
+    expect(getSchemaVersion()).toBe(DATABASE_SCHEMA_VERSION)
+    expect(migrate()).toContain("No migrations to apply")
+    expect(migrate("--check")).toContain("Migration check passed")
+    expect((await new TaskRepository(getPersistenceClient()).findById("retained"))?.is_favorite).toBe(1)
+  } finally { await rm(proof.custodyDirectory, { recursive: true, force: true }) }
 })
 
 test("the migration check rejects a pin index with the wrong sort order", async ({ db }) => {
@@ -72,6 +82,7 @@ test("the migration check rejects a pin index with the wrong sort order", async 
     "CREATE INDEX task_pins_owner_recent_idx ON task_pins(owner_id, pinned_at ASC, task_id ASC)",
   ], "write")
   expect(() => migrate("--check")).toThrow(/Unexpected task pins index/)
+  resetPersistenceForTests()
   await expect(ensureSchema()).rejects.toThrow(/Unexpected task pins index/)
 })
 

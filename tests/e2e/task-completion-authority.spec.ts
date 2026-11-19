@@ -1,11 +1,11 @@
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { pathToFileURL } from "node:url"
 import { expect, test as base, type APIRequestContext } from "@playwright/test"
-import { openDatabase } from "../../apps/web/scripts/database-client.mjs"
+import { openDatabaseForStartup } from "../../apps/web/scripts/database-client.mjs"
 import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
 import { startCoreFixture } from "../scripts/task-pins-fixture"
 
@@ -258,7 +258,7 @@ test("a busy writer returns a retryable problem without consuming the task versi
 test("completion retries acquisition after a competing writer releases its lock", async ({ completion }) => {
   const { db, databaseFile } = completion
   const task = await createTask(completion, "Recurring completion after a writer lock", { due_date: friday, recurrence_rule: weekdayRule })
-  const client = openDatabase(pathToFileURL(databaseFile).href)
+  const client = await openDatabaseForStartup(pathToFileURL(databaseFile).href, { markerPath: join(dirname(databaseFile), "meitheal-board-grants.json") })
   db.exec("BEGIN IMMEDIATE")
   try {
     const repo = new TaskRepository(client)
@@ -280,7 +280,7 @@ test("completion retries acquisition after a competing writer releases its lock"
 test("native recurrence completion leaves the writer available for another task edit", async ({ completion }) => {
   const task = await createTask(completion, "Recurring completion beside a normal edit", { due_date: friday, recurrence_rule: weekdayRule })
   const other = await createTask(completion, "Independent task edit")
-  const client = openDatabase(pathToFileURL(completion.databaseFile).href)
+  const client = await openDatabaseForStartup(pathToFileURL(completion.databaseFile).href, { markerPath: join(dirname(completion.databaseFile), "meitheal-board-grants.json") })
   try {
     const repo = new TaskRepository(client)
     const [completed, updated] = await Promise.all([

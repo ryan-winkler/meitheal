@@ -137,7 +137,7 @@ export const POST: APIRoute = async ({ request }) => {
               syncIntervalMs: intervalMs,
             };
           });
-          startMultiCalendarSync(configs);
+          await startMultiCalendarSync(configs);
           return new Response(
             JSON.stringify({
               ok: true,
@@ -157,7 +157,7 @@ export const POST: APIRoute = async ({ request }) => {
           );
         }
         const singleMode = perEntityModes[body.entity_id] ?? globalMode;
-        startCalendarSync({
+        await startCalendarSync({
           entityId: body.entity_id,
           syncEnabled: true,
           syncMode: singleMode,

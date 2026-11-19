@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process"
+import { execFile, spawn } from "../helpers/isolated-process"
 import { once } from "node:events"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import http from "node:http"
@@ -14,7 +14,7 @@ import {
   findTasksByExternalSyncIds,
   type SyncTaskMutation,
 } from "../../apps/web/src/domains/tasks"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
 import { getTasksForView } from "../../apps/web/src/lib/task-queries"
 import { onRequest, resetRateLimitsForTests } from "../../apps/web/src/middleware"

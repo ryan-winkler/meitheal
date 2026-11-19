@@ -1,3 +1,4 @@
+import { isCurrentRetiredHouseholdResult } from "../../apps/web/src/domains/tasks/persistence/retired-household-result"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -5,7 +6,7 @@ import { expect, test } from "@playwright/test"
 import { NamedBoardRepository, householdBoardIsActive } from "../../apps/web/src/domains/tasks/persistence/named-board-repository"
 import { NamedBoardTaskRepository } from "../../apps/web/src/domains/tasks/persistence/named-board-task-repository"
 import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 import { getTodayTaskCounts, getTodayTaskRows, getTasksForView } from "../../apps/web/src/lib/task-queries"
 import { createPillar, getPillars, getPillarById, resetPillarSchemaForTests } from "../../apps/web/src/domains/pillars/pillar-service"
 import { createPrinciple, getAllPrinciples, getPrinciplesForPillar, resetPrincipleSchemaForTests } from "../../apps/web/src/domains/pillars/principle-service"
@@ -43,7 +44,7 @@ test.beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), "meitheal-lifecycle-"))
   marker = join(directory, "grants.json")
   process.env.MEITHEAL_DB_URL = `file:${join(directory, "meitheal.db")}`
-  await ensureSchema()
+  await ensureSchema({ markerPath: marker })
 })
 
 test.afterEach(async () => {
@@ -144,7 +145,7 @@ test("Household retirement pauses storage and aggregates without losing work or 
   await expect(db.execute({ sql: "DELETE FROM principles WHERE pillar_id = ?", args: [sharedPillar.id] })).rejects.toThrow(/Household Board is deleted/)
   expect(await repository.findAccess(parent, named)).toMatchObject({ state: "active" })
   resetPersistenceForTests()
-  await ensureSchema()
+  await ensureSchema({ markerPath: marker })
   const restoredDb = getPersistenceClient()
   const restarted = new NamedBoardRepository(restoredDb, marker)
   expect(await householdBoardIsActive(restoredDb)).toBe(false)
@@ -244,17 +245,25 @@ test("admitted late pin and reaction writers cannot change a retired Household, 
   await namedTasks.create(parent, id, { title: "Named still works", description: "" }, {})
   const namedTask = String((await db.execute({ sql: "SELECT id FROM tasks WHERE task_board_id = ?", args: [id] })).rows[0]!.id)
   const before = (await db.execute("SELECT * FROM task_reactions WHERE task_id = 'late-task'")).rows
-  const delayed = delayWriters(db, 4)
+  const delayed = Array.from({ length: 4 }, () => delayWriters(db, 1))
   const pending = [
-    new TaskPinRepository(delayed.client).set("parent", "late-task", false),
-    new TaskPinRepository(delayed.client).set("other", "late-task", true),
-    new TaskReactionRepository(delayed.client).remove({ taskId: "late-task", commentId: null }, reaction!.id, "parent"),
-    new TaskReactionRepository(delayed.client).add({ taskId: "late-task", commentId: null }, "new", "Parent", "other"),
+    new TaskPinRepository(delayed[0]!.client).set("parent", "late-task", false),
+    new TaskPinRepository(delayed[1]!.client).set("other", "late-task", true),
+    new TaskReactionRepository(delayed[2]!.client).remove({ taskId: "late-task", commentId: null }, reaction!.id, "parent"),
+    new TaskReactionRepository(delayed[3]!.client).add({ taskId: "late-task", commentId: null }, "new", "Parent", "other"),
   ]
-  await delayed.ready
+  await Promise.all(delayed.map(writer => writer.ready))
   await repository.changeLifecycle(parent, "household", "retired", 1, true)
-  delayed.release()
-  expect(await Promise.all(pending)).toEqual([null, null, false, null])
+  const results = []
+  for (const [index, operation] of pending.entries()) {
+    delayed[index]!.release()
+    results.push(await operation)
+  }
+  expect(results).toEqual([null, null, false, null])
+  const changedAuthority = Object.assign(new Error("Current permissions changed"), { status: 409 })
+  expect(await isCurrentRetiredHouseholdResult(db, changedAuthority, "late-task")).toBe(true)
+  expect(await isCurrentRetiredHouseholdResult(db, changedAuthority, namedTask)).toBe(false)
+  expect(await isCurrentRetiredHouseholdResult(db, Object.assign(new Error("Continuity lost"), { status: 503 }), "late-task")).toBe(false)
   for (const statement of [
     { sql: "DELETE FROM task_pins WHERE owner_id = 'parent' AND task_id = 'late-task'" },
     { sql: "INSERT INTO task_pins(owner_id, task_id, pinned_at) VALUES ('other', 'late-task', 1)" },

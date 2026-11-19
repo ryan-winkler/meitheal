@@ -1,3 +1,5 @@
+import { isCurrentRetiredHouseholdResult } from "./retired-household-result"
+import { guardClientContinuity } from "./continuity-client"
 import type { Client } from "@libsql/client"
 
 export const TASK_PIN_PAGE_SIZE = 25
@@ -18,7 +20,11 @@ export interface TaskPinRow {
 }
 
 export class TaskPinRepository {
-  constructor(private readonly client: Client) {}
+  private readonly client: Client
+
+  constructor(private readonly sourceClient: Client) {
+    this.client = guardClientContinuity(sourceClient)
+  }
 
   async hasAny(ownerId: string): Promise<boolean> {
     const { rows } = await this.client.execute({
@@ -67,22 +73,27 @@ export class TaskPinRepository {
   }
 
   async set(ownerId: string, taskId: string, desired: boolean, now = Date.now()): Promise<TaskPinState | null> {
-    const [task, , pin] = await this.client.batch([
-      { sql: "SELECT id FROM tasks WHERE id = ? AND task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')", args: [taskId] },
-      desired ? {
-        sql: `INSERT INTO task_pins (owner_id, task_id, pinned_at)
-              SELECT ?, id, ? FROM tasks WHERE id = ? AND task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')
-              ON CONFLICT(owner_id, task_id) DO NOTHING`,
-        args: [ownerId, now, taskId],
-      } : {
-        sql: `DELETE FROM task_pins WHERE owner_id = ? AND task_id = ?
-              AND EXISTS (SELECT 1 FROM tasks WHERE id = task_pins.task_id AND task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active'))`,
-        args: [ownerId, taskId],
-      },
-      { sql: "SELECT pinned_at FROM task_pins WHERE owner_id = ? AND task_id = ?", args: [ownerId, taskId] },
-    ], "write")
-    if (!task?.rows.length) return null
-    const row = pin?.rows[0]
-    return { id: taskId, pinned: Boolean(row), pinned_at: row ? Number(row.pinned_at) : null }
+    try {
+      const [task, , pin] = await this.client.batch([
+        { sql: "SELECT id FROM tasks WHERE id = ? AND task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')", args: [taskId] },
+        desired ? {
+          sql: `INSERT INTO task_pins (owner_id, task_id, pinned_at)
+                SELECT ?, id, ? FROM tasks WHERE id = ? AND task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')
+                ON CONFLICT(owner_id, task_id) DO NOTHING`,
+          args: [ownerId, now, taskId],
+        } : {
+          sql: `DELETE FROM task_pins WHERE owner_id = ? AND task_id = ?
+                AND EXISTS (SELECT 1 FROM tasks WHERE id = task_pins.task_id AND task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active'))`,
+          args: [ownerId, taskId],
+        },
+        { sql: "SELECT pinned_at FROM task_pins WHERE owner_id = ? AND task_id = ?", args: [ownerId, taskId] },
+      ], "write")
+      if (!task?.rows.length) return null
+      const row = pin?.rows[0]
+      return { id: taskId, pinned: Boolean(row), pinned_at: row ? Number(row.pinned_at) : null }
+      } catch (error) {
+      if (await isCurrentRetiredHouseholdResult(this.sourceClient, error, taskId)) return null
+      throw error
+    }
   }
 }

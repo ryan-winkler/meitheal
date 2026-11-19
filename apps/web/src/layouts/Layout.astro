@@ -1,4 +1,6 @@
 ---
+import { taskViewUrl } from "../lib/task-view-route"
+import { boardNavigationLinks, readBoardNavigationContext } from "../lib/board-workspace"
 import { organizationNeedsVerification } from "../lib/organization-request-context"
 import { readRequestOrganizationLabels, renderedLabelsProof } from "@lib/organization-labels"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
@@ -41,6 +43,11 @@ const organizationSettings = Astro.url.pathname === "/settings"
 const organizationProof = organizationUser && organizationState &&
   (organizationSettings || Object.keys(organizationState.forms).length > 0 || organizationNeedsVerification()) ? renderedLabelsProof(organizationUser.id, locale, organizationState, organizationSettings) : null
 if (organizationProof) Astro.response.headers.set("Cache-Control", "private, no-store")
+const mobileBoardContext = readBoardNavigationContext(Astro.url)
+const mobileTaskHref = mobileBoardContext ? boardNavigationLinks(mobileBoardContext).tasks : "/boards/household"
+const mobileCalendar = taskViewUrl(new URL(mobileTaskHref, Astro.url), "calendar", true)
+const mobileCalendarHref = mobileCalendar.pathname + mobileCalendar.search + mobileCalendar.hash
+const mobileNamedBoard = mobileBoardContext && mobileBoardContext.boardId !== "household"
 const featureFlagsJson = JSON.stringify(featureFlags);
 const showConfetti = !!featureFlags.confetti;
 const showPomodoro = !!featureFlags.pomodoro;
@@ -606,11 +613,11 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         <span class="mobile-tab-bar__icon" aria-hidden="true"><Icon name="today" size={20} sprite={true} /></span>
         <span class="mobile-tab-bar__label">Today</span>
       </a>
-      <a href="/tasks" class="mobile-tab-bar__item" data-page="tasks">
+      <a href={mobileTaskHref} class="mobile-tab-bar__item" data-page="tasks">
         <span class="mobile-tab-bar__icon" aria-hidden="true"><Icon name="tasks" size={20} sprite={true} /></span>
         <span class="mobile-tab-bar__label">Tasks</span>
       </a>
-      <a href="/tasks?view=calendar#calendar" data-astro-prefetch="false" class="mobile-tab-bar__item" data-page="calendar">
+      <a href={mobileCalendarHref} hidden={mobileNamedBoard || undefined} data-astro-prefetch="false" class="mobile-tab-bar__item" data-page="calendar">
         <span class="mobile-tab-bar__icon" aria-hidden="true"><Icon name="calendar" size={20} sprite={true} /></span>
         <span class="mobile-tab-bar__label">Calendar</span>
       </a>
@@ -635,6 +642,25 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
           if (page === "" || page === "index") page = "dashboard";
           if (page === "kanban" || page === "table" || page === "timeline" || page === "tickets") page = "tasks";
           if (page === "tasks" && document.querySelector('[data-task-view="calendar"]')) page = "calendar";
+          var board = /^\/boards\/([^/]+)\/?$/.exec(path);
+          var params = new URLSearchParams(window.location.search);
+          var taskLink = bar.querySelector('[data-page="tasks"]');
+          var calendarLink = bar.querySelector('[data-page="calendar"]');
+          if (board && taskLink) {
+            var target = new URL(ip + "/boards/" + board[1], window.location.origin);
+            ["area", "project", "from"].forEach(function(key) { if (params.has(key)) target.searchParams.set(key, params.get(key)); });
+            target.hash = "kanban";
+            taskLink.href = target.href;
+            if (calendarLink) {
+              calendarLink.hidden = board[1] !== "household";
+              if (!calendarLink.hidden) {
+                var calendarTarget = new URL(target.href);
+                calendarTarget.searchParams.set("view", "calendar"); calendarTarget.hash = "calendar";
+                calendarLink.href = calendarTarget.href;
+              }
+            }
+            if (params.get("view") !== "groups") page = "tasks";
+          }
           var items = bar.querySelectorAll(".mobile-tab-bar__item");
           for (var i = 0; i < items.length; i++) {
             var isActive = items[i].getAttribute("data-page") === page;

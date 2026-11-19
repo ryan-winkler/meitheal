@@ -2,6 +2,7 @@
 import { mkdir } from "node:fs/promises"
 import http from "node:http"
 import path from "node:path"
+import { finalizeStartupBoardGrant, initializeBoardGrantContinuity } from "./board-grant-journal.mjs"
 import { boardRouteSelection } from "./board-route-selection.mjs"
 import { isMemoryDatabase, openDatabaseForStartup, withStartupWriteTransaction } from "./database-client.mjs"
 import { runWithIngressTransport, waitForDownloadDrain } from "./ingress-transport.mjs"
@@ -32,11 +33,16 @@ async function prepareDatabase() {
   if (!migrated && url.startsWith("file:")) {
     await mkdir(path.dirname(path.resolve(url.slice("file:".length))), { recursive: true })
   }
-  const client = await openDatabaseForStartup(url, { readOnly: migrated })
+  const client = await openDatabaseForStartup(url, { readOnly: migrated, markerPath: process.env.MEITHEAL_BOARD_GRANT_PATH })
   try {
     if (!migrated) {
       await autoBackupDb(client)
-      await withStartupWriteTransaction(client, applyStartupTaskSchema)
+      let initialRevision = null
+      await withStartupWriteTransaction(client, async tx => {
+        await applyStartupTaskSchema(tx)
+        initialRevision = await initializeBoardGrantContinuity(client, tx)
+      })
+      await finalizeStartupBoardGrant(client, initialRevision)
       process.env.MEITHEAL_STARTUP_BACKUP_HANDLED = "1"
       return
     }

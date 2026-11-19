@@ -1,3 +1,4 @@
+import { guardClientContinuity } from "./continuity-client"
 import { householdBoardIsActive } from "./named-board-repository"
 /**
  * TaskRepository — centralized domain service for all task-related database queries.
@@ -315,11 +316,10 @@ export type TaskCreationData = {
   source?: string; created_by?: string | null;
 }
 
-const noNamedBoardEpoch = "NOT EXISTS (SELECT 1 FROM board_access_epoch)"
-const householdAreaForWrite = `COALESCE((SELECT owner_board_id IS NULL AND retired_at IS NULL FROM areas WHERE id = ?), ? = 'default' OR ${noNamedBoardEpoch})`
+const householdAreaForWrite = `COALESCE((SELECT owner_board_id IS NULL AND retired_at IS NULL FROM areas WHERE id = ?), ? = 'default')`
 const householdPlanningTarget = (table: "projects" | "goals") => `(? IS NULL OR COALESCE((
   SELECT owner_board_id IS NULL FROM ${table} WHERE id = ?
-), ${noNamedBoardEpoch}))`
+), 0))`
 const householdPlanningProjection = (table: "areas" | "projects", column: string) => `CASE WHEN EXISTS (
   SELECT 1 FROM ${table} AS linked WHERE linked.id = ${column} AND linked.owner_board_id IS NOT NULL
 ) THEN ${table === "areas" ? "'default'" : "NULL"} ELSE ${column} END`
@@ -345,7 +345,7 @@ export function taskInsertStatement(data: TaskCreationData, createdAt: number, {
           SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                   ${nextHouseholdTicketNumberSql}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                   ?, ?, ?, ?
-          WHERE ${householdAreaForWrite} AND ${householdPlanningTarget("projects")} AND ${householdPlanningTarget("goals")}
+          WHERE EXISTS (SELECT 1 FROM board_access_epoch WHERE singleton = 1) AND ${householdAreaForWrite} AND ${householdPlanningTarget("projects")} AND ${householdPlanningTarget("goals")}
             AND (? IS NULL OR EXISTS (SELECT 1 FROM tasks AS parent WHERE parent.id = ? AND parent.task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')))
             ${guard ? `AND (${guard.sql})` : ""}
           RETURNING ticket_number`,
@@ -534,7 +534,11 @@ const CALENDAR_FILTER_COLUMNS = `status, title, priority, task_type, task_kind,
   ${householdPlanningProjection("areas", "tasks.area_id")} AS area_id, ${householdPlanningProjection("projects", "tasks.project_id")} AS project_id, assigned_to, is_promoted, labels, deferred_at, framework_payload`
 
 export class TaskRepository {
-  constructor(private readonly client: Client) {}
+  private readonly client: Client
+
+  constructor(client: Client) {
+    this.client = guardClientContinuity(client)
+  }
 
   // ── Dashboard (index.astro) ─────────────────────────────────────────
 
@@ -2778,6 +2782,7 @@ export class TaskRepository {
       errors: [],
     }
     if (mutations.length === 0) return aggregate
+    if (!await householdBoardIsActive(this.client)) return { ...aggregate, skipped: mutations.length }
 
     if (mutations.some(m => m.confirmation?.source === "ha_todo")) {
       await ensureTodoSyncConfirmationTable(this.client)

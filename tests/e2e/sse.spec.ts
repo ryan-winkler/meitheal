@@ -1,3 +1,7 @@
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 import { getEventListeners, once } from "node:events"
 import { createServer } from "node:http"
 import { expect, test } from "@playwright/test"
@@ -12,6 +16,24 @@ import {
   stopEntitySubscription,
 } from "../../apps/web/src/domains/ha"
 import { GET, HEAD, emitSSE } from "../../apps/web/src/pages/api/sse"
+
+let work: string
+let marker: string
+let originalDb: string | undefined
+
+test.beforeEach(async () => {
+  work = await mkdtemp(join(tmpdir(), "sse-continuity-"))
+  marker = join(work, "grants.json")
+  originalDb = process.env.MEITHEAL_DB_URL
+  process.env.MEITHEAL_DB_URL = "file:" + join(work, "meitheal.db")
+  await ensureSchema({ markerPath: marker })
+})
+test.afterEach(async () => {
+  resetPersistenceForTests()
+  if (originalDb === undefined) delete process.env.MEITHEAL_DB_URL
+  else process.env.MEITHEAL_DB_URL = originalDb
+  await rm(work, { force: true, recursive: true })
+})
 
 const url = "http://meitheal.test/api/sse"
 const decoder = new TextDecoder()
@@ -36,7 +58,7 @@ test("starts immediately and cleans up after cancellation or request abort", asy
     try {
       expect(decoder.decode((await second.read()).value)).toContain('"clients":2')
 
-      emitSSE("task:updated", { id: "example" })
+      await emitSSE("task:updated", { id: "example" })
       for (const reader of [first, second]) {
         expect(decoder.decode((await reader.read()).value)).toBe('event: task:updated\ndata: {"id":"example"}\n\n')
       }
@@ -61,7 +83,7 @@ test("disconnects only the client whose stream exceeds its byte budget", async (
   try {
     await fast.read()
     for (let i = 0; i < 12; i++) {
-      emitSSE("example", { sequence: i, data: "x".repeat(8 * 1024) })
+      await emitSSE("example", { sequence: i, data: "x".repeat(8 * 1024) })
       expect(decoder.decode((await fast.read()).value)).toContain(`"sequence":${i}`)
     }
 
@@ -95,7 +117,7 @@ test("counts the wrapper's pending HTTP bytes and terminates a backed-up socket"
   try {
     expect(decoder.decode((await reader.read()).value)).toContain('"clients":1')
     sseSocket.writableLength = 64 * 1024 - 20
-    emitSSE("example", { data: "does not fit" })
+    await emitSSE("example", { data: "does not fit" })
     expect(destroyed).toBe(true)
     expect((await reader.read()).done).toBe(true)
     expect(getEventListeners(request.signal, "abort")).toHaveLength(0)
@@ -242,7 +264,7 @@ test("keeps calendar, todo and mobile notification delivery on scoped HA subscri
       })
       expect(delivered).toEqual(["on"])
       expect(getEntity("sensor.unwatched")).toBeUndefined()
-      emitSSE("probe", {})
+      await emitSSE("probe", {})
       for (const reader of [first, second]) {
         expect(decoder.decode((await reader.read()).value)).toMatch(/^event: ha:entity_changed\ndata: .*"entity_id":"calendar.test","state":"on"/)
         expect(decoder.decode((await reader.read()).value)).toMatch(/^event: ha:entity_changed\ndata: .*"entity_id":"todo.test","state":"1".*"last_updated":"1970-01-01T00:00:02.000Z"/)
@@ -262,7 +284,7 @@ test("keeps calendar, todo and mobile notification delivery on scoped HA subscri
       })
       expect(delivered).toEqual(["on", "off"])
       expect(getCalendarEntities()).toHaveLength(0)
-      emitSSE("probe", {})
+      await emitSSE("probe", {})
       for (const reader of [first, second]) {
         expect(decoder.decode((await reader.read()).value)).toBe("event: probe\ndata: {}\n\n")
       }
@@ -292,5 +314,134 @@ test("keeps calendar, todo and mobile notification delivery on scoped HA subscri
     server.close()
     server.closeAllConnections()
     await closed
+  }
+})
+
+test("closes new and cached SSE delivery after continuity is lost", async () => {
+  const { reader } = await open()
+  try {
+    await reader.read()
+    const current = await readFile(marker)
+    await rm(marker)
+    const head = await HEAD({ request: new Request(url, { method: "HEAD" }) } as Parameters<typeof HEAD>[0])
+    const get = await GET({ request: new Request(url) } as Parameters<typeof GET>[0])
+    expect(head.status).toBe(503)
+    expect(get.status).toBe(503)
+    await emitSSE("task:updated", { id: "must-not-leak" })
+    await writeFile(marker, current)
+    await emitSSE("task:updated", { id: "current-only" })
+    expect(decoder.decode((await reader.read()).value)).toBe('event: task:updated\ndata: {"id":"current-only"}\n\n')
+  } finally {
+    await reader.cancel()
+  }
+})
+
+function holdNextAuthorityRead() {
+  const db = getPersistenceClient()
+  const execute = db.execute.bind(db)
+  let release!: () => void
+  let admitted!: () => void
+  let held = false
+  const ready = new Promise<void>(resolve => { admitted = resolve })
+  const gate = new Promise<void>(resolve => { release = resolve })
+  db.execute = async statement => {
+    const sql = typeof statement === "string" ? statement : statement.sql
+    if (!held && sql === "SELECT revision FROM board_access_epoch WHERE singleton = 1") {
+      held = true
+      admitted()
+      await gate
+    }
+    return execute(statement)
+  }
+  return { ready, release: () => release(), restore: () => { db.execute = execute } }
+}
+
+for (const pressure of ["bytes", "frames"]) {
+  test(`bounds pending SSE ${pressure} while authority is held and reconnects without old frames`, async () => {
+    const { reader } = await open()
+    await reader.read()
+    const held = holdNextAuthorityRead()
+    const sends = [emitSSE("held", { private: "old" })]
+    try {
+      await held.ready
+      for (let index = 0; index < 257; index++) {
+        sends.push(emitSSE("queued", pressure === "bytes" ? { data: "x".repeat(4096), index } : { index }))
+      }
+      expect((await reader.read()).done).toBe(true)
+      // Overflow releases every caller even before the held authority resolves.
+      await Promise.all(sends)
+    } finally {
+      held.restore()
+      held.release()
+      await reader.cancel()
+    }
+    const current = await open()
+    try {
+      await current.reader.read()
+      await emitSSE("fresh", { id: "current-only" })
+      expect(decoder.decode((await current.reader.read()).value)).toBe('event: fresh\ndata: {"id":"current-only"}\n\n')
+    } finally { await current.reader.cancel() }
+  })
+}
+
+test("last-client cancellation releases queued SSE frames before authority resumes", async () => {
+  const { reader } = await open()
+  await reader.read()
+  const held = holdNextAuthorityRead()
+  try {
+    const first = emitSSE("held", { private: "old" })
+    await held.ready
+    const second = emitSSE("queued", { private: "also-old" })
+    await reader.cancel()
+    await Promise.all([first, second])
+  } finally {
+    held.restore()
+    held.release()
+    await reader.cancel()
+  }
+  const current = await open()
+  try {
+    await current.reader.read()
+    await emitSSE("fresh", {})
+    expect(decoder.decode((await current.reader.read()).value)).toBe("event: fresh\ndata: {}\n\n")
+  } finally { await current.reader.cancel() }
+})
+
+test("a stalled SSE authority check disconnects and releases retained payloads", async () => {
+  const { reader } = await open()
+  await reader.read()
+  const held = holdNextAuthorityRead()
+  try {
+    const pending = emitSSE("held", { private: "old" })
+    await held.ready
+    await pending
+    expect((await reader.read()).done).toBe(true)
+  } finally {
+    held.restore()
+    held.release()
+    await reader.cancel()
+  }
+  const current = await open()
+  try {
+    await current.reader.read()
+    await emitSSE("fresh", {})
+    expect(decoder.decode((await current.reader.read()).value)).toBe("event: fresh\ndata: {}\n\n")
+  } finally { await current.reader.cancel() }
+})
+
+test("a failed SSE authority read withholds its frame and leaves delivery usable", async () => {
+  const { reader } = await open()
+  await reader.read()
+  const db = getPersistenceClient()
+  const execute = db.execute.bind(db)
+  try {
+    db.execute = async () => { throw new Error("Authority storage unavailable") }
+    await emitSSE("withheld", { private: "old" })
+    db.execute = execute
+    await emitSSE("fresh", {})
+    expect(decoder.decode((await reader.read()).value)).toBe("event: fresh\ndata: {}\n\n")
+  } finally {
+    db.execute = execute
+    await reader.cancel()
   }
 })

@@ -72,6 +72,18 @@ When Areas is unavailable to you, an unfiltered Board remains accessible with it
 
 The optional **Home Assistant Area** field identifies a task’s physical location, such as Kitchen. Areas organize responsibility and Projects organize related tasks. An administrator can offer the location field through Organization features without changing the task’s Board, Area or Project.
 
+### Work within the selected Board
+
+**Boards** is one collection: Household sits alongside the other Boards. Its shared audience is a property of that Board, rather than a separate level. The same sidebar hierarchy contains every visible Board and its Areas and Projects. Household retains its existing Area and Project actions without a second framed menu.
+
+Open a Board to work with its tasks. The local navigation switches between tasks, Areas and Projects, Goals, Routines and Pillars. The main Tasks, Planning and Progress links keep the current Board and selected Area or Project. A Project's Goals view uses its actual Goal association and the existing authorized progress projection; shared Goal progress includes only Projects the reader can access. Private names are never recovered from browser storage to determine access.
+
+Household Routines are Area-based. From a Household Project, **Area Routines** opens the associated Area's Routine library; it does not claim a Project-only Routine filter. Named Board Routines retain their Project association. Household Goals and Routine links pass their real Area filters to the existing loaders. Household's scoped Pillars view contains Household Pillars; personal Pillars remain in the global Progress view.
+
+Named Boards currently use Kanban. Their sidebar and phone navigation do not offer a Household Calendar, Table or Timeline as if it belonged to that Board. Those Household views remain available after switching to Household. Daily and prioritization task views retain their existing Household scope; this change does not claim they aggregate every private Board's tasks. Today can also show authorized named Board Routine check-ins.
+
+Legacy `/tasks` bookmarks render the same Household Board navigation and preserve their existing task filters. The default Tasks entry opens the canonical Household Board route. Board settings remain distinct from organizing Areas and Projects.
+
 Older `/areas/{id}` and `/projects/{id}` bookmarks open the matching Household Board context. Supported section bookmarks, including settings, keep their destination. `/planning#spaces` opens the Boards directory when Planning is available. Task filters use the Area label and support your personal display name from Settings.
 
 Household Project details use Tabler icons for their tabs and actions. The title and breadcrumb show Tabler equivalents for recognized icons, including the Every Day sun. Custom icons without an equivalent still display as entered. Open **Settings** to see the saved Project icon.

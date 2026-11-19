@@ -9,7 +9,7 @@ import {
   getWeeklyData,
   recordTaskCompletion,
 } from "../../apps/web/src/domains/gamification/streak-tracker"
-import { getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 
 test("gamification keeps consecutive UTC days across a local DST transition", async () => {
   const directory = await mkdtemp(join(tmpdir(), "meitheal-gamification-days-"))
@@ -20,6 +20,7 @@ test("gamification keeps consecutive UTC days across a local DST transition", as
   resetPersistenceForTests()
 
   try {
+    await ensureSchema()
     await ensureGamificationSchema()
     await getPersistenceClient().execute(
       "INSERT INTO gamification_stats(date, completed_count, streak_count, points) VALUES ('2026-11-01', 2, 4, 60)",

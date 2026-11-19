@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto"
 import { execFile } from "node:child_process"
+import { mkdtemp, rm } from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -53,49 +53,55 @@ const expectedSchema = {
 }
 
 async function main() {
-  const dbPath = path.join(os.tmpdir(), `meitheal-schema-drift-${Date.now()}-${randomUUID()}.db`);
-  const dbUrl = `file:${dbPath}`;
-  const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-  const appRoot = path.resolve(scriptDir, "..");
-
-  await execFileAsync(process.execPath, ["./scripts/migrate.mjs"], {
-    cwd: appRoot,
-    env: {
-      ...process.env,
-      MEITHEAL_DB_URL: dbUrl
-    }
-  })
-
-  const client = await openDatabaseForStartup(dbUrl, { readOnly: true })
+  const workDir = await mkdtemp(path.join(os.tmpdir(), "meitheal-schema-drift-"))
+  const dbPath = path.join(workDir, "tasks.db")
+  const markerPath = path.join(workDir, "meitheal-board-grants.json")
+  const dbUrl = `file:${dbPath}`
+  const scriptDir = path.dirname(fileURLToPath(import.meta.url))
+  const appRoot = path.resolve(scriptDir, "..")
   const failures = []
 
   try {
-    const tx = await client.transaction("read")
+    await execFileAsync(process.execPath, ["./scripts/migrate.mjs"], {
+      cwd: appRoot,
+      env: {
+        ...process.env,
+        MEITHEAL_DB_URL: dbUrl,
+        MEITHEAL_BOARD_GRANT_PATH: markerPath,
+      }
+    })
+
+    const client = await openDatabaseForStartup(dbUrl, { readOnly: true, markerPath })
     try {
-      await validateStartupTaskSchema(tx)
-      for (const [tableName, requiredColumns] of Object.entries(expectedSchema)) {
-        const tableResult = await tx.execute({
-          sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
-          args: [tableName],
-        })
+      const tx = await client.transaction("read")
+      try {
+        await validateStartupTaskSchema(tx)
+        for (const [tableName, requiredColumns] of Object.entries(expectedSchema)) {
+          const tableResult = await tx.execute({
+            sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+            args: [tableName],
+          })
 
-        if (tableResult.rows.length === 0) {
-          failures.push(`Missing table: ${tableName}`)
-          continue
+          if (tableResult.rows.length === 0) {
+            failures.push(`Missing table: ${tableName}`)
+            continue
+          }
+
+          const columns = await tx.execute(`PRAGMA table_info(${tableName})`)
+          const actual = new Set(columns.rows.map(row => String(row.name)))
+
+          for (const column of requiredColumns) {
+            if (!actual.has(column)) failures.push(`Missing column: ${tableName}.${column}`)
+          }
         }
-
-        const columns = await tx.execute(`PRAGMA table_info(${tableName})`)
-        const actual = new Set(columns.rows.map(row => String(row.name)))
-
-        for (const column of requiredColumns) {
-          if (!actual.has(column)) failures.push(`Missing column: ${tableName}.${column}`)
-        }
+      } finally {
+        tx.close()
       }
     } finally {
-      tx.close()
+      client.close()
     }
   } finally {
-    client.close()
+    await rm(workDir, { recursive: true, force: true })
   }
 
   if (failures.length > 0) {

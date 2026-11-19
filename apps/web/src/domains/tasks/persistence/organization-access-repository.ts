@@ -1,9 +1,7 @@
 import { randomUUID } from "node:crypto"
-import { existsSync } from "node:fs"
 import type { Client } from "@libsql/client"
 import {
-  boardGrantPath, boardGrantStillCurrent, changeBoardGrants, currentBoardGrantRevision,
-  readBoardGrantRevision,
+  boardGrantStillCurrent, changeBoardGrants, currentBoardGrantRevision,
 } from "./board-grant-fence"
 
 export type OrganizationAudience =
@@ -56,19 +54,9 @@ export function organizationAudienceContains(
 }
 
 export class OrganizationAccessRepository {
-  constructor(private readonly db: Client, private readonly marker = boardGrantPath) {}
+  constructor(private readonly db: Client, private readonly marker?: string) {}
 
   async policies(scope: OrganizationScope["scope"], boardId: string): Promise<ReadPolicies> {
-    const { rows: [state] } = await this.db.execute({
-      sql: `SELECT EXISTS(SELECT 1 FROM board_access_epoch WHERE singleton = 1) AS has_epoch,
-        EXISTS(SELECT 1 FROM organization_access_policies WHERE scope = ? AND board_id = ?) AS has_policy`,
-      args: [scope, boardId],
-    })
-    if (state?.has_epoch === 0 && state.has_policy === 0) {
-      // A marker can outlive the database or appear during concurrent initialization.
-      if (existsSync(this.marker) && await readBoardGrantRevision(this.marker)) return { status: "locked" }
-      return { status: "current", policies: [] }
-    }
     const revision = await currentBoardGrantRevision(this.db, this.marker)
     if (!revision) return { status: "locked" }
     const tx = await this.db.transaction("read")

@@ -1,3 +1,4 @@
+import { guardClientContinuity } from "../tasks/persistence/continuity-client"
 import { householdBoardIsActive } from "../tasks/persistence/named-board-repository"
 /**
  * Calendar Bridge — Multi-Calendar Bi-Directional Sync
@@ -172,7 +173,9 @@ function debounceWithCancel<T extends (...args: unknown[]) => unknown>(
  * Start simultaneous sync for multiple HA calendar entities.
  * Replaces any previously active syncs.
  */
-export function startMultiCalendarSync(configs: CalendarSyncConfig[]): Promise<void> {
+export async function startMultiCalendarSync(configs: CalendarSyncConfig[]): Promise<void> {
+  await ensureSchemaOnce()
+  if (!await householdBoardIsActive((await getStoreModule()).getPersistenceClient())) return
   stopCalendarSync()
 
   const enabled = configs.filter(c => c.syncEnabled)
@@ -216,7 +219,9 @@ export function startMultiCalendarSync(configs: CalendarSyncConfig[]): Promise<v
  * Legacy single-entity start — wraps into multi-calendar API.
  * Kept for backward compatibility with existing API routes.
  */
-export function startCalendarSync(config: CalendarSyncConfig): void {
+export async function startCalendarSync(config: CalendarSyncConfig): Promise<void> {
+  await ensureSchemaOnce()
+  if (!await householdBoardIsActive((await getStoreModule()).getPersistenceClient())) return
   // If this specific entity is already syncing, stop it first
   const existing = activeSyncs.get(config.entityId)
   if (existing) {
@@ -916,7 +921,7 @@ function groupHAEventsIntoSeries(
 async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState | null): Promise<CalendarSyncCounts> {
   await ensureSchemaOnce()
   if (!await householdBoardIsActive((await getStoreModule()).getPersistenceClient())) {
-    return { created: 0, updated: 0, total: 0, skipped: "Household Board is deleted; restore it to resume sync" }
+    return { created: 0, updated: 0, total: 0, skipped: "Household work is unavailable; check continuity and Board state" }
   }
 
   // Backoff: skip sync after 5 consecutive failures (reset via stopSingleEntitySync or manual)
@@ -946,8 +951,8 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
   try {
     await ensureSchemaOnce()
     const mod = await getStoreModule()
-    const client = mod.getPersistenceClient()
-    if (!await householdBoardIsActive(client)) return { created: 0, updated: 0, total: 0, skipped: "Household Board is deleted" }
+    const client = guardClientContinuity(mod.getPersistenceClient())
+    if (!await householdBoardIsActive(client)) return { created: 0, updated: 0, total: 0, skipped: "Household work is unavailable; check continuity and Board state" }
     const timezone = await readHouseholdTimezone(client)
     const todayStr = calendarToday(timezone, now)
 
@@ -1500,7 +1505,7 @@ async function _syncEntityFromHAInner(entityId: string, state: EntitySyncState |
       events_created: created,
       events_updated: updated,
       total_events: totalSeries,
-    }).catch(() => { /* fire-and-forget */ })
+    }, { operationAllowed: () => householdBoardIsActive(client) }).catch(() => { /* fire-and-forget */ })
 
     return { created, updated, total: totalSeries }
   } catch (err) {
@@ -1578,7 +1583,7 @@ function buildCalendarDescription(
 export async function isImportedCalendarTask(taskId: string): Promise<boolean> {
   await ensureSchemaOnce()
   const mod = await getStoreModule()
-  const result = await mod.getPersistenceClient().execute({
+  const result = await guardClientContinuity(mod.getPersistenceClient()).execute({
     sql: `SELECT
             SUM(CASE WHEN source IN ('ha.calendar_sync', 'caldav') THEN 1 ELSE 0 END) AS imported,
             SUM(CASE WHEN source = 'ha.write_back' THEN 1 ELSE 0 END) AS sent
@@ -1631,7 +1636,7 @@ export async function pushTaskToCalendar(
   try {
     await ensureSchemaOnce()
     const mod = await getStoreModule()
-    const client = mod.getPersistenceClient()
+    const client = guardClientContinuity(mod.getPersistenceClient())
     const existing = await client.execute({
       sql: "SELECT confirmation_id FROM calendar_confirmations WHERE task_id = ? AND source = 'ha.write_back'",
       args: [taskId],
@@ -1688,7 +1693,7 @@ export async function pushTaskToCalendar(
     // Record write-back confirmation for deduplication
     try {
       const mod = await getStoreModule()
-      const client = mod.getPersistenceClient()
+      const client = guardClientContinuity(mod.getPersistenceClient())
       await client.execute({
         sql: `INSERT INTO calendar_confirmations (confirmation_id, task_id, request_id, provider_event_id,
                 source, payload, created_at) SELECT ?, ?, ?, ?, 'ha.write_back', ?, ? WHERE EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')`,
@@ -1725,7 +1730,7 @@ export async function removeTaskCalendarEvent(taskId: string): Promise<boolean> 
   try {
     await ensureSchemaOnce()
     const mod = await getStoreModule()
-    const client = mod.getPersistenceClient()
+    const client = guardClientContinuity(mod.getPersistenceClient())
 
     // Find the write-back confirmation to get entity_id
     const conf = await client.execute({
@@ -1891,7 +1896,9 @@ let syncingCalDAV = false
  * Start periodic CalDAV sync. Independent error boundary — CalDAV
  * failure never impacts HA calendar sync.
  */
-export function startCalDAVSync(url: string, intervalMs: number): void {
+export async function startCalDAVSync(url: string, intervalMs: number): Promise<void> {
+  await ensureSchemaOnce()
+  if (!await householdBoardIsActive((await getStoreModule()).getPersistenceClient())) return
   stopCalDAVSync()
 
   caldavSyncState = {
@@ -1980,7 +1987,7 @@ function normalizeCalDAVCalendarKey(baseUrl: string, calendarHref: string): stri
 async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
   await ensureSchemaOnce()
   if (!await householdBoardIsActive((await getStoreModule()).getPersistenceClient())) {
-    return { created: 0, updated: 0, total: 0, skipped: "Household Board is deleted; restore it to resume sync" }
+    return { created: 0, updated: 0, total: 0, skipped: "Household work is unavailable; check continuity and Board state" }
   }
   let totalCreated = 0
   let totalUpdated = 0
@@ -1992,7 +1999,7 @@ async function importCalDAVEvents(): Promise<CalendarSyncCounts> {
     const mod = await getStoreModule()
 
     await ensureSchemaOnce()
-    const client = mod.getPersistenceClient()
+    const client = guardClientContinuity(mod.getPersistenceClient())
 
     // Load credentials
     const credRes = await client.execute({

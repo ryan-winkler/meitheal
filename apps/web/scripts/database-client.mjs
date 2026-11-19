@@ -1,10 +1,13 @@
 import { createRequire } from "node:module"
-import { statSync } from "node:fs"
+import { constants, lstatSync, statSync } from "node:fs"
+import { open } from "node:fs/promises"
+import { dirname, resolve } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { setTimeout as sleepMs } from "node:timers/promises"
 import { LibsqlBatchError, LibsqlError } from "@libsql/core/api"
 import { expandConfig, isInMemoryConfig } from "@libsql/core/config"
 import { ResultSetImpl } from "@libsql/core/util"
+import { getBoardGrantPath, registerBoardGrantContext } from "./board-grant-context.mjs"
 import { BOARD_LIFECYCLE_SCHEMA_VERSION } from "../drizzle/migrations/0015_board_lifecycle.mjs"
 import {
   readTaskBoardMigrationState, taskBoardMigrationStateSteps,
@@ -688,7 +691,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       if (!active || !db.isTransaction) throw new LibsqlError("The transaction is closed", "TRANSACTION_CLOSED")
     }
 
-    return {
+    const result = {
       get closed() { return !active || !db.isTransaction },
       /** @param {InStatement} statement @param {InArgs} [args] */
       async execute(statement, args) {
@@ -720,6 +723,8 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
         if (active) sqliteOperation(settle)
       },
     }
+    registerBoardGrantContext(result, { markerPath: getBoardGrantPath(client) })
+    return result
   }
 
   function close() {
@@ -848,23 +853,76 @@ async function inspectStartupSchema(client) {
   }
 }
 
-/** Inspect an existing file read-only before opening it writable. */
-/** @param {string} url @param {{ readOnly?: boolean }} [options] @returns {Promise<Client>} */
-export function openDatabaseForStartup(url, { readOnly = false } = {}) {
+function assertRegularDatabasePath(path) {
+  for (let current = resolve(path); ; current = dirname(current)) {
+    const stats = lstatSync(current, { throwIfNoEntry: false })
+    if (stats?.isSymbolicLink()) throw new Error("Database startup refuses symlink paths")
+    if (current === resolve(path) && stats && !stats.isFile()) throw new Error("Database startup requires a regular file")
+    if (dirname(current) === current) break
+  }
+}
+
+function hasDatabaseFamily(path) {
+  return ["-wal", "-shm", "-journal"].some(suffix => lstatSync(path + suffix, { throwIfNoEntry: false }))
+}
+
+/** Inspect existing data read-only. Only successful exclusive local creation owns first enrollment. */
+/** @param {string} url @param {{ readOnly?: boolean, markerPath?: string, trustedInitialization?: { kind: "isolated-memory" } }} [options] @returns {Promise<Client>} */
+export function openDatabaseForStartup(url, { readOnly = false, markerPath, trustedInitialization } = {}) {
   return retryStartupLock(async () => {
     const local = localDatabaseLocation(url)
     if (!local || local.memory) {
+      if (trustedInitialization && (trustedInitialization.kind !== "isolated-memory" || !local?.memory || !markerPath || readOnly)) {
+        throw new Error("Trusted initialization requires an explicit isolated memory database and marker context")
+      }
       const client = openDatabase(url, { readOnly })
       try {
         await inspectStartupSchema(client)
+        registerBoardGrantContext(client, { markerPath, created: !!trustedInitialization })
+        if (!local) {
+          const transaction = client.transaction.bind(client)
+          client.transaction = async (...args) => {
+            const tx = await transaction(...args)
+            registerBoardGrantContext(tx, { markerPath: getBoardGrantPath(client) })
+            return tx
+          }
+        }
         return client
       } catch (error) {
         client.close()
         throw error
       }
     }
-    if (!readOnly && !statSync(local.path, { throwIfNoEntry: false })) {
-      return openLocal(local.path, false, false, true)
+    if (trustedInitialization) throw new Error("Local database initialization requires exclusive creation")
+    assertRegularDatabasePath(local.path)
+    if (!readOnly && !lstatSync(local.path, { throwIfNoEntry: false })) {
+      if (hasDatabaseFamily(local.path)) throw new Error("Database family residue prevents fresh enrollment")
+      let file
+      try {
+        file = await open(local.path, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600)
+      } catch (error) {
+        // A competing creator owns its capability. Never turn EEXIST into fresh authority.
+        if (error?.code === "EEXIST") throw new Error("Database creation raced; retry startup with existing data")
+        throw error
+      }
+      const created = await file.stat()
+      await file.sync()
+      await file.close()
+      const directory = await open(dirname(resolve(local.path)), constants.O_DIRECTORY | constants.O_RDONLY | constants.O_NOFOLLOW)
+      try { await directory.sync() } finally { await directory.close() }
+      assertRegularDatabasePath(local.path)
+      const actual = lstatSync(local.path)
+      if (!created.isFile() || actual.dev !== created.dev || actual.ino !== created.ino || hasDatabaseFamily(local.path)) {
+        throw new Error("Database creation provenance is ambiguous")
+      }
+      const client = openLocal(local.path, false, false, true)
+      const opened = lstatSync(local.path)
+      if (opened.dev !== created.dev || opened.ino !== created.ino) {
+        client.close()
+        throw new Error("Database identity changed during creation")
+      }
+      registerBoardGrantContext(client, { markerPath, created: true })
+      return client
     }
 
     let inspection
@@ -885,9 +943,14 @@ export function openDatabaseForStartup(url, { readOnly = false } = {}) {
         throw recoveryError
       }
     }
-    if (readOnly || recovered) return inspection
+    if (readOnly || recovered) {
+      registerBoardGrantContext(inspection, { markerPath })
+      return inspection
+    }
     inspection.close()
-    return openLocal(local.path, false, false, true)
+    const client = openLocal(local.path, false, false, true)
+    registerBoardGrantContext(client, { markerPath })
+    return client
   })
 }
 

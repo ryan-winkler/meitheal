@@ -11,6 +11,10 @@ import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from 
  * @domain navigation + pillars + routines
  * @phase 15 + 17 + 18 — Hierarchy Architecture + Pillars + Unification
  */
+import BoardWorkspaceNav from "../components/boards/BoardWorkspaceNav.astro"
+import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
+import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import "../styles/boards.css"
 import Layout from "../layouts/Layout.astro"
 import ParentPageShell from "../components/layout/ParentPageShell.astro"
 import GoalsTab from "../components/progress/GoalsTab.astro"
@@ -27,6 +31,24 @@ import { HOUSEHOLD_PILLAR_OWNER, getPillars } from "@domains/pillars/pillar-serv
 import { getAllPrinciples } from "@domains/pillars/principle-service"
 import { getAssociationsForPillar } from "@domains/pillars/pillar-association-service"
 
+const boardScoped = Astro.url.searchParams.get("board") === "household"
+let boardArea: { id: string; name: string } | undefined
+let boardProject: { id: string; name: string } | undefined
+if (boardScoped) {
+  await ensureSchema()
+  const hierarchy = new HierarchyRepository(getPersistenceClient())
+  const projectId = Astro.url.searchParams.get("project_id")
+  const project = projectId ? await hierarchy.findProjectById(projectId) : null
+  const areaId = project?.area_id ?? Astro.url.searchParams.get("area_id")
+  const area = areaId ? await hierarchy.findAreaById(areaId) : null
+  if (project) boardProject = { id: project.id, name: project.title }
+  if (area) boardArea = { id: area.id, name: area.name }
+}
+const routineParams = new URLSearchParams(boardScoped ? { board: "household" } : {})
+if (boardArea) routineParams.set("area_id", boardArea.id)
+const routinesHref = "/habits" + (routineParams.size ? "?" + routineParams : "")
+const newRoutineParams = new URLSearchParams(routineParams)
+newRoutineParams.set("new", "1")
 const label = await organizationLabelsFor(Astro)
 const newLabel = (name: Parameters<typeof label>[0], fallback?: string) => newOrganizationLabel(label(name, false, fallback), organizationLocale(Astro))
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
@@ -53,7 +75,7 @@ try {
   const pillarsData = available("pillars") ? await getPillars({ includeInactive: false, personalOwner }) : []
   const allPrinciplesMap = available("principles") ? await getAllPrinciples(personalOwner) : new Map()
   enrichedPillars = await Promise.all(
-    pillarsData.map(async (p) => {
+    pillarsData.filter(p => !boardScoped || p.userId === HOUSEHOLD_PILLAR_OWNER).map(async (p) => {
       const personal = p.userId !== HOUSEHOLD_PILLAR_OWNER
       const associations = personal ? [] : await getAssociationsForPillar(p.id)
       const linkedGoalCount = associations.filter((a: { entityType: string }) => a.entityType === "goal").length
@@ -74,6 +96,7 @@ const routinesEnabled = await isFeatureEnabled("habits")
 <Layout title={`Meitheal — ${label("progress", false, t("nav.progress", locale))}`} hideSearchHub={true} hideGlobalSearch={true}>
   {/* Suppress TopNavigation — ParentPageShell provides its own UnifiedBar */}
   <Fragment slot="custom-header" />
+  {boardScoped && <BoardWorkspaceNav boardId="household" boardName="Household" area={boardArea} project={boardProject} active="goals" />}
   <ParentPageShell pageId="progress">
 
     {/* ─── Pillars (full inline content) ─── */}
@@ -136,7 +159,7 @@ const routinesEnabled = await isFeatureEnabled("habits")
           </div>
         )}
       </div>
-      <PillarFormModal personalForm={personalForm} />
+      <PillarFormModal personalForm={boardScoped ? undefined : personalForm} />
       <PillarDetailModal />
     </section>}
 
@@ -146,8 +169,8 @@ const routinesEnabled = await isFeatureEnabled("habits")
         <h2>{label("routine", true)}</h2>
         <p>Set up repeatable work for each day or week.</p>
         {routinesEnabled ? <div class="flex flex-wrap gap-2">
-          <a class="btn btn-primary" href="/habits?new=1">{newLabel("routine")}</a>
-          <a class="btn btn-ghost" href="/habits" id="progress-routines-link">View {label("routine", true)}</a>
+          <a class="btn btn-primary" href={`/habits?${newRoutineParams}`}>{newLabel("routine")}</a>
+          <a class="btn btn-ghost" href={routinesHref} id="progress-routines-link">View {label("routine", true)}</a>
         </div> : <a href="/settings#tasks-boards-settings">Enable Routines in Settings</a>}
       </div>
     </section>}

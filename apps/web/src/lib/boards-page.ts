@@ -31,6 +31,7 @@ export function bindBoardPage(signal: AbortSignal) {
   recovery.append("This Board is hidden until access can be verified. Your input is kept on this page. ", retry)
   status.before(recovery)
   let expired = false
+  let navigating = false
   let checking: AbortController | undefined
   const placeholder = document.createComment("")
   const detach = () => {
@@ -123,6 +124,15 @@ export function bindBoardPage(signal: AbortSignal) {
   }
 
   const fragment = location.hash.slice(1)
+  const initialSection = document.getElementById(fragment)
+  if (initialSection instanceof HTMLDetailsElement) initialSection.open = true
+  const leavePage = (destination?: string) => {
+    navigating = true
+    for (const button of root!.querySelectorAll<HTMLButtonElement>('button[type="submit"]')) button.disabled = true
+    if (destination) window.location.href = safeIngressHref(destination)
+    else window.location.reload()
+  }
+
   const current = new URL(location.href)
   if (root.dataset.boardId && ["groups", "projects", "goals", "routines", "group-settings", "project-settings"].includes(fragment)
       && current.searchParams.get("view") !== "groups") {
@@ -190,7 +200,7 @@ export function bindBoardPage(signal: AbortSignal) {
     const form = event.target
     if (!(form instanceof HTMLFormElement) || !form.dataset.boardForm) return
     event.preventDefault()
-    if (expired || signal.aborted) return
+    if (expired || signal.aborted || navigating) return
     const { boardForm, ticketId, version } = form.dataset
     const data = new FormData(form)
     const value = (name: string) => String(data.get(name) ?? "")
@@ -218,7 +228,7 @@ export function bindBoardPage(signal: AbortSignal) {
         case "create": {
           const result = await jsonRequest(api, "POST", { name: value("name") })
           if (typeof result.id === "string" && !result.accessPending) {
-            window.location.href = safeIngressHref(`/boards/${encodeURIComponent(result.id)}`)
+            leavePage(`/boards/${encodeURIComponent(result.id)}`)
             return
           }
           if (feedback) feedback.textContent = "Board saved. Its access is still being verified."
@@ -230,7 +240,7 @@ export function bindBoardPage(signal: AbortSignal) {
             if (feedback) feedback.textContent = "Board saved. Access is still being verified. Refresh Boards to check the result."
             return
           }
-          window.location.href = safeIngressHref("/boards")
+          leavePage("/boards")
           return
         }
         case "sidebar":
@@ -333,13 +343,13 @@ export function bindBoardPage(signal: AbortSignal) {
         default:
           return
       }
-      if (!signal.aborted) window.location.reload()
+      if (!signal.aborted) leavePage()
     } catch (error) {
       if (!signal.aborted && feedback) {
         feedback.textContent = error instanceof Error ? error.message : "Could not save. Your input is still here."
       }
     } finally {
-      button.disabled = false
+      if (!navigating) button.disabled = false
     }
   }, { signal })
 }

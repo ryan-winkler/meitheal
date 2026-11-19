@@ -42,7 +42,7 @@ import {
   ensureSchema,
   getPersistenceClient,
   resetPersistenceForTests,
-} from "../../apps/web/src/domains/tasks/persistence/store"
+} from "../helpers/persistence-fixture"
 import { SettingsRepository } from "../../apps/web/src/domains/tasks/persistence/settings-repository"
 import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
 import { GET as getTodayCountsRoute } from "../../apps/web/src/pages/api/tasks/today-counts"

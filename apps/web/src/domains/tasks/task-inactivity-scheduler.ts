@@ -1,3 +1,5 @@
+import { guardClientContinuity } from "./persistence/continuity-client"
+import { householdBoardIsActive } from "./persistence/named-board-repository"
 import type { Client } from "@libsql/client"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import { ensureSchema, getPersistenceClient } from "./persistence/store"
@@ -19,20 +21,24 @@ let timer: ReturnType<typeof setInterval> | undefined
 let sweeping = false
 
 export async function sweepInactiveTasks(client: Client, now: number): Promise<number> {
-  const inactivity = new TaskInactivityRepository(client)
+  if (!await householdBoardIsActive(client)) return 0
+  const inactivity = new TaskInactivityRepository(guardClientContinuity(client))
   if (!await inactivity.hasEnabledPolicy()) return 0
   const candidates = await inactivity.candidates(now)
   const tasks = new TaskRepository(client)
   const actor = { id: inactivityRuleActor, type: "system", requestId: crypto.randomUUID() } as const
   let moved = 0
   for (const candidate of candidates) {
+    if (!await householdBoardIsActive(client)) break
     const result = await tasks.setDeferral(candidate.id, true, { ...candidate, inactivityNow: now }, actor)
     if (result.ok && result.task.deferred_at === now) moved++
   }
   return moved
 }
 
-export function startInactivityScheduler() {
+export async function startInactivityScheduler() {
+  await ensureSchema()
+  if (!await householdBoardIsActive(getPersistenceClient())) return
   if (timer) return
   timer = setInterval(async () => {
     if (sweeping) return

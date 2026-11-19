@@ -1,3 +1,4 @@
+import { getPersistenceClient, householdBoardIsActive } from "../tasks"
 /**
  * Task notifications — Home Assistant sidebar and Companion push
  *
@@ -32,13 +33,15 @@ export interface TaskNotification {
 
 /** Send one notification to every enabled channel. Delivery failures are logged, never thrown. */
 export async function sendTaskNotification(prefs: TaskNotificationPreferences, notification: TaskNotification): Promise<void> {
+  const operationAllowed = () => householdBoardIsActive(getPersistenceClient())
+  if (!await operationAllowed()) return
   const { callHAService } = await import("@domains/ha")
   const { title, message, notificationId, ingress, taskId, isUrgent, badgeCount } = notification
   const deliveries: Promise<unknown>[] = []
 
   if (prefs.channels.sidebar !== false) {
     deliveries.push(
-      callHAService("persistent_notification", "create", { title, message, notification_id: notificationId })
+      callHAService("persistent_notification", "create", { title, message, notification_id: notificationId }, undefined, { operationAllowed })
         .catch(err => logApiError("ha-notify", "Failed to send sidebar notification", err)),
     )
   }
@@ -71,7 +74,7 @@ export async function sendTaskNotification(prefs: TaskNotificationPreferences, n
               ...(taskId ? [{ action: `MEITHEAL_TASK_DONE_${taskId}`, title: "✅ Mark Done" }] : []),
             ],
           },
-        }).catch(err => logApiError("ha-notify", `Failed to send mobile push to ${target}`, err)),
+        }, undefined, { operationAllowed }).catch(err => logApiError("ha-notify", `Failed to send mobile push to ${target}`, err)),
       )
     }
   }
