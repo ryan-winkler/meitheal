@@ -1,0 +1,59 @@
+---
+import { DASHBOARD_SECTIONS, type DashboardSectionId } from "@lib/dashboard-registry"
+
+interface Props {
+  id: DashboardSectionId
+}
+
+const { id } = Astro.props
+const label = DASHBOARD_SECTIONS.find(section => section.id === id)?.label
+---
+
+<section id={id} class="dashboard-shell__section" aria-label={label} data-dashboard-section>
+  <div class="dashboard-widget-body" data-dashboard-widget-body>
+    <slot />
+  </div>
+  <div class="dashboard-widget-collapsed card" data-dashboard-widget-collapsed hidden>
+    <h2 class="card-title">{label}</h2>
+    <span>Collapsed</span>
+  </div>
+</section>
+
+<style>
+  .dashboard-shell__section {
+    grid-column: 1 / -1;
+    min-inline-size: 0;
+    scroll-margin-top: calc(var(--unified-bar-height, 56px) + 20px);
+  }
+
+  .dashboard-widget-body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .dashboard-widget-collapsed {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 0;
+    color: var(--text-secondary);
+  }
+
+  .dashboard-widget-collapsed h2 {
+    margin: 0;
+    color: var(--text-primary);
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+
+  @container dashboard (width >= 52rem) {
+    .dashboard-shell__section[data-dashboard-width="half"] {
+      grid-column: span 1;
+    }
+  }
+</style>

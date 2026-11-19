@@ -39,6 +39,7 @@ const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "c
   <header id="settings-bar" class="settings-bar" data-search-scope="settings" slot="custom-header">
     <h1 tabindex="-1">{t("settings.title", locale)}</h1>
     <div class="settings-bar__actions">
+      <a id="run-setup-again" class="btn btn-secondary" href="/setup">{t("setup.rerun", locale)}</a>
       <button type="button" id="settings-sections-toggle" aria-expanded="true" aria-controls="settings-directory">
         {t("settings.sections", locale)} <span aria-hidden="true">▾</span>
       </button>
@@ -182,6 +183,8 @@ const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "c
 
   .settings-bar__actions {
     display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 6px;
   }
 
@@ -206,6 +209,7 @@ const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "c
   }
 
   .settings-bar button:focus-visible,
+  .settings-bar a:focus-visible,
   .settings-shell :global(:focus-visible) {
     outline: 2px solid var(--border-focus);
     outline-offset: 2px;

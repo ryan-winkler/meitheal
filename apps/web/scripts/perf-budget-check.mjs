@@ -12,6 +12,7 @@ const execFileAsync = promisify(execFile);
 
 const defaultBudgets = {
   clientBytesMax: 100 * 1024,
+  workspaceUiBytesMax: 0,
   rssKbMax: 220 * 1024,
   p95MsMax: 250
 };
@@ -49,6 +50,7 @@ async function loadBudgets(scriptDir) {
       if (fromFile) {
         budgets = {
           clientBytesMax: parsePositiveInteger(String(fromFile.clientBytesMax)) ?? budgets.clientBytesMax,
+          workspaceUiBytesMax: parsePositiveInteger(String(fromFile.workspaceUiBytesMax)) ?? budgets.workspaceUiBytesMax,
           rssKbMax: parsePositiveInteger(String(fromFile.rssKbMax)) ?? budgets.rssKbMax,
           p95MsMax: parsePositiveNumber(String(fromFile.p95MsMax)) ?? budgets.p95MsMax
         };
@@ -80,6 +82,15 @@ async function sizeOfDirectoryBytes(dir) {
     total += stat.size;
   }
   return total;
+}
+
+// These route or interaction entry points are loaded on Setup, Quick Add, or
+// Customize Dashboard. Keep the existing common-assets ceiling independent.
+async function workspaceUiBytes(dir) {
+  const optional = /^(?:dashboard-layout-editor|modal|tabler-modal|tabler-styles|preferred-quick-add|setup(?:\.astro_astro_type_script_index_0_lang)?)\.[\w-]+\.(?:js|css)$/
+  const files = (await fs.readdir(dir)).filter(filename => optional.test(filename))
+  const sizes = await Promise.all(files.map(filename => fs.stat(path.join(dir, filename))))
+  return sizes.reduce((bytes, file) => bytes + file.size, 0)
 }
 
 async function waitForHealth(url, version, maxAttempts = 30, delayMs = 500) {
@@ -161,7 +172,10 @@ async function main() {
 
   const clientDir = path.join(appRoot, "dist/client");
   const serviceWorker = await fs.stat(path.join(clientDir, "sw.js")); // nosemgrep
-  const clientBytes = await sizeOfDirectoryBytes(path.join(clientDir, "_astro")) + serviceWorker.size;
+  const generatedDir = path.join(clientDir, "_astro");
+  const clientBytes = await sizeOfDirectoryBytes(generatedDir) + serviceWorker.size;
+  const optionalBytes = await workspaceUiBytes(generatedDir);
+  const commonBytes = clientBytes - optionalBytes;
   const distClientBytes = await sizeOfDirectoryBytes(clientDir);
 
   const scratchDir = await fs.mkdtemp(path.join(os.tmpdir(), "meitheal-perf-"));
@@ -277,8 +291,11 @@ async function main() {
     latenciesMs.sort((a, b) => a - b);
     const p95Ms = percentile(latenciesMs, 0.95);
     const failures = [];
-    if (clientBytes > budgets.clientBytesMax) {
-      failures.push(`Generated client assets too large: ${clientBytes} bytes > ${budgets.clientBytesMax}`);
+    if (commonBytes > budgets.clientBytesMax) {
+      failures.push(`Common generated client assets too large: ${commonBytes} bytes > ${budgets.clientBytesMax}`);
+    }
+    if (optionalBytes > budgets.workspaceUiBytesMax) {
+      failures.push(`Optional workspace assets too large: ${optionalBytes} bytes > ${budgets.workspaceUiBytesMax}`);
     }
     if (rssKb > budgets.rssKbMax) {
       failures.push(`RSS too high: ${rssKb} KB > ${budgets.rssKbMax} KB`);
@@ -301,6 +318,8 @@ async function main() {
           },
           observed: {
             clientBytes,
+            commonClientBytes: commonBytes,
+            workspaceUiBytes: optionalBytes,
             distClientBytes,
             rssKb,
             warmups,

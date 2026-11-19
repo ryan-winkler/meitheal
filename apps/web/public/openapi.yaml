@@ -1113,6 +1113,8 @@ paths:
           description: The owned Board ID
         "202":
           description: The Board was saved, and access verification is pending
+        "400":
+          description: Invalid Board name or preset
         "503":
           description: Board access is locked
       security: *a7
@@ -1125,6 +1127,13 @@ paths:
               properties:
                 name: &a8
                   type: string
+                preset:
+                  type: string
+                  enum:
+                    - standard
+                    - project
+                    - chores
+                  default: standard
               additionalProperties: false
   /api/boards/routines:
     get:

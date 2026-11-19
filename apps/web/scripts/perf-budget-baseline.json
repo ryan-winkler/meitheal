@@ -1,7 +1,8 @@
 {
-  "scope": "Linux Node CI smoke. Measures generated Astro assets plus the service worker, warmed process RSS, and complete native task-create responses.",
+  "scope": "Linux Node CI smoke. Measures common generated Astro assets plus the service worker, optional workspace UI assets, warmed process RSS, and complete native task-create responses.",
   "budgets": {
     "clientBytesMax": 1765000,
+    "workspaceUiBytesMax": 50000,
     "rssKbMax": 229376,
     "p95MsMax": 250
   }

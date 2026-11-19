@@ -1,0 +1,24 @@
+---
+interface Props {
+  id: string
+  title: string
+  descriptionId?: string
+  size?: "sm" | "lg"
+}
+
+const { id, title, descriptionId, size } = Astro.props
+---
+<div class="tabler-surface">
+  <div class="modal" style="display: none" id={id} tabindex="-1" aria-hidden="true" aria-labelledby={`${id}-title`}
+    aria-describedby={descriptionId} data-meitheal-tabler-modal>
+    <div class:list={["modal-dialog", "modal-dialog-centered", "modal-dialog-scrollable", size && `modal-${size}`]}>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title" id={`${id}-title`}>{title}</h2>
+        </div>
+        <div class="modal-body"><slot /></div>
+        <div class="modal-footer"><slot name="footer" /></div>
+      </div>
+    </div>
+  </div>
+</div>

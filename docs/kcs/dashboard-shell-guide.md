@@ -53,6 +53,30 @@ The URL hash updates as you move, so the current section can be reloaded or shar
 
 Both paths keep the dashboard context intact.
 
+### Customize the dashboard
+
+Open **Customize dashboard** in the toolbar. Drag a widget by its grip or use
+its up and down buttons. Use **Show widget** to add or remove it, choose
+**Full** or **Half** width, and set **Keep expanded** or **Keep collapsed**.
+Half-width widgets share a row when the Dashboard has room and stack on narrow
+screens. Select **Save dashboard** to apply changes or **Cancel** to leave the
+current layout. **Restore defaults**, followed by **Save dashboard**, restores
+the five widgets and their original order.
+
+The layout is saved in this browser for the current Home Assistant account.
+Standalone mode stores it in the current browser profile. Existing tasks and
+shared Boards keep their own settings. Section shortcuts follow your visible
+widget order. A bookmarked section can reveal a hidden or collapsed widget for
+the current visit. Reload with no section hash to see the saved visibility and
+collapsed state again.
+
+If all widgets are hidden, **Add widgets** reopens the editor and **Open Tasks**
+opens the task list. You can still use the New Task button in the toolbar.
+
+If saving fails because site storage is disabled, allow site storage and try
+again. If another tab has saved a newer layout, close the editor and reopen it
+to load the current layout.
+
 ### Open search from the dashboard shell
 
 1. Click the search launcher in the shell.

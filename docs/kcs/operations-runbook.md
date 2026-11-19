@@ -505,6 +505,10 @@ Ticket drawers keep their canonical URL while editing. On standalone pages, Layo
 
 Label removal confirmations render the count and each selected name as plain text in a bounded list. Markup in a stored label name must be visible as text and never create elements. Successful card-color changes refresh the board after acknowledgement; inactivity cues must revalidate without navigating away or clearing peer cues.
 
+## First-time setup and browser storage
+
+Confirm **Set up Meitheal** is offered on a new browser session. Finish or skip and check that the invitation disappears. **Settings → Run setup again** should reopen it even when the shared Settings request fails. Verify a second Home Assistant identity in the same browser can choose independent settings. A blocked browser storage write should leave the draft available and offer a Dashboard link. See [First-time setup](first-time-setup.md).
+
 ## Database readiness
 
 `GET /api/health` reports HTTP 503 and `status: degraded` when the database is reachable but its startup integrity check failed. A successful connection alone does not establish healthy storage. Inspect `db_status` and `db_integrity` separately. Keep a copy of the database and its WAL together before recovery, and restore a verified backup in a disposable installation before replacing live data. `HEAD /api/health` remains a lightweight process/schema liveness check; its 200 response does not override degraded readiness.

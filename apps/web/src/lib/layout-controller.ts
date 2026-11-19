@@ -6,7 +6,9 @@
         import { createClientLogger, registerGlobalLogger } from "@lib/client-logger";
         import { containTabFocus } from "@lib/focus-trap"
         import { applyAppearancePreferences, bindAppearanceNavigation, readAppearancePreferences } from "@lib/appearance-preferences"
-        import { initIngressNavigation, safeIngressHref, syncIngressDestination } from "@lib/ingress-navigation"
+        import { safeIngressHref, syncIngressDestination } from "@lib/ingress-navigation"
+        import { bindWorkspaceEntry, DASHBOARD_PATH } from "@lib/workspace-entry"
+        import { openWorkspaceQuickAdd } from "@lib/open-workspace-capture"
         import { hasPriorityOverlay, initShortcutModal } from "@lib/layout-shortcuts-controller"
         import { pageLifecycle } from "@lib/page-lifecycle";
         import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
@@ -79,6 +81,7 @@
         // ============================================================
         let keyboardSignal: AbortSignal | undefined
         pageLifecycle.onPageLoad((signal) => {
+          bindWorkspaceEntry(signal)
           // The fallback and initial Astro event can arrive with the same signal.
           const bindKeyboard = keyboardSignal !== signal
           keyboardSignal = signal
@@ -118,8 +121,8 @@
 
           const SHORTCUT_NAV = {
             dashboard: () => {
-              syncIngressDestination("/")
-              window.location.assign(safeIngressHref("/"))
+              syncIngressDestination(DASHBOARD_PATH)
+              window.location.assign(safeIngressHref(DASHBOARD_PATH))
             },
             tasks: () => {
               syncIngressDestination("/tasks")
@@ -150,6 +153,7 @@
           // The New Task modal ships in Layout, so open it directly. Clicking a page
           // button by id pattern used to match the modal's own Cancel button instead.
           function openNewTaskAction() {
+            if (openWorkspaceQuickAdd(document.activeElement instanceof HTMLElement ? document.activeElement : undefined)) return
             const modalFn = (window as { openNewTaskModal?: () => void }).openNewTaskModal
             if (typeof modalFn === "function") {
               modalFn()

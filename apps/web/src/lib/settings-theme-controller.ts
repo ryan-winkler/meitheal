@@ -12,6 +12,7 @@ import { HA_THEME_MATCH_KEY } from "@lib/ha-theme-palette"
 import { showToast } from "@lib/toast"
 import { isThemeMode } from "@lib/theme-mode"
 import { readAppearanceValue, readStoredThemeMode, setTheme } from "@lib/theme-watcher"
+import { readWorkspacePreferences, saveWorkspacePreferences } from "@lib/workspace-preferences"
 import { attachShortcutTooltips } from "@lib/shortcut-tooltip"
 import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, setSingleKeyShortcuts, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { settingsStore } from "@lib/settings-store"
@@ -227,7 +228,7 @@ export function initThemeSettings(): void {
     showCustomThemeSection(themeSelect.value === "custom")
   }
 
-  function bindPreference(id: string, key: string, apply: (value: string) => void): void {
+  function bindPreference(id: string, key: string, apply: (value: string) => void | Promise<void>): void {
     const select = document.getElementById(id) as HTMLSelectElement | null
     if (!select) return
 
@@ -242,7 +243,7 @@ export function initThemeSettings(): void {
       select.setAttribute("aria-busy", "true")
       try {
         await saveSetting(key, value)
-        apply(value)
+        await apply(value)
         showToast("common.updated")
       } catch (error) {
         const settings = await settingsStore.load().catch(() => null)
@@ -259,8 +260,15 @@ export function initThemeSettings(): void {
     })
   }
 
-  bindPreference("theme-select", "theme", mode => {
-    if (isThemeMode(mode)) setTheme(mode)
+  const clearSetupTheme = async () => {
+    if (readWorkspacePreferences().theme && !await saveWorkspacePreferences({}, true)) {
+      throw new Error("The household theme was saved. This browser kept its setup theme.")
+    }
+  }
+  bindPreference("theme-select", "theme", async mode => {
+    if (!isThemeMode(mode)) return
+    await clearSetupTheme()
+    setTheme(mode)
   })
   bindPreference("locale-select", "locale", (locale) => {
     localStorage.setItem("meitheal-locale", locale)
@@ -282,6 +290,7 @@ export function initThemeSettings(): void {
     themeSelect.disabled = input.disabled = remove.disabled = true
     try {
       await settingsStore.saveSetting("custom_theme_css", css, name)
+      await clearSetupTheme()
       if (!restoreTheme({ theme: css ? "custom" : "dark", custom_theme_css: css, custom_theme_name: name })) {
         showToast("settings.appearance_save_error", "error")
         return
@@ -349,9 +358,10 @@ function restoreTheme(settings: Record<string, unknown>): boolean {
     else localStorage.removeItem("meitheal-custom-theme-css")
     const mode = isThemeMode(savedTheme) && (savedTheme !== "custom" || hasCSS)
       ? savedTheme : "dark"
-    if (themeEl) themeEl.value = mode
+    const selectedMode = readWorkspacePreferences().theme ?? mode
+    if (themeEl) themeEl.value = selectedMode
     setTheme(mode)
-    showCustomThemeSection(mode === "custom")
+    showCustomThemeSection(selectedMode === "custom")
     updateCustomThemeDisplay(hasCSS ? String(settings.custom_theme_name || "custom-theme.css") : null)
     return true
   } catch (e) {

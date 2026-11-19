@@ -1,0 +1,57 @@
+---
+import TablerModal from "../ui/TablerModal.astro"
+import Icon from "../ui/Icon.astro"
+import { DASHBOARD_SECTIONS } from "@lib/dashboard-registry"
+import { isIconName } from "../../generated/icon-registry"
+---
+
+<TablerModal id="dashboard-layout-editor" title="Customize dashboard" descriptionId="dashboard-layout-help" size="lg">
+  <p id="dashboard-layout-help">
+    Drag widgets or use the arrows to reorder them. This layout is saved in this browser for your profile.
+  </p>
+  <ol class="dashboard-layout-list" data-dashboard-editor-list aria-label="Dashboard widgets">
+    {DASHBOARD_SECTIONS.map(section => (
+      <li class="card dashboard-layout-row" data-dashboard-editor-widget={section.id}>
+        <div class="dashboard-layout-row__heading">
+          <span class="dashboard-layout-grip" data-dashboard-drag aria-hidden="true"><Icon name="grip-vertical" size={20} sprite /></span>
+          {isIconName(section.icon) && <Icon name={section.icon} size={18} sprite />}
+          <strong>{section.label}</strong>
+          <span class="dashboard-layout-row__moves">
+            <button type="button" class="btn btn-ghost" aria-label={`Move ${section.label} up`} data-dashboard-move="up">
+              <Icon name="arrow-up" size={18} sprite />
+            </button>
+            <button type="button" class="btn btn-ghost" aria-label={`Move ${section.label} down`} data-dashboard-move="down">
+              <Icon name="arrow-down" size={18} sprite />
+            </button>
+          </span>
+        </div>
+        <div class="dashboard-layout-row__options">
+          <label>
+            <input type="checkbox" data-dashboard-visible checked aria-label={`Show ${section.label}`} />
+            Show widget
+          </label>
+          <label>
+            Width
+            <select class="form-select" data-dashboard-width aria-label={`${section.label} width`}>
+              <option value="full">Full</option>
+              <option value="half">Half</option>
+            </select>
+          </label>
+          <label>
+            State
+            <select class="form-select" data-dashboard-state aria-label={`${section.label} state`}>
+              <option value="expanded">Keep expanded</option>
+              <option value="collapsed">Keep collapsed</option>
+            </select>
+          </label>
+        </div>
+      </li>
+    ))}
+  </ol>
+  <p class="text-text-secondary" data-dashboard-editor-message role="status" hidden></p>
+  <button type="button" class="btn btn-ghost" data-dashboard-reset>Restore defaults</button>
+  <Fragment slot="footer">
+    <button type="button" class="btn btn-ghost" data-dashboard-cancel data-tabler-initial-focus>Cancel</button>
+    <button type="button" class="btn btn-primary" data-dashboard-save>Save dashboard</button>
+  </Fragment>
+</TablerModal>

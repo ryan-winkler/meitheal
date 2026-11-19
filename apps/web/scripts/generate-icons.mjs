@@ -113,6 +113,7 @@ export const CANONICAL_TABLER_ICONS = [
   "mug",
   "confetti",
   "grip-vertical",
+  "heart",
   "arrow-up",
   "arrow-down",
   "arrows-maximize",
@@ -315,8 +316,8 @@ function extractInnerSvg(rawSvg, iconFile) {
 }
 
 export function generateIconRegistrySource() {
-  if (CANONICAL_TABLER_ICONS.length !== 69 || new Set(CANONICAL_TABLER_ICONS).size !== 69) {
-    throw new Error(`[generate-icons] Expected 69 unique canonical Tabler icons, got ${CANONICAL_TABLER_ICONS.length}`)
+  if (CANONICAL_TABLER_ICONS.length !== new Set(CANONICAL_TABLER_ICONS).size) {
+    throw new Error("[generate-icons] Duplicate canonical Tabler icons")
   }
 
   const outlineDir = resolveTablerOutlineDir()
@@ -465,5 +466,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const output = generateIconRegistrySource()
   mkdirSync(dirname(OUTPUT_PATH), { recursive: true })
   writeFileSync(OUTPUT_PATH, output, "utf-8")
-  console.log(`[generate-icons] Wrote 69 canonical icons (+ ${Object.keys(LEGACY_ICON_ALIASES).length} legacy aliases) to ${OUTPUT_PATH}`)
+  console.log(`[generate-icons] Wrote ${CANONICAL_TABLER_ICONS.length} canonical icons (+ ${Object.keys(LEGACY_ICON_ALIASES).length} legacy aliases) to ${OUTPUT_PATH}`)
 }
