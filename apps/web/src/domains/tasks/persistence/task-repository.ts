@@ -977,7 +977,9 @@ export class TaskRepository {
   /** All tasks with date fields for Timeline/GANTT chart rendering */
   async getTimelineTasks(): Promise<TaskRow[]> {
     const result = await this.forOperation("read").execute(
-      scopedTaskRead(this.scope, sourceSql(`SELECT id, title, status, priority, due_date, start_date, end_date, color, task_type, task_kind, project_id, assigned_to, progress, ticket_number, ticket_ref, ticket_ref AS ticket_key, parent_id, public_parent_id, blocked_by, effort_minutes, labels, area_id, public_area_id, public_project_id, public_goal_id, deferred_at, updated_at, ${taskTimestampMs("tasks.updated_at")} AS task_version
+      scopedTaskRead(this.scope, sourceSql(`SELECT id, title, status, priority, due_date, start_date, end_date, color, task_type, task_kind, project_id, assigned_to, progress, ticket_number, ticket_ref, ticket_ref AS ticket_key, parent_id, public_parent_id, blocked_by, effort_minutes, labels, area_id, public_area_id, public_project_id, public_goal_id, deferred_at, updated_at, ${taskTimestampMs("tasks.updated_at")} AS task_version,
+       COALESCE(NULLIF(tasks.area_id, ''), (SELECT NULLIF(project.area_id, '') FROM scoped_projects AS project
+         WHERE project.id = tasks.project_id)) IS NOT NULL AS area_assigned
        FROM scoped_tasks AS tasks WHERE 1 ORDER BY start_date ASC NULLS LAST, created_at DESC`), "select"),
     );
     return this.normalizeTaskRows(result.rows);

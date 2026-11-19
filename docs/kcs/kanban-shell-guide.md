@@ -105,7 +105,7 @@ When you group by **Project**, each project has its own section. If project name
 
 When you group by **Area**, different Areas have separate rows even when their names match. A short reference distinguishes matching names. You can collapse each group independently and its state survives filtering. Tasks with unavailable Area information appear under **Unknown Area**.
 
-Timeline loads Project and Group labels according to your organization access. If a task belongs to an unavailable Area, its bar stays visible under **Unknown Area** and Timeline omits the Area reference from its chart data.
+Timeline loads Project and Group labels according to your organization access. On Household and named Boards, tasks you can view retain their **Unknown Project** or **Unknown Area** grouping when a reference becomes unavailable. Timeline omits unavailable identifiers and names from its chart data.
 
 ### Group cards by assignee
 

@@ -54,7 +54,7 @@ interface TaskRecord {
   [key: string]: any;
 }
 
-let tasks: TaskRecord[] = [];
+let tasks: { task: TaskRecord; areaAssigned: boolean; projectAssigned: boolean }[] = []
 let areaMap: Record<string, string> = {};
 const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
 const projectFallbacks = { none: t("kanban.no_project", locale), unknown: t("kanban.unknown_project", locale) }
@@ -64,9 +64,13 @@ try {
   await ensureSchema();
   const client = getPersistenceClient();
   const repo = new TaskRepository(client, scope);
-  tasks = (await repo.getTimelineTasks()).map(row => projectPublicTaskFields(row as unknown as Record<string, unknown>)) as TaskRecord[];
+  tasks = (await repo.getTimelineTasks()).map(row => ({
+    task: projectPublicTaskFields(row as unknown as Record<string, unknown>) as TaskRecord,
+    areaAssigned: Number(row.area_assigned) === 1,
+    projectAssigned: Boolean(row.project_id),
+  }))
   const projectId = Astro.url.searchParams.get("project")
-  if (projectId) tasks = tasks.filter(task => task.project_id === projectId)
+  if (projectId) tasks = tasks.filter(({ task }) => task.project_id === projectId)
   // Resolve labels from the scoped catalog even when task filters change.
   const hierarchy = new HierarchyRepository(client, scope)
   const [areas, projects] = await Promise.allSettled([
@@ -84,15 +88,16 @@ try {
 }
 
 let taskCount = 0
-const timelineTasks = tasks.map(task => {
+const timelineTasks = tasks.map(({ task, areaAssigned, projectAssigned }) => {
   if (task.start_date || task.due_date) taskCount++
   const item: Record<string, unknown> = {}
   for (const field in task) {
     if (field !== "area_id" && field !== "project_id" && task[field] !== null) item[field] = task[field]
   }
-  // A null Area is unfiled. Hidden catalog identifiers stay out of browser data.
-  if (!task.area_id || Object.hasOwn(areaMap, task.area_id)) item.area_id = task.area_id
-  item.project_group = getHouseholdProjectGroup(task.project_id, projectMap)
+  // Null means unfiled. Omit the Area field entirely when an assigned Area is unavailable.
+  if (task.area_id && Object.hasOwn(areaMap, task.area_id)) item.area_id = task.area_id
+  else if (!areaAssigned && !task.area_id) item.area_id = null
+  item.project_group = getHouseholdProjectGroup(task.project_id, projectMap, projectAssigned)
   return item
 })
 const totalTasks = tasks.length;
