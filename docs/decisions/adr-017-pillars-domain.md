@@ -8,7 +8,7 @@ description: "Defines pillars, principles, and their relationships to planning w
 
 **Date:** 2026-03-21 (updated with expanded scope)
 **Status:** Accepted
-**Deciders:** Ryan Winkler, 50-persona GSD panel (iterations 01 + 02)
+**Deciders:** Ryan Winkler
 
 ## Context
 
@@ -20,13 +20,11 @@ Users (especially those with ADHD) need a stable anchor that persists across shi
 
 ### 1. Naming: "Pillars"
 
-A 50-persona panel voted on naming:
-- **Pillars:** 42% primary preference, 70%+ acceptable
-- "Values": 28% — too personal/religious for some
-- "Principles": 18% — too corporate (but retained as sub-entity name)
-- "Foundations": 12% — too abstract
-
-"Pillar" evokes structural support — something a house stands on.
+Naming options considered:
+- **Pillars** (chosen): evokes structural support — something a house stands on.
+- **Values**: felt too personal or religious for some households.
+- **Principles**: too corporate for the top-level concept, but retained for concrete behavioral rules beneath a Pillar.
+- **Foundations**: too abstract.
 
 ### 2. Principles / Non-Negotiables (Sub-Layer)
 
@@ -40,7 +38,7 @@ Principles are behavioral boundaries within a Pillar. Each Pillar has 0:N Princi
 
 ### 3. Separate Bounded Context
 
-94% of the panel confirmed Pillars are a distinct domain concept.
+Pillars serve a distinct role from Goals, Areas, Lenses, and Routines and therefore live in their own bounded context:
 
 | Concept | Answers | Lifespan | Can complete? |
 |---------|---------|----------|---------------|
