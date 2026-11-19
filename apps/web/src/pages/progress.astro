@@ -17,6 +17,7 @@ import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from 
 import BoardWorkspaceNav from "../components/boards/BoardWorkspaceNav.astro"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import { boardScopeStorage } from "@domains/tasks/board-scope"
 import "../styles/boards.css"
 import Layout from "../layouts/Layout.astro"
 import ParentPageShell from "../components/layout/ParentPageShell.astro"
@@ -38,7 +39,6 @@ if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
 const workScope = workScopeResult.scope
 
 
-const boardScoped = true
 const boardId = workScope.boardId
 const { rows: [boardRecord] } = await getPersistenceClient().execute({ sql: "SELECT name FROM task_boards WHERE id = ?", args: [boardId] })
 const boardName = String(boardRecord?.name ?? "Board")
@@ -71,7 +71,12 @@ let enrichedPillars: Array<{
   personal: boolean
 }> = []
 
-const personalOwner = await resolvePersonalPillarOwner(Astro)
+// Progress can show personal work outside the explicitly selected Board views.
+const personalProgress = boardScopeStorage(workScope) === "legacy_null_v1" &&
+  !Astro.props.boardId && !Astro.request.headers.has("x-meitheal-board-id") &&
+  !Astro.url.searchParams.has("board") && !Astro.url.searchParams.has("board_id") &&
+  !boardArea && !boardProject
+const personalOwner = personalProgress ? await resolvePersonalPillarOwner(Astro) : undefined
 const personalForm = personalOwner ? issuePersonalPillarForm(personalOwner) : undefined
 
 try {
@@ -99,7 +104,7 @@ const routinesEnabled = await isFeatureEnabled("habits")
 <Layout title={`Meitheal — ${label("progress", false, t("nav.progress", locale))}`} hideSearchHub={true} hideGlobalSearch={true}>
   {/* Suppress TopNavigation — ParentPageShell provides its own UnifiedBar */}
   <Fragment slot="custom-header" />
-  {boardScoped && <BoardWorkspaceNav {boardId} {boardName} area={boardArea} project={boardProject} active="goals" />}
+  <BoardWorkspaceNav {boardId} {boardName} area={boardArea} project={boardProject} active="goals" />
   <ParentPageShell pageId="progress">
 
     {/* ─── Pillars (full inline content) ─── */}
@@ -162,7 +167,7 @@ const routinesEnabled = await isFeatureEnabled("habits")
           </div>
         )}
       </div>
-      <PillarFormModal personalForm={boardScoped ? undefined : personalForm} />
+      <PillarFormModal {personalForm} />
       <PillarDetailModal />
     </section>}
 
