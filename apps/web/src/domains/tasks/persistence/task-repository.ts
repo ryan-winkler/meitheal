@@ -3,7 +3,7 @@ import { hasCommentMentionSelector } from "../../../lib/comment-mentions"
 import { stripHtml } from "../../../lib/strip-html"
 import { assignmentProofMatches, resolveHAAssignmentProof, type AssignmentProof } from "../assignment-proof"
 import { validateIntegrationScope, type IntegrationScope } from "../board-automation"
-import { readWorkDestinations } from "../integration-destinations"
+import { bindingAllows, readWorkDestinations } from "../integration-destinations"
 import { projectPublicTaskFields } from "../task-projection"
 import { goalEligibility } from "./shared-goal-repository"
 import { readTaskAssignmentReceipt } from "./task-assignment-receipt"
@@ -2371,10 +2371,20 @@ export class TaskRepository {
       const { rows } = await tx.execute(sql`SELECT DISTINCT binding_id FROM ${sourceSql(table)} WHERE task_id = ${id} AND binding_id IS NOT NULL`)
       for (const row of rows) if (typeof row.binding_id === "string") bindingIds.add(row.binding_id)
     }
-    const bindingRefs = (settings?.bindings ?? []).filter(binding => binding.enabled && binding.destination.boardId === this.scope.boardId && bindingIds.has(binding.id)).map(binding => ({ id: binding.id, generation: binding.generation }))
+    const placement = await this.effectiveTaskPlacement(tx, task)
+    // Outbound receivers need the approval that existed at deletion, even
+    // when the task was never linked to an inbound sync source.
+    const bindingRefs = (settings?.bindings ?? []).filter(binding => {
+      if (!binding.enabled || binding.destination.boardId !== this.scope.boardId) return false
+      if (bindingIds.has(binding.id)) return true
+      const { areaId, projectId } = binding.destination
+      return (binding.integration === "webhook" || binding.integration === "ha_events" && binding.sourceId === "meitheal") &&
+        binding.purpose === "webhook.delivery" &&
+        bindingAllows(binding, { resource: "task", action: "read" }) &&
+        (!areaId || areaId === placement.areaId) && (!projectId || projectId === placement.projectId)
+    }).map(binding => ({ id: binding.id, generation: binding.generation }))
     const eventId = crypto.randomUUID()
     const now = Date.now()
-    const placement = await this.effectiveTaskPlacement(tx, task)
     const snapshot = { ...projectPublicTaskFields(task), id, board_id: this.scope.boardId, ticket_key: task.ticket_ref }
     const payload = { ...snapshot, _authority: { version: 1, boardId: this.scope.boardId, principalKind: this.scope.principal.kind,
       principalId: this.scope.principal.id, operation: "delete", oldAssignedTo: task.assigned_to ?? null,
