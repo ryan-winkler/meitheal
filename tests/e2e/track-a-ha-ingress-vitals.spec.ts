@@ -406,6 +406,7 @@ test("A4/A5/A8: live serve.mjs leaves Ingress HTML uncompressed, keeps attribute
     SUPERVISOR_TOKEN: "test-sup-token",
     INGRESS_PATH: "/api/hassio_ingress/live_tok",
     MEITHEAL_DB_URL: `file:${join(work, "live.db")}`,
+    MEITHEAL_BOARD_GRANT_PATH: join(work, "board-grants.json"),
   }
   await execFileAsync(process.execPath, ["scripts/migrate.mjs"], { cwd: webDir, env })
 
@@ -447,23 +448,28 @@ test("A4/A5/A8: live serve.mjs leaves Ingress HTML uncompressed, keeps attribute
     const healthRes = await fetch(`http://127.0.0.1:${port}/api/health`)
     expect(healthRes.status, childStderr).toBe(200)
 
-    const adminIngressHeaders = {
+    const origin = `http://127.0.0.1:${port}`
+    const adminIngressHeaders: Record<string, string> = {
       "x-test-peer": "supervisor",
       "x-ingress-path": "/api/hassio_ingress/live_tok",
       "x-remote-user-id": "admin-1",
       "x-remote-user-groups": "system-admin",
       "accept-encoding": "gzip, deflate, br",
+      "x-meitheal-board-id": "household",
+    }
+    const directory = await fetch(origin + "/api/boards", { headers: adminIngressHeaders })
+    expect(directory.status).toBe(200)
+    const boardSession = directory.headers.get("x-meitheal-board-session")
+    if (!boardSession) throw new Error("Current ingress Board session required")
+    const writeHeaders = {
+      ...adminIngressHeaders, origin, "content-type": "application/json", "x-meitheal-board-session": boardSession,
     }
 
     // Seed 40 tasks with rich descriptions so /tasks HTML streams multiple chunks
     for (let i = 0; i < 40; i++) {
       const cr = await fetch(`http://127.0.0.1:${port}/api/tasks`, {
         method: "POST",
-        headers: {
-          ...adminIngressHeaders,
-          "content-type": "application/json",
-          origin: `http://127.0.0.1:${port}`,
-        },
+        headers: writeHeaders,
         body: JSON.stringify({
           title: `Streaming task ${i}`,
           description: `Detailed markdown note ${"word ".repeat(80)}`,
@@ -473,7 +479,7 @@ test("A4/A5/A8: live serve.mjs leaves Ingress HTML uncompressed, keeps attribute
     }
 
     // 1. Uncompressed Ingress HTML & attribute size < 32 KiB
-    for (const route of ["/tasks", "/planning", "/eisenhower"]) {
+    for (const route of ["/boards/household", "/planning", "/eisenhower"]) {
       const res = await fetch(`http://127.0.0.1:${port}${route}`, { headers: adminIngressHeaders })
       expect(res.status, childStderr).toBe(200)
       expect(res.headers.get("content-encoding")).toBeNull()
@@ -510,7 +516,7 @@ test("A4/A5/A8: live serve.mjs leaves Ingress HTML uncompressed, keeps attribute
       const req = http.request({
         host: "127.0.0.1",
         port,
-        path: "/tasks",
+        path: "/boards/household",
         method: "GET",
         headers: { ...adminIngressHeaders, "x-test-slow-stream": "1" },
       }, res => {
@@ -550,11 +556,7 @@ test("A4/A5/A8: live serve.mjs leaves Ingress HTML uncompressed, keeps attribute
 
     const tokenCreate = await fetch(`http://127.0.0.1:${port}/api/agent-tokens`, {
       method: "POST",
-      headers: {
-        ...adminIngressHeaders,
-        "content-type": "application/json",
-        origin: `http://127.0.0.1:${port}`,
-      },
+      headers: writeHeaders,
       body: JSON.stringify({ name: "Diag probe", scopes: ["tasks:read", "mcp:execute"] }),
     })
     expect(tokenCreate.status).toBe(201)
@@ -693,6 +695,7 @@ test("A8: logger bypasses category filter on warn/error, health.ts caches only H
   }) as typeof fetch
 
   try {
+    await store.ensureSchema()
     const res502 = await (await healthGET({} as Parameters<typeof healthGET>[0])).json()
     expect(res502.supervisor_reachable).toBe(false)
     expect(supervisorCalls).toBe(1)
