@@ -49,7 +49,7 @@ test("drag and keyboard reorder keep the Boards subtree intact", async ({ page }
   await expect(sidebar.getByRole("button", { name: "Move Dashboard" })).toBeFocused()
 
   const groupRoot = sidebar.locator('[data-sidebar-group="boards"]')
-  await expect(groupRoot.locator('[data-sidebar-household]')).toHaveCount(1)
+  await expect(groupRoot.locator('[data-named-board-shortcut="household"]')).toHaveCount(1)
   await expect(sidebar.locator('[data-sidebar-group="areas"]')).toHaveCount(0)
   const groups = sidebar.getByRole("button", { name: "Move Boards", exact: true })
   const dashboard = sidebar.getByRole("button", { name: "Move Dashboard", exact: true })

@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 const configuredOrigin = process.env.E2E_BASE_URL ? new URL(process.env.E2E_BASE_URL) : null
@@ -15,8 +16,8 @@ let projectId = ""
 let areaName = ""
 let projectName = ""
 
-async function removeFixtureEntity(request: APIRequestContext, path: string) {
-  const response = await request.delete(path, { data: {} })
+async function removeFixtureEntity(request: APIRequestContext, path: string, headers: Record<string, string>) {
+  const response = await request.delete(path, { headers, data: {} })
   expect(response.status()).toBe(200)
 }
 
@@ -51,23 +52,26 @@ async function keyboardOptions(page: Page, kind: EntityKind, id: string) {
   return { trigger, menu }
 }
 
-test.beforeEach(async ({ request }) => {
+test.beforeEach(async ({ request, baseURL }) => {
   areaId = ""
   projectId = ""
   const suffix = crypto.randomUUID().slice(0, 8)
   areaName = `Popup layout Area ${suffix}`
   projectName = `Popup layout Project ${suffix}`
-  const area = await request.post("/api/areas", { data: { name: areaName } })
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+  const area = await request.post("/api/areas", { headers, data: { name: areaName } })
   expect(area.status()).toBe(201)
   areaId = (await area.json()).id
-  const project = await request.post("/api/projects", { data: { title: projectName, area_id: areaId } })
+  const project = await request.post("/api/projects", { headers, data: { title: projectName, area_id: areaId } })
   expect(project.status()).toBe(201)
   projectId = (await project.json()).id
 })
 
-test.afterEach(async ({ request }) => {
-  if (projectId) await removeFixtureEntity(request, `/api/projects/${projectId}`)
-  if (areaId) await removeFixtureEntity(request, `/api/areas/${areaId}`)
+test.afterEach(async ({ request, baseURL }) => {
+  if (!projectId && !areaId) return
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+  if (projectId) await removeFixtureEntity(request, `/api/projects/${projectId}`, headers)
+  if (areaId) await removeFixtureEntity(request, `/api/areas/${areaId}`, headers)
 })
 
 test("hover sidebar remains expanded for its body popups and collapses when focus leaves them", async ({ page, request }, testInfo) => {

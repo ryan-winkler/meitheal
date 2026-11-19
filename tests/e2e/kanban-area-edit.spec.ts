@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test, type Route } from "@playwright/test"
 
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable built app")
@@ -21,10 +22,10 @@ test("Area changes update the Kanban groups and preserve the board context throu
     const [{ port, configuredPath }] = await once(fixture, "message", { signal: AbortSignal.timeout(10_000) })
     const origin = `https://127.0.0.1:${port}`
     const app = origin + configuredPath
-    const headers = { origin, "sec-fetch-site": "same-origin" }
     browser = await launchPinBrowser(directory)
     const context = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {}, serviceWorkers: "block" })
     await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+    const headers = await currentBoardWriteHeaders(context.request, "household", { origin, "content-type": "application/json" }, app)
     const page = await context.newPage()
     page.setDefaultTimeout(5_000)
     expect((await page.goto(app + "/fixture"))?.ok()).toBe(true)
