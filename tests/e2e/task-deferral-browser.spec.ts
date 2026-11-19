@@ -1,4 +1,11 @@
-import { expect, test, type APIRequestContext } from "@playwright/test"
+import { expect, test as base, type APIRequestContext } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
+
+const test = base.extend<{ boardHeaders: Record<string, string> }>({
+  boardHeaders: async ({ request, baseURL }, use) => {
+    await use(await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin }))
+  },
+})
 
 const useDev = process.env.MEITHEAL_DEFERRAL_DEV === "1"
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1" && !useDev, "Needs an isolated Meitheal fixture")
@@ -9,25 +16,25 @@ test.use({
   ...(useDev && process.env.E2E_BASE_URL ? { extraHTTPHeaders: { origin: process.env.E2E_BASE_URL } } : {}),
 })
 
-async function seed(request: APIRequestContext, title: string, parentId?: string, areaId?: string) {
-  const response = await request.post("/api/tasks", { data: { title, status: "pending", parent_id: parentId, area_id: areaId } })
-  expect(response.ok()).toBe(true)
+async function seed(request: APIRequestContext, headers: Record<string, string>, title: string, parentId?: string, areaId?: string) {
+  const response = await request.post("/api/tasks", { headers, data: { title, status: "pending", parent_id: parentId, area_id: areaId } })
+  expect(response.ok(), await response.text()).toBe(true)
   const task = await response.json() as { id: string; ticket_key: string }
   const detail = await request.get(`/api/tasks/${task.id}`)
   expect(detail.ok()).toBe(true)
   return { ...task, updated_at: Number((await detail.json()).task_version) }
 }
 
-async function defer(request: APIRequestContext, task: Awaited<ReturnType<typeof seed>>) {
+async function defer(request: APIRequestContext, headers: Record<string, string>, task: Awaited<ReturnType<typeof seed>>) {
   const response = await request.patch(`/api/tasks/${task.id}/deferral`, {
-    data: { deferred: true, updated_at: task.updated_at, deferral_revision: null },
+    headers, data: { deferred: true, updated_at: task.updated_at, deferral_revision: null },
   })
-  expect(response.ok()).toBe(true)
+  expect(response.ok(), await response.text()).toBe(true)
 }
 
-test("keyboard Defer removes a board card and keyboard Resume brings it back", async ({ page, request }) => {
-  const sibling = await seed(request, "Board deferral neighbor")
-  const task = await seed(request, "Board keyboard deferral")
+test("keyboard Defer removes a board card and keyboard Resume brings it back", async ({ page, request, boardHeaders }) => {
+  const sibling = await seed(request, boardHeaders, "Board deferral neighbor")
+  const task = await seed(request, boardHeaders, "Board keyboard deferral")
   await page.goto("/tasks")
   const card = page.locator(`.kanban-card[data-id="${task.id}"]`)
   await expect(card).toBeVisible()
@@ -51,9 +58,9 @@ test("keyboard Defer removes a board card and keyboard Resume brings it back", a
   await expect(card).toBeVisible()
 })
 
-test("Details keeps session reconciliation across a linked task and terminal states", async ({ page, request }) => {
-  const parent = await seed(request, "Deferral linked parent")
-  const child = await seed(request, "Deferral linked child", parent.id)
+test("Details keeps session reconciliation across a linked task and terminal states", async ({ page, request, boardHeaders }) => {
+  const parent = await seed(request, boardHeaders, "Deferral linked parent")
+  const child = await seed(request, boardHeaders, "Deferral linked child", parent.id)
   await page.goto(`/tasks?open=${child.ticket_key}`)
   const modal = page.locator("#task-detail-overlay")
   const action = modal.locator("#td-deferral-action")
@@ -79,12 +86,12 @@ test("Details keeps session reconciliation across a linked task and terminal sta
   await expect(page.locator("#deferred-heading")).toBeFocused()
 })
 
-test("the queue renders 25 rows and clamps after resuming the final row", async ({ page, request }) => {
+test("the queue renders 25 rows and clamps after resuming the final row", async ({ page, request, boardHeaders }) => {
   test.setTimeout(45_000)
   const entries = []
   for (let index = 0; index < 26; index++) {
-    const task = await seed(request, `Deferral pagination ${index}`)
-    await defer(request, task)
+    const task = await seed(request, boardHeaders, `Deferral pagination ${index}`)
+    await defer(request, boardHeaders, task)
     entries.push(task)
   }
   await page.goto("/deferred")
@@ -96,12 +103,12 @@ test("the queue renders 25 rows and clamps after resuming the final row", async 
   await expect(page.locator("[data-deferred-card]")).toHaveCount(25)
   await expect(page).not.toHaveURL(/page=/)
   await expect(page.locator("#deferred-heading")).toBeFocused()
-  for (const task of entries) await request.delete(`/api/tasks/${task.id}`, { data: {} })
+  for (const task of entries) await request.delete(`/api/tasks/${task.id}`, { headers: boardHeaders, data: {} })
 })
 
-test("a stale Resume offers a fresh read and only retries on a new decision", async ({ page, request }) => {
-  const task = await seed(request, "DeferralStaleResume".repeat(22))
-  await defer(request, task)
+test("a stale Resume offers a fresh read and only retries on a new decision", async ({ page, request, boardHeaders }) => {
+  const task = await seed(request, boardHeaders, "DeferralStaleResume".repeat(22))
+  await defer(request, boardHeaders, task)
   await page.setViewportSize({ width: 320, height: 740 })
   let attempts = 0
   page.on("request", candidate => {
@@ -111,7 +118,7 @@ test("a stale Resume offers a fresh read and only retries on a new decision", as
   const card = page.locator(`[data-deferred-card="${task.id}"]`)
   await expect(card).toBeVisible()
   expect(await card.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
-  expect((await request.put(`/api/tasks/${task.id}`, { data: { title: "Edited elsewhere" } })).ok()).toBe(true)
+  expect((await request.put(`/api/tasks/${task.id}`, { headers: boardHeaders, data: { title: "Edited elsewhere" } })).ok()).toBe(true)
   await card.getByRole("button", { name: "Resume", exact: true }).tap()
   const reload = page.getByRole("link", { name: "Reload Deferred", exact: true })
   await expect(reload).toBeFocused()
@@ -124,9 +131,9 @@ test("a stale Resume offers a fresh read and only retries on a new decision", as
   expect(attempts).toBe(2)
 })
 
-test("deferred rows remain visible in Table and a terminal status clears the badge", async ({ page, request }) => {
-  const task = await seed(request, "Deferral retained Table row")
-  await defer(request, task)
+test("deferred rows remain visible in Table and a terminal status clears the badge", async ({ page, request, boardHeaders }) => {
+  const task = await seed(request, boardHeaders, "Deferral retained Table row")
+  await defer(request, boardHeaders, task)
   await page.goto("/tasks?view=table#table")
   const row = page.locator(`.table-row[data-id="${task.id}"]`)
   const badge = row.locator("[data-table-deferred]")
@@ -139,14 +146,14 @@ test("deferred rows remain visible in Table and a terminal status clears the bad
   await expect(badge).toBeHidden()
 })
 
-test("Deferred preserves the Board Area and can widen to all Areas", async ({ page, request }) => {
-  const area = await request.post("/api/areas", { data: { name: "Deferred Area" } })
+test("Deferred preserves the Board Area and can widen to all Areas", async ({ page, request, boardHeaders }) => {
+  const area = await request.post("/api/areas", { headers: boardHeaders, data: { name: "Deferred Area" } })
   expect(area.status()).toBe(201)
   const { id: areaId } = await area.json()
-  const local = await seed(request, "Deferred in selected area", undefined, areaId)
-  const elsewhere = await seed(request, "Deferred in another area")
-  await defer(request, local)
-  await defer(request, elsewhere)
+  const local = await seed(request, boardHeaders, "Deferred in selected area", undefined, areaId)
+  const elsewhere = await seed(request, boardHeaders, "Deferred in another area")
+  await defer(request, boardHeaders, local)
+  await defer(request, boardHeaders, elsewhere)
 
   await page.goto(`/tasks?area=${areaId}#kanban`)
   await page.getByRole("link", { name: "Deferred", exact: true }).click()
@@ -166,12 +173,12 @@ test("Deferred preserves the Board Area and can widen to all Areas", async ({ pa
   await page.getByRole("link", { name: "Back to Tasks" }).click()
   await expect(page).toHaveURL(/\/tasks\?area=#kanban$/)
 
-  for (const task of [local, elsewhere]) await request.delete(`/api/tasks/${task.id}`, { data: {} })
+  for (const task of [local, elsewhere]) await request.delete(`/api/tasks/${task.id}`, { headers: boardHeaders, data: {} })
 })
 
-test("a missing Deferred Area stays visible on the Board until the user widens it", async ({ page, request }) => {
+test("a missing Deferred Area stays visible on the Board until the user widens it", async ({ page, request, boardHeaders }) => {
   const id = crypto.randomUUID()
-  const task = await seed(request, "Recover an open task")
+  const task = await seed(request, boardHeaders, "Recover an open task")
   try {
     await page.goto(`/deferred?area=${id}`)
     const area = page.getByRole("combobox", { name: "Area", exact: true })
@@ -198,6 +205,6 @@ test("a missing Deferred Area stays visible on the Board until the user widens i
     await add.click()
     await expect(page.getByRole("textbox", { name: "New task title" })).toBeVisible()
   } finally {
-    await request.delete(`/api/tasks/${task.id}`, { data: {} })
+    await request.delete(`/api/tasks/${task.id}`, { headers: boardHeaders, data: {} })
   }
 })

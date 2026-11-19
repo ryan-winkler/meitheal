@@ -14,19 +14,23 @@ type Marker = { selector: Selector; expiresAt: number }
 
 function markerKey() {
   const context = currentTaskApiContext()
-  return context ? `meitheal-draft-operation:${context.boardId}:${context.session}` : "meitheal-draft-operation:unavailable"
+  // A Board request proof rotates when the App restarts. Recovery follows the
+  // verified installation and actor while draft requests still require the current proof.
+  return context?.actorKey ? `meitheal-draft-operation:${context.boardId}:${context.actorKey}` : undefined
 }
 const markerDuration = 300_000
 
 function readMarker(): Marker | undefined {
+  const key = markerKey()
+  if (!key) return
   try {
-    const marker = JSON.parse(sessionStorage.getItem(markerKey()) ?? "null") as Marker | null
+    const marker = JSON.parse(sessionStorage.getItem(key) ?? "null") as Marker | null
     if (marker && marker.expiresAt > Date.now() && marker.expiresAt <= Date.now() + markerDuration &&
         /^[a-f0-9-]{36}$/.test(marker.selector.attemptId) &&
         (marker.selector.kind === "save" ||
           marker.selector.kind === "publish" && /^[a-f0-9-]{36}$/.test(marker.selector.draftId)
             && Number.isSafeInteger(marker.selector.revision) && marker.selector.revision > 0)) return marker
-    sessionStorage.removeItem(markerKey())
+    sessionStorage.removeItem(key)
   } catch { /* Private storage can be unavailable. */ }
   return undefined
 }
@@ -91,9 +95,11 @@ export function connectTaskDrafts(overlay: HTMLElement, editor: DraftEditor, sig
   function setMarker(selector?: Selector) {
     continuation = undefined
     marker = selector ? { selector, expiresAt: Date.now() + markerDuration } : undefined
+    const key = markerKey()
+    if (!key) return
     try {
-      if (marker) sessionStorage.setItem(markerKey(), JSON.stringify(marker))
-      else sessionStorage.removeItem(markerKey())
+      if (marker) sessionStorage.setItem(key, JSON.stringify(marker))
+      else sessionStorage.removeItem(key)
     } catch { /* Continue within the current page. */ }
   }
 
