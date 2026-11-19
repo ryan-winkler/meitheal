@@ -63,6 +63,21 @@ export function commentAttempt(request: Request) {
   return { key, issuedAt }
 }
 
+/** A legacy plain-comment retry joins the existing durable receipt namespace. */
+export function legacyCommentAttempt(request: Request, binding: {
+  installationId: string; boardId: string; principalKind: string; principalId: string; taskId: string
+}) {
+  const clientKey = request.headers.get("idempotency-key")
+  if (clientKey === null) return null
+  if (!clientKey || clientKey.length > 255 || /[\u0000-\u001f\u007f]/.test(clientKey))
+    return commentMentionProblem("Idempotency-Key must contain 1 to 255 characters without control characters.", 400)
+  if (!binding.installationId)
+    return commentMentionProblem("The current installation identity is unavailable. Try again after restoring current work access.", 503)
+  const key = createHash("sha256").update(JSON.stringify(["plain-comment-retry-v1", binding.installationId,
+    binding.boardId, binding.principalKind, binding.principalId, binding.taskId, clientKey])).digest("hex")
+  return { key: "legacy:" + key, issuedAt: Date.now(), legacyPlain: true as const }
+}
+
 export async function prepareCommentMentions(
   content: string, mentions: ReturnType<typeof commentMentions>, locals: App.Locals, signal: AbortSignal,
 ) {

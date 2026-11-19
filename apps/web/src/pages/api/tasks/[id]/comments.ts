@@ -7,7 +7,7 @@ import { CommentMentionRepository } from "@domains/tasks/persistence/comment-men
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { apiError } from "@lib/api-response"
 import { requireAssignedTaskWriteAccess, restrictedAssigneeId } from "@lib/agent-token-guard"
-import { checkCommentMentionWriteContext, commentAttempt, commentMentionProblem, prepareCommentMentions } from "@lib/comment-mention-request"
+import { checkCommentMentionWriteContext, commentAttempt, legacyCommentAttempt, commentMentionProblem, prepareCommentMentions } from "@lib/comment-mention-request"
 import { commentAttemptHorizonMs, commentMentions, hasCommentMentionSelector, redactCommentMentionSelectors } from "@lib/comment-mentions"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
 import { notifyAgentComment } from "@domains/notifications"
@@ -48,8 +48,9 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "edit" 
   const content = await readComment(request)
   if (content instanceof Response) return content
 
-  const attempt = verifiedIngressUser(locals) ? commentAttempt(request) : null
-  if (attempt instanceof Response) return attempt
+  const explicitAttempt = verifiedIngressUser(locals) ? commentAttempt(request) : null
+  if (explicitAttempt instanceof Response) return explicitAttempt
+  let attempt: { key: string; issuedAt: number; legacyPlain?: boolean } | null = explicitAttempt
   const parsedMentions = commentMentions(content)
   if (attempt || parsedMentions.length) {
     const wrongContext = checkCommentMentionWriteContext(request, locals)
@@ -73,10 +74,22 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "edit" 
       "Agent can only comment on tasks assigned to it",
     )
     if (denied) return denied
+    if (!attempt && request.headers.has("idempotency-key")) {
+      if (!actor.owner) return commentMentionProblem("Comment retries require a current authenticated comment owner.", 400)
+      if (parsedMentions.length) return commentMentionProblem("Start this comment again to send its mentions.", 400)
+      const { rows: [installation] } = await client.execute({ sql: "SELECT value FROM app_settings WHERE key = 'work_installation_id'", args: [] })
+      const legacy = legacyCommentAttempt(request, {
+        installationId: typeof installation?.value === "string" ? installation.value : "",
+        boardId: scope.boardId, principalKind: scope.principal.kind, principalId: scope.principal.id, taskId,
+      })
+      if (legacy instanceof Response) return legacy
+      attempt = legacy
+    }
+    const cutoff = attempt?.legacyPlain ? Date.now() - commentAttemptHorizonMs : undefined
     if (attempt && actor.owner) {
-      if (await mentions.replay(taskId, actor.owner, attempt.key, content)) {
+      if (await mentions.replay(taskId, actor.owner, attempt.key, content, cutoff)) {
         if (!await hasCurrentTaskParticipant(locals, request.signal, true)) return activeParticipantRequired()
-        const prior = await mentions.replay(taskId, actor.owner, attempt.key, content)
+        const prior = await mentions.replay(taskId, actor.owner, attempt.key, content, cutoff)
         return attemptResponse(prior ?? { state: "gone" })
       }
     }
@@ -104,7 +117,9 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "edit" 
     // Tells the household and emits task.commented for the agent's answer.
     if (agentToken) notifyAgentComment(taskId, { id: commentResult.comment.id, author: actor.author, content: prepared.content }, scope).catch(() => {})
     return commentJson(commentResult.comment, 201)
-  } catch {
+  } catch (error) {
+    const failure = boardScopeErrorResponse(error)
+    if (failure) return failure
     return commentFailure("post", "Failed to create comment")
   }
 })

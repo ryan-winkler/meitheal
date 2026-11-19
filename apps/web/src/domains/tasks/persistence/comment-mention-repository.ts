@@ -17,7 +17,13 @@ const retentionMs = 30 * 24 * 60 * 60000,
   inboxSize = 1000,
   pageSize = 25
 const commentColumns = "id, task_id, content, author, created_at"
-type CommentAttempt = { key: string; issuedAt: number; rawContent: string; cutoff: number }
+type CommentAttempt = {
+  key: string
+  issuedAt: number
+  rawContent: string
+  cutoff: number
+  legacyPlain?: boolean
+}
 const commentDigest = (value: string) => createHash("sha256").update(value).digest("hex")
 function parent(scope: BoardScope, reference: SqlFragment, write = false): SqlFragment {
   const assigned = write ? scopeAssignedTo(scope) : undefined
@@ -32,7 +38,8 @@ async function readAttempt(
   taskId: string,
   owner: string,
   key: string,
-  digest: string
+  digest: string,
+  cutoff?: number
 ) {
   const {
     rows: [prior]
@@ -41,7 +48,7 @@ async function readAttempt(
       scope,
       sql`SELECT receipt.body_digest,comment.id,comment.task_id,comment.content,comment.author,comment.created_at
     FROM comment_mention_attempts AS receipt LEFT JOIN comments AS comment ON comment.id=receipt.comment_id AND comment.task_id=receipt.task_id
-    WHERE receipt.task_id=${taskId} AND receipt.owner_key=${owner} AND receipt.attempt_key=${key} AND ${parent(scope, sourceSql("receipt.task_id"), true)}`
+    WHERE receipt.task_id=${taskId} AND receipt.owner_key=${owner} AND receipt.attempt_key=${key} ${cutoff === undefined ? sourceSql("") : sql`AND receipt.issued_at > ${cutoff}`} AND ${parent(scope, sourceSql("receipt.task_id"), true)}`
     )
   )
   if (!prior) return undefined
@@ -93,7 +100,7 @@ export class CommentMentionRepository {
   private owns(owner: string) {
     return owner === scopeCommentOwnerKey(this.scope)
   }
-  async replay(taskId: string, owner: string, key: string, rawContent: string) {
+  async replay(taskId: string, owner: string, key: string, rawContent: string, cutoff?: number) {
     if (!this.owns(owner)) return undefined
     return readAttempt(
       this.db("edit", [taskId]),
@@ -101,7 +108,8 @@ export class CommentMentionRepository {
       taskId,
       owner,
       key,
-      commentDigest(rawContent)
+      commentDigest(rawContent),
+      cutoff
     )
   }
   async create(
@@ -117,23 +125,40 @@ export class CommentMentionRepository {
     const digest = commentDigest(attempt.rawContent),
       tx = await this.db("edit", [taskId]).transaction("write")
     try {
-      const prior = await readAttempt(tx, this.scope, taskId, owner, attempt.key, digest)
+      const prior = await readAttempt(
+        tx,
+        this.scope,
+        taskId,
+        owner,
+        attempt.key,
+        digest,
+        attempt.legacyPlain ? attempt.cutoff : undefined
+      )
       if (prior) {
         await tx.commit()
         return prior
       }
+      if (attempt.legacyPlain)
+        await tx.execute(
+          scoped(
+            this.scope,
+            sql`DELETE FROM comment_mention_attempts WHERE task_id=${taskId} AND owner_key=${owner}
+          AND attempt_key=${attempt.key} AND issued_at<=${attempt.cutoff} AND ${parent(this.scope, sourceSql("comment_mention_attempts.task_id"), true)}`
+          )
+        )
       const {
         rows: [comment]
       } =
         await tx.execute(sql`INSERT INTO comments(task_id,content,author,owner_key,inactivity_spike_human)
         SELECT id,${content},${author},${owner},${verifiedHuman && this.scope.principal.kind === "ha_user" ? 1 : 0} FROM tasks WHERE id=${taskId} AND ${taskOwnedBy(this.scope)} RETURNING ${sourceSql(commentColumns)}`)
       if (!comment) return { state: "missing" } as const
-      await tx.execute(
-        scoped(
-          this.scope,
-          sql`DELETE FROM comment_mention_attempts WHERE issued_at<=${attempt.cutoff} AND ${parent(this.scope, sourceSql("comment_mention_attempts.task_id"), true)}`
+      if (!attempt.legacyPlain)
+        await tx.execute(
+          scoped(
+            this.scope,
+            sql`DELETE FROM comment_mention_attempts WHERE issued_at<=${attempt.cutoff} AND ${parent(this.scope, sourceSql("comment_mention_attempts.task_id"), true)}`
+          )
         )
-      )
       await tx.execute(
         sql`INSERT INTO comment_mention_attempts(task_id,owner_key,attempt_key,body_digest,comment_id,issued_at) VALUES (${taskId},${owner},${attempt.key},${digest},${Number(comment.id)},${attempt.issuedAt})`
       )

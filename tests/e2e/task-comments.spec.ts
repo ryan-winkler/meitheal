@@ -6,10 +6,11 @@ import { request as httpRequest } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { expect, test } from "@playwright/test"
+import { expect, test, type APIRequestContext } from "@playwright/test"
 import { openDatabase } from "../../apps/web/scripts/database-client.mjs"
 import { enrollCurrentOwnedLegacyFixture } from "../helpers/current-legacy-fixture"
 import { prepareTaskBoardPredecessor } from "../scripts/task-board-predecessor"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
 // This spec injects a failed comment response with Playwright request routing.
 test.use({ serviceWorkers: "block" })
@@ -17,11 +18,11 @@ test.use({ serviceWorkers: "block" })
 const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
 const fixture = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
 
-function sendOversizedChunks(url: string): Promise<number | undefined> {
+function sendOversizedChunks(url: string, proof: Record<string, string>): Promise<number | undefined> {
   return new Promise((resolve, reject) => {
     const client = httpRequest(url, {
       method: "POST",
-      headers: { "content-type": "application/json", cookie: "feedback-fixture=member" },
+      headers: { ...proof, "content-type": "application/json", cookie: "feedback-fixture=member" },
     }, response => {
       response.resume()
       resolve(response.statusCode)
@@ -34,7 +35,7 @@ function sendOversizedChunks(url: string): Promise<number | undefined> {
   })
 }
 
-test("verified comment owners can edit and delete without claiming other comments", async ({ request }) => {
+test("verified comment owners can edit and delete without claiming other comments", async ({ request, playwright }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and the ingress fixture")
   const work = await mkdtemp(join(tmpdir(), "meitheal-comments-"))
   const env = {
@@ -47,6 +48,7 @@ test("verified comment owners can edit and delete without claiming other comment
   }
   const id = "legacy-comment-task"
   const legacyAuthor = `Home Assistant member · ${createHash("sha256").update("comment-author:fixture-member").digest("hex").slice(0, 10)}`
+  let native!: APIRequestContext
   let server: ReturnType<typeof fork> | undefined
   let custodyDirectory: string | undefined
   try {
@@ -84,11 +86,14 @@ test("verified comment owners can edit and delete without claiming other comment
     ])
     const origin = `http://127.0.0.1:${info.port}`
     const ingress = origin + info.configuredPath
-    const headers = (role: string) => ({ cookie: `feedback-fixture=${role}` })
+    const proofs = new Map(await Promise.all(["admin", "member"].map(async role => [role,
+      await currentBoardWriteHeaders(request, "household", { origin, cookie: `feedback-fixture=${role}` }, ingress)] as const)))
+    const headers = (role: string) => proofs.get(role) ?? ({ cookie: `feedback-fixture=${role}` })
+    native = await playwright.request.newContext({ extraHTTPHeaders: {} })
     const comments = `/api/tasks/${id}/comments`
     const beforeEdits = await request.get(ingress + comments, { headers: headers("member") })
     expect(beforeEdits.status()).toBe(200)
-    expect(beforeEdits.headers()["cache-control"]).toBe("no-store")
+    expect(beforeEdits.headers()["cache-control"]).toBe("private, no-store")
     expect((await beforeEdits.json()).comments).toEqual([{
       id: expect.any(Number),
       task_id: id,
@@ -146,15 +151,15 @@ test("verified comment owners can edit and delete without claiming other comment
     expect(names.admin?.size).toBe(1)
     expect([...names.member ?? []]).not.toEqual([...names.admin ?? []])
 
-    const automation = await request.post(origin + comments, {
-      headers: { authorization: `Bearer ${token}` },
+    const automation = await native.post(origin + comments, {
+      headers: { authorization: `Bearer ${token}`, "x-meitheal-board-id": "household" },
       data: { content: "Automation note", author: "Fake author" },
     })
     expect(automation.status()).toBe(201)
     const automationComment = await automation.json()
     expect(automationComment).toMatchObject({ content: "Automation note", author: "Automation: Test automation" })
 
-    const forged = await request.post(origin + comments, {
+    const forged = await native.post(origin + comments, {
       headers: { "x-remote-user-id": "fixture-admin", "x-remote-user-groups": "system-admin" },
       data: { content: "Direct forgery" },
     })
@@ -163,7 +168,7 @@ test("verified comment owners can edit and delete without claiming other comment
       headers: headers("old"),
       data: { content: "Unverified ingress user" },
     })).status()).toBe(403)
-    expect(await sendOversizedChunks(ingress + comments)).toBe(413)
+    expect(await sendOversizedChunks(ingress + comments, headers("member"))).toBe(413)
     expect((await request.post(ingress + comments, {
       headers: headers("member"),
       data: { content: "a".repeat(5001) },
@@ -188,7 +193,7 @@ test("verified comment owners can edit and delete without claiming other comment
     const item = ingress + comments + "/" + memberComment.id
     const ownerHeaders = { ...headers("member"), origin, "sec-fetch-site": "same-origin" }
     const initial = await request.get(item, { headers: headers("member") })
-    expect(initial.headers()["cache-control"]).toBe("no-store")
+    expect(initial.headers()["cache-control"]).toBe("private, no-store")
     expect(await initial.json()).toEqual(memberComment)
     expect((await request.get(item + "junk", { headers: headers("member") })).status()).toBe(404)
     const wrongTask = ingress + `/api/tasks/wrong-parent/comments/${memberComment.id}`
@@ -216,42 +221,52 @@ test("verified comment owners can edit and delete without claiming other comment
     expect(await (await request.get(item, { headers: headers("member") })).json()).toEqual(updated)
 
     const automationItem = origin + comments + "/" + automationComment.id
-    const automationHeaders = { authorization: `Bearer ${token}` }
-    expect((await request.get(automationItem, { headers: automationHeaders })).status()).toBe(403)
+    const automationHeaders = { authorization: `Bearer ${token}`, "x-meitheal-board-id": "household" }
+    expect((await native.get(automationItem, { headers: automationHeaders })).status()).toBe(403)
     const changeAutomationScopes = async (scopes: string[]) => {
       const response = await request.patch(ingress + "/api/agent-tokens", {
         headers: { ...headers("admin"), origin },
         data: { id: automationTokenId, scopes },
       })
       expect(response.status()).toBe(200)
+      // A credential scope update cannot enlarge its independently approved Board grant.
+      const beforeApproval = scopes.includes("tasks:write")
+        ? await native.patch(automationItem, { headers: automationHeaders, data: { content: "Must wait for Board approval" } })
+        : await native.get(automationItem, { headers: automationHeaders })
+      expect(beforeApproval.status()).toBe(403)
+      const approved = await request.patch(ingress + "/api/boards/household", {
+        headers: { ...headers("admin"), origin },
+        data: { action: "agent", tokenId: automationTokenId, enabled: true },
+      })
+      expect(approved.status(), await approved.text()).toBe(200)
     }
     await changeAutomationScopes(["tasks:read"])
-    const readOnlyOwner = await request.get(origin + comments, { headers: automationHeaders })
+    const readOnlyOwner = await native.get(origin + comments, { headers: automationHeaders })
     expect(readOnlyOwner.status()).toBe(200)
     expect((await readOnlyOwner.json()).comments.at(-1)).toEqual({ ...automationComment, can_manage: false })
-    expect((await request.delete(automationItem, { headers: automationHeaders })).status()).toBe(403)
+    expect((await native.delete(automationItem, { headers: automationHeaders })).status()).toBe(403)
     await changeAutomationScopes(["tasks:read", "tasks:write"])
-    const readWriteOwner = await request.get(origin + comments, { headers: automationHeaders })
+    const readWriteOwner = await native.get(origin + comments, { headers: automationHeaders })
     expect(readWriteOwner.status()).toBe(200)
     expect((await readWriteOwner.json()).comments.at(-1)).toEqual({ ...automationComment, can_manage: true })
-    const readerHeaders = { authorization: `Bearer ${readerToken}` }
-    const automationRead = await request.get(automationItem, { headers: readerHeaders })
+    const readerHeaders = { authorization: `Bearer ${readerToken}`, "x-meitheal-board-id": "household" }
+    const automationRead = await native.get(automationItem, { headers: readerHeaders })
     expect(automationRead.status()).toBe(200)
     expect(await automationRead.json()).toEqual(automationComment)
-    const readOnlyEdit = await request.patch(automationItem, { headers: readerHeaders, data: { content: "Cannot write" } })
+    const readOnlyEdit = await native.patch(automationItem, { headers: readerHeaders, data: { content: "Cannot write" } })
     expect(readOnlyEdit.status()).toBe(403)
-    const replacementEdit = await request.patch(automationItem, {
-      headers: { authorization: `Bearer ${replacementToken}` },
+    const replacementEdit = await native.patch(automationItem, {
+      headers: { authorization: `Bearer ${replacementToken}`, "x-meitheal-board-id": "household" },
       data: { content: "Claim by name" },
     })
     expect(replacementEdit.status()).toBe(404)
-    const editedAutomation = await request.patch(automationItem, {
+    const editedAutomation = await native.patch(automationItem, {
       headers: automationHeaders,
       data: { content: "Edited automation note" },
     })
     expect(editedAutomation.status()).toBe(200)
     expect(await editedAutomation.json()).toEqual({ ...automationComment, content: "Edited automation note" })
-    expect((await request.delete(automationItem, { headers: { ...automationHeaders, "content-type": "application/json" } })).status()).toBe(204)
+    expect((await native.delete(automationItem, { headers: { ...automationHeaders, "content-type": "application/json" } })).status()).toBe(204)
 
     const [raceEdit, raceDelete] = await Promise.all([
       request.patch(item, { headers: ownerHeaders, data: { content: "Concurrent edit" } }),
@@ -270,8 +285,10 @@ test("verified comment owners can edit and delete without claiming other comment
       data: { content: "Task was deleted" },
     })).status()).toBe(404)
     const afterDelete = await request.get(ingress + comments, { headers: headers("member") })
-    expect(await afterDelete.json()).toEqual({ comments: [] })
+    expect(afterDelete.status()).toBe(404)
+    expect(await afterDelete.json()).toMatchObject({ status: 404, detail: "This work is unavailable." })
   } finally {
+    await native?.dispose()
     if (server && server.exitCode === null && server.signalCode === null) {
       const exited = once(server, "exit")
       server.kill()
@@ -285,7 +302,8 @@ test("verified comment owners can edit and delete without claiming other comment
 test("a failed comment post keeps the draft for retry in the task panel", async ({ page, request, baseURL }) => {
   test.skip(!process.env.E2E_BASE_URL, "Requires a disposable local Meitheal server")
   const origin = new URL(baseURL!).origin
-  const task = await request.post("/api/tasks", { headers: { origin }, data: { title: "Comment draft fixture" } })
+  const proof = await currentBoardWriteHeaders(request, "household", { origin })
+  const task = await request.post("/api/tasks", { headers: proof, data: { title: "Comment draft fixture" } })
   expect(task.status()).toBe(201)
   const { id } = await task.json()
   const comments = `**/api/tasks/${id}/comments`

@@ -5,17 +5,19 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
-import { expect, test } from "@playwright/test"
+import { expect, test, type APIRequestContext } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
 const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
 const fixture = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
 
-test("task promotion is shared, typed, and independent of the stored manual order", async ({ request, browser }) => {
+test("task promotion is shared, typed, and independent of the stored manual order", async ({ request, browser, playwright }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the built App and the ingress fixture")
   test.slow()
 
   const work = await mkdtemp(join(tmpdir(), "meitheal-prominence-"))
   const file = join(work, "meitheal.db")
+  let native!: APIRequestContext
   let db!: DatabaseSync
   let child: ReturnType<typeof fork> | undefined
   const browserSessions = []
@@ -46,8 +48,9 @@ test("task promotion is shared, typed, and independent of the stored manual orde
     const session = (role: string) => ({
       cookie: `feedback-fixture=${role}`, origin, "sec-fetch-site": "same-origin",
     })
-    const member = session("member")
-    const admin = session("admin")
+    const member = await currentBoardWriteHeaders(request, "household", session("member"), ingress)
+    const admin = await currentBoardWriteHeaders(request, "household", session("admin"), ingress)
+    native = await playwright.request.newContext({ extraHTTPHeaders: {} })
     const create = async (title: string) => {
       const result = await request.post(ingress + "/api/tasks", {
         headers: member, data: { title, priority: 4, is_favorite: true },
@@ -82,10 +85,10 @@ test("task promotion is shared, typed, and independent of the stored manual orde
       headers: admin, data: { name: "Read-only fixture", scopes: ["tasks:read"] },
     })
     expect(issued.status()).toBe(201)
-    const reader = { authorization: `Bearer ${(await issued.json()).token}` }
-    const forbidden = await request.patch(origin + taskPath, { headers: reader, data: { is_promoted: true } })
+    const reader = { authorization: `Bearer ${(await issued.json()).token}`, "x-meitheal-board-id": "household" }
+    const forbidden = await native.patch(origin + taskPath, { headers: reader, data: { is_promoted: true } })
     expect(forbidden.status()).toBe(403)
-    const unauthenticated = await request.patch(origin + taskPath, {
+    const unauthenticated = await native.patch(origin + taskPath, {
       headers: { "x-remote-user-id": "fixture-admin", "x-remote-user-groups": "system-admin" },
       data: { is_promoted: true },
     })
@@ -95,7 +98,7 @@ test("task promotion is shared, typed, and independent of the stored manual orde
     expect(promoted.status()).toBe(200)
     expect(await promoted.json()).toMatchObject({ is_promoted: true, is_favorite: 1, priority: 4 })
     expect(await (await read()).json()).toMatchObject({ is_promoted: true })
-    expect(await (await request.get(origin + taskPath, { headers: reader })).json()).toMatchObject({ is_promoted: true })
+    expect(await (await native.get(origin + taskPath, { headers: reader })).json()).toMatchObject({ is_promoted: true })
     expect(positions()).toEqual(underlying)
 
     const moveBefore = (task_id: string, anchor_id: string) => request.post(reorderPath, {
@@ -179,6 +182,7 @@ test("task promotion is shared, typed, and independent of the stored manual orde
     await lane.getByRole("link", { name: "Next" }).press("Enter")
     await expect(cards.last()).toHaveAttribute("data-id", targetId)
   } finally {
+    await native?.dispose()
     await Promise.allSettled(browserSessions.map(context => context.close()))
     if (child && child.exitCode === null) {
       const exited = once(child, "exit")
