@@ -35,7 +35,7 @@ test("only new verified human comments advance a spike across both comment write
     const adminProof = await currentBoardWriteHeaders(admin.request, "household", { origin }, origin + prefix)
     const memberProof = await currentBoardWriteHeaders(member.request, "household", { origin }, origin + prefix)
     native = await playwright.request.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {} })
-    const created = await admin.request.post(origin + prefix + "/api/tasks", { headers: adminProof, data: { title: "Stall comment provenance" } })
+    const created = await admin.request.post(origin + prefix + "/api/tasks", { headers: adminProof, data: { title: "Stall comment provenance", area_id: "default" } })
     expect(created.status()).toBe(201)
     const taskId = (await created.json()).id as string
     const path = prefix + "/api/tasks/" + taskId + "/comments"
