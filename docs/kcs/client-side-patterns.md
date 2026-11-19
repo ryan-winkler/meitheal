@@ -107,6 +107,10 @@ When Astro embeds JSON in a script element, use `serializeForScript` from `lib/s
 
 For a regression check, run `pnpm --filter @meitheal/tests test e2e/sanitize.spec.ts e2e/timeline-bootstrap.spec.ts` with `E2E_BASE_URL` pointed at a disposable Meitheal instance and SQLite database. The timeline check creates and deletes a synthetic task.
 
+The Household ticket inspector displays the description as text while it loads Markdown rendering and sanitization. It keeps the text if rich rendering fails. The renderer loads for nonempty descriptions on ticket open or after a successful save. Rich previews still use sanitized DOM nodes and ingress-aware task links. Only the latest description render can update the current drawer.
+
+To troubleshoot an unformatted preview, check the browser console for `Could not render task description Markdown` and check whether the Markdown modules loaded. Use `task-references.spec.ts` to verify rich previews and task links through ingress and `task-detail-layout.spec.ts` to check description editing and saving.
+
 ## Custom Fields Rendering
 
 Shopping items store complex data in `custom_fields`:

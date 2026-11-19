@@ -13,8 +13,6 @@
         import { saveAttachment } from "@domains/offline/offline-store";
         import { confirmDialog } from "@lib/confirm-dialog";
         import { pageLifecycle } from "@lib/page-lifecycle";
-        import { marked } from "marked";
-        import { sanitizeClient } from "@lib/sanitize-client";
         import { onTaskCompleted } from "@lib/gamification-hook";
         import { renderTypeIconSvg } from "@lib/type-icon-config";
         import { escapeHtml } from "@lib/safe-html";
@@ -909,12 +907,6 @@
             setDescriptionSaving(false)
             if (descSaveBtn) descSaveBtn.disabled = true
             if (descSavedIndicator) descSavedIndicator.style.display = "none"
-            try {
-              renderTaskDescription(description)
-            } catch (error) {
-              descPreview?.replaceChildren()
-              log.warn("markdown-preview error", error)
-            }
             _descOriginalValue = description
             if (!keepDescriptionDraft) {
               tdDescription.value = description
@@ -1282,6 +1274,7 @@
             taskLoaded = true
             syncInspectorDockMode()
             tdLoaded?.classList.remove("hidden")
+            void renderTaskDescription(description)
             resizeTitle()
             setTimeout(() => {
               if (modalSignal.aborted) return
@@ -1373,13 +1366,41 @@
 
         let _descOriginalValue = "";
         let _descSavedTimer: number | null = null;
+        let descriptionRenderSequence = 0
 
-        function renderTaskDescription(markdown: string) {
-          if (!descPreview) return
-          const sanitized = sanitizeClient(String(marked.parse(markdown || "*No description provided.*")))
-          const parsedDoc = new DOMParser().parseFromString(sanitized, "text/html")
-          descPreview.replaceChildren(...Array.from(parsedDoc.body.childNodes))
-          resolveDescriptionTaskReferences(descPreview)
+        async function renderTaskDescription(markdown: string): Promise<void> {
+          if (!descPreview || __signal.aborted) return
+          const generation = detailGeneration
+          const sequence = ++descriptionRenderSequence
+          const fallback = document.createElement("p")
+
+          if (!markdown) {
+            const placeholder = document.createElement("em")
+            placeholder.textContent = "No description provided."
+            fallback.append(placeholder)
+            descPreview.replaceChildren(fallback)
+            return
+          }
+
+          fallback.className = "whitespace-pre-wrap"
+          fallback.textContent = markdown
+          descPreview.replaceChildren(fallback)
+
+          try {
+            const [{ marked }, { sanitizeClient }] = await Promise.all([
+              import("marked"),
+              import("@lib/sanitize-client"),
+            ])
+            if (__signal.aborted || generation !== detailGeneration ||
+                sequence !== descriptionRenderSequence || !descPreview.isConnected) return
+
+            const sanitized = sanitizeClient(marked.parse(markdown, { async: false }))
+            const parsedDoc = new DOMParser().parseFromString(sanitized, "text/html")
+            resolveDescriptionTaskReferences(parsedDoc.body)
+            descPreview.replaceChildren(...Array.from(parsedDoc.body.childNodes))
+          } catch (error) {
+            log.warn("Could not render task description Markdown", error)
+          }
         }
 
         function enterDescEdit() {
@@ -1417,7 +1438,7 @@
               return false
             }
             _descOriginalValue = raw
-            renderTaskDescription(raw)
+            void renderTaskDescription(raw)
             if (descSavedIndicator) {
               descSavedIndicator.style.display = ""
               if (_descSavedTimer) clearTimeout(_descSavedTimer)
