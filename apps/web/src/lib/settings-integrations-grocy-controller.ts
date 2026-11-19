@@ -10,6 +10,7 @@ import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
 import { saveSetting, log } from "@lib/settings-utils"
+import { settingsWriteHeaders } from "./settings-store"
 
 function syncOpenGrocyLink(rawUrl: string | undefined): void {
   const openLink = document.getElementById("open-grocy-link") as HTMLAnchorElement | null
@@ -40,7 +41,7 @@ export function initGrocySettings(): void {
       if (urlInput?.value?.trim()) body.url = urlInput.value.trim()
       const res = await fetch("/api/grocy/auto-key", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: settingsWriteHeaders("grocy_api_key"),
         body: JSON.stringify(body),
         signal: pageLifecycle.signal,
       })
@@ -109,7 +110,7 @@ export function initGrocySettings(): void {
       if (key) payload.grocy_api_key = key
       const res = await fetch("/api/grocy/settings", {
         method: "PUT",
-        headers: { "content-type": "application/json" },
+        headers: settingsWriteHeaders("grocy_url"),
         body: JSON.stringify(payload),
         signal: pageLifecycle.signal,
       })
@@ -210,7 +211,7 @@ export function initGrocySettings(): void {
       const syncInterval = (document.getElementById("grocy-sync-interval") as HTMLSelectElement).value
       const res = await fetch("/api/grocy/sync", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: settingsWriteHeaders("grocy_sync_enabled"),
         body: JSON.stringify({ action: "sync", sync_mode: syncMode, interval_ms: Number(syncInterval) }),
         signal: pageLifecycle.signal,
       })

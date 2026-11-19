@@ -74,6 +74,8 @@ Manage integration credentials, outbound integration tests, Node-RED deployment,
 
 Settings downloads exclude credential values. Settings imports also skip credential fields in older files. After an import, re-enter integration secrets separately in Settings. A masked value in Settings means the existing value is kept if the mask is submitted unchanged.
 
+Save CalDAV or Grocy credentials and run Calendar, To-do, and Grocy sync from Settings with the current Board session. If sync needs an approved destination, open the Board’s integration settings to approve the source and choose where its work belongs.
+
 An imported theme keeps its saved mode when Meitheal recognizes it. An empty or unrecognized theme in the backup restores Emerald Isle while the rest of the settings import proceeds.
 
 ## Recover from an error

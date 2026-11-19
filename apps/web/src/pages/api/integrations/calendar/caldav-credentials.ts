@@ -1,4 +1,5 @@
 import { verifiedBoardRequestPrincipal } from "@lib/board-request-context"
+import { boardScopeErrorResponse } from "@lib/board-http"
 import { currentSettingsAccess } from "@lib/current-settings-access"
 /**
  * CalDAV Credentials API — Encrypted credential management
@@ -288,6 +289,8 @@ export const POST: APIRoute = async ({ locals, request }) => {
       ok: true, message: "CalDAV credentials saved securely",
     }), { status: 200, headers: { "Content-Type": "application/json" } })
   } catch (err) {
+    const failure = boardScopeErrorResponse(err)
+    if (failure) return failure
     logApiError("caldav-credentials", "POST failed", err)
     return new Response(
       JSON.stringify({ ok: false, error: "Internal server error" }),
