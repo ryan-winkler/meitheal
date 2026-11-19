@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { routinePeriod } from "../routine-period"
 import type { Client, InValue } from "@libsql/client"
 import {
   requireBoardScope,
@@ -40,6 +41,7 @@ export interface RoutineWithStats extends RoutineTemplateRow {
   currentStreak: number
   longestStreak: number
   totalCompletions: number
+  projectActive: boolean
   checklists: Array<{ text: string; done: boolean }>
 }
 
@@ -65,11 +67,7 @@ type TemplatePatch = Partial<Omit<TemplateInput, "id" | "position" | "isHabit" |
   streak_freeze_limit?: number
 }
 
-export function routinePeriod(cadence: string, now = new Date()): string {
-  const date = new Date(now)
-  if (cadence === "weekly") date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7))
-  return date.toISOString().slice(0, 10)
-}
+export { routinePeriod } from "../routine-period"
 
 function templateObject(value: string): Record<string, unknown> {
   const parsed: unknown = JSON.parse(value)
@@ -322,8 +320,13 @@ export class TemplateRepository {
         expected -= dayStep * 86400000
       }
       const body = templateObject(routine.template_json)
+      // Routine eligibility needs only its referenced Project lifecycle, never
+      // the unrelated Project catalogue or its feature/CRUD capability.
+      const projectId = typeof body.project_id === "string" && body.project_id ? body.project_id : null
+      const projectActive = !projectId || (await this.db("read").execute(sql`SELECT id FROM projects AS project WHERE id=${projectId} AND ${ownedPlanning(this.scope, "project")} AND retired_at IS NULL AND status='active'`)).rows.length > 0
       result.push({
         ...routine,
+        projectActive,
         todayCompleted: today?.status === "complete",
         todayTaskId: today ? String(today.id) : null,
         lastCompletedDate: dates[0] ?? null,
@@ -347,6 +350,7 @@ export class TemplateRepository {
       templateId: string
       period: string
       expectedTemplateJson: string
+      expectedCadence: string
       complete?: boolean
     },
     templateSnapshot?: { templateId: string; expectedTemplateJson: string }
@@ -408,7 +412,10 @@ export class TemplateRepository {
       ...(routine ? { routineOccurrence: routine } : {}),
       ...(templateSnapshot ? { templateSnapshot } : {})
     })
-    if (!result.ok) throw new Error(result.errorCode)
+    if (!result.ok) {
+      if (result.errorCode === "conflict") throw new BoardOperationError("stale")
+      throw new BoardOperationError(result.errorCode === "denied" ? "denied" : "unavailable")
+    }
     return {
       taskId: String(result.task.id),
       alreadyExisted: result.replayed,
@@ -450,11 +457,12 @@ export class TemplateRepository {
     return this.createTask(randomUUID(), body, {
       templateId,
       period: routinePeriod(String(row.cadence ?? "daily")),
-      expectedTemplateJson: String(row.template_json)
+      expectedTemplateJson: String(row.template_json),
+      expectedCadence: String(row.cadence ?? "daily")
     })
   }
-  async completeRoutine(templateId: string) {
-    await this.db("edit").execute(
+  async completeRoutine(templateId: string, requestedPeriod?: string) {
+    await this.db("read").execute(
       sql`SELECT id FROM task_templates AS template WHERE id=${templateId} AND ${ownedPlanning(this.scope, "template")} AND is_routine=1 AND retired_at IS NULL`
     )
     const row = await this.findById(templateId)
@@ -463,8 +471,9 @@ export class TemplateRepository {
     body.title ??= row.name
     return this.createTask(randomUUID(), body, {
       templateId,
-      period: routinePeriod(String(row.cadence ?? "daily")),
+      period: requestedPeriod ?? routinePeriod(String(row.cadence ?? "daily")),
       expectedTemplateJson: String(row.template_json),
+      expectedCadence: String(row.cadence ?? "daily"),
       complete: true
     })
   }

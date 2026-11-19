@@ -1,4 +1,4 @@
-import { withBoardScope } from "@lib/board-http"
+import { boardScopeErrorResponse, withBoardScope } from "@lib/board-http"
 /**
  * POST /api/tasks/reorder — Persist kanban card positions within a lane.
  *
@@ -63,6 +63,11 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "edit" 
       { status: 200, headers: { "content-type": "application/json" } },
     )
   } catch (err: unknown) {
+    if (err && typeof err === "object" && "errorCode" in err && err.errorCode === "unavailable") {
+      return apiJson({ error: "The cards are no longer available to reorder", errorCode: "TASK_ORDER_CONFLICT" }, 409)
+    }
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
     logApiError("POST", "/api/tasks/reorder", err)
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,

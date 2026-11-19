@@ -44,6 +44,7 @@ import { calendarDayFromInput, calendarEventDay, calendarEventInterval, calendar
 import { todayCompletionFilter } from "../../../lib/task-queries"
 import { parseTicketKey } from "../../../lib/ticket-key"
 import { getNextOccurrence, parseRRule } from "../recurrence"
+import { routinePeriod } from "../routine-period"
 import type { TaskEpicLink } from "../task-epic-groups"
 import { deferralTerminalStatusesSql, isDeferralTerminalStatus } from "./task-deferral-status"
 import { discardUnappliedTaskActivity, taskAddedActivity, taskChangedActivity, type RecentTaskActor } from "./recent-activity"
@@ -366,7 +367,7 @@ export type WorkCreateMetadata = {
   recurrenceSource?: { taskId: string, rule: string, version: number }
   laneId?: string
   deriveStatusFromLane?: boolean
-  routineOccurrence?: { templateId: string, period: string, expectedTemplateJson: string, complete?: boolean }
+  routineOccurrence?: { templateId: string, period: string, expectedTemplateJson: string, expectedCadence: string, complete?: boolean }
   templateSnapshot?: { templateId: string, expectedTemplateJson: string }
   captureAttemptDigest?: string
   clientIdempotencyKey?: string
@@ -740,7 +741,7 @@ export class TaskRepository {
     if (!statuses.length) return []
     const resolvedToday = today ?? calendarToday(timezone)
     const filter = location ? homeAssistantTaskAreaCondition(location) : null
-    const result = await this.readFromSnapshot(reader,scopedTaskRead(this.scope, sourceSql(`SELECT id, status, priority, task_type, task_kind, area_id, assigned_to, is_promoted
+    const result = await this.readFromSnapshot(reader,scopedTaskRead(this.scope, sourceSql(`SELECT id, status, priority, task_type, task_kind, public_area_id AS area_id, assigned_to, is_promoted
                   ${matchText ? ", title, labels" : ""}
                   ${search ? ", CASE WHEN instr(lower(COALESCE(description, '')), lower(?)) > 0 THEN 1 ELSE 0 END AS description_matches" : ""}
                   ${matchOverdue ? ", due_date" : ""}
@@ -1111,28 +1112,29 @@ export class TaskRepository {
     return this.normalizeTaskRows(result.rows);
   }
 
-  async findBacklogPage(requestedPage: number): Promise<{
+  async findBacklogPage(requestedPage: number, placement?: TaskReadPlacement): Promise<{
     page: number;
     total: number;
     tasks: Array<Pick<TaskRow, "id" | "title" | "description" | "ticket_number" | "due_date"> & { updated_at: number, ticket_key: string | null }>;
   }> {
     const pageSize = 25
     const page = Number.isSafeInteger(requestedPage) ? requestedPage : 1
+    const context = taskReadPlacement(placement)
     const result = await this.forOperation("read").execute(scopedTaskRead(this.scope, sourceSql(`totals AS (
-              SELECT COUNT(*) AS total FROM scoped_tasks AS tasks WHERE 1 AND status = ? AND deferred_at IS NULL
+              SELECT COUNT(*) AS total FROM scoped_tasks AS tasks WHERE ${context.sql} AND status = ? AND deferred_at IS NULL
             ), bounds AS (
               SELECT total, MAX(1, MIN(?, CAST((total + ? - 1) / ? AS INTEGER))) AS page FROM totals
             ), items AS (
               SELECT id, title, description, ticket_number, ticket_ref AS ticket_key, due_date,
                      ${taskTimestampMs("created_at")} AS created_ms,
                      ${taskTimestampMs("updated_at")} AS updated_at
-              FROM scoped_tasks AS tasks WHERE 1 AND status = ? AND deferred_at IS NULL
+              FROM scoped_tasks AS tasks WHERE ${context.sql} AND status = ? AND deferred_at IS NULL
               ORDER BY created_ms ASC, id ASC
               LIMIT ? OFFSET (SELECT (page - 1) * ? FROM bounds)
             )
             SELECT bounds.total, bounds.page, items.*
             FROM bounds LEFT JOIN items ON TRUE
-            ORDER BY items.created_ms ASC, items.id ASC`, [STATUS.BACKLOG, page, pageSize, pageSize, STATUS.BACKLOG, pageSize, pageSize]), "with"))
+            ORDER BY items.created_ms ASC, items.id ASC`, [...context.args, STATUS.BACKLOG, page, pageSize, pageSize, ...context.args, STATUS.BACKLOG, pageSize, pageSize]), "with"))
     return {
       page: Number(result.rows[0]?.page ?? 1),
       total: Number(result.rows[0]?.total ?? 0),
@@ -1515,9 +1517,18 @@ export class TaskRepository {
       if (metadata.routineOccurrence) {
         const occurrence = metadata.routineOccurrence
         if (data.task_kind !== "routine_instance" || data.due_date !== occurrence.period || !await validateBoardFeature(this.scope, tx, "routines")) return { ok: false, errorCode: "invalid" }
-        const { rows: [template] } = await tx.execute(sql`SELECT template_json FROM task_templates WHERE id = ${occurrence.templateId} AND ${ownedPlanning(this.scope, "task_templates")} AND is_routine = 1 AND retired_at IS NULL`)
+        const { rows: [template] } = await tx.execute(sql`SELECT template_json,cadence FROM task_templates WHERE id = ${occurrence.templateId} AND ${ownedPlanning(this.scope, "task_templates")} AND is_routine = 1 AND retired_at IS NULL`)
         if (!template) return { ok: false, errorCode: "unavailable" }
-        if (template.template_json !== occurrence.expectedTemplateJson) return { ok: false, errorCode: "conflict" }
+        const scheduleCurrent = () => template.template_json === occurrence.expectedTemplateJson &&
+          String(template.cadence ?? "daily") === occurrence.expectedCadence &&
+          routinePeriod(String(template.cadence ?? "daily")) === occurrence.period
+        if (!scheduleCurrent()) return { ok: false, errorCode: "conflict" }
+        await requireBoardWriterCheck(tx, this.scope, async () => {
+          const { rows: [current] } = await tx.execute(sql`SELECT template_json,cadence FROM task_templates WHERE id=${occurrence.templateId} AND ${ownedPlanning(this.scope, "task_templates")} AND is_routine=1 AND retired_at IS NULL`)
+          if (!current || current.template_json !== occurrence.expectedTemplateJson ||
+            String(current.cadence ?? "daily") !== occurrence.expectedCadence ||
+            routinePeriod(String(current.cadence ?? "daily")) !== occurrence.period) throw new BoardOperationError("stale")
+        })
         const { rows: [identity] } = await tx.execute(sql`SELECT id FROM tasks WHERE task_board_id IS ${storageBoardId(this.scope)}
           AND source_template_id = ${occurrence.templateId} AND due_date = ${occurrence.period} ORDER BY created_at, id LIMIT 1`)
         const { rows: [existing] } = identity ? await tx.execute(scopedTaskRead(this.scope, sql`SELECT * FROM scoped_tasks AS tasks WHERE id = ${String(identity.id)}`)) : { rows: [] }
@@ -1616,6 +1627,15 @@ export class TaskRepository {
   async findByNfcTag(tagId: string): Promise<Array<{ id: string; title: string; status: string }>> {
     const result = await this.forOperation("read").execute(scopedTaskRead(this.scope, sourceSql("SELECT id, title, status FROM scoped_tasks AS tasks WHERE 1 AND nfc_tag_id = ? AND status != 'archived' ORDER BY id LIMIT 2", [tagId]), "select"))
     return result.rows as unknown as Array<{ id: string; title: string; status: string }>
+  }
+
+  /** Command-only NFC locator. No Task read grant or transport projection. */
+  async findNfcCompletionTargets(tagId: string): Promise<Array<{ id: string; status: string }>> {
+    const assigned = scopeAssignedTo(this.scope)
+    const result = await this.readCommandStatement("complete", scopedTaskRead(this.scope, sql`SELECT id,status FROM scoped_tasks AS tasks
+      WHERE nfc_tag_id=${tagId} AND status != 'archived'
+      ${assigned === undefined ? sourceSql("") : sql`AND assigned_to=${assigned}`} ORDER BY id LIMIT 2`))
+    return result.rows.map(row => ({ id: String(row.id), status: String(row.status) }))
   }
 
   /** A successful assigned-only hand-off can be acknowledged after its old assignment ends. */
@@ -2592,7 +2612,7 @@ export class TaskRepository {
     // Lane membership and promotion group are checked before ranking the full
     // board. The underlying order is shared across lanes, filters and groups.
     // Leave the unranked suffix alone; it still sorts by the same tie-breaks.
-    const result = await this.forOperation("move", [input.id, input.anchorId]).execute(scopedTaskRead(this.scope, sourceSql(`requested(moved_id, anchor_id, lane, after_anchor) AS (VALUES (?, ?, ?, ?)),\n            allowed AS MATERIALIZED (\n              SELECT requested.*\n              FROM requested\n              WHERE (\n                SELECT COUNT(*) = 2 AND MIN(is_promoted) = MAX(is_promoted) FROM scoped_tasks AS tasks\n                WHERE id IN (requested.moved_id, requested.anchor_id)\n                  AND 1 AND deferred_at IS NULL\n                  AND status IN (\n                    SELECT value FROM json_each((\n                      SELECT includes FROM kanban_lanes WHERE board_id = (SELECT board_id FROM scoped_storage) AND key = requested.lane\n                    ))\n                  )\n              )\n            ),\n            ordered AS MATERIALIZED (\n              SELECT id, kanban_position, ROW_NUMBER() OVER (\n                ORDER BY kanban_position ASC NULLS LAST, priority ASC, created_at DESC, id ASC\n              ) AS position\n              FROM scoped_tasks AS tasks\n              WHERE 1 AND EXISTS (SELECT 1 FROM allowed)\n            ),\n            move AS MATERIALIZED (\n              SELECT moved_id, source.position AS from_position,\n                     anchor.position + after_anchor - (source.position < anchor.position) AS to_position\n              FROM allowed\n              JOIN ordered AS source ON source.id = moved_id\n              JOIN ordered AS anchor ON anchor.id = anchor_id\n            ),\n            updated_order AS MATERIALIZED (\n              SELECT ordered.id, ordered.kanban_position AS prior_position, CASE\n                WHEN from_position = to_position THEN kanban_position\n                ELSE (CASE\n                  WHEN ordered.id = moved_id THEN to_position\n                  WHEN position > from_position AND position <= to_position THEN position - 1\n                  WHEN position >= to_position AND position < from_position THEN position + 1\n                  ELSE position\n                END) - 1\n              END AS position\n              FROM ordered CROSS JOIN move\n              WHERE from_position != to_position OR ordered.id = moved_id\n            )\n            UPDATE tasks\n            SET kanban_position = updated_order.position,\n                inactivity_touched_at = CASE WHEN tasks.id = (SELECT moved_id FROM move WHERE from_position != to_position)\n                  THEN MAX(COALESCE(inactivity_touched_at, 0), ?) ELSE inactivity_touched_at END\n            FROM updated_order\n            WHERE tasks.id = updated_order.id AND tasks.id IN (SELECT id FROM scoped_tasks)\n              ${scopeAssignedTo(this.scope) === undefined ? "" : "AND tasks.assigned_to = ?"}\n              AND (\n                tasks.id = (SELECT moved_id FROM move)\n                OR (tasks.kanban_position IS NOT updated_order.position AND updated_order.position <= (\n                  SELECT MAX(position) FROM updated_order\n                  WHERE prior_position IS NOT NULL OR id = (SELECT moved_id FROM move)\n                ))\n              )`, [input.id, input.anchorId, input.lane, input.before ? 0 : 1, Date.now(), ...(scopeAssignedTo(this.scope) === undefined ? [] : [scopeAssignedTo(this.scope)!])]), "with"))
+    const result = await this.forOperation("move", [input.id, input.anchorId]).execute(scopedTaskRead(this.scope, sourceSql(`requested(moved_id, anchor_id, lane, after_anchor) AS (VALUES (?, ?, ?, ?)),\n            allowed AS MATERIALIZED (\n              SELECT requested.*\n              FROM requested\n              WHERE (\n                SELECT COUNT(*) = 2 AND MIN(is_promoted) = MAX(is_promoted) FROM scoped_tasks AS tasks\n                WHERE id IN (requested.moved_id, requested.anchor_id)\n                  AND 1 AND deferred_at IS NULL\n                  AND status IN (\n                    SELECT value FROM json_each((\n                      SELECT includes FROM kanban_lanes WHERE board_id = (SELECT board_id FROM scoped_storage) AND key = requested.lane\n                    ))\n                  )\n              )\n            ),\n            ordered AS MATERIALIZED (\n              SELECT id, kanban_position, ROW_NUMBER() OVER (\n                ORDER BY kanban_position ASC NULLS LAST, priority ASC, created_at DESC, id ASC\n              ) AS position\n              FROM scoped_tasks AS tasks\n              WHERE 1 AND EXISTS (SELECT 1 FROM allowed)\n            ),\n            move AS MATERIALIZED (\n              SELECT moved_id, source.position AS from_position,\n                     anchor.position + after_anchor - (source.position < anchor.position) AS to_position\n              FROM allowed\n              JOIN ordered AS source ON source.id = moved_id\n              JOIN ordered AS anchor ON anchor.id = anchor_id\n            ),\n            updated_order AS MATERIALIZED (\n              SELECT ordered.id, ordered.kanban_position AS prior_position, CASE\n                WHEN from_position = to_position THEN kanban_position\n                ELSE (CASE\n                  WHEN ordered.id = moved_id THEN to_position\n                  WHEN position > from_position AND position <= to_position THEN position - 1\n                  WHEN position >= to_position AND position < from_position THEN position + 1\n                  ELSE position\n                END) - 1\n              END AS position\n              FROM ordered CROSS JOIN move\n              WHERE from_position != to_position OR ordered.id = moved_id\n            )\n            UPDATE tasks\n            SET kanban_position = updated_order.position,\n                inactivity_touched_at = CASE WHEN tasks.id = (SELECT moved_id FROM move WHERE from_position != to_position)\n                  THEN MAX(COALESCE(inactivity_touched_at, 0), ?) ELSE inactivity_touched_at END\n            FROM updated_order\n            WHERE tasks.id = updated_order.id AND tasks.id IN (SELECT id FROM scoped_tasks)\n              ${scopeAssignedTo(this.scope) === undefined ? "" : "AND tasks.assigned_to = ?"}\n              AND (\n                tasks.id = (SELECT moved_id FROM move)\n                OR (tasks.kanban_position IS NOT updated_order.position AND updated_order.position <= (\n                  SELECT MAX(position) FROM updated_order\n                  WHERE prior_position IS NOT NULL OR id = (SELECT moved_id FROM move)\n                ))\n              )`, [input.id, input.anchorId, input.lane, input.before ? 0 : 1, Date.now(), ...(scopeAssignedTo(this.scope) === undefined ? [] : [scopeAssignedTo(this.scope)!])]), "with", "kanban-order"))
     return result.rowsAffected > 0
   }
 

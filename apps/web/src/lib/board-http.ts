@@ -2,6 +2,7 @@ import type { APIContext, APIRoute } from "astro"
 import { validateBoardScope, type BoardScope, type ScopeFailure, type WorkOperation } from "@domains/tasks/board-scope"
 import { BoardAccessService, getPersistenceClient } from "@domains/tasks"
 import { resolveBoardRequestScope } from "./board-request-context"
+import { retainBoardResponseScope } from "./board-view"
 import { apiProblem } from "./api-response"
 import { db503Response, isDbUnavailable } from "./db-fallback"
 
@@ -18,18 +19,20 @@ type RecordResource = "task" | "area" | "project" | "goal" | "routine" | "pillar
 type ScopeOptions = { recordResource?: RecordResource, recordParam?: string, boardParam?: string, write?: boolean }
 
 /** Server page loader shared by canonical Board pages and existing bookmarks. */
-export function resolveBoardPageScope(context: Pick<APIContext, "request" | "locals" | "url" | "params">,
+export async function resolveBoardPageScope(context: Pick<APIContext, "request" | "locals" | "url" | "params">,
   options: { boardId?: string | undefined, record?: { resource: RecordResource, id: string } } = {}) {
   const boardMatch = /^\/boards\/([^/]+)\/?$/.exec(context.url.pathname)
   const recordMatch = /^\/(areas|projects|goals|task|tickets)\/([^/]+)\/?$/.exec(context.url.pathname)
   const resources = { areas: "area", projects: "project", goals: "goal", task: "task", tickets: "task" } as const
-  return resolveBoardRequestScope(context, {
+  const result = await resolveBoardRequestScope(context, {
     operation: { resource: "task", action: "read" },
     ...(options.boardId || boardMatch ? { boardId: options.boardId ?? decodeURIComponent(boardMatch![1]!) } : {}),
     ...(options.record ? { record: options.record } : recordMatch ? {
       record: { resource: resources[recordMatch[1] as keyof typeof resources], id: decodeURIComponent(recordMatch[2]!) },
     } : {}),
   })
+  if (result.ok) retainBoardResponseScope(context.request, result.scope)
+  return result
 }
 
 export function boardScopeResponse(code: ScopeFailure): Response {

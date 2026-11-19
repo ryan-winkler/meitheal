@@ -1,6 +1,6 @@
 import { validateBoardFeature } from "../board-access-service"
 import { goalEligibility } from "./shared-goal-repository"
-import { scopedTaskRead, planningVisible } from "./board-work-query"
+import { scopedTaskRead, planningVisible, referenceFeatures } from "./board-work-query"
 import type { Client, InValue } from "@libsql/client"
 import { goalProgress } from "@meitheal/domain-tasks"
 import { getStatusDef, STATUS } from "../../../lib/status-config"
@@ -158,8 +158,18 @@ export class HierarchyRepository {
   async deleteGoal(id: string): Promise<boolean> { return await this.retirePlanning("goals", "goal", id) === "saved" }
   async countGoals(): Promise<number> { return this.count("goals", "goal") }
 
-  async findProjectGroups(): Promise<Array<{ id: string; title: string; area_id: string | null }>> {
-    return (await this.findAllProjects()).map(project => ({ id: project.id, title: project.title, area_id: project.area_id }))
+  async findProjectGroups(): Promise<Array<{ id: string; title: string; area_id: string | null; label_area_id: string | null }>> {
+    const { rows } = await this.db("project").execute(sql`SELECT projects.id,projects.title,
+      CASE WHEN ${referenceFeatures(this.scope, ["organizer", "groups"])} THEN (${this.target("areas", sourceSql("projects.area_id"))}) END AS area_id,
+      CASE WHEN ${referenceFeatures(this.scope, ["organizer", "groups"])} THEN
+        CASE WHEN projects.area_id IS NOT NULL THEN (${this.target("areas", sourceSql("projects.area_id"))})
+        WHEN ${referenceFeatures(this.scope, ["goals"])} THEN (
+          SELECT (${this.target("areas", sourceSql("goals.area_id"))}) FROM goals WHERE goals.id=projects.goal_id
+            AND ${ownedPlanning(this.scope, "goals")} AND ${planningVisible(this.scope, "goals")} AND goals.retired_at IS NULL
+        ) END END AS label_area_id
+      FROM projects WHERE ${ownedPlanning(this.scope, "projects")} AND ${planningVisible(this.scope, "projects")} AND projects.retired_at IS NULL
+      ORDER BY projects.position,projects.created_at DESC`)
+    return rows.map(row => ({ id: String(row.id), title: String(row.title), area_id: row.area_id == null ? null : String(row.area_id), label_area_id: row.label_area_id == null ? null : String(row.label_area_id) }))
   }
   async findAllProjects(filters?: { goal_id?: string; area_id?: string; status?: string }): Promise<ProjectRow[]> {
     const predicates = [ownedPlanning(this.scope, "projects"), planningVisible(this.scope, "projects"), sourceSql("projects.retired_at IS NULL")]

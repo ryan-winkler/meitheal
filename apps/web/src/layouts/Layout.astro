@@ -3,7 +3,7 @@ import { readBoardPagePlacement } from "@lib/board-page-placement"
 import { createHash } from "node:crypto"
 import { getPersistenceClient, scopeBoardAccess } from "@domains/tasks"
 import { resolveBoardRequestScope } from "@lib/board-request-context"
-import { boardScopeAuthorityKey } from "@lib/board-view"
+import { boardScopeAuthorityKey, retainBoardResponseScope } from "@lib/board-view"
 import { boardSessionProof } from "@lib/named-board-request"
 import { taskViewUrl } from "../lib/task-view-route"
 import { boardNavigationLinks, readBoardNavigationContext } from "../lib/board-workspace"
@@ -107,6 +107,7 @@ if (!privatePageShell) {
     ...(recordMatch ? { record: { resource: resources[recordMatch[1] as keyof typeof resources], id: decodeURIComponent(recordMatch[2]!) } } : {}),
   }).catch(() => null)
   if (result?.ok) {
+    retainBoardResponseScope(Astro.request, result.scope)
     mobilePlacement = await readBoardPagePlacement(result.scope, Astro.url)
     layoutAuthority = boardScopeAuthorityKey(result.scope)
     const { rows: [installation] } = await getPersistenceClient().execute({ sql: "SELECT value FROM app_settings WHERE key = 'work_installation_id'", args: [] })

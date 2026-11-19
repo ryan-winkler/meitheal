@@ -1,4 +1,4 @@
-import { boardScopeErrorResponse } from "@lib/board-http"
+import { journaledBoardCommandAck, boardScopeErrorResponse } from "@lib/board-http"
 import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
@@ -115,11 +115,6 @@ const manageRoutine: Parameters<typeof withBoardScope>[1] = async ({ request }, 
         if (!templateId) return apiError("templateId is required", 400)
         const existing = await repo.findById(templateId)
         if (!existing || !existing.is_routine) return apiError("Routine not found", 404)
-        const { area_id } = JSON.parse(String(existing.template_json)) as Record<string, unknown>
-        if (!await validArea(area_id)) {
-          return apiError("Choose a new Area for this Routine before completing it", 409)
-        }
-
         const result = await repo.completeRoutine(templateId)
         return apiJson(result)
       }
@@ -153,7 +148,7 @@ const manageRoutine: Parameters<typeof withBoardScope>[1] = async ({ request }, 
         if (!templateId) return apiError("templateId is required", 400)
         if (!(await repo.findById(templateId))?.is_routine) return apiError("Routine not found", 404)
         await repo.delete(templateId)
-        return apiJson({ ok: true })
+        return journaledBoardCommandAck(scope, { resource: "routine", action: "delete" })
       }
 
       default:
@@ -169,6 +164,6 @@ const manageRoutine: Parameters<typeof withBoardScope>[1] = async ({ request }, 
 
 export const POST: APIRoute = async context => {
   const body = await context.request.clone().json().catch(() => null) as Record<string, unknown> | null
-  const action = body?.action === "delete" ? "delete" : body?.action === "complete" || body?.action === "update" ? "edit" : "create"
-  return withBoardScope({ resource: "routine", action }, manageRoutine)(context)
+  const action = body?.action === "delete" ? "delete" : body?.action === "complete" ? "read" : body?.action === "update" ? "edit" : "create"
+  return withBoardScope({ resource: "routine", action }, manageRoutine, { write: true })(context)
 }

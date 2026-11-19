@@ -106,3 +106,5 @@ export { readTaskAssignmentReceipt, type TaskAssignmentReceipt } from "./persist
 export { checkOverdueTaskEvents } from "./overdue-task-events"
 export { prepareWorkIntegrationSettings, validateWorkIntegrationSettingsApproval, sameWorkIntegrationSetting,
   type WorkIntegrationSettingsApproval } from "./work-binding-manager"
+
+export { parseRRule } from "./recurrence"

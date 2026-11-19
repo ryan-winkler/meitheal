@@ -1,13 +1,16 @@
 import {
   BoardOperationError,
   isVerifiedPrincipalCurrent,
-  currentBoardGrantRevision
+  currentBoardGrantRevision,
+  requireBoardScope,
+  validateBoardScope
 } from "@domains/tasks"
 import { boardScopeErrorResponse } from "./board-http"
 import {
   scopeBoardAccess,
   type BoardScope,
-  type VerifiedPrincipal
+  type VerifiedPrincipal,
+  type WorkOperation
 } from "@domains/tasks/board-scope"
 import { createHash } from "node:crypto"
 import { BoardIntakeRepository } from "@domains/tasks/persistence/board-intake-repository"
@@ -68,7 +71,38 @@ export function boardViewResponse(value: unknown, actorId: string, payload = val
 
 type DirectoryAdmission = { actor: VerifiedPrincipal; revision: string }
 const directoryAdmissions = new WeakMap<object, DirectoryAdmission>()
-const requestDirectoryAdmissions = new WeakMap<Request, DirectoryAdmission>()
+type ScopeAdmission = { scope: BoardScope; operation: WorkOperation }
+type ResponseAdmissions = { directories: DirectoryAdmission[]; scopes: ScopeAdmission[] }
+const requestAdmissions = new WeakMap<Request, ResponseAdmissions>()
+
+function responseAdmissions(request: Request): ResponseAdmissions {
+  let admissions = requestAdmissions.get(request)
+  if (!admissions) {
+    admissions = { directories: [], scopes: [] }
+    requestAdmissions.set(request, admissions)
+  }
+  return admissions
+}
+
+/** Append original server-admitted authority; a later scope never replaces it. */
+export function retainBoardResponseScope(
+  request: Request,
+  scope: BoardScope,
+  operation: WorkOperation = { resource: "task", action: "read" }
+) {
+  requireBoardScope(scope)
+  const admissions = responseAdmissions(request)
+  if (
+    !admissions.scopes.some(
+      (current) =>
+        current.scope === scope &&
+        current.operation.resource === operation.resource &&
+        current.operation.action === operation.action
+    )
+  ) {
+    admissions.scopes.push({ scope, operation: { ...operation } })
+  }
+}
 
 async function assertDirectoryAdmission(admission: DirectoryAdmission) {
   if (!isVerifiedPrincipalCurrent(admission.actor)) throw new BoardOperationError("stale")
@@ -85,7 +119,7 @@ export async function readBoardDirectory(actor: VerifiedPrincipal, request?: Req
   const revision = await currentBoardGrantRevision(client)
   if (!revision) throw new BoardOperationError("continuity_locked")
   const admission = { actor, revision }
-  if (request) requestDirectoryAdmissions.set(request, admission)
+  if (request) responseAdmissions(request).directories.push(admission)
   const repository = new NamedBoardRepository(client)
   const [boards, destinations, deletedBoards] = await Promise.all([
     repository.findDirectory(actor),
@@ -104,13 +138,13 @@ export async function assertBoardDirectoryCurrent(directory: object) {
   await assertDirectoryAdmission(admission)
 }
 
-/** Final HTTP boundary: finish asynchronous directory SSR before admitting any bytes. */
-export async function admitBoardDirectoryResponse(
+/** Final HTTP boundary: finish governed asynchronous SSR before admitting any private bytes. */
+export async function admitBoardResponse(
   request: Request,
   response: Response,
-  directoryPage = false
+  governedHtml = false
 ) {
-  const retain = directoryPage || requestDirectoryAdmissions.has(request)
+  const retain = governedHtml || requestAdmissions.has(request)
   if (!retain) return response
   let buffered: ArrayBuffer | undefined
   if (response.body) {
@@ -139,10 +173,30 @@ export async function admitBoardDirectoryResponse(
       reader.releaseLock()
     }
   }
-  const admission = requestDirectoryAdmissions.get(request)
-  if (admission) {
+  const admissions = requestAdmissions.get(request)
+  if (admissions) {
     try {
-      await assertDirectoryAdmission(admission)
+      for (const admission of admissions.directories) await assertDirectoryAdmission(admission)
+      for (const { scope, operation } of admissions.scopes) {
+        const current = await validateBoardScope(scope, getPersistenceClient(), operation)
+        if (!current.ok) throw new BoardOperationError(current.errorCode)
+      }
+      // Keep every original proof current through later sibling revalidation.
+      const originals = [
+        ...admissions.directories,
+        ...admissions.scopes.map(({ scope }) => ({
+          actor: scope.principal,
+          revision: scope.authorityRevision
+        }))
+      ]
+      const revision = await currentBoardGrantRevision(getPersistenceClient())
+      if (
+        originals.some(
+          (original) =>
+            original.revision !== revision || !isVerifiedPrincipalCurrent(original.actor)
+        )
+      )
+        throw new BoardOperationError("stale")
     } catch (error) {
       const failure = boardScopeErrorResponse(error)
       if (failure) return failure

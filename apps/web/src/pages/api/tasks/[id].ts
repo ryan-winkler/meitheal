@@ -8,6 +8,7 @@ import type { InValue } from "@libsql/client"
 import { VALID_TASK_TYPES } from "@meitheal/domain-tasks"
 import type { TaskType } from "@meitheal/domain-tasks"
 import {
+  parseRRule,
   ensureSchema,
   getPersistenceClient,
   hasBoardSelection,
@@ -390,6 +391,13 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     } catch {
       return new Response(JSON.stringify({ error: "checklists must be a valid JSON array of {text, done} objects" }), { status: 400, headers: { "content-type": "application/json" } })
     }
+  }
+
+  if (body.recurrence_rule !== undefined) {
+    if (body.recurrence_rule !== null && typeof body.recurrence_rule !== "string") return apiError("recurrence_rule must be a recurrence rule string or null", 400)
+    const rule = typeof body.recurrence_rule === "string" ? body.recurrence_rule.trim() : ""
+    if (rule && (rule.length > 200 || !parseRRule(rule))) return apiError("recurrence_rule must be a supported recurrence rule", 400)
+    sanitized.recurrence_rule = rule || null
   }
 
   // Phase 6: Recurrence anchor (due_date or completion_date)

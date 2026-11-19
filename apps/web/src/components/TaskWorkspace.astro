@@ -1,5 +1,5 @@
 ---
-import { boardScopeAuthorityKey } from "@lib/board-view"
+import { boardScopeAuthorityKey, retainBoardResponseScope } from "@lib/board-view"
 import { scopePermits, type BoardScope } from "@domains/tasks/board-scope"
 import { boardSessionProof } from "@lib/named-board-request"
 import { boardWorkspaceHref } from "@lib/board-workspace"
@@ -62,6 +62,7 @@ const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 interface Props { workScope: BoardScope; boardId?: string; namedBoardId?: string }
 const scope = Astro.props.workScope
+retainBoardResponseScope(Astro.request, scope)
 const boardId = scope.boardId
 const session = boardSessionProof(scope.principal.id)
 const authorityKey = boardScopeAuthorityKey(scope)

@@ -57,6 +57,7 @@ export interface TaskViewItem {
   checklist_done?: number | undefined;
   created_at: string;
   updated_at: string;
+  task_version?: number;
   deferred_at: number | null
   is_overdue: boolean;
   is_done: boolean;
@@ -139,7 +140,7 @@ const TASK_VIEW_COLUMNS = `
   id, title, description, status, priority, due_date, labels,
   framework_payload, calendar_sync_state, area_id, project_id, public_area_id, public_project_id, public_goal_id, custom_fields,
   start_date, end_date, progress, color, is_favorite, task_type, task_kind,
-  parent_id, public_parent_id, ticket_number, ticket_ref AS ticket_key, assigned_to, checklists, created_at, updated_at, deferred_at,
+  parent_id, public_parent_id, ticket_number, ticket_ref AS ticket_key, assigned_to, checklists, created_at, updated_at, ${taskTimestampMs("updated_at")} AS task_version, deferred_at,
   urgency, importance, eisenhower_override,
   effort_minutes, effort_type, blocked_by
 `;
@@ -197,7 +198,7 @@ export async function getTasksForView(options: TaskViewOptions = {}, scope: Boar
         NULL AS checklists,
         CASE WHEN json_valid(checklists) THEN json_array_length(checklists) ELSE 0 END AS checklist_total,
         (SELECT COUNT(*) FROM json_each(CASE WHEN json_valid(tasks.checklists) THEN tasks.checklists ELSE '[]' END) WHERE json_extract(value, '$.done') = 1) AS checklist_done,
-        created_at, updated_at, deferred_at,
+        created_at, updated_at, ${taskTimestampMs("updated_at")} AS task_version, deferred_at,
         urgency, importance, eisenhower_override,
         effort_minutes, effort_type, blocked_by
       `;
@@ -209,7 +210,7 @@ export async function getTasksForView(options: TaskViewOptions = {}, scope: Boar
         status, priority, due_date, labels,
         framework_payload, calendar_sync_state, area_id, project_id, public_area_id, public_project_id, public_goal_id, custom_fields,
         start_date, end_date, progress, color, is_favorite, task_type, task_kind,
-        parent_id, public_parent_id, ticket_number, ticket_ref AS ticket_key, assigned_to, checklists, created_at, updated_at, deferred_at,
+        parent_id, public_parent_id, ticket_number, ticket_ref AS ticket_key, assigned_to, checklists, created_at, updated_at, ${taskTimestampMs("updated_at")} AS task_version, deferred_at,
         urgency, importance, eisenhower_override,
         effort_minutes, effort_type, blocked_by
       `;
@@ -362,6 +363,7 @@ function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "
     checklists: slim ? null : (row.checklists ? String(row.checklists) : null),
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
+    task_version: Number(row.task_version),
     deferred_at: deferredAt,
     is_overdue: overdue,
     is_done: isDone,

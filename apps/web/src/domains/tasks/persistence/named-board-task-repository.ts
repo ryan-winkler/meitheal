@@ -54,14 +54,11 @@ export class NamedBoardTaskRepository {
   async routineLibrary(actor: BoardActor, placement?: TaskReadPlacement) {
     if (!this.matches(actor)) return []
     const routines = await new TemplateRepository(this.db, this.scope).getRoutinesWithStats(placement?.areaId ?? undefined, placement?.projectId ?? undefined)
-    const projects = new Map((await new HierarchyRepository(this.db, this.scope).findAllProjects()).map(project => [project.id, project.status]))
     const board = scopeBoardAccess(this.scope)
     return routines.map(routine => {
-      const template = JSON.parse(routine.template_json) as { project_id?: unknown }
-      const projectActive = typeof template.project_id !== "string" || projects.get(template.project_id) === "active"
       return { id: routine.id, name: routine.name, cadence: routine.cadence,
       period: namedRoutinePeriod(routine.cadence), boardId: board.id, boardName: board.name,
-      complete: routine.todayCompleted, canComplete: projectActive && scopePermits(this.scope, { resource: "task", action: "complete" }) && scopePermits(this.scope, { resource: "task", action: "create" }) }
+      complete: routine.todayCompleted, canComplete: routine.projectActive && scopePermits(this.scope, { resource: "task", action: "complete" }) && scopePermits(this.scope, { resource: "task", action: "create" }) }
     })
   }
 
@@ -183,7 +180,7 @@ export class NamedBoardTaskRepository {
       const template = await templates.findById(routineId)
       if (!template) return unavailable
       if (requestedPeriod && requestedPeriod !== namedRoutinePeriod(String(template.cadence ?? "daily"))) return stale
-      const result = await templates.completeRoutine(routineId)
+      const result = await templates.completeRoutine(routineId, requestedPeriod)
       return result?.completed ? { ok: true, value: { id: result.taskId } } : unavailable
     })
   }

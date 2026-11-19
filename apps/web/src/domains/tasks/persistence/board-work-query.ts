@@ -41,7 +41,7 @@ export function planningVisible(scope: BoardScope, resource: "areas" | "projects
 }
 
 /** Metadata visibility intersects current primary and secondary feature audiences. */
-function referenceFeatures(scope: BoardScope, features: readonly string[]): SqlFragment {
+export function referenceFeatures(scope: BoardScope, features: readonly string[]): SqlFragment {
   const predicates = [scope, ...scopeLimits(scope)].flatMap(current => features.map(feature => featureAudienceAllowed(current.principal, feature)))
   return predicates.reduce((all, predicate) => sql`${all} AND (${predicate})`, sql`1`)
 }
@@ -85,16 +85,19 @@ const taskColumns = [
  * not accept or rewrite an arbitrary query. Callers reference scoped_* aliases;
  * their bound arguments follow this prefix's arguments in lexical order.
  */
-export function scopedTaskRead(scope: BoardScope, query: SqlFragment, continuation: "select" | "with" | "recursive" = "select"): SqlFragment {
+export function scopedTaskRead(scope: BoardScope, query: SqlFragment, continuation: "select" | "with" | "recursive" = "select", projection: "full" | "kanban-order" = "full"): SqlFragment {
+  const columns = projection === "kanban-order" ? ["id", "is_promoted", "deferred_at", "status", "kanban_position", "priority", "created_at", "assigned_to"] : taskColumns
+  const references = projection === "full" ? sql`, ${publicPlanningReferences(scope)}` : sourceSql("")
+  const parent = projection === "full" ? sql`, CASE WHEN ${scopePermits(scope, { resource: "task", action: "read" }) ? 1 : 0} = 1
+      THEN (SELECT parent.id FROM scoped_task_records AS parent WHERE parent.id = child.parent_id) ELSE NULL END AS public_parent_id` : sourceSql("")
   return sql`${sourceSql(continuation === "recursive" ? "WITH RECURSIVE" : "WITH")} scoped_storage AS (
     SELECT ${scope.boardId} AS board_id, ${storageBoardId(scope)} AS owner_board_id
   ), scoped_task_records AS NOT MATERIALIZED (
-    SELECT work_task.rowid AS rowid, (work_task.task_kind = 'routine_instance' AND work_task.source_template_id IS NOT NULL) AS routine_occurrence, ${taskProjection(scope, taskColumns, "work_task", "work_placement")}, ${publicPlanningReferences(scope)}
+    SELECT work_task.rowid AS rowid, (work_task.task_kind = 'routine_instance' AND work_task.source_template_id IS NOT NULL) AS routine_occurrence, ${taskProjection(scope, columns, "work_task", "work_placement")}${references}
     FROM tasks AS work_task ${taskPlacementJoin(scope, "work_task", "work_placement")}
     WHERE ${taskOwnedBy(scope, "work_task")} AND ${visiblePlacement(scope)}
   ), scoped_tasks AS NOT MATERIALIZED (
-    SELECT child.*, CASE WHEN ${scopePermits(scope, { resource: "task", action: "read" }) ? 1 : 0} = 1
-      THEN (SELECT parent.id FROM scoped_task_records AS parent WHERE parent.id = child.parent_id) ELSE NULL END AS public_parent_id
+    SELECT child.*${parent}
     FROM scoped_task_records AS child
   ), scoped_areas AS (SELECT * FROM areas WHERE ${ownedPlanning(scope, "areas")} AND ${planningVisible(scope, "areas")}),
   scoped_projects AS (SELECT * FROM projects WHERE ${ownedPlanning(scope, "projects")} AND ${planningVisible(scope, "projects")}),

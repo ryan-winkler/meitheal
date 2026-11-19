@@ -1,3 +1,4 @@
+import { scopePermits } from "@domains/tasks/board-scope"
 import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
@@ -24,11 +25,12 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "comple
   }
   await ensureSchema()
   const repo = new TaskRepository(getPersistenceClient(), scope)
-  const matches = await repo.findByNfcTag(input.tag_id.trim())
+  const matches = await repo.findNfcCompletionTargets(input.tag_id.trim())
   if (!matches.length) return apiError("No task is assigned to this NFC tag", 404)
   if (matches.length > 1) return apiError("NFC tag is assigned to multiple tasks; remove duplicate assignments", 409)
   const task = matches[0]!
-  if (task.status === "complete") return apiJson({ ok: true, task_id: task.id, already_complete: true })
+  const canReadTask = scopePermits(scope, { resource: "task", action: "read" })
+  if (task.status === "complete") return apiJson(canReadTask ? { ok: true, task_id: task.id, already_complete: true } : { ok: true })
   const headers = new Headers(context.request.headers)
   headers.set("content-type", "application/json")
   const response = await updateTask({
@@ -39,7 +41,7 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "comple
     }),
   })
   if (!response.ok) return response
-  const result = apiJson({ ok: true, task_id: task.id, task: await response.json() })
+  const result = apiJson(canReadTask ? { ok: true, task_id: task.id, task: await response.json() } : { ok: true })
   const authority = response.headers.get(HA_EVENT_AUTHORITY_HEADER)
   if (authority) result.headers.set(HA_EVENT_AUTHORITY_HEADER, authority)
   return result

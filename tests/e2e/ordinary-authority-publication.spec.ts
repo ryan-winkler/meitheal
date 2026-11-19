@@ -19,7 +19,7 @@ import {
 import { GET as boardDirectory } from "../../apps/web/src/pages/api/boards/index"
 import { PATCH as patchBoard } from "../../apps/web/src/pages/api/boards/[id]/index"
 import { boardSessionProof } from "../../apps/web/src/lib/named-board-request"
-import { admitBoardDirectoryResponse, readBoardDirectory } from "../../apps/web/src/lib/board-view"
+import { admitBoardResponse, readBoardDirectory } from "../../apps/web/src/lib/board-view"
 import { runWithIngressTransport } from "../../apps/web/scripts/ingress-transport.mjs"
 import { GET as listTasks, POST as createTask } from "../../apps/web/src/pages/api/tasks/index"
 import { boardScopeResponse, resolveBoardPageScope } from "../../apps/web/src/lib/board-http"
@@ -225,7 +225,7 @@ for (const mode of ["revoke", "expire"] as const)
         }
       }
     )
-    const pending = admitBoardDirectoryResponse(request, response, true)
+    const pending = admitBoardResponse(request, response, true)
     await held.promise
     try {
       if (mode === "revoke")
@@ -351,7 +351,7 @@ test("actual API directory response cannot cross the final middleware admission 
     null,
     ["owner", "member", "other"]
   )
-  const final = await admitBoardDirectoryResponse(ctx.request, response)
+  const final = await admitBoardResponse(ctx.request, response)
   expect(final.status).toBe(409)
   expect(final.headers.get("x-meitheal-board-session")).toBeNull()
   expect(await final.text()).not.toContain("PRIVATE-PUBLICATION-SENTINEL")
@@ -371,7 +371,7 @@ test("aborted directory SSR admission stops without awaiting a suspended rendere
     }),
     { headers: { "content-type": "text/html" } }
   )
-  const pending = admitBoardDirectoryResponse(request, response, true)
+  const pending = admitBoardResponse(request, response, true)
   try {
     cancel.abort()
     await expect(pending).rejects.toMatchObject({ name: "AbortError" })
