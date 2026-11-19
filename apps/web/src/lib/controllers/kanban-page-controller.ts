@@ -1,5 +1,6 @@
 import { getRememberedAreaId, getSelectedAreaId } from "@lib/area-selector-controller"
 import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "@lib/task-page-url"
+import { TASK_REFRESH_FRAGMENT_HEADER } from "@lib/task-view-route"
 import { findKanbanDetailFocus } from "@lib/task-detail-handoff"
 import { DEFERRAL_RECONCILED, type DeferralReconciliation } from "@lib/deferral-client"
 import { initKanbanArea } from "@lib/kanban-controller"
@@ -108,6 +109,7 @@ export function initKanbanPage(signal: AbortSignal): void {
       // Older installed service workers can serve cached HTML to fetch(), even with no-store.
       requestUrl.searchParams.set("boardRefresh", `${performance.timeOrigin}-${++requestNumber}`)
       const response = await fetch(requestUrl, { // nosemgrep
+        headers: { [TASK_REFRESH_FRAGMENT_HEADER]: "1" },
         signal: AbortSignal.any([signal, request.signal, AbortSignal.timeout(10_000)]),
         redirect: "error",
         cache: "no-store",

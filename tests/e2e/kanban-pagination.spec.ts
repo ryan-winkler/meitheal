@@ -94,7 +94,9 @@ test.describe("Tasks view loading and Kanban pages", () => {
 
       await page.goto(`/tasks?area=${area}#kanban`)
       await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+      const pageRefresh = page.waitForResponse(response => new URL(response.url()).searchParams.has("boardRefresh"))
       await lane.getByRole("link", { name: "Next" }).press("Enter")
+      expect(await (await pageRefresh).text()).not.toContain('id="task-detail-overlay"')
       await expect(range).toHaveText("26–28 of 28")
       await expect(range).toBeFocused()
       await expect(cards).toHaveCount(3)

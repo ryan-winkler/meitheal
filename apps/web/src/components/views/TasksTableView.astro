@@ -52,7 +52,7 @@ const { rows, page, pageCount, offset, stats, active, overdue } = getTablePage(
 
 function tableLink(next: number, open?: string) {
   const query = new URLSearchParams(params)
-  for (const key of ["tableRefresh", "open", "comment", "tp"]) query.delete(key)
+  for (const key of ["boardRefresh", "tableRefresh", "open", "comment", "tp"]) query.delete(key)
   query.set("view", "table")
   if (next > 1) query.set("tp", String(next))
   if (open) query.set("open", open)

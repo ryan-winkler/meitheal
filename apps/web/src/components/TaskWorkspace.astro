@@ -5,6 +5,7 @@ import { boardSessionProof, currentBoardUser } from "@lib/named-board-request"
 import { boardWorkspaceHref, readBoardWorkspaceSelection } from "@lib/board-workspace"
 import { permitsBoardTaskAction } from "@domains/tasks/persistence/named-board-repository"
 import TaskDetailModal from "./tasks/TaskDetailModal.astro"
+import TaskRefreshShell from "./tasks/TaskRefreshShell.astro"
 import "../styles/boards.css"
 import NamedBoardInspector from "./boards/NamedBoardInspector.astro"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
@@ -15,7 +16,7 @@ import Layout from "../layouts/Layout.astro";
 
 import UnifiedBar from "../components/layout/UnifiedBar.astro";
 import SignalBar from "../components/layout/SignalBar.astro";
-import { requestedTaskView, taskViewUrl, TASK_VIEWS, TASK_VIEW_LABELS, TASK_VIEW_ICONS } from "../lib/task-view-route"
+import { requestedTaskView, taskViewUrl, TASK_VIEWS, TASK_VIEW_LABELS, TASK_VIEW_ICONS, TASK_REFRESH_FRAGMENT_HEADER } from "../lib/task-view-route"
 import { loadKanbanBoard } from "../lib/kanban-board-data"
 import { getHouseholdProjectGroup, getHouseholdProjectLabels } from "../lib/household-project-grouping"
 import { readKanbanFilters, setKanbanPage } from "../lib/kanban-query"
@@ -90,6 +91,13 @@ const verifyParams = new URLSearchParams(currentUrl.searchParams)
 verifyParams.set("view", "tasks")
 verifyParams.set("kanban", "1")
 const namedVerify = namedBoardId ? `/api/boards/${encodeURIComponent(namedBoardId)}?${verifyParams}` : undefined
+// Keep ordinary navigation and old clients on the full document. A refresh still
+// goes through the same workspace and authorization as its corresponding page.
+const compactRefresh = !namedBoardId && Astro.request.method === "GET" &&
+  Astro.request.headers.get(TASK_REFRESH_FRAGMENT_HEADER) === "1" &&
+  ((renderedView === "kanban" && currentUrl.searchParams.has("boardRefresh")) ||
+   (renderedView === "table" && currentUrl.searchParams.has("tableRefresh")))
+const WorkspaceShell = compactRefresh ? TaskRefreshShell : Layout
 if (currentUrl.searchParams.has("boardRefresh") ||
     (renderedView === "table" && currentUrl.searchParams.has("tableRefresh"))) {
   currentUrl.searchParams.delete("boardRefresh")
@@ -309,7 +317,7 @@ if (groupByProject) {
 
 ---
 
-<Layout title={`Meitheal — ${householdWorkspace ? "Household · " : ""}${heading}`} suppressHouseholdTaskModals={Boolean(namedBoardId)}>
+<WorkspaceShell title={`Meitheal — ${householdWorkspace ? "Household · " : ""}${heading}`} suppressHouseholdTaskModals={Boolean(namedBoardId)}>
 
   <UnifiedBar
     title={householdWorkspace ? "Household" : heading}
@@ -1133,7 +1141,7 @@ if (groupByProject) {
       // Lanes panel toggle handled by kanban-controller (inside initKanbanArea)
     })
   </script>
-</Layout>
+</WorkspaceShell>
 
 <style>
   @reference "../../src/styles/global.css";
