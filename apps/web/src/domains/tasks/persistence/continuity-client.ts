@@ -5,6 +5,7 @@ import { boardGrantStillCurrent, currentBoardGrantRevision } from "./board-grant
 
 export class ContinuityLockedError extends Error {
   readonly status = 503
+  readonly errorCode = "continuity_locked"
   constructor() {
     super("Current installation continuity is unavailable. Governed work remains locked until the current operator checkpoint is verified.")
     this.name = "ContinuityLockedError"
@@ -59,7 +60,7 @@ export function guardClientContinuity(client: Client): Client {
       const current = await databaseRevision(live)
       if (current && await readBoardGrantRevision(marker) === current) {
         const error = new Error("Current permissions changed. Retry the operation with current authority.")
-        Object.assign(error, { status: 409 })
+        Object.assign(error, { status: 409, errorCode: "stale" })
         throw error
       }
       throw new ContinuityLockedError()

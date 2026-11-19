@@ -20,6 +20,10 @@ import { HierarchyRepository } from "../../apps/web/src/domains/tasks/persistenc
 import { prepareTaskCreation } from "../../apps/web/src/domains/tasks/task-creation-service"
 import { changeGoalShare } from "../../apps/web/src/domains/tasks/persistence/shared-goal-repository"
 import { changeBoardGrants } from "../../apps/web/src/domains/tasks/persistence/board-grant-fence"
+import { GET as boardDetail } from "../../apps/web/src/pages/api/boards/[id]/index"
+import { GET as goalList } from "../../apps/web/src/pages/api/goals/index"
+import { readNamedBoardPlanning } from "../../apps/web/src/domains/tasks/persistence/named-board-planning-repository"
+import { getTasksForView } from "../../apps/web/src/lib/task-queries"
 import { GET as taskDetail } from "../../apps/web/src/pages/api/tasks/[id]"
 import { GET as taskList } from "../../apps/web/src/pages/api/tasks/index"
 
@@ -69,12 +73,22 @@ for (const encoding of ["legacy", "scoped"] as const) {
         expect(response.status, await response.clone().text()).toBe(200)
         return response.json()
       }
+      const readBoardTask = async () => {
+        const selected = context(boardId, principal.id, boardId)
+        selected.url = new URL(`http://localhost/api/boards/${boardId}?view=tasks`)
+        selected.request = new Request(selected.url, { headers: selected.request.headers })
+        const response = await boardDetail(selected)
+        expect(response.status, await response.clone().text()).toBe(200)
+        return (await response.json()).tasks.find((task: { id: string }) => task.id === created.task.id)
+      }
       expect(await readDetail()).toMatchObject({ area_id: areaId, project_id: projectId, goal_id: goalId })
+      expect(await readBoardTask()).toMatchObject({ area_id: areaId, project_id: projectId, placement: { areaId, projectId } })
       expect(await hierarchy.deleteProject(projectId)).toBe(true)
       scope = await current(); hierarchy = new HierarchyRepository(db, scope)
       const retained = await new TaskRepository(db, scope).findById(created.task.id)
       expect(retained).toMatchObject({ project_id: projectId, public_project_id: null, area_id: areaId, goal_id: goalId })
       expect(await readDetail()).toMatchObject({ project_id: null, area_id: areaId, goal_id: goalId })
+      expect(await readBoardTask()).toMatchObject({ project_id: null, placement: { areaId, projectId: null } })
       const listed = await taskList(context(boardId, principal.id))
       expect(listed.status).toBe(200)
       expect((await listed.json()).tasks).toEqual([expect.objectContaining({ id: created.task.id, project_id: null })])
@@ -86,6 +100,18 @@ for (const encoding of ["legacy", "scoped"] as const) {
       expect(await repo.findById(created.task.id)).toMatchObject({ area_id: areaId, project_id: projectId, goal_id: goalId, public_area_id: null, public_project_id: null, public_goal_id: null })
       const publicTask = await readDetail()
       expect(publicTask).toMatchObject({ area_id: null, project_id: null, goal_id: null })
+      expect(await readBoardTask()).toMatchObject({ area_id: null, project_id: null, goal_id: null, placement: { areaId: null, projectId: null } })
+      for (const rows of [await repo.getRecentTasks(), await repo.getOpenTasks(), await repo.getTimelineTasks(), await repo.findByProjectId(projectId)]) {
+        expect(rows).toHaveLength(1)
+        expect(rows[0]).toMatchObject({ area_id: areaId, project_id: projectId, public_area_id: null, public_project_id: null })
+        expect(projectPublicTaskFields(rows[0]!)).toMatchObject({ area_id: null, project_id: null })
+      }
+      expect((await repo.getTimelineTasks())[0]?.task_version).toEqual(expect.any(Number))
+      const kanban = await repo.withKanbanRead(reader => repo.getKanbanCards([created.task.id], 0, reader))
+      expect(kanban[0]).toMatchObject({ area_id: null, project_id: null })
+      for (const options of [{}, { slim: true }, { descriptionPreviewChars: 10 }]) {
+        expect((await getTasksForView({ ...options, requireAvailable: true }, scope)).tasks[0]).toMatchObject({ area_id: null, project_id: null })
+      }
       expect(Object.keys(publicTask).some(key => key.startsWith("public_"))).toBe(false)
       // Retirement does not erase the old Area audience or historical references.
       await changeBoardGrants(db, async tx => {
@@ -175,6 +201,28 @@ test("known-current25 foreign planning references stay physical and never become
   expect((await db.execute("SELECT area_id,project_id,goal_id FROM tasks WHERE id='old-home-task'")).rows[0]).toMatchObject({ area_id: "work-area", project_id: "work-project", goal_id: "work-goal" })
   expect((await db.execute("SELECT area_id,project_id,goal_id FROM board_task_planning WHERE task_id='old-work-task'")).rows[0]).toMatchObject({ area_id: "home-area", project_id: "home-project", goal_id: "home-goal" })
   expect((await db.execute("PRAGMA foreign_key_check")).rows).toEqual([])
+  await runWithIngressTransport(transport, async () => {
+    const principal = await verifiedBoardRequestPrincipal({ request: new Request("http://localhost/boards"), locals: {} as App.Locals })
+    if (!principal) throw new Error("Actual current operator required")
+    // The synthetic current operator is explicitly enrolled in this test's Work
+    // Board before exercising the actual HTTP projection. No scope is fabricated.
+    await changeBoardGrants(db, async tx => {
+      await tx.execute({ sql: "INSERT INTO board_access_grants(board_id,principal_type,principal_id,role) VALUES('old-work',?,?,'owner')", args: [principal.kind, principal.id] })
+      return { next: true }
+    })
+    for (const [boardId, taskId] of [["household", "old-home-task"], ["old-work", "old-work-task"]] as const) {
+      const selected = context(boardId, principal.id, boardId)
+      selected.url = new URL(`http://localhost/api/boards/${boardId}?view=tasks`)
+      selected.request = new Request(selected.url, { headers: selected.request.headers })
+      const response = await boardDetail(selected)
+      expect(response.status, await response.clone().text()).toBe(200)
+      const task = (await response.json()).tasks.find((item: { id: string }) => item.id === taskId)
+      expect(task).toMatchObject({ area_id: null, project_id: null, goal_id: null, placement: { areaId: null, projectId: null } })
+      const canonical = await taskList(context(boardId, principal.id))
+      expect(canonical.status, await canonical.clone().text()).toBe(200)
+      expect((await canonical.json()).tasks).toEqual([expect.objectContaining({ id: taskId, area_id: null, project_id: null, goal_id: null })])
+    }
+  })
 })
 
 for (const encoding of ["legacy", "scoped"] as const) {
@@ -208,5 +256,57 @@ for (const encoding of ["legacy", "scoped"] as const) {
       expect(await withOrganizationAvailability({ locked: false, needsVerification: false, includes: feature => feature !== hidden, revision: () => null },
         () => facade.projects(principal, boardId, areaId, null))).toBeNull()
     }
+  })
+}
+
+for (const encoding of ["legacy", "scoped"] as const) {
+  test(`Goal list, filters, counts and planning enforce the same Area audience: ${encoding}`, async () => {
+    await runWithIngressTransport(transport, async () => {
+      const principal = await verifiedBoardRequestPrincipal({ request: new Request("http://localhost/boards"), locals: {} as App.Locals })
+      if (!principal) throw new Error("Actual admitted operator required")
+      const db = getPersistenceClient(), boards = new NamedBoardRepository(db)
+      const created = await boards.create(principal, "Goal audience")
+      if (created.status !== "committed") throw new Error("Board creation failed")
+      const boardId = encoding === "legacy" ? "household" : created.result.id
+      for (const id of ["included", "excluded"]) expect(await boards.updateMember(principal, boardId, id, { role: "member", denyCompletion: false, denyDeletion: false }, ["included", "excluded"])).toMatchObject({ result: "saved" })
+      let scope = await currentBoardScope(db, boardId, principal), hierarchy = new HierarchyRepository(db, scope)
+      const areaId = crypto.randomUUID(), visibleArea = crypto.randomUUID(), hiddenGoal = crypto.randomUUID(), visibleGoal = crypto.randomUUID(), visibleProject = crypto.randomUUID()
+      await hierarchy.createArea({ id: areaId, name: "Restricted Area" }); await hierarchy.createArea({ id: visibleArea, name: "Visible Area" })
+      expect(await hierarchy.createGoal({ id: hiddenGoal, title: "SECRET GOAL TITLE", description: "SECRET GOAL DESCRIPTION", area_id: areaId, status: "active", metric_type: "currency", metric_target: 78231, metric_current: 3456 })).toBe(true)
+      expect(await hierarchy.createGoal({ id: visibleGoal, title: "Visible Goal", area_id: visibleArea, status: "active" })).toBe(true)
+      expect(await hierarchy.createProject({ id: visibleProject, title: "Visible association cannot bypass Goal privacy", area_id: visibleArea, goal_id: hiddenGoal })).toBe(true)
+      await changeBoardGrants(db, async tx => {
+        await tx.execute({ sql: "INSERT INTO organization_access_policies(scope,scope_id,board_id,audience,selected_users,revision) VALUES ('group',?,?,'selected',?,1)", args: [areaId, boardId, JSON.stringify(["included"])] })
+        return { next: true }
+      })
+      for (const [id, allowed] of [["included", true], ["excluded", false]] as const) {
+        const actor = fixturePrincipal(id, false), actorScope = await currentBoardScope(db, boardId, actor), reader = new HierarchyRepository(db, actorScope)
+        for (const filters of [undefined, { status: "active" }, { project_id: visibleProject }, { area_id: areaId }]) {
+          const goals = await reader.findAllGoals(filters)
+          expect(goals.some(goal => goal.id === hiddenGoal)).toBe(allowed)
+          if (!allowed) expect(JSON.stringify(goals)).not.toMatch(/SECRET|78231|3456/)
+        }
+        expect((await reader.findGoalById(hiddenGoal)) !== null).toBe(allowed)
+        expect(await reader.countGoals()).toBe(allowed ? 2 : 1)
+        const planning = await readNamedBoardPlanning(db, actorScope)
+        expect(JSON.stringify(planning).includes("SECRET GOAL TITLE")).toBe(allowed)
+      }
+      for (const included of [false, true]) {
+        if (included) await changeBoardGrants(db, async tx => {
+          await tx.execute({ sql: "UPDATE organization_access_policies SET audience='everyone',selected_users='[]',revision=revision+1 WHERE scope='group' AND scope_id=? AND board_id=?", args: [areaId, boardId] })
+          return { next: true }
+        })
+        for (const query of ["", "?projection=owned", "?status=active", `?project_id=${visibleProject}`]) {
+          const selected = context(boardId, principal.id)
+          selected.url = new URL(`http://localhost/api/goals${query}`)
+          selected.request = new Request(selected.url, { headers: selected.request.headers })
+          const response = await goalList(selected)
+          expect(response.status, await response.clone().text()).toBe(200)
+          const payload = await response.json()
+          expect(payload.goals.some((goal: { id: string }) => goal.id === hiddenGoal)).toBe(included)
+          if (!included) expect(JSON.stringify(payload)).not.toMatch(/SECRET|78231|3456/)
+        }
+      }
+    })
   })
 }

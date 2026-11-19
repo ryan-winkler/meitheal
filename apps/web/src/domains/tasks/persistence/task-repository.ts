@@ -9,7 +9,7 @@ import { goalEligibility } from "./shared-goal-repository"
 import { readTaskAssignmentReceipt } from "./task-assignment-receipt"
 import { validateBoardFeature, validateBoardPlacement } from "../board-access-service"
 import { createHash } from "node:crypto"
-import { scopedTaskRead } from "./board-work-query"
+import { scopedTaskRead, taskReadPlacement, type TaskReadPlacement } from "./board-work-query"
 import { sql, sourceSql, joinSql } from "./sql-fragment"
 import { taskOwnedBy, ownedPlanning, storageBoardId, taskField, requireBoardScope } from "./board-storage"
 import { boardOperationClient, requireBoardWriterIntent, requireBoardWriterCheck, validateTaskOperation, BoardOperationError } from "./board-operation-client"
@@ -574,17 +574,18 @@ export class TaskRepository {
   // ── Dashboard (index.astro) ─────────────────────────────────────────
 
   /** Recent tasks for dashboard hero section */
-  async getRecentTasks(limit = 10): Promise<TaskRow[]> {
+  async getRecentTasks(limit = 10, placement?: TaskReadPlacement): Promise<TaskRow[]> {
+    const context = taskReadPlacement(placement)
     const result = await this.forOperation("read").execute(
-      scopedTaskRead(this.scope, sourceSql(`SELECT id, title, description, status, priority, due_date, labels, calendar_sync_state, is_favorite, area_id, color, ticket_number, task_type, task_kind, project_id, owner, handoff_state, created_at, updated_at, deferred_at
-       FROM scoped_tasks AS tasks WHERE 1 AND status <> 'archived' ORDER BY created_at DESC LIMIT ${limit}`), "select"),
+      scopedTaskRead(this.scope, sourceSql(`SELECT id, title, description, status, priority, due_date, labels, calendar_sync_state, is_favorite, area_id, public_area_id, public_project_id, public_goal_id, color, ticket_number, task_type, task_kind, project_id, owner, handoff_state, created_at, updated_at, deferred_at
+       FROM scoped_tasks AS tasks WHERE ${context.sql} AND status <> 'archived' ORDER BY created_at DESC LIMIT ${limit}`, context.args), "select"),
     );
     return this.normalizeTaskRows(result.rows);
   }
 
   /** Tasks belonging to a specific project, ordered by priority */
   async findByProjectId(projectId: string): Promise<TaskRow[]> {
-    const result = await this.forOperation("read").execute(scopedTaskRead(this.scope, sourceSql("SELECT id, title, description, status, priority, due_date, labels, is_favorite, area_id, color, ticket_number, task_type, task_kind, project_id, owner, handoff_state, assigned_to, progress, created_at, updated_at, deferred_at\n            FROM scoped_tasks AS tasks WHERE 1 AND project_id = ?\n            ORDER BY priority ASC, created_at DESC", [projectId]), "select"));
+    const result = await this.forOperation("read").execute(scopedTaskRead(this.scope, sourceSql("SELECT id, title, description, status, priority, due_date, labels, is_favorite, area_id, public_area_id, public_project_id, public_goal_id, color, ticket_number, task_type, task_kind, project_id, owner, handoff_state, assigned_to, progress, created_at, updated_at, deferred_at\n            FROM scoped_tasks AS tasks WHERE 1 AND project_id = ?\n            ORDER BY priority ASC, created_at DESC", [projectId]), "select"));
     return sanitizeRows(this.normalizeTaskRows(result.rows));
   }
 
@@ -607,26 +608,29 @@ export class TaskRepository {
   }
 
   /** Favorited open tasks */
-  async getFavoriteTasks(limit = 5): Promise<TaskRow[]> {
+  async getFavoriteTasks(limit = 5, placement?: TaskReadPlacement): Promise<TaskRow[]> {
+    const context = taskReadPlacement(placement)
     const result = await this.forOperation("read").execute(scopedTaskRead(this.scope, sourceSql(`SELECT id, title, status, priority, due_date, is_favorite, color
-            FROM scoped_tasks AS tasks WHERE 1 AND is_favorite = 1 AND ${openStatusPredicate} AND deferred_at IS NULL
-            ORDER BY updated_at DESC LIMIT ${limit}`, CLOSED_TASK_STATUSES), "select"));
+            FROM scoped_tasks AS tasks WHERE ${context.sql} AND is_favorite = 1 AND ${openStatusPredicate} AND deferred_at IS NULL
+            ORDER BY updated_at DESC LIMIT ${limit}`, [...context.args, ...CLOSED_TASK_STATUSES]), "select"));
     return this.normalizeTaskRows(result.rows);
   }
 
   /** Open tasks ordered by priority then due date */
-  async getOpenTasks(limit = 15): Promise<TaskRow[]> {
-    const result = await this.forOperation("read").execute(scopedTaskRead(this.scope, sourceSql(`SELECT id, title, status, priority, due_date, assigned_to, area_id, ticket_number, task_type, task_kind, project_id, owner, handoff_state, color
-            FROM scoped_tasks AS tasks WHERE 1 AND ${openStatusPredicate} AND deferred_at IS NULL
+  async getOpenTasks(limit = 15, placement?: TaskReadPlacement): Promise<TaskRow[]> {
+    const context = taskReadPlacement(placement)
+    const result = await this.forOperation("read").execute(scopedTaskRead(this.scope, sourceSql(`SELECT id, title, status, priority, due_date, assigned_to, area_id, public_area_id, public_project_id, public_goal_id, ticket_number, task_type, task_kind, project_id, owner, handoff_state, color
+            FROM scoped_tasks AS tasks WHERE ${context.sql} AND ${openStatusPredicate} AND deferred_at IS NULL
             ORDER BY priority ASC, due_date ASC NULLS LAST, updated_at DESC
-            LIMIT ${limit}`, CLOSED_TASK_STATUSES), "select"));
+            LIMIT ${limit}`, [...context.args, ...CLOSED_TASK_STATUSES]), "select"));
     return this.normalizeTaskRows(result.rows);
   }
 
   /** Count tasks grouped by status for dashboard stats */
-  async getStatusCounts(): Promise<DashboardStats> {
+  async getStatusCounts(placement?: TaskReadPlacement): Promise<DashboardStats> {
+    const context = taskReadPlacement(placement)
     const result = await this.forOperation("read").execute(
-      scopedTaskRead(this.scope, sourceSql("SELECT status, COUNT(*) AS cnt, COUNT(*) FILTER (WHERE deferred_at IS NULL) AS open_count FROM scoped_tasks AS tasks WHERE 1 AND status <> 'archived' GROUP BY status"), "select"),
+      scopedTaskRead(this.scope, sourceSql(`SELECT status, COUNT(*) AS cnt, COUNT(*) FILTER (WHERE deferred_at IS NULL) AS open_count FROM scoped_tasks AS tasks WHERE ${context.sql} AND status <> 'archived' GROUP BY status`, context.args), "select"),
     );
     const stats: DashboardStats = { total: 0, open: 0, active: 0, completed: 0, overdue: 0 };
     for (const row of result.rows) {
@@ -644,14 +648,15 @@ export class TaskRepository {
 
   /** Count overdue tasks (past due, not complete) */
   /** Count open tasks past due. Pass today's YYYY-MM-DD in the user's timezone. */
-  async getOverdueCount(today?: string, timezone = "Europe/Dublin"): Promise<number> {
+  async getOverdueCount(today?: string, timezone = "Europe/Dublin", placement?: TaskReadPlacement): Promise<number> {
     const resolvedToday = today ?? calendarToday(timezone);
     const upperBound = shiftCalendarDay(resolvedToday, 2);
+    const context = taskReadPlacement(placement)
     const result = await this.forOperation("read").execute(scopedTaskRead(this.scope, sourceSql(`SELECT due_date FROM scoped_tasks AS tasks
-            WHERE 1 AND due_date IS NOT NULL AND due_date <> ''
+            WHERE ${context.sql} AND due_date IS NOT NULL AND due_date <> ''
               AND substr(due_date, 1, 10) < ?
               AND ${openStatusPredicate}
-              AND deferred_at IS NULL`, [upperBound, ...CLOSED_TASK_STATUSES]), "select"));
+              AND deferred_at IS NULL`, [...context.args, upperBound, ...CLOSED_TASK_STATUSES]), "select"));
     let count = 0;
     for (const row of result.rows) {
       if (isDueOverdue((row as Record<string, unknown>).due_date, timezone, resolvedToday)) count++;
@@ -745,7 +750,7 @@ export class TaskRepository {
   async getKanbanCards(ids: string[], cutoff: number, reader: Pick<Client, "execute">): Promise<Array<TaskRow & { project_assigned: number }>> {
     if (!ids.length) return []
     const result = await this.readFromSnapshot(reader,scopedTaskRead(this.scope, sourceSql(`SELECT task.id, task.title, task.description, task.status, task.priority, task.due_date,
-                   task.labels, task.framework_payload, task.calendar_sync_state, task.area_id,
+                   task.labels, task.framework_payload, task.calendar_sync_state, task.area_id, task.public_area_id, task.public_project_id, task.public_goal_id,
                    task.custom_fields, task.progress, task.color, task.is_favorite, task.is_promoted, task.task_type,
                    task.task_kind,
                    (SELECT project.id FROM scoped_projects AS project WHERE project.id = task.project_id
@@ -761,7 +766,10 @@ export class TaskRepository {
                       AND (? = 0 OR lower(child.status) != 'complete' OR child.updated_at >= ?)) AS child_count
             FROM json_each(?) AS wanted JOIN scoped_tasks AS task ON task.id = wanted.value
             WHERE 1 AND task.deferred_at IS NULL`, [cutoff, cutoff, JSON.stringify(ids)]), "select"))
-    return result.rows as unknown as Array<TaskRow & { project_assigned: number }>
+    return result.rows.map(value => {
+      const row = value as unknown as TaskRow & { project_assigned: number }
+      return { ...row, area_id: row.public_area_id ?? null, project_id: row.public_project_id ?? null }
+    })
   }
 
   /** Kanban lane definitions ordered by position */
@@ -951,7 +959,8 @@ export class TaskRepository {
   /** All tasks with date fields for Timeline/GANTT chart rendering */
   async getTimelineTasks(): Promise<TaskRow[]> {
     const result = await this.forOperation("read").execute(
-      scopedTaskRead(this.scope, sourceSql("SELECT id, title, status, priority, due_date, start_date, end_date, color, task_type, task_kind, project_id, assigned_to, progress, ticket_number, parent_id, blocked_by, effort_minutes, labels, area_id, deferred_at\n       FROM scoped_tasks AS tasks WHERE 1 ORDER BY start_date ASC NULLS LAST, created_at DESC"), "select"),
+      scopedTaskRead(this.scope, sourceSql(`SELECT id, title, status, priority, due_date, start_date, end_date, color, task_type, task_kind, project_id, assigned_to, progress, ticket_number, ticket_ref, ticket_ref AS ticket_key, parent_id, blocked_by, effort_minutes, labels, area_id, public_area_id, public_project_id, public_goal_id, deferred_at, updated_at, ${taskTimestampMs("tasks.updated_at")} AS task_version
+       FROM scoped_tasks AS tasks WHERE 1 ORDER BY start_date ASC NULLS LAST, created_at DESC`), "select"),
     );
     return this.normalizeTaskRows(result.rows);
   }
@@ -1019,10 +1028,11 @@ export class TaskRepository {
   // ── Upcoming (upcoming.astro) ───────────────────────────────────────
 
   /** Tasks within a date range (non-complete) for upcoming view */
-  async getTasksInRange(startDate: string, endDate: string, timezone = "Europe/Dublin"): Promise<TaskRow[]> {
+  async getTasksInRange(startDate: string, endDate: string, timezone = "Europe/Dublin", placement?: TaskReadPlacement): Promise<TaskRow[]> {
     const lowerBound = shiftCalendarDay(startDate, -2);
     const upperBound = shiftCalendarDay(endDate, 2);
-    const result = await this.forOperation("read").execute(scopedTaskRead(this.scope, sourceSql("SELECT * FROM scoped_tasks AS tasks\n            WHERE 1 AND due_date IS NOT NULL AND due_date <> ''\n              AND substr(due_date, 1, 10) >= ? AND substr(due_date, 1, 10) <= ?\n              AND status NOT IN (?)\n              AND deferred_at IS NULL\n            ORDER BY due_date ASC, priority DESC, created_at ASC", [lowerBound, upperBound, STATUS.COMPLETE]), "select"));
+    const context = taskReadPlacement(placement)
+    const result = await this.forOperation("read").execute(scopedTaskRead(this.scope, sourceSql(`SELECT * FROM scoped_tasks AS tasks\n            WHERE ${context.sql} AND due_date IS NOT NULL AND due_date <> ''\n              AND substr(due_date, 1, 10) >= ? AND substr(due_date, 1, 10) <= ?\n              AND status NOT IN (?)\n              AND deferred_at IS NULL\n            ORDER BY due_date ASC, priority DESC, created_at ASC`, [...context.args, lowerBound, upperBound, STATUS.COMPLETE]), "select"));
     const rows = sanitizeRows(this.normalizeTaskRows(result.rows));
     return rows.filter((row) => {
       const day = calendarDayFromInput(row.due_date, timezone);
@@ -2341,13 +2351,13 @@ export class TaskRepository {
   }
   async purgeAll(): Promise<void> { await this.purgeWorkCommand() }
 
-  async archiveCompletedForDay(day: string, timezone: string): Promise<number> {
+  async archiveCompletedForDay(day: string, timezone: string, placement?: TaskReadPlacement): Promise<number> {
     let db = this.forOperation("delete")
     db = boardOperationClient(db, this.scope, { resource: "task", action: "edit" })
     db = boardOperationClient(db, this.scope, { resource: "task", action: "complete" })
     const filter = todayCompletionFilter(day, timezone)
     const result = await db.execute(scopedTaskRead(this.scope, sql`UPDATE tasks SET status = 'archived', updated_at = ${Date.now()}
-      WHERE id IN (SELECT id FROM scoped_tasks AS tasks WHERE ${sourceSql(filter.sql, [...filter.args])}
+      WHERE id IN (SELECT id FROM scoped_tasks AS tasks WHERE ${sourceSql(filter.sql, [...filter.args])} AND ${taskReadPlacement(placement)}
         ${scopeAssignedTo(this.scope) === undefined ? sourceSql("") : sql`AND assigned_to = ${scopeAssignedTo(this.scope)!}`})`))
     return result.rowsAffected
   }

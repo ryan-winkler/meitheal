@@ -318,6 +318,8 @@ The add-on defaults to `file:/data/meitheal.db`. Startup and migrations open fil
 
 Local SQLite returns busy errors immediately so feedback can retry without blocking the event loop. Check the primary SQLite error code and the numeric `rawCode` when diagnosing a failure. The adapter also names extended busy and constraint codes.
 
+Planning read bursts keep the existing 19-transaction connection limit. Up to 64 waiting reads acquire released slots in order, with a five-second admission deadline. Overload returns a temporary unavailable response; retry after the indicated delay. Admission never replays a query or preserves an old permission snapshot. If permissions change while a read waits, it returns a stale response without the former work: refresh the page before retrying. Daily lists, counts and archive-completed actions retain the selected Area or Project.
+
 On a Supervisor start, s6 prepares the App’s files under `/data`, including a restored database and any SQLite sidecars, before starting migrations and the web server as `meitheal` (UID and GID `10001`). Supervisor’s `/data/options.json` keeps its ownership. If the ownership transfer fails, startup stops before opening the database and retries the transfer on the next start. Check that the volume permits writes and ownership changes. For a local database configured outside `/data`, provision directory and file access for UID and GID `10001` separately.
 
 ## Database Migrations

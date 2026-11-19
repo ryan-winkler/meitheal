@@ -31,6 +31,9 @@ const DB_DIAGNOSTICS_SYMBOL = Symbol.for("meitheal.sqlite.diagnostics")
 const WRITE_BACKOFF_DELAYS_MS = [5, 15, 30, 60, 120]
 const READ_LEASE_SLOW_MS = 5_000
 const READ_IDLE_EVICT_MS = 30_000
+const MAX_TRANSACTION_CONNECTIONS = 19
+const MAX_QUEUED_READ_TRANSACTIONS = 64
+const READ_TRANSACTION_ADMISSION_MS = 5_000
 
 function getDiagnosticsStore() {
   let store = globalThis[DB_DIAGNOSTICS_SYMBOL]
@@ -480,6 +483,44 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
   let main = openMain()
   let closed = false
   const transactions = new Set()
+  let readReservations = 0
+  let clientGeneration = 0
+  /** @type {Array<{ resolve: () => void, reject: (error: Error) => void, timer: ReturnType<typeof globalThis.setTimeout> }>} */
+  const readWaiters = []
+
+  function admitWaitingReads() {
+    while (!closed && readWaiters.length && transactions.size + readReservations < MAX_TRANSACTION_CONNECTIONS) {
+      const waiter = readWaiters.shift()
+      if (!waiter) break
+      globalThis.clearTimeout(waiter.timer)
+      readReservations += 1
+      waiter.resolve()
+    }
+  }
+
+  /** Queue acquisition only. A query is never started, retried or replayed here. */
+  async function admittedReadTransaction() {
+    if (closed) throw new LibsqlError("The client is closed", "CLIENT_CLOSED")
+    if (memory || !readWaiters.length && transactions.size + readReservations < MAX_TRANSACTION_CONNECTIONS) return transaction("read")
+    if (readWaiters.length >= MAX_QUEUED_READ_TRANSACTIONS) throw new LibsqlError("SQLite read admission queue is full", "TRANSACTION_ACTIVE")
+    const generation = clientGeneration
+    await new Promise((resolve, reject) => {
+      const waiter = { resolve, reject, timer: globalThis.setTimeout(() => {
+        const index = readWaiters.indexOf(waiter)
+        if (index >= 0) readWaiters.splice(index, 1)
+        reject(new LibsqlError("SQLite read admission deadline exceeded", "TRANSACTION_ACTIVE"))
+      }, READ_TRANSACTION_ADMISSION_MS) }
+      readWaiters.push(waiter)
+      admitWaitingReads()
+    })
+    // Consume exactly this caller's reserved slot without another await. A close
+    // or reconnect invalidates queued work even if admission was just signalled.
+    readReservations -= 1
+    try {
+      if (closed || generation !== clientGeneration) throw new LibsqlError("The client is closed", "CLIENT_CLOSED")
+      return transaction("read")
+    } finally { admitWaitingReads() }
+  }
 
   /** @type {DatabaseSync | null} */
   let idleReadHandle = null
@@ -595,7 +636,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
   /** @param {TransactionMode} mode @param {boolean} [exclusive] @returns {Transaction} */
   function transaction(mode, exclusive = false) {
     const primary = idle()
-    if (transactions.size >= 19) throw new LibsqlError("All SQLite transaction connections are in use", "TRANSACTION_ACTIVE")
+    if (transactions.size + readReservations >= MAX_TRANSACTION_CONNECTIONS) throw new LibsqlError("All SQLite transaction connections are in use", "TRANSACTION_ACTIVE")
 
     const diag = getDiagnosticsStore()
     const useReadPool = !memory && mode === "read"
@@ -649,19 +690,21 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       try {
         if (db.isTransaction) db.exec("ROLLBACK")
       } finally {
-        if (memory) {
-          if (restoreReadOnly) db.exec("PRAGMA query_only=OFF")
-        } else if (leasedFromPrimaryReadSlot) {
-          readSlotLeased = false
-          if (closed) {
-            db.close()
+        try {
+          if (memory) {
+            if (restoreReadOnly) db.exec("PRAGMA query_only=OFF")
+          } else if (leasedFromPrimaryReadSlot) {
+            readSlotLeased = false
+            if (closed) {
+              db.close()
+            } else {
+              idleReadHandle = db
+              armReadIdleEviction()
+            }
           } else {
-            idleReadHandle = db
-            armReadIdleEviction()
+            db.close()
           }
-        } else {
-          db.close()
-        }
+        } finally { admitWaitingReads() }
       }
     }
 
@@ -730,6 +773,11 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
   function close() {
     if (closed) return
     closed = true
+    clientGeneration += 1
+    for (const waiter of readWaiters.splice(0)) {
+      globalThis.clearTimeout(waiter.timer)
+      waiter.reject(new LibsqlError("The client is closed", "CLIENT_CLOSED"))
+    }
     try {
       for (const settle of transactions) settle()
     } finally {
@@ -755,7 +803,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     },
     async migrate(statements) { return batchSync(statements, "deferred", true) },
     /** @param {TransactionMode} [mode] */
-    async transaction(mode = "write") { return transaction(mode) },
+    async transaction(mode = "write") { return mode === "read" ? admittedReadTransaction() : transaction(mode) },
     async sync() {
       idle()
       throw new LibsqlError("Sync is unavailable for local SQLite", "SYNC_NOT_SUPPORTED")

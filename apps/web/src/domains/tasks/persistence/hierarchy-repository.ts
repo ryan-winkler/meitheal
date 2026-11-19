@@ -115,7 +115,7 @@ export class HierarchyRepository {
   async getNextAreaPosition(): Promise<number> { return this.nextPosition("areas", "area") }
 
   async findAllGoals(filters?: { area_id?: string; project_id?: string; status?: string }): Promise<GoalRow[]> {
-    const predicates = [ownedPlanning(this.scope, "goals"), sourceSql("goals.retired_at IS NULL")]
+    const predicates = [ownedPlanning(this.scope, "goals"), planningVisible(this.scope, "goals"), sourceSql("goals.retired_at IS NULL")]
     if (filters?.area_id) predicates.push(sql`EXISTS (${this.target("areas", sql`${filters.area_id}`)}) AND (goals.area_id = ${filters.area_id} OR EXISTS (
       SELECT 1 FROM projects WHERE projects.goal_id = goals.id AND projects.area_id = ${filters.area_id} AND ${ownedPlanning(this.scope, "projects")} AND ${planningVisible(this.scope, "projects")} AND projects.retired_at IS NULL))`)
     if (filters?.project_id) predicates.push(sql`EXISTS (SELECT 1 FROM projects WHERE projects.id = ${filters.project_id} AND projects.goal_id = goals.id AND ${ownedPlanning(this.scope, "projects")} AND ${planningVisible(this.scope, "projects")} AND projects.retired_at IS NULL)`)

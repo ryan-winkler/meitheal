@@ -3,6 +3,18 @@ import { ownedPlanning, storageBoardId, taskField, taskOwnedBy, taskPlacementJoi
 import { sql, sourceSql, type SqlFragment } from "./sql-fragment"
 import { goalEligibility } from "./shared-goal-repository"
 
+export type TaskReadPlacement = { areaId?: string | null; projectId?: string | null }
+
+/** Optional selected context, applied to normalized raw refs after Board/audience ownership. */
+export function taskReadPlacement(placement?: TaskReadPlacement, table = "tasks"): SqlFragment {
+  if (!/^[a-z][a-z0-9_]*$/i.test(table)) throw new Error("Source-owned task alias required")
+  const task = sourceSql(table)
+  const project = placement?.projectId ? sql`AND ${task}.project_id = ${placement.projectId}` : sourceSql("")
+  const area = placement?.areaId ? sql`AND COALESCE((SELECT context_project.area_id FROM scoped_projects AS context_project
+    WHERE context_project.id = ${task}.project_id), ${task}.area_id) = ${placement.areaId}` : sourceSql("")
+  return sql`1 ${project} ${area}`
+}
+
 function visiblePlacement(scope: BoardScope): SqlFragment {
   const human = scope.principal.kind === "ha_user"
   const area = sql`COALESCE((SELECT visibility_project.area_id FROM projects AS visibility_project

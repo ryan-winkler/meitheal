@@ -14,6 +14,7 @@ import { readNamedBoardPlanning, namedRoutinePeriod } from "./named-board-planni
 import { editTaskHomeAssistantArea, findTaskHomeAssistantArea, readHomeAssistantAreaPolicyRevision } from "./home-assistant-task-area"
 import type { BoardActor } from "./named-board-repository"
 import { sql } from "./sql-fragment"
+import type { TaskReadPlacement } from "./board-work-query"
 import { isOrganizationFeatureAvailable as available } from "../../../lib/organization-request-context"
 
 type Outcome<T> = { ok: true, value: T } | { ok: false, errorCode: "unavailable" | "denied" | "stale", reason?: "routine-date" }
@@ -50,9 +51,9 @@ export class NamedBoardTaskRepository {
     }
   }
 
-  async routineLibrary(actor: BoardActor) {
+  async routineLibrary(actor: BoardActor, placement?: TaskReadPlacement) {
     if (!this.matches(actor)) return []
-    const routines = await new TemplateRepository(this.db, this.scope).getRoutinesWithStats()
+    const routines = await new TemplateRepository(this.db, this.scope).getRoutinesWithStats(placement?.areaId ?? undefined, placement?.projectId ?? undefined)
     const projects = new Map((await new HierarchyRepository(this.db, this.scope).findAllProjects()).map(project => [project.id, project.status]))
     const board = scopeBoardAccess(this.scope)
     return routines.map(routine => {
@@ -106,11 +107,14 @@ export class NamedBoardTaskRepository {
       return {
         board: access, authorityRevision: this.scope.authorityRevision, planning, context, summary,
         lanes: lanes.map(lane => ({ id: lane.id, label: lane.label, key: lane.key })),
-        tasks: rows.tasks.slice(0, 50).map(task => ({ ...projectPublicTaskFields(task), id: task.id, title: task.title, description: task.description ?? "",
-          status: task.status, ticket: String(task.ticket_ref ?? `${access.ticketPrefix}-${task.ticket_number}`),
-          laneId: String(task.board_column_id ?? lanes.find(lane => lane.includes.includes(normalizeStatus(task.status)))?.id ?? ""),
-          assignedTo: task.assigned_to, dueDate: task.due_date, routine: task.task_kind === "routine_instance" && task.source_template_id !== null,
-          version: Number(task.task_version ?? task.updated_at), placement: { areaId: task.area_id, projectId: task.project_id } })),
+        tasks: rows.tasks.slice(0, 50).map(task => {
+          const publicTask = projectPublicTaskFields(task)
+          return { ...publicTask, id: task.id, title: task.title, description: task.description ?? "",
+            status: task.status, ticket: String(task.ticket_ref ?? `${access.ticketPrefix}-${task.ticket_number}`),
+            laneId: String(task.board_column_id ?? lanes.find(lane => lane.includes.includes(normalizeStatus(task.status)))?.id ?? ""),
+            assignedTo: task.assigned_to, dueDate: task.due_date, routine: task.task_kind === "routine_instance" && task.source_template_id !== null,
+            version: Number(task.task_version ?? task.updated_at), placement: { areaId: publicTask.area_id ?? null, projectId: publicTask.project_id ?? null } }
+        }),
         nextOffset: rows.tasks.length > 50 ? offset + 50 : null,
         members: (members?.rows ?? []).map(member => ({ id: String(member.principal_id), role: String(member.role), denyCompletion: member.deny_completion === 1, denyDeletion: member.deny_deletion === 1 })),
         intakes: (intakes?.rows ?? []).map(intake => ({ id: String(intake.id), label: String(intake.label), enabled: intake.enabled === 1 })),
