@@ -8,7 +8,7 @@ description: "Defines the task activity history and its storage."
 
 - **Status**: Accepted
 - **Date**: 2026-02-28
-- **Context**: Phase 30 competitive parity, Persona #34 (domain events)
+- **Context**: Household members and automation operators need field-level change history on tasks to trace who or which integration modified a record.
 
 ## Decision
 

@@ -8,7 +8,7 @@ description: "Records the request rate-limiting strategy."
 
 - **Status**: Accepted
 - **Date**: 2026-02-28
-- **Context**: Phase 29 security hardening, Persona audit #3/#5/#6
+- **Context**: Security hardening pass addressing unthrottled API endpoints and burst-traffic resilience on constrained Home Assistant hardware.
 
 ## Decision
 

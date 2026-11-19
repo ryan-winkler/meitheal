@@ -1,0 +1,23 @@
+---
+import TablerModal from "../ui/TablerModal.astro"
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+
+const { locale } = Astro.props as { locale: Locale }
+---
+<template id="preferred-quick-add-template">
+  <TablerModal id="workspace-quick-add" title={t("setup.quick", locale)} size="sm">
+    <form id="workspace-quick-add-form">
+      <label for="workspace-quick-title">{t("setup.quick_placeholder", locale)}</label>
+      <input id="workspace-quick-title" name="title" class="form-input" maxlength="500" required data-tabler-initial-focus />
+      <p role="status" data-quick-add-saving hidden>{t("setup.quick_saving", locale)}</p>
+      <p role="alert" data-quick-add-error hidden
+        data-rejected={t("setup.quick_rejected", locale)}
+        data-uncertain={t("setup.quick_uncertain", locale)}></p>
+    </form>
+    <Fragment slot="footer">
+      <button type="button" class="btn btn-secondary" data-quick-add-full>{t("setup.quick_full_form", locale)}</button>
+      <button class="btn btn-primary" type="submit" form="workspace-quick-add-form">{t("setup.quick_submit", locale)}</button>
+    </Fragment>
+  </TablerModal>
+</template>

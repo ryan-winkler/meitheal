@@ -1,5 +1,6 @@
 ---
 import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
+import { NAMED_BOARD_PRESETS } from "@domains/tasks"
 import { BoardIntakeRepository } from "@domains/tasks/persistence/board-intake-repository"
 import { getPersistenceClient } from "@domains/tasks/persistence/store"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
@@ -42,6 +43,13 @@ const snapshot = user && directory ? boardViewKey(directory, user.actor.id) : un
             <summary class="btn btn-primary">{newLabel("board")}</summary>
             <form data-board-form="create" class="board-form">
               <label>{label("board")} <input name="name" required maxlength="100" autocomplete="off" /></label>
+              <label>{organizationLocale(Astro) === "ga" ? "Réamhshocrú sreafa oibre" : "Workflow preset"}
+                <select name="preset">
+                  {Object.entries(NAMED_BOARD_PRESETS).map(([preset, lanes]) => (
+                    <option value={preset}>{lanes.join(" → ")}</option>
+                  ))}
+                </select>
+              </label>
               <p role="status" data-board-feedback></p>
               <button type="submit" class="btn btn-primary">{organizationLocale(Astro) === "en" ? `Create ${label("board")}` : newLabel("board")}</button>
             </form>

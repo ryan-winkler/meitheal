@@ -1,5 +1,6 @@
 /** Public task persistence and board-availability operations used across contexts. */
 export { AreaRepository } from "./persistence/area-repository"
+export { isNamedBoardPreset, NAMED_BOARD_PRESETS, type NamedBoardPreset } from "./named-board-presets"
 export {
   commitSyncMutationChunks,
   ensureSchema,

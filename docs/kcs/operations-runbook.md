@@ -422,7 +422,7 @@ The `schema-drift` CI job validates migration SQL against runtime schema expecta
 
 The `perf-budgets` job and local `pnpm --filter @meitheal/web perf:budget` command read [the same thresholds](../../apps/web/scripts/perf-budget-baseline.json). Run the web build first. The check starts its own production web process on an available loopback port assigned by the operating system. The check measures:
 
-- Up to 1,765,000 bytes for Astro build assets and the service worker. The full public directory, including install screenshots and API specifications, is reported separately.
+- Up to 1,820,000 bytes for all generated Astro build assets and the service worker. Within that aggregate, common assets are capped at 1,770,000 bytes and the optional Setup, Quick Add and Dashboard customization assets at 50,000 bytes. The full public directory, including install screenshots and API specifications, is reported separately.
 - Up to 224 MiB (`229,376 KiB`) of web process RSS after five warmup writes. This is a single process measurement on the CI host.
 - Up to 250 ms at p95 across 100 consecutive requests to `POST /api/tasks` against a fresh local SQLite database. Each timed sample includes reading and validating the response body. The nearest-rank p95 is observation 95 of 100 after sorting. Read it alongside p50, p99, maximum and the number of requests over the threshold. A p95 pass permits up to five requests above the threshold. The job fails on an unexpected response or readback.
 - A report-only `kanbanWarm2000` result. The check inserts 2,000 undated tasks directly into the same SQLite database, then times five warmup and 25 measured `GET /tasks` page loads. It reports the seeded and total task counts, every sample, p50, p95 and maximum. No threshold applies, but an unexpected response still fails the job. If seeding fails, the result names the reason under `skipped` instead of reporting a smaller board. Compare it with the Green 2,000-card board timings; it does not replace them.
@@ -450,6 +450,8 @@ For calibration, the check accepts these overrides.
 - `MEITHEAL_PERF_BUDGET_RSS_KB_MAX`
 - `MEITHEAL_PERF_BUDGET_P95_MS_MAX`
 - `MEITHEAL_PERF_BUDGET_FILE`
+
+Custom budget files can set `budgets.workspaceUiBytesMax`. Files that omit it use the default 50,000-byte ceiling for optional workspace assets.
 
 ## Label storage
 
@@ -504,6 +506,10 @@ Ticket drawers retain the background queue URL in history state. Match an in-fli
 Ticket drawers keep their canonical URL while editing. On standalone pages, Layout registers the drawer history guard before Astro ClientRouter so Back and Forward restore the existing drawer and queue rather than replacing the page. The guard only handles history entries owned by the currently mounted drawer. Home Assistant ingress retains its native navigation path. If Triage receives a decision acknowledgement while a ticket is open, its background route remains the comparison target; the saved status stays visible after closing the drawer.
 
 Label removal confirmations render the count and each selected name as plain text in a bounded list. Markup in a stored label name must be visible as text and never create elements. Successful card-color changes refresh the board after acknowledgement; inactivity cues must revalidate without navigating away or clearing peer cues.
+
+## First-time setup and browser storage
+
+Confirm **Set up Meitheal** is offered on a new browser session. Finish or skip and check that the invitation disappears. **Settings → Run setup again** should reopen it even when the shared Settings request fails. Verify a second Home Assistant identity in the same browser can choose independent settings. A blocked browser storage write should leave the draft available and offer a Dashboard link. See [First-time setup](first-time-setup.md).
 
 ## Database readiness
 
@@ -602,7 +608,7 @@ After building the App, run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tes
 
 Schema 25 retains the reserved Household identity and MTH ticket counter while allowing an active/retired lifecycle. It replaces the Household state guard and installs storage guards that reject writes to retired Household tasks, Areas, Projects, Goals, templates, workflow lanes, drafts, pins, reactions, comments and mention receipts, Home Assistant locations, Calendar/Todo confirmation links and shared Pillars/Principles. Personal Pillars remain available. The migration and web startup share the same transaction and validation; startup does not reseed or repair retired Household work. Activity, mentions, reminders and inactivity views exclude retired Household work. Shared Goal reads and the Routine library continue to show authorized work from active named Boards.
 
-The scoped workspace controls, with compact workspace headers, Timeline integration and navigation focus recovery, increase total generated client assets by approximately 0.80 percent. The static allowance is 1,765,000 bytes; runtime and physical Green limits are unchanged. Run `pnpm --filter @meitheal/web perf:budget` against a fresh production build. See [the workspace decision](../decisions/0025-board-workspace-lifecycle.md) for the measured baseline and allowance.
+The scoped workspace controls, with compact workspace headers, Timeline integration and navigation focus recovery, increase total generated client assets by approximately 0.80 percent. Run `pnpm --filter @meitheal/web perf:budget` against a fresh production build. The check caps aggregate generated assets at 1,820,000 bytes, common assets at 1,770,000 bytes, and the optional Setup, Quick Add and Dashboard customization assets at 50,000 bytes. Existing custom `clientBytesMax` settings continue to limit the aggregate. The separate common-assets allowance is configured with `commonClientBytesMax`. Runtime and physical Green limits are unchanged. See [the workspace decision](../decisions/0025-board-workspace-lifecycle.md) for the measured baseline and allowance.
 
 In a disposable database, run `tests/e2e/board-lifecycle.spec.ts`. Delete populated and empty named Boards, verify owners can restore them, and confirm a member, deletion-blocked child and agent cannot delete them. Delete Household as the verified browser administrator. Confirm named Boards remain usable, global shared counts disappear, legacy capture returns the explicit paused message, and calendar/Todo import and write-back create no changes. Restart and verify Household stays deleted, then restore it and compare exact task IDs, ticket numbers, planning relationships, draft receipts and sync identifiers. Require `PRAGMA integrity_check` and `PRAGMA foreign_key_check` after restart and recovery.
 

@@ -8,6 +8,8 @@ description: "Set up private Boards, send-only access and scoped planning."
 
 Open **Boards** from the sidebar inside Home Assistant. **Household** takes you to the existing task workspace. Use **New Board** for work with its own members and workflow. Use **Hide from my sidebar** to change your shortcuts. You can reopen a hidden Board from **Your Boards**.
 
+When creating a named Board, choose the workflow labels that fit the work. The presets use the same task statuses, Board permissions, and Routine completion rules. A preset takes effect on the new Board for all its members. [First-time setup](first-time-setup.md) controls personal preferences.
+
 Expand **Boards** to find Household and your other visible Boards. Expand a Board to see its Areas and an Area to see its Projects. **Show more Projects** preserves the choices already loaded while it checks the next page. If that check fails, retry the same page. Keyboard focus moves to the first new choice only when you remain on the paging control. Losing access clears private shortcuts. The **All Areas** picker filters the selected Board. Project selection keeps its own context.
 
 Household and named Boards use the same Kanban cards and columns. Select a named Board card to open its details, or focus it and press Enter. You can edit, file, move or remove the ticket when your permissions allow it. Changes use the ticket version, so a concurrent edit requires refreshing before trying again. Creation opens the same detail panel. The named workspace exposes Kanban, and Household also provides Table, Calendar and Timeline.

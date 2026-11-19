@@ -8,7 +8,7 @@ description: "Explains the distinction between recurring tasks and habits."
 
 - **Status**: Accepted
 - **Date**: 2026-03-20
-- **Context**: Phase 1 discuss — 50-persona panel analysis on whether task recurrence (RRULE) and habit cadence should converge into one engine.
+- **Context**: Architectural review evaluating whether RFC 5545 task recurrence (RRULE) and daily/weekly habit cadence should converge into one engine or remain separate domain concepts.
 
 ## Decision
 
@@ -27,14 +27,6 @@ Task recurrence and habit cadence remain **separate domain concepts** with disti
 
 ## Rationale
 
-### 50-Persona Panel Results (0/50 for convergence)
-
-- **33/50** — keep fully separate
-- **8/50** — keep separate with shared scheduling primitive
-- **5/50** — shared primitive only (neutral on domain separation)
-- **4/50** — neutral (no opinion)
-- **0/50** — converge into one engine
-
 ### Industry Precedent
 
 | Product | Approach | Outcome |
@@ -45,7 +37,7 @@ Task recurrence and habit cadence remain **separate domain concepts** with disti
 | **Things 3** | Fixed/after-completion, no habits | Beloved UX simplicity |
 | **Todoist** | Habits = recurring tasks | Consistently criticized, added Habits extension |
 
-### ADHD/Productivity Panel (unanimous: keep separate)
+### Behavioral and Motivational Separation
 
 Habits are ADHD dopamine mechanisms — streak counters and daily check-in cards only work because habits feel fundamentally different from tasks. Merging them kills the motivational distinction.
 

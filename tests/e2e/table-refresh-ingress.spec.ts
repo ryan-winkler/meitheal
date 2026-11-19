@@ -121,7 +121,7 @@ test("Task refreshes use compact ingress HTML and ignore a worker-cached respons
       const response = await fetch(route, { cache: "no-store", redirect: "error" })
       return { cacheControl: response.headers.get("cache-control"), hasTask: (await response.text()).includes(title) }
     }, { prefix, title })
-    expect(evidence).toEqual({ cacheControl: "no-store", hasTask: true })
+    expect(evidence).toEqual({ cacheControl: "private, no-store", hasTask: true })
 
     const escaped: string[] = []
     page.on("request", request => {

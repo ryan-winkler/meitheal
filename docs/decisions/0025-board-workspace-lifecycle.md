@@ -40,6 +40,8 @@ Browser verification covers the common Kanban, Area filtering, keyboard navigati
 
 The static client asset allowance changes from 1,740,000 to 1,765,000 bytes. The pre-change build measured 1,737,433 bytes; the shared workspace, scoped controls and navbar recovery initially measured 1,761,639 bytes. With compact workspace headers, Timeline integration, loading dismissal and navigation focus handoff fixes, the current measurement including the planning, pagination and lifecycle-control refinements is 1,751,345 bytes, an increase of 13,912 bytes over the original baseline, approximately 0.80 percent across all client assets. The allowance includes lifecycle rebinding, accessible pin controls and responsive editor preservation. Retain the existing compiler and runtime memory, CPU and latency limits. This allowance does not change the physical Green release profile.
 
+Combined with the optional Setup, Quick Add and Dashboard customization work, the common-asset measurement after the Project paging and lifecycle-control changes is 1,765,316 bytes. The common allowance therefore moves from 1,765,000 to 1,770,000 bytes and the aggregate from 1,815,000 to 1,820,000 bytes, keeping the separate 50,000-byte optional allowance unchanged.
+
 ## Alternatives considered
 
 Retaining two renderers would require parallel card, keyboard and error-state fixes. A unified task repository could remove more duplication, but would also migrate legacy Household integrations and references. Shared presentation with authorized scope adapters addresses the current journey with a smaller persistence change.

@@ -12,6 +12,13 @@ const SCROLL_KEY = "meitheal-restore-scroll"
 const MAX_AGE_MS = 60_000
 const SCROLL_DEBOUNCE_MS = 500
 
+function scopedKey(key: string): string | null {
+  if (typeof document === "undefined") return null
+  const { workspaceScope, workspaceFrozen } = document.documentElement.dataset
+  if (window.__ingress_path && (!workspaceScope || workspaceFrozen)) return null
+  return workspaceScope ? `${key}:${workspaceScope}` : key
+}
+
 let pendingDestination: { path: string; timestamp: number } | undefined
 
 export interface NavigationState {
@@ -38,7 +45,7 @@ export function stripIngressPrefix(
   }
   if (value === prefix) return "/"
   if (value.startsWith(`${prefix}/`)) {
-    return value.slice(prefix.length) || "/"
+    return value.slice(prefix.length).replace(/^\/+/, "/")
   }
   if (value.startsWith(`${prefix}?`) || value.startsWith(`${prefix}#`)) {
     return `/${value.slice(prefix.length)}`
@@ -57,6 +64,8 @@ function currentInternalRoute(): string {
  */
 export function saveNavigationState(path?: string, scrollY?: number): void {
   try {
+    const key = scopedKey(STORAGE_KEY)
+    if (!key) return
     let resolvedPath: string
     let resolvedScrollY: number
     if (path === undefined) {
@@ -76,7 +85,7 @@ export function saveNavigationState(path?: string, scrollY?: number): void {
       scrollY: resolvedScrollY,
       timestamp: Date.now(),
     }
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+    sessionStorage.setItem(key, JSON.stringify(state))
   } catch {
     // sessionStorage full or unavailable — silently ignore
   }
@@ -88,7 +97,9 @@ export function saveNavigationState(path?: string, scrollY?: number): void {
  */
 export function getNavigationState(): NavigationState | null {
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY)
+    const key = scopedKey(STORAGE_KEY)
+    if (!key) return null
+    const raw = sessionStorage.getItem(key)
     if (!raw) return null
 
     const state: NavigationState = JSON.parse(raw)
@@ -102,7 +113,7 @@ export function getNavigationState(): NavigationState | null {
     }
 
     if (Date.now() - state.timestamp > MAX_AGE_MS) {
-      sessionStorage.removeItem(STORAGE_KEY)
+      sessionStorage.removeItem(key)
       return null
     }
 
@@ -202,9 +213,10 @@ export function initStatePersistence(): void {
   )
 
   try {
-    const pendingScroll = sessionStorage.getItem(SCROLL_KEY)
-    if (pendingScroll) {
-      sessionStorage.removeItem(SCROLL_KEY)
+    const scrollKey = scopedKey(SCROLL_KEY)
+    const pendingScroll = scrollKey && sessionStorage.getItem(scrollKey)
+    if (pendingScroll && scrollKey) {
+      sessionStorage.removeItem(scrollKey)
       const y = parseInt(pendingScroll, 10)
       if (y > 0) {
         requestAnimationFrame(() => {

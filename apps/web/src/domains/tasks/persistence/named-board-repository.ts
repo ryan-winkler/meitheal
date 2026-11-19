@@ -2,6 +2,7 @@ import { randomInt, randomUUID } from "node:crypto"
 import type { Client, Transaction } from "@libsql/client"
 import { isActiveAgentToken } from "@domains/auth"
 import { acquireWriteTransaction } from "../../../../scripts/database-client.mjs"
+import { NAMED_BOARD_PRESETS, type NamedBoardPreset } from "../named-board-presets"
 import { boardGrantStillCurrent, changeBoardGrants, currentBoardGrantRevision, readBoardGrantRevision } from "./board-grant-fence"
 
 export type BoardActor = { kind: "ha_user" | "agent"; id: string }
@@ -121,8 +122,9 @@ export class NamedBoardRepository {
   }
 
   /** The caller verifies that the creator is the current active Home Assistant user. */
-  async create(ownerId: string, name: string) {
+  async create(ownerId: string, name: string, preset: NamedBoardPreset = "standard") {
     const boardId = randomUUID()
+    const labels = NAMED_BOARD_PRESETS[preset]
     return changeBoardGrants(this.db, async tx => {
       const now = Date.now()
       await tx.batch([
@@ -143,7 +145,7 @@ export class NamedBoardRepository {
           sql: `INSERT INTO kanban_lanes
             (id, key, label, position, includes, built_in, created_at, updated_at, board_id)
             VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`,
-          args: [randomUUID(), key, ["To Do", "In Progress", "Done"][position]!, position,
+          args: [randomUUID(), key, labels[position]!, position,
             JSON.stringify([key]), now, now, boardId],
         })),
       ])
