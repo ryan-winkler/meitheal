@@ -22,7 +22,7 @@ test("Household Areas organize capture and Projects inside the Board", async ({ 
   await expect(page).toHaveURL(/\/boards\/household\?area=/)
   const groupId = new URL(page.url()).searchParams.get("area")!
   await page.goto(`/boards/household?area=${groupId}&view=groups#group-settings`)
-  await page.getByRole("tab", { name: /Tasks/ }).click()
+  await page.getByRole("navigation", { name: "Area sections" }).getByRole("link", { name: "Tasks", exact: true }).click()
   await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
   await page.locator("#kanban-bar-new-task").click()
   await page.locator("#new-task-title-input").fill("Replace workshop light")
@@ -80,13 +80,15 @@ test("Household Project detail uses Tabler icons and keeps custom Project icons"
   await expect(back).toHaveAttribute("href", "/boards/household")
   await expectIcon(back, "arrow-down")
   await expectIcon(addTask, "plus")
-  for (const [label, icon] of [["Overview", "chart-bar"], ["Tasks", "checkbox"], ["Fields", "tag"], ["Settings", "settings"]] as const) {
+  await expectIcon(page.getByRole("navigation", { name: "Project sections" }).getByRole("link", { name: "Tasks", exact: true }), "checkbox")
+  for (const [label, icon] of [["Overview", "chart-bar"], ["Fields", "tag"], ["Settings", "settings"]] as const) {
     await expectIcon(tab(label), icon)
   }
 
   await page.setViewportSize({ width: 375, height: 740 })
-  await tab("Overview").focus()
+  await page.getByRole("navigation", { name: "Project sections" }).getByRole("link", { name: "Tasks", exact: true }).focus()
   await page.keyboard.press("Tab")
+  await expect(tab("Overview")).toBeFocused()
   await page.keyboard.press("Tab")
   await expect(tab("Fields")).toBeFocused()
   await page.keyboard.press("Enter")

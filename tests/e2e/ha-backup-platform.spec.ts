@@ -32,7 +32,7 @@ test.describe("Home Assistant backup contract", () => {
     }
   })
 
-  test("the manifests exclude transient files and keep Canary Board authority outside App backups", () => {
+  test("the manifests exclude transient files and keep Board authority outside App backups", () => {
     for (const configPath of [
       "meitheal-hub/config.yaml",
       "meitheal-hub-canary/config.yaml",
@@ -44,9 +44,7 @@ test.describe("Home Assistant backup contract", () => {
         ?.trim().split(/\r?\n/).map(line => line.trim()).sort()
 
       const expected = ['- "*.log"', '- "*.tmp"']
-      if (configPath === "meitheal-hub-canary/config.yaml") {
-        expected.push('- "meitheal-board-grants-pending"', '- "meitheal-board-grants.json"')
-      }
+      expected.push('- "meitheal-board-grants-pending"', '- "meitheal-board-grants.json"')
       expect(exclusions).toEqual(expected)
     }
   })

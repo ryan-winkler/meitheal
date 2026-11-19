@@ -1,5 +1,5 @@
 import { browserUuid } from "./browser-uuid"
-import { confirmDialog } from "./confirm-dialog"
+import { confirmDialog, type ConfirmOptions } from "./confirm-dialog"
 import { safeIngressHref, syncIngressDestination } from "./ingress-navigation"
 import { safeFetch } from "./safe-fetch"
 
@@ -33,21 +33,38 @@ export function bindBoardPage(signal: AbortSignal) {
   let expired = false
   let checking: AbortController | undefined
   const placeholder = document.createComment("")
-  const detach = () => {
+  // Hiding the Board removes the focused control (or an open confirmation), so
+  // hand keyboard focus to whichever recovery control is now visible.
+  const holdsFocus = () => {
+    const active = document.activeElement
+    return !!active && active !== document.body &&
+      (root.contains(active) || recovery.contains(active) || !!active.closest('[role="dialog"], [role="alertdialog"]'))
+  }
+  const focusRecovery = (owned: boolean) => {
+    // Hiding the focused Retry control does not move focus until the next frame, so it counts as lost.
+    const active = document.activeElement
+    if (!owned || (active && active !== document.body && active.isConnected && !(expired && recovery.contains(active)))) return
+    const target = expired ? status.querySelector<HTMLElement>("[data-board-refresh]") : retry
+    target?.focus({ preventScroll: true })
+  }
+  const detach = (owned = holdsFocus()) => {
     root.dispatchEvent(new Event("meitheal:board-hidden"))
     if (root.isConnected) root.replaceWith(placeholder)
     recovery.hidden = expired
+    if (!expired) focusRecovery(owned)
   }
   const restore = () => {
     if (placeholder.isConnected) placeholder.replaceWith(root)
     recovery.hidden = true
   }
   const expire = () => {
+    const owned = holdsFocus()
     expired = true
-    detach()
+    detach(owned)
     root.replaceChildren()
     recovery.hidden = true
     status.hidden = false
+    focusRecovery(owned)
   }
   async function recheck(beforeRevealing = false) {
     if (expired || signal.aborted) return
@@ -87,6 +104,17 @@ export function bindBoardPage(signal: AbortSignal) {
   window.addEventListener("pagehide", () => { checking?.abort(); detach() }, { signal })
   window.addEventListener("pageshow", event => { if (event.persisted) void recheck(true) }, { signal })
   status.querySelector("[data-board-refresh]")?.addEventListener("click", () => window.location.reload(), { signal })
+
+  async function confirmBoard(options: ConfirmOptions) {
+    const confirmation = new AbortController()
+    const hide = () => confirmation.abort()
+    root!.addEventListener("meitheal:board-hidden", hide, { signal })
+    try {
+      return await confirmDialog({ ...options, signal: AbortSignal.any([signal, confirmation.signal]) })
+    } finally {
+      root!.removeEventListener("meitheal:board-hidden", hide)
+    }
+  }
 
   const dest = root.querySelector<HTMLSelectElement>('[name="destination"]')
   const recipient = root.querySelector<HTMLElement>("[data-board-recipient]")
@@ -190,11 +218,15 @@ export function bindBoardPage(signal: AbortSignal) {
     const feedback = form.querySelector<HTMLElement>("[data-board-feedback]")
     const button = form.querySelector<HTMLButtonElement>('[type="submit"]')
     if (!button || button.disabled || button.hidden) return
-    if (boardForm === "task-delete" && !await confirmDialog({ message: "Delete this task?" })) return
-    if (boardForm === "planning" && value("action") === "retire" && !await confirmDialog({ message: "Remove this item from active planning?" })) return
-    if (boardForm === "lifecycle" && value("action") === "retire" && !await confirmDialog({
+    if (boardForm === "task-delete" && !await confirmBoard({ message: "Delete this task?" })) return
+    if (boardForm === "planning" && value("action") === "retire" && !await confirmBoard({ message: "Remove this item from active planning?" })) return
+    if (boardForm === "lifecycle" && value("action") === "retire" && !await confirmBoard({
+      title: "Delete Board",
       message: `Delete ${value("boardName") || "this Board"}? Its work stays saved in Deleted Boards. Incoming work and Routines pause until you restore it.`,
+      confirmText: "Delete Board",
+      variant: "danger",
     })) return
+    if (expired || signal.aborted || !root.isConnected || !form.isConnected) return
     button.disabled = true
     if (feedback) feedback.textContent = ""
 

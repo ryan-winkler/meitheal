@@ -28,6 +28,8 @@ tmpfs: true
 watchdog: http://[HOST]:[PORT:3000]/api/health
 backup: cold
 backup_exclude:
+  - "meitheal-board-grants.json"
+  - "meitheal-board-grants-pending"
   - "*.log"
   - "*.tmp"
 stage: stable

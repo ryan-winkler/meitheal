@@ -8,7 +8,7 @@ description: "Back up, restore, and verify Meitheal with the Home Assistant Supe
 
 Stable and canary use Supervisor-managed cold backups. Supervisor stops a running Meitheal app before archiving its data and starts it again afterward. The app is unavailable during the snapshot. [Home Assistant app backup configuration](https://contributors.home-assistant.io/apps/reference/configuration/#backups)
 
-Use the Home Assistant backup controls for a database that contains a named Board, Personal Pillar, personal display label, Selected people or Nobody audience, or task location. Changing a restricted audience back to Everyone keeps the database protected from raw download. Named Board access uses a separate revision file and a pending publication directory excluded from the App backup. A live interruption can finish publishing an exact matching committed revision from that directory. A restored App whose database and current revision disagree keeps named Board access closed.
+Use the Home Assistant backup controls for a database that contains a named Board, Personal Pillar, personal display label, Selected people or Nobody audience, or task location. Changing a restricted audience back to Everyone keeps the database protected from raw download. Named Board access uses a separate revision file and a pending publication directory excluded from the App backup. A live interruption can finish publishing an exact matching committed revision from that directory. Supervisor can remove the excluded marker while replacing App data during restore. Exclusion does not make the marker survive. A missing or mismatched current revision keeps governed Board access closed. The App keeps its existing filesystem permissions; recovery uses the separately retained operator checkpoint described below.
 
 ## What is protected
 
@@ -38,6 +38,7 @@ The snapshot includes committed WAL data. Meitheal publishes the completed file 
 2. Select the installed Meitheal app, name the backup and choose an approved location. Confirm the app and version in the completed backup details.
 3. Keep an off-device copy and its emergency kit available to the operator. App data and options can include private household information or credentials.
 4. If the app was running, confirm it returns to service. Open the Meitheal ingress page and confirm `GET /api/health` reports a healthy database.
+5. If the installation has named Boards, the archive alone cannot restore Board access because it excludes the published grant marker. Capture and retain a current operator checkpoint as described in [Capture and refresh](#capture-and-refresh) before you treat the backup as complete.
 
 ## Checkpoint a legacy installation before upgrading
 
@@ -52,6 +53,8 @@ An installed app can still use the former hot backup configuration even when the
 
 Restore only the matching Meitheal app from the selected Home Assistant backup. The stable and canary apps have separate data volumes. For a version rollback, restore the prior image and its pre-upgrade data together.
 
+An archive created before the App excluded `meitheal-board-grants.json` can hold an older database together with its matching marker. Restoring it can reopen a Board grant that was revoked later, and Supervisor starts the App if it was running when the archive was made. Do not restore such an archive over an installation that has named Boards. Restore it only into a disposable, isolated Home Assistant instance to recover historical data, or follow [Restore without reopening historical permissions](#restore-without-reopening-historical-permissions) with startup prevented.
+
 1. Wait for Supervisor to finish and verify the exact restored app version and image.
 2. Start the app if it was stopped at backup time, then check ingress and `GET /api/health`.
 3. Verify a known task, relation and setting match the backup point.
@@ -59,9 +62,34 @@ Restore only the matching Meitheal app from the selected Home Assistant backup. 
 
 If the restored app cannot start, preserve the backup and check Supervisor and app logs. Verify that the old image can be retrieved and the backup contains the selected app. If database integrity fails, keep the restored app stopped and use the last verified backup.
 
+## Recover governed access from a current operator checkpoint
+
+The Supervisor archive alone cannot establish current Board permissions. Keep the published `/data/meitheal-board-grants.json` in protected operator custody **outside** the App archive, paired with a verified current checkpoint. Do not add it to the backup or reconstruct its revision from a restored database. This procedure needs operator access to the App's local volume; there is no in-app unlock or database import endpoint.
+
+### Capture and refresh
+
+1. Establish continuity while the known current App is running. Verify the current Home Assistant owner through Core and check the expected Board roster, authorized reader and denied reader. A fresh empty installation enrolls through its ordinary owner flow. An existing installation needs its confirmed live upgrade or an independently trusted current checkpoint. A markerless restored database is not proof of first enrollment.
+2. Record the App slug, channel, architecture, exact image/config identity and full source revision. Record the actual `/data` mount before stopping; Supervisor can remove its runtime container on stop. Stop only Meitheal and wait for its lifecycle job to finish. Keep Core accounts and other Apps unchanged.
+3. Verify the published marker is a regular private file, and that no pending publication journal remains unresolved. Retain its original bytes privately and verify that its revision matches the cold database. Create a stopped-App Supervisor backup selecting only this App, with no Core or folder backup. Keep the DB, WAL and shared-memory files together.
+4. Download the archive off-device. Record SHA-256 checksums for the archive, marker and cold database file family, and bind them to the installation and exact image. Independently extract the archive, verify SQLite integrity and foreign keys, the same database revision, App-only membership, and marker/journal exclusions. Retain the matching image; a tag alone can disappear or change.
+5. Publish the verified checkpoint as current in a protected continuity record outside the Supervisor archive, keeping earlier records historical. Resume the exact App and recheck reader/denied-reader parity.
+
+**Every committed grant or Board lifecycle change makes the previous checkpoint historical.** Refresh using these stopped-App steps after the change. Record a known newer change even if checkpoint capture is interrupted. If host loss occurs before refresh and current continuity cannot be independently established, recovery stays locked. An old checkpoint, a matching old database/marker pair, a timestamp or the last saved pointer cannot establish currency by itself.
+
+### Restore without reopening historical permissions
+
+1. Record the actual local volume while the container exists. Stop the App and any predecessor that could accept grant changes, and wait for Supervisor lifecycle jobs to finish. Keep them stopped through restore and marker publication. Only after stopping, independently establish that the retained checkpoint is still current. Require the same installation/App slug, matching exact image, archive and database checksums, and original separately retained published marker. Reject missing, unknown, foreign or superseded custody before writing any marker. Preserve the failed state and recovery files.
+2. Restore only that App and its matching data while keeping it stopped. Prevent automatic startup during restore; if Supervisor cannot guarantee this, do not proceed with marker publication. Expect the marker to be absent afterward. Verify the missing-marker lock on a disposable copy; health alone does not establish permission recovery. Keep the App and any predecessor stopped through cold verification and marker publication in step 3.
+3. Through the recorded local volume, verify the restored cold database file family against the trusted archive **before** publishing anything. Require an absent marker destination and no unresolved pending journal. Publish only the separately retained current marker bytes with no-clobber/no-symlink handling, owner `10001:10001`, mode `0600`, and file plus parent-directory durability. Do not overwrite a different existing marker, infer one from SQLite, or use the predecessor's historical marker to unlock old data.
+4. Start the exact matching App. Verify schema, integrity, image/config and protection, current roster and grant parity, authorized reads and denied readers. Any subsequent grant/lifecycle mutation requires a fresh checkpoint.
+
+In disposable Supervisor, prove both the missing-marker lock and an older database paired with the independently current newer marker remain closed. Then prove the matching latest checkpoint restores only its current permissions. Keep failed and successful receipts separate. Portable re-certification after unknown continuity is a separate owner-approved procedure.
+
 ## Move data between Store repositories
 
 A different repository URL creates a different internal App ID and data volume. A matching-App Supervisor restore is not a database import into that new ID. Settings JSON also omits tasks and protected credentials; there is no in-app SQLite import endpoint. This one-time transfer requires an operator with access to the App's local volume.
+
+The source database may move without its excluded Board-grant marker. Named Board access therefore stays closed under the fail-closed rule. The target needs independently trusted marker bytes matching the database’s current revision, verified source continuity and verified target custody. There is currently no supported cross-repository marker transfer or re-certification process: access stays locked until the named **Store move custody re-certification** procedure is approved by the Home Assistant owner and completed. Do not synthesize a marker from SQLite or copy a historical matching pair. Checkpoint recovery above requires the same installation and App slug and cannot authorize this move.
 
 Rehearse the complete transition in a disposable Supervisor before changing the installed Canary. Isolate outbound network access before starting restored data or applying old App options: saved integration and logging endpoints can be contacted during startup or a health request. Limit the rehearsal browser to fixture services as well. Preserve stored values and verify isolation with a disposable control endpoint, without probing real saved URLs.
 
@@ -85,6 +113,5 @@ When draft capture is enabled, make a second App-only checkpoint with a saved dr
 In the editor-managed Home Assistant devcontainer, seed a task, related data and settings, then create a Supervisor backup while Meitheal runs. Observe a stop before archiving and a restart afterward. Make a second write, restore the backup and verify that the first write survived, the second is absent, and ingress and database integrity pass. Repeat with the app already stopped and confirm backup leaves it stopped. Record the image digest and outage.
 
 Before updating the Green, rehearse the older app and data rollback on a disposable Supervisor. A locally tested archive proves file recovery. It takes a Supervisor rehearsal to verify the lifecycle and a Green run to verify device acceptance.
-
 
 Schema 24 adds raw-download protection for Nobody audiences and prevents changing or clearing a generated Routine occurrence's saved date when one is present. It upgrades existing schema 23 data in place and keeps the previous migration ledger entries. Use the matching App and data backup when restoring an earlier schema.

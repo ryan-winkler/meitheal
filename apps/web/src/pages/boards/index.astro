@@ -90,7 +90,7 @@ const snapshot = user && directory ? boardViewKey(directory, user.actor.id) : un
               <input type="hidden" name="action" value="restore" />
               <input type="hidden" name="revision" value={board.revision} />
               <p role="status" data-board-feedback></p>
-              <button type="submit" class="btn btn-primary">Restore Board</button>
+              <button type="submit" class="btn btn-primary" aria-label={`Restore Board ${board.name}`}>Restore Board</button>
             </form>
           </article>)}
         </div>
