@@ -1,5 +1,6 @@
 import { request as httpRequest } from "node:http"
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
 test.skip(!process.env.E2E_BASE_URL, "Requires a disposable App server")
 test.use({ serviceWorkers: "block" })
@@ -38,7 +39,8 @@ test("To-do selection hydrates JSON arrays and legacy single entity IDs", async 
 })
 
 test("Task AI handoff explains an invalid saved URL without opening a provider", async ({ page, request, context, baseURL }) => {
-  const created = await request.post("/api/tasks", { data: { title: "Invalid AI URL fixture" } })
+  const headers = await currentBoardWriteHeaders(request, "household", {})
+  const created = await request.post("/api/tasks", { headers, data: { title: "Invalid AI URL fixture" } })
   expect(created.status()).toBe(201)
   const { id } = await created.json()
   let opens = 0
@@ -101,7 +103,7 @@ test("Task AI handoff explains an invalid saved URL without opening a provider",
     await expect(page.getByRole("link", { name: "Oscail an soláthraí" })).toHaveAttribute("rel", "noopener noreferrer")
     expect(await handoffs()).toEqual([])
   } finally {
-    expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204)
+    expect((await request.delete(`/api/tasks/${id}`, { headers, data: {} })).status()).toBe(204)
   }
 })
 

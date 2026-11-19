@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { evaluateFrameworkFormula, isFrameworkFormulaSupported } from "@meitheal/domain-strategy"
 import { deferred } from "./_helpers"
 
@@ -24,6 +25,7 @@ test.describe("Ticket scoring review regressions", () => {
 
   test("unsupported saved formulas show a formula error and untrusted bounds cannot create attributes", async ({ page, request, baseURL }) => {
     const origin = new URL(baseURL!).origin
+    const headers = await currentBoardWriteHeaders(request, "household", { origin })
     const config = {
       id: "unsupported-score-test", name: "Unsupported score test", version: "1.0.0", archetype: "formula", source: "user",
       formula: "impact ** 2", badgeThresholds: [],
@@ -37,7 +39,7 @@ test.describe("Ticket scoring review regressions", () => {
       fields: [{ key: "impact", label: "Custom impact", type: "number", min: 0, options: "legacy" }] }
     // Simulate legacy stored records; new writes reject these configurations.
     await page.route("**/api/frameworks", route => route.fulfill({ json: { data: [config, invalidFormula, invalidOptions] } }))
-    const created = await request.post("/api/tasks", { headers: { origin }, data: {
+    const created = await request.post("/api/tasks", { headers, data: {
       title: "Unsupported scoring formula", framework_payload: JSON.stringify({ [config.id]: { impact: 2 } }),
     } })
     expect(created.status()).toBe(201)
@@ -63,14 +65,15 @@ test.describe("Ticket scoring review regressions", () => {
         await expect(page.locator("#se-live-result")).toContainText("unsupported scoring settings")
       }
     } finally {
-      await request.delete(`/api/tasks/${id}`, { headers: { origin }, data: {} })
+      await request.delete(`/api/tasks/${id}`, { headers, data: {} })
       await request.delete(`/api/frameworks/${config.id}`, { headers: { origin }, data: {} })
     }
   })
 
   test("legacy timestamp responses retain the normalized concurrency guard", async ({ page, request, baseURL }) => {
     const origin = new URL(baseURL!).origin
-    const created = await request.post("/api/tasks", { headers: { origin }, data: { title: "Legacy score concurrency" } })
+    const headers = await currentBoardWriteHeaders(request, "household", { origin })
+    const created = await request.post("/api/tasks", { headers, data: { title: "Legacy score concurrency" } })
     expect(created.status()).toBe(201)
     const { id } = await created.json()
     const path = `/api/tasks/${id}`
@@ -88,7 +91,7 @@ test.describe("Ticket scoring review regressions", () => {
           const response = await route.fetch()
           const task = await response.json()
           version = task.task_version
-          const changed = await request.patch(path, { headers: { origin }, data: { framework_payload: JSON.stringify(concurrent) } })
+          const changed = await request.patch(path, { headers, data: { framework_payload: JSON.stringify(concurrent) } })
           expect(changed.ok()).toBe(true)
           await route.fulfill({ response, json: { ...task, updated_at: "2024-01-02T03:04:05.000Z" } })
         } else {
@@ -103,13 +106,14 @@ test.describe("Ticket scoring review regressions", () => {
       const stored = await (await request.get(path)).json()
       expect(JSON.parse(stored.framework_payload)).toEqual(concurrent)
       await expect(page.getByRole("spinbutton", { name: "Effort", exact: true })).toHaveValue("0.5")
-    } finally { await request.delete(path, { headers: { origin }, data: {} }) }
+    } finally { await request.delete(path, { headers, data: {} }) }
   })
 
   test("saving merges an unrelated evaluation and retains inactive drafts, then refuses a competing same-framework save", async ({ page, request, baseURL }) => {
     const origin = new URL(baseURL!).origin
+    const headers = await currentBoardWriteHeaders(request, "household", { origin })
     const rice = { reach: 10, impact: 2, confidence: 80, effort: 2 }
-    const created = await request.post("/api/tasks", { headers: { origin }, data: {
+    const created = await request.post("/api/tasks", { headers, data: {
       title: "Scoring merge fixture", framework_payload: JSON.stringify({ rice }),
     } })
     expect(created.status()).toBe(201)
@@ -117,7 +121,7 @@ test.describe("Ticket scoring review regressions", () => {
     const path = `/api/tasks/${id}`
     const read = async () => (await request.get(path)).json()
     const write = async (payload: unknown) => {
-      expect((await request.patch(path, { headers: { origin }, data: { framework_payload: JSON.stringify(payload) } })).ok()).toBe(true)
+      expect((await request.patch(path, { headers, data: { framework_payload: JSON.stringify(payload) } })).ok()).toBe(true)
     }
     const writes: unknown[] = []
     await page.route(`**${path}`, async route => {
@@ -163,12 +167,13 @@ test.describe("Ticket scoring review regressions", () => {
       await expect(effort).toHaveValue("5")
       expect(writes).toEqual([latestVersion])
       expect(JSON.parse((await read()).framework_payload)).toEqual(concurrent)
-    } finally { await request.delete(path, { headers: { origin }, data: {} }) }
+    } finally { await request.delete(path, { headers, data: {} }) }
   })
 
   test("partial Assist suggestions preserve edits made before and during the request and across framework switches", async ({ page, request, baseURL }) => {
     const origin = new URL(baseURL!).origin
-    const created = await request.post("/api/tasks", { headers: { origin }, data: { title: "Partial Assist scoring" } })
+    const headers = await currentBoardWriteHeaders(request, "household", { origin })
+    const created = await request.post("/api/tasks", { headers, data: { title: "Partial Assist scoring" } })
     expect(created.status()).toBe(201)
     const { id } = await created.json()
     try {
@@ -234,6 +239,6 @@ test.describe("Ticket scoring review regressions", () => {
       await expect(effort).toHaveValue("5")
       const saved = await (await request.get(`/api/tasks/${id}`)).json()
       expect(JSON.parse(saved.framework_payload).rice.effort).toBe(5)
-    } finally { await request.delete(`/api/tasks/${id}`, { headers: { origin }, data: {} }) }
+    } finally { await request.delete(`/api/tasks/${id}`, { headers, data: {} }) }
   })
 })

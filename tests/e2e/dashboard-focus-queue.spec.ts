@@ -8,12 +8,12 @@ test("Dashboard Focus Queue selects open work before applying its row limit", as
   const ids: string[] = []
   try {
     for (let index = 0; index < 15; index++) {
-      const task = await request.post("/api/tasks", { headers, data: { title: `Cancelled inspection ${index}`, priority: 1 } })
+      const task = await request.post("/api/tasks", { headers, data: { title: `Closed inspection ${index}`, priority: 1 } })
       expect(task.status()).toBe(201)
       const { id } = await task.json()
       ids.push(id)
-      const closed = await request.put(`/api/tasks/${id}`, { headers, data: { status: "cancelled" } })
-      expect(closed.ok()).toBe(true)
+      const closed = await request.put(`/api/tasks/${id}`, { headers, data: { status: "complete" } })
+      expect(closed.ok(), await closed.text()).toBe(true)
     }
     const task = await request.post("/api/tasks", { headers, data: { title: "Open inspection", status: "pending", priority: 3 } })
     expect(task.status()).toBe(201)
@@ -22,7 +22,7 @@ test("Dashboard Focus Queue selects open work before applying its row limit", as
     await page.goto("/")
     const queue = page.locator("#my-open-list")
     await expect(queue.locator(`[data-id="${id}"]`)).toContainText("Open inspection")
-    await expect(queue.getByText(/Cancelled inspection/)).toHaveCount(0)
+    await expect(queue.getByText(/Closed inspection/)).toHaveCount(0)
     await expect(page.locator("#my-open-count")).toHaveText("1 open task")
     await expect(page.locator("#dashboard-stat-open-count")).toHaveText("1")
   } finally {

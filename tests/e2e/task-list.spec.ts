@@ -1,8 +1,10 @@
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
 
 test("due date filters rows and total before pagination", async ({ request }) => {
+  const headers = await currentBoardWriteHeaders(request, "household", {})
   const fixtures = [
     { title: "A different day", due_date: "2032-03-01" },
     { title: "B date only", due_date: "2032-02-29" },
@@ -12,7 +14,7 @@ test("due date filters rows and total before pagination", async ({ request }) =>
   ]
   const ids: string[] = []
   for (const data of fixtures) {
-    const response = await request.post("/api/tasks", { data })
+    const response = await request.post("/api/tasks", { headers, data })
     expect(response.status(), await response.text()).toBe(201)
     ids.push((await response.json()).id)
   }
@@ -48,6 +50,7 @@ test("due date filters rows and total before pagination", async ({ request }) =>
 })
 
 test("native task statuses normalize aliases and preserve custom names", async ({ request }) => {
+  const headers = await currentBoardWriteHeaders(request, "household", {})
   const statuses = [
     { input: "todo", expected: "pending" },
     { input: "in_progress", expected: "active" },
@@ -58,7 +61,7 @@ test("native task statuses normalize aliases and preserve custom names", async (
   ]
 
   for (const { input, expected } of statuses) {
-    const response = await request.post("/api/tasks", { data: { title: `Fixture ${input}`, status: input } })
+    const response = await request.post("/api/tasks", { headers, data: { title: `Fixture ${input}`, status: input } })
     expect(response.status(), await response.text()).toBe(201)
     const task = await response.json()
     expect(task.status).toBe(expected)

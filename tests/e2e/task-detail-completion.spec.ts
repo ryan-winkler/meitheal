@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal browser fixture")
 
@@ -6,10 +7,11 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
   await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
   await page.emulateMedia({ reducedMotion: "reduce" })
   const title = "Finish the active card from Details"
-  const created = await request.post("/api/tasks", { data: { title, status: "active", is_favorite: true } })
+  const headers = await currentBoardWriteHeaders(request, "household", {})
+  const created = await request.post("/api/tasks", { headers, data: { title, status: "active", is_favorite: true } })
   expect(created.status()).toBe(201)
   const { id } = await created.json()
-  const other = await request.post("/api/tasks", { data: { title: "Another Board card" } })
+  const other = await request.post("/api/tasks", { headers, data: { title: "Another Board card" } })
   expect(other.status()).toBe(201)
   const { id: otherId } = await other.json()
   const status = page.locator("#td-status")
@@ -191,7 +193,7 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
   } finally {
     releaseTitle()
     releaseHeldRefresh()
-    await request.delete(`/api/tasks/${otherId}`, { data: {} })
-    await request.delete(`/api/tasks/${id}`, { data: {} })
+    await request.delete(`/api/tasks/${otherId}`, { headers, data: {} })
+    await request.delete(`/api/tasks/${id}`, { headers, data: {} })
   }
 })
