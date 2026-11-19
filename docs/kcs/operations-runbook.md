@@ -47,7 +47,7 @@ If an SVG is rejected, export a single SVG and retry. If its appearance changes,
 
 ## Live Updates
 
-Open `GET /api/sse` through an authorized Home Assistant ingress session or the standalone app. The response should start with a `connected` event and send a heartbeat comment every 30 seconds. To verify Home Assistant delivery, open two streams and change a disposable calendar or to-do entity. Each stream should receive one `ha:entity_changed` event for the change. Closing the final stream releases the Meitheal event listeners.
+Open `GET /api/sse` through an authorized Home Assistant ingress session or the standalone app. The response should start with a `connected` event and send a heartbeat comment every 30 seconds. To verify Home Assistant delivery, use two Board members and change a disposable calendar or to-do entity bound to an active Area or Project that only one member can access. The member with placement access should receive one `ha:entity_changed` event. Both members should receive updates from a Board-wide binding they can access. Retiring the first binding's destination should stop its events for both members. Closing the final stream releases the Meitheal event listeners.
 
 Calendar and to-do updates use the Home Assistant entity subscription. Event-bus subscriptions are limited to Companion notification actions and Meitheal-specific events. To check the notification path, complete a disposable task from a configured notification and confirm its status in Meitheal. Use Home Assistant's automation traces for service call diagnostics.
 

@@ -2,6 +2,7 @@ import { currentBoardGrantRevision } from "../../domains/tasks/persistence/board
 import { resolveBoardRequestScope } from "../../lib/board-request-context"
 import { boardScopeErrorResponse, boardScopeResponse } from "../../lib/board-http"
 import { bindingAllows, readWorkDestinations } from "../../domains/tasks/integration-destinations"
+import { validateIntegrationDestinationPlacement } from "../../domains/tasks/board-automation"
 import { validateBoardScope } from "../../domains/tasks/board-scope"
 import { validateBoardFeature } from "../../domains/tasks/board-access-service"
 import { projectPublicTaskFields } from "../../domains/tasks/task-projection"
@@ -251,11 +252,17 @@ export const GET: APIRoute = async context => {
         if (!data || typeof data !== "object" || Array.isArray(data)) return false
         const payload = data as Record<string, unknown>
         if (event === "ha:entity_changed") {
-          if (!await validateBoardFeature(current.scope, getPersistenceClient(), "home_assistant_area")) return false
-          const bindings = await readWorkDestinations(getPersistenceClient())
-          const allowed = Boolean(bindings?.bindings.some(binding => binding.destination.boardId === boardId &&
-            binding.sourceId === payload.entity_id && bindingAllows(binding, { resource: "task", action: "read" })))
-          return allowed && (await validateBoardScope(current.scope, getPersistenceClient(), { resource: "task", action: "read" })).ok
+          const db = getPersistenceClient()
+          const operation = { resource: "task", action: "read" } as const
+          if (!await validateBoardFeature(current.scope, db, "home_assistant_area")) return false
+          const destinations = await readWorkDestinations(db)
+          for (const binding of destinations?.bindings ?? []) {
+            if (binding.destination.boardId === boardId && binding.sourceId === payload.entity_id &&
+                bindingAllows(binding, operation) && await validateIntegrationDestinationPlacement(db, current.scope, binding)) {
+              return (await validateBoardScope(current.scope, db, operation)).ok
+            }
+          }
+          return false
         }
         // Generic task events require actual record ownership; an arbitrary
         // payload Board field cannot authorize publication to a subscription.

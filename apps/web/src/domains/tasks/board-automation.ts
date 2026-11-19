@@ -22,7 +22,8 @@ export type IntegrationScopeResult = { ok: true, value: IntegrationScope } |
 
 const admitted = new WeakSet<IntegrationScope>()
 
-async function placementAvailable(db: Pick<Client, "execute">, scope: BoardScope, binding: WorkBinding): Promise<boolean> {
+export async function validateIntegrationDestinationPlacement(db: Pick<Client, "execute">, scope: BoardScope, binding: WorkBinding): Promise<boolean> {
+  if (scope.boardId !== binding.destination.boardId) return false
   const { areaId, projectId } = binding.destination
   let effectiveAreaId = areaId
   if (areaId) {
@@ -96,7 +97,7 @@ export async function validateIntegrationScope(
   if (context.originatingActor) {
     const human = await validateBoardScope(context.originatingActor, db, context.originatingOperation ?? operation)
     if (!human.ok) return human
-    if (!await placementAvailable(db, context.originatingActor, current)) return { ok: false, errorCode: "destination_unavailable" }
+    if (!await validateIntegrationDestinationPlacement(db, context.originatingActor, current)) return { ok: false, errorCode: "destination_unavailable" }
     // Reading work for an approved outward channel does not grant the sender
     // read access. A new local mutation effect still needs that actor's right.
     if (operation.action !== "read" && (operation.resource !== context.originatingOperation?.resource ||
@@ -105,7 +106,7 @@ export async function validateIntegrationScope(
       if (!effect.ok) return effect
     }
   }
-  if (!await placementAvailable(db, context.scope, current)) return { ok: false, errorCode: "destination_unavailable" }
+  if (!await validateIntegrationDestinationPlacement(db, context.scope, current)) return { ok: false, errorCode: "destination_unavailable" }
   return { ok: true }
 }
 

@@ -21,6 +21,7 @@ import { currentBoardScope } from "../helpers/current-board-scope"
 import { ordinaryTask } from "../helpers/ordinary-sync-fixture"
 import { verifiedBoardRequestPrincipal } from "../../apps/web/src/lib/board-request-context"
 import { createTaskNotificationDoneAction } from "../../apps/web/src/lib/task-notification-action"
+import { HierarchyRepository } from "../../apps/web/src/domains/tasks/persistence/hierarchy-repository"
 import { OrganizationAccessRepository } from "../../apps/web/src/domains/tasks/persistence/organization-access-repository"
 import { readWorkDestinations } from "../../apps/web/src/domains/tasks/integration-destinations"
 import { saveWorkBinding } from "../../apps/web/src/domains/tasks/work-binding-manager"
@@ -161,15 +162,22 @@ test("keeps calendar, todo and mobile notification delivery on scoped HA subscri
   if (!principal) throw new Error("Current local operator required")
   const scope = await currentBoardScope(db, "household", principal)
   const legacyTask = (await ordinaryTask(scope, "Legacy action sentinel")).task.id
-  const feature = await new OrganizationAccessRepository(db, marker).change(
+  const areaId = crypto.randomUUID()
+  const projectId = crypto.randomUUID()
+  const hierarchy = new HierarchyRepository(db, scope, marker)
+  await hierarchy.createArea({ id: areaId, name: "Calendar audience" })
+  expect(await hierarchy.createProject({ id: projectId, title: "Calendar destination", area_id: areaId })).toBe(true)
+  const policies = new OrganizationAccessRepository(db, marker)
+  const feature = await policies.change(
     { scope: "feature", id: "home_assistant_area", boardId: "" }, null, { audience: "everyone", users: [] }, principal,
   )
   expect(feature.status).toBe("committed")
   const haUser = "fixture-sse-owner"
+  const haMember = "fixture-sse-member"
   const target = "notify.mobile_app_sse_fixture"
   const read = { resource: "task", action: "read" } as const
-  for (const binding of [
-    { integration: "calendar", sourceId: "calendar.test", purpose: "calendar.sync", allowedOperations: [read] },
+  for (const { projectId: destinationProject, ...binding } of [
+    { integration: "calendar", sourceId: "calendar.test", purpose: "calendar.sync", allowedOperations: [read], projectId },
     { integration: "todo", sourceId: "todo.test", purpose: "todo.sync", allowedOperations: [read] },
     { integration: "notification", sourceId: target, purpose: "notify.delivery", allowedOperations: [read], recipientUserIds: [haUser] },
     { integration: "notification_action", sourceId: target, purpose: "notify.task.complete",
@@ -178,9 +186,13 @@ test("keeps calendar, todo and mobile notification delivery on scoped HA subscri
     const current = await readWorkDestinations(db)
     if (!current) throw new Error("Current work destinations required")
     expect((await saveWorkBinding(db, principal, current.revision, {
-      ...binding, id: crypto.randomUUID(), enabled: true, generation: 1, destination: { boardId: "household" },
+      ...binding, id: crypto.randomUUID(), enabled: true, generation: 1,
+      destination: { boardId: "household", ...(destinationProject ? { projectId: destinationProject } : {}) },
     })).ok).toBe(true)
   }
+  expect((await policies.change(
+    { scope: "group", id: areaId, boardId: "household" }, null, { audience: "selected", users: [haUser] }, principal,
+  )).status).toBe("committed")
 
   const priorWebSocket = globalThis.WebSocket
   const priorToken = process.env.SUPERVISOR_TOKEN
@@ -204,7 +216,10 @@ test("keeps calendar, todo and mobile notification delivery on scoped HA subscri
       if (type === "subscribe_entities") entitySubscription = { socket, id }
       if (type === "subscribe_events" && event_type) subscriptions.set(event_type, { socket, id })
       const result = type === "config/auth/list"
-        ? [{ id: haUser, is_active: active, system_generated: false, is_owner: true, group_ids: [] }] : []
+        ? [
+            { id: haUser, is_active: active, system_generated: false, is_owner: true, group_ids: [] },
+            { id: haMember, is_active: active, system_generated: false, is_owner: false, group_ids: [] },
+          ] : []
       socket.send(JSON.stringify({ type: "result", id, success: true, result }))
     })
   })
@@ -272,8 +287,9 @@ test("keeps calendar, todo and mobile notification delivery on scoped HA subscri
     const locals = { behindIngress: true, hassUserId: haUser, hassIsAdmin: true }
     const { reader: first } = await open(undefined, transport, locals)
     const { reader: second } = await open(undefined, transport, locals)
+    const { reader: member } = await open(undefined, transport, { ...locals, hassUserId: haMember, hassIsAdmin: false })
     try {
-      await Promise.all([first.read(), second.read()])
+      await Promise.all([first.read(), second.read(), member.read()])
       send(entitySubscription!, { c: {
         "calendar.test": { "+": { s: "on", lu: 2 } },
         "todo.test": { "+": { lu: 2 } },
@@ -289,6 +305,8 @@ test("keeps calendar, todo and mobile notification delivery on scoped HA subscri
         expect(decoder.decode((await reader.read()).value)).toMatch(/^event: ha:entity_changed\ndata: .*"entity_id":"todo.test","state":"1".*"last_updated":"1970-01-01T00:00:02.000Z"/)
         expect(decoder.decode((await reader.read()).value)).toBe(`event: probe\ndata: ${JSON.stringify({ id: taskId })}\n\n`)
       }
+      expect(decoder.decode((await member.read()).value)).toMatch(/^event: ha:entity_changed\ndata: .*"entity_id":"todo.test"/)
+      expect(decoder.decode((await member.read()).value)).toBe(`event: probe\ndata: ${JSON.stringify({ id: taskId })}\n\n`)
 
       send(entitySubscription!, {
         c: {
@@ -300,7 +318,7 @@ test("keeps calendar, todo and mobile notification delivery on scoped HA subscri
       await expect.poll(() => delivered).toEqual(["on", "off"])
       expect(getCalendarEntities()).toHaveLength(0)
       await emitSSE("probe", { id: taskId })
-      for (const reader of [first, second]) {
+      for (const reader of [first, second, member]) {
         expect(decoder.decode((await reader.read()).value)).toBe(`event: probe\ndata: ${JSON.stringify({ id: taskId })}\n\n`)
       }
 
@@ -310,11 +328,21 @@ test("keeps calendar, todo and mobile notification delivery on scoped HA subscri
         expect(decoder.decode((await reader.read()).value)).toMatch(/^event: ha:entity_changed\ndata: .*"entity_id":"calendar.test","state":"off"/)
       }
 
+      const owner = await runWithIngressTransport(transport, () => verifiedBoardRequestPrincipal(requestContext(new Request(url), locals)))
+      if (!owner) throw new Error("Current Home Assistant owner required")
+      const ownerScope = await currentBoardScope(db, "household", owner)
+      expect(await new HierarchyRepository(db, ownerScope, marker).deleteProject(projectId)).toBe(true)
+      await emitSSE("ha:entity_changed", { entity_id: "calendar.test", state: "on" })
+      await emitSSE("probe", { id: taskId })
+      for (const reader of [first, second, member]) {
+        expect(decoder.decode((await reader.read()).value)).toBe(`event: probe\ndata: ${JSON.stringify({ id: taskId })}\n\n`)
+      }
+
       active = false
       await emitSSE("probe", { id: taskId, title: "Withheld from inactive user" })
-      for (const reader of [first, second]) expect((await reader.read()).done).toBe(true)
+      for (const reader of [first, second, member]) expect((await reader.read()).done).toBe(true)
     } finally {
-      await Promise.all([first.cancel(), second.cancel()])
+      await Promise.all([first.cancel(), second.cancel(), member.cancel()])
     }
   } finally {
     stopEntitySubscription()
