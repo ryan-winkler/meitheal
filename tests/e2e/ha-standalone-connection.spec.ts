@@ -77,19 +77,27 @@ test("unconfigured startup pauses repeated settings bootstrap and immediately ad
   const { SettingsRepository } = await import("../../apps/web/src/domains/tasks/persistence/settings-repository")
   const { stopDueDateReminders } = await import("../../apps/web/src/domains/notifications/due-date-reminders")
   const { stopEntitySubscription } = await import("../../apps/web/src/domains/ha/ha-entities")
-  const restores: Array<() => void> = []
+  let restoreSettingsObservation = () => {}
   const observeSettingsBootstrap = () => {
+    restoreSettingsObservation()
     const db = store.getPersistenceClient()
     const execute = db.execute.bind(db)
-    const observed = { creates: 0, reads: 0 }
+    const ensureSettingsTable = SettingsRepository.prototype.ensureSettingsTable
+    const observed = { bootstraps: 0, reads: 0 }
+    SettingsRepository.prototype.ensureSettingsTable = async function () {
+      observed.bootstraps++
+      return ensureSettingsTable.call(this)
+    }
     db.execute = async statement => {
       const sql = typeof statement === "string" ? statement : statement.sql
-      if (sql.includes("CREATE TABLE IF NOT EXISTS settings")) observed.creates++
       if (sql.includes("SELECT key, value FROM settings WHERE key IN") &&
           typeof statement !== "string" && Array.isArray(statement.args) && statement.args.includes("ha_url")) observed.reads++
       return execute(statement)
     }
-    restores.push(() => { db.execute = execute })
+    restoreSettingsObservation = () => {
+      db.execute = execute
+      SettingsRepository.prototype.ensureSettingsTable = ensureSettingsTable
+    }
     return observed
   }
   try {
@@ -102,27 +110,27 @@ test("unconfigured startup pauses repeated settings bootstrap and immediately ad
     await store.ensureSchema()
     const first = observeSettingsBootstrap()
     await initHAIntegrations()
-    expect(first).toEqual({ creates: 1, reads: 1 })
+    expect(first).toEqual({ bootstraps: 1, reads: 1 })
     for (let i = 0; i < 20; i++) await initHAIntegrations()
-    expect(first).toEqual({ creates: 1, reads: 1 })
+    expect(first).toEqual({ bootstraps: 1, reads: 1 })
 
     // Even an incomplete environment edit invalidates known-unconfigured admission.
     process.env.HA_BASE_URL = fixture.url
     await initHAIntegrations()
-    expect(first).toEqual({ creates: 2, reads: 2 })
+    expect(first).toEqual({ bootstraps: 2, reads: 2 })
 
     process.env.MEITHEAL_DB_URL = `file:${join(directory, "second.db")}`
     await store.ensureSchema()
     const second = observeSettingsBootstrap()
     await initHAIntegrations()
-    expect(second).toEqual({ creates: 1, reads: 1 })
+    expect(second).toEqual({ bootstraps: 1, reads: 1 })
     await initHAIntegrations()
-    expect(second).toEqual({ creates: 1, reads: 1 })
+    expect(second).toEqual({ bootstraps: 1, reads: 1 })
 
     // Direct/out-of-process database changes still get a bounded retry without a local revision signal.
     await setTimeout(5_050)
     await initHAIntegrations()
-    expect(second).toEqual({ creates: 2, reads: 2 })
+    expect(second).toEqual({ bootstraps: 2, reads: 2 })
 
     const settings = new SettingsRepository(store.getPersistenceClient())
     await settings.importBatch([
@@ -147,7 +155,7 @@ test("unconfigured startup pauses repeated settings bootstrap and immediately ad
     await initHAIntegrations()
     expect(second).toEqual(completed)
   } finally {
-    for (const restore of restores) restore()
+    restoreSettingsObservation()
     clearGrocyStartupRetry()
     stopDueDateReminders()
     stopEntitySubscription()
