@@ -6,7 +6,7 @@ description: "Collect and validate the versioned Green release workload and driv
 
 # Green Canary Benchmark
 
-`green-2000-task-v2` is the release minimum for the Astro SSR App. It measures raw, total App `memory.current`: idle p95 must be **below 128 MiB** and active p95 **below 160 MiB**, inside a **192 MiB hard cgroup cap**. The earlier 64/96 MiB figures remain optimization goals, not a second qualification mode or an additional release gate. Do not subtract page cache, driver memory, or selected process measurements from the App's total.
+`green-2000-task-v3` is the release minimum for the Astro SSR App. It measures raw, total App `memory.current`: idle p95 must be **below 128 MiB** and active p95 **below 160 MiB**, inside a **192 MiB hard cgroup cap**. The earlier 64/96 MiB figures remain optimization goals, not a second qualification mode or an additional release gate. Do not subtract page cache, driver memory, or selected process measurements from the App's total.
 
 The active App CPU mean remains at most **15% of one core**, and each route's nearest-rank p95 remains at most **350 ms**. Keep one CPU, zero swap, the existing App sampling, 12 idle samples, and at least 50 active samples spaced 5–8 seconds apart. The active sample window must still match the driver wall time within eight seconds.
 
@@ -14,13 +14,13 @@ Inside the `192 MiB` Green Canary cgroup cap, `resolve_max_old_space_mb()` in `m
 
 ## Fixed workload and helper
 
-The workload is unchanged except for the already measured response-file directory change to `/dev/shm`. It seeds exactly 2,000 synthetic tasks, then runs 105 ordered cycles: Today, List, Search, Open, Create, Complete, Readback. That is 735 complete HTTP responses plus 105 sleeps of 2.5 seconds. `curl` still waits for each complete response body; the existing ID and completion-state body assertions still run against the retained response file. No source App or runtime change is part of this profile.
+The workload seeds exactly 2,000 synthetic tasks. Before sampling the timed routes, the driver obtains a current local operator session from the Board directory and uses it for Create and Complete on the fixture Board. The session proof stays inside the driver. The 105 ordered cycles cover Today, List, Search, Open, Create, Complete and Readback. They produce 735 measured responses and 105 sleeps of 2.5 seconds. `curl` waits for each complete response body, and the driver checks the task ID and completion state against the response file in `/dev/shm`.
 
 The two public scripts are pinned byte-for-byte:
 
 | Script | SHA-256 |
 |---|---|
-| `scripts/green-canary-workload.sh` | `d060f566d2ab6c8a90537b21f049cc1215b97ea9328e23e428b56aa1246fa50b` |
+| `scripts/green-canary-workload.sh` | `afc84c625a4bf1df6a1a41c15780a49340884bb2bce1b0dd39f52ab3da6ec6c0` |
 | `scripts/green-canary-driver-parent.sh` | `60b394f364c7f43a0038c0fb4376abd1a435a1760cf2bcd7ca29404e12ea6869` |
 
 Use the existing immutable ARM64 helper config `sha256:5ce98efbe0fdb68edf92f3b98dfe78a70739a412d76083a42bfefbde8410824f`, architecture `arm64`, with layer `sha256:5070b31eb4c50bf7d0297a1a5aee25bc13ff29894e87354610f6b8b6a445e07e`. Do not replace it with a mutable tag or the candidate App image. Keep the existing separate seed/driver cgroups, shared probe loopback namespace and disposable data volume. Existing seed limits remain unchanged; the measured driver stays at **80 MiB, one CPU and zero swap**.
@@ -37,7 +37,7 @@ Before `--rm` can remove the cgroup, the surviving parent reads and emits its ac
 
 ## Receipt contract
 
-Start a new raw receipt with `benchmark_profile=green-2000-task-v2`. Retain exactly one `seed_and_driver_script_sha256=` record and one `driver_parent_script_sha256=` record with the hashes above, plus their checksum-command output. The workload checksum line must end in `/seed-and-run.sh`; the parent line must end in `/green-canary-driver-parent.sh` or `/driver-parent-wrapper.sh`.
+Start a new raw receipt with `benchmark_profile=green-2000-task-v3`. Retain exactly one `seed_and_driver_script_sha256=` record and one `driver_parent_script_sha256=` record with the hashes above, plus their checksum-command output. The workload checksum line must end in `/seed-and-run.sh`; the parent line must end in `/green-canary-driver-parent.sh` or `/driver-parent-wrapper.sh`.
 
 Keep the existing exact App config ID, source version, helper identity, health, seed count, resource limits, samples, ordered response records and unchanged installed-Canary identity. The single 2,000-task seed completion, installed-Canary-before snapshot and matching initial health record must each precede the first cgroup sample or HTTP measurement. A prerequisite recorded during or after measurement cannot qualify the run. After the measured HTTP/sample records, the terminal order is:
 
@@ -54,6 +54,6 @@ Validate the complete receipt with `python3 scripts/verify-canary-green.py --rep
 
 ## Failed and historical evidence
 
-Preserve earlier failed receipts, scripts and checksums. Original and R3 receipts without this profile and final driver telemetry remain rejected, even when their memory values would fit the new minimum. Malformed historical timing such as `11.:00` remains invalid. Do not repair old raw CSV, attach new telemetry to an old run, or relabel a diagnostic result as passing. Run a new physical benchmark after the reviewed source and profile are adopted.
+Preserve earlier failed receipts, scripts and checksums. Earlier receipts, including v2, remain historical. This profile verifies the current Board-scoped workload and final driver telemetry. Malformed historical timing such as `11.:00` remains invalid. Do not repair old raw CSV, attach new telemetry to an old run, or relabel a diagnostic result as passing. Run a new physical benchmark after the reviewed source and profile are adopted.
 
 Run `pnpm --filter @meitheal/tests test governance/canary-green-receipt.spec.ts` for deterministic boundaries, tampering and publication fail-closed checks. Short isolated AMD64 helper tests can verify normal child completion, failed child status and cgroup-event rejection using the installed immutable AMD64 counterpart; those tests are not a Green run. Preserve their raw output and confirm their owned containers were removed. Physical Green operation and source/image promotion remain separate, explicitly authorized steps.
