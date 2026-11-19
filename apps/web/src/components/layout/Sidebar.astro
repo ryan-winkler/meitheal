@@ -8,6 +8,7 @@ import SidebarHierarchyActions from "./SidebarHierarchyActions.astro"
 import SidebarNavList from "./SidebarNavList.astro";
 import { currentBoardContext } from "@lib/named-board-request"
 import { resolveBoardPageScope } from "@lib/board-http"
+import { scopePermits } from "@domains/tasks"
 import TaskCreationMenu from "./TaskCreationMenu.astro";
 import NavOverflowMore from "./NavOverflowMore.astro";
 import SidebarFooter from "./SidebarFooter.astro";
@@ -23,6 +24,7 @@ import { getFeatureFlags } from "../../lib/feature-flags";
 
 const currentPath = Astro.url.pathname;
 const selectedScope = await resolveBoardPageScope(Astro).catch(() => null)
+const captureDenied = selectedScope?.ok === true && !scopePermits(selectedScope.scope, { resource: "task", action: "create" })
 const boardContext = readBoardNavigationContext(Astro.url) ?? (selectedScope?.ok ? { boardId: selectedScope.scope.boardId } : undefined)
 const boardLinks = boardContext ? boardNavigationLinks(boardContext) : undefined
 export interface Props {
@@ -307,6 +309,7 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
         <button
           type="button"
           id="sidebar-rail-new-task"
+          disabled={captureDenied}
           class="sidebar-rail-cta"
           data-tooltip={quickCreate}
           aria-label={quickCreate}
@@ -380,6 +383,15 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
     const signal = AbortSignal.any([pageSignal, controller.signal])
     bindSidebarBoards(signal)
     const sidebar = document.getElementById("sidebar")
+    const capture = sidebar?.querySelector<HTMLButtonElement>("#sidebar-rail-new-task")
+    const capturePermission = document.querySelector<HTMLMetaElement>('meta[name="meitheal-task-create"]')
+    if (capture && capturePermission) capture.disabled = capturePermission.content !== "true"
+    if (capture) {
+      document.addEventListener("meitheal:board-revoked", event => {
+        const boardId = (event as CustomEvent<{ boardId?: string }>).detail.boardId
+        if (boardId && boardId === document.querySelector<HTMLMetaElement>('meta[name="meitheal-work-board"]')?.content) capture.disabled = true
+      }, { signal })
+    }
     if (sidebar) {
       // Recent activity restores through guarded browser history.
       bindSidebarPinPresence(sidebar, signal, Boolean(document.querySelector("[data-recent-activity]")))
