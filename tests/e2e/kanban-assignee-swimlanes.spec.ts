@@ -47,7 +47,7 @@ const test = base.extend<{ assigneeFixture: AssigneeFixture }>({
       // Load assignments already stored by earlier versions or a prior HA roster.
       // The live mutation API still enforces the current roster and Board scope.
       const setStoredAssignee = (id: string, assignee: string | null) => {
-        const db = new DatabaseSync(dbPath)
+        const db = new DatabaseSync(dbPath, { timeout: 5_000 })
         try { db.prepare("UPDATE tasks SET assigned_to = ? WHERE id = ?").run(assignee, id) }
         finally { db.close() }
       }
