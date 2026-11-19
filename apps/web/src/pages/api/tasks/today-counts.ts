@@ -1,4 +1,5 @@
-import { withBoardScope } from "@lib/board-http"
+import { readBoardPagePlacement } from "@lib/board-page-placement"
+import { withBoardScope, boardScopeResponse } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { apiError } from "../../../lib/api-response"
 import { calendarToday, isValidTimezone } from "../../../lib/date"
@@ -10,7 +11,9 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
     const now = new Date()
     const problem = todayScopeProblem(url.searchParams, timezone, calendarToday(timezone, now))
     if (problem) return apiError(problem.error, problem.status)
-    return Response.json(await getTodayTaskCounts(now, timezone, url.searchParams.get("completed") === "1", scope), {
+    const selected = await readBoardPagePlacement(scope, url)
+    if (!selected.ok) return boardScopeResponse(selected.errorCode)
+    return Response.json(await getTodayTaskCounts(now, timezone, url.searchParams.get("completed") === "1", scope, selected.placement), {
       headers: { "cache-control": "private, no-store" },
     })
   } catch {

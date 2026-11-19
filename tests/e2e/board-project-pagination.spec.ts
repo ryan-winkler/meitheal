@@ -22,12 +22,14 @@ let origin: string
 let boardId: string
 let areaId: string
 let headers: Record<string, string>
+let fixtureLog = ""
 
 test.beforeAll(async () => {
   work = await mkdtemp(join(tmpdir(), "board-project-pagination-"))
   child = startCoreFixture(work, false, undefined, undefined, work)
-  child.stdout?.resume()
-  child.stderr?.resume()
+  const recordLog = (chunk: Buffer) => { fixtureLog = (fixtureLog + chunk.toString()).slice(-65_536) }
+  child.stdout?.on("data", recordLog)
+  child.stderr?.on("data", recordLog)
   const [fixture] = await once(child, "message", { signal: AbortSignal.timeout(10_000) })
   origin = `https://127.0.0.1:${fixture.port}`
   app = origin + fixture.configuredPath
@@ -65,7 +67,10 @@ test.beforeEach(async () => {
 })
 
 test.afterEach(async ({}, info) => {
-  if (info.status !== info.expectedStatus && page) await page.screenshot({ path: info.outputPath("pagination-failure.png"), fullPage: true })
+  if (info.status !== info.expectedStatus && page) {
+    await page.screenshot({ path: info.outputPath("pagination-failure.png"), fullPage: true })
+    await info.attach("fixture-runtime.log", { body: fixtureLog, contentType: "text/plain" })
+  }
   await context?.close()
 })
 
@@ -145,11 +150,11 @@ test("retains the first Project page and retries the failed cursor with keyboard
   await expect(links()).toHaveCount(60)
   expect(attempted).toHaveLength(2)
   expect(attempted[1]).toBe(attempted[0])
-  await expect(links().nth(30).getByRole("link")).toBeFocused()
+  await expect(links().nth(30).locator("a.nav-link")).toBeFocused()
   await page.screenshot({ path: test.info().outputPath("pagination-focus-after.png"), fullPage: true })
   await expect(projects().locator("img")).toHaveCount(0)
-  await expect(links().first().getByRole("link")).toContainText("<img src=x onerror=alert(1)>")
-  await expect(links().first().getByRole("link")).toHaveAttribute("href", `${new URL(app).pathname}/boards/${boardId}?project=paging-0&from=${areaId}`)
+  await expect(links().first().locator("a.nav-link")).toContainText("<img src=x onerror=alert(1)>")
+  await expect(links().first().locator("a.nav-link")).toHaveAttribute("href", `${new URL(app).pathname}/boards/${boardId}?project=paging-0&from=${areaId}`)
 })
 
 test("hands focus to new Projects only while the replaced pager still owns focus", async () => {
@@ -157,7 +162,7 @@ test("hands focus to new Projects only while the replaced pager still owns focus
   await expect(links()).toHaveCount(30)
   await pager().press("Enter")
   await expect(links()).toHaveCount(60)
-  await expect(links().nth(30).getByRole("link")).toBeFocused()
+  await expect(links().nth(30).locator("a.nav-link")).toBeFocused()
   const held = deferred<void>()
   const release = deferred<void>()
   let requests = 0
@@ -172,7 +177,9 @@ test("hands focus to new Projects only while the replaced pager still owns focus
     await held.promise
     await page.keyboard.press("Enter")
     await page.keyboard.press("Shift+Tab")
-    const previous = links().nth(59).getByRole("link")
+    await expect(links().nth(59).getByRole("link", { name: "Manage Project Project 59", exact: true })).toBeFocused()
+    await page.keyboard.press("Shift+Tab")
+    const previous = links().nth(59).locator("a.nav-link")
     await expect(previous).toBeFocused()
     release.resolve()
     await expect(links()).toHaveCount(65)
@@ -200,7 +207,7 @@ test("an empty initial failure retries from the first Project page", async () =>
   await retry.press("Enter")
   await expect(links()).toHaveCount(30)
   expect(cursors).toEqual([null, null])
-  await expect(links().first().getByRole("link")).toBeFocused()
+  await expect(links().first().locator("a.nav-link")).toBeFocused()
 })
 
 for (const level of ["Area", "Project"] as const) {
@@ -295,4 +302,30 @@ test("a real account revocation removes the loaded private Project projection", 
     expect((await denied).status()).toBe(404)
     await expect(page.locator(`[data-named-board-shortcut="${boardId}"]`)).toHaveCount(0)
   } finally { await owner.close() }
+})
+
+test("an empty continuation retry retains its 30 loaded Projects and returns focus to the disclosure", async () => {
+  await openProjects()
+  await expect(links()).toHaveCount(30)
+  const loadedIds = await links().evaluateAll(rows => rows.map(row => (row as HTMLElement).dataset.groupChoice))
+  const cursors: (string | null)[] = []
+  await page.route(url => projectRequest(url.href) && url.searchParams.has("after"), async route => {
+    cursors.push(new URL(route.request().url()).searchParams.get("after"))
+    await route.fulfill(cursors.length === 1
+      ? { status: 503, contentType: "application/json", body: "{}" }
+      : { status: 200, contentType: "application/json", body: JSON.stringify({ items: [], next_cursor: null }) })
+  })
+  await pager().press("Enter")
+  const retry = projects().getByRole("button", { name: "Try loading Projects again", exact: true })
+  await expect(retry).toBeFocused()
+  await expect(links()).toHaveCount(30)
+  await retry.press("Enter")
+  await expect(retry).toHaveCount(0)
+  await expect(pager()).toHaveCount(0)
+  await expect(links()).toHaveCount(30)
+  expect(await links().evaluateAll(rows => rows.map(row => (row as HTMLElement).dataset.groupChoice))).toEqual(loadedIds)
+  expect(cursors).toHaveLength(2)
+  expect(cursors[0]).toBeTruthy()
+  expect(cursors[1]).toBe(cursors[0])
+  await expect(page.getByRole("button", { name: "Projects in Workbench", exact: true })).toBeFocused()
 })

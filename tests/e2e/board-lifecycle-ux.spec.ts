@@ -1,5 +1,5 @@
 import { once } from "node:events"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
@@ -100,17 +100,21 @@ test("Delete Board defaults to Cancel and restores two distinctly named Boards",
   }
 })
 
-test("Household creation keeps default, personalized and Irish Area labels consistent", async ({ boards }, testInfo) => {
-  const { page, member, app, origin, work } = boards
-  // Model a catalog with no active Areas, retaining its seeded relationships.
-  // The public API intentionally protects the default Area from deletion.
-  const db = new DatabaseSync(join(work, "pins.db"))
-  try { db.prepare("UPDATE areas SET retired_at = 1 WHERE id = 'default'").run() } finally { db.close() }
-  const catalog = await member.request.get(app + "/api/areas")
+test("an empty Board keeps default, personalized and Irish Area labels consistent", async ({ boards }, testInfo) => {
+  const { page, member, app, origin } = boards
+  const directory = await member.request.get(app + "/api/boards")
+  const headers = { origin, "x-meitheal-board-session": directory.headers()["x-meitheal-board-session"]! }
+  const createdBoard = await member.request.post(app + "/api/boards", { headers, data: { name: "Area vocabulary" } })
+  expect(createdBoard.status(), await createdBoard.text()).toBe(201)
+  const boardId = (await createdBoard.json()).id
+  const catalog = await member.request.get(app + "/api/areas?board_id=" + boardId)
   expect(catalog.status()).toBe(200)
   expect((await catalog.json()).areas).toEqual([])
-  const form = page.locator("[data-household-group-create]")
-  await page.goto(app + "/boards/household?view=groups")
+  const form = page.locator('form[data-board-form="planning"]')
+    .filter({ has: page.locator('input[name="action"][value="area"]') })
+    .filter({ hasNot: page.locator('input[name="id"]') })
+  const workspace = app + `/boards/${boardId}?view=groups`
+  await page.goto(workspace)
   await expect(page.locator(".board-empty")).toHaveText("Choose “New Area” to organize related work.")
   await form.locator("..").locator("summary").click()
   await expect(form.getByRole("button", { name: "Create Area", exact: true })).toBeVisible()
@@ -131,17 +135,23 @@ test("Household creation keeps default, personalized and Irish Area labels consi
   await form.locator("..").locator("summary").click()
   await page.screenshot({ path: testInfo.outputPath("personalized-area-submit.png"), fullPage: true })
   await form.getByRole("textbox", { name: "Name", exact: true }).fill("Reading room")
-  const navigation = page.waitForURL(url => Boolean(url.searchParams.get("area")), { timeout: 5_000 })
-  const created = page.waitForResponse(response => response.url() === app + "/api/areas" && response.request().method() === "POST")
+  const reloaded = page.waitForEvent("load")
+  const created = page.waitForResponse(response => response.url() === app + `/api/boards/${boardId}/planning` && response.request().method() === "POST")
   await form.getByRole("button", { name: "Create Room", exact: true }).click()
-  expect((await created).status()).toBe(201)
-  await navigation
-  await expect(page).toHaveURL(url => Boolean(url.searchParams.get("area")))
-  const id = new URL(page.url()).searchParams.get("area")
-  expect((await (await member.request.get(app + "/api/areas/" + id)).json()).name).toBe("Reading room")
+  expect((await created).status()).toBe(200)
+  await reloaded
+  const areas = await member.request.get(app + "/api/areas?board_id=" + boardId)
+  expect(areas.status()).toBe(200)
+  const area = (await areas.json()).areas.find((item: { name: string }) => item.name === "Reading room")
+  expect(area).toBeDefined()
+  const link = page.getByRole("link", { name: /Reading room/ }).filter({ hasText: "Reading room" }).first()
+  await expect(link).toHaveAttribute("href", `${new URL(app).pathname}/boards/${boardId}?area=${area.id}`)
+  await link.click()
+  await expect(page).toHaveURL(url => url.searchParams.get("area") === area.id && url.pathname.endsWith(`/boards/${boardId}`))
+  expect((await (await member.request.get(app + `/api/areas/${area.id}?board_id=${boardId}`)).json()).name).toBe("Reading room")
 
   await member.addCookies([{ name: "meitheal-locale", value: "ga", url: origin }])
-  await page.goto(app + "/boards/household?view=groups")
+  await page.goto(workspace)
   await expect(form.locator("..").locator("summary")).toHaveText("Réimse nua")
   await form.locator("..").locator("summary").click()
   await expect(form.getByRole("button", { name: "Réimse nua", exact: true })).toBeVisible()
@@ -149,7 +159,11 @@ test("Household creation keeps default, personalized and Irish Area labels consi
 
 test("Unavailable Areas omit the create instruction and preserve Unfiled Projects", async ({ boards }, testInfo) => {
   const { page, member, admin, app, origin } = boards
-  const project = await member.request.post(app + "/api/projects", { headers: { origin }, data: { title: "Loose lighting Project" } })
+  const directory = await member.request.get(app + "/api/boards")
+  const project = await member.request.post(app + "/api/projects", {
+    headers: { origin, "x-meitheal-board-id": "household", "x-meitheal-board-session": directory.headers()["x-meitheal-board-session"]! },
+    data: { title: "Loose lighting Project" },
+  })
   expect(project.status(), await project.text()).toBe(201)
   const { id } = await project.json()
   const endpoint = app + "/api/organization-features"
@@ -235,7 +249,7 @@ for (const mode of ["offline", "revoked"] as const) {
     await expect(page.locator("body")).not.toContainText(name)
     expect(await disconnectedTrigger!.evaluate(button => button.isConnected)).toBe(false)
     const recovery = page.getByRole("button", { name: mode === "offline" ? "Retry verification" : "Refresh Board", exact: true })
-    await recovery.focus()
+    await expect(recovery).toBeFocused()
     // A queued click on the removed native button must have no remaining listener.
     await staleConfirmation!.evaluate(button => (button as HTMLButtonElement).click())
     await expect(recovery).toBeFocused()
@@ -270,3 +284,78 @@ for (const mode of ["offline", "revoked"] as const) {
     if (target !== owner) await target.close()
   })
 }
+
+test("a markerless existing schema26 fixture cannot inherit access or bootstrap Board and planning mutations", async ({ boards }) => {
+  const { page, member, admin, app, origin, work } = boards
+  const selected = "household"
+  const directory = await admin.request.get(app + "/api/boards")
+  expect(directory.status()).toBe(200)
+  const headers = {
+    origin,
+    "x-meitheal-board-id": selected,
+    "x-meitheal-board-session": directory.headers()["x-meitheal-board-session"]!,
+  }
+  const features = await admin.request.get(app + "/api/organization-features")
+  expect(features.status(), await features.text()).toBe(200)
+  const featureState = await features.json()
+  const featureHeaders = { ...headers, "x-meitheal-area-admin": features.headers()["x-meitheal-area-admin"]! }
+  const created = await admin.request.post(app + "/api/areas", { headers, data: { name: "Retained planning after custody loss" } })
+  expect(created.status(), await created.text()).toBe(201)
+  const area = await created.json()
+  expect(typeof area.id).toBe("string")
+  const currentBoard = await admin.request.get(app + "/api/boards/" + selected, { headers })
+  expect(currentBoard.status()).toBe(200)
+  const revision = (await currentBoard.json()).board.revision
+  await page.goto(app + "/boards/household?view=groups")
+  const root = page.locator("[data-board-directory]")
+  await expect(root).toHaveAttribute("data-bound", "true")
+  await expect(root).toContainText("Retained planning after custody loss")
+
+  const snapshot = () => {
+    const database = new DatabaseSync(join(work, "pins.db"), { readOnly: true })
+    try {
+      return {
+        version: database.prepare("SELECT value FROM app_settings WHERE key='schema_version'").get(),
+        boards: database.prepare("SELECT * FROM task_boards ORDER BY id").all(),
+        areas: database.prepare("SELECT * FROM areas ORDER BY id").all(),
+        projects: database.prepare("SELECT * FROM projects ORDER BY id").all(),
+        policies: database.prepare("SELECT * FROM organization_access_policies ORDER BY scope, board_id, scope_id").all(),
+        epoch: database.prepare("SELECT * FROM board_access_epoch").all(),
+      }
+    } finally { database.close() }
+  }
+  expect(snapshot().version).toEqual({ value: "26" })
+  expect(snapshot().boards.map(board => board.id)).toEqual([selected])
+  const database = new DatabaseSync(join(work, "pins.db"))
+  try { database.exec("DELETE FROM board_access_epoch") } finally { database.close() }
+  const marker = join(work, "meitheal-board-grants.json")
+  await rm(marker)
+  const lost = snapshot()
+  expect(lost.epoch).toEqual([])
+
+  // This is the actual current ingress/Core fixture. No request interception or replacement marker.
+  const checked = page.waitForResponse(response => response.request().method() === "HEAD"
+    && new URL(response.url()).pathname.endsWith("/api/boards/household"))
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")))
+  expect((await checked).status()).toBe(503)
+  await expect(root).not.toBeVisible()
+  for (const response of [
+    await admin.request.get(app + "/api/organization-features"),
+    await member.request.get(app + "/api/areas?board_id=household"),
+    await admin.request.post(app + "/api/boards", { headers, data: { name: "Must not reopen restored access" } }),
+    await admin.request.patch(app + "/api/boards/household", { headers, data: { action: "retire", revision } }),
+    await admin.request.post(app + "/api/boards/household/planning", { headers, data: { action: "retire", entity: "area", id: area.id } }),
+    await admin.request.delete(app + "/api/areas/" + area.id, { headers: { ...headers, "content-type": "application/json" }, data: {} }),
+    await admin.request.put(app + "/api/organization-features", { headers: featureHeaders,
+      data: { feature: "goals", audience: "nobody", users: [], revision: featureState.features.goals.revision } }),
+  ]) {
+    expect(response.status(), response.url() + ": " + await response.text()).toBe(503)
+    expect(response.headers()["cache-control"]).toContain("no-store")
+    expect(await response.text()).not.toContain("Retained planning after custody loss")
+  }
+  const reloaded = await page.reload()
+  expect(reloaded?.status()).toBe(503)
+  await expect(page.getByText("Retained planning after custody loss", { exact: true })).toHaveCount(0)
+  expect(snapshot()).toEqual(lost)
+  await expect(readFile(marker)).rejects.toMatchObject({ code: "ENOENT" })
+})

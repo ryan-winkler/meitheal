@@ -7,6 +7,9 @@ import {
   allowsOrganizationAudience, organizationAudienceContains, OrganizationAccessRepository,
 } from "../../apps/web/src/domains/tasks/persistence/organization-access-repository"
 import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
+import { currentBoardScope, fixturePrincipal } from "../helpers/current-board-scope"
+import { NamedBoardRepository } from "../../apps/web/src/domains/tasks/persistence/named-board-repository"
+import { HierarchyRepository, PlanningAccessLockedError } from "../../apps/web/src/domains/tasks/persistence/hierarchy-repository"
 
 test("access policy snapshots fail closed when restored separately from the grant journal", async () => {
   const work = await mkdtemp(join(tmpdir(), "organization-policy-"))
@@ -17,6 +20,12 @@ test("access policy snapshots fail closed when restored separately from the gran
     await ensureSchema({ markerPath: marker })
     const db = getPersistenceClient()
     const repository = new OrganizationAccessRepository(db, marker)
+    const owner = fixturePrincipal("policy-owner")
+    const scope = await currentBoardScope(db, "household", owner, { resource: "area", action: "delete" })
+    const hierarchy = new HierarchyRepository(db, scope, marker)
+    await hierarchy.createArea({ id: "retained-area", name: "Retained planning" })
+    const retainedArea = (await db.execute("SELECT * FROM areas WHERE id='retained-area'")).rows
+    const retainedBoards = (await db.execute("SELECT * FROM task_boards ORDER BY id")).rows
     await db.execute(`INSERT INTO tasks (id, title, status, task_kind, source_template_id, due_date,
       area_id, idempotency_key, request_id, created_at, updated_at)
       VALUES ('occurrence-fixture', 'Fixed Routine day', 'complete', 'routine_instance', 'routine-fixture', '2026-11-17',
@@ -47,6 +56,19 @@ test("access policy snapshots fail closed when restored separately from the gran
     expect(await repository.policies("feature", "")).toEqual({ status: "locked" })
     await rm(marker)
     expect(await repository.policies("feature", "")).toEqual({ status: "locked" })
+    // Losing both epoch and marker cannot turn this existing schema26 data into first enrollment.
+    expect((await db.execute("SELECT value FROM app_settings WHERE key='schema_version'")).rows[0]?.value).toBe("26")
+    expect(await repository.change(feature, null, { audience: "nobody", users: [] })).toEqual({ status: "locked" })
+    const boards = new NamedBoardRepository(db, marker)
+    expect(await boards.create(owner, "Cannot bootstrap restored work")).toEqual({ status: "locked" })
+    expect(await boards.changeLifecycle(owner, "household", "retired", 1)).toEqual({ status: "locked" })
+    await expect(hierarchy.deleteArea("retained-area")).rejects.toBeInstanceOf(PlanningAccessLockedError)
+    expect((await db.execute("SELECT * FROM task_boards ORDER BY id")).rows).toEqual(retainedBoards)
+    expect((await db.execute("SELECT * FROM areas WHERE id='retained-area'")).rows).toEqual(retainedArea)
+    expect((await db.execute("SELECT * FROM organization_access_policies")).rows).toEqual([])
+    expect((await db.execute("SELECT * FROM board_access_epoch")).rows).toEqual([])
+    await expect((await import("node:fs/promises")).readFile(marker)).rejects.toMatchObject({ code: "ENOENT" })
+    // Resume the existing race checks only with the original independently retained fixture pair.
     await db.execute({ sql: "INSERT INTO board_access_epoch(singleton, revision) VALUES (1, ?)", args: [initialRevision] })
     await writeFile(marker, initialMarker)
 

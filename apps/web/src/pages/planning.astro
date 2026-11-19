@@ -1,4 +1,6 @@
 ---
+import { readBoardPagePlacement } from "@lib/board-page-placement"
+import { boardContextHref } from "@lib/board-workspace"
 import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
 
 import { organizationLabelsFor } from "@lib/organization-labels"
@@ -26,6 +28,9 @@ import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
 if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
 const workScope = workScopeResult.scope
+const pagePlacement = await readBoardPagePlacement(workScope, Astro.url)
+if (!pagePlacement.ok) return boardScopeResponse(pagePlacement.errorCode)
+const placement = pagePlacement.placement
 
 
 let taskRepo: TaskRepository | undefined
@@ -39,6 +44,8 @@ const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
 
 const { tasks } = await getTasksForView({
+  areaId: placement.areaId ?? undefined,
+  projectId: placement.projectId ?? undefined,
   slim: true,
   descriptionPreviewChars: 240,
   excludeStatuses: ["complete", "archived"],
@@ -74,7 +81,7 @@ for (const task of tasks) {
     {/* ─── Eisenhower ─── */}
     <section data-parent-section="eisenhower" id="planning-section-eisenhower" hidden>
       <SectionHubCard
-        href={`/eisenhower?board_id=${encodeURIComponent(workScope.boardId)}`}
+        href={boardContextHref({ boardId: workScope.boardId, area: pagePlacement.area?.id, project: pagePlacement.project?.id }, "/eisenhower")}
         icon="🎯"
         title="Eisenhower Matrix"
         description="Prioritise by urgency × importance — classify tasks into Do First, Schedule, Delegate, or Not Now quadrants."

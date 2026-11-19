@@ -202,7 +202,7 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
         <label>Icon <input name="icon" value="📁" maxlength="24" /></label>
           <label>Color <input name="color" type="color" value={DEFAULT_GROUP_COLOR} /></label>
           <p role="status" data-board-feedback></p>
-        <button type="submit" class="btn btn-ghost">Create Area</button>
+        <button type="submit" class="btn btn-ghost">{organizationLocale(Astro) === "ga" ? newLabel("group") : `Create ${label("group")}`}</button>
       </form>
     </details>}
     </div>

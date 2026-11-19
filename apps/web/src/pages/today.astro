@@ -1,4 +1,6 @@
 ---
+import { boardContextHref } from "@lib/board-workspace"
+import { readBoardPagePlacement } from "@lib/board-page-placement"
 import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
 
 import BoardRoutineCheckins from "../components/boards/BoardRoutineCheckins.astro"
@@ -44,6 +46,10 @@ import { getUnscheduledPage, requestedUnscheduledPage, setUnscheduledPage } from
 const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
 if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
 const workScope = workScopeResult.scope
+const pagePlacement = await readBoardPagePlacement(workScope, Astro.url)
+if (!pagePlacement.ok) return boardScopeResponse(pagePlacement.errorCode)
+const placement = pagePlacement.placement
+const contextHref = (path: string) => boardContextHref({ boardId: workScope.boardId, area: pagePlacement.area?.id, project: pagePlacement.project?.id }, path)
 
 
 let carriedForwardTasks: TaskViewItem[] = []
@@ -61,7 +67,6 @@ let currentStreak = 0
 let todayXP = 0
 let habits: HabitWithStats[] = []
 let habitsEnabled = false
-let showBoardWork = false
 const todayTimeZone = Astro.locals.timezone || "Europe/Dublin"
 const todayDate = new Date()
 const todayIsoDate = calendarToday(todayTimeZone, todayDate)
@@ -75,7 +80,7 @@ function focusDueLabel(task: TaskViewItem): string | undefined {
 try {
   const todayStr = todayIsoDate
   const includeUnscheduled = requestedUnscheduledPage(Astro.url.searchParams) !== null
-  const { tasks, completedTodayCount: completed, openUnscheduledCount, completedTasks } = await getTodayTaskRows(todayStr, includeUnscheduled, todayTimeZone, todayDate, workScope)
+  const { tasks, completedTodayCount: completed, openUnscheduledCount, completedTasks } = await getTodayTaskRows(todayStr, includeUnscheduled, todayTimeZone, todayDate, workScope, placement)
   completedTodayCount = completed
   completedTaskSummaries = completedTasks
 
@@ -152,12 +157,6 @@ try {
   }
 }
 
-if (verifiedIngressUser(Astro.locals)) {
-  try {
-    const { rows } = await getPersistenceClient().execute("SELECT 1 FROM board_access_epoch LIMIT 1")
-    showBoardWork = rows.length > 0
-  } catch { /* named Boards may be unavailable */ }
-}
 // G36: Fetch gamification stats for streak/XP display.
 if (isOrganizationFeatureAvailable("achievements")) try {
   const { getDailyProgress } = await import("@domains/gamification")
@@ -171,7 +170,7 @@ try {
   habitsEnabled = await isFeatureEnabled("habits")
   if (habitsEnabled) {
     const repo = new TemplateRepository(getPersistenceClient(), workScope)
-    habits = await repo.getHabitsWithStats()
+    habits = await repo.getRoutinesWithStats(placement.areaId ?? undefined, placement.projectId ?? undefined)
   }
 } catch { /* habits may not be available */ }
 
@@ -222,7 +221,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     </button>
   </UnifiedBar>
 
-  <div id="page-shell" class="page-shell" data-today-day={todayIsoDate} data-today-timezone={todayTimeZone}>
+  <div id="page-shell" class="page-shell" data-today-day={todayIsoDate} data-today-timezone={todayTimeZone} data-today-board={workScope.boardId} data-today-area={placement.areaId ?? undefined} data-today-project={placement.projectId ?? undefined}>
     <div id="today-rollover" class="alert alert-warning" role="status" hidden>
       Today has changed. <button type="button" class="btn btn-sm" data-today-refresh>Refresh Today</button>
     </div>
@@ -518,12 +517,8 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
         </div>
       </div>
 
-      <BoardRoutineCheckins />
-      {showBoardWork && <section class="today-section" data-today-board-work aria-labelledby="today-board-work-heading" hidden>
-        <h3 id="today-board-work-heading" class="today-section__title">Due on other Boards</h3>
-        <ul class="list-group" data-today-board-links></ul>
-        <p data-today-board-more hidden>Showing 30 tasks. <a href="/boards">Open Boards</a> to see the rest.</p>
-      </section>}
+      <BoardRoutineCheckins scope={workScope} placement={placement} contextName={pagePlacement.project?.name ?? pagePlacement.area?.name} />
+
 
       <details class="today-completed-tasks" hidden={completedTaskSummaries.length === 0}>
         <summary>Completed today ({completedTodayCount})</summary>
@@ -649,23 +644,23 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
       </InlineHelper>
 
       <div class="page-flow-grid">
-        <a class="card page-flow-card" href="/upcoming">
+        <a class="card page-flow-card" href={contextHref("/upcoming")}>
           <strong><Icon name="calendar-event" size={14} /> Upcoming</strong>
           <p>See what’s due in the next seven days.</p>
         </a>
-        <a class="card page-flow-card" href="/tasks?view=calendar#calendar">
+        <a class="card page-flow-card" href={contextHref("/tasks?view=calendar#calendar")}>
           <strong><Icon name="calendar" size={14} /> Calendar</strong>
           <p>See tasks and events by date.</p>
         </a>
-        <a class="card page-flow-card" href="/planning#eisenhower">
+        <a class="card page-flow-card" href={contextHref("/planning#eisenhower")}>
           <strong><Icon name="eisenhower" size={14} /> Eisenhower</strong>
           <p>Sort tasks by urgency and importance.</p>
         </a>
-        <a class="card page-flow-card" href="/tasks#kanban">
+        <a class="card page-flow-card" href={contextHref("/tasks#kanban")}>
           <strong><Icon name="kanban" size={14} /> Kanban</strong>
           <p>Move tasks between status columns.</p>
         </a>
-        <a class="card page-flow-card" href="/progress#routines">
+        <a class="card page-flow-card" href={contextHref("/progress#routines")}>
           <strong><Icon name="trophy" size={14} /> Progress</strong>
           <p>Track routines, goals, and achievements in one place.</p>
         </a>
@@ -1558,10 +1553,8 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
   import { initTodayPage } from "../lib/today-controller"
   import { pageLifecycle } from "../lib/page-lifecycle"
 
-  import { setupTodayBoardWork } from "../lib/controllers/today-board-work"
 
   pageLifecycle.onPageLoad(signal => {
     initTodayPage()
-    setupTodayBoardWork(signal)
   })
 </script>

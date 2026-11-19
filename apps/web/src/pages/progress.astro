@@ -1,4 +1,5 @@
 ---
+import { readBoardPagePlacement } from "@lib/board-page-placement"
 import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
 
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
@@ -41,18 +42,10 @@ const boardScoped = true
 const boardId = workScope.boardId
 const { rows: [boardRecord] } = await getPersistenceClient().execute({ sql: "SELECT name FROM task_boards WHERE id = ?", args: [boardId] })
 const boardName = String(boardRecord?.name ?? "Board")
-let boardArea: { id: string; name: string } | undefined
-let boardProject: { id: string; name: string } | undefined
-if (boardScoped) {
-  await ensureSchema()
-  const hierarchy = new HierarchyRepository(getPersistenceClient(), workScope)
-  const projectId = Astro.url.searchParams.get("project_id")
-  const project = projectId ? await hierarchy.findProjectById(projectId) : null
-  const areaId = project?.area_id ?? Astro.url.searchParams.get("area_id")
-  const area = areaId ? await hierarchy.findAreaById(areaId) : null
-  if (project) boardProject = { id: project.id, name: project.title }
-  if (area) boardArea = { id: area.id, name: area.name }
-}
+const pagePlacement = await readBoardPagePlacement(workScope, Astro.url)
+if (!pagePlacement.ok) return boardScopeResponse(pagePlacement.errorCode)
+const boardArea = pagePlacement.area
+const boardProject = pagePlacement.project
 const routineParams = new URLSearchParams({ board_id: boardId })
 if (boardArea) routineParams.set("area_id", boardArea.id)
 if (boardProject) routineParams.set("project_id", boardProject.id)

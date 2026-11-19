@@ -1,3 +1,7 @@
+import { saveVersionedTask, taskRecordVersion, sameTaskApiContext } from "./task-api-client"
+import { currentTaskApiContext, type TaskApiContext } from "./task-api"
+import { boardWorkspaceHref } from "./board-workspace"
+import { safeIngressHref } from "./ingress-navigation"
 import { InlineDatePicker } from "../components/shared/InlineDatePicker"
 import { getSelectedAreaId, initAreaSelector } from "@lib/area-selector-controller"
 import { hasPriorityOverlay } from "@lib/layout-shortcuts-controller"
@@ -39,6 +43,9 @@ const ganttLog = createClientLogger("timeline", "gantt")
 interface TimelineTask {
   id: string
   title: string
+  task_version?: number
+  updated_at?: string | number
+  ticket_key?: string
   status: string
   priority: number
   due_date?: string | null
@@ -342,22 +349,53 @@ function clearToastTimers() {
 
 // ── PATCH Helper ───────────────────────────────────────────────────────────
 
-async function patchTask(
-  taskId: string,
-  fields: Record<string, unknown>,
-): Promise<boolean> {
-  try {
-    const res = await fetch(`/api/tasks/${taskId}`, { // nosemgrep
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(fields),
-    })
-    if (!res.ok) ganttLog.warn(`PATCH /api/tasks/${taskId} → ${res.status}`)
-    return res.ok
-  } catch (e) {
-    ganttLog.warn("PATCH failed:", e)
-    return false
+let timelineSignal: AbortSignal | undefined
+const pendingTimelineEdits = new Map<string, { task: TimelineTask; fields: Record<string, unknown>; context: TaskApiContext }>()
+
+function renderPendingTimelineEdits() {
+  document.getElementById("timeline-pending-edits")?.remove()
+  if (!pendingTimelineEdits.size) return
+  const panel = document.createElement("section")
+  panel.id = "timeline-pending-edits"
+  panel.className = "alert alert-warning"
+  panel.setAttribute("role", "alert")
+  const explanation = document.createElement("p")
+  explanation.textContent = "These dates were not confirmed. Your proposed dates are kept below. Review the saved task before applying them."
+  panel.append(explanation)
+  for (const [id, entry] of pendingTimelineEdits) {
+    if (!sameTaskApiContext(entry.context, currentTaskApiContext())) continue
+    const row = document.createElement("p")
+    const dates = Object.entries(entry.fields).map(([field, value]) => `${({ start_date: "Start", end_date: "End", due_date: "Due" } as Record<string, string>)[field] ?? field}: ${value ?? "No date"}`).join(" · ")
+    row.append(`${entry.task.title} — ${dates} `)
+    const review = document.createElement("a")
+    review.href = safeIngressHref(boardWorkspaceHref(entry.context.boardId, { ticket: id }))
+    review.textContent = "Review saved task"
+    const discard = document.createElement("button")
+    discard.type = "button"
+    discard.className = "btn btn-ghost"
+    discard.textContent = "Discard proposed dates"
+    discard.addEventListener("click", () => { pendingTimelineEdits.delete(id); renderPendingTimelineEdits() }, timelineSignal ? { signal: timelineSignal } : {})
+    row.append(review, " ", discard)
+    panel.append(row)
   }
+  document.getElementById("gantt-chart")?.before(panel)
+}
+
+async function patchTask(task: TimelineTask, fields: Record<string, unknown>): Promise<boolean> {
+  const context = currentTaskApiContext()
+  if (!context || timelineSignal?.aborted || pendingTimelineEdits.has(task.id)) return false
+  const result = await saveVersionedTask(task.id, fields, taskRecordVersion({ ...task }), context, timelineSignal)
+  if (result.ok) {
+    Object.assign(task, result.task, { task_version: result.version })
+    return true
+  }
+  if (sameTaskApiContext(context, currentTaskApiContext()) && !timelineSignal?.aborted
+    && (result.errorCode === "conflict" || result.errorCode === "unconfirmed")) {
+    pendingTimelineEdits.set(task.id, { task, fields: { ...fields }, context })
+    renderPendingTimelineEdits()
+  }
+  ganttLog.warn(`Task date update was not confirmed: ${result.status}`)
+  return false
 }
 
 // ── Data Mapping ───────────────────────────────────────────────────────────
@@ -1666,7 +1704,7 @@ function renderGantt(
           null,
           async (date) => {
             const iso = toISODate(date)
-            const ok = await patchTask(ut.id, { due_date: iso, start_date: iso })
+            const ok = await patchTask(ut, { due_date: iso, start_date: iso })
             if (ok) {
               ut.due_date = iso
               ut.start_date = iso
@@ -1756,7 +1794,7 @@ function renderGantt(
         const dayOffset = Math.floor(clickX / pxPerDay)
         const clickedDate = addDays(rangeStart, dayOffset)
         const iso = toISODate(clickedDate)
-        const ok = await patchTask(ut.id, { start_date: iso, due_date: iso })
+        const ok = await patchTask(ut, { start_date: iso, due_date: iso })
         if (ok) {
           ut.start_date = iso
           ut.due_date = iso
@@ -1866,14 +1904,14 @@ function renderGantt(
           bar.original.due_date,
           async (date) => {
             const iso = toISODate(date)
-            const ok = await patchTask(bar.id, { due_date: iso })
+            const ok = await patchTask(bar.original, { due_date: iso })
             if (ok) {
               bar.original.due_date = iso
               renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
             }
           },
           async () => {
-            const ok = await patchTask(bar.id, { due_date: null })
+            const ok = await patchTask(bar.original, { due_date: null })
             if (ok) {
               bar.original.due_date = null
               renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
@@ -1887,14 +1925,14 @@ function renderGantt(
           bar.original.start_date,
           async (date) => {
             const iso = toISODate(date)
-            const ok = await patchTask(bar.id, { start_date: iso })
+            const ok = await patchTask(bar.original, { start_date: iso })
             if (ok) {
               bar.original.start_date = iso
               renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
             }
           },
           async () => {
-            const ok = await patchTask(bar.id, { start_date: null })
+            const ok = await patchTask(bar.original, { start_date: null })
             if (ok) {
               bar.original.start_date = null
               renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
@@ -2586,7 +2624,7 @@ function setupBarDrag(
     const newStart = addDays(bar.start, daysDelta)
     const newEnd = addDays(bar.end, daysDelta)
 
-    const ok = await patchTask(bar.id, {
+    const ok = await patchTask(bar.original, {
       start_date: toISODate(newStart),
       end_date: toISODate(newEnd),
       due_date: toISODate(newEnd),
@@ -2735,7 +2773,7 @@ function setupResizeDrag(
         onComplete()
         return
       }
-      const ok = await patchTask(bar.id, { start_date: toISODate(newStart) })
+      const ok = await patchTask(bar.original, { start_date: toISODate(newStart) })
       if (ok) { bar.start = newStart; showToast("Start date updated") }
       else showToast("Failed to update start date", "error")
     } else {
@@ -2745,7 +2783,7 @@ function setupResizeDrag(
         onComplete()
         return
       }
-      const ok = await patchTask(bar.id, { end_date: toISODate(newEnd), due_date: toISODate(newEnd) })
+      const ok = await patchTask(bar.original, { end_date: toISODate(newEnd), due_date: toISODate(newEnd) })
       if (ok) { bar.end = newEnd; showToast("End date updated") }
       else showToast("Failed to update end date", "error")
     }
@@ -2805,6 +2843,12 @@ export function initTimelineController(signal: AbortSignal) {
     return
   }
 
+  timelineSignal = signal
+  const clearPendingEdits = () => { pendingTimelineEdits.clear(); document.getElementById("timeline-pending-edits")?.remove() }
+  clearPendingEdits()
+  signal.addEventListener("abort", clearPendingEdits, { once: true })
+  document.addEventListener("meitheal:board-hidden", clearPendingEdits, { signal })
+  window.addEventListener("pagehide", clearPendingEdits, { signal })
   container.dataset.timelineReady = "true"
   const { dated: allBars, undated: allUndated } = mapTasks(tasks)
 

@@ -1,5 +1,6 @@
 import { boardScopeErrorResponse } from "@lib/board-http"
-import { withBoardScope } from "@lib/board-http"
+import { readBoardPagePlacement } from "@lib/board-page-placement"
+import { withBoardScope, boardScopeResponse } from "@lib/board-http"
 import { TaskRepository } from "@domains/tasks"
 /**
  * POST /api/tasks/clear-completed — Archive tasks completed today
@@ -33,7 +34,9 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "delete
     const today = calendarToday(timezone)
     const problem = todayScopeProblem(url.searchParams, timezone, today)
     if (problem) return apiError(problem.error, problem.status)
-    const count = await new TaskRepository(client, scope).archiveCompletedForDay(today, timezone)
+    const selected = await readBoardPagePlacement(scope, url)
+    if (!selected.ok) return boardScopeResponse(selected.errorCode)
+    const count = await new TaskRepository(client, scope).archiveCompletedForDay(today, timezone, selected.placement)
 
     apiLogger.log("info", {
       event: "clear-completed.success",
@@ -52,6 +55,8 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "delete
       { status: 200, headers: { "content-type": "application/json" } },
     )
   } catch (err: unknown) {
+    const scoped = boardScopeErrorResponse(err)
+    if (scoped) return scoped
     logApiError("POST", "/api/tasks/clear-completed", err)
     return new Response(
       JSON.stringify({ error: "Internal server error" }),

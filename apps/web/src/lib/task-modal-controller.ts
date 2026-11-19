@@ -1,3 +1,4 @@
+import { saveVersionedTask, taskRecordVersion } from "./task-api-client"
         import { askAIForTask } from "@domains/ai/ai-context-service";
         import { createClientLogger } from "@lib/client-logger";
         import { copyToClipboard } from "@lib/clipboard"
@@ -88,6 +89,9 @@
         const commentButton = document.querySelector<HTMLButtonElement>("#td-comment-submit")
         const commentError = document.getElementById("td-comment-error")
         let currentTaskId: string | null = null;
+        let currentTaskVersion: number | null = null
+        let taskSaveConflict = false
+        let fieldSaveQueue: Promise<boolean> = Promise.resolve(false)
         let sessionTicketId: string | null = null
         let currentTicketKey: string | null = null
         let currentTicketNumber: number | null = null
@@ -463,6 +467,7 @@
           if (newSession) _previouslyFocused = search ? null : document.activeElement
           document.dispatchEvent(new CustomEvent("meitheal:ha-location-task"))
           currentTaskId = taskId
+          currentTaskVersion = null
           if (!sameTicket) {
             sessionTicketId = null
             currentTicketKey = null
@@ -568,6 +573,9 @@
             }
             taskId = String(t.id)
             currentTaskId = taskId
+            currentTaskVersion = taskRecordVersion(t)
+            taskSaveConflict = false
+            document.getElementById("td-write-conflict")?.remove()
             document.dispatchEvent(new CustomEvent("meitheal:ha-location-task", { detail: taskId }))
             sessionTicketId = taskId
             currentTicketKey = typeof t.ticket_key === "string" ? t.ticket_key : null
@@ -1317,8 +1325,33 @@
 
 
 
-        async function saveTaskField(field: string, value: unknown, updatedAt?: number): Promise<boolean> {
+        function showTaskWriteConflict() {
+          if (document.getElementById("td-write-conflict")) return
+          const notice = document.createElement("div")
+          notice.id = "td-write-conflict"
+          notice.className = "alert alert-warning"
+          notice.setAttribute("role", "alert")
+          notice.append("This task changed or its save could not be confirmed. Your input is kept here. Reload the saved task before making further changes. ")
+          const refresh = document.createElement("button")
+          refresh.type = "button"
+          refresh.className = "btn btn-ghost"
+          refresh.textContent = "Reload saved task"
+          refresh.addEventListener("click", () => { if (currentTaskId) void openTaskDetail(currentTaskId) }, { signal: __signal })
+          notice.append(refresh)
+          document.getElementById("td-loaded-content")?.prepend(notice)
+        }
+
+        function saveTaskField(field: string, value: unknown, updatedAt?: number): Promise<boolean> {
+          if (!currentTaskId || _isPopulating) return Promise.resolve(false)
+          const generation = detailGeneration
+          const queued = fieldSaveQueue.then(() => generation === detailGeneration ? saveTaskFieldNow(field, value, updatedAt) : false)
+          fieldSaveQueue = queued.catch(() => false)
+          return queued
+        }
+
+        async function saveTaskFieldNow(field: string, value: unknown, updatedAt?: number): Promise<boolean> {
           if (!currentTaskId || _isPopulating) return false
+          if (taskSaveConflict) { showTaskWriteConflict(); return false }
           const generation = detailGeneration
           const taskId = currentTaskId
           const search = searchSession
@@ -1326,13 +1359,14 @@
           const scopedWrite = search || ["title", "status", "area_id", "project_id", "framework_payload"].includes(field) ? beginScopedWrite() : undefined
           let saved = false
           try {
-            const response = await fetch(`/api/tasks/${taskId}`, {
-              method: "PUT",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ [field]: value, ...(updatedAt === undefined ? {} : { updated_at: updatedAt }) }),
-              ...(scopedWrite ? { signal: scopedWrite.signal } : field === "area_id" ? { signal: AbortSignal.timeout(7_000) } : {}),
-            })
-            saved = response.ok
+            const result = await saveVersionedTask(taskId, { [field]: value }, updatedAt ?? currentTaskVersion, undefined,
+              scopedWrite?.signal ?? AbortSignal.timeout(7_000))
+            saved = result.ok
+            if (result.ok && generation === detailGeneration) currentTaskVersion = result.version
+            if (!result.ok && generation === detailGeneration && (result.errorCode === "conflict" || result.errorCode === "unconfirmed")) {
+              taskSaveConflict = true
+              showTaskWriteConflict()
+            }
             if (saved) {
               if (field === "area_id") {
                 changedAreaTask = taskId
@@ -1346,13 +1380,13 @@
               }
               notifyInactivityTaskChanged(field === "status" ? undefined : taskId)
               if (field === "status") {
-                const task = await response.json()
+                const task = result.ok ? result.task : {}
                 document.dispatchEvent(new CustomEvent("meitheal:task-status-saved", { detail: { id: taskId, status: task.status, deferred: task.deferred_at != null } }))
                 if (value === "complete" && (!search || generation === detailGeneration)) onTaskCompleted(task)
               }
               return field === "area_id" || !search || generation === detailGeneration
             }
-            log.warn(`Failed to save ${field}:`, response.status)
+            if (!result.ok) log.warn(`Failed to save ${field}:`, result.status)
           } catch (err) {
             log.warn(`Network error saving ${field}:`, err)
           } finally {
@@ -1549,7 +1583,7 @@
           setStatusBusy(true)
           try {
             const saved = await saveTaskField("status", next)
-            if (generation === detailGeneration) renderSavedStatus(saved ? next : previous)
+            if (generation === detailGeneration && (saved || !taskSaveConflict)) renderSavedStatus(saved ? next : previous)
           } finally {
             unlock()
             if (generation === detailGeneration) setStatusBusy(false)
@@ -1598,8 +1632,8 @@
           if (ticketKey) pendingAreaWrites.set(ticketKey, write)
           const savedArea = await write
           if (modalSignal.aborted) return
-          if (savedArea) select.dataset.savedArea = savedArea
-          else select.value = previous ?? ""
+          if (savedArea !== null) select.dataset.savedArea = savedArea
+          else if (!taskSaveConflict) select.value = previous ?? ""
           select.disabled = false
           if (hadFocus && document.activeElement === document.body) select.focus({ preventScroll: true })
         }, { signal: __signal })
@@ -1612,7 +1646,7 @@
           const saved = await saveTaskField("project_id", projectId || null)
           if (modalSignal?.aborted) return
           if (saved) select.dataset.savedProject = projectId
-          else select.value = select.dataset.savedProject ?? ""
+          else if (!taskSaveConflict) select.value = select.dataset.savedProject ?? ""
           select.disabled = false
         }, { signal: __signal })
 

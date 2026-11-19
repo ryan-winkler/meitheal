@@ -1,4 +1,5 @@
 ---
+import { readBoardPagePlacement } from "@lib/board-page-placement"
 import { createHash } from "node:crypto"
 import { getPersistenceClient, scopeBoardAccess } from "@domains/tasks"
 import { resolveBoardRequestScope } from "@lib/board-request-context"
@@ -88,6 +89,7 @@ const {
 
 let boardContext = Astro.props.boardContext
 let layoutAuthority: string | undefined
+let mobilePlacement: Awaited<ReturnType<typeof readBoardPagePlacement>> | undefined
 if (!privatePageShell) {
   const boardMatch = /^\/boards\/([^/]+)\/?$/.exec(Astro.url.pathname)
   const recordMatch = /^\/(areas|projects|goals|task|tickets)\/([^/]+)\/?$/.exec(Astro.url.pathname)
@@ -98,6 +100,7 @@ if (!privatePageShell) {
     ...(recordMatch ? { record: { resource: resources[recordMatch[1] as keyof typeof resources], id: decodeURIComponent(recordMatch[2]!) } } : {}),
   }).catch(() => null)
   if (result?.ok) {
+    mobilePlacement = await readBoardPagePlacement(result.scope, Astro.url)
     layoutAuthority = boardScopeAuthorityKey(result.scope)
     const { rows: [installation] } = await getPersistenceClient().execute({ sql: "SELECT value FROM app_settings WHERE key = 'work_installation_id'", args: [] })
     const actorKey = typeof installation?.value === "string" && installation.value
@@ -108,7 +111,9 @@ if (!privatePageShell) {
   }
 }
 
-const mobileBoardContext = readBoardNavigationContext(Astro.url) ?? (boardContext ? { boardId: boardContext.boardId } : undefined)
+const mobileBoardContext = boardContext && mobilePlacement?.ok
+  ? { boardId: boardContext.boardId, area: mobilePlacement.area?.id, project: mobilePlacement.project?.id }
+  : boardContext && !readBoardNavigationContext(Astro.url) ? { boardId: boardContext.boardId } : undefined
 const mobileLinks = mobileBoardContext ? boardNavigationLinks(mobileBoardContext) : undefined
 const mobileTaskHref = mobileLinks?.tasks ?? "/boards"
 const mobileCalendar = taskViewUrl(new URL(mobileTaskHref, Astro.url), "calendar", true)

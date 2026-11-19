@@ -19,6 +19,48 @@
  */
 
 import { safeFetch, type SafeFetchOptions } from "./safe-fetch"
+import { currentTaskApiContext, taskApiHeaders, type TaskApiContext } from "./task-api"
+
+/** Canonical task versions are normalized milliseconds, including retained ISO rows. */
+export function taskRecordVersion(task: Record<string, unknown>): number | null {
+  const value = Object.hasOwn(task, "task_version") ? task.task_version : task.updated_at
+  const number = typeof value === "number" ? value : typeof value === "string" && /^\d+$/.test(value) ? Number(value)
+    : typeof value === "string" && /(?:Z|[+-]\d\d:\d\d)$/.test(value) ? Date.parse(value) : NaN
+  return Number.isSafeInteger(number) && number >= 0 ? number : null
+}
+
+export function sameTaskApiContext(a: TaskApiContext | null, b: TaskApiContext | null): boolean {
+  return Boolean(a && b && a.boardId === b.boardId && a.session === b.session && a.actorKey === b.actorKey)
+}
+
+export type VersionedTaskSave = { ok: true; task: Record<string, unknown>; version: number }
+  | { ok: false; status: number; errorCode: "conflict" | "unavailable" | "unconfirmed" }
+
+/** Existing browser writes retain their loaded version and original actor/Board through publication. */
+export async function saveVersionedTask(id: string, fields: Record<string, unknown>, version: number | null,
+  context = currentTaskApiContext(), signal?: AbortSignal): Promise<VersionedTaskSave> {
+  if (version === null || !Number.isSafeInteger(version) || version < 0 || !sameTaskApiContext(context, currentTaskApiContext())) {
+    return { ok: false, status: 0, errorCode: "unavailable" }
+  }
+  let status = 0
+  try {
+    const response = await safeFetch(`/api/tasks/${encodeURIComponent(id)}`, {
+      method: "PUT", headers: taskApiHeaders(context!, { "content-type": "application/json" }),
+      body: JSON.stringify({ ...fields, updated_at: version }), ...(signal ? { signal } : {}),
+    })
+    status = response.status
+    if (!sameTaskApiContext(context, currentTaskApiContext()) || signal?.aborted) return { ok: false, status, errorCode: "unavailable" }
+    if (!response.ok) return { ok: false, status, errorCode: status === 409 ? "conflict" : "unavailable" }
+    const task: unknown = await response.json()
+    if (!sameTaskApiContext(context, currentTaskApiContext()) || signal?.aborted) return { ok: false, status, errorCode: "unavailable" }
+    if (!task || typeof task !== "object" || Array.isArray(task) || !("id" in task) || task.id !== id) return { ok: false, status, errorCode: "unconfirmed" }
+    const saved = task as Record<string, unknown>
+    const nextVersion = taskRecordVersion(saved)
+    return nextVersion === null ? { ok: false, status, errorCode: "unconfirmed" } : { ok: true, task: saved, version: nextVersion }
+  } catch {
+    return { ok: false, status, errorCode: "unconfirmed" }
+  }
+}
 
 const pendingStatusWrites = new Set<string>()
 

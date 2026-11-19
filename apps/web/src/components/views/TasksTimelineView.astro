@@ -1,4 +1,5 @@
 ---
+import { projectPublicTaskFields } from "@domains/tasks"
 import type { BoardScope } from "@domains/tasks/board-scope"
 const scope: BoardScope = Astro.props.scope
 /**
@@ -63,7 +64,7 @@ try {
   await ensureSchema();
   const client = getPersistenceClient();
   const repo = new TaskRepository(client, scope);
-  tasks = (await repo.getTimelineTasks()) as unknown as TaskRecord[];
+  tasks = (await repo.getTimelineTasks()).map(row => projectPublicTaskFields(row as unknown as Record<string, unknown>)) as TaskRecord[];
   const projectId = Astro.url.searchParams.get("project")
   if (projectId) tasks = tasks.filter(task => task.project_id === projectId)
   // Resolve labels from the scoped catalog even when task filters change.
@@ -89,7 +90,7 @@ const timelineTasks = tasks.map(task => {
   for (const field in task) {
     if (field !== "area_id" && field !== "project_id" && task[field] !== null) item[field] = task[field]
   }
-  // A null Area means Default. An absent Area means the catalog cannot reveal it.
+  // A null Area is unfiled. Hidden catalog identifiers stay out of browser data.
   if (!task.area_id || Object.hasOwn(areaMap, task.area_id)) item.area_id = task.area_id
   item.project_group = getHouseholdProjectGroup(task.project_id, projectMap)
   return item

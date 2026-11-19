@@ -1,4 +1,6 @@
 ---
+import { boardContextHref } from "@lib/board-workspace"
+import { readBoardPagePlacement } from "@lib/board-page-placement"
 import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
 
 import Layout from "../layouts/Layout.astro";
@@ -24,6 +26,10 @@ interface DayGroup {
 const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
 if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
 const workScope = workScopeResult.scope
+const pagePlacement = await readBoardPagePlacement(workScope, Astro.url)
+if (!pagePlacement.ok) return boardScopeResponse(pagePlacement.errorCode)
+const placement = pagePlacement.placement
+const contextHref = (path: string) => boardContextHref({ boardId: workScope.boardId, area: pagePlacement.area?.id, project: pagePlacement.project?.id }, path)
 
 const days: DayGroup[] = [];
 const upcomingTimeZone = Astro.locals.timezone || "Europe/Dublin";
@@ -36,7 +42,7 @@ try {
   // Persona 9: Single query for all 7 days instead of 7 sequential queries
   const endStr = shiftCalendarDay(todayStr, 6);
 
-  const allTasks = await repo.getTasksInRange(todayStr, endStr, upcomingTimeZone);
+  const allTasks = await repo.getTasksInRange(todayStr, endStr, upcomingTimeZone, placement);
 
   const tasksByDate = new Map<string, Record<string, unknown>[]>();
   for (const row of allTasks) {
@@ -300,10 +306,10 @@ function dayLabelClass(day: DayGroup): string {
     <section id="upcoming-flow" class="page-shell__section" data-upcoming-section>
       <h2 class="m-0 text-lg font-semibold">Related views</h2>
       <div class="page-flow-grid">
-        <a class="card page-flow-card" href="/today">
+        <a class="card page-flow-card" href={contextHref("/today")}>
           <strong class="inline-flex items-center gap-2"><Icon name="sun" size={16} sprite /> Today</strong>
         </a>
-        <a class="card page-flow-card" href="/tasks?view=calendar#calendar">
+        <a class="card page-flow-card" href={contextHref("/tasks?view=calendar#calendar")}>
           <strong class="inline-flex items-center gap-2"><Icon name="calendar" size={16} sprite /> Calendar</strong>
         </a>
       </div>

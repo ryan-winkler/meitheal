@@ -18,10 +18,7 @@ const context = { boardId, area: area?.id, project: project?.id, fromArea }
 const links = boardNavigationLinks(context)
 const scope = { area: project ? undefined : area?.id, project: project?.id, fromArea }
 const sectionHref = (section: BoardPlanningSection) => boardWorkspaceHref(boardId, { ...scope, groups: true, section }, "groups")
-const routineQuery = new URLSearchParams({ board_id: boardId })
-if (area) routineQuery.set("area_id", area.id)
-if (project) routineQuery.set("project_id", project.id)
-const routines = `/habits?${routineQuery}`
+
 ---
 <div class="board-workspace-navigation" data-board-workspace-navigation={boardId}>
   <nav class="board-breadcrumb" aria-label="Board location">
@@ -35,8 +32,8 @@ const routines = `/habits?${routineQuery}`
     {available("organizer") && (available("groups") || available("projects")) &&
       <a data-board-section="planning" href={links.planning} aria-current={active === "planning" ? "page" : undefined}>{label("group", true)} &amp; {label("project", true)}</a>}
     {available("goals") && <a data-board-section="goals" href={links.progress} aria-current={active === "goals" ? "page" : undefined}>{label("goal", true)}</a>}
-    {available("routines") && <a data-board-section="routines" href={routines} aria-current={active === "routines" ? "page" : undefined}>{label("routine", true)}</a>}
-    {available("pillars") && <a data-board-section="pillars" href={`/progress?board_id=${encodeURIComponent(boardId)}#pillars`} aria-current={active === "pillars" ? "page" : undefined}>{label("pillar", true)}</a>}
+    {available("routines") && <a data-board-section="routines" href={links.routines} aria-current={active === "routines" ? "page" : undefined}>{label("routine", true)}</a>}
+    {available("pillars") && <a data-board-section="pillars" href={links.pillars} aria-current={active === "pillars" ? "page" : undefined}>{label("pillar", true)}</a>}
     {settingsHref && <a href={settingsHref}>{label("board")} settings</a>}
   </nav>
 </div>

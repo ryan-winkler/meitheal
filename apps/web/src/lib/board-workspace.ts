@@ -73,9 +73,9 @@ export function boardNavigationLinks(context: { boardId: string; area?: string |
   if (project) progress.set("project_id", project)
   else if (area) progress.set("area_id", area)
   return {
-    dashboard: `/?board_id=${encodeURIComponent(boardId)}`,
-    today: `/today?board_id=${encodeURIComponent(boardId)}`,
-    upcoming: `/upcoming?board_id=${encodeURIComponent(boardId)}`,
+    dashboard: `/?${progress}`,
+    today: `/today?${progress}`,
+    upcoming: `/upcoming?${progress}`,
     activity: `/activity?board_id=${encodeURIComponent(boardId)}`,
     mentionInbox: `/mention-inbox?board_id=${encodeURIComponent(boardId)}`,
     pinned: `/pinned?board_id=${encodeURIComponent(boardId)}`,
@@ -83,5 +83,25 @@ export function boardNavigationLinks(context: { boardId: string; area?: string |
     tasks: boardWorkspaceHref(boardId, placement, "kanban"),
     planning: boardWorkspaceHref(boardId, { ...placement, groups: true }, "groups"),
     progress: `/progress?${progress}#goals`,
+    pillars: `/progress?${progress}#pillars`,
+    routines: `/habits?${progress}`,
   }
+}
+
+/** Existing page-flow links keep the same validated Board and placement. */
+export function boardContextHref(context: { boardId: string; area?: string | undefined; project?: string | undefined }, path: string): string {
+  const [beforeHash = "/", fragment] = path.split("#", 2)
+  const separator = beforeHash.indexOf("?")
+  let pathname = separator < 0 ? beforeHash : beforeHash.slice(0, separator)
+  const query = new URLSearchParams(separator < 0 ? "" : beforeHash.slice(separator + 1))
+  if (pathname === "/tasks") {
+    pathname = `/boards/${encodeURIComponent(context.boardId)}`
+    if (context.project) query.set("project", context.project)
+    else if (context.area) query.set("area", context.area)
+  } else {
+    query.set("board_id", context.boardId)
+    if (context.project) query.set("project_id", context.project)
+    else if (context.area) query.set("area_id", context.area)
+  }
+  return pathname + (query.size ? `?${query}` : "") + (fragment ? `#${fragment}` : "")
 }
