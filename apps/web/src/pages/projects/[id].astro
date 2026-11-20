@@ -25,6 +25,7 @@ import { HierarchyRepository, type AreaRow, type GoalRow } from "@domains/tasks/
 import { TaskRepository } from "@domains/tasks/persistence/task-repository";
 import { PRIORITY_COLORS } from "../../lib/priority-config";
 import { boardWorkspaceHref } from "@lib/board-workspace"
+import { taskDetailPath } from "@lib/task-page-url"
 import { isClosedStatus, STATUS_LABELS } from "../../lib/status-config";
 import { mapEntityEmojiToTabler } from "../../lib/tabler-svg"
 import { isIconName, type IconName } from "../../generated/icon-registry"
@@ -190,7 +191,7 @@ const tabs: { id: string; label: string; icon: IconName }[] = [
         <div class="project-header-info">
           <span class={`project-status-badge status-${projStatus}`}>{projStatus}</span>
           {workspaceProjectId && <p>{openTasks.length} open · {nextAction
-            ? <a href={`/tickets/${encodeURIComponent(String(nextAction.id))}`}>Next action: {String(nextAction.title)}</a>
+            ? <a href={taskDetailPath({ id: String(nextAction.id), ticket_key: nextAction.ticket_key })}>Next action: {String(nextAction.title)}</a>
             : "No next action"}</p>}
 
           {projDesc && <p class="project-desc">{projDesc}</p>}
@@ -299,14 +300,6 @@ const tabs: { id: string; label: string; icon: IconName }[] = [
       <button type="button" class="btn btn-danger" id="delete-proj-btn">Delete Project</button>
     </div>
   </section>
-
-  <div
-    id="toast-container"
-    class="toast-container"
-    aria-live="polite"
-    role="status"
-    data-no-scroll-lock="true"
-  ></div>
 </Layout>}
 
 <style>

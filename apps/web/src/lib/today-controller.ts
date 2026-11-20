@@ -1109,7 +1109,7 @@ function renderCompletedTasks(container: HTMLElement, counts: TodayTaskCounts): 
     list?.replaceChildren(...tasks.map(task => {
       const row = document.createElement("li")
       const link = document.createElement("a")
-      link.href = buildTaskPermalink(task.id)
+      link.href = buildTaskPermalink(task)
       link.dataset.taskDetailLink = task.id
       link.dataset.todayCompletion = ""
       const title = document.createElement("span")

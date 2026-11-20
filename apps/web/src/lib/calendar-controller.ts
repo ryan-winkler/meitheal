@@ -88,8 +88,120 @@ export function initCalendarPage(signal: AbortSignal): void {
     retry!.hidden = !retryTarget
   }
 
+  let dayViewRequest: AbortController | undefined
+
+  function createSkeletonRows(count = 2): HTMLElement[] {
+    return Array.from({ length: count }, (_, idx) => {
+      const row = document.createElement("div")
+      row.className = idx === count - 1 ? "cal-skeleton-row cal-skeleton-row--short" : "cal-skeleton-row"
+      row.setAttribute("aria-hidden", "true")
+      return row
+    })
+  }
+
+  function createEmptyNotice(title: string, hint: string): HTMLElement {
+    const box = document.createElement("div")
+    box.className = "cal-empty-state"
+    box.append(createTablerSvgElement("calendar", 22))
+    const heading = document.createElement("span")
+    heading.className = "cal-empty-state__title"
+    heading.textContent = title
+    const sub = document.createElement("span")
+    sub.textContent = hint
+    box.append(heading, sub)
+    return box
+  }
+
+  function hydrateDayView() {
+    dayViewRequest?.abort()
+    const dayHost = month.querySelector<HTMLElement>("[data-cal-day-view]")
+    const date = dayHost?.dataset.calDayView
+    if (!dayHost || !date) return
+    const context = currentTaskApiContext()
+    if (!context || !calendarContext || context.boardId !== calendarContext.boardId || context.actorKey !== calendarContext.actorKey) return
+
+    const tasksEl = dayHost.querySelector<HTMLElement>("#cal-day-view-tasks")
+    const taskStatusEl = dayHost.querySelector<HTMLElement>("#cal-day-view-task-status")
+    const eventsEl = dayHost.querySelector<HTMLElement>("#cal-day-view-events")
+    const eventStatusEl = dayHost.querySelector<HTMLElement>("#cal-day-view-event-status")
+    if (!tasksEl || !taskStatusEl) return
+
+    const req = new AbortController()
+    dayViewRequest = req
+    const linked = AbortSignal.any([signal, req.signal, AbortSignal.timeout(10_000)])
+    const filters = new URLSearchParams([...applied.searchParams].filter(([key]) => agendaFilterKeys.has(key))).toString()
+    const showEvents = month.dataset.calendarEvents === "true" && Boolean(eventsEl && eventStatusEl)
+
+    tasksEl.setAttribute("aria-busy", "true")
+    tasksEl.replaceChildren(...createSkeletonRows(3))
+    taskStatusEl.textContent = ""
+
+    let liveEvents: Awaited<ReturnType<typeof loadCalendarRange>> | undefined
+    let persistedEvents: LinkedCalendarEvent[] | null | undefined
+
+    const renderDayEvents = () => {
+      if (!showEvents || !eventsEl || !eventStatusEl) return
+      if (liveEvents === undefined && persistedEvents === undefined) return
+      const rows: Array<{ start: string; row: HTMLElement }> = (persistedEvents ?? []).map(event => ({
+        start: event.start,
+        row: agendaItem("calendar-event", event.title, formatCalendarEventTime(event.start, timezone) || "All day", event.id),
+      }))
+      for (const event of distinctLiveCalendarEvents(liveEvents?.events ?? [], persistedEvents ?? [], timezone)) {
+        rows.push({
+          start: event.start,
+          row: agendaItem("calendar-event", event.summary, formatCalendarEventTime(event.start, timezone) || "All day"),
+        })
+      }
+      rows.sort((a, b) => compareCalendarStarts(a.start, b.start, timezone))
+      eventsEl.removeAttribute("aria-busy")
+      if (rows.length) {
+        eventsEl.replaceChildren(...rows.map(item => item.row))
+        eventStatusEl.textContent = ""
+      } else if (liveEvents && persistedEvents !== undefined) {
+        eventsEl.replaceChildren(createEmptyNotice("No connected events", "Connected Home Assistant calendar events for this day appear here."))
+        eventStatusEl.textContent = ""
+      }
+    }
+
+    if (showEvents && eventsEl && eventStatusEl) {
+      eventsEl.setAttribute("aria-busy", "true")
+      eventsEl.replaceChildren(...createSkeletonRows(2))
+      const ranges = dayHost.dataset.dayRanges
+      void loadCalendarRange(date, shiftCalendarDay(date, 1), timezone, 5, readCalendarSources, linked,
+        ranges ? JSON.parse(ranges) : undefined).then(result => {
+        if (dayViewRequest !== req || linked.aborted) return
+        liveEvents = result
+        renderDayEvents()
+      }).catch(() => {
+        if (dayViewRequest !== req || linked.aborted) return
+        liveEvents = { events: [], available: false, partial: false }
+        renderDayEvents()
+      })
+    }
+
+    void loadDrawerTasks({ date, filters, offset: 0, limit: 100 }, timezone, linked, context).then(({ rows, linkedEvents }) => {
+      if (dayViewRequest !== req || linked.aborted) return
+      persistedEvents = linkedEvents ?? []
+      renderDayEvents()
+      tasksEl.removeAttribute("aria-busy")
+      if (rows?.length) {
+        tasksEl.replaceChildren(...rows)
+        taskStatusEl.textContent = ""
+      } else {
+        tasksEl.replaceChildren(createEmptyNotice("Your day is clear", "Add a task or event above to plan this day."))
+        taskStatusEl.textContent = ""
+      }
+    }).catch(() => {
+      if (dayViewRequest !== req || linked.aborted) return
+      tasksEl.removeAttribute("aria-busy")
+      tasksEl.replaceChildren()
+      taskStatusEl.textContent = "Couldn’t load this day’s agenda."
+    })
+  }
+
   function previewEvents() {
     previewsRequest?.abort()
+    hydrateDayView()
     if (month.dataset.calendarEvents !== "true") return
     previewsRequest = new AbortController()
     const lifetime = AbortSignal.any([signal, previewsRequest.signal])
@@ -276,8 +388,8 @@ export function initCalendarPage(signal: AbortSignal): void {
       }
     }
     if (showEvents) {
-      drawerEvents!.replaceChildren()
-      drawerEventStatus!.textContent = loading
+      drawerEvents!.replaceChildren(...createSkeletonRows(2))
+      drawerEventStatus!.textContent = ""
       const ranges = month.querySelector<HTMLElement>(`.cal-cell[data-date="${CSS.escape(date)}"]`)?.dataset.dayRanges
       void loadCalendarRange(date, shiftCalendarDay(date, 1), timezone, 5, readCalendarSources, linked,
         ranges ? JSON.parse(ranges) : undefined).then(result => {
@@ -292,7 +404,7 @@ export function initCalendarPage(signal: AbortSignal): void {
       })
     }
 
-    drawerTasks!.replaceChildren()
+    drawerTasks!.replaceChildren(...createSkeletonRows(2))
     const filters = new URLSearchParams([...applied.searchParams].filter(([key]) => agendaFilterKeys.has(key))).toString()
     moreTasks.hidden = true
     moreTasks.removeAttribute("aria-disabled")
@@ -398,19 +510,33 @@ export function initCalendarPage(signal: AbortSignal): void {
   shell.addEventListener("click", event => {
     if (event.defaultPrevented) return
     const target = event.target as Element
-    const monthLink = target.closest<HTMLAnchorElement>("[data-calendar-nav]")
-    if (monthLink && desired.search !== applied.search) {
+    const navLink = target.closest<HTMLAnchorElement>("[data-calendar-nav]")
+    if (navLink) {
       if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return
       event.preventDefault()
-      const destination = new URL(monthLink.href)
+      const destination = new URL(navLink.href)
       const next = new URL(desired)
-      for (const key of ["year", "month"]) {
+      for (const key of ["calView", "year", "month", "date"]) {
         const value = destination.searchParams.get(key)
         if (value === null) next.searchParams.delete(key)
         else next.searchParams.set(key, value)
       }
-      next.hash = destination.hash
-      location.assign(next.href)
+      next.hash = destination.hash || next.hash
+      void refresh(next)
+      return
+    }
+    const dayAdd = target.closest<HTMLButtonElement>("[data-day-view-add]")
+    if (dayAdd) {
+      const date = dayAdd.dataset.date
+      if (date) window.__prefillTaskDate = date
+      const kind: TaskKind = dayAdd.dataset.dayViewAdd === "event" ? "calendar_event" : "standard_action"
+      if (window.openNewTaskModal) window.openNewTaskModal(kind)
+      else byId("kanban-bar-new-task")?.click()
+      return
+    }
+    const dayTaskId = target.closest<HTMLElement>("#cal-day-view-tasks [data-task-id], #cal-day-view-events [data-task-id]")?.dataset.taskId
+    if (dayTaskId) {
+      openTaskDetailHandoff(dayTaskId)
       return
     }
     if (target.closest("#day-drawer-close, #day-drawer-backdrop")) {
@@ -437,7 +563,7 @@ export function initCalendarPage(signal: AbortSignal): void {
 
   window.addEventListener("keydown", event => {
     const target = event.target
-    if (event.defaultPrevented || !(target instanceof Element) || target !== document.body && !shell.contains(target)) return
+    if (event.defaultPrevented || !(target instanceof Element)) return
     if (drawerDate) {
       if (event.key === "Escape") {
         event.preventDefault()
@@ -445,11 +571,33 @@ export function initCalendarPage(signal: AbortSignal): void {
       } else {
         containTabFocus(panel, event)
       }
-    } else if ((event.key === "Enter" || event.key === " ") && target.matches(dayButton)) {
+      return
+    }
+    if ((event.key === "Enter" || event.key === " ") && target.matches(dayButton)) {
       event.preventDefault()
       openCell(target)
+      return
     }
-  }, { signal })
+    // Single-key calendar range shortcuts (D / W / M / Y / T) when not editing text
+    if (event.ctrlKey || event.metaKey || event.altKey) return
+    if (target.matches("input, textarea, select, [contenteditable='true']") || target.closest("[role='dialog']")) return
+    const key = event.key.toLowerCase()
+    if (key === "d" || key === "w" || key === "m" || key === "y") {
+      const shortcutLink = month.querySelector<HTMLAnchorElement>(`[data-calendar-shortcut="${key}"]`)
+      if (shortcutLink) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        shortcutLink.click()
+      }
+    } else if (key === "t") {
+      const todayLink = month.querySelector<HTMLAnchorElement>('[data-calendar-nav="today"]')
+      if (todayLink) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        todayLink.click()
+      }
+    }
+  }, { capture: true, signal })
 
   moreTasks.addEventListener("click", () => loadMoreDueTasks?.(), { signal })
   retry.addEventListener("click", () => {
@@ -472,6 +620,7 @@ export function initCalendarPage(signal: AbortSignal): void {
   document.addEventListener("meitheal:tasks-changed", refreshTasks, { signal })
   document.addEventListener("meitheal:task-status-saved", refreshTasks, { signal })
   signal.addEventListener("abort", () => {
+    dayViewRequest?.abort()
     delete shell.dataset.calendarReady
     closeDrawer(false)
   }, { once: true })

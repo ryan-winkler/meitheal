@@ -1,4 +1,5 @@
 import { matchesSql, tableDefinitions } from "./board-storage-schema.mjs"
+import { customBoardKeyObjects, customTicketRefColumn, CUSTOM_BOARD_KEYS_SCHEMA_VERSION } from "./0017_custom_board_keys.mjs"
 
 const ticketRef = `ticket_ref TEXT CHECK (ticket_ref IS NULL OR (
   ticket_number IS NULL AND length(ticket_ref) BETWEEN 10 AND 25
@@ -82,12 +83,16 @@ export async function validateNamedBoardStoragePhase(db) {
   const { rows: [version] } = await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")
   const lifecycle = Number(version?.value) >= 25
   const ordinary = Number(version?.value) >= 26
-  const expected = ordinary ? Object.fromEntries(Object.entries(namedPhaseTriggers).filter(([name]) =>
-    !["task_boards_household_identity_insert", "task_boards_household_identity_update", "task_boards_household_v19_delete", "board_members_household_v19_insert",
-      "task_drafts_household_v19_insert", "task_drafts_household_v19_update", "task_draft_receipts_household_v19_insert", "task_draft_receipts_household_v19_update"].includes(name))) : lifecycle ? {
+  const customKeys = Number(version?.value) >= CUSTOM_BOARD_KEYS_SCHEMA_VERSION
+  const expected = ordinary ? {
+    ...Object.fromEntries(Object.entries(namedPhaseTriggers).filter(([name]) =>
+      !["task_boards_household_identity_insert", "task_boards_household_identity_update", "task_boards_household_v19_delete", "board_members_household_v19_insert",
+        "task_drafts_household_v19_insert", "task_drafts_household_v19_update", "task_draft_receipts_household_v19_insert", "task_draft_receipts_household_v19_update"].includes(name))),
+    ...(customKeys ? { tasks_require_named_placement_update: customBoardKeyObjects.tasks_require_named_placement_update } : {}),
+  } : lifecycle ? {
     ...namedPhaseTriggers, task_boards_household_identity_update: lifecycleHouseholdIdentitySql,
   } : namedPhaseTriggers
-  await validatePhaseObjects(db, expected, [...taskBoardHouseholdTriggerNames, ...Object.keys(namedPhaseTriggers)])
+  await validatePhaseObjects(db, expected, [...taskBoardHouseholdTriggerNames, ...Object.keys(namedPhaseTriggers)], customKeys ? customTicketRefColumn : ticketRef)
   if (ordinary) {
     const { rows: invalid } = await db.execute(`SELECT 1 WHERE EXISTS (SELECT 1 FROM board_members)
       OR EXISTS (SELECT 1 FROM tasks AS NEW WHERE NOT ${validPlacement})`)
@@ -117,7 +122,7 @@ export async function applyTaskBoardHouseholdPhase(tx) {
   await validateTaskBoardHouseholdPhase(tx)
 }
 
-async function validatePhaseObjects(db, expectedTriggers, oldNames = []) {
+async function validatePhaseObjects(db, expectedTriggers, oldNames = [], expectedTicketRef = ticketRef) {
   const names = [...new Set(["tasks_ticket_ref_unique_idx", ...Object.keys(expectedTriggers), ...oldNames])]
   const { rows } = await db.execute({
     sql: `SELECT name, sql FROM main.sqlite_schema WHERE name IN (${names.map(() => "?").join(", ")})`,
@@ -133,7 +138,7 @@ async function validatePhaseObjects(db, expectedTriggers, oldNames = []) {
   }
 
   const { rows: [taskTable] } = await db.execute("SELECT sql FROM main.sqlite_schema WHERE name = 'tasks' AND type = 'table'")
-  if (!tableDefinitions(String(taskTable?.sql ?? "")).some(definition => matchesSql(definition, ticketRef))) {
+  if (!tableDefinitions(String(taskTable?.sql ?? "")).some(definition => matchesSql(definition, expectedTicketRef))) {
     throw new Error("Unexpected task Board ticket column")
   }
 }

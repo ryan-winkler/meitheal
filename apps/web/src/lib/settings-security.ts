@@ -7,6 +7,7 @@ const credentialName = /(?:^|[-_])(?:api[-_]?key|credential|password|secret|toke
 const systemSettingPrefix = /^(?:agent[-_]protocols|ai|cal|caldav|calendar|grocy|ha|loki|n8n|todo|vikunja|webhook)[-_]/i
 const localHosts = new Set(["localhost", "127.0.0.1", "[::1]"])
 const localPeers = new Set(["127.0.0.1", "::1"])
+const standalonePreviewHost = /(?:^|\.)(?:run\.app|googleusercontent\.com|web\.app)$/i
 
 export function isSecretSetting(key: string): boolean {
   return credentialName.test(key) || key.toLowerCase() === "license_key"
@@ -20,9 +21,14 @@ export function isSystemSetting(key: string): boolean {
 export function canManageSystemSettings(request: Request, locals: Pick<App.Locals, "hassIsAdmin" | "agentToken">): boolean {
   if (locals.agentToken) return false
   if (locals.hassIsAdmin) return true
-  if (process.env.SUPERVISOR_TOKEN || !localHosts.has(new URL(request.url).hostname)) return false
+  if (process.env.SUPERVISOR_TOKEN) return false
+  const hostname = new URL(request.url).hostname
+  const isLocalHost = localHosts.has(hostname)
+  const isPreviewHost = standalonePreviewHost.test(hostname)
+  if (!isLocalHost && !isPreviewHost) return false
   const peer = getIngressTransport()?.peer
-  return peer ? localPeers.has(peer) : import.meta.env?.DEV === true
+  if (peer) return localPeers.has(peer) || isPreviewHost
+  return import.meta.env?.DEV === true || isPreviewHost
 }
 
 export function requireSystemSettingsAdmin(request: Request, locals: Pick<App.Locals, "hassIsAdmin" | "agentToken">): Response | null {

@@ -14,7 +14,7 @@ import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
 import { formatRegionalDate } from "../../lib/regional-date";
 import { formatTicketKey } from "../../lib/ticket-key";
-import { buildTaskPath } from "../../lib/task-detail-handoff"
+import { taskDetailPath } from "../../lib/task-page-url"
 import { taskDescriptionPreview } from "../../lib/task-description-preview"
 import type { TaskViewItem } from "../../lib/task-queries"
 import { CANONICAL_STATUSES, STATUS_CONFIG } from "../../lib/status-config";
@@ -244,7 +244,7 @@ const priorityClasses: Record<number, string> = {
                     </td>
                     <td class="col-key">
                       <a
-                        href={buildTaskPath(task.id)}
+                        href={taskDetailPath(task)}
                         data-task-detail-link={task.id}
                         class="ticket-key-badge"
                         data-open-table-task
@@ -475,15 +475,6 @@ const priorityClasses: Record<number, string> = {
     <button type="button" class="btn bulk-close-btn" id="bulk-close" aria-label="Close bulk actions">
       <Icon name="x" size={16} />
     </button>
-  </div>
-
-  <div
-    id="toast-container"
-    class="toast-container"
-    aria-live="polite"
-    role="status"
-    data-no-scroll-lock="true"
-  >
   </div>
 
   <script>

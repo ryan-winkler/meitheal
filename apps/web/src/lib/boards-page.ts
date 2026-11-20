@@ -4,6 +4,7 @@ import { confirmDialog, type ConfirmOptions } from "./confirm-dialog"
 import { safeIngressHref, syncIngressDestination } from "./ingress-navigation"
 import { stripIngressPrefix } from "./ingress-state-persistence"
 import { safeFetch } from "./safe-fetch"
+import { normalizeBoardKey, suggestBoardKey, validateBoardKey } from "@domains/tasks/board-key"
 
 class BoardRequestError extends Error {
   constructor(message: string, readonly status: number) { super(message) }
@@ -171,6 +172,37 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
     visibility?.addEventListener("change", showSharedSettings, { signal })
   }
 
+  for (const form of root.querySelectorAll<HTMLFormElement>('[data-board-form="create"], [data-board-form="ticket-prefix"]')) {
+    const keyInput = form.querySelector<HTMLInputElement>("[data-board-key-input]")
+    const preview = form.querySelector<HTMLElement>("[data-board-key-preview]")
+    const nameInput = form.dataset.boardForm === "create" ? form.querySelector<HTMLInputElement>('[name="name"]') : null
+    const currentKey = form.querySelector<HTMLInputElement>('[name="currentKey"]')?.value
+    let userEditedKey = false
+    const updatePreview = (raw: string) => {
+      if (!preview) return
+      const normalized = normalizeBoardKey(raw)
+      const display = normalized || (currentKey ?? "KEY")
+      const code = preview.querySelector("code")
+      if (code) {
+        code.textContent = currentKey && normalized && normalized !== currentKey
+          ? `${currentKey}-1 → ${normalized}-1`
+          : `${display}-1`
+      }
+    }
+    keyInput?.addEventListener("input", () => {
+      userEditedKey = keyInput.value.trim().length > 0
+      const clean = normalizeBoardKey(keyInput.value)
+      if (keyInput.value !== clean) keyInput.value = clean
+      updatePreview(clean)
+    }, { signal })
+    nameInput?.addEventListener("input", () => {
+      if (!keyInput || userEditedKey) return
+      const suggested = nameInput.value.trim() ? suggestBoardKey(nameInput.value) : ""
+      keyInput.value = suggested
+      updatePreview(suggested)
+    }, { signal })
+  }
+
   async function jsonRequest(path: string, method: string, body: object) {
     const boardPath = /^boards\/([^/]+)(?:\/|$)/.exec(path)
     const response = await safeFetch("/api/" + path, {
@@ -301,6 +333,7 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
     })) return
     if (expired || signal.aborted || !root.isConnected || !form.isConnected) return
     button.disabled = true
+    button.classList.add("btn-loading")
     form.setAttribute("aria-busy", "true")
     if (feedback) feedback.textContent = ""
 
@@ -322,8 +355,43 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
           }
           break
         }
+        case "ticket-prefix": {
+          const revision = Number(value("revision"))
+          if (!Number.isSafeInteger(revision) || revision < 1) throw new Error("Refresh this Board before changing its key.")
+          const checked = validateBoardKey(value("ticketPrefix"))
+          if (!checked.ok) throw new Error(checked.error)
+          const previous = normalizeBoardKey(value("currentKey"))
+          if (checked.key === previous) {
+            if (feedback) feedback.textContent = `Board key is already ${checked.key}.`
+            return
+          }
+          const approved = await confirmBoard({
+            title: "Change Board key?",
+            message: `Changing the Board key from ${previous} to ${checked.key} will rewrite every ticket number on this Board (for example ${previous}-30 becomes ${checked.key}-30). Saved links, bookmarks, and external automations using ${previous}-* may stop working. Continue?`,
+            confirmText: `Change to ${checked.key}`,
+            variant: "danger",
+          })
+          if (!approved) return
+          const result = await jsonRequest(api, "PATCH", { action: "ticket-prefix", ticketPrefix: checked.key, revision })
+          if (result.data?.accessPending) {
+            keepPendingSave(form, feedback, "Saved. Access is still being verified. Your input is kept here. Refresh Board to check the result.")
+            return
+          }
+          break
+        }
         case "create": {
-          const { status, data: result } = await jsonRequest(api, "POST", { name: value("name"), preset: value("preset") || undefined })
+          const rawKey = value("ticketPrefix").trim()
+          let ticketPrefix: string | undefined
+          if (rawKey) {
+            const checked = validateBoardKey(rawKey)
+            if (!checked.ok) throw new Error(checked.error)
+            ticketPrefix = checked.key
+          }
+          const { status, data: result } = await jsonRequest(api, "POST", {
+            name: value("name"),
+            preset: value("preset") || undefined,
+            ...(ticketPrefix ? { ticketPrefix } : {}),
+          })
           const id = result?.id
           if (status === 201 && typeof id === "string" &&
             /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) && !result?.accessPending) {
@@ -457,6 +525,7 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
       }
     } finally {
       form.removeAttribute("aria-busy")
+      if (!navigating) button.classList.remove("btn-loading")
       if (!navigating && !form.dataset.boardPending) button.disabled = false
     }
   }, { signal })

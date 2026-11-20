@@ -1,5 +1,6 @@
 import { assertBoardStorageWriter, assertNoInboundReferences, matchesSql, moveBoardStorageTables, normalizeSql, tableDefinitions } from "./board-storage-schema.mjs"
 import { storageEncodingColumn } from "./0016_ordinary_boards.mjs"
+import { customBoardKeyObjects, CUSTOM_BOARD_KEYS_SCHEMA_VERSION } from "./0017_custom_board_keys.mjs"
 
 const laneColumns = {
   id: "TEXT PRIMARY KEY",
@@ -173,11 +174,13 @@ export async function applyTaskBoardStorage(tx) {
 export async function validateTaskBoardStorage(db, allowedObjects = []) {
   const { rows: [version] } = await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")
   const ordinary = Number(version?.value) >= 26
+  const customKeys = Number(version?.value) >= CUSTOM_BOARD_KEYS_SCHEMA_VERSION
   const objects = {
     task_boards: ordinary ? boardTableSql.replace(/\)\s*$/, `, ${storageEncodingColumn})`) : boardTableSql,
     board_members: memberTableSql,
     kanban_lanes: scopedLaneSql,
     ...scopedObjects,
+    ...(customKeys ? { task_boards_identity_guard: customBoardKeyObjects.task_boards_identity_guard } : {}),
   }
   const names = Object.keys(objects)
   const { rows } = await db.execute({
@@ -206,5 +209,8 @@ export async function validateTaskBoardStorage(db, allowedObjects = []) {
   }
 
   const { rows: [household] } = await db.execute("SELECT ticket_prefix FROM main.task_boards WHERE id = 'household'")
-  if (household?.ticket_prefix !== "MTH") throw new Error("Household Board is missing its reserved identity")
+  const validHouseholdPrefix = customKeys
+    ? /^[A-Z0-9]{2,10}$/.test(String(household?.ticket_prefix ?? ""))
+    : household?.ticket_prefix === "MTH"
+  if (!validHouseholdPrefix) throw new Error("Household Board is missing its reserved identity")
 }

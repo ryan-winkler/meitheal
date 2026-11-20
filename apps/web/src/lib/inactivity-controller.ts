@@ -1,4 +1,4 @@
-import { buildTaskPath } from "@lib/task-detail-handoff"
+import { taskDetailPath } from "@lib/task-page-url"
 import { safeIngressHref } from "@lib/ingress-navigation"
 import type { InactivityFilter } from "@domains/tasks/persistence/task-inactivity-repository"
 import { t, type Locale } from "../i18n/client"
@@ -16,6 +16,7 @@ pageLifecycle.onPageLoad(signal => {
   const locale = (root.dataset.locale === "ga" ? "ga" : "en") satisfies Locale
   const label = (key: string, params?: Record<string, string>) => t(`inactivity.${key}`, locale, params)
   const status = select<HTMLParagraphElement>("status")
+  const skeleton = root.querySelector<HTMLElement>("[data-inactivity-skeleton]")
   const content = select<HTMLDivElement>("content")
   const area = select<HTMLSelectElement>("area")
   const filter = select<HTMLSelectElement>("filter")
@@ -85,6 +86,7 @@ pageLifecycle.onPageLoad(signal => {
     select<HTMLElement>("range").textContent = ""
     empty.hidden = true
     retry.hidden = true
+    if (skeleton) skeleton.hidden = true
     status.textContent = label("loading")
   }
 
@@ -141,7 +143,7 @@ pageLifecycle.onPageLoad(signal => {
         appendCue(task.deadline <= preview.now ? "ready" : "upcoming", task.deadline)
       }
       const details = document.createElement("a")
-      details.href = safeIngressHref(buildTaskPath(task.id))
+      details.href = safeIngressHref(taskDetailPath(task))
       details.dataset.astroPrefetch = "false"
       details.className = "btn btn-outline"
       details.append(createTablerSvgElement("file-text", 18), t("triage.details", locale))
@@ -160,6 +162,7 @@ pageLifecycle.onPageLoad(signal => {
       first: String((page - 1) * 25 + 1), last: String(last), total: String(preview.total),
     })
     content.hidden = false
+    if (skeleton) skeleton.hidden = true
     if (proposed !== undefined && preview.canSave) reviewed = { preview, proposed }
     save.disabled = !reviewed
   }
@@ -171,6 +174,7 @@ pageLifecycle.onPageLoad(signal => {
     rows.replaceChildren()
     empty.hidden = true
     pagination.hidden = true
+    if (skeleton && content.hidden) skeleton.hidden = false
     results.setAttribute("aria-busy", "true")
     retry.hidden = true
     status.textContent = label("loading")

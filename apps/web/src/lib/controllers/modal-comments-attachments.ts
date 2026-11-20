@@ -140,8 +140,9 @@ function attachCommentManagement(
  * Load and render comments for a task.
  */
 export async function loadComments(
-  taskId: string, signal: AbortSignal, commentTarget: string | null = null, postedCommentId?: number,
+  task: { id: string, ticket_key: string | null }, signal: AbortSignal, commentTarget: string | null = null, postedCommentId?: number,
 ): Promise<void> {
+  const taskId = task.id
   const container = document.getElementById("td-comments")
   const status = document.getElementById("td-comment-link-status")
   if (!container) return
@@ -184,7 +185,7 @@ export async function loadComments(
       const dateLink = document.createElement("a")
       const timestamp = new Date(c.created_at).toLocaleString()
       dateLink.textContent = timestamp
-      dateLink.href = buildTaskPermalink(taskId, c.id)
+      dateLink.href = buildTaskPermalink(task, c.id)
       dateLink.className = "underline underline-offset-2 hover:text-accent"
       const linkLabel = container.dataset.linkLabel
       if (linkLabel) {

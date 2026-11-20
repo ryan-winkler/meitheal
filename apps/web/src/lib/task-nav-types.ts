@@ -4,15 +4,15 @@ import { readKanbanSearch } from "./kanban-query"
 import { normalizeStatus } from "./status-config"
 import { appliedTaskRules, parseTaskView, type TaskView } from "./task-view-route"
 
-export type TaskNavTypeId = "standard" | "shopping_item" | "checklist" | "calendar_event"
+export type TaskNavTypeId = "standard" | "quick_capture" | "shopping_item" | "checklist" | "calendar_event"
 
 export type TaskNavDisplayMode = "all" | "none" | "custom"
 
 export interface TaskNavTypeEntry {
   id: TaskNavTypeId
-  kind: "standard_action" | "shopping_item" | "checklist" | "calendar_event"
+  kind: "standard_action" | "quick_capture" | "shopping_item" | "checklist" | "calendar_event"
   label: string
-  icon: "checkbox" | "shopping-cart" | "list-check" | "calendar-event"
+  icon: "checkbox" | "bolt" | "shopping-cart" | "list-check" | "calendar-event"
 }
 
 export interface TaskNavPrefs {
@@ -31,6 +31,12 @@ export const TASK_NAV_TYPES: readonly TaskNavTypeEntry[] = [
     kind: "standard_action",
     label: "Task",
     icon: "checkbox",
+  },
+  {
+    id: "quick_capture",
+    kind: "quick_capture",
+    label: "Quick capture",
+    icon: "bolt",
   },
   {
     id: "shopping_item",
@@ -54,15 +60,20 @@ export const TASK_NAV_TYPES: readonly TaskNavTypeEntry[] = [
 
 const VALID_TYPE_IDS = new Set<TaskNavTypeId>(TASK_NAV_TYPES.map((item) => item.id))
 
+function buildTaskNavVisibility(value: boolean): Record<TaskNavTypeId, boolean> {
+  return {
+    standard: value,
+    quick_capture: value,
+    shopping_item: value,
+    checklist: value,
+    calendar_event: value,
+  }
+}
+
 export function defaultTaskNavPrefs(): TaskNavPrefs {
   return {
     mode: "all",
-    visible: {
-      standard: true,
-      shopping_item: true,
-      checklist: true,
-      calendar_event: true,
-    },
+    visible: buildTaskNavVisibility(true),
     pinned: [],
     pinnedViews: [],
   }
@@ -153,6 +164,7 @@ export function normalizeTaskNavPrefs(input: unknown): TaskNavPrefs {
   const visibleRaw = raw.visible && typeof raw.visible === "object" ? (raw.visible as Record<string, unknown>) : {}
   const visible: Record<TaskNavTypeId, boolean> = {
     standard: typeof visibleRaw.standard === "boolean" ? visibleRaw.standard : true,
+    quick_capture: typeof visibleRaw.quick_capture === "boolean" ? visibleRaw.quick_capture : true,
     shopping_item: typeof visibleRaw.shopping_item === "boolean" ? visibleRaw.shopping_item : true,
     checklist: typeof visibleRaw.checklist === "boolean" ? visibleRaw.checklist : true,
     calendar_event: typeof visibleRaw.calendar_event === "boolean" ? visibleRaw.calendar_event : true,
@@ -209,24 +221,14 @@ export function setTaskNavMode(prefs: TaskNavPrefs, mode: TaskNavDisplayMode): T
     return writeTaskNavPrefs({
       ...prefs,
       mode: "all",
-      visible: {
-        standard: true,
-        shopping_item: true,
-        checklist: true,
-        calendar_event: true,
-      },
+      visible: buildTaskNavVisibility(true),
     })
   }
   if (mode === "none") {
     return writeTaskNavPrefs({
       ...prefs,
       mode: "none",
-      visible: {
-        standard: false,
-        shopping_item: false,
-        checklist: false,
-        calendar_event: false,
-      },
+      visible: buildTaskNavVisibility(false),
     })
   }
   return writeTaskNavPrefs({ ...prefs, mode: "custom" })
@@ -236,6 +238,7 @@ export function toggleTaskNavChild(prefs: TaskNavPrefs, id: TaskNavTypeId): Task
   const current = isTaskNavTypeVisible(prefs, id)
   const visible: Record<TaskNavTypeId, boolean> = {
     standard: isTaskNavTypeVisible(prefs, "standard"),
+    quick_capture: isTaskNavTypeVisible(prefs, "quick_capture"),
     shopping_item: isTaskNavTypeVisible(prefs, "shopping_item"),
     checklist: isTaskNavTypeVisible(prefs, "checklist"),
     calendar_event: isTaskNavTypeVisible(prefs, "calendar_event"),

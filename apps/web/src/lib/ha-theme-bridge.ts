@@ -37,15 +37,21 @@ function frameParent(): Window | undefined {
   }
 }
 
-export function refreshHAThemeMatch(): void {
+export function refreshHAThemeMatch(preview?: { matchHaTheme?: boolean; accent?: string | null }): void {
   const root = document.documentElement
   const wasMatched = root.dataset.haMatch === "light" || root.dataset.haMatch === "dark"
   const parent = frameParent()
   const appearance = parent && parentAppearance(parent)
   if (appearance) root.dataset.haTheme = appearance
   else delete root.dataset.haTheme
-  const match = readHAThemePalette(readAppearanceValue(HA_THEME_MATCH_KEY) === "1", Boolean(parent))
-  applyHAThemePalette(root, match, readAppearanceValue("meitheal-accent-color"), applyPersonalAccent)
+  const matchEnabled = preview?.matchHaTheme !== undefined
+    ? preview.matchHaTheme
+    : readAppearanceValue(HA_THEME_MATCH_KEY) === "1"
+  const accent = preview && "accent" in preview
+    ? (preview.accent ?? null)
+    : readAppearanceValue("meitheal-accent-color")
+  const match = readHAThemePalette(matchEnabled, Boolean(parent))
+  applyHAThemePalette(root, match, accent, applyPersonalAccent)
   if (wasMatched || match.state === "active" || (parent && root.dataset.theme === "auto")) applyTheme()
   document.dispatchEvent(new Event("meitheal:ha-theme-match"))
 }

@@ -198,6 +198,7 @@ export function initKanbanPage(signal: AbortSignal): void {
       void hydrateTaskAssignees(board, boardLifetime.signal)
       initKanbanReactionCounts(board, boardLifetime.signal)
       initKanbanInactivity(board, boardLifetime.signal)
+      bindBoardScrollTrack(board, boardLifetime.signal)
 
       const total = shell?.querySelector("[data-kanban-visible-count]")
       const label = shell?.querySelector("[data-kanban-visible-label]")
@@ -269,6 +270,44 @@ export function initKanbanPage(signal: AbortSignal): void {
     if (url.search !== before) void load(url, undefined, resetPage)
   }
 
+  const scrollWrap = shell.querySelector<HTMLElement>("[data-kanban-scroll-wrap]")
+  const scrollLeftBtn = scrollWrap?.querySelector<HTMLButtonElement>('[data-kanban-scroll="left"]')
+  const scrollRightBtn = scrollWrap?.querySelector<HTMLButtonElement>('[data-kanban-scroll="right"]')
+
+  function syncHorizontalScrollState() {
+    if (!scrollWrap) return
+    const maxScroll = Math.max(0, board.scrollWidth - board.clientWidth)
+    const canLeft = maxScroll > 6 && board.scrollLeft > 4
+    const canRight = maxScroll > 6 && board.scrollLeft < maxScroll - 4
+    scrollWrap.dataset.scrollLeft = String(canLeft)
+    scrollWrap.dataset.scrollRight = String(canRight)
+    if (scrollLeftBtn) scrollLeftBtn.hidden = !canLeft
+    if (scrollRightBtn) scrollRightBtn.hidden = !canRight
+  }
+
+  function bindBoardScrollTrack(target: HTMLElement, boardSignal: AbortSignal) {
+    target.addEventListener("scroll", syncHorizontalScrollState, { passive: true, signal: boardSignal })
+    target.addEventListener("wheel", event => {
+      if (!event.shiftKey || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
+      if (target.scrollWidth <= target.clientWidth) return
+      event.preventDefault()
+      target.scrollLeft += event.deltaY
+    }, { passive: false, signal: boardSignal })
+    requestAnimationFrame(syncHorizontalScrollState)
+  }
+
+  const scrollStep = (dir: -1 | 1) => {
+    const col = board.querySelector<HTMLElement>(".kanban-column")
+    const step = (col?.offsetWidth ?? 304) + 16
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    board.scrollBy({ left: dir * step, behavior: reduced ? "auto" : "smooth" })
+  }
+  scrollLeftBtn?.addEventListener("click", () => scrollStep(-1), { signal })
+  scrollRightBtn?.addEventListener("click", () => scrollStep(1), { signal })
+  window.addEventListener("resize", syncHorizontalScrollState, { passive: true, signal })
+  const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(syncHorizontalScrollState) : null
+  if (scrollWrap) resizeObserver?.observe(scrollWrap)
+
   const toolsToggle = document.getElementById("kanban-tools-toggle")
   toolsToggle?.addEventListener("click", () => {
     toolsToggle.setAttribute("aria-expanded", String(toolsToggle.getAttribute("aria-expanded") !== "true"))
@@ -277,6 +316,7 @@ export function initKanbanPage(signal: AbortSignal): void {
   initKanbanArea(boardLifetime.signal, refresh, queueMoveRefresh)
   void hydrateTaskAssignees(board, boardLifetime.signal)
   initKanbanReactionCounts(board, boardLifetime.signal)
+  bindBoardScrollTrack(board, boardLifetime.signal)
 
   shell.addEventListener("click", event => {
     if (!(event instanceof MouseEvent) || event.defaultPrevented || event.button !== 0 ||
@@ -349,6 +389,7 @@ export function initKanbanPage(signal: AbortSignal): void {
   signal.addEventListener("abort", () => {
     boardLifetime.abort()
     interactionObserver.disconnect()
+    resizeObserver?.disconnect()
   }, { once: true })
   if (board.dataset.available !== "true") {
     renderStatus(window.mI18n?.get("kanban.board_load_failed") ?? "Couldn’t load the board.", true)

@@ -9,7 +9,7 @@ import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
  */
 
 import { buildIngressPagePath } from "@lib/page-shell-links"
-import { buildTaskPath } from "@lib/task-detail-handoff"
+import { taskDetailPath } from "@lib/task-page-url"
 import { isPwaSupported } from "./sw-register"
 
 function getNotificationPermission(): NotificationPermission | "unsupported" {
@@ -95,6 +95,7 @@ export async function showTaskNotification(notification: TaskNotification): Prom
 
 interface TaskForCheck {
   id: string
+  ticket_key?: string | null
   title: string
   dueDate: string
   status: string
@@ -123,7 +124,7 @@ export async function checkOverdueTasks(tasks: TaskForCheck[]): Promise<void> {
         title: "⏰ Overdue Task",
         body: task.title,
         tag: `overdue-${task.id}`,
-        url: buildTaskPath(task.id),
+        url: taskDetailPath(task),
         taskId: task.id,
       })
       if (delivered) notified.add(task.id)
@@ -158,7 +159,7 @@ export async function checkUpcomingReminders(tasks: TaskForCheck[]): Promise<voi
         title: "📋 Task Due Soon",
         body: `${task.title} — due in ${minutesUntilDue} minutes`,
         tag: `upcoming-${task.id}`,
-        url: buildTaskPath(task.id),
+        url: taskDetailPath(task),
         taskId: task.id,
       })
       if (delivered) notified.add(task.id)

@@ -68,7 +68,18 @@ export function initQuickActions(
   async function saveColor(button: HTMLButtonElement, taskId: string, color: string | null) {
     if (__signal.aborted || button.disabled) return
     close()
-    button.closest(".kanban-card")?.querySelector<HTMLElement>(".card-more-btn")?.focus({ preventScroll: true })
+    const card = button.closest<HTMLElement>(".kanban-card")
+    card?.querySelector<HTMLElement>(".card-more-btn")?.focus({ preventScroll: true })
+    if (card) {
+      if (color) {
+        card.setAttribute("data-task-color", "")
+        card.style.setProperty("--knight-task-color", color)
+        card.style.setProperty("--card-accent", color)
+      } else {
+        card.removeAttribute("data-task-color")
+        card.style.removeProperty("--knight-task-color")
+      }
+    }
     button.disabled = true
     try {
       const response = await fetch(buildTaskApiUrl(taskId), {
@@ -412,10 +423,9 @@ export function initQuickActions(
 
         content.appendChild(grid)
 
-        // Clear color button
         const clearBtn = document.createElement("button")
         clearBtn.className = "popover-item clear-color-btn"
-        clearBtn.textContent = "✕ Clear color"
+        clearBtn.append(createSpriteIconElement("x", { size: 14, strokeWidth: 1.75 }), " Clear color")
         clearBtn.addEventListener("click", () => {
           void saveColor(btn, taskId, null)
         }, { signal: __signal })

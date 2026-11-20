@@ -6,6 +6,7 @@ import type { APIRoute } from "astro"
 import { ensureAgentTokenSchema } from "@domains/auth"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
 import { NamedBoardTaskRepository } from "@domains/tasks/persistence/named-board-task-repository"
+import { validateBoardKey } from "@domains/tasks"
 import { NamedBoardRepository } from "@domains/tasks/persistence/named-board-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import {
@@ -169,6 +170,30 @@ const patchBoard: APIRoute = async (context) => {
       return apiError("Keep an active owner before restricting this Board or disabling shared administrator management.", 409)
     return apiJson(
       { ok: true, accessPending: result.status === "committed-locked" },
+      result.status === "committed-locked" ? 202 : 200
+    )
+  }
+  if (body.action === "ticket-prefix") {
+    if (!Number.isSafeInteger(body.revision) || Number(body.revision) < 1)
+      return apiError("Refresh the Board before changing its key.", 400)
+    const rawKey = typeof body.ticketPrefix === "string" ? body.ticketPrefix : ""
+    const check = validateBoardKey(rawKey)
+    if (!check.ok) return apiError(check.error, 400)
+    const result = await repository.updateTicketPrefix(
+      user.principal,
+      id,
+      check.key,
+      Number(body.revision)
+    )
+    if (result.status === "locked") return apiError("Board access is temporarily locked.", 503)
+    if (result.result === "invalid") return apiError(result.error, 400)
+    if (result.result === "unavailable") return apiError("Board unavailable", 404)
+    if (result.result === "stale")
+      return apiError("This Board changed. Refresh it before trying again.", 409)
+    if (result.result === "duplicate-key")
+      return apiError("That Board key is already in use by another Board. Choose a unique key.", 409)
+    return apiJson(
+      { ok: true, ticketPrefix: check.key, accessPending: result.status === "committed-locked" },
       result.status === "committed-locked" ? 202 : 200
     )
   }

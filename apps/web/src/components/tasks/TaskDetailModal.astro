@@ -9,6 +9,8 @@ import TaskDetailSection from "./TaskDetailSection.astro"
 import TaskDetailLayoutEditor from "./TaskDetailLayoutEditor.astro"
 import StrategicEvaluator from "./StrategicEvaluator.astro";
 import Icon from "../ui/Icon.astro";
+import { ensureSchema, getPersistenceClient, SettingsRepository } from "@domains/tasks"
+import { taskDetailServerSettingKey } from "@lib/task-detail-layout"
 import { t } from "../../i18n/translations"
 
 interface Props { suppressUrlOpen?: boolean; namedBoard?: boolean }
@@ -17,6 +19,14 @@ const { suppressUrlOpen = false, namedBoard = false } = Astro.props
 const organization = await organizationLabelsFor(Astro)
 const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
 const mentionUser = verifiedIngressUser(Astro.locals)
+let serverLayoutJson: string | null = null
+try {
+  const client = getPersistenceClient()
+  await ensureSchema(client)
+  const stored = await new SettingsRepository(client).getByKeys([taskDetailServerSettingKey])
+  const raw = stored[taskDetailServerSettingKey]
+  if (typeof raw === "string" && raw.trim()) serverLayoutJson = raw
+} catch { /* fallback to built-in layout defaults */ }
 ---
     <!-- Task Detail Centered Panel -->
     <div
@@ -53,8 +63,11 @@ const mentionUser = verifiedIngressUser(Astro.locals)
           </div>
           <div class="flex gap-1.5 items-center flex-none">
             <div id="td-task-actions" hidden class="flex gap-1.5 items-center">
-              <button id="td-toggle-favorite" type="button" class="p-1.5 hover:bg-bg-hover hover:text-text-primary text-text-secondary rounded transition-colors" title="Favorite" aria-label="Favorite">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17.75l-6.172 3.245l1.179 -6.873l-5 -4.867l6.9 -1l3.086 -6.253l3.086 6.253l6.9 1l-5 4.867l1.179 6.873z" /></svg>
+              <button id="td-toggle-promote" type="button" aria-pressed="false" class="p-1.5 hover:bg-bg-hover hover:text-warning text-text-secondary rounded transition-colors aria-pressed:text-warning aria-pressed:bg-warning/15" title={t("kanban.promote_card", locale)} aria-label={t("kanban.promote_card", locale)}>
+                <Icon name="star" size={18} />
+              </button>
+              <button id="td-toggle-favorite" type="button" aria-pressed="false" class="p-1.5 hover:bg-bg-hover hover:text-text-primary text-text-secondary rounded transition-colors aria-pressed:text-danger aria-pressed:bg-danger/10" title="Favorite" aria-label="Favorite">
+                <Icon name="heart" size={18} />
               </button>
               <button id="td-copy-link" type="button" class="p-1.5 hover:bg-bg-hover hover:text-text-primary text-text-secondary rounded transition-colors" title={t("task_modal.copy_link", locale)} aria-label={t("task_modal.copy_link", locale)}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 15l6 -6" /><path d="M11 6l.463 -.536a5 5 0 0 1 7.071 7.072l-.534 .464" /><path d="M13 18l-.397 .534a5.068 5.068 0 0 1 -7.127 0a4.972 4.972 0 0 1 0 -7.071l.524 -.463" /></svg>
@@ -118,7 +131,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
           <div class="td-reading-column">
             <div id="td-layout-panel" hidden>
               <h2 class="td-layout-title">{t("task_layout.layout", locale)}</h2>
-              <TaskDetailLayoutEditor locale={locale} />
+              <TaskDetailLayoutEditor locale={locale} scope="personal" serverLayoutJson={serverLayoutJson} />
             </div>
             <div class="td-task-actions flex flex-wrap items-center gap-2">
               <button id="td-pin-action" type="button" aria-pressed="false"
@@ -155,7 +168,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
               ></textarea>
             </div>
 
-            <div id="td-sections" data-layout-order="sections">
+            <div id="td-sections" data-layout-order="sections" data-server-layout={serverLayoutJson ?? undefined}>
             <TaskDetailSection name="description">
               <div class="td-description-view">
                 <div class="td-description-view__actions">

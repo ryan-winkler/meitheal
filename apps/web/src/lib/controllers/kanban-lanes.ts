@@ -14,7 +14,7 @@
 import { createClientLogger } from "@lib/client-logger"
 import { promptDialog } from "@lib/prompt-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { escapeHtml } from "@lib/safe-html"
+import { showToast } from "@lib/toast"
 
 const log = createClientLogger("kanban-lanes")
 
@@ -65,16 +65,7 @@ export function initLaneManagementPanel(): void {
   }
 
   function notify(message: string, variant: "error" | "success" | "warning" = "success") {
-    if (window.showToast) {
-      window.showToast(message, variant)
-      return
-    }
-
-    const toast = document.createElement("div")
-    toast.className = `toast ${variant}`
-    toast.textContent = message
-    document.getElementById("toast-container")?.appendChild(toast)
-    setTimeout(() => toast.remove(), 3000)
+    showToast(message, variant)
   }
 
   const renderLaneList = async (): Promise<void> => {

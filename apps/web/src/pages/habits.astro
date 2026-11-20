@@ -19,6 +19,7 @@ import { newOrganizationLabel, organizationLabelsFor } from "@lib/organization-l
  * @see docs/decisions/ADR-007-hierarchy-model.md
  */
 import UnifiedBar from "../components/layout/UnifiedBar.astro"
+import Icon from "../components/ui/Icon.astro"
 import Layout from "../layouts/Layout.astro"
 
 import { scopeBoardAccess, scopePermits } from "@domains/tasks/board-scope"
@@ -479,22 +480,14 @@ const habitsBootstrap = serializeForScript({ habits })
 
   <button
     id="habits-go-top"
-    class="habits-go-top"
+    class="go-top-btn habits-go-top"
     type="button"
     aria-label="Scroll to top"
     title="Back to top"
     hidden
   >
-    ↑
+    <Icon name="arrow-up" size={18} sprite />
   </button>
-
-  <div
-    id="toast-container"
-    class="toast-container"
-    aria-live="polite"
-    role="status"
-    data-no-scroll-lock="true"
-  />
 
   <script id="habits-bootstrap" type="application/json" set:html={habitsBootstrap}></script>
 
@@ -982,21 +975,8 @@ const habitsBootstrap = serializeForScript({ habits })
   }
 
   .habits-go-top {
-    position: fixed;
-    right: 18px;
-    bottom: var(--floating-action-bottom, calc(18px + env(safe-area-inset-bottom, 0px)));
-    z-index: 25;
-    width: 44px;
-    height: 44px;
-    border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--bg-card) 94%, transparent);
-    color: var(--text-primary);
-    box-shadow: 0 12px 28px -18px rgba(0, 0, 0, 0.5);
-    cursor: pointer;
     opacity: 0;
     transform: translateY(10px);
-    transition: opacity 160ms ease, transform 160ms ease;
   }
 
   .habits-go-top.is-visible {

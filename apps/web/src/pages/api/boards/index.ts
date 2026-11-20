@@ -1,7 +1,7 @@
 import { boardScopeErrorResponse } from "@lib/board-http"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import type { APIRoute } from "astro"
-import { isNamedBoardPreset } from "@domains/tasks"
+import { isNamedBoardPreset, validateBoardKey } from "@domains/tasks"
 import { NamedBoardRepository } from "@domains/tasks/persistence/named-board-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { assertBoardDirectoryCurrent, boardViewResponse, readBoardDirectory } from "@lib/board-view"
@@ -36,12 +36,21 @@ const createBoard: APIRoute = async (context) => {
   const preset = body?.preset
   if (preset !== undefined && !isNamedBoardPreset(preset))
     return apiError("Choose an available Board preset.", 400)
+  const rawKey = typeof body?.ticketPrefix === "string" ? body.ticketPrefix.trim() : ""
+  let ticketPrefix: string | undefined
+  if (rawKey.length > 0) {
+    const check = validateBoardKey(rawKey)
+    if (!check.ok) return apiError(check.error, 400)
+    ticketPrefix = check.key
+  }
   if (!available("organizer")) return apiError("The Boards organizer is unavailable.", 404)
   const user = await currentBoardContext(context, true)
   if (!user) return apiError("Use your current authenticated session to create a Board.", 403)
   await ensureSchema()
   const repository = new NamedBoardRepository(getPersistenceClient())
-  const result = await repository.create(user.principal, name, preset)
+  const result = await repository.create(user.principal, name, preset, ticketPrefix)
+  if (result.status === "unchanged" && result.result === "duplicate-key")
+    return apiError("That Board key is already in use by another Board. Choose a unique key.", 409)
   if (result.status === "committed") return apiJson(result.result, 201)
   if (result.status === "committed-locked")
     return apiJson({ ...result.result, accessPending: true }, 202)

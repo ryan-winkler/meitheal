@@ -61,7 +61,7 @@ const deadline = `CASE WHEN can_defer THEN last_activity + days * ${inactivityDa
 function rowsCte(preview = false, stalledOnly = false) {
   return `input(area_id, proposed, now_ms) AS (VALUES (?, ?, ?)),
     eligible AS MATERIALIZED (
-      SELECT tasks.id, tasks.title, tasks.area_id, tasks.ticket_number, tasks.status,
+      SELECT tasks.id, tasks.title, tasks.area_id, tasks.ticket_number, tasks.ticket_ref, tasks.status,
         ${taskTimestampMs("tasks.updated_at")} AS updated_at, tasks.deferral_revision,
         ${inactivityClockSql} AS last_activity, ${inactivityDaysSql(true)} AS days,
         ${stalledOnly ? `(${inactivityProtectionSql})` : "1"} AS can_defer
@@ -137,7 +137,7 @@ export class TaskInactivityRepository {
           `${rowsCte(true, filter === "stalled")}, filtered AS MATERIALIZED (SELECT * FROM dated WHERE ${where}),
           bounds AS (SELECT COUNT(*) AS total, MAX(1, MIN(?, (COUNT(*) + 24) / 25)) AS page FROM filtered),
           items AS (
-            SELECT id, title, area_id, ticket_number, status, last_activity, deadline, stall_since
+            SELECT id, title, area_id, ticket_number, ticket_ref, status, last_activity, deadline, stall_since
             FROM filtered ORDER BY ${sort}, id
             LIMIT 25 OFFSET (SELECT (page - 1) * 25 FROM bounds)
           )
@@ -171,6 +171,7 @@ export class TaskInactivityRepository {
             title,
             area_id,
             ticket_number,
+            ticket_ref,
             status,
             last_activity,
             deadline,
@@ -181,6 +182,7 @@ export class TaskInactivityRepository {
             area_id: area_id === null ? null : String(area_id),
             status: String(status),
             ticket_number: ticket_number === null ? null : Number(ticket_number),
+            ticket_key: ticket_ref === null ? null : String(ticket_ref),
             last_activity: Number(last_activity),
             deadline: deadline === null ? null : Number(deadline),
             stall_since: stall_since === null ? null : Number(stall_since)

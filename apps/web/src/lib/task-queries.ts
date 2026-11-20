@@ -389,7 +389,7 @@ function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "
 
 function completedTodayQuery(scope: BoardScope, filter: ReturnType<typeof todayCompletionFilter>, placement?: TaskReadPlacement) {
   const context = taskReadPlacement(placement)
-  const query = scopedTaskRead(scope, sourceSql(`SELECT id, title FROM scoped_tasks AS tasks WHERE ${filter.sql} AND ${context.sql}
+  const query = scopedTaskRead(scope, sourceSql(`SELECT id, title, ticket_ref AS ticket_key FROM scoped_tasks AS tasks WHERE ${filter.sql} AND ${context.sql}
           ORDER BY CASE WHEN typeof(updated_at) = 'text' AND updated_at NOT LIKE '%T%' AND updated_at NOT LIKE '%:%'
             THEN ? ELSE ${taskTimestampMs("updated_at")} END DESC, rowid DESC
           LIMIT 20`, [...filter.args, ...context.args, filter.firstInstant]))
@@ -397,7 +397,7 @@ function completedTodayQuery(scope: BoardScope, filter: ReturnType<typeof todayC
 }
 
 function completedTodaySummaries(rows: Row[]) {
-  return rows.map(row => ({ id: String(row.id), title: String(row.title) }))
+  return rows.map(row => ({ id: String(row.id), title: String(row.title), ticket_key: row.ticket_key == null ? null : String(row.ticket_key) }))
 }
 
 export function todayScopeProblem(params: URLSearchParams, timezone: string, day: string) {
@@ -470,7 +470,7 @@ export interface TodayTaskCounts {
   carriedForward: number
   remaining: number
   completionPercent: number
-  completedTasks?: Array<{ id: string; title: string }>
+  completedTasks?: Array<{ id: string; title: string; ticket_key: string | null }>
 }
 
 /** Count the complete queue and read its renderable rows from one SQLite snapshot.

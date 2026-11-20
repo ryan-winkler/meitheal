@@ -20,13 +20,32 @@ export function currentTaskApiContext(): TaskApiContext | null {
   return boardId && session ? { boardId, session, ...(actorKey ? { actorKey } : {}), ...(boardName ? { boardName } : {}) } : null
 }
 
+function replaceWindowFetch(wrapped: typeof window.fetch): boolean {
+  try {
+    Object.defineProperty(window, "fetch", {
+      value: wrapped,
+      writable: true,
+      configurable: true,
+      enumerable: true,
+    })
+    return true
+  } catch {
+    try {
+      window.fetch = wrapped
+      return true
+    } catch {
+      return false
+    }
+  }
+}
+
 /** Installed once; consult current DOM on each request so Astro navigation cannot retain an old Board. */
 export function installTaskApiContext(): void {
   const state = window as typeof window & { __meithealTaskApiInstalled?: boolean }
   if (state.__meithealTaskApiInstalled) return
   state.__meithealTaskApiInstalled = true
   const previous = window.fetch.bind(window)
-  window.fetch = (input, init) => {
+  const wrapped: typeof window.fetch = (input, init) => {
     const context = currentTaskApiContext()
     if (!context) return previous(input, init)
     const url = new URL(input instanceof Request ? input.url : String(input), window.location.href)
@@ -37,6 +56,7 @@ export function installTaskApiContext(): void {
     const headers = taskApiHeaders({ ...context, boardId: explicitBoard || context.boardId }, init?.headers ?? (input instanceof Request ? input.headers : undefined))
     return previous(input, { ...init, headers })
   }
+  replaceWindowFetch(wrapped)
 }
 
 if (typeof window !== "undefined") installTaskApiContext()

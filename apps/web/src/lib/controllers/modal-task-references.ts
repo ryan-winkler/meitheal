@@ -2,7 +2,7 @@ import type { SearchResultItem } from "@domains/search"
 import { fetchOnlineSearch, searchWorkerReady, searchWorkerScope } from "@lib/online-search-client"
 import { commentMentionContextHeader, commentMentionToken } from "@lib/comment-mentions"
 import { fetchCommentPrivate } from "@lib/comment-mention-client"
-import { buildTaskPath } from "@lib/task-detail-handoff"
+import { taskDetailPath } from "@lib/task-page-url"
 
 const limit = 5
 
@@ -18,7 +18,7 @@ function referenceAtCaret(input: HTMLTextAreaElement) {
 }
 
 function ticketLabel(item: SearchResultItem): string {
-  return item.subtitle?.match(/^MTH-[0-9]+(?= · )/)?.[0] ?? "Task"
+  return item.subtitle?.match(/^[A-Z0-9]+-[0-9]+(?= · |$)/)?.[0] ?? "Task"
 }
 
 export function initModalTaskReferences(overlay: HTMLElement, signal: AbortSignal): () => void {
@@ -109,7 +109,7 @@ export function initModalTaskReferences(overlay: HTMLElement, signal: AbortSigna
             .map(item => {
               const label = ticketLabel(item)
               return { title: item.title, detail: label === "Task" ? picker.dataset.taskLabel ?? "" : label,
-                replacement: `[${label}](${buildTaskPath(item.taskId!)})` }
+                replacement: `[${label}](${taskDetailPath(label === "Task" ? item.taskId! : label)})` }
             })
         }
         list.replaceChildren(...results.map((item, index) => {

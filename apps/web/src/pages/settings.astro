@@ -16,6 +16,7 @@ import SettingsRules from "../components/settings/SettingsRules.astro"
 import SettingsSectionIntro from "../components/settings/SettingsSectionIntro.astro"
 import SettingsShellNav from "../components/settings/SettingsShellNav.astro"
 import SettingsTasksBoards from "../components/settings/SettingsTasksBoards.astro"
+import Icon from "../components/ui/Icon.astro"
 import Layout from "../layouts/Layout.astro"
 import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
@@ -139,18 +140,16 @@ const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "c
     </div>
   </div>
 
-  <button id="settings-go-top" type="button" aria-label={t("settings.scroll_to_top", locale)} hidden>
-    <span aria-hidden="true">↑</span>
-  </button>
-
-  <div
-    id="toast-container"
-    class="toast-container"
-    aria-live="polite"
-    role="status"
-    data-no-scroll-lock="true"
+  <button
+    id="settings-go-top"
+    class="go-top-btn"
+    type="button"
+    aria-label={t("settings.scroll_to_top", locale)}
+    title="Back to top"
+    hidden
   >
-  </div>
+    <Icon name="arrow-up" size={18} sprite />
+  </button>
 
   <script>
     import "@lib/settings-page"
@@ -261,26 +260,6 @@ const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "c
     width: 1px;
     height: 160px;
     pointer-events: none;
-  }
-
-  #settings-go-top:not([hidden]) {
-    position: fixed;
-    inset-block-end: var(--floating-action-bottom, calc(28px + env(safe-area-inset-bottom, 0px)));
-    inset-inline-end: 16px;
-    z-index: 50;
-    width: 44px;
-    height: 44px;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: var(--bg-card);
-    color: var(--text-primary);
-    font-size: 18px;
-    cursor: pointer;
-  }
-
-  #settings-go-top:focus-visible {
-    outline: 2px solid var(--border-focus);
-    outline-offset: 2px;
   }
 
   .settings-shell__content {

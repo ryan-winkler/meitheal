@@ -39,11 +39,17 @@ export function readAppearancePreferences(): AppearancePreferences {
 
 function setSidebarCollapsed(collapsed: boolean): void {
   document.body.classList.toggle("sidebar-collapsed", collapsed)
-  const button = document.getElementById("sidebar-edge-toggle")
   const label = collapsed ? "Expand sidebar (Ctrl+B)" : "Collapse sidebar (Ctrl+B)"
-  button?.setAttribute("aria-expanded", String(!collapsed))
-  button?.setAttribute("aria-label", label)
-  button?.setAttribute("title", label)
+  const toggles = [
+    document.getElementById("sidebar-edge-toggle"),
+    ...document.querySelectorAll<HTMLElement>("[data-sidebar-collapse-toggle]"),
+  ]
+  for (const button of toggles) {
+    if (!button) continue
+    button.setAttribute("aria-expanded", String(!collapsed))
+    button.setAttribute("aria-label", label)
+    button.setAttribute("title", label)
+  }
 }
 
 function hasVisibleSidebarFocus(): boolean {
@@ -124,6 +130,22 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
     }
   }
   edgeButton?.addEventListener("click", toggle, { signal })
+  sidebar?.querySelectorAll<HTMLElement>("[data-sidebar-collapse-toggle]").forEach(btn => {
+    btn.addEventListener("click", toggle, { signal })
+  })
+  window.addEventListener("meitheal:sidebar-ensure-expanded", () => {
+    if (innerWidth <= 768) {
+      sidebar?.classList.add("open")
+      return
+    }
+    if (document.documentElement.dataset.appearanceNavigation === "navbar") return
+    if (document.body.classList.contains("sidebar-collapsed")) {
+      setSidebarCollapsed(false)
+      if (document.documentElement.dataset.appearanceSidebar === "remember") {
+        try { localStorage.setItem("meitheal_sidebar_collapsed", "false") } catch { /* Still usable without storage. */ }
+      }
+    }
+  }, { signal })
   document.addEventListener("keydown", event => {
     if (event.defaultPrevented || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "b" || event.repeat) return
     if ((event.target as HTMLElement)?.closest("input, textarea, select, [contenteditable=true]")) return

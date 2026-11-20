@@ -1,23 +1,123 @@
 ---
 import TablerModal from "../ui/TablerModal.astro"
+import Icon from "../ui/Icon.astro"
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 
 const { locale } = Astro.props as { locale: Locale }
 ---
 <template id="preferred-quick-add-template">
-  <TablerModal id="workspace-quick-add" title={t("setup.quick", locale)} size="sm">
-    <form id="workspace-quick-add-form">
-      <label for="workspace-quick-title">{t("setup.quick_placeholder", locale)}</label>
-      <input id="workspace-quick-title" name="title" class="form-input" maxlength="500" required data-tabler-initial-focus />
-      <p role="status" data-quick-add-saving hidden>{t("setup.quick_saving", locale)}</p>
-      <p role="alert" data-quick-add-error hidden
+  <TablerModal
+    id="workspace-quick-add"
+    title={t("dashboard.quick_add", locale)}
+    descriptionId="workspace-quick-add-subtitle"
+  >
+    <p id="workspace-quick-add-subtitle" class="qa-dialog-subtitle">
+      {t("dashboard.quick_add_subtitle", locale)}
+    </p>
+    <form id="workspace-quick-add-form" class="qa-dialog-form">
+      <div class="qa-inline-row">
+        <input
+          id="workspace-quick-title"
+          name="title"
+          type="text"
+          class="form-input qa-inline-input"
+          aria-label={t("dashboard.quick_add", locale)}
+          placeholder={t("dashboard.quick_add_placeholder", locale)}
+          autocomplete="off"
+          maxlength="500"
+          required
+          data-tabler-initial-focus
+        />
+        <button class="btn btn-primary qa-inline-submit" type="submit">
+          {t("dashboard.add", locale)}
+        </button>
+      </div>
+      <p class="qa-parse-preview" data-quick-add-preview role="status" aria-live="polite" hidden></p>
+      <p class="sr-only" role="status" data-quick-add-saving hidden>{t("setup.quick_saving", locale)}</p>
+      <p
+        class="qa-dialog-error"
+        role="alert"
+        data-quick-add-error
+        hidden
         data-rejected={t("setup.quick_rejected", locale)}
-        data-uncertain={t("setup.quick_uncertain", locale)}></p>
+        data-uncertain={t("setup.quick_uncertain", locale)}
+      ></p>
     </form>
     <Fragment slot="footer">
-      <button type="button" class="btn btn-secondary" data-quick-add-full>{t("setup.quick_full_form", locale)}</button>
-      <button class="btn btn-primary" type="submit" form="workspace-quick-add-form">{t("setup.quick_submit", locale)}</button>
+      <button type="button" class="btn btn-ghost qa-full-btn" data-quick-add-full>
+        <Icon name="arrows-maximize" size={14} sprite />
+        <span>{t("setup.quick_full_form", locale)}</span>
+      </button>
+      <button type="button" class="btn btn-ghost" data-quick-add-cancel>
+        {t("task_modal.btn_cancel", locale)}
+      </button>
     </Fragment>
   </TablerModal>
 </template>
+
+<style>
+  :global(#workspace-quick-add .modal-dialog) {
+    max-width: 560px;
+  }
+  :global(#workspace-quick-add .modal-header) {
+    border-bottom: 0;
+    padding-bottom: 4px;
+  }
+  :global(#workspace-quick-add .modal-body) {
+    padding-top: 0;
+  }
+  :global(#workspace-quick-add .modal-footer) {
+    justify-content: space-between;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  :global(.qa-dialog-subtitle) {
+    margin: 0 0 14px;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+  }
+  :global(.qa-dialog-form) {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  :global(.qa-inline-row) {
+    display: flex;
+    align-items: stretch;
+    gap: 10px;
+  }
+  :global(.qa-inline-input) {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 44px;
+  }
+  :global(.qa-inline-submit) {
+    flex-shrink: 0;
+    min-width: 76px;
+    min-height: 44px;
+  }
+  :global(.qa-parse-preview) {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--accent-text, var(--accent));
+  }
+  :global(.qa-dialog-error) {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--danger, #ef4444);
+  }
+  :global(.qa-full-btn) {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  @media (max-width: 480px) {
+    :global(.qa-inline-row) {
+      flex-direction: column;
+    }
+    :global(.qa-inline-submit) {
+      width: 100%;
+    }
+  }
+</style>

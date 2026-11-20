@@ -1,28 +1,45 @@
 ---
 import Icon from "../ui/Icon.astro"
 import { readBoardNavigationContext } from "../../lib/board-workspace"
-import SidebarReorderHandle from "./SidebarReorderHandle.astro"
 import { t } from "../../i18n/translations"
 import { TASK_VIEW_ICONS, TASK_VIEW_LABELS, taskViewUrl, type TaskView } from "../../lib/task-view-route"
+import type { SidebarSectionId } from "@domains/navigation/sidebar-menu"
 
 const initialBoard = readBoardNavigationContext(Astro.url)
 
 const views = (["calendar", "kanban", "timeline", "table"] as const satisfies readonly TaskView[]).map(id => {
   const href = taskViewUrl(new URL(initialBoard ? `/boards/${encodeURIComponent(initialBoard.boardId)}` : "/tasks", Astro.url), id, true)
-  return { id, href: href.pathname + href.search + href.hash, icon: TASK_VIEW_ICONS[id], label: TASK_VIEW_LABELS[id] }
+  return { id, itemKey: `view-${id}`, href: href.pathname + href.search + href.hash, icon: TASK_VIEW_ICONS[id], label: TASK_VIEW_LABELS[id] }
 })
 
-export interface Props {
-  navItems: {
-    key: string
-    label: string
-    isActive: boolean
-    href: string
-    defaultHref?: string
-    icon: string
-  }[]
+export interface SidebarNavItemView {
+  key: string
+  label: string
+  defaultLabel: string
+  isActive: boolean
+  href: string
+  defaultHref?: string
+  icon: string
+  hidden: boolean
+  removable?: boolean
+  taskView?: TaskView
 }
-const { navItems } = Astro.props
+
+export interface SidebarSectionView {
+  id: SidebarSectionId
+  label: string
+  defaultLabel: string
+  hidden: boolean
+  hasVisibleItems: boolean
+  items: SidebarNavItemView[]
+}
+
+export interface Props {
+  sections: SidebarSectionView[]
+  pinnedTaskViews: readonly TaskView[]
+}
+const { sections, pinnedTaskViews } = Astro.props
+const pinnedViewSet = new Set<string>(pinnedTaskViews)
 const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
 
 /** Check if a URL is external (absolute http/https) */
@@ -31,135 +48,307 @@ function isExternal(href: string): boolean {
 }
 ---
 
-<ul class="nav-list nav-overflow__primary flex flex-col gap-1 list-none m-0 p-0 w-full"
-  data-nav-overflow-primary data-task-views-primary={navItems.some(item => item.key === "tasks") || undefined}>
-  {
-    navItems.map((item) => {
-      const external = isExternal(item.href)
-      if (item.key === "tasks") {
-        return (
-          <>
-            <li class="nav-item nav-item--tasks relative" data-sidebar-group={item.key}>
+<div class="sidebar-sections" data-sidebar-sections>
+  {sections.map(section => (
+    <section
+      class="sidebar-section"
+      data-sidebar-section={section.id}
+      data-sidebar-section-hidden={section.hidden ? "true" : undefined}
+      data-sidebar-section-empty={!section.hasVisibleItems ? "true" : undefined}
+      aria-label={section.label}
+    >
+      <div class="sidebar-section__header" data-sidebar-section-header={section.id}>
+        <button
+          type="button"
+          class="sidebar-edit-grip"
+          data-sidebar-section-drag={section.id}
+          draggable="true"
+          aria-keyshortcuts="ArrowUp ArrowDown"
+          aria-label={t("sidebar.reorder_section", locale, { label: section.label })}
+          title={t("sidebar.reorder_section", locale, { label: section.label })}
+        >
+          <Icon name="grip-vertical" size={14} />
+        </button>
+        <span
+          class="sidebar-section__title"
+          data-sidebar-section-label={section.id}
+          data-default-label={section.defaultLabel}
+        >
+          {section.label}
+        </span>
+        <div class="sidebar-edit-actions">
+          <button
+            type="button"
+            class="sidebar-edit-btn"
+            data-sidebar-section-rename={section.id}
+            aria-label={t("sidebar.rename_section", locale, { label: section.label })}
+            title={t("sidebar.rename_section", locale, { label: section.label })}
+          >
+            <Icon name="pencil" size={14} />
+          </button>
+          <button
+            type="button"
+            class="sidebar-edit-btn"
+            data-sidebar-section-toggle={section.id}
+            aria-pressed={section.hidden ? "true" : "false"}
+            aria-label={section.hidden
+              ? t("sidebar.show_section", locale, { label: section.label })
+              : t("sidebar.hide_section", locale, { label: section.label })}
+            title={section.hidden
+              ? t("sidebar.show_section", locale, { label: section.label })
+              : t("sidebar.hide_section", locale, { label: section.label })}
+          >
+            <span class="sidebar-eye-visible"><Icon name="eye" size={14} /></span>
+            <span class="sidebar-eye-hidden"><Icon name="eye-off" size={14} /></span>
+          </button>
+        </div>
+      </div>
+
+      <ul
+        class="nav-list nav-overflow__primary flex flex-col gap-1 list-none m-0 p-0 w-full"
+        data-nav-overflow-primary
+        data-sidebar-section-list={section.id}
+        data-task-views-primary={section.items.some(item => item.key === "tasks") || undefined}
+      >
+        {section.items.map(item => {
+          const external = isExternal(item.href)
+          if (item.key === "tasks") {
+            return (
+              <li
+                class="nav-item nav-item--tasks sidebar-nav-item relative"
+                data-sidebar-group={item.key}
+                data-sidebar-item-key={item.key}
+                data-sidebar-item-hidden={item.hidden ? "true" : undefined}
+              >
+                <div class="nav-row flex items-center gap-1 min-w-0">
+                  <button
+                    type="button"
+                    class="sidebar-edit-grip"
+                    data-sidebar-item-drag={item.key}
+                    draggable="true"
+                    aria-keyshortcuts="ArrowUp ArrowDown"
+                    aria-label={t("sidebar.reorder_item", locale, { label: item.label })}
+                    title={t("sidebar.reorder_item", locale, { label: item.label })}
+                  >
+                    <Icon name="grip-vertical" size={14} />
+                  </button>
+                  <a
+                    href={item.href}
+                    class={`nav-link flex-1 min-w-0 ${item.isActive ? "active" : ""}`}
+                    data-page={item.key}
+                    data-board-nav-default={item.defaultHref ?? item.href}
+                    title={item.label}
+                    data-tooltip={item.label}
+                    data-astro-prefetch="viewport"
+                    aria-current={item.isActive ? "page" : undefined}
+                    aria-label={item.label}
+                  >
+                    <span class="nav-icon">
+                      <Icon name={item.icon as any} />
+                    </span>
+                    <span class="nav-label" data-sidebar-item-label={item.key} data-default-label={item.defaultLabel}>
+                      {item.label}
+                    </span>
+                  </a>
+                  <button
+                    type="button"
+                    class="task-view-disclosure"
+                    id="tasks-submenu-toggle"
+                    aria-expanded="false"
+                    aria-controls="tasks-nav-submenu"
+                    aria-label="Task views"
+                    title="Task views"
+                  >
+                    <Icon name="chevron-down" size={13} />
+                  </button>
+                  <div class="sidebar-edit-actions">
+                    <button
+                      type="button"
+                      class="sidebar-edit-btn"
+                      data-sidebar-item-rename={item.key}
+                      aria-label={t("sidebar.rename_item", locale, { label: item.label })}
+                      title={t("sidebar.rename_item", locale, { label: item.label })}
+                    >
+                      <Icon name="pencil" size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      class="sidebar-edit-btn"
+                      data-sidebar-item-toggle={item.key}
+                      aria-pressed={item.hidden ? "true" : "false"}
+                      aria-label={item.hidden
+                        ? t("sidebar.show_item", locale, { label: item.label })
+                        : t("sidebar.hide_item", locale, { label: item.label })}
+                      title={item.hidden
+                        ? t("sidebar.show_item", locale, { label: item.label })
+                        : t("sidebar.hide_item", locale, { label: item.label })}
+                    >
+                      <span class="sidebar-eye-visible"><Icon name="eye" size={14} /></span>
+                      <span class="sidebar-eye-hidden"><Icon name="eye-off" size={14} /></span>
+                    </button>
+                  </div>
+                </div>
+                <ul id="tasks-nav-submenu" class="task-view-submenu" data-nav-overflow-submenu hidden>
+                  {views.map(view => {
+                    const isPinned = pinnedViewSet.has(view.id)
+                    return (
+                      <li class="task-view-subitem">
+                        <a href={view.href} class="nav-link task-view-sublink" data-task-view-link={view.id} data-astro-prefetch="false">
+                          <Icon name={view.icon} size={16} />
+                          <span>{view.label}</span>
+                        </a>
+                        <button
+                          type="button"
+                          class="task-view-pin"
+                          data-task-view-pin={view.id}
+                          aria-pressed={String(isPinned)}
+                          aria-label={isPinned ? `Unpin ${view.label} from sidebar` : `Pin ${view.label} to sidebar`}
+                          title={isPinned ? `Unpin ${view.label}` : `Pin ${view.label}`}
+                        >
+                          <Icon name="pin" size={15} />
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </li>
+            )
+          }
+
+          return (
+            <li
+              class="sidebar-nav-item relative"
+              data-sidebar-group={item.key}
+              data-sidebar-item-key={item.key}
+              data-sidebar-item-hidden={item.hidden ? "true" : undefined}
+              data-sidebar-item-removable={item.removable ? "true" : undefined}
+              data-sidebar-pin-presence={item.key === "system-pinned" || undefined}
+              hidden={item.key === "system-pinned"}
+            >
               <div class="nav-row flex items-center gap-1 min-w-0">
+                <button
+                  type="button"
+                  class="sidebar-edit-grip"
+                  data-sidebar-item-drag={item.key}
+                  draggable="true"
+                  aria-keyshortcuts="ArrowUp ArrowDown"
+                  aria-label={t("sidebar.reorder_item", locale, { label: item.label })}
+                  title={t("sidebar.reorder_item", locale, { label: item.label })}
+                >
+                  <Icon name="grip-vertical" size={14} />
+                </button>
                 <a
                   href={item.href}
-                  class={`nav-link flex-1 min-w-0 ${item.isActive ? "active" : ""}`}
+                  class={`nav-link flex-1 min-w-0 ${item.isActive ? "active" : ""} ${external ? "nav-link--external" : ""}`}
                   data-page={item.key}
-                  data-board-nav-default={item.defaultHref ?? item.href}
+                  data-task-view-link={item.taskView}
+                  data-board-nav-default={external || item.key === "settings" || item.taskView ? undefined : item.defaultHref ?? item.href}
                   title={item.label}
                   data-tooltip={item.label}
-                  data-astro-prefetch="viewport"
+                  data-astro-prefetch={item.key === "system-pinned" || item.key === "activity" || item.key === "mentionInbox" || item.taskView ? "false" : external ? undefined : "viewport"}
                   aria-current={item.isActive ? "page" : undefined}
-                  aria-label={item.label}
+                  aria-describedby={item.key === "settings" ? "connection-status" : undefined}
+                  aria-label={`${item.label}${external ? " (opens in new tab)" : ""}`}
+                  {...(external
+                    ? { target: "_blank", rel: "noopener noreferrer" }
+                    : {})}
                 >
                   <span class="nav-icon">
                     <Icon name={item.icon as any} />
                   </span>
-                  <span class="nav-label">{item.label}</span>
+                  <span class="nav-label" data-sidebar-item-label={item.key} data-default-label={item.defaultLabel}>
+                    {item.label}
+                  </span>
+                  {item.key === "settings" && (
+                    <span
+                      class="status-indicator sidebar-settings-readiness"
+                      id="connection-status"
+                      role="status"
+                      aria-live="polite"
+                      data-ready={t("status.app_ready", locale)}
+                      data-storage-offline={t("status.db_offline", locale)}
+                      data-unreachable={t("status.app_unreachable", locale)}
+                    >
+                      <span class="status-dot w-2 h-2 rounded-full bg-gray-400" aria-hidden="true"></span>
+                      <span class="status-text sr-only">{t("status.checking", locale)}</span>
+                    </span>
+                  )}
+                  {external && (
+                    <span class="nav-external-icon" aria-hidden="true">↗</span>
+                  )}
                 </a>
-                <button
-                  type="button"
-                  class="task-view-disclosure"
-                  id="tasks-submenu-toggle"
-                  aria-expanded="false"
-                  aria-controls="tasks-nav-submenu"
-                  aria-label="Task views"
-                  title="Task views"
-                >
-                  <Icon name="chevron-down" size={13} />
-                </button>
-              </div>
-              <ul id="tasks-nav-submenu" class="task-view-submenu" data-nav-overflow-submenu hidden>
-                {views.map(view => (
-                  <li class="task-view-subitem">
-                    <a href={view.href} class="nav-link task-view-sublink" data-task-view-link={view.id} data-astro-prefetch="false">
-                      <Icon name={view.icon} size={16} />
-                      <span>{view.label}</span>
-                    </a>
+                {item.key === "boards" && (
+                  <button
+                    type="button"
+                    class="task-view-disclosure"
+                    data-sidebar-boards-toggle
+                    aria-label={item.label}
+                    aria-expanded="true"
+                    aria-controls="sidebar-board-children"
+                  >
+                    <Icon name="chevron-down" size={13} />
+                  </button>
+                )}
+                <div class="sidebar-edit-actions">
+                  <button
+                    type="button"
+                    class="sidebar-edit-btn"
+                    data-sidebar-item-rename={item.key}
+                    aria-label={t("sidebar.rename_item", locale, { label: item.label })}
+                    title={t("sidebar.rename_item", locale, { label: item.label })}
+                  >
+                    <Icon name="pencil" size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    class="sidebar-edit-btn"
+                    data-sidebar-item-toggle={item.key}
+                    aria-pressed={item.hidden ? "true" : "false"}
+                    aria-label={item.hidden
+                      ? t("sidebar.show_item", locale, { label: item.label })
+                      : t("sidebar.hide_item", locale, { label: item.label })}
+                    title={item.hidden
+                      ? t("sidebar.show_item", locale, { label: item.label })
+                      : t("sidebar.hide_item", locale, { label: item.label })}
+                  >
+                    <span class="sidebar-eye-visible"><Icon name="eye" size={14} /></span>
+                    <span class="sidebar-eye-hidden"><Icon name="eye-off" size={14} /></span>
+                  </button>
+                  {item.removable && (
                     <button
                       type="button"
-                      class="task-view-pin"
-                      data-task-view-pin={view.id}
-                      aria-pressed="false"
-                      aria-label={`Pin ${view.label} to navigation`}
-                      title={`Pin ${view.label}`}
+                      class="sidebar-edit-btn sidebar-edit-btn--danger"
+                      data-sidebar-item-remove={item.key}
+                      aria-label={`Remove ${item.label}`}
+                      title={`Remove ${item.label}`}
                     >
-                      <Icon name="pin" size={15} />
+                      <Icon name="x" size={14} />
                     </button>
-                  </li>
-                ))}
-              </ul>
-              <template id="tasks-view-pinned-tpl">
-                {views.map(view => (
-                  <li class="task-view-pinned" data-task-view-pinned-item={view.id} data-sidebar-group="tasks">
-                    <span class="task-view-pinned-label">{t("nav.pinned_views", locale)}</span>
-                    <div class="nav-row flex items-center gap-1 min-w-0">
-                      <a href={view.href} class="nav-link flex-1 min-w-0" data-task-view-link={view.id}
-                        data-tooltip={view.label} aria-label={view.label} data-astro-prefetch="false">
-                        <span class="nav-icon"><Icon name={view.icon} /></span>
-                        <span class="nav-label">{view.label}</span>
-                      </a>
-                      <button type="button" class="task-view-pin task-view-unpin" data-task-view-pin={view.id}
-                        aria-label={`Unpin ${view.label} from navigation`} title={`Unpin ${view.label}`}>
-                        <Icon name="x" size={14} />
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </template>
-              <SidebarReorderHandle label={item.label} locale={locale} />
+                  )}
+                </div>
+              </div>
+              {item.key === "boards" && <slot name="boards" />}
             </li>
-          </>
-        )
-      }
-
-      return (
-        <li data-sidebar-group={item.key} data-sidebar-pin-presence={item.key === "system-pinned" || undefined} hidden={item.key === "system-pinned"}>
-          <div class="nav-row flex items-center gap-1 min-w-0">
-          <a
-            href={item.href}
-            class={`nav-link flex-1 min-w-0 ${item.isActive ? "active" : ""} ${external ? "nav-link--external" : ""}`}
-            data-page={item.key}
-            data-board-nav-default={external ? undefined : item.defaultHref ?? item.href}
-            title={item.label}
-            data-tooltip={item.label}
-            data-astro-prefetch={item.key === "system-pinned" || item.key === "activity" || item.key === "mentionInbox" ? "false" : external ? undefined : "viewport"}
-            aria-current={item.isActive ? "page" : undefined}
-            aria-label={`${item.label}${external ? " (opens in new tab)" : ""}`}
-            {...(external
-              ? { target: "_blank", rel: "noopener noreferrer" }
-              : {})}
-          >
-            <span class="nav-icon">
-              <Icon name={item.icon as any} />
-            </span>
-            <span class="nav-label">{item.label}</span>
-            {external && (
-              <span class="nav-external-icon" aria-hidden="true">↗</span>
-            )}
-          </a>
-          {item.key === "boards" && <button type="button" class="task-view-disclosure" data-sidebar-boards-toggle aria-label={item.label} aria-expanded="true" aria-controls="sidebar-board-children"><Icon name="chevron-down" size={13} /></button>}
-          </div>
-          {item.key === "boards" && <slot name="boards" />}
-          <SidebarReorderHandle label={item.label} locale={locale} />
-        </li>
-      )
-    })
-  }
-</ul>
+          )
+        })}
+      </ul>
+    </section>
+  ))}
+</div>
 
 <style>
   .nav-external-icon {
     margin-left: auto;
     font-size: 11px;
-    opacity: 0.5;
+    opacity: 0.55;
+    flex-shrink: 0;
     transition: opacity 150ms ease;
   }
   .nav-link--external:hover .nav-external-icon {
     opacity: 1;
   }
 
-  .task-view-disclosure[hidden], :global([data-task-view-pinned-item][hidden]) { display: none !important; }
+  .task-view-disclosure[hidden] { display: none !important; }
 
   .task-view-disclosure,
   .task-view-pin {
@@ -179,6 +368,10 @@ function isExternal(href: string): boolean {
 
   .task-view-disclosure { border-color: var(--border); }
 
+  :global(#sidebar[data-sidebar-editing]) .task-view-disclosure {
+    display: none;
+  }
+
   .task-view-pin:hover,
   .task-view-disclosure:hover,
   .task-view-disclosure[aria-expanded="true"] {
@@ -189,8 +382,8 @@ function isExternal(href: string): boolean {
   .task-view-disclosure[aria-expanded="true"] svg { rotate: 180deg; }
   .task-view-pin[aria-pressed="true"] {
     background: rgb(var(--accent-rgb) / 0.14);
-    color: var(--text-primary);
-    border-color: currentColor;
+    color: var(--accent-text, var(--text-primary));
+    border-color: rgb(var(--accent-rgb) / 0.45);
   }
 
   .task-view-submenu {
@@ -204,7 +397,7 @@ function isExternal(href: string): boolean {
   }
 
   .task-view-submenu[hidden] { display: none; }
-  .task-view-subitem { display: flex; align-items: center; }
+  .task-view-subitem { display: flex; align-items: center; gap: 2px; }
   :global(.sidebar .task-view-sublink) {
     flex: 1;
     min-inline-size: 0;
@@ -213,27 +406,12 @@ function isExternal(href: string): boolean {
   }
   .task-view-sublink svg { flex: none; }
 
-  .task-view-pinned-label { display: none; }
-  :global(.nav-overflow__menu) .task-view-pinned:not(.task-view-pinned + .task-view-pinned) .task-view-pinned-label {
-    display: block;
-    padding: 6px 8px 2px;
-    color: var(--text-secondary);
-    font-size: 0.75rem;
-    font-weight: 600;
-  }
-
-  @media (pointer: fine) {
-    .task-view-unpin { opacity: 0; }
-    .task-view-pinned:hover .task-view-unpin,
-    .task-view-pinned:focus-within .task-view-unpin { opacity: 1; }
-  }
   @media (pointer: coarse) {
     .task-view-pin, .task-view-disclosure { min-inline-size: 44px; min-block-size: 44px; }
     :global(.sidebar .task-view-sublink) { min-block-size: 44px; }
   }
 
   @media (min-width: 769px) {
-    :global(body.sidebar-collapsed) .task-view-unpin { display: none; }
     :global(body.sidebar-collapsed) .nav-item--tasks > .nav-row { flex-direction: column; gap: 0; }
     :global(body.sidebar-collapsed) .task-view-disclosure {
       inline-size: 40px;
@@ -292,18 +470,11 @@ function isExternal(href: string): boolean {
   import { currentTaskApiContext } from "../../lib/task-api"
   import { safeIngressHref } from "../../lib/ingress-navigation"
   import { pageLifecycle } from "../../lib/page-lifecycle"
-  import {
-    TASK_NAV_PREFS_EVENT,
-    TASK_NAV_PREFS_KEY,
-    matchingTaskShortcutCriteria,
-    readTaskNavPrefs,
-    toggleTaskViewPin,
-    type TaskNavPrefs,
-  } from "../../lib/task-nav-types"
+  import { matchingTaskShortcutCriteria } from "../../lib/task-nav-types"
   import { TASK_VIEW_LOCATION_EVENT, taskBackgroundUrl } from "../../lib/task-page-url"
   import { parseTaskView, requestedTaskView, taskViewUrl } from "../../lib/task-view-route"
+  import { SIDEBAR_TOGGLE_VIEW_PIN_EVENT } from "../../lib/sidebar-order"
 
-  // A private page can remove the persisted sidebar. Rebind the new sidebar on its return.
   const runtime = window as typeof window & { __meithealSidebarActive?: AbortController }
   runtime.__meithealSidebarActive?.abort()
   const controller = new AbortController()
@@ -344,8 +515,6 @@ function isExternal(href: string): boolean {
     }
     const disclosure = document.getElementById("tasks-submenu-toggle")
     if (disclosure) disclosure.hidden = false
-    const submenu = document.getElementById("tasks-nav-submenu")
-    for (const item of document.querySelectorAll<HTMLElement>("[data-task-view-pinned-item]")) item.hidden = false
     const taskPath = (url: URL) => {
       const path = appPath(url.pathname)
       return parseTaskView(path.slice(1)) ? "/tasks" : path
@@ -371,7 +540,7 @@ function isExternal(href: string): boolean {
       matchedCriteria = criteria
       typedLink = link
     }
-    const activeViewLink = document.querySelector(`[data-task-view-pinned-item="${view}"] .nav-link`)
+    const activeViewLink = document.querySelector(`[data-sidebar-item-key="view-${view}"]:not([data-sidebar-item-hidden]) .nav-link`)
       ?? document.querySelector(`#tasks-nav-submenu:not([hidden]) [data-task-view-link="${view}"]`)
     navLinks.forEach(link => {
       const child = link.dataset.taskViewLink
@@ -402,48 +571,10 @@ function isExternal(href: string): boolean {
   function bindTaskViews(signal: AbortSignal) {
     const nav = document.querySelector<HTMLElement>('[data-nav-overflow="sidebar"]')
     const group = nav?.querySelector<HTMLElement>(".nav-item--tasks")
-    const template = group?.querySelector<HTMLTemplateElement>("#tasks-view-pinned-tpl")
     const submenu = group?.querySelector<HTMLElement>("#tasks-nav-submenu")
     const trigger = group?.querySelector<HTMLButtonElement>("#tasks-submenu-toggle")
-    if (!nav || !group || !template || !submenu || !trigger) return
+    if (!nav || !group || !submenu || !trigger) return
 
-    const render = (prefs = readTaskNavPrefs()) => {
-      const primaryList = nav.querySelector<HTMLElement>("[data-task-views-primary]")
-      if (!primaryList) return
-      const existing = new Map<string, HTMLElement>()
-      let mutated = false
-      for (const item of nav.querySelectorAll<HTMLElement>("[data-task-view-pinned-item]")) {
-        const view = parseTaskView(item.dataset.taskViewPinnedItem ?? null)
-        if (view && prefs.pinnedViews.includes(view)) existing.set(view, item)
-        else {
-          if (item.contains(document.activeElement)) trigger.focus()
-          item.remove()
-          mutated = true
-        }
-      }
-
-      let anchor = group.parentElement === primaryList ? group : null
-      for (const view of prefs.pinnedViews) {
-        const previous = existing.get(view)
-        const node = previous ?? template.content.querySelector<HTMLElement>(`[data-task-view-pinned-item="${view}"]`)?.cloneNode(true) as HTMLElement | undefined
-        if (!node) continue
-        if (anchor && anchor.nextElementSibling !== node) {
-          anchor.after(node)
-          mutated = true
-        } else if (!previous) {
-          primaryList.append(node)
-          mutated = true
-        }
-        if (node.parentElement === primaryList) anchor = node
-      }
-
-      for (const pin of submenu.querySelectorAll<HTMLElement>("[data-task-view-pin]")) {
-        const view = parseTaskView(pin.dataset.taskViewPin ?? null)
-        pin.setAttribute("aria-pressed", String(Boolean(view && prefs.pinnedViews.includes(view))))
-      }
-      updateActiveNavLink()
-      if (mutated) window.dispatchEvent(new Event("meitheal:task-nav-dom-synced"))
-    }
     const positionCompactMenu = () => {
       if (submenu.hidden || !document.body.classList.contains("sidebar-collapsed")) return
       const top = Math.max(8, Math.min(trigger.getBoundingClientRect().top, innerHeight - submenu.offsetHeight - 8))
@@ -455,7 +586,6 @@ function isExternal(href: string): boolean {
       positionCompactMenu()
       updateActiveNavLink()
     }
-    render()
 
     trigger.addEventListener("click", () => setOpen(Boolean(submenu.hidden)), { signal })
     group.addEventListener("focusout", event => {
@@ -471,25 +601,23 @@ function isExternal(href: string): boolean {
     }, { signal })
     nav.addEventListener("click", event => {
       const target = event.target instanceof Element ? event.target : null
-      const link = target?.closest<HTMLAnchorElement>("[data-task-view-link]")
+      const link = target?.closest<HTMLAnchorElement>("#tasks-nav-submenu [data-task-view-link]")
       if (link) {
         setOpen(false)
       }
       const pin = target?.closest<HTMLElement>("[data-task-view-pin]")
       const pinnedView = parseTaskView(pin?.dataset.taskViewPin ?? null)
-      if (pinnedView) toggleTaskViewPin(readTaskNavPrefs(), pinnedView)
+      if (pinnedView) {
+        event.preventDefault()
+        event.stopPropagation()
+        window.dispatchEvent(new CustomEvent(SIDEBAR_TOGGLE_VIEW_PIN_EVENT, { detail: { view: pinnedView } }))
+      }
     }, { signal, capture: true })
     document.addEventListener("click", event => {
       if (!submenu.hidden && event.target instanceof Node && !group.contains(event.target)) setOpen(false)
     }, { signal })
     nav.addEventListener("scroll", positionCompactMenu, { signal, passive: true })
     window.addEventListener("resize", positionCompactMenu, { signal })
-    window.addEventListener(TASK_NAV_PREFS_EVENT, event => {
-      render((event as CustomEvent<TaskNavPrefs>).detail)
-    }, { signal })
-    window.addEventListener("storage", event => {
-      if (event.key === TASK_NAV_PREFS_KEY || event.key === null) render()
-    }, { signal })
   }
 
   let boundSignal: AbortSignal | undefined

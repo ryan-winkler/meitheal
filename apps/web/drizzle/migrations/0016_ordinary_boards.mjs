@@ -655,9 +655,15 @@ export async function readOrdinaryBoardMigrationState(db) {
   )
     throw new Error("Ordinary Board schema markers disagree")
   if (!current) return false
+  const customKeys = Number(version?.value) >= 27
   const objects = {
     ...ordinaryAccessObjects,
     ...ordinaryBoardObjects,
+    ...(customKeys ? {
+      task_boards_ordinary_identity_insert: `CREATE TRIGGER task_boards_ordinary_identity_insert BEFORE INSERT ON task_boards
+    WHEN length(NEW.ticket_prefix) NOT BETWEEN 2 AND 10 OR NEW.ticket_prefix GLOB '*[^A-Z0-9]*'
+    BEGIN SELECT RAISE(ABORT, 'Invalid Board ticket prefix'); END`,
+    } : {}),
     vikunja_labels: ordinaryLabelTable,
     gamification_stats: ordinaryStatsTable,
     gamification_achievements: ordinaryAchievementsTable,

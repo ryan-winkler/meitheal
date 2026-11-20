@@ -63,6 +63,7 @@ const ALLOWED_KEYS = new Set([
   "locale",
   "sidebar-collapsed",
   "sidebar_config",
+  "user_profile",
   "timezone",
   "week_start",
   "date_format",

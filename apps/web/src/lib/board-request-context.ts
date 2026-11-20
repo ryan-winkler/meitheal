@@ -189,7 +189,7 @@ async function recordBoard(record: RecordScope): Promise<string | null> {
 
 /** Preserve existing case-insensitive and zero-padded ticket bookmarks without changing opaque IDs. */
 export function normalizeTaskLocatorKey(value: string): string | null {
-  const match = /^([a-z2-7]{8}|mth)-(\d+)$/i.exec(value)
+  const match = /^([a-z][a-z0-9]{1,9}|[a-z2-7]{8})-(\d+)$/i.exec(value)
   const number = match ? Number(match[2]) : 0
   return match && Number.isSafeInteger(number) && number > 0
     ? `${match[1]!.toUpperCase()}-${number}`

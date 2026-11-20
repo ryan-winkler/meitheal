@@ -20,7 +20,7 @@ import LabelBadges from "../ui/LabelBadges.astro"
 import TaskTypeIcon from "../ui/TaskTypeIcon.astro"
 import { taskSurface } from "../../lib/task-surface"
 import { formatTicketKey } from "../../lib/ticket-key"
-import { buildTaskPath } from "../../lib/task-detail-handoff"
+import { taskDetailPath } from "../../lib/task-page-url"
 import type { TaskViewItem } from "../../lib/task-queries"
 
 interface Props {
@@ -138,7 +138,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
         <span class="tli__ticket">{ticketKey}</span>
       )}
       <TaskTypeIcon type={task.task_type} size={14} role="img" />
-      <a class="tli__title-text" title={task.title} href={buildTaskPath(task.id)} data-task-detail-link={task.id}>{task.title}</a>
+      <a class="tli__title-text" title={task.title} href={taskDetailPath(task)} data-task-detail-link={task.id}>{task.title}</a>
     </div>
 
     <div class="tli__meta">

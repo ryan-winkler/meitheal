@@ -370,7 +370,7 @@ components:
           description: "Priority level: 0=none, 1=lowest, 5=critical"
         is_promoted:
           type: boolean
-          description: Shared Kanban promotion, returned for task detail and updates.
+          description: Shared Kanban promotion — pins card to top of lane with Tabler ribbon sash.
         actions:
           type: array
           items:
@@ -2396,6 +2396,10 @@ paths:
                           type: string
                         title:
                           type: string
+                        ticket_key:
+                          type:
+                            - string
+                            - "null"
                       additionalProperties: false
                 additionalProperties: false
         "409":
@@ -2598,6 +2602,9 @@ paths:
                 description:
                   type: string
                   maxLength: 10000
+                is_promoted:
+                  type: boolean
+                  description: Pin the new task to the top of its Kanban lane with a promoted ribbon sash.
                 assigned_to:
                   type: string
                   maxLength: 255

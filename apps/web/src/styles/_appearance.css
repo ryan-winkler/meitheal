@@ -29,10 +29,10 @@
   --font-heading: var(--font-sans);
 }
 
-:root[data-appearance-radius="0"] { --appearance-radius-scale: 0; }
-:root[data-appearance-radius="0.5"] { --appearance-radius-scale: 0.5; }
-:root[data-appearance-radius="1.5"] { --appearance-radius-scale: 1.5; }
-:root[data-appearance-radius="2"] { --appearance-radius-scale: 2; }
+:root[data-appearance-radius="0"] { --appearance-radius-scale: 0; --sidebar-toggle-radius: 0px; }
+:root[data-appearance-radius="0.5"] { --appearance-radius-scale: 0.5; --sidebar-toggle-radius: 4px; }
+:root[data-appearance-radius="1.5"] { --appearance-radius-scale: 1.5; --sidebar-toggle-radius: 12px; }
+:root[data-appearance-radius="2"] { --appearance-radius-scale: 2; --sidebar-toggle-radius: 9999px; }
 
 :root[data-appearance-radius]:not([data-appearance-radius="1"]) {
   --radius-xs: calc(4px * var(--appearance-radius-scale));
@@ -445,3 +445,43 @@
     padding-bottom: max(80px, calc(var(--mobile-tab-bar-height) + 16px + env(safe-area-inset-bottom, 0px))) !important;
   }
 }
+
+.appearance-preferences-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 8px 24px;
+}
+.appearance-preferences-grid .form-group { min-width: 0; }
+.appearance-preferences-grid .form-select { min-height: 44px; width: 100%; }
+.appearance-preferences-form > .flex,
+.appearance-preferences-form__footer { padding-top: 12px; border-top: 1px solid var(--border); }
+.appearance-preferences-form .btn { min-height: 40px; }
+
+.settings-dirty-bar {
+  position: sticky;
+  bottom: 12px;
+  z-index: 25;
+  margin-top: 14px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--warning) 55%, var(--border));
+  background: color-mix(in srgb, var(--warning) 12%, var(--bg-card));
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+}
+.settings-dirty-bar[hidden] { display: none !important; }
+.settings-dirty-bar__info {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.settings-dirty-bar__icon { color: var(--warning); flex: none; display: inline-flex; }
+.settings-dirty-bar__actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }

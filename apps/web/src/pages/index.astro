@@ -11,6 +11,7 @@ import StreakBadge from "../components/gamification/StreakBadge.astro"
 import UnifiedBar from "../components/layout/UnifiedBar.astro"
 import EmptyState from "../components/ui/EmptyState.astro"
 import Icon from "../components/ui/Icon.astro"
+import InlineHelper from "../components/ui/InlineHelper.astro"
 import LabelBadges from "../components/ui/LabelBadges.astro"
 import Layout from "../layouts/Layout.astro"
 import {
@@ -187,6 +188,17 @@ function relativeTime(dueDate: string): string {
   <div id="dashboard-shell" class="dashboard-shell">
     <DashboardWidget id="dashboard-overview">
       <h1 class="m-0 text-2xl font-semibold tracking-tight">{t("nav.dashboard", locale)}</h1>
+      <InlineHelper helperId="meitheal-function-tour" title="New to Meitheal? Take the quick workspace tour" icon="sparkles" variant="info">
+        <div class="tour-prompt-body">
+          <p>Walk through quick capture, <strong>Boards &amp; custom ticket keys</strong>, universal search, and workspace views in under a minute. Press <kbd>?</kbd> anytime to restore this tour prompt if dismissed.</p>
+          <div class="tour-prompt-actions">
+            <button type="button" class="btn btn-primary btn-sm" data-tour-start>
+              <Icon name="rocket" size={14} sprite />
+              <span>Start interactive tour</span>
+            </button>
+          </div>
+        </div>
+      </InlineHelper>
       {!statsLoaded && <p role="status" class="m-0 text-text-secondary">Task counts couldn’t load. Refresh the page to try again.</p>}
       {statsLoaded && overdueCount === null && <p role="status" class="m-0 text-text-secondary">Overdue count couldn’t load. Refresh the page to try again.</p>}
       {(statsLoaded || overdueCount !== null || gamificationStats.currentStreak > 0) && <div class="stats-grid">
@@ -309,9 +321,13 @@ function relativeTime(dueDate: string): string {
                 {favorites.map((favorite) => {
                   const priority = Number(favorite.priority ?? 3)
                   const priorityColor = getPriorityColor(priority)
-                  const ticketNumber = favorite.ticket_number
-                    ? `MTH-${String(favorite.ticket_number).padStart(3, "0")}`
-                    : null
+                  const ticketNumber = typeof favorite.ticket_key === "string" && favorite.ticket_key
+                    ? favorite.ticket_key
+                    : typeof favorite.ticket_ref === "string" && favorite.ticket_ref
+                      ? favorite.ticket_ref
+                      : favorite.ticket_number
+                        ? `MTH-${String(favorite.ticket_number).padStart(3, "0")}`
+                        : null
                   const statusLabel =
                     statusLabels[String(favorite.status)] ?? String(favorite.status)
 
@@ -392,8 +408,9 @@ function relativeTime(dueDate: string): string {
             >
               <option value="all">All users</option>
             </select>
-            <a href={contextHref("/tasks")} class="btn btn-ghost" id="kanban-link" style="font-size: 12px;">
-              Kanban →
+            <a href={contextHref("/tasks")} class="btn btn-ghost inline-flex items-center gap-1.5" id="kanban-link" style="font-size: 12px;">
+              <Icon name="layout-kanban" size={14} sprite />
+              <span>Kanban</span>
             </a>
           </div>
         </div>
@@ -403,9 +420,13 @@ function relativeTime(dueDate: string): string {
             openTasks.map((task) => {
               const priority = Number(task.priority ?? 3)
               const priorityColor = getPriorityColor(priority)
-              const ticketNumber = task.ticket_number
-                ? `MTH-${String(task.ticket_number).padStart(3, "0")}`
-                : null
+              const ticketNumber = typeof task.ticket_key === "string" && task.ticket_key
+                ? task.ticket_key
+                : typeof task.ticket_ref === "string" && task.ticket_ref
+                  ? task.ticket_ref
+                  : task.ticket_number
+                    ? `MTH-${String(task.ticket_number).padStart(3, "0")}`
+                    : null
               const statusLabel =
                 statusLabels[String(task.status)] ?? String(task.status)
 
@@ -489,9 +510,13 @@ function relativeTime(dueDate: string): string {
                   name: "Default",
                   color: "#146C4E",
                 }
-                const ticketNumber = task.ticket_number
-                  ? `MTH-${String(task.ticket_number).padStart(3, "0")}`
-                  : null
+                const ticketNumber = typeof task.ticket_key === "string" && task.ticket_key
+                  ? task.ticket_key
+                  : typeof task.ticket_ref === "string" && task.ticket_ref
+                    ? task.ticket_ref
+                    : task.ticket_number
+                      ? `MTH-${String(task.ticket_number).padStart(3, "0")}`
+                      : null
 
                 const { style: taskColorStyle, ...surface } = taskSurface(String(task.status), task.color)
                 return (
@@ -584,22 +609,14 @@ function relativeTime(dueDate: string): string {
 
   <button
     id="dashboard-go-top"
-    class="dashboard-go-top"
+    class="go-top-btn dashboard-go-top"
     type="button"
     aria-label="Scroll to top"
     title="Back to top"
     hidden
   >
-    ↑
+    <Icon name="arrow-up" size={18} sprite />
   </button>
-
-  <div
-    id="toast-container"
-    class="toast-container"
-    aria-live="polite"
-    role="status"
-    data-no-scroll-lock="true"
-  />
 
   <script>
     import "@lib/dashboard-controller"

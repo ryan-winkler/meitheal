@@ -116,7 +116,7 @@ pageLifecycle.onPageLoad(signal => {
     }
   }
 
-  async function resume(button: HTMLButtonElement) {
+  async function resume(button: HTMLButtonElement, moveToBacklog = false) {
     const card = button.closest<HTMLElement>("[data-deferred-card]")
     const id = card?.dataset.deferredCard
     const guard = readDeferralGuard(Number(card?.dataset.version), card?.dataset.revision || null)
@@ -127,17 +127,31 @@ pageLifecycle.onPageLoad(signal => {
     const relevant = () => live() && card.isConnected && queueUrl().href === start && (workers?.controller ?? null) === worker
     pending = true
     button.disabled = true
+    button.classList.add("btn-loading")
     card.setAttribute("aria-busy", "true")
     showStatus("")
     let needsRefresh = false
     try {
       if (!await allowsDeferral(worker) || !relevant()) return
       const result = await writeDeferral(id, false, guard, signal)
-      if (result.kind === "saved") notifyTaskCountsChanged(card.dataset.project)
+      if (result.kind === "saved") {
+        if (moveToBacklog) {
+          await fetch(`/api/tasks/${encodeURIComponent(id)}`, {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ status: "backlog" }),
+            signal,
+          }).catch(() => undefined)
+        }
+        notifyTaskCountsChanged(card.dataset.project)
+      }
       if (!relevant()) return
       switch (result.kind) {
         case "saved":
-          await readQueue(next?.dataset.deferredCard ?? "", message("resumed", "Task resumed."))
+          await readQueue(
+            next?.dataset.deferredCard ?? "",
+            moveToBacklog ? "Moved to Backlog." : message("resumed", "Task resumed."),
+          )
           break
         case "blocked": {
           const text = message("blocked", "This task is still blocked.")
@@ -158,6 +172,7 @@ pageLifecycle.onPageLoad(signal => {
       pending = false
       if (relevant()) {
         card.removeAttribute("aria-busy")
+        button.classList.remove("btn-loading")
         button.disabled = needsRefresh
         if (!needsRefresh) button.focus()
       }
@@ -166,6 +181,8 @@ pageLifecycle.onPageLoad(signal => {
 
   ui.root.addEventListener("click", event => {
     const target = event.target instanceof Element ? event.target : null
+    const backlogBtn = target?.closest<HTMLButtonElement>("[data-deferred-backlog]")
+    if (backlogBtn) { void resume(backlogBtn, true); return }
     const button = target?.closest<HTMLButtonElement>("[data-deferred-resume]")
     if (button) { void resume(button); return }
     const details = target?.closest<HTMLAnchorElement>("[data-deferred-details]")

@@ -86,7 +86,7 @@ import {
 import StatusBadge from "../components/ui/StatusBadge.astro";
 import { STATUS_LABELS, normalizeStatus } from "../lib/status-config";
 import { UPCOMING_SECTIONS } from "../lib/upcoming-registry";
-import { buildTaskPath } from "../lib/task-detail-handoff"
+import { taskDetailPath } from "../lib/task-page-url"
 
 
 
@@ -234,7 +234,7 @@ function dayLabelClass(day: DayGroup): string {
                             <div class="task-title">
                               <a
                                 class="task-detail-link"
-                                href={buildTaskPath(id)}
+                                href={taskDetailPath({ ...task, id })}
                                 data-task-detail-link={id}
                                 aria-describedby={descriptionId}
                               >

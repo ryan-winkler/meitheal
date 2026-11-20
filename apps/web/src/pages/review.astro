@@ -67,7 +67,7 @@ const displayValue = (value: string | null) => value === null ? "(not set)" : va
             data-expires-at={p.expiresAt} data-stale={String(p.stale)} aria-labelledby={`proposal-title-${p.id}`}>
             <div class="review-card__header">
               <div class="review-card__title-row">
-                <a class="review-card__ticket" href={taskDetailPath(p.id)}>{formatTicketKey(p.ticketNumber) ?? "Open task"}</a>
+                <a class="review-card__ticket" href={taskDetailPath({ id: p.id, ticket_key: p.ticketKey })}>{p.ticketKey ?? formatTicketKey(p.ticketNumber) ?? "Open task"}</a>
                 <h2 class="review-card__title" id={`proposal-title-${p.id}`}>{p.title}</h2>
               </div>
               <div class="review-card__meta">

@@ -45,9 +45,9 @@ function initCompanionLinks(): void {
       pageLifecycle.on(copyButton, "click", async () => {
         try {
           await navigator.clipboard.writeText(xCallbackHref)
-          showToast("Companion x-callback URL copied", "success")
+          showToast("settings.pwa_companion_copied", "success")
         } catch {
-          showToast("Could not copy the companion URL", "error")
+          showToast("settings.pwa_companion_copy_failed", "error")
         }
       })
     })

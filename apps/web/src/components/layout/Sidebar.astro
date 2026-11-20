@@ -1,47 +1,67 @@
 ---
 import { newOrganizationLabel, organizationLabelsFor, type OrganizationTerm } from "@lib/organization-labels"
 import "../../styles/_sidebar-reorder.css"
-import { t } from "../../i18n/translations";
-import type { Locale } from "../../lib/locale";
-import Icon from "../ui/Icon.astro";
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import Icon from "../ui/Icon.astro"
 import SidebarHierarchyActions from "./SidebarHierarchyActions.astro"
-import SidebarNavList from "./SidebarNavList.astro";
+import SidebarNavList, { type SidebarNavItemView, type SidebarSectionView } from "./SidebarNavList.astro"
 import { currentBoardContext } from "@lib/named-board-request"
 import { resolveBoardPageScope } from "@lib/board-http"
 import { scopePermits, type BoardScope } from "@domains/tasks"
-import TaskCreationMenu from "./TaskCreationMenu.astro";
-import NavOverflowMore from "./NavOverflowMore.astro";
-import SidebarFooter from "./SidebarFooter.astro";
-import StreakBadge from "../gamification/StreakBadge.astro";
+import TaskCreationMenu from "./TaskCreationMenu.astro"
+import NavOverflowMore from "./NavOverflowMore.astro"
+import SidebarFooter from "./SidebarFooter.astro"
+import StreakBadge from "../gamification/StreakBadge.astro"
 import {
   ensureSchema,
   getPersistenceClient,
-} from "@domains/tasks/persistence/store";
-import { getDailyProgress } from "@domains/gamification";
-import { verifiedIngressUser } from "../../lib/verified-ingress-user"
+} from "@domains/tasks/persistence/store"
+import { getDailyProgress } from "@domains/gamification"
 import { boardNavigationLinks, readBoardNavigationContext } from "@lib/board-workspace"
-import { getFeatureFlags } from "../../lib/feature-flags";
+import { getFeatureFlags } from "../../lib/feature-flags"
+import { TASK_VIEW_ICONS, TASK_VIEW_LABELS, taskViewUrl, type TaskView } from "../../lib/task-view-route"
+import {
+  DEFAULT_SIDEBAR_SECTIONS,
+  TASK_VIEW_ITEM_KEYS,
+  flattenSidebarOrder,
+  isItemHidden,
+  isSectionHidden,
+  normalizeSidebarConfig,
+  serializeSidebarConfig,
+} from "@domains/navigation/sidebar-menu"
+import { normalizeUserProfile, type UserProfile } from "@domains/auth/user-profile"
 
-const currentPath = Astro.url.pathname;
+const currentPath = Astro.url.pathname
 const workNavigation = Astro.props.workNavigation
 const selectedScope = workNavigation ? { ok: true as const, scope: workNavigation.scope } : await resolveBoardPageScope(Astro).catch(() => null)
 const captureDenied = selectedScope?.ok === true && !scopePermits(selectedScope.scope, { resource: "task", action: "create" })
 const boardContext = readBoardNavigationContext(Astro.url) ?? (selectedScope?.ok ? { boardId: selectedScope.scope.boardId } : undefined)
 const boardLinks = boardContext ? boardNavigationLinks(boardContext) : undefined
+const settingsHref = boardContext?.boardId ? `/settings?board_id=${encodeURIComponent(boardContext.boardId)}` : "/settings"
+
 export interface Props {
   workNavigation?: { scope: BoardScope, dailyStreak?: number } | undefined
-  locale?: Locale;
+  locale?: Locale
 }
 const {
   locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en",
-} = Astro.props;
+} = Astro.props
 
 /** Default nav item definitions */
 interface NavItemDef {
-  href: string;
-  i18nKey: string;
-  icon: string;
-  matchExact?: boolean;
+  href: string
+  i18nKey: string
+  icon: string
+  matchExact?: boolean
+  taskView?: TaskView
+  defaultLabel?: string
+}
+
+const taskViewBaseUrl = new URL(boardContext ? `/boards/${encodeURIComponent(boardContext.boardId)}` : "/tasks", Astro.url)
+const taskViewHref = (view: TaskView) => {
+  const url = taskViewUrl(taskViewBaseUrl, view, true)
+  return url.pathname + url.search + url.hash
 }
 
 const NAV_ITEMS: Record<string, NavItemDef> = {
@@ -58,6 +78,40 @@ const NAV_ITEMS: Record<string, NavItemDef> = {
     i18nKey: "nav.tasks",
     icon: "kanban",
   },
+  "view-calendar": {
+    href: taskViewHref("calendar"),
+    i18nKey: "",
+    defaultLabel: TASK_VIEW_LABELS.calendar,
+    icon: TASK_VIEW_ICONS.calendar,
+    taskView: "calendar",
+  },
+  "view-kanban": {
+    href: taskViewHref("kanban"),
+    i18nKey: "",
+    defaultLabel: TASK_VIEW_LABELS.kanban,
+    icon: TASK_VIEW_ICONS.kanban,
+    taskView: "kanban",
+  },
+  "view-timeline": {
+    href: taskViewHref("timeline"),
+    i18nKey: "",
+    defaultLabel: TASK_VIEW_LABELS.timeline,
+    icon: TASK_VIEW_ICONS.timeline,
+    taskView: "timeline",
+  },
+  "view-table": {
+    href: taskViewHref("table"),
+    i18nKey: "",
+    defaultLabel: TASK_VIEW_LABELS.table,
+    icon: TASK_VIEW_ICONS.table,
+    taskView: "table",
+  },
+  "system-pinned": {
+    href: "/pinned",
+    i18nKey: "pins.title",
+    icon: "pin",
+    matchExact: true,
+  },
   mentionInbox: { href: "/mention-inbox", i18nKey: "mention_inbox.title", icon: "inbox", matchExact: true },
   activity: { href: "/activity", i18nKey: "recent_activity.title", icon: "bolt", matchExact: true },
   progress: {
@@ -66,178 +120,160 @@ const NAV_ITEMS: Record<string, NavItemDef> = {
     icon: "trophy",
   },
   boards: { href: "/boards", i18nKey: "Boards", icon: "kanban" },
-  areas: {
-    href: "/planning#spaces",
-    i18nKey: "sidebar.areas_header",
-    icon: "folder",
-  },
   planning: {
     href: "/planning",
     i18nKey: "nav.planning",
     icon: "eisenhower",
   },
-};
-
-type NavKey = string;
-const DEFAULT_ORDER: NavKey[] = [
-  "dashboard",
-  "today",
-  "upcoming",
-  "tasks",
-  "activity",
-  "mentionInbox",
-  "progress",
-  "planning",
-  "boards",
-  "areas",
-];
-
-interface CustomNavItem {
-  id: string;
-  href: string;
-  icon: string;
-  label: string;
+  settings: {
+    href: settingsHref,
+    i18nKey: "nav.settings",
+    icon: "settings",
+  },
 }
-
-/** Sidebar configuration from settings DB */
-interface SidebarConfig {
-  /** Visibility toggles (legacy format preserved) */
-  [key: string]: unknown;
-  /** Display order — array of nav keys */
-  order?: string[];
-  /** Custom labels per nav key */
-  labels?: Record<string, string>;
-  /** Custom dynamically added nav items */
-  customItems?: CustomNavItem[];
-}
-
 
 let showNamedBoardShortcuts = false
-let sidebarConfig: SidebarConfig = {
-  dashboard: true,
-  today: true,
-  upcoming: true,
-  tasks: true,
-  progress: true,
-  planning: true,
-  areas: true,
-};
+let rawSidebarConfig: unknown = null
+let rawUserProfile: unknown = null
 
 /** Feature flags — hide gamification/habits if disabled */
-const ff = await getFeatureFlags();
-const gamificationEnabled = ff.gamification !== false;
-const habitsEnabled = ff.habits !== false;
-const hierarchyEnabled = ff.hierarchy !== false && ff.organizer !== false;
+const ff = await getFeatureFlags()
+const gamificationEnabled = ff.gamification !== false
+const hierarchyEnabled = ff.hierarchy !== false && ff.organizer !== false
 
 /** Fetch streak data for sidebar badge */
-let currentStreak = 0;
+let currentStreak = 0
 if (gamificationEnabled && selectedScope?.ok) {
   try {
-    currentStreak = workNavigation?.dailyStreak ?? (await getDailyProgress(selectedScope.scope)).currentStreak;
+    currentStreak = workNavigation?.dailyStreak ?? (await getDailyProgress(selectedScope.scope)).currentStreak
   } catch {
     /* gamification schema may not exist yet */
   }
 }
 
 try {
-  await ensureSchema();
-  const c = getPersistenceClient();
+  await ensureSchema()
+  const c = getPersistenceClient()
   showNamedBoardShortcuts = hierarchyEnabled && Boolean(await currentBoardContext(Astro))
   const res = await c.execute(
-    "SELECT value FROM settings WHERE key = 'sidebar_config'",
-  );
-  if (res.rows.length > 0) {
-    let parsed = JSON.parse(String(res.rows[0]?.value));
-    // Handle double-encoded JSON (API stores JSON.stringify'd values)
-    if (typeof parsed === "string") {
-      try {
-        parsed = JSON.parse(parsed);
-      } catch {
-        /* not double-encoded */
-      }
-    }
-    if (parsed && typeof parsed === "object") {
-      sidebarConfig = { ...sidebarConfig, ...parsed };
-    }
+    "SELECT key, value FROM settings WHERE key IN ('sidebar_config', 'user_profile')",
+  )
+  for (const row of res.rows) {
+    const key = String(row.key ?? "")
+    if (key === "sidebar_config") rawSidebarConfig = row.value
+    if (key === "user_profile") rawUserProfile = row.value
   }
 } catch (e) {
-  const { logApiError } = await import("@lib/api-logger");
-  logApiError("sidebar", "load_sidebar_config", e);
-  // DB fallback — use defaults
+  const { logApiError } = await import("@lib/api-logger")
+  logApiError("sidebar", "load_sidebar_config", e)
 }
 
-/** Inject custom items into NAV_ITEMS before processing */
-if (Array.isArray(sidebarConfig.customItems)) {
-  sidebarConfig.customItems.forEach((c) => {
-    if (c.id && c.id !== "system-pinned" && c.href) {
-      NAV_ITEMS[c.id] = {
-        href: c.href,
-        i18nKey: "",
-        icon: c.icon || "link",
-        matchExact: false, // Default matching
-      };
-      if (!sidebarConfig.labels) sidebarConfig.labels = {};
-      sidebarConfig.labels[c.id] = c.label || c.id;
-    }
-  });
+const eligibleBuiltInKeys = Object.keys(NAV_ITEMS).filter(key => {
+  if (key === "planning" && ff.planning === false) return false
+  if (key === "progress" && ff.pillars === false && ff.goals === false && ff.habits === false && ff.gamification === false) return false
+  if (key === "boards" && !hierarchyEnabled) return false
+  if ((key === "activity" || key === "mentionInbox") && !Astro.locals.hassUserId) return false
+  return true
+})
+
+const sidebarMenuConfig = normalizeSidebarConfig(rawSidebarConfig, eligibleBuiltInKeys)
+const customItemIds = new Set(sidebarMenuConfig.customItems.map(item => item.id))
+
+for (const custom of sidebarMenuConfig.customItems) {
+  NAV_ITEMS[custom.id] = {
+    href: custom.href,
+    i18nKey: "",
+    defaultLabel: custom.label,
+    icon: custom.icon || "link",
+    matchExact: false,
+  }
 }
-
-/** Build ordered, filtered nav item list */
-const rawOrder: NavKey[] =
-  Array.isArray(sidebarConfig.order) && sidebarConfig.order.length > 0
-    ? (sidebarConfig.order as string[]).filter((k: string) => k in NAV_ITEMS)
-    : [];
-// Fall back to defaults if saved order is empty / invalid, then append any missing defaults
-const order: NavKey[] = rawOrder.length > 0
-  ? [...new Set(rawOrder.map(key => key === "areas" && !rawOrder.includes("boards") ? "boards" : key))]
-  : [...DEFAULT_ORDER];
-DEFAULT_ORDER.forEach((k) => {
-  if (!order.includes(k)) order.push(k);
-});
-// Append custom items that were injected into NAV_ITEMS but aren't in the order yet
-Object.keys(NAV_ITEMS).forEach((k) => {
-  if (!order.includes(k)) order.push(k);
-});
-
-const labels: Record<string, string> =
-  (sidebarConfig.labels as Record<string, string>) ?? {};
 
 const resolveLabel = await organizationLabelsFor(Astro)
 const quickCreate = newOrganizationLabel(resolveLabel("task", false, locale === "en" ? "task" : undefined), locale)
 const terminology: Partial<Record<string, OrganizationTerm>> = {
   boards: "board", tasks: "task", planning: "planning", progress: "progress",
 }
-const navItems = order
-  .filter((key) => {
-    if (sidebarConfig[key] === false) return false
-    if (!(key in NAV_ITEMS)) return false
-    // Feature flag: hide progress parent page when all sub-features disabled
-    if (key === "areas") return false
-    if (key === "planning" && ff.planning === false) return false
-    if (key === "progress" && ff.pillars === false && ff.goals === false && ff.habits === false && ff.gamification === false) return false
-    if (key === "boards" && !hierarchyEnabled) return false
-    if ((key === "activity" || key === "mentionInbox") && !Astro.locals.hassUserId) return false
-    return true
-  })
-  .map((key) => {
-    const def = NAV_ITEMS[key]!;
-    const term = terminology[key];
-    const defaultLabel = labels[key] || (key === "boards" ? (locale === "ga" ? "Cláir" : "Boards") : t(def.i18nKey, locale));
-    const label = term ? resolveLabel(term, true, defaultLabel) : defaultLabel;
-    const isActive = def.matchExact
-      ? currentPath === def.href.split("?", 1)[0]
-      : currentPath.startsWith(def.href);
-    return { key, label, isActive, ...def, defaultHref: def.href, href: boardLinks && key in boardLinks ? boardLinks[key as keyof typeof boardLinks] : def.href };
-  });
-const tasksIndex = navItems.findIndex(item => item.key === "tasks")
-const pinIndex = tasksIndex >= 0 ? tasksIndex + 1 : navItems.findIndex(item => item.key === "today") + 1
-navItems.splice(pinIndex, 0, {
-  key: "system-pinned", href: boardLinks?.pinned ?? "/pinned", defaultHref: "/pinned", label: t("pins.title", locale), i18nKey: "pins.title",
-  icon: "pin", isActive: currentPath === "/pinned", matchExact: true,
+
+const sectionMetaMap = new Map(DEFAULT_SIDEBAR_SECTIONS.map(section => [section.id, section]))
+
+const sections: SidebarSectionView[] = sidebarMenuConfig.sectionOrder.map(sectionId => {
+  const spec = sectionMetaMap.get(sectionId)
+  const defaultLabel = spec ? t(spec.i18nKey, locale) : sectionId
+  const label = sidebarMenuConfig.sectionLabels[sectionId] || defaultLabel
+  const hidden = isSectionHidden(sidebarMenuConfig, sectionId)
+  const keys = sidebarMenuConfig.sectionItems[sectionId] ?? []
+
+  const items: SidebarNavItemView[] = keys
+    .filter(key => key in NAV_ITEMS)
+    .map(key => {
+      const def = NAV_ITEMS[key]!
+      const term = terminology[key]
+      const customEntry = sidebarMenuConfig.customItems.find(entry => entry.id === key)
+      const baseLabel = customEntry?.label
+        || def.defaultLabel
+        || (key === "boards" ? (locale === "ga" ? "Cláir" : "Boards") : t(def.i18nKey, locale))
+      const defaultItemLabel = term ? resolveLabel(term, true, baseLabel) : baseLabel
+      const itemLabel = sidebarMenuConfig.itemLabels[key] || defaultItemLabel
+      const resolvedHref = key === "settings"
+        ? settingsHref
+        : key === "system-pinned"
+          ? (boardLinks?.pinned ?? "/pinned")
+          : def.taskView
+            ? def.href
+            : (boardLinks && key in boardLinks ? boardLinks[key as keyof typeof boardLinks] : def.href)
+      const comparePath = def.href.split("?", 1)[0] ?? def.href
+      const isActive = def.taskView
+        ? false
+        : def.matchExact
+          ? currentPath === comparePath
+          : currentPath === comparePath || currentPath.startsWith(comparePath + "/")
+
+      return {
+        key,
+        label: itemLabel,
+        defaultLabel: defaultItemLabel,
+        isActive,
+        href: resolvedHref,
+        defaultHref: def.href,
+        icon: def.icon,
+        hidden: isItemHidden(sidebarMenuConfig, key),
+        removable: customItemIds.has(key),
+        taskView: def.taskView,
+      }
+    })
+
+  const hasVisibleItems = items.some(item => !item.hidden && item.key !== "system-pinned")
+  return {
+    id: sectionId,
+    label,
+    defaultLabel,
+    hidden,
+    hasVisibleItems,
+    items,
+  }
 })
 
-const sidebarDefaultOrder = navItems.map(item => item.key)
+const pinnedTaskViews: TaskView[] = TASK_VIEW_ITEM_KEYS
+  .filter(key => !isItemHidden(sidebarMenuConfig, key))
+  .map(key => key.slice("view-".length) as TaskView)
 
+const sidebarDefaultOrder = flattenSidebarOrder(sidebarMenuConfig)
+const serializedSidebarConfig = serializeSidebarConfig(sidebarMenuConfig)
+
+const haDisplayName = (Astro.locals as Record<string, unknown>).hassDisplayName
+const haUsername = (Astro.locals as Record<string, unknown>).hassUserName ?? Astro.locals.hassUserId
+const userProfile: UserProfile = normalizeUserProfile(rawUserProfile, {
+  displayName: typeof haDisplayName === "string" && haDisplayName.trim()
+    ? haDisplayName
+    : typeof haUsername === "string" && haUsername.trim()
+      ? haUsername
+      : "Household Member",
+  username: typeof haUsername === "string" && haUsername.trim() ? haUsername : "local",
+  role: Astro.locals.hassIsAdmin ? "Admin" : "",
+})
+
+const areasVisible = !isItemHidden(sidebarMenuConfig, "areas")
 ---
 
 <nav
@@ -245,6 +281,8 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
   id="sidebar"
   role="navigation"
   aria-label="Main Navigation"
+  data-sidebar-config={JSON.stringify(serializedSidebarConfig)}
+  data-storage-error={t("sidebar.reorder_storage_error", locale)}
 >
   <button
     type="button"
@@ -262,7 +300,7 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
     </span>
   </button>
 
-  <div class="sidebar-header flex items-center gap-2 pb-4 mb-0 px-2">
+  <div class="sidebar-header flex items-center gap-2 pb-3 mb-0">
     <div class="sidebar-brand-group flex flex-col flex-1 min-w-0">
       <a
         href="/?view=dashboard"
@@ -324,11 +362,11 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
     </div>
 
     <div class="sidebar-scroll" data-nav-overflow="sidebar" data-sidebar-default-order={JSON.stringify(sidebarDefaultOrder)}>
-      <SidebarNavList navItems={navItems}>
+      <SidebarNavList sections={sections} pinnedTaskViews={pinnedTaskViews}>
         <ul slot="boards" id="sidebar-board-children" class="sidebar-board-children" data-sidebar-board-children
-          data-sidebar-boards={showNamedBoardShortcuts ? "" : undefined} data-board-group-label={resolveLabel("group", true, labels.areas || undefined)}
+          data-sidebar-boards={showNamedBoardShortcuts ? "" : undefined} data-board-group-label={resolveLabel("group", true, sidebarMenuConfig.itemLabels.areas || undefined)}
           data-board-project-label={resolveLabel("project", true)} data-projects-enabled={String(ff.projects !== false)}
-          data-areas-enabled={String(ff.groups !== false && sidebarConfig.areas !== false)} aria-label={resolveLabel("board", true)}>
+          data-areas-enabled={String(ff.groups !== false && areasVisible)} aria-label={resolveLabel("board", true)}>
         </ul>
       </SidebarNavList>
       <NavOverflowMore id="sidebar-more-destinations" list locale={locale} />
@@ -336,35 +374,64 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
     </div>
   </div>
 
-  <div class="sidebar-reorder-tools" data-sidebar-reorder-tools hidden
-    data-moved={t("sidebar.reordered", locale)} data-storage-error={t("sidebar.reorder_storage_error", locale)}>
-    <button type="button" class="sidebar-reorder-button" aria-pressed="false" data-sidebar-reorder-toggle
-      data-start-label={t("sidebar.reorder", locale)} data-done-label={t("sidebar.reorder_done", locale)}>
-      <Icon name="adjustments-horizontal" size={16} />
-      <span>{t("sidebar.reorder", locale)}</span>
+  <!-- Edit Mode Actions: Subtle Custom Link Adder + Leave Edit Mode -->
+  <div class="sidebar-edit-footer" data-sidebar-leave-edit hidden>
+    <button
+      type="button"
+      id="sidebar-add-link-btn"
+      class="sidebar-add-link-trigger"
+      data-sidebar-add-link-trigger
+      aria-expanded="false"
+      aria-controls="sidebar-add-link-form"
+    >
+      <Icon name="link" size={14} />
+      <span>Add custom link</span>
     </button>
-    <div class="sidebar-reorder-moves" data-sidebar-reorder-moves hidden>
-      <button type="button" class="sidebar-reorder-button" data-sidebar-move="-1"
-        aria-label={t("sidebar.reorder_up", locale)} title={t("sidebar.reorder_up", locale)} disabled>
-        <Icon name="chevron-down" size={16} class="rotate-180" />
-      </button>
-      <button type="button" class="sidebar-reorder-button" data-sidebar-move="1"
-        aria-label={t("sidebar.reorder_down", locale)} title={t("sidebar.reorder_down", locale)} disabled>
-        <Icon name="chevron-down" size={16} />
-      </button>
-    </div>
-    <span role="status" class="sr-only" data-sidebar-reorder-status></span>
-  </div>
 
-  {gamificationEnabled && (
+    <form id="sidebar-add-link-form" class="sidebar-add-link-form" data-sidebar-add-link-form hidden novalidate>
+      <input
+        type="text"
+        name="label"
+        class="form-input"
+        placeholder="Label (e.g. Home Assistant)"
+        maxlength="64"
+        required
+        aria-label="Custom link label"
+      />
+      <input
+        type="text"
+        name="href"
+        class="form-input"
+        placeholder="URL (https://… or /path)"
+        required
+        aria-label="Custom link URL"
+      />
+      <select name="section" class="form-select" aria-label="Section">
+        {sections.map(sec => (
+          <option value={sec.id}>{sec.label}</option>
+        ))}
+      </select>
+      <p class="sidebar-add-link-error" data-sidebar-add-link-error role="alert" hidden></p>
+      <div class="sidebar-add-link-actions">
+        <button type="button" class="btn btn-ghost" data-sidebar-add-link-cancel>Cancel</button>
+        <button type="submit" class="btn btn-primary">Pin link</button>
+      </div>
+    </form>
+
+    <button type="button" id="sidebar-leave-edit" class="sidebar-leave-edit__btn" data-sidebar-leave-edit-btn>
+      <Icon name="check" size={16} />
+      <span>{t("sidebar.leave_edit_mode", locale)}</span>
+    </button>
+  </div>
+  <span role="status" aria-live="polite" class="sr-only" data-sidebar-reorder-status></span>
+
+  {gamificationEnabled && currentStreak > 0 && (
     <div class="sidebar-gamification-wrapper">
       <StreakBadge streak={currentStreak} compact />
     </div>
   )}
 
-  <SidebarFooter locale={locale} />
-
-
+  <SidebarFooter locale={locale} profile={userProfile} />
 </nav>
 
 <script>
@@ -372,6 +439,7 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
   import { bindSidebarBoards } from "@lib/sidebar-boards"
   import { bindSidebarReorder } from "@lib/sidebar-order"
   import { bindSidebarPinPresence } from "@lib/sidebar-pin-presence"
+  import { bindSidebarUserMenu } from "@lib/sidebar-user-menu"
 
   const runtime = window as Window & { __meithealSidebarController?: AbortController }
   runtime.__meithealSidebarController?.abort()
@@ -397,18 +465,19 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
       // Recent activity restores through guarded browser history.
       bindSidebarPinPresence(sidebar, signal, Boolean(document.querySelector("[data-recent-activity]")))
       bindSidebarReorder(sidebar, signal)
+      bindSidebarUserMenu(sidebar, signal)
     }
   })
 </script>
 
 <style>
-  .sidebar-board-children { list-style: none; margin: 0; padding-inline-start: 1rem; }
+  .sidebar-board-children { list-style: none; margin: 0; padding-inline-start: 0.75rem; }
   .sidebar-board-children[hidden] { display: none; }
   .sidebar-household { margin-inline-start: 0; }
   :global(:root[data-appearance-navigation="navbar"]) .sidebar-household { margin-inline-start: 0; }
   :global(body.sidebar-collapsed) .sidebar-board-children { display: none; }
-  .sidebar-board-children :global([data-named-board-shortcut] a) { display: block; padding: 0.3rem 0; overflow-wrap: anywhere; }
-  .sidebar-board-children :global(.sidebar-board-row) { display: flex; align-items: center; }
+  .sidebar-board-children :global([data-named-board-shortcut] a) { display: block; padding: 0.3rem 0.5rem; overflow-wrap: anywhere; }
+  .sidebar-board-children :global(.sidebar-board-row) { display: flex; align-items: center; gap: 2px; }
   .sidebar-board-children :global(.sidebar-board-row .nav-link) { flex: 1; min-width: 0; }
   .sidebar-board-children :global(.sidebar-board-toggle[aria-expanded="true"]) { transform: rotate(90deg); }
   .sidebar-board-children :global([data-board-groups]), .sidebar-board-children :global([data-board-projects]) { list-style: none; padding-left: 1rem; }
@@ -434,7 +503,7 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
 
   .sidebar-edge-toggle {
     position: absolute;
-    top: 56px;
+    top: 37px;
     right: -16px;
     width: 32px;
     height: 32px;
@@ -453,7 +522,7 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
   .sidebar-edge-toggle__circle {
     width: 28px;
     height: 28px;
-    border-radius: 9999px;
+    border-radius: var(--sidebar-toggle-radius, var(--radius-md, 10px));
     background: var(--bg-card);
     border: 1px solid var(--border);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
@@ -463,6 +532,7 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
     transition:
       background-color 180ms cubic-bezier(0.23, 1, 0.32, 1),
       border-color 180ms cubic-bezier(0.23, 1, 0.32, 1),
+      border-radius 180ms cubic-bezier(0.23, 1, 0.32, 1),
       color 180ms cubic-bezier(0.23, 1, 0.32, 1),
       transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
   }
@@ -486,6 +556,10 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
     transform: rotate(90deg);
   }
 
+  :global(body.sidebar-collapsed) .sidebar-edge-toggle {
+    top: 22px;
+  }
+
   :global(body.sidebar-collapsed) .sidebar-edge-toggle__icon {
     transform: rotate(-90deg);
   }
@@ -499,7 +573,7 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
   .sidebar-main { display: contents; }
 
   .sidebar-cta-wrap {
-    padding: 0 0.25rem 0.625rem;
+    padding: 0 0 0.625rem;
     flex-shrink: 0;
   }
 
@@ -553,7 +627,6 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
     }
   }
 
-  /* Scope through .sidebar so this outranks the global .nav-link display. */
   .sidebar .sidebar-compact-areas {
     display: none;
   }
@@ -574,10 +647,9 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
     overflow-x: hidden;
     overscroll-behavior: contain;
     min-height: 0;
-    padding-top: 8px;
-    scrollbar-width: none; /* Hide scrollbar Firefox */
+    padding-top: 4px;
+    scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
-    overscroll-behavior: contain;
   }
 
   @media (max-width: 768px) {
@@ -591,14 +663,13 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
     .sidebar-scroll { overflow: visible; }
   }
 
-  /* Hide scrollbar WebKit */
   .sidebar-scroll::-webkit-scrollbar {
     display: none;
   }
 
   .sidebar-header {
-    margin-bottom: 0.625rem;
-    padding: 0 0.25rem;
+    margin-bottom: 0.5rem;
+    padding: 0 0.125rem;
     position: relative;
   }
 
@@ -615,52 +686,12 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
     font-family: "JetBrains Mono", ui-monospace, monospace;
   }
 
-  .sidebar-tooltip {
-    display: none;
-    position: absolute;
-    left: 0.5rem;
-    top: calc(100% + 2px);
-    /* Prevent overflow clipping — constrain width to sidebar */
-    max-width: calc(100% - 1rem);
-    white-space: normal;
-    overflow-wrap: break-word;
-    font-size: 10px;
-    font-weight: 400;
-    font-style: italic;
-    color: var(--text-muted);
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 3px 8px;
-    pointer-events: none;
-    z-index: 50;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  }
-
-  :global(body:not(.sidebar-collapsed)) .sidebar-header:hover .sidebar-tooltip {
-    display: block !important;
-    animation: tooltip-fade-in 200ms ease forwards;
-  }
-
-  @keyframes tooltip-fade-in {
-    from {
-      opacity: 0;
-      transform: translateY(-2px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  /* Subtle mint glow on the brand completion dot when hovering the brand link */
   @media (hover: hover) and (pointer: fine) {
     .sidebar-brand:hover .sidebar-logo-svg circle {
       filter: drop-shadow(0 0 5px rgb(var(--accent-rgb) / 0.55));
     }
   }
 
-  /* Expose these styles globally for the sub-components to use cleanly without duplicate scopes */
   :global(.sidebar .nav-links) {
     display: flex;
     flex-direction: column;
@@ -675,7 +706,7 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
     align-items: center;
     justify-content: flex-start;
     gap: 0.625rem;
-    padding: 0.5rem 0.625rem;
+    padding: 0.45rem 0.625rem;
     border-radius: var(--radius-sm, 6px);
     font-size: 0.875rem;
     font-weight: 500;
@@ -709,11 +740,12 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 1.5rem;
-    height: 1.5rem;
-    margin-right: 0.75rem;
+    width: 1.25rem;
+    height: 1.25rem;
+    margin-right: 0;
     color: var(--text-muted);
     transition: color 200ms ease;
+    flex-shrink: 0;
   }
 
   :global(.sidebar .nav-badge) {
@@ -742,12 +774,10 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
       z-index: 200;
       box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
     }
-
   }
 
   .sidebar-gamification-wrapper {
-    padding: 0.5rem 0.75rem;
-    border-top: 1px solid var(--border, #334155);
+    padding: 0.4rem 0.25rem 0;
   }
 
   @media (prefers-reduced-motion: reduce) {

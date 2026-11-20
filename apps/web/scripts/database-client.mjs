@@ -8,7 +8,7 @@ import { LibsqlBatchError, LibsqlError } from "@libsql/core/api"
 import { expandConfig, isInMemoryConfig } from "@libsql/core/config"
 import { ResultSetImpl } from "@libsql/core/util"
 import { boardGrantRevisionQuery, getBoardGrantPath, registerBoardGrantContext } from "./board-grant-context.mjs"
-import { ORDINARY_BOARD_SCHEMA_VERSION } from "../drizzle/migrations/0016_ordinary_boards.mjs"
+import { CUSTOM_BOARD_KEYS_SCHEMA_VERSION } from "../drizzle/migrations/0017_custom_board_keys.mjs"
 import {
   readTaskBoardMigrationState, taskBoardMigrationStateSteps,
 } from "../drizzle/migrations/task-board-upgrade.mjs"
@@ -155,7 +155,7 @@ export function resetDatabaseDiagnosticsForTests() {
   s.readLeaseSlowWarningsTotal = 0
 }
 
-export const DATABASE_SCHEMA_VERSION = ORDINARY_BOARD_SCHEMA_VERSION
+export const DATABASE_SCHEMA_VERSION = CUSTOM_BOARD_KEYS_SCHEMA_VERSION
 
 const schemaMarkerTable = "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'app_settings' COLLATE NOCASE"
 const schemaMarkerRows = "SELECT value AS value FROM app_settings WHERE key = 'schema_version' LIMIT 2"
