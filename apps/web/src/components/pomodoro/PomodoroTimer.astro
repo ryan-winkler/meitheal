@@ -83,10 +83,10 @@ import Icon from "../ui/Icon.astro"
     align-items: center;
     gap: 6px;
     padding: 8px 14px;
-    background: var(--bg-card, #1a1a2e);
-    border: 1px solid var(--border, #334155);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
     border-radius: 24px;
-    color: var(--text-primary, #e0e0e0);
+    color: var(--text-primary);
     font-size: 0.8125rem;
     font-weight: 600;
     cursor: pointer;
@@ -121,8 +121,8 @@ import Icon from "../ui/Icon.astro"
     right: 24px;
     z-index: 46;
     width: 240px;
-    background: var(--bg-card, #1a1a2e);
-    border: 1px solid var(--border, #334155);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
     border-radius: 16px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
     padding: 16px;
@@ -142,13 +142,13 @@ import Icon from "../ui/Icon.astro"
   .pomodoro-panel__title {
     font-size: 0.875rem;
     font-weight: 600;
-    color: var(--text-primary, #e0e0e0);
+    color: var(--text-primary);
   }
 
   .pomodoro-panel__close {
     background: none;
     border: none;
-    color: var(--text-muted, #888);
+    color: var(--text-muted);
     cursor: pointer;
     font-size: 1rem;
     padding: 2px 6px;
@@ -157,7 +157,7 @@ import Icon from "../ui/Icon.astro"
   }
 
   .pomodoro-panel__close:hover {
-    background: var(--bg-hover, #1e293b);
+    background: var(--bg-hover);
   }
 
   /* Timer ring */
@@ -175,7 +175,7 @@ import Icon from "../ui/Icon.astro"
 
   .pomodoro-ring__bg {
     fill: none;
-    stroke: var(--border, #334155);
+    stroke: var(--border);
     stroke-width: 5;
   }
 
@@ -199,14 +199,14 @@ import Icon from "../ui/Icon.astro"
   .pomodoro-time {
     font-size: 2rem;
     font-weight: 700;
-    color: var(--text-primary, #e0e0e0);
+    color: var(--text-primary);
     font-variant-numeric: tabular-nums;
     display: block;
   }
 
   .pomodoro-phase {
     font-size: 0.6875rem;
-    color: var(--text-muted, #888);
+    color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.08em;
     margin-top: 4px;
@@ -226,7 +226,7 @@ import Icon from "../ui/Icon.astro"
     justify-content: center;
     gap: 4px;
     padding: 6px 10px;
-    border: 1px solid var(--border, #334155);
+    border: 1px solid var(--border);
     border-radius: 8px;
     font-size: 0.75rem;
     font-weight: 600;
@@ -246,17 +246,17 @@ import Icon from "../ui/Icon.astro"
   }
 
   .pomodoro-btn--secondary {
-    background: var(--bg-hover, #1e293b);
-    color: var(--text-primary, #e0e0e0);
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 
   .pomodoro-btn--secondary:hover {
-    background: var(--bg-input, #2a2a4a);
+    background: var(--bg-input);
   }
 
   .pomodoro-btn--danger {
     background: transparent;
-    color: var(--text-muted, #888);
+    color: var(--text-muted);
     border-color: transparent;
   }
 
@@ -268,7 +268,7 @@ import Icon from "../ui/Icon.astro"
   /* Sessions */
   .pomodoro-sessions {
     font-size: 0.6875rem;
-    color: var(--text-muted, #888);
+    color: var(--text-muted);
     text-align: center;
   }
 
@@ -344,6 +344,11 @@ import Icon from "../ui/Icon.astro"
   let lastPillIcon = ""
   let openerFocus: HTMLElement | null = null
   let tickInterval: ReturnType<typeof setInterval> | null = null
+  let retryTimer: ReturnType<typeof setTimeout> | null = null
+  let mountGen = 0
+  let requestSeq = 0
+  let activeActions = 0
+  let lastBoardKey = ""
 
   function formatTime(seconds: number): string {
     return `${Math.floor(seconds / 60)}:${(seconds % 60).toString().padStart(2, "0")}`
@@ -404,11 +409,28 @@ import Icon from "../ui/Icon.astro"
     }
   }
 
+  function clearExpiryRetry() {
+    if (retryTimer) {
+      clearTimeout(retryTimer)
+      retryTimer = null
+    }
+  }
+
   function stopLocalTick() {
+    clearExpiryRetry()
     if (tickInterval) {
       clearInterval(tickInterval)
       tickInterval = null
     }
+  }
+
+  function currentBoardKey(): string {
+    return (
+      document.querySelector<HTMLElement>("#main-content [data-board-id], [data-task-workspace][data-board-id]")?.dataset.boardId ??
+      new URLSearchParams(location.search).get("board_id") ??
+      location.pathname.match(/^\/boards\/([^/]+)/)?.[1] ??
+      ""
+    )
   }
 
   function startLocalTick() {
@@ -423,18 +445,32 @@ import Icon from "../ui/Icon.astro"
         updateDisplay()
       } else {
         stopLocalTick()
-        void runRequest("/api/pomodoro")
+        void runRequest("/api/pomodoro", undefined, true, true)
       }
     }, 1000)
   }
 
-  async function runRequest(url: string, init?: RequestInit, includeToday = true) {
+  async function runRequest(url: string, init?: RequestInit, includeToday = true, retryOnFail = false) {
     const activeRoot = boundRoot
     if (!activeRoot?.isConnected) return
+    const isAction = init?.method === "POST"
+    if (!isAction && activeActions > 0) return
+
+    const gen = mountGen
+    const seq = ++requestSeq
+    const isMounted = () => gen === mountGen && boundRoot === activeRoot && activeRoot.isConnected
+    if (isAction) activeActions++
+    let shouldRetry = false
     try {
       const res = await fetch(url, init)
-      if (!res.ok || boundRoot !== activeRoot || !activeRoot.isConnected || !els) return
+      if (!isMounted() || !els) return
+      if (!res.ok) {
+        shouldRetry = retryOnFail && (res.status >= 500 || res.status === 429)
+        return
+      }
       const data = await res.json()
+      if (!isMounted() || seq !== requestSeq || (!isAction && activeActions > 0) || !els) return
+      clearExpiryRetry()
       const state = data.state
       localRemaining = state.remaining || 0
       localTotal = state.total || 0
@@ -449,7 +485,18 @@ import Icon from "../ui/Icon.astro"
       if (els.pill && !expanded) els.pill.classList.toggle("pomodoro-hidden", localPhase === "idle")
       notifyLayoutChanged()
     } catch {
-      // Non-critical
+      shouldRetry = retryOnFail
+    } finally {
+      if (isAction && activeActions > 0) activeActions--
+      if (shouldRetry && isMounted() && localRemaining === 0 && localPhase !== "idle") {
+        clearExpiryRetry()
+        retryTimer = setTimeout(() => {
+          retryTimer = null
+          if (isMounted() && localRemaining === 0 && localPhase !== "idle") {
+            void runRequest("/api/pomodoro", undefined, true, true)
+          }
+        }, 5000)
+      }
     }
   }
 
@@ -473,10 +520,10 @@ import Icon from "../ui/Icon.astro"
       els?.panel?.querySelector<HTMLElement>("button:not(.pomodoro-hidden)")?.focus({ preventScroll: true })
     } else {
       if (wasInsidePanel) {
-        if (els?.pill && !els.pill.classList.contains("pomodoro-hidden")) {
-          els.pill.focus({ preventScroll: true })
-        } else if (canRestoreFocusTarget(openerFocus)) {
+        if (canRestoreFocusTarget(openerFocus)) {
           openerFocus.focus({ preventScroll: true })
+        } else if (els?.pill && !els.pill.classList.contains("pomodoro-hidden")) {
+          els.pill.focus({ preventScroll: true })
         }
       }
       openerFocus = null
@@ -485,12 +532,18 @@ import Icon from "../ui/Icon.astro"
   }
 
   function teardownPomodoroMount() {
+    mountGen++
     stopLocalTick()
     rootAc?.abort()
     rootAc = null
     boundRoot = null
     els = null
     expanded = false
+    localRemaining = 0
+    localTotal = 0
+    localPhase = "idle"
+    activeActions = 0
+    lastBoardKey = ""
     openerFocus = null
     lastPillIcon = ""
     delete window.startPomodoro
@@ -503,10 +556,24 @@ import Icon from "../ui/Icon.astro"
       notifyLayoutChanged()
       return
     }
-    if (root === boundRoot) return
+    const boardKey = currentBoardKey()
+    if (root === boundRoot) {
+      if (boardKey === lastBoardKey) return
+      lastBoardKey = boardKey
+      stopLocalTick()
+      localRemaining = 0
+      localTotal = 0
+      localPhase = "idle"
+      updateDisplay()
+      els?.pill?.classList.toggle("pomodoro-hidden", !expanded)
+      notifyLayoutChanged()
+      void runRequest("/api/pomodoro")
+      return
+    }
 
     teardownPomodoroMount()
     boundRoot = root
+    lastBoardKey = boardKey
     rootAc = new AbortController()
     const { signal } = rootAc
     const q = <T extends HTMLElement = HTMLElement>(id: string) => root.querySelector<T>(`#${id}`)

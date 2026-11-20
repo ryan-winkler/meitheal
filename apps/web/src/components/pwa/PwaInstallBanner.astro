@@ -171,6 +171,7 @@ const locale = Astro.props.locale ?? getLocale(Astro)
 
 <script>
   import { canRestoreFocusTarget } from "@lib/dialog-overlay"
+  import { consumePwaInstallPrompt } from "@lib/layout-pwa-controller"
   import { bindSwipeDismiss } from "@lib/swipe-dismiss"
   import { isSoftwareKeyboardOpen } from "@lib/toast"
 
@@ -333,21 +334,12 @@ const locale = Astro.props.locale ?? getLocale(Astro)
     }
 
     document.getElementById("pwa-install-btn")?.addEventListener("click", async () => {
-      const prompt = window.__pwa_install_prompt
-      if (!prompt) return
-      try {
-        await prompt.prompt()
-        const result = await prompt.userChoice
-        if (result.outcome === "accepted") {
-          dismissBanner()
-        } else {
-          setSessionHidden(true)
-          hideBanner()
-        }
-      } catch {
+      const outcome = await consumePwaInstallPrompt()
+      if (outcome === "accepted") dismissBanner()
+      else if (outcome === "dismissed") {
+        setSessionHidden(true)
         hideBanner()
-      }
-      window.__pwa_install_prompt = null
+      } else if (outcome === "error") hideBanner()
     }, { signal })
 
     document.getElementById("pwa-dismiss-btn")?.addEventListener("click", dismissBanner, { signal })
@@ -412,6 +404,10 @@ const locale = Astro.props.locale ?? getLocale(Astro)
     showBanner()
   }, { signal: globalAc.signal })
   window.addEventListener("meitheal-pwa-installed", dismissBanner, { signal: globalAc.signal })
+  window.addEventListener("meitheal-pwa-prompt-consumed", hideBanner, { signal: globalAc.signal })
+  window.addEventListener("meitheal-pwa-hints-reset", () => {
+    setSessionHidden(false)
+  }, { signal: globalAc.signal })
   document.addEventListener("astro:before-swap", () => window.__pwaBannerTeardown?.(), { signal: globalAc.signal })
   document.addEventListener("astro:page-load", bindBannerListeners, { signal: globalAc.signal })
 

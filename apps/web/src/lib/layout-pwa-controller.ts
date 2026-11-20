@@ -36,6 +36,21 @@ window.addEventListener("appinstalled", () => {
   window.dispatchEvent(new CustomEvent("meitheal-pwa-installed"))
 }, { signal: globalSignal })
 
+export async function consumePwaInstallPrompt(): Promise<"accepted" | "dismissed" | "error" | "none"> {
+  const prompt = window.__pwa_install_prompt
+  if (!prompt) return "none"
+  let outcome: "accepted" | "dismissed" | "error" = "error"
+  try {
+    await prompt.prompt()
+    outcome = (await prompt.userChoice).outcome
+  } catch {
+    outcome = "error"
+  }
+  window.__pwa_install_prompt = null
+  window.dispatchEvent(new Event("meitheal-pwa-prompt-consumed"))
+  return outcome
+}
+
 export interface SwActivationButtonOptions {
   button: HTMLElement
   target: ServiceWorker | (() => Promise<ServiceWorker | null>)

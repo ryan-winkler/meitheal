@@ -11,7 +11,7 @@
  *      without native browser dialogs.
  */
 
-import { dialogText, openManagedDialog } from "./dialog-overlay"
+import { dialogText, isTopManagedDialog, openManagedDialog } from "./dialog-overlay"
 
 export interface PromptOptions {
   title?: string
@@ -91,7 +91,7 @@ export function promptDialog(options: PromptOptions): Promise<string | null> {
       close(value || null)
     }
 
-    const { signal, close } = openManagedDialog<string | null>({
+    const { overlay, signal, close } = openManagedDialog<string | null>({
       id: "meitheal-prompt-overlay",
       role: "dialog",
       labelledBy: "prompt-title",
@@ -111,7 +111,16 @@ export function promptDialog(options: PromptOptions): Promise<string | null> {
     input.focus()
     input.select()
     requestAnimationFrame(() => {
-      if (!input.isConnected || options.signal?.aborted || document.activeElement === input) return
+      if (
+        !input.isConnected ||
+        options.signal?.aborted ||
+        !isTopManagedDialog("meitheal-prompt-overlay") ||
+        document.activeElement === input
+      ) {
+        return
+      }
+      const active = document.activeElement
+      if (active && active !== document.body && !overlay.contains(active)) return
       input.focus()
       input.select()
     })

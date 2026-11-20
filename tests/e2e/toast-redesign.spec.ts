@@ -261,6 +261,13 @@ test.describe("Unified toast, persistent notifications & mobile UX", () => {
       })
       h1?.element.querySelector<HTMLButtonElement>(".toast-undo")?.click()
 
+      window.__meithealToast?.({
+        id: "throwing-undo-pagehide",
+        message: "Throwing commit",
+        action: { label: "Undo", onClick: () => {} },
+        onForceCommit: () => { throw new Error("boom") },
+      })
+
       let rawPendingForceCommits = 0
       let rawPendingDismissCommits = 0
       window.__meithealToast?.({
@@ -271,7 +278,7 @@ test.describe("Unified toast, persistent notifications & mobile UX", () => {
         onForceCommit: () => { rawPendingForceCommits += 1 },
       })
 
-      // Dispatch twice — toast.ts `settled` guard + removal ensures strictly 1 execution
+      // Dispatch twice — throwing first commit must not skip second pending commit
       window.dispatchEvent(new Event("pagehide"))
       window.dispatchEvent(new Event("pagehide"))
 
@@ -280,7 +287,7 @@ test.describe("Unified toast, persistent notifications & mobile UX", () => {
         rawCancelledCommits,
         rawPendingForceCommits,
         rawPendingDismissCommits,
-        remainingPendingNode: document.querySelectorAll('[data-toast-id="pending-undo-pagehide"]').length,
+        remainingPendingNode: document.querySelectorAll('[data-toast-id="pending-undo-pagehide"], [data-toast-id="throwing-undo-pagehide"]').length,
       }
     })
 
@@ -360,6 +367,23 @@ test.describe("Unified toast, persistent notifications & mobile UX", () => {
     })
     expect(await snapCard.getAttribute("data-swiping")).toBeNull()
     await expect(snapCard).toBeVisible()
+
+    // Locking axis at 16px then releasing immediately without post-lock velocity must not false-flick
+    await page.evaluate(() => {
+      const el = document.querySelector<HTMLElement>('[data-toast-id="swipe-wrong-way"]')!
+      const rect = el.getBoundingClientRect()
+      const sx = rect.x + rect.width * 0.5
+      const sy = rect.y + rect.height * 0.5
+      el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, pointerId: 88, button: 0, clientX: sx, clientY: sy }))
+      window.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, cancelable: true, pointerId: 88, clientX: sx + 16, clientY: sy }))
+      window.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, pointerId: 88, clientX: sx + 16, clientY: sy }))
+    })
+    await expect(snapCard).toBeVisible()
+    await expect(snapCard).toHaveCSS("opacity", "1")
+
+    // Object.prototype key names (e.g., "constructor") resolve literally instead of inherited properties
+    await page.evaluate(() => { window.showToast?.("constructor", "info", { id: "proto-key", duration: 15000 }) })
+    await expect(page.locator('[data-toast-id="proto-key"] .m-toast__message')).toHaveText("constructor")
 
     // Swipe right beyond threshold clears data-swiping so exit animates & dismisses
     await swipeElement(page, snapCard, 180, 0)
@@ -448,17 +472,18 @@ test.describe("Unified toast, persistent notifications & mobile UX", () => {
     expect(await page.evaluate(() => localStorage.getItem("meitheal-pwa-dismissed"))).toBe("permanent")
   })
 
-  test("meets reduced-motion sync removal, info accent, Irish localization, and Axe contrast across themes", async ({ page, baseURL }) => {
-    for (const cfg of [
-      { theme: "dark", locale: "en" },
-      { theme: "light", locale: "en" },
-      { theme: "dark", locale: "ga" },
-      { theme: "light", locale: "ga" },
-    ]) {
+  for (const cfg of [
+    { theme: "dark", locale: "en" },
+    { theme: "light", locale: "en" },
+    { theme: "dark", locale: "ga" },
+    { theme: "light", locale: "ga" },
+  ] as const) {
+    test(`meets reduced-motion sync removal, info accent, Irish localization, and Axe contrast (${cfg.theme}/${cfg.locale})`, async ({ page, baseURL }) => {
       await page.emulateMedia({ reducedMotion: "reduce" })
       await page.addInitScript((theme) => localStorage.setItem("meitheal-theme", theme), cfg.theme)
       await page.context().addCookies([{ name: "meitheal-locale", value: cfg.locale, url: baseURL ?? process.env.E2E_BASE_URL! }])
       await page.goto("/")
+      await expect(page.locator("html")).toHaveAttribute("data-theme", cfg.theme)
 
       await page.evaluate(() => {
         window.__meithealToast?.({
@@ -504,8 +529,8 @@ test.describe("Unified toast, persistent notifications & mobile UX", () => {
         return document.querySelector('[data-toast-id="axe-info"]') === null
       })
       expect(removedImmediately).toBe(true)
-    }
-  })
+    })
+  }
 
   test("returns Tab focus from Top-Layer toast back into SearchHub and localizes NewTask/prompt fallbacks in ga", async ({ page, baseURL }) => {
     await page.context().addCookies([{ name: "meitheal-locale", value: "ga", url: baseURL ?? process.env.E2E_BASE_URL! }])

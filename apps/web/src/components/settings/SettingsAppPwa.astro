@@ -491,7 +491,7 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
 <script>
   import { getAppServiceWorkerRegistration, type SwUpdateEventDetail } from "@domains/offline/sw-register"
   import { clearCurrentOfflineCache, hasUnattributedOfflineData } from "@domains/offline/offline-store"
-  import { activateSwWithButtonUi } from "@lib/layout-pwa-controller"
+  import { activateSwWithButtonUi, consumePwaInstallPrompt } from "@lib/layout-pwa-controller"
   import { pageLifecycle } from "../../lib/page-lifecycle"
 
   let troubleshootTimer: number | undefined
@@ -576,22 +576,16 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
       }
       showInstallBtn()
       window.addEventListener("meitheal-pwa-installable", showInstallBtn, { signal })
+      window.addEventListener("meitheal-pwa-prompt-consumed", () => {
+        installBtn.style.display = "none"
+      }, { signal })
 
       installBtn.addEventListener("click", async (e: Event) => {
         e.preventDefault()
-        const prompt = (window as any).__pwa_install_prompt
-        if (!prompt) return
-        try {
-          await prompt.prompt()
-          const result = await prompt.userChoice
-          if (result.outcome === "accepted") {
-            installBtn.style.display = "none"
-            if (installedBadge) installedBadge.style.display = "inline-flex"
-          }
-        } catch {
-          /* prompt can only be called once */
+        if ((await consumePwaInstallPrompt()) === "accepted") {
+          installBtn.style.display = "none"
+          if (installedBadge) installedBadge.style.display = "inline-flex"
         }
-        ;(window as any).__pwa_install_prompt = null
       }, { signal })
     }
 
@@ -613,28 +607,15 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
     popoutBtn.addEventListener("click", (e: Event) => {
       e.preventDefault()
       const ingressPath = (window as any).__ingress_path || ""
-      let targetUrl: string
-
+      let origin = window.location.origin
       if (ingressPath) {
         try {
-          const parentOrigin =
-            window.top?.location?.origin || window.location.origin
-          targetUrl = parentOrigin + ingressPath + "/settings#app-pwa-settings"
+          origin = window.top?.location?.origin || origin
         } catch {
-          const referrer = document.referrer
-          if (referrer) {
-            const refUrl = new URL(referrer)
-            targetUrl =
-              refUrl.origin + ingressPath + "/settings#app-pwa-settings"
-          } else {
-            targetUrl = ingressPath + "/settings#app-pwa-settings"
-          }
+          origin = document.referrer ? new URL(document.referrer).origin : ""
         }
-      } else {
-        targetUrl = window.location.origin + "/settings#app-pwa-settings"
       }
-
-      window.open(targetUrl, "_blank", "noopener")
+      window.open(origin + ingressPath + "/settings#app-pwa-settings", "_blank", "noopener")
     }, { signal })
 
     if (uninstallBtn) {
@@ -758,6 +739,7 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
             cleared++
           }
         } catch { /* non-fatal */ }
+        window.dispatchEvent(new Event("meitheal-pwa-hints-reset"))
         showTroubleshootResult(
           cleared > 0
             ? (copy?.hintsResetOk ?? "✓ Reset {count} hint(s). They’ll reappear on next page load.").replace("{count}", String(cleared))

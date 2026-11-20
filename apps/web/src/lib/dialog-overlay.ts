@@ -9,14 +9,18 @@
 
 import { containTabFocus } from "./focus-trap"
 
+const BASE_BLOCKING_SELECTORS =
+  "dialog[open], [data-meitheal-tabler-modal].show, #meitheal-confirm-overlay, #meitheal-prompt-overlay"
+
 export const UNPROMOTED_BLOCKING_OVERLAY_SELECTOR =
   "dialog[open], [data-meitheal-tabler-modal].show, #meitheal-confirm-overlay:not([popover]), #meitheal-prompt-overlay:not([popover])"
 
-export const PRIORITY_OVERLAY_SELECTOR =
-  'dialog[open], [data-meitheal-tabler-modal].show, #meitheal-confirm-overlay, #meitheal-prompt-overlay, #search-hub-overlay:not(.hidden), .habit-modal-overlay:not(.hidden), #ask-ha-overlay.active, #ask-ha-overlay:not(.modal-overlay):not(.hidden), [role="dialog"][aria-modal="true"].active:not(#shortcut-modal)'
+export const PRIORITY_OVERLAY_SELECTOR = [
+  BASE_BLOCKING_SELECTORS,
+  '#search-hub-overlay:not(.hidden), .habit-modal-overlay:not(.hidden), #ask-ha-overlay.active, #ask-ha-overlay:not(.modal-overlay):not(.hidden), [role="dialog"][aria-modal="true"].active:not(#shortcut-modal)',
+].join(", ")
 
-const SELF_TRAPPED_OVERLAY_SELECTOR =
-  "dialog[open], [data-meitheal-tabler-modal].show, #meitheal-confirm-overlay, #meitheal-prompt-overlay, #shortcut-modal:not(.hidden)"
+const SELF_TRAPPED_OVERLAY_SELECTOR = [BASE_BLOCKING_SELECTORS, "#shortcut-modal:not(.hidden)"].join(", ")
 
 export function findModalTrapTarget(): HTMLElement | null {
   if (
@@ -44,6 +48,11 @@ export function dialogText(key: string, fallback: string): string {
 }
 
 const activeDismisses = new Map<string, () => void>()
+const openDialogIds: string[] = []
+
+export function isTopManagedDialog(id: string): boolean {
+  return openDialogIds[openDialogIds.length - 1] === id
+}
 
 export function notifyOverlayChange(phase: "opened" | "closed"): void {
   if (typeof document === "undefined") return
@@ -63,7 +72,7 @@ export function canRestoreFocusTarget(target: HTMLElement | null): target is HTM
   return true
 }
 
-function mountOverlay(overlay: HTMLElement): void {
+function mountOverlay(overlay: HTMLElement, isAborted?: () => boolean): void {
   document.body.append(overlay)
   if (typeof overlay.showPopover === "function") {
     // Promote blocking dialogs unconditionally into the top layer above non-modal popovers.
@@ -74,7 +83,7 @@ function mountOverlay(overlay: HTMLElement): void {
       overlay.removeAttribute("popover")
     }
   }
-  notifyOverlayChange("opened")
+  if (!isAborted?.()) notifyOverlayChange("opened")
 }
 
 export interface ManagedDialogOptions<T> {
@@ -107,16 +116,28 @@ export function openManagedDialog<T>(opts: ManagedDialogOptions<T>): {
   if (opts.describedBy) overlay.setAttribute("aria-describedby", opts.describedBy)
   overlay.appendChild(opts.dialog)
 
-  const previouslyFocused = document.activeElement as HTMLElement | null
-  mountOverlay(overlay)
-
+  const listeners = new AbortController()
   let settled = false
   let removeTimer: number | undefined
-  const listeners = new AbortController()
+
+  if (opts.signal?.aborted) {
+    listeners.abort()
+    opts.resolve(opts.cancelValue)
+    return {
+      overlay,
+      signal: listeners.signal,
+      isSettled: () => true,
+      close: () => {},
+    }
+  }
+
+  const previouslyFocused = document.activeElement as HTMLElement | null
   const close = (result: T, immediate = true, restoreFocus = true) => {
     const remove = () => {
       window.clearTimeout(removeTimer)
       listeners.abort()
+      const idx = openDialogIds.lastIndexOf(opts.id)
+      if (idx !== -1) openDialogIds.splice(idx, 1)
       overlay.remove()
       if (activeDismisses.get(opts.id) === dismiss) activeDismisses.delete(opts.id)
       notifyOverlayChange("closed")
@@ -136,7 +157,11 @@ export function openManagedDialog<T>(opts: ManagedDialogOptions<T>): {
   }
   const abort = () => close(opts.cancelValue, true)
   const dismiss = () => close(opts.cancelValue, true, false)
+
+  openDialogIds.push(opts.id)
   activeDismisses.set(opts.id, dismiss)
+  opts.signal?.addEventListener("abort", abort, { once: true, signal: listeners.signal })
+  mountOverlay(overlay, () => settled || Boolean(opts.signal?.aborted))
 
   overlay.addEventListener("click", (e) => {
     if (e.target === overlay) close(opts.cancelValue)
@@ -145,6 +170,7 @@ export function openManagedDialog<T>(opts: ManagedDialogOptions<T>): {
   overlay.addEventListener("keydown", (e) => e.stopPropagation(), { signal: listeners.signal })
 
   document.addEventListener("keydown", (e) => {
+    if (!isTopManagedDialog(opts.id)) return
     if (settled) {
       if (e.key === "Escape") {
         e.preventDefault()
@@ -164,7 +190,6 @@ export function openManagedDialog<T>(opts: ManagedDialogOptions<T>): {
     }
   }, { capture: true, signal: listeners.signal })
   document.addEventListener("astro:before-swap", dismiss, { once: true, signal: listeners.signal })
-  opts.signal?.addEventListener("abort", abort, { once: true, signal: listeners.signal })
 
   return { overlay, signal: listeners.signal, isSettled: () => settled, close }
 }

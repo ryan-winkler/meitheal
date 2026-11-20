@@ -10,7 +10,12 @@
  * ============================================= */
 
 /* --- Shared button base --- */
-.btn {
+.btn,
+.btn-primary,
+.btn-secondary,
+.btn-outline,
+.btn-ghost,
+.btn-ghost-accent {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -20,36 +25,20 @@
   font-weight: 500;
   font-size: 0.875rem;
   line-height: 1.25rem;
-  transition: background 160ms var(--ease-out, ease), color 160ms var(--ease-out, ease), border-color 160ms var(--ease-out, ease), transform 160ms var(--ease-out, ease), box-shadow 160ms var(--ease-out, ease);
   cursor: pointer;
+  transition: background 160ms var(--ease-out, ease), color 160ms var(--ease-out, ease), border-color 160ms var(--ease-out, ease), transform 160ms var(--ease-out, ease), box-shadow 160ms var(--ease-out, ease);
 }
 
-.btn:disabled {
+:is(.btn, .btn-primary, .btn-secondary, .btn-outline, .btn-ghost):disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
 .btn-primary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.625rem 1rem;
-  border-radius: var(--radius-sm, 6px);
-  font-weight: 500;
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  cursor: pointer;
   background: var(--personal-accent, var(--palette-accent-hover));
   color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
   border: 1px solid transparent;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-  transition: background 160ms var(--ease-out, ease), color 160ms var(--ease-out, ease), transform 160ms var(--ease-out, ease), box-shadow 160ms var(--ease-out, ease);
-}
-
-.btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -60,26 +49,10 @@
 }
 
 .btn-secondary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.625rem 1rem;
-  border-radius: var(--radius-sm, 6px);
-  font-weight: 500;
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  cursor: pointer;
   background: transparent;
   color: var(--text-secondary);
   border: 1px solid var(--border);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-  transition: background 160ms var(--ease-out, ease), color 160ms var(--ease-out, ease), border-color 160ms var(--ease-out, ease), transform 160ms var(--ease-out, ease), box-shadow 160ms var(--ease-out, ease);
-}
-
-.btn-secondary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -90,26 +63,10 @@
 }
 
 .btn-outline {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.625rem 1rem;
-  border-radius: var(--radius-sm, 6px);
-  font-weight: 500;
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  cursor: pointer;
   background: var(--bg-card);
   color: var(--text-primary);
   border: 1px solid var(--border);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-  transition: background 160ms var(--ease-out, ease), color 160ms var(--ease-out, ease), border-color 160ms var(--ease-out, ease), transform 160ms var(--ease-out, ease), box-shadow 160ms var(--ease-out, ease);
-}
-
-.btn-outline:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -128,25 +85,9 @@
 }
 
 .btn-ghost {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.625rem 1rem;
-  border-radius: var(--radius-sm, 6px);
-  font-weight: 500;
-  font-size: 0.875rem;
-  line-height: 1.25rem;
-  cursor: pointer;
   background: transparent;
   color: var(--text-secondary);
   border: 1px solid transparent;
-  transition: background 160ms var(--ease-out, ease), color 160ms var(--ease-out, ease), transform 160ms var(--ease-out, ease), box-shadow 160ms var(--ease-out, ease);
-}
-
-.btn-ghost:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -230,26 +171,12 @@
 
 /* Button micro-interactions */
 /* ===== Button Press Micro-Interactions (Wave 7) ===== */
-.btn:focus-visible,
-.btn-primary:focus-visible,
-.btn-secondary:focus-visible,
-.btn-outline:focus-visible,
-.btn-ghost:focus-visible,
-.btn-danger:focus-visible,
-.btn-ghost-accent:focus-visible {
+:is(.btn, .btn-primary, .btn-secondary, .btn-outline, .btn-ghost, .btn-danger, .btn-ghost-accent):focus-visible {
   outline: 2px solid var(--border-focus, var(--accent));
   outline-offset: 2px;
 }
 
-.btn:active:not(:disabled),
-.btn-primary:active:not(:disabled),
-.btn-secondary:active:not(:disabled),
-.btn-outline:active:not(:disabled),
-.btn-ghost:active:not(:disabled),
-.btn-danger:active:not(:disabled),
-.btn-ghost-accent:active:not(:disabled),
-.task-action-btn:active:not(:disabled),
-.task-fav-btn:active:not(:disabled) {
+:is(.btn, .btn-primary, .btn-secondary, .btn-outline, .btn-ghost, .btn-danger, .btn-ghost-accent, .task-action-btn, .task-fav-btn):active:not(:disabled) {
   transform: scale(0.97);
 }
 
@@ -281,16 +208,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .btn:active:not(:disabled),
-  .btn-primary:active:not(:disabled),
-  .btn-secondary:active:not(:disabled),
-  .btn-outline:active:not(:disabled),
-  .btn-ghost:active:not(:disabled),
-  .btn-danger:active:not(:disabled),
-  .btn-ghost-accent:active:not(:disabled),
-  .btn-icon:active:not(:disabled),
-  .task-action-btn:active:not(:disabled),
-  .task-fav-btn:active:not(:disabled) {
+  :is(.btn, .btn-primary, .btn-secondary, .btn-outline, .btn-ghost, .btn-danger, .btn-ghost-accent, .btn-icon, .task-action-btn, .task-fav-btn):active:not(:disabled) {
     transform: none;
   }
 
@@ -366,12 +284,7 @@
 
 /* MT-01: WCAG 2.5.8 — 44px minimum touch targets on coarse pointer devices */
 @media (pointer: coarse) {
-  .btn-icon {
-    min-width: 44px;
-    min-height: 44px;
-  }
-
-  /* Ensure action buttons in task cards/rows are tappable */
+  .btn-icon,
   .task-action-btn,
   .task-fav-btn {
     min-width: 44px;

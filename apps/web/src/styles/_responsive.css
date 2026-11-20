@@ -306,6 +306,10 @@
   touch-action: none;
 }
 
+.toast-container[data-scrollable="true"] .toast {
+  touch-action: pan-y;
+}
+
 /* ===== PRA-16: Mobile Bottom Tab Bar ===== */
 /* Hidden on desktop, shown on mobile — thumb-zone nav for HA Companion App */
 .mobile-tab-bar {

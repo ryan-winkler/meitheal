@@ -86,7 +86,8 @@ interface ToastRecord {
   duration: number
   persistent: boolean
   dismissible: boolean
-  hasAction: boolean
+  coalesceable: boolean
+  mapKey: string
   repeatCount: number
   element: HTMLElement
   iconEl: HTMLSpanElement
@@ -142,6 +143,19 @@ let onViewportChange: (() => void) | null = null
 let announcerRaf: number | undefined
 let lastTopToastVisible = false
 
+function reportSafeError(err: unknown): void {
+  if (typeof reportError === "function") reportError(err)
+}
+
+function invokeSafe(fn?: () => void): void {
+  if (!fn) return
+  try {
+    fn()
+  } catch (err) {
+    reportSafeError(err)
+  }
+}
+
 function normalizeType(value: unknown): ToastType {
   return value === "error" || value === "warning" || value === "info" || value === "success"
     ? value
@@ -153,7 +167,7 @@ function translate(key: string, fallback?: string): string {
     const resolved = window.mI18n.get(key)
     if (resolved && resolved !== key) return resolved
   }
-  return fallback ?? DEFAULT_FALLBACKS[key] ?? key
+  return fallback ?? (Object.hasOwn(DEFAULT_FALLBACKS, key) ? DEFAULT_FALLBACKS[key] : undefined) ?? key
 }
 
 function prefersReducedMotion(): boolean {
@@ -201,7 +215,7 @@ function syncPopoverLayer(container: HTMLElement | null): void {
   if (!container) return
   const hasVisible = activeRecords.size > 0 || container.children.length > 0
   if (hasVisible) {
-    const label = container.dataset.regionLabel || translate("toast.region_label")
+    const label = translate("toast.region_label", container.dataset.regionLabel)
     if (container.getAttribute("aria-label") !== label) container.setAttribute("aria-label", label)
   } else {
     container.removeAttribute("aria-label")
@@ -209,8 +223,7 @@ function syncPopoverLayer(container: HTMLElement | null): void {
 
   if (typeof container.showPopover !== "function") return
   const unpromotedBlocking = document.querySelector(UNPROMOTED_BLOCKING_OVERLAY_SELECTOR)
-  const otherOpen = Array.from(document.querySelectorAll("[popover]:popover-open"))
-    .some((el) => el !== container)
+  const otherOpen = Boolean(document.querySelector("[popover]:popover-open:not(#toast-container)"))
 
   // UA CSS hides `[popover]:not(:popover-open)`, so never keep `popover` attached
   // unless Top-Layer promotion is actively open.
@@ -265,8 +278,18 @@ function isTopDocked(container: HTMLElement | null): boolean {
 function clearDockState(container: HTMLElement): void {
   delete container.dataset.dockTop
   delete container.dataset.keyboardOpen
+  delete container.dataset.scrollable
   container.style.removeProperty("--toast-vv-top")
   container.style.removeProperty("--toast-vv-max-h")
+}
+
+function syncScrollableState(container: HTMLElement | null): void {
+  if (!container) return
+  if (isTopDocked(container) && container.scrollHeight > container.clientHeight) {
+    container.dataset.scrollable = "true"
+  } else {
+    delete container.dataset.scrollable
+  }
 }
 
 function syncDockState(container: HTMLElement | null): void {
@@ -302,6 +325,7 @@ function notifyDockStateIfChanged(container: HTMLElement | null): void {
 
 function syncDockAndNotify(container: HTMLElement | null): void {
   syncDockState(container)
+  syncScrollableState(container)
   notifyDockStateIfChanged(container)
 }
 
@@ -317,8 +341,11 @@ function flushPendingCommits(): void {
   for (const record of Array.from(activeRecords.values())) {
     if (record.onForceCommit && !record.settled) {
       record.settled = true
-      record.onForceCommit()
-      finalizeRemoval(record)
+      try {
+        invokeSafe(record.onForceCommit)
+      } finally {
+        finalizeRemoval(record)
+      }
     }
   }
 }
@@ -398,11 +425,14 @@ function startTimer(record: ToastRecord, resetDuration = false): void {
   record.timerId = window.setTimeout(() => {
     record.timerId = undefined
     if (record.leaving) return
-    if (!record.settled) {
-      record.settled = true
-      record.onAutoClose?.()
+    try {
+      if (!record.settled) {
+        record.settled = true
+        invokeSafe(record.onAutoClose)
+      }
+    } finally {
+      removeToastRecord(record)
     }
-    removeToastRecord(record)
   }, Math.max(0, record.remainingMs))
 }
 
@@ -452,8 +482,8 @@ function finalizeRemoval(record: ToastRecord, options?: { restoreFocus?: boolean
   )
 
   record.controller.abort()
-  if (activeRecords.get(record.id) === record) {
-    activeRecords.delete(record.id)
+  if (activeRecords.get(record.mapKey) === record) {
+    activeRecords.delete(record.mapKey)
   }
   record.element.remove()
 
@@ -466,6 +496,8 @@ function finalizeRemoval(record: ToastRecord, options?: { restoreFocus?: boolean
     clearDockState(container)
     detachViewportListener()
     syncPopoverLayer(container)
+  } else {
+    syncScrollableState(container)
   }
   notifyDockStateIfChanged(container)
 }
@@ -485,7 +517,7 @@ function removeToastRecord(
 
   if (!record.settled) {
     record.settled = true
-    record.onDismiss?.()
+    invokeSafe(record.onDismiss)
   }
 
   const el = record.element
@@ -496,22 +528,21 @@ function removeToastRecord(
 
   el.dataset.toastState = "leaving"
   el.style.pointerEvents = "none"
+  let exitTransform: string
   if (options?.swipeExit) {
     // Flush after cleanupDrag cleared data-swiping so opacity & exit transform both transition.
     void el.offsetWidth
-    el.style.opacity = "0"
-    el.style.transform = `translate3d(${options.swipeExit.x}px, ${options.swipeExit.y}px, 0)`
+    exitTransform = `translate3d(${options.swipeExit.x}px, ${options.swipeExit.y}px, 0)`
   } else if (isTopDocked(getContainer(false))) {
-    el.style.opacity = "0"
-    el.style.transform = "translate3d(0, -16px, 0) scale(0.96)"
+    exitTransform = "translate3d(0, -16px, 0) scale(0.96)"
   } else if (window.innerWidth <= 768) {
-    el.style.opacity = "0"
-    el.style.transform = "translate3d(0, 16px, 0) scale(0.96)"
+    exitTransform = "translate3d(0, 16px, 0) scale(0.96)"
   } else {
-    el.style.opacity = "0"
     const exitX = document.documentElement.dir === "rtl" ? -20 : 20
-    el.style.transform = `translate3d(${exitX}px, 0, 0) scale(0.96)`
+    exitTransform = `translate3d(${exitX}px, 0, 0) scale(0.96)`
   }
+  el.style.opacity = "0"
+  el.style.transform = exitTransform
 
   window.setTimeout(() => finalizeRemoval(record, options), EXIT_DURATION_MS)
 }
@@ -572,10 +603,36 @@ function buildActionButton(action: ToastAction, record: ToastRecord, handle: Toa
   btn.className = action.className ? `${variantClass} ${action.className}` : variantClass
   btn.textContent = translate(action.label)
   if (action.ariaLabel) btn.setAttribute("aria-label", translate(action.ariaLabel))
+  let actionPending = false
+  const finish = () => {
+    if (!record.leaving && btn.isConnected && action.closeOnClick !== false) {
+      removeToastRecord(record, { restoreFocus: true })
+    }
+  }
   btn.addEventListener("click", (event) => {
-    if (record.leaving) return
-    void action.onClick(event, handle)
-    if (action.closeOnClick !== false) removeToastRecord(record, { restoreFocus: true })
+    if (record.leaving || actionPending) return
+    let res: void | Promise<void>
+    try {
+      res = action.onClick(event, handle)
+    } catch (err) {
+      reportSafeError(err)
+      return
+    }
+    if (res && typeof (res as PromiseLike<void>).then === "function") {
+      actionPending = true
+      Promise.resolve(res).then(
+        () => {
+          actionPending = false
+          finish()
+        },
+        (err) => {
+          actionPending = false
+          reportSafeError(err)
+        },
+      )
+    } else {
+      finish()
+    }
   }, { signal })
   return btn
 }
@@ -596,7 +653,6 @@ function syncDescription(record: ToastRecord, desc: string): void {
 }
 
 function syncAction(record: ToastRecord, action: ToastAction | undefined, handle: ToastHandle): void {
-  record.hasAction = Boolean(action)
   if (action) {
     if (!record.actionsEl) {
       record.actionsEl = document.createElement("div")
@@ -658,11 +714,13 @@ function updateRecord(
   record.onForceCommit = options.onForceCommit
   record.persistent = persistent
   record.duration = duration
-  if (!record.element.matches(":focus-within")) resumeTimer(record, "focus")
+  if (record.element.matches(":focus-within")) pauseTimer(record, "focus")
+  else resumeTimer(record, "focus")
   startTimer(record, true)
   const container = getContainer(false)
   syncPopoverLayer(container)
   syncDockState(container)
+  syncScrollableState(container)
 }
 
 /** Core unified toast & persistent notification dispatcher */
@@ -674,7 +732,7 @@ export function pushToast(options: ToastOptions): ToastHandle {
   const duration = persistent ? Infinity : (options.duration ?? DEFAULT_DURATIONS[type])
 
   if (options.id) {
-    const existing = activeRecords.get(options.id)
+    const existing = activeRecords.get(`id:${options.id}`)
     if (existing) {
       if (!existing.leaving) {
         const handle = makeHandle(existing)
@@ -692,10 +750,12 @@ export function pushToast(options: ToastOptions): ToastHandle {
   }
 
   // Coalesce rapid identical non-error status toasts without altering children[1] text.
-  const canCoalesce = type !== "error" && !options.id && !options.action && !persistent && options.dedupe !== false && !displayDescription
+  const hasCallbacks = Boolean(options.onDismiss || options.onAutoClose || options.onForceCommit)
+  const canCoalesce = type !== "error" && !options.id && !options.action && !persistent &&
+    options.dedupe !== false && !displayDescription && !hasCallbacks
   if (canCoalesce) {
     for (const existing of activeRecords.values()) {
-      if (!existing.leaving && !existing.hasAction && !existing.persistent &&
+      if (!existing.leaving && existing.coalesceable &&
         existing.type === type && existing.message === displayMessage && !existing.description) {
         existing.repeatCount += 1
         existing.element.dataset.repeatCount = String(existing.repeatCount)
@@ -718,7 +778,8 @@ export function pushToast(options: ToastOptions): ToastHandle {
 
   evictOverflowIfNeeded()
 
-  const id = options.id ?? `m-toast-${nextAutoId++}`
+  const id = options.id ?? `m-toast-auto-${nextAutoId}`
+  const mapKey = options.id ? `id:${options.id}` : `auto:${nextAutoId++}`
   const controller = new AbortController()
   const toastEl = document.createElement("div")
   toastEl.className = `toast ${type}`
@@ -747,7 +808,8 @@ export function pushToast(options: ToastOptions): ToastHandle {
     duration,
     persistent,
     dismissible,
-    hasAction: Boolean(options.action),
+    coalesceable: canCoalesce,
+    mapKey,
     repeatCount: 1,
     element: toastEl,
     iconEl,
@@ -788,7 +850,9 @@ export function pushToast(options: ToastOptions): ToastHandle {
         record.returnFocus = related
       } else if (!toastEl.contains(related)) {
         const prevToast = related.closest<HTMLElement>(".toast[data-toast-id]")
-        const prevRecord = prevToast?.dataset.toastId ? activeRecords.get(prevToast.dataset.toastId) : undefined
+        const prevRecord = prevToast
+          ? Array.from(activeRecords.values()).find((r) => r.element === prevToast)
+          : undefined
         if (prevRecord?.returnFocus) record.returnFocus = prevRecord.returnFocus
       }
     }
@@ -805,12 +869,12 @@ export function pushToast(options: ToastOptions): ToastHandle {
     }
   }, { signal: controller.signal })
 
-  activeRecords.set(id, record)
+  activeRecords.set(mapKey, record)
   bindSwipeDismiss({
     element: toastEl,
     signal: controller.signal,
     canStart: () => record.dismissible && !record.leaving,
-    allowVertical: () => window.innerWidth <= 768 || isTopDocked(getContainer(false)),
+    allowVertical: () => (window.innerWidth <= 768 || isTopDocked(getContainer(false))) && getContainer(false)?.dataset.scrollable !== "true",
     horizontalSign: () => {
       if (window.innerWidth <= 768) return 0
       return document.documentElement.dir === "rtl" ? -1 : 1
@@ -825,6 +889,7 @@ export function pushToast(options: ToastOptions): ToastHandle {
   container.appendChild(toastEl)
   ensureGlobalListeners()
   syncPopoverLayer(container)
+  syncScrollableState(container)
   notifyDockStateIfChanged(container)
   if (document.hidden) pauseTimer(record, "hidden")
   startTimer(record)
@@ -940,7 +1005,7 @@ export function dismissToast(id?: string): void {
     for (const record of Array.from(activeRecords.values())) removeToastRecord(record)
     return
   }
-  const record = activeRecords.get(id)
+  const record = activeRecords.get(`id:${id}`) ?? Array.from(activeRecords.values()).find((r) => r.id === id)
   if (record) removeToastRecord(record)
 }
 

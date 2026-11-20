@@ -319,7 +319,7 @@ body:has(
   #search-hub-overlay:not(.hidden),
   .habit-modal-overlay:not(.hidden),
   #ask-ha-overlay.active,
-  #ask-ha-overlay:not(.modal-overlay):not(.hidden),
+  #ask-ha-overlay:not(.modal-overlay, .hidden),
   [role="dialog"][aria-modal="true"].active:not(#shortcut-modal)
 ) .shortcut-modal-overlay {
   visibility: hidden;

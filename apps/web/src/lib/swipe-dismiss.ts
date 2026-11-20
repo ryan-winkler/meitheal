@@ -40,6 +40,7 @@ export interface SwipeDismissOptions {
 
 function shouldCommitSwipe(
   delta: number,
+  postLockDelta: number,
   sign: number,
   distanceThreshold: number,
   minFlickDistance: number,
@@ -47,8 +48,8 @@ function shouldCommitSwipe(
 ): boolean {
   const dirOk = sign === 0 || delta * sign > 0
   if (!dirOk) return false
-  const abs = Math.abs(delta)
-  return abs >= distanceThreshold || (abs >= minFlickDistance && abs / elapsedMs > SWIPE_VELOCITY_THRESHOLD)
+  if (Math.abs(delta) >= distanceThreshold) return true
+  return postLockDelta * delta > 0 && Math.abs(postLockDelta) >= minFlickDistance && Math.abs(postLockDelta) / elapsedMs > SWIPE_VELOCITY_THRESHOLD
 }
 
 export function bindSwipeDismiss(options: SwipeDismissOptions): void {
@@ -91,6 +92,8 @@ export function bindSwipeDismiss(options: SwipeDismissOptions): void {
 
     let lockedAxis: "x" | "y" | null = null
     let dragStartTime = 0
+    let lockDelta = 0
+    let justLocked = false
     let lastDx = 0
     let lastDy = 0
 
@@ -144,29 +147,27 @@ export function bindSwipeDismiss(options: SwipeDismissOptions): void {
 
         lockedAxis = canX && (!canY || absX >= absY) ? "x" : "y"
         dragStartTime = performance.now()
+        justLocked = true
         element.dataset.swiping = "true"
         onDragStart?.()
         try { element.setPointerCapture(mv.pointerId) } catch { /* pointer may have left */ }
       }
 
-      if (lockedAxis === "x") {
-        const hSign = horizontalSign()
-        const resisted = hSign !== 0 && dx * hSign < 0
-        const visualDx = resisted ? dx * 0.22 : dx
-        lastDx = visualDx
-        lastDy = 0
-        const fade = Math.max(0.25, 1 - Math.abs(visualDx) / Math.max(140, element.offsetWidth * 0.7))
-        element.style.transform = `translate3d(${visualDx}px, 0, 0)`
-        element.style.opacity = String(fade)
-      } else {
-        const vSign = verticalSign()
-        const visualDy = dy * vSign >= 0 ? dy : dy * 0.22
-        lastDx = 0
-        lastDy = visualDy
-        const fade = Math.max(0.3, 1 - Math.abs(visualDy) / 96)
-        element.style.transform = `translate3d(0, ${visualDy}px, 0)`
-        element.style.opacity = String(fade)
+      const isX = lockedAxis === "x"
+      const axisSign = isX ? horizontalSign() : verticalSign()
+      const delta = isX ? dx : dy
+      const resisted = isX ? (axisSign !== 0 && delta * axisSign < 0) : delta * axisSign < 0
+      const visual = resisted ? delta * 0.22 : delta
+      if (justLocked) {
+        lockDelta = visual
+        justLocked = false
       }
+      lastDx = isX ? visual : 0
+      lastDy = isX ? 0 : visual
+      const fadeDenom = isX ? Math.max(140, element.offsetWidth * 0.7) : 96
+      const fadeFloor = isX ? 0.25 : 0.3
+      element.style.transform = isX ? `translate3d(${visual}px, 0, 0)` : `translate3d(0, ${visual}px, 0)`
+      element.style.opacity = String(Math.max(fadeFloor, 1 - Math.abs(visual) / fadeDenom))
     }, { signal: dragSignal })
 
     window.addEventListener("pointerup", (up: PointerEvent) => {
@@ -182,14 +183,14 @@ export function bindSwipeDismiss(options: SwipeDismissOptions): void {
       const elapsed = Math.max(1, performance.now() - dragStartTime)
       if (axis === "x") {
         const threshold = Math.min(88, Math.max(56, element.offsetWidth * 0.3))
-        if (shouldCommitSwipe(lastDx, horizontalSign(), threshold, 16, elapsed)) {
+        if (shouldCommitSwipe(lastDx, lastDx - lockDelta, horizontalSign(), threshold, 16, elapsed)) {
           const exitX = (lastDx >= 0 ? 1 : -1) * Math.max(element.offsetWidth + 24, 180)
           onDismiss({ x: exitX, y: 0 })
           return
         }
       } else {
         const vSign = verticalSign()
-        if (shouldCommitSwipe(lastDy, vSign, verticalThreshold, 12, elapsed)) {
+        if (shouldCommitSwipe(lastDy, lastDy - lockDelta, vSign, verticalThreshold, 12, elapsed)) {
           onDismiss({ x: 0, y: vSign * 84 })
           return
         }
