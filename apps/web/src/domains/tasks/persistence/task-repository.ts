@@ -1076,9 +1076,10 @@ export class TaskRepository {
 
   async resolveTaskId(idOrKey: string, action: WorkAction = "read"): Promise<{ id: string, updated_at: unknown } | null> {
     const number = this.ticketNumberForScope(idOrKey)
+    const identity = number === null ? sql`id = ${idOrKey}` : sql`(id = ${idOrKey} OR ticket_number = ${number})`
     const assigned = action === "read" ? undefined : scopeAssignedTo(this.scope)
     const { rows: [row] } = await this.readCommandStatement(action, scopedTaskRead(this.scope, sql`SELECT id, ${sourceSql(taskTimestampMs("updated_at"))} AS updated_at FROM scoped_tasks AS tasks
-      WHERE (id = ${idOrKey} OR ticket_number = ${number}) ${assigned === undefined ? sourceSql("") : sql`AND assigned_to = ${assigned}`} LIMIT 1`))
+      WHERE ${identity} ${assigned === undefined ? sourceSql("") : sql`AND assigned_to = ${assigned}`} LIMIT 1`))
     return row ? { id: String(row.id), updated_at: row.updated_at } : null
   }
 
@@ -1091,12 +1092,13 @@ export class TaskRepository {
 
   /** Retrieve a single task by ID/ticket key, with parent info JOINed */
   async findById(idOrKey: string): Promise<TaskRow | null> {
-    const parsedTicketNum = this.ticketNumberForScope(idOrKey);
+    const number = this.ticketNumberForScope(idOrKey)
+    const identity = number === null ? sql`t.id = ${idOrKey}` : sql`(t.id = ${idOrKey} OR t.ticket_number = ${number})`
     const result = await this.forOperation("read").execute(scopedTaskRead(this.scope, sql`SELECT t.*, t.ticket_ref AS ticket_key,
       ${sourceSql(taskTimestampMs("t.updated_at"))} AS task_version, parent.title AS parent_title,
       parent.task_type AS parent_task_type, parent.ticket_number AS parent_ticket_number
       FROM scoped_tasks AS t LEFT JOIN scoped_tasks AS parent ON parent.id = t.parent_id
-      WHERE t.id = ${idOrKey} OR t.ticket_number = ${parsedTicketNum} LIMIT 1`))
+      WHERE ${identity} LIMIT 1`))
     return (result.rows[0] as unknown as TaskRow) ?? null;
   }
 

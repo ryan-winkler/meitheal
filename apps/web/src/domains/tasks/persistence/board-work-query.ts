@@ -80,17 +80,36 @@ const taskColumns = [
   "task_board_id", "board_column_id", "ticket_ref", "source", "created_by",
 ] as const
 
+type TaskReadProjection = "full" | "kanban-order"
+const readModelPrefixes = new WeakMap<BoardScope, Map<TaskReadProjection, SqlFragment>>()
+
 /**
  * Shared read model, composed explicitly by repository source queries. This does
  * not accept or rewrite an arbitrary query. Callers reference scoped_* aliases;
  * their bound arguments follow this prefix's arguments in lexical order.
  */
-export function scopedTaskRead(scope: BoardScope, query: SqlFragment, continuation: "select" | "with" | "recursive" = "select", projection: "full" | "kanban-order" = "full"): SqlFragment {
+export function scopedTaskRead(scope: BoardScope, query: SqlFragment, continuation: "select" | "with" | "recursive" = "select", projection: TaskReadProjection = "full"): SqlFragment {
+  let prefixes = readModelPrefixes.get(scope)
+  if (!prefixes) {
+    prefixes = new Map()
+    readModelPrefixes.set(scope, prefixes)
+  }
+  let prefix = prefixes.get(projection)
+  if (!prefix) {
+    prefix = taskReadPrefix(scope, projection)
+    prefixes.set(projection, prefix)
+  }
+  return sql`${sourceSql(continuation === "recursive" ? "WITH RECURSIVE" : "WITH")} ${prefix}
+    ${sourceSql(continuation === "select" ? "" : ",")} ${query}`
+}
+
+/** Reuse only the query template for the same issued scope. SQL still checks the current audiences. */
+function taskReadPrefix(scope: BoardScope, projection: TaskReadProjection): SqlFragment {
   const columns = projection === "kanban-order" ? ["id", "is_promoted", "deferred_at", "status", "kanban_position", "priority", "created_at", "assigned_to"] : taskColumns
   const references = projection === "full" ? sql`, ${publicPlanningReferences(scope)}` : sourceSql("")
   const parent = projection === "full" ? sql`, CASE WHEN ${scopePermits(scope, { resource: "task", action: "read" }) ? 1 : 0} = 1
       THEN (SELECT parent.id FROM scoped_task_records AS parent WHERE parent.id = child.parent_id) ELSE NULL END AS public_parent_id` : sourceSql("")
-  return sql`${sourceSql(continuation === "recursive" ? "WITH RECURSIVE" : "WITH")} scoped_storage AS (
+  return sql`scoped_storage AS (
     SELECT ${scope.boardId} AS board_id, ${storageBoardId(scope)} AS owner_board_id
   ), scoped_task_records AS NOT MATERIALIZED (
     SELECT work_task.rowid AS rowid, (work_task.task_kind = 'routine_instance' AND work_task.source_template_id IS NOT NULL) AS routine_occurrence, ${taskProjection(scope, columns, "work_task", "work_placement")}${references}
@@ -101,6 +120,5 @@ export function scopedTaskRead(scope: BoardScope, query: SqlFragment, continuati
     FROM scoped_task_records AS child
   ), scoped_areas AS (SELECT * FROM areas WHERE ${ownedPlanning(scope, "areas")} AND ${planningVisible(scope, "areas")}),
   scoped_projects AS (SELECT * FROM projects WHERE ${ownedPlanning(scope, "projects")} AND ${planningVisible(scope, "projects")}),
-  scoped_goals AS (SELECT * FROM goals WHERE ${ownedPlanning(scope, "goals")} AND ${planningVisible(scope, "goals")})
-  ${sourceSql(continuation === "select" ? "" : ",")} ${query}`
+  scoped_goals AS (SELECT * FROM goals WHERE ${ownedPlanning(scope, "goals")} AND ${planningVisible(scope, "goals")})`
 }

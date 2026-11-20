@@ -180,9 +180,9 @@ async function recordBoard(record: RecordScope): Promise<string | null> {
   } = await db.execute({
     sql: `SELECT COALESCE(record.${owner}, legacy.id) AS board_id FROM ${table} AS record
       LEFT JOIN task_boards AS legacy ON legacy.storage_encoding = 'legacy_null_v1'
-      WHERE ${record.resource === "task" ? "(record.id = ? OR record.ticket_ref = ? OR (record.task_board_id IS NULL AND legacy.ticket_prefix || '-' || record.ticket_number = ?))" : "record.id = ?"}
+      WHERE ${key !== null ? "(record.id = ? OR record.ticket_ref = ? OR (record.task_board_id IS NULL AND legacy.ticket_prefix || '-' || record.ticket_number = ?))" : "record.id = ?"}
       ${record.resource === "pillar" ? "AND record.user_id = 'default'" : ""}`,
-    args: record.resource === "task" ? [record.id, key, key] : [record.id]
+    args: key !== null ? [record.id, key, key] : [record.id]
   })
   return typeof row?.board_id === "string" ? row.board_id : null
 }
@@ -198,20 +198,18 @@ export function normalizeTaskLocatorKey(value: string): string | null {
 
 async function captureDefault(principal: VerifiedPrincipal): Promise<string | null> {
   const db = getPersistenceClient()
-  const { rows } = await db.execute(
-    "SELECT key, value FROM settings WHERE key = 'capture-board-preferences'"
+  const { rows: [row] } = await db.execute(
+    `SELECT (SELECT value FROM settings WHERE key = 'capture-board-preferences') AS preferences,
+      (SELECT value FROM app_settings WHERE key = 'default_capture_board_id') AS fallback`
   )
   try {
-    const preferences = rows[0] ? JSON.parse(String(rows[0].value)) : null
+    const preferences = row?.preferences == null ? null : JSON.parse(String(row.preferences))
     const preferred = preferences?.[`${principal.kind}:${principal.id}`]
     if (typeof preferred === "string" && preferred) return preferred
   } catch {
     /* An invalid preference does not choose a different Board. */ return null
   }
-  const {
-    rows: [fallback]
-  } = await db.execute("SELECT value FROM app_settings WHERE key = 'default_capture_board_id'")
-  return typeof fallback?.value === "string" ? fallback.value : null
+  return typeof row?.fallback === "string" ? row.fallback : null
 }
 
 export async function resolveBoardRequestScope(
