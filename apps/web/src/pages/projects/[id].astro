@@ -191,7 +191,7 @@ const tabs: { id: string; label: string; icon: IconName }[] = [
         <div class="project-header-info">
           <span class={`project-status-badge status-${projStatus}`}>{projStatus}</span>
           {workspaceProjectId && <p>{openTasks.length} open · {nextAction
-            ? <a href={taskDetailPath(nextAction)}>Next action: {String(nextAction.title)}</a>
+            ? <a href={taskDetailPath({ id: String(nextAction.id), ticket_key: nextAction.ticket_key })}>Next action: {String(nextAction.title)}</a>
             : "No next action"}</p>}
 
           {projDesc && <p class="project-desc">{projDesc}</p>}
