@@ -38,19 +38,20 @@ Create home screen shortcuts to Meitheal:
 
 1. **Settings → Companion App → Manage Shortcuts**
 2. Select **Dashboard** type
-3. Enter path: `/api/hassio_ingress/<YOUR_TOKEN>/`
-   - Find your token in HA sidebar → click Meitheal → copy URL after `/api/hassio_ingress/`
+3. Enter path: `/meitheal`
+   - Use the sidebar path from your browser address bar when Meitheal is open, such as `/meitheal` or `/meitheal_canary`
+   - Do not use an `/api/hassio_ingress/` address. It needs a session that only the Home Assistant sidebar creates, so a shortcut or notification that opens it directly shows an authorization error.
 4. Set label: "Meitheal" (10 chars max)
 
-**Shortcut paths:**
+**Shortcut paths:** add `?meitheal=` and an encoded Meitheal page to open that page inside the sidebar panel.
 
 | Shortcut | Path |
 |----------|------|
-| Dashboard | `/api/hassio_ingress/<TOKEN>/` |
-| Kanban | `/api/hassio_ingress/<TOKEN>/kanban` |
-| Today | `/api/hassio_ingress/<TOKEN>/today` |
-| Calendar | `/api/hassio_ingress/<TOKEN>/calendar` |
-| Settings | `/api/hassio_ingress/<TOKEN>/settings#app-pwa-settings` |
+| Dashboard | `/meitheal` |
+| Tasks | `/meitheal?meitheal=%2Ftasks` |
+| Today | `/meitheal?meitheal=%2Ftoday` |
+| Calendar | `/meitheal?meitheal=%2Fcalendar` |
+| Settings | `/meitheal?meitheal=%2Fsettings%23app-pwa-settings` |
 
 ### Quick Settings Tile
 
@@ -66,10 +67,10 @@ Set up the optional Core integration so Home Assistant can call `meitheal.comple
 
 1. **Settings → Automations → Blueprints → Import Blueprint**
 2. Import [Task Notification with Actions](https://github.com/ryan-winkler/meitheal/blob/dev/integrations/home-assistant/blueprints/meitheal_task_notification.yaml) and [Complete Task from Notification](https://github.com/ryan-winkler/meitheal/blob/dev/integrations/home-assistant/blueprints/meitheal_complete_from_notification.yaml).
-3. Create an automation from each blueprint. Choose the same notification device, then set the task event and ingress path in the sender.
+3. Create an automation from each blueprint. Choose the same notification device, then set the task event and the Meitheal sidebar path, such as `/meitheal` or `/meitheal_canary`, in the sender.
 4. Save and enable both automations. Send a notification for a sample task and check that **Complete** marks it done.
 
-Notifications for events with a task ID include **View task** and **Complete**. Other events, such as a board update, link to the Meitheal dashboard. If an App event is missing, check that its type is enabled in the Canary's event settings.
+Tapping a notification opens Meitheal inside the Companion app. Notifications for events with a task ID open that ticket and include **View task** and **Complete**. Older automations that stored an `/api/hassio_ingress/` address fall back to `/meitheal`; edit the automation to set `/meitheal_canary` for Canary. Other events, such as a board update, link to the Meitheal dashboard. If an App event is missing, check that its type is enabled in the Canary's event settings.
 
 ### Widgets
 
