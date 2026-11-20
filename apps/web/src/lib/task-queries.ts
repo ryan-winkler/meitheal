@@ -251,37 +251,35 @@ export async function getTasksForView(options: TaskViewOptions = {}, scope: Boar
       selectArgs.push(Math.floor(limit));
     }
 
-    const result = await client.execute(scopedTaskRead(scope, sourceSql(`SELECT ${columnsSql} FROM scoped_tasks AS tasks${whereSql} ORDER BY created_at DESC${limitSql}`, selectArgs)));
-    const rows = result.rows as Record<string, unknown>[];
+    const taskQuery = scopedTaskRead(scope, sourceSql(`SELECT ${columnsSql} FROM scoped_tasks AS tasks${whereSql} ORDER BY created_at DESC${limitSql}`, selectArgs));
+    const counts = { total: 0, open: 0, active: 0, pending: 0, complete: 0, overdue: 0 };
+    const useGlobalCounts = slim || hasPushdownFilter;
+    let rows: Record<string, unknown>[];
 
-    // Load custom field definitions
+    // Complete the optional read before admitting the task results.
     let customFieldDefs: Array<{ name: string; type: string }> = [];
     try {
-      const cfRes = await client.execute(
-        "SELECT value FROM settings WHERE key = 'custom_fields'",
-      );
-      if (cfRes.rows.length > 0 && cfRes.rows[0]) {
-        customFieldDefs = JSON.parse(String(cfRes.rows[0].value));
-      }
+      const { rows: [fields] } = await client.execute("SELECT value FROM settings WHERE key = 'custom_fields'");
+      if (fields) customFieldDefs = JSON.parse(String(fields.value));
     } catch {
       /* custom fields not configured */
     }
 
-    const counts = { total: 0, open: 0, active: 0, pending: 0, complete: 0, overdue: 0 };
-
-    if (slim || hasPushdownFilter) {
+    if (useGlobalCounts) {
       const resolvedToday = calendarToday(timezone);
       const upperBound = shiftCalendarDay(resolvedToday, 2);
-      const [countRes, overdueRes] = await Promise.all([
-        client.execute(scopedTaskRead(scope, sourceSql(`
+      // The returned rows and unfiltered counts share a scoped read snapshot.
+      const [tasksRes, countRes, overdueRes] = await client.batch([
+        taskQuery,
+        scopedTaskRead(scope, sourceSql(`
             SELECT COUNT(*) AS total,
                    COUNT(*) FILTER (WHERE status = 'complete') AS complete,
                    COUNT(*) FILTER (WHERE status != 'complete' AND deferred_at IS NULL) AS open,
                    COUNT(*) FILTER (WHERE status = 'active' AND deferred_at IS NULL) AS active,
                    COUNT(*) FILTER (WHERE status != 'complete' AND status != 'active' AND deferred_at IS NULL) AS pending
             FROM scoped_tasks AS tasks WHERE 1
-          `, []))),
-        client.execute(scopedTaskRead(scope, sourceSql(`
+          `, [])),
+        scopedTaskRead(scope, sourceSql(`
             SELECT due_date
             FROM scoped_tasks AS tasks
             WHERE 1 AND status != 'complete'
@@ -289,34 +287,36 @@ export async function getTasksForView(options: TaskViewOptions = {}, scope: Boar
               AND due_date IS NOT NULL
               AND due_date != ''
               AND substr(due_date, 1, 10) < ?
-          `, [upperBound]))),
-      ]);
-      const cr = (countRes.rows[0] ?? {}) as Record<string, unknown>;
+          `, [upperBound])),
+      ], "read");
+      rows = tasksRes!.rows as Record<string, unknown>[];
+      const cr = (countRes!.rows[0] ?? {}) as Record<string, unknown>;
       counts.total = Number(cr.total ?? 0);
       counts.complete = Number(cr.complete ?? 0);
       counts.open = Number(cr.open ?? 0);
       counts.active = Number(cr.active ?? 0);
       counts.pending = Number(cr.pending ?? 0);
-      counts.overdue = overdueRes.rows.filter((row) =>
+      counts.overdue = overdueRes!.rows.filter((row) =>
         isDueDayOverdue(String(row.due_date ?? ""), resolvedToday, timezone),
       ).length;
 
-      const tasks = rows.map((row) => toTaskViewItem(row, slim, timezone));
-      return { tasks, counts, customFieldDefs };
+    } else {
+      rows = (await client.execute(taskQuery)).rows as Record<string, unknown>[];
     }
 
-    const tasks = rows.map((row) => {
-      const task = toTaskViewItem(row, false, timezone);
-      counts.total++;
-      if (task.is_done) counts.complete++;
-      else if (task.deferred_at === null) {
-        counts.open++;
-        if (task.status === "active") counts.active++;
-        else counts.pending++;
+    const tasks = rows.map((row) => toTaskViewItem(row, slim, timezone));
+    if (!useGlobalCounts) {
+      for (const task of tasks) {
+        counts.total++;
+        if (task.is_done) counts.complete++;
+        else if (task.deferred_at === null) {
+          counts.open++;
+          if (task.status === "active") counts.active++;
+          else counts.pending++;
+        }
+        if (task.is_overdue) counts.overdue++;
       }
-      if (task.is_overdue) counts.overdue++;
-      return task;
-    });
+    }
 
     return { tasks, counts, customFieldDefs };
   } catch (error) {

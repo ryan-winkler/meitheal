@@ -24,7 +24,8 @@ import {
 
 const localWriters = new WeakMap()
 const localExecutors = new WeakMap()
-const localReadSnapshots = new WeakSet()
+/** @type {WeakMap<object, Pick<Transaction, "execute" | "batch" | "executeMultiple">>} */
+const localReadSnapshots = new WeakMap()
 /** @type {WeakMap<object, { execute: unknown, read: () => unknown }>} */
 const localGrantRevisionReaders = new WeakMap()
 /** @type {WeakMap<DatabaseSync, import("node:sqlite").StatementSync>} */
@@ -32,10 +33,11 @@ const totalChangesStatements = new WeakMap()
 /** @type {WeakMap<DatabaseSync, import("node:sqlite").StatementSync>} */
 const grantRevisionStatements = new WeakMap()
 /** @typedef {"rows" | "completed"} TodayRead */
-/** @type {WeakMap<object, TodayRead>} */
-const todayReads = new WeakMap()
-/** @type {WeakMap<DatabaseSync, Partial<Record<TodayRead, { sql: string, statement: import("node:sqlite").StatementSync }>>>} */
-const todayReadStatements = new WeakMap()
+/** @typedef {TodayRead | "board-policy"} ScopedRead */
+/** @type {WeakMap<object, ScopedRead>} */
+const scopedReads = new WeakMap()
+/** @type {WeakMap<DatabaseSync, Partial<Record<ScopedRead, { sql: string, statement: import("node:sqlite").StatementSync }>>>} */
+const scopedReadStatements = new WeakMap()
 
 /** Explicitly tag a source-owned Today query for local read-batch preparation.
  * @template {Exclude<InStatement, string>} T
@@ -44,13 +46,23 @@ const todayReadStatements = new WeakMap()
  * @returns {T}
  */
 export function tagTodayRead(statement, kind) {
-  if (kind === "rows" || kind === "completed") todayReads.set(statement, kind)
+  if (kind === "rows" || kind === "completed") scopedReads.set(statement, kind)
   return statement
 }
 
-/** Only transactions using a physically read-only local SQLite handle. */
+/** @template {Exclude<InStatement, string>} T @param {T} statement @returns {T} */
+export function tagBoardPolicyRead(statement) {
+  scopedReads.set(statement, "board-policy")
+  return statement
+}
+
+/** Only unmodified transactions using a physically read-only local SQLite handle.
+ * @param {Transaction} transaction
+ */
 export function isLocalReadSnapshot(transaction) {
-  return localReadSnapshots.has(transaction)
+  const methods = localReadSnapshots.get(transaction)
+  return methods !== undefined && transaction.execute === methods.execute &&
+    transaction.batch === methods.batch && transaction.executeMultiple === methods.executeMultiple
 }
 
 /** Use the reader's own execute method for adapters and decorated clients.
@@ -222,8 +234,9 @@ function execute(db, input, args = [], localReadBatch = false) {
   const bindings = Array.isArray(values)
     ? values.map(bind)
     : Object.fromEntries(Object.entries(values).map(([key, value]) => [key.replace(/^[@$:]/, ""), bind(value)]))
-  const kind = localReadBatch && typeof input !== "string" ? todayReads.get(input) : undefined
-  const slots = kind ? todayReadStatements.get(db) : undefined
+  const tag = typeof input === "string" ? undefined : scopedReads.get(input)
+  const kind = localReadBatch || tag === "board-policy" ? tag : undefined
+  const slots = kind ? scopedReadStatements.get(db) : undefined
   const cached = kind ? slots?.[kind] : undefined
   let statement = cached?.sql === sql ? cached.statement : undefined
   if (!statement) {
@@ -232,7 +245,7 @@ function execute(db, input, args = [], localReadBatch = false) {
     if (kind) {
       // Each query has one slot per handle. Changes in the scoped SQL replace it.
       if (slots) slots[kind] = { sql, statement }
-      else todayReadStatements.set(db, { [kind]: { sql, statement } })
+      else scopedReadStatements.set(db, { [kind]: { sql, statement } })
     }
   }
   if (statement.columns().length) {
@@ -829,7 +842,11 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
         return sqliteOperation(() => readGrantRevision(db))
       },
     })
-    if (useReadPool) localReadSnapshots.add(result)
+    if (useReadPool) localReadSnapshots.set(result, {
+      execute: result.execute,
+      batch: result.batch,
+      executeMultiple: result.executeMultiple,
+    })
     return result
   }
 

@@ -577,12 +577,8 @@ export class TaskRepository {
    * a SQLite writer for a SELECT. Mutation authorization is repeated by the
    * command's actual signal-aware writer. Publication still checks live scope. */
   private async readCommandStatement(action: WorkAction, statement: InStatement, taskIds: readonly string[] = []): Promise<ResultSet> {
-    const tx = await this.forOperation(action, taskIds).transaction("read")
-    try {
-      const result = await tx.execute(statement)
-      await tx.commit()
-      return result
-    } finally { tx.close() }
+    const [result] = await this.forOperation(action, taskIds).batch([statement], "read")
+    return result!
   }
 
   // ── Dashboard (index.astro) ─────────────────────────────────────────

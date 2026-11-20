@@ -4,6 +4,7 @@ import { joinSql, sql } from "./persistence/sql-fragment"
 import { parseWorkDestinations } from "./integration-destinations"
 import { featureAudienceAllowed, organizationAudienceAllowed } from "./board-feature-policy"
 import type { Client } from "@libsql/client"
+import { tagBoardPolicyRead } from "../../../scripts/database-client.mjs"
 import { boardGrantStillCurrent, currentBoardGrantRevision } from "./persistence/board-grant-fence"
 import {
   principalProof,
@@ -245,7 +246,7 @@ export class BoardAccessService {
     if (!proof) return { ok: false, errorCode: "stale" }
     const {
       rows: [row]
-    } = await db.execute(sql`SELECT board.id, board.name, board.ticket_prefix, board.state, board.revision, board.visibility, board.storage_encoding,
+    } = await db.execute(tagBoardPolicyRead(sql`SELECT board.id, board.name, board.ticket_prefix, board.state, board.revision, board.visibility, board.storage_encoding,
           policy.shared_role, policy.shared_admin_management,
           policy.deny_completion AS board_deny_completion, policy.deny_deletion AS board_deny_deletion,
           policy.deny_agent_deletion, access.role, access.deny_completion, access.deny_deletion, access.authority_limits,
@@ -258,7 +259,7 @@ export class BoardAccessService {
           AND access.principal_type = ${principal.kind} AND access.principal_id = ${principal.id}
         WHERE board.id = ${boardId} AND EXISTS (
           SELECT 1 FROM board_access_epoch WHERE singleton = 1 AND revision = ${revision}
-        )`)
+        )`))
     if (!row) return { ok: false, errorCode: "unavailable" }
     let role = typeof row.role === "string" ? row.role : null
     if (!role && principal.kind === "ha_user" && row.visibility === "shared") {

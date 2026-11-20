@@ -57,6 +57,7 @@ export function guardClientContinuity(client: Client): Client {
       raw = mode === "write" || mode === undefined ? await acquireWriteTransaction(client) : await (client.transaction as (mode?: "read" | "write" | "deferred") => Promise<Transaction>)(mode)
     } catch (error) { settle(); throw error }
     const pinnedLocalRead = mode === "read" && isLocalReadSnapshot(raw)
+    let pinnedEpochChecked = false
     const check = async () => {
       // A read/deferred transaction can retain an old WAL snapshot after an
       // authority writer commits. Its old epoch plus an unpublished old marker
@@ -64,9 +65,13 @@ export function guardClientContinuity(client: Client): Client {
       const live = mode === "read" || mode === "deferred" ? client : raw
       // For an immutable local snapshot, compare its stored epoch before the
       // fresh live marker and epoch check.
-      const snapshotCurrent = pinnedLocalRead
-        ? await databaseRevision(raw) === revision
+      const immutableSnapshot = pinnedLocalRead && isLocalReadSnapshot(raw)
+      const snapshotCurrent = immutableSnapshot
+        ? (!raw.closed && pinnedEpochChecked) || await databaseRevision(raw) === revision
         : await boardGrantStillCurrent(raw, revision!, marker)
+      // The initial SELECT pins an immutable SQLite snapshot. The live marker
+      // and live database epoch still have to agree at every boundary.
+      pinnedEpochChecked = immutableSnapshot && snapshotCurrent
       if (snapshotCurrent && (live === raw || await boardGrantStillCurrent(live, revision!, marker))) return
       const current = await databaseRevision(live)
       if (current && await readBoardGrantRevision(marker) === current) {
@@ -88,7 +93,11 @@ export function guardClientContinuity(client: Client): Client {
           return async (...args: unknown[]) => {
             await check()
             const operation = Reflect.get(target, property) as (...args: unknown[]) => Promise<unknown>
-            const result = await operation.apply(target, args)
+            // Multiple statements are allowed on this continuity adapter.
+            // Discard the pinned proof if any can replace its transaction.
+            let result: unknown
+            try { result = await operation.apply(target, args) }
+            finally { if (property === "executeMultiple") pinnedEpochChecked = false }
             await check()
             return result
           }
@@ -105,10 +114,11 @@ export function guardClientContinuity(client: Client): Client {
       },
     })
     registerFencedScopeReader(guarded, async (scope, operations) => {
-      await check()
+      // Scope validation begins with the same marker and scoped epoch. Withhold
+      // even a denial until the guarded transaction has checked live continuity.
       const result = await validateBoardOperations(scope, raw, operations)
-      if (!result.ok) return result
       await check()
+      if (!result.ok) return result
       return principalProof(scope.principal) ? result : { ok: false, errorCode: "stale" }
     })
     if (pinnedLocalRead) fencedReadSnapshots.add(guarded)
