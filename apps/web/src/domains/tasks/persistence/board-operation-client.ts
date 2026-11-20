@@ -2,7 +2,7 @@ import type { Client, InArgs, InStatement, Transaction } from "@libsql/client"
 import { acquireWriteTransaction } from "../../../../scripts/database-client.mjs"
 import { principalProof, requireBoardScope, scopeAssignedTo, scopeLimits, validateBoardOperations, validateBoardScope, type BoardScope, type WorkOperation } from "../board-scope"
 import { boardGrantStillCurrent, currentBoardGrantRevision } from "./board-grant-fence"
-import { guardClientContinuity, isFencedLocalWriter, isFencedReadSnapshot } from "./continuity-client"
+import { ContinuityLockedError, guardClientContinuity, isFencedLocalFileClient, isFencedLocalWriter, isFencedReadSnapshot } from "./continuity-client"
 import { validateBoardPlacement } from "../board-access-service"
 import { ownedPlanning, taskField, taskOwnedBy } from "./board-storage"
 import { sql, joinSql, sourceSql } from "./sql-fragment"
@@ -45,6 +45,8 @@ export function boardOperationClient(client: Client, scope: BoardScope, operatio
   const db = guardClientContinuity(source)
   const write = operations.some(item => item.action !== "read" && item.action !== "search")
   const targets = [...new Set([...(prior?.targets ?? []), ...taskIds])]
+  const actorStillCurrent = () => Boolean(principalProof(scope.principal)) &&
+    scopeLimits(scope).every(limit => Boolean(principalProof(limit.principal)))
   const check = async (reader: Pick<Client, "execute">, requestedOperations: readonly WorkOperation[] = operations) => {
     const result = await validateBoardOperations(scope, reader, requestedOperations)
     if (!result.ok) throw new BoardOperationError(result.errorCode)
@@ -74,8 +76,17 @@ export function boardOperationClient(client: Client, scope: BoardScope, operatio
   ): Promise<Transaction> {
     // A read entitlement cannot be used to acquire a writable transaction.
     if (!write && mode !== "read") throw new BoardOperationError("denied")
-    await check(db)
-    const tx = await db.transaction(mode)
+    // A private native reader can authorize on its actual snapshot before any
+    // task query. Other clients retain the live check before opening a lease.
+    const verifyOnSnapshot = mode === "read" && holdResult && isFencedLocalFileClient(db)
+    if (!verifyOnSnapshot || !actorStillCurrent()) await check(db)
+    let tx: Transaction
+    try {
+      tx = await db.transaction(mode)
+    } catch (error) {
+      if (verifyOnSnapshot && error instanceof ContinuityLockedError) await check(db)
+      throw error
+    }
     const requiredIntents = [...operations]
     const requiredChecks: Array<() => Promise<void>> = []
     const requireIntent = async (intent: WorkOperation) => {
@@ -84,6 +95,7 @@ export function boardOperationClient(client: Client, scope: BoardScope, operatio
       if (!requiredIntents.some(item => item.resource === intent.resource && item.action === intent.action)) requiredIntents.push(intent)
     }
     try {
+      if (verifyOnSnapshot && !isFencedReadSnapshot(tx)) await check(db)
       await check(tx)
       await checkTargets(tx)
       if (write) for (const resolve of intents) for (const intent of await resolve(tx)) {
@@ -102,7 +114,7 @@ export function boardOperationClient(client: Client, scope: BoardScope, operatio
       (scope.principal.kind === "ha_user" || scope.principal.kind === "local_operator") && isFencedLocalWriter(tx)
     async function checkSnapshot(requested: readonly WorkOperation[] = operations) {
       if (!reuseSnapshotAuthority && !(privateWriter && isFencedLocalWriter(tx))) return check(tx, requested)
-      if (!principalProof(scope.principal) || scopeLimits(scope).some(limit => !principalProof(limit.principal))) {
+      if (!actorStillCurrent()) {
         throw new BoardOperationError("stale")
       }
     }

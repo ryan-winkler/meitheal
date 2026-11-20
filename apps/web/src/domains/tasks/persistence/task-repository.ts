@@ -1074,15 +1074,17 @@ export class TaskRepository {
     const number = this.ticketNumberForScope(idOrKey)
     const identity = number === null ? sql`id = ${idOrKey}` : sql`(id = ${idOrKey} OR ticket_number = ${number})`
     const assigned = action === "read" ? undefined : scopeAssignedTo(this.scope)
-    const { rows: [row] } = await this.readCommandStatement(action, scopedTaskRead(this.scope, sql`SELECT id, ${sourceSql(taskTimestampMs("updated_at"))} AS updated_at FROM scoped_tasks AS tasks
-      WHERE ${identity} ${assigned === undefined ? sourceSql("") : sql`AND assigned_to = ${assigned}`} LIMIT 1`))
+    const locate = scopedTaskRead(this.scope, sql`SELECT id, ${sourceSql(taskTimestampMs("updated_at"))} AS updated_at FROM scoped_tasks AS tasks
+      WHERE ${identity} ${assigned === undefined ? sourceSql("") : sql`AND assigned_to = ${assigned}`} LIMIT 1`)
+    const { rows: [row] } = await this.readCommandStatement(action, tagTaskProjectionRead(locate, "task-locator"))
     return row ? { id: String(row.id), updated_at: row.updated_at } : null
   }
 
   /** Internal command preflight; its result never grants a readable transport projection. */
   async findTaskForCommand(id: string, action: "edit" | "delete" | "propose" | "assign" | "complete" | "move"): Promise<TaskRow | null> {
-    const { rows: [row] } = await this.readCommandStatement(action, scopedTaskRead(this.scope, sql`SELECT tasks.*, tasks.ticket_ref AS ticket_key,
-      ${sourceSql(taskTimestampMs("tasks.updated_at"))} AS task_version FROM scoped_tasks AS tasks WHERE id = ${id}`), [id])
+    const lookup = scopedTaskRead(this.scope, sql`SELECT tasks.*, tasks.ticket_ref AS ticket_key,
+      ${sourceSql(taskTimestampMs("tasks.updated_at"))} AS task_version FROM scoped_tasks AS tasks WHERE id = ${id}`)
+    const { rows: [row] } = await this.readCommandStatement(action, tagTaskProjectionRead(lookup, "task-command"), [id])
     return row as unknown as TaskRow ?? null
   }
 
@@ -2574,9 +2576,10 @@ export class TaskRepository {
    */
   async cascadeCompleteIds(parentId: string, assignedTo?: string): Promise<string[]> {
     const assigned = scopeAssignedTo(this.scope) ?? assignedTo
-    const rows = await this.readCommandStatement("complete", scopedTaskRead(this.scope, sql`SELECT id, recurrence_rule, assigned_to
+    const childLookup = scopedTaskRead(this.scope, sql`SELECT id, recurrence_rule, assigned_to
       FROM scoped_tasks WHERE parent_id = ${parentId} AND status != ${STATUS.COMPLETE}
-      ${assigned === undefined ? sourceSql("") : sql`AND assigned_to = ${assigned}`}`), [parentId])
+      ${assigned === undefined ? sourceSql("") : sql`AND assigned_to = ${assigned}`}`)
+    const rows = await this.readCommandStatement("complete", tagTaskProjectionRead(childLookup, "task-cascade"), [parentId])
     if (rows.rows.length === 0) return []
     const inherit = new Map<string, { assigneeId: string | null, proof?: AssignmentProof | undefined }>()
     for (const row of rows.rows) if (row.recurrence_rule) {

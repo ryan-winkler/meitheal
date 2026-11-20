@@ -33,7 +33,7 @@ const totalChangesStatements = new WeakMap()
 /** @type {WeakMap<DatabaseSync, import("node:sqlite").StatementSync>} */
 const grantRevisionStatements = new WeakMap()
 /** @typedef {"rows" | "completed"} TodayRead */
-/** @typedef {"task-list" | "task-count" | "task-detail" | "task-search"} TaskProjectionRead */
+/** @typedef {"task-list" | "task-count" | "task-detail" | "task-search" | "task-locator" | "task-command" | "task-cascade"} TaskProjectionRead */
 /** @typedef {TodayRead | TaskProjectionRead | "board-policy"} ScopedRead */
 /** @type {WeakMap<object, ScopedRead>} */
 const scopedReads = new WeakMap()
@@ -76,6 +76,13 @@ export function isLocalReadSnapshot(transaction) {
 /** @param {Transaction} transaction */
 export function isLocalFileWriter(transaction) {
   return localFileTransactionMode(transaction) === "write"
+}
+
+/** @param {Client} client */
+export function isLocalFileClient(client) {
+  const executor = localExecutors.get(client)
+  return executor?.fileBacked === true && client.execute === executor.execute &&
+    client.transaction === executor.transaction
 }
 
 /** @param {Transaction} transaction */
@@ -249,25 +256,28 @@ function getTotalChanges(db) {
   return stmt.get()?.count
 }
 
-/** @param {DatabaseSync} db @param {InStatement} input @param {InArgs} [args] @param {boolean} [localReadBatch] */
-function execute(db, input, args = [], localReadBatch = false) {
+/** @param {DatabaseSync} db @param {InStatement} input @param {InArgs} [args] @param {boolean} [fileReadSnapshot] */
+function execute(db, input, args = [], fileReadSnapshot = false) {
   const sql = typeof input === "string" ? input : input.sql
   const values = typeof input === "string" ? args : input.args ?? []
   const bindings = Array.isArray(values)
     ? values.map(bind)
     : Object.fromEntries(Object.entries(values).map(([key, value]) => [key.replace(/^[@$:]/, ""), bind(value)]))
   const tag = typeof input === "string" ? undefined : scopedReads.get(input)
-  const kind = localReadBatch || tag === "board-policy" ? tag : undefined
+  const kind = fileReadSnapshot || tag === "board-policy" ? tag : undefined
   const slots = kind ? scopedReadStatements.get(db) : undefined
   const cached = kind ? slots?.[kind] : undefined
   let statement = cached?.sql === sql ? cached.statement : undefined
   if (!statement) {
-    statement = db.prepare(sql)
     if (kind) {
+      statement = db.prepare(sql)
       // Each query has one slot per handle. Changes in the scoped SQL replace it.
       if (slots) slots[kind] = { sql, statement }
       else scopedReadStatements.set(db, { [kind]: { sql, statement } })
-    } else statement.setReadBigInts(true)
+    } else {
+      statement = db.prepare(sql)
+      statement.setReadBigInts(true)
+    }
   }
   if (kind) {
     // Native named rows already have the declared projection keys. SQLite
@@ -318,12 +328,14 @@ function execute(db, input, args = [], localReadBatch = false) {
   return new ResultSetImpl([], [], [], rowsAffected, BigInt(lastInsertRowid))
 }
 
-/** @param {DatabaseSync} db @param {Array<InStatement | [string, InArgs?]>} statements @param {boolean} [localReadBatch] */
-function executeBatch(db, statements, localReadBatch = false) {
+/** @param {DatabaseSync} db @param {Array<InStatement | [string, InArgs?]>} statements @param {boolean} [fileReadSnapshot] */
+function executeBatch(db, statements, fileReadSnapshot = false) {
   return statements.map((statement, index) => {
     try {
       if (!db.isTransaction) throw new LibsqlError("The transaction is closed", "TRANSACTION_CLOSED")
-      return sqliteOperation(() => Array.isArray(statement) ? execute(db, statement[0], statement[1]) : execute(db, statement, undefined, localReadBatch))
+      return sqliteOperation(() => Array.isArray(statement)
+        ? execute(db, statement[0], statement[1], fileReadSnapshot)
+        : execute(db, statement, undefined, fileReadSnapshot))
     } catch (error) {
       if (!(error instanceof LibsqlError)) throw error
       throw new LibsqlBatchError(error.message, index, error.code, error.extendedCode, error.rawCode,
@@ -964,6 +976,9 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
   localExecutors.set(client, {
     executeStatement: executeStatementWithRetry,
     batchWrite: batchWriteWithRetry,
+    fileBacked: !memory,
+    execute: client.execute,
+    transaction: client.transaction,
   })
   localGrantRevisionReaders.set(client, { execute: client.execute, read: () => onMain(readGrantRevision) })
   return client

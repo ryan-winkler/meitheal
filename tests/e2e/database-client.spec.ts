@@ -80,6 +80,10 @@ test("tagged file projections preserve result shape and use fresh bound values",
     expect((await reader.execute(score)).toJSON().rows).toEqual([[9007199254740991]])
     const overflow = tagTaskProjectionRead({ ...score, args: [9007199254740992n] }, "task-detail")
     await expect(reader.execute(overflow)).rejects.toBeInstanceOf(RangeError)
+    const sql = "SELECT ? AS required, ? AS optional"
+    const bound = (args: (number | string)[]) => tagTaskProjectionRead({ sql, args }, "task-detail")
+    expect((await reader.execute(bound([1, "local value"]))).toJSON().rows).toEqual([[1, "local value"]])
+    expect((await reader.execute(bound([2]))).toJSON().rows).toEqual([[2, null]])
     await reader.commit()
   } finally {
     reader.close()

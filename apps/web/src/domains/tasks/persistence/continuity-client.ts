@@ -1,5 +1,5 @@
 import type { Client, InArgs, InStatement, Transaction } from "@libsql/client"
-import { acquireWriteTransaction, isLocalFileWriter, isLocalReadSnapshot } from "../../../../scripts/database-client.mjs"
+import { acquireWriteTransaction, isLocalFileClient, isLocalFileWriter, isLocalReadSnapshot } from "../../../../scripts/database-client.mjs"
 import { databaseRevision, getBoardGrantPath, readBoardGrantRevision } from "../../../../scripts/board-grant-journal.mjs"
 import { principalProof, registerFencedScopeReader, validateBoardOperations } from "../board-scope"
 import { boardGrantStillCurrent, currentBoardGrantRevision } from "./board-grant-fence"
@@ -26,6 +26,11 @@ export function isFencedReadSnapshot(transaction: Transaction): boolean {
 export function isFencedLocalWriter(transaction: Transaction): boolean {
   const raw = fencedLocalWriters.get(transaction)
   return raw !== undefined && isLocalFileWriter(raw)
+}
+
+export function isFencedLocalFileClient(guarded: Client): boolean {
+  const raw = guardSources.get(guarded)
+  return raw !== undefined && isLocalFileClient(raw)
 }
 
 /** Only controlled journal writers and synthetic fixtures may bypass an actual guard.

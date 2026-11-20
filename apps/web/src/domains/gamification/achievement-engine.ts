@@ -200,11 +200,19 @@ export async function checkAchievements(
 ): Promise<AchievementCheckResult> {
   await ensureAchievementSchema()
   const client = await gamificationClient(scope, true)
+  const eligible = ACHIEVEMENTS.filter(achievement => CONDITIONS.get(achievement.id)?.(stats))
+  const query = gamificationRead(scope, "SELECT id FROM board_achievements")
+  const [snapshot] = await client.batch([query], "read")
+  const observed = new Set(snapshot!.rows.map(row => String(row.id)))
+  if (eligible.every(achievement => observed.has(achievement.id))) {
+    return { newlyUnlocked: [], total: ACHIEVEMENTS.length, unlocked: observed.size }
+  }
   const tx = await client.transaction("write")
   try {
-    const existing = await tx.execute(gamificationRead(scope, "SELECT id FROM board_achievements"))
+    // Another completion may have awarded a candidate since the read.
+    const existing = await tx.execute(query)
     const unlocked = new Set(existing.rows.map(row => String(row.id)))
-    const candidates = ACHIEVEMENTS.filter(achievement => !unlocked.has(achievement.id) && CONDITIONS.get(achievement.id)?.(stats))
+    const candidates = eligible.filter(achievement => !unlocked.has(achievement.id))
     const unlockedAt = new Date().toISOString()
     if (candidates.length) {
       await tx.batch(candidates.map(achievement => ({
