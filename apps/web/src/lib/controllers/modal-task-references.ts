@@ -109,7 +109,7 @@ export function initModalTaskReferences(overlay: HTMLElement, signal: AbortSigna
             .map(item => {
               const label = ticketLabel(item)
               return { title: item.title, detail: label === "Task" ? picker.dataset.taskLabel ?? "" : label,
-                replacement: `[${label}](${taskDetailPath(label === "Task" ? item.taskId! : label)})` }
+                replacement: `[${label}](${taskDetailPath(item.taskId!)})` }
             })
         }
         list.replaceChildren(...results.map((item, index) => {

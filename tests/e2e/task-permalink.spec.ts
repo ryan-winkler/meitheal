@@ -17,13 +17,13 @@ test("copies a stable task link and returns from a deleted task to the task view
   expect(created.status(), await created.text()).toBe(201)
   const { id, ticket_key } = await created.json()
   const taskPage = "/tasks?area_id=default#kanban"
-  const canonical = `${origin}/tickets/${id}`
+  const canonical = `${origin}/tickets/${ticket_key}`
 
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"])
   await page.goto(taskPage)
   const card = page.getByRole("link", { name: /^Task: Task permalink round trip,/ })
     .and(page.locator(`[data-id="${id}"]`))
-  await expect(card).toHaveAttribute("href", `/tickets/${id}?board_id=household`)
+  await expect(card).toHaveAttribute("href", `/tickets/${ticket_key}?board_id=household`)
   await card.click()
   const detail = page.getByRole("dialog", { name: `Task detail: ${title}` })
   await detail.getByRole("button", { name: "Copy task link" }).click()
@@ -36,6 +36,16 @@ test("copies a stable task link and returns from a deleted task to the task view
   await expect(detail).toBeVisible()
   await expect(page).toHaveURL(canonical)
   await page.goto(`/tasks?open=${ticket_key}#kanban`)
+  await expect(page.locator("#td-title")).toHaveValue(title)
+  await expect(page).toHaveURL(canonical)
+
+  // Older ID links and lower-case keys still open the ticket and settle on the readable key.
+  for (const locator of [id, String(ticket_key).toLowerCase()]) {
+    await page.goto(`/tickets/${locator}`)
+    await expect(page.locator("#td-title")).toHaveValue(title)
+    await expect(page).toHaveURL(canonical)
+  }
+  await page.goBack()
   await expect(page.locator("#td-title")).toHaveValue(title)
   await expect(page).toHaveURL(canonical)
 
@@ -187,7 +197,7 @@ test("a task link preserves simulated ingress and opens in another authorized co
     const headers = await currentBoardWriteHeaders(source.request, "household", { origin }, entry)
     const created = await source.request.post(entry + "/api/tasks", { headers, data: { title, status: "active" } })
     expect(created.status(), await created.text()).toBe(201)
-    const { id } = await created.json()
+    const { ticket_key } = await created.json()
     const sourcePage = await source.newPage()
     await sourcePage.addInitScript(() => {
       Object.defineProperty(navigator, "clipboard", { value: undefined })
@@ -204,11 +214,11 @@ test("a task link preserves simulated ingress and opens in another authorized co
     const manual = sourcePage.getByLabel("Copy this task link manually")
     await expect(manual).toBeFocused()
     const copiedLink = await manual.inputValue()
-    expect(copiedLink).toBe(`${entry}/tickets/${id}`)
+    expect(copiedLink).toBe(`${entry}/tickets/${ticket_key}`)
 
     const recipientPage = await recipient.newPage()
     const taskRead = recipientPage.waitForResponse(response =>
-      response.url() === `${entry}/api/tasks/${id}` && response.request().method() === "GET")
+      response.url() === `${entry}/api/tasks/${ticket_key}` && response.request().method() === "GET")
     await recipientPage.goto(copiedLink)
     await expect(recipientPage.locator("#td-title")).toHaveValue(title)
     expect((await taskRead).status()).toBe(200)
@@ -259,19 +269,19 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     const createTask = async (title: string) => {
       const result = await source.request.post(entry + "/api/tasks", { headers, data: { title, status: "active" } })
       expect(result.status()).toBe(201)
-      return (await result.json()).id as string
+      return await result.json() as { id: string, ticket_key: string }
     }
     const post = async (taskId: string, content: string) => {
       const result = await source.request.post(`${entry}/api/tasks/${taskId}/comments`, { headers, data: { content } })
       expect(result.status()).toBe(201)
       return (await result.json()).id as number
     }
-    const id = await createTask("Comment link task")
-    const other = await createTask("Unrelated comment task")
+    const { id, ticket_key } = await createTask("Comment link task")
+    const { id: other } = await createTask("Unrelated comment task")
     await post(id, "First visible comment")
     const comment = await post(id, "The linked comment")
     const otherComment = await post(other, "Comment belonging to a different task")
-    const taskUrl = `${entry}/tickets/${id}`
+    const taskUrl = `${entry}/tickets/${ticket_key}`
     const commentApiPath = `/api/tasks/${id}/comments/${comment}`
 
     const commentsUrl = entry + `/api/tasks/${id}/comments`
@@ -464,9 +474,9 @@ test("ticket scoring keeps other lenses and retries a failed save", async ({ pag
     headers, data: { title: "Ticket scoring retry", framework_payload: JSON.stringify({ ice: { impact: 7, confidence: 8, ease: 9 } }) },
   })
   expect(created.status()).toBe(201)
-  const { id } = await created.json()
+  const { id, ticket_key } = await created.json()
   await page.goto(`/tasks?open=${id}#kanban`)
-  await expect(page).toHaveURL(`${origin}/tickets/${id}`)
+  await expect(page).toHaveURL(`${origin}/tickets/${ticket_key}`)
   const chooser = page.getByLabel("Scoring framework", { exact: true })
   await expect(chooser).toBeEnabled()
   await chooser.selectOption("rice")

@@ -176,7 +176,7 @@ test("task references preserve text editing and open the saved task through HTTP
     await expect(descriptionLink).toHaveAttribute("href", root + "/tickets/" + target.id)
     await expect(comment.getByRole("link", { name: other.ticket_key })).toHaveAttribute("href", root + "/tickets/" + other.id)
     await descriptionLink.click()
-    await expect(page).toHaveURL(root + "/tickets/" + target.id)
+    await expect(page).toHaveURL(root + "/tickets/" + target.ticket_key)
     await expect(page.locator("#td-title")).toHaveValue("Renamed reference target")
     expect(lookups.every(url => url.pathname === prefix + "/api/search")).toBe(true)
   })

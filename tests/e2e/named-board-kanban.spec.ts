@@ -194,10 +194,14 @@ test("named Boards use the common Kanban with paged capture, version conflicts, 
       const response = await savedPlanning
       expect(response.status()).toBe(201)
       expect(response.request().headers()["x-meitheal-board-id"]).toBe(id)
-      const savedTicket = (await response.json()).id
-      expect((await refreshedPlanning).status()).toBe(200)
+      const { id: savedTicket, ticket_key: savedKey } = await response.json()
+      const refresh = await refreshedPlanning
+      expect(refresh.status()).toBe(200)
+      expect(new URL(refresh.url()).searchParams.get("open")).toBe(savedTicket)
       await page.waitForFunction(start => performance.timeOrigin !== start, previousDocument)
-      await expect(page).toHaveURL(url => url.searchParams.get("open") === savedTicket)
+      await expect(page).toHaveURL(
+        url => url.searchParams.get("open") === savedTicket || url.pathname === fixture.configuredPath + "/tickets/" + savedKey,
+      )
       await page.waitForLoadState("load")
       const placed = await (await owner.request.get(api + "?view=tasks&ticket=" + savedTicket)).json()
       expect(placed.tasks[0].placement).toMatchObject({ areaId: scope.areaId, projectId: scope.projectId })

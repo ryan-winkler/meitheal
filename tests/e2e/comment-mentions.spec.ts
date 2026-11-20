@@ -73,7 +73,7 @@ test("comment picker and inbox stay private through edits, removal, restart and 
       headers: await boardHeaders(), data: { title: "Private mention journey" },
     })
     expect(created.status(), await created.text()).toBe(201)
-    const taskId = (await created.json()).id as string
+    const { id: taskId, ticket_key: ticketKey } = await created.json() as { id: string, ticket_key: string }
     const commentUrl = root + `/api/tasks/${taskId}/comments`
     const peopleUrl = root + "/api/comment-people"
     await sender.goto(root + "/today?open=" + taskId)
@@ -207,7 +207,7 @@ test("comment picker and inbox stay private through edits, removal, restart and 
     })).status()).toBe(409)
 
     await recipient.getByRole("button", { name: "Refresh inbox" }).click()
-    await expect(recipientLink).toHaveAttribute("href", `${prefix}/tickets/${taskId}?comment=${id}`)
+    await expect(recipientLink).toHaveAttribute("href", `${prefix}/tickets/${ticketKey}?comment=${id}`)
     await expect(recipient.getByRole("status").filter({ hasText: "Unread: 1" })).toBeVisible()
     await recipient.context().setOffline(true)
     await expect(recipientLink).toHaveCount(0)

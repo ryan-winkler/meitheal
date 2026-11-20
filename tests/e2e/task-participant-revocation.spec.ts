@@ -371,7 +371,7 @@ test("an open task preserves input and focus when Core revokes its member", asyn
     const title = "Participant access changes"
     const task = await context.request.post(root + "/api/tasks", { headers, data: { title, status: "active" } })
     expect(task.status()).toBe(201)
-    const { id } = await task.json()
+    const { id, ticket_key } = await task.json()
     const taskApi = root + "/api/tasks/" + id
     const comment = await context.request.post(taskApi + "/comments", { headers, data: { content: "Existing shared comment" } })
     expect(comment.status()).toBe(201)
@@ -383,7 +383,7 @@ test("an open task preserves input and focus when Core revokes its member", asyn
     await page.goto(`${root}/tasks?open=${id}`)
     const detail = page.getByRole("dialog", { name: `Task detail: ${title}` })
     await expect(detail).toBeVisible()
-    await expect(page).toHaveURL(url => url.pathname === fixture.configuredPath + "/tickets/" + encodeURIComponent(id))
+    await expect(page).toHaveURL(url => url.pathname === fixture.configuredPath + "/tickets/" + ticket_key)
     const detailUrl = page.url()
     const row = detail.locator(`#td-comment-${commentId}`)
     const edit = row.getByRole("button", { name: "Edit comment" })
