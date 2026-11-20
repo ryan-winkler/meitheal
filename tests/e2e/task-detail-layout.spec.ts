@@ -92,6 +92,7 @@ test("ticket and Settings share a real section and field order, and reset restor
 
 test("Focus fills the viewport and preserves current edits, history, and Escape order", async ({ page, request }) => {
   const id = await createTicket(request, "Focus layout fixture")
+  const { ticket_key } = await (await request.get(`/api/tasks/${id}`)).json()
   await page.setViewportSize({ width: 1600, height: 900 })
   await page.goto(`/tickets/${id}`)
   const overlay = page.locator("#task-detail-overlay")
@@ -135,7 +136,7 @@ test("Focus fills the viewport and preserves current edits, history, and Escape 
   await expect(draft).toHaveValue("Uncommitted description in Focus")
   expect(await draft.evaluate(node => (node as HTMLTextAreaElement).selectionStart)).toBe(caret)
   expect(await page.evaluate(() => history.length)).toBe(historyLength)
-  expect(new URL(page.url()).pathname).toMatch(/^\/tickets\/MTH-\d+$/)
+  expect(new URL(page.url()).pathname).toBe(`/tickets/${ticket_key}`)
   expect(writes.length).toBe(writesBeforeExit)
 
   const layout = page.getByRole("button", { name: "Task detail layout", exact: true })
