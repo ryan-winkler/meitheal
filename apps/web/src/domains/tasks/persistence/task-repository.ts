@@ -35,7 +35,7 @@ import { setTaskHomeAssistantArea, readHomeAssistantAreaPolicyRevision } from ".
 import { taskLabelInsert } from "./label-reference-repository"
 import { homeAssistantTaskAreaCondition } from "./home-assistant-task-area"
 import type { Client, InStatement, InValue, ResultSet, Transaction } from "@libsql/client"
-import { acquireWriteTransaction, executeWriteWithRetry, runWriteTransaction } from "../../../../scripts/database-client.mjs"
+import { acquireWriteTransaction, executeWriteWithRetry, runWriteTransaction, tagTaskProjectionRead } from "../../../../scripts/database-client.mjs"
 import { CLOSED_TASK_STATUSES, getStatusDef, isClosedStatus, isDoneStatus, normalizeStatus, STATUS } from "../../../lib/status-config"
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "../../../lib/task-search-score"
@@ -1090,11 +1090,12 @@ export class TaskRepository {
   async findById(idOrKey: string): Promise<TaskRow | null> {
     const number = this.ticketNumberForScope(idOrKey)
     const identity = number === null ? sql`t.id = ${idOrKey}` : sql`(t.id = ${idOrKey} OR t.ticket_number = ${number})`
-    const result = await this.forOperation("read").execute(scopedTaskRead(this.scope, sql`SELECT t.*, t.ticket_ref AS ticket_key,
+    const detail = scopedTaskRead(this.scope, sql`SELECT t.*, t.ticket_ref AS ticket_key,
       ${sourceSql(taskTimestampMs("t.updated_at"))} AS task_version, parent.title AS parent_title,
       parent.task_type AS parent_task_type, parent.ticket_number AS parent_ticket_number
       FROM scoped_tasks AS t LEFT JOIN scoped_tasks AS parent ON parent.id = t.parent_id
-      WHERE ${identity} LIMIT 1`))
+      WHERE ${identity} LIMIT 1`)
+    const result = await this.forOperation("read").execute(tagTaskProjectionRead(detail, "task-detail"))
     return (result.rows[0] as unknown as TaskRow) ?? null;
   }
 
@@ -1285,8 +1286,8 @@ export class TaskRepository {
     const countSql = `SELECT COUNT(*) as cnt FROM scoped_tasks AS tasks${where}`;
 
     const [result, countResult] = await this.forOperation("read").batch([
-      scopedTaskRead(this.scope, sourceSql(selectSql, args)),
-      scopedTaskRead(this.scope, sourceSql(countSql, args)),
+      tagTaskProjectionRead(scopedTaskRead(this.scope, sourceSql(selectSql, args)), "task-list"),
+      tagTaskProjectionRead(scopedTaskRead(this.scope, sourceSql(countSql, args)), "task-count"),
     ], "read")
 
     const total = Number(countResult?.rows[0]?.cnt ?? 0)
@@ -1367,7 +1368,7 @@ export class TaskRepository {
     const excerpt = snippets.length ? `CASE ${snippets.join("\n")} END` : "NULL"
     const orderBy = opts.sort === "updated" ? "" : "score DESC, "
 
-    const result = await this.forOperation(operation).execute(scopedTaskRead(this.scope, sourceSql(`needle(value, ticket) AS (VALUES (?, ?)),
+    const search = scopedTaskRead(this.scope, sourceSql(`needle(value, ticket) AS (VALUES (?, ?)),
             hits AS MATERIALIZED (
               SELECT tasks.id, tasks.priority, ${updatedAt} AS updated_at_ms,
                 ${selected("id", `lower(tasks.id) = needle.value OR coalesce(tasks.ticket_number = needle.ticket, 0)`)} AS exact_id,
@@ -1399,7 +1400,8 @@ export class TaskRepository {
             SELECT ${projection}, page.score, page.id_hit, page.exact_id, page.title_at,
               page.description_hit, page.labels_hit, page.custom_fields_hit, page.comments_hit, ${excerpt} AS excerpt
             FROM page JOIN scoped_tasks AS tasks ON tasks.id = page.id CROSS JOIN needle
-            ORDER BY ${orderBy}page.updated_at_ms DESC, page.priority ASC, page.id ASC`, [query, ticket, ...args, limit]), "with"))
+            ORDER BY ${orderBy}page.updated_at_ms DESC, page.priority ASC, page.id ASC`, [query, ticket, ...args, limit]), "with")
+    const result = await this.forOperation(operation).execute(tagTaskProjectionRead(search, "task-search"))
 
     return result.rows as unknown as TaskCatalogRow[]
   }

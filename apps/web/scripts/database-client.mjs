@@ -33,7 +33,8 @@ const totalChangesStatements = new WeakMap()
 /** @type {WeakMap<DatabaseSync, import("node:sqlite").StatementSync>} */
 const grantRevisionStatements = new WeakMap()
 /** @typedef {"rows" | "completed"} TodayRead */
-/** @typedef {TodayRead | "board-policy"} ScopedRead */
+/** @typedef {"task-list" | "task-count" | "task-detail" | "task-search"} TaskProjectionRead */
+/** @typedef {TodayRead | TaskProjectionRead | "board-policy"} ScopedRead */
 /** @type {WeakMap<object, ScopedRead>} */
 const scopedReads = new WeakMap()
 /** @type {WeakMap<DatabaseSync, Partial<Record<ScopedRead, { sql: string, statement: import("node:sqlite").StatementSync }>>>} */
@@ -53,6 +54,15 @@ export function tagTodayRead(statement, kind) {
 /** @template {Exclude<InStatement, string>} T @param {T} statement @returns {T} */
 export function tagBoardPolicyRead(statement) {
   scopedReads.set(statement, "board-policy")
+  return statement
+}
+
+/** Explicit source-owned projections consume unique named columns only.
+ * @template {Exclude<InStatement, string>} T
+ * @param {T} statement @param {TaskProjectionRead} kind @returns {T}
+ */
+export function tagTaskProjectionRead(statement, kind) {
+  scopedReads.set(statement, kind)
   return statement
 }
 
@@ -253,12 +263,32 @@ function execute(db, input, args = [], localReadBatch = false) {
   let statement = cached?.sql === sql ? cached.statement : undefined
   if (!statement) {
     statement = db.prepare(sql)
-    statement.setReadBigInts(true)
     if (kind) {
       // Each query has one slot per handle. Changes in the scoped SQL replace it.
       if (slots) slots[kind] = { sql, statement }
       else scopedReadStatements.set(db, { [kind]: { sql, statement } })
-    }
+    } else statement.setReadBigInts(true)
+  }
+  if (kind) {
+    // Native named rows already have the declared projection keys. SQLite
+    // checks the safe integer range in its number mode. Add libSQL's indexed
+    // fields for both key access and ResultSet JSON serialization.
+    const nativeRows = Array.isArray(bindings) ? statement.all(...bindings) : statement.all(bindings)
+    const metadata = statement.columns()
+    const columns = metadata.map(column => column.name)
+    const rows = /** @type {Row[]} */ (nativeRows.map(nativeRow => {
+      const row = { ...nativeRow }
+      Object.defineProperty(row, "length", { value: columns.length })
+      for (let index = 0; index < columns.length; index++) {
+        const name = columns[index]
+        const value = nativeRow[name]
+        const decoded = value instanceof Uint8Array ? new Uint8Array(value).buffer : value
+        if (decoded !== value) row[name] = decoded
+        Object.defineProperty(row, index, { value: decoded })
+      }
+      return row
+    }))
+    return new ResultSetImpl(columns, metadata.map(column => column.type ?? ""), rows, 0, undefined)
   }
   if (statement.columns().length) {
     statement.setReturnArrays(true)
@@ -819,7 +849,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       /** @param {InStatement} statement @param {InArgs} [args] */
       async execute(statement, args) {
         assertActive()
-        return sqliteOperation(() => execute(db, statement, args))
+        return sqliteOperation(() => execute(db, statement, args, useReadPool))
       },
       async batch(statements) {
         assertActive()
