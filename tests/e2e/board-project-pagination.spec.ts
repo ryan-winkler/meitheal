@@ -4,6 +4,7 @@ import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { setTimeout } from "node:timers/promises"
 
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
@@ -288,11 +289,20 @@ for (const status of [401, 403, 404]) {
 }
 
 test("a real account revocation removes the loaded private Project projection", async () => {
+  test.setTimeout(100_000)
   const owner = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {} })
   try {
     await owner.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
     const membership = `${app}/api/boards/${boardId}`
-    const grant = await owner.request.patch(membership, { headers, data: { action: "member", memberId: "fixture-member-two", role: "viewer" } })
+    const grantMember = () => owner.request.patch(membership, { headers, data: { action: "member", memberId: "fixture-member-two", role: "viewer" } })
+    let grant = await grantMember()
+    if (grant.status() === 429) {
+      const retryAfter = Number(grant.headers()["retry-after"])
+      expect(retryAfter).toBeGreaterThan(0)
+      expect(retryAfter).toBeLessThanOrEqual(60)
+      await setTimeout(retryAfter * 1000)
+      grant = await grantMember()
+    }
     expect(grant.status(), await grant.text()).toBe(200)
     await context.addCookies([{ name: "feedback-fixture", value: "member-two", url: origin }])
     await page.goto(`${app}/boards/${boardId}?area=${areaId}`)

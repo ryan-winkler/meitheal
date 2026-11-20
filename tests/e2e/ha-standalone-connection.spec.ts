@@ -67,7 +67,7 @@ test("saved standalone credentials connect and changes replace the authenticated
   }
 })
 
-test("unconfigured startup pauses repeated settings bootstrap and immediately admits saved, environment and database changes", async () => {
+test("unconfigured startup reuses migrated settings and admits saved, environment and database changes", async () => {
   const directory = await mkdtemp(join(tmpdir(), "meitheal-ha-startup-"))
   const originalEnv = Object.fromEntries(["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_BASE_URL", "HA_TOKEN"].map(key => [key, process.env[key]]))
   const fixture = await startHAWebSocketFixture()
@@ -110,27 +110,27 @@ test("unconfigured startup pauses repeated settings bootstrap and immediately ad
     await store.ensureSchema()
     const first = observeSettingsBootstrap()
     await initHAIntegrations()
-    expect(first).toEqual({ bootstraps: 1, reads: 1 })
+    expect(first).toEqual({ bootstraps: 0, reads: 1 })
     for (let i = 0; i < 20; i++) await initHAIntegrations()
-    expect(first).toEqual({ bootstraps: 1, reads: 1 })
+    expect(first).toEqual({ bootstraps: 0, reads: 1 })
 
     // Even an incomplete environment edit invalidates known-unconfigured admission.
     process.env.HA_BASE_URL = fixture.url
     await initHAIntegrations()
-    expect(first).toEqual({ bootstraps: 2, reads: 2 })
+    expect(first).toEqual({ bootstraps: 0, reads: 2 })
 
     process.env.MEITHEAL_DB_URL = `file:${join(directory, "second.db")}`
     await store.ensureSchema()
     const second = observeSettingsBootstrap()
     await initHAIntegrations()
-    expect(second).toEqual({ bootstraps: 1, reads: 1 })
+    expect(second).toEqual({ bootstraps: 0, reads: 1 })
     await initHAIntegrations()
-    expect(second).toEqual({ bootstraps: 1, reads: 1 })
+    expect(second).toEqual({ bootstraps: 0, reads: 1 })
 
     // Direct/out-of-process database changes still get a bounded retry without a local revision signal.
     await setTimeout(5_050)
     await initHAIntegrations()
-    expect(second).toEqual({ bootstraps: 2, reads: 2 })
+    expect(second).toEqual({ bootstraps: 0, reads: 2 })
 
     const settings = new SettingsRepository(store.getPersistenceClient())
     await settings.importBatch([
