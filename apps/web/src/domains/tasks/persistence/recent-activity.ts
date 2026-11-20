@@ -1,3 +1,8 @@
+import type { BoardScope } from "../board-scope"
+import { taskField, taskOwnedBy } from "./board-storage"
+import { boardOperationClient } from "./board-operation-client"
+import { scopedTaskRead } from "./board-work-query"
+import { sql, sourceSql } from "./sql-fragment"
 import { createHash } from "node:crypto"
 import type { Client, InStatement, InValue } from "@libsql/client"
 import { getStatusDef, STATUS } from "../../../lib/status-config"
@@ -186,15 +191,11 @@ export function recentActivityPersonKey(id: string): string {
   return createHash("sha256").update(`recent-activity-person:${id}`).digest("hex").slice(0, 32)
 }
 
-export function taskAddedActivity(taskId: string, actor: RecentTaskActor, at: number): InStatement {
+export function taskAddedActivity(scope: BoardScope, taskId: string, actor: RecentTaskActor, at: number): InStatement {
   const summary = serializeProvenanceSummary(actor) ?? "Task added"
-  return {
-    sql: `INSERT INTO task_activity_log
-            (task_id, field, actor, actor_type, event_type, summary, created_at, feed_action, feed_person_key)
-          SELECT id, 'created', ?, ?, 'created', ?, ?, 'added', ?
-          FROM tasks WHERE id = ? AND task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')`,
-    args: [actor.kind, actor.kind, summary, at, actor.personKey, taskId],
-  }
+  return sql`INSERT INTO task_activity_log (task_id, field, actor, actor_type, event_type, summary, created_at, feed_action, feed_person_key)
+    SELECT id, 'created', ${actor.kind}, ${actor.kind}, 'created', ${summary}, ${at}, 'added', ${actor.personKey}
+    FROM tasks WHERE id = ${taskId} AND ${taskOwnedBy(scope)}`
 }
 
 function statusValues(status: string): readonly string[] {
@@ -207,6 +208,7 @@ function statusMatches(status: string): string {
 
 /** Read the old row with the same guards as the following task update. */
 export function taskChangedActivity(
+  scope: BoardScope,
   fields: Record<string, InValue>,
   where: string,
   whereArgs: InValue[],
@@ -215,7 +217,13 @@ export function taskChangedActivity(
   eventId: string,
 ): InStatement {
   const summary = serializeProvenanceSummary(actor)
-  const args: InValue[] = [actor.kind, actor.kind, summary, eventId, at]
+  const display = actor.kind === "agent" ? sanitizeOriginName(actor.provenance?.tokenName) ?? "Agent" : actor.kind
+  const eventType = typeof fields.status === "string"
+    ? `CASE WHEN ${statusMatches(fields.status)} THEN 'field_change' ELSE 'status_change' END`
+    : "'field_change'"
+  const args: InValue[] = [display, actor.kind]
+  if (typeof fields.status === "string") args.push(...statusValues(fields.status))
+  args.push(summary, eventId, at)
   let action = "'edited'"
   if (typeof fields.status === "string") {
     action = fields.status === STATUS.COMPLETE
@@ -223,21 +231,23 @@ export function taskChangedActivity(
       : `CASE WHEN ${statusMatches(STATUS.COMPLETE)} THEN 'reopened' ELSE 'edited' END`
     args.push(...statusValues(STATUS.COMPLETE))
   }
-  args.push(actor.personKey, ...whereArgs)
+  const ownership = taskOwnedBy(scope)
+  args.push(actor.personKey, ...whereArgs, ...ownership.args)
   const changes = Object.entries(fields).map(([column, value]) => {
     if (column === "status" && typeof value === "string") {
       args.push(...statusValues(value))
       return `NOT (${statusMatches(value)})`
     }
-    args.push(value)
-    return `${column} IS NOT ?`
+    const field = taskField(scope, column)
+    args.push(...field.args, value)
+    return `${field.sql} IS NOT ?`
   })
 
   return {
     sql: `INSERT INTO task_activity_log
             (task_id, field, actor, actor_type, event_type, summary, correlation_id, created_at, feed_action, feed_person_key)
-          SELECT id, 'activity', ?, ?, 'field_change', ?, ?, ?, ${action}, ?
-          FROM tasks ${where} AND task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND (${changes.join(" OR ")})`,
+          SELECT id, 'activity', ?, ?, ${eventType}, ?, ?, ?, ${action}, ?
+          FROM tasks ${where} AND ${ownership.sql} AND (${changes.join(" OR ")})`,
     args,
   }
 }
@@ -252,6 +262,7 @@ export function discardUnappliedTaskActivity(eventId: string): InStatement {
 
 export async function readRecentActivity(
   client: Client,
+  scope: BoardScope,
   { areaId, personKey, before }: { areaId?: string | undefined; personKey?: string | undefined; before?: Cursor | undefined },
 ) {
   const size = 25
@@ -269,18 +280,15 @@ export async function readRecentActivity(
     conditions.push("(activity.created_at, activity.id) < (?, ?)")
     args.push(before.at, before.id)
   }
-  const result = await client.execute({
-    sql: `SELECT activity.id, activity.created_at, activity.feed_action, activity.feed_person_key,
+  const result = await boardOperationClient(client, scope, { resource: "task", action: "read" }).execute(scopedTaskRead(scope, sourceSql( `SELECT activity.id, activity.created_at, activity.feed_action, activity.feed_person_key,
                  activity.actor_type, activity.summary,
-                 task.id AS task_id, task.title, task.ticket_number, task.created_by, task.source,
+                 task.id AS task_id, task.title, task.ticket_number, task.ticket_ref, task.created_by, task.source,
                  area.name AS area_name
           FROM task_activity_log AS activity
-          JOIN tasks AS task ON task.id = activity.task_id AND task.task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')
-          LEFT JOIN areas AS area ON area.id = task.area_id AND area.owner_board_id IS NULL AND area.retired_at IS NULL
+          JOIN scoped_tasks AS task ON task.id = activity.task_id
+          LEFT JOIN scoped_areas AS area ON area.id = task.area_id AND area.retired_at IS NULL
           WHERE ${conditions.join(" AND ")}
-          ORDER BY activity.created_at DESC, activity.id DESC LIMIT ?`,
-    args: [...args, size + 1],
-  })
+          ORDER BY activity.created_at DESC, activity.id DESC LIMIT ?`, [...args, size + 1])))
   const items = result.rows.slice(0, size).map(row => {
     const kind = String(row.actor_type)
     // Only expose verified token/origin provenance for rows recorded by an authenticated agent token.
@@ -296,6 +304,7 @@ export async function readRecentActivity(
       provenance,
       taskId: String(row.task_id),
       title: String(row.title),
+      ticketKey: typeof row.ticket_ref === "string" ? row.ticket_ref : null,
       ticketNumber: row.ticket_number == null ? null : Number(row.ticket_number),
       areaName: row.area_name == null ? null : String(row.area_name),
     }

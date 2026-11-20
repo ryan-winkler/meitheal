@@ -1,3 +1,5 @@
+import { currentTaskApiContext, taskApiHeaders, type TaskApiContext } from "./task-api"
+import { sameTaskApiContext } from "./task-api-client"
 import type { TaskKind } from "@meitheal/domain-tasks"
 import { CALENDAR_AREA_APPLIED_EVENT, CALENDAR_AREA_REQUEST_EVENT, getRememberedAreaId } from "@lib/area-selector-controller"
 import { CALENDAR_FILTER_STATE_EVENT, readCalendarTaskFilters } from "@lib/calendar-task-filter"
@@ -58,6 +60,7 @@ export function initCalendarPage(signal: AbortSignal): void {
   const moreTasks = queryMoreTasks
 
   shell.dataset.calendarReady = "true"
+  const calendarContext = currentTaskApiContext()
   let timezone = shell.dataset.timezone || "Europe/Dublin"
   let month = initialMonth
   let desired = taskBackgroundUrl()
@@ -217,6 +220,8 @@ export function initCalendarPage(signal: AbortSignal): void {
   }
 
   function startDrawerRead(date: string) {
+    const context = currentTaskApiContext()
+    if (!context || !calendarContext || context.boardId !== calendarContext.boardId || context.actorKey !== calendarContext.actorKey) return
     drawerRequest?.abort()
     const currentRequest = new AbortController()
     drawerRequest = currentRequest
@@ -303,7 +308,7 @@ export function initCalendarPage(signal: AbortSignal): void {
       const taskSignal = AbortSignal.any([signal, currentRequest.signal, AbortSignal.timeout(10_000)])
       let received = false
       try {
-        const { rows, total, linkedEvents } = await loadDrawerTasks({ date, filters, offset, limit }, timezone, taskSignal)
+        const { rows, total, linkedEvents } = await loadDrawerTasks({ date, filters, offset, limit }, timezone, taskSignal, context)
         if (taskSignal.aborted) return
         received = true
         if (!offset) {
@@ -476,7 +481,7 @@ export function initCalendarPage(signal: AbortSignal): void {
   if (rememberedArea) applyFilters({ area: rememberedArea })
 }
 
-const agendaFilterKeys = new Set(["project", "area", "area_id", "board", "search", "user", "status", "priority",
+const agendaFilterKeys = new Set(["project", "project_id", "area", "area_id", "board", "search", "user", "status", "priority",
   "rice", "types", "task_type", "label", "labels", "promoted", "advancedFilter"])
 
 function writeCalendarTaskFilters(url: URL, filters: KanbanFilters, rawRules: string | null) {
@@ -588,19 +593,22 @@ async function loadDrawerTasks(
   query: { date: string; filters: string; offset: number; limit: number },
   timezone: string,
   signal: AbortSignal,
+  context: TaskApiContext,
 ) {
+  if (!sameTaskApiContext(context, currentTaskApiContext())) throw new Error("Calendar context changed")
   const response = await fetch("/api/calendar/agenda", {
     method: "POST",
     mode: "same-origin",
     redirect: "error",
-    headers: { "content-type": "application/json" },
+    headers: taskApiHeaders(context, { "content-type": "application/json" }),
     body: JSON.stringify(query),
     signal,
   })
-  if (!response.ok) throw new Error(`Task query failed: ${response.status}`)
+  if (!response.ok || signal.aborted || !sameTaskApiContext(context, currentTaskApiContext())) throw new Error(`Task query failed: ${response.status}`)
   const data = await response.json() as {
     tasks?: Record<string, unknown>[] | null; total?: number | null; linkedEvents?: LinkedCalendarEvent[] | null
   }
+  if (signal.aborted || !sameTaskApiContext(context, currentTaskApiContext())) throw new Error("Calendar context changed")
   if (data.tasks !== null && !Array.isArray(data.tasks)) throw new Error("Invalid task list")
 
   const rows = data.tasks?.map(task => {

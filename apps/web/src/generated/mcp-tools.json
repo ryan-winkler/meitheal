@@ -115,7 +115,7 @@
     },
     {
       "name": "createTask",
-      "description": "Create a task with optional calendar sync, assignment, and framework payload. Authenticated callers can retry an identical request with the Idempotency-Key header. Use this when a user or agent wants to capture a new action item.",
+      "description": "Compatibility capture envelope over the canonical scoped task command. Calendar timestamps create an Event task; outbound calendar work follows approved Board source bindings. The events array contains no synchronous integration receipts. Retry an identical request with Idempotency-Key; successful replays retain HTTP 201 and idempotency-key-status: cached.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -140,7 +140,9 @@
             "type": "object",
             "properties": {
               "entityId": {
-                "type": "string"
+                "type": "string",
+                "deprecated": true,
+                "description": "Does not retarget a provider. Configure an approved Board integration source."
               },
               "startDateTime": {
                 "type": "string",
@@ -151,10 +153,14 @@
                 "format": "date-time"
               },
               "durationMinutes": {
-                "type": "integer"
+                "type": "integer",
+                "deprecated": true,
+                "description": "Use an explicit endDateTime for Event task dates."
               },
               "timezone": {
-                "type": "string"
+                "type": "string",
+                "deprecated": true,
+                "description": "Provide offsets in the Event timestamps; the approved integration owns its timezone."
               }
             },
             "additionalProperties": false
@@ -167,7 +173,7 @@
     },
     {
       "name": "completeTaskByNfcTag",
-      "description": "Complete the uniquely assigned incomplete task for an NFC tag",
+      "description": "Uses the selected Board's current completion permission. A caller without Task read permission receives only {ok:true}, including retries, without the Task identity or state. Readable callers retain the detailed completion or already-complete response.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -2329,23 +2335,6 @@
       }
     },
     {
-      "name": "getA2ATask",
-      "description": "Requires a token with a2a:execute, search:read, and tasks:read, plus A2A-Version: 1.0.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Task UUID or ticket key (e.g., MTH-42)"
-          }
-        },
-        "required": [
-          "id"
-        ]
-      }
-    },
-    {
       "name": "createAgentToken",
       "description": "Issue a zero-trust agent token with fine-grained scopes. The plaintext token is returned ONCE in the response — store it securely. Requires Home Assistant admin access.\n\n**For n8n/Node-RED**: Create a token with only the scopes your workflow needs, then set it as Bearer token in your HTTP Request node.",
       "inputSchema": {
@@ -3448,15 +3437,6 @@
       "path": "/api/unfurl",
       "hasBody": true,
       "pathParams": [],
-      "queryParams": []
-    },
-    "getA2ATask": {
-      "method": "GET",
-      "path": "/api/a2a/tasks/{id}",
-      "hasBody": false,
-      "pathParams": [
-        "id"
-      ],
       "queryParams": []
     },
     "createAgentToken": {

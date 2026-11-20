@@ -71,3 +71,27 @@
   font-weight: 600;
   color: var(--accent);
 }
+
+
+.board-directory { gap: 1rem; }
+.board-directory-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); }
+.boards-list .board-directory-card { max-width: none; align-content: start; gap: 0.875rem; }
+.board-directory-card .board-name { display: inline-block; font-size: 1.125rem; }
+.board-directory-card .board-note { margin-block: 0.3rem 0; }
+.board-card-actions { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; }
+.board-card-actions a { font-size: 0.875rem; text-underline-offset: 0.2em; }
+.board-directory-card .board-preference { margin-top: auto; }
+.board-breadcrumb { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; color: var(--text-secondary); font-size: 0.875rem; }
+.board-breadcrumb a { text-decoration: none; }
+.board-breadcrumb a:hover { text-decoration: underline; }
+.board-workspace-navigation { padding-inline: clamp(0.75rem, 2vw, 1.75rem); padding-block: 0.75rem; }
+.boards-workspace .board-workspace-navigation { padding: 0; }
+.board-context-tabs { gap: 0; border-bottom: 1px solid var(--border); }
+.board-context-tabs > a { padding: 0.65rem 0.8rem; text-decoration: none; border-bottom: 2px solid transparent; overflow-wrap: anywhere; }
+.board-context-tabs > a[aria-current="page"] { border-bottom-color: var(--accent); }
+.board-context-tabs > a:hover { background: var(--bg-hover); }
+.board-context-tabs > a:focus-visible, .board-card-actions a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.board-settings [hidden], .board-settings[hidden] { display: none !important; }
+
+.mobile-tab-bar__item[hidden] { display: none; }

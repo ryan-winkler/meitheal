@@ -7,13 +7,14 @@ import { DatabaseSync } from "node:sqlite"
 
 import { expect, test } from "@playwright/test"
 
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
 test.use({ actionTimeout: 5_000, serviceWorkers: "block" })
 
 test("Table restores Epic groups and subgroups and counts children whose parents are outside the page", async ({ page, request, baseURL }) => {
-  const headers = { origin: new URL(baseURL!).origin, "content-type": "application/json" }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin, "content-type": "application/json" })
   const token = randomUUID().slice(0, 8)
   const prefix = `Epic Table child ${token}`
   const cleanup: string[] = []
@@ -125,8 +126,8 @@ test("Table restores Epic groups and subgroups and counts children whose parents
     expect(renamed.ok(), await renamed.text()).toBe(true)
     const appliedUrl = page.url()
     let failNextRefresh = true
-    await page.route("**/tasks?**", route => {
-      if (new URL(route.request().url()).searchParams.has("tableRefresh") && failNextRefresh) {
+    await page.context().route(url => url.searchParams.has("tableRefresh"), route => {
+      if (failNextRefresh) {
         failNextRefresh = false
         return route.fulfill({ status: 503, body: "Fixture unavailable" })
       }
@@ -177,8 +178,9 @@ test("Ingress Table keeps unavailable, cyclic and named Board ancestry out of Ep
     await context.setExtraHTTPHeaders({})
     await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
     const prefix = "Displayed Table scoped descendant"
+    const headers = await currentBoardWriteHeaders(context.request, "household", { origin }, app)
     async function seed(title: string, fields: object = {}) {
-      const response = await context.request.post(app + "/api/tasks", { headers: { origin }, data: { title, ...fields } })
+      const response = await context.request.post(app + "/api/tasks", { headers, data: { title, ...fields } })
       expect(response.status(), await response.text()).toBe(201)
       return await response.json() as { id: string; ticket_key: string }
     }

@@ -473,6 +473,15 @@ export const guardedLookup = createGuardedLookup()
 export type OutboundRequestInit = Omit<RequestInit, "redirect"> & OutboundPolicyOptions & {
   /** "error" (default) rejects any redirect; "manual" returns the 3xx for the caller to re-check. */
   redirect?: "error" | "manual"
+  /** Recheck application authority after asynchronous validation, immediately before fetch. */
+  operationAllowed?: (() => Promise<boolean>) | undefined
+}
+
+export class OutboundOperationUnavailableError extends Error {
+  constructor() {
+    super("Current integration authority is unavailable")
+    this.name = "OutboundOperationUnavailableError"
+  }
 }
 
 async function dispatchValidatedOutbound(
@@ -491,7 +500,7 @@ export async function fetchOutbound(
   url: string | URL,
   options: OutboundRequestInit = {},
 ): Promise<Response> {
-  const { allowPrivate = true, redirect = "error", ...requestOptions } = options
+  const { allowPrivate = true, redirect = "error", operationAllowed, ...requestOptions } = options
   const target = assertOutboundUrl(url, { allowPrivate })
 
   // Node/undici skips connect.lookup when the URL host is already an IP literal,
@@ -516,6 +525,7 @@ export async function fetchOutbound(
 
   try {
     const init = { ...requestOptions, redirect, dispatcher }
+    if (operationAllowed && !await operationAllowed()) throw new OutboundOperationUnavailableError()
     return await dispatchValidatedOutbound(target, init as RequestInit)
   } finally {
     // close() lets the in-flight response body finish before the pool closes.

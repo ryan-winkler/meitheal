@@ -1,4 +1,8 @@
 ---
+import { readBoardPagePlacement } from "@lib/board-page-placement"
+import { boardContextHref } from "@lib/board-workspace"
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+
 /**
  * Eisenhower Matrix — Schema-driven urgency × importance prioritisation view
  *
@@ -26,6 +30,13 @@ import { getTasksForView, type TaskViewItem } from "../lib/task-queries"
 import { EISENHOWER_SECTIONS } from "../lib/eisenhower-registry"
 import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
+const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
+if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
+const workScope = workScopeResult.scope
+const pagePlacement = await readBoardPagePlacement(workScope, Astro.url)
+if (!pagePlacement.ok) return boardScopeResponse(pagePlacement.errorCode)
+const placement = pagePlacement.placement
+
 
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
@@ -33,12 +44,14 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en"
 const todayStr = new Date().toISOString().slice(0, 10)
 const todayStartMs = Date.parse(`${todayStr}T00:00:00.000Z`)
 const { tasks } = await getTasksForView({
+  areaId: placement.areaId ?? undefined,
+  projectId: placement.projectId ?? undefined,
   slim: true,
   descriptionPreviewChars: 240,
   includeDeferred: false,
   excludeCompletedBeforeMs: todayStartMs,
   timezone: Astro.locals.timezone || "Europe/Dublin",
-})
+}, workScope)
 const openTasks = tasks.filter((t) => !t.is_done && t.deferred_at === null)
 
 // ── Schema-driven quadrant partitioning ────────────────────────

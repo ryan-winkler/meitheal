@@ -51,7 +51,7 @@ These shared changes require a currently verified Home Assistant administrator, 
 
 Open **Settings → Tasks & Boards → Labels**, then choose **Review unused labels** with a current Home Assistant administrator account. Select labels on the displayed page and choose **Remove selected labels**. The confirmation names every selected label. Changing pages clears the selection.
 
-An unused label definition has no remaining task association or matching saved label name. Cleanup checks tasks in every Area, including deferred and completed work, plus private draft and template selections. It removes selected definitions only. Tasks, drafts and templates are preserved. A label that becomes used or changes after the preview requires another review before removal. Planned labels remain available until deliberately selected.
+An unused label definition has no remaining task association or matching saved label name. Cleanup checks published tasks in every Area of the selected Board, including deferred and completed work, plus templates and your own draft selections. Other people’s private drafts remain untouched and do not affect the preview. If a label in another person’s draft has changed or been removed, their next save or publication asks them to review the retained selection. It removes selected definitions only. Tasks, drafts and templates are preserved. A label that becomes used or changes after the preview requires another review before removal. Planned labels remain available until deliberately selected.
 
 ### Link to another task
 
@@ -71,7 +71,7 @@ Open **New Task** to load the available lanes and goals. **To Do** and **No goal
 
 On an active Home Assistant account, open **Draft** in **New Task** to save or resume one private capture. Save keeps the form open. Closing preserves the last saved revision. An unrelated New Task can still be created while a saved draft exists. Once you save or resume the current form, use **Publish draft** or Ctrl/Cmd+Enter to create the shared task. Add files from task details after publication.
 
-If another tab edits the same draft, check for the current revision before replacing your form. If a publication is interrupted, **Check draft status** can recover the receipt. When the attempt remains unresolved, retry it with the original values or choose **Keep saved draft** to close the attempt and continue editing. **Open task** follows the original task’s identity. A receipt remains available after the task is removed.
+If another tab edits the same draft, check for the current revision before replacing your form. If a publication is interrupted, **Check draft status** can recover the receipt. If the App restarts, reopen **New Task** within five minutes of the interruption in the same browser tab, Board and Home Assistant account. When the attempt remains unresolved, retry it with the original values or choose **Keep saved draft** to close the attempt and continue editing. **Open task** follows the original task’s identity. A receipt remains available after the task is removed.
 
 Private drafts need an online verified Home Assistant session. Changing accounts or hiding the page withdraws the draft until the account is verified again. When prompted to update the installed web app, activate the update before checking for drafts. Text, date selections, shopping items, checklist items and custom fields are saved. Attachments are handled in task details. Event location and the all-day and routine controls round-trip in the draft and use the existing task creation rules at publication.
 
@@ -88,13 +88,15 @@ In Details, select a checklist item's checkbox to mark it done. Long items wrap 
 
 Task detail saves checklist changes against the version it loaded. Independent changes to different identified steps and new steps can be combined automatically. If a newer save changes the same step differently or the editor cannot identify the changed steps safely, it keeps your draft visible. Choose **Load latest checklist** to review the saved version alongside your draft, then make any remaining edits.
 
+Checklist and field saves from the same Details session are applied in order. Closing Details or opening a different task waits for edited checklist text to save. If the save fails, Details keeps your text open until **Retry checklist save** succeeds or **Load latest checklist** retrieves the saved version for review. If another session edits the task, your independent checklist change can still save. A stale description stays open for you to review alongside the saved task.
+
 Older text-only items open unchecked. If a concurrent edit conflicts on a step without an ID, Meitheal keeps your draft for review.
 
 A task API client can use the same protection by sending `expected_checklists` with `checklists` in `PUT /api/tasks/{id}`. Pass the exact previous checklist value from the GET response. Use JSON `null` if the task has a historical null checklist. A stale comparison returns `409` with `code: "checklist_conflict"` and the current checklist value. The rejected update leaves all task fields untouched. Existing API callers can keep using the checklist string without a comparison.
 
 ### Defer and Resume Open Work
 
-Choose **Defer** in a Kanban card menu or in Details to set open work aside. Open **Tasks → Deferred** to see the queue and choose **Resume**. Deferral preserves the task's status, position, dates, relationships, and history. The task leaves active work and stays available through search, Table, and scheduled or historical views.
+Choose **Defer** in a Kanban card menu or in Details to set open work aside. Open **Tasks → Deferred** to see the queue and choose **Resume**. On a named Board, changing the Area, opening a queued task, or returning to Tasks keeps you in that Board. Deferral preserves the task's status, position, dates, relationships, and history. The task leaves active work and stays available through search, Table, and scheduled or historical views.
 
 Resuming returns the task to its existing workflow. An Active task with an open prerequisite stays deferred until the dependency is resolved. Completion clears deferral. Reopening a completed task makes it eligible for active views again.
 

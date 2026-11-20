@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test, type Browser } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, pinRequest, startCoreFixture } from "../scripts/task-pins-fixture"
 
 const noStore = "private, no-store"
@@ -13,11 +14,12 @@ const newDescription = "Synthetic current history value"
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the packaged app and ingress fixture")
 
 test("packaged task history preserves JSON and protects successes, errors and encoded aliases", async ({ request }) => {
-  const task = await request.post("/api/tasks", { data: { title: "History transport fixture", description: oldDescription } })
+  const headers = await currentBoardWriteHeaders(request, "household", {})
+  const task = await request.post("/api/tasks", { headers, data: { title: "History transport fixture", description: oldDescription } })
   expect(task.status()).toBe(201)
   const { id } = await task.json() as { id: string }
   const path = "/api/tasks/" + id
-  expect((await request.put(path, { data: { description: newDescription } })).status()).toBe(200)
+  expect((await request.put(path, { headers, data: { description: newDescription } })).status()).toBe(200)
   const encodedId = "%" + id.charCodeAt(0).toString(16) + id.slice(1)
   for (const name of history) {
     const canonical = path + "/" + name + "?limit=2&offset=0"
@@ -80,15 +82,16 @@ test("HTTPS ingress history bypasses offline cache and activation purges legacy 
     const origin = `https://127.0.0.1:${fixture.port}`
     const prefix: string = fixture.configuredPath
     browser = await launchPinBrowser(work)
-    const context = await browser.newContext({ extraHTTPHeaders: {} })
+    const context = await browser.newContext({ extraHTTPHeaders: {}, ignoreHTTPSErrors: true })
     await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
     const page = await context.newPage()
     expect((await page.goto(origin + prefix + "/fixture"))?.status()).toBe(200)
-    const created = await pinRequest(page, prefix + "/api/tasks", "POST", { title: "History cache fixture", description: oldDescription })
+    const boardHeaders = await currentBoardWriteHeaders(page.request, "household", { origin }, origin + prefix)
+    const created = await pinRequest(page, prefix + "/api/tasks", "POST", { title: "History cache fixture", description: oldDescription }, undefined, boardHeaders)
     expect(created.status).toBe(201)
     const { id } = created.body as { id: string }
     const taskPath = "/api/tasks/" + id
-    expect((await pinRequest(page, prefix + taskPath, "PUT", { description: newDescription })).status).toBe(200)
+    expect((await pinRequest(page, prefix + taskPath, "PUT", { description: newDescription }, undefined, boardHeaders)).status).toBe(200)
     const paths = history.map(name => `${prefix}${taskPath}/${name}?limit=2`)
     const variants = history.flatMap(name => [
       `${prefix}${taskPath}/${name}?offset=2`, `${prefix}/api/%2574asks/${id}/${name}`,
@@ -141,12 +144,13 @@ test("HTTPS ingress history bypasses offline cache and activation purges legacy 
     }
 
     await context.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
+    const adminHeaders = await currentBoardWriteHeaders(page.request, "household", { origin }, origin + prefix)
     for (const [scope, status] of [["tasks:read", 200], ["search:read", 403]] as const) {
-      const issued = await pinRequest(page, prefix + "/api/agent-tokens", "POST", { name: "History scope fixture", scopes: [scope] })
+      const issued = await pinRequest(page, prefix + "/api/agent-tokens", "POST", { name: "History scope fixture", scopes: [scope] }, undefined, adminHeaders)
       expect(issued.status).toBe(201)
       const { token } = issued.body as { token: string }
       const responses = await page.evaluate(async ({ paths, token }) => Promise.all(paths.map(async path => {
-        const response = await fetch(path, { headers: { authorization: "Bearer " + token } })
+        const response = await fetch(path, { headers: { authorization: "Bearer " + token, "x-meitheal-board-id": "household" } })
         return [response.status, response.headers.get("cache-control")]
       })), { paths, token })
       expect(responses).toEqual(paths.map(() => [status, noStore]))
@@ -159,11 +163,8 @@ test("HTTPS ingress history bypasses offline cache and activation purges legacy 
       const cache = await caches.open(cacheName)
       const stale = new Response("Synthetic stale history")
       await Promise.all(replayPaths.map(path => cache.put(path, stale.clone())))
-      const deadline = Date.now() + 3_000
-      while (!(await cache.match(taskPath))) {
-        if (Date.now() > deadline) throw new Error("Ordinary task did not enter the offline cache")
-        await new Promise(resolve => setTimeout(resolve, 25))
-      }
+      if (await cache.match(taskPath)) throw new Error("The Board task entered the offline cache")
+      await cache.put(taskPath, stale.clone())
     }, { replayPaths, taskPath: prefix + taskPath, cacheName: cacheState.names[0]! })
     await context.setOffline(true)
     const offline = await page.evaluate(async ({ replayPaths, ordinaryPath }) => {
@@ -172,16 +173,18 @@ test("HTTPS ingress history bypasses offline cache and activation purges legacy 
         return [response.status, response.headers.get("cache-control"), await response.json()]
       }))
       const task = await fetch(ordinaryPath)
-      return { reads, task: [task.status, (await task.json()).description] }
+      return { reads, task: [task.status, task.headers.get("cache-control"), await task.json()] }
     }, { replayPaths, ordinaryPath: prefix + taskPath })
     expect(offline.reads).toEqual(replayPaths.map(() => [503, noStore, { error: "offline" }]))
-    expect(offline.task).toEqual([200, newDescription])
+    expect(offline.task).toEqual([503, noStore, { error: "offline" }])
 
     const unavailableFeed = await page.evaluate(async path => {
       const response = await fetch(path)
       return [response.status, response.headers.get("cache-control"), await response.text()]
     }, activityFeed)
-    expect(unavailableFeed).toEqual([503, noStore, "Offline"])
+    expect(unavailableFeed.slice(0, 2)).toEqual([503, noStore])
+    expect(unavailableFeed[2]).toContain("You're offline")
+    expect(unavailableFeed[2]).not.toContain("Synthetic stale history")
     await context.setOffline(false)
     const feed = await page.evaluate(async path => {
       const response = await fetch(path)

@@ -1,5 +1,6 @@
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
-import { ensureSchema, getPersistenceClient, TaskRepository } from "@domains/tasks"
+import { ensureSchema, getPersistenceClient, TaskRepository, NamedBoardTaskRepository } from "@domains/tasks"
 import {
   editTaskHomeAssistantArea, findTaskHomeAssistantArea, readHomeAssistantAreaPolicyRevision,
 } from "@domains/tasks/persistence/home-assistant-task-area"
@@ -9,27 +10,18 @@ import { homeAssistantAreaMutationResponse, homeAssistantAreaProblem, homeAssist
 import { readBoardRequest } from "@lib/named-board-request"
 import { acquireWriteTransaction } from "../../../../../scripts/database-client.mjs"
 
-export const GET: APIRoute = async context => {
-  const areaRevision = await homeAssistantAreaAccess(context)
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async (context, scope) => {
+  const revision = await homeAssistantAreaAccess(context)
   const id = context.params.id
-  if (!areaRevision || !id) return homeAssistantAreaProblem(404, "Task or Home Assistant Area unavailable.")
+  if (!revision || !id) return homeAssistantAreaProblem(404, "Task or Home Assistant Area unavailable.")
   await ensureSchema()
-  const tx = await getPersistenceClient().transaction("read")
-  try {
-    const { rows: [task] } = await tx.execute({
-      sql: `SELECT ${taskTimestampMs("updated_at")} AS version FROM tasks WHERE id = ? AND task_board_id IS NULL`,
-      args: [id],
-    })
-    if (!task || !(await tx.execute(readHomeAssistantAreaPolicyRevision(areaRevision))).rows.length) {
-      return homeAssistantAreaProblem(404, "Task or Home Assistant Area unavailable.")
-    }
-    return homeAssistantAreaResponse({ ...await findTaskHomeAssistantArea(tx, id), version: Number(task.version) })
-  } finally {
-    tx.close()
-  }
-}
+  const repo = new TaskRepository(getPersistenceClient(), scope)
+  const task = await repo.resolveTaskId(id)
+  const result = task ? await new NamedBoardTaskRepository(getPersistenceClient(), scope).homeAssistantArea(scope.principal, scope.boardId, task.id, revision) : null
+  return result ? homeAssistantAreaResponse(result) : homeAssistantAreaProblem(404, "Task or Home Assistant Area unavailable.")
+})
 
-export const PUT: APIRoute = async context => {
+export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }, async( context, scope) => {
   const id = context.params.id
   if (!id || !await homeAssistantAreaAccess(context)) return homeAssistantAreaProblem(404, "Task or Home Assistant Area unavailable.")
   const body = await readBoardRequest(context.request)
@@ -40,17 +32,13 @@ export const PUT: APIRoute = async context => {
   }
   await ensureSchema()
   const db = getPersistenceClient()
-  const task = await new TaskRepository(db).resolveTaskId(id)
+  const task = await new TaskRepository(db, scope).resolveTaskId(id, "edit")
   if (!task || task.id !== id) return homeAssistantAreaProblem(404, "Task or Home Assistant Area unavailable.")
   const field = await resolveHomeAssistantAreaSelection(context, body.home_assistant_area_id)
   if (!field.ok) return homeAssistantAreaProblem(field.status, field.detail)
   if (!field.selection) return homeAssistantAreaProblem(400, "Choose a Home Assistant Area.")
-  const tx = await acquireWriteTransaction(db, { signal: context.locals.writeAbortSignal })
-  try {
-    const result = await editTaskHomeAssistantArea(tx, task.id, null, body.version, body.locationRevision, field.selection)
-    if (result.ok) await tx.commit()
-    return homeAssistantAreaMutationResponse(result)
-  } finally {
-    tx.close()
-  }
-}
+  const result = await new NamedBoardTaskRepository(db, scope).changeHomeAssistantArea(
+    scope.principal, scope.boardId, task.id, body.version, body.locationRevision, field.selection,
+  )
+  return homeAssistantAreaMutationResponse(result)
+})

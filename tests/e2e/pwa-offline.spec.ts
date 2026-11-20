@@ -17,8 +17,10 @@ test("standalone navigation keeps the update offer and rebinds Settings update c
   await page.locator('a[href="/today"]:visible').first().click()
   await expect(page).toHaveURL(/\/today$/)
   await expect(page.locator("#sw-update-btn")).toBeVisible()
-  await page.locator('a[href="/settings"]:visible').first().click()
-  await expect(page).toHaveURL(/\/settings(?:#.*)?$/)
+  const settings = page.locator("#sidebar").getByRole("link", { name: "Settings", exact: true })
+  await expect(settings).toHaveAttribute("href", "/settings?board_id=household")
+  await settings.click()
+  await expect(page).toHaveURL(url => url.pathname === "/settings" && url.searchParams.get("board_id") === "household")
   await page.evaluate(() => { window.location.hash = "app-pwa-settings" })
   await expect(page.locator("#app-pwa-settings")).toBeVisible()
   expect(await page.evaluate(() => performance.timeOrigin)).toBe(oldDocument)
@@ -44,7 +46,7 @@ test("standalone navigation keeps the update offer and rebinds Settings update c
   const reloaded = page.waitForEvent("domcontentloaded")
   await force.click({ noWaitAfter: true })
   await reloaded
-  await expect(page).toHaveURL(/\/settings#app-pwa-settings$/)
+  await expect(page).toHaveURL("/settings?board_id=household#app-pwa-settings")
 })
 
 // Note: These tests validate offline domain logic at the unit level.

@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process"
+import { execFile, spawn } from "../helpers/isolated-process"
 import { once } from "node:events"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import http from "node:http"
@@ -11,10 +11,13 @@ import { openDatabase } from "../../apps/web/scripts/database-client.mjs"
 import { runWithIngressTransport } from "../../apps/web/scripts/ingress-transport.mjs"
 import {
   commitSyncMutationChunks,
+  resolveIntegrationScope,
   findTasksByExternalSyncIds,
   type SyncTaskMutation,
 } from "../../apps/web/src/domains/tasks"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
+import { currentBoardScope } from "../helpers/current-board-scope"
+import { integrationFixture, integrationRoute } from "../helpers/ordinary-integration-fixture"
 import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
 import { getTasksForView } from "../../apps/web/src/lib/task-queries"
 import { onRequest, resetRateLimitsForTests } from "../../apps/web/src/middleware"
@@ -58,14 +61,15 @@ test("B3: commitSyncMutationChunks commits 60 items in 25/25/10 chunks, isolates
     await ensureSchema()
     const client = getPersistenceClient()
 
+    const todo = await integrationFixture({ integration: "todo", sourceId: "todo.household", purpose: "todo.sync" })
     // 60 inbound items (chunks of 25, 25, 10).
-    // Item 23 inserts a task row FIRST inside SAVEPOINT sync_item_23, then hits UNIQUE constraint on
-    // todo_sync_confirmations.confirmation_id by colliding with item 0's confirmationId — proving
-    // ROLLBACK TO SAVEPOINT rolls back both the task row AND its provisional ticket_number=24 so
-    // item 24 claims ticket_number=24 cleanly!
+    // A confirmation constraint fails AFTER item 23 inserts its Task inside the SAVEPOINT.
+    // Caller IDs are now opaque/owned, so an exact fixture trigger supplies the same late failure.
+    // Rolling back the SAVEPOINT must roll back both the Task and provisional ticket number.
+    await client.execute(`CREATE TRIGGER track_b_confirmation_failure BEFORE INSERT ON todo_sync_confirmations
+      WHEN NEW.ha_todo_uid = 'uid-23' BEGIN SELECT RAISE(ABORT, 'fixture confirmation collision'); END`)
     const mutations: SyncTaskMutation[] = Array.from({ length: 60 }, (_, idx) => {
       const uid = `uid-${idx}`
-      const confirmationId = idx === 23 ? "conf-0" : `conf-${idx}`
       return {
         kind: "create",
         title: `Inbound Todo ${idx}`,
@@ -74,7 +78,6 @@ test("B3: commitSyncMutationChunks commits 60 items in 25/25/10 chunks, isolates
         idempotencyKey: `todo-sync-test:${idx}`,
         confirmation: {
           source: "ha_todo",
-          confirmationId,
           entityId: "todo.household",
           externalId: uid,
           payload: JSON.stringify({ entity_id: "todo.household", uid, summary: `Inbound Todo ${idx}` }),
@@ -82,7 +85,8 @@ test("B3: commitSyncMutationChunks commits 60 items in 25/25/10 chunks, isolates
       }
     })
 
-    const result = await commitSyncMutationChunks(mutations, { chunkSize: 25 })
+    const result = await test.step("Commit the 60 inbound items and roll back the failed confirmation", () =>
+      commitSyncMutationChunks(mutations, todo.context, { chunkSize: 25 }))
     expect(result.chunksCommitted).toBe(3)
     expect(result.created).toBe(59)
     expect(result.errors).toHaveLength(1)
@@ -92,20 +96,10 @@ test("B3: commitSyncMutationChunks commits 60 items in 25/25/10 chunks, isolates
     expect(persisted.rows).toHaveLength(59)
     const ticketNumbers = persisted.rows.map(r => Number(r.ticket_number))
     expect(ticketNumbers).toEqual(Array.from({ length: 59 }, (_, i) => i + 1))
+    expect(persisted.rows.map(row => row.title)).not.toContain("Inbound Todo 23")
+    const failedConfirmation = await client.execute("SELECT 1 FROM todo_sync_confirmations WHERE ha_todo_uid = 'uid-23'")
+    expect(failedConfirmation.rows).toEqual([])
 
-    // Add calendar (scoped across 2 entity_ids) + grocy confirmations + >200 todo IDs to verify multi-chunk lookup
-    const extraTodoMutations: SyncTaskMutation[] = Array.from({ length: 210 }, (_, idx) => ({
-      kind: "create",
-      title: `Bulk Todo ${idx}`,
-      status: "pending",
-      idempotencyKey: `bulk-todo:${idx}`,
-      confirmation: {
-        source: "ha_todo",
-        entityId: "todo.bulk",
-        externalId: `bulk-uid-${idx}`,
-        payload: JSON.stringify({ uid: `bulk-uid-${idx}` }),
-      },
-    }))
     const calAndGrocyMutations: SyncTaskMutation[] = [
       {
         kind: "create",
@@ -145,14 +139,49 @@ test("B3: commitSyncMutationChunks commits 60 items in 25/25/10 chunks, isolates
       },
     ]
 
-    await commitSyncMutationChunks([...extraTodoMutations, ...calAndGrocyMutations])
+    const bulk = await integrationFixture({ integration: "todo", sourceId: "todo.bulk", purpose: "todo.sync" })
+    const family = await integrationFixture({ integration: "calendar", sourceId: "calendar.family", purpose: "calendar.sync" })
+    const workCalendar = await integrationFixture({ integration: "calendar", sourceId: "calendar.work", purpose: "calendar.sync" })
+    const grocy = await integrationFixture({ integration: "grocy", sourceId: "configured-grocy", purpose: "grocy.sync" })
+    // Appending owner-approved bindings advances authority; resolve current service snapshots.
+    for (const fixture of [bulk, family, workCalendar, grocy]) {
+      const current = await resolveIntegrationScope(client, fixture.binding.id, fixture.binding.generation, { resource: "task", action: "read" })
+      if (!current.ok) throw new Error("Current retained sync fixture required")
+      fixture.context = current.value
+    }
+    await test.step("Seed 210 stored Todo mappings for the scoped lookup batch", async () => {
+      const version = Date.now()
+      const statements = Array.from({ length: 210 }, (_, index) => {
+        const id = `bulk-task-${index}`
+        const externalId = `bulk-uid-${index}`
+        return [
+          {
+            sql: `INSERT INTO tasks(id,title,status,idempotency_key,request_id,created_at,updated_at)
+              VALUES (?,?,'pending',?,?,?,?)`,
+            args: [id, `Bulk Todo ${index}`, id, id, version, version],
+          },
+          {
+            sql: `INSERT INTO todo_sync_confirmations(confirmation_id,task_id,request_id,ha_entity_id,ha_todo_uid,payload,created_at,updated_at,binding_id)
+              VALUES (?,?,?,'todo.bulk',?,?,?,?,?)`,
+            args: [id, id, id, externalId, JSON.stringify({ uid: externalId }), version, version, bulk.binding.id],
+          },
+        ]
+      }).flat()
+      // The previous step exercises the live writer. These rows isolate the read-side batch boundary.
+      await client.batch(statements, "write")
+    })
+    for (const [index, context] of [family.context, workCalendar.context, grocy.context].entries()) {
+      const mutation = calAndGrocyMutations[index]
+      if (!mutation) throw new Error("Expected retained provider fixture")
+      expect(await commitSyncMutationChunks([mutation], context)).toMatchObject({ created: 1, errors: [] })
+    }
 
-    const repo = new TaskRepository(client)
+    const repo = new TaskRepository(client, await currentBoardScope(client))
     const todoMap = await findTasksByExternalSyncIds({
       source: "ha_todo",
       entityId: "todo.bulk",
       externalIds: Array.from({ length: 210 }, (_, i) => `bulk-uid-${i}`),
-    })
+    }, bulk.context)
     expect(todoMap.size).toBe(210)
     expect((await repo.findById(todoMap.get("bulk-uid-205")!.taskId))?.title).toBe("Bulk Todo 205")
 
@@ -160,12 +189,12 @@ test("B3: commitSyncMutationChunks commits 60 items in 25/25/10 chunks, isolates
       source: "calendar",
       entityId: "calendar.family",
       externalIds: ["ev-shared"],
-    })
+    }, family.context)
     const workCalMap = await findTasksByExternalSyncIds({
       source: "calendar",
       entityId: "calendar.work",
       externalIds: ["ev-shared"],
-    })
+    }, workCalendar.context)
     expect((await repo.findById(familyCalMap.get("ev-shared")!.taskId))?.title).toBe("Family Event")
     expect((await repo.findById(workCalMap.get("ev-shared")!.taskId))?.title).toBe("Work Event Same UID")
 
@@ -173,7 +202,7 @@ test("B3: commitSyncMutationChunks commits 60 items in 25/25/10 chunks, isolates
       source: "grocy",
       grocyEntityType: "chore",
       externalIds: ["77"],
-    })
+    }, grocy.context)
     expect((await repo.findById(grocyMap.get("77")!.taskId))?.title).toBe("Grocy Chore Clean Filter")
   } finally {
     resetPersistenceForTests()
@@ -314,13 +343,20 @@ test("B2/B4/D1: slim SQL projections, deep description search, /planning active 
     expect(healthRes.status, childStderr).toBe(200)
 
     const origin = `http://127.0.0.1:${port}`
-    const adminHeaders = {
+    const adminHeaders: Record<string, string> = {
       "x-test-peer": "supervisor",
       "x-ingress-path": "/api/hassio_ingress/tok_b",
       "x-remote-user-id": "admin-b",
       "x-remote-user-groups": "system-admin",
+      "x-meitheal-board-id": "household",
       origin,
     }
+
+    const currentSession = await fetch(`${origin}/api/boards`, { headers: adminHeaders })
+    expect(currentSession.status).toBe(200)
+    const boardSession = currentSession.headers.get("x-meitheal-board-session")
+    if (!boardSession) throw new Error("Current genuine ingress Board session proof required")
+    adminHeaders["x-meitheal-board-session"] = boardSession
 
     // Create project + active task + deep-description task + checklist task
     const projRes = await fetch(`${origin}/api/projects`, {
@@ -433,6 +469,7 @@ test("B2/B4/D1: slim SQL projections, deep description search, /planning active 
         method: "POST",
         headers: {
           authorization: `Bearer ${token}`,
+          "x-meitheal-board-id": "household",
           origin,
           "content-type": "application/json",
         },
@@ -465,6 +502,7 @@ test("B2/B4/D1: slim SQL projections, deep description search, /planning active 
         method: "POST",
         headers: {
           authorization: `Bearer ${tokenA}`,
+          "x-meitheal-board-id": "household",
           origin,
           "content-type": "application/json",
         },
@@ -479,6 +517,7 @@ test("B2/B4/D1: slim SQL projections, deep description search, /planning active 
       method: "POST",
       headers: {
         authorization: `Bearer ${tokenB}`,
+        "x-meitheal-board-id": "household",
         origin,
         "content-type": "application/json",
       },
@@ -506,29 +545,22 @@ test("B2/B4: non-loopback IP rate limit short-circuits before SQLite token looku
     await ensureSchema()
 
     const client = getPersistenceClient()
-    const repo = new TaskRepository(client)
+    const repo = new TaskRepository(client, await currentBoardScope(client))
 
     // Direct B2 slim query verification
-    const seedRes = await tasksPOST({
-      request: new Request("http://127.0.0.1:3000/api/tasks", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          title: "Slim query check",
-          description: `${"prefix ".repeat(20)}DIRECT_SLIM_NEEDLE`,
-          status: "pending",
-          priority: 2,
-        }),
-      }),
-      locals: { behindIngress: false } as unknown as App.Locals,
-    } as unknown as Parameters<typeof tasksPOST>[0])
+    const seedRes = await integrationRoute(tasksPOST, "/api/tasks?board_id=household", {
+      title: "Slim query check",
+      description: `${"prefix ".repeat(20)}DIRECT_SLIM_NEEDLE`,
+      status: "pending",
+      priority: 2,
+    })
     expect(seedRes.status).toBe(201)
     const created = (await seedRes.json()) as { id: string }
 
     const slimPreviewView = await getTasksForView({
       slim: true,
       descriptionPreviewChars: 80,
-    })
+    }, await currentBoardScope(client))
     expect(slimPreviewView.tasks).toHaveLength(1)
     expect(slimPreviewView.tasks[0]?.has_description).toBe(true)
     expect((slimPreviewView.tasks[0]?.description ?? "").length).toBeLessThanOrEqual(80)
@@ -620,17 +652,7 @@ test("B2/B4: non-loopback IP rate limit short-circuits before SQLite token looku
       setTimeout(() => postAbort.abort(), 12)
       await expect(
         Promise.resolve(
-          tasksPOST({
-            request: new Request("http://127.0.0.1:3000/api/tasks", {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ title: "Aborted standard POST" }),
-            }),
-            locals: {
-              behindIngress: false,
-              writeAbortSignal: postAbort.signal,
-            } as unknown as App.Locals,
-          } as unknown as Parameters<typeof tasksPOST>[0]),
+          integrationRoute(tasksPOST, "/api/tasks?board_id=household", { title: "Aborted standard POST" }, "POST", { writeAbortSignal: postAbort.signal }),
         ),
       ).rejects.toMatchObject({ name: "AbortError" })
 
@@ -638,18 +660,7 @@ test("B2/B4: non-loopback IP rate limit short-circuits before SQLite token looku
       const putAbort = new AbortController()
       setTimeout(() => putAbort.abort(), 12)
       const putResOrErr = await Promise.resolve(
-        taskPUT({
-          params: { id: created.id },
-          request: new Request(`http://127.0.0.1:3000/api/tasks/${created.id}`, {
-            method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ title: "Aborted PUT" }),
-          }),
-          locals: {
-            behindIngress: false,
-            writeAbortSignal: putAbort.signal,
-          } as unknown as App.Locals,
-        } as unknown as Parameters<typeof taskPUT>[0]),
+        integrationRoute(context => taskPUT({ ...context, params: { id: created.id } }), `/api/tasks/${created.id}?board_id=household`, { title: "Aborted PUT" }, "PUT", { writeAbortSignal: putAbort.signal }),
       ).catch((err: unknown) => err)
       if (putResOrErr instanceof Response) {
         expect([499, 500, 503]).toContain(putResOrErr.status)
@@ -661,14 +672,7 @@ test("B2/B4: non-loopback IP rate limit short-circuits before SQLite token looku
       const delAbort = new AbortController()
       setTimeout(() => delAbort.abort(), 12)
       const delResOrErr = await Promise.resolve(
-        taskDELETE({
-          params: { id: created.id },
-          request: new Request(`http://127.0.0.1:3000/api/tasks/${created.id}`, { method: "DELETE" }),
-          locals: {
-            behindIngress: false,
-            writeAbortSignal: delAbort.signal,
-          } as unknown as App.Locals,
-        } as unknown as Parameters<typeof taskDELETE>[0]),
+        integrationRoute(context => taskDELETE({ ...context, params: { id: created.id } }), `/api/tasks/${created.id}?board_id=household`, undefined, "DELETE", { writeAbortSignal: delAbort.signal }),
       ).catch((err: unknown) => err)
       if (delResOrErr instanceof Response) {
         expect([499, 500, 503]).toContain(delResOrErr.status)

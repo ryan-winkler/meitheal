@@ -1,4 +1,5 @@
-import { execFileSync } from "node:child_process"
+import { currentBoardScope } from "../helpers/current-board-scope"
+import { execFileSync } from "../helpers/isolated-process"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -92,7 +93,7 @@ test("filter-state and appearance-preferences cover filtering, serialization, gr
   }
 
   Object.assign(globalThis, {
-    window: fakeWindow,
+    window: { ...fakeWindow, fetch: globalThis.fetch.bind(globalThis) },
     document: fakeDocument,
     location: fakeWindow.location,
     history: fakeWindow.history,
@@ -235,10 +236,10 @@ test("TaskRepository and SettingsRepository AI handoff persistence cover full CR
   const webDir = path.resolve(process.cwd(), "../apps/web")
   execFileSync(process.execPath, ["scripts/migrate.mjs"], {
     cwd: webDir,
-    env: { ...process.env, MEITHEAL_DB_URL: dbUrl },
+    env: { ...process.env, MEITHEAL_DB_URL: dbUrl, MEITHEAL_BOARD_GRANT_PATH: dbFile + ".board-grants.json" },
   })
 
-  const store = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const store = await import("../helpers/persistence-fixture")
   await store.ensureSchema()
   const client = store.getPersistenceClient()
 
@@ -258,6 +259,8 @@ test("TaskRepository and SettingsRepository AI handoff persistence cover full CR
   )).toBe(false)
   await settingsMod.saveLegacyAiHandoffUrl(client, "https://legacy.example/api")
 
+  await client.execute("INSERT INTO custom_users(id,name,color,kind,created_at,updated_at) VALUES ('ryan','Ryan','#112233','human',1,1)")
+  await client.execute("INSERT OR IGNORE INTO areas(id,name,created_at,updated_at) VALUES ('default','A real default Area',1,1)")
   // Seed project so project_id queries have a match
   const now = Date.now()
   await client.execute({
@@ -267,7 +270,7 @@ test("TaskRepository and SettingsRepository AI handoff persistence cover full CR
   })
 
   const { TaskRepository } = await import("../../apps/web/src/domains/tasks/persistence/task-repository")
-  const repo = new TaskRepository(client)
+  const repo = new TaskRepository(client, await currentBoardScope(client))
 
   const todayStr = new Date(now).toISOString().split("T")[0]!
   const tomorrowStr = new Date(now + 86_400_000).toISOString().split("T")[0]!
@@ -486,7 +489,7 @@ test("Kanban groups visible Household descendants under an Epic outside the lane
   const directory = mkdtempSync(path.join(tmpdir(), "meitheal-kanban-epic-repo-"))
   const previousDb = process.env.MEITHEAL_DB_URL
   const { ensureSchema, getPersistenceClient, resetPersistenceForTests } =
-    await import("../../apps/web/src/domains/tasks/persistence/store")
+    await import("../helpers/persistence-fixture")
   const { TaskRepository } = await import("../../apps/web/src/domains/tasks/persistence/task-repository")
   const { loadKanbanBoard } = await import("../../apps/web/src/lib/kanban-board-data")
   process.env.MEITHEAL_DB_URL = `file:${path.join(directory, "epic.db")}`
@@ -495,11 +498,11 @@ test("Kanban groups visible Household descendants under an Epic outside the lane
   try {
     await ensureSchema()
     const client = getPersistenceClient()
-    const repo = new TaskRepository(client)
+    const repo = new TaskRepository(client, await currentBoardScope(client))
     const createTask = (id: string, title: string, status: string, taskType: string, parentId: string | null) =>
       repo.createTask({
         id, title, status, task_type: taskType, parent_id: parentId,
-        description: "", priority: 3, area_id: "default", labels: "[]",
+        description: "", priority: 3, area_id: null, labels: "[]",
         framework_payload: "{}", custom_fields: "{}", progress: 0, is_favorite: 0,
         due_date: null, start_date: null, end_date: null, color: null, assigned_to: null,
       })

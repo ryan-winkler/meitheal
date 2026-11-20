@@ -1,8 +1,31 @@
 import { request as httpRequest } from "node:http"
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
 test.skip(!process.env.E2E_BASE_URL, "Requires a disposable App server")
 test.use({ serviceWorkers: "block" })
+
+test("Calendar Settings saves CalDAV through the current Board session", async ({ page, request }) => {
+  test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable App fixture")
+  await page.goto("/settings#connections-settings")
+  await page.getByRole("button", { name: /^Calendar Sync / }).click()
+  await page.locator("#caldav-details summary").click()
+  await page.locator("#caldav-url").fill("https://calendar.example/dav")
+  await page.locator("#caldav-username").fill("fixture-calendar")
+  await page.locator("#caldav-password").fill("fixture-only-password")
+  const saved = page.waitForResponse(response =>
+    response.request().method() === "POST" &&
+    new URL(response.url()).pathname.endsWith("/api/integrations/calendar/caldav-credentials"),
+  )
+  await page.locator("#save-cal").click()
+  const receipt = await saved
+  expect(receipt.status()).toBe(200)
+  expect(receipt.request().headers()["x-meitheal-board-id"]).toBe("household")
+  const persisted = await request.get("/api/integrations/calendar/caldav-credentials")
+  expect(await persisted.json()).toEqual({
+    ok: true, configured: true, url: "https://calendar.example/dav", username: "fixture-calendar",
+  })
+})
 
 test("To-do selection hydrates JSON arrays and legacy single entity IDs", async ({ page }) => {
   let saved: unknown = '["todo.shopping","todo.household"]'
@@ -38,7 +61,8 @@ test("To-do selection hydrates JSON arrays and legacy single entity IDs", async 
 })
 
 test("Task AI handoff explains an invalid saved URL without opening a provider", async ({ page, request, context, baseURL }) => {
-  const created = await request.post("/api/tasks", { data: { title: "Invalid AI URL fixture" } })
+  const headers = await currentBoardWriteHeaders(request, "household", {})
+  const created = await request.post("/api/tasks", { headers, data: { title: "Invalid AI URL fixture" } })
   expect(created.status()).toBe(201)
   const { id } = await created.json()
   let opens = 0
@@ -101,7 +125,7 @@ test("Task AI handoff explains an invalid saved URL without opening a provider",
     await expect(page.getByRole("link", { name: "Oscail an soláthraí" })).toHaveAttribute("rel", "noopener noreferrer")
     expect(await handoffs()).toEqual([])
   } finally {
-    expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204)
+    expect((await request.delete(`/api/tasks/${id}`, { headers, data: {} })).status()).toBe(204)
   }
 })
 

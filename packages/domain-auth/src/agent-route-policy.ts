@@ -6,6 +6,8 @@ const taskRead = { GET: "tasks:read" } satisfies MethodScopes
 const taskCreate = { POST: "tasks:write" } satisfies MethodScopes
 const taskDelete = { DELETE: "tasks:delete" } satisfies MethodScopes
 const routes = new Map<string, MethodScopes>([
+  // Sender-owned destinations, drafts and acknowledgements grant no task read.
+  ["/api/board-intake", { GET: "tasks:write", POST: "tasks:write" }],
   ["/api/nfc/complete", { POST: "tasks:write" }],
   ["/api/tasks", { ...taskRead, ...taskCreate, ...taskDelete }],
   ["/api/tasks/create", taskCreate],
@@ -15,6 +17,7 @@ const routes = new Map<string, MethodScopes>([
   ["/api/tasks/today-counts", taskRead],
   ["/api/tasks/reaction-counts", taskRead],
   ["/api/users", { GET: "tasks:read" }],
+  ["/api/agent-context", { GET: "tasks:read" }],
   ["/api/projects", { GET: "projects:read", POST: "projects:write" }],
   ["/api/search", { GET: "search:read" }],
   ["/api/mcp", { GET: "mcp:execute", POST: "mcp:execute" }],

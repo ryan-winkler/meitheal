@@ -296,7 +296,7 @@ export class InlineDatePicker {
     this.cleanups.push(() => document.removeEventListener("keydown", escHandler as EventListener))
   }
 
-  private closePanel() {
+  closePanel() {
     if (this.panel) {
       this.panel.remove()
       this.panel = null

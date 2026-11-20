@@ -24,7 +24,7 @@ Scroll sideways within the table to reach more columns. With a keyboard, focus t
 4. Use **Previous** and **Next** above the table to move through 50 matching rows at a time. Keyboard paging returns focus to the page controls, which report the current range. Group counts cover all matches. Select-all and bulk actions apply to visible rows on the current page.
 5. Focus a group or subgroup toggle and press Enter or Space to expand or collapse its rows. The Title cell is associated with its column, group, and subgroup headings.
 
-Group or sub-group by **Area** to see the names, icons, and colors of the Board's Groups. A removed Group appears as **Unavailable Area** in grouping headers. When a refresh cannot load the Group catalog, Table keeps the current rows, Group selector and bulk choices. Use **Retry** to refresh them together. Accepted refreshes update renamed and removed Groups. The selector shows **Group unavailable** when the selected Group was removed. If an administrator excludes the Groups feature for your account, the selector is hidden and other Table filters still work.
+Group or sub-group by **Area** to see the names, icons, and colors of the Board's Groups. Tasks without a visible Area appear under **No area**. The existing **Default** Area keeps its own group and count. When a refresh cannot load the Group catalog, Table keeps the current rows, Group selector and bulk choices. Use **Retry** to refresh them together. Accepted refreshes update renamed and removed Groups. The selector shows **Group unavailable** when the selected Group was removed. If an administrator excludes the Groups feature for your account, the selector is hidden and other Table filters still work.
 
 ### Save a working view
 

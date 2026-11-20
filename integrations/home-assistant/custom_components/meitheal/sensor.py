@@ -10,9 +10,8 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .coordinator import MeithealCoordinator
+from .coordinator import MeithealBoardEntity, MeithealCoordinator
 from .helpers import PARALLEL_UPDATES as _PARALLEL_UPDATES
 from .helpers import device_info
 
@@ -41,7 +40,7 @@ async def async_setup_entry(
 
 
 class MeithealActiveTasksSensor(
-    CoordinatorEntity[MeithealCoordinator], SensorEntity
+    MeithealBoardEntity, SensorEntity
 ):
     """Sensor: count of active (non-done) tasks."""
 
@@ -60,14 +59,14 @@ class MeithealActiveTasksSensor(
     @property
     def native_value(self) -> int | None:
         """Return active task count."""
-        if not self.coordinator.data:
+        if not self.coordinator.data or not self.coordinator.shared_entity_delivery:
             return None
         return self.coordinator.data.active_count
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Expose active task details for AI agents and automations."""
-        if not self.coordinator.data:
+        if not self.coordinator.data or not self.coordinator.shared_entity_delivery:
             return None
         active = [t for t in self.coordinator.data.tasks if t.status != "done"]
         # Priority breakdown for automations
@@ -84,7 +83,7 @@ class MeithealActiveTasksSensor(
 
 
 class MeithealOverdueTasksSensor(
-    CoordinatorEntity[MeithealCoordinator], SensorEntity
+    MeithealBoardEntity, SensorEntity
 ):
     """Sensor: count of overdue tasks."""
 
@@ -103,14 +102,14 @@ class MeithealOverdueTasksSensor(
     @property
     def native_value(self) -> int | None:
         """Return overdue task count."""
-        if not self.coordinator.data:
+        if not self.coordinator.data or not self.coordinator.shared_entity_delivery:
             return None
         return self.coordinator.data.overdue_count
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Expose overdue task details for AI agents and automations."""
-        if not self.coordinator.data:
+        if not self.coordinator.data or not self.coordinator.shared_entity_delivery:
             return None
         overdue = [t for t in self.coordinator.data.tasks if t.is_overdue]
         return {
@@ -121,7 +120,7 @@ class MeithealOverdueTasksSensor(
 
 
 class MeithealTotalTasksSensor(
-    CoordinatorEntity[MeithealCoordinator], SensorEntity
+    MeithealBoardEntity, SensorEntity
 ):
     """Sensor: total task count."""
 
@@ -141,14 +140,14 @@ class MeithealTotalTasksSensor(
     @property
     def native_value(self) -> int | None:
         """Return total task count."""
-        if not self.coordinator.data:
+        if not self.coordinator.data or not self.coordinator.shared_entity_delivery:
             return None
         return self.coordinator.data.total_count
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Expose task summary for AI agents and automations."""
-        if not self.coordinator.data:
+        if not self.coordinator.data or not self.coordinator.shared_entity_delivery:
             return None
         tasks = self.coordinator.data.tasks
         statuses: dict[str, int] = {}
@@ -166,7 +165,7 @@ class MeithealTotalTasksSensor(
 
 
 class MeithealDueTodaySensor(
-    CoordinatorEntity[MeithealCoordinator], SensorEntity
+    MeithealBoardEntity, SensorEntity
 ):
     """Sensor: count of tasks due today."""
 
@@ -184,14 +183,14 @@ class MeithealDueTodaySensor(
     @property
     def native_value(self) -> int | None:
         """Return count of tasks due today."""
-        if not self.coordinator.data:
+        if not self.coordinator.data or not self.coordinator.shared_entity_delivery:
             return None
         return self.coordinator.data.due_today_count
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Expose today's task details."""
-        if not self.coordinator.data:
+        if not self.coordinator.data or not self.coordinator.shared_entity_delivery:
             return None
         due = self.coordinator.data.due_today_tasks[:10]
         return {
@@ -201,7 +200,7 @@ class MeithealDueTodaySensor(
 
 
 class MeithealCompletedTodaySensor(
-    CoordinatorEntity[MeithealCoordinator], SensorEntity
+    MeithealBoardEntity, SensorEntity
 ):
     """Sensor: count of tasks completed today."""
 
@@ -219,7 +218,7 @@ class MeithealCompletedTodaySensor(
     @property
     def native_value(self) -> int | None:
         """Return count of tasks completed today."""
-        if not self.coordinator.data:
+        if not self.coordinator.data or not self.coordinator.shared_entity_delivery:
             return None
         return self.coordinator.data.completed_today
 
@@ -230,7 +229,7 @@ class MeithealCompletedTodaySensor(
 
 
 class MeithealStreakSensor(
-    CoordinatorEntity[MeithealCoordinator], SensorEntity
+    MeithealBoardEntity, SensorEntity
 ):
     """Sensor: current streak (consecutive days with task completions)."""
 
@@ -248,7 +247,7 @@ class MeithealStreakSensor(
     @property
     def native_value(self) -> int | None:
         """Return current streak from gamification data."""
-        if not self.coordinator.data:
+        if not self.coordinator.data or not self.coordinator.shared_entity_delivery:
             return None
         return self.coordinator.data.streak
 
@@ -260,7 +259,7 @@ class MeithealStreakSensor(
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Expose gamification details."""
-        if not self.coordinator.data:
+        if not self.coordinator.data or not self.coordinator.shared_entity_delivery:
             return None
         return {
             "total_points": self.coordinator.data.total_points,

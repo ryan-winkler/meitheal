@@ -1,18 +1,22 @@
+import type { BoardScope, WorkAction } from "../board-scope"
+import type { IntegrationScope } from "../board-automation"
 import { taskReactionStorageSql } from "../../../../drizzle/migrations/task-reaction-schema.mjs"
 import { mkdirSync } from "node:fs"
 import path from "node:path";
 import type { Client, Transaction } from "@libsql/client"
-import type { CalendarResult } from "@meitheal/integration-core";
-import type { CalendarSyncState, CreateTaskPlan, IntegrationOutcome } from "@meitheal/domain-tasks";
+import type { CalendarSyncState, IntegrationOutcome } from "@meitheal/domain-tasks";
 import {
   DATABASE_SCHEMA_VERSION, enableStartupWal, openDatabaseForStartup, withStartupWriteTransaction,
+  type DatabaseStartupOptions,
 } from "../../../../scripts/database-client.mjs"
+import { boardGrantPath, finalizeStartupBoardGrant } from "../../../../scripts/board-grant-journal.mjs"
 import { autoBackupDb } from "../../../../scripts/startup-backup.mjs"
-import { applyStartupTaskSchema } from "../../../../scripts/task-schema-startup.mjs"
+import { applyStartupBoardSchema } from "../../../../scripts/task-schema-startup.mjs"
 import { taskTemplateTableSql } from "../../../../drizzle/migrations/task-template-schema.mjs"
-import { taskWriteTriggerMetadata, validateExistingTaskWriteTriggers } from "../../../../drizzle/migrations/task-activity-schema.mjs"
+import { taskWriteTriggerMetadata, validateExistingTaskWriteTriggers, validateTaskActivityTriggers } from "../../../../drizzle/migrations/task-activity-schema.mjs"
 import { nextHouseholdTicketNumberSql } from "../../../../drizzle/migrations/task-board-tickets.mjs"
 import { STATUS } from "../../../lib/status-config"
+import { guardClientContinuity } from "./continuity-client"
 import {
   TaskRepository,
   type ExternalSyncLookup,
@@ -53,6 +57,7 @@ export interface PersistedTaskResponse {
 let clientSingleton: Client | null = null
 let schemaInitialization: Promise<void> | undefined
 let initializingDbUrl: string | null = null
+let initializingMarkerPath: string | null = null
 let startupBackupState = { attempted: false }
 
 /** Latest DB integrity check result — exposed via /api/health */
@@ -118,9 +123,14 @@ function getClient(): Client {
   return clientSingleton
 }
 
-/** Low-level SQLite client — use for raw SQL queries. */
+/** Governed application SQLite client; continuity is checked at reads and commits. */
 export function getPersistenceClient(): Client {
-  return getClient();
+  return guardClientContinuity(getClient())
+}
+
+/** Fixed content-free health probe. Never exposes the startup client or accepts SQL. */
+export async function probeDatabaseConnectivity(): Promise<void> {
+  await getClient().execute("SELECT 1")
 }
 
 function toTask(row: Record<string, unknown>): PersistedTask {
@@ -141,22 +151,6 @@ function toTask(row: Record<string, unknown>): PersistedTask {
   };
 }
 
-function toIntegrationOutcomeFromStored(params: {
-  calendarSyncState: CalendarSyncState;
-  confirmationId?: string;
-  errorCode?: string;
-  retryAfterSeconds?: number;
-}): IntegrationOutcome {
-  return {
-    calendarSyncState: params.calendarSyncState,
-    ...(params.confirmationId ? { confirmationId: params.confirmationId } : {}),
-    ...(params.errorCode ? { errorCode: params.errorCode } : {}),
-    ...(typeof params.retryAfterSeconds === "number"
-      ? { retryAfterSeconds: params.retryAfterSeconds }
-      : {})
-  };
-}
-
 async function hasColumn(client: Pick<Client, "execute">, tableName: string, columnName: string): Promise<boolean> {
   const result = await client.execute(`PRAGMA table_info(${tableName})`);
   return result.rows.some((row) => String((row as Record<string, unknown>).name) === columnName);
@@ -166,8 +160,10 @@ async function hasColumn(client: Pick<Client, "execute">, tableName: string, col
  * Idempotent schema bootstrap — creates all tables, indexes, and default data.
  * Concurrent requests share one initialization and later calls reuse its result.
  */
-export function ensureSchema(): Promise<void> {
+export function ensureSchema(options: Omit<DatabaseStartupOptions, "readOnly"> = {}): Promise<void> {
   const url = resolveDbUrl()
+  const markerPath = options.markerPath ?? (initializingDbUrl === url ? initializingMarkerPath : null) ?? process.env.MEITHEAL_BOARD_GRANT_PATH ?? boardGrantPath
+  if (initializingDbUrl === url && initializingMarkerPath !== markerPath) return Promise.reject(new Error("Meitheal startup marker context changed for the same database"))
   if (initializingDbUrl === url && schemaInitialization) return schemaInitialization
   if (initializingDbUrl !== url) {
     clientSingleton?.close()
@@ -175,15 +171,16 @@ export function ensureSchema(): Promise<void> {
     currentSchemaVersion = 0
     startupBackupState = { attempted: false }
     initializingDbUrl = url
+    initializingMarkerPath = markerPath
   }
-  const pending = initializeSchema(url, startupBackupState).then(({ client, integrityOk }) => {
+  const pending = initializeSchema(url, startupBackupState, options).then(({ client, integrityOk, schemaVersion }) => {
     if (schemaInitialization !== pending || resolveDbUrl() !== url) {
       client.close()
       throw new Error("Meitheal database changed during startup")
     }
     clientSingleton = client
     dbIntegrityOk = integrityOk
-    currentSchemaVersion = DATABASE_SCHEMA_VERSION
+    currentSchemaVersion = schemaVersion
   }).catch(error => {
     if (schemaInitialization === pending) schemaInitialization = undefined
     throw error
@@ -192,16 +189,21 @@ export function ensureSchema(): Promise<void> {
   return pending
 }
 
-async function initializeSchema(url: string, backupState: { attempted: boolean }): Promise<{ client: Client; integrityOk: boolean }> {
+async function initializeSchema(url: string, backupState: { attempted: boolean }, options: Omit<DatabaseStartupOptions, "readOnly">): Promise<{ client: Client; integrityOk: boolean; schemaVersion: number }> {
   ensureFileDbDirectory(url)
-  const client = await openDatabaseForStartup(url)
+  const client = await openDatabaseForStartup(url, { ...options, markerPath: options.markerPath ?? process.env.MEITHEAL_BOARD_GRANT_PATH })
   try {
     if (!backupState.attempted && process.env.MEITHEAL_STARTUP_BACKUP_HANDLED !== "1") {
       backupState.attempted = true
       await autoBackupDb(client)
     }
 
-    await withStartupWriteTransaction(client, tx => applyStartupTaskSchema(tx, initializeRuntimeTables))
+    let initialRevision: string | null = null
+    await withStartupWriteTransaction(client, async tx => {
+      const result = await applyStartupBoardSchema(client, tx, initializeRuntimeTables)
+      initialRevision = result.revision
+    })
+    await finalizeStartupBoardGrant(client, initialRevision)
     // Change SQLite's journal mode after the schema transaction commits.
     await enableStartupWal(client)
 
@@ -213,7 +215,8 @@ async function initializeSchema(url: string, backupState: { attempted: boolean }
     } catch {
       console.error("[meitheal] DB integrity check threw")
     }
-    return { client, integrityOk }
+    const { rows: [schema] } = await client.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")
+    return { client, integrityOk, schemaVersion: Number(schema?.value) }
   } catch (error) {
     client.close()
     throw error
@@ -755,7 +758,9 @@ async function initializeRuntimeTables(client: Transaction): Promise<void> {
   // Unique constraint prevents double-spawn: one instance per template per day
   await client.execute("CREATE UNIQUE INDEX IF NOT EXISTS tasks_routine_spawn_unique_idx ON tasks(routine_template_id, spawned_for_date)")
 
-  validateExistingTaskWriteTriggers(await client.execute(taskWriteTriggerMetadata))
+  const { rows: [runtimeSchema] } = await client.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")
+  if (Number(runtimeSchema?.value) === 26) await validateTaskActivityTriggers(client)
+  else validateExistingTaskWriteTriggers(await client.execute(taskWriteTriggerMetadata))
   const household = await hasColumn(client, "tasks", "task_board_id") ? "task_board_id IS NULL AND " : ""
   await client.batch([
     `UPDATE tasks SET status = 'pending' WHERE ${household}status = 'todo'`,
@@ -764,362 +769,31 @@ async function initializeRuntimeTables(client: Transaction): Promise<void> {
   ])
 }
 
-export async function findByIdempotencyKey(idempotencyKey: string): Promise<PersistedTaskResponse | null> {
-  const client = getClient();
-  const taskResult = await client.execute({
-    sql: `
-      SELECT id, title, status, framework_payload, calendar_sync_state, idempotency_key, request_id, created_at, updated_at
-      FROM tasks
-      WHERE idempotency_key = ? AND task_board_id IS NULL
-      LIMIT 1
-    `,
-    args: [idempotencyKey]
-  });
-
-  const taskRow = taskResult.rows[0] as Record<string, unknown> | undefined;
-  if (!taskRow) {
-    return null;
-  }
-
-  const task = toTask(taskRow);
-
-  const confirmationResult = await client.execute({
-    sql: `
-      SELECT confirmation_id
-      FROM calendar_confirmations
-      WHERE task_id = ?
-      ORDER BY created_at DESC
-      LIMIT 1
-    `,
-    args: [task.id]
-  });
-
-  const attemptResult = await client.execute({
-    sql: `
-      SELECT error_code, retry_after_seconds
-      FROM integration_attempts
-      WHERE task_id = ? AND integration = 'calendar'
-      ORDER BY created_at DESC
-      LIMIT 1
-    `,
-    args: [task.id]
-  });
-
-  const confirmationRow = confirmationResult.rows[0] as Record<string, unknown> | undefined;
-  const attemptRow = attemptResult.rows[0] as Record<string, unknown> | undefined;
-
-  return {
-    task,
-    integration: toIntegrationOutcomeFromStored({
-      calendarSyncState: task.calendarSyncState,
-      ...(typeof confirmationRow?.confirmation_id === "string"
-        ? { confirmationId: confirmationRow.confirmation_id }
-        : {}),
-      ...(typeof attemptRow?.error_code === "string" ? { errorCode: attemptRow.error_code } : {}),
-      ...(typeof attemptRow?.retry_after_seconds === "number"
-        ? { retryAfterSeconds: attemptRow.retry_after_seconds }
-        : {})
-    })
-  };
+/** Internal command lookup; the requested operation remains subject to current Board authority. */
+export async function findTaskById(taskId: string, scope: BoardScope, operation: WorkAction = "read"): Promise<PersistedTask | null> {
+  const repo = new TaskRepository(getClient(), scope)
+  const task = operation === "read" ? await repo.findById(taskId) : await repo.findTaskForCommand(taskId, operation as "edit" | "delete" | "propose" | "assign" | "complete" | "move")
+  return task ? toTask(task as unknown as Record<string, unknown>) : null
 }
 
-/** Find a single task by UUID. Returns null if not found. */
-export async function findTaskById(taskId: string): Promise<PersistedTask | null> {
-  const client = getClient();
-  const taskResult = await client.execute({
-    sql: `
-      SELECT id, title, status, framework_payload, calendar_sync_state, idempotency_key, request_id, created_at, updated_at
-      FROM tasks
-      WHERE id = ? AND task_board_id IS NULL
-      LIMIT 1
-    `,
-    args: [taskId]
-  });
-
-  const taskRow = taskResult.rows[0] as Record<string, unknown> | undefined;
-  if (!taskRow) {
-    return null;
-  }
-  return toTask(taskRow);
+export function persistManualCalendarConfirmation(params: {
+  taskId: string
+  requestId: string
+  confirmationId: string
+  providerEventId?: string
+  payload?: unknown
+}, context: IntegrationScope): Promise<{ confirmationId: string, alreadyExisted: boolean }> {
+  return new TaskRepository(getClient(), context.scope).persistManualCalendarConfirmation(params, context)
 }
 
-export async function persistInitialPlan(plan: CreateTaskPlan, description: string | null): Promise<void> {
-  const now = Date.now();
-
-  await getClient().batch([
-    {
-      sql: `
-        INSERT INTO tasks(
-          id, title, description, status, framework_payload, calendar_sync_state,
-          ticket_number, idempotency_key, request_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ${nextHouseholdTicketNumberSql}, ?, ?, ?, ?)
-      `,
-      args: [
-        plan.aggregate.task.id,
-        plan.aggregate.task.title,
-        description,
-        plan.aggregate.task.status,
-        JSON.stringify(plan.aggregate.task.frameworkPayload),
-        plan.aggregate.calendarSyncState,
-        plan.aggregate.idempotencyKey,
-        plan.aggregate.requestId,
-        now,
-        now
-      ]
-    },
-
-    ...plan.events.map(event => ({
-      sql: `
-        INSERT INTO domain_events(event_id, event_type, task_id, request_id, idempotency_key, payload, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `,
-      args: [
-        event.eventId,
-        event.eventType,
-        plan.aggregate.task.id,
-        event.requestId,
-        plan.aggregate.idempotencyKey,
-        JSON.stringify(event.payload),
-        now
-      ]
-    })),
-
-    {
-      sql: `
-        INSERT INTO integration_attempts(
-          attempt_id, task_id, integration, request_id, idempotency_key, status, created_at, updated_at
-        ) VALUES (?, ?, 'calendar', ?, ?, 'pending', ?, ?)
-      `,
-      args: [crypto.randomUUID(), plan.aggregate.task.id, plan.aggregate.requestId, plan.aggregate.idempotencyKey, now, now]
-    },
-
-    {
-      sql: `
-        INSERT INTO audit_trail(audit_id, request_id, task_id, integration, level, message, metadata, created_at)
-        VALUES (?, ?, ?, 'calendar', 'info', ?, ?, ?)
-      `,
-      args: [
-        crypto.randomUUID(),
-        plan.aggregate.requestId,
-        plan.aggregate.task.id,
-        "Task persisted and calendar sync marked pending",
-        JSON.stringify({ idempotencyKey: plan.aggregate.idempotencyKey }),
-        now
-      ]
-    },
-  ], "write");
+export function findTasksByExternalSyncIds(lookup: ExternalSyncLookup, context: IntegrationScope): Promise<Map<string, ExternalSyncMatch>> {
+  return new TaskRepository(getClient(), context.scope).findTasksByExternalSyncIds(lookup, context)
 }
 
-export async function persistCalendarIntegrationResult(params: {
-  taskId: string;
-  requestId: string;
-  idempotencyKey: string;
-  result: CalendarResult;
-}): Promise<PersistedTaskResponse> {
-  const now = Date.now();
-
-  const failedState = !params.result.ok && params.result.retryable ? "failed_retryable" : "failed_terminal";
-  await getClient().batch(params.result.ok ? [
-    {
-      sql: `
-        UPDATE tasks SET calendar_sync_state = 'confirmed', updated_at = ?
-        WHERE id = ? AND task_board_id IS NULL
-      `,
-      args: [now, params.taskId]
-    },
-
-    {
-      sql: `
-        UPDATE integration_attempts
-        SET status = 'succeeded', response_payload = ?, updated_at = ?
-        WHERE task_id = ? AND integration = 'calendar'
-      `,
-      args: [JSON.stringify(params.result.raw ?? null), now, params.taskId]
-    },
-
-    {
-      sql: `
-        INSERT OR IGNORE INTO calendar_confirmations(
-          confirmation_id, task_id, request_id, provider_event_id, source, payload, created_at
-        ) VALUES (?, ?, ?, ?, 'ha.create_event', ?, ?)
-      `,
-      args: [
-        params.result.confirmationId,
-        params.taskId,
-        params.requestId,
-        params.result.providerEventId ?? null,
-        JSON.stringify(params.result.raw ?? null),
-        now
-      ]
-    },
-
-    {
-      sql: `
-        INSERT INTO domain_events(event_id, event_type, task_id, request_id, idempotency_key, payload, created_at)
-        VALUES (?, 'integration.sync.completed', ?, ?, ?, ?, ?)
-      `,
-      args: [
-        crypto.randomUUID(),
-        params.taskId,
-        params.requestId,
-        params.idempotencyKey,
-        JSON.stringify({ integration: "calendar", confirmationId: params.result.confirmationId }),
-        now
-      ]
-    },
-
-    {
-      sql: `
-        INSERT INTO audit_trail(audit_id, request_id, task_id, integration, level, message, metadata, created_at)
-        VALUES (?, ?, ?, 'calendar', 'info', 'Calendar event confirmed', ?, ?)
-      `,
-      args: [
-        crypto.randomUUID(),
-        params.requestId,
-        params.taskId,
-        JSON.stringify({ confirmationId: params.result.confirmationId }),
-        now
-      ]
-    },
-  ] : [
-    {
-      sql: `
-        UPDATE tasks SET calendar_sync_state = ?, updated_at = ?
-        WHERE id = ? AND task_board_id IS NULL
-      `,
-      args: [failedState, now, params.taskId]
-    },
-
-    {
-      sql: `
-        UPDATE integration_attempts
-        SET status = 'failed', error_code = ?, retry_after_seconds = ?, response_payload = ?, updated_at = ?
-        WHERE task_id = ? AND integration = 'calendar'
-      `,
-      args: [
-        params.result.errorCode,
-        params.result.retryAfterSeconds ?? null,
-        JSON.stringify(params.result.raw ?? null),
-        now,
-        params.taskId
-      ]
-    },
-
-    {
-      sql: `
-        INSERT INTO audit_trail(audit_id, request_id, task_id, integration, level, message, metadata, created_at)
-        VALUES (?, ?, ?, 'calendar', 'warn', 'Calendar sync failed', ?, ?)
-      `,
-      args: [
-        crypto.randomUUID(),
-        params.requestId,
-        params.taskId,
-        JSON.stringify({
-          errorCode: params.result.errorCode,
-          retryAfterSeconds: params.result.retryAfterSeconds,
-          retryable: params.result.retryable
-        }),
-        now
-      ]
-    },
-  ], "write");
-
-  const persisted = await findByIdempotencyKey(params.idempotencyKey);
-  if (!persisted) {
-    throw new Error(`Unable to reload persisted task for idempotency key ${params.idempotencyKey}`);
-  }
-
-  return persisted;
-}
-
-export async function persistManualCalendarConfirmation(params: {
-  taskId: string;
-  requestId: string;
-  confirmationId: string;
-  providerEventId?: string;
-  payload?: unknown;
-}): Promise<{ confirmationId: string; alreadyExisted: boolean }> {
-  const client = getClient();
-  const task = await findTaskById(params.taskId);
-  if (!task) {
-    throw new Error(`TASK_NOT_FOUND:${params.taskId}`);
-  }
-
-  const now = Date.now();
-  const [insertion] = await client.batch([
-    {
-      sql: `
-        INSERT INTO calendar_confirmations(
-          confirmation_id, task_id, request_id, provider_event_id, source, payload, created_at
-        ) SELECT ?, ?, ?, ?, 'manual.confirmation', ?, ?
-        WHERE EXISTS (SELECT 1 FROM tasks WHERE id = ? AND task_board_id IS NULL)
-        ON CONFLICT(confirmation_id) DO NOTHING
-      `,
-      args: [
-        params.confirmationId,
-        params.taskId,
-        params.requestId,
-        params.providerEventId ?? null,
-        JSON.stringify(params.payload ?? null),
-        now, params.taskId
-      ]
-    },
-
-    {
-      sql: `
-        UPDATE tasks
-        SET calendar_sync_state = 'confirmed', updated_at = ?
-        WHERE id = ? AND task_board_id IS NULL AND changes() = 1
-      `,
-      args: [now, params.taskId]
-    },
-
-    {
-      sql: `
-        INSERT INTO audit_trail(audit_id, request_id, task_id, integration, level, message, metadata, created_at)
-        SELECT ?, ?, ?, 'calendar', 'info', 'Manual calendar confirmation persisted', ?, ?
-        WHERE changes() = 1
-      `,
-      args: [
-        crypto.randomUUID(),
-        params.requestId,
-        params.taskId,
-        JSON.stringify({ confirmationId: params.confirmationId, providerEventId: params.providerEventId }),
-        now
-      ]
-    },
-  ], "write");
-
-  if (insertion?.rowsAffected === 0) {
-    const existingResult = await client.execute({
-      sql: `
-        SELECT confirmation_id
-        FROM calendar_confirmations
-        WHERE task_id = ? AND confirmation_id = ?
-        LIMIT 1
-      `,
-      args: [params.taskId, params.confirmationId]
-    });
-
-    const existing = existingResult.rows[0] as Record<string, unknown> | undefined;
-    if (existing) {
-      return { confirmationId: String(existing.confirmation_id), alreadyExisted: true };
-    }
-    throw new Error("Calendar confirmation ID is already associated with another task");
-  }
-
-  return { confirmationId: params.confirmationId, alreadyExisted: false };
-}
-
-export function findTasksByExternalSyncIds(lookup: ExternalSyncLookup): Promise<Map<string, ExternalSyncMatch>> {
-  return new TaskRepository(getClient()).findTasksByExternalSyncIds(lookup)
-}
-
-export function commitSyncMutationChunks(
-  mutations: SyncTaskMutation[],
-  options?: { chunkSize?: number | undefined; signal?: AbortSignal | undefined },
+export function commitSyncMutationChunks(mutations: SyncTaskMutation[], context: IntegrationScope,
+  options?: { chunkSize?: number | undefined, signal?: AbortSignal | undefined },
 ): Promise<SyncChunkCommitResult> {
-  return new TaskRepository(getClient()).commitSyncMutationChunks(mutations, options)
+  return new TaskRepository(getClient(), context.scope).commitSyncMutationChunks(mutations, context, options)
 }
 
 export function resetPersistenceForTests(): void {
@@ -1127,6 +801,7 @@ export function resetPersistenceForTests(): void {
   clientSingleton = null;
   schemaInitialization = undefined
   initializingDbUrl = null
+  initializingMarkerPath = null
   startupBackupState = { attempted: false }
   currentSchemaVersion = 0
   dbIntegrityOk = true

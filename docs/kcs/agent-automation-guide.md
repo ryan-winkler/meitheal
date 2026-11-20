@@ -161,3 +161,17 @@ curl -X POST http://localhost:3000/api/tasks/create \
 | Tool definitions appear stale in dev | 30s spec cache TTL | Wait 30 seconds or restart the dev server |
 | `X-Automation-Source` logged as `unknown` | Header value not in allowlist | Use an allowlisted source string |
 | Missing `trace_id` in structured logs | `traceparent` invalid or bypassed | Send valid W3C `traceparent`; middleware generates one automatically |
+
+## Board context and native callers
+
+Create a credential from Settings while the intended Board is selected. Credential creation requires current system administration and management of that Board. The existing browser context supplies the selected Board and current session proof; a failed or uncertain creation must retain the form and never claim to have revealed a token.
+
+Direct credentials keep their own grants and scope ceiling. A native action with a Home Assistant user additionally verifies that user through the official Supervisor ingress session and Core membership. The App intersects both authorities. Agent-context returns only eligible Board metadata and the existing human session proof for a genuine verified human; a direct credential call does not become a human session.
+
+Task duplication returns the committed task identity. An identical agent assignment retry can acknowledge its own exact durable receipt after assignment moves away. Missing, corrupted, superseded or unprovable historical receipts fail closed; activity history does not replace current command evidence. Genuine recurrence completion after reopening has a new completion identity, while replaying the same closed completion cannot generate another successor.
+
+The native Core integration patch is **0.3.1**. Its MCP handshake and diagnostics report the installed manifest version through Home Assistant’s loader. The separately staged Core component archive and the Canary App image retain separate release and installation receipts. Use the existing manual update path when no reviewed Marketplace/HACS owner is established; do not create a publishing target implicitly.
+
+`GET /api/search` also accepts a credential with `search:read` and an explicitly approved Board search permission, without `tasks:read`. It uses the same narrow ID/title lookup and returns only task references, titles and ticket keys. Descriptions, labels, custom fields, comments, planning and settings are excluded. Search-only credentials cannot use status or priority filters to infer private metadata; the response describes the actual narrow fields and ordering. A credential with only `tasks:read` still lacks the Search route scope. Human search and authorized task-read search keep their existing richer results.
+
+A2A `SendMessage` task-title search needs `a2a:execute`, `search:read`, and an explicitly approved search permission on the selected Board. Its result contains only task IDs, titles and links. It cannot search private descriptions, labels, comments or custom fields, and it does not grant `tasks:read` for detail/list operations. The current human's Board access still limits a credential used through native ingress. Existing explicit grants without the search permission remain denied until a current Board manager reapproves that credential; the App does not silently expand them.

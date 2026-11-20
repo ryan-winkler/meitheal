@@ -5,7 +5,7 @@ import { logApiError } from "../../../../lib/api-logger"
 import {
   updatePillar,
   deletePillar,
-} from "@domains/pillars/pillar-service"
+} from "@domains/pillars"
 
 /**
  * Pillar Detail API — Get, Update, Delete
@@ -22,8 +22,10 @@ export const GET: APIRoute = async ({ params, request, locals }) => {
     const id = params.id
     if (!id) return apiError("Pillar ID is required", 400)
 
-    const pillar = await getVisiblePillar(id, locals, request.signal)
-    if (!pillar) return apiError("Pillar not found", 404)
+    const visible = await getVisiblePillar(id, { locals, request }, "read")
+    if (visible instanceof Response) return visible
+    if (!visible) return apiError("Pillar not found", 404)
+    const { pillar, ownerScope } = visible
 
     return apiJson({ pillar })
   } catch (error) {
@@ -40,8 +42,10 @@ export const PATCH: APIRoute = async ({ params, request, locals }) => {
     const body = await readPillarBody(request)
     if (body instanceof Response) return body
 
-    const pillar = await getVisiblePillar(id, locals, request.signal)
-    if (!pillar) return apiError("Pillar not found", 404)
+    const visible = await getVisiblePillar(id, { locals, request }, "edit")
+    if (visible instanceof Response) return visible
+    if (!visible) return apiError("Pillar not found", 404)
+    const { pillar, ownerScope } = visible
 
 
     if (body.audience !== undefined || body.userId !== undefined || body.user_id !== undefined) {
@@ -61,7 +65,7 @@ export const PATCH: APIRoute = async ({ params, request, locals }) => {
       if (name.length > 100) return apiError("name must be 100 characters or fewer", 400)
     }
 
-    const updates: Parameters<typeof updatePillar>[1] = {}
+    const updates: Parameters<typeof updatePillar>[2] = {}
     if (typeof body.name === "string") updates.name = body.name.trim()
     if (body.manifesto !== undefined) updates.manifesto = body.manifesto === null ? null : String(body.manifesto)
     if (typeof body.icon === "string") updates.icon = body.icon
@@ -70,7 +74,7 @@ export const PATCH: APIRoute = async ({ params, request, locals }) => {
     if (typeof body.position === "number") updates.position = body.position
     if (typeof body.isActive === "boolean") updates.isActive = body.isActive
 
-    const updated = await updatePillar(id, updates, pillar.userId)
+    const updated = await updatePillar(ownerScope, id, updates)
 
     if (!updated) return apiError("Pillar not found or no changes", 404)
     return apiJson({ ok: true })
@@ -85,11 +89,13 @@ export const DELETE: APIRoute = async ({ params, url, request, locals }) => {
     const id = params.id
     if (!id) return apiError("Pillar ID is required", 400)
 
-    const pillar = await getVisiblePillar(id, locals, request.signal)
-    if (!pillar) return apiError("Pillar not found", 404)
+    const visible = await getVisiblePillar(id, { locals, request }, "delete")
+    if (visible instanceof Response) return visible
+    if (!visible) return apiError("Pillar not found", 404)
+    const { pillar, ownerScope } = visible
 
     const hard = url.searchParams.get("hard") === "true"
-    const deleted = await deletePillar(id, hard, pillar.userId)
+    const deleted = await deletePillar(ownerScope, id, hard)
 
     if (!deleted) return apiError("Pillar not found", 404)
     return apiJson({ ok: true })

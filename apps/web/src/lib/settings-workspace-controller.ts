@@ -1,4 +1,5 @@
 import { createClientLogger } from "./client-logger"
+import { settingsWriteHeaders } from "./settings-store"
 
 const log = createClientLogger("settings", "workspace")
 
@@ -533,7 +534,7 @@ function initNotificationsPanel(signal: AbortSignal): ((users: WorkspaceUser[]) 
 
       fetch("/api/settings", {
         method: "PUT",
-        headers: { "content-type": "application/json" },
+        headers: settingsWriteHeaders("notification_preferences"),
         body: JSON.stringify({ key: "notification_preferences", value: payload }),
         signal,
       })
@@ -728,7 +729,7 @@ function initPeopleAndNotifications(signal: AbortSignal): void {
   document.getElementById("save-default-assignee")?.addEventListener(
     "click",
     () => {
-      if (!select) return
+      if (!select || select.disabled) return
       fetch("/api/users/default", {
         method: "PUT",
         headers: { "content-type": "application/json" },

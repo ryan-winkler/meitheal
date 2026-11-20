@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
@@ -29,9 +30,10 @@ test("Kanban groups Household descendants by named Epic and skips outside-Board 
     page.setDefaultTimeout(5_000)
     expect((await page.goto(app + "/fixture"))?.ok()).toBe(true)
 
+    const headers = await currentBoardWriteHeaders(context.request, "household", { origin }, app)
     async function seed(title: string, fields: object = {}) {
       const response = await context.request.post(app + "/api/tasks", {
-        headers: { origin }, data: { title, status: "pending", ...fields },
+        headers, data: { title, status: "pending", ...fields },
       })
       expect(response.status(), await response.text()).toBe(201)
       return await response.json() as { id: string; ticket_key: string }

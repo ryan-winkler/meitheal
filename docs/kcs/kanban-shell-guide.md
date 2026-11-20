@@ -16,7 +16,7 @@ The Tasks view uses the Household board. A bookmark for an unavailable Board sho
 
 Use **All Areas** above the board to select a specific area. The card and lane counts follow that selection and the task filters. **Add Task** at the bottom of a lane captures a task in the selected area and lane. Press Enter or choose **Add** to save. If the save fails, the form keeps the title available for retry. **Cancel** or Escape closes the form.
 
-Choose **Group → By Area** to group the current page of cards within each lane. Groups sort by the displayed Area name. Tasks that refer to retired Areas stay visible together under **Unavailable Area**. Open a task to move it to an available Area.
+Choose **Group by → By Area** to group the current page of cards within each lane. Groups sort by the displayed Area name. Unfiled tasks and tasks that refer to a retired Area stay visible under **No area**. Open a task to move it to an available Area.
 
 ### Move or open a card
 
@@ -29,6 +29,8 @@ The task key is part of the card button’s accessible name. When one quick acti
 Quick actions sit below the task details and wrap within the card.
 
 Tab and Shift+Tab stay inside task detail while it loads and while you edit. Press Escape to close it and return to the card. When a confirmation is open, Escape dismisses the confirmation first.
+
+The title becomes editable when task details and edit permission are ready. Viewers can read and copy the title.
 
 Closing Details while a task is still loading also clears its pending launch link. Your Board and Project filters remain in the address, so the next task creation or refresh does not reopen the dismissed task.
 
@@ -67,13 +69,13 @@ Each lane shows up to 25 cards. Its count includes every task matching the curre
 
 Household Kanban reloads its results in place. The refresh requests the same scoped page with `boardRefresh` and `X-Meitheal-Task-Fragment: 1`, so the response skips the shared page shell. Ordinary navigation still includes the shell. If a refresh fails, use **Retry board** to retain your last visible results until a new response succeeds.
 
-To move a task to another Board Group, open its **Details** and choose the destination in **Group**. When the save succeeds, the card appears in its new group after Details closes. If the destination group is collapsed, focus returns to its heading. If the board is filtered to the original group, the card leaves the results and the filter stays selected. A failed save restores the previous selection. Use the **Home Assistant Area** control in Details to edit the task's location when it is available.
+To move a task to another Area on its Board, open **Details** and choose the destination in **Area**. After the save succeeds, the card appears in its new group when Details closes. If the destination group is collapsed, focus returns to its heading. If the Board is filtered to the original Area, the card leaves the results and the filter stays selected. When a save is rejected, **Reload saved task** lets you recover the latest saved value. Use **Home Assistant Area** separately to edit the task's location when that control is available.
 
 Open **Overdue** from Dashboard to filter tasks across every Kanban page. The board matches Dashboard’s due-date and completion rules.
 
 Use a swimlane’s group heading to show or hide its cards with a click, Enter, or Space. The board remembers expanded and collapsed groups on this browser for each grouping choice and workflow lane. With single-key shortcuts enabled, press **C** while the board has focus to toggle all its visible groups.
 
-Choose **Group by → By Epic** to organize each workflow lane of Household Kanban. A card uses the nearest Epic in its parent chain, even when that Epic is outside the current filter or page. Cards without a readable Epic appear under **No Epic**. Headings sort by name and include ticket numbers to distinguish matching names. Group counts reflect the current page of each lane. Close Details after changing a parent to see the card in its new group. Copy the board URL to preserve the grouping. Switching between Kanban and Table preserves Epic grouping.
+Open **Group by** on Household or a named Board. **By Area** uses the task’s Area, including the Area inherited from its Project. **By Epic** groups an Epic card under its own name. Other cards use their nearest readable parent Epic, even outside the current filter or page. Cards without a readable Epic appear under **No Epic**. Epic headings sort by name and include the Board’s ticket key to distinguish matching names. Group counts reflect the current page of each lane. Close Details after changing a parent to see the card in its new group. Copy the Board URL to preserve the grouping. Switching between Kanban and Table preserves Epic grouping.
 
 The work-in-progress count uses all eligible cards in the lane. Reordering a card preserves the relative order of all other cards across area filters and overlapping custom lanes. After a move, the destination lane may show a different page from the one containing the moved card.
 
@@ -105,7 +107,7 @@ When you group by **Project**, each project has its own section. If project name
 
 When you group by **Area**, different Areas have separate rows even when their names match. A short reference distinguishes matching names. You can collapse each group independently and its state survives filtering. Tasks with unavailable Area information appear under **Unknown Area**.
 
-Timeline loads Project and Group labels according to your organization access. If a task belongs to an unavailable Area, its bar stays visible under **Unknown Area** and Timeline omits the Area reference from its chart data.
+Timeline loads Project and Group labels according to your organization access. On Household and named Boards, tasks you can view retain their **Unknown Project** or **Unknown Area** grouping when a reference becomes unavailable. Timeline omits unavailable identifiers and names from its chart data.
 
 ### Group cards by assignee
 

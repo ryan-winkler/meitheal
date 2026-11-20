@@ -5,6 +5,7 @@ import { join } from "node:path"
 import type { ChildProcess } from "node:child_process"
 import AxeBuilder from "@axe-core/playwright"
 import { expect, test, type APIRequestContext, type Page, type PlaywrightWorkerArgs } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
 interface ReviewFixture {
@@ -31,8 +32,10 @@ async function withReview(playwright: PlaywrightWorkerArgs["playwright"], run: (
     const context = await browser.newContext({ serviceWorkers: "block", extraHTTPHeaders: {} })
     await context.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
     const page = await context.newPage()
-    const apiContext = await playwright.request.newContext({ baseURL: origin, ignoreHTTPSErrors: true,
-      extraHTTPHeaders: { cookie: "feedback-fixture=admin", origin } })
+    const ingress = { cookie: "feedback-fixture=admin", origin }
+    const current = await playwright.request.newContext({ baseURL: origin, ignoreHTTPSErrors: true, extraHTTPHeaders: ingress })
+    const headers = await currentBoardWriteHeaders(current, "household", ingress, prefix).finally(() => current.dispose())
+    const apiContext = await playwright.request.newContext({ baseURL: origin, ignoreHTTPSErrors: true, extraHTTPHeaders: headers })
     api = apiContext
     const minted = await apiContext.post(prefix + "/api/agent-tokens", { data: { name: "Review fixture agent", scopes: ["tasks:propose"] } })
     expect(minted.status()).toBe(201)

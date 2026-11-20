@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
@@ -24,7 +25,7 @@ test("Household picker and every task view retain context; modal, lane and draft
     browser = await launchPinBrowser(work)
     const context = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {}, serviceWorkers: "block" })
     await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
-    const headers = { origin }
+    const headers = await currentBoardWriteHeaders(context.request, "household", { origin }, app)
     async function create(path: string, data: object) {
       const response = await context.request.post(app + path, { headers, data })
       expect(response.status(), await response.text()).toBe(201)
@@ -34,6 +35,7 @@ test("Household picker and every task view retain context; modal, lane and draft
     const other = await create("/api/areas", { name: "Other context" })
     const project = await create("/api/projects", { title: "Scoped Project", area_id: area.id })
     const task = await create("/api/tasks", { title: "Existing scoped work", placement: { projectId: project.id }, due_date: "2031-07-08" })
+    const outside = await create("/api/tasks", { title: "Work in another Area", placement: { areaId: other.id } })
     const page = await context.newPage()
     page.setDefaultTimeout(8_000)
     await page.goto(app + "/boards/household")
@@ -52,8 +54,8 @@ test("Household picker and every task view retain context; modal, lane and draft
     for (const scope of [`area=${area.id}`, `project=${project.id}`]) {
       const planningResponse = await page.goto(app + `/boards/household?${scope}&view=groups`)
       expect(planningResponse?.status(), scope).toBe(200)
-      await page.getByRole("navigation", { name: scope.startsWith("area=") ? "Area sections" : "Project sections", exact: true })
-        .getByRole("link", { name: "Tasks", exact: true }).click()
+      const sections = scope.startsWith("area=") ? "Area sections" : "Project sections"
+      await page.getByRole("navigation", { name: sections, exact: true }).getByRole("link", { name: "Tasks", exact: true }).click()
       await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
       await expect(page.locator(`.kanban-card[data-id="${task.id}"]`)).toBeVisible()
     }
@@ -77,10 +79,10 @@ test("Household picker and every task view retain context; modal, lane and draft
     const added = page.waitForResponse(response => response.url().endsWith("/api/tasks") && response.request().method() === "POST")
     await lane.locator(".quick-add-btn").click()
     expect((await added).status()).toBe(201)
-    const persistedLane = await (await context.request.get(app + "/api/tasks?project_id=" + project.id)).json()
+    const persistedLane = await (await context.request.get(app + "/api/tasks?project_id=" + project.id, { headers })).json()
     const listedLane = persistedLane.tasks.find((task: { title: string }) => task.title === "Lane Project capture")
     expect(listedLane).toBeTruthy()
-    const laneTask = await (await context.request.get(app + "/api/tasks/" + listedLane.id)).json()
+    const laneTask = await (await context.request.get(app + "/api/tasks/" + listedLane.id, { headers })).json()
     expect(laneTask).toMatchObject({ project_id: project.id, area_id: area.id })
     await expect(page.locator(`.kanban-card[data-id="${laneTask.id}"]`)).toBeVisible()
     await page.locator("#kanban-bar-new-task").click()
@@ -96,9 +98,10 @@ test("Household picker and every task view retain context; modal, lane and draft
     const published = page.waitForResponse(response => response.url().endsWith("/api/task-drafts") && response.request().method() === "PUT" && response.request().postDataJSON().action === "publish")
     await page.locator("#submit-new-task-btn").click()
     const receipt = await (await published).json()
-    const persisted = await (await context.request.get(app + "/api/tasks/" + receipt.receipt.taskId)).json()
+    const persisted = await (await context.request.get(app + "/api/tasks/" + receipt.receipt.taskId, { headers })).json()
     expect(persisted).toMatchObject({ project_id: project.id, area_id: area.id })
-    await page.evaluate(value => localStorage.setItem("meitheal-selected-area", JSON.stringify({ areaId: value, areaName: "Workshop context", areaIcon: "📁" })), area.id)
+    await page.goto(app + `/boards/household?area=${area.id}`)
+    await expect(page.locator("#area-selector-trigger")).toHaveAttribute("data-selected-area-id", area.id)
     // The live fixture can still be writing when failure injection changes its schema.
     const db = new DatabaseSync(join(work, "pins.db"), { timeout: 5_000 })
     db.exec("ALTER TABLE areas RENAME TO areas_catalog_unavailable")
@@ -109,6 +112,7 @@ test("Household picker and every task view retain context; modal, lane and draft
     await expect(page.locator("[data-area-catalog-feedback]")).toContainText("unavailable")
     await expect(page.locator("[data-area-catalog-retry]")).toBeVisible()
     await expect(page.locator("#area-selector-trigger")).toHaveAttribute("data-selected-area-id", area.id)
+    await expect(page.locator(`.kanban-card[data-id="${outside.id}"]`)).not.toBeVisible()
     const repaired = new DatabaseSync(join(work, "pins.db"), { timeout: 5_000 })
     repaired.exec("ALTER TABLE areas_catalog_unavailable RENAME TO areas")
     repaired.close()
@@ -116,8 +120,9 @@ test("Household picker and every task view retain context; modal, lane and draft
     await page.locator("[data-area-catalog-retry]").click()
     await expect(page.locator("#area-selector-dropdown")).toHaveAttribute("data-area-catalog-ready", "true")
     await expect(page.locator("#area-selector-trigger")).toHaveText(/Workshop context/)
-    await expect(page.locator(`.kanban-card[data-id="${task.id}"]`)).toBeVisible()
     await expect(page).toHaveURL(url => url.searchParams.get("area") === area.id)
+    await expect(page.locator(`.kanban-card[data-id="${task.id}"]`)).toBeVisible()
+    await expect(page.locator(`.kanban-card[data-id="${outside.id}"]`)).toHaveCount(0)
   } finally {
     if (renamed) {
       const db = new DatabaseSync(join(work, "pins.db"), { timeout: 5_000 })

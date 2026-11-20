@@ -1,10 +1,11 @@
-import { execFileSync, fork } from "node:child_process"
+import { execFileSync, fork } from "../helpers/isolated-process"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
 const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
 const fixture = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
@@ -46,9 +47,9 @@ test("reactions load on demand through ingress and update only rendered card cou
     ])
     const origin = `http://127.0.0.1:${info.port}`
     const entry = origin + info.configuredPath
-    const headers = { origin, "sec-fetch-site": "same-origin" }
     await owner.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
     await member.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+    const headers = await currentBoardWriteHeaders(owner.request, "household", { origin, "sec-fetch-site": "same-origin" }, entry)
 
     const title = "Reaction interaction fixture"
     const task = await owner.request.post(entry + "/api/tasks", { headers, data: { title, status: "active" } })

@@ -1,4 +1,32 @@
 /** Public task persistence and board-availability operations used across contexts. */
+export { BoardAccessService, validateBoardFeature, validateBoardPlacement } from "./board-access-service"
+export { createBoardAgentCredential } from "./agent-board-authority"
+export { resolveHAAssignmentProof, type AssignmentProof } from "./assignment-proof"
+export { listSharedGoals } from "./persistence/shared-goal-repository"
+export { TemplateRepository } from "./persistence/template-repository"
+export {
+  isVerifiedPrincipalCurrent, boardPlanningOwnership, boardTaskOwnership, boardOwnerInsertExpression,
+  guardWorkPersistence, sql, sourceSql, joinSql, type SqlFragment,
+} from "./server-persistence"
+export {
+  requireBoardScope, scopeAssignedTo, scopePermits, scopeServicePurpose, scopeBoardAccess, validateBoardScope,
+  type BoardScope, type BoardCapabilities, type ScopeResult, type VerifiedPrincipal,
+  type WorkOperation, type WorkResource, type WorkAction, type WorkspaceContext, type TaskPlacement,
+} from "./board-scope"
+export { BoardRepository } from "./persistence/named-board-repository"
+export { NamedBoardTaskRepository } from "./persistence/named-board-task-repository"
+export { IdentityRepository } from "./persistence/identity-repository"
+export { readTaskDeletionReceipt, type TaskDeletionReceipt } from "./persistence/task-deletion-receipt"
+export {
+  resolveIntegrationScope, validateIntegrationScope, integrationOperationAllowed, resolveIntegrationRecipient,
+  type IntegrationScope, type IntegrationScopeResult,
+} from "./board-automation"
+export {
+  readWorkDestinations, parseWorkDestinations, selectWorkBinding, bindingAllows,
+  type WorkBinding, type WorkDestinations, type WorkDestination,
+} from "./integration-destinations"
+export { projectPublicTaskFields, TASK_PUBLIC_FIELDS } from "./task-projection"
+export { boardOperationClient, BoardOperationError, canReadBoardAggregate, validateTaskOperation } from "./persistence/board-operation-client"
 export { AreaRepository } from "./persistence/area-repository"
 export { isNamedBoardPreset, NAMED_BOARD_PRESETS, type NamedBoardPreset } from "./named-board-presets"
 export {
@@ -40,7 +68,7 @@ export {
   saveLegacyAiHandoffUrl,
   SettingsRepository,
 } from "./persistence/settings-repository"
-export { rewriteLabelReferences } from "./persistence/label-reference-repository"
+export { rewriteLabelReferences, findUsedLabelDefinitions, removeBoardLabelJunctions } from "./persistence/label-reference-repository"
 export { TaskHandoff } from "./persistence/task-handoff"
 export {
   taskInsertStatement,
@@ -68,3 +96,17 @@ export {
   rejectBoardSelectionInUrl,
   unavailableBoardResponse,
 } from "./board-availability"
+
+
+export { isWorkIntegrationSetting, saveWorkIntegrationSettings, saveWorkBinding } from "./work-binding-manager"
+export { currentBoardGrantRevision } from "./persistence/board-grant-fence"
+export { persistManualCalendarConfirmation } from "./persistence/store"
+
+export { readTaskAssignmentReceipt, type TaskAssignmentReceipt } from "./persistence/task-assignment-receipt"
+export { checkOverdueTaskEvents } from "./overdue-task-events"
+export { prepareWorkIntegrationSettings, validateWorkIntegrationSettingsApproval, sameWorkIntegrationSetting,
+  type WorkIntegrationSettingsApproval } from "./work-binding-manager"
+
+export { parseRRule } from "./recurrence"
+
+export { taskActionHints, type TaskActionHint } from "./task-action-hints"

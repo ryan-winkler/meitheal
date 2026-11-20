@@ -7,11 +7,13 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 
 import { expect, test, type Browser } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable built app")
 
 test("Timeline keeps unavailable Project and Area references out of its grouping data", async () => {
+  test.setTimeout(60_000)
   const work = await mkdtemp(join(tmpdir(), "meitheal-timeline-project-scope-"))
   let child: ChildProcess | undefined
   let browser: Browser | undefined
@@ -26,8 +28,9 @@ test("Timeline keeps unavailable Project and Area references out of its grouping
     const context = await browser.newContext({ ignoreHTTPSErrors: true, serviceWorkers: "block" })
     await context.setExtraHTTPHeaders({})
     await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
-    async function create(path: string, data: object): Promise<string> {
-      const response = await context.request.post(app + path, { headers: { origin }, data })
+    const headers = await currentBoardWriteHeaders(context.request, "household", { origin }, app)
+    async function create(path: string, data: object, writeHeaders = headers): Promise<string> {
+      const response = await context.request.post(app + path, { headers: writeHeaders, data })
       expect(response.status(), await response.text()).toBe(201)
       return (await response.json() as { id: string }).id
     }
@@ -49,11 +52,26 @@ test("Timeline keeps unavailable Project and Area references out of its grouping
     const group = await create("/api/areas", { name: groupName })
     const project = await create("/api/projects", { title: projectTitle, area_id: group })
     const assigned = await create("/api/tasks", { ...dates, title: `${prefix} assigned`, area_id: group, project_id: project })
+    const namedBoard = await create("/api/boards", { name: "Timeline catalog scope Board" }, {
+      origin, "x-meitheal-board-session": headers["x-meitheal-board-session"]!,
+    })
+    const namedHeaders = await currentBoardWriteHeaders(context.request, namedBoard, { origin }, app)
+    const namedAreaTitle = "Retired named Board Area"
+    const namedProjectTitle = "Retired named Board Project"
+    const namedArea = await create("/api/areas", { name: namedAreaTitle }, namedHeaders)
+    const namedProject = await create("/api/projects", { title: namedProjectTitle, area_id: namedArea }, namedHeaders)
+    const namedAssigned = await create("/api/tasks", {
+      ...dates, title: `${prefix} named assigned`, project_id: namedProject,
+    }, namedHeaders)
+    const namedUnfiled = await create("/api/tasks", { ...dates, title: `${prefix} named unfiled` }, namedHeaders)
     const db = new DatabaseSync(join(work, "pins.db"))
     try {
       // The public project lifecycle clears associations. Seed legacy references directly.
       expect(db.prepare("UPDATE projects SET retired_at = ? WHERE id = ?").run(start, retiredProject).changes).toBe(1)
       expect(db.prepare("UPDATE tasks SET project_id = ?, area_id = ? WHERE id = ?").run(missingProject, missingArea, danglingTask).changes).toBe(1)
+      expect(db.prepare("UPDATE projects SET retired_at = ? WHERE id = ?").run(start, namedProject).changes).toBe(1)
+      expect(db.prepare("UPDATE areas SET retired_at = ? WHERE id = ?").run(start, namedArea).changes).toBe(1)
+      expect(db.prepare("SELECT area_id FROM board_task_planning WHERE task_id = ?").get(namedAssigned)).toMatchObject({ area_id: null })
     } finally {
       db.close()
     }
@@ -80,6 +98,27 @@ test("Timeline keeps unavailable Project and Area references out of its grouping
     await expect(paneToggle).toBeEnabled()
     if (await paneToggle.getAttribute("aria-expanded") === "false") await paneToggle.press("Enter")
     await expect(page.getByRole("heading", { name: "Group: Unknown Project", exact: true })).toBeVisible()
+
+    const namedUrl = `${app}/boards/${namedBoard}`
+    await page.goto(`${namedUrl}?${query}#timeline`)
+    const namedData = (await page.locator("#timeline-data").textContent())!
+    const namedTasks = JSON.parse(namedData) as typeof tasks
+    expect(namedTasks.find(task => task.id === namedAssigned)).toMatchObject({ project_group: "unavailable-project" })
+    expect(namedTasks.find(task => task.id === namedAssigned)).not.toHaveProperty("area_id")
+    expect(namedTasks.find(task => task.id === namedUnfiled)).toMatchObject({ project_group: "project-", area_id: null })
+    for (const value of [retiredTask, namedProject, namedArea, namedProjectTitle, namedAreaTitle]) {
+      expect(namedData).not.toContain(value)
+    }
+    expect(await page.locator("#timeline-projects").textContent()).not.toContain(namedProjectTitle)
+    expect(await page.locator("#timeline-areas").textContent()).not.toContain(namedAreaTitle)
+    await expect(paneToggle).toBeEnabled()
+    if (await paneToggle.getAttribute("aria-expanded") === "false") await paneToggle.press("Enter")
+    await expect(page.getByRole("heading", { name: "Group: Unknown Project", exact: true })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Group: No Project", exact: true })).toBeVisible()
+    const namedAreaQuery = new URLSearchParams(query)
+    namedAreaQuery.set("groupBy", "area")
+    await page.goto(`${namedUrl}?${namedAreaQuery}#timeline`)
+    await expect(page.getByRole("heading", { name: "Group: Unknown Area", exact: true })).toBeVisible()
 
     const admin = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {} })
     await admin.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
@@ -174,7 +213,7 @@ test("Timeline keeps unavailable Project and Area references out of its grouping
 
 test("Timeline remounts project rows in visual keyboard order and keeps long-Area identity visible", async ({ page, request, baseURL }) => {
   test.setTimeout(90_000)
-  const headers = { origin: new URL(baseURL!).origin, "content-type": "application/json", "sec-fetch-site": "same-origin" }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const prefix = `Timeline ordered ${randomUUID()}`
   const cleanup: string[] = []
   const cleanupFailures: string[] = []
@@ -244,7 +283,7 @@ test("Timeline remounts project rows in visual keyboard order and keeps long-Are
     await expect(secondToggle).toBeFocused()
   } finally {
     for (const path of cleanup.reverse()) {
-      const response = await request.delete(path, { headers })
+      const response = await request.delete(path, { headers, data: {} })
       if (!response.ok()) cleanupFailures.push(`${path}: ${response.status()} ${await response.text()}`)
     }
   }

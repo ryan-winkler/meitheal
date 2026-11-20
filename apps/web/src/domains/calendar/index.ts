@@ -20,6 +20,8 @@ export {
   type CalendarSyncConfig,
   type CalendarSyncMode,
   type CalendarSyncStatusEntity,
-  type TaskCalendarMeta,
+  type TaskCalendarMeta
 } from "./calendar-bridge"
 export { CALENDAR_ENTITY_SETTINGS, configuredCalendarEntityIds } from "./resolve-calendar-entities"
+
+export type { CalDAVOperationOptions } from "./caldav-client"

@@ -5,9 +5,9 @@ import { formatTicketKey, parseTicketKey } from "@lib/ticket-key"
 
 type Item = { id?: string; text: string; done: boolean }
 
-const pendingChecklistSaves = new Map<string, Promise<void>>()
+const pendingChecklistSaves = new Map<string, Promise<boolean>>()
 
-export function pendingChecklistSave(taskId: string): Promise<void> | undefined {
+export function pendingChecklistSave(taskId: string): Promise<boolean> | undefined {
   const ticketKey = formatTicketKey(parseTicketKey(taskId))
   return pendingChecklistSaves.get(taskId) ?? (ticketKey ? pendingChecklistSaves.get(ticketKey) : undefined)
 }
@@ -77,7 +77,13 @@ function rebaseChecklist(before: Item[], proposed: Item[], latest: Item[]): Item
   return [...current.values()]
 }
 
-export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal: AbortSignal, ticketKey?: string) {
+export function showTaskChecklist(
+  taskId: string,
+  rawChecklist: unknown,
+  signal: AbortSignal,
+  write: (send: (version: number | null) => Promise<Response>) => Promise<Response>,
+  ticketKey?: string,
+) {
   const container = document.getElementById("td-checklists")
   const add = document.querySelector<HTMLButtonElement>("#td-add-checklist-item")
   const progress = document.getElementById("td-checklist-progress")
@@ -99,6 +105,7 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
   let saved = loaded ?? []
   let items = saved.slice()
   let problem: "retry" | "conflict" | null = null
+  let textEditPending = false
   let rendering = false
 
   add.disabled = loaded === null
@@ -165,7 +172,8 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
         if (!current || next === current.text) return
         items[index] = { ...current, text: next }
         checkbox.setAttribute("aria-label", next || "Checklist item " + (index + 1))
-        void save()
+        textEditPending = true
+        save()
       }, { signal })
       text.addEventListener("keydown", event => {
         if (event.key !== "Enter" || event.isComposing) return
@@ -196,8 +204,15 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
   }
 
   function save() {
-    if (pendingChecklistSaves.has(taskId) || problem || equal(saved, items)) return
-    const pending = persist().finally(() => {
+    if (problem || pendingChecklistSaves.has(taskId)) return
+    if (equal(saved, items)) {
+      textEditPending = false
+      return
+    }
+    const pending = persist().then(saved => {
+      if (saved) textEditPending = false
+      return saved
+    }).finally(() => {
       pendingChecklistSaves.delete(taskId)
       if (ticketKey && pendingChecklistSaves.get(ticketKey) === pending) pendingChecklistSaves.delete(ticketKey)
     })
@@ -205,17 +220,17 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
     if (ticketKey) pendingChecklistSaves.set(ticketKey, pending)
   }
 
-  async function persist() {
+  async function persist(): Promise<boolean> {
     let rebased = false
     try {
       while (!equal(saved, items)) {
         const pending = JSON.stringify(items)
-        const response = await fetch(path, { // nosemgrep
+        const response = await write(version => fetch(path, { // nosemgrep
           method: "PUT",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ checklists: pending, expected_checklists: savedRaw }),
+          body: JSON.stringify({ checklists: pending, expected_checklists: savedRaw, ...(version === null ? {} : { updated_at: version }) }),
           signal: AbortSignal.timeout(10_000),
-        })
+        }))
         if (response.ok) {
           notifyInactivityTaskChanged(taskId)
           savedRaw = pending
@@ -226,9 +241,9 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
         const latestRaw = conflict?.checklists
         if (conflict?.code !== "checklist_conflict" || (latestRaw !== null && typeof latestRaw !== "string")) {
           report("retry")
-          return
+          return false
         }
-        if (signal.aborted) return
+        if (signal.aborted) return false
         const latest = parseChecklist(latestRaw)
         const active = document.activeElement
         const row = active?.closest<HTMLElement>("[data-checklist-row]")
@@ -237,7 +252,7 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
         const merged = latest && !rebased ? rebaseChecklist(saved, items, latest) : null
         if (!latest || !merged) {
           report("conflict")
-          return
+          return false
         }
         let focusedIndex = focusedItem ? merged.indexOf(focusedItem) : -1
         if (focusedIndex < 0 && focusedItem?.id &&
@@ -254,7 +269,7 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
         const typedValue = typing && focusedItem && active.value !== focusedItem.text ? active.value : undefined
         if (typedValue !== undefined && merged[focusedIndex]?.text !== focusedItem?.text) {
           report("conflict")
-          return
+          return false
         }
         rebased = true
         savedRaw = latestRaw
@@ -271,8 +286,10 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
           restored.setSelectionRange(selection.start, selection.end, selection.direction)
         }
       }
+      return true
     } catch {
       report("retry")
+      return false
     }
   }
 
@@ -312,6 +329,7 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
       savedRaw = latestRaw
       saved = latest
       items = latest.slice()
+      textEditPending = false
       problem = null
       message.textContent = "Latest checklist loaded. Your unsaved draft is below."
       recover.hidden = true
@@ -324,4 +342,5 @@ export function showTaskChecklist(taskId: string, rawChecklist: unknown, signal:
     }
   }, { signal })
   render()
+  return () => !signal.aborted && textEditPending
 }

@@ -7,6 +7,7 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 
 import { expect, test, type Browser } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
@@ -14,7 +15,7 @@ test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Me
 test.use({ serviceWorkers: "block" })
 
 test("Household Kanban keeps Project identity, qualifiers and the current column page", async ({ page, request, baseURL }) => {
-  const headers = { origin: new URL(baseURL!).origin, "content-type": "application/json" }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin, "content-type": "application/json" })
   const token = randomUUID().slice(0, 8)
   const prefix = `Project grouping ${token}`
   const title = `A long household project title that needs its Area kept visible ${token}`
@@ -128,16 +129,24 @@ test("Household Kanban keeps Project identity, qualifiers and the current column
     await expect(pending).toHaveAttribute("data-total", total!)
     await header(direct).press("Enter")
     await expect(header(direct)).toHaveAttribute("aria-expanded", "false")
-    expect((await request.delete(`/api/projects/${direct}`, { headers })).ok()).toBe(true)
+    expect((await request.delete(`/api/projects/${direct}`, { headers, data: {} })).ok()).toBe(true)
     cleanup.splice(cleanup.indexOf(`/api/projects/${direct}`), 1)
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })))
+    const refresh = page.getByRole("button", { name: "Refresh Board" })
+    await expect(refresh).toBeFocused()
+    await expect(page.locator("#kanban-board")).toHaveCount(0)
+    await refresh.click()
     await expect(header(direct)).toHaveCount(0)
-    await expect(pending.locator(".kanban-column-header")).toBeFocused()
-    await expect(group(pending, "").locator(`.kanban-card[data-id="${directTask}"]`)).toBeVisible()
+    const unavailable = pending.locator(".dynamic-group").filter({
+      has: page.getByRole("button", { name: /^Unknown Project/ }),
+    })
+    await expect(unavailable.locator(`.kanban-card[data-id="${directTask}"]`)).toBeVisible()
+    await expect(pending).not.toContainText(renamedTitle)
+    await expect(range).toHaveText("26–29 of 29")
   } finally {
     const failures: string[] = []
     for (const path of cleanup.reverse()) {
-      const response = await request.delete(path, { headers })
+      const response = await request.delete(path, { headers, data: {} })
       if (!response.ok()) failures.push(`${path}: ${response.status()} ${await response.text()}`)
     }
     expect(failures).toEqual([])
@@ -160,7 +169,7 @@ test("Ingress Kanban hides unavailable Project references and recovers its catal
     const context = await browser.newContext({ ignoreHTTPSErrors: true, serviceWorkers: "block" })
     await context.setExtraHTTPHeaders({})
     await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
-    const headers = { origin, "content-type": "application/json" }
+    const headers = await currentBoardWriteHeaders(context.request, "household", { origin, "content-type": "application/json" }, app)
     async function create(path: string, data: object): Promise<string> {
       const response = await context.request.post(app + path, { headers, data })
       expect(response.status(), await response.text()).toBe(201)

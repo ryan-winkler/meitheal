@@ -90,9 +90,7 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
             "5": "⚪ P5 — Minimal",
           }
         : {}
-    const areaLabel = (key: string, card: HTMLElement | undefined) => card?.dataset.areaName || (key === "default"
-      ? board.dataset.defaultAreaLabel ?? "Default Area"
-      : board.dataset.unavailableAreaLabel ?? "Unavailable Area")
+    const areaLabel = (card: HTMLElement | undefined) => card?.dataset.areaName || board.dataset.noAreaLabel || "No area"
 
     // O1: Hoist getComputedStyle outside column loop
     const cs = getComputedStyle(document.documentElement)
@@ -119,7 +117,7 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
       flatCards.forEach((card) => {
         const value = card.dataset[mode]
         let val = mode === "status" ? normalizeStatus(value || STATUS.PENDING)
-          : byAssignee ? value ?? "" : value || (mode === "priority" ? "3" : mode === "epic" ? "epic:none" : "default")
+          : byAssignee || mode === "area" ? value ?? "" : value || (mode === "priority" ? "3" : mode === "epic" ? "epic:none" : "default")
         if (byProject) val = card.dataset.projectGroup || "unavailable-project"
         if (byAssignee && card.dataset.assigneeKey) {
           try {
@@ -127,8 +125,8 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
             if (typeof key === "string") val = key
           } catch { /* Keep the unencoded identity when metadata is malformed. */ }
         }
-        // Empty Area IDs map to Default, leaving the empty key for unavailable Areas.
-        const key = mode === "area" && val !== "default" && !card.dataset.areaName ? "" : val
+        // Unfiled and masked placement share a neutral label; visible real Areas retain their identity.
+        const key = mode === "area" && !card.dataset.areaName ? "" : val
         if (!groups.has(key)) groups.set(key, [])
         groups.get(key)!.push(card)
       })
@@ -143,7 +141,7 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
         if (mode === "epic") return card?.dataset.epicLabel || board.dataset.noEpicLabel || "No Epic"
         if (byAssignee) return key ? window.mI18n?.get("tasks.assignee_loading") ?? "Loading assignee…"
           : window.mI18n?.get("tasks.unassigned") ?? "Unassigned"
-        if (mode === "area") return areaLabel(key, card)
+        if (mode === "area") return areaLabel(card)
         if (mode === "status") {
           const status = getStatusDef(key)
           return status ? window.mI18n?.get(status.i18nKey) ?? status.label : key

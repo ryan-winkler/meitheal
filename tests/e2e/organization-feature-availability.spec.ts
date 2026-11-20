@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable built app")
@@ -28,7 +29,8 @@ test("Timeline All Areas links survive filtering, reload and Back when Areas is 
       await context.addCookies([{ name: "feedback-fixture", value: user, url: origin }])
     }
 
-    const areaCreated = await member.request.post(app + "/api/areas", { headers, data: { name: "Timeline restricted Area" } })
+    const household = await currentBoardWriteHeaders(member.request, "household", headers, app)
+    const areaCreated = await member.request.post(app + "/api/areas", { headers: household, data: { name: "Timeline restricted Area" } })
     expect(areaCreated.status()).toBe(201)
     const areaId = (await areaCreated.json()).id
     const directory = await member.request.get(app + "/api/boards")
@@ -41,7 +43,7 @@ test("Timeline All Areas links survive filtering, reload and Back when Areas is 
     const prefix = "Timeline All Areas access"
     const ids: string[] = []
     for (const [suffix, status] of [["Current", "active"], ["Later", "pending"]]) {
-      const created = await member.request.post(app + "/api/tasks", { headers, data: {
+      const created = await member.request.post(app + "/api/tasks", { headers: household, data: {
         title: `${prefix} ${suffix}`, status,
         start_date: new Date().toISOString().slice(0, 10),
         due_date: new Date(Date.now() + 86_400_000).toISOString().slice(0, 10),
@@ -58,16 +60,13 @@ test("Timeline All Areas links survive filtering, reload and Back when Areas is 
     })
     expect(saved.status(), await saved.text()).toBe(204)
 
-    for (const path of ["/boards/household", `/boards/${boardId}`, `/api/boards/${boardId}`]) {
+    for (const path of ["/boards/household", "/api/boards/household", `/boards/${boardId}`, `/api/boards/${boardId}`]) {
       for (const query of ["", "?area="]) expect((await member.request.get(app + path + query)).status(), path + query).toBe(200)
       for (const query of [`?area=${areaId}`, "?area=%20", `?area=&area=${areaId}`]) {
         expect((await member.request.get(app + path + query)).status(), path + query).toBe(404)
       }
     }
-    // Household uses its shared task API; the named-Board API remains unavailable.
-    for (const query of ["", "?area=", `?area=${areaId}`]) {
-      expect((await member.request.get(app + "/api/boards/household" + query)).status()).toBe(404)
-    }
+    expect((await member.request.get(app + "/api/boards/household?view=groups")).status()).toBe(404)
     expect((await member.request.get(app + "/api/areas")).status()).toBe(404)
     expect((await other.request.get(app + "/api/areas")).status()).toBe(200)
     for (const path of [`/boards/${boardId}?area=`, `/api/boards/${boardId}?area=`]) {
@@ -153,11 +152,12 @@ test("Administrators choose who can use each organization feature", async () => 
       const current = await (await member.request.get(app + "/api/features")).json()
       expect(current.features.find((feature: { name: string }) => feature.name === "gamification").enabled).toBe(enabled)
     }
-    const group = await member.request.post(app + "/api/areas", { headers, data: { name: "Hidden group fixture" } })
+    const household = await currentBoardWriteHeaders(member.request, "household", headers, app)
+    const group = await member.request.post(app + "/api/areas", { headers: household, data: { name: "Hidden group fixture" } })
     expect(group.status()).toBe(201)
     const groupId = (await group.json()).id
     const projectTitle = "Organization policy project fixture"
-    const project = await member.request.post(app + "/api/projects", { headers, data: { title: projectTitle } })
+    const project = await member.request.post(app + "/api/projects", { headers: household, data: { title: projectTitle } })
     expect(project.status(), await project.text()).toBe(201)
     const householdProjectId = (await project.json()).id
     const areaPickerPage = await member.newPage()
@@ -168,13 +168,13 @@ test("Administrators choose who can use each organization feature", async () => 
     await areaPickerPage.close()
     const projectTaskTitle = "Project policy task fixture"
     const assignment = await member.request.post(app + "/api/tasks", {
-      headers, data: { title: projectTaskTitle, project_id: householdProjectId },
+      headers: household, data: { title: projectTaskTitle, project_id: householdProjectId },
     })
     expect(assignment.status(), await assignment.text()).toBe(201)
     await setFeature("groups", "nobody")
     expect((await member.request.get(app + "/api/boards/household?view=groups")).status()).toBe(404)
     expect((await member.request.post(app + "/api/tasks", {
-      headers, data: { title: "Unavailable filing", placement: { areaId: groupId } },
+      headers: household, data: { title: "Unavailable filing", placement: { areaId: groupId } },
     })).status()).toBe(404)
     await setFeature("goals", "nobody")
     await setFeature("routines", "selected", ["fixture-member"])
@@ -194,9 +194,12 @@ test("Administrators choose who can use each organization feature", async () => 
     await setFeature("groups", "everyone")
     const noProjectsPage = await member.newPage()
     await noProjectsPage.goto(app + "/boards/household")
-    await expect(noProjectsPage.locator('#sidebar [data-sidebar-household] [data-project-id]')).toHaveCount(0)
-    await expect(noProjectsPage.locator('#sidebar [data-sidebar-household] [data-area-add]')).toHaveCount(0)
-    await expect(noProjectsPage.locator('#sidebar [data-sidebar-household] [data-area-group="' + groupId + '"]')).toBeVisible()
+    const householdRow = noProjectsPage.locator('#sidebar [data-named-board-shortcut="household"]')
+    await householdRow.getByRole("button", { name: "Areas in Household" }).click()
+    const groupChoice = householdRow.locator(`[data-group-choice="${groupId}"]`)
+    await expect(groupChoice.getByRole("link", { name: "Hidden group fixture" })).toBeVisible()
+    await expect(groupChoice.getByRole("button", { name: /Projects in/ })).toHaveCount(0)
+    await expect(householdRow.getByRole("link", { name: projectTitle })).toHaveCount(0)
     await noProjectsPage.close()
     await setFeature("groups", "nobody")
     const groupedPath = app + "/tasks?area=&groupBy=project&search=" + encodeURIComponent(projectTaskTitle)
@@ -288,9 +291,9 @@ test("Administrators choose who can use each organization feature", async () => 
     const pillarGoal = { action: "pillar-link", pillarId, entityType: "goal", id: goalId, enabled: true }
     const pillarRoutine = { action: "pillar-link", pillarId, entityType: "routine", id: routine.id, enabled: true }
     for (const data of [linkGoal, pillarGoal, pillarRoutine]) expect((await change(data)).status()).toBe(200)
-    const scoringTask = await member.request.post(app + "/api/tasks", { headers, data: { title: "Today score fixture", priority: 3 } })
+    const scoringTask = await member.request.post(app + "/api/tasks", { headers: household, data: { title: "Today score fixture", priority: 3 } })
     expect(scoringTask.status()).toBe(201)
-    const scored = await member.request.patch(app + "/api/tasks/" + (await scoringTask.json()).id, { headers, data: { status: "done" } })
+    const scored = await member.request.patch(app + "/api/tasks/" + (await scoringTask.json()).id, { headers: household, data: { status: "done" } })
     expect(scored.status()).toBe(200)
     await page.goto(app + "/today")
     await expect(page.locator(".stat-xp")).toContainText("+30")

@@ -15,6 +15,7 @@
  * @bounded-context tasks (view-layer controller)
  */
 
+import { createTableTaskWrites, type TableTaskWrites } from "./table-task-writes"
 import { showToast } from "@lib/toast"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { onTaskCompleted } from "@lib/gamification-hook"
@@ -230,6 +231,7 @@ function init(signal: AbortSignal) {
       table.dataset.tablePage = replacement.dataset.tablePage
       table.dataset.tableStats = replacement.dataset.tableStats
       tbody.replaceChildren(...replacement.tBodies[0].children)
+      writes.restore()
       areas = applyAreaCatalog(areaCatalog, bulkArea)
       if (areaCatalog) document.dispatchEvent(new CustomEvent(TABLE_AREA_CATALOG_EVENT, { detail: areaCatalog }))
       void hydrateTaskAssignees(tbody, signal)
@@ -291,9 +293,11 @@ function init(signal: AbortSignal) {
   setupPagerFocus(shell, signal)
   setupGroupHeaderListeners(tbody, signal)
   setupSubtaskToggles(tbody, signal)
-  setupInlineEditing(table, signal, () => void refresh(), replacedTitleEditors)
-  setupRowClicks(table, signal, () => void refresh())
-  setupBulkActions({ signal, onTasksChanged: () => void refresh() })
+  const writes = createTableTaskWrites(table, signal, () => void refresh())
+  const refreshAfterWrite = () => { if (!writes.hasPending()) void refresh() }
+  setupInlineEditing(table, signal, refreshAfterWrite, replacedTitleEditors, writes)
+  setupRowClicks(table, signal, refreshAfterWrite, writes)
+  setupBulkActions({ signal, onTasksChanged: refreshAfterWrite, writes })
   setupSortableHeaders(signal, (column, direction) => void refresh({ ...desired, sort: `${column}-${direction}` }, true), () => desired.sort)
   setupTableOverflow()
   retry.addEventListener("click", () => {
@@ -624,7 +628,9 @@ function getGroupDisplayForKey(
     const area = areas.get(key)
     if (area) return area
     if (key !== "default") return {
-      label: window.mI18n?.get("table.unavailable_area") ?? "Unavailable Area", icon: "📋", color: "var(--accent)",
+      label: key ? window.mI18n?.get("table.unavailable_area") ?? "Unavailable Area"
+        : window.mI18n?.get("recent_activity.no_area") ?? "No area",
+      icon: "📋", color: "var(--accent)",
     }
   }
   return getGroupDisplay(groupBy, key)
@@ -778,7 +784,7 @@ function toggleChildRows(parentId: string, show: boolean) {
 // Inline Editing
 // =============================================================================
 
-function setupInlineEditing(table: HTMLTableElement, signal: AbortSignal, refresh: () => void, replacedTitleEditors: WeakSet<HTMLElement>) {
+function setupInlineEditing(table: HTMLTableElement, signal: AbortSignal, refresh: () => void, replacedTitleEditors: WeakSet<HTMLElement>, writes: TableTaskWrites) {
   table.addEventListener("focusout", async event => {
     const cell = (event.target as Element).closest<HTMLElement>(".editable-cell")
     if (!cell || !cell.isConnected || replacedTitleEditors.has(cell)) return
@@ -792,19 +798,16 @@ function setupInlineEditing(table: HTMLTableElement, signal: AbortSignal, refres
     if (!id) return
 
     try {
-      const response = await fetch(`/api/tasks/${id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title }), signal,
-      })
-      if (!response.ok) throw new Error("Title update failed")
-      if (signal.aborted) return
+      const row = cell.closest<HTMLElement>(".table-row")
+      if (!row) return
+      const updated = await writes.edit(row, { title })
+      if (!updated || signal.aborted) return
       cell.dataset.original = title
       showToast("Title updated", "success")
       refresh()
     } catch {
       if (signal.aborted) return
-      cell.textContent = original
-      showToast("Failed to update", "error")
+      showToast("Could not confirm the change. Your input is kept.", "error")
     }
   }, { signal })
 
@@ -823,31 +826,25 @@ function setupInlineEditing(table: HTMLTableElement, signal: AbortSignal, refres
     const row = select?.closest<HTMLElement>(".table-row")
     if (!id || !field || !row || !select) return
     const value = select.value
-    const previous = row.dataset[field] ?? ""
     try {
-      const response = await fetch(`/api/tasks/${id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [field]: field === "priority" ? Number(value) : value }), signal,
-      })
-      if (!response.ok) throw new Error("Task update failed")
-      if (signal.aborted) return
+      const updated = await writes.edit(row, { [field]: field === "priority" ? Number(value) : value })
+      if (!updated || signal.aborted) return
       showToast(`${field} updated`, "success")
       if (field === "status") {
         row.dataset.status = value
         row.classList.toggle("row-done", value === "complete")
         void reconcileTableDeferral(row, value, signal)
-        if (value === "complete") onTaskCompleted(await response.json())
+        if (value === "complete") onTaskCompleted(updated)
       }
       refresh()
     } catch {
       if (signal.aborted) return
-      select.value = previous
-      showToast("Failed to update", "error")
+      showToast("Could not confirm the change. Your input is kept.", "error")
     }
   }, { signal })
 }
 
-function setupRowClicks(table: HTMLTableElement, signal: AbortSignal, refresh: () => void) {
+function setupRowClicks(table: HTMLTableElement, signal: AbortSignal, refresh: () => void, writes: TableTaskWrites) {
   table.addEventListener("click", async event => {
     if (!(event.target instanceof Element)) return
     if (event.defaultPrevented || event.target.closest("a[data-task-detail-link]")) return
@@ -866,15 +863,15 @@ function setupRowClicks(table: HTMLTableElement, signal: AbortSignal, refresh: (
       return
     }
     if (!control.classList.contains("delete-row")) return
+    const intent = writes.capture(row)
+    if (!intent) return
     const confirmed = await confirmDialog({
       title: "Delete task?", message: "This action cannot be undone.",
-      confirmText: "Delete", variant: "danger", signal,
+      confirmText: "Delete", variant: "danger", signal: intent.signal,
     })
-    if (!confirmed || signal.aborted) return
+    if (!confirmed || !writes.current(intent)) return
     try {
-      const response = await fetch(`/api/tasks/${id}`, { method: "DELETE", signal })
-      if (!response.ok) throw new Error("Task deletion failed")
-      if (signal.aborted) return
+      if (!await writes.remove(row, intent) || signal.aborted) return
       notifyTaskCountsChanged(row.dataset.projectId)
       showToast("Task deleted", "success")
       refresh()

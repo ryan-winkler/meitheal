@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { expect, test as base, type Page } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
 const test = base.extend<{ planning: { page: Page; app: string; area: string; project: string } }>({
@@ -21,8 +22,9 @@ const test = base.extend<{ planning: { page: Page; app: string; area: string; pr
       const context = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {}, serviceWorkers: "block" })
       context.setDefaultTimeout(6_000)
       await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+      const headers = await currentBoardWriteHeaders(context.request, "household", { origin }, app)
       const create = async (path: string, data: object) => {
-        const response = await context.request.post(app + path, { headers: { origin }, data })
+        const response = await context.request.post(app + path, { headers, data })
         expect(response.status(), await response.text()).toBe(201)
         return (await response.json()).id as string
       }

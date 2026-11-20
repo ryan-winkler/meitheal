@@ -6,6 +6,7 @@ import { join } from "node:path"
 
 import { expect, test } from "@playwright/test"
 import { TASK_REFRESH_FRAGMENT_HEADER } from "../../apps/web/src/lib/task-view-route"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable built app")
@@ -28,15 +29,16 @@ test("Task refreshes use compact ingress HTML and ignore a worker-cached respons
     const page = await context.newPage()
     expect((await page.goto(origin + prefix + "/fixture"))?.status()).toBe(200)
     const title = "Ingress table refresh fixture"
-    await page.evaluate(async ({ prefix, title }) => {
+    const seedHeaders = await currentBoardWriteHeaders(context.request, "household", { "content-type": "application/json" }, origin + prefix)
+    await page.evaluate(async ({ prefix, title, headers }) => {
       const response = await fetch(prefix + "/api/tasks", {
-        method: "POST", headers: { "content-type": "application/json" },
+        method: "POST", headers,
         mode: "same-origin", cache: "no-store", redirect: "error",
         body: JSON.stringify({ title }),
       })
       if (!response.ok) throw new Error("Task seed failed")
       await navigator.serviceWorker.register(prefix + "/sw.js", { scope: prefix + "/" })
-    }, { prefix, title })
+    }, { prefix, title, headers: seedHeaders })
     await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller))
     const db = new DatabaseSync(join(work, "pins.db"))
     try {
@@ -111,7 +113,11 @@ test("Task refreshes use compact ingress HTML and ignore a worker-cached respons
     const { id } = await named.json()
     const namedRefresh = await context.request.get(origin + prefix + "/boards/" + id + "?boardRefresh=contract", { headers })
     expect(namedRefresh.status()).toBe(200)
-    expect(await namedRefresh.text()).toContain('id="task-detail-overlay"')
+    const namedFragment = await namedRefresh.text()
+    expect(namedRefresh.headers()["cache-control"]).toMatch(/\bno-store\b/)
+    expect(namedFragment).toContain('id="kanban-board"')
+    expect(namedFragment).not.toContain('id="task-detail-overlay"')
+    expect(namedFragment).not.toContain(title)
 
     const evidence = await page.evaluate(async ({ prefix, title }) => {
       const route = prefix + "/tasks?view=table&tableRefresh=cached-fixture"

@@ -1,11 +1,12 @@
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run API and page specs")
 
 test("task labels round-trip without escaping the timeline data block", async ({ request, baseURL }) => {
   const labels = JSON.stringify(["</ScRiPt ><img data-timeline-injection>"])
-  const headers = { origin: new URL(baseURL!).origin, "content-type": "application/json" }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const create = await request.post("/api/tasks", {
     headers,
     data: { title: "Timeline bootstrap regression", labels },
@@ -30,7 +31,7 @@ test("task labels round-trip without escaping the timeline data block", async ({
     expect(task).not.toHaveProperty("start_date")
     expect(task).not.toHaveProperty("assigned_to")
   } finally {
-    const removed = await request.delete(`/api/tasks/${id}`, { headers })
+    const removed = await request.delete(`/api/tasks/${id}`, { headers, data: {} })
     expect(removed.status()).toBe(204)
   }
 })

@@ -2,6 +2,8 @@ import { WEBMCP_SETTING, webMcpEnabled } from "@domains/agents/webmcp-protocol"
 import type { SearchResponse } from "@domains/search"
 import { buildIngressPagePath } from "@lib/page-shell-links"
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
+import { boardWorkspaceHref } from "@lib/board-workspace"
 import { parseTaskView, TASK_VIEWS, taskViewUrl } from "@lib/task-view-route"
 
 interface BrowserTool {
@@ -83,19 +85,25 @@ export async function configureWebMcp(enabled: boolean): Promise<void> {
     setStatus(enabled ? "unavailable" : "disabled")
     return
   }
+  const board = currentTaskApiContext()
+  if (!board?.actorKey) { setStatus("unavailable"); return }
+  const sameBoard = () => {
+    const current = currentTaskApiContext()
+    return current?.boardId === board.boardId && current.actorKey === board.actorKey
+  }
   const controller = new AbortController()
   runtime.registration = controller
   const { signal } = controller
   setStatus("starting")
   const requestSignal = (toolSignal?: AbortSignal) => toolSignal ? AbortSignal.any([signal, toolSignal]) : signal
   async function canExecute(callSignal: AbortSignal): Promise<boolean> {
-    if (callSignal.aborted) return false
+    if (callSignal.aborted || !sameBoard()) return false
     try {
       const enabled = await readPreference(callSignal)
       if (!enabled && !signal.aborted) await configureWebMcp(false)
-      return enabled && !callSignal.aborted
+      return enabled && !callSignal.aborted && sameBoard()
     } catch {
-      if (callSignal.aborted) return false
+      if (callSignal.aborted || !sameBoard()) return false
       if (!signal.aborted) {
         await configureWebMcp(false)
         setStatus("failed")
@@ -125,17 +133,17 @@ export async function configureWebMcp(enabled: boolean): Promise<void> {
           const response = await fetch(`/api/search?${params}`, { // nosemgrep
             signal: callSignal,
             cache: "no-store",
-            headers: { "X-Automation-Source": "webmcp" },
+            headers: taskApiHeaders(board, { "X-Automation-Source": "browser" }),
           })
           if (!response.ok) return { error: "Meitheal task search is unavailable." }
           const data = await response.json() as SearchResponse
           if (!Array.isArray(data.sections) || data.sections.some(section => !Array.isArray(section?.items))) throw new Error("Invalid search response")
           const items = data.sections.flatMap(section => section.items).filter(item => item?.kind === "task")
           if (items.some(item => typeof item.taskId !== "string" || !item.taskId || typeof item.title !== "string")) throw new Error("Invalid task result")
-          if (callSignal.aborted) return { error: "Browser tools are unavailable." }
+          if (callSignal.aborted || !sameBoard()) return { error: "Browser tools are unavailable." }
           return { tasks: items.slice(0, 8).map(item => ({
             title: item.title,
-            url: `${buildIngressPagePath("/tasks")}?open=${encodeURIComponent(item.taskId!)}`,
+            url: buildIngressPagePath(boardWorkspaceHref(board.boardId, { ticket: item.taskId! })),
           })) }
         } catch {
           return { error: "Meitheal task search did not complete." }
@@ -159,7 +167,7 @@ export async function configureWebMcp(enabled: boolean): Promise<void> {
         if (!view) return { error: "Choose Kanban, Table, Calendar, or Timeline." }
         try {
           if (!await canExecute(requestSignal(options?.signal))) return { error: "Browser tools are unavailable." }
-          const nextUrl = taskViewUrl(new URL(buildIngressPagePath("/tasks"), location.origin), view)
+          const nextUrl = taskViewUrl(new URL(buildIngressPagePath(boardWorkspaceHref(board.boardId)), location.origin), view)
           if (nextUrl.origin !== location.origin) return { error: "Could not open the Tasks view." }
           window.location.href = nextUrl.pathname + nextUrl.search + nextUrl.hash // nosemgrep
           return { opened: view }
@@ -200,6 +208,12 @@ runtime.onPageLoad = signal => {
     }
   }
   runtime.refresh = refresh
+  document.addEventListener("meitheal:board-hidden", () => {
+    runtime.registration?.abort()
+    runtime.registration = undefined
+    setStatus("unavailable")
+  }, { signal: lifecycle.signal })
+  document.addEventListener("meitheal:board-verified", () => { void refresh() }, { signal: lifecycle.signal })
   window.addEventListener("storage", event => {
     if (event.key === SYNC_KEY) void refresh()
   }, { signal: lifecycle.signal })

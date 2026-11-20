@@ -1,10 +1,12 @@
-import { execFileSync, fork } from "node:child_process"
+import { execFileSync, fork } from "../helpers/isolated-process"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, test, type APIRequestContext } from "@playwright/test"
+
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and disposable ingress fixture")
 
@@ -21,7 +23,12 @@ let ingress: string
 
 test.beforeAll(async ({ playwright }) => {
   work = await mkdtemp(join(tmpdir(), "meitheal-a2a-"))
-  const env = { PATH: process.env.PATH, NODE_ENV: "production", MEITHEAL_DB_URL: `file:${join(work, "meitheal.db")}` }
+  const env = {
+    PATH: process.env.PATH,
+    NODE_ENV: "production",
+    MEITHEAL_DB_URL: `file:${join(work, "meitheal.db")}`,
+    MEITHEAL_TEST_CORE_USER_LOOKUP: "1",
+  }
   execFileSync(process.execPath, ["scripts/migrate.mjs"], { cwd: web, env })
   child = fork(fixture, { cwd: web, env, stdio: ["ignore", "ignore", "inherit", "ipc"] })
   const [info] = await Promise.race([
@@ -43,14 +50,18 @@ test.afterAll(async () => {
   if (work) await rm(work, { recursive: true, force: true })
 })
 
+function tokenHeaders(token: string) {
+  return { ...admin, authorization: `Bearer ${token}`, "x-meitheal-board-id": "household" }
+}
+
 async function issueToken(scopes: string[]) {
   const response = await request.post(ingress + "/api/agent-tokens", {
-    headers: { ...admin, origin },
+    headers: await currentBoardWriteHeaders(request, "household", { ...admin, origin }, ingress),
     data: { name: "A2A test fixture", scopes },
   })
   expect(response.status()).toBe(201)
   const { token } = await response.json()
-  return { authorization: `Bearer ${token}` }
+  return tokenHeaders(token)
 }
 
 async function toggle(enabled: boolean) {
@@ -97,7 +108,7 @@ test("discovery aliases advertise a scoped endpoint that returns real task data"
     headers: { ...reader, "A2A-Version": "1.0" },
     data: envelope("SendMessage", { message }),
   })
-  expect(result.ok()).toBe(true)
+  expect(result.ok(), await result.text()).toBe(true)
   const json = await result.json()
   expect(json).toMatchObject({
     jsonrpc: "2.0",
@@ -107,7 +118,7 @@ test("discovery aliases advertise a scoped endpoint that returns real task data"
         role: "ROLE_AGENT",
         messageId: expect.any(String),
         contextId: expect.any(String),
-        parts: [{ data: { tasks: [{ id, title, url: ingress + `/tasks?open=${id}` }] }, mediaType: "application/json" }],
+        parts: [{ data: { tasks: [{ id, title, url: ingress + `/boards/household?open=${id}` }] }, mediaType: "application/json" }],
       },
     },
   })
@@ -179,7 +190,7 @@ test("enforces scopes, reports unsupported operations, and disables execution wi
 
 test("an agent reads its assigned household tasks as A2A tasks and cannot cancel them", async () => {
   const endpoint = ingress + "/api/a2a/message"
-  const asAdmin = { ...admin, origin }
+  const asAdmin = await currentBoardWriteHeaders(request, "household", { ...admin, origin }, ingress)
   const agentResponse = await request.post(ingress + "/api/users/custom", { headers: asAdmin, data: { name: "A2A agent", kind: "agent" } })
   expect(agentResponse.status()).toBe(201)
   const agentBody = await agentResponse.json()
@@ -189,7 +200,7 @@ test("an agent reads its assigned household tasks as A2A tasks and cannot cancel
     data: { name: "A2A assignee", scopes: ["a2a:execute", "search:read", "tasks:read"], assigneeId },
   })
   expect(tokenResponse.status()).toBe(201)
-  const agent = { authorization: `Bearer ${(await tokenResponse.json()).token}`, "A2A-Version": "1.0" }
+  const agent = { ...tokenHeaders((await tokenResponse.json()).token), "A2A-Version": "1.0" }
   const unlinked = { ...await issueToken(["a2a:execute", "search:read", "tasks:read"]), "A2A-Version": "1.0" }
   const noRead = { ...await issueToken(["a2a:execute", "search:read"]), "A2A-Version": "1.0" }
 
@@ -210,7 +221,7 @@ test("an agent reads its assigned household tasks as A2A tasks and cannot cancel
     contextId: mine.id,
     status: { state: "TASK_STATE_WORKING" },
     artifacts: [{ parts: [{ mediaType: "application/json", data: {
-      id: mine.id, title: "Descale the kettle", assigned_to: assigneeId, url: ingress + `/tasks?open=${mine.id}`,
+      id: mine.id, title: "Descale the kettle", assigned_to: assigneeId, url: ingress + `/boards/household?open=${mine.id}`,
     } }] }],
   }] })
   expect((await call(agent, "ListTasks")).result.tasks[0]).not.toHaveProperty("artifacts")
@@ -227,7 +238,11 @@ test("an agent reads its assigned household tasks as A2A tasks and cannot cancel
   const unchanged = await (await request.get(ingress + `/api/tasks/${mine.id}`, { headers: admin })).json()
   expect(unchanged.status).toBe(mine.status)
 
-  const archived = await create({ title: "Old archived task", assigned_to: assigneeId, status: "archived" })
+  const archived = await create({ title: "Old archived task", assigned_to: assigneeId, status: "complete" })
+  const archive = await request.post(ingress + "/api/tasks/clear-completed", { headers: asAdmin, data: {} })
+  expect(archive.status(), await archive.text()).toBe(200)
+  const archivedRecord = await request.get(ingress + `/api/tasks/${archived.id}`, { headers: asAdmin })
+  expect(await archivedRecord.json()).toMatchObject({ status: "archived" })
   expect((await call(agent, "ListTasks")).result.tasks.map((task: { id: string }) => task.id)).toEqual([mine.id])
   expect((await call(agent, "ListTasks", { status: "TASK_STATE_COMPLETED" })).result.tasks.map((task: { id: string }) => task.id)).toContain(archived.id)
 

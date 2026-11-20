@@ -3,12 +3,15 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
-import type { AgentScope } from "../../packages/domain-auth/src/agent-tokens"
+import { generateAgentToken } from "../../packages/domain-auth/src/index"
+import { createAgentToken, ensureAgentTokenSchema } from "../../apps/web/src/domains/auth/agent-token-store"
+import { verifiedBoardRequestPrincipal } from "../../apps/web/src/lib/board-request-context"
+import { currentBoardScope } from "../helpers/current-board-scope"
+import { readWorkDestinations, saveWorkBinding, IdentityRepository } from "../../apps/web/src/domains/tasks"
 import { notifyAgentComment } from "../../apps/web/src/domains/notifications/agent-comment"
 import { SettingsRepository } from "../../apps/web/src/domains/tasks/persistence/settings-repository"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
-import { UserRepository } from "../../apps/web/src/domains/tasks/persistence/user-repository"
-import { checkAssignedTask } from "../../apps/web/src/lib/agent-token-guard"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
+import { checkAssignedTask, resolveAgentAuth } from "../../apps/web/src/lib/agent-token-guard"
 import { getA2aTask, listA2aTasks } from "../../apps/web/src/lib/a2a-tasks"
 import { parseTicketKey } from "../../apps/web/src/lib/ticket-key"
 import { resetWebhookCacheForTests } from "../../apps/web/src/lib/webhook-dispatcher"
@@ -48,6 +51,12 @@ test("notifyAgentComment includes comment_id and content in webhook events and i
     await settings.upsert("webhook_endpoint", JSON.stringify(`http://127.0.0.1:${address.port}/hook`))
     await settings.upsert("notification_preferences", JSON.stringify({ enabled: false }))
 
+    const configuration = await readWorkDestinations(client)
+    if (!configuration) throw new Error("Expected configuration")
+    const manager = await currentBoardScope(client)
+    expect((await saveWorkBinding(client, manager.principal, configuration.revision, { id: crypto.randomUUID(), generation: 1, enabled: true,
+      integration: "webhook", sourceId: "generic-webhook", purpose: "webhook.delivery", destination: { boardId: manager.boardId }, allowedOperations: [{ resource: "task", action: "read" }] })).ok).toBe(true)
+    const scope = () => currentBoardScope(client)
     const now = Date.now()
     await client.execute("UPDATE task_boards SET ticket_high_water = 6 WHERE id = 'household'")
     await client.execute({
@@ -59,7 +68,7 @@ test("notifyAgentComment includes comment_id and content in webhook events and i
       id: 42,
       author: "Automation: Claude",
       content: "Pressure checked and steady.",
-    })
+    }, await scope())
 
     await expect.poll(() => delivered.length).toBe(1)
     expect(delivered[0]).toMatchObject({
@@ -75,7 +84,7 @@ test("notifyAgentComment includes comment_id and content in webhook events and i
     })
 
     // String signature stays compatible for callers without a comment ID.
-    await notifyAgentComment("task-notify-unit-1", "Codex", "Second opinion")
+    await notifyAgentComment("task-notify-unit-1", "Codex", await scope(), "Second opinion")
     await expect.poll(() => delivered.length).toBe(2)
     expect(delivered[1]?.payload).toMatchObject({
       author: "Codex",
@@ -86,7 +95,7 @@ test("notifyAgentComment includes comment_id and content in webhook events and i
 
     // Closed webhook endpoint must never cause notifyAgentComment to throw.
     await new Promise<void>(resolve => server.close(() => resolve()))
-    await notifyAgentComment("task-notify-unit-1", { id: 43, author: "Automation: Claude", content: "No throw" })
+    await notifyAgentComment("task-notify-unit-1", { id: 43, author: "Automation: Claude", content: "No throw" }, await scope())
   } finally {
     if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()))
     getPersistenceClient().close()
@@ -109,7 +118,7 @@ test("A2A task helpers resolve ticket keys, paginate past 200 rows, and enforce 
     await ensureSchema()
 
     const client = getPersistenceClient()
-    const users = new UserRepository(client)
+    const users = new IdentityRepository(client)
     await users.createCustomUser("custom_agent_a2a", "Claude", "#6366f1", "agent")
     await users.createCustomUser("custom_human_other", "Aoife", "#f59e0b", "human")
 
@@ -137,29 +146,34 @@ test("A2A task helpers resolve ticket keys, paginate past 200 rows, and enforce 
       args: ["a2a-other", "Other task", "k-other", "r-other", "custom_human_other", baseTime + 301_000, baseTime + 301_000],
     })
 
-    const agent = {
-      tokenId: "tok-1",
-      tokenName: "Claude",
-      scopes: ["a2a:execute", "search:read", "tasks:read"] as AgentScope[],
-      assigneeId: "custom_agent_a2a",
-    }
+    await ensureAgentTokenSchema()
+    const credential = generateAgentToken()
+    await createAgentToken({ id: "tok-1", name: "Claude", tokenHash: credential.tokenHash, tokenPrefix: credential.tokenPrefix,
+      scopes: ["a2a:execute", "search:read", "tasks:read"], assigneeId: "custom_agent_a2a" }, await currentBoardScope(client))
+    const headers = { authorization: `Bearer ${credential.token}`, "X-Meitheal-Board-Id": "household" }
+    const request = new Request("http://127.0.0.1/api/a2a/message", { headers })
+    const agent = await resolveAgentAuth(request)
+    if (!agent) throw new Error("Expected actual credential")
+    const principal = await verifiedBoardRequestPrincipal({ request, locals: { agentToken: agent } as App.Locals })
+    if (!principal) throw new Error("Expected current credential principal")
+    const scope = await currentBoardScope(client, "household", principal)
 
     expect(parseTicketKey("MTH-0")).toBeNull()
     expect(parseTicketKey("MTH-abc")).toBeNull()
     expect(parseTicketKey(`MTH-${"9".repeat(320)}`)).toBeNull()
 
-    const byKey = await getA2aTask(agent, "MTH-17", "http://127.0.0.1")
+    const byKey = await getA2aTask(agent, "MTH-17", "http://127.0.0.1", scope)
     expect(byKey).toMatchObject({ id: "a2a-task-17", metadata: { ticket_key: "MTH-17" } })
-    expect(await getA2aTask(agent, "missing-task", "http://127.0.0.1")).toBeNull()
-    expect(await getA2aTask(agent, "MTH-abc", "http://127.0.0.1")).toBeNull()
-    expect(await getA2aTask(agent, `MTH-${"9".repeat(320)}`, "http://127.0.0.1")).toBeNull()
+    expect(await getA2aTask(agent, "missing-task", "http://127.0.0.1", scope)).toBeNull()
+    expect(await getA2aTask(agent, "MTH-abc", "http://127.0.0.1", scope)).toBeNull()
+    expect(await getA2aTask(agent, `MTH-${"9".repeat(320)}`, "http://127.0.0.1", scope)).toBeNull()
     expect(await checkAssignedTask("MTH-abc", agent)).toBeNull()
     expect(await checkAssignedTask(`MTH-${"9".repeat(320)}`, agent)).toBeNull()
 
     const badKeyGetRes = await a2aMessagePost({
       request: new Request("http://127.0.0.1/api/a2a/message", {
         method: "POST",
-        headers: { "content-type": "application/json", "A2A-Version": "1.0" },
+        headers: { "content-type": "application/json", "A2A-Version": "1.0", ...headers },
         body: JSON.stringify({
           jsonrpc: "2.0",
           id: 99,
@@ -173,7 +187,7 @@ test("A2A task helpers resolve ticket keys, paginate past 200 rows, and enforce 
     const badKeyGetJson = await badKeyGetRes.json()
     expect(badKeyGetJson.error.code).toBe(-32001)
 
-    const page1 = await listA2aTasks(agent, "http://127.0.0.1", { pageSize: 50, offset: 0, includeArtifacts: false })
+    const page1 = await listA2aTasks(agent, "http://127.0.0.1", { pageSize: 50, offset: 0, includeArtifacts: false }, scope)
     expect(page1.totalSize).toBe(205)
     expect(page1.tasks).toHaveLength(50)
     expect(page1.nextPageToken).toBe("50")
@@ -182,7 +196,7 @@ test("A2A task helpers resolve ticket keys, paginate past 200 rows, and enforce 
     const filteredRes = await a2aMessagePost({
       request: new Request("http://127.0.0.1/api/a2a/message", {
         method: "POST",
-        headers: { "content-type": "application/json", "A2A-Version": "1.0" },
+        headers: { "content-type": "application/json", "A2A-Version": "1.0", ...headers },
         body: JSON.stringify({
           jsonrpc: "2.0",
           id: 1,
@@ -202,7 +216,7 @@ test("A2A task helpers resolve ticket keys, paginate past 200 rows, and enforce 
       const badTsRes = await a2aMessagePost({
         request: new Request("http://127.0.0.1/api/a2a/message", {
           method: "POST",
-          headers: { "content-type": "application/json", "A2A-Version": "1.0" },
+          headers: { "content-type": "application/json", "A2A-Version": "1.0", ...headers },
           body: JSON.stringify({
             jsonrpc: "2.0",
             id: 2,

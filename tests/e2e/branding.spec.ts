@@ -136,7 +136,7 @@ test.describe("Branding — Logo & Static Assets", () => {
     await page.goto("/offline.html")
     await expect(page.locator('svg[viewBox="0 0 64 64"]')).toBeVisible()
     await expect(page.getByRole("heading", { name: /You're offline/i })).toBeVisible()
-    const btnColors = await page.getByRole("button", { name: /Try again/i }).evaluate(el => {
+    const btnColors = await page.getByRole("link", { name: /Try again/i }).evaluate(el => {
       const s = getComputedStyle(el)
       return { bg: s.backgroundColor, fg: s.color }
     })
@@ -224,7 +224,7 @@ test("Dashboard shows its heading and workload links without an explainer banner
   const overview = page.locator("#dashboard-overview")
   await expect(overview.getByRole("heading", { level: 1, name: "Dashboard" })).toBeVisible()
   await expect(overview.locator(".dashboard-hero")).toHaveCount(0)
-  await expect(overview.locator("#stat-active")).toHaveAttribute("href", "/tasks?status=active")
-  await expect(overview.locator("#stat-overdue")).toHaveAttribute("href", "/tasks?status=overdue")
+  await expect(overview.locator("#stat-active")).toHaveAttribute("href", "/boards/household?status=active")
+  await expect(overview.locator("#stat-overdue")).toHaveAttribute("href", "/boards/household?status=overdue")
   await expect(page.locator("#quick-title")).not.toBeFocused()
 })

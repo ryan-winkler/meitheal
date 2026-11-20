@@ -1,4 +1,7 @@
 ---
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+import { boardWorkspaceHref } from "@lib/board-workspace"
+
 import Layout from "../layouts/Layout.astro"
 import Icon from "../components/ui/Icon.astro"
 import { AreaRepository, type AreaRow } from "@domains/tasks/persistence/area-repository"
@@ -8,6 +11,10 @@ import { formatTicketKey } from "@lib/ticket-key"
 import { getStatusDef } from "@lib/status-config"
 import { t } from "../i18n/translations"
 import "../styles/work-queue.css"
+const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
+if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
+const workScope = workScopeResult.scope
+
 
 Astro.response.headers.set("cache-control", "no-store")
 const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
@@ -19,8 +26,8 @@ try {
   await ensureSchema()
   const client = getPersistenceClient()
   const [result, availableAreas] = await Promise.all([
-    new TaskRepository(client).findDeferredPage(/^[1-9]\d*$/.test(rawPage) ? Number(rawPage) : 1, area),
-    new AreaRepository(client).findAll(),
+    new TaskRepository(client, workScope).findDeferredPage(/^[1-9]\d*$/.test(rawPage) ? Number(rawPage) : 1, area),
+    new AreaRepository(client, workScope).findAll(),
   ])
   queue = result
   areas = availableAreas
@@ -32,7 +39,10 @@ const tasks = queue?.tasks ?? []
 const first = (page - 1) * 25 + 1
 const last = first + tasks.length - 1
 const total = queue?.total ?? 0
-const boardHref = `/tasks?${new URLSearchParams({ area })}#kanban`
+const namedBoardId = workScope.boardId !== "household" ? workScope.boardId : undefined
+const boardHref = namedBoardId
+  ? boardWorkspaceHref(namedBoardId, { area }, "kanban")
+  : `/tasks?${new URLSearchParams({ area })}#kanban`
 const dateOptions = { dateStyle: "medium", timeStyle: "short" } as const
 let dateFormat: Intl.DateTimeFormat
 try {
@@ -43,6 +53,7 @@ try {
 
 function pageHref(target: number, open?: string) {
   const params = new URLSearchParams()
+  if (namedBoardId) params.set("board_id", namedBoardId)
   if (area) params.set("area", area)
   if (target > 1) params.set("page", String(target))
   if (open) params.set("open", open)
@@ -72,6 +83,7 @@ function pageHref(target: number, open?: string) {
         <>
           <div class="work-queue-panel work-queue-scope">
             <form method="get" action="/deferred" class="work-queue-controls">
+              {namedBoardId && <input type="hidden" name="board_id" value={namedBoardId} />}
               <label>
                 <span class="form-label">{t("inactivity.area", locale)}</span>
                 <select class="form-select" name="area">

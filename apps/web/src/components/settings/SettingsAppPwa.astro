@@ -455,6 +455,7 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
 
 <script>
   import { activateServiceWorker, getAppServiceWorkerRegistration, type SwUpdateEventDetail } from "@domains/offline/sw-register"
+  import { clearCurrentOfflineCache, hasUnattributedOfflineData } from "@domains/offline/offline-store"
   import { pageLifecycle } from "../../lib/page-lifecycle"
   import { showToast } from "@lib/toast"
 
@@ -680,45 +681,20 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
       })
     }
 
+    void hasUnattributedOfflineData().then(found => {
+      if (!found || !clearOfflineBtn?.isConnected) return
+      const notice = document.createElement("p")
+      notice.setAttribute("role", "status")
+      notice.textContent = "Offline work from an older version is retained separately. It has no verified account or Board, so it cannot be shown or sent automatically. Keep this browser’s data until an administrator can recover it."
+      clearOfflineBtn.parentElement?.after(notice)
+    })
     if (clearOfflineBtn) {
       pageLifecycle.on(clearOfflineBtn, "click", async () => {
         try {
-          const dbNames = [
-            "meitheal-offline",
-            "meitheal-tasks",
-            "meitheal-sync",
-            "task_attachments",
-          ]
-          let deleted = 0
-          for (const name of dbNames) {
-            try {
-              const req = indexedDB.deleteDatabase(name)
-              await new Promise<void>((resolve, reject) => {
-                req.onsuccess = () => {
-                  deleted++
-                  resolve()
-                }
-                req.onerror = () => reject(req.error)
-                req.onblocked = () => resolve()
-              })
-            } catch {
-              /* skip individual failures */
-            }
-          }
-          ;[
-            "meitheal-sync-queue",
-            "meitheal-last-sync",
-            "meitheal-offline-tasks",
-          ].forEach((k) => {
-            try {
-              localStorage.removeItem(k)
-            } catch { /* non-fatal */ }
-          })
-          showTroubleshootResult(
-            `✓ Cleared ${deleted} offline database(s) and sync state.`,
-          )
-        } catch {
-          showTroubleshootResult("✗ Failed to clear offline data.", false)
+          await clearCurrentOfflineCache()
+          showTroubleshootResult("✓ Cleared this Board’s cached tasks. Pending work and other accounts remain saved.")
+        } catch (error) {
+          showTroubleshootResult(error instanceof Error ? error.message : "Offline data was not cleared.", false)
         }
       })
     }

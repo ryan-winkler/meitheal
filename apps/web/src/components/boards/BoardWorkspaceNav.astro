@@ -1,0 +1,60 @@
+---
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
+import { organizationLabelsFor } from "@lib/organization-labels"
+import { boardNavigationLinks, boardWorkspaceHref, type BoardPlanningSection } from "@lib/board-workspace"
+
+interface Props {
+  boardId: string
+  boardName: string
+  area?: { id: string; name: string } | undefined
+  project?: { id: string; name: string } | undefined
+  fromArea?: string | undefined
+  active?: "tasks" | BoardPlanningSection
+  settingsHref?: string | undefined
+}
+const { boardId, boardName, area, project, fromArea, active = "tasks", settingsHref } = Astro.props
+const label = await organizationLabelsFor(Astro)
+const context = { boardId, area: area?.id, project: project?.id, fromArea }
+const links = boardNavigationLinks(context)
+const scope = { area: project ? undefined : area?.id, project: project?.id, fromArea }
+const sectionHref = (section: BoardPlanningSection) => boardWorkspaceHref(boardId, { ...scope, groups: true, section }, "groups")
+
+---
+<div class="board-workspace-navigation" data-board-workspace-navigation={boardId}>
+  <nav class="board-breadcrumb" aria-label="Board location">
+    <a href="/boards">{label("board", true)}</a>
+    <span aria-hidden="true">/</span><a href={boardWorkspaceHref(boardId)}>{boardName}</a>
+    {area && <><span aria-hidden="true">/</span><a href={boardWorkspaceHref(boardId, { area: area.id })}>{area.name}</a></>}
+    {project && <><span aria-hidden="true">/</span><span>{project.name}</span></>}
+  </nav>
+  <nav class="board-context-tabs" aria-label="Board workspace">
+    <a data-board-section="tasks" href={links.tasks} aria-current={active === "tasks" ? "page" : undefined}>{label("task", true)}</a>
+    {available("organizer") && (available("groups") || available("projects")) &&
+      <a data-board-section="planning" href={links.planning} aria-current={active === "planning" ? "page" : undefined}>{label("group", true)} &amp; {label("project", true)}</a>}
+    {available("goals") && <a data-board-section="goals" href={links.progress} aria-current={active === "goals" ? "page" : undefined}>{label("goal", true)}</a>}
+    {available("routines") && <a data-board-section="routines" href={links.routines} aria-current={active === "routines" ? "page" : undefined}>{label("routine", true)}</a>}
+    {available("pillars") && <a data-board-section="pillars" href={links.pillars} aria-current={active === "pillars" ? "page" : undefined}>{label("pillar", true)}</a>}
+    {settingsHref && <a href={settingsHref}>{label("board")} settings</a>}
+  </nav>
+</div>
+
+
+<script>
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  import { readBoardPlanningSection } from "@lib/board-workspace"
+  pageLifecycle.onPageLoad(signal => {
+    const sync = () => {
+      const url = new URL(location.href)
+      const path = url.pathname.replace(window.__ingress_path || "", "")
+      const section = path === "/habits" ? "routines" : path === "/progress"
+        ? ["goals", "routines", "pillars"].find(value => value === url.hash.slice(1)) ?? "pillars"
+        : url.searchParams.get("view") === "groups" ? readBoardPlanningSection(url.searchParams) : "tasks"
+      document.querySelectorAll<HTMLAnchorElement>("[data-board-workspace-navigation] [data-board-section]").forEach(link => {
+        if (link.dataset.boardSection === section) link.setAttribute("aria-current", "page")
+        else link.removeAttribute("aria-current")
+      })
+    }
+    sync()
+    window.addEventListener("hashchange", sync, { signal })
+  })
+</script>

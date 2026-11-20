@@ -17,6 +17,7 @@ import {
   openDatabase,
   resetDatabaseDiagnosticsForTests,
   runWriteTransaction,
+  tagTaskProjectionRead,
 } from "../../apps/web/scripts/database-client.mjs"
 
 const webRequire = createRequire(new URL("../../apps/web/package.json", import.meta.url))
@@ -59,6 +60,35 @@ test("local results preserve libSQL row indices, metadata, bindings and JSON", a
     await expect(client.execute("SELECT id FROM records WHERE id > 4")).rejects.toThrow(RangeError)
   } finally {
     client.close()
+  }
+})
+
+test("tagged file projections preserve result shape and use fresh bound values", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-sqlite-projection-"))
+  const client = openDatabase(pathToFileURL(join(directory, "tasks.db")).href)
+  const reader = await client.transaction("read")
+  try {
+    const projection = (value: string) => tagTaskProjectionRead({ sql: "SELECT ? AS title, X'00FF' AS bytes", args: [value] }, "task-detail")
+    const first = await reader.execute(projection("first"))
+    expect(first.rows[0]).toMatchObject({ title: "first", bytes: Uint8Array.of(0, 255).buffer })
+    expect(first.rows[0]?.[0]).toBe("first")
+    expect(first.rows[0]?.length).toBe(2)
+    expect(Object.keys(first.rows[0]!)).toEqual(["title", "bytes"])
+    expect(first.toJSON().rows).toEqual([["first", "AP8="]])
+    expect((await reader.execute(projection("second"))).toJSON().rows).toEqual([["second", "AP8="]])
+    const score = tagTaskProjectionRead({ sql: "SELECT ? AS score", args: [9007199254740991n] }, "task-detail")
+    expect((await reader.execute(score)).toJSON().rows).toEqual([[9007199254740991]])
+    const overflow = tagTaskProjectionRead({ ...score, args: [9007199254740992n] }, "task-detail")
+    await expect(reader.execute(overflow)).rejects.toBeInstanceOf(RangeError)
+    const sql = "SELECT ? AS required, ? AS optional"
+    const bound = (args: (number | string)[]) => tagTaskProjectionRead({ sql, args }, "task-detail")
+    expect((await reader.execute(bound([1, "local value"]))).toJSON().rows).toEqual([[1, "local value"]])
+    expect((await reader.execute(bound([2]))).toJSON().rows).toEqual([[2, null]])
+    await reader.commit()
+  } finally {
+    reader.close()
+    client.close()
+    await rm(directory, { recursive: true, force: true })
   }
 })
 
@@ -214,7 +244,7 @@ test("starts with remote transports unloaded and sends remote requests through l
 
     const script = fileURLToPath(new URL("../../apps/web/scripts/migrate.mjs", import.meta.url))
     const migrate = (...args: string[]) => execFileAsync(process.execPath, [script, ...args], {
-      env: { PATH: process.env.PATH, MEITHEAL_DB_URL: url }, timeout: 10_000,
+      env: { PATH: process.env.PATH, MEITHEAL_DB_URL: url, MEITHEAL_BOARD_GRANT_PATH: join(tmpdir(), `meitheal-remote-${address.port}-board-grants.json`) }, timeout: 10_000,
     })
     const takeStatements = () => requests.splice(0).map(({ baton, stmt }) => [baton, stmt.sql])
     const markerReads = [

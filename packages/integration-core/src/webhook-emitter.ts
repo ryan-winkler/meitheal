@@ -44,7 +44,8 @@ function classifyWebhookError(status: number): { retryable: boolean } {
 
 export async function emitWebhook(
   event: DomainEvent,
-  subscriber: WebhookSubscriberConfig
+  subscriber: WebhookSubscriberConfig,
+  options?: { operationAllowed?: () => boolean | Promise<boolean> },
 ): Promise<WebhookDeliveryResult> {
   const deliveryId = crypto.randomUUID()
   const payload = JSON.stringify(event)
@@ -53,6 +54,7 @@ export async function emitWebhook(
   // Pre-compute span ID for traceparent propagation (avoid per-attempt string ops)
   const deliverySpanId = deliveryId.replace(/-/g, "").slice(0, 16)
 
+  let attempts = 0
   let lastStatusCode: number | null = null
   let lastError: string | undefined
 
@@ -90,8 +92,14 @@ export async function emitWebhook(
           ...(subscriber.headers ?? {}),
         },
         body: payload,
+        ...(options?.operationAllowed ? { operationAllowed: async () => Boolean(await options.operationAllowed!()) } : {}),
       }
 
+      if (options?.operationAllowed && !await options.operationAllowed()) {
+        lastError = "Delivery authority is unavailable"
+        break
+      }
+      attempts = attempt + 1
       const response = await fetchOutbound(subscriber.url, fetchOpts)
       await response.body?.cancel().catch(() => undefined)
 
@@ -134,7 +142,7 @@ export async function emitWebhook(
     subscriberId: subscriber.id,
     eventType: event.eventType,
     statusCode: lastStatusCode,
-    attempts: RETRY_DELAYS_MS.length + 1,
+    attempts,
     finalError: lastError,
   }
 }

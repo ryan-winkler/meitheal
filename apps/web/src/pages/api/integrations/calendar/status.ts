@@ -1,50 +1,18 @@
-/**
- * Calendar Integration Status API
- *
- * GET /api/integrations/calendar/status — returns available calendar entities
- * and current sync status for the settings panel hydration.
- *
- * @domain calendar
- * @bounded-context integration
- */
 import type { APIRoute } from "astro"
-import { getCalendarEntities } from "../../../../domains/ha"
-import { getCalendarSyncStatus } from "../../../../domains/calendar/calendar-bridge"
-import { logApiError } from "../../../../lib/api-logger"
+import { getCalendarEntities } from "@domains/ha"
+import { getCalendarSyncStatus } from "@domains/calendar"
+import { withBoardScope } from "@lib/board-http"
+import { currentSettingsAccess } from "@lib/current-settings-access"
+import { visibleIntegrationBindings } from "@lib/integration-binding-access"
+import { apiJson } from "@lib/api-response"
 
-export const GET: APIRoute = async () => {
-  try {
-    // List calendar.* entities from HA state cache
-    const entities = getCalendarEntities().map((e) => ({
-      entity_id: e.entity_id,
-      friendly_name: e.attributes?.friendly_name ?? e.entity_id,
-      state: e.state,
-    }))
-
-    const syncStatus = getCalendarSyncStatus()
-
-    return new Response(JSON.stringify({
-      ok: true,
-      calendars: entities,
-      sync: {
-        active: syncStatus.active,
-        entityId: syncStatus.entityId ?? "",
-        lastSyncAt: syncStatus.lastSyncAt ?? null,
-        eventCount: syncStatus.lastSyncEventCount ?? 0,
-      },
-    }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    })
-  } catch (err) {
-    logApiError("calendar-status", "Failed to fetch calendar status", err)
-    return new Response(JSON.stringify({
-      ok: false,
-      calendars: [],
-      sync: { active: false, entityId: "", lastSyncAt: null, eventCount: 0 },
-    }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    })
-  }
-}
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async ({ request, locals }, scope) => {
+  const bindings = await visibleIntegrationBindings(scope, ["calendar", "caldav"])
+  const access = await currentSettingsAccess(request, locals, false)
+  const ids = new Set(bindings.map(binding => binding.sourceId))
+  const entities = getCalendarEntities().filter(entity => !(access instanceof Response) && access.admin || ids.has(entity.entity_id)).map(entity => ({
+    entity_id: entity.entity_id, friendly_name: entity.attributes?.friendly_name ?? entity.entity_id,
+  }))
+  const status = await getCalendarSyncStatus(scope)
+  return apiJson({ ok: true, calendars: entities, bindings, sync: { ...status, eventCount: status.lastSyncEventCount } })
+})

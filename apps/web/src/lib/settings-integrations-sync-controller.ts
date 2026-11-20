@@ -10,12 +10,13 @@ import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
 import { PartialSettingsSave, saveSettings, showSettingsSaveError, log } from "@lib/settings-utils"
+import { settingsWriteHeaders } from "./settings-store"
 
-async function applySyncConfiguration(path: string, payload: Record<string, unknown>): Promise<void> {
+async function applySyncConfiguration(path: string, setting: string, payload: Record<string, unknown>): Promise<void> {
   try {
     const response = await fetch(path, { // nosemgrep
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: settingsWriteHeaders(setting),
       body: JSON.stringify(payload),
       signal: pageLifecycle.signal,
     })
@@ -132,11 +133,11 @@ export function initCalendarTodoSettings(): void {
       calendar_sync_enabled: enabledEntities.length > 0 ? "true" : "false",
     })
     if (caldavUrl && caldavUsername && caldavPassword) {
-      await applySyncConfiguration("/api/integrations/calendar/caldav-credentials", {
+      await applySyncConfiguration("/api/integrations/calendar/caldav-credentials", "caldav_url", {
         action: "save", url: caldavUrl, username: caldavUsername, password: caldavPassword,
       })
     }
-    await applySyncConfiguration("/api/integrations/calendar/sync", enabledEntities.length > 0
+    await applySyncConfiguration("/api/integrations/calendar/sync", "calendar_sync_enabled", enabledEntities.length > 0
       ? { action: "enable", entity_id: enabledEntities[0], entities: enabledEntities, write_back: writeBack, interval_ms: intervalMs, sync_mode: globalMode, sync_modes: syncModes }
       : { action: "disable" })
     const statusEl = document.getElementById("cal-status")
@@ -156,7 +157,7 @@ export function initCalendarTodoSettings(): void {
     const resultEl = document.getElementById("cal-sync-result")
     try {
       const res = await fetch("/api/integrations/calendar/sync", {
-        method: "POST", headers: { "content-type": "application/json" },
+        method: "POST", headers: settingsWriteHeaders("calendar_sync_enabled"),
         body: JSON.stringify({ action: "sync" }),
         signal: pageLifecycle.signal,
       })
@@ -262,7 +263,7 @@ export function initCalendarTodoSettings(): void {
       todo_sync_direction: direction,
       todo_sync_enabled: enabled,
     })
-    await applySyncConfiguration("/api/todo/sync", enabled && enabledEntities.length > 0
+    await applySyncConfiguration("/api/todo/sync", "todo_sync_enabled", enabled && enabledEntities.length > 0
       ? { action: "enable", entity_id: enabledEntities[0], entities: enabledEntities, direction }
       : { action: "disable" })
     const statusEl = document.getElementById("todo-status")
@@ -282,7 +283,7 @@ export function initCalendarTodoSettings(): void {
       const enabledTodos = Array.from(document.querySelectorAll<HTMLInputElement>("#todo-entities-container .todo-entity-toggle:checked")).map((cb) => cb.value)
       const entity = enabledTodos[0] || undefined
       const res = await fetch("/api/todo/sync", {
-        method: "POST", headers: { "content-type": "application/json" },
+        method: "POST", headers: settingsWriteHeaders("todo_sync_enabled"),
         body: JSON.stringify({ action: "sync", entity_id: entity || undefined }),
         signal: pageLifecycle.signal,
       })

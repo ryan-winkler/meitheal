@@ -2,6 +2,7 @@ import { applyNamedBoardStoragePhase } from "./task-board-household.mjs"
 import { matchesSql } from "./board-storage-schema.mjs"
 import { pillarAssociationTableSql, principleTableSql } from "./pillar-storage-schema.mjs"
 import { taskTemplateTableSql } from "./task-template-schema.mjs"
+import { ordinaryAccessObjects, sharedRoleColumn, sharedManagementColumn } from "./0016_ordinary_boards.mjs"
 
 export const BOARD_ACCESS_SCHEMA_VERSION = 21
 export const BOARD_ACCESS_MIGRATION = "0011_board_access.mjs"
@@ -128,7 +129,10 @@ export async function readBoardAccessMigrationState(db) {
     throw new Error("The Meitheal Board access schema markers disagree")
   }
   if (applied) {
-    for (const [name, shape] of Object.entries(objects)) {
+    const expected = Number(version?.value) >= 26 ? { ...objects, ...ordinaryAccessObjects,
+      board_permissions: objects.board_permissions.replace(/\)\s*$/, `, ${sharedRoleColumn}, ${sharedManagementColumn})`),
+    } : objects
+    for (const [name, shape] of Object.entries(expected)) {
       const { rows: [object] } = await db.execute({
         sql: "SELECT sql FROM main.sqlite_schema WHERE name = ?",
         args: [name],

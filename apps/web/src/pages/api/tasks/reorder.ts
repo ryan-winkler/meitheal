@@ -1,3 +1,4 @@
+import { boardScopeErrorResponse, withBoardScope } from "@lib/board-http"
 /**
  * POST /api/tasks/reorder — Persist kanban card positions within a lane.
  *
@@ -18,7 +19,7 @@ import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { apiLogger, logApiError } from "../../../lib/api-logger"
 import { apiJson } from "../../../lib/api-response"
 
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = withBoardScope({ resource: "task", action: "edit" }, async ({ request }, scope) => {
   try {
     const body = await request.json() as Record<string, unknown>
     if (hasBoardSelection(body)) return unavailableBoardResponse()
@@ -31,7 +32,7 @@ export const POST: APIRoute = async ({ request }) => {
         })
       }
       await ensureSchema()
-      const repo = new TaskRepository(getPersistenceClient())
+      const repo = new TaskRepository(getPersistenceClient(), scope)
       const ok = await repo.reorderKanbanCard({ id: task_id, anchorId: anchor_id, lane, before })
       return ok ? apiJson({ ok }) :
         apiJson({ error: "The cards are no longer available in the same lane and promotion group", errorCode: "TASK_ORDER_CONFLICT" }, 409)
@@ -50,7 +51,7 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     await ensureSchema()
-    const repo = new TaskRepository(getPersistenceClient())
+    const repo = new TaskRepository(getPersistenceClient(), scope)
 
     if (!await repo.reorderTasks(body.ordered_ids)) {
       return apiJson({ error: "The requested cards are no longer available to reorder", errorCode: "TASK_ORDER_CONFLICT" }, 409)
@@ -62,10 +63,15 @@ export const POST: APIRoute = async ({ request }) => {
       { status: 200, headers: { "content-type": "application/json" } },
     )
   } catch (err: unknown) {
+    if (err && typeof err === "object" && "errorCode" in err && err.errorCode === "unavailable") {
+      return apiJson({ error: "The cards are no longer available to reorder", errorCode: "TASK_ORDER_CONFLICT" }, 409)
+    }
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
     logApiError("POST", "/api/tasks/reorder", err)
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { "content-type": "application/json" },
     })
   }
-}
+})

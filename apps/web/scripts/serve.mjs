@@ -2,12 +2,13 @@
 import { mkdir } from "node:fs/promises"
 import http from "node:http"
 import path from "node:path"
+import { finalizeStartupBoardGrant } from "./board-grant-journal.mjs"
 import { boardRouteSelection } from "./board-route-selection.mjs"
 import { isMemoryDatabase, openDatabaseForStartup, withStartupWriteTransaction } from "./database-client.mjs"
 import { runWithIngressTransport, waitForDownloadDrain } from "./ingress-transport.mjs"
 import { recordIngressStreamAbort } from "./runtime-counters.mjs"
 import { autoBackupDb } from "./startup-backup.mjs"
-import { applyStartupTaskSchema, validateStartupTaskSchema } from "./task-schema-startup.mjs"
+import { applyStartupBoardSchema, validateStartupTaskSchema } from "./task-schema-startup.mjs"
 
 // Home Assistant's documented ingress transport peer. Forwarding headers and
 // Astro's clientAddress can describe the client, so neither establishes this.
@@ -17,6 +18,8 @@ const configuredPath = process.env.INGRESS_PATH
 const databaseExportPath = "/api/export/database.sqlite"
 const onlineReadPaths = new Set(["/api/search", "/api/saved-filters", "/activity", "/api/comment-people", "/api/mention-inbox", "/mention-inbox"])
 const taskHistoryPath = /^\/api\/tasks\/[^/]+\/(?:activity|timeline)$/
+const taskCapturePath = "/api/tasks"
+const boardCapturePath = /^\/api\/boards\/[^/]+\/tickets$/
 const pinApiPath = "/api/task-pins"
 const draftApiPath = "/api/task-drafts"
 const inactivityApiPath = "/api/task-inactivity"
@@ -32,17 +35,22 @@ async function prepareDatabase() {
   if (!migrated && url.startsWith("file:")) {
     await mkdir(path.dirname(path.resolve(url.slice("file:".length))), { recursive: true })
   }
-  const client = await openDatabaseForStartup(url, { readOnly: migrated })
+  const client = await openDatabaseForStartup(url, { readOnly: migrated, markerPath: process.env.MEITHEAL_BOARD_GRANT_PATH })
   try {
     if (!migrated) {
       await autoBackupDb(client)
-      await withStartupWriteTransaction(client, applyStartupTaskSchema)
+      let initialRevision = null
+      await withStartupWriteTransaction(client, async tx => {
+        const result = await applyStartupBoardSchema(client, tx)
+        initialRevision = result.revision
+      })
+      await finalizeStartupBoardGrant(client, initialRevision)
       process.env.MEITHEAL_STARTUP_BACKUP_HANDLED = "1"
       return
     }
     const tx = await client.transaction("read")
     try {
-      await validateStartupTaskSchema(tx)
+      await validateStartupTaskSchema(tx, { allowPending: true })
     } finally {
       tx.close()
     }
@@ -116,8 +124,14 @@ const server = http.createServer((req, res) => {
   const waitForDrain = signal => waitForDownloadDrain(res, signal)
   const waitForHtmlDrain = fromSupervisor ? waitForDrain : undefined
   if (req.url) {
+    // A fragment is not part of an HTTP request target. Do not let Astro reinterpret it.
+    if (req.url.includes("#")) {
+      res.writeHead(400, { "cache-control": "private, no-store" }).end()
+      return
+    }
     const query = req.url.indexOf("?")
     const path = query === -1 ? req.url : req.url.slice(0, query)
+    const search = query === -1 ? "" : req.url.slice(query)
     const normalizedPath = path.replace(/\/+/g, "/")
     rawPath = normalizedPath
     const canonical = privateRoutePath(normalizedPath)
@@ -126,6 +140,20 @@ const server = http.createServer((req, res) => {
     const isDraft = canonical === draftApiPath
     const isInactivity = canonical === inactivityApiPath || canonical === inactivityPagePath
     const isLabelCleanup = canonical === labelCleanupPath
+    const isReceiptLookup = canonical === taskCapturePath && new URLSearchParams(search).has("captureReceipt")
+    const isCaptureCreate = req.method === "POST" && req.headers["x-meitheal-capture-attempt"] !== undefined &&
+      (canonical === taskCapturePath || boardCapturePath.test(canonical ?? ""))
+    if (isReceiptLookup || isCaptureCreate) {
+      res.setHeader("cache-control", "private, no-store")
+      if (normalizedPath !== canonical) {
+        res.writeHead(404).end()
+        return
+      }
+      if (isReceiptLookup && req.method !== "GET" && req.method !== "HEAD") {
+        res.writeHead(405, { allow: "GET, HEAD" }).end()
+        return
+      }
+    }
     if (isLabelCleanup && (path !== canonical || query !== -1)) {
       res.writeHead(path !== canonical ? 404 : 400, {
         "cache-control": "private, no-store",
@@ -144,10 +172,11 @@ const server = http.createServer((req, res) => {
       res.writeHead(400).end()
       return
     }
-    const search = query === -1 ? "" : req.url.slice(query)
     // Keep scoped aliases inside ingress and let the normal middleware authorize them.
     let routedPath = normalizedPath
-    if (search && canonical && boardRouteSelection(canonical, new URLSearchParams(search))) {
+    const boardSelectors = new URLSearchParams(search)
+    if (search && canonical && (boardSelectors.has("board") || boardSelectors.has("board_id") ||
+        boardRouteSelection(canonical, boardSelectors))) {
       const parsedPath = new URL("http://localhost" + normalizedPath).pathname
       if (parsedPath.endsWith("/")) routedPath = parsedPath.slice(0, -1)
     }

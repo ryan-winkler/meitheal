@@ -1,4 +1,4 @@
-import { fork } from "node:child_process"
+import { fork } from "../helpers/isolated-process"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { request as httpRequest } from "node:http"
@@ -6,7 +6,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
-import { expect, test, type APIResponse } from "@playwright/test"
+import { expect, test, type APIRequestContext, type APIResponse } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
 const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
 const fixture = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
@@ -18,9 +19,9 @@ async function assertPrivate(response: APIResponse, status: number) {
   expect(response.headers()["idempotency-key-status"]).toBeUndefined()
 }
 
-function sendOversizedChunks(url: string): Promise<number | undefined> {
+function sendOversizedChunks(url: string, proof: Record<string, string>): Promise<number | undefined> {
   return new Promise((resolve, reject) => {
-    const client = httpRequest(url, { method: "POST", headers: { ...sessionCookie("member"), "content-type": "application/json" } }, response => {
+    const client = httpRequest(url, { method: "POST", headers: { ...proof, ...sessionCookie("member"), "content-type": "application/json" } }, response => {
       response.resume()
       resolve(response.statusCode)
     })
@@ -32,11 +33,12 @@ function sendOversizedChunks(url: string): Promise<number | undefined> {
   })
 }
 
-test("reaction API protects identity, bounds requests, and keeps task and comment reactions independent", async ({ request }) => {
+test("reaction API protects identity, bounds requests, and keeps task and comment reactions independent", async ({ request, playwright }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and the ingress fixture")
   const work = await mkdtemp(join(tmpdir(), "meitheal-reactions-"))
   const file = join(work, "meitheal.db")
-  const db = new DatabaseSync(file)
+  let native!: APIRequestContext
+  let db!: DatabaseSync
   const env = {
     PATH: process.env.PATH,
     NODE_ENV: "production",
@@ -56,9 +58,13 @@ test("reaction API protects identity, bounds requests, and keeps task and commen
     ])
     const origin = `http://127.0.0.1:${info.port}`
     const ingress = origin + info.configuredPath
+    const ready = await request.get(ingress + "/api/health", { headers: { origin } })
+    expect(ready.status(), await ready.text()).toBe(200)
+    db = new DatabaseSync(file)
     const session = (role: string) => ({ ...sessionCookie(role), origin, "sec-fetch-site": "same-origin" })
-    const member = session("member")
-    const admin = session("admin")
+    const member = await currentBoardWriteHeaders(request, "household", session("member"), ingress)
+    const admin = await currentBoardWriteHeaders(request, "household", session("admin"), ingress)
+    native = await playwright.request.newContext({ extraHTTPHeaders: {} })
     const oldUser = session("old")
     const createTask = async (title: string) => {
       const response = await request.post(ingress + "/api/tasks", { headers: member, data: { title } })
@@ -83,13 +89,13 @@ test("reaction API protects identity, bounds requests, and keeps task and commen
     const before = taskState()
 
     for (const path of [card, comment, counts]) {
-      await assertPrivate(await request.get(path.slice(ingress.length), {
+      await assertPrivate(await native.get(origin + path.slice(ingress.length), {
         headers: { "x-remote-user-id": "fixture-admin", "x-remote-user-groups": "system-admin" },
-      }), 403)
+      }), 401)
       await assertPrivate(await request.get(path, { headers: oldUser }), 403)
       await assertPrivate(await request.get(path, { headers: { cookie: "" } }), 403)
     }
-    expect((await request.get(origin + taskPath + "/reactions", {
+    expect((await native.get(origin + taskPath + "/reactions", {
       headers: { "x-remote-user-id": "fixture-admin", "x-remote-user-groups": "system-admin" },
     })).status()).toBe(401)
     for (const url of [card, comment]) {
@@ -143,7 +149,7 @@ test("reaction API protects identity, bounds requests, and keeps task and commen
       await assertPrivate(await request.post(card, { headers: member, data: { content } }), 400)
     }
     await assertPrivate(await request.post(card, { headers: member, data: "plain text" }), 415)
-    expect(await sendOversizedChunks(card)).toBe(413)
+    expect(await sendOversizedChunks(card, member)).toBe(413)
     for (const query of ["cursor=-1", "cursor=01", "cursor=1&cursor=2", "cursor=9007199254740992"]) {
       await assertPrivate(await request.get(card + "?" + query, { headers: member }), 400)
     }
@@ -154,24 +160,24 @@ test("reaction API protects identity, bounds requests, and keeps task and commen
     const issueToken = async (scopes: string[]) => {
       const response = await request.post(ingress + "/api/agent-tokens", { headers: admin, data: { name: "Fixture", scopes } })
       expect(response.status()).toBe(201)
-      return { authorization: `Bearer ${(await response.json()).token}`, origin }
+      return { authorization: `Bearer ${(await response.json()).token}`, "x-meitheal-board-id": "household" }
     }
     const reader = await issueToken(["tasks:read", "mcp:execute"])
     const writer = await issueToken(["tasks:write", "mcp:execute"])
-    const robot = await request.post(origin + taskPath + "/reactions", { headers: writer, data: { content: "🤖" } })
+    const robot = await native.post(origin + taskPath + "/reactions", { headers: writer, data: { content: "🤖" } })
     await assertPrivate(robot, 201)
     expect(await robot.json()).toMatchObject({ author: "Automation: Fixture", can_manage: true })
-    const readOnly = await request.get(origin + taskPath + "/reactions", { headers: reader })
+    const readOnly = await native.get(origin + taskPath + "/reactions", { headers: reader })
     await assertPrivate(readOnly, 200)
     expect(await readOnly.json()).toMatchObject({
       can_react: false, reactions: [expect.objectContaining({ can_manage: false }), expect.objectContaining({ can_manage: false }),
         expect.objectContaining({ can_manage: false })],
     })
-    expect((await request.post(origin + taskPath + "/reactions", { headers: reader, data: { content: "Denied" } })).status()).toBe(403)
-    expect((await request.get(origin + taskPath + "/reactions", { headers: writer })).status()).toBe(403)
+    expect((await native.post(origin + taskPath + "/reactions", { headers: reader, data: { content: "Denied" } })).status()).toBe(403)
+    expect((await native.get(origin + taskPath + "/reactions", { headers: writer })).status()).toBe(403)
 
     const tools = async (headers: Record<string, string>) => {
-      const response = await request.post(origin + "/api/mcp", {
+      const response = await native.post(origin + "/api/mcp", {
         headers, data: { jsonrpc: "2.0", id: 1, method: "tools/list" },
       })
       expect(response.status(), await response.text()).toBe(200)
@@ -185,7 +191,7 @@ test("reaction API protects identity, bounds requests, and keeps task and commen
     expect(writeTools).not.toContain("getTaskReactions")
 
     const call = async (headers: Record<string, string>, name: string, args: Record<string, unknown>) => {
-      const response = await request.post(origin + "/api/mcp", {
+      const response = await native.post(origin + "/api/mcp", {
         headers, data: { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name, arguments: args } },
       })
       expect(response.status(), await response.text()).toBe(200)
@@ -221,12 +227,13 @@ test("reaction API protects identity, bounds requests, and keeps task and commen
     expect(db.prepare("SELECT COUNT(*) AS count FROM task_reactions WHERE task_id = ?").get(taskId)?.count).toBe(0)
     await assertPrivate(await request.get(card, { headers: member }), 404)
   } finally {
+    await native?.dispose()
     if (child && child.exitCode === null && child.signalCode === null) {
       const exited = once(child, "exit")
       child.kill()
       await exited
     }
-    db.close()
+    db?.close()
     await rm(work, { recursive: true, force: true })
   }
 })

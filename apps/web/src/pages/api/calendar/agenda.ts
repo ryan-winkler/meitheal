@@ -1,3 +1,4 @@
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient, TaskRepository } from "@domains/tasks"
 import { logApiError } from "../../../lib/api-logger"
@@ -11,7 +12,7 @@ import { readStoredHouseholdTimezone } from "../../../lib/task-queries"
 
 const filtersLimit = 20_000
 
-export const POST: APIRoute = async ({ request, locals }) => {
+export const POST: APIRoute = withBoardScope({ resource: "task", action: "read" }, async ({ request, locals }, scope) => {
   if (request.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") {
     return apiError("Send the Calendar query as JSON", 415)
   }
@@ -40,7 +41,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
     const configuredTimezone = locals.timezone?.trim() ?? ""
     const timezone = isValidTimezone(configuredTimezone) ? configuredTimezone : await readStoredHouseholdTimezone()
     const filter = createCalendarTaskFilter(new URLSearchParams(filters), timezone)
-    const repo = new TaskRepository(getPersistenceClient())
+    const repo = new TaskRepository(getPersistenceClient(), scope)
     const readLinks = filter.showConnectedEvents && offset === 0
     const [work, links] = await Promise.allSettled([
       repo.findAll({ calendarDay: date, timezone, matchCalendarTask: filter.matchesAgenda, limit, offset }),
@@ -65,4 +66,4 @@ export const POST: APIRoute = async ({ request, locals }) => {
     logApiError("calendar-agenda", "Could not load scheduled work", error)
     return apiError("Could not load scheduled work")
   }
-}
+}, { write: false })

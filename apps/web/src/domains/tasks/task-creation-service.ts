@@ -1,3 +1,5 @@
+import type { BoardScope } from "./board-scope"
+import { notifyUrgentTaskCreation } from "../notifications"
 import {
   deriveEisenhowerQuadrant,
   isValidEffortMinutes,
@@ -31,7 +33,7 @@ import type { TaskCreationData, TaskRepository } from "./persistence/task-reposi
 export async function prepareTaskCreation(
   repo: TaskRepository,
   body: Record<string, unknown>,
-  { id = crypto.randomUUID(), useDefaultAssignee = true } = {},
+  { id = crypto.randomUUID(), useDefaultAssignee = true }: { id?: string, useDefaultAssignee?: boolean } = {},
 ): Promise<{ ok: true; task: TaskCreationData } | { ok: false; error: string }> {
   // OA-604: Input sanitization
   const { sanitize } = await import("../../lib/sanitize")
@@ -98,7 +100,7 @@ export async function prepareTaskCreation(
   }
 
   // Area and custom fields
-  const area_id = typeof body.area_id === "string" ? body.area_id : "default"
+  const area_id = typeof body.area_id === "string" && body.area_id ? body.area_id : null
 
   let custom_fields = "{}"
   if (body.custom_fields !== undefined) {
@@ -204,24 +206,13 @@ export function taskCreationPayload(task: TaskCreationData, ticket_number: numbe
 
 export function dispatchTaskCreation(
   taskPayload: ReturnType<typeof taskCreationPayload>,
-  requestId?: string,
-  eventId?: string,
-  responseAuthority?: Record<string, string>,
+  requestId: string | undefined,
+  eventId: string | undefined,
+  responseAuthority: Record<string, string> | undefined,
+  scope: BoardScope,
 ) {
-  const { id, ticket_key, title, description, priority } = taskPayload
-  dispatchTaskEvent("task.created", taskPayload, requestId, undefined, eventId, responseAuthority).catch(() => {})
-
-  // Phase 52: Native Push Notification for Urgent (P1) tasks
-  if (priority === 1) {
-    import("../ha/ha-services").then(({ sendNotification }) => {
-      sendNotification("notify", `🚨 Urgent Task: ${title}`, description.slice(0, 100) || "Needs immediate attention.", {
-        push: { category: "URGENT_TASK" },
-        action_data: { task_id: id, ticket_key },
-        actions: [
-          { action: `MEITHEAL_TASK_DONE_${id}`, title: "Mark Done" },
-          { action: `MEITHEAL_TASK_VIEW_${id}`, title: "View details", uri: `/meitheal/task/${ticket_key}` }
-        ]
-      }).catch(err => logApiError("ha-notify", "Failed to send urgent task push", err))
-    }).catch(() => {})
+  dispatchTaskEvent("task.created", taskPayload, requestId, undefined, eventId, responseAuthority, scope).catch(() => {})
+  if (taskPayload.priority === 1) {
+    notifyUrgentTaskCreation(scope, taskPayload).catch(error => logApiError("ha-notify", "Failed to deliver an approved urgent task notification", error))
   }
 }

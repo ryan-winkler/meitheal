@@ -1,4 +1,6 @@
-import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
+import { expect } from "@playwright/test"
+import { test } from "../helpers/stored-assignee-fixture"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.describe("Tasks Shell (Kanban)", () => {
@@ -29,7 +31,7 @@ test.describe("Tasks Shell (Kanban)", () => {
   })
 
   test("card previews show plain text for descriptions saved in Details", async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const create = await request.post("/api/tasks", { headers, data: { title: "Check the supply controller", description: "Original description." } })
     expect(create.status()).toBe(201)
     const { id } = await create.json()
@@ -61,7 +63,7 @@ test.describe("Tasks Shell (Kanban)", () => {
 
   test("card names include the key and only the newest quick action accepts input", async ({ page, request, baseURL }) => {
     const title = "Check kitchen tap"
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const created = await request.post("/api/tasks", { headers, data: { title, priority: 2 } })
     expect(created.status()).toBe(201)
     const { id, ticket_key: key } = await created.json()
@@ -86,18 +88,21 @@ test.describe("Tasks Shell (Kanban)", () => {
     }
   })
 
-  test("retains the assigned Home Assistant identity when its directory cannot verify it", async ({ page, request, baseURL }) => {
+  test("retains the assigned Home Assistant identity when its directory cannot verify it", async ({
+    assigneeFixture: { page, request, headers, setStoredAssignee },
+  }) => {
+    test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
     const idFromHa = "ha_0123456789abcdef0123456789abcdef"
     await page.addInitScript(() => {
       localStorage.setItem("meitheal-theme", "knight-rider")
       localStorage.setItem("meitheal-accent-color", "#000000")
     })
-    const headers = { origin: new URL(baseURL!).origin }
     const response = await request.post("/api/tasks", { headers, data: {
-      title: "Check assignee availability", assigned_to: idFromHa,
+      title: "Check assignee availability",
     } })
     expect(response.status()).toBe(201)
     const { id } = await response.json()
+    setStoredAssignee(id, idFromHa)
     const olderUser = { id: "ha_old_account", name: "A cached Home Assistant user" }
     const currentUser = { id: idFromHa, name: "Home Assistant housemate" }
     const localUser = { id: "local_account", name: "Custom assignee" }
@@ -116,7 +121,7 @@ test.describe("Tasks Shell (Kanban)", () => {
     const card = page.locator(`.kanban-card[data-id="${id}"]`)
     const selected = page.locator("#td-assigned-to option:checked")
     try {
-      await page.reload()
+      await page.goto("/tasks")
       await expect(card.locator("[data-task-assignee]")).toHaveText("Home Assistant assignee not verified")
       await card.locator(".card-open-btn").click()
       await expect(selected).toHaveText("Home Assistant assignee not verified")
@@ -174,7 +179,8 @@ test.describe("Tasks Shell (Kanban)", () => {
   })
 
   test("offers a retry when an empty assignment directory is unverified", async ({ page, request }) => {
-    const created = await request.post("/api/tasks", { data: { title: "Check empty assignment directory" } })
+    const headers = await currentBoardWriteHeaders(request, "household", {})
+    const created = await request.post("/api/tasks", { headers, data: { title: "Check empty assignment directory" } })
     expect(created.status()).toBe(201)
     const { id } = await created.json()
     let verified = false
@@ -203,12 +209,12 @@ test.describe("Tasks Shell (Kanban)", () => {
       await page.keyboard.press("Escape")
       await expect(trigger).toBeFocused()
     } finally {
-      await request.delete(`/api/tasks/${id}`)
+      await request.delete(`/api/tasks/${id}`, { headers })
     }
   })
 
   test("color saves keep focus on the card during the request and after refresh", async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const created = await request.post("/api/tasks", { headers, data: { title: "Color focus regression", priority: 2 } })
     expect(created.status()).toBe(201)
     const { id } = await created.json()
@@ -350,7 +356,7 @@ test.describe("Tasks Shell (Kanban)", () => {
 
   test("quick actions stay reachable below card details at narrow and desktop widths", async ({ page, request, baseURL }) => {
     const title = "Kanban fixture with a long household task title that wraps onto multiple lines"
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const response = await request.post("/api/tasks", {
       headers,
       data: { title, status: "active", description: "Inspect the spare parts and note any replacements." },
@@ -421,7 +427,7 @@ test.describe("Tasks Shell (Kanban)", () => {
   })
 
   test("a denied optional reaction count releases its response body", async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const created = await request.post("/api/tasks", { headers, data: { title: "Reaction count cancellation fixture" } })
     expect(created.status()).toBe(201)
     const { id } = await created.json()
@@ -451,7 +457,7 @@ test.describe("Kanban card workflows", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
 
   test("uses the focused card, exposes lane actions and leaves rejected moves in place", async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const area = await request.post("/api/areas", { headers, data: { name: "Card workflow fixture area" } })
     expect(area.status()).toBe(201)
     const { id: areaId } = await area.json()
@@ -511,7 +517,7 @@ test.describe("Kanban card workflows", () => {
   })
 
   test("filters by the selected area and retries capture without losing focus or text", async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const area = await request.post("/api/areas", { headers, data: { name: "Capture fixture area" } })
     expect(area.status()).toBe(201)
     const { id: areaId } = await area.json()

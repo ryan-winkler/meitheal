@@ -1,4 +1,9 @@
 ---
+import { projectPublicTaskFields } from "@domains/tasks/task-projection"
+import { boardContextHref } from "@lib/board-workspace"
+import { readBoardPagePlacement } from "@lib/board-page-placement"
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+
 import DashboardLayoutEditor from "../components/dashboard/DashboardLayoutEditor.astro"
 import DashboardWidget from "../components/dashboard/DashboardWidget.astro"
 import GamificationWidget from "../components/gamification/GamificationWidget.astro"
@@ -28,6 +33,14 @@ import { STATUS_LABELS as statusLabels } from "../lib/status-config"
 import { DASHBOARD_SECTIONS } from "../lib/dashboard-registry"
 import { calendarDaysFromToday, calendarToday } from "../lib/date"
 import dashboardStyles from "../styles/dashboard.css?url"
+const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
+if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
+const workScope = workScopeResult.scope
+const pagePlacement = await readBoardPagePlacement(workScope, Astro.url)
+if (!pagePlacement.ok) return boardScopeResponse(pagePlacement.errorCode)
+const placement = pagePlacement.placement
+const contextHref = (path: string) => boardContextHref({ boardId: workScope.boardId, area: pagePlacement.area?.id, project: pagePlacement.project?.id }, path)
+
 
 const dashboardTimeZone = Astro.locals.timezone || "Europe/Dublin"
 
@@ -75,25 +88,25 @@ let areaMap: Record<string, { name: string; color: string }> = {
 
 try {
   await ensureSchema()
-  const repo = new TaskRepository(getPersistenceClient())
+  const repo = new TaskRepository(getPersistenceClient(), workScope)
   const [recentRead, favoritesRead, openRead, statsRead, overdueRead, areaRead] = await Promise.allSettled([
-    repo.getRecentTasks(10),
-    repo.getFavoriteTasks(5),
-    repo.getOpenTasks(15),
-    repo.getStatusCounts(),
-    repo.getOverdueCount(calendarToday(dashboardTimeZone), dashboardTimeZone),
+    repo.getRecentTasks(10, placement),
+    repo.getFavoriteTasks(5, placement),
+    repo.getOpenTasks(15, placement),
+    repo.getStatusCounts(placement),
+    repo.getOverdueCount(calendarToday(dashboardTimeZone), dashboardTimeZone, placement),
     repo.getAreas(),
   ])
   if (recentRead.status === "fulfilled") {
-    tasks = recentRead.value
+    tasks = recentRead.value.map(projectPublicTaskFields)
     recentLoaded = true
   }
   if (favoritesRead.status === "fulfilled") {
-    favorites = favoritesRead.value
+    favorites = favoritesRead.value.map(projectPublicTaskFields)
     favoritesLoaded = true
   }
   if (openRead.status === "fulfilled") {
-    openTasks = openRead.value
+    openTasks = openRead.value.map(projectPublicTaskFields)
     openLoaded = true
   }
   if (statsRead.status === "fulfilled") {
@@ -114,9 +127,9 @@ try {
 }
 
 try {
-  gamificationStats = await getGamificationStats()
-  gamificationWeekly = await getGamificationWeekly()
-  achievementData = await getAllAchievements()
+  gamificationStats = await getGamificationStats(workScope)
+  gamificationWeekly = await getGamificationWeekly(workScope)
+  achievementData = await getAllAchievements(workScope)
   gamificationLoaded = true
 } catch {
   // Gamification is optional - keep the dashboard available without it.
@@ -179,7 +192,7 @@ function relativeTime(dueDate: string): string {
       {(statsLoaded || overdueCount !== null || gamificationStats.currentStreak > 0) && <div class="stats-grid">
         {gamificationStats.currentStreak > 0 && (
           <a
-            href="/progress#achievements"
+            href={contextHref("/progress#achievements")}
             class="stat-card stat-card-link"
             title={`Current streak: ${gamificationStats.currentStreak} day${gamificationStats.currentStreak === 1 ? "" : "s"} — view achievements`}
             aria-label={`Current streak: ${gamificationStats.currentStreak} day${gamificationStats.currentStreak === 1 ? "" : "s"} — view achievements`}
@@ -194,7 +207,7 @@ function relativeTime(dueDate: string): string {
 
         {statsLoaded && <>
           <a
-            href="/tasks"
+            href={contextHref("/tasks")}
             class="stat-card stat-card-link"
             title="Open tasks - not yet completed"
           >
@@ -208,7 +221,7 @@ function relativeTime(dueDate: string): string {
           </a>
 
           <a
-            href="/tasks?status=active"
+            href={contextHref("/tasks?status=active")}
             class="stat-card stat-card-link"
             id="stat-active"
             title="Tasks currently in progress or active"
@@ -223,7 +236,7 @@ function relativeTime(dueDate: string): string {
           </a>
 
           <a
-            href="/tasks?status=complete"
+            href={contextHref("/tasks?status=complete")}
             class="stat-card stat-card-link"
             title="Tasks marked as done"
           >
@@ -238,7 +251,7 @@ function relativeTime(dueDate: string): string {
         </>}
         {overdueCount !== null && (
           <a
-            href="/tasks?status=overdue"
+            href={contextHref("/tasks?status=overdue")}
             id="stat-overdue"
             class={`stat-card stat-card-link ${overdueCount > 0 ? "stat-card-danger" : ""}`}
             title="Tasks past their due date across all areas"
@@ -266,6 +279,7 @@ function relativeTime(dueDate: string): string {
       <div class="dashboard-shell__stack">
         {gamificationLoaded ? <div class="card dashboard-card dashboard-card--flush">
           <GamificationWidget
+            achievementsHref={contextHref("/progress#achievements")}
             stats={gamificationStats}
             weekly={gamificationWeekly}
             level={gamLevel}
@@ -378,7 +392,7 @@ function relativeTime(dueDate: string): string {
             >
               <option value="all">All users</option>
             </select>
-            <a href="/kanban" class="btn btn-ghost" id="kanban-link" style="font-size: 12px;">
+            <a href={contextHref("/tasks")} class="btn btn-ghost" id="kanban-link" style="font-size: 12px;">
               Kanban →
             </a>
           </div>
@@ -443,7 +457,7 @@ function relativeTime(dueDate: string): string {
               }) : `${t("dashboard.total_tasks", locale)} ${stats.total}`}
             </div>}
           </div>
-          <a href="/tasks" class="btn btn-ghost">{t("dashboard.view_all", locale)}</a>
+          <a href={contextHref("/tasks")} class="btn btn-ghost">{t("dashboard.view_all", locale)}</a>
         </div>
 
         <div class="bento-grid" id="task-list">
@@ -560,7 +574,7 @@ function relativeTime(dueDate: string): string {
       <p class="empty-subtitle">Add widgets to see tasks, capture work, and track progress here.</p>
       <div class="empty-action">
         <button type="button" class="btn btn-primary" data-dashboard-edit>Add widgets</button>
-        <a href="/tasks" class="btn btn-ghost">Open Tasks</a>
+        <a href={contextHref("/tasks")} class="btn btn-ghost">Open Tasks</a>
       </div>
     </div>
   </div>

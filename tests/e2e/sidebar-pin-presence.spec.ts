@@ -4,7 +4,8 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
-import { launchPinBrowser, pinRequest, startCoreFixture } from "../scripts/task-pins-fixture"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
+import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Run with MEITHEAL_TEST_BROWSER=1 and a built web app")
 
@@ -24,21 +25,33 @@ test("the first verified pin reveals the sidebar destination and the last unpin 
     browser = await launchPinBrowser(work)
     // The dedicated pin-worker suite covers service-worker activation and transport checks.
     const context = await browser.newContext({
-      viewport: { width: 1440, height: 900 }, extraHTTPHeaders: {}, serviceWorkers: "block",
+      viewport: { width: 1440, height: 900 }, ignoreHTTPSErrors: true, extraHTTPHeaders: {}, serviceWorkers: "block",
     })
     const owner = (value: string) => context.addCookies([{ name: "feedback-fixture", value, url: origin }])
     await owner("member")
     const page = await context.newPage()
     await page.goto(origin + prefix + "/fixture")
-    const task = await page.evaluate(async prefix => {
-      const response = await fetch(prefix + "/api/tasks", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "Replace the hall light" }),
-      })
-      if (!response.ok) throw new Error(`Could not create task: ${response.status}`)
-      return (await response.json()).id as string
-    }, prefix)
-    const empty = await pinRequest(page, path, "POST", { action: "presence" })
+    const app = origin + prefix
+    const headers = await currentBoardWriteHeaders(context.request, "household", { origin }, app)
+    const created = await context.request.post(app + "/api/tasks", { headers, data: { title: "Replace the hall light" } })
+    expect(created.status(), await created.text()).toBe(201)
+    const { id: task } = await created.json() as { id: string }
+    async function readPresence() {
+      const current = await currentBoardWriteHeaders(context.request, "household", { origin }, app)
+      return page.evaluate(async ({ path, boardSession }) => {
+        const response = await fetch(path, {
+          method: "POST", mode: "same-origin", referrerPolicy: "same-origin", cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            "x-meitheal-board-id": "household",
+            "x-meitheal-board-session": boardSession,
+          },
+          body: JSON.stringify({ action: "presence" }),
+        })
+        return { status: response.status, cache: response.headers.get("cache-control"), body: await response.json() }
+      }, { path, boardSession: current["x-meitheal-board-session"]! })
+    }
+    const empty = await readPresence()
     expect(empty).toMatchObject({ status: 200, cache: "private, no-store", body: { hasPins: false } })
     const checks: string[] = []
     page.on("request", request => {
@@ -60,7 +73,7 @@ test("the first verified pin reveals the sidebar destination and the last unpin 
     expect(checks).not.toContain("list")
 
     await owner("member-two")
-    const other = await pinRequest(page, path, "POST", { action: "presence" })
+    const other = await readPresence()
     expect(other).toMatchObject({ status: 200, body: { hasPins: false } })
     await expect(nav).toBeHidden({ timeout: 12000 })
     await owner("member")

@@ -1,3 +1,4 @@
+import { currentBoardScope } from "../helpers/current-board-scope"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -6,7 +7,7 @@ import {
   ensureSchema,
   getPersistenceClient,
   resetPersistenceForTests,
-} from "../../apps/web/src/domains/tasks/persistence/store"
+} from "../helpers/persistence-fixture"
 import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
 
 test("Backlog page clamps its range and orders current and legacy tasks in one read", async () => {
@@ -18,7 +19,7 @@ test("Backlog page clamps its range and orders current and legacy tasks in one r
   try {
     await ensureSchema()
     const client = getPersistenceClient()
-    const repo = new TaskRepository(client)
+    const repo = new TaskRepository(client, await currentBoardScope(client))
     async function add(id: string, created: number | string, status = "backlog") {
       await client.execute({
         sql: `INSERT INTO tasks (id, title, request_id, idempotency_key, status, created_at, updated_at)

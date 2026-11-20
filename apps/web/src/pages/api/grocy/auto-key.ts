@@ -1,3 +1,12 @@
+import {
+  ensureSchema,
+  getPersistenceClient,
+  prepareWorkIntegrationSettings,
+  validateWorkIntegrationSettingsApproval,
+  saveWorkIntegrationSettings
+} from "@domains/tasks"
+import { verifiedBoardRequestPrincipal } from "@lib/board-request-context"
+import { currentSettingsAccess } from "@lib/current-settings-access"
 /**
  * Grocy Auto-Key API — Automatic API Key Generation
  *
@@ -13,7 +22,7 @@ import { logApiError } from "../../../lib/api-logger"
 import {
   isLegacySupervisorIngressUrl,
   resolveSupervisorGrocyAddon,
-  resolveSupervisorGrocySlugForUrl,
+  resolveSupervisorGrocySlugForUrl
 } from "../../../lib/grocy-client"
 import { requireSystemSettingsAdmin } from "../../../lib/settings-security"
 import { supervisorFetch } from "../../../lib/supervisor-fetch"
@@ -21,6 +30,8 @@ import { supervisorFetch } from "../../../lib/supervisor-fetch"
 export const POST: APIRoute = async ({ locals, request }) => {
   const denied = requireSystemSettingsAdmin(request, locals)
   if (denied) return denied
+  const settingsAccess = await currentSettingsAccess(request, locals, true)
+  if (settingsAccess instanceof Response) return settingsAccess
   try {
     let body: { url?: string } = {}
     const rawBody = await request.text()
@@ -29,23 +40,23 @@ export const POST: APIRoute = async ({ locals, request }) => {
       try {
         parsed = JSON.parse(rawBody)
       } catch {
-        return new Response(
-          JSON.stringify({ ok: false, error: "Invalid JSON body" }),
-          { status: 400, headers: { "Content-Type": "application/json" } },
-        )
+        return new Response(JSON.stringify({ ok: false, error: "Invalid JSON body" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" }
+        })
       }
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        return new Response(
-          JSON.stringify({ ok: false, error: "Invalid JSON body" }),
-          { status: 400, headers: { "Content-Type": "application/json" } },
-        )
+        return new Response(JSON.stringify({ ok: false, error: "Invalid JSON body" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" }
+        })
       }
       const record = parsed as Record<string, unknown>
       if (record.url !== undefined && typeof record.url !== "string") {
-        return new Response(
-          JSON.stringify({ ok: false, error: "Invalid URL format" }),
-          { status: 400, headers: { "Content-Type": "application/json" } },
-        )
+        return new Response(JSON.stringify({ ok: false, error: "Invalid URL format" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" }
+        })
       }
       body = record as { url?: string }
     }
@@ -59,10 +70,10 @@ export const POST: APIRoute = async ({ locals, request }) => {
     if (grocyUrl) {
       const urlCheck = validateGrocyBaseUrl(grocyUrl)
       if (!urlCheck.ok) {
-        return new Response(
-          JSON.stringify({ ok: false, error: urlCheck.error }),
-          { status: 400, headers: { "Content-Type": "application/json" } },
-        )
+        return new Response(JSON.stringify({ ok: false, error: urlCheck.error }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" }
+        })
       }
       grocyUrl = urlCheck.normalizedUrl
     }
@@ -85,50 +96,78 @@ export const POST: APIRoute = async ({ locals, request }) => {
     if (!grocyUrl) {
       return new Response(
         JSON.stringify({ ok: false, error: "No Grocy URL provided and auto-detection failed" }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
+        { status: 400, headers: { "Content-Type": "application/json" } }
       )
     }
+
+    await ensureSchema()
+    const db = getPersistenceClient()
+    const principal = await verifiedBoardRequestPrincipal({ request, locals }, true)
+    const approval = principal
+      ? await prepareWorkIntegrationSettings(db, principal, ["grocy_url", "grocy_api_key"])
+      : null
+    const approvalChanged = () =>
+      new Response(
+        JSON.stringify({
+          ok: false,
+          error:
+            "The Grocy profile serves Boards you cannot manage, or its approval changed. Review the Board destinations before creating a key."
+        }),
+        {
+          status: 409,
+          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }
+        }
+      )
+    if (!principal || !approval) return approvalChanged()
+    const operationAllowed = () => validateWorkIntegrationSettingsApproval(db, approval)
 
     // Attempt to create an API key via Supervisor ingress only for a matched Supervisor add-on
     let createRes: Response | null = null
     if (detectedSlug) {
       try {
+        if (!(await operationAllowed())) return approvalChanged()
         const supervisorRes = await supervisorFetch(
           `/addons/${encodeURIComponent(detectedSlug)}/proxy/api/objects/api_keys`,
           {
             method: "POST",
             headers: {
               "content-type": "application/json",
-              accept: "application/json",
+              accept: "application/json"
             },
-            body: JSON.stringify({ key_type: "default" }),
-          },
+            body: JSON.stringify({ key_type: "default" })
+          }
         )
         if (supervisorRes?.ok) {
           createRes = supervisorRes
         } else {
           await supervisorRes?.body?.cancel().catch(() => undefined)
         }
-      } catch { /* Supervisor proxy failed — try direct */ }
+      } catch {
+        /* Supervisor proxy failed — try direct */
+      }
     }
 
     // Fallback: direct API call under shared connect-time outbound policy
     if (!createRes) {
       try {
+        if (!(await operationAllowed())) return approvalChanged()
         const autoKeyTarget = new URL(grocyUrl)
         autoKeyTarget.pathname = `${autoKeyTarget.pathname.replace(/\/+$/, "")}/api/objects/api_keys`
         createRes = await fetchOutbound(autoKeyTarget.href, {
           method: "POST",
+          operationAllowed,
           allowPrivate: true,
           redirect: "error",
           signal: AbortSignal.timeout(5_000),
           headers: {
             "content-type": "application/json",
-            accept: "application/json",
+            accept: "application/json"
           },
-          body: JSON.stringify({ key_type: "default" }),
+          body: JSON.stringify({ key_type: "default" })
         })
-      } catch { /* direct fetch also failed */ }
+      } catch {
+        /* direct fetch also failed */
+      }
     }
 
     if (!createRes || !createRes.ok) {
@@ -137,9 +176,9 @@ export const POST: APIRoute = async ({ locals, request }) => {
       return new Response(
         JSON.stringify({
           ok: false,
-          error: `Failed to create API key: ${failedStatus ? `HTTP ${failedStatus}` : "Connection failed"}. Create one manually in Grocy → Settings → API Keys.`,
+          error: `Failed to create API key: ${failedStatus ? `HTTP ${failedStatus}` : "Connection failed"}. Create one manually in Grocy → Settings → API Keys.`
         }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
+        { status: 200, headers: { "Content-Type": "application/json" } }
       )
     }
 
@@ -160,31 +199,34 @@ export const POST: APIRoute = async ({ locals, request }) => {
       return new Response(
         JSON.stringify({
           ok: false,
-          error: "API key creation succeeded but no key was returned. Create one manually in Grocy → Settings → API Keys.",
+          error:
+            "API key creation succeeded but no key was returned. Create one manually in Grocy → Settings → API Keys."
         }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
+        { status: 200, headers: { "Content-Type": "application/json" } }
       )
     }
 
-    // Save the URL and key atomically to settings via SettingsRepository
+    // The same finite approval is rechecked by the journal writer after the provider reply.
     try {
-      const { ensureSchema, getPersistenceClient, SettingsRepository } = await import("@domains/tasks")
-      await ensureSchema()
-      const repo = new SettingsRepository(getPersistenceClient())
-      await repo.ensureSettingsTable()
-
-      await repo.importBatch([
-        { key: "grocy_url", value: JSON.stringify(grocyUrl) },
-        { key: "grocy_api_key", value: JSON.stringify(apiKey) },
-      ])
+      const saved = await saveWorkIntegrationSettings(
+        db,
+        principal,
+        [
+          { key: "grocy_url", value: JSON.stringify(grocyUrl) },
+          { key: "grocy_api_key", value: JSON.stringify(apiKey) }
+        ],
+        approval
+      )
+      if (!saved) throw new Error("Profile approval changed after external key creation")
     } catch (err) {
       logApiError("grocy-auto-key", "Failed to save settings", err)
       return new Response(
         JSON.stringify({
           ok: false,
-          error: "API key was created in Grocy, but saving settings failed. Create or copy a key manually in Grocy → Settings → API Keys.",
+          error:
+            "API key was created in Grocy, but saving settings failed. Create or copy a key manually in Grocy → Settings → API Keys."
         }),
-        { status: 500, headers: { "Content-Type": "application/json" } },
+        { status: 500, headers: { "Content-Type": "application/json" } }
       )
     }
 
@@ -193,15 +235,15 @@ export const POST: APIRoute = async ({ locals, request }) => {
         ok: true,
         apiKey: apiKey.length > 4 ? "••••" + apiKey.slice(-4) : "••••",
         url: grocyUrl,
-        message: "API key created and saved automatically",
+        message: "API key created and saved automatically"
       }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
+      { status: 200, headers: { "Content-Type": "application/json" } }
     )
   } catch (err) {
     logApiError("grocy-auto-key", "POST failed", err)
-    return new Response(
-      JSON.stringify({ ok: false, error: "Internal server error" }),
-      { status: 500, headers: { "Content-Type": "application/json" } },
-    )
+    return new Response(JSON.stringify({ ok: false, error: "Internal server error" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" }
+    })
   }
 }

@@ -23,7 +23,7 @@ except ModuleNotFoundError as error:
     )
 
 from custom_components.meitheal.api import build_origin_headers
-from custom_components.meitheal.const import CONF_API_TOKEN, DOMAIN
+from custom_components.meitheal.const import CONF_API_TOKEN, CONF_BOARD_ID, DOMAIN
 from custom_components.meitheal.coordinator import (
     MeithealCoordinator,
     MeithealCoordinatorData,
@@ -41,8 +41,15 @@ def _mock_coordinator(hass: HomeAssistant, async_request: AsyncMock | None = Non
     api = SimpleNamespace(
         async_request=async_request or AsyncMock(),
         origin="https://tasks.example.test",
+        board_id="work", cache_key="work-credential-fixture", configured=True,
     )
-    return MeithealCoordinator(hass, api)  # type: ignore[arg-type]
+    coordinator = MeithealCoordinator(hass, api)  # type: ignore[arg-type]
+    coordinator._async_board_metadata = AsyncMock(return_value={"sharedEntityDelivery": True})
+    coordinator._shared_entity_delivery = True
+    async def current_data():
+        return coordinator.data if coordinator.data is not None else MeithealCoordinatorData([])
+    coordinator.async_data_for_context = AsyncMock(side_effect=current_data)
+    return coordinator
 
 
 async def test_mcp_notifications_return_none(hass: HomeAssistant) -> None:
@@ -332,6 +339,7 @@ async def test_mcp_tool_argument_validation(hass: HomeAssistant) -> None:
         assert expected_error in res["result"]["content"][0]["text"], name
 
     coordinator.data = None
+    coordinator.async_data_for_context.side_effect = HomeAssistantError("No task data available")
     no_data = await handle_mcp_request(
         coordinator,
         {
@@ -487,13 +495,15 @@ async def test_service_call_from_automation_context_sends_origin_headers(
     """Service calls invoked inside an automation context attribute the automation name and edit target."""
     origin = "https://tasks.example.test"
     token = "mth_" + "d" * 64
+    aioclient_mock.get(f"{origin}/api/agent-context", json={"boards": [{"id": "work", "name": "Work", "sharedEntityDelivery": True}], "enrollmentBoardId": "work"})
     aioclient_mock.get(f"{origin}/api/tasks", json={"tasks": []})
     aioclient_mock.get(f"{origin}/api/gamification", status=403)
     aioclient_mock.post(f"{origin}/api/tasks", json={"id": "auto-task-1"})
 
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={CONF_HOST: "tasks.example.test", CONF_PORT: 443, CONF_SSL: True, CONF_API_TOKEN: token},
+        data={CONF_HOST: "tasks.example.test", CONF_PORT: 443, CONF_SSL: True, CONF_API_TOKEN: token, CONF_BOARD_ID: "work"},
+        version=2,
     )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)

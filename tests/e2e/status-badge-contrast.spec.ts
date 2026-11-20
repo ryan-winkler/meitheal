@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright"
 import { expect, test, type Page } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { STATUS } from "../../apps/web/src/lib/status-config"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
@@ -18,7 +19,7 @@ async function checkContrast(page: Page, selectors: string[], state: string) {
 for (const theme of ["light", "dark"] as const) {
   test(`task status stays readable in ${theme} theme on task routes and Project Kanban`, async ({ page, request, baseURL }) => {
     test.skip(shouldSkipBrowserSpecs(), "Requires a disposable Meitheal fixture")
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const project = await request.post("/api/projects", { headers, data: { title: "Status badge contrast project" } })
     expect(project.status(), await project.text()).toBe(201)
     const { id: projectId } = await project.json()
@@ -93,7 +94,7 @@ for (const theme of ["light", "dark"] as const) {
 for (const theme of ["light", "dark"] as const) {
   test(`completed goals and unlocked achievement dates stay readable in ${theme} theme`, async ({ page, request, baseURL }) => {
     test.skip(shouldSkipBrowserSpecs(), "Requires a disposable Meitheal fixture")
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const goal = await request.post("/api/goals", { headers, data: { title: `Completed goal contrast ${theme}` } })
     expect(goal.status(), await goal.text()).toBe(201)
     const { id: goalId } = await goal.json()

@@ -1,9 +1,11 @@
-import type { ReadStream } from "node:fs"
+import type { FileHandle } from "node:fs/promises"
 import { mkdtemp, open, rm, stat, statfs } from "node:fs/promises"
 import path from "node:path"
-import { Readable } from "node:stream"
 import type { APIRoute } from "astro"
 import { verifyCurrentHAOwner } from "@domains/ha/current-admin"
+import { boardGrantStillCurrent, currentBoardGrantRevision } from "@domains/tasks/persistence/board-grant-fence"
+import { ContinuityLockedError } from "@domains/tasks/persistence/continuity-client"
+import { getPersistenceClient } from "@domains/tasks/persistence/store"
 import { logApiError } from "@lib/api-logger"
 import { readWithinLimit } from "@lib/bounded-body"
 import { verifyDatabaseDownloadToken } from "@lib/database-download-token"
@@ -78,22 +80,38 @@ export const POST: APIRoute = async ({ locals, request }) => {
   const signal = request.signal
   exportInProgress = true
   let snapshotDirectory: string | undefined
-  let stream: ReadStream | undefined
+  let file: FileHandle | undefined
+  let streaming = false
+  let cleanupPromise: Promise<void> | undefined
+  let removeAbortListener = () => {}
 
-  async function cleanup() {
-    try {
-      if (snapshotDirectory) await rm(snapshotDirectory, { recursive: true, force: true })
-    } catch (error) {
-      logApiError("export-database", "Failed to remove the database snapshot", error)
-    } finally {
-      exportInProgress = false
-    }
+  function cleanup(): Promise<void> {
+    return cleanupPromise ??= (async () => {
+      removeAbortListener()
+      try {
+        await file?.close()
+        if (snapshotDirectory) await rm(snapshotDirectory, { recursive: true, force: true })
+      } catch (error) {
+        logApiError("export-database", "Failed to remove the database snapshot", error)
+      } finally {
+        exportInProgress = false
+      }
+    })()
   }
 
   try {
     signal.throwIfAborted()
+    const client = getPersistenceClient()
+    const revision = await currentBoardGrantRevision(client)
+    if (!revision) throw new ContinuityLockedError()
+    async function requireOriginalAuthority() {
+      signal.throwIfAborted()
+      if (!await boardGrantStillCurrent(client, revision!)) throw new ContinuityLockedError()
+      signal.throwIfAborted()
+    }
     const currentOwner = await verifyCurrentHAOwner(user.id, signal)
     signal.throwIfAborted()
+    await requireOriginalAuthority()
     if (currentOwner === "unavailable") {
       return backupProblem(503, "Could not verify current owner access with Home Assistant. Try again when it is available.")
     }
@@ -116,8 +134,8 @@ export const POST: APIRoute = async ({ locals, request }) => {
     try {
       // Pin one WAL snapshot so writes on other connections cannot restart the copy.
       source.exec("BEGIN")
-      if (source.prepare("SELECT 1 FROM task_boards WHERE id <> 'household' LIMIT 1").get()) {
-        return backupProblem(403, "Download is unavailable for databases with named Boards. Use the Home Assistant backup controls.")
+      if (source.prepare("SELECT 1 FROM task_boards WHERE visibility = 'restricted' OR (SELECT COUNT(*) FROM task_boards) > 1 LIMIT 1").get()) {
+        return backupProblem(403, "Download is unavailable for databases with multiple or restricted Boards. Use the Home Assistant backup controls.")
       }
       if (source.prepare("SELECT 1 FROM app_settings WHERE key = 'private_organization_data' LIMIT 1").get()) {
         return backupProblem(403, "Use Home Assistant backups for databases containing personal labels or restricted organization data.")
@@ -139,23 +157,53 @@ export const POST: APIRoute = async ({ locals, request }) => {
       source.close()
     }
 
-    signal.throwIfAborted()
-    const file = await open(snapshotPath, "r")
-    stream = file.createReadStream({ signal })
-    stream.once("close", () => { void cleanup() })
-    const body = Readable.toWeb(stream, {
-      strategy: { highWaterMark: 64 * 1024, size: (chunk: Uint8Array) => chunk.byteLength },
-    }) as ReadableStream<Uint8Array>
+    await requireOriginalAuthority()
+    file = await open(snapshotPath, "r")
+    await requireOriginalAuthority()
+    let ended = false
+    let streamController: ReadableStreamDefaultController<Uint8Array>
+    async function finish(controller: ReadableStreamDefaultController<Uint8Array>, error?: unknown) {
+      if (ended) return cleanup()
+      ended = true
+      await cleanup()
+      if (error) controller.error(error)
+      else controller.close()
+    }
+    // Read on demand, bounded to one chunk. Node's eager file stream can retain
+    // snapshot bytes that were admitted before an asynchronous authority change.
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) { streamController = controller },
+      async pull(controller) {
+        try {
+          await requireOriginalAuthority()
+          const chunk = Buffer.allocUnsafe(64 * 1024)
+          const { bytesRead } = await file!.read(chunk, 0, chunk.byteLength, null)
+          await requireOriginalAuthority()
+          if (ended) return
+          if (!bytesRead) return finish(controller)
+          controller.enqueue(chunk.subarray(0, bytesRead))
+        } catch (error) { await finish(controller, error) }
+      },
+      async cancel() {
+        ended = true
+        await cleanup()
+      },
+    }, { highWaterMark: 0 })
+    const onAbort = () => { void finish(streamController, signal.reason ?? new Error("Database download was cancelled.")) }
+    signal.addEventListener("abort", onAbort, { once: true })
+    removeAbortListener = () => signal.removeEventListener("abort", onAbort)
+    await requireOriginalAuthority()
+    streaming = true
     return new Response(paceResponseBody(body, waitForDrain, signal), { headers })
   } catch (error) {
-    stream?.destroy()
     if (signal.aborted) return backupProblem(499, "Database download was cancelled.")
+    if (error instanceof ContinuityLockedError) return backupProblem(503, "Installation continuity or download authority changed. Start again only after current access is verified.")
     if (!snapshotDirectory && typeof error === "object" && error && "code" in error && error.code === "ENOENT") {
       return backupProblem(404, "Database file not found on the server.")
     }
     logApiError("export-database", "Failed to export database", error)
     return backupProblem(500, "Could not download the database.")
   } finally {
-    if (!stream) await cleanup()
+    if (!streaming) await cleanup()
   }
 }

@@ -1,61 +1,27 @@
-/**
- * Pillar Association — Service
- *
- * @domain pillars
- * @bounded-context pillars
- *
- * Manages M2M associations between Pillars and entities (Goals, Routines, Tasks).
- * Also handles the ALTER TABLE migration for direct `pillar_id` FK on entity tables.
- *
- * Dual strategy:
- * - Primary: Direct `pillar_id` FK on goals/tasks/task_templates (one Pillar per entity)
- * - Secondary: `pillar_associations` M2M table (cross-cutting, multiple Pillars per entity)
- *
- * Inheritance: Task.pillar_id ?? Goal.pillar_id ?? null ("unaligned")
- *
- * @see docs/decisions/ADR-017-pillars-domain.md
- */
-
-import { pillarAssociationTableSql } from "../../../drizzle/migrations/pillar-storage-schema.mjs"
 import { randomUUID } from "node:crypto"
-import type { Row } from "@libsql/client"
-import { getPersistenceClient } from "../tasks/persistence/store"
-import { ensurePillarSchema, HOUSEHOLD_PILLAR_OWNER, type Pillar } from "./pillar-service"
+import type { Client, Row } from "@libsql/client"
+import {
+  validateBoardPlacement,
+  validateBoardScope,
+  type BoardScope,
+  type WorkAction,
+  getPersistenceClient,
+  boardPlanningOwnership,
+  boardTaskOwnership,
+  validateTaskOperation,
+  sql,
+  sourceSql
+} from "@domains/tasks"
+import { ensurePillarSchema, toPillar, type Pillar } from "./pillar-service"
+import {
+  isPersonalPillarScope,
+  pillarOperationClient,
+  pillarOwnedBy,
+  type PillarOwnerScope
+} from "./pillar-owner"
 
-// ── Schema ──────────────────────────────────────────────────────
-
-let associationSchemaEnsured = false
-
-/** Valid entity types for Pillar associations */
 export const VALID_PILLAR_ENTITY_TYPES = ["goal", "routine", "task"] as const
-export type PillarEntityType = typeof VALID_PILLAR_ENTITY_TYPES[number]
-
-export async function ensureAssociationSchema(): Promise<void> {
-  if (associationSchemaEnsured) return
-  await ensurePillarSchema()
-  const client = getPersistenceClient()
-
-  // M2M join table
-  await client.execute(pillarAssociationTableSql)
-
-  await client.execute("CREATE INDEX IF NOT EXISTS pillar_assoc_pillar_idx ON pillar_associations(pillar_id)")
-  await client.execute("CREATE INDEX IF NOT EXISTS pillar_assoc_entity_idx ON pillar_associations(entity_type, entity_id)")
-
-  // Direct FK columns — idempotent ALTER TABLE with error catching
-  const tables = ["goals", "tasks", "task_templates"]
-  for (const table of tables) {
-    try {
-      await client.execute(`ALTER TABLE ${table} ADD COLUMN pillar_id TEXT`)
-    } catch {
-      // Column already exists — safe to ignore
-    }
-  }
-
-  associationSchemaEnsured = true
-}
-
-// ── Types ───────────────────────────────────────────────────────
-
+export type PillarEntityType = (typeof VALID_PILLAR_ENTITY_TYPES)[number]
 export interface PillarAssociation {
   id: string
   pillarId: string
@@ -63,170 +29,241 @@ export interface PillarAssociation {
   entityId: string
   createdAt: number
 }
-
-const householdPillar = (id: string) => `SELECT 1 FROM pillars
-  WHERE id = ${id} AND owner_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND user_id = '${HOUSEHOLD_PILLAR_OWNER}'`
-
-const householdEntity = (kind: string, id: string) => `(
-  (${kind} = 'goal' AND EXISTS (SELECT 1 FROM goals WHERE id = ${id} AND owner_board_id IS NULL AND retired_at IS NULL))
-  OR (${kind} = 'routine' AND EXISTS (SELECT 1 FROM task_templates WHERE id = ${id} AND owner_board_id IS NULL AND is_routine = 1))
-  OR (${kind} = 'task' AND EXISTS (SELECT 1 FROM tasks WHERE id = ${id} AND task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')))
-)`
-
+export async function ensureAssociationSchema(): Promise<void> {
+  await ensurePillarSchema()
+}
+export function resetAssociationSchemaForTests(): void {}
 function mapAssociation(row: Row): PillarAssociation {
   return {
     id: String(row.id),
     pillarId: String(row.pillar_id),
     entityType: String(row.entity_type) as PillarEntityType,
     entityId: String(row.entity_id),
-    createdAt: Number(row.created_at),
+    createdAt: Number(row.created_at)
   }
 }
-
-// ── M2M Association CRUD ────────────────────────────────────────
-
-function generateId(): string {
-  return `pa_${Date.now()}_${randomUUID().slice(0, 8)}`
+function selectedTarget(owner: PillarOwnerScope, target?: BoardScope): BoardScope | null {
+  if (!isPersonalPillarScope(owner))
+    return target && target.boardId !== owner.boardId ? null : owner
+  return target &&
+    target.principal.kind === owner.principal.kind &&
+    target.principal.id === owner.principal.id
+    ? target
+    : null
 }
-
+async function targetAvailable(
+  db: Pick<Client, "execute">,
+  scope: BoardScope,
+  kind: PillarEntityType,
+  id: string,
+  action: WorkAction
+): Promise<boolean> {
+  if (!VALID_PILLAR_ENTITY_TYPES.includes(kind)) return false
+  const authority = await validateBoardScope(scope, db, { resource: kind, action })
+  if (!authority.ok) return false
+  if (kind === "task") return validateTaskOperation(db, scope, id, { resource: "task", action })
+  const table = { goal: "goals", routine: "task_templates" }[kind]
+  const owner = boardPlanningOwnership(scope, "target")
+  const area =
+    kind === "routine"
+      ? sourceSql("json_extract(target.template_json,'$.area_id')")
+      : sourceSql("target.area_id")
+  const project =
+    kind === "routine"
+      ? sourceSql("json_extract(target.template_json,'$.project_id')")
+      : sourceSql("NULL")
+  const {
+    rows: [row]
+  } =
+    await db.execute(sql`SELECT ${area} AS area_id,${project} AS project_id FROM ${sourceSql(table)} AS target WHERE target.id=${id} AND ${owner}
+    AND target.retired_at IS NULL
+    ${kind === "routine" ? sourceSql("AND target.is_routine=1") : sourceSql("")}
+`)
+  return Boolean(
+    row &&
+      (await validateBoardPlacement(scope, db, {
+        areaId: typeof row.area_id === "string" ? row.area_id : null,
+        projectId: typeof row.project_id === "string" ? row.project_id : null
+      }))
+  )
+}
 export async function linkEntity(
+  owner: PillarOwnerScope,
   pillarId: string,
-  entityType: PillarEntityType,
-  entityId: string
+  kind: PillarEntityType,
+  id: string,
+  target?: BoardScope,
+  database?: Client
 ): Promise<PillarAssociation | null> {
-  await ensureAssociationSchema()
-  const client = getPersistenceClient()
-
-  if (!VALID_PILLAR_ENTITY_TYPES.includes(entityType)) {
-    throw new Error(`Invalid entity type: ${entityType}. Must be one of: ${VALID_PILLAR_ENTITY_TYPES.join(", ")}`)
+  if (!database) await ensureAssociationSchema()
+  const scope = selectedTarget(owner, target)
+  if (!scope) return null
+  const tx = await pillarOperationClient(
+    database ?? getPersistenceClient(),
+    owner,
+    "edit"
+  ).transaction("write")
+  try {
+    if (!(await targetAvailable(tx, scope, kind, id, "edit"))) return null
+    await tx.execute(sql`INSERT OR IGNORE INTO pillar_associations(id,pillar_id,entity_type,entity_id,created_at)
+      SELECT ${`pa_${randomUUID()}`},parent.id,${kind},${id},${Date.now()} FROM pillars AS parent WHERE parent.id=${pillarId} AND ${pillarOwnedBy(owner, "parent")}`)
+    const {
+      rows: [row]
+    } =
+      await tx.execute(sql`SELECT link.* FROM pillar_associations AS link JOIN pillars AS parent ON parent.id=link.pillar_id
+      WHERE link.pillar_id=${pillarId} AND link.entity_type=${kind} AND link.entity_id=${id} AND ${pillarOwnedBy(owner, "parent")}`)
+    await tx.commit()
+    return row ? mapAssociation(row) : null
+  } finally {
+    tx.close()
   }
-
-  const [, existing] = await client.batch([
-    {
-      sql: `WITH target(kind, entity_id) AS (VALUES (?, ?))
-            INSERT OR IGNORE INTO pillar_associations (id, pillar_id, entity_type, entity_id, created_at)
-            SELECT ?, ?, kind, entity_id, ? FROM target
-            WHERE EXISTS (${householdPillar("?")}) AND ${householdEntity("target.kind", "target.entity_id")}`,
-      args: [entityType, entityId, generateId(), pillarId, Date.now(), pillarId],
-    }, {
-      sql: `SELECT * FROM pillar_associations AS link
-            WHERE link.pillar_id = ? AND link.entity_type = ? AND link.entity_id = ?
-              AND EXISTS (${householdPillar("link.pillar_id")}) AND ${householdEntity("link.entity_type", "link.entity_id")}`,
-      args: [pillarId, entityType, entityId],
-    },
-  ], "write")
-  const row = existing?.rows[0]
-  return row ? mapAssociation(row) : null
 }
-
 export async function unlinkEntity(
+  owner: PillarOwnerScope,
   pillarId: string,
-  entityType: PillarEntityType,
-  entityId: string
+  kind: PillarEntityType,
+  id: string,
+  target?: BoardScope,
+  database?: Client
 ): Promise<boolean> {
-  await ensureAssociationSchema()
-  const client = getPersistenceClient()
-
-  const result = await client.execute({
-    sql: `DELETE FROM pillar_associations AS link WHERE pillar_id = ? AND entity_type = ? AND entity_id = ?
-      AND EXISTS (${householdPillar("link.pillar_id")}) AND ${householdEntity("link.entity_type", "link.entity_id")}`,
-    args: [pillarId, entityType, entityId],
-  })
-
-  return (result.rowsAffected ?? 0) > 0
+  if (!database) await ensureAssociationSchema()
+  const scope = selectedTarget(owner, target)
+  if (!scope) return false
+  const tx = await pillarOperationClient(
+    database ?? getPersistenceClient(),
+    owner,
+    "edit"
+  ).transaction("write")
+  try {
+    if (!(await targetAvailable(tx, scope, kind, id, "edit"))) return false
+    const result =
+      await tx.execute(sql`DELETE FROM pillar_associations WHERE pillar_id=${pillarId} AND entity_type=${kind} AND entity_id=${id}
+      AND EXISTS(SELECT 1 FROM pillars AS parent WHERE parent.id=pillar_associations.pillar_id AND ${pillarOwnedBy(owner, "parent")})`)
+    await tx.commit()
+    return result.rowsAffected > 0
+  } finally {
+    tx.close()
+  }
 }
-
-export async function getAssociationsForPillar(pillarId: string): Promise<PillarAssociation[]> {
-  await ensureAssociationSchema()
-  const client = getPersistenceClient()
-
-  const result = await client.execute({
-    sql: `SELECT * FROM pillar_associations AS link WHERE pillar_id = ?
-      AND EXISTS (${householdPillar("link.pillar_id")}) AND ${householdEntity("link.entity_type", "link.entity_id")}
-      ORDER BY created_at ASC, id ASC`,
-    args: [pillarId],
-  })
-  return result.rows.map(mapAssociation)
+export async function getAssociationsForPillar(
+  owner: PillarOwnerScope,
+  pillarId: string,
+  target?: BoardScope,
+  database?: Client
+): Promise<PillarAssociation[]> {
+  if (!database) await ensureAssociationSchema()
+  const scope = selectedTarget(owner, target)
+  if (!scope) return []
+  const tx = await pillarOperationClient(
+    database ?? getPersistenceClient(),
+    owner,
+    "read"
+  ).transaction("read")
+  try {
+    const { rows } = await tx.execute(
+      sql`SELECT link.* FROM pillar_associations AS link JOIN pillars AS parent ON parent.id=link.pillar_id WHERE link.pillar_id=${pillarId} AND ${pillarOwnedBy(owner, "parent")} ORDER BY link.created_at,link.id`
+    )
+    const result = []
+    for (const row of rows)
+      if (
+        await targetAvailable(
+          tx,
+          scope,
+          String(row.entity_type) as PillarEntityType,
+          String(row.entity_id),
+          "read"
+        )
+      )
+        result.push(mapAssociation(row))
+    await tx.commit()
+    return result
+  } finally {
+    tx.close()
+  }
 }
-
 export async function getPillarsForEntity(
-  entityType: PillarEntityType,
-  entityId: string
+  owner: PillarOwnerScope,
+  kind: PillarEntityType,
+  id: string,
+  target?: BoardScope,
+  database?: Client
 ): Promise<Pillar[]> {
-  await ensureAssociationSchema()
-  const client = getPersistenceClient()
-
-  const result = await client.execute({
-    sql: `
-      SELECT p.* FROM pillars p
-      INNER JOIN pillar_associations pa ON pa.pillar_id = p.id
-      WHERE pa.entity_type = ? AND pa.entity_id = ? AND p.is_active = 1 AND p.owner_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND p.user_id = ?
-        AND ${householdEntity("pa.entity_type", "pa.entity_id")}
-      ORDER BY p.weight DESC, p.position ASC
-    `,
-    args: [entityType, entityId, HOUSEHOLD_PILLAR_OWNER],
-  })
-
-  return result.rows.map(row => {
-    const r = row as Record<string, unknown>
-    return {
-      id: String(r.id),
-      slug: String(r.slug),
-      userId: String(r.user_id),
-      name: String(r.name),
-      manifesto: r.manifesto ? String(r.manifesto) : null,
-      icon: String(r.icon),
-      colorHex: String(r.color_hex),
-      weight: Number(r.weight),
-      position: Number(r.position),
-      isActive: Number(r.is_active) === 1,
-      createdAt: Number(r.created_at),
-      updatedAt: Number(r.updated_at),
-    }
-  })
+  if (!database) await ensureAssociationSchema()
+  const scope = selectedTarget(owner, target)
+  if (!scope) return []
+  const tx = await pillarOperationClient(
+    database ?? getPersistenceClient(),
+    owner,
+    "read"
+  ).transaction("read")
+  try {
+    if (!(await targetAvailable(tx, scope, kind, id, "read"))) return []
+    const { rows } =
+      await tx.execute(sql`SELECT parent.* FROM pillars AS parent JOIN pillar_associations AS link ON link.pillar_id=parent.id
+      WHERE link.entity_type=${kind} AND link.entity_id=${id} AND parent.is_active=1 AND ${pillarOwnedBy(owner, "parent")} ORDER BY parent.weight DESC,parent.position,parent.id`)
+    await tx.commit()
+    return rows.map(toPillar)
+  } finally {
+    tx.close()
+  }
 }
-
-// ── Direct FK Operations ────────────────────────────────────────
-
 export async function setEntityPillar(
+  owner: PillarOwnerScope,
   table: "goals" | "tasks" | "task_templates",
-  entityId: string,
-  pillarId: string | null
+  id: string,
+  pillarId: string | null,
+  database?: Client
 ): Promise<boolean> {
-  await ensureAssociationSchema()
-  const client = getPersistenceClient()
-
-  const scope = table === "tasks" ? "task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')" : table === "goals" ? "owner_board_id IS NULL AND retired_at IS NULL" : "owner_board_id IS NULL AND is_routine = 1"
-  const result = await client.execute({
-    sql: `UPDATE ${table} SET pillar_id = ? WHERE id = ? AND ${scope}
-      AND (pillar_id IS NULL OR EXISTS (${householdPillar(`${table}.pillar_id`)}))
-      AND (? IS NULL OR EXISTS (${householdPillar("?")}))`,
-    args: [pillarId, entityId, pillarId, pillarId],
-  })
-
-  return (result.rowsAffected ?? 0) > 0
+  if (isPersonalPillarScope(owner)) return false
+  if (!database) await ensureAssociationSchema()
+  const kind = { goals: "goal", tasks: "task", task_templates: "routine" }[
+    table
+  ] as PillarEntityType
+  if (!kind) return false
+  const tx = await pillarOperationClient(
+    database ?? getPersistenceClient(),
+    owner,
+    "edit"
+  ).transaction("write")
+  try {
+    if (!(await targetAvailable(tx, owner, kind, id, "edit"))) return false
+    const result =
+      await tx.execute(sql`UPDATE ${sourceSql(table)} SET pillar_id=${pillarId} WHERE id=${id}
+      ${table === "tasks" ? sql`AND ${boardTaskOwnership(owner, table)}` : sql`AND ${boardPlanningOwnership(owner, table)}`}
+      AND (${pillarId} IS NULL OR EXISTS(SELECT 1 FROM pillars AS parent WHERE parent.id=${pillarId} AND ${pillarOwnedBy(owner, "parent")}))`)
+    await tx.commit()
+    return result.rowsAffected > 0
+  } finally {
+    tx.close()
+  }
 }
-
 export async function getEntityPillarId(
+  owner: PillarOwnerScope,
   table: "goals" | "tasks" | "task_templates",
-  entityId: string
+  id: string,
+  database?: Client
 ): Promise<string | null> {
-  await ensureAssociationSchema()
-  const client = getPersistenceClient()
-
-  const scope = table === "tasks" ? "task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')" : table === "goals" ? "owner_board_id IS NULL AND retired_at IS NULL" : "owner_board_id IS NULL AND is_routine = 1"
-  const result = await client.execute({
-    sql: `SELECT pillar_id FROM ${table} WHERE id = ? AND ${scope}
-      AND EXISTS (${householdPillar(`${table}.pillar_id`)})`,
-    args: [entityId],
-  })
-
-  if (result.rows.length === 0) return null
-  const val = (result.rows[0] as Record<string, unknown>).pillar_id
-  return val ? String(val) : null
-}
-
-/** Reset for tests */
-export function resetAssociationSchemaForTests(): void {
-  associationSchemaEnsured = false
+  if (isPersonalPillarScope(owner)) return null
+  if (!database) await ensureAssociationSchema()
+  const kind = { goals: "goal", tasks: "task", task_templates: "routine" }[
+    table
+  ] as PillarEntityType
+  if (!kind) return null
+  const tx = await pillarOperationClient(
+    database ?? getPersistenceClient(),
+    owner,
+    "read"
+  ).transaction("read")
+  try {
+    if (!(await targetAvailable(tx, owner, kind, id, "read"))) return null
+    const {
+      rows: [row]
+    } = await tx.execute(
+      sql`SELECT target.pillar_id FROM ${sourceSql(table)} AS target JOIN pillars AS parent ON parent.id=target.pillar_id WHERE target.id=${id} AND ${pillarOwnedBy(owner, "parent")}`
+    )
+    await tx.commit()
+    return typeof row?.pillar_id === "string" ? row.pillar_id : null
+  } finally {
+    tx.close()
+  }
 }

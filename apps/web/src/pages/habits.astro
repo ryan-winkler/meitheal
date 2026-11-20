@@ -1,5 +1,8 @@
 ---
-import BoardRoutineCheckins from "../components/boards/BoardRoutineCheckins.astro"
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+
+import BoardWorkspaceNav from "../components/boards/BoardWorkspaceNav.astro"
+import "../styles/boards.css"
 import { newOrganizationLabel, organizationLabelsFor } from "@lib/organization-labels"
 /**
  * Habits Page — Routine Template Control Surface
@@ -18,9 +21,9 @@ import { newOrganizationLabel, organizationLabelsFor } from "@lib/organization-l
 import UnifiedBar from "../components/layout/UnifiedBar.astro"
 import Layout from "../layouts/Layout.astro"
 
-import { householdBoardIsActive } from "@domains/tasks/persistence/named-board-repository"
+import { scopeBoardAccess, scopePermits } from "@domains/tasks/board-scope"
 import { TemplateRepository, type RoutineWithStats } from "@domains/tasks/persistence/template-repository"
-import { HierarchyRepository, type AreaRow } from "@domains/tasks/persistence/hierarchy-repository"
+import { HierarchyRepository, type AreaRow, type ProjectRow } from "@domains/tasks/persistence/hierarchy-repository"
 import {
   ensureSchema,
   getPersistenceClient,
@@ -30,6 +33,10 @@ import { formatCalendarDay } from "@lib/calendar-day"
 import { isFeatureEnabled } from "../lib/feature-flags"
 import { HABITS_SECTIONS } from "../lib/habits-registry"
 import { serializeForScript } from "../lib/safe-html"
+const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
+if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
+const workScope = workScopeResult.scope
+
 
 interface HabitViewModel extends RoutineWithStats {
   description: string
@@ -45,9 +52,17 @@ if (!isEnabled) {
 
 let habits: HabitViewModel[] = []
 let loadFailed = false
-let householdActive = false
+const boardActive = scopeBoardAccess(workScope).state === "active"
+const boardName = scopeBoardAccess(workScope).name
 let areas: AreaRow[] = []
+let projects: ProjectRow[] = []
+let project: ProjectRow | undefined
+const canCreateRoutine = scopePermits(workScope, { resource: "routine", action: "create" })
+const canEditRoutine = scopePermits(workScope, { resource: "routine", action: "edit" })
+const canDeleteRoutine = scopePermits(workScope, { resource: "routine", action: "delete" })
+const canCompleteRoutine = canEditRoutine && scopePermits(workScope, { resource: "task", action: "complete" }) && scopePermits(workScope, { resource: "task", action: "create" })
 const areaId = Astro.url.searchParams.get("area_id")
+const projectId = Astro.url.searchParams.get("project_id")
 const openNew = Astro.url.searchParams.get("new") === "1"
 let area: AreaRow | undefined
 
@@ -96,11 +111,13 @@ function formatLastCompletedDate(value: string | null): string {
 try {
   await ensureSchema()
   const client = getPersistenceClient()
-  householdActive = await householdBoardIsActive(client)
-  areas = await new HierarchyRepository(client).findAllAreas()
+  const hierarchy = new HierarchyRepository(client, workScope)
+  ;[areas, projects] = await Promise.all([hierarchy.findAllAreas(), hierarchy.findAllProjects()])
+  project = projectId ? projects.find(candidate => candidate.id === projectId) : undefined
+  if (projectId && !project) return boardScopeResponse("unavailable")
   area = areaId ? areas.find(candidate => candidate.id === areaId) : undefined
-  if (areaId !== null && !area) return Astro.redirect(`${Astro.locals.ingressPath || ""}/${householdActive ? "planning#spaces" : "boards?notice=household-deleted"}`)
-  const routines = await new TemplateRepository(client).getRoutinesWithStats(area?.id)
+  if (areaId !== null && !area) return Astro.redirect(`${Astro.locals.ingressPath || ""}/boards/${encodeURIComponent(workScope.boardId)}?view=groups`)
+  const routines = await new TemplateRepository(client, workScope).getRoutinesWithStats(area?.id, projectId ?? undefined)
   habits = routines.map((routine) => ({
     ...routine,
     ...parseTemplateDetails(routine),
@@ -115,7 +132,7 @@ const longestStreak = Math.max(0, ...habits.map((habit) => habit.longestStreak))
 const totalCompletions = habits.reduce((sum, habit) => sum + habit.totalCompletions, 0)
 const dailyCount = habits.filter((habit) => habit.cadence === "daily").length
 const weeklyCount = habits.filter((habit) => habit.cadence === "weekly").length
-const cadenceSummary = !householdActive ? "Use the Routines on your active Boards below, or restore Household from Boards." :
+const cadenceSummary = !boardActive ? "This Board is unavailable. Return to Boards to choose another." :
   activeCount === 0
     ? "Create your first habit to begin a consistent routine."
     : `${dailyCount} daily · ${weeklyCount} weekly routines`
@@ -145,9 +162,9 @@ const habitsBootstrap = serializeForScript({ habits })
       type="button"
       class="btn btn-ghost habits-shell__create-bar-btn"
       id="habits-bar-new-habit"
-      data-open-habit-modal={loadFailed || !householdActive ? undefined : "true"}
-      disabled={loadFailed || !householdActive}
-      title={loadFailed ? "Refresh the page to retry loading Routines" : householdActive ? newRoutine : "Restore Household from Boards to create a shared Routine"}
+      data-open-habit-modal={loadFailed || !boardActive || !canCreateRoutine ? undefined : "true"}
+      disabled={loadFailed || !boardActive || !canCreateRoutine}
+      title={loadFailed ? "Refresh the page to retry loading Routines" : boardActive ? newRoutine : "This Board is unavailable"}
       aria-label={newRoutine}
     >
       <svg
@@ -166,11 +183,14 @@ const habitsBootstrap = serializeForScript({ habits })
       <span class="unified-bar__new-task-label">{newRoutine}</span>
     </button>
   </UnifiedBar>
+  {<BoardWorkspaceNav boardId={workScope.boardId} {boardName}
+    area={area ? { id: area.id, name: area.name } : undefined} project={project ? { id: project.id, name: project.title } : undefined} active="routines" />}
 
-  <div id="habits-shell" class="habits-shell" data-area-id={area?.id} data-household-active={String(householdActive)} data-open-new={openNew && !loadFailed && householdActive ? "true" : undefined}>
+
+  <div id="habits-shell" class="habits-shell" data-area-id={area?.id} data-project-id={project?.id} data-can-edit={String(canEditRoutine)} data-can-delete={String(canDeleteRoutine)} data-can-complete={String(canCompleteRoutine)} data-board-id={workScope.boardId} data-board-active={String(boardActive)} data-open-new={openNew && !loadFailed && boardActive ? "true" : undefined}>
     {area && <div class="flex flex-wrap gap-2">
       <a class="btn btn-ghost" href={`/areas/${encodeURIComponent(area.id)}#routines`}>{area.name}</a>
-      <a class="btn btn-ghost" href="/habits">All Routines</a>
+      <a class="btn btn-ghost" href={`/habits?board_id=${encodeURIComponent(workScope.boardId)}`}>All Routines</a>
     </div>}
     <section
       id="habits-overview"
@@ -213,16 +233,16 @@ const habitsBootstrap = serializeForScript({ habits })
       </>}
     </section>
 
-    {!householdActive && !loadFailed && <p class="card card-body" role="status">
-      Household is deleted. Its Routines and shared creation are paused. Routines on your active Boards remain available.
-      <a href="/boards">Open Boards to restore Household</a>
+    {!boardActive && !loadFailed && <p class="card card-body" role="status">
+      This Board is unavailable. Its Routines remain saved.
+      <a href="/boards">Open Boards</a>
     </p>}
-    <BoardRoutineCheckins />
+
     <section id="habits-library" class="habits-shell__section" data-habits-section>
       <div class="habits-section__intro">
         <h2 class="habits-section__title">Library</h2>
         <div class="habits-section__actions">
-          <button type="button" class="btn btn-primary" data-open-habit-modal={loadFailed || !householdActive ? undefined : "true"} disabled={loadFailed || !householdActive}>
+          <button type="button" class="btn btn-primary" data-open-habit-modal={loadFailed || !boardActive || !canCreateRoutine ? undefined : "true"} disabled={loadFailed || !boardActive || !canCreateRoutine}>
             {newRoutine}
           </button>
         </div>
@@ -248,9 +268,9 @@ const habitsBootstrap = serializeForScript({ habits })
                   warming up.
                 </p>
               </div>
-            ) : !householdActive ? (
-              <div class="habits-empty"><p class="habits-empty__title">Household Routines are paused</p>
-                <p class="habits-empty__detail">Restore Household from Boards to return to its saved Routines.</p></div>
+            ) : !boardActive ? (
+              <div class="habits-empty"><p class="habits-empty__title">Board Routines are paused</p>
+                <p class="habits-empty__detail">Restore this Board from Boards to return to its saved Routines.</p></div>
             ) : habits.length === 0 ? (
               <div class="habits-empty">
                 <p class="habits-empty__title">No routines yet.</p>
@@ -265,7 +285,7 @@ const habitsBootstrap = serializeForScript({ habits })
                     <button
                       type="button"
                       class="habit-card__check"
-                      data-action="complete"
+                      disabled={!canCompleteRoutine} data-action="complete"
                       data-id={habit.id}
                       aria-label={`Complete ${habit.name} today`}
                     >
@@ -310,7 +330,7 @@ const habitsBootstrap = serializeForScript({ habits })
                       <button
                         type="button"
                         class="btn-icon"
-                        data-action="edit"
+                        disabled={!canEditRoutine} data-action="edit"
                         data-id={habit.id}
                         aria-label={`Edit ${habit.name}`}
                         title={`Edit ${habit.name}`}
@@ -320,7 +340,7 @@ const habitsBootstrap = serializeForScript({ habits })
                       <button
                         type="button"
                         class="btn-icon"
-                        data-action="delete"
+                        disabled={!canDeleteRoutine} data-action="delete"
                         data-id={habit.id}
                         aria-label={`Delete ${habit.name}`}
                         title={`Delete ${habit.name}`}
@@ -362,17 +382,17 @@ const habitsBootstrap = serializeForScript({ habits })
       <h2 class="habits-section__title">Related views</h2>
       <p class="m-0 text-text-secondary">Completing a routine creates or updates a task in these views.</p>
       <div class="habits-flow-links">
-        <a href="/today" class="habits-flow-link">Today</a>
-        <a href="/kanban" class="habits-flow-link">Kanban</a>
-        <a href="/table" class="habits-flow-link">Table</a>
-        <a href="/upcoming" class="habits-flow-link">Upcoming</a>
+        <a href={`/today?board_id=${encodeURIComponent(workScope.boardId)}`} class="habits-flow-link">Today</a>
+        <a href={`/boards/${encodeURIComponent(workScope.boardId)}?view=kanban`} class="habits-flow-link">Kanban</a>
+        <a href={`/boards/${encodeURIComponent(workScope.boardId)}?view=table`} class="habits-flow-link">Table</a>
+        <a href={`/upcoming?board_id=${encodeURIComponent(workScope.boardId)}`} class="habits-flow-link">Upcoming</a>
       </div>
     </section>
 
     <div class="habit-modal-overlay hidden" id="habit-modal-overlay">
       <div class="habit-modal" role="dialog" aria-modal="true" aria-labelledby="habit-modal-title">
         <div class="habit-modal__header">
-          <h2 id="habit-modal-title" data-create-title={householdActive ? newRoutine : "Restore Household from Boards to create a shared Routine"} data-edit-title={`Edit ${organization("routine")}`}>{newRoutine}</h2>
+          <h2 id="habit-modal-title" data-create-title={boardActive ? newRoutine : "This Board is unavailable"} data-edit-title={`Edit ${organization("routine")}`}>{newRoutine}</h2>
           <button class="btn-icon" id="habit-modal-close" aria-label="Close">×</button>
         </div>
 
@@ -418,10 +438,16 @@ const habitsBootstrap = serializeForScript({ habits })
 
           <div class="form-group">
             <label for="habit-area">Area</label>
-            <select id="habit-area" required>
-              {!areas.some(option => option.id === "default") &&
-                <option value="default" selected={!area}>Without an Area</option>}
-              {areas.map(option => <option value={option.id} selected={(area?.id ?? "default") === option.id}>{option.name}</option>)}
+            <select id="habit-area">
+              <option value="" selected={!area}>Without an Area</option>
+              {areas.map(option => <option value={option.id} selected={area?.id === option.id}>{option.name}</option>)}
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="habit-project">Project (optional)</label>
+            <select id="habit-project">
+              <option value="" selected={!project}>Without a Project</option>
+              {projects.map(option => <option value={option.id} data-area-id={option.area_id ?? ""} selected={project?.id === option.id}>{option.title}</option>)}
             </select>
           </div>
 

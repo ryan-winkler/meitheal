@@ -96,3 +96,6 @@ decisions.md
 __pycache__/
 *.pyc
 integrations/home-assistant/tests/testing_config/custom_sentences/
+
+# Native process crash dumps are local diagnostics, not source.
+core.[0-9]*

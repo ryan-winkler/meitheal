@@ -1,45 +1,52 @@
-import { organizationPlacementAvailable } from "@lib/organization-placement-access"
-import { resolveHomeAssistantAreaSelection } from "@lib/home-assistant-area-access"
 import type { APIRoute } from "astro"
-import { NamedBoardTaskRepository } from "@domains/tasks/persistence/named-board-task-repository"
-import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { parseBoardPlacement } from "@lib/board-workspace"
-import { apiError, apiJson } from "@lib/api-response"
-import { currentBoardTaskActor, readBoardRequest } from "@lib/named-board-request"
-import { parseCalendarDay } from "@lib/calendar-day"
-import { stripHtml } from "@lib/strip-html"
+import { withBoardScope } from "@lib/board-http"
+import { apiError } from "@lib/api-response"
+import { GET as listTasks, POST as createTask } from "../../../tasks/index"
 
-export const POST: APIRoute = async (context) => {
-  const { locals, request, params } = context
-  const body = await readBoardRequest(request)
-  if (body && !organizationPlacementAvailable(body)) return apiError("This organizing feature is unavailable.", 404)
-  const dueDate = body?.due_date
-  if (dueDate !== undefined && dueDate !== null && (typeof dueDate !== "string" || !parseCalendarDay(dueDate))) {
-    return apiError("Choose a valid due date.", 400)
+/** Keep the earlier receipt aliases without adding fields withheld by canonical authorization. */
+async function ticketResponse(response: Response): Promise<Response> {
+  if (!response.ok) return response
+  const payload: unknown = await response.json()
+  const aliases = (value: unknown) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return value
+    const task = value as Record<string, unknown>
+    return { ...task,
+      ...(typeof task.ticket_key === "string" ? { ticket: task.ticket_key } : {}),
+      ...(typeof task.task_version === "number" && Number.isSafeInteger(task.task_version)
+        ? { version: task.task_version } : {}),
+    }
   }
-  const title = typeof body?.title === "string" ? stripHtml(body.title.trim()) : ""
-  const description = typeof body?.description === "string" ? stripHtml(body.description.trim()) : ""
-  if (!body || !title || title.length > 500 || description.length > 10_000) return apiError("Enter a valid task title and description.", 400)
-  const scopes = parseBoardPlacement(body.placement)
-  if (body.placement !== undefined && (!scopes || body.areaId !== undefined || body.projectId !== undefined)) {
-    return apiError("Choose a valid Board group and Project.", 400)
-  }
-  const actor = await currentBoardTaskActor(locals, request, true)
-  if (!actor || !params.id) return apiError("Board unavailable", 404)
-  const homeLocation = await resolveHomeAssistantAreaSelection(context, body.home_assistant_area_id)
-  if (!homeLocation.ok) return apiError(homeLocation.detail, homeLocation.status)
-  await ensureSchema()
-  const repository = new NamedBoardTaskRepository(getPersistenceClient())
-  const result = await repository.create(actor, params.id, { title, description, ...(dueDate !== undefined ? { dueDate } : {}) }, {
-    ...(homeLocation.selection ? { homeAssistantArea: homeLocation.selection } : {}),
-    ...(typeof body.laneId === "string" ? { laneId: body.laneId } : {}),
-    ...(scopes ? { ...(scopes.areaId ? { areaId: scopes.areaId } : {}), ...(scopes.projectId ? { projectId: scopes.projectId } : {}), local: true } : {
-      ...(typeof body.areaId === "string" ? { areaId: body.areaId } : {}),
-      ...(typeof body.projectId === "string" ? { projectId: body.projectId } : {}),
-    }),
-    ...(typeof body.goalId === "string" ? { goalId: body.goalId } : {}),
-  })
-  if (result.ok) return apiJson(result.value, 201)
-  if (result.errorCode === "denied") return apiError("Your Board permissions do not allow this action.", 403)
-  return apiError("Board or placement unavailable", 404)
+  const result = payload && typeof payload === "object" && !Array.isArray(payload) &&
+    "tasks" in payload && Array.isArray(payload.tasks)
+    ? { ...payload, tasks: payload.tasks.map(aliases) } : aliases(payload)
+  const headers = new Headers(response.headers)
+  headers.delete("content-length")
+  return new Response(JSON.stringify(result), { status: response.status, headers })
 }
+
+// The old tickets URL shares the rich command. Private receipt lookup stays canonical.
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async (context, scope) => {
+  if (context.url.searchParams.has("captureReceipt") || context.request.headers.has("X-Meitheal-Capture-Attempt")) return apiError("Use the canonical task receipt lookup.", 400)
+  const headers = new Headers(context.request.headers)
+  headers.set("X-Meitheal-Board-Id", scope.boardId)
+  return ticketResponse(await listTasks({ ...context, request: new Request(context.request, { headers }) }))
+}, { boardParam: "id" })
+
+export const POST: APIRoute = withBoardScope({ resource: "task", action: "create" }, async (context, scope) => {
+  if (context.url.searchParams.has("captureReceipt")) return apiError("Use the canonical task receipt lookup.", 400)
+  if (context.request.headers.has("X-Meitheal-Capture-Attempt") && context.request.headers.get("X-Meitheal-Board-Id") !== scope.boardId) return apiError("Capture requires its original explicit Board header.", 400)
+  const body: unknown = await context.request.json().catch(() => null)
+  if (!body || typeof body !== "object" || Array.isArray(body)) return apiError("Send a task object.", 400)
+  const input = body as Record<string, unknown>
+  const translated = { ...input }
+  for (const [alias, field] of [["areaId", "area_id"], ["projectId", "project_id"], ["goalId", "goal_id"]] as const) {
+    if (!(alias in input)) continue
+    if (field in input) return apiError("Choose one placement format.", 400)
+    translated[field] = input[alias]
+    delete translated[alias]
+  }
+  const headers = new Headers(context.request.headers)
+  headers.set("X-Meitheal-Board-Id", scope.boardId)
+  const request = new Request(context.request, { headers, body: JSON.stringify(translated) })
+  return ticketResponse(await createTask({ ...context, request }))
+}, { boardParam: "id" })

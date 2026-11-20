@@ -8,7 +8,7 @@ test("health readiness is degraded when a reachable database fails integrity", a
   const directory = await mkdtemp(join(tmpdir(), "meitheal-health-"))
   const originalDb = process.env.MEITHEAL_DB_URL
   const originalSupervisor = process.env.SUPERVISOR_TOKEN
-  const store = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const store = await import("../helpers/persistence-fixture")
   try {
     delete process.env.SUPERVISOR_TOKEN
     const path = join(directory, "test.db")

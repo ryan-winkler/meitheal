@@ -1,6 +1,6 @@
 create_task:
   name: Create Task
-  description: Create a new task in Meitheal.
+  description: Create a new task in the explicitly configured Meitheal Board.
   fields:
     title:
       name: Title
@@ -47,7 +47,7 @@ create_task:
           step: 1
     assignee:
       name: Assignee
-      description: The person the task is for. They need a Home Assistant account. Leave empty to use Meitheal's default assignee.
+      description: The person the task is for. They need a Home Assistant account. Leave empty to use the selected Board's default assignee.
       example: person.aoife
       selector:
         entity:
@@ -90,7 +90,7 @@ complete_task:
 
 sync_todo:
   name: Sync Tasks
-  description: Trigger a manual refresh of task data from Meitheal.
+  description: Refresh the explicitly configured Board. Private Board contents stay unavailable in shared Home Assistant entities.
 
 complete_task_by_tag:
   name: Complete Task by NFC Tag

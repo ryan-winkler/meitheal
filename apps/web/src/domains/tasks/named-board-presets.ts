@@ -1,7 +1,7 @@
 export const NAMED_BOARD_PRESETS = {
-  standard: ["To Do", "In Progress", "Done"],
-  project: ["Backlog", "In Progress", "Delivered"],
-  chores: ["To Do", "Doing", "Checked Off"],
+  standard: ["Backlog", "To Do", "In Progress", "Done"],
+  project: ["Backlog", "To Do", "In Progress", "Delivered"],
+  chores: ["Backlog", "To Do", "Doing", "Checked Off"],
 } as const
 
 export type NamedBoardPreset = keyof typeof NAMED_BOARD_PRESETS

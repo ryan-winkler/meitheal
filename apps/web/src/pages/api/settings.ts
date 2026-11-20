@@ -1,7 +1,10 @@
+import { verifiedBoardRequestPrincipal } from "@lib/board-request-context"
 import { organizationLegacyFeatureWrite } from "@lib/organization-legacy-feature-write"
+import { isPrivateWorkSetting } from "@domains/tasks/integration-destinations"
 import type { APIRoute } from "astro"
 import {
   AI_HANDOFF_SETTING_KEYS,
+  isWorkIntegrationSetting, saveWorkIntegrationSettings,
   ensureSchema,
   getPersistenceClient,
   saveAiHandoffSettings,
@@ -72,6 +75,7 @@ export const GET: APIRoute = async ({ request, url, locals }) => {
     const admin = canManageSystemSettings(request, locals)
     const key = url.searchParams.get("key")
     if (key) {
+      if (isPrivateWorkSetting(key)) return apiProblem({ status: 404, detail: "This setting is unavailable.", extraHeaders: noStore })
       if (key === "ai-provider" && url.searchParams.get("handoff") === "1") return await readAiHandoff(request, locals, repo)
       if (!admin && isSystemSetting(key)) return requireSystemSettingsAdmin(request, locals)!
       if (AI_HANDOFF_SETTING_KEYS.includes(key)) {
@@ -84,7 +88,6 @@ export const GET: APIRoute = async ({ request, url, locals }) => {
         const detected = await resolveSupervisorGrocyAddon(value)
         if (detected) {
           value = detected.url
-          await repo.upsert("grocy_url", JSON.stringify(detected.url))
         } else {
           value = null
         }
@@ -103,6 +106,7 @@ export const GET: APIRoute = async ({ request, url, locals }) => {
     const settings: Record<string, unknown> = Object.create(null)
     for (const row of rows) {
       const k = String(row.key)
+      if (isPrivateWorkSetting(k)) continue
       if (!admin && isSystemSetting(k)) continue
       if (!canReadHandoffSettings && AI_HANDOFF_SETTING_KEYS.includes(k)) continue
       if (isSecretSetting(k)) {
@@ -119,7 +123,6 @@ export const GET: APIRoute = async ({ request, url, locals }) => {
       const detected = await resolveSupervisorGrocyAddon(settings.grocy_url)
       if (detected) {
         settings.grocy_url = detected.url
-        await repo.upsert("grocy_url", JSON.stringify(detected.url))
       } else {
         delete settings.grocy_url
       }
@@ -152,6 +155,7 @@ export const PUT: APIRoute = async ({ request, locals }) => {
     const body = payload as Record<string, unknown>
 
     const key = typeof body.key === "string" ? body.key.trim() : ""
+    if (isPrivateWorkSetting(key)) return apiProblem({ status: 404, detail: "Manage work access and capture preferences from Boards.", extraHeaders: noStore })
     if (!key || key.length > 100 || !/^[a-zA-Z0-9_-]+$/.test(key)) {
       return apiError("key must be 1-100 alphanumeric/hyphen/underscore characters", 400)
     }
@@ -256,7 +260,14 @@ export const PUT: APIRoute = async ({ request, locals }) => {
       return settingsJson({ key, value: css, name, theme })
     }
 
-    if (key === "ai-custom-url") {
+    if (isWorkIntegrationSetting(key)) {
+      const access = await currentSettingsAccess(request, locals, true)
+      if (access instanceof Response) return access
+      const principal = await verifiedBoardRequestPrincipal({ request, locals }, true)
+      if (!principal || !await saveWorkIntegrationSettings(client, principal, [{ key, value }])) {
+        return apiProblem({ status: 409, detail: "This integration serves Boards you cannot manage, or its approval changed. Review its Board destinations before saving.", extraHeaders: noStore })
+      }
+    } else if (key === "ai-custom-url") {
       await saveLegacyAiHandoffUrl(client, body.value ?? null)
     } else {
       await repo.upsert(key, value)
@@ -291,7 +302,13 @@ export const DELETE: APIRoute = async ({ request, url, locals }) => {
     await repo.ensureSettingsTable()
     const policyDenied = await organizationLegacyFeatureWrite(request, locals, ["feature_habits", "feature_gamification"])
     if (policyDenied) return policyDenied
-    await repo.deleteAll()
+    // A preference reset cannot rewrite authority or erase other users' Board
+    // choices. Dedicated commands retain their current actor/journal checks.
+    const rows = await repo.getAll()
+    const resettable = rows.map(row => String(row.key)).filter(key => !isPrivateWorkSetting(key) && !isWorkIntegrationSetting(key))
+    if (resettable.length) await getPersistenceClient().execute({
+      sql: `DELETE FROM settings WHERE key IN (${resettable.map(() => "?").join(",")})`, args: resettable,
+    })
 
     logger.audit({
       event: "audit.settings.reset",

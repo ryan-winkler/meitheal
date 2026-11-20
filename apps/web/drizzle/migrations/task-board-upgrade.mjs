@@ -64,8 +64,8 @@ export function* taskBoardMigrationStateSteps() {
         throw new Error("The Meitheal database has an invalid schema version marker")
       }
       version = Number(value)
-      if (version > BOARD_LIFECYCLE_SCHEMA_VERSION) {
-        throw new Error(`Meitheal database schema ${version} requires a newer App (this App supports ${BOARD_LIFECYCLE_SCHEMA_VERSION})`)
+      if (version > 26) {
+        throw new Error(`Meitheal database schema ${version} requires a newer App (this App supports ${26})`)
       }
       if (version >= TASK_BOARD_SCHEMA_VERSION && value !== String(version)) {
         throw new Error("The Meitheal database has an invalid Board schema version marker")
@@ -111,8 +111,11 @@ export async function validateTaskBoardUpgrade(db, { namedStorage = false } = {}
   await assertNoInboundReferences(db, tables)
   const { rows: [version] } = await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")
   const lifecycle = Number(version?.value) >= BOARD_LIFECYCLE_SCHEMA_VERSION
+  const ordinary = Number(version?.value) >= 26
+  const ordinaryModule = ordinary ? await import("./0016_ordinary_boards.mjs") : null
   const allowedTriggers = [...(namedStorage ? namedBoardPhaseTriggerNames : taskBoardHouseholdTriggerNames),
-    ...(lifecycle ? householdRetirementTriggers.map(([name]) => name) : [])]
+    ...(ordinary ? [...Object.keys(ordinaryModule.ordinaryBoardObjects), ...ordinaryModule.ordinaryRetirementTriggers.map(([name]) => name)]
+      : lifecycle ? householdRetirementTriggers.map(([name]) => name) : [])]
   await validateTaskBoardStorage(db, allowedTriggers)
   await validateTaskBoardDraftStorage(db, allowedTriggers)
   await validateTaskBoardTicketAllocator(db)

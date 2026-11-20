@@ -22,6 +22,7 @@ const SYS_REQ = "ha-system";
 
 export interface HAServiceOperationOptions {
   operationAllowed?: () => boolean | Promise<boolean>
+  throwOnError?: boolean
 }
 
 /** Optional caller-owned admission policy; generic HA callers keep their existing behavior. */
@@ -146,16 +147,19 @@ export async function getCalendarEntityFeatures(entityId: string): Promise<numbe
 
 export async function listCalendarEvents(
   entityId: string, startDate: string, endDate: string,
+  options?: HAServiceOperationOptions,
 ): Promise<CalendarEvent[]> {
   const conn = await getHAConnection();
   if (!conn) throw new Error("Home Assistant is not connected");
   try {
+    if (!await permitsServiceOperation(options)) throw new Error("Home Assistant calendar read authority changed")
     const result = await conn.sendMessagePromise<Record<string, unknown>>({
       type: "call_service", domain: "calendar", service: "get_events",
       target: { entity_id: entityId },
       service_data: { start_date_time: startDate, end_date_time: endDate },
       return_response: true,
     });
+    if (!await permitsServiceOperation(options)) throw new Error("Home Assistant calendar read authority changed")
 
     // HA WebSocket call_service with return_response wraps data in a `response` key
     // Try both: result.response[entityId].events AND result[entityId].events
@@ -217,7 +221,7 @@ export async function createCalendarEvent(
     logger.log("info", {
       event: "ha.calendar.event_created", domain: "ha", component: "ha-services",
       request_id: SYS_REQ,
-      message: `Created calendar event: ${event.summary} (all-day: ${isDateOnly(event.start)})`,
+      message: "Created calendar event",
     });
     return true;
   } catch (err) {
@@ -259,7 +263,7 @@ export async function updateCalendarEvent(
     logger.log("info", {
       event: "ha.calendar.event_updated", domain: "ha", component: "ha-services",
       request_id: SYS_REQ,
-      message: `Updated calendar event: ${event.summary} (uid: ${event.uid}, all-day: ${isDateOnly(event.start)})`,
+      message: "Updated calendar event",
     });
     return true;
   } catch (updateErr) {
@@ -284,7 +288,7 @@ export async function updateCalendarEvent(
       await callService(conn, "calendar", "create_event", createData, { entity_id: entityId });
       logger.log("info", {
         event: "ha.calendar.event_updated_via_recreate", domain: "ha", component: "ha-services",
-        request_id: SYS_REQ, message: `Updated event via delete+create: ${event.summary}`,
+        request_id: SYS_REQ, message: "Updated calendar event via replacement",
       });
       return true;
     } catch (fallbackErr) {
@@ -349,19 +353,31 @@ export interface TodoItem {
  */
 export async function getTodoItems(
   entityId: string, status?: ("needs_action" | "completed")[],
+  options?: HAServiceOperationOptions,
 ): Promise<TodoItem[]> {
   const conn = await getHAConnection();
-  if (!conn) return [];
+  if (!conn) {
+    if (options?.throwOnError) throw new Error("Home Assistant todo read is unavailable")
+    return []
+  }
   try {
     const serviceData: Record<string, unknown> = {};
     if (status && status.length > 0) serviceData.status = status;
 
+    if (!await permitsServiceOperation(options)) {
+      if (options?.throwOnError) throw new Error("Home Assistant todo read authority changed")
+      return []
+    }
     const result = await conn.sendMessagePromise<Record<string, unknown>>({
       type: "call_service", domain: "todo", service: "get_items",
       target: { entity_id: entityId },
       service_data: serviceData,
       return_response: true,
     });
+    if (!await permitsServiceOperation(options)) {
+      if (options?.throwOnError) throw new Error("Home Assistant todo read authority changed")
+      return []
+    }
 
     // HA WebSocket call_service with return_response wraps data in a `response` key
     // Try both: result.response[entityId].items AND result[entityId].items
@@ -380,6 +396,7 @@ export async function getTodoItems(
     });
     return items;
   } catch (err) {
+    if (options?.throwOnError) throw new Error("Home Assistant todo read could not be confirmed")
     logger.log("error", {
       event: "ha.todo.get_items.failed", domain: "ha", component: "ha-services",
       request_id: SYS_REQ, message: `Failed to get todo items: ${err}`,
@@ -414,7 +431,7 @@ export async function addTodoItem(
     await callService(conn, "todo", "add_item", serviceData, { entity_id: entityId });
     logger.log("info", {
       event: "ha.todo.item_added", domain: "ha", component: "ha-services",
-      request_id: SYS_REQ, message: `Added todo item: ${item.summary}`,
+      request_id: SYS_REQ, message: "Added todo item",
     });
     return true;
   } catch (err) {
@@ -552,23 +569,55 @@ export async function moveTodoItem(
 export async function subscribeTodoItems(
   entityId: string,
   callback: (items: TodoItem[]) => void,
+  options?: HAServiceOperationOptions,
 ): Promise<() => void> {
   const conn = await getHAConnection();
-  if (!conn) return () => {};
+  if (!conn) {
+    if (options?.throwOnError) throw new Error("Home Assistant todo subscription is unavailable")
+    return () => {}
+  }
   try {
+    if (!await permitsServiceOperation(options)) {
+      if (options?.throwOnError) throw new Error("Home Assistant todo subscription authority changed")
+      return () => {}
+    }
+    let active = true
+    let pending: TodoItem[] | undefined
+    let draining = false
+    const drain = async () => {
+      if (draining) return
+      draining = true
+      try {
+        while (active && pending !== undefined) {
+          const items = pending
+          pending = undefined
+          if (!await permitsServiceOperation(options)) { pending = undefined; return }
+          // Coalesce newer snapshots while authority is being checked. Async
+          // checks cannot make an older frame overwrite a later provider state.
+          if (active && pending === undefined) callback(items)
+        }
+      } finally { draining = false }
+    }
     const unsub = await conn.subscribeMessage<{ items?: TodoItem[] }>(
       (msg) => {
-        const items = msg.items ?? [];
-        callback(items);
+        if (!active) return
+        pending = msg.items ?? []
+        void drain().catch(() => { pending = undefined })
       },
       { type: "todo/item/subscribe", entity_id: entityId },
     );
+    if (!await permitsServiceOperation(options)) {
+      active = false; pending = undefined; unsub()
+      if (options?.throwOnError) throw new Error("Home Assistant todo subscription authority changed")
+      return () => {}
+    }
     logger.log("info", {
       event: "ha.todo.subscribed", domain: "ha", component: "ha-services",
       request_id: SYS_REQ, message: `Subscribed to todo updates for ${entityId}`,
     });
-    return unsub;
+    return () => { active = false; pending = undefined; unsub() };
   } catch (err) {
+    if (options?.throwOnError) throw new Error("Home Assistant todo subscription could not be confirmed")
     logger.log("error", {
       event: "ha.todo.subscribe.failed", domain: "ha", component: "ha-services",
       request_id: SYS_REQ, message: `Failed to subscribe to todo updates: ${err}`,
@@ -588,7 +637,7 @@ export async function sendNotification(
     await callService(conn, "notify", target, { title, message, data });
     logger.log("info", {
       event: "ha.notification.sent", domain: "ha", component: "ha-services",
-      request_id: SYS_REQ, message: `Sent notification to ${target}: ${title}`,
+      request_id: SYS_REQ, message: "Sent notification",
     });
     return true;
   } catch (err) {
@@ -689,10 +738,12 @@ export async function callHAService(
   domain: string, service: string,
   serviceData?: Record<string, unknown>,
   target?: { entity_id?: string | string[]; device_id?: string | string[] },
+  options?: HAServiceOperationOptions,
 ): Promise<unknown> {
   const conn = await getHAConnection();
   if (!conn) return null;
   try {
+    if (!await permitsServiceOperation(options)) return null
     const result = await callService(conn, domain, service, serviceData, target);
     logger.log("debug", {
       event: "ha.service.called", domain: "ha", component: "ha-services",

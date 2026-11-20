@@ -7,9 +7,12 @@
         import { containTabFocus } from "@lib/focus-trap"
         import { applyAppearancePreferences, bindAppearanceNavigation, readAppearancePreferences } from "@lib/appearance-preferences"
         import { safeIngressHref, syncIngressDestination } from "@lib/ingress-navigation"
-        import { bindWorkspaceEntry, DASHBOARD_PATH } from "@lib/workspace-entry"
+        import { bindWorkspaceEntry } from "@lib/workspace-entry"
         import { openWorkspaceQuickAdd } from "@lib/open-workspace-capture"
         import { hasPriorityOverlay, initShortcutModal } from "@lib/layout-shortcuts-controller"
+        import { currentTaskApiContext } from "@lib/task-api"
+        import { boardNavigationLinks, readBoardNavigationContext } from "@lib/board-workspace"
+        import { taskViewUrl, type TaskView } from "@lib/task-view-route"
         import { pageLifecycle } from "@lib/page-lifecycle";
         import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
         import { attachShortcutTooltips, injectShortcutStyles } from "@lib/shortcut-tooltip";
@@ -119,35 +122,54 @@
             }
           }, { signal })
 
+          const navigationContext = () => {
+            const url = new URL(location.href)
+            const ingress = window.__ingress_path || ""
+            if (ingress && url.pathname.startsWith(ingress + "/")) url.pathname = url.pathname.slice(ingress.length)
+            const context = currentTaskApiContext()
+            const selected = readBoardNavigationContext(url)
+            return context ? { ...selected, boardId: context.boardId } : undefined
+          }
+          const taskDestination = (view?: TaskView) => {
+            const context = navigationContext()
+            if (!context) return "/boards"
+            const tasks = new URL(boardNavigationLinks(context).tasks, location.href)
+            if (view) {
+              const selected = taskViewUrl(tasks, view, true)
+              return selected.pathname + selected.search + selected.hash
+            }
+            return tasks.pathname + tasks.search + tasks.hash
+          }
+          const openTasks = (view?: TaskView) => {
+            const href = taskDestination(view)
+            if (!href) return
+            syncIngressDestination(href)
+            window.location.assign(safeIngressHref(href))
+          }
+
           const SHORTCUT_NAV = {
             dashboard: () => {
-              syncIngressDestination(DASHBOARD_PATH)
-              window.location.assign(safeIngressHref(DASHBOARD_PATH))
+              const context = navigationContext()
+              const destination = context ? boardNavigationLinks(context).dashboard : "/boards"
+              syncIngressDestination(destination)
+              window.location.assign(safeIngressHref(destination))
             },
-            tasks: () => {
-              syncIngressDestination("/tasks")
-              window.location.assign(safeIngressHref("/tasks"))
-            },
-            kanban: () => {
-              syncIngressDestination("/tasks#kanban")
-              window.location.assign(safeIngressHref("/tasks#kanban"))
-            },
-            table: () => {
-              syncIngressDestination("/table")
-              window.location.assign(safeIngressHref("/table"))
-            },
+            tasks: () => openTasks(),
+            kanban: () => openTasks("kanban"),
+            table: () => openTasks("table"),
             today: () => {
-              syncIngressDestination("/today")
-              window.location.assign(safeIngressHref("/today"))
+              const context = navigationContext()
+              const destination = context ? boardNavigationLinks(context).today : "/boards"
+              syncIngressDestination(destination)
+              window.location.assign(safeIngressHref(destination))
             },
             upcoming: () => {
-              syncIngressDestination("/upcoming")
-              window.location.assign(safeIngressHref("/upcoming"))
+              const context = navigationContext()
+              const destination = context ? boardNavigationLinks(context).upcoming : "/boards"
+              syncIngressDestination(destination)
+              window.location.assign(safeIngressHref(destination))
             },
-            calendar: () => {
-              syncIngressDestination("/calendar")
-              window.location.assign(safeIngressHref("/calendar"))
-            },
+            calendar: () => openTasks("calendar"),
           } as const
 
           // The New Task modal ships in Layout, so open it directly. Clicking a page

@@ -7,7 +7,7 @@ import { expect, test } from "@playwright/test"
 import { validateFrameworkOverrides } from "@meitheal/domain-strategy"
 import { parseRuleInput } from "../../apps/web/src/domains/strategy/rule-input"
 import { findAllRules, replaceRules } from "../../apps/web/src/domains/strategy/rule-repository"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 import { POST as importSettings } from "../../apps/web/src/pages/api/import/settings"
 import { startCoreFixture } from "../scripts/task-pins-fixture"
 
@@ -16,6 +16,9 @@ const imported = (payload: unknown) => importSettings({
   request: new Request("http://localhost/api/import/settings", { method: "POST", body: JSON.stringify(payload) }),
   locals: { hassIsAdmin: true },
 } as Parameters<typeof importSettings>[0])
+const settingsSnapshot = async () => Object.fromEntries(
+  (await getPersistenceClient().execute("SELECT key, value FROM settings")).rows.map(({ key, value }) => [String(key), value])
+)
 
 test("rules and framework overrides reject invalid typed values", () => {
   for (const value of [null, [], { name: " " }, { name: "Invalid", taskTypes: ["unknown"] },
@@ -74,9 +77,9 @@ test.describe("configuration transactions", () => {
   })
 
   test("string preferences retain JSON encoding while credential imports and agent administration stay denied", async () => {
+    const before = await settingsSnapshot()
     expect((await imported({ theme: "light", locale: "ga", ha_token: "synthetic-only" })).status).toBe(200)
-    const rows = (await getPersistenceClient().execute("SELECT key, value FROM settings ORDER BY key")).rows
-    expect(rows).toEqual([{ key: "locale", value: '"ga"' }, { key: "theme", value: '"light"' }])
+    expect(await settingsSnapshot()).toEqual({ ...before, locale: '"ga"', theme: '"light"' })
     const response = await importSettings({ request: new Request("http://localhost/api/import/settings", { method: "POST", body: "{}" }),
       locals: { hassIsAdmin: true, agentToken: { scopes: ["settings:write"] } },
     } as unknown as Parameters<typeof importSettings>[0])
@@ -84,8 +87,9 @@ test.describe("configuration transactions", () => {
   })
 
   test("actual import bytes are bounded without relying on Content-Length", async () => {
+    const before = await settingsSnapshot()
     expect((await imported({ theme: "é".repeat(102400) })).status).toBe(413)
-    expect((await getPersistenceClient().execute("SELECT key FROM settings")).rows).toHaveLength(0)
+    expect(await settingsSnapshot()).toEqual(before)
   })
 })
 

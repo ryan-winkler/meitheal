@@ -17,12 +17,12 @@ export interface KanbanRefreshFocus {
   afterSave?: "status" | "lane-move" | "epic" | "board-group"
 }
 
-function findGroupFocus(board: HTMLElement, group: HTMLElement) {
+export function findGroupFocus(board: HTMLElement, group: HTMLElement) {
   const laneId = group.closest<HTMLElement>(".kanban-column")?.dataset.laneId
   const key = group.dataset.swimlaneType
   const lane = laneId && board.querySelector(`.kanban-column[data-lane-id="${CSS.escape(laneId)}"]`)
-  const target = lane && [...lane.querySelectorAll<HTMLElement>(".dynamic-group")]
-    .find(candidate => candidate.dataset.swimlaneType === key)
+  const target = lane && [...lane.querySelectorAll<HTMLElement>(".swimlane-group")]
+    .find(candidate => key !== undefined && candidate.dataset.swimlaneType === key)
   return (target && target.querySelector<HTMLElement>(".swimlane-header")) ||
     (lane || board).querySelector<HTMLElement>(".kanban-column-header")
 }
@@ -125,6 +125,16 @@ export function initKanbanPage(signal: AbortSignal): void {
     lastFocus = focus
     resetScroll = reset
     const origin = location.href
+    const requestedFocus = document.activeElement
+    let focusMoved = false
+    const focusLifetime = new AbortController()
+    const markFocusMoved = (event: Event) => {
+      const target = event.target
+      if (target instanceof Element && target.closest("[data-board-verification]")) return
+      if (target !== requestedFocus && target !== document.body) focusMoved = true
+    }
+    document.addEventListener("focusin", markFocusMoved, { signal: focusLifetime.signal })
+    document.addEventListener("pointerdown", markFocusMoved, { signal: focusLifetime.signal })
     const statusSaved = focus?.afterSave === "status" || focus?.afterSave === "lane-move"
     board.setAttribute("aria-busy", "true")
     if (!dataOnly) renderStatus(window.mI18n?.get("kanban.board_loading") ?? "Loading board…")
@@ -155,7 +165,8 @@ export function initKanbanPage(signal: AbortSignal): void {
         return
       }
 
-      const active = document.activeElement
+      const nowFocused = document.activeElement
+      const active = !focusMoved && (nowFocused === document.body || (nowFocused instanceof Element && nowFocused.closest("[data-board-verification]"))) ? requestedFocus : nowFocused
       const grouping = board.dataset.groupBy
       const activeGroup = (grouping === "assigned" || grouping === "status" || grouping === "project") && board.contains(active) &&
         active?.matches("button.swimlane-header") ? active.closest<HTMLElement>(".swimlane-group") : null
@@ -233,6 +244,7 @@ export function initKanbanPage(signal: AbortSignal): void {
         renderStatus(statusSaved ? `Status saved. ${message}` : message, true)
       }
     } finally {
+      focusLifetime.abort()
       if (pending === request) {
         pending = undefined
         board.removeAttribute("aria-busy")
@@ -313,7 +325,14 @@ export function initKanbanPage(signal: AbortSignal): void {
     if (new URLSearchParams(location.search).has("home_assistant_area_id")) void refresh()
   }, { signal })
   document.addEventListener("meitheal:area-catalog-ready", () => {
-    if (board.style.visibility === "hidden") void refresh()
+    if (board.style.visibility !== "hidden" && board.dataset.available === "true") return
+    const current = taskBackgroundUrl().searchParams
+    if (current.has("area") || current.has("project")) { void refresh(); return }
+    const url = new URL(desired)
+    const area = getRememberedAreaId()
+    const reset = updateKanbanFilters(url, { ...readKanbanFilters(url.searchParams), area }, true)
+    syncAreaLinks(area)
+    void load(url, undefined, reset)
   }, { signal })
   document.addEventListener("meitheal:area-changed", () => {
     syncAreaLinks(getSelectedAreaId())

@@ -36,12 +36,19 @@ test("private verification failures explain the hidden Board and retry without l
     await member.addCookies([{ name: "feedback-fixture", value: "member-two", url: origin }])
     const page = await member.newPage()
     page.setDefaultTimeout(8_000)
-    await page.goto(app + "/boards/" + id + "?ticket=" + ticket.id)
     const inspector = page.locator("#task-detail-overlay")
-    const form = page.locator('form[data-board-form="task-edit"]:visible')
-    await expect(inspector).toHaveClass(/active/)
-    await form.getByRole("textbox", { name: "Title", exact: true }).fill("Unsubmitted recovery draft")
-    await form.getByRole("textbox", { name: "Details", exact: true }).fill("Keep this description across verification failures")
+    await page.goto(app + "/boards/" + id)
+    const open = page.locator(`.kanban-card[data-id="${ticket.id}"] .card-open-btn`)
+    await open.press("Enter")
+    await expect(inspector.locator("#td-title")).toHaveValue("Recovery ticket")
+    await page.goto(app + "/boards/" + id + "?ticket=" + ticket.id)
+    const title = inspector.locator("#td-title")
+    const description = inspector.locator("#td-description")
+    await expect(inspector).toBeVisible()
+    await expect(title).toHaveValue("Recovery ticket")
+    await inspector.locator("#td-desc-edit-btn-hover").click()
+    await description.fill("Keep this description across verification failures")
+    await title.fill("Unsubmitted recovery draft")
     let mode: "ok" | "503" | "timeout" = "ok"
     const isVerification = (url: URL) => url.origin === origin && url.pathname === fixture.configuredPath + "/api/boards/" + id
     await page.route(isVerification, async route => {
@@ -54,10 +61,9 @@ test("private verification failures explain the hidden Board and retry without l
     const retry = recovery.getByRole("button", { name: "Retry verification", exact: true })
     const reopenDraft = async () => {
       await expect(recovery).toBeHidden()
-      await page.locator(".kanban-card .card-open-btn").press("Enter")
-      await expect(inspector).toHaveClass(/active/)
-      await expect(form.getByRole("textbox", { name: "Title", exact: true })).toHaveValue("Unsubmitted recovery draft")
-      await expect(form.getByRole("textbox", { name: "Details", exact: true })).toHaveValue("Keep this description across verification failures")
+      await expect(inspector).toBeVisible()
+      await expect(title).toHaveValue("Unsubmitted recovery draft")
+      await expect(description).toHaveValue("Keep this description across verification failures")
     }
     mode = "503"
     const rejected = page.waitForResponse(response => response.request().method() === "HEAD" && isVerification(new URL(response.url())) && response.status() === 503)
@@ -65,7 +71,8 @@ test("private verification failures explain the hidden Board and retry without l
     await rejected
     await expect(recovery).toContainText("hidden until access can be verified")
     await expect(retry).toBeVisible()
-    await expect(page.locator(".kanban-card, #task-detail-overlay")).toHaveCount(0)
+    await expect(page.locator(".kanban-card")).toHaveCount(0)
+    await expect(inspector).toBeHidden()
     await expect(recovery).not.toContainText("Unsubmitted recovery draft")
     mode = "ok"
     await retry.click()
@@ -81,7 +88,8 @@ test("private verification failures explain the hidden Board and retry without l
     await member.setOffline(true)
     await page.evaluate(() => window.dispatchEvent(new Event("offline")))
     await expect(retry).toBeVisible()
-    await expect(page.locator(".kanban-card, #task-detail-overlay")).toHaveCount(0)
+    await expect(page.locator(".kanban-card")).toHaveCount(0)
+    await expect(inspector).toBeHidden()
     await member.setOffline(false)
     await page.evaluate(() => window.dispatchEvent(new Event("online")))
     await reopenDraft()
@@ -89,7 +97,8 @@ test("private verification failures explain the hidden Board and retry without l
     await page.evaluate(() => window.dispatchEvent(new Event("focus")))
     await expect(page.locator("[data-board-expired]")).toBeVisible()
     await expect(recovery).toBeHidden()
-    await expect(page.locator(".kanban-card, #task-detail-overlay")).toHaveCount(0)
+    await expect(page.locator(".kanban-card")).toHaveCount(0)
+    await expect(inspector).toHaveCount(0)
     const admin = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {} })
     await admin.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
     const settings = await admin.newPage()

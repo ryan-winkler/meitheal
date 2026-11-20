@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { parseRiceInputs, readRiceInputs, riceLensScore } from "../../apps/web/src/lib/rice-lens"
 import { evaluateFrameworkFormula } from "@meitheal/domain-strategy"
 import { taskDetailPath, ticketIdFromPath } from "../../apps/web/src/lib/task-page-url"
@@ -32,21 +33,23 @@ test.describe("Planning RICE editor", () => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
   test.use({ serviceWorkers: "block" })
 
-  async function create(request: APIRequestContext, title: string, payload = {}, status = "pending") {
-    const response = await request.post("/api/tasks", { data: { title, status, framework_payload: JSON.stringify(payload) } })
+  async function create(request: APIRequestContext, headers: Record<string, string>, title: string, payload = {}, status = "pending") {
+    const response = await request.post("/api/tasks", { headers, data: { title, status, framework_payload: JSON.stringify(payload) } })
     expect(response.status()).toBe(201)
     return (await response.json()).id as string
   }
 
-  test("edits a legacy score in place and preserves the rest of its payload", async ({ page, request }) => {
+  test("edits a legacy score in place and preserves the rest of its payload", async ({ page, request, baseURL }) => {
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const legacy = { reach: "0x10", impact: 2, confidence: true, effort: 1, heart: { note: "keep me" } }
     const title = "A long task " + "window".repeat(26)
-    const id = await create(request, title, legacy)
-    const finished = await create(request, "Completed score outside active work", legacy, "complete")
-    const deferred = await create(request, "Deferred score outside active work", legacy)
+    const id = await create(request, headers, title, legacy)
+    const finished = await create(request, headers, "Completed score outside active work", legacy, "complete")
+    const deferred = await create(request, headers, "Deferred score outside active work", legacy)
     try {
       const current = await (await request.get(`/api/tasks/${deferred}`)).json()
       const defer = await request.patch(`/api/tasks/${deferred}/deferral`, {
+        headers,
         data: { deferred: true, updated_at: current.task_version, deferral_revision: null },
       })
       expect(defer.ok()).toBe(true)
@@ -92,13 +95,14 @@ test.describe("Planning RICE editor", () => {
       await expect(page.locator(`#task-table tr[data-id="${id}"]`)).toHaveAttribute("data-rice", "0")
     } finally {
       for (const task of [id, deferred, finished]) {
-        expect((await request.delete(`/api/tasks/${task}`, { data: {} })).status()).toBe(204)
+        expect((await request.delete(`/api/tasks/${task}`, { headers, data: {} })).status()).toBe(204)
       }
     }
   })
 
-  test("a stale editor preserves another session's write and reloads current estimates", async ({ page, request }) => {
-    const id = await create(request, "Score the greenhouse plan")
+  test("a stale editor preserves another session's write and reloads current estimates", async ({ page, request, baseURL }) => {
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+    const id = await create(request, headers, "Score the greenhouse plan")
     const path = `/api/tasks/${id}`
     try {
       await page.goto("/planning#rice")
@@ -109,7 +113,7 @@ test.describe("Planning RICE editor", () => {
         await form.getByRole("spinbutton", { name: label }).fill(value)
       }
       const other = { rice: { reach: 3, impact: 1, confidence: 50, effort: 1 }, heart: { note: "newer" } }
-      expect((await request.patch(path, { data: { framework_payload: JSON.stringify(other) } })).ok()).toBe(true)
+      expect((await request.patch(path, { headers, data: { framework_payload: JSON.stringify(other) } })).ok()).toBe(true)
       await form.getByRole("button", { name: "Save score" }).press("Enter")
       await expect(form.locator("[data-rice-message]")).toContainText("This task changed")
       const reload = form.getByRole("button", { name: "Reload score" })
@@ -120,7 +124,7 @@ test.describe("Planning RICE editor", () => {
       await expect(form.getByRole("spinbutton", { name: "Reach" })).toHaveValue("3")
       await expect(form.locator("output")).toHaveText("150")
     } finally {
-      expect((await request.delete(path, { data: {} })).status()).toBe(204)
+      expect((await request.delete(path, { headers, data: {} })).status()).toBe(204)
     }
   })
 })

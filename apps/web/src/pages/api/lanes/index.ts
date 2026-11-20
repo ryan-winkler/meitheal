@@ -1,3 +1,4 @@
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { hasBoardSelection, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
@@ -17,10 +18,10 @@ const logger = createLogger({
 
 /** GET /api/lanes — list all lanes, POST /api/lanes — create a lane */
 
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async (context, scope) => {
   try {
     await ensureSchema()
-    const repo = new LaneRepository(getPersistenceClient())
+    const repo = new LaneRepository(getPersistenceClient(), scope)
     const rawLanes = await repo.findAll()
 
     const lanes = rawLanes.map((r) => ({
@@ -47,14 +48,14 @@ export const GET: APIRoute = async () => {
     })
     return apiError("Failed to list lanes")
   }
-}
+})
 
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = withBoardScope({ resource: "board", action: "manage" }, async ({ request }, scope) => {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     if (hasBoardSelection(body)) return unavailableBoardResponse()
     await ensureSchema()
-    const repo = new LaneRepository(getPersistenceClient())
+    const repo = new LaneRepository(getPersistenceClient(), scope)
 
     const rawLabel = typeof body.label === "string" ? body.label.trim() : ""
     const label = stripHtml(rawLabel)
@@ -96,4 +97,4 @@ export const POST: APIRoute = async ({ request }) => {
     })
     return apiError("Failed to create lane")
   }
-}
+})

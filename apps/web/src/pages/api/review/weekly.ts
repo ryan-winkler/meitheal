@@ -1,3 +1,4 @@
+import { withBoardScope } from "@lib/board-http"
 /**
  * GET /api/review/weekly — Weekly Review aggregation endpoint
  *
@@ -55,10 +56,10 @@ interface PriorityBreakdown {
   p5_lowest: number
 }
 
-export const GET: APIRoute = async ({ locals }) => {
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async ({ locals }, scope) => {
   try {
     const timezone = resolveTimezone(locals.timezone)
-    const { tasks } = await getTasksForView({ timezone })
+    const { tasks } = await getTasksForView({ timezone }, scope)
     const todayStr = calendarToday(timezone)
     const weekAgoStr = shiftCalendarDay(todayStr, -6)
 
@@ -203,4 +204,4 @@ export const GET: APIRoute = async ({ locals }) => {
       headers: { "Content-Type": "application/json" },
     })
   }
-}
+})

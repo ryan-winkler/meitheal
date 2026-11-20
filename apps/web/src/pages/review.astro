@@ -1,4 +1,6 @@
 ---
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+
 import { ensureSchema, getPersistenceClient, TaskHandoff } from "@domains/tasks"
 import { verifyCurrentHAAdministrator } from "@domains/ha/current-admin"
 import Layout from "../layouts/Layout.astro"
@@ -6,6 +8,10 @@ import EmptyState from "../components/ui/EmptyState.astro"
 import { verifiedIngressUser } from "../lib/verified-ingress-user"
 import { taskDetailPath } from "../lib/task-page-url"
 import { formatTicketKey } from "../lib/ticket-key"
+const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
+if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
+const workScope = workScopeResult.scope
+
 
 Astro.response.headers.set("Cache-Control", "private, no-store")
 const user = verifiedIngressUser(Astro.locals)
@@ -22,7 +28,7 @@ let hasMore = false
 if (allowed) {
   try {
     await ensureSchema()
-    const queue = await new TaskHandoff(getPersistenceClient()).queue((page - 1) * pageSize, pageSize + 1)
+    const queue = await new TaskHandoff(getPersistenceClient(), workScope).queue((page - 1) * pageSize, pageSize + 1)
     hasMore = queue.length > pageSize
     proposals = queue.slice(0, pageSize)
   } catch {

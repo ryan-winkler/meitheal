@@ -1,4 +1,5 @@
-import { boardWorkspaceHref } from "../board-workspace"
+import { currentTaskApiContext, taskApiHeaders, type TaskApiContext } from "../task-api"
+import { sameTaskApiContext } from "../task-api-client"
 import { safeIngressHref } from "../ingress-navigation"
 import { safeFetch } from "../safe-fetch"
 
@@ -10,6 +11,10 @@ export function setupBoardRoutineCheckins(signal: AbortSignal) {
   const feedback = section?.querySelector<HTMLElement>("[data-board-routine-feedback]")
   const more = section?.querySelector<HTMLElement>("[data-board-routine-more]")
   if (!section || !list || !feedback || !more) return
+  const boardId = section.dataset.boardId
+  const query = section.dataset.routineQuery
+  if (!boardId || !query) return
+  let verifiedContext: TaskApiContext | null = null
   let pending: AbortController | undefined
   let session = ""
   let items: Routine[] = []
@@ -17,7 +22,7 @@ export function setupBoardRoutineCheckins(signal: AbortSignal) {
   let uncertain: { item: Routine; proof: string } | undefined
   const showUnconfirmed = () => {
     feedback.replaceChildren(document.createTextNode("Could not confirm the check-in. "))
-    if (!uncertain || uncertain.proof !== session) return
+    if (!uncertain || uncertain.proof !== session || !items.some(item => item.id === uncertain!.item.id && item.period === uncertain!.item.period && item.canComplete && !item.complete)) return
     const retry = document.createElement("button")
     retry.type = "button"
     retry.className = "btn btn-ghost"
@@ -29,21 +34,27 @@ export function setupBoardRoutineCheckins(signal: AbortSignal) {
     pending?.abort()
     items = []
     session = ""
+    verifiedContext = null
     section.hidden = true
     list.replaceChildren()
     feedback.textContent = ""
   }
   const refresh = async () => {
     if (signal.aborted || document.hidden || !navigator.onLine || saving) return
+    const context = currentTaskApiContext()
+    if (!context || context.boardId !== boardId) { clear(); return }
     pending?.abort()
     const request = new AbortController()
     pending = request
     const active = AbortSignal.any([signal, request.signal])
     try {
-      const response = await safeFetch("/api/boards/routines", { cache: "no-store", signal: active })
+      const response = await safeFetch(`/api/boards/routines?${query}`, { cache: "no-store", headers: taskApiHeaders(context), signal: active })
       if (!response.ok) throw new Error("Unavailable")
       const data: { items: Routine[]; hasMore: boolean } = await response.json()
       if (active.aborted || document.hidden) return
+      if (!sameTaskApiContext(context, currentTaskApiContext())) { clear(); return }
+      if (!Array.isArray(data.items) || data.items.some(item => item.boardId !== boardId)) throw new Error("Unavailable")
+      verifiedContext = context
       session = response.headers.get("x-meitheal-board-session") ?? ""
       items = data.items
       if (uncertain && uncertain.proof !== session) uncertain = undefined
@@ -55,7 +66,7 @@ export function setupBoardRoutineCheckins(signal: AbortSignal) {
         const row = document.createElement("li")
         row.className = "list-group-item"
         const link = document.createElement("a")
-        link.href = safeIngressHref(boardWorkspaceHref(item.boardId, { groups: true }, "routines"))
+        link.href = safeIngressHref(`/habits?${query}`)
         link.textContent = item.name
         const context = document.createElement("p")
         context.className = "text-muted"
@@ -89,18 +100,21 @@ export function setupBoardRoutineCheckins(signal: AbortSignal) {
     const retry = button?.hasAttribute("data-board-routine-retry")
     const item = retry ? uncertain?.item : items.find(row => row.id === button?.dataset.boardRoutineId)
     const proof = retry ? uncertain?.proof : session
-    if (!button || !item || saving || !proof || proof !== session) return
+    if (!button || !item || saving || !proof || proof !== session || item.boardId !== boardId || !sameTaskApiContext(verifiedContext, currentTaskApiContext())) return
+    const commandContext = verifiedContext
     saving = true
     button.disabled = true
     feedback.textContent = "Saving…"
     try {
       const response = await safeFetch(`/api/boards/${encodeURIComponent(item.boardId)}/planning`, {
-        method: "POST", signal, headers: { "content-type": "application/json", "x-meitheal-board-session": proof },
+        method: "POST", signal, headers: taskApiHeaders(commandContext!, { "content-type": "application/json", "x-meitheal-board-session": proof }),
         body: JSON.stringify({ action: "routine-complete", id: item.id, period: item.period }),
       })
+      if (!sameTaskApiContext(commandContext, currentTaskApiContext())) { clear(); return }
       uncertain = undefined
       if (session === proof) feedback.textContent = response.ok ? "Saved" : "The check-in is unavailable. Refresh to review its current period and permissions."
     } catch {
+      if (!sameTaskApiContext(commandContext, currentTaskApiContext())) { clear(); return }
       uncertain = { item, proof }
       if (session === proof) showUnconfirmed()
     } finally {

@@ -1,3 +1,4 @@
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { randomUUID } from "node:crypto"
 import { expect, test } from "@playwright/test"
 import { calendarToday } from "../../apps/web/src/lib/date"
@@ -35,7 +36,7 @@ test.describe("Launch layout and due-date regressions", () => {
 
   test("Kanban cards keep their height in a busy lane and overdue counts use calendar days", async ({ page, request, baseURL }) => {
     test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
-    const headers = { origin: new URL(baseURL!).origin, "content-type": "application/json" }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin, "content-type": "application/json" })
     const prefix = `Launch ${randomUUID().slice(0, 8)}`
     const today = calendarToday("Europe/Dublin")
     const ids: string[] = []

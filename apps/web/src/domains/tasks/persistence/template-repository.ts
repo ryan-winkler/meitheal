@@ -1,21 +1,20 @@
-import { householdBoardIsActive } from "./named-board-repository"
-/**
- * TemplateRepository — domain service for task template database queries.
- * @domain Task Management (Templates context)
- *
- * Provides typed, parameterized query methods for task template CRUD
- * and task instantiation from templates.
- *
- * Routine templates (is_routine=1) are a specialization that auto-create
- * recurring tasks. Streaks are derived from completed task dates.
- *
- * @kcs Routines are NOT isolated — they create real tasks via templates.
- * Tasks created from routines carry source_template_id for tracking.
- * @see docs/decisions/ADR-007-hierarchy-model.md for terminology evolution.
- */
-import type { Client } from "@libsql/client"
-import { nextHouseholdTicketNumberSql } from "../../../../drizzle/migrations/task-board-tickets.mjs"
-import { STATUS } from "../../../lib/status-config"
+import { randomUUID } from "node:crypto"
+import { routinePeriod } from "../routine-period"
+import type { Client, InValue } from "@libsql/client"
+import {
+  requireBoardScope,
+  validateBoardScope,
+  type BoardScope,
+  type WorkAction
+} from "../board-scope"
+import { validateBoardPlacement } from "../board-access-service"
+import { prepareTaskCreation } from "../task-creation-service"
+import { boardOperationClient, requireBoardWriterIntent, requireBoardWriterCheck, BoardOperationError } from "./board-operation-client"
+import { ownedPlanning, storageBoardId } from "./board-storage"
+import { sql, sourceSql } from "./sql-fragment"
+import { TaskRepository } from "./task-repository"
+import { changeBoardGrants } from "./board-grant-fence"
+import { scopedTaskRead } from "./board-work-query"
 
 export interface RoutineTemplateRow {
   id: string
@@ -42,392 +41,443 @@ export interface RoutineWithStats extends RoutineTemplateRow {
   currentStreak: number
   longestStreak: number
   totalCompletions: number
+  projectActive: boolean
   checklists: Array<{ text: string; done: boolean }>
 }
 
 /** @deprecated Use RoutineWithStats — ADR-007 ubiquitous language */
 export type HabitWithStats = RoutineWithStats
 
+type TemplateInput = {
+  id: string
+  name: string
+  templateJson: string
+  icon: string
+  position: number
+  isRoutine?: boolean
+  cadence?: string
+  areaId?: string | null | undefined
+  projectId?: string | null | undefined
+  isHabit?: boolean
+  frequency?: string
+}
+type TemplatePatch = Partial<Omit<TemplateInput, "id" | "position" | "isHabit" | "isRoutine">> & {
+  templatePatch?: string
+  streak_freezes_used?: number
+  streak_freeze_limit?: number
+}
+
+export { routinePeriod } from "../routine-period"
+
+function templateObject(value: string): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(value)
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    throw new Error("Template must contain a JSON object")
+  return parsed as Record<string, unknown>
+}
+
 export class TemplateRepository {
-  constructor(private client: Client) {}
-
-  /** List all templates ordered by position */
+  constructor(
+    private readonly client: Client,
+    readonly scope: BoardScope
+  ) {
+    requireBoardScope(scope)
+  }
+  private db(action: WorkAction, routine = true) {
+    return boardOperationClient(this.client, this.scope, {
+      resource: routine ? "routine" : "task",
+      action
+    })
+  }
   async findAll() {
-    const result = await this.client.execute(
-      "SELECT * FROM task_templates WHERE owner_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') ORDER BY position ASC, created_at ASC"
-    )
-    return result.rows
-  }
-
-  /** Find a template by ID */
-  async findById(id: string) {
-    const result = await this.client.execute({
-      sql: "SELECT * FROM task_templates WHERE owner_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND id = ?",
-      args: [id],
-    })
-    return (result.rows[0] as Record<string, unknown>) ?? null
-  }
-
-  /** Get next available template position */
-  async getNextPosition(): Promise<number> {
-    const result = await this.client.execute(
-      "SELECT COALESCE(MAX(position), -1) + 1 AS next_pos FROM task_templates WHERE owner_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active')"
-    )
-    return Number((result.rows[0] as Record<string, unknown>)?.next_pos ?? 0)
-  }
-
-  /** Create a task from a template */
-  async instantiateFromTemplate(taskId: string, template: Record<string, unknown>): Promise<void> {
-    const now = Date.now()
-    const areaId = String(template.area_id ?? "default")
-    const inserted = await this.client.execute({
-      sql: `INSERT INTO tasks (id, title, description, status, priority, labels, task_type,
-            recurrence_rule, checklists, custom_fields, area_id, framework_payload,
-            calendar_sync_state, idempotency_key, request_id, created_at, updated_at)
-            SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '{}', ?, ?, ?, ?, ?
-            WHERE ? = 'default' OR EXISTS (SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND retired_at IS NULL)`,
-      args: [
-        taskId,
-        String(template.title ?? "Untitled"),
-        String(template.description ?? ""),
-        STATUS.PENDING,
-        Number(template.priority ?? 3),
-        JSON.stringify(template.labels ?? []),
-        String(template.task_type ?? "task"),
-        template.recurrence_rule ? String(template.recurrence_rule) : null,
-        JSON.stringify(template.checklists ?? []),
-        JSON.stringify(template.custom_fields ?? {}),
-        areaId,
-        STATUS.PENDING,
-        crypto.randomUUID(),
-        crypto.randomUUID(),
-        now,
-        now,
-        areaId,
-        areaId,
-      ],
-    })
-    if (!inserted.rowsAffected) throw new Error("Template Area is unavailable")
-  }
-
-  /** Create a new template */
-  async create(data: {
-    id: string; name: string; templateJson: string; icon: string; position: number; isRoutine?: boolean; cadence?: string
-    areaId?: string | undefined
-    /** @deprecated Use isRoutine */
-    isHabit?: boolean
-    /** @deprecated Use cadence */
-    frequency?: string
-  }): Promise<boolean> {
-    const now = Date.now()
-    const isRoutine = data.isRoutine ?? data.isHabit ?? false
-    const cadence = data.cadence ?? data.frequency ?? "daily"
-    const inserted = await this.client.execute({
-      sql: `INSERT INTO task_templates (id, name, template_json, icon, is_routine, cadence, position, created_at, updated_at)
-            SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
-            WHERE ? IS NULL OR EXISTS (SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND retired_at IS NULL)`,
-      args: [data.id, data.name, data.templateJson, data.icon, isRoutine ? 1 : 0, cadence, data.position, now, now, data.areaId ?? null, data.areaId ?? null],
-    })
-    return inserted.rowsAffected !== 0
-  }
-
-  /** Delete a template by ID */
-  async delete(id: string): Promise<void> {
-    await this.client.execute({
-      sql: "DELETE FROM task_templates WHERE owner_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND id = ?",
-      args: [id],
-    })
-  }
-
-  /** Update a template */
-  async update(id: string, data: {
-    name?: string; templateJson?: string; icon?: string; cadence?: string
-    templatePatch?: string
-    areaId?: string
-    streak_freezes_used?: number; streak_freeze_limit?: number
-    /** @deprecated Use cadence */
-    frequency?: string
-  }): Promise<boolean> {
-    const sets: string[] = []
-    const args: (string | number)[] = []
-
-    if (data.name !== undefined) { sets.push("name = ?"); args.push(data.name) }
-    if (data.templateJson !== undefined) { sets.push("template_json = ?"); args.push(data.templateJson) }
-    else if (data.templatePatch !== undefined) {
-      sets.push("template_json = json_patch(CASE WHEN json_valid(template_json) THEN template_json ELSE '{}' END, ?)")
-      args.push(data.templatePatch)
+    const tx = await this.db("read", false).transaction("read")
+    try {
+      const { rows } = await tx.execute(
+        sql`SELECT * FROM task_templates AS template WHERE ${ownedPlanning(this.scope, "template")} AND retired_at IS NULL ORDER BY position,created_at,id`
+      )
+      const result = []
+      for (const row of rows) if (await this.visible(tx, row)) result.push(row)
+      await tx.commit()
+      return result
+    } finally {
+      tx.close()
     }
-    if (data.icon !== undefined) { sets.push("icon = ?"); args.push(data.icon) }
-    const cadence = data.cadence ?? data.frequency
-    if (cadence !== undefined) { sets.push("cadence = ?"); args.push(cadence) }
-    if (data.streak_freezes_used !== undefined) { sets.push("streak_freezes_used = ?"); args.push(data.streak_freezes_used) }
-    if (data.streak_freeze_limit !== undefined) { sets.push("streak_freeze_limit = ?"); args.push(data.streak_freeze_limit) }
-
-    if (sets.length === 0) return true
-
-    sets.push("updated_at = ?")
-    args.push(Date.now())
-    args.push(id)
-    const areaCheck = data.areaId === undefined ? "" : "AND EXISTS (SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND retired_at IS NULL)"
-    if (data.areaId !== undefined) args.push(data.areaId)
-
-    const written = await this.client.execute({
-      sql: `UPDATE task_templates SET ${sets.join(", ")} WHERE owner_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND id = ? ${areaCheck}`,
-      args,
-    })
-    return written.rowsAffected !== 0
   }
-
-  // ── Routine-Specific Methods ────────────────────────────────────
-
-  /** Find all routine templates */
-  async findRoutines(areaId?: string): Promise<RoutineTemplateRow[]> {
-    if (!await householdBoardIsActive(this.client)) return []
-    const areaFilter = areaId ? "AND COALESCE(CASE WHEN json_valid(template_json) THEN json_extract(template_json, '$.area_id') END, 'default') = ?" : ""
-    const result = await this.client.execute({
-      sql: `SELECT * FROM task_templates WHERE owner_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND is_routine = 1 ${areaFilter} ORDER BY position ASC, created_at ASC`,
-      args: areaId ? [areaId] : [],
+  async findById(id: string) {
+    const tx = await this.db("read", false).transaction("read")
+    try {
+      const {
+        rows: [row]
+      } = await tx.execute(
+        sql`SELECT * FROM task_templates AS template WHERE ${ownedPlanning(this.scope, "template")} AND template.id=${id} AND retired_at IS NULL`
+      )
+      const result = row && (await this.visible(tx, row)) ? (row as Record<string, unknown>) : null
+      await tx.commit()
+      return result
+    } finally {
+      tx.close()
+    }
+  }
+  private async visible(
+    db: Pick<Client, "execute">,
+    row: Record<string, unknown>
+  ): Promise<boolean> {
+    if (
+      row.is_routine === 1 &&
+      !(await validateBoardScope(this.scope, db, { resource: "routine", action: "read" })).ok
+    )
+      return false
+    const data = templateObject(String(row.template_json))
+    return validateBoardPlacement(this.scope, db, {
+      areaId: typeof data.area_id === "string" ? data.area_id : null,
+      projectId: typeof data.project_id === "string" ? data.project_id : null
     })
-    return result.rows.map(r => {
-      const row = r as Record<string, unknown>
-      return {
+  }
+  async getNextPosition(): Promise<number> {
+    const {
+      rows: [row]
+    } = await this.db("read", false).execute(
+      sql`SELECT COALESCE(MAX(position),-1)+1 AS position FROM task_templates AS template WHERE ${ownedPlanning(this.scope, "template")}`
+    )
+    return Number(row?.position ?? 0)
+  }
+  private async placement(db: Pick<Client, "execute">, template: Record<string, unknown>) {
+    let areaId = typeof template.area_id === "string" && template.area_id ? template.area_id : null
+    const projectId =
+      typeof template.project_id === "string" && template.project_id ? template.project_id : null
+    if (projectId) {
+      const {
+        rows: [project]
+      } = await db.execute(
+        sql`SELECT area_id FROM projects AS project WHERE id = ${projectId} AND ${ownedPlanning(this.scope, "project")} AND retired_at IS NULL`
+      )
+      if (!project || (areaId && project.area_id !== areaId))
+        throw new Error("Template Project is unavailable")
+      if (!areaId && typeof project.area_id === "string") areaId = project.area_id
+    }
+    if (areaId) {
+      const { rows } = await db.execute(
+        sql`SELECT id FROM areas AS area WHERE id = ${areaId} AND ${ownedPlanning(this.scope, "area")} AND retired_at IS NULL`
+      )
+      if (!rows.length) throw new Error("Template Area is unavailable")
+    }
+    if (!(await validateBoardPlacement(this.scope, db, { areaId, projectId })))
+      throw new Error("Template placement is unavailable")
+    return { ...template, area_id: areaId, project_id: projectId }
+  }
+  async create(data: TemplateInput): Promise<boolean> {
+    const routine = data.isRoutine ?? data.isHabit ?? false
+    const db = this.db("create", routine)
+    const tx = await db.transaction("write")
+    try {
+      const input = templateObject(data.templateJson)
+      if (data.areaId !== undefined) input.area_id = data.areaId
+      if (data.projectId !== undefined) input.project_id = data.projectId
+      const template = await this.placement(tx, input)
+      const now = Date.now()
+      const result =
+        await tx.execute(sql`INSERT INTO task_templates(id,name,template_json,icon,is_routine,cadence,position,created_at,updated_at,owner_board_id)
+        VALUES (${data.id},${data.name},${JSON.stringify(template)},${data.icon},${routine ? 1 : 0},${data.cadence ?? data.frequency ?? "daily"},${data.position},${now},${now},${storageBoardId(this.scope)})`)
+      await tx.commit()
+      return result.rowsAffected > 0
+    } finally {
+      tx.close()
+    }
+  }
+  async update(id: string, data: TemplatePatch): Promise<boolean> {
+    const current = await this.findById(id)
+    if (!current) return false
+    const tx = await this.db("edit", Boolean(current.is_routine)).transaction("write")
+    try {
+      const {
+        rows: [fresh]
+      } = await tx.execute(
+        sql`SELECT * FROM task_templates AS template WHERE id=${id} AND ${ownedPlanning(this.scope, "template")} AND retired_at IS NULL`
+      )
+      if (!fresh || !await this.visible(tx, fresh)) return false
+      await requireBoardWriterIntent(tx, this.scope, { resource: fresh.is_routine ? "routine" : "task", action: "edit" })
+      await requireBoardWriterCheck(tx, this.scope, async () => {
+        if (!await this.visible(tx, fresh)) throw new BoardOperationError("unavailable")
+      })
+      let template = templateObject(data.templateJson ?? String(fresh.template_json))
+      if (data.templatePatch !== undefined)
+        template = { ...template, ...templateObject(data.templatePatch) }
+      if (data.areaId !== undefined) template.area_id = data.areaId
+      if (data.projectId !== undefined) template.project_id = data.projectId
+      template = await this.placement(tx, template)
+      const sets = [sql`template_json=${JSON.stringify(template)}`, sql`updated_at=${Date.now()}`]
+      for (const [key, value] of Object.entries({
+        name: data.name,
+        icon: data.icon,
+        cadence: data.cadence ?? data.frequency,
+        streak_freezes_used: data.streak_freezes_used,
+        streak_freeze_limit: data.streak_freeze_limit
+      })) {
+        if (value !== undefined) sets.push(sql`${sourceSql(key)}=${value}`)
+      }
+      const { joinSql } = await import("./sql-fragment")
+      const result = await tx.execute(
+        sql`UPDATE task_templates SET ${joinSql(sets)} WHERE id=${id} AND ${ownedPlanning(this.scope, "task_templates")}`
+      )
+      await tx.commit()
+      return result.rowsAffected > 0
+    } finally {
+      tx.close()
+    }
+  }
+  async delete(id: string): Promise<void> {
+    const current = await this.findById(id)
+    if (!current) return
+    const result = await changeBoardGrants(this.client, this.scope.principal, async (tx) => {
+      const { rows: [fresh] } = await tx.execute(sql`SELECT * FROM task_templates AS template
+        WHERE id=${id} AND ${ownedPlanning(this.scope, "template")} AND retired_at IS NULL`)
+      if (!fresh || !await this.visible(tx, fresh)) return { unchanged: false }
+      const allowed = await validateBoardScope(this.scope, tx, {
+        resource: fresh.is_routine ? "routine" : "task",
+        action: "delete"
+      })
+      if (!allowed.ok) throw new BoardOperationError(allowed.errorCode)
+      const changed = await tx.execute(
+        sql`UPDATE task_templates SET retired_at=${Date.now()},updated_at=${Date.now()} WHERE id=${id} AND ${ownedPlanning(this.scope, "task_templates")} AND retired_at IS NULL`
+      )
+      return changed.rowsAffected ? { next: true } : { unchanged: false }
+    })
+    if (result.status === "locked") throw new Error("Current template authority is unavailable")
+  }
+  async findRoutines(areaId?: string, projectId?: string): Promise<RoutineTemplateRow[]> {
+    const filter = areaId
+      ? sql`AND json_extract(template_json,'$.area_id')=${areaId}`
+      : sourceSql("")
+    const project = projectId
+      ? sql`AND json_extract(template_json,'$.project_id')=${projectId}`
+      : sourceSql("")
+    const tx = await this.db("read").transaction("read")
+    try {
+      const { rows } = await tx.execute(
+        sql`SELECT * FROM task_templates AS template WHERE ${ownedPlanning(this.scope, "template")} AND is_routine=1 AND retired_at IS NULL ${filter} ${project} ORDER BY position,created_at,id`
+      )
+      const visible = []
+      for (const row of rows) if (await this.visible(tx, row)) visible.push(row)
+      await tx.commit()
+      return visible.map((row) => ({
         id: String(row.id),
         name: String(row.name),
-        template_json: String(row.template_json ?? "{}"),
-        icon: String(row.icon ?? "✅"),
+        template_json: String(row.template_json),
+        icon: String(row.icon),
         cadence: String(row.cadence ?? row.frequency ?? "daily"),
-        position: Number(row.position ?? 0),
+        position: Number(row.position),
         streak_freezes_used: Number(row.streak_freezes_used ?? 0),
         streak_freeze_limit: Number(row.streak_freeze_limit ?? 3),
         created_at: Number(row.created_at),
-        updated_at: Number(row.updated_at),
-      }
-    })
+        updated_at: Number(row.updated_at)
+      }))
+    } finally {
+      tx.close()
+    }
   }
-
-  /** @deprecated Use findRoutines() — ADR-007 ubiquitous language */
-  async findHabits(): Promise<RoutineTemplateRow[]> {
+  async findHabits() {
     return this.findRoutines()
   }
-
-  /**
-   * Get routines with stats — enriches each routine template with:
-   * - Today's completion status (from linked tasks)
-   * - Last completed date
-   * - Current and longest streaks
-   * - Total completions
-   * - Checklists from template
-   */
-  async getRoutinesWithStats(areaId?: string): Promise<RoutineWithStats[]> {
-    const routines = await this.findRoutines(areaId)
-    const today = new Date().toISOString().split("T")[0]!
-    const results: RoutineWithStats[] = []
-
+  async getRoutinesWithStats(areaId?: string, projectId?: string): Promise<RoutineWithStats[]> {
+    const routines = await this.findRoutines(areaId, projectId)
+    const result: RoutineWithStats[] = []
     for (const routine of routines) {
-      // Today's task for this routine
-      const todayTask = await this.client.execute({
-        sql: `SELECT id, status FROM tasks
-              WHERE task_board_id IS NULL AND source_template_id = ? AND due_date = ?
-              ORDER BY created_at DESC LIMIT 1`,
-        args: [routine.id, today],
-      })
-      const todayRow = todayTask.rows[0] as Record<string, unknown> | undefined
-      const todayCompleted = todayRow ? String(todayRow.status) === "complete" : false
-      const todayTaskId = todayRow ? String(todayRow.id) : null
-
-      // Last completed date
-      const lastCompleted = await this.client.execute({
-        sql: `SELECT due_date FROM tasks
-              WHERE task_board_id IS NULL AND source_template_id = ? AND status = 'complete'
-              ORDER BY due_date DESC LIMIT 1`,
-        args: [routine.id],
-      })
-      const lastRow = lastCompleted.rows[0] as Record<string, unknown> | undefined
-      const lastCompletedDate = lastRow ? String(lastRow.due_date) : null
-
-      // Total completions
-      const totalResult = await this.client.execute({
-        sql: "SELECT COUNT(*) as cnt FROM tasks WHERE task_board_id IS NULL AND source_template_id = ? AND status = 'complete'",
-        args: [routine.id],
-      })
-      const totalCompletions = Number((totalResult.rows[0] as Record<string, unknown>).cnt)
-
-      // Streak calculation from completed task dates
-      const streakData = await this.calculateStreak(routine.id)
-
-      // Parse checklists from template JSON
-      let checklists: Array<{ text: string; done: boolean }> = []
-      try {
-        const tmpl = JSON.parse(routine.template_json) as Record<string, unknown>
-        if (Array.isArray(tmpl.checklists)) {
-          checklists = tmpl.checklists as Array<{ text: string; done: boolean }>
-        }
-      } catch { /* invalid JSON */ }
-
-      results.push({
+      const period = routinePeriod(routine.cadence)
+      const { rows } = await this.db("read").execute(
+        scopedTaskRead(
+          this.scope,
+          sql`SELECT id,status,due_date FROM scoped_tasks WHERE source_template_id=${routine.id} ORDER BY due_date DESC,created_at DESC`
+        )
+      )
+      const today = rows.find((row) => row.due_date === period)
+      const completed = rows.filter((row) => row.status === "complete")
+      const dates = [
+        ...new Set(
+          completed
+            .map((row) => String(row.due_date))
+            .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date))
+        )
+      ]
+        .sort()
+        .reverse()
+      const dayStep = routine.cadence === "weekly" ? 7 : 1
+      let longest = 0,
+        streak = 0,
+        previous: number | undefined
+      for (const date of dates) {
+        const time = Date.parse(date)
+        streak = previous !== undefined && previous - time === dayStep * 86400000 ? streak + 1 : 1
+        longest = Math.max(longest, streak)
+        previous = time
+      }
+      let current = 0,
+        expected = Date.parse(period)
+      if (dates[0] && Date.parse(dates[0]) === expected - dayStep * 86400000)
+        expected -= dayStep * 86400000
+      for (const date of dates) {
+        if (Date.parse(date) !== expected) break
+        current++
+        expected -= dayStep * 86400000
+      }
+      const body = templateObject(routine.template_json)
+      // Routine eligibility needs only its referenced Project lifecycle, never
+      // the unrelated Project catalogue or its feature/CRUD capability.
+      const projectId = typeof body.project_id === "string" && body.project_id ? body.project_id : null
+      const projectActive = !projectId || (await this.db("read").execute(sql`SELECT id FROM projects AS project WHERE id=${projectId} AND ${ownedPlanning(this.scope, "project")} AND retired_at IS NULL AND status='active'`)).rows.length > 0
+      result.push({
         ...routine,
-        todayCompleted,
-        todayTaskId,
-        lastCompletedDate,
-        currentStreak: streakData.current,
-        longestStreak: streakData.longest,
-        totalCompletions,
-        checklists,
+        projectActive,
+        todayCompleted: today?.status === "complete",
+        todayTaskId: today ? String(today.id) : null,
+        lastCompletedDate: dates[0] ?? null,
+        currentStreak: current,
+        longestStreak: longest,
+        totalCompletions: completed.length,
+        checklists: Array.isArray(body.checklists)
+          ? (body.checklists as Array<{ text: string; done: boolean }>)
+          : []
       })
     }
-
-    return results
+    return result
   }
-
-  /** @deprecated Use getRoutinesWithStats() — ADR-007 ubiquitous language */
-  async getHabitsWithStats(): Promise<RoutineWithStats[]> {
+  async getHabitsWithStats() {
     return this.getRoutinesWithStats()
   }
-
-  /**
-   * Create today's task from a routine template.
-   * If today's task already exists, returns its ID without creating a duplicate.
-   *
-   * @returns { taskId, alreadyExisted }
-   */
-  async instantiateRoutineTask(templateId: string): Promise<{ taskId: string; alreadyExisted: boolean }> {
-    if (!await householdBoardIsActive(this.client)) throw new Error("Household Board is deleted. Restore it from Boards to resume Routines.")
-    const today = new Date().toISOString().split("T")[0]!
-
-    const findToday = {
-      sql: `SELECT id FROM tasks WHERE task_board_id IS NULL AND source_template_id = ? AND due_date = ? LIMIT 1`,
-      args: [templateId, today],
-    }
-    const existing = await this.client.execute(findToday)
-    if (existing.rows.length > 0) {
-      return { taskId: String((existing.rows[0] as Record<string, unknown>).id), alreadyExisted: true }
-    }
-
-    // Get template
-    const tmpl = await this.findById(templateId)
-    if (!tmpl?.is_routine) throw new Error("Routine not found")
-
-    const template = JSON.parse(String(tmpl.template_json ?? "{}")) as Record<string, unknown>
-    const areaId = String(template.area_id ?? "default")
-    const taskId = crypto.randomUUID()
-    const now = Date.now()
-
-    // Reset checklists (all unchecked for new day)
-    let checklists = "[]"
-    try {
-      if (Array.isArray(template.checklists)) {
-        checklists = JSON.stringify(
-          (template.checklists as Array<{ text: string }>).map(item => ({
-            text: item.text,
-            done: false,
-          }))
-        )
-      }
-    } catch { /* keep default */ }
-
-    // Build routine task label
-    const labels = Array.isArray(template.labels) ? [...template.labels] : []
-    if (!labels.includes("routine")) labels.push("routine")
-
-    const write = await this.client.execute({
-      sql: `INSERT INTO tasks (id, title, description, status, priority, labels, task_type, task_kind,
-            due_date, checklists, custom_fields, area_id, source_template_id, ticket_number,
-            framework_payload, calendar_sync_state, idempotency_key, request_id, created_at, updated_at)
-            SELECT ?, ?, ?, ?, ?, ?, ?, 'routine_instance', ?, ?, ?, ?, ?,
-                   ${nextHouseholdTicketNumberSql}, '{}', 'pending', ?, ?, ?, ?
-            WHERE EXISTS (SELECT 1 FROM task_templates WHERE owner_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND id = ? AND is_routine = 1 AND template_json = ?)
-              AND (? = 'default' OR EXISTS (SELECT 1 FROM areas WHERE id = ? AND owner_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active') AND retired_at IS NULL))
-              AND NOT EXISTS (SELECT 1 FROM tasks WHERE task_board_id IS NULL AND source_template_id = ? AND due_date = ?)`,
-      args: [
-        taskId,
-        String(template.title ?? tmpl.name ?? "Routine"),
-        String(template.description ?? ""),
-        STATUS.PENDING,
-        Number(template.priority ?? 3),
-        JSON.stringify(labels),
-        String(template.task_type ?? "task"),
-        today,
-        checklists,
-        JSON.stringify(template.custom_fields ?? {}),
-        areaId,
-        templateId,
-        crypto.randomUUID(),
-        crypto.randomUUID(),
-        now,
-        now,
-        templateId,
-        String(tmpl.template_json),
-        areaId,
-        areaId,
-        templateId,
-        today,
-      ],
-    })
-    if (!write.rowsAffected) {
-      const concurrent = await this.client.execute(findToday)
-      if (concurrent.rows[0]) return { taskId: String(concurrent.rows[0].id), alreadyExisted: true }
-      throw new Error("Routine changed or its Area is unavailable. Reload and try again.")
-    }
-
-    return { taskId, alreadyExisted: false }
-  }
-
-  /** @deprecated Use instantiateRoutineTask() — ADR-007 ubiquitous language */
-  async instantiateHabitTask(templateId: string): Promise<{ taskId: string; alreadyExisted: boolean }> {
-    return this.instantiateRoutineTask(templateId)
-  }
-
-  /**
-   * Calculate current and longest streak for a routine.
-   * Streaks are derived from distinct completed task dates (due_date).
-   */
-  private async calculateStreak(templateId: string): Promise<{ current: number; longest: number }> {
-    const result = await this.client.execute({
-      sql: `SELECT DISTINCT due_date FROM tasks
-            WHERE task_board_id IS NULL AND source_template_id = ? AND status = 'complete' AND due_date IS NOT NULL
-            ORDER BY due_date DESC`,
-      args: [templateId],
-    })
-
-    if (result.rows.length === 0) return { current: 0, longest: 0 }
-
-    const dates = result.rows.map(r => String((r as Record<string, unknown>).due_date))
-    const today = new Date().toISOString().split("T")[0]!
-
-    let current = 0
-    let longest = 0
-    let streak = 0
-    let expectedDate = today
-
-    for (const date of dates) {
-      if (date === expectedDate) {
-        streak++
-        const d = new Date(expectedDate)
-        d.setDate(d.getDate() - 1)
-        expectedDate = d.toISOString().split("T")[0]!
-      } else if (streak === 0) {
-        // First date might be yesterday if not yet completed today
-        const yesterday = new Date()
-        yesterday.setDate(yesterday.getDate() - 1)
-        if (date === yesterday.toISOString().split("T")[0]) {
-          streak = 1
-          const d = new Date(date)
-          d.setDate(d.getDate() - 1)
-          expectedDate = d.toISOString().split("T")[0]!
-        } else {
-          break
+  private async createTask(
+    taskId: string,
+    template: Record<string, unknown>,
+    routine?: {
+      templateId: string
+      period: string
+      expectedTemplateJson: string
+      expectedCadence: string
+      complete?: boolean
+    },
+    templateSnapshot?: { templateId: string; expectedTemplateJson: string }
+  ) {
+    const repo = new TaskRepository(this.client, this.scope)
+    const stored = routine ?? templateSnapshot
+    let labels = template.labels
+    let storedLabels: string | undefined
+    if (stored) {
+      const {
+        rows: [raw]
+      } = await this.db("read", false).execute(
+        sql`SELECT json_extract(${stored.expectedTemplateJson}, '$.labels') AS labels`
+      )
+      if (typeof raw?.labels === "string") {
+        try {
+          const entries: unknown = JSON.parse(raw.labels)
+          if (
+            Array.isArray(entries) &&
+            entries.every(
+              (entry) =>
+                typeof entry === "string" ||
+                (entry !== null &&
+                  typeof entry === "object" &&
+                  !Array.isArray(entry) &&
+                  typeof entry.name === "string")
+            )
+          ) {
+            labels = entries.map((entry) => (typeof entry === "string" ? entry : entry.name))
+            storedLabels = raw.labels
+          }
+        } catch {
+          /* Native validation handles malformed historical selections. */
         }
-      } else {
-        // Streak broken
-        if (current === 0) current = streak
-        longest = Math.max(longest, streak)
-        break
       }
     }
-
-    if (current === 0) current = streak
-    longest = Math.max(longest, streak)
-
-    return { current, longest }
+    const prepared = await prepareTaskCreation(
+      repo,
+      {
+        ...template,
+        ...(labels === undefined ? {} : { labels }),
+        area_id: template.area_id ?? null,
+        status: routine?.complete ? "complete" : "pending",
+        custom_fields:
+          typeof template.custom_fields === "string"
+            ? template.custom_fields
+            : JSON.stringify(template.custom_fields ?? {}),
+        checklists:
+          typeof template.checklists === "string"
+            ? template.checklists
+            : JSON.stringify(template.checklists ?? []),
+        ...(routine ? { task_kind: "routine_instance", due_date: routine.period } : {})
+      },
+      { id: taskId }
+    )
+    if (!prepared.ok) throw new Error(prepared.error)
+    if (storedLabels !== undefined) prepared.task.labels = storedLabels
+    const result = await repo.createWorkCommand(prepared.task, {
+      ...(routine ? { routineOccurrence: routine } : {}),
+      ...(templateSnapshot ? { templateSnapshot } : {})
+    })
+    if (!result.ok) {
+      if (result.errorCode === "conflict") throw new BoardOperationError("stale")
+      throw new BoardOperationError(result.errorCode === "denied" ? "denied" : "unavailable")
+    }
+    return {
+      taskId: String(result.task.id),
+      alreadyExisted: result.replayed,
+      completed: result.task.status === "complete"
+    }
+  }
+  async instantiateFromTemplate(
+    taskId: string,
+    template: Record<string, unknown>,
+    sourceTemplateId?: string
+  ): Promise<void> {
+    // Recover metadata only from a current owned template. Two-argument server
+    // callers retain strict native creation when no matching saved template exists.
+    const rows = sourceTemplateId
+      ? [await this.findById(sourceTemplateId)].filter((row) => row !== null)
+      : await this.findAll()
+    const matching = rows.filter(
+      (row) =>
+        JSON.stringify(templateObject(String(row.template_json))) === JSON.stringify(template)
+    )
+    if (sourceTemplateId && matching.length !== 1) throw new Error("Template changed")
+    const row = matching.length === 1 ? matching[0] : undefined
+    await this.createTask(
+      taskId,
+      template,
+      undefined,
+      row
+        ? { templateId: String(row.id), expectedTemplateJson: String(row.template_json) }
+        : undefined
+    )
+  }
+  async instantiateRoutineTask(templateId: string) {
+    const row = await this.findById(templateId)
+    if (!row || !row.is_routine) throw new Error("Routine is unavailable")
+    const body = templateObject(String(row.template_json))
+    body.title ??= row.name
+    if (Array.isArray(body.checklists))
+      body.checklists = body.checklists.map((item) => ({ ...item, done: false }))
+    return this.createTask(randomUUID(), body, {
+      templateId,
+      period: routinePeriod(String(row.cadence ?? "daily")),
+      expectedTemplateJson: String(row.template_json),
+      expectedCadence: String(row.cadence ?? "daily")
+    })
+  }
+  async completeRoutine(templateId: string, requestedPeriod?: string) {
+    await this.db("read").execute(
+      sql`SELECT id FROM task_templates AS template WHERE id=${templateId} AND ${ownedPlanning(this.scope, "template")} AND is_routine=1 AND retired_at IS NULL`
+    )
+    const row = await this.findById(templateId)
+    if (!row || !row.is_routine) throw new Error("Routine is unavailable")
+    const body = templateObject(String(row.template_json))
+    body.title ??= row.name
+    return this.createTask(randomUUID(), body, {
+      templateId,
+      period: requestedPeriod ?? routinePeriod(String(row.cadence ?? "daily")),
+      expectedTemplateJson: String(row.template_json),
+      expectedCadence: String(row.cadence ?? "daily"),
+      complete: true
+    })
+  }
+  async instantiateHabitTask(templateId: string) {
+    return this.instantiateRoutineTask(templateId)
   }
 }

@@ -1,9 +1,11 @@
+import { currentBoardScope } from "../helpers/current-board-scope"
+import { readWorkDestinations, saveWorkBinding, TaskRepository } from "../../apps/web/src/domains/tasks"
 import { test, expect } from "@playwright/test";
 import * as http from "node:http";
 import { createHmac } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store";
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture";
 import { dispatchTaskEvent, resetWebhookCacheForTests } from "../../apps/web/src/lib/webhook-dispatcher";
 
 function makeDbUrl(label: string): string {
@@ -61,6 +63,23 @@ test.describe("Integration Webhooks", () => {
     resetWebhookCacheForTests();
   });
 
+  async function approve(sourceId: string) {
+    const db = getPersistenceClient(), scope = await currentBoardScope(db)
+    const config = await readWorkDestinations(db)
+    if (!config) throw new Error("Current configuration required")
+    const result = await saveWorkBinding(db, scope.principal, config.revision, { id: crypto.randomUUID(), generation: 1, enabled: true,
+      integration: "webhook", sourceId, purpose: "webhook.delivery", destination: { boardId: scope.boardId }, allowedOperations: [{ resource: "task", action: "read" }] })
+    if (!result.ok) throw new Error("Expected owner-approved webhook")
+  }
+  async function dispatch(event: string, payload: { id: string, title?: string, status?: string }) {
+    const db = getPersistenceClient(), scope = await currentBoardScope(db), now = Date.now()
+    await db.execute({ sql: "INSERT INTO tasks(id,title,status,idempotency_key,request_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
+      args: [payload.id, payload.title ?? "N8N Task", payload.status ?? "pending", payload.id, payload.id, now, now] })
+    const task = await new TaskRepository(db, scope).findById(payload.id)
+    if (!task) throw new Error("Owned Task required")
+    await dispatchTaskEvent(event, task, undefined, undefined, undefined, undefined, scope)
+  }
+
   test("emits HMAC-signed webhooks on task creation", async () => {
     const secret = "test_e2e_secret_key";
     const client = getPersistenceClient();
@@ -70,8 +89,9 @@ test.describe("Integration Webhooks", () => {
     await client.execute({ sql: "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)", args: ["webhook_endpoint", `"${`http://127.0.0.1:${port}/webhook`}"`, now] });
     await client.execute({ sql: "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)", args: ["webhook_secret", `"${secret}"`, now] });
 
+    await approve("generic-webhook")
     // 2. Dispatch event
-    await dispatchTaskEvent("task.created", { id: "test-task-1", title: "Trigger Webhook Task" });
+    await dispatch("task.created", { id: "test-task-1", title: "Trigger Webhook Task" });
 
     // 3. Wait for webhook
     await expect.poll(() => receivedRequests.length).toBeGreaterThan(0);
@@ -97,15 +117,16 @@ test.describe("Integration Webhooks", () => {
     await client.execute({ sql: "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)", args: ["n8n_webhook_url", `"${`http://127.0.0.1:${port}/n8n`}"`, now] });
     await client.execute({ sql: "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)", args: ["n8n_events", JSON.stringify(["task.updated"]), now] });
 
+    await approve("n8n-webhook")
     // Dispatch an event that SHOULD NOT trigger the webhook
-    await dispatchTaskEvent("task.created", { id: "test-task-none", title: "N8N Task" });
+    await dispatch("task.created", { id: "test-task-none", title: "N8N Task" });
 
     // Wait a brief moment
     await new Promise(r => setTimeout(r, 500));
     expect(receivedRequests.length).toBe(0);
 
     // Dispatch an event that SHOULD trigger the webhook
-    await dispatchTaskEvent("task.updated", { id: "test-task-update", status: "done" });
+    await dispatch("task.updated", { id: "test-task-update", status: "done" });
 
     // Wait for webhook
     await expect.poll(() => receivedRequests.length).toBe(1);

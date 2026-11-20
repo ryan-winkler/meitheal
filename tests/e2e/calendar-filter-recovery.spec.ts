@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.describe("Calendar filters and recovery", () => {
@@ -58,13 +59,14 @@ test.describe("Calendar filters and recovery", () => {
     await expect(search).toHaveValue("temporarily unavailable")
   })
 
-  test("failed Clear Rules restores the applied rules in the open Calendar editor", async ({ page, request }) => {
+  test("failed Clear Rules restores the applied rules in the open Calendar editor", async ({ page, request, baseURL }) => {
     test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const day = "2031-07-24"
     const ids: string[] = []
     try {
       for (const title of ["Replace roof", "Paint fence"]) {
-        const task = await request.post("/api/tasks", { data: { title, due_date: day } })
+        const task = await request.post("/api/tasks", { headers, data: { title, due_date: day } })
         expect(task.status(), await task.text()).toBe(201)
         ids.push((await task.json()).id)
       }
@@ -103,7 +105,7 @@ test.describe("Calendar filters and recovery", () => {
       await expect(cell).toHaveAccessibleName(/2 tasks$/)
       await expect(page).not.toHaveURL(/advancedFilter=/)
     } finally {
-      for (const id of ids) await request.delete(`/api/tasks/${id}`, { data: {} })
+      for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
     }
   })
 
@@ -282,15 +284,16 @@ test.describe("Calendar filters and recovery", () => {
     }
   })
 
-  test("pending and failed Calendar refreshes retain accepted Area and Events states", async ({ page, request }) => {
-    const created = await request.post("/api/areas", { data: { name: "Remembered workshop" } })
+  test("pending and failed Calendar refreshes retain accepted Area and Events states", async ({ page, request, baseURL }) => {
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+    const created = await request.post("/api/areas", { headers, data: { name: "Remembered workshop" } })
     expect(created.status()).toBe(201)
     const { id } = await created.json()
     let release = () => {}
     const hold = new Promise<void>(resolve => { release = resolve })
     let held = false
     let fail = false
-    await page.evaluate(areaId => localStorage.setItem("meitheal-selected-area", JSON.stringify({
+    await page.evaluate(areaId => localStorage.setItem(document.querySelector<HTMLElement>("[data-area-selector]")!.dataset.areaStorageKey!, JSON.stringify({
       areaId, areaName: "Remembered workshop", areaIcon: "folder",
     })), id)
     await page.route(url => url.searchParams.has("calendarRefresh"), async route => {
@@ -319,7 +322,7 @@ test.describe("Calendar filters and recovery", () => {
       await expect(retry).toBeVisible()
       await expect(trigger).toContainText("Remembered workshop")
       await expect(page.locator(`#area-selector-dropdown [data-area-id="${id}"]`)).toHaveAttribute("aria-selected", "true")
-      expect(await page.evaluate(() => JSON.parse(localStorage.getItem("meitheal-selected-area") ?? "{}").areaId)).toBe(id)
+      expect(await page.evaluate(() => JSON.parse(localStorage.getItem(document.querySelector<HTMLElement>("[data-area-selector]")!.dataset.areaStorageKey!) ?? "{}").areaId)).toBe(id)
 
       const events = page.getByRole("toolbar", { name: "Filter tasks" }).getByRole("button", { name: "Events", exact: true })
       await events.click()
@@ -347,18 +350,18 @@ test.describe("Calendar filters and recovery", () => {
       await page.locator('#area-selector-dropdown [data-area-id=""]').click()
       await expect(page).toHaveURL(url => url.searchParams.get("area") === "")
       await expect(retry).toBeHidden()
-      expect(await page.evaluate(() => JSON.parse(localStorage.getItem("meitheal-selected-area") ?? "{}").areaId)).toBe("")
+      expect(await page.evaluate(() => JSON.parse(localStorage.getItem(document.querySelector<HTMLElement>("[data-area-selector]")!.dataset.areaStorageKey!) ?? "{}").areaId)).toBe("")
       await page.goto("/tasks?view=calendar&year=2031&month=6#calendar", { waitUntil: "networkidle" })
       await expect(trigger).toContainText("All Areas")
       await expect(page).not.toHaveURL(/area=/)
     } finally {
       release()
-      await request.delete(`/api/areas/${id}`)
+      await request.delete(`/api/areas/${id}`, { headers, data: {} })
     }
   })
 
   test("Calendar keeps the previous Area when a filter change exceeds its URL limit", async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const created = await request.post("/api/areas", { headers, data: { name: "Extra calendar area" } })
     expect(created.status()).toBe(201)
     const { id } = await created.json()
@@ -379,7 +382,7 @@ test.describe("Calendar filters and recovery", () => {
       await expect(page).toHaveURL(url => url.searchParams.get("area") === "")
       await expect(trigger).toContainText("All Areas")
       await expect(all).toHaveAttribute("aria-selected", "true")
-      expect(await page.evaluate(() => JSON.parse(localStorage.getItem("meitheal-selected-area") ?? "{}").areaId)).toBe("")
+      expect(await page.evaluate(() => JSON.parse(localStorage.getItem(document.querySelector<HTMLElement>("[data-area-selector]")!.dataset.areaStorageKey!) ?? "{}").areaId)).toBe("")
 
       const filters = page.getByRole("toolbar", { name: "Filter tasks" })
       const eventType = filters.getByRole("button", { name: "Events", exact: true })
@@ -395,7 +398,7 @@ test.describe("Calendar filters and recovery", () => {
       await expect(trigger).toContainText("All Areas")
       await expect(all).toHaveAttribute("aria-selected", "true")
 
-      await page.evaluate(areaId => localStorage.setItem("meitheal-selected-area", JSON.stringify({
+      await page.evaluate(areaId => localStorage.setItem(document.querySelector<HTMLElement>("[data-area-selector]")!.dataset.areaStorageKey!, JSON.stringify({
         areaId, areaName: "Extra calendar area", areaIcon: "folder",
       })), id)
       params.delete("area")
@@ -403,7 +406,7 @@ test.describe("Calendar filters and recovery", () => {
       await expect(page.locator("[data-calendar-status]")).toContainText("The previous results are still shown.")
       await expect(trigger).toContainText("All Areas")
       await expect(all).toHaveAttribute("aria-selected", "true")
-      expect(await page.evaluate(() => JSON.parse(localStorage.getItem("meitheal-selected-area") ?? "{}").areaId)).toBe(id)
+      expect(await page.evaluate(() => JSON.parse(localStorage.getItem(document.querySelector<HTMLElement>("[data-area-selector]")!.dataset.areaStorageKey!) ?? "{}").areaId)).toBe(id)
 
       await page.goto("/tasks?view=calendar&area=#calendar")
       const advanced = page.locator("#calendar-advanced-toggle")
@@ -425,7 +428,7 @@ test.describe("Calendar filters and recovery", () => {
       await expect(advanced).toBeFocused()
       await expect(page).toHaveURL(url => url.searchParams.has("advancedFilter"))
     } finally {
-      await request.delete(`/api/areas/${id}`, { headers })
+      await request.delete(`/api/areas/${id}`, { headers, data: {} })
     }
   })
 

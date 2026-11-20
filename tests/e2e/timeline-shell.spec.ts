@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.describe("Tasks Shell (Timeline/GANTT)", () => {
@@ -51,7 +52,7 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
   })
 
   test("native GANTT chart renders SVG when tasks have dates", async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const now = new Date()
     const response = await request.post("/api/tasks", { headers, data: {
       title: "Timeline dated fixture", start_date: now.toISOString(),
@@ -65,12 +66,12 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
       await expect(chart.locator("svg.gantt-native")).toBeAttached()
       await expect(chart.locator(".gantt-bar, .gantt-milestone").first()).toBeAttached()
     } finally {
-      await request.delete(`/api/tasks/${id}`, { headers })
+      await request.delete(`/api/tasks/${id}`, { headers, data: {} })
     }
   })
 
   test("Timeline keeps its filters and grouping across view switches", async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const prefix = `Timeline filters ${crypto.randomUUID()}`
     const ids: string[] = []
     const now = Date.now()
@@ -116,14 +117,14 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
       await expect(paint).toHaveCount(0)
       await expect(page.locator("#tasks-view-kanban, #tasks-view-table")).toHaveCount(0)
     } finally {
-      for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })
+      for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
     }
   })
 
   test("Timeline keeps same-name projects and unassigned tasks in separate groups", async ({ page, request, baseURL }) => {
     test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable built app")
 
-    const headers = { origin: new URL(baseURL!).origin, "content-type": "application/json" }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const token = crypto.randomUUID().slice(0, 8)
     const prefix = `Timeline projects ${token}`
     const title = `Renovation ${token} with the shared collection of household repairs, maintenance, materials and schedules`
@@ -275,7 +276,7 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
 
   test("Timeline keeps same-name Areas separate through filtering and renaming", async ({ page, request, baseURL }) => {
     test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable built app")
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const token = crypto.randomUUID().slice(0, 8)
     const title = `Workshop ${token} with the shared collection of household repairs and workshop equipment`
     const prefix = `Timeline area ${token}`
@@ -436,7 +437,7 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
     await page.evaluate(() => localStorage.setItem("meitheal-task-nav-prefs", JSON.stringify({ pinnedViews: ["table"] })))
     const title = "Inspect the heating system"
     const start = Date.now()
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const response = await request.post("/api/tasks", { headers, data: {
       title, start_date: new Date(start).toISOString(), due_date: new Date(start + 86_400_000).toISOString(),
     } })
@@ -473,7 +474,7 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
   test("phone Timeline discloses filters and the task pane without crowding the chart", async ({ page, request, baseURL }) => {
     const title = "Phone Timeline milestone " + crypto.randomUUID()
     const date = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const response = await request.post("/api/tasks", { headers, data: {
       title, start_date: date, due_date: date, color: "#000044",
     } })
@@ -495,7 +496,9 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
       await expect(paneToggle).toHaveAttribute("aria-expanded", "false")
       await expect(pane).toBeHidden()
       await expect(chart).toBeInViewport()
-      expect((await paneToggle.boundingBox())?.height).toBeGreaterThanOrEqual(44)
+      // Chromium can report tiny floating-point differences after scaling.
+      const paneHeight = (await paneToggle.boundingBox())?.height ?? 0
+      expect(Math.round(paneHeight * 1000) / 1000).toBeGreaterThanOrEqual(44)
       expect((await chart.locator(".gantt-scroll-wrapper").boundingBox())?.width).toBeGreaterThan(240)
 
       const legend = page.locator(".timeline-legend")
@@ -576,7 +579,7 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
       await page.getByText("Legend", { exact: true }).click()
       await expect(page.getByText("Overdue milestone", { exact: true })).toBeVisible()
     } finally {
-      await request.delete(`/api/tasks/${id}`, { headers })
+      await request.delete(`/api/tasks/${id}`, { headers, data: {} })
     }
   })
 

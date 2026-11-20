@@ -343,7 +343,7 @@ function setupEventDelegation(container: HTMLElement, refreshReopened: (id: stri
       if (archive?.getAttribute("aria-disabled") === "true") return
       const ok = await confirmDialog({
         title: "Archive completed tasks?",
-        message: "This archives all Household Board tasks marked Complete and last updated today.",
+        message: "This archives tasks in the current view marked Complete and last updated today.",
         variant: "warning",
         confirmText: "Archive",
       })
@@ -924,10 +924,13 @@ function showTodayRollover(container: HTMLElement): void {
 }
 
 function todayScopeParams(container: HTMLElement): URLSearchParams {
-  const { todayDay, todayTimezone } = container.querySelector<HTMLElement>("#page-shell")?.dataset ?? {}
+  const { todayDay, todayTimezone, todayBoard, todayArea, todayProject } = container.querySelector<HTMLElement>("#page-shell")?.dataset ?? {}
   const params = new URLSearchParams()
   if (todayDay) params.set("expected_day", todayDay)
   if (todayTimezone) params.set("expected_timezone", todayTimezone)
+  if (todayBoard) params.set("board_id", todayBoard)
+  if (todayProject) params.set("project_id", todayProject)
+  else if (todayArea) params.set("area_id", todayArea)
   return params
 }
 

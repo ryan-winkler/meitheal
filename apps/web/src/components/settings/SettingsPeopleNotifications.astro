@@ -9,8 +9,9 @@ import Icon from "../ui/Icon.astro"
 
 interface Props {
   locale: Locale
+  board?: { id: string, name: string, canManage: boolean, session: string, authority: string } | undefined
 }
-const { locale } = Astro.props
+const { locale, board } = Astro.props
 
 const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.id === "people-notifications-settings")!
 ---
@@ -30,15 +31,18 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
     >
       <div class="settings-stack">
         <!-- Default Assignee -->
-        <div>
+        <div data-board-directory={board ? "" : undefined} data-board-id={board?.id}
+          data-board-key={board?.authority} data-board-authority={board?.authority} data-board-session={board?.session}
+          data-board-verify={board ? `/api/boards/${encodeURIComponent(board.id)}?view=authority` : undefined}>
           <label
             for="default-assignee-select"
             class="settings-label"
-            >{t("settings.default_assignee", locale)}</label
+            >{t("settings.default_assignee", locale)}{board ? ` · ${board.name}` : ""}</label
           >
           <div style="display: flex; gap: 8px; align-items: center;">
             <select
               id="default-assignee-select"
+              disabled={!board?.canManage} data-board-unavailable={!board || undefined}
               class="form-select settings-input-narrow"
               aria-label={t("settings.people_assignee_label", locale)}
               data-unavailable-assignee={t("settings.people_unavailable_assignee", locale)}
@@ -49,13 +53,17 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
               type="button"
               class="btn btn-primary settings-text-sm"
               id="save-default-assignee"
+              disabled={!board?.canManage}
               >{t("settings.save", locale)}</button
             >
           </div>
           <p class="settings-hint">
-            {t("settings.people_assignee_hint", locale)}
+            {board ? `Applies to new tasks on ${board.name}. ${board.canManage ? "" : "Manage this Board to change its default."}` : "Choose an accessible Board to manage its default assignee. Your personal settings remain available."}
+            {!board && <a href="/boards">Choose a Board</a>}
           </p>
         </div>
+
+        <p data-board-expired hidden role="status">This Board’s settings changed. <button type="button" class="btn btn-ghost" data-board-refresh>Refresh Board settings</button></p>
 
         <!-- Discovered Users -->
         <div>
@@ -254,3 +262,9 @@ const peopleNotificationsSection = SETTINGS_SECTIONS.find((section) => section.i
     </SettingsPanelCard>
   </div>
 </section>
+
+<script>
+  import { bindBoardPage } from "@lib/boards-page"
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  pageLifecycle.onPageLoad(signal => bindBoardPage(signal))
+</script>

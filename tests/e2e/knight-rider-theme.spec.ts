@@ -1,3 +1,4 @@
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { expect, test, type Locator } from "@playwright/test"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal browser fixture")
@@ -23,12 +24,13 @@ function badgeContrast(badge: Locator, surfaceSelector: string) {
 }
 
 test("Knight Rider persists and fills active work and task colors on Today and Board", async ({ page, request }, testInfo) => {
+  const boardHeaders = await currentBoardWriteHeaders(request, "household", {})
   await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" })
   const dueDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin", dateStyle: "short" }).format(new Date())
   async function create(title: string, status: string, color?: string, rice = 4): Promise<string> {
     const framework_payload = JSON.stringify({ reach: rice, impact: 1, confidence: 1, effort: 1 })
     const response = await request.post("/api/tasks", {
-      data: { title, due_date: dueDate, status, color, priority: color || rice > 4 ? 3 : 1, framework_payload },
+      headers: boardHeaders, data: { title, due_date: dueDate, status, color, priority: color || rice > 4 ? 3 : 1, framework_payload },
     })
     expect(response.status()).toBe(201)
     return (await response.json()).id
@@ -40,7 +42,7 @@ test("Knight Rider persists and fills active work and task colors on Today and B
   const paleId = await create("Prime the new workshop controller", "active", "#fff")
   const mediumId = await create("Check the meter readings", "active", undefined, 10)
   const highId = await create("Send the maintenance schedule", "active", undefined, 16)
-  expect((await request.put(`/api/tasks/${paleId}`, { data: {
+  expect((await request.put(`/api/tasks/${paleId}`, { headers: boardHeaders, data: {
     checklists: JSON.stringify([{ text: "Check stock", done: true }]),
     custom_fields: JSON.stringify({ Place: "Cabinet" }),
   } })).ok()).toBe(true)
@@ -150,7 +152,7 @@ test("Knight Rider persists and fills active work and task colors on Today and B
     await expect(active.locator(".status-badge")).toHaveText("Done")
     await completed.click()
     await expect(active.locator(".status-badge")).toHaveText("Todo")
-    expect((await request.put(`/api/tasks/${activeId}`, { data: { status: "active" } })).ok()).toBe(true)
+    expect((await request.put(`/api/tasks/${activeId}`, { headers: boardHeaders, data: { status: "active" } })).ok()).toBe(true)
 
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.goto("/tasks#kanban")
@@ -200,7 +202,7 @@ test("Knight Rider persists and fills active work and task colors on Today and B
     }
     await page.evaluate(() => localStorage.removeItem("meitheal-appearance"))
 
-    const favorite = await request.put(`/api/tasks/${coloredId}`, { data: { is_favorite: 1 } })
+    const favorite = await request.put(`/api/tasks/${coloredId}`, { headers: boardHeaders, data: { is_favorite: 1 } })
     expect(favorite.ok()).toBe(true)
     await page.goto("/")
     await page.mouse.move(0, 0)
@@ -230,7 +232,7 @@ test("Knight Rider persists and fills active work and task colors on Today and B
     await expect(card(coloredId)).toHaveCSS("border-inline-start-color", "rgb(33, 163, 102)")
   } finally {
     for (const id of [activeId, coloredId, idleId, paleId, mediumId, highId]) {
-      expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204)
+      expect((await request.delete(`/api/tasks/${id}`, { headers: boardHeaders, data: {} })).status()).toBe(204)
     }
     await request.put("/api/settings", { data: { key: "theme", value: "dark" } })
   }

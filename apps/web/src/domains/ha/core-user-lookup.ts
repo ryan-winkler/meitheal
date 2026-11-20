@@ -1,10 +1,32 @@
+import { createHash } from "node:crypto"
 import { readBoundedCoreCommand } from "./core-bounded-command"
 import type { HAConfiguration } from "./ha-configuration"
 
-/** Read the current Core users over a dedicated, time- and size-bounded socket. */
-export function readCurrentHACoreUsers(signal?: AbortSignal): Promise<unknown> {
+type CoreObservation = { order: number, users: unknown }
+const maxMembershipLookups = 16
+let authority: { fingerprint: string, latest?: CoreObservation } | undefined
+let nextRead = 0
+let pendingLookups = 0
+
+/** Read current Core users without letting an older completion supersede a newer check. */
+export async function readCurrentHACoreUsers(signal?: AbortSignal): Promise<unknown> {
   const token = process.env.SUPERVISOR_TOKEN
-  return token ? readBoundedCoreCommand("config/auth/list", token, signal) : Promise.resolve(undefined)
+  if (!token || signal?.aborted || pendingLookups >= maxMembershipLookups) return
+  const fingerprint = createHash("sha256").update(token).digest("hex")
+  if (authority?.fingerprint !== fingerprint) authority = { fingerprint }
+  const currentAuthority = authority
+  const order = ++nextRead
+  pendingLookups++
+  try {
+    const users = await readBoundedCoreCommand("config/auth/list", token, signal)
+    if (signal?.aborted || authority !== currentAuthority || process.env.SUPERVISOR_TOKEN !== token) return
+    if (!currentAuthority.latest || order > currentAuthority.latest.order) {
+      currentAuthority.latest = { order, users }
+    }
+    return currentAuthority.latest.users
+  } finally {
+    pendingLookups--
+  }
 }
 
 /** Read assignee names from the configured source with the same bounded transport. */

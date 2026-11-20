@@ -6,7 +6,7 @@ export const activeStatuses: string
 export const openStatuses: string
 export const completeStatuses: string
 export const validInactivityRevisionSql: string
-export function inactivityDaysSql(simulate?: boolean, area?: string): string
+export function inactivityDaysSql(simulate?: boolean, area?: string, board?: string | null, policyTable?: "task_inactivity_policy" | "scoped_policy"): string
 export function taskTimestampMs(column: TaskClockColumn): string
 export function activityTriggerCatalogQuery(names: string[]): InStatement
 export function findActivityTrigger(rows: Row[], name: string): Row | undefined

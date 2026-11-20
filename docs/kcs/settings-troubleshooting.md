@@ -74,6 +74,8 @@ Manage integration credentials, outbound integration tests, Node-RED deployment,
 
 Settings downloads exclude credential values. Settings imports also skip credential fields in older files. After an import, re-enter integration secrets separately in Settings. A masked value in Settings means the existing value is kept if the mask is submitted unchanged.
 
+Save CalDAV or Grocy credentials and run Calendar, To-do, and Grocy sync from Settings with the current Board session. If sync needs an approved destination, open the Board’s integration settings to approve the source and choose where its work belongs.
+
 An imported theme keeps its saved mode when Meitheal recognizes it. An empty or unrecognized theme in the backup restores Emerald Isle while the rest of the settings import proceeds.
 
 ## Recover from an error
@@ -214,7 +216,8 @@ while preserving the last selection. This failure is separate from the app's
 own connection to its server. The compact app status beside Settings remains reachable through its accessible description. Operator logs distinguish static `invalid_agent_payload` and `websocket_request_failed` reasons without recording the HA payload.
 
 Ask Home Assistant keeps its chat and HA conversation ID when closed and
-reopened on the same page. Changing the selected agent starts a new conversation.
+reopened on the same page. The first reply can continue while the page finishes
+loading. Changing the selected agent starts a new conversation.
 The Settings default is persistent; the most recent Ask selection is stored for
 the browser session. Saving a new Settings default clears that session override.
 
@@ -246,6 +249,8 @@ Today formats its visible and machine-readable dates in the workspace timezone, 
 ## Home Assistant connection changes
 
 The App uses the Supervisor connection when available. Standalone installations use a complete saved URL/token pair, then an environment pair. Saving changed credentials replaces the authenticated WebSocket and entity subscription; incomplete saved pairs do not mix credentials with environment settings. Connection status never includes tokens. If setup began before Home Assistant was configured, retry after saving the pair.
+
+Integration changes require a current Settings session and management access to each Board served by the integration. If Settings rejects a save after access changes, reopen Settings and review the integration’s Board destinations before retrying.
 
 Calendar sync distinguishes an empty successful response from a missing or failed response. A partial or skipped manual sync reports failure with per-calendar outcomes, so existing tasks are not presented as a successful empty import. Use a disposable calendar to check empty success, disconnected failure and partial failure after changing connection settings. Assist uses the current selected agent; an explicit empty selection uses built-in Assist.
 

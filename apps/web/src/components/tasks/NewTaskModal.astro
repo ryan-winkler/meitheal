@@ -2,6 +2,7 @@
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import HomeAssistantAreaField from "./HomeAssistantAreaField.astro"
 import { newOrganizationLabel, organizationLabelsFor } from "@lib/organization-labels"
+import { verifiedBoardRequestPrincipal } from "@lib/board-request-context"
 import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
 import Icon from "../ui/Icon.astro";
@@ -10,12 +11,19 @@ import LabelPicker from "../ui/LabelPicker.astro";
 const organization = await organizationLabelsFor(Astro)
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
+const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astro))
 ---
 
-<div id="new-task-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="new-task-title">
+<div id="new-task-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="new-task-title"
+  data-capture-receipt={captureReceiptAvailable || undefined}>
   <div class="modal-content nt-modal">
     <header class="nt-header">
-      <h2 id="new-task-title">{newOrganizationLabel(organization("task"), locale)}</h2>
+      <div>
+        <h2 id="new-task-title">{newOrganizationLabel(organization("task"), locale)}</h2>
+        <p id="nt-capture-board" class="nt-hint"></p>
+        <p id="nt-capture-feedback" class="nt-hint" role="status" tabindex="-1"></p>
+        <p id="nt-capture-validation" class="nt-error" role="alert" tabindex="-1" hidden></p>
+      </div>
       <button type="button" class="btn btn-ghost nt-icon-button" id="close-new-task-modal" aria-label="Close" title="Close">
         <Icon name="x" size={18} sprite={true} />
       </button>
@@ -23,7 +31,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     <form id="new-task-form" class="nt-form"
       data-toast-created={t("task_modal.toast_created", locale)}
       data-toast-error={t("task_modal.toast_error", locale)}
-      data-toast-unexpected={t("task_modal.toast_unexpected", locale)}
       data-save-failed={t("task_modal.form_save_failed", locale)}
     >
       <input type="hidden" name="task_kind" id="new-task-kind" value="standard_action" />
@@ -198,10 +205,22 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           <p class="nt-hint">{t("task_modal.routine_hint", locale)} <a href="/habits">{t("nav.habits", locale)}</a></p>
         </div>
       </details>
-      <p id="nt-capture-validation" class="nt-error" role="alert" hidden></p>
+      <div id="nt-create-uncertain" class="nt-context" hidden>
+        <p id="nt-create-uncertain-alert" class="nt-error" role="alert">{t("task_modal.create_uncertain", locale)}</p>
+        <p id="nt-create-receipt-status" role="status"></p>
+        <div class="nt-draft-actions">
+          <button type="button" id="nt-check-save" class="btn btn-ghost" hidden
+            data-check-label={t("task_modal.check_save", locale)}
+            data-open-label={t("task_draft.open_task", locale)}
+            data-checking={t("task_modal.checking_save", locale)}
+            data-confirmed={t("task_modal.toast_created", locale)}
+            data-unconfirmed={t("task_modal.save_unconfirmed", locale)}>{t("task_modal.check_save", locale)}</button>
+          <a id="nt-check-tasks" class="btn btn-ghost" target="_blank" rel="noopener">{t("task_modal.check_tasks", locale)}</a>
+        </div>
+      </div>
     </form>
     <div id="nt-draft-panel" class="nt-draft-panel" hidden>
-      <p id="nt-draft-status" role="status" aria-live="polite"></p>
+      <p id="nt-draft-status" role="status" tabindex="-1"></p>
       <div class="nt-draft-actions">
         <button type="button" id="nt-draft-save" class="btn btn-ghost" hidden>{t("task_draft.save", locale)}</button>
         <button type="button" id="nt-draft-resume" class="btn btn-ghost" hidden>{t("task_draft.resume", locale)}</button>
@@ -240,13 +259,18 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           data-label-event={t("task_modal.btn_create_event", locale)}
           data-label-creating={t("task_modal.btn_creating", locale)}
         >{t("task_modal.btn_create_task", locale)}</button>
+        <button type="submit" form="new-task-form" class="btn btn-ghost" id="submit-new-task-another"
+          aria-keyshortcuts="Control+Shift+Enter Meta+Shift+Enter"
+          data-publish={t("task_modal.publish_another", locale)}
+          data-create={t("task_modal.create_another", locale)}>{t("task_modal.create_another", locale)}</button>
       </div>
     </div>
   </div>
 </div>
 <script>
+  import { currentTaskApiContext, taskApiHeaders, type TaskApiContext } from "@lib/task-api"
   import { taskCapturePlacement } from "@lib/task-capture-placement"
-  import { showToast } from "@lib/toast";
+  import { showToast, showTaskCreatedToast } from "@lib/toast";
   import { renderSpriteIconSvg, type IconName } from "../../generated/icon-registry";
   import { InlineDatePicker } from "../shared/InlineDatePicker"
   import { createTablerSvgElement, renderIconOrCustomEmoji, type TablerIconName } from "@lib/tabler-svg";
@@ -258,6 +282,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   import { taskDraftText } from "@lib/task-draft-copy"
   import type { connectTaskDrafts } from "@lib/task-draft-controller"
   import { getLegacyTaskId, openTaskDetailHandoff } from "@lib/task-detail-handoff"
+  import { buildIngressPagePath } from "@lib/page-shell-links"
+  import { browserUuid } from "@lib/browser-uuid"
   import type { TaskDraftSnapshot, TaskDraftPublication } from "@lib/task-draft-state"
 
   const log = createClientLogger("tasks", "new-task-modal");
@@ -280,8 +306,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       delete overlay.dataset.newTaskController
     }, { once: true })
 
-    const closeBtn = document.getElementById("close-new-task-modal");
-    const cancelBtn = document.getElementById("cancel-new-task");
+    const closeBtn = overlay.querySelector<HTMLButtonElement>("#close-new-task-modal")
+    const cancelBtn = overlay.querySelector<HTMLButtonElement>("#cancel-new-task")
     const form = document.getElementById("new-task-form") as HTMLFormElement | null;
 
     // ── Cached DOM refs (avoid per-click lookups) ──
@@ -293,6 +319,13 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     const titleInput = document.getElementById("new-task-title-input") as HTMLTextAreaElement | null;
     const descInput = document.getElementById("new-task-desc-input") as HTMLTextAreaElement | null;
     const submitBtn = document.getElementById("submit-new-task-btn") as HTMLButtonElement | null;
+    const anotherBtn = overlay.querySelector<HTMLButtonElement>("#submit-new-task-another")
+    const captureFeedback = overlay.querySelector<HTMLElement>("#nt-capture-feedback")
+    const uncertain = overlay.querySelector<HTMLElement>("#nt-create-uncertain")
+    const uncertainAlert = overlay.querySelector<HTMLElement>("#nt-create-uncertain-alert")
+    const receiptStatus = overlay.querySelector<HTMLElement>("#nt-create-receipt-status")
+    const checkSave = overlay.querySelector<HTMLButtonElement>("#nt-check-save")
+    const checkTasks = overlay.querySelector<HTMLAnchorElement>("#nt-check-tasks")
     const pillsContainer = document.getElementById("nt-status-pills")
     const statusInput = document.querySelector<HTMLInputElement>("#new-task-status")
     const goalSelect = document.querySelector<HTMLSelectElement>("#new-task-goal")
@@ -303,8 +336,21 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     let captureSession = 0
     let preserveAssignee = false
     let isHydrating = false
-    let refreshAfterCaptureClose = false
     let capturePlacement: TaskDraftSnapshot["placement"]
+    let contextPlacement: TaskDraftSnapshot["placement"]
+    let captureNeedsRefresh = false
+    let captureContinues = false
+    let unconfirmedAttempt: string | undefined
+    let captureContext: TaskApiContext | null = null
+    let pendingContext: TaskApiContext | null = null
+    let boardWithheld = false
+    let revealCapture = false
+    let recoveredTaskId: string | undefined
+    let repeatAfterReceipt = false
+    let refreshOnRestore = false
+    let contextDue = ""
+    let contextKind = ""
+    let defaultAssignee = ""
     let drafts: ReturnType<typeof connectTaskDrafts> | undefined
     let draftLoading = false
     let editedWhileLoading = false
@@ -596,26 +642,27 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     }
 
     function closeNewTaskModal() {
-      if (!overlay?.classList.contains("active") || overlay.classList.contains("closing")) return
+      if (submitting || !overlay?.classList.contains("active") || overlay.classList.contains("closing")) return
       captureOptionsRequest?.abort()
-      captureSession++
+      const closingSession = ++captureSession
       drafts?.close()
       draftLoading = false
       const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
       let finished = false
       const finishClose = () => {
-        if (finished || signal.aborted) return
+        if (finished || signal.aborted || closingSession !== captureSession) return
         finished = true
         overlay.classList.remove("active", "closing")
         focusTrap.deactivate()
-        clearCapture()
+        if (!unconfirmedAttempt || recoveredTaskId) clearCapture()
+        captureContinues = Boolean(unconfirmedAttempt)
         if (calendarCaptureTask) {
           const taskId = calendarCaptureTask
           calendarCaptureTask = undefined
           openTaskDetailHandoff(taskId)
         }
-        if (refreshAfterCaptureClose) {
-          refreshAfterCaptureClose = false
+        if (captureNeedsRefresh && !unconfirmedAttempt) {
+          captureNeedsRefresh = false
           document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "created" } }))
         }
       }
@@ -639,44 +686,109 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
     document.addEventListener("keydown", (e) => {
       if (overlay?.classList.contains("active") && !e.defaultPrevented && !e.isComposing) {
-        if (e.key === "Escape") {
+        if (e.key === "Tab" && submitting) {
+          e.preventDefault()
+          captureFeedback?.focus()
+        } else if (e.key === "Escape") {
           e.preventDefault();
           if (!drafts?.dismissConfirmation()) closeNewTaskModal();
-        } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !e.altKey &&
+          e.target instanceof Node && overlay.contains(e.target)) {
           e.preventDefault();
-          if (canSubmitCapture() && !submitting) form?.requestSubmit(submitBtn ?? undefined);
+          const submitter = e.shiftKey ? anotherBtn : submitBtn
+          if (!e.repeat && submitter && !submitter.disabled && canSubmitCapture()) form?.requestSubmit(submitter)
         }
       }
     }, { signal });
 
+    document.addEventListener("meitheal:before-task-refresh", event => {
+      if (captureContinues || submitting) {
+        event.preventDefault()
+        captureNeedsRefresh = true
+      }
+    }, { signal })
+    window.addEventListener("beforeunload", event => {
+      if (unconfirmedAttempt) { event.preventDefault(); event.returnValue = "" }
+    }, { signal })
+    window.addEventListener("pagehide", () => {
+      if (!overlay.classList.contains("active")) return
+      if (drafts?.isBound()) { captureContinues = false; return }
+      if (!captureContinues && !submitting && !overlay.classList.contains("closing")) return
+      refreshOnRestore = captureNeedsRefresh || submitting
+      captureOptionsRequest?.abort()
+      captureSession++
+      calendarCaptureTask = undefined
+      submitting = captureContinues = captureNeedsRefresh = draftLoading = false
+      drafts?.close()
+      overlay.classList.remove("active", "closing")
+      focusTrap.deactivate(false)
+      if (!unconfirmedAttempt) clearCapture()
+      else { submitting = false; showUncertainCreate(unconfirmedAttempt, repeatAfterReceipt) }
+    }, { signal })
+    window.addEventListener("pageshow", event => {
+      if (!event.persisted || !refreshOnRestore) return
+      refreshOnRestore = false
+      document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "created" } }))
+    }, { signal })
+
+    document.addEventListener("meitheal:board-hidden", () => {
+      boardWithheld = true
+      revealCapture = overlay.classList.contains("active")
+      overlay.hidden = true
+      overlay.inert = true
+      captureOptionsRequest?.abort()
+      focusTrap.deactivate(false)
+    }, { signal })
+    document.addEventListener("meitheal:board-session-updated", () => {
+      const current = currentTaskApiContext()
+      for (const frozen of [captureContext, pendingContext]) {
+        if (current && frozen && current.boardId === frozen.boardId && current.actorKey && current.actorKey === frozen.actorKey) frozen.session = current.session
+      }
+    }, { signal })
+    document.addEventListener("meitheal:board-verified", () => {
+      boardWithheld = false
+      overlay.hidden = false
+      overlay.inert = false
+      if (revealCapture && overlay.classList.contains("active")) focusTrap.activate()
+      revealCapture = false
+    }, { signal })
+
     // Expose global open method
     window.openNewTaskModal = (kind) => {
-      if (signal.aborted || overlay.classList.contains("active")) return
+      if (signal.aborted || boardWithheld || overlay.classList.contains("active")) return
       // If the detail panel is open, close it to avoid dual modal
       document.getElementById("task-detail-panel")?.classList.remove("open");
       document.getElementById("task-detail-overlay")?.classList.remove("active");
       document.body.classList.remove("has-docked-inspector");
 
-      clearCapture()
-      capturePlacement = taskCapturePlacement()
-      if (kind && [...kindTabs].some(tab => (tab as HTMLElement).dataset.kind === kind)) selectKind(kind)
-      const contextualDate = window.__prefillTaskDate
+      if (!unconfirmedAttempt) {
+        clearCapture()
+        captureContext = currentTaskApiContext()
+      } else captureContext = pendingContext
+      if (!captureContext) return
+      const captureBoardLabel = document.getElementById("nt-capture-board")
+      if (captureBoardLabel) captureBoardLabel.textContent = `Board: ${captureContext.boardName ?? "Selected Board"}`
+      contextPlacement = unconfirmedAttempt ? capturePlacement : taskCapturePlacement()
+      contextDue = window.__prefillTaskDate ?? ""
+      contextKind = kind && [...kindTabs].some(tab => (tab as HTMLElement).dataset.kind === kind) ? kind : ""
+      if (captureFeedback) captureFeedback.textContent = ""
       delete window.__prefillTaskDate
-      if (contextualDate) {
-        if (kind === "calendar_event") restoreEventDate("nt-event-start", contextualDate)
-        else restoreDue(contextualDate)
-      }
+      if (!unconfirmedAttempt) restoreCaptureContext()
+      defaultAssignee = ""
       preserveAssignee = false
       captureSession++
       overlay.classList.add("active")
 
       captureOptionsRequest = new AbortController()
       const requestSignal = AbortSignal.any([signal, captureOptionsRequest.signal, AbortSignal.timeout(10_000)])
-      void loadAssigneeDropdown(requestSignal)
-      if (!lanesLoaded) void loadStatusPills(requestSignal)
-      if (!goalsLoaded) void loadGoals(requestSignal)
-      void loadDraftEditor(captureSession)
+      if (!unconfirmedAttempt) {
+        void loadAssigneeDropdown(requestSignal)
+        if (!lanesLoaded) void loadStatusPills(requestSignal)
+        if (!goalsLoaded) void loadGoals(requestSignal)
+      }
       focusTrap.activate()
+      if (!unconfirmedAttempt) void loadDraftEditor(captureSession)
+      else { renderCaptureSubmit(); checkSave?.focus() }
     };
 
     // Fetch users and populate the Assign To dropdown
@@ -699,7 +811,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         if (select.parentElement) select.parentElement.style.display = users.length || selected ? "" : "none"
         hint?.classList.toggle("hidden", users.length < 2)
         const fallback = data.default_assignee || (users.length === 1 ? users[0].id : "")
-        if (preserveAssignee) selectSavedOption(select, selected, taskDraftText("assignee_missing"))
+        defaultAssignee = fallback
+        if (preserveAssignee || submitting) selectSavedOption(select, selected, taskDraftText("assignee_missing"))
         else select.value = fallback
 
         // Used only by the existing @mention parser.
@@ -864,7 +977,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     async function loadGoals(requestSignal: AbortSignal) {
       if (!goalSelect) return
       try {
-        const res = await fetch("/api/goals?projection=household", { signal: requestSignal })
+        const res = await fetch("/api/goals", { signal: requestSignal })
         if (!res.ok) return
         const data = await res.json()
         const goals = data?.goals ?? data
@@ -1035,6 +1148,17 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     }
 
     function clearCapture() {
+      unconfirmedAttempt = recoveredTaskId = undefined
+      pendingContext = null
+      repeatAfterReceipt = false
+      if (uncertain) uncertain.hidden = true
+      if (uncertainAlert) uncertainAlert.hidden = false
+      if (receiptStatus) receiptStatus.textContent = ""
+      if (checkSave) {
+        checkSave.hidden = true
+        checkSave.removeAttribute("aria-disabled")
+        checkSave.textContent = checkSave.dataset.checkLabel ?? ""
+      }
       restoreCapture({
         version: 1, title: "", description: "", taskKind: "standard_action", status: "pending", priority: 3,
         due: "", labels: [], newLabels: [], assignedTo: "", goal: "", recurrence: "", isRoutine: false,
@@ -1043,24 +1167,54 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       })
     }
 
+    function restoreCaptureContext() {
+      capturePlacement = contextPlacement
+      if (contextKind) selectKind(contextKind)
+      if (contextKind === "calendar_event") restoreEventDate("nt-event-start", contextDue)
+      else restoreDue(contextDue)
+    }
+
+    function prepareNextCapture() {
+      clearCapture()
+      restoreCaptureContext()
+      if (assignee) assignee.value = defaultAssignee
+      preserveAssignee = false
+    }
+
     function hasSelectedFiles() {
       return [...(form?.querySelectorAll<HTMLInputElement>("input[type=file]") ?? [])].some(file => file.files?.length)
     }
 
     function showSubmit(bound: boolean, disabled: boolean) {
-      if (!submitBtn) return
-      submitBtn.disabled = disabled
-      submitBtn.formNoValidate = bound
-      submitBtn.textContent = bound ? taskDraftText("publish") : submitting ? submitBtn.dataset.labelCreating || "Creating…" : createButtonLabel()
+      if (submitBtn) {
+        submitBtn.disabled = disabled || !canRetryCreate()
+        submitBtn.formNoValidate = bound
+        submitBtn.textContent = bound ? taskDraftText("publish") : submitting ? submitBtn.dataset.labelCreating || "Creating…" : createButtonLabel()
+      }
+      if (anotherBtn) {
+        anotherBtn.disabled = disabled || !canRetryCreate()
+        anotherBtn.formNoValidate = bound
+        anotherBtn.textContent = (bound ? anotherBtn.dataset.publish : anotherBtn.dataset.create) ?? ""
+      }
+      if (closeBtn) closeBtn.disabled = submitting
+      if (cancelBtn) cancelBtn.disabled = submitting
+    }
+
+    function canRetryCreate() {
+      return uncertain?.hidden !== false
     }
 
     function canSubmitCapture() {
-      return !draftLoading && (!drafts || drafts.canSubmit())
+      return Boolean(overlay?.matches(".active:not(.closing)")) &&
+        !draftLoading && canRetryCreate() && (!drafts || drafts.canSubmit())
     }
 
     function renderCaptureSubmit() {
       if (drafts) drafts.render()
-      else showSubmit(false, draftLoading || submitting)
+      else {
+        if (form) form.inert = submitting
+        showSubmit(false, draftLoading || submitting)
+      }
     }
 
     const draftEditor = {
@@ -1068,28 +1222,132 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       restore: restoreCapture,
       clear: clearCapture,
       selectedFiles: hasSelectedFiles,
-      ordinarySubmitting: () => submitting,
+      ordinaryCapturePending: () => submitting || !canRetryCreate(),
       focusTitle: () => titleInput?.focus(),
-      stateChanged(bound, disabled, withdrawn) {
-        if (form) form.inert = withdrawn
+      stateChanged(bound, disabled, withdrawn, holdFields) {
+        if (form) form.inert = withdrawn || holdFields || submitting
         const kindBar = overlay.querySelector<HTMLElement>("#nt-kind-tabs")
-        if (kindBar) kindBar.inert = withdrawn
+        if (kindBar) kindBar.inert = withdrawn || holdFields
         showSubmit(bound, disabled)
       },
-      taskPublished() {
-        refreshAfterCaptureClose = true
+      taskPublished(_receipt, addAnother) {
+        captureNeedsRefresh = true
+        if (addAnother) prepareNextCapture()
       },
       openTask(receipt) {
         queueCreatedTask(receipt.taskId)
-        refreshAfterCaptureClose = true
+        captureNeedsRefresh = true
         closeNewTaskModal()
       },
     } satisfies Parameters<typeof connectTaskDrafts>[1]
 
+    const precommitRejections = new Set([400, 401, 403, 404, 413, 415, 422, 429])
+    async function createCapture(payload: Record<string, unknown>, attempt: string | undefined) {
+      let response: Response | undefined
+      try {
+        if (!captureContext) return { kind: "rejected" as const, message: "Choose an available Board before capturing." }
+        response = await fetch("/api/tasks", {
+          method: "POST",
+          headers: taskApiHeaders(captureContext, {
+            "content-type": "application/json",
+            ...(attempt ? { "x-meitheal-capture-attempt": attempt } : {}),
+          }),
+          body: JSON.stringify(payload),
+          redirect: "error",
+          signal: AbortSignal.any([signal, ...(captureOptionsRequest ? [captureOptionsRequest.signal] : []), AbortSignal.timeout(30_000)]),
+        })
+        if (response.status === 201) {
+          const created = await response.json()
+          if (typeof created?.id === "string" && created.id.trim()) {
+            return { kind: "created" as const, task: created as { id: string; ticket_key?: string; task_kind?: string } }
+          }
+        }
+
+      } catch { /* Delivery or receipt could have failed after the write. */ }
+      const kind = response && precommitRejections.has(response.status) ? "rejected" : "uncertain"
+      if (!signal.aborted) log.warn("Create task outcome", {
+        kind, status: response?.status, requestId: response?.headers.get("x-request-id"),
+      })
+      return { kind }
+    }
+
+    checkSave?.addEventListener("keydown", event => {
+      if (event.key === "Enter" && event.repeat) event.preventDefault()
+    }, { signal })
+    checkSave?.addEventListener("click", async () => {
+      if (recoveredTaskId) {
+        queueCreatedTask(recoveredTaskId)
+        closeNewTaskModal()
+        return
+      }
+      if (!unconfirmedAttempt || !pendingContext || checkSave.getAttribute("aria-disabled") === "true") return
+      const session = captureSession
+      checkSave.setAttribute("aria-disabled", "true")
+      if (receiptStatus) receiptStatus.textContent = checkSave.dataset.checking ?? ""
+      try {
+        const response = await fetch("/api/tasks?captureReceipt=1", {
+          headers: taskApiHeaders(pendingContext!, { "x-meitheal-capture-attempt": unconfirmedAttempt }),
+          mode: "same-origin",
+          cache: "no-store",
+          redirect: "error",
+          signal: AbortSignal.any([signal, ...(captureOptionsRequest ? [captureOptionsRequest.signal] : []), AbortSignal.timeout(5000)]),
+        })
+        const receipt = response.ok && response.headers.get("cache-control")?.includes("no-store") ? await response.json() : null
+        if (session !== captureSession || signal.aborted) return
+        if (typeof receipt?.id === "string" && receipt.id.trim()) {
+          if (repeatAfterReceipt) {
+            continueCapture(checkSave.dataset.confirmed ?? "")
+            return
+          }
+          recoveredTaskId = receipt.id
+          if (receiptStatus) receiptStatus.textContent = checkSave.dataset.confirmed ?? ""
+          if (uncertainAlert) uncertainAlert.hidden = true
+          checkSave.textContent = checkSave.dataset.openLabel ?? ""
+          return
+        }
+        if (receiptStatus) receiptStatus.textContent = checkSave.dataset.unconfirmed ?? ""
+      } catch {
+        if (session === captureSession && !signal.aborted && receiptStatus) {
+          receiptStatus.textContent = checkSave.dataset.unconfirmed ?? ""
+        }
+      } finally {
+        if (session === captureSession && !signal.aborted) checkSave.removeAttribute("aria-disabled")
+      }
+    }, { signal })
+
+    function continueCapture(message: string) {
+      prepareNextCapture()
+      submitting = false
+      renderCaptureSubmit()
+      titleInput?.focus()
+      if (captureFeedback) captureFeedback.textContent = message
+    }
+
+    function showUncertainCreate(attempt: string | undefined, addAnother: boolean) {
+      captureContinues = true
+      captureNeedsRefresh = true
+      unconfirmedAttempt = attempt
+      pendingContext = captureContext
+      repeatAfterReceipt = addAnother
+      if (checkTasks) {
+        const query = new URLSearchParams({ view: "table", area: "", tableRefresh: String(Date.now()) })
+        checkTasks.href = buildIngressPagePath(`/boards/${encodeURIComponent((pendingContext ?? captureContext)!.boardId)}?${query}`)
+      }
+      if (checkSave) checkSave.hidden = !attempt
+      if (uncertain) uncertain.hidden = false
+      renderCaptureSubmit()
+      if (attempt) checkSave?.focus()
+      else checkTasks?.focus()
+    }
+
     async function loadDraftEditor(session: number) {
       editedWhileLoading = false
       if (!privateIngressScope()) { renderCaptureSubmit(); return }
-      if (drafts) { drafts.open(); return }
+      if (drafts) {
+        drafts.open()
+        if (contextDue) drafts.edited()
+        return
+      }
 
       draftLoading = true
       let blocked = false
@@ -1099,7 +1357,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         if (!overlay || signal.aborted || session !== captureSession) return
         drafts = connectTaskDrafts(overlay, draftEditor, signal)
         drafts.open()
-        if (editedWhileLoading) drafts.edited()
+        if (editedWhileLoading || contextDue) drafts.edited()
       } catch {
         // An older offline shell may not have this optional editor chunk yet.
         try {
@@ -1116,6 +1374,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
     function markEdited() {
       if (!isHydrating) {
+        repeatAfterReceipt = false
         showFieldError()
         const dateError = document.getElementById("nt-date-error")
         if (dateError) dateError.hidden = true
@@ -1128,11 +1387,15 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
       const target = event.target as HTMLElement
       eventDates.delete(target.id)
       if (target === assignee) preserveAssignee = true
-      if (!target.matches(".label-picker__input")) markEdited()
+      if (target.matches(".label-picker__input")) {
+        repeatAfterReceipt = false
+        if (drafts) drafts.edited()
+        else editedWhileLoading = true
+      } else markEdited()
     }, { signal })
     form?.addEventListener("change", event => {
       const target = event.target as HTMLElement
-      if (eventDates.delete(target.id) || target.matches("input[type=hidden]")) markEdited()
+      if (eventDates.delete(target.id) || target.matches("input[type=hidden]") || uncertain?.hidden === false) markEdited()
     }, { signal })
     form?.addEventListener("invalid", event => {
       if (event.target === qtyEl && kindInput?.value === "shopping_item") showFieldError(taskDraftText("quantity"))
@@ -1154,6 +1417,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         e.preventDefault()
         if (submitting || !canSubmitCapture() || !titleInput) return
         const bound = drafts?.isBound() ?? false
+        const addAnother = e.submitter === anotherBtn
         let title = titleInput.value.trim()
         if (!title) { showFieldError(taskDraftText("title_required")); titleInput.focus(); return }
         if (bound && hasSelectedFiles()) {
@@ -1181,6 +1445,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
           return
         }
         const session = captureSession
+        let confirmed = false
 
         try {
           const extractedLabels: string[] = [];
@@ -1330,6 +1595,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
             }
           }
 
+          duePicker?.closePanel()
+          if (addAnother) captureContinues = true
           if (bound) {
             const fields = captureFields().filter(field => field.type === "checkbox" ? field.label || field.checked : field.value)
             const custom = body.custom_fields ? JSON.parse(String(body.custom_fields)) : undefined
@@ -1340,61 +1607,59 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
               catalogLabels: manualLabels.filter(name => !newLabels.includes(name)),
               ...(body.checklists ? { checklists: JSON.parse(String(body.checklists)) } : {}),
               ...(custom || fields.length ? { custom_fields: { ...custom, ...(fields.length ? { fields } : {}) } } : {}),
-            } as TaskDraftPublication)
+            } as TaskDraftPublication, addAnother)
             return
           }
 
           if (newLabels.length) body.new_labels = newLabels
           submitting = true
+          if (captureFeedback) {
+            captureFeedback.textContent = submitBtn?.dataset.labelCreating || "Creating…"
+            captureFeedback.focus()
+          }
           renderCaptureSubmit()
-          const res = await fetch("/api/tasks", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(body),
-            signal
-          });
+          const attempt = overlay.dataset.captureReceipt ? browserUuid() : undefined
+          unconfirmedAttempt = attempt
+          pendingContext = captureContext
+          const outcome = await createCapture(body, attempt)
 
           if (session !== captureSession || signal.aborted) return
-          if (res.ok) {
-            // Parse created task for toast and auto-open
-            let created: { id?: string; ticket_key?: string; task_kind?: string } = {};
-            try { created = await res.json(); } catch { /* non-JSON response — use empty obj */ }
-            if (session !== captureSession || signal.aborted) return
-
-            // Rich toast with clickable ticket key
-            const { showTaskCreatedToast } = await import("../../lib/toast");
-            showTaskCreatedToast(
-              created.ticket_key ?? null,
-              created.id ?? "",
-              title,
-            );
-
-            if (created.id && created.task_kind !== "quick") {
-              queueCreatedTask(created.id)
-            }
-            const calendar = document.querySelector("#calendar-shell[data-calendar-ready='true']")
-            if (calendar) refreshAfterCaptureClose = true
+          if (!("task" in outcome)) {
+            submitting = false
+            if (captureFeedback) captureFeedback.textContent = ""
+            renderCaptureSubmit()
+            if (outcome.kind === "uncertain") { showUncertainCreate(attempt, addAnother); return }
+            unconfirmedAttempt = undefined
+            pendingContext = null
+            showFieldError(outcome.message ?? form.dataset.saveFailed)
+            if (!captureContinues) showToast(form.dataset.toastError || "Failed to create task", "error")
+            fieldError?.focus()
+            return
+          }
+          confirmed = true
+          unconfirmedAttempt = undefined
+          pendingContext = null
+          captureNeedsRefresh = true
+          const created = outcome.task
+          if (addAnother) {
+            continueCapture(form.dataset.toastCreated || "Task created!")
+            return
+          }
+          if (created.task_kind !== "quick_capture") queueCreatedTask(created.id)
+          submitting = false
+          closeNewTaskModal()
+          showTaskCreatedToast(created.ticket_key ?? null, created.id, title)
+        } catch {
+          if (session !== captureSession || signal.aborted) return
+          if (confirmed) {
+            submitting = false
             closeNewTaskModal()
-            if (!calendar) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", {
-              detail: { action: "created" }
-            }));
-
-          } else {
-            const err = await res.text();
-            showFieldError(form.dataset.saveFailed || "Could not create this task. Your entries are still here. Try again.")
-            showToast(form.dataset.toastError || "Failed to create task", "error");
-            log.error("Create task failed:", err);
+            log.warn("Could not present saved task")
+            return
           }
-        } catch (e) {
-          if (session !== captureSession || signal.aborted) return
-          if (bound) showFieldError(taskDraftText("invalid_values"))
-          else {
-            log.error("Form submission error", e)
-            showFieldError(form.dataset.saveFailed || "Could not create this task. Your entries are still here. Try again.")
-            showToast(form.dataset.toastUnexpected || "Unexpected error creating task", "error")
-          }
+          showFieldError(bound ? taskDraftText("invalid_values") : form.dataset.saveFailed)
         } finally {
-          if (!bound) { submitting = false; renderCaptureSubmit() }
+          if (!bound && session === captureSession && !signal.aborted) { submitting = false; renderCaptureSubmit() }
         }
       }, { signal });
     }
@@ -1430,4 +1695,10 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     :global(.nt-due-date-panel .idp-calendar) { min-width: 0; }
   }
   .nt-draft-panel [hidden], .nt-footer [hidden] { display: none !important; }
+  #nt-create-uncertain[hidden] { display: none; }
+  #nt-create-uncertain .btn { min-height: 44px; }
+  @media (max-height: 520px) {
+    #new-task-overlay .nt-modal { overflow-y: auto; }
+    #new-task-overlay :is(.nt-form, .nt-draft-panel) { flex: none; max-height: none; overflow: visible; }
+  }
 </style>

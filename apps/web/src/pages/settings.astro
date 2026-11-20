@@ -1,4 +1,8 @@
 ---
+import { resolveBoardPageScope } from "@lib/board-http"
+import { scopeBoardAccess, scopePermits } from "@domains/tasks"
+import { boardScopeAuthorityKey } from "@lib/board-view"
+import { boardSessionProof } from "@lib/named-board-request"
 import SettingsAgents from "../components/settings/SettingsAgents.astro"
 import SettingsAgentTokens from "../components/settings/SettingsAgentTokens.astro"
 import SettingsAppPwa from "../components/settings/SettingsAppPwa.astro"
@@ -21,10 +25,16 @@ import { ensureSchema, getPersistenceClient } from "@domains/tasks"
 import { verifyCurrentHAOwner } from "@domains/ha/current-admin"
 import { verifiedIngressUser } from "../lib/verified-ingress-user"
 
+const selectedBoard = await resolveBoardPageScope(Astro).catch(() => null)
+const settingsBoard = selectedBoard?.ok ? {
+  id: selectedBoard.scope.boardId, name: scopeBoardAccess(selectedBoard.scope).name,
+  canManage: scopePermits(selectedBoard.scope, { resource: "board", action: "manage" }),
+  session: boardSessionProof(selectedBoard.scope.principal.id), authority: boardScopeAuthorityKey(selectedBoard.scope),
+} : undefined
 const user = verifiedIngressUser(Astro.locals)
 const mayDownloadDatabase = user?.isAdmin && await verifyCurrentHAOwner(user.id, Astro.request.signal) === "allowed"
 const protectedBackup = mayDownloadDatabase && await ensureSchema().then(async () =>
-  (await getPersistenceClient().execute("SELECT 1 FROM task_boards WHERE id <> 'household' UNION ALL SELECT 1 FROM app_settings WHERE key = 'private_organization_data' UNION ALL SELECT 1 FROM organization_access_policies WHERE audience = 'selected' OR scope <> 'feature' UNION ALL SELECT 1 FROM home_assistant_task_areas UNION ALL SELECT 1 FROM pillars WHERE user_id <> 'default' LIMIT 1")).rows.length > 0
+  (await getPersistenceClient().execute("SELECT 1 FROM task_boards WHERE visibility = 'restricted' OR (SELECT COUNT(*) FROM task_boards) > 1 UNION ALL SELECT 1 FROM app_settings WHERE key = 'private_organization_data' UNION ALL SELECT 1 FROM organization_access_policies WHERE audience = 'selected' OR scope <> 'feature' UNION ALL SELECT 1 FROM home_assistant_task_areas UNION ALL SELECT 1 FROM pillars WHERE user_id <> 'default' LIMIT 1")).rows.length > 0
 ).catch(() => true)
 const databaseDownloadToken = mayDownloadDatabase && !protectedBackup ? issueDatabaseDownloadToken(user.id) : undefined
 if (user) Astro.response.headers.set("Cache-Control", "private, no-store")
@@ -35,7 +45,7 @@ const aiAgentsSection = SETTINGS_SECTIONS.find((section) => section.id === "ai-a
 const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "connections-settings")!
 ---
 
-<Layout title={`Meitheal — ${t("settings.title", locale)}`}>
+<Layout title={`Meitheal — ${t("settings.title", locale)}`} {...(settingsBoard ? { boardContext: { boardId: settingsBoard.id, session: settingsBoard.session, boardName: settingsBoard.name } } : {})}>
   <header id="settings-bar" class="settings-bar" data-search-scope="settings" slot="custom-header">
     <h1 tabindex="-1">{t("settings.title", locale)}</h1>
     <div class="settings-bar__actions">
@@ -78,7 +88,7 @@ const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "c
       <SettingsTasksBoards locale={locale} />
 
       <!-- 5. People & Notifications -->
-      <SettingsPeopleNotifications locale={locale} />
+      <SettingsPeopleNotifications locale={locale} board={settingsBoard} />
 
       <!-- 6. Scoring & Rules -->
       <section

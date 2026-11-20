@@ -4,6 +4,9 @@ import { initPageShellSectionTracking } from "@lib/page-shell-controller"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { quickAddPayload } from "@lib/quick-add"
 import { getStatusLabel, isActiveStatus, isClosedStatus, isDoneStatus } from "@lib/status-config"
+import { currentTaskApiContext } from "@lib/task-api"
+import { taskCapturePlacement } from "@lib/task-capture-placement"
+import { boardContextHref, readBoardNavigationContext } from "@lib/board-workspace"
 import { taskApi } from "@lib/task-api-client"
 import { taskBackgroundUrl } from "@lib/task-page-url"
 import { showToast } from "@lib/toast"
@@ -187,6 +190,9 @@ function initQuickAddForm(): void {
     const text = input.value.trim()
     if (!text) return
     const { payload } = quickAddPayload(text)
+    const captureContext = currentTaskApiContext()
+    const placement = taskCapturePlacement()
+    if (!captureContext) { showToast("Choose a Board before adding a task.", "error"); return }
     const title = payload.title
 
     const newCard = document.createElement("div")
@@ -219,11 +225,11 @@ function initQuickAddForm(): void {
     }
 
     try {
-      const areaId = window.__activeArea ?? "default"
       await taskApi.createTask({
         ...payload,
-        area_id: areaId === "all" ? "default" : areaId,
-      })
+        area_id: placement?.areaId ?? null,
+        project_id: placement?.projectId ?? null,
+      }, pageLifecycle.signal, captureContext)
       showToast("common.task_created")
       form.classList.add("flash-success")
       setTimeout(() => form.classList.remove("flash-success"), 600)
@@ -294,11 +300,11 @@ function initOpenTaskFilter(): (() => void) | undefined {
     }
 
     if (kanbanLink) {
-      const ingressPath = window.__ingress_path || ""
-      kanbanLink.href =
-        value === "all"
-          ? `${ingressPath}/tasks`
-          : `${ingressPath}/tasks?user=${encodeURIComponent(value)}`
+      const context = currentTaskApiContext()
+      const selected = readBoardNavigationContext(taskBackgroundUrl())
+      const navigation = context ? { ...selected, boardId: context.boardId } : null
+      const path = value === "all" ? "/tasks" : `/tasks?user=${encodeURIComponent(value)}`
+      kanbanLink.href = (window.__ingress_path || "") + (navigation ? boardContextHref(navigation, path) : "/boards")
     }
   }
 

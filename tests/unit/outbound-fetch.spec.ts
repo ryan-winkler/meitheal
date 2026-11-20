@@ -24,12 +24,15 @@ import {
   testConnection,
 } from "../../apps/web/src/domains/calendar/caldav-client"
 import { n8nFetch, extractBaseUrl, jsonResponse } from "../../apps/web/src/lib/n8n-fetch"
+import { runWithIngressTransport } from "../../apps/web/scripts/ingress-transport.mjs"
+import { verifiedBoardRequestPrincipal } from "../../apps/web/src/lib/board-request-context"
+import { boardSessionProof } from "../../apps/web/src/lib/named-board-request"
 import {
   ensureSchema,
   getLocalDataDirectory,
   getPersistenceClient,
   resetPersistenceForTests,
-} from "../../apps/web/src/domains/tasks/persistence/store"
+} from "../helpers/persistence-fixture"
 import {
   decryptCalDAVPassword,
   POST as saveCredentials,
@@ -395,16 +398,25 @@ test.describe("CalDAV credential key initialization and legacy migration", () =>
     process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
     resetPersistenceForTests()
     try {
+      await ensureSchema()
       expect(getLocalDataDirectory()).toBe(directory)
+      const transport = { peer: "127.0.0.1", fromSupervisor: false, identityHeadersSafe: true, configuredPath: undefined }
+      const url = "http://localhost/api/integrations/calendar/caldav-credentials"
+      const operator = await runWithIngressTransport(transport, () => verifiedBoardRequestPrincipal({
+        locals: {} as App.Locals,
+        request: new Request(url),
+      }))
+      if (!operator) throw new Error("The disposable local operator must have a current Board session")
+      const headers = { "content-type": "application/json", "x-meitheal-board-session": boardSessionProof(operator.id) }
 
       // Concurrent saves race on first key initialization and must converge on one 0600 key file
       const responses = await Promise.all(
         Array.from({ length: 5 }, (_, idx) =>
-          saveCredentials({
-            locals: { hassIsAdmin: true },
-            request: new Request("http://localhost/api/integrations/calendar/caldav-credentials", {
+          runWithIngressTransport(transport, () => saveCredentials({
+            locals: {},
+            request: new Request(url, {
               method: "POST",
-              headers: { "content-type": "application/json" },
+              headers,
               body: JSON.stringify({
                 action: "save",
                 url: "https://dav.example/",
@@ -412,12 +424,16 @@ test.describe("CalDAV credential key initialization and legacy migration", () =>
                 password: `s3cret-${idx}`,
               }),
             }),
-          } as unknown as Parameters<typeof saveCredentials>[0]),
+          } as Parameters<typeof saveCredentials>[0])),
         ),
       )
-      for (const response of responses) {
-        expect(response.status).toBe(200)
+      const acceptedPasswords: string[] = []
+      for (const [index, response] of responses.entries()) {
+        expect([200, 409, 503]).toContain(response.status)
+        if (response.status === 503) expect(response.headers.get("cache-control")).toContain("no-store")
+        if (response.status === 200) acceptedPasswords.push(`s3cret-${index}`)
       }
+      expect(acceptedPasswords.length).toBeGreaterThan(0)
 
       const keyFile = join(directory, "caldav-credentials.key")
       expect(statSync(keyFile).mode & 0o777).toBe(0o600)
@@ -427,7 +443,7 @@ test.describe("CalDAV credential key initialization and legacy migration", () =>
       const row = await getPersistenceClient().execute("SELECT value FROM settings WHERE key = 'caldav_password_enc'")
       const stored = String(row.rows[0]!.value)
       expect(stored.startsWith('"')).toBe(false)
-      expect(decryptCalDAVPassword(stored)).toMatch(/^s3cret-\d$/)
+      expect(acceptedPasswords).toContain(decryptCalDAVPassword(stored))
       expect(() => decryptCalDAVPassword("c2hvcnQ=")).toThrow(/enter it again/)
 
       // A ciphertext from another key is reported plainly, not as a crypto error.

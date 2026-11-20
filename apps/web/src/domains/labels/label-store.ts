@@ -1,8 +1,6 @@
-import type { InStatement } from "@libsql/client"
-import { ensureSchema, getPersistenceClient } from "@domains/tasks"
+import { boardOperationClient, ensureSchema, getPersistenceClient, type BoardScope } from "@domains/tasks"
 import { stripHtml } from "../../lib/strip-html"
 import { LabelMutationRepository } from "./label-mutation"
-import { resetColorCache } from "./label-color-resolver"
 import { isWellFormedLabelName, labelNameKey } from "./label-name"
 
 export interface Label {
@@ -20,10 +18,10 @@ function readLabel(row: Record<string, unknown>): Label {
   }
 }
 
-export async function listLabels(): Promise<Label[]> {
+export async function listLabels(scope: BoardScope): Promise<Label[]> {
   await ensureSchema()
-  const rows = await getPersistenceClient().execute(
-    "SELECT id, title, hex_color FROM vikunja_labels ORDER BY id",
+  const rows = await boardOperationClient(getPersistenceClient(), scope, { resource: "label", action: "read" }).execute(
+    { sql: "SELECT id, title, hex_color FROM vikunja_labels WHERE board_id = ? ORDER BY id", args: [scope.boardId] },
   )
   return rows.rows.map(readLabel)
 }
@@ -33,19 +31,8 @@ export function normalizeLabelTitle(title: string): string {
   return isWellFormedLabelName(normalized) ? normalized : ""
 }
 
-/** Add an explicitly created label only if the task write in this batch won. */
-export function taskLabelInsert(title: string, taskId: string, requestId: string): InStatement {
-  return {
-    sql: `INSERT INTO vikunja_labels (title, hex_color)
-          SELECT ?, '6b7280'
-          WHERE EXISTS (SELECT 1 FROM tasks WHERE id = ? AND request_id = ? AND task_board_id IS NULL AND EXISTS (SELECT 1 FROM task_boards WHERE id = 'household' AND state = 'active'))
-            AND NOT EXISTS (SELECT 1 FROM vikunja_labels WHERE lower(title) = lower(?))`,
-    args: [title, taskId, requestId, title],
-  }
-}
-
 /** Return an existing label when the title differs only by case. */
-export async function createLabel(title: string, hexColor?: string): Promise<Label> {
+export async function createLabel(scope: BoardScope, title: string, hexColor?: string): Promise<Label> {
   const sanitized = normalizeLabelTitle(title)
   if (!sanitized) {
     throw new Error("Label title is required")
@@ -56,24 +43,14 @@ export async function createLabel(title: string, hexColor?: string): Promise<Lab
     : "6b7280"
 
   await ensureSchema()
-  const [, result] = await getPersistenceClient().batch([
-    {
-      sql: `INSERT INTO vikunja_labels (title, hex_color)
-            SELECT ?, ? WHERE NOT EXISTS (
-              SELECT 1 FROM vikunja_labels WHERE lower(title) = lower(?)
-            )`,
-      args: [sanitized, color, sanitized],
-    },
-    {
-      sql: "SELECT id, title, hex_color FROM vikunja_labels WHERE lower(title) = lower(?) ORDER BY id LIMIT 1",
-      args: [sanitized],
-    },
+  const [, result] = await boardOperationClient(getPersistenceClient(), scope, { resource: "label", action: "create" }).batch([
+    { sql: "INSERT INTO vikunja_labels (board_id, title, hex_color) SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM vikunja_labels WHERE board_id = ? AND lower(title) = lower(?))", args: [scope.boardId, sanitized, color, scope.boardId, sanitized] },
+    { sql: "SELECT id, title, hex_color FROM vikunja_labels WHERE board_id = ? AND lower(title) = lower(?) ORDER BY id LIMIT 1", args: [scope.boardId, sanitized] },
   ], "write")
   const row = result?.rows[0]
   if (!row) {
     throw new Error("Label write did not return a row")
   }
-  resetColorCache()
   return readLabel(row)
 }
 
@@ -82,6 +59,7 @@ export async function createLabel(title: string, hexColor?: string): Promise<Lab
  * Title is sanitized and length-capped at 100 characters.
  */
 export async function updateLabel(
+  scope: BoardScope,
   id: number,
   updates: { title?: string; hexColor?: string }
 ): Promise<Label | null> {
@@ -90,11 +68,10 @@ export async function updateLabel(
   const title = updates.title === undefined ? undefined : normalizeLabelTitle(updates.title)
   if (title !== undefined && !title) return null
   if (updates.hexColor !== undefined && !/^#?[0-9a-fA-F]{6}$/.test(updates.hexColor)) return null
-  const row = await new LabelMutationRepository(getPersistenceClient()).update(id, {
+  const row = await new LabelMutationRepository(getPersistenceClient(), scope).update(id, {
     ...(title === undefined ? {} : { title }),
     ...(updates.hexColor === undefined ? {} : { hexColor: updates.hexColor.replace(/^#/, "") }),
   })
-  if (row) resetColorCache()
   return row ? readLabel(row) : null
 }
 
@@ -104,11 +81,10 @@ export async function updateLabel(
  * Equivalent surviving definitions retain their shared name references.
  * Returns true if label existed and was deleted.
  */
-export async function deleteLabel(id: number): Promise<boolean> {
+export async function deleteLabel(scope: BoardScope, id: number): Promise<boolean> {
   await ensureSchema()
   if (!Number.isSafeInteger(id) || id < 1) return false
-  const deleted = await new LabelMutationRepository(getPersistenceClient()).delete(id)
-  if (deleted) resetColorCache()
+  const deleted = await new LabelMutationRepository(getPersistenceClient(), scope).delete(id)
   return deleted
 }
 
@@ -116,8 +92,8 @@ export async function deleteLabel(id: number): Promise<boolean> {
  * Get the label color map: label title (lowercase) → hex color.
  * Used by label-color-resolver for rendering.
  */
-export async function getLabelColorMap(): Promise<Map<string, string>> {
-  const labels = await listLabels()
+export async function getLabelColorMap(scope: BoardScope): Promise<Map<string, string>> {
+  const labels = await listLabels(scope)
   const map = new Map<string, string>()
   for (const label of labels) {
     map.set(labelNameKey(label.title), label.hexColor)

@@ -11,6 +11,9 @@ export {
 export { notifyAgentComment } from "./agent-comment"
 export {
   sendTaskNotification,
+  notificationOperationAllowed,
+  notifyUrgentTaskCreation,
+  notifyTaskHandback,
   type TaskNotification,
   type TaskNotificationPreferences,
 } from "./task-notifications"

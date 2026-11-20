@@ -1,197 +1,63 @@
+import type { APIRoute } from "astro"
+import { getPersistenceClient, readWorkDestinations, type WorkOperation } from "@domains/tasks"
+import { getCalendarSyncStatus, syncFromHA, syncCalDAVEvents, startCalendarSync,
+  stopCalendarSync, stopCalDAVSync, type CalendarSyncMode } from "@domains/calendar"
+import { withBoardScope } from "@lib/board-http"
+import { currentSettingsAccess } from "@lib/current-settings-access"
+import { apiJson, apiError } from "@lib/api-response"
+import { requestIntegrationBinding } from "@lib/integration-binding-access"
 import { calendarSyncResult } from "@domains/calendar/calendar-sync-result"
-/**
- * Calendar Sync API — Manual Sync Trigger & Status
- *
- * POST /api/integrations/calendar/sync — trigger manual sync or enable/disable
- * GET  /api/integrations/calendar/sync — get sync status
- *
- * Supports multi-calendar: enable accepts `entities` array.
- * Mirrors /api/todo/sync pattern for API consistency.
- *
- * @domain calendar
- * @bounded-context integration
- */
-import type { APIRoute } from "astro";
-import type { CalendarSyncMode } from "@domains/calendar/calendar-bridge";
-import {
-  startCalendarSync,
-  startMultiCalendarSync,
-  stopCalendarSync,
-  getCalendarSyncStatus,
-  syncFromHA,
-  syncCalDAVEvents,
-} from "@domains/calendar/calendar-bridge";
-import { logApiError } from "../../../../lib/api-logger";
 
-/**
- * GET /api/integrations/calendar/sync — returns current sync status
- */
-export const GET: APIRoute = async () => {
-  try {
-    const status = getCalendarSyncStatus();
-    return new Response(JSON.stringify({ ok: true, sync: status }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (err) {
-    logApiError("calendar-sync", "GET failed", err);
-    return new Response(
-      JSON.stringify({ ok: false, error: "Internal server error" }),
-      { status: 500, headers: { "Content-Type": "application/json" } },
-    );
-  }
-};
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async (_context, scope) =>
+  apiJson({ ok: true, sync: await getCalendarSyncStatus(scope) }))
 
-/**
- * POST /api/integrations/calendar/sync
- * Body: {
- *   action: "sync" | "enable" | "disable",
- *   entity_id?: string,         // single entity (legacy)
- *   entities?: string[],         // multi-entity support
- *   write_back?: boolean,
- *   interval_ms?: number,
- * }
- */
-export const POST: APIRoute = async ({ request }) => {
-  try {
-    let body: {
-      action?: "sync" | "enable" | "disable";
-      entity_id?: string;
-      entities?: string[];
-      write_back?: boolean;
-      interval_ms?: number;
-      sync_mode?: CalendarSyncMode;
-      sync_modes?: Record<string, CalendarSyncMode>;
-    };
-
-    try {
-      body = await request.json();
-    } catch {
-      return new Response(
-        JSON.stringify({ ok: false, error: "Invalid JSON body" }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      );
+export const POST: APIRoute = async context => {
+  const raw: unknown = await context.request.json().catch(() => null)
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return apiError("Choose a Calendar action and approved source.", 400)
+  const body = raw as Record<string, unknown>
+  if (Object.hasOwn(body, "board_id")) return apiError("Select the Board using the request context.", 400)
+  const action = body.action ?? "sync"
+  if (!["sync", "enable", "disable"].includes(String(action))) return apiError("Choose sync, enable or disable.", 400)
+  const operation: WorkOperation = { resource: "board", action: "manage" }
+  return withBoardScope(operation, async (requestContext, scope) => {
+    if (action !== "sync") {
+      const access = await currentSettingsAccess(requestContext.request, requestContext.locals, true)
+      if (access instanceof Response) return access
     }
-
-    const action = body.action ?? "enable";
-
-    switch (action) {
-      case "sync": {
-        // Trigger an immediate sync — all configured entities or specific one
-        try {
-          let entityId = body.entity_id;
-          let resolvedEntities: string[] = [];
-
-          // Fall back to settings DB if no entity provided
-          if (!entityId) {
-            const { resolveCalendarEntities } = await import("@domains/calendar/resolve-calendar-entities");
-            resolvedEntities = await resolveCalendarEntities();
-          } else {
-            resolvedEntities = [entityId];
-          }
-
-          const includeCalDAV = !entityId && getCalendarSyncStatus().caldavActive
-          if (resolvedEntities.length === 0 && !includeCalDAV) {
-            return new Response(
-              JSON.stringify({ ok: false, error: "No calendar entities configured. Go to Settings → Integrations → Calendar to select calendars." }),
-              { status: 400, headers: { "Content-Type": "application/json" } },
-            );
-          }
-
-          // Sync each resolved entity individually — bypasses activeSyncs check
-          // so manual sync works even if background sync wasn't auto-started
-          const pending = resolvedEntities.map((eid) => syncFromHA(eid))
-          if (includeCalDAV) {
-            resolvedEntities.push("caldav")
-            pending.push(syncCalDAVEvents())
-          }
-          const results = await Promise.allSettled(pending);
-
-          const outcome = calendarSyncResult(resolvedEntities, results)
-          return new Response(JSON.stringify(outcome), {
-            status: outcome.ok ? 200 : 502, headers: { "Content-Type": "application/json" },
-          })
-        } catch (err) {
-          return new Response(
-            JSON.stringify({ ok: false, error: `Sync failed: ${err}` }),
-            { status: 500, headers: { "Content-Type": "application/json" } },
-          );
-        }
-      }
-
-      case "enable": {
-        const intervalMs = body.interval_ms ?? 5 * 60 * 1000;
-        const writeBack = body.write_back ?? false;
-        const globalMode: CalendarSyncMode = body.sync_mode ?? "bidirectional";
-        const perEntityModes = body.sync_modes ?? {};
-
-        // Multi-entity enable
-        if (body.entities && body.entities.length > 0) {
-          const configs = body.entities.map((entityId) => {
-            const entityMode = perEntityModes[entityId] ?? globalMode;
-            return {
-              entityId,
-              syncEnabled: true,
-              syncMode: entityMode,
-              writeBack: entityMode !== "import" ? writeBack : false,
-              syncIntervalMs: intervalMs,
-            };
-          });
-          startMultiCalendarSync(configs);
-          return new Response(
-            JSON.stringify({
-              ok: true,
-              message: `Calendar sync enabled for ${body.entities.length} entities`,
-              entities: body.entities,
-              sync_modes: configs.reduce((acc, c) => ({ ...acc, [c.entityId]: c.syncMode }), {} as Record<string, CalendarSyncMode>),
-            }),
-            { status: 200, headers: { "Content-Type": "application/json" } },
-          );
-        }
-
-        // Legacy single-entity enable
-        if (!body.entity_id) {
-          return new Response(
-            JSON.stringify({ ok: false, error: "entity_id or entities[] required" }),
-            { status: 400, headers: { "Content-Type": "application/json" } },
-          );
-        }
-        const singleMode = perEntityModes[body.entity_id] ?? globalMode;
-        startCalendarSync({
-          entityId: body.entity_id,
-          syncEnabled: true,
-          syncMode: singleMode,
-          writeBack: singleMode !== "import" ? writeBack : false,
-          syncIntervalMs: intervalMs,
-        });
-        return new Response(
-          JSON.stringify({
-            ok: true,
-            message: `Calendar sync enabled for ${body.entity_id} (${singleMode})`,
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
-      }
-
-      case "disable": {
-        stopCalendarSync();
-        return new Response(
-          JSON.stringify({ ok: true, message: "Calendar sync disabled" }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
-      }
-
-      default:
-        return new Response(
-          JSON.stringify({ ok: false, error: "Unknown action" }),
-          { status: 400, headers: { "Content-Type": "application/json" } },
-        );
+    const candidates = (await readWorkDestinations(getPersistenceClient()))?.bindings.filter(binding => binding.enabled &&
+      binding.destination.boardId === scope.boardId && binding.purpose === "calendar.sync" &&
+      ["calendar", "caldav"].includes(binding.integration) &&
+      (body.binding_id === undefined || binding.id === body.binding_id) &&
+      (body.generation === undefined || binding.generation === body.generation) &&
+      (body.entity_id === undefined || binding.sourceId === body.entity_id) &&
+      (body.entities === undefined || Array.isArray(body.entities) && body.entities.includes(binding.sourceId))) ?? []
+    if (!candidates.length) return apiError("Choose a current Calendar destination in this Board.", 404)
+    if (action === "sync") {
+      const pending = candidates.map(async binding => {
+        const approved = await requestIntegrationBinding(scope, binding.integration, "calendar.sync", { binding_id: binding.id, generation: binding.generation }, operation)
+        if (!approved?.ok) throw new Error("Calendar approval unavailable")
+        return binding.integration === "caldav" ? syncCalDAVEvents(binding.id, scope, operation) : syncFromHA(binding.id, scope, operation)
+      })
+      const outcome = calendarSyncResult(candidates.map(binding => binding.id), await Promise.allSettled(pending))
+      return apiJson(outcome, outcome.ok ? 200 : 502)
     }
-  } catch (err) {
-    logApiError("calendar-sync", "POST failed", err);
-    return new Response(
-      JSON.stringify({ ok: false, error: "Internal server error" }),
-      { status: 500, headers: { "Content-Type": "application/json" } },
-    );
-  }
-};
+    for (const binding of candidates) {
+      if (action === "disable") {
+        if (binding.integration === "caldav") stopCalDAVSync(binding.id, binding.generation)
+        else stopCalendarSync(binding.id, binding.generation)
+        continue
+      }
+      if (binding.integration !== "calendar") return apiError("Save and enable the approved CalDAV profile before syncing.", 409)
+      const modes = body.sync_modes && typeof body.sync_modes === "object" && !Array.isArray(body.sync_modes) ? body.sync_modes as Record<string, unknown> : {}
+      const mode = modes[binding.sourceId] ?? body.sync_mode ?? "bidirectional"
+      const interval = body.interval_ms ?? 300000
+      if (!["import", "export", "bidirectional"].includes(String(mode)) || typeof interval !== "number" || !Number.isFinite(interval) || interval < 0 ||
+        body.write_back !== undefined && typeof body.write_back !== "boolean") return apiError("Choose a valid Calendar mode and interval.", 400)
+      const approved = await requestIntegrationBinding(scope, "calendar", "calendar.sync", { binding_id: binding.id, generation: binding.generation }, operation)
+      if (!approved?.ok) return apiError("Calendar approval changed.", 409)
+      await startCalendarSync({ bindingId: binding.id, generation: binding.generation, entityId: binding.sourceId, syncEnabled: true,
+        syncMode: mode as CalendarSyncMode, writeBack: mode !== "import" && body.write_back === true, syncIntervalMs: interval })
+    }
+    return apiJson({ ok: true })
+  }, { write: true })(context)
+}

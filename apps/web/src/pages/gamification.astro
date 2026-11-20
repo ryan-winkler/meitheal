@@ -1,4 +1,7 @@
 ---
+import { readBoardPagePlacement } from "@lib/board-page-placement"
+import { boardContextHref } from "@lib/board-workspace"
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
 /**
  * Gamification Page — Achievement gallery, level progress, stats, heatmap
  *
@@ -34,6 +37,13 @@ import {
 } from "@domains/gamification";
 import { isFeatureEnabled } from "../lib/feature-flags";
 
+const scoped = await resolveBoardPageScope(Astro)
+if (!scoped.ok) return boardScopeResponse(scoped.errorCode)
+const workScope = scoped.scope
+const pagePlacement = await readBoardPagePlacement(workScope, Astro.url)
+if (!pagePlacement.ok) return boardScopeResponse(pagePlacement.errorCode)
+const achievementsHref = boardContextHref({ boardId: workScope.boardId, area: pagePlacement.area?.id, project: pagePlacement.project?.id }, "/progress#achievements")
+
 // Feature flag guard — redirect if gamification disabled
 if (!(await isFeatureEnabled("gamification"))) {
   return Astro.redirect(`${Astro.locals.ingressPath || ""}/`);
@@ -60,11 +70,11 @@ let heatmapData: { date: string; count: number }[] = [];
 
 try {
   [stats, weekly, achievementData] = await Promise.all([
-    getStats(),
-    getWeeklyData(),
-    getAllAchievements(),
+    getStats(workScope),
+    getWeeklyData(workScope),
+    getAllAchievements(workScope),
   ]);
-  heatmapData = await getYearlyHeatmapData();
+  heatmapData = await getYearlyHeatmapData(workScope);
 } catch {
   /* graceful fallback */
 }
@@ -168,7 +178,7 @@ const categories: readonly { key: string; label: string; icon: IconName }[] = [
 
     <!-- Weekly Progress -->
     <section class="gam-section">
-      <GamificationWidget stats={stats} weekly={weekly} />
+      <GamificationWidget achievementsHref={achievementsHref} stats={stats} weekly={weekly} />
     </section>
 
     <!-- Activity Heatmap -->

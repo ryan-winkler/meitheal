@@ -1,4 +1,4 @@
-import { fork } from "node:child_process"
+import { fork } from "../helpers/isolated-process"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"

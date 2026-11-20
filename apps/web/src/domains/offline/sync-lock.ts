@@ -1,3 +1,4 @@
+import { currentOfflinePartition, offlinePartitionKey } from "./offline-store"
 /**
  * Sync Lock — Web Locks API for sync queue safety
  *
@@ -17,18 +18,21 @@ const LOCK_TTL_MS = 30_000 // 30s max lock hold
  * Uses Web Locks API when available, localStorage fallback otherwise.
  */
 export async function acquireSyncLock(): Promise<(() => void) | null> {
+  const partition = currentOfflinePartition()
+  if (!partition) return null
+  const key = offlinePartitionKey(partition)
   if (typeof navigator !== "undefined" && "locks" in navigator) {
-    return acquireWebLock()
+    return acquireWebLock(key)
   }
-  return acquireLocalStorageLock()
+  return acquireLocalStorageLock(key)
 }
 
-async function acquireWebLock(): Promise<(() => void) | null> {
+async function acquireWebLock(key: string): Promise<(() => void) | null> {
   return new Promise((resolve) => {
     const controller = new AbortController()
 
     navigator.locks.request(
-      LOCK_NAME,
+      `${LOCK_NAME}:${key}`,
       { signal: controller.signal },
       () => {
         // Lock acquired — return release function
@@ -44,9 +48,10 @@ async function acquireWebLock(): Promise<(() => void) | null> {
   })
 }
 
-function acquireLocalStorageLock(): (() => void) | null {
+function acquireLocalStorageLock(key: string): (() => void) | null {
+  const lockKey = `${LS_LOCK_KEY}:${key}`
   const now = Date.now()
-  const existing = localStorage.getItem(LS_LOCK_KEY)
+  const existing = localStorage.getItem(lockKey)
 
   if (existing) {
     const lockTime = parseInt(existing, 10)
@@ -56,10 +61,10 @@ function acquireLocalStorageLock(): (() => void) | null {
   }
 
   // Acquire
-  localStorage.setItem(LS_LOCK_KEY, String(now))
+  localStorage.setItem(lockKey, String(now))
 
   return () => {
-    localStorage.removeItem(LS_LOCK_KEY)
+    if (localStorage.getItem(lockKey) === String(now)) localStorage.removeItem(lockKey)
   }
 }
 

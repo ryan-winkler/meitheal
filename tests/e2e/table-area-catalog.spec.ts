@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto"
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable built app")
 test.use({ serviceWorkers: "block" })
 
 test("Table keeps Area group names and bulk choices in sync with accepted rows", async ({ page, request, baseURL }) => {
-  const headers = { origin: new URL(baseURL!).origin, "sec-fetch-site": "same-origin" }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const term = `Area catalog ${randomUUID()}`
   const known = "Utility room"
   const renamed = "Electrical cupboard"
@@ -32,7 +33,7 @@ test("Table keeps Area group names and bulk choices in sync with accepted rows",
       expect(response.status(), await response.text()).toBe(201)
       taskIds.push((await response.json()).id)
     }
-    expect((await request.delete(`/api/areas/${retiredId}`, { headers })).ok()).toBe(true)
+    expect((await request.delete(`/api/areas/${retiredId}`, { headers, data: {} })).ok()).toBe(true)
 
     await page.route("**/api/areas", route => route.fulfill({ status: 503, json: {} }))
     await page.route("**/api/boards/household?view=groups**", route => route.fulfill({ status: 503, json: {} }))
@@ -48,6 +49,8 @@ test("Table keeps Area group names and bulk choices in sync with accepted rows",
     const rows = page.locator("#task-table .table-row")
     const header = (id: string) => page.locator(`#task-table .group-header-row[data-group-by="area"][data-group-key="${id}"]`)
     const named = header(areaId)
+    const neutral = header("")
+    const defaultArea = header("default")
     const bulk = page.locator("#bulk-area")
     const option = bulk.locator(`option[value="${areaId}"]`)
     const retry = page.getByRole("button", { name: "Retry", exact: true })
@@ -63,8 +66,18 @@ test("Table keeps Area group names and bulk choices in sync with accepted rows",
     await expect(named.getByRole("checkbox", { name: `Select visible tasks in ${known} on this page` })).toBeVisible()
     await expect(named.locator(".group-icon")).toHaveText("⚡")
     await expect(named.locator(".group-dot")).toHaveCSS("background-color", "rgb(70, 113, 204)")
-    await expect(header(retiredId).getByRole("button", { name: "Toggle group Unavailable Area" })).toBeVisible()
-    await expect(header("default").getByRole("button", { name: "Toggle group Default", exact: true })).toBeVisible()
+    await expect(neutral.getByRole("button", { name: "Toggle group No area", exact: true })).toBeVisible()
+    await expect(neutral.locator(".group-count")).toHaveText("1")
+    await expect(rows.filter({ hasText: `${term} retired` })).toHaveAttribute("data-group-value", "")
+    await expect(header(retiredId)).toHaveCount(0)
+    await expect(defaultArea.getByRole("button", { name: "Toggle group Default", exact: true })).toBeVisible()
+    await expect(defaultArea.locator(".group-count")).toHaveText("1")
+    await expect(rows.filter({ hasText: `${term} default` })).toHaveAttribute("data-group-value", "default")
+    const selectNeutral = neutral.getByRole("checkbox", { name: "Select visible tasks in No area on this page" })
+    await selectNeutral.check()
+    await expect(rows.filter({ hasText: `${term} retired` }).locator(".row-check")).toBeChecked()
+    await expect(rows.filter({ hasText: `${term} default` }).locator(".row-check")).not.toBeChecked()
+    await selectNeutral.uncheck()
     await expect(option).toHaveText(`⚡ ${known}`)
     await expect(selectorOption).toHaveAttribute("data-area-name", known)
     await expect(selectorOption.locator(".area-selector__option-icon svg")).toHaveCount(1)
@@ -174,9 +187,11 @@ test("Table keeps Area group names and bulk choices in sync with accepted rows",
     await expect(named.locator(".group-dot")).toHaveCSS("background-color", "rgb(70, 113, 204)")
     await expect(named.locator(".group-count")).toHaveText("1")
 
-    expect((await request.delete(`/api/areas/${areaId}`, { headers })).ok()).toBe(true)
+    expect((await request.delete(`/api/areas/${areaId}`, { headers, data: {} })).ok()).toBe(true)
     await input.fill(term)
-    await expect(named.getByRole("button", { name: "Toggle sub-group Unavailable Area" })).toBeVisible()
+    await expect(neutral.getByRole("button", { name: "Toggle sub-group No area", exact: true })).toBeVisible()
+    await expect(neutral.locator(".group-count")).toHaveText("2")
+    await expect(named).toHaveCount(0)
     await expect(option).toHaveCount(0)
     await expect(selectorOption).toHaveCount(0)
     await expect(selectorLabel).toHaveText("All Areas")
@@ -185,14 +200,14 @@ test("Table keeps Area group names and bulk choices in sync with accepted rows",
     await expect(bulk).not.toHaveAttribute("data-changed-during-refresh")
     expect(writes).toEqual([])
   } finally {
-    for (const id of taskIds) await request.delete(`/api/tasks/${id}`, { headers })
-    for (const id of areaIds) await request.delete(`/api/areas/${id}`, { headers })
+    for (const id of taskIds) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
+    for (const id of areaIds) await request.delete(`/api/areas/${id}`, { headers, data: {} })
   }
 })
 
 
 test("Table preserves a selected Area through catalog rename and deletion", async ({ page, request, baseURL }) => {
-  const headers = { origin: new URL(baseURL!).origin, "sec-fetch-site": "same-origin" }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const name = `Selected Area ${randomUUID()}`
   const created = await request.post("/api/areas", { headers, data: { name, icon: "⚡" } })
   expect(created.status()).toBe(201)
@@ -212,7 +227,7 @@ test("Table preserves a selected Area through catalog rename and deletion", asyn
     await expect(label).toHaveText(`${name} renamed`)
     await expect(selected).toHaveAttribute("aria-selected", "true")
     await expect(trigger).toHaveAttribute("data-selected-area-id", id)
-    const deleted = await request.delete(`/api/areas/${id}`, { headers })
+    const deleted = await request.delete(`/api/areas/${id}`, { headers, data: {} })
     expect(deleted.status(), await deleted.text()).toBe(200)
     await input.fill(name)
     await expect(label).toHaveText("Area unavailable")
@@ -224,7 +239,7 @@ test("Table preserves a selected Area through catalog rename and deletion", asyn
     await expect(label).toHaveText("All Areas")
     await expect(page).toHaveURL(url => url.searchParams.get("area") === "")
   } finally {
-    await request.delete(`/api/tasks/${taskId}`, { headers })
-    await request.delete(`/api/areas/${id}`, { headers })
+    await request.delete(`/api/tasks/${taskId}`, { headers, data: {} })
+    await request.delete(`/api/areas/${id}`, { headers, data: {} })
   }
 })

@@ -244,7 +244,7 @@ const handle = (request, response) => {
     }
   }
   runWithIngressTransport({
-    peer: fromSupervisor ? "172.30.32.2" : "172.30.33.7",
+    peer: fromSupervisor ? "172.30.32.2" : process.env.MEITHEAL_TEST_LOOPBACK_OPERATOR === "1" ? "127.0.0.1" : "172.30.33.7",
     fromSupervisor,
     identityHeadersSafe: user !== "old",
     configuredPath,

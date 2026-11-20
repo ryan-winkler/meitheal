@@ -1,14 +1,12 @@
-import { execFileSync, fork, type ChildProcess } from "node:child_process"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { fileURLToPath } from "node:url"
 import { expect, test } from "@playwright/test"
 import { readScopedNavigation, shouldSkipBrowserSpecs } from "./_helpers"
 
-const webDir = fileURLToPath(new URL("../../apps/web", import.meta.url))
-const ingressFixturePath = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
+import { startCoreFixture } from "../scripts/task-pins-fixture"
 
 test.describe("Track D — @container Docked Task Inspector, Ingress Reload Persistence & Virtualized GANTT", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
@@ -17,7 +15,7 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
     request,
     baseURL,
   }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const created = await request.post("/api/tasks", {
       headers,
       data: { title: "Ticket key GET lookup fixture" },
@@ -44,7 +42,7 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
     request,
     baseURL,
   }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const created = await request.post("/api/tasks", {
       headers,
       data: {
@@ -54,6 +52,33 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
     })
     expect(created.status()).toBe(201)
     const { id } = await created.json()
+    const checklistDraft = "Unsaved checklist item draft"
+    let appendStarted = false
+    let renameAttempts = 0
+    let releaseAppend!: () => void
+    let releaseRename!: () => void
+    let releaseRetry!: () => void
+    const holdAppend = new Promise<void>(resolve => { releaseAppend = resolve })
+    const holdRename = new Promise<void>(resolve => { releaseRename = resolve })
+    const holdRetry = new Promise<void>(resolve => { releaseRetry = resolve })
+    await page.route(`**/api/tasks/${id}`, async route => {
+      if (route.request().method() !== "PUT") return route.continue()
+      const { checklists } = route.request().postDataJSON()
+      if (typeof checklists !== "string") return route.continue()
+      const [item] = JSON.parse(checklists) as Array<{ text: string }>
+      if (item?.text === "New Item") {
+        appendStarted = true
+        await holdAppend
+      } else if (item?.text === checklistDraft) {
+        renameAttempts++
+        if (renameAttempts === 1) {
+          await holdRename
+          return route.fulfill({ status: 503, json: { error: "Checklist write unavailable" } })
+        }
+        await holdRetry
+      }
+      await route.continue()
+    })
 
     try {
       await page.setViewportSize({ width: 1600, height: 900 })
@@ -109,7 +134,8 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       await descInput.fill("Unsaved docked markdown body")
       await page.locator("#td-add-checklist-item").click()
       await expect(checklistInput).toBeVisible()
-      await checklistInput.fill("Unsaved checklist item draft")
+      await checklistInput.fill(checklistDraft)
+      await expect.poll(() => appendStarted).toBe(true)
 
       // Resize 1600px -> 1200px (transitions to modal dialog without unmounting or losing drafts)
       await page.setViewportSize({ width: 1200, height: 900 })
@@ -126,7 +152,7 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       expect(modalState.draftToken).toBe("same-dom-node")
       await expect(titleInput).toHaveValue("Unsaved docked draft title")
       await expect(descInput).toHaveValue("Unsaved docked markdown body")
-      await expect(checklistInput).toHaveValue("Unsaved checklist item draft")
+      await expect(checklistInput).toHaveValue(checklistDraft)
 
       // Resize 1200px -> 1600px (transitions back to docked rail preserving drafts)
       await page.setViewportSize({ width: 1600, height: 900 })
@@ -135,14 +161,63 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       await expect(panel).not.toHaveAttribute("aria-modal")
       await expect(titleInput).toHaveValue("Unsaved docked draft title")
       await expect(descInput).toHaveValue("Unsaved docked markdown body")
-      await expect(checklistInput).toHaveValue("Unsaved checklist item draft")
+      await expect(checklistInput).toHaveValue(checklistDraft)
 
       // Escape closes docked inspector when focus resides inside #task-detail-panel
       await commentsDisclosure.focus()
       await page.keyboard.press("Escape")
+      await expect(page.locator("#td-desc-edit-container")).toHaveAttribute("aria-busy", "true")
+      releaseAppend()
+      await expect(descInput).toBeHidden()
+      await expect(overlay).toHaveClass(/active/)
+      await expect.poll(() => renameAttempts).toBe(1)
+      releaseRename()
+      const retry = page.getByRole("button", { name: "Retry checklist save", exact: true })
+      await expect(retry).toBeVisible()
+      await expect(overlay).toHaveClass(/active/)
+      await expect(checklistInput).toHaveValue(checklistDraft)
+
+      // The failed save has finished. Close and Escape must still keep the draft available for Retry.
+      await page.getByRole("button", { name: "Close detail", exact: true }).click()
+      await expect(retry).toBeFocused()
+      await page.keyboard.press("Escape")
+      await expect(overlay).toHaveClass(/active/)
+      await expect(checklistInput).toHaveValue(checklistDraft)
+
+      await retry.click()
+      await expect.poll(() => renameAttempts).toBe(2)
+      await commentsDisclosure.focus()
+      await page.keyboard.press("Escape")
+      await expect(overlay).toHaveClass(/active/)
+      releaseRetry()
       await expect(overlay).not.toHaveClass(/active/)
       await expect(page.locator("body")).not.toHaveClass(/has-docked-inspector/)
+      const saved = await request.get(`/api/tasks/${id}`)
+      expect(saved.status()).toBe(200)
+      const savedTask = await saved.json()
+      expect(savedTask).toMatchObject({ title: "Unsaved docked draft title", description: "Unsaved docked markdown body" })
+      expect(JSON.parse(savedTask.checklists)).toMatchObject([{ text: checklistDraft }])
+
+      await page.goto(`/tickets/${id}`)
+      await expect(titleInput).toHaveValue(savedTask.title)
+      await page.locator("#td-desc-edit-btn-hover").dispatchEvent("click")
+      await descInput.fill("Local draft after another session edits")
+      const externalDescription = "Saved from another task session"
+      const external = await request.put(`/api/tasks/${id}`, {
+        headers, data: { description: externalDescription, updated_at: savedTask.task_version },
+      })
+      expect(external.status()).toBe(200)
+      await page.locator("#td-add-checklist-item").click()
+      await expect.poll(async () => JSON.parse((await (await request.get(`/api/tasks/${id}`)).json()).checklists).length).toBe(2)
+      await commentsDisclosure.focus()
+      await page.keyboard.press("Escape")
+      await expect(page.locator("#td-write-conflict")).toBeVisible()
+      await expect(descInput).toHaveValue("Local draft after another session edits")
+      expect((await (await request.get(`/api/tasks/${id}`)).json()).description).toBe(externalDescription)
     } finally {
+      releaseAppend()
+      releaseRename()
+      releaseRetry()
       await request.delete(`/api/tasks/${id}`, { headers })
     }
   })
@@ -173,15 +248,11 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
 
   test("Home Assistant Ingress reload restores /tickets/MTH-1 without double-prefixing", async ({ page }) => {
     const work = await mkdtemp(path.join(tmpdir(), "meitheal-track-d-ingress-"))
-    let server: ChildProcess | undefined
+    let server: ReturnType<typeof startCoreFixture> | undefined
     try {
-      const env = {
-        PATH: process.env.PATH,
-        NODE_ENV: "production",
-        MEITHEAL_DB_URL: `file:${path.join(work, "meitheal.db")}`,
-      }
-      execFileSync(process.execPath, ["scripts/migrate.mjs"], { cwd: webDir, env })
-      server = fork(ingressFixturePath, { cwd: webDir, env, stdio: ["ignore", "ignore", "inherit", "ipc"] })
+      server = startCoreFixture(work, true, undefined, undefined, work)
+      server.stdout?.resume()
+      server.stderr?.resume()
       const [info] = await Promise.race([
         once(server, "message", { signal: AbortSignal.timeout(10_000) }),
         once(server, "exit").then(([code]) => {
@@ -193,8 +264,9 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
 
       await page.context().setExtraHTTPHeaders({})
       await page.context().addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
+      const headers = await currentBoardWriteHeaders(page.request, "household", { origin }, origin + prefix)
       const seedRes = await page.request.post(`${origin}${prefix}/api/tasks`, {
-        headers: { origin },
+        headers,
         data: { title: "Ingress reload MTH-1 fixture" },
       })
       expect(seedRes.status()).toBe(201)
@@ -228,16 +300,16 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
     }
   })
 
-  test("500-task virtualized GANTT stays <= 450 DOM nodes & <= 2 ms scroll pass while preserving drag, keyboard, Month dividers, external labels & scrolled PNG export", async ({
+  test("500-task virtualized GANTT stays <= 450 DOM nodes and <= 6 ms median scroll pass while preserving drag, keyboard, Month dividers, external labels and scrolled PNG export", async ({
     page,
     request,
     baseURL,
   }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const baseMs = Date.UTC(2026, 10, 10)
     const fmt = (offsetDays: number) => new Date(baseMs + offsetDays * 86_400_000).toISOString().slice(0, 10)
 
-    // Create 2 real backing SQLite tasks so inline bar drag exercises real PATCH /api/tasks/:id
+    // Create 2 real backing SQLite tasks so inline bar drag exercises a real versioned PUT /api/tasks/:id
     const realIds: string[] = []
     try {
       const t0Res = await request.post("/api/tasks", {
@@ -269,7 +341,7 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       realIds.push(t1.id)
 
       // Inject 500 dated tasks into SSR #timeline-data (2 real SQLite tasks + 498 synthetic tasks across a 14-month span)
-      await page.route("**/tasks?view=timeline*", async (route) => {
+      await page.route(url => url.pathname === "/boards/household" && url.searchParams.get("view") === "timeline", async (route) => {
         const response = await route.fetch()
         const html = await response.text()
         const syntheticTasks: Array<Record<string, unknown>> = [
@@ -285,6 +357,7 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
             task_type: "task",
             task_kind: "standard_action",
             ticket_number: t0.ticket_number ?? 1,
+            task_version: t0.task_version ?? t0.updated_at,
             progress: 40,
             blocked_by: null,
             parent_id: null,
@@ -307,6 +380,7 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
             task_type: "task",
             task_kind: "standard_action",
             ticket_number: t1.ticket_number ?? 2,
+            task_version: t1.task_version ?? t1.updated_at,
             progress: 0,
             blocked_by: JSON.stringify([t0.id]),
             parent_id: null,
@@ -352,7 +426,7 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       })
 
       await page.setViewportSize({ width: 1440, height: 900 })
-      await page.goto("/tasks?view=timeline#timeline")
+      await page.goto("/boards/household?view=timeline#timeline")
       await page.waitForLoadState("networkidle")
       await expect(page.locator("#gantt-chart svg.gantt-native")).toBeVisible()
 
@@ -394,21 +468,22 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       expect(initialAudit.textX).toBe(initialAudit.expectedTextX)
       expect(initialAudit.textFill).toBe("var(--text-secondary)")
 
-      // 2. Active bar drag updates x in-place and PATCHes /api/tasks/:id without detaching the mounted <g>
+      // 2. Active bar drag updates x in-place and saves current dates without detaching the mounted <g>
       const barZero = page.locator(`.gantt-bar[data-task-id="${t0.id}"]`)
       await barZero.scrollIntoViewIfNeeded()
-      const box = await barZero.boundingBox()
+      const box = await barZero.locator("rect").first().boundingBox()
       expect(box).not.toBeNull()
 
-      const patchPromise = page.waitForResponse(
-        (res) => res.url().includes(`/api/tasks/${t0.id}`) && res.request().method() === "PATCH",
+      const savePromise = page.waitForResponse(
+        (res) => res.url().includes(`/api/tasks/${t0.id}`) && res.request().method() === "PUT",
+        { timeout: 5_000 },
       )
       await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2)
       await page.mouse.down()
       await page.mouse.move(box!.x + box!.width / 2 + 48, box!.y + box!.height / 2, { steps: 3 })
       await page.mouse.up()
-      const patchRes = await patchPromise
-      expect(patchRes.status()).toBe(200)
+      const saved = await savePromise
+      expect(saved.status()).toBe(200)
 
       // 3. ArrowDown navigation past row 50 (55 steps -> row index 54 / aria-rowindex 55)
       await page.evaluate(() => {
@@ -433,13 +508,16 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       expect(navState.activeAriaRowIndex).toBe(55)
       expect(navState.focusedSidebarRowIndex).toBe(54)
 
-      // 4. Vertical scroll pass to row 250: <= 2 ms windowing pass, <= 450 DOM nodes, <= 60 bars, visible scrolled sidebar rows, & off-screen dependency partner arrow
+      // 4. Check the median windowing time, node budget, scrolled rows and off-screen dependency arrow.
       const scrollAudit = await page.evaluate(async () => {
         const sw = document.querySelector<HTMLElement>(".gantt-scroll-wrapper")!
         const sidebarViewport = document.querySelector<HTMLElement>(".gantt-sidebar-rows")!
         const durations: number[] = []
 
-        for (const targetRow of [140, 200, 250]) {
+        for (const targetRow of [45, 105, 165, 225, 285, 345, 405, 465, 250]) {
+          // Let the scroll and resize work from the previous window finish so
+          // the sampled callback belongs to this change in scroll position.
+          await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
           const duration = await new Promise<number>((resolve) => {
             const origRaf = window.requestAnimationFrame
             window.requestAnimationFrame = (cb: FrameRequestCallback) =>
@@ -456,7 +534,7 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
         }
 
         durations.sort((a, b) => a - b)
-        const medianMs = durations[1]!
+        const medianMs = durations[Math.floor(durations.length / 2)]!
         const totalNodes = document.querySelectorAll(
           "#tasks-view-timeline .gantt-sidebar *, #tasks-view-timeline svg.gantt-native *",
         ).length
@@ -474,6 +552,7 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
 
         return {
           medianMs,
+          durations,
           totalNodes,
           barGroups,
           rowVisibleInSidebar,
@@ -482,7 +561,7 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
         }
       })
 
-      expect(scrollAudit.medianMs).toBeLessThanOrEqual(6)
+      expect(scrollAudit.medianMs, `Measured scroll passes: ${scrollAudit.durations.join(", ")}`).toBeLessThanOrEqual(6)
       expect(scrollAudit.totalNodes).toBeLessThanOrEqual(450)
       expect(scrollAudit.barGroups).toBeLessThanOrEqual(60)
       expect(scrollAudit.rowVisibleInSidebar).toBe(true)

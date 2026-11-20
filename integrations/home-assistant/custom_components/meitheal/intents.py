@@ -33,7 +33,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import intent
 
-from .api import origin_scope
+from .api import origin_scope, human_request_scope
 from .coordinator import MeithealCoordinator
 from .helpers import assignee_for_user
 
@@ -82,7 +82,11 @@ class _MeithealAdminIntent(intent.IntentHandler):
             raise intent.IntentHandleError(
                 "This Meitheal request requires an active Home Assistant administrator."
             )
-        return await self._async_handle_admin(intent_obj)
+        coordinator = _get_coordinator(intent_obj.hass)
+        if coordinator is None:
+            raise intent.IntentHandleError("Meitheal is unavailable")
+        async with human_request_scope(intent_obj.hass, coordinator.api, intent_obj.context):
+            return await self._async_handle_admin(intent_obj)
 
     async def _async_handle_admin(
         self, intent_obj: intent.Intent
@@ -173,12 +177,13 @@ class MeithealShowTasksHandler(_MeithealAdminIntent):
         hass = intent_obj.hass
         coordinator = _get_coordinator(hass)
 
-        if not coordinator or not coordinator.data:
+        if not coordinator:
             response = intent_obj.create_response()
             response.async_set_speech("No tasks found.")
             return response
 
-        active = [t for t in coordinator.data.tasks if t.status != "done"]
+        data = await coordinator.async_data_for_context()
+        active = [t for t in data.tasks if t.status != "done"]
         if not active:
             response = intent_obj.create_response()
             response.async_set_speech("You're all caught up! No active tasks.")
@@ -208,12 +213,13 @@ class MeithealOverdueHandler(_MeithealAdminIntent):
         hass = intent_obj.hass
         coordinator = _get_coordinator(hass)
 
-        if not coordinator or not coordinator.data:
+        if not coordinator:
             response = intent_obj.create_response()
             response.async_set_speech("No tasks found.")
             return response
 
-        overdue = [t for t in coordinator.data.tasks if t.is_overdue]
+        data = await coordinator.async_data_for_context()
+        overdue = [t for t in data.tasks if t.is_overdue]
         if not overdue:
             response = intent_obj.create_response()
             response.async_set_speech("Nothing overdue. You're on track!")
@@ -244,7 +250,7 @@ class MeithealTodayHandler(_MeithealAdminIntent):
         hass = intent_obj.hass
         coordinator = _get_coordinator(hass)
 
-        if not coordinator or not coordinator.data:
+        if not coordinator:
             response = intent_obj.create_response()
             response.async_set_speech("No tasks found.")
             return response
@@ -253,7 +259,8 @@ class MeithealTodayHandler(_MeithealAdminIntent):
         today_tasks = []
         overdue = []
 
-        for t in coordinator.data.tasks:
+        data = await coordinator.async_data_for_context()
+        for t in data.tasks:
             if t.status == "done":
                 continue
             if t.is_overdue:
@@ -295,12 +302,12 @@ class MeithealSummaryHandler(_MeithealAdminIntent):
         hass = intent_obj.hass
         coordinator = _get_coordinator(hass)
 
-        if not coordinator or not coordinator.data:
+        if not coordinator:
             response = intent_obj.create_response()
             response.async_set_speech("Meitheal has no tasks right now.")
             return response
 
-        data = coordinator.data
+        data = await coordinator.async_data_for_context()
         parts = [f"{data.active_count} active"]
         if data.overdue_count:
             parts.append(f"{data.overdue_count} overdue")
@@ -341,7 +348,8 @@ class MeithealDeleteTaskHandler(_MeithealAdminIntent):
             return response
 
         try:
-            task_id = coordinator.resolve_task_title(item)
+            data = await coordinator.async_data_for_context()
+            task_id = coordinator.resolve_task_title(item, data.tasks)
             with origin_scope(*_ASSIST_ORIGIN):
                 await coordinator.async_delete_task(task_id)
             response = intent_obj.create_response()
@@ -377,8 +385,8 @@ class MeithealBriefingHandler(_MeithealAdminIntent):
         coordinator = _get_coordinator(hass)
         parts = [f"{greeting}!"]
 
-        if coordinator and coordinator.data:
-            data = coordinator.data
+        if coordinator:
+            data = await coordinator.async_data_for_context()
             parts.append(f"You have {data.active_count} active tasks")
             if data.overdue_count:
                 parts.append(f"{data.overdue_count} overdue")

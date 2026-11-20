@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../helpers/isolated-process"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -23,9 +23,20 @@ test("Pomodoro, Template, Settings, Rule, CustomFramework, CommentMention reposi
     env: { ...process.env, MEITHEAL_DB_URL: dbUrl },
   })
 
-  const store = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const store = await import("../helpers/persistence-fixture")
   await store.ensureSchema()
   const client = store.getPersistenceClient()
+  const { BoardAccessService } = await import("../../apps/web/src/domains/tasks/board-access-service")
+  const { registerVerifiedPrincipal, scopeCommentOwnerKey, scopeMentionRecipientKey } = await import("../../apps/web/src/domains/tasks/board-scope")
+  const access = new BoardAccessService(client)
+  const resolve = async (id: string, administrator: boolean) => {
+    const principal = registerVerifiedPrincipal({ kind: "ha_user", id }, { administrator, expiresAt: Date.now() + 60_000 })
+    const result = await access.resolve(principal, "household", { resource: "task", action: "read" })
+    if (!result.ok) throw new Error(result.errorCode)
+    return result.scope
+  }
+  let scope = await resolve("ryan", true)
+
 
   // Seed a base task so foreign-key tables (time_entries, comments, mentions) have a valid target
   const taskId = "task-repo-unit-1"
@@ -48,32 +59,34 @@ test("Pomodoro, Template, Settings, Rule, CustomFramework, CommentMention reposi
   // 1. PomodoroService
   const pomodoro = await import("../../apps/web/src/domains/pomodoro/pomodoro-service")
   pomodoro.resetPomodoroForTests()
-  expect(pomodoro.getTimerState().phase).toBe("idle")
-  const focus = await pomodoro.startFocus(taskId)
+  expect((await pomodoro.getTimerState(scope)).phase).toBe("idle")
+  const focus = await pomodoro.startFocus(scope, taskId)
   expect(focus.phase).toBe("focus")
-  const brk = await pomodoro.skipToBreak()
+  const brk = await pomodoro.skipToBreak(scope)
   expect(brk.phase).toBe("short_break")
-  const backToFocus = await pomodoro.skipBreak()
+  const backToFocus = await pomodoro.skipBreak(scope)
   expect(backToFocus.phase).toBe("focus")
-  const cancelled = await pomodoro.cancelSession()
+  const cancelled = await pomodoro.cancelSession(scope)
   expect(cancelled.phase).toBe("idle")
-  expect((await pomodoro.getSessionHistory(5)).length).toBeGreaterThanOrEqual(1)
-  expect((await pomodoro.getTodayStats()).sessionsCompleted).toBeGreaterThanOrEqual(1)
+  expect((await pomodoro.getSessionHistory(scope, 5)).length).toBeGreaterThanOrEqual(1)
+  expect((await pomodoro.getTodayStats(scope)).sessionsCompleted).toBeGreaterThanOrEqual(1)
 
-  expect(await pomodoro.startTimeEntryForTask("missing-task", "ryan")).toEqual({ ok: false, errorCode: "not_found" })
-  expect(await pomodoro.startTimeEntryForTask(taskId, "someone-else")).toEqual({ ok: false, errorCode: "assignee_mismatch" })
-  const startedEntry = await pomodoro.startTimeEntryForTask(taskId, "ryan")
+  const originalEntries = (await client.execute("SELECT * FROM time_entries ORDER BY id")).rows
+  await expect(pomodoro.startTimeEntryForTask(scope, "missing-task", "ryan")).rejects.toMatchObject({ errorCode: "unavailable" })
+  expect((await client.execute("SELECT * FROM time_entries ORDER BY id")).rows).toEqual(originalEntries)
+  expect(await pomodoro.startTimeEntryForTask(scope, taskId, "someone-else")).toEqual({ ok: false, errorCode: "assignee_mismatch" })
+  const startedEntry = await pomodoro.startTimeEntryForTask(scope, taskId, "ryan")
   expect(startedEntry.ok).toBe(true)
-  expect((await pomodoro.stopTimeEntryForTask(taskId, "ryan")).ok).toBe(true)
-  await pomodoro.startTimeEntry(taskId)
-  await pomodoro.stopTimeEntry(taskId)
-  expect((await pomodoro.getTimeEntries(taskId)).length).toBeGreaterThanOrEqual(2)
-  expect(await pomodoro.getTotalTimeForTask(taskId)).toBeGreaterThanOrEqual(0)
+  expect((await pomodoro.stopTimeEntryForTask(scope, taskId, "ryan")).ok).toBe(true)
+  await pomodoro.startTimeEntry(scope, taskId)
+  await pomodoro.stopTimeEntry(scope, taskId)
+  expect((await pomodoro.getTimeEntries(scope, taskId)).length).toBeGreaterThanOrEqual(2)
+  expect(await pomodoro.getTotalTimeForTask(scope, taskId)).toBeGreaterThanOrEqual(0)
   pomodoro.resetPomodoroForTests()
 
   // 2. TemplateRepository
   const { TemplateRepository } = await import("../../apps/web/src/domains/tasks/persistence/template-repository")
-  const templates = new TemplateRepository(client)
+  const templates = new TemplateRepository(client, scope)
   const tmplId = "tmpl-routine-1"
   await templates.create({
     id: tmplId,
@@ -111,7 +124,8 @@ test("Pomodoro, Template, Settings, Rule, CustomFramework, CommentMention reposi
   expect(routineStats?.todayCompleted).toBe(true)
   expect(routineStats?.currentStreak).toBeGreaterThanOrEqual(2)
   await templates.delete(tmplId)
-  expect(await templates.findById(tmplId)).toBeNull()
+  scope = await resolve("ryan", true)
+  expect(await new TemplateRepository(client, scope).findById(tmplId)).toBeNull()
 
   // 3. SettingsRepository
   const { SettingsRepository } = await import("../../apps/web/src/domains/tasks/persistence/settings-repository")
@@ -122,13 +136,13 @@ test("Pomodoro, Template, Settings, Rule, CustomFramework, CommentMention reposi
   await settings.importBatch([{ key: "timezone", value: JSON.stringify("Europe/Dublin") }])
   expect(await settings.getByKeys(["date_format", "timezone"])).toEqual({ date_format: "absolute-iso", timezone: "Europe/Dublin" })
   expect((await settings.getAll()).length).toBeGreaterThanOrEqual(2)
-  await settings.snoozeReminder(taskId, new Date(Date.now() - 60_000).toISOString())
-  expect((await settings.getPendingReminders()).reminders.length).toBeGreaterThanOrEqual(1)
-  await settings.dismissReminder(taskId)
+  await settings.snoozeReminder(scope, taskId, new Date(Date.now() - 60_000).toISOString())
+  expect((await settings.getPendingReminders(scope)).reminders.length).toBeGreaterThanOrEqual(1)
+  await settings.dismissReminder(scope, taskId)
   const filterId = "sf-1"
-  await settings.createFilter({ id: filterId, name: "Urgent", queryJson: "{}", icon: "🔥", position: await settings.getNextFilterPosition() })
-  expect((await settings.listFilters()).length).toBeGreaterThanOrEqual(1)
-  await settings.deleteFilter(filterId)
+  await settings.createFilter(scope, { id: filterId, name: "Urgent", queryJson: "{}", icon: "🔥", position: await settings.getNextFilterPosition(scope) })
+  expect((await settings.listFilters(scope)).length).toBeGreaterThanOrEqual(1)
+  await settings.deleteFilter(scope, filterId)
   await settings.deleteByKeys(["timezone"])
 
   // 4. RuleRepository & CustomFrameworkRepository
@@ -191,9 +205,11 @@ test("Pomodoro, Template, Settings, Rule, CustomFramework, CommentMention reposi
 
   // 5. CommentMentionRepository
   const { CommentMentionRepository } = await import("../../apps/web/src/domains/tasks/persistence/comment-mention-repository")
-  const mentions = new CommentMentionRepository(client)
-  const recipientKey = "0123456789abcdef0123456789abcdef"
-  const ownerKey = "fedcba9876543210fedcba9876543210"
+  const mentions = new CommentMentionRepository(client, scope)
+  const recipientScope = await resolve("claire", false)
+  const recipientKey = scopeMentionRecipientKey(recipientScope)!
+  const ownerKey = scopeCommentOwnerKey(scope)!
+  const recipientMentions = new CommentMentionRepository(client, recipientScope)
   const createdComment = await mentions.create(
     taskId,
     "Check @claire",
@@ -209,13 +225,13 @@ test("Pomodoro, Template, Settings, Rule, CustomFramework, CommentMention reposi
     expect((await mentions.replay(taskId, ownerKey, "attempt-1", "Check @claire"))?.state).toBe("replayed")
     expect((await mentions.editChecked(taskId, cid, ownerKey, "Updated @claire", [recipientKey], "wrong-owner")).state).toBe("assignee_mismatch")
     expect(await mentions.edit(taskId, cid, ownerKey, "Final edit", [])).toBeTruthy()
-    const inbox = await mentions.page(recipientKey, null)
+    const inbox = await recipientMentions.page(recipientKey, null)
     expect(inbox.rows).toBeDefined()
-    expect(await mentions.mark(recipientKey, null, true)).toBe(true)
+    expect(await recipientMentions.mark(recipientKey, null, true)).toBe(true)
   }
 
-  // 6. cleanupCorruptTitles
-  const { cleanupCorruptTitles } = await import("../../apps/web/src/lib/cleanup-corrupt-titles")
-  const touched = await cleanupCorruptTitles()
-  expect(touched).toBeGreaterThanOrEqual(2)
+  // Import normalization is pure; startup no longer deletes user tasks based
+  // only on a title pattern. Ordinary task commands own any later repair.
+  const { sanitizeTodoTitle } = await import("../../apps/web/src/lib/cleanup-corrupt-titles")
+  expect(sanitizeTodoTitle("📋 MTH-86: 📋 MTH-85: Original — DUE — DUE")).toBe("Original")
 })

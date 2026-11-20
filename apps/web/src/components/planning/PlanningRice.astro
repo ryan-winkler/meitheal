@@ -85,7 +85,7 @@ const groups = [
           {items.map(task => (
             <li class="rice-row" data-rice-task={task.id}>
               <div>
-                <span class="rice-key">{formatTicketKey(task.ticket_number ?? 0)}</span>
+                <span class="rice-key">{task.ticket_key ?? formatTicketKey(task.ticket_number ?? 0)}</span>
                 <p>{task.title}</p>
               </div>
               {task.rice !== null && <span data-rice-score>{task.rice}</span>}

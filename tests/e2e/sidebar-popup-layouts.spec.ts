@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 const configuredOrigin = process.env.E2E_BASE_URL ? new URL(process.env.E2E_BASE_URL) : null
@@ -15,24 +16,25 @@ let projectId = ""
 let areaName = ""
 let projectName = ""
 
-async function removeFixtureEntity(request: APIRequestContext, path: string) {
-  const response = await request.delete(path, { data: {} })
+async function removeFixtureEntity(request: APIRequestContext, path: string, headers: Record<string, string>) {
+  const response = await request.delete(path, { headers, data: {} })
   expect(response.status()).toBe(200)
 }
 
 async function openHierarchy(page: Page) {
   const boards = page.locator("[data-sidebar-boards-toggle]")
   if (await boards.getAttribute("aria-expanded") !== "true") await boards.click()
-  const areas = page.locator("#sidebar-areas-group")
-  if (!(await areas.evaluate(element => (element as HTMLDetailsElement).open))) {
-    await areas.locator(":scope > summary").click()
-  }
+  const areas = page.locator('[data-named-board-shortcut="household"]').getByRole("button", { name: "Areas in Household" })
+  if (await areas.getAttribute("aria-expanded") !== "true") await areas.click()
   await expect(boards).toHaveAttribute("aria-expanded", "true")
-  await expect(areas).toHaveJSProperty("open", true)
+  await expect(areas).toHaveAttribute("aria-expanded", "true")
+  const projects = page.locator(`[data-area-toggle="${areaId}"]`)
+  if (await projects.getAttribute("aria-expanded") !== "true") await projects.click()
+  await expect(projects).toHaveAttribute("aria-expanded", "true")
 }
 
 async function keyboardOptions(page: Page, kind: EntityKind, id: string) {
-  const anchor = page.locator(kind === "area" ? `[data-area-toggle="${id}"]` : `#project-nav-list [data-project-id="${id}"]`)
+  const anchor = page.locator(kind === "area" ? `[data-area-toggle="${id}"]` : `[data-board-projects] [data-project-id="${id}"]`)
   const trigger = page.locator(`[data-${kind}-menu="${id}"]`)
   await expect(anchor).toBeVisible()
   await anchor.scrollIntoViewIfNeeded()
@@ -51,23 +53,26 @@ async function keyboardOptions(page: Page, kind: EntityKind, id: string) {
   return { trigger, menu }
 }
 
-test.beforeEach(async ({ request }) => {
+test.beforeEach(async ({ request, baseURL }) => {
   areaId = ""
   projectId = ""
   const suffix = crypto.randomUUID().slice(0, 8)
   areaName = `Popup layout Area ${suffix}`
   projectName = `Popup layout Project ${suffix}`
-  const area = await request.post("/api/areas", { data: { name: areaName } })
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+  const area = await request.post("/api/areas", { headers, data: { name: areaName } })
   expect(area.status()).toBe(201)
   areaId = (await area.json()).id
-  const project = await request.post("/api/projects", { data: { title: projectName, area_id: areaId } })
+  const project = await request.post("/api/projects", { headers, data: { title: projectName, area_id: areaId } })
   expect(project.status()).toBe(201)
   projectId = (await project.json()).id
 })
 
-test.afterEach(async ({ request }) => {
-  if (projectId) await removeFixtureEntity(request, `/api/projects/${projectId}`)
-  if (areaId) await removeFixtureEntity(request, `/api/areas/${areaId}`)
+test.afterEach(async ({ request, baseURL }) => {
+  if (!projectId && !areaId) return
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+  if (projectId) await removeFixtureEntity(request, `/api/projects/${projectId}`, headers)
+  if (areaId) await removeFixtureEntity(request, `/api/areas/${areaId}`, headers)
 })
 
 test("hover sidebar remains expanded for its body popups and collapses when focus leaves them", async ({ page, request }, testInfo) => {
@@ -77,7 +82,6 @@ test("hover sidebar remains expanded for its body popups and collapses when focu
   })
   await page.goto("/tasks")
   await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
-  await expect(page.locator(`[data-project-task-count="${projectId}"]`)).toHaveAttribute("data-loaded", "true")
   const body = page.locator("body")
   await expect(body).toHaveClass(/sidebar-collapsed/)
   const boardsLink = page.locator("#sidebar a[data-page=boards]")
@@ -86,6 +90,7 @@ test("hover sidebar remains expanded for its body popups and collapses when focu
   await expect(body).not.toHaveClass(/sidebar-collapsed/)
   await page.mouse.move(1100, 700)
   await openHierarchy(page)
+  await expect(page.locator(`[data-project-task-count="${projectId}"]`)).toHaveAttribute("data-loaded", "true")
 
   for (const [kind, id, name] of [["area", areaId, areaName], ["project", projectId, projectName]] as const) {
     const { trigger, menu } = await keyboardOptions(page, kind, id)
@@ -94,7 +99,7 @@ test("hover sidebar remains expanded for its body popups and collapses when focu
     await menu.getByRole("button", { name: "Rename", exact: true }).press("Enter")
     const input = page.locator(kind === "area"
       ? `[data-area-group="${id}"] > .stree__area-row > .stree__inline-input`
-      : `#project-nav-list .stree__project:has([data-project-id="${id}"]) > .stree__inline-input`)
+      : `[data-board-projects] .stree__project:has([data-project-id="${id}"]) > .stree__inline-input`)
     await expect(input).toBeVisible()
     await expect(input).toBeFocused()
     await input.fill(name + " must not save")
@@ -108,7 +113,7 @@ test("hover sidebar remains expanded for its body popups and collapses when focu
     expect((await persisted.json())[kind === "area" ? "name" : "title"]).toBe(name)
   }
 
-  const projectLink = page.locator(`#project-nav-list [data-project-id="${projectId}"]`)
+  const projectLink = page.locator(`[data-board-projects] [data-project-id="${projectId}"]`)
   await projectLink.focus()
   const addTask = page.locator(`[data-task-add-project="${projectId}"]`)
   await expect(addTask).toBeVisible()
@@ -128,6 +133,8 @@ test("hover sidebar remains expanded for its body popups and collapses when focu
   const popover = page.locator("body > #color-icon-popover")
   await expect(popover).toBeVisible()
   await expect(popover.locator("[data-emoji-tab]").first()).toBeFocused()
+  await page.mouse.move(1100, 700)
+  await expect.poll(() => page.locator("#sidebar").evaluate(sidebar => sidebar.matches(":hover"))).toBe(false)
   await expect(body).not.toHaveClass(/sidebar-collapsed/)
   const mainText = page.getByRole("textbox", { name: "Filter by text", exact: true })
   await expect(mainText).toBeVisible()

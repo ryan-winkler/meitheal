@@ -23,6 +23,115 @@ servers:
     description: Development server
 components:
   schemas:
+    WorkBinding:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - generation
+        - integration
+        - sourceId
+        - purpose
+        - enabled
+        - destination
+        - allowedOperations
+      properties:
+        id:
+          type: string
+        generation:
+          type: integer
+          minimum: 1
+        integration:
+          type: string
+          enum:
+            - todo
+            - calendar
+            - caldav
+            - grocy
+            - calendar_reminder
+            - webhook
+            - ha_events
+            - notification
+            - notification_action
+            - builtin
+            - routine
+            - recurrence
+        retired:
+          const: true
+          readOnly: true
+          description: Replaced receiver identity; cannot be re-enabled.
+        sourceId:
+          type: string
+        purpose:
+          type: string
+        enabled:
+          type: boolean
+        destination:
+          type: object
+          additionalProperties: false
+          required:
+            - boardId
+          properties:
+            boardId:
+              type: string
+            areaId:
+              type: string
+            projectId:
+              type: string
+        allowedOperations:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - resource
+              - action
+            properties:
+              resource:
+                const: task
+              action:
+                type: string
+                enum:
+                  - read
+                  - create
+                  - edit
+                  - complete
+                  - reopen
+                  - delete
+        recipientUserIds:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+    AgentContext:
+      type: object
+      required:
+        - boards
+        - enrollmentBoardId
+      properties:
+        enrollmentBoardId:
+          type:
+            - string
+            - "null"
+          description: Only an unambiguous current credential enrollment. Never a browser capture default.
+        boards:
+          type: array
+          items:
+            type: object
+            required:
+              - id
+              - name
+              - sharedEntityDelivery
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              sharedEntityDelivery:
+                type: boolean
+                description: Current approved broad HA receiver and unrestricted readable audience; private task data is not returned.
+            additionalProperties: false
+      additionalProperties: false
     TaskReaction:
       type: object
       required:
@@ -262,6 +371,15 @@ components:
         is_promoted:
           type: boolean
           description: Shared Kanban promotion, returned for task detail and updates.
+        actions:
+          type: array
+          items:
+            type: string
+            enum:
+              - edit
+              - complete
+              - delete
+          description: Detail-only hints for the current caller. Each write verifies current permission separately.
         due_date:
           type: string
           format: date-time
@@ -1070,6 +1188,75 @@ tags:
   - name: Auth
     description: Agent token management — zero-trust authorization for automations
 paths:
+  /api/agent-context:
+    get:
+      operationId: getAgentContext
+      tags:
+        - Agents
+      summary: Read the current credential's Board enrollment metadata
+      security:
+        - bearerAuth: []
+      description: Requires tasks:read. Genuine Supervisor ingress also intersects the current HA caller. No task fields or
+        capture default are returned. A verified human ingress response can provide the existing Board session header.
+      responses:
+        "200":
+          description: Credential and current caller metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentContext"
+        "403":
+          description: Credential or current caller unavailable
+        "409":
+          description: Current access changed
+  /api/integrations/work-destinations:
+    get:
+      operationId: getWorkDestinations
+      summary: Read approved sources for the selected Board
+      tags:
+        - Boards
+      parameters: []
+      responses:
+        "200":
+          description: Current configuration revision and this Board's bindings
+        "403": &a7
+          description: Board, ticket, or destination unavailable
+      security: &a8
+        - &a11
+          haIngressSession: []
+    put:
+      operationId: saveWorkDestination
+      summary: Review an integration source and its selected Board destination
+      tags:
+        - Boards
+      parameters:
+        - &a9
+          name: X-Meitheal-Board-Session
+          in: header
+          required: true
+          schema: &a25
+            type: string
+      responses:
+        "200":
+          description: Committed binding receipt. Refresh work access after the journal revision changes.
+        "400":
+          description: Invalid source or destination
+        "403": *a7
+        "409":
+          description: Approval changed or a required Board is unavailable
+      security: *a8
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                revision:
+                  type: string
+                binding:
+                  $ref: "#/components/schemas/WorkBinding"
+              additionalProperties: false
   /api/boards:
     get:
       operationId: listPrivateBoards
@@ -1083,9 +1270,7 @@ paths:
             Board session header.
         "403":
           description: A current Home Assistant session is required
-      security: &a7
-        - &a9
-          haIngressSession: []
+      security: *a8
     head:
       operationId: verifyBoardDirectory
       summary: Verify the current Board directory projection
@@ -1095,19 +1280,14 @@ paths:
       responses:
         "200":
           description: The current projection hash and session are in the response headers
-      security: *a7
+      security: *a8
     post:
       operationId: createPrivateBoard
       summary: Create a Board owned by the current Home Assistant user
       tags:
         - Boards
       parameters:
-        - &a23
-          name: X-Meitheal-Board-Session
-          in: header
-          required: true
-          schema: &a25
-            type: string
+        - *a9
       responses:
         "201":
           description: The owned Board ID
@@ -1117,7 +1297,7 @@ paths:
           description: Invalid Board name or preset
         "503":
           description: Board access is locked
-      security: *a7
+      security: *a8
       requestBody:
         required: true
         content:
@@ -1125,7 +1305,7 @@ paths:
             schema:
               type: object
               properties:
-                name: &a8
+                name: &a10
                   type: string
                 preset:
                   type: string
@@ -1145,7 +1325,7 @@ paths:
       responses:
         "200":
           description: Up to 100 current actor-scoped Routines and whether there are more
-      security: *a7
+      security: *a8
   /api/boards/due-today:
     get:
       operationId: listPrivateBoardDueWork
@@ -1156,7 +1336,7 @@ paths:
       responses:
         "200":
           description: Up to 30 eligible tasks and whether there are more
-      security: *a7
+      security: *a8
   /api/boards/{id}:
     get:
       operationId: getPrivateBoard
@@ -1164,7 +1344,7 @@ paths:
       tags:
         - Boards
       parameters:
-        - &a10
+        - &a12
           name: id
           in: path
           required: true
@@ -1172,9 +1352,9 @@ paths:
             type: string
         - name: offset
           in: query
-          schema: &a11
+          schema: &a13
             type: integer
-        - &a12
+        - &a14
           name: kanban
           in: query
           description: With view=tasks, filter before paging 25 cards per lane and include lane totals and page metadata.
@@ -1182,43 +1362,43 @@ paths:
             type: string
             enum:
               - "1"
-        - &a13
+        - &a15
           name: search
           in: query
-          schema: *a8
-        - &a14
+          schema: *a10
+        - &a16
           name: status
           in: query
-          schema: *a8
-        - &a15
+          schema: *a10
+        - &a17
           name: user
           in: query
-          schema: *a8
-        - &a16
+          schema: *a10
+        - &a18
           name: types
           in: query
-          schema: *a8
-        - &a17
+          schema: *a10
+        - &a19
           name: advancedFilter
           in: query
-          schema: *a8
-        - &a18
+          schema: *a10
+        - &a20
           name: home_assistant_area_id
           in: query
-          schema: *a8
-        - &a19
+          schema: *a10
+        - &a21
           name: kp.pending
           in: query
           schema:
             type: integer
             minimum: 1
-        - &a20
+        - &a22
           name: kp.active
           in: query
           schema:
             type: integer
             minimum: 1
-        - &a21
+        - &a23
           name: kp.complete
           in: query
           schema:
@@ -1234,20 +1414,20 @@ paths:
               - tasks
         - name: after
           in: query
-          schema: *a8
+          schema: *a10
         - name: selected
           in: query
-          schema: *a8
+          schema: *a10
         - name: area
           in: query
           description: Board-owned Area ID. With view=groups, returns its paginated Projects.
-          schema: *a8
+          schema: *a10
         - name: project
           in: query
-          schema: *a8
+          schema: *a10
         - name: ticket
           in: query
-          schema: *a8
+          schema: *a10
         - name: planning
           in: query
           schema:
@@ -1256,11 +1436,11 @@ paths:
               - "1"
       responses:
         "200":
-          description: Authorized Board, lanes, tickets and eligible owner settings
-        "404": &a22
-          description: Board, ticket, or destination unavailable
+          description: Authorized Board work or paged hierarchy. Hierarchy pages include current resource/action hints, clamped by
+            effective actor and feature permissions; these hints never grant command authority.
+        "404": *a7
       security:
-        - *a9
+        - *a11
         - bearerAuth: []
       description: An agent token needs tasks:read and an explicit service grant on this Board.
     head:
@@ -1269,12 +1449,10 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a10
+        - *a12
         - name: offset
           in: query
-          schema: *a11
-        - *a12
-        - *a13
+          schema: *a13
         - *a14
         - *a15
         - *a16
@@ -1283,6 +1461,8 @@ paths:
         - *a19
         - *a20
         - *a21
+        - *a22
+        - *a23
         - name: view
           in: query
           description: Use groups to verify the current Areas or selected Area Project page.
@@ -1293,20 +1473,20 @@ paths:
               - tasks
         - name: after
           in: query
-          schema: *a8
+          schema: *a10
         - name: selected
           in: query
-          schema: *a8
+          schema: *a10
         - name: area
           in: query
           description: Board-owned Area ID, including the parent for a Project catalog page.
-          schema: *a8
+          schema: *a10
         - name: project
           in: query
-          schema: *a8
+          schema: *a10
         - name: ticket
           in: query
-          schema: *a8
+          schema: *a10
         - name: planning
           in: query
           schema:
@@ -1316,9 +1496,9 @@ paths:
       responses:
         "200":
           description: The current projection hash and session are returned to a Home Assistant browser
-        "404": *a22
+        "404": *a7
       security:
-        - *a9
+        - *a11
         - bearerAuth: []
       description: An agent token needs tasks:read and an explicit service grant on this Board.
     patch:
@@ -1327,15 +1507,15 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a10
-        - *a23
+        - *a12
+        - *a9
       responses:
         "200":
           description: Saved
-        "404": *a22
+        "404": *a7
         "409":
           description: A Board must retain an active owner
-      security: *a7
+      security: *a8
       requestBody:
         required: true
         content:
@@ -1354,7 +1534,7 @@ paths:
                     - restore
                 hidden: &a24
                   type: boolean
-                tokenId: *a8
+                tokenId: *a10
                 enabled: *a24
                 denyCompletion: *a24
                 denyDeletion: *a24
@@ -1364,7 +1544,7 @@ paths:
                   minimum: 1
                   description: Required by browser-only retire and restore actions. Household deletion pauses shared capture and syncing
                     until restored.
-                memberId: *a8
+                memberId: *a10
                 role:
                   type:
                     - string
@@ -1382,7 +1562,7 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a10
+        - *a12
         - &a26
           name: X-Meitheal-Board-Session
           in: header
@@ -1394,9 +1574,9 @@ paths:
           description: Created ticket identifier, reference and edit version
         "403":
           description: Ticket creation or completion is denied
-        "404": *a22
+        "404": *a7
       security:
-        - *a9
+        - *a11
         - bearerAuth: []
       description: An agent token needs tasks:write and an explicit service grant on this Board.
       requestBody:
@@ -1406,12 +1586,12 @@ paths:
             schema:
               type: object
               properties:
-                title: *a8
-                description: *a8
-                laneId: *a8
-                areaId: *a8
-                projectId: *a8
-                goalId: *a8
+                title: *a10
+                description: *a10
+                laneId: *a10
+                areaId: *a10
+                projectId: *a10
+                goalId: *a10
                 due_date:
                   type:
                     - string
@@ -1437,7 +1617,7 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a10
+        - *a12
         - &a27
           name: ticket
           in: path
@@ -1450,11 +1630,11 @@ paths:
           description: New ticket version
         "403":
           description: A required effect is denied
-        "404": *a22
+        "404": *a7
         "409":
           description: Ticket version is stale
       security:
-        - *a9
+        - *a11
         - bearerAuth: []
       description: An agent token needs tasks:write and an explicit service grant on this Board.
       requestBody:
@@ -1464,10 +1644,10 @@ paths:
             schema:
               type: object
               properties:
-                version: *a11
-                title: *a8
-                description: *a8
-                laneId: *a8
+                version: *a13
+                title: *a10
+                description: *a10
+                laneId: *a10
                 due_date:
                   type:
                     - string
@@ -1492,7 +1672,7 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a10
+        - *a12
         - *a27
         - *a26
       responses:
@@ -1500,11 +1680,11 @@ paths:
           description: Deleted
         "403":
           description: Deletion is denied
-        "404": *a22
+        "404": *a7
         "409":
           description: Ticket version or relationship changed
       security:
-        - *a9
+        - *a11
         - bearerAuth: []
       description: An agent token needs tasks:delete and an explicit service grant on this Board.
       requestBody:
@@ -1514,7 +1694,7 @@ paths:
             schema:
               type: object
               properties:
-                version: *a11
+                version: *a13
               additionalProperties: false
   /api/boards/{id}/intakes:
     post:
@@ -1523,13 +1703,13 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a10
-        - *a23
+        - *a12
+        - *a9
       responses:
         "201":
           description: Destination created
-        "404": *a22
-      security: *a7
+        "404": *a7
+      security: *a8
       requestBody:
         required: true
         content:
@@ -1537,12 +1717,12 @@ paths:
             schema:
               type: object
               properties:
-                label: *a8
-                laneId: *a8
+                label: *a10
+                laneId: *a10
                 senderIds:
                   type: array
-                  items: *a8
-                recipientId: *a8
+                  items: *a10
+                recipientId: *a10
               additionalProperties: false
     patch:
       operationId: changePrivateBoardIntake
@@ -1550,13 +1730,13 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a10
-        - *a23
+        - *a12
+        - *a9
       responses:
         "200":
           description: Saved
-        "404": *a22
-      security: *a7
+        "404": *a7
+      security: *a8
       requestBody:
         required: true
         content:
@@ -1564,7 +1744,7 @@ paths:
             schema:
               type: object
               properties:
-                id: *a8
+                id: *a10
                 enabled: *a24
               additionalProperties: false
   /api/boards/{id}/planning:
@@ -1574,17 +1754,17 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a10
-        - *a23
+        - *a12
+        - *a9
       responses:
         "200":
           description: Saved
         "400":
           description: Invalid planning change
-        "404": *a22
+        "404": *a7
         "409":
           description: A Routine period changed or an Area still has active planning records
-      security: *a7
+      security: *a8
       requestBody:
         required: true
         content:
@@ -1608,12 +1788,12 @@ paths:
                     - pillar-link
                     - routine
                     - routine-complete
-                title: *a8
-                description: *a8
-                icon: *a8
-                color: *a8
-                id: *a8
-                areaId: *a8
+                title: *a10
+                description: *a10
+                icon: *a10
+                color: *a10
+                id: *a10
+                areaId: *a10
                 projectId:
                   type:
                     - string
@@ -1650,7 +1830,7 @@ paths:
                     - goal
                     - routine
                     - task
-                pillarId: *a8
+                pillarId: *a10
                 nonNegotiable: *a24
               additionalProperties: false
   /api/board-intake:
@@ -1665,25 +1845,25 @@ paths:
           description: Send aliases, assignment options, and recent submissions owned by the sender
         "403":
           description: A current Home Assistant session is required
-      security: *a7
+      security: *a8
     post:
       operationId: submitPrivateBoardIntake
       summary: Prepare, send, or retry a task without Board read access
       tags:
         - Boards
       parameters:
-        - *a23
+        - *a9
       responses:
         "200":
           description: An opaque acknowledgment bound to the sender
         "201":
           description: A sender-bound submission expires after 24 hours
-        "404": *a22
+        "404": *a7
         "409":
           description: The token was used with different content
         "429":
           description: Sender limit reached
-      security: *a7
+      security: *a8
       requestBody:
         required: true
         content:
@@ -1697,11 +1877,11 @@ paths:
                     - prepare
                     - send
                     - retry
-                id: *a8
-                token: *a8
-                resumeId: *a8
-                title: *a8
-                description: *a8
+                id: *a10
+                token: *a10
+                resumeId: *a10
+                title: *a10
+                description: *a10
                 assignToRecipient: *a24
               additionalProperties: false
   /api/feedback:
@@ -1711,7 +1891,7 @@ paths:
         - Local feedback
       summary: Save local feedback and return a durable receipt
       description: Available to verified Home Assistant ingress users. An identical retry returns the same receipt.
-      security: *a7
+      security: *a8
       parameters:
         - &a34
           in: header
@@ -1794,7 +1974,7 @@ paths:
       tags: *a28
       summary: List local feedback for a verified Home Assistant administrator
       description: Returns up to 50 reports. Pass both parts of nextCursor for the next page.
-      security: *a7
+      security: *a8
       parameters:
         - in: query
           name: state
@@ -1834,7 +2014,7 @@ paths:
       operationId: reviewLocalFeedback
       tags: *a28
       summary: Claim or close a report as a verified Home Assistant administrator
-      security: *a7
+      security: *a8
       parameters:
         - &a39
           in: path
@@ -1895,7 +2075,7 @@ paths:
       operationId: deleteLocalFeedback
       tags: *a28
       summary: Permanently delete a closed report as a verified Home Assistant administrator
-      security: *a7
+      security: *a8
       parameters:
         - *a39
         - *a34
@@ -1923,7 +2103,7 @@ paths:
       operationId: prepareLocalFeedbackExport
       tags: *a28
       summary: Preview a reviewed report as a verified Home Assistant administrator
-      security: *a7
+      security: *a8
       parameters:
         - *a39
         - *a34
@@ -2001,7 +2181,7 @@ paths:
       description: Returns V8 heap spaces, Linux cgroup limits, Home Assistant scoped entity cache statistics, SSE
         backpressure drops, Ingress stream aborts, and SQLite contention counters. Restricted to verified Home Assistant
         administrators or standalone local operator sessions.
-      security: *a7
+      security: *a8
       responses:
         "200":
           description: Current runtime vitals snapshot
@@ -2236,7 +2416,7 @@ paths:
         Calendar filters before pagination. The first page also returns saved linked Home Assistant and CalDAV
         occurrences when Events is selected. If one first-page read fails, its fields are null and the other result is
         returned. Live Home Assistant events are read separately.
-      security: *a7
+      security: *a8
       requestBody:
         required: true
         content:
@@ -2393,9 +2573,10 @@ paths:
       tags:
         - Tasks
       summary: Create a new task
-      description: Create a task with optional calendar sync, assignment, and framework payload. Authenticated callers can
-        retry an identical request with the Idempotency-Key header. Use this when a user or agent wants to capture a new
-        action item.
+      description: "Compatibility capture envelope over the canonical scoped task command. Calendar timestamps create an Event
+        task; outbound calendar work follows approved Board source bindings. The events array contains no synchronous
+        integration receipts. Retry an identical request with Idempotency-Key; successful replays retain HTTP 201 and
+        idempotency-key-status: cached."
       parameters:
         - name: Idempotency-Key
           in: header
@@ -2429,6 +2610,8 @@ paths:
                   properties:
                     entityId:
                       type: string
+                      deprecated: true
+                      description: Does not retarget a provider. Configure an approved Board integration source.
                     startDateTime:
                       type: string
                       format: date-time
@@ -2437,56 +2620,15 @@ paths:
                       format: date-time
                     durationMinutes:
                       type: integer
+                      deprecated: true
+                      description: Use an explicit endDateTime for Event task dates.
                     timezone:
                       type: string
+                      deprecated: true
+                      description: Provide offsets in the Event timestamps; the approved integration owns its timezone.
                   additionalProperties: false
               additionalProperties: false
       responses:
-        "200":
-          description: Idempotent replay — task already existed
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - task
-                  - events
-                  - integration
-                  - requestId
-                properties:
-                  task:
-                    $ref: "#/components/schemas/Task"
-                  events:
-                    type: array
-                    items:
-                      type: object
-                  integration:
-                    type: object
-                    properties:
-                      calendarSyncState:
-                        type: string
-                      confirmationId:
-                        type:
-                          - string
-                          - "null"
-                      errorCode:
-                        type:
-                          - string
-                          - "null"
-                      retryAfterSeconds:
-                        type:
-                          - integer
-                          - "null"
-                    additionalProperties: false
-                  requestId:
-                    type: string
-                  idempotencyKey:
-                    type:
-                      - string
-                      - "null"
-                  idempotentReplay:
-                    type: boolean
-                additionalProperties: false
         "201":
           description: Task created
           content:
@@ -2497,10 +2639,23 @@ paths:
                   - task
                   - events
                   - integration
-                  - requestId
                 properties:
                   task:
-                    $ref: "#/components/schemas/Task"
+                    oneOf:
+                      - $ref: "#/components/schemas/Task"
+                      - type: object
+                        required:
+                          - id
+                        additionalProperties: false
+                        properties:
+                          id:
+                            type: string
+                          ticket_key:
+                            type:
+                              - string
+                              - "null"
+                    description: The full task requires current task-read authority; create-only callers receive their minimal
+                      acknowledgement.
                   events:
                     type: array
                     items:
@@ -2523,14 +2678,6 @@ paths:
                           - integer
                           - "null"
                     additionalProperties: false
-                  requestId:
-                    type: string
-                  idempotencyKey:
-                    type:
-                      - string
-                      - "null"
-                  idempotentReplay:
-                    type: boolean
                 additionalProperties: false
         "400": *a30
         "404":
@@ -2558,14 +2705,49 @@ paths:
                 tag_id:
                   type: string
               additionalProperties: false
+      description: Uses the selected Board's current completion permission. A caller without Task read permission receives
+        only {ok:true}, including retries, without the Task identity or state. Readable callers retain the detailed
+        completion or already-complete response.
       responses:
         "200":
-          description: Task completed (or already complete on retry)
+          description: Completion accepted; details require current Task read permission
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    additionalProperties: false
+                    required:
+                      - ok
+                    properties:
+                      ok:
+                        const: true
+                  - type: object
+                    additionalProperties: false
+                    required:
+                      - ok
+                      - task_id
+                    properties:
+                      ok:
+                        const: true
+                      task_id:
+                        type: string
+                      task:
+                        $ref: "#/components/schemas/Task"
+                      already_complete:
+                        const: true
+                    oneOf:
+                      - required:
+                          - task
+                      - required:
+                          - already_complete
         "400": *a30
+        "403":
+          description: Current completion permission is required
         "404":
-          description: No matching task
+          description: No eligible matching task
         "409":
-          description: Tag is assigned ambiguously
+          description: Tag is assigned ambiguously or current work changed
         "500": *a32
   /api/tasks/{id}/handoff:
     post:
@@ -4325,7 +4507,7 @@ paths:
       description: Returns up to 50 reactions, newest first. Home Assistant ingress requires current membership. Automation
         tokens need tasks:read.
       security: &a58
-        - *a9
+        - *a11
         - bearerAuth: []
       parameters:
         - *a53
@@ -7223,11 +7405,13 @@ paths:
       operationId: exportDatabase
       tags:
         - Export
-      summary: Download a consistent SQLite snapshot as a verified Home Assistant administrator
-      description: Submit the native form from the administrator's Meitheal Settings page. The form token is valid for 15
-        minutes and bound to the verified user. Includes committed writes in the write-ahead log. Contains private
-        household data and local feedback. Use the database host's backup tools for remote databases.
-      security: *a7
+      summary: Download a consistent SQLite snapshot as the verified current Home Assistant owner
+      description: "Submit the native form from the current owner's Meitheal Settings page. The form token is valid for 15
+        minutes and bound to the verified user. Includes committed writes in the write-ahead log. Databases containing
+        protected organization data require Home Assistant backups instead. The download remains bound to its admitted
+        access revision: loss before publication returns unavailable, and loss after headers aborts the remaining
+        stream. Use the database host's backup tools for remote databases."
+      security: *a8
       requestBody:
         required: true
         content:
@@ -7251,7 +7435,7 @@ paths:
         "400":
           description: The form could not be read or the app uses a remote database
         "403":
-          description: Current administrator access and a valid same-origin download form are required
+          description: Current Home Assistant owner access, an eligible database and a valid same-origin download form are required
         "404":
           description: Local database or download path unavailable
         "409":
@@ -7261,7 +7445,7 @@ paths:
         "415":
           description: The form must use application/x-www-form-urlencoded
         "503":
-          description: Home Assistant Core could not verify current administrator access
+          description: Current owner or installation continuity could not be verified before response publication
         "507":
           description: Insufficient free space for a snapshot on the database volume
   /api/export/settings.json:

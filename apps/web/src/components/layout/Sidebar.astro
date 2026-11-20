@@ -4,9 +4,11 @@ import "../../styles/_sidebar-reorder.css"
 import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
 import Icon from "../ui/Icon.astro";
-import SidebarHierarchyTree from "./SidebarHierarchyTree.astro"
+import SidebarHierarchyActions from "./SidebarHierarchyActions.astro"
 import SidebarNavList from "./SidebarNavList.astro";
-import { householdBoardIsActive } from "@domains/tasks/persistence/named-board-repository"
+import { currentBoardContext } from "@lib/named-board-request"
+import { resolveBoardPageScope } from "@lib/board-http"
+import { scopePermits, type BoardScope } from "@domains/tasks"
 import TaskCreationMenu from "./TaskCreationMenu.astro";
 import NavOverflowMore from "./NavOverflowMore.astro";
 import SidebarFooter from "./SidebarFooter.astro";
@@ -17,10 +19,17 @@ import {
 } from "@domains/tasks/persistence/store";
 import { getDailyProgress } from "@domains/gamification";
 import { verifiedIngressUser } from "../../lib/verified-ingress-user"
+import { boardNavigationLinks, readBoardNavigationContext } from "@lib/board-workspace"
 import { getFeatureFlags } from "../../lib/feature-flags";
 
 const currentPath = Astro.url.pathname;
+const workNavigation = Astro.props.workNavigation
+const selectedScope = workNavigation ? { ok: true as const, scope: workNavigation.scope } : await resolveBoardPageScope(Astro).catch(() => null)
+const captureDenied = selectedScope?.ok === true && !scopePermits(selectedScope.scope, { resource: "task", action: "create" })
+const boardContext = readBoardNavigationContext(Astro.url) ?? (selectedScope?.ok ? { boardId: selectedScope.scope.boardId } : undefined)
+const boardLinks = boardContext ? boardNavigationLinks(boardContext) : undefined
 export interface Props {
+  workNavigation?: { scope: BoardScope, dailyStreak?: number } | undefined
   locale?: Locale;
 }
 const {
@@ -104,7 +113,6 @@ interface SidebarConfig {
 
 
 let showNamedBoardShortcuts = false
-let householdActive = true
 let sidebarConfig: SidebarConfig = {
   dashboard: true,
   today: true,
@@ -123,10 +131,9 @@ const hierarchyEnabled = ff.hierarchy !== false && ff.organizer !== false;
 
 /** Fetch streak data for sidebar badge */
 let currentStreak = 0;
-if (gamificationEnabled) {
+if (gamificationEnabled && selectedScope?.ok) {
   try {
-    const stats = await getDailyProgress(Astro.locals);
-    currentStreak = stats.currentStreak;
+    currentStreak = workNavigation?.dailyStreak ?? (await getDailyProgress(selectedScope.scope)).currentStreak;
   } catch {
     /* gamification schema may not exist yet */
   }
@@ -135,11 +142,7 @@ if (gamificationEnabled) {
 try {
   await ensureSchema();
   const c = getPersistenceClient();
-  householdActive = await householdBoardIsActive(c)
-  if (hierarchyEnabled && verifiedIngressUser(Astro.locals)) {
-    const epoch = await c.execute("SELECT 1 FROM board_access_epoch LIMIT 1")
-    showNamedBoardShortcuts = epoch.rows.length > 0
-  }
+  showNamedBoardShortcuts = hierarchyEnabled && Boolean(await currentBoardContext(Astro))
   const res = await c.execute(
     "SELECT value FROM settings WHERE key = 'sidebar_config'",
   );
@@ -224,17 +227,15 @@ const navItems = order
     const isActive = def.matchExact
       ? currentPath === def.href.split("?", 1)[0]
       : currentPath.startsWith(def.href);
-    return { key, label, isActive, ...def };
+    return { key, label, isActive, ...def, defaultHref: def.href, href: boardLinks && key in boardLinks ? boardLinks[key as keyof typeof boardLinks] : def.href };
   });
 const tasksIndex = navItems.findIndex(item => item.key === "tasks")
 const pinIndex = tasksIndex >= 0 ? tasksIndex + 1 : navItems.findIndex(item => item.key === "today") + 1
 navItems.splice(pinIndex, 0, {
-  key: "system-pinned", href: "/pinned", label: t("pins.title", locale), i18nKey: "pins.title",
+  key: "system-pinned", href: boardLinks?.pinned ?? "/pinned", defaultHref: "/pinned", label: t("pins.title", locale), i18nKey: "pins.title",
   icon: "pin", isActive: currentPath === "/pinned", matchExact: true,
 })
 
-const householdGroups = householdActive && hierarchyEnabled && sidebarConfig.areas !== false && ff.groups !== false
-const householdGroupLabel = resolveLabel("group", true, labels.areas)
 const sidebarDefaultOrder = navItems.map(item => item.key)
 
 ---
@@ -309,6 +310,7 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
         <button
           type="button"
           id="sidebar-rail-new-task"
+          disabled={captureDenied}
           class="sidebar-rail-cta"
           data-tooltip={quickCreate}
           aria-label={quickCreate}
@@ -324,17 +326,13 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
     <div class="sidebar-scroll" data-nav-overflow="sidebar" data-sidebar-default-order={JSON.stringify(sidebarDefaultOrder)}>
       <SidebarNavList navItems={navItems}>
         <ul slot="boards" id="sidebar-board-children" class="sidebar-board-children" data-sidebar-board-children
-          data-sidebar-boards={showNamedBoardShortcuts ? "" : undefined} data-board-group-label={resolveLabel("group", true)}
+          data-sidebar-boards={showNamedBoardShortcuts ? "" : undefined} data-board-group-label={resolveLabel("group", true, labels.areas || undefined)}
           data-board-project-label={resolveLabel("project", true)} data-projects-enabled={String(ff.projects !== false)}
-          data-areas-enabled={String(ff.groups !== false)} aria-label={resolveLabel("board", true)}>
-          {householdActive && <li class="sidebar-household" data-sidebar-household>
-            <a class="nav-link sidebar-household-link" href="/boards/household" aria-current={currentPath === "/boards/household" ? "page" : undefined}>Household</a>
-            {householdGroups && <div id="sidebar-hierarchy-panel"><SidebarHierarchyTree locale={locale} label={householdGroupLabel} /></div>}
-          </li>}
-
+          data-areas-enabled={String(ff.groups !== false && sidebarConfig.areas !== false)} aria-label={resolveLabel("board", true)}>
         </ul>
       </SidebarNavList>
       <NavOverflowMore id="sidebar-more-destinations" list locale={locale} />
+      <SidebarHierarchyActions />
     </div>
   </div>
 
@@ -386,6 +384,15 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
     const signal = AbortSignal.any([pageSignal, controller.signal])
     bindSidebarBoards(signal)
     const sidebar = document.getElementById("sidebar")
+    const capture = sidebar?.querySelector<HTMLButtonElement>("#sidebar-rail-new-task")
+    const capturePermission = document.querySelector<HTMLMetaElement>('meta[name="meitheal-task-create"]')
+    if (capture && capturePermission) capture.disabled = capturePermission.content !== "true"
+    if (capture) {
+      document.addEventListener("meitheal:board-revoked", event => {
+        const boardId = (event as CustomEvent<{ boardId?: string }>).detail?.boardId
+        if (boardId && boardId === document.querySelector<HTMLMetaElement>('meta[name="meitheal-work-board"]')?.content) capture.disabled = true
+      }, { signal })
+    }
     if (sidebar) {
       // Recent activity restores through guarded browser history.
       bindSidebarPinPresence(sidebar, signal, Boolean(document.querySelector("[data-recent-activity]")))
@@ -405,6 +412,7 @@ const sidebarDefaultOrder = navItems.map(item => item.key)
   .sidebar-board-children :global(.sidebar-board-row .nav-link) { flex: 1; min-width: 0; }
   .sidebar-board-children :global(.sidebar-board-toggle[aria-expanded="true"]) { transform: rotate(90deg); }
   .sidebar-board-children :global([data-board-groups]), .sidebar-board-children :global([data-board-projects]) { list-style: none; padding-left: 1rem; }
+  .sidebar-board-children :global([data-board-group-notice]) { padding-inline-start: 1rem; margin: 0; }
   .sidebar-household[hidden] { display: none; }
 
   .sidebar {

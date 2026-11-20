@@ -81,9 +81,19 @@ export async function applyNamedBoardStoragePhase(tx) {
 export async function validateNamedBoardStoragePhase(db) {
   const { rows: [version] } = await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")
   const lifecycle = Number(version?.value) >= 25
-  await validatePhaseObjects(db, lifecycle ? {
+  const ordinary = Number(version?.value) >= 26
+  const expected = ordinary ? Object.fromEntries(Object.entries(namedPhaseTriggers).filter(([name]) =>
+    !["task_boards_household_identity_insert", "task_boards_household_identity_update", "task_boards_household_v19_delete", "board_members_household_v19_insert",
+      "task_drafts_household_v19_insert", "task_drafts_household_v19_update", "task_draft_receipts_household_v19_insert", "task_draft_receipts_household_v19_update"].includes(name))) : lifecycle ? {
     ...namedPhaseTriggers, task_boards_household_identity_update: lifecycleHouseholdIdentitySql,
-  } : namedPhaseTriggers, taskBoardHouseholdTriggerNames)
+  } : namedPhaseTriggers
+  await validatePhaseObjects(db, expected, [...taskBoardHouseholdTriggerNames, ...Object.keys(namedPhaseTriggers)])
+  if (ordinary) {
+    const { rows: invalid } = await db.execute(`SELECT 1 WHERE EXISTS (SELECT 1 FROM board_members)
+      OR EXISTS (SELECT 1 FROM tasks AS NEW WHERE NOT ${validPlacement})`)
+    if (invalid.length) throw new Error("Invalid ordinary Board task storage state")
+    return
+  }
   const household = lifecycle ? householdBoard.replace("state IS 'active'", "state IN ('active', 'retired')") : householdBoard
   const { rows: invalid } = await db.execute(`SELECT 1 WHERE
     NOT EXISTS (SELECT 1 FROM main.task_boards WHERE ${household})

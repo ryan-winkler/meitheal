@@ -1,11 +1,12 @@
+import { boardScopeErrorResponse, withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
-import { ensureSchema } from "@domains/tasks"
+import { ensureSchema, scopePermits } from "@domains/tasks"
 import {
   searchMeithealCatalog,
   type SearchQueryOptions,
   type SearchScope,
   type SearchSort,
-  type TaskSearchField,
+  type TaskSearchField
 } from "@domains/search"
 import { apiError, apiJson, apiProblem } from "../../lib/api-response"
 import { organizationLabelsFor } from "@lib/organization-labels"
@@ -17,7 +18,7 @@ const DEFAULT_FIELDS: TaskSearchField[] = [
   "description",
   "labels",
   "custom_fields",
-  "comments",
+  "comments"
 ]
 
 const VALID_SCOPES = new Set<SearchScope>(["all", "tasks", "views", "settings", "actions"])
@@ -39,51 +40,65 @@ function parseTaskFields(value: string | null): TaskSearchField[] {
   return fields.length > 0 ? fields : DEFAULT_FIELDS
 }
 
-export const GET: APIRoute = async (context) => {
-  const { url } = context
-  const rawLimit = url.searchParams.get("limit")
-  const parsedLimit = Number(rawLimit ?? 8)
-  if ((rawLimit !== null && !/^[0-9]+$/.test(rawLimit)) || !Number.isSafeInteger(parsedLimit) || parsedLimit < 1) {
-    return apiProblem({
-      status: 400,
-      detail: "The search limit must be a positive decimal integer.",
-      invalidParams: [{ name: "query.limit", reason: "Use a decimal integer from 1 to 9007199254740991." }],
-    })
-  }
-
-  try {
-    await ensureSchema()
-
-    const rawScope = (url.searchParams.get("scope") ?? "all") as SearchScope
-    const rawSort = (url.searchParams.get("sort") ?? "relevance") as SearchSort
-    const priority = url.searchParams.get("priority")
-    const limit = Math.min(12, parsedLimit)
-
-    const options: SearchQueryOptions = {
-      query: url.searchParams.get("q")?.trim() ?? "",
-      scope: VALID_SCOPES.has(rawScope) ? rawScope : "all",
-      limit,
-      includeCompleted: parseBoolean(url.searchParams.get("include_completed")),
-      includeArchived: parseBoolean(url.searchParams.get("include_archived")),
-      sort: VALID_SORTS.has(rawSort) ? rawSort : "relevance",
-      taskFields: parseTaskFields(url.searchParams.get("task_fields")),
+export const GET: APIRoute = withBoardScope(
+  { resource: "task", action: "search" },
+  async (context, scope) => {
+    const { url } = context
+    const rawLimit = url.searchParams.get("limit")
+    const parsedLimit = Number(rawLimit ?? 8)
+    if (
+      (rawLimit !== null && !/^[0-9]+$/.test(rawLimit)) ||
+      !Number.isSafeInteger(parsedLimit) ||
+      parsedLimit < 1
+    ) {
+      return apiProblem({
+        status: 400,
+        detail: "The search limit must be a positive decimal integer.",
+        invalidParams: [
+          { name: "query.limit", reason: "Use a decimal integer from 1 to 9007199254740991." }
+        ]
+      })
     }
-    const status = url.searchParams.get("status")?.trim()
-    const assignedTo = url.searchParams.get("assigned_to")?.trim()
-    const parsedPriority = priority == null
-      ? undefined
-      : Math.min(5, Math.max(1, Number(priority) || 0)) || undefined
 
-    if (status) options.status = status
-    if (assignedTo) options.assignedTo = assignedTo
-    if (parsedPriority != null) options.priority = parsedPriority
+    try {
+      await ensureSchema()
 
-    const result = await searchMeithealCatalog(options, await organizationLabelsFor(context))
-    const response = apiJson(result)
-    response.headers.set("cache-control", "private, no-store")
-    return response
-  } catch (error) {
-    logApiError("search", "GET error", error)
-    return apiError("Failed to search Meitheal", 500)
-  }
-}
+      const rawScope = (url.searchParams.get("scope") ?? "all") as SearchScope
+      const rawSort = (url.searchParams.get("sort") ?? "relevance") as SearchSort
+      const priority = url.searchParams.get("priority")
+      const limit = Math.min(12, parsedLimit)
+
+      const options: SearchQueryOptions = {
+        query: url.searchParams.get("q")?.trim() ?? "",
+        scope: VALID_SCOPES.has(rawScope) ? rawScope : "all",
+        limit,
+        includeCompleted: parseBoolean(url.searchParams.get("include_completed")),
+        includeArchived: parseBoolean(url.searchParams.get("include_archived")),
+        sort: VALID_SORTS.has(rawSort) ? rawSort : "relevance",
+        taskFields: parseTaskFields(url.searchParams.get("task_fields"))
+      }
+      const status = url.searchParams.get("status")?.trim()
+      const assignedTo = url.searchParams.get("assigned_to")?.trim()
+      const parsedPriority =
+        priority == null ? undefined : Math.min(5, Math.max(1, Number(priority) || 0)) || undefined
+
+      if (status) options.status = status
+      if (assignedTo) options.assignedTo = assignedTo
+      if (parsedPriority != null) options.priority = parsedPriority
+
+      const organization = scopePermits(scope, { resource: "task", action: "read" })
+        ? await organizationLabelsFor(context)
+        : undefined
+      const result = await searchMeithealCatalog(options, scope, organization)
+      const response = apiJson(result)
+      response.headers.set("cache-control", "private, no-store")
+      return response
+    } catch (error) {
+      const failure = boardScopeErrorResponse(error)
+      if (failure) return failure
+      logApiError("search", "GET error", error)
+      return apiError("Failed to search Meitheal", 500)
+    }
+  },
+  { write: false }
+)

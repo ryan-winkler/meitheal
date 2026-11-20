@@ -1,3 +1,4 @@
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import type { InValue } from "@libsql/client"
 import { hasBoardSelection, rejectBoardSelectionInJson, unavailableBoardResponse } from "@domains/tasks/board-availability"
@@ -18,12 +19,12 @@ const logger = createLogger({
 
 /** PUT /api/lanes/[id], DELETE /api/lanes/[id] */
 
-export const PUT: APIRoute = async ({ params, request }) => {
+export const PUT: APIRoute = withBoardScope({ resource: "board", action: "manage" }, async ({ params, request }, scope) => {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     if (hasBoardSelection(body)) return unavailableBoardResponse()
     await ensureSchema()
-    const repo = new LaneRepository(getPersistenceClient())
+    const repo = new LaneRepository(getPersistenceClient(), scope)
 
     const existing = await repo.findById(params.id!)
     if (!existing) {
@@ -94,14 +95,14 @@ export const PUT: APIRoute = async ({ params, request }) => {
     })
     return apiError("Failed to update lane")
   }
-}
+})
 
-export const DELETE: APIRoute = async ({ params, request }) => {
+export const DELETE: APIRoute = withBoardScope({ resource: "board", action: "manage" }, async ({ params, request }, scope) => {
   try {
     const boardSelection = await rejectBoardSelectionInJson(request)
     if (boardSelection) return boardSelection
     await ensureSchema()
-    const repo = new LaneRepository(getPersistenceClient())
+    const repo = new LaneRepository(getPersistenceClient(), scope)
 
     const existing = await repo.findForDelete(params.id!)
     if (!existing) {
@@ -126,4 +127,4 @@ export const DELETE: APIRoute = async ({ params, request }) => {
     })
     return apiError("Failed to delete lane")
   }
-}
+})

@@ -66,13 +66,13 @@ const { personalForm } = Astro.props
         <div class="form-group">
           <label for="pillar-audience" class="form-label">Visible to</label>
           <select id="pillar-audience" class="form-input" data-audience-proof={personalForm} aria-describedby="pillar-audience-hint">
-            <option value="household">Household</option>
+            <option value="board">Board</option>
             <option value="personal">Only me</option>
           </select>
           <p id="pillar-audience-hint" class="pillar-form__hint">Choose the audience before saving.</p>
         </div>
       ) : (
-        <p class="pillar-form__hint">New Pillars here are visible to the Household. To create one only you can see, open Progress in an active Home Assistant session.</p>
+        <p class="pillar-form__hint">New Pillars here are visible to the Board. To create one only you can see, open Progress in an active Home Assistant session.</p>
       )}
 
       <!-- Manifesto (WHY) -->
@@ -354,7 +354,7 @@ const { personalForm } = Astro.props
       editingPersonal = editData?.personal === true
       if (audience) {
         audience.disabled = Boolean(editData?.id)
-        audience.value = editingPersonal ? "personal" : "household"
+        audience.value = editingPersonal ? "personal" : "board"
         if (audienceHint) audienceHint.hidden = audience.disabled
       }
 

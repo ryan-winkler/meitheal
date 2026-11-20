@@ -19,12 +19,9 @@ Object.defineProperty(globalThis, "WebSocket", {
 process.env.ASTRO_NODE_AUTOSTART = "disabled"
 const { handler } = await import("../../apps/web/dist/server/entry.mjs")
 const server = http.createServer((request, response) => {
-  // Synthetic trusted ingress identity, confined to this loopback test process.
-  request.headers["x-remote-user-id"] = "event-fixture-admin"
-  request.headers["x-remote-user-groups"] = "system-admin"
+  // The native client sends its Board credential directly, without HA ingress.
   runWithIngressTransport({
-    peer: "172.30.32.2", fromSupervisor: true, identityHeadersSafe: true,
-    configuredPath: "/api/hassio_ingress/event-authority-fixture",
+    peer: "127.0.0.1", fromSupervisor: false, identityHeadersSafe: false,
   }, () => handler(request, response))
 })
 server.listen(0, "127.0.0.1", () => {

@@ -1,3 +1,4 @@
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { expect, test } from "@playwright/test"
 import { deferred, shouldSkipBrowserSpecs } from "./_helpers"
 
@@ -6,7 +7,7 @@ test.skip(shouldSkipBrowserSpecs(), "Requires a disposable Meitheal server")
 
 for (const action of ["complete", "snooze", "delete"] as const) {
   test(`Today batch ${action} refreshes saved changes and retries only the remaining task`, async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const title = `Today batch ${action} ${crypto.randomUUID()}`
     const today = new Date().toISOString().slice(0, 10)
     const ids: string[] = []
@@ -113,7 +114,7 @@ for (const action of ["complete", "snooze", "delete"] as const) {
 }
 
 test("Today updates the Overdue filter and deadline when work is completed or reopened", async ({ page, request, baseURL }) => {
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const due_date = new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10)
   const created = await request.post("/api/tasks", { headers, data: { title: "Carried-forward deadline", due_date } })
   expect(created.status(), await created.text()).toBe(201)
@@ -146,7 +147,7 @@ test("Today updates the Overdue filter and deadline when work is completed or re
 })
 
 test("Work reopens Focus cards before and after the cleared state", async ({ page, request, baseURL }) => {
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const day = new Intl.DateTimeFormat("en-CA", { dateStyle: "short", timeZone: "Europe/Dublin" }).format(new Date())
   const ids: string[] = []
   try {

@@ -354,7 +354,23 @@ async function quadrantPatch(action: string, signal: AbortSignal): Promise<TaskP
     }
     case "assign-q3": {
       const assignee = await promptDialog({ title: "Assign Delegate Tasks", placeholder: "Assignee name", required: true, signal })
-      return assignee ? { assigned_to: assignee.trim() } : undefined
+      if (!assignee || signal.aborted) return undefined
+      try {
+        const directory = await taskApi.listUserDirectory(signal)
+        if (signal.aborted) return undefined
+        const entered = assignee.trim().toLocaleLowerCase()
+        const matches = directory.users.filter(user => user.id.toLocaleLowerCase() === entered ||
+          (user.display_name || user.name || "").trim().toLocaleLowerCase() === entered)
+        const unique = [...new Map(matches.map(user => [user.id, user])).values()]
+        if (unique.length !== 1) {
+          showToast(unique.length ? "More than one assignee has this name. Enter the exact assignee ID." : "No eligible assignee matches that name. Choose a current person or agent.", "error")
+          return undefined
+        }
+        return { assigned_to: unique[0]!.id }
+      } catch {
+        if (!signal.aborted) showToast("Could not verify assignees. No tasks were assigned.", "error")
+        return undefined
+      }
     }
     case "defer-q4": return { status: STATUS.BACKLOG }
     case "complete-q4": return { status: STATUS.COMPLETE }

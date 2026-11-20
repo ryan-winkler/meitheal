@@ -30,6 +30,11 @@ for (const failure of [false, true]) {
       await writeFile(join(directory, "dist/client/_astro/fixture.js"), "ok")
       await writeFile(join(directory, "dist/client/_astro/dashboard-layout-editor.fake.js"), "extra")
       await writeFile(join(directory, "dist/client/sw.js"), "")
+      await writeFile(join(directory, "scripts/serve.mjs"), `
+import { startServer } from "../dist/server/entry.mjs"
+const { done } = startServer()
+await done
+`)
       await writeFile(join(directory, "dist/server/entry.mjs"), `
 import { createServer } from "node:http"
 import { once } from "node:events"
@@ -42,9 +47,19 @@ const server = createServer((request, response) => {
     response.end(JSON.stringify({ version: process.env.MEITHEAL_VERSION, db_integrity: "ok" }))
     return
   }
+  if (request.method === "GET" && request.url === "/api/boards") {
+    response.writeHead(200, { "content-type": "application/json", "x-meitheal-board-session": "fixture-session" })
+    response.end("{}")
+    return
+  }
   if (request.method !== "POST" || request.url !== "/api/tasks") {
     request.resume()
     response.writeHead(404).end()
+    return
+  }
+  if (request.headers["x-meitheal-board-session"] !== "fixture-session" || request.headers["x-meitheal-board-id"] !== "household") {
+    request.resume()
+    response.writeHead(403).end()
     return
   }
   let body = ""

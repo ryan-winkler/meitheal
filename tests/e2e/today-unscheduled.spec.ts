@@ -1,10 +1,14 @@
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
+
+// Request interception needs the browser to contact the disposable server directly.
+test.use({ serviceWorkers: "block" })
 
 test("pages a large unscheduled queue and filters across every page", async ({ page, request, baseURL }) => {
   test.skip(shouldSkipBrowserSpecs(), "Requires a disposable Meitheal server")
   const origin = new URL(baseURL!).origin
-  const headers = { origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin })
   const prefix = `Unscheduled fixture ${crypto.randomUUID()}`
   const target = `${prefix} beyond the first page`
   const ids: string[] = []
@@ -76,13 +80,13 @@ test("pages a large unscheduled queue and filters across every page", async ({ p
     await expect(toggle).toHaveAttribute("aria-expanded", "false")
     await expect(page).not.toHaveURL(/unscheduledPage=/)
   } finally {
-    for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })
+    for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
   }
 })
 
 test("a status refresh preserves focus on another Unscheduled row", async ({ page, request, baseURL }) => {
   test.skip(shouldSkipBrowserSpecs(), "Requires a disposable Meitheal server")
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const prefix = `Unscheduled focus ${crypto.randomUUID()}`
   const ids: string[] = []
   let release: (() => void) | undefined
@@ -108,13 +112,13 @@ test("a status refresh preserves focus on another Unscheduled row", async ({ pag
     await expect(next).toBeFocused()
   } finally {
     release?.()
-    for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })
+    for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
   }
 })
 
 test("Unscheduled status refresh preserves explicit pagination and focus on the pager", async ({ page, request, baseURL }) => {
   test.skip(shouldSkipBrowserSpecs(), "Requires a disposable Meitheal server")
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const prefix = `Unscheduled paging race ${crypto.randomUUID()}`
   const ids: string[] = []
   let releaseSave = () => {}
@@ -200,6 +204,6 @@ test("Unscheduled status refresh preserves explicit pagination and focus on the 
   } finally {
     releaseSave()
     releasePage()
-    for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })
+    for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
   }
 })

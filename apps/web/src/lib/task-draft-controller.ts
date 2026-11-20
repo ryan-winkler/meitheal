@@ -1,3 +1,4 @@
+import { currentTaskApiContext } from "./task-api"
 import {
   activateDraftUpdate, DraftAccessError, draftLeaseDuration, draftRenewAfter, privateIngressScope,
   readDraft, verifyDraftLease, writeDraft, type DraftLease,
@@ -11,18 +12,25 @@ type Publication = Extract<TaskDraftWrite, { action: "publish" }>
 type Selector = NonNullable<TaskDraftRead["resolve"]>
 type Marker = { selector: Selector; expiresAt: number }
 
-const markerKey = "meitheal-draft-operation"
+function markerKey() {
+  const context = currentTaskApiContext()
+  // A Board request proof rotates when the App restarts. Recovery follows the
+  // verified installation and actor while draft requests still require the current proof.
+  return context?.actorKey ? `meitheal-draft-operation:${context.boardId}:${context.actorKey}` : undefined
+}
 const markerDuration = 300_000
 
 function readMarker(): Marker | undefined {
+  const key = markerKey()
+  if (!key) return
   try {
-    const marker = JSON.parse(sessionStorage.getItem(markerKey) ?? "null") as Marker | null
+    const marker = JSON.parse(sessionStorage.getItem(key) ?? "null") as Marker | null
     if (marker && marker.expiresAt > Date.now() && marker.expiresAt <= Date.now() + markerDuration &&
         /^[a-f0-9-]{36}$/.test(marker.selector.attemptId) &&
         (marker.selector.kind === "save" ||
           marker.selector.kind === "publish" && /^[a-f0-9-]{36}$/.test(marker.selector.draftId)
             && Number.isSafeInteger(marker.selector.revision) && marker.selector.revision > 0)) return marker
-    sessionStorage.removeItem(markerKey)
+    sessionStorage.removeItem(key)
   } catch { /* Private storage can be unavailable. */ }
   return undefined
 }
@@ -36,9 +44,9 @@ interface DraftEditor {
   restore(snapshot: TaskDraftSnapshot): void
   clear(): void
   selectedFiles(): boolean
-  ordinarySubmitting(): boolean
-  stateChanged(bound: boolean, disabled: boolean, withdrawn: boolean): void
-  taskPublished(receipt: TaskDraftReceipt): void
+  ordinaryCapturePending(): boolean
+  stateChanged(bound: boolean, disabled: boolean, withdrawn: boolean, holdFields: boolean): void
+  taskPublished(receipt: TaskDraftReceipt, addAnother: boolean): void
   openTask(receipt: TaskDraftReceipt): void
   focusTitle(): void
 }
@@ -73,6 +81,7 @@ export function connectTaskDrafts(overlay: HTMLElement, editor: DraftEditor, sig
   let dirty = false
   let edit = 0
   let marker: Marker | undefined
+  let continuation: Extract<Selector, { kind: "publish" }> | undefined
   let frozen: Publication | undefined
   let suspended: { snapshot: TaskDraftSnapshot; expiresAt: number } | undefined
   let operation: AbortController | undefined
@@ -84,10 +93,13 @@ export function connectTaskDrafts(overlay: HTMLElement, editor: DraftEditor, sig
   let confirmation: { trigger: HTMLButtonElement; run: () => void } | undefined
 
   function setMarker(selector?: Selector) {
+    continuation = undefined
     marker = selector ? { selector, expiresAt: Date.now() + markerDuration } : undefined
+    const key = markerKey()
+    if (!key) return
     try {
-      if (marker) sessionStorage.setItem(markerKey, JSON.stringify(marker))
-      else sessionStorage.removeItem(markerKey)
+      if (marker) sessionStorage.setItem(key, JSON.stringify(marker))
+      else sessionStorage.removeItem(key)
     } catch { /* Continue within the current page. */ }
   }
 
@@ -96,16 +108,19 @@ export function connectTaskDrafts(overlay: HTMLElement, editor: DraftEditor, sig
   }
 
   function canSubmit() {
-    return !operation && !locked && (!bound || Boolean(lease && foreground()
+    return !operation && !confirmation && !locked && (!bound || Boolean(lease && foreground()
       && performance.now() < lease.verifiedAt + draftLeaseDuration && !withdrawn))
   }
 
   function render() {
+    const ordinaryPending = editor.ordinaryCapturePending()
     toggle.hidden = !privateIngressScope()
+    toggle.disabled = ordinaryPending
     toggle.setAttribute("aria-expanded", String(expanded))
     panel.hidden = !expanded
+    panel.inert = ordinaryPending
     status.textContent = notice
-    const pending = Boolean(operation) || editor.ordinarySubmitting()
+    const pending = Boolean(operation) || ordinaryPending
     const awaiting = Boolean(marker)
     const verified = Boolean(lease)
     const editable = verified && !withdrawn
@@ -122,7 +137,7 @@ export function connectTaskDrafts(overlay: HTMLElement, editor: DraftEditor, sig
     update.hidden = !updateNeeded
     openTask.hidden = !receipt || !verified || !receipt.ticketKey
     for (const action of [save, resume, discard, recover, retry, abandon, clear, update, openTask]) action.disabled = pending
-    editor.stateChanged(Boolean(bound), !canSubmit() || editor.ordinarySubmitting(), withdrawn)
+    editor.stateChanged(Boolean(bound), !canSubmit() || ordinaryPending, withdrawn, Boolean(continuation))
   }
 
   function stopTimers() {
@@ -135,6 +150,7 @@ export function connectTaskDrafts(overlay: HTMLElement, editor: DraftEditor, sig
     const { trigger } = confirmation
     confirmation = undefined
     confirmPanel.hidden = true
+    render()
     if (restoreFocus) trigger.focus()
     return true
   }
@@ -143,10 +159,12 @@ export function connectTaskDrafts(overlay: HTMLElement, editor: DraftEditor, sig
     confirmation = { trigger, run }
     confirmMessage.textContent = message
     confirmPanel.hidden = false
+    render()
     cancel.focus()
   }
 
   function withdraw(permanent: boolean, message: string) {
+    if (permanent) continuation = undefined
     operation?.abort()
     operation = undefined
     stopTimers()
@@ -234,7 +252,11 @@ export function connectTaskDrafts(overlay: HTMLElement, editor: DraftEditor, sig
     if (focus) { render(); editor.focusTitle() }
   }
 
-  function finishPublished(value: TaskDraftReceipt) {
+  function finishPublished(value: TaskDraftReceipt, preserveFocus = false) {
+    const addAnother = continuation !== undefined && continuation === marker?.selector
+      && continuation.draftId === value.draftId && continuation.revision === value.revision
+    const wasBound = Boolean(bound)
+    const focusReceipt = wasBound || (!dirty && !preserveFocus)
     operation = undefined
     setMarker()
     frozen = undefined
@@ -242,19 +264,24 @@ export function connectTaskDrafts(overlay: HTMLElement, editor: DraftEditor, sig
     available = null
     receipt = value
     locked = withdrawn = canAbandon = false
-    dirty = false
-    editor.clear()
+    if (wasBound) {
+      dirty = false
+      editor.clear()
+    }
     notice = value.ticketKey ? taskDraftText("published").replace("{ticket}", value.ticketKey) : taskDraftText("removed")
+    if (addAnother) notice += " " + taskDraftText("ready_new")
     render()
-    editor.taskPublished(value)
-    if (value.ticketKey) openTask.focus()
+    editor.taskPublished(value, addAnother)
+    if (addAnother) editor.focusTitle()
+    else if (focusReceipt && value.ticketKey) openTask.focus()
   }
 
-  async function load(resumeAfter = false) {
-    if (!foreground() || operation || editor.ordinarySubmitting()) return
+  async function load(resumeAfter = false, opening = false) {
+    if (!foreground() || operation || editor.ordinaryCapturePending()) return
     expanded = true
     const local = new AbortController()
     const startedEdit = edit
+    const startedFocus = document.activeElement
     operation = local
     notice = taskDraftText("checking")
     render()
@@ -271,7 +298,10 @@ export function connectTaskDrafts(overlay: HTMLElement, editor: DraftEditor, sig
       updateNeeded = false
 
       if (result?.state === "published") {
-        finishPublished(result.receipt)
+        const focused = document.activeElement
+        const preserveFocus = focused !== null && overlay.contains(focused) &&
+          (focused !== startedFocus || (opening && !focused.hasAttribute("autofocus")))
+        finishPublished(result.receipt, preserveFocus)
       } else if (result?.state === "saved" && available && edit === startedEdit) {
         setMarker()
         applyDraft(available)
@@ -302,7 +332,7 @@ export function connectTaskDrafts(overlay: HTMLElement, editor: DraftEditor, sig
   }
 
   async function write(action: TaskDraftWrite) {
-    if (!lease || !foreground() || operation || editor.ordinarySubmitting()) return
+    if (!lease || !foreground() || operation || editor.ordinaryCapturePending()) return
     const local = new AbortController()
     const active = AbortSignal.any([signal, local.signal])
     const startedEdit = edit
@@ -353,7 +383,7 @@ export function connectTaskDrafts(overlay: HTMLElement, editor: DraftEditor, sig
   }
 
   function saveCurrent() {
-    if (!lease || !foreground() || operation || editor.ordinarySubmitting()) return
+    if (!lease || !foreground() || operation || editor.ordinaryCapturePending()) return
     if (editor.selectedFiles()) {
       notice = taskDraftText("file_save")
       render()
@@ -367,6 +397,7 @@ export function connectTaskDrafts(overlay: HTMLElement, editor: DraftEditor, sig
 
   toggle.addEventListener("click", () => {
     expanded = !expanded
+    if (!expanded && dismissConfirmation(false)) return
     render()
     if (expanded && (!lease || marker)) void load()
   }, { signal })
@@ -392,6 +423,7 @@ export function connectTaskDrafts(overlay: HTMLElement, editor: DraftEditor, sig
     const selector = marker?.selector
     if (selector?.kind === "publish") {
       ask(abandon, taskDraftText("confirm_keep"), () => {
+        continuation = undefined
         void write({ action: "abandon-publish", expected: version(selector), attemptId: selector.attemptId })
       })
     }
@@ -434,7 +466,10 @@ export function connectTaskDrafts(overlay: HTMLElement, editor: DraftEditor, sig
     if (document.visibilityState === "hidden") withdraw(false, taskDraftText("paused_hidden"))
     else resumeForeground()
   }, { signal })
-  window.addEventListener("pagehide", () => { if (opened) withdraw(true, taskDraftText("verify_again")) }, { signal })
+  window.addEventListener("pagehide", () => {
+    if (!opened) return
+    withdraw(true, taskDraftText("verify_again"))
+  }, { signal })
   window.addEventListener("pageshow", event => {
     if (event.persisted && opened && expanded && foreground() && !operation) void load()
   }, { signal })
@@ -467,7 +502,7 @@ export function connectTaskDrafts(overlay: HTMLElement, editor: DraftEditor, sig
       marker = readMarker()
       locked = expanded = Boolean(marker)
       render()
-      if (marker) void load()
+      if (marker) void load(false, true)
     },
     close,
     edited() { edit++; dirty = true },
@@ -475,14 +510,17 @@ export function connectTaskDrafts(overlay: HTMLElement, editor: DraftEditor, sig
     isBound: () => Boolean(bound),
     canSubmit,
     render,
-    publish(task: TaskDraftPublication) {
+    publish(task: TaskDraftPublication, addAnother = false) {
       expanded = true
       if (!bound || !lease || !canSubmit()) return
       const expected = bound
       const attemptId = crypto.randomUUID()
-      setMarker({ kind: "publish", ...expected, attemptId })
+      const selector = { kind: "publish" as const, ...expected, attemptId }
+      setMarker(selector)
+      if (addAnother) continuation = selector
       frozen = { action: "publish", expected, attemptId, task }
       void write(frozen)
+      if (addAnother) status.focus()
     },
   }
 }

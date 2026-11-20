@@ -61,6 +61,30 @@ const pinState = { id: { type: "string" }, pinned: { type: "boolean" }, pinned_a
 const pinContextParameter = { name: "X-Meitheal-Pin-Context", in: "header", required: true, schema: pinContext }
 
 const schemas = {
+  WorkBinding: {
+    type: "object", additionalProperties: false,
+    required: ["id", "generation", "integration", "sourceId", "purpose", "enabled", "destination", "allowedOperations"],
+    properties: {
+      id: { type: "string" }, generation: { type: "integer", minimum: 1 },
+      integration: { type: "string", enum: ["todo", "calendar", "caldav", "grocy", "calendar_reminder", "webhook", "ha_events", "notification", "notification_action", "builtin", "routine", "recurrence"] },
+      retired: { const: true, readOnly: true, description: "Replaced receiver identity; cannot be re-enabled." },
+      sourceId: { type: "string" }, purpose: { type: "string" }, enabled: { type: "boolean" },
+      destination: { type: "object", additionalProperties: false, required: ["boardId"], properties: {
+        boardId: { type: "string" }, areaId: { type: "string" }, projectId: { type: "string" },
+      } },
+      allowedOperations: { type: "array", items: { type: "object", additionalProperties: false, required: ["resource", "action"], properties: {
+        resource: { const: "task" }, action: { type: "string", enum: ["read", "create", "edit", "complete", "reopen", "delete"] },
+      } } }, recipientUserIds: { type: "array", uniqueItems: true, items: { type: "string" } },
+    },
+  },
+  AgentContext: {
+    type: "object", required: ["boards", "enrollmentBoardId"], properties: {
+      enrollmentBoardId: { type: ["string", "null"], description: "Only an unambiguous current credential enrollment. Never a browser capture default." },
+      boards: { type: "array", items: { type: "object", required: ["id", "name", "sharedEntityDelivery"], properties: {
+        id: { type: "string" }, name: { type: "string" }, sharedEntityDelivery: { type: "boolean", description: "Current approved broad HA receiver and unrestricted readable audience; private task data is not returned." },
+      } } },
+    },
+  },
   TaskReaction: {
     type: "object",
     required: ["id", "content", "author", "can_manage"],
@@ -151,6 +175,7 @@ const schemas = {
       status: { type: "string", description: "Current workflow status. Also supports custom workflow statuses.", example: "pending" },
       priority: { type: "integer", minimum: 0, maximum: 5, description: "Priority level: 0=none, 1=lowest, 5=critical" },
       is_promoted: { type: "boolean", description: "Shared Kanban promotion, returned for task detail and updates." },
+      actions: { type: "array", items: { type: "string", enum: ["edit", "complete", "delete"] }, description: "Detail-only hints for the current caller. Each write verifies current permission separately." },
       due_date: { type: "string", format: "date-time", nullable: true },
       assigned_to: { type: "string", nullable: true, description: "User ID prefixed with 'ha_' or 'custom_'" },
       kanban_position: { type: "number", nullable: true, description: "Persisted shared board position; unranked tasks have null." },
@@ -621,6 +646,18 @@ const boardKanbanParams = [
 ]
 
 const paths = {
+  "/api/agent-context": {
+    get: { operationId: "getAgentContext", tags: ["Agents"], summary: "Read the current credential's Board enrollment metadata",
+      security: [{ bearerAuth: [] }], description: "Requires tasks:read. Genuine Supervisor ingress also intersects the current HA caller. No task fields or capture default are returned. A verified human ingress response can provide the existing Board session header.",
+      responses: { 200: { description: "Credential and current caller metadata", content: { "application/json": { schema: { $ref: "#/components/schemas/AgentContext" } } } }, 403: { description: "Credential or current caller unavailable" }, 409: { description: "Current access changed" } },
+    },
+  },
+  "/api/integrations/work-destinations": {
+    get: boardOperation("getWorkDestinations", "Read approved sources for the selected Board", [], { 200: { description: "Current configuration revision and this Board's bindings" }, 403: boardUnavailable }),
+    put: boardOperation("saveWorkDestination", "Review an integration source and its selected Board destination", [boardSessionParam], {
+      200: { description: "Committed binding receipt. Refresh work access after the journal revision changes." }, 400: { description: "Invalid source or destination" }, 403: boardUnavailable, 409: { description: "Approval changed or a required Board is unavailable" },
+    }, boardJson({ revision: { type: "string" }, binding: { $ref: "#/components/schemas/WorkBinding" } })),
+  },
   "/api/boards": {
     get: boardOperation("listPrivateBoards", "List Boards and send destinations for the current Home Assistant user", [], {
       200: { description: "Accessible Boards, personal sidebar preferences, and authorized send destinations. Response includes the Board session header." },
@@ -652,7 +689,7 @@ const paths = {
       { name: "ticket", in: "query", schema: boardString },
       { name: "planning", in: "query", schema: { type: "string", enum: ["1"] } },
     ], {
-      200: { description: "Authorized Board, lanes, tickets and eligible owner settings" }, 404: boardUnavailable,
+      200: { description: "Authorized Board work or paged hierarchy. Hierarchy pages include current resource/action hints, clamped by effective actor and feature permissions; these hints never grant command authority." }, 404: boardUnavailable,
     }, undefined, "tasks:read"),
     head: boardOperation("verifyPrivateBoard", "Verify the current Board view", [boardIdParam,
       { name: "offset", in: "query", schema: boardVersion },
@@ -973,7 +1010,7 @@ const paths = {
       operationId: "createTask",
       tags: ["Tasks"],
       summary: "Create a new task",
-      description: "Create a task with optional calendar sync, assignment, and framework payload. Authenticated callers can retry an identical request with the Idempotency-Key header. Use this when a user or agent wants to capture a new action item.",
+      description: "Compatibility capture envelope over the canonical scoped task command. Calendar timestamps create an Event task; outbound calendar work follows approved Board source bindings. The events array contains no synchronous integration receipts. Retry an identical request with Idempotency-Key; successful replays retain HTTP 201 and idempotency-key-status: cached.",
       parameters: [
         { name: "Idempotency-Key", in: "header", schema: { type: "string" }, description: "Prevents duplicate creation on retry" },
       ],
@@ -992,11 +1029,11 @@ const paths = {
                 calendar: {
                   type: "object",
                   properties: {
-                    entityId: { type: "string" },
+                    entityId: { type: "string", deprecated: true, description: "Does not retarget a provider. Configure an approved Board integration source." },
                     startDateTime: { type: "string", format: "date-time" },
                     endDateTime: { type: "string", format: "date-time" },
-                    durationMinutes: { type: "integer" },
-                    timezone: { type: "string" },
+                    durationMinutes: { type: "integer", deprecated: true, description: "Use an explicit endDateTime for Event task dates." },
+                    timezone: { type: "string", deprecated: true, description: "Provide offsets in the Event timestamps; the approved integration owns its timezone." },
                   },
                 },
               },
@@ -1007,9 +1044,9 @@ const paths = {
       responses: {
         201: jsonContent({
           type: "object",
-          required: ["task", "events", "integration", "requestId"],
+          required: ["task", "events", "integration"],
           properties: {
-            task: ref("Task"),
+            task: { oneOf: [ref("Task"), { type: "object", required: ["id"], additionalProperties: false, properties: { id: { type: "string" }, ticket_key: { type: ["string", "null"] } } }], description: "The full task requires current task-read authority; create-only callers receive their minimal acknowledgement." },
             events: { type: "array", items: { type: "object" } },
             integration: {
               type: "object",
@@ -1020,31 +1057,8 @@ const paths = {
                 retryAfterSeconds: { type: ["integer", "null"] },
               },
             },
-            requestId: { type: "string" },
-            idempotencyKey: { type: ["string", "null"] },
-            idempotentReplay: { type: "boolean" },
           },
         }, "Task created"),
-        200: jsonContent({
-          type: "object",
-          required: ["task", "events", "integration", "requestId"],
-          properties: {
-            task: ref("Task"),
-            events: { type: "array", items: { type: "object" } },
-            integration: {
-              type: "object",
-              properties: {
-                calendarSyncState: { type: "string" },
-                confirmationId: { type: ["string", "null"] },
-                errorCode: { type: ["string", "null"] },
-                retryAfterSeconds: { type: ["integer", "null"] },
-              },
-            },
-            requestId: { type: "string" },
-            idempotencyKey: { type: ["string", "null"] },
-            idempotentReplay: { type: "boolean" },
-          },
-        }, "Idempotent replay — task already existed"),
         400: err400,
         404: problemContent("Requested Board unavailable"),
         500: err500,
@@ -1054,7 +1068,11 @@ const paths = {
   "/api/nfc/complete": {
     post: { operationId: "completeTaskByNfcTag", tags: ["Tasks"], summary: "Complete the uniquely assigned incomplete task for an NFC tag",
       requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["tag_id"], properties: { tag_id: { type: "string" } } } } } },
-      responses: { 200: { description: "Task completed (or already complete on retry)" }, 400: err400, 404: { description: "No matching task" }, 409: { description: "Tag is assigned ambiguously" }, 500: err500 },
+      description: "Uses the selected Board's current completion permission. A caller without Task read permission receives only {ok:true}, including retries, without the Task identity or state. Readable callers retain the detailed completion or already-complete response.",
+      responses: { 200: { description: "Completion accepted; details require current Task read permission", content: { "application/json": { schema: { oneOf: [
+        { type: "object", additionalProperties: false, required: ["ok"], properties: { ok: { const: true } } },
+        { type: "object", additionalProperties: false, required: ["ok", "task_id"], properties: { ok: { const: true }, task_id: { type: "string" }, task: { $ref: "#/components/schemas/Task" }, already_complete: { const: true } }, oneOf: [{ required: ["task"] }, { required: ["already_complete"] }] },
+      ] } } } }, 400: err400, 403: { description: "Current completion permission is required" }, 404: { description: "No eligible matching task" }, 409: { description: "Tag is assigned ambiguously or current work changed" }, 500: err500 },
     },
   },
   "/api/tasks/{id}/handoff": {
@@ -2305,8 +2323,8 @@ const paths = {
     post: {
       operationId: "exportDatabase",
       tags: ["Export"],
-      summary: "Download a consistent SQLite snapshot as a verified Home Assistant administrator",
-      description: "Submit the native form from the administrator's Meitheal Settings page. The form token is valid for 15 minutes and bound to the verified user. Includes committed writes in the write-ahead log. Contains private household data and local feedback. Use the database host's backup tools for remote databases.",
+      summary: "Download a consistent SQLite snapshot as the verified current Home Assistant owner",
+      description: "Submit the native form from the current owner's Meitheal Settings page. The form token is valid for 15 minutes and bound to the verified user. Includes committed writes in the write-ahead log. Databases containing protected organization data require Home Assistant backups instead. The download remains bound to its admitted access revision: loss before publication returns unavailable, and loss after headers aborts the remaining stream. Use the database host's backup tools for remote databases.",
       security: ingressSession,
       requestBody: {
         required: true,
@@ -2319,12 +2337,12 @@ const paths = {
       responses: {
         200: { description: "SQLite snapshot", content: { "application/x-sqlite3": { schema: { type: "string", format: "binary" } } } },
         400: { description: "The form could not be read or the app uses a remote database" },
-        403: { description: "Current administrator access and a valid same-origin download form are required" },
+        403: { description: "Current Home Assistant owner access, an eligible database and a valid same-origin download form are required" },
         404: { description: "Local database or download path unavailable" },
         409: { description: "Another database download is in progress" },
         413: { description: "The form exceeds 256 bytes" },
         415: { description: "The form must use application/x-www-form-urlencoded" },
-        503: { description: "Home Assistant Core could not verify current administrator access" },
+        503: { description: "Current owner or installation continuity could not be verified before response publication" },
         507: { description: "Insufficient free space for a snapshot on the database volume" },
       },
     },

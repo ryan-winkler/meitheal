@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto"
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
 test("Kanban groups the current page by available Area names and reflects changes after refresh", async ({ page, request, baseURL }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
-  const headers = { origin: new URL(baseURL!).origin, "sec-fetch-site": "same-origin" }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin, "sec-fetch-site": "same-origin" })
   const prefix = `Area grouping ${randomUUID().slice(0, 8)}`
   const areaIds: string[] = []
   const taskIds: string[] = []
@@ -37,7 +38,7 @@ test("Kanban groups the current page by available Area names and reflects change
       taskIds.push((await response.json() as { id: string }).id)
     }
     for (const area of [formerOffice, formerPantry]) {
-      const retirement = await request.delete(`/api/areas/${area}`, { headers })
+      const retirement = await request.delete(`/api/areas/${area}`, { headers, data: {} })
       expect(retirement.status(), await retirement.text()).toBe(200)
       retiredAreas.add(area)
     }
@@ -49,8 +50,8 @@ test("Kanban groups the current page by available Area names and reflects change
     const lane = page.locator('.kanban-column[data-status="pending"]')
     const groups = lane.locator(".dynamic-group")
     const groupNames = groups.locator(".swimlane-label")
-    await expect(groupNames).toHaveText(["📁 Alpha kitchen", "📋 Default", "📋 Unavailable Area", "📁 Zulu workbench"])
-    const unavailable = groups.filter({ hasText: "Unavailable Area" })
+    await expect(groupNames).toHaveText(["📁 Alpha kitchen", "📋 Default", "📋 No area", "📁 Zulu workbench"])
+    const unavailable = groups.filter({ hasText: "No area" })
     await expect(unavailable).toHaveCount(1)
     const unavailableCards = unavailable.locator(".kanban-card")
     await expect(unavailableCards).toHaveCount(2)
@@ -71,11 +72,11 @@ test("Kanban groups the current page by available Area names and reflects change
     await expect(groupNames).toHaveText(["📁 Aardvark workbench"])
   } finally {
     for (const id of taskIds) {
-      const response = await request.delete(`/api/tasks/${id}`, { headers })
+      const response = await request.delete(`/api/tasks/${id}`, { headers, data: {} })
       expect(response.status(), await response.text()).toBe(204)
     }
     for (const id of areaIds) {
-      if (!retiredAreas.has(id)) await request.delete(`/api/areas/${id}`, { headers })
+      if (!retiredAreas.has(id)) await request.delete(`/api/areas/${id}`, { headers, data: {} })
     }
   }
 })

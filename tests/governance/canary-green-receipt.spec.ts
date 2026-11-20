@@ -12,8 +12,8 @@ const version = revision.slice(0, 12)
 const arm = `sha256:${"a".repeat(64)}`
 const amd = `sha256:${"b".repeat(64)}`
 const digest = `sha256:${"c".repeat(64)}`
-const profile = "green-2000-task-v2"
-const hash = "d060f566d2ab6c8a90537b21f049cc1215b97ea9328e23e428b56aa1246fa50b"
+const profile = "green-2000-task-v3"
+const hash = "afc84c625a4bf1df6a1a41c15780a49340884bb2bce1b0dd39f52ab3da6ec6c0"
 const parentHash = "60b394f364c7f43a0038c0fb4376abd1a435a1760cf2bcd7ca29404e12ea6869"
 const clock = "driver_clock,v1,uptime_start_cs=1000000,uptime_end_cs=1030850,user_start_usec=5000000,system_start_usec=7000000,user_end_usec=16000000,system_end_usec=19000000"
 const driverCgroup = "driver_cgroup_receipt,v1,workload_status=0,receipt_status=0,memory.max=83886080,memory.swap.max=0,memory.swap.current=0,cpu.max=100000 100000,max=0,oom=0,oom_kill=0,oom_group_kill=0"
@@ -372,7 +372,7 @@ test("the versioned profile pins the public workload and parent bytes", ({ harne
   for (const raw of [
     passingReceipt().replace(`benchmark_profile=${profile}\n`, ""),
     passingReceipt().replace(profile, "green-2000-task-v1"),
-    passingReceipt().replace(profile, "green-2000-task-v3"),
+    passingReceipt().replace(profile, "green-2000-task-v2"),
     passingReceipt().replace(`benchmark_profile=${profile}`, `benchmark_profile=${profile}\nbenchmark_profile=${profile}`),
     passingReceipt().replaceAll(hash, "0".repeat(64)),
     passingReceipt().replaceAll(parentHash, "0".repeat(64)),
@@ -384,7 +384,7 @@ test("the versioned profile pins the public workload and parent bytes", ({ harne
   }
 })
 
-test("legacy receipts and missing or altered driver telemetry cannot qualify under v2", ({ harness }) => {
+test("legacy receipts and missing or altered driver telemetry cannot qualify under the current profile", ({ harness }) => {
   const variants = [
     passingReceipt().replaceAll(hash, "042901c8a19a12c1619348d12c199447992037955ef9070e67853cb9f7921549")
       .replace(`benchmark_profile=${profile}\n`, "").replace(clock, "").replace(driverCgroup, ""),
@@ -449,7 +449,7 @@ test("driver-only checks validate timing/cgroup evidence and cannot replace a re
   expect(withAuthority.status).not.toBe(0)
 })
 
-test("v2 retains the fixed seed, ordered complete cycles, helper and App resource limits", ({ harness }) => {
+test("the current profile retains the fixed seed, ordered cycles, helper and App limits", ({ harness }) => {
   const firstRoutes = "http,today,200,0.020000\nhttp,list,200,0.020000"
   for (const raw of [
     passingReceipt().replace('{"synthetic_tasks":2000}', '{"synthetic_tasks":1999}'),

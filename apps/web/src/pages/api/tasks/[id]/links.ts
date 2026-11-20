@@ -1,3 +1,5 @@
+import { boardScopeErrorResponse } from "@lib/board-http"
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import { hasBoardSelection, rejectBoardSelectionInJson, unavailableBoardResponse } from "@domains/tasks/board-availability"
@@ -28,10 +30,10 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /**
  * GET /api/tasks/:id/links — Returns all links for a task (both as source and target).
  */
-export const GET: APIRoute = async ({ params }) => {
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async ({ params }, scope) => {
   try {
     await ensureSchema()
-    const repo = new TaskRepository(getPersistenceClient())
+    const repo = new TaskRepository(getPersistenceClient(), scope)
     const taskId = (await repo.resolveTaskId(params.id!))?.id
     if (!taskId) return apiJson({ outbound: [], inbound: [] })
 
@@ -42,22 +44,24 @@ export const GET: APIRoute = async ({ params }) => {
 
     return apiJson({ outbound, inbound })
   } catch (err) {
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
     logger.log("error", { event: "api.links.get_failed", domain: "tasks", component: "links-api", request_id: "system", message: `GET links failed: ${err}` })
     return apiError("Failed to fetch task links", 500)
   }
-}
+})
 
 /**
  * POST /api/tasks/:id/links — Create a link between two tasks.
  */
-export const POST: APIRoute = async ({ params, request, locals }) => {
+export const POST: APIRoute = withBoardScope({ resource: "task", action: "edit" }, async ({ params, request, locals }, scope) => {
   try {
     const body = await request.json()
     if (hasBoardSelection(body)) return unavailableBoardResponse()
 
     await ensureSchema()
-    const repo = new TaskRepository(getPersistenceClient())
-    const resolved = await repo.resolveTaskId(params.id!)
+    const repo = new TaskRepository(getPersistenceClient(), scope)
+    const resolved = await repo.resolveTaskId(params.id!, "edit")
     const sourceTaskId = resolved?.id ?? params.id!
 
     const { target_task_id, link_type } = body as { target_task_id: string; link_type: string }
@@ -81,7 +85,7 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     if (!resolved) return apiError("Task not found", 404)
     const sourceDenied = await requireAssignedTaskWriteAccess(
       locals.agentToken,
-      (id) => repo.findById(id),
+      (id) => repo.findTaskForCommand(id, "edit"),
       [sourceTaskId],
       "Agent can only modify links for tasks assigned to it",
     )
@@ -116,15 +120,17 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
 
     return apiJson({ id, source_task_id: sourceTaskId, target_task_id, link_type, created_at, created: true }, 201)
   } catch (err) {
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
     logger.log("error", { event: "api.links.post_failed", domain: "tasks", component: "links-api", request_id: locals.requestId ?? "system", message: `POST link failed: ${err}` })
     return apiError("Failed to create task link", 500)
   }
-}
+})
 
 /**
  * DELETE /api/tasks/:id/links?link_id=xxx — Remove a link.
  */
-export const DELETE: APIRoute = async ({ params, request, url, locals }) => {
+export const DELETE: APIRoute = withBoardScope({ resource: "task", action: "edit" }, async ({ params, request, url, locals }, scope) => {
   const requestId = locals.requestId ?? "system"
   try {
     const link_id = url.searchParams.get("link_id")
@@ -136,8 +142,8 @@ export const DELETE: APIRoute = async ({ params, request, url, locals }) => {
     if (boardSelection) return boardSelection
 
     await ensureSchema()
-    const repo = new TaskRepository(getPersistenceClient())
-    const resolved = await repo.resolveTaskId(params.id!)
+    const repo = new TaskRepository(getPersistenceClient(), scope)
+    const resolved = await repo.resolveTaskId(params.id!, "edit")
     if (!resolved) return apiError("Task not found", 404)
     const taskId = resolved.id
 
@@ -145,7 +151,7 @@ export const DELETE: APIRoute = async ({ params, request, url, locals }) => {
     if (!endpoints) {
       const denied = await requireAssignedTaskWriteAccess(
         locals.agentToken,
-        (id) => repo.findById(id),
+        (id) => repo.findTaskForCommand(id, "edit"),
         [taskId],
         "Agent can only modify links for tasks assigned to it",
       )
@@ -154,7 +160,7 @@ export const DELETE: APIRoute = async ({ params, request, url, locals }) => {
     }
     const denied = await requireAssignedTaskWriteAccess(
       locals.agentToken,
-      (id) => repo.findById(id),
+      (id) => repo.findTaskForCommand(id, "edit"),
       [endpoints.source_task_id, endpoints.target_task_id],
       "Agent can only modify links for tasks assigned to it",
     )
@@ -171,7 +177,9 @@ export const DELETE: APIRoute = async ({ params, request, url, locals }) => {
 
     return apiJson({ deleted: true })
   } catch (err) {
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
     logger.log("error", { event: "api.links.delete_failed", domain: "tasks", component: "links-api", request_id: requestId, message: `DELETE link failed: ${err}` })
     return apiError("Failed to delete task link", 500)
   }
-}
+})

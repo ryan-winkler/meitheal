@@ -1,3 +1,4 @@
+import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
 /**
  * Sync Engine — Background sync for offline operations
  *
@@ -10,6 +11,7 @@
  */
 
 import {
+  currentOfflinePartition, assertOfflinePartition, offlinePartitionKey,
   getSyncQueue,
   removeSyncOp,
   incrementRetryCount,
@@ -66,137 +68,92 @@ export function getSyncState(): SyncState {
 /**
  * Process the sync queue — call this from SW sync event or periodic timer.
  */
-export async function processSyncQueue(
-  baseUrl: string = ""
-): Promise<SyncResult> {
-  if (syncState === "syncing") {
-    return { processed: 0, succeeded: 0, failed: 0, conflicts: 0 }
-  }
-
+export async function processSyncQueue(): Promise<SyncResult> {
+  const result: SyncResult = { processed: 0, succeeded: 0, failed: 0, conflicts: 0 }
+  const partition = currentOfflinePartition()
+  if (!partition || !navigator.onLine || syncState === "syncing") return result
   syncState = "syncing"
   emitSyncEvent({ type: "sync-start" })
-
-  const queue = await getSyncQueue()
-  const result: SyncResult = { processed: 0, succeeded: 0, failed: 0, conflicts: 0 }
-
-  for (const op of queue) {
-    result.processed++
-
-    try {
-      const response = await executeOperation(op, baseUrl)
-
-      if (response.ok) {
-        await removeSyncOp(op.id)
-        result.succeeded++
-
-        // Update local store with server response (authoritative timestamps)
-        if (op.operation !== "delete") {
-          const serverData = await response.json() as OfflineTask
-          await putTask({ ...serverData, syncedAt: new Date().toISOString() })
-        }
-      } else if (response.status === 409) {
-        // Conflict: last-write-wins
-        result.conflicts++
-        const serverVersion = await response.json() as OfflineTask
-
-        emitSyncEvent({
-          type: "conflict-resolved",
-          conflict: {
-            entityId: op.entityId,
-            localUpdatedAt: (JSON.parse(op.payload) as Record<string, string>).updatedAt ?? "unknown",
-            serverUpdatedAt: serverVersion.updatedAt,
-          },
-        })
-
-        // Server wins — update local with server data
-        await putTask({ ...serverVersion, syncedAt: new Date().toISOString() })
-        await removeSyncOp(op.id)
-        result.succeeded++
-        // Wait using exponential backoff based on retry count
-        const delay = RETRY_DELAYS_MS[op.retryCount] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1]!
-        log.warn(`op ${op.id} failed, retrying in ${delay}ms...`)
-        emitSyncEvent({
-          type: "sync-error",
-          error: `Network unstable. Retrying in ${delay / 1000}s...`,
-        })
-        await new Promise((r) => setTimeout(r, delay))
-        // Break out of the current queue processing so we don't hammer the offline network
-        break;
-      } else {
-        // Max retries exceeded — dead letter
-        log.error(`Max retries exceeded for ${op.id}, removing from queue`)
-        await removeSyncOp(op.id)
+  try {
+    const queue = await getSyncQueue(partition)
+    for (const op of queue) {
+      assertOfflinePartition(partition)
+      if (!op.partition || offlinePartitionKey(op.partition) !== offlinePartitionKey(partition)) {
         result.failed++
+        emitSyncEvent({ type: "sync-error", error: "An offline edit has no matching original account and Board. It remains saved for review." })
+        break
       }
-    } catch (error) {
-      result.failed++
-      if (op.retryCount < MAX_RETRIES) {
-        await incrementRetryCount(op.id)
-        const delay = RETRY_DELAYS_MS[op.retryCount] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1]!
-        log.warn(`op ${op.id} failed, retrying in ${delay}ms...`)
-        emitSyncEvent({
-          type: "sync-error",
-          error: `Network unstable. Retrying in ${delay / 1000}s...`,
-        })
-        await new Promise((r) => setTimeout(r, delay))
-        break; // Break queue if the network is completely down
-      } else {
-        await removeSyncOp(op.id)
-        emitSyncEvent({
-          type: "sync-error",
-          error: `Sync failed permanently for operation ${op.id}.`,
-        })
-        log.error(`Operation ${op.id} failed:`, error)
+      result.processed++
+      try {
+        const response = await executeOperation(op)
+        assertOfflinePartition(partition)
+        if (!response.ok) {
+          result.failed++
+          if (response.status === 409) {
+            result.conflicts++
+            emitSyncEvent({ type: "sync-error", error: "An offline edit conflicts with current work. Both versions are kept for review." })
+          } else if ([401, 403, 404].includes(response.status)) {
+            emitSyncEvent({ type: "sync-error", error: "The original Board or action is unavailable. Offline edits remain saved." })
+          } else {
+            await incrementRetryCount(op.id, partition)
+            emitSyncEvent({ type: "sync-error", error: "The offline edit is unconfirmed and remains saved. Reconnect before checking it again." })
+          }
+          break
+        }
+        if (op.operation !== "delete") {
+          const task = await response.json() as Record<string, unknown>
+          assertOfflinePartition(partition)
+          // A write-only acknowledgement is never a full offline task snapshot.
+          if (typeof task.title === "string" && typeof task.id === "string") {
+            const instant = (value: unknown) => typeof value === "number" ? new Date(value).toISOString() : String(value ?? "")
+            await putTask({
+              id: task.id, title: task.title, description: String(task.description ?? ""),
+              status: String(task.status ?? "pending") as OfflineTask["status"], priority: Number(task.priority ?? 3),
+              dueDate: typeof task.due_date === "string" ? task.due_date : null,
+              updatedAt: instant(task.updated_at), createdAt: instant(task.created_at), syncedAt: new Date().toISOString(),
+              areaId: typeof task.area_id === "string" ? task.area_id : null, labels: typeof task.labels === "string" ? task.labels : null,
+              kind: String(task.task_kind ?? "standard_action"), sortOrder: Number(task.kanban_position ?? 0),
+            }, partition)
+          }
+        }
+        await removeSyncOp(op.id, partition)
+        result.succeeded++
+      } catch {
+        result.failed++
+        // An uncertain write is retained with the same operation ID. Never report
+        // a conflict as a successful last-write-wins merge or drop an edit.
+        assertOfflinePartition(partition)
+        await incrementRetryCount(op.id, partition)
+        emitSyncEvent({ type: "sync-error", error: "The offline edit is unconfirmed. Its original operation remains saved." })
+        break
       }
     }
+  } finally {
+    syncState = result.failed ? "error" : "idle"
+    emitSyncEvent({ type: "sync-complete", result })
   }
-
-  syncState = result.failed > 0 ? "error" : "idle"
-  emitSyncEvent({ type: "sync-complete", result })
   return result
 }
 
-/**
- * Execute a single sync operation against the server API.
- */
-async function executeOperation(
-  op: PendingSyncOperation,
-  baseUrl: string
-): Promise<Response> {
-  if (op.table !== "tasks") {
-    return new Response(null, { status: 404 })
+async function executeOperation(op: PendingSyncOperation): Promise<Response> {
+  assertOfflinePartition(op.partition)
+  const context = currentTaskApiContext()
+  if (!context || context.actorKey !== op.partition.actorKey || context.boardId !== op.partition.boardId) {
+    throw new Error("The original offline account and Board are unavailable.")
   }
-  const url = `${baseUrl}/api/tasks`
-  const entityId = encodeURIComponent(op.entityId)
-  const payload = JSON.parse(op.payload) as Record<string, unknown>
+  if (op.table !== "tasks") return new Response(null, { status: 404 })
+  const url = op.operation === "create" ? "/api/tasks" : `/api/tasks/${encodeURIComponent(op.entityId)}`
+  const headers = taskApiHeaders(context, { "content-type": "application/json" })
+  if (op.operation === "create") headers.set("Idempotency-Key", op.id)
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
-
   try {
-    switch (op.operation) {
-      case "create":
-        return await fetch(url, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(payload),
-          signal: controller.signal,
-        })
-      case "update":
-        return await fetch(`${url}/${entityId}`, { // nosemgrep
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(payload),
-          signal: controller.signal,
-        })
-      case "delete":
-        return await fetch(`${url}/${entityId}`, { // nosemgrep
-          method: "DELETE",
-          signal: controller.signal,
-        })
-    }
-  } finally {
-    clearTimeout(timeout)
-  }
+    return await fetch(url, {
+      method: op.operation === "create" ? "POST" : op.operation === "update" ? "PUT" : "DELETE",
+      headers, ...(op.operation === "delete" ? {} : { body: op.payload }),
+      signal: controller.signal, cache: "no-store", redirect: "error", mode: "same-origin",
+    })
+  } finally { clearTimeout(timeout) }
 }
 
 // --- Background Sync Registration ---

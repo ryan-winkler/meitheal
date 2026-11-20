@@ -1,4 +1,4 @@
-import { execFileSync, fork } from "node:child_process"
+import { execFileSync, fork } from "../helpers/isolated-process"
 import { createHash } from "node:crypto"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
@@ -6,6 +6,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, test, type APIRequestContext } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the built app and an isolated ingress fixture")
 
@@ -44,7 +45,8 @@ test.afterAll(async () => {
 
 test("Kanban color picker is visible, saves, reloads, rejects failed changes and clears", async ({ browser }) => {
   const base = origin + prefix
-  const created = await request.post(base + "/api/tasks", { data: { title: "Household card color fixture", status: "active" } })
+  const headers = await currentBoardWriteHeaders(request, "household", { origin }, base)
+  const created = await request.post(base + "/api/tasks", { headers, data: { title: "Household card color fixture", status: "active" } })
   expect(created.status()).toBe(201)
   const { id } = await created.json()
   const context = await browser.newContext({ viewport: { width: 320, height: 844 }, serviceWorkers: "block", reducedMotion: "reduce", extraHTTPHeaders: {} })
@@ -83,18 +85,22 @@ test("Kanban color picker is visible, saves, reloads, rejects failed changes and
     await expect(color).toHaveAttribute("data-color", "")
   } finally {
     await context.close()
-    await request.delete(base + `/api/tasks/${id}`)
+    await request.delete(base + `/api/tasks/${id}`, { headers })
   }
 })
 
 test("legacy Projects stays inside ingress and reaches Boards", async ({ browser }) => {
-  for (const route of ["/projects", "/projects/no-such-project", "/areas"]) {
+  for (const route of ["/projects", "/areas"]) {
     const response = await request.get(origin + prefix + route, { maxRedirects: 0 })
     expect(response.status()).toBe(302)
     expect(response.headers().location).toMatch(new RegExp("^" + prefix + "/"))
   }
-  const context = await browser.newContext({ extraHTTPHeaders: { cookie: "feedback-fixture=admin" } })
+  const missing = await request.get(origin + prefix + "/projects/no-such-project", { maxRedirects: 0 })
+  expect(missing.status()).toBe(404)
+  expect(missing.headers()["cache-control"]).toContain("no-store")
+  const context = await browser.newContext({ extraHTTPHeaders: {} })
   try {
+    await context.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
     const page = await context.newPage()
     const response = await page.goto(origin + prefix + "/projects")
     expect(response!.status()).toBe(200)
@@ -235,8 +241,10 @@ test("Board creation distinguishes access pending from an unconfirmed response",
       await form.getByRole("combobox").selectOption("chores")
       await form.getByRole("button", { name: "Create Board" }).click()
       await expect(form.getByRole("status")).toContainText(pending
-        ? "Its access is still being verified" : "Could not confirm whether the Board was created")
-      await expect(form.getByRole("button", { name: "Create Board" })).toBeHidden()
+        ? "Access is still being verified" : "Could not confirm whether the Board was created")
+      const submit = form.locator('button[type="submit"]')
+      if (pending) await expect(submit).toBeDisabled()
+      else await expect(submit).toBeHidden()
     }
   } finally { await context.close() }
 })

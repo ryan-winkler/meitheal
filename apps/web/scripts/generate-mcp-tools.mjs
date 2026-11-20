@@ -21,6 +21,7 @@ const OUTPUT_PATH = resolve(SCRIPT_DIR, "../src/generated/mcp-tools.json")
 
 /** Must match EXCLUDED_OPS in apps/web/src/pages/api/mcp.ts */
 export const EXCLUDED_OPS = new Set([
+  "getAgentContext", "getWorkDestinations", "saveWorkDestination",
   "reviewTaskProposal", "acceptTaskProposal",
   "createRule", "replaceRules", "updateRule", "deleteRule", "restoreRuleDefaults",
   "createFramework", "updateFramework", "deleteFramework",
@@ -29,7 +30,7 @@ export const EXCLUDED_OPS = new Set([
   "taskInactivity",
   "readCalendarAgenda",
   "mcpEndpoint",
-  "getA2AAgentCard", "sendA2AMessage",
+  "getA2AAgentCard", "sendA2AMessage", "getA2ATask",
   "healthPing",
   "getRuntimeDiagnostics",
   "subscribeSSE",

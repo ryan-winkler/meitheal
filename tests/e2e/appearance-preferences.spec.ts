@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test"
 import { APPEARANCE_PREFERENCES } from "../../apps/web/src/lib/appearance-preferences"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.describe("Appearance preferences", () => {
@@ -203,7 +204,7 @@ test.describe("Appearance preferences", () => {
   })
 
   test("expanded Boards and Areas survive More, wide navbar and phone drawer handoffs", async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const areaResponse = await request.post("/api/areas", { headers, data: { name: "Resize Area" } })
     expect(areaResponse.status()).toBe(201)
     const { id: areaId } = await areaResponse.json()
@@ -225,8 +226,9 @@ test.describe("Appearance preferences", () => {
       const more = row.locator("[data-nav-overflow-more]")
       const boards = row.locator('[data-sidebar-group="boards"]')
       const boardToggle = boards.locator("[data-sidebar-boards-toggle]")
-      const areas = boards.locator("#sidebar-areas-group")
-      const project = boards.locator(`a[data-project-id="${projectId}"]`)
+      const areaToggle = boards.getByRole("button", { name: "Areas in Household", exact: true })
+      const projectToggle = boards.getByRole("button", { name: "Projects in Resize Area", exact: true })
+      const project = boards.getByRole("link", { name: "Resize Project", exact: true })
       const arrowTo = async () => {
         for (let step = 0; step < 20; step++) {
           if (await project.evaluate(element => element === document.activeElement)) break
@@ -237,8 +239,10 @@ test.describe("Appearance preferences", () => {
       await more.locator(":scope > summary").press("ArrowDown")
       await boardToggle.click()
       await expect(boardToggle).toHaveAttribute("aria-expanded", "true")
-      await areas.locator(":scope > summary").click()
-      await expect(areas).toHaveAttribute("open", "")
+      await areaToggle.click()
+      await expect(areaToggle).toHaveAttribute("aria-expanded", "true")
+      await projectToggle.click()
+      await expect(projectToggle).toHaveAttribute("aria-expanded", "true")
       await more.locator(":scope > summary").press("ArrowDown")
       await arrowTo()
 
@@ -246,14 +250,16 @@ test.describe("Appearance preferences", () => {
       await page.setViewportSize({ width: 2200, height: 900 })
       await expect(more).toBeHidden()
       await expect(project).toBeFocused()
-      await expect(areas).toHaveAttribute("open", "")
+      await expect(areaToggle).toHaveAttribute("aria-expanded", "true")
+      await expect(projectToggle).toHaveAttribute("aria-expanded", "true")
       await page.setViewportSize({ width: 320, height: 900 })
       await expect(row).not.toHaveAttribute("data-nav-overflow-active", "")
-      await expect(areas).toHaveAttribute("open", "")
+      await expect(areaToggle).toHaveAttribute("aria-expanded", "true")
+      await expect(projectToggle).toHaveAttribute("aria-expanded", "true")
       await expect(boardToggle).toHaveAttribute("aria-expanded", "true")
       await expect(page.locator("#sidebar")).toHaveClass(/open/)
       await expect(project).toBeFocused()
-      await expect(boards.locator('[data-sidebar-household] > a')).toBeVisible()
+      await expect(boards.getByRole("link", { name: "Household", exact: true })).toBeVisible()
       await expect(project).toBeVisible()
       await expect(project).not.toHaveAttribute("tabindex", "-1")
     } finally {

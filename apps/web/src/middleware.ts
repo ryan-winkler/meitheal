@@ -1,5 +1,6 @@
-import { householdBoardIsActive } from "./domains/tasks/persistence/named-board-repository"
-import { householdWorkRoute } from "./lib/household-work-route"
+import { admitBoardResponse } from "./lib/board-view"
+import { continuityRequestAllowed } from "./lib/continuity-request-policy"
+import { currentBoardGrantRevision } from "./domains/tasks/persistence/board-grant-fence"
 import { getOrganizationAvailability } from "./lib/organization-availability"
 import { withOrganizationAvailability } from "./lib/organization-request-context"
 import { organizationRouteAvailable } from "./lib/organization-route-access"
@@ -231,7 +232,8 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
     routePattern === "/api/organization-features" || routePattern === "/api/ha/areas" ||
     routePattern.endsWith("/home-assistant-area") ||
     /^\/(?:planning|today|upcoming|habits|areas|projects)(?:\/|$)/.test(routePattern)
-  const privateTaskRoute = privateOrganizationRoute || pinRoute || draftRoute || inactivityApi || inactivityPage || mentionRoute || labelCleanup
+  const scopedWorkApi = /^\/api\/(?:tasks|lanes|areas|projects|goals|templates|habits|labels|pillars|task-drafts|task-pins|task-inactivity|reminders|saved-filters|mention-inbox|pomodoro|review|gamification)(?:\/|$)/.test(url.pathname)
+  const privateTaskRoute = scopedWorkApi || privateOrganizationRoute || pinRoute || draftRoute || inactivityApi || inactivityPage || mentionRoute || labelCleanup
   if (!privateTaskRoute && !onlineReadRoute && !taskHistoryRoute && !participantRoute && !privatePillars && !boardPlanningRoute) {
     return handleRequest(context, next, requestUrl)
   }
@@ -508,21 +510,20 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     databaseAvailable = false
   }
 
-  if (databaseAvailable && (householdWorkRoute(url.pathname, method) || householdWorkRoute(routePattern, method)) &&
-      !await householdBoardIsActive(getPersistenceClient())) {
-    const detail = "Household Board is deleted. Restore it from Boards to resume shared work."
-    if (!url.pathname.startsWith("/api/") && (method === "GET" || method === "HEAD")) {
-      return new Response(null, { status: 303, headers: {
-        location: `${ingressPath || ""}/boards?notice=household-deleted`, "cache-control": "private, no-store",
-      } })
-    }
-    return apiProblem({ status: 409, detail, extraHeaders: { "cache-control": "private, no-store" } })
+  // Unknown continuity cannot expose restored work data through route aliases,
+  // search, exports, agents or cached deliveries. Only bounded diagnostics survive.
+  const continuityLocked = !databaseAvailable || !await currentBoardGrantRevision(getPersistenceClient())
+  if (databaseAvailable && continuityLocked &&
+      !continuityRequestAllowed(url.pathname, routePattern)) {
+    return apiProblem({ status: 503,
+      detail: "Installation continuity is locked. Use the current operator checkpoint recovery procedure.",
+      extraHeaders: { "cache-control": "private, no-store" } })
   }
 
   // Lazy-init only after accepting the caller. Do not block on the HA connection.
-  if (databaseAvailable) {
+  if (databaseAvailable && !continuityLocked) {
     initHAIntegrations().catch(() => {})
-    if (method === "GET" && (!isHealthCheck || !supervisorMode || trustedLocalCaller)) startInactivityScheduler()
+    if (method === "GET" && (!isHealthCheck || !supervisorMode || trustedLocalCaller)) startInactivityScheduler().catch(() => {})
   }
 
   // Load regional settings for SSR (cached for 60s to avoid DB per-request)
@@ -614,11 +615,12 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     }
   }
 
-  // Retirement may have committed while an already-admitted legacy mutation was running.
-  if (databaseAvailable && response.status >= 400 && url.pathname.startsWith("/api/") &&
-      (householdWorkRoute(url.pathname, method) || householdWorkRoute(routePattern, method)) &&
-      !await householdBoardIsActive(getPersistenceClient())) {
-    response = apiProblem({ status: 409, detail: "Household Board is deleted. Restore it from Boards to resume shared work.",
+  // A request admitted while current must not return governed data after authority
+  // changes or disappears during an asynchronous handler.
+  if (databaseAvailable && !continuityRequestAllowed(url.pathname, routePattern) &&
+      !await currentBoardGrantRevision(getPersistenceClient())) {
+    response = apiProblem({ status: 503,
+      detail: "Installation continuity is locked. Use the current operator checkpoint recovery procedure.",
       extraHeaders: { "cache-control": "private, no-store" } })
   }
 
@@ -635,6 +637,10 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     // without relying solely on window.__ingress_path injection.
     response.headers.set("x-ingress-path", ingressPath);
   }
+
+  response = await admitBoardResponse(request, response,
+    !continuityRequestAllowed(url.pathname, routePattern) &&
+    (response.headers.get("content-type") ?? "").includes("text/html"))
 
   // Service-Worker-Allowed: let SW claim scope broader than its script path.
   // Required for ingress: SW at /api/hassio_ingress/{token}/sw.js needs to

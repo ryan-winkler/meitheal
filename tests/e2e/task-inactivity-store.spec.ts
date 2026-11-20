@@ -1,4 +1,7 @@
-import { execFileSync, type ExecFileSyncOptions } from "node:child_process"
+import { currentBoardScope } from "../helpers/current-board-scope"
+import { readWorkDestinations } from "../../apps/web/src/domains/tasks/integration-destinations"
+import { resolveIntegrationScope } from "../../apps/web/src/domains/tasks/board-automation"
+import { execFileSync, type ExecFileSyncOptions } from "../helpers/isolated-process"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -6,7 +9,7 @@ import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
 import { expect, test as base } from "@playwright/test"
 import { DATABASE_SCHEMA_VERSION } from "../../apps/web/scripts/database-client.mjs"
-import { ensureSchema, getPersistenceClient, getSchemaVersion, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient, getSchemaVersion, resetPersistenceForTests } from "../helpers/persistence-fixture"
 import { inactivityDayMs as day, inactivityRuleActor } from "../../apps/web/src/domains/tasks/persistence/task-inactivity-query"
 import { TaskInactivityRepository } from "../../apps/web/src/domains/tasks/persistence/task-inactivity-repository"
 import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
@@ -15,6 +18,14 @@ import { sweepInactiveTasks } from "../../apps/web/src/domains/tasks/task-inacti
 type Database = ReturnType<typeof getPersistenceClient>
 const actor = { id: inactivityRuleActor, type: "system", requestId: "inactivity-store-spec" } as const
 const now = Date.now() + 1000
+
+async function automaticTasks(db: Database) {
+  const binding = (await readWorkDestinations(db))?.bindings.find(value => value.purpose === "builtin.inactivity.defer")
+  if (!binding) throw new Error("Expected approved inactivity observer")
+  const resolved = await resolveIntegrationScope(db, binding.id, binding.generation, { resource: "task", action: "edit" })
+  if (!resolved.ok) throw new Error(resolved.errorCode)
+  return new TaskRepository(db, resolved.value.scope)
+}
 
 const test = base.extend<{ db: Database; inactivity: TaskInactivityRepository }>({
   db: async ({}, use) => {
@@ -32,7 +43,7 @@ const test = base.extend<{ db: Database; inactivity: TaskInactivityRepository }>
       await rm(dir, { recursive: true, force: true })
     }
   },
-  inactivity: async ({ db }, use) => { await use(new TaskInactivityRepository(db)) },
+  inactivity: async ({ db }, use) => { await use(new TaskInactivityRepository(db, await currentBoardScope(db))) },
 })
 
 function seed(db: Database, id: string, when: string | number, area = "default", status = "pending") {
@@ -143,7 +154,7 @@ test("protects scheduled or routine work and rechecks comment and policy races",
 
   const candidates = new Map((await inactivity.candidates(now)).map(candidate => [candidate.id, candidate]))
   expect([...candidates.keys()]).toEqual(["ascii-space", "date-added", "new-comment", "policy-race"])
-  const tasks = new TaskRepository(db)
+  const tasks = new TaskRepository(db, await currentBoardScope(db))
   await db.execute("INSERT INTO comments (task_id, content) VALUES ('new-comment', 'A recent comment')")
   await db.execute("UPDATE comments SET content = 'An edit' WHERE task_id = 'new-comment'")
   await db.execute("DELETE FROM comments WHERE task_id = 'new-comment'")
@@ -165,7 +176,7 @@ test("sweeps at most 25, keeps one audit per move, and restarts the clock on Res
   expect(await sweepInactiveTasks(db, now)).toBe(25)
   expect(await sweepInactiveTasks(db, now + 1)).toBe(1)
   expect(await sweepInactiveTasks(db, now + 2)).toBe(0)
-  const tasks = new TaskRepository(db)
+  const tasks = new TaskRepository(db, await currentBoardScope(db))
   expect((await tasks.findDeferredPage(1)).tasks.every(task => task.automatic)).toBe(true)
   const deferred = await tasks.findById("card-00")
   expect(deferred?.status).toBe("active")
@@ -229,7 +240,7 @@ test("keeps active tasks with open prerequisites on the board, including depende
   expect(candidate.id).toBe("active-task")
   await db.execute(`INSERT INTO task_links (source_task_id, target_task_id, link_type, created_at)
     VALUES ('prerequisite', 'active-task', 'blocks', ${then})`)
-  expect(await new TaskRepository(db).setDeferral(candidate.id, true, { ...candidate, inactivityNow: now }, actor))
+  expect(await (await automaticTasks(db)).setDeferral(candidate.id, true, { ...candidate, inactivityNow: now }, actor))
     .toEqual({ ok: false, errorCode: "ineligible" })
   expect((await preview(inactivity)).total).toBe(0)
   expect(await sweepInactiveTasks(db, now)).toBe(0)
@@ -309,7 +320,7 @@ test("qualifying transitions and verified multi-person comment bursts record a s
   await setPolicy(inactivity, null, 30)
   await seed(db, "shared", now - 20 * day)
   const marker = async () => (await db.execute("SELECT last_activity_spike_at AS value FROM tasks WHERE id = 'shared'")).rows[0]?.value
-  const repo = new TaskRepository(db)
+  const repo = new TaskRepository(db, await currentBoardScope(db))
   expect(await marker()).toBeNull()
   await repo.addComment("shared", "First verified comment", "Alice", "verified-one", true)
   await repo.addComment("shared", "Second from the same person", "Alice", "verified-one", true)

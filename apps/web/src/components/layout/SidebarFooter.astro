@@ -1,4 +1,6 @@
 ---
+import { resolveBoardPageScope } from "@lib/board-http"
+import { readBoardNavigationContext } from "@lib/board-workspace"
 import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
 import Icon from "../ui/Icon.astro";
@@ -7,11 +9,14 @@ export interface Props {
   locale: Locale;
 }
 const { locale } = Astro.props;
+const scoped = await resolveBoardPageScope(Astro).catch(() => null)
+const boardId = scoped?.ok ? scoped.scope.boardId : readBoardNavigationContext(Astro.url)?.boardId
+const settingsHref = boardId ? `/settings?board_id=${encodeURIComponent(boardId)}` : "/settings"
 ---
 
 <div class="sidebar-footer mt-auto">
   <a
-    href="/settings"
+    href={settingsHref}
     data-astro-prefetch="viewport"
     class="nav-link w-full"
     data-page="settings"

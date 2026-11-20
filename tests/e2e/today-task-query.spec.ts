@@ -6,9 +6,19 @@ import {
   ensureSchema,
   getPersistenceClient,
   resetPersistenceForTests,
-} from "../../apps/web/src/domains/tasks/persistence/store"
+} from "../helpers/persistence-fixture"
 import { getTasksForView, getTodayTaskCounts, getTodayTaskRows, todayDueSection } from "../../apps/web/src/lib/task-queries"
 import { calendarToday, formatRelativeDue } from "../../apps/web/src/lib/date"
+
+import { BoardAccessService } from "../../apps/web/src/domains/tasks/board-access-service"
+import { registerVerifiedPrincipal } from "../../apps/web/src/domains/tasks/board-scope"
+
+async function householdScope(db: ReturnType<typeof getPersistenceClient>) {
+  const principal = registerVerifiedPrincipal({ kind: "ha_user", id: "today-fixture" }, { administrator: true, expiresAt: Date.now() + 60_000 })
+  const access = await new BoardAccessService(db).resolve(principal, "household", { resource: "task", action: "read" })
+  if (!access.ok) throw new Error(access.errorCode)
+  return access.scope
+}
 
 for (const [timezone, midnight] of [
   ["Europe/Dublin", "2031-06-30T23:00:00.000Z"],
@@ -30,6 +40,7 @@ for (const [timezone, midnight] of [
     try {
       await ensureSchema()
       const client = getPersistenceClient()
+      const scope = await householdScope(client)
       for (const [id, due] of [["date-only", today], ["timed", timedDue], ["tomorrow", tomorrow]] as const) {
         await client.execute({
           sql: `INSERT INTO tasks
@@ -40,7 +51,7 @@ for (const [timezone, midnight] of [
       }
       const read = async (now: Date) => {
         const day = calendarToday(timezone, now)
-        const result = await getTodayTaskRows(day, false, timezone, now)
+        const result = await getTodayTaskRows(day, false, timezone, now, scope)
         return new Map(result.tasks.map(task => [task.id, {
           overdue: task.is_overdue,
           section: todayDueSection(task.due_date!, day, timezone),
@@ -86,6 +97,7 @@ test("Today reads full queue counts without materializing hidden rows", async ()
   try {
     await ensureSchema()
     const client = getPersistenceClient()
+    const scope = await householdScope(client)
     async function addTask(id: string, options: {
       status?: string
       due?: string
@@ -109,7 +121,7 @@ test("Today reads full queue counts without materializing hidden rows", async ()
     await addTask("complete-start", { status: "complete", updated: dayStart })
     await addTask("complete-before", { status: "complete", updated: dayStart - 1 })
     await addTask("complete-next-day", { status: "complete", updated: dayStart + 86_400_000 })
-    await expect(getTodayTaskRows(date, false)).resolves.toEqual({
+    await expect(getTodayTaskRows(date, false, undefined, undefined, scope)).resolves.toEqual({
       completedTasks: [
         { id: "complete-ms", title: "complete-ms" },
         { id: "complete-iso", title: "complete-iso" },
@@ -126,9 +138,9 @@ test("Today reads full queue counts without materializing hidden rows", async ()
     await addTask("rice-first", { payload })
     await addTask("rice-second", { payload })
     await addTask("archived", { status: "archived" })
-    const baselineRows = await getTodayTaskRows(date, true)
-    const baselineCounts = await getTodayTaskCounts(new Date(now), undefined, true)
-    const baselineView = await getTasksForView()
+    const baselineRows = await getTodayTaskRows(date, true, undefined, undefined, scope)
+    const baselineCounts = await getTodayTaskCounts(new Date(now), undefined, true, scope)
+    const baselineView = await getTasksForView({}, scope)
     await client.batch([
       "INSERT INTO task_boards (id, name, visibility, ticket_prefix, created_at, updated_at) VALUES ('work', 'Work', 'restricted', 'WORKABCD', 1, 1)",
       "INSERT INTO kanban_lanes (id, key, label, board_id, created_at, updated_at) VALUES ('work-pending', 'pending', 'Pending', 'work', 1, 1)",
@@ -141,12 +153,12 @@ test("Today reads full queue counts without materializing hidden rows", async ()
         VALUES ('private-work-done', 'Private completed Work ticket', 'complete', '__meitheal_no_area__',
           'work', 'work-pending', 'WORKABCD-2', 'work-done-key', 'work-done-req', ?, ?)`, args: [now, now] },
     ], "write")
-    expect(await getTodayTaskRows(date, true)).toEqual(baselineRows)
-    expect(await getTodayTaskCounts(new Date(now), undefined, true)).toEqual(baselineCounts)
-    expect(await getTasksForView()).toEqual(baselineView)
-    const full = await getTasksForView()
-    const collapsed = await getTodayTaskRows(date, false)
-    const expanded = await getTodayTaskRows(date, true)
+    expect(await getTodayTaskRows(date, true, undefined, undefined, scope)).toEqual(baselineRows)
+    expect(await getTodayTaskCounts(new Date(now), undefined, true, scope)).toEqual(baselineCounts)
+    expect(await getTasksForView({}, scope)).toEqual(baselineView)
+    const full = await getTasksForView({}, scope)
+    const collapsed = await getTodayTaskRows(date, false, undefined, undefined, scope)
+    const expanded = await getTodayTaskRows(date, true, undefined, undefined, scope)
 
     expect(expanded.tasks).toEqual(full.tasks.filter(task => !task.is_done && task.status !== "archived"))
     expect(collapsed.tasks.map(task => [task.id, task.rice])).toEqual([
@@ -166,13 +178,13 @@ test("Today reads full queue counts without materializing hidden rows", async ()
       args: [now, now],
     })
     await addTask("pinned-overdue", { favorite: 1, due: "2026-11-08" })
-    await expect(getTodayTaskCounts(new Date(now))).resolves.toEqual({
+    await expect(getTodayTaskCounts(new Date(now), undefined, false, scope)).resolves.toEqual({
       dueToday: 0, completedToday: 3, carriedForward: 121, remaining: 123, completionPercent: 2,
     })
 
     await test.step("a failed Today read rejects", async () => {
       await client.execute("ALTER TABLE tasks RENAME COLUMN description TO unavailable_description")
-      await expect(getTodayTaskRows(date, false)).rejects.toThrow(/no such column: description/)
+      await expect(getTodayTaskRows(date, false, undefined, undefined, scope)).rejects.toThrow(/no such column: (?:work_task\.)?description/)
     })
   } finally {
     resetPersistenceForTests()

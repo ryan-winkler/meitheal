@@ -24,7 +24,7 @@ except ModuleNotFoundError as error:
     )
 
 from custom_components.meitheal.api import MeithealApi
-from custom_components.meitheal.const import DOMAIN
+from custom_components.meitheal.const import CONF_API_TOKEN, CONF_BOARD_ID, DOMAIN
 from custom_components.meitheal.coordinator import MeithealCoordinator
 from custom_components.meitheal.llm_api import async_register_llm_api
 
@@ -59,19 +59,37 @@ async def async_call(
     )
 
 
+def business_api(native_human_transport, business):
+    """Keep business assertions isolated while actual Core/Supervisor authorization runs.
+
+    Bootstrap metadata/proof uses production HTTP transport. Only task business
+    responses are doubled here; test_board_context covers actual request headers.
+    """
+    api = native_human_transport.make_api()
+    original = api.async_request
+    async def request(method, path, **kwargs):
+        if path == "/api/agent-context":
+            return await original(method, path, **kwargs)
+        return await business.async_request(method, path, **kwargs)
+    api.async_request = request
+    return api
+
+
 async def test_optional_registry_follows_entry_lifecycle(
     hass: HomeAssistant,
     hass_admin_user: User,
     aioclient_mock: AiohttpClientMocker,
+    native_human_transport,
 ) -> None:
     """Core loads ordinary services on both versions and removes the optional API."""
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={CONF_HOST: "tasks.example.test", CONF_PORT: 443, CONF_SSL: True},
+        data={CONF_HOST: "local-meitheal", CONF_PORT: 3000, CONF_SSL: False, CONF_API_TOKEN: "mth_" + "a" * 64, CONF_BOARD_ID: "work"},
+        version=2,
     )
     entry.add_to_hass(hass)
-    aioclient_mock.get("https://tasks.example.test/api/tasks", json={"tasks": []})
-    aioclient_mock.get("https://tasks.example.test/api/gamification", status=403)
+    aioclient_mock.get(native_human_transport.origin + "/api/tasks", json={"tasks": []})
+    aioclient_mock.get(native_human_transport.origin + "/api/gamification", status=403)
     assert await hass.config_entries.async_setup(entry.entry_id)
     assert hass.services.has_service(DOMAIN, "create_task")
 
@@ -89,7 +107,7 @@ async def test_optional_registry_follows_entry_lifecycle(
 
 
 @pytest.fixture
-def registered_entries(hass: HomeAssistant):
+def registered_entries(hass: HomeAssistant, native_human_transport):
     """Provide distinct loaded entries to verify routing without changing the manifest."""
     entries = []
     for label in ("entry-a", "entry-b"):
@@ -100,7 +118,7 @@ def registered_entries(hass: HomeAssistant):
             {"sections": [{"id": "tasks", "items": [{"id": label, "title": label}]}]},
             {"id": label, "title": label, "description": "Fixture", "private": "omit"},
         ]
-        entry.runtime_data = MeithealCoordinator(hass, client)
+        entry.runtime_data = MeithealCoordinator(hass, business_api(native_human_transport, client))
         unregister = async_register_llm_api(hass, entry)
         assert unregister is not None
         entries.append((entry, client, unregister))
@@ -175,7 +193,7 @@ async def test_cached_tools_recheck_user_entry_and_arguments(
             await async_call(instance, name, arguments)
 
     original_coordinator = entry.runtime_data
-    entry.runtime_data = MeithealCoordinator(hass, client)
+    entry.runtime_data = MeithealCoordinator(hass, original_coordinator.api)
     with pytest.raises(HomeAssistantError, match="Meitheal entry is unavailable"):
         await async_call(instance, SEARCH, {"query": "fixture"})
     entry.runtime_data = original_coordinator
@@ -203,6 +221,7 @@ async def test_llm_write_tools_send_verified_origin_headers(
     platform: str,
     assistant: str,
     expected_name: str,
+    native_human_transport,
 ) -> None:
     """Create and complete LLM tools attach verified conversation-agent provenance headers."""
     entry = MockConfigEntry(domain=DOMAIN, title="llm-origin", state=ConfigEntryState.LOADED)
@@ -212,7 +231,7 @@ async def test_llm_write_tools_send_verified_origin_headers(
         {"id": "task-created"},
         {"id": "task-created", "status": "done"},
     ]
-    entry.runtime_data = MeithealCoordinator(hass, client)
+    entry.runtime_data = MeithealCoordinator(hass, business_api(native_human_transport, client))
     entry.runtime_data.async_request_refresh = AsyncMock()
     unregister = async_register_llm_api(hass, entry)
     assert unregister is not None
@@ -244,19 +263,23 @@ async def test_intent_origin_scope_attaches_assist_headers_over_http(
     hass: HomeAssistant,
     hass_admin_user: User,
     aioclient_mock: AiohttpClientMocker,
+    native_human_transport,
 ) -> None:
     """Custom intents attach Home Assistant Assist origin headers via MeithealApi without changing coordinator args."""
     from custom_components.meitheal import intents
     from homeassistant.helpers import intent
 
-    origin = "https://tasks.example.test"
+    origin = native_human_transport.origin
     token = "mth_" + "c" * 64
     aioclient_mock.get(f"{origin}/api/tasks", json={"tasks": []})
     aioclient_mock.get(f"{origin}/api/gamification", status=403)
-    aioclient_mock.post(f"{origin}/api/tasks", json={"id": "assist-task-1"})
+    aioclient_mock.post(native_human_transport.proxy + "/api/tasks", json={"id": "assist-task-1"})
+    aioclient_mock.get(native_human_transport.proxy + "/api/tasks", json={"tasks": []})
+    aioclient_mock.get(native_human_transport.proxy + "/api/gamification", status=403)
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={CONF_HOST: "tasks.example.test", CONF_PORT: 443, CONF_SSL: True, "api_token": token},
+        data={CONF_HOST: "local-meitheal", CONF_PORT: 3000, CONF_SSL: False, CONF_API_TOKEN: token, CONF_BOARD_ID: "work"},
+        version=2,
     )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -274,7 +297,7 @@ async def test_intent_origin_scope_attaches_assist_headers_over_http(
     post_calls = [
         headers
         for method, url, _, headers in aioclient_mock.mock_calls
-        if method == "POST" and str(url) == f"{origin}/api/tasks"
+        if method == "POST" and str(url) == native_human_transport.proxy + "/api/tasks"
     ]
     assert len(post_calls) == 1
     assert post_calls[0]["X-Meitheal-Origin-Kind"] == "conversation_agent"
@@ -284,13 +307,13 @@ async def test_intent_origin_scope_attaches_assist_headers_over_http(
 
 @pytest.mark.skipif(not NATIVE_ADMIN, reason="Core does not provide an admin-aware registry")
 async def test_manage_api_reads_and_changes_tasks_for_the_caller(
-    hass: HomeAssistant, hass_admin_user: User
+    hass: HomeAssistant, hass_admin_user: User, native_human_transport
 ) -> None:
     """The full API lists the caller's tasks, answers, updates, hands off and completes."""
     entry = MockConfigEntry(domain=DOMAIN, title="manage", state=ConfigEntryState.LOADED)
     entry.add_to_hass(hass)
     client = AsyncMock(spec=MeithealApi)
-    coordinator = entry.runtime_data = MeithealCoordinator(hass, client)
+    coordinator = entry.runtime_data = MeithealCoordinator(hass, business_api(native_human_transport, client))
     coordinator.async_request_refresh = AsyncMock()
     coordinator.async_complete_task = AsyncMock()
     unregister = async_register_llm_api(hass, entry)

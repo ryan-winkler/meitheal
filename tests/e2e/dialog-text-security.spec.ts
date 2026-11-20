@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
 test.skip(!process.env.E2E_BASE_URL, "Requires a disposable App server")
 test.use({ serviceWorkers: "block" })
@@ -187,7 +188,7 @@ test("prompt preserves required validation, input selection, Tab, trimming, canc
 
 test("Pillar removal uses the raw name without double-escaping literal entities", async ({ page, request, baseURL }) => {
   const name = 'Fáilte <garden> &amp; "Home"'
-  const headers = { origin: new URL(baseURL!).origin, "content-type": "application/json" }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const response = await request.post("/api/pillars", { headers, data: { name } })
   expect(response.status()).toBe(201)
   const { pillar } = await response.json()

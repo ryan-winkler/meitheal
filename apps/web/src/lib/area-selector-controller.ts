@@ -123,7 +123,9 @@ export function initAreaSelector(signal: AbortSignal): void {
     if (retry) retry.hidden = true
     if (more) more.disabled = true
     try {
-      const url = new URL(container!.dataset.areaEndpoint || "/api/boards/household?view=groups", location.origin)
+      const endpoint = container!.dataset.areaEndpoint
+      if (!endpoint) throw new Error("Choose a current Board to load Areas.")
+      const url = new URL(endpoint, location.origin)
       if (after) url.searchParams.set("after", after)
       else if (trigger!.dataset.selectedAreaId) url.searchParams.set("selected", trigger!.dataset.selectedAreaId)
       const response = await fetch(url.pathname + url.search, {

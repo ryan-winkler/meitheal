@@ -1,11 +1,12 @@
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
 test.use({ serviceWorkers: "block" })
 
 test("legacy Shopping type filters survive view switches and respect Table search spacing", async ({ page, request, baseURL }) => {
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const previous = (await (await request.get("/api/settings")).json()).sidebar_config
   const suffix = crypto.randomUUID()
   const titles = [`Pantry ${suffix}`, `Frying pan ${suffix}`]

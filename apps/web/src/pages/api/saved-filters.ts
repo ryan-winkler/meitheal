@@ -1,3 +1,4 @@
+import { withBoardScope } from "@lib/board-http"
 /**
  * Saved Filters API — Phase 31
  *
@@ -14,19 +15,19 @@ import { apiError, apiJson } from "../../lib/api-response"
 import { logApiError } from "../../lib/api-logger"
 import { normalizeTableCreationRange } from "../../lib/filter-state"
 
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async (context, scope) => {
   try {
     await ensureSchema()
     const repo = new SettingsRepository(getPersistenceClient())
-    const filters = await repo.listFilters()
+    const filters = await repo.listFilters(scope)
     return apiJson({ filters })
   } catch (error) {
     logApiError("saved-filters", "GET error", error)
     return apiError("Failed to fetch saved filters", 500)
   }
-}
+})
 
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = withBoardScope({ resource: "task", action: "edit" }, async ({ request }, scope) => {
   try {
     await ensureSchema()
     const repo = new SettingsRepository(getPersistenceClient())
@@ -66,9 +67,9 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     const id = crypto.randomUUID()
-    const position = await repo.getNextFilterPosition()
+    const position = await repo.getNextFilterPosition(scope)
 
-    await repo.createFilter({
+    await repo.createFilter(scope, {
       id,
       name: name.trim(),
       queryJson: JSON.stringify(query_json ?? {}),
@@ -81,9 +82,9 @@ export const POST: APIRoute = async ({ request }) => {
     logApiError("saved-filters", "POST error", error)
     return apiError("Failed to create saved filter", 500)
   }
-}
+})
 
-export const DELETE: APIRoute = async ({ request }) => {
+export const DELETE: APIRoute = withBoardScope({ resource: "task", action: "edit" }, async ({ request }, scope) => {
   try {
     await ensureSchema()
     const repo = new SettingsRepository(getPersistenceClient())
@@ -94,10 +95,10 @@ export const DELETE: APIRoute = async ({ request }) => {
       return apiError("id query parameter is required", 400)
     }
 
-    await repo.deleteFilter(id)
+    await repo.deleteFilter(scope, id)
     return apiJson({ deleted: true })
   } catch (error) {
     logApiError("saved-filters", "DELETE error", error)
     return apiError("Failed to delete saved filter", 500)
   }
-}
+})

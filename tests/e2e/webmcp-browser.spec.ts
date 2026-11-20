@@ -1,4 +1,5 @@
 import { expect } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { test } from "../scripts/settings-persistence-fixture"
 import { expectTools, installWebMcpDouble, saveProtocols, saveWebMcp, searchTool, toolNames, webMcpKey } from "../scripts/webmcp-browser-helpers"
 
@@ -12,17 +13,19 @@ test("WebMCP is off by default and searches real task titles with eight bounded 
   expect(await page.evaluate(() => (window as any).__webmcpRegistrations)).toBe(0)
   expect((await (await request.get(`/api/settings?key=${webMcpKey}`)).json()).value).toBeNull()
   const title = `WebMcpSearch${crypto.randomUUID().replaceAll("-", "")}`
+  const headers = await currentBoardWriteHeaders(request, "household", {})
   const ids: string[] = []
   for (let i = 0; i < 9; i++) {
-    const response = await request.post("/api/tasks", { data: { title: `${title} ${i}` } })
+    const response = await request.post("/api/tasks", { headers, data: { title: `${title} ${i}` } })
     expect(response.status()).toBe(201)
     ids.push((await response.json()).id)
   }
-  expect((await request.post("/api/tasks", { data: { title: "Description-only match", description: title } })).status()).toBe(201)
-  const searches: { url: string; source: string | undefined }[] = []
+  expect((await request.post("/api/tasks", { headers, data: { title: "Description-only match", description: title } })).status()).toBe(201)
+  const searches: { url: string; source: string | undefined; board: string | undefined }[] = []
   page.on("request", r => {
     if (new URL(r.url()).pathname.endsWith("/api/search")) {
-      searches.push({ url: r.url(), source: r.headers()["x-automation-source"] })
+      const requestHeaders = r.headers()
+      searches.push({ url: r.url(), source: requestHeaders["x-automation-source"], board: requestHeaders["x-meitheal-board-id"] })
     }
   })
   await saveProtocols(page, true)
@@ -33,12 +36,15 @@ test("WebMCP is off by default and searches real task titles with eight bounded 
   const prefix = await page.evaluate(() => window.__ingress_path || "")
   for (const item of result.tasks) {
     expect(item.title).toMatch(new RegExp(`^${title} [0-8]$`))
-    expect(ids).toContain(new URL(item.url, page.url()).searchParams.get("open"))
-    expect(item.url).toMatch(new RegExp(`^${prefix}/tasks\\?open=`))
+    const resultUrl = new URL(item.url, page.url())
+    expect(resultUrl.origin).toBe(new URL(page.url()).origin)
+    expect(resultUrl.pathname).toBe(`${prefix}/boards/household`)
+    expect(ids).toContain(resultUrl.searchParams.get("ticket"))
+    expect(item.url).toBe(`${prefix}/boards/household?ticket=${resultUrl.searchParams.get("ticket")}`)
     expect(Object.keys(item).sort()).toEqual(["title", "url"])
   }
   const url = new URL(searches[0]!.url)
-  expect(searches[0]!.source).toBe("webmcp")
+  expect(searches[0]).toMatchObject({ source: "browser", board: "household" })
   expect(url.pathname).toBe(`${prefix}/api/search`)
   expect(Object.fromEntries(url.searchParams)).toEqual({ q: title, scope: "tasks", task_fields: "title", limit: "8" })
   expect(searches).toHaveLength(1)
@@ -159,7 +165,7 @@ test("WebMCP returns search errors and fails closed when its saved preference ca
   const bounded = await searchTool(page, "heating")
   expect(bounded.tasks).toHaveLength(8)
   expect(bounded.tasks[0].title).toBe("<img onerror=alert(1)> 0")
-  expect(bounded.tasks[0].url).toMatch(/\?open=id%2F0$/)
+  expect(bounded.tasks[0].url).toMatch(/\?ticket=id%2F0$/)
   let searches = 0
   page.on("request", r => { if (new URL(r.url()).pathname.endsWith("/api/search")) searches++ })
   await page.route(`**/api/settings?key=${webMcpKey}`, route => route.fulfill({ status: 503, json: {} }))
@@ -169,16 +175,17 @@ test("WebMCP returns search errors and fails closed when its saved preference ca
   expect(searches).toBe(0)
 })
 
-test("WebMCP denies nonadmin preference access without granting browser tools", async ({ page, request }) => {
+test("WebMCP denies nonadmin preference access without granting browser tools", async ({ household, page, request }) => {
   await saveWebMcp(request, true)
   await installWebMcpDouble(page)
-  await page.goto("/today")
-  test.skip(!await page.evaluate(() => Boolean(window.__ingress_path)), "Administrator/member authority is covered by the guarded ingress fixture")
   await page.context().clearCookies()
-  await page.context().addCookies([{ name: "feedback-fixture", value: "member", url: page.url() }])
+  await page.context().addCookies([{ name: "feedback-fixture", value: "member", url: household.origin }])
   const denied = page.waitForResponse(r => new URL(r.url()).pathname.endsWith("/api/settings") && new URL(r.url()).searchParams.get("key") === webMcpKey)
-  await page.reload()
-  expect((await denied).status()).toBe(403)
+  await page.goto("/today")
+  expect(await page.evaluate(() => window.__ingress_path)).toBe(household.prefix)
+  const response = await denied
+  expect(await response.request().headerValue("cookie")).toContain("feedback-fixture=member")
+  expect(response.status()).toBe(403)
   await expect.poll(() => page.evaluate(() => (window as any).__meithealWebMcpRuntime?.status)).toBe("disabled")
   await expectTools(page, [])
 })
@@ -202,7 +209,7 @@ test("WebMCP opens only canonical Tasks views and cancels an execution before is
   expect(searches).toBe(0)
   const prefix = await page.evaluate(() => window.__ingress_path || "")
   await page.evaluate(() => { void (window as any).__webmcpTools.meitheal_open_tasks.execute({ view: "table" }) })
-  await expect(page).toHaveURL(new URL(`${prefix}/tasks?view=table#table`, current).href)
+  await expect(page).toHaveURL(new URL(`${prefix}/boards/household?view=table#table`, current).href)
   await expect(page.locator('[data-task-view="table"]')).toBeVisible()
 })
 

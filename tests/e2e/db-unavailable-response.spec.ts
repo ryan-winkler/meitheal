@@ -2,8 +2,11 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
+import { runWithIngressTransport } from "../../apps/web/scripts/ingress-transport.mjs"
+import { resolveBoardRequestScope, verifiedBoardRequestPrincipal } from "../../apps/web/src/lib/board-request-context"
+import { boardSessionProof } from "../../apps/web/src/lib/named-board-request"
 import { db503Response } from "../../apps/web/src/lib/db-fallback"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 import { GET as listTasks } from "../../apps/web/src/pages/api/tasks/index"
 import { GET as previewCompleted, DELETE as deleteCompleted } from "../../apps/web/src/pages/api/tasks/delete-completed"
 
@@ -54,6 +57,20 @@ for (const [name, handler, query] of [
         audit: (await client.execute("SELECT * FROM audit_trail ORDER BY audit_id")).rows,
       })
       const before = await snapshot()
+      const transport = { peer: "127.0.0.1", fromSupervisor: false, identityHeadersSafe: true, configuredPath: undefined }
+      const principal = await runWithIngressTransport(transport, () => verifiedBoardRequestPrincipal({
+        request: new Request("http://localhost/boards"), locals: {} as App.Locals,
+      }))
+      if (!principal) throw new Error("Current standalone operator fixture was not admitted")
+      const url = new URL(`http://localhost/api/tasks${query}`)
+      const request = new Request(url, { method: handler === deleteCompleted ? "DELETE" : "GET",
+        headers: { "x-meitheal-board-id": "household", "x-meitheal-board-session": boardSessionProof(principal.id) },
+      })
+      const context = { url, request, locals: {} as App.Locals, params: {} }
+      const admission = await runWithIngressTransport(transport, () => resolveBoardRequestScope(context, {
+        operation: { resource: "task", action: handler === deleteCompleted ? "delete" : "read" },
+      }))
+      expect(admission.ok).toBe(true)
       const execute = client.execute.bind(client)
       const batch = client.batch.bind(client)
       let attempts = 0
@@ -62,9 +79,7 @@ for (const [name, handler, query] of [
       client.execute = unavailable
       client.batch = unavailable
       try {
-        const url = new URL(`http://localhost/api/tasks${query}`)
-        const request = new Request(url, { method: handler === deleteCompleted ? "DELETE" : "GET" })
-        response = await handler({ url, request } as never)
+        response = await runWithIngressTransport(transport, () => handler(context as Parameters<typeof handler>[0]))
       } finally {
         client.execute = execute
         client.batch = batch

@@ -1,3 +1,5 @@
+import { journaledBoardCommandAck, withBoardScope } from "@lib/board-http"
+import type { GoalShareTarget } from "@domains/tasks/persistence/shared-goal-repository"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import type { APIRoute } from "astro"
 import { NamedBoardPlanningRepository } from "@domains/tasks/persistence/named-board-planning-repository"
@@ -5,16 +7,29 @@ import { NamedBoardTaskRepository } from "@domains/tasks/persistence/named-board
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { apiError, apiJson } from "@lib/api-response"
 import { isFeatureEnabled } from "@lib/feature-flags"
-import { currentBoardUser, readBoardRequest } from "@lib/named-board-request"
+import { currentBoardContext, readBoardRequest } from "@lib/named-board-request"
 import { stripHtml } from "@lib/strip-html"
+
+function shareTarget(value: unknown): GoalShareTarget | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  const target = value as Record<string, unknown>
+  const valid = (id: unknown): id is string => typeof id === "string" && id.length > 0 && id.length <= 150 && !id.includes("\0")
+  if (!valid(target.boardId)) return null
+  if (target.kind === "board" && Object.keys(target).every(key => ["kind", "boardId"].includes(key))) return { kind: "board", boardId: target.boardId }
+  if (target.kind === "area" && valid(target.areaId) && Object.keys(target).every(key => ["kind", "boardId", "areaId"].includes(key))) return { kind: "area", boardId: target.boardId, areaId: target.areaId }
+  if (target.kind === "project" && valid(target.projectId) && Object.keys(target).every(key => ["kind", "boardId", "projectId"].includes(key))) return { kind: "project", boardId: target.boardId, projectId: target.projectId }
+  return null
+}
 
 function parseChange(body: Record<string, unknown> | null): Parameters<NamedBoardPlanningRepository["save"]>[2] | null {
   if (!body) return null
   const { action, id, areaId, projectId, goalId, enabled, status, cadence, entity, pillarId, entityType } = body
   if (action === "project-status" && typeof id === "string" &&
       (status === "active" || status === "completed" || status === "archived")) return { action, id, status }
-  if (action === "goal-share" && typeof id === "string" && typeof areaId === "string" && typeof enabled === "boolean") {
-    return { action, id, areaId, enabled }
+  if (action === "goal-share" && typeof id === "string" && typeof enabled === "boolean") {
+    const target = shareTarget(body.target)
+    if (body.target !== undefined) return target ? { action, id, target, enabled } : null
+    return typeof areaId === "string" && areaId ? { action, id, areaId, enabled } : null
   }
   if (action === "project-goal" && typeof id === "string" && (goalId === null || typeof goalId === "string")) return { action, id, goalId }
   if (action === "retire" && typeof id === "string" && (entity === "area" || entity === "goal" || entity === "project" || entity === "routine")) {
@@ -35,16 +50,16 @@ function parseChange(body: Record<string, unknown> | null): Parameters<NamedBoar
       ...(typeof icon === "string" ? { icon: stripHtml(icon) } : {}),
       ...(typeof color === "string" ? { color } : {}) }
   }
-  if (action === "goal" && typeof areaId === "string" && (id === undefined || typeof id === "string")) {
-    return { action, title, description, areaId, ...(id === undefined ? {} : { id }) }
+  if (action === "goal" && (areaId == null || typeof areaId === "string") && (id === undefined || typeof id === "string")) {
+    return { action, title, description, ...(areaId === undefined ? {} : { areaId }), ...(id === undefined ? {} : { id }) }
   }
   if (action === "project-edit" && typeof id === "string") return { action, id, title, description }
-  if (action === "project" && typeof areaId === "string" && (goalId === null || typeof goalId === "string")) {
-    return { action, title, description, areaId, goalId }
+  if (action === "project" && (areaId == null || typeof areaId === "string") && (goalId === null || typeof goalId === "string")) {
+    return { action, title, description, ...(areaId === undefined ? {} : { areaId }), goalId }
   }
-  if (action === "routine" && typeof areaId === "string" && (cadence === "daily" || cadence === "weekly") &&
+  if (action === "routine" && (areaId == null || typeof areaId === "string") && (cadence === "daily" || cadence === "weekly") &&
       (id === undefined || typeof id === "string") && (projectId === undefined || projectId === null || typeof projectId === "string")) {
-    return { action, title, description, areaId, cadence, ...(projectId === undefined ? {} : { projectId }), ...(id === undefined ? {} : { id }) }
+    return { action, title, description, ...(areaId === undefined ? {} : { areaId }), cadence, ...(projectId === undefined ? {} : { projectId }), ...(id === undefined ? {} : { id }) }
   }
   if (action === "pillar" && (id === undefined || typeof id === "string")) {
     return { action, title, description, ...(id === undefined ? {} : { id }) }
@@ -55,8 +70,11 @@ function parseChange(body: Record<string, unknown> | null): Parameters<NamedBoar
   return null
 }
 
-export const POST: APIRoute = async ({ locals, params, request }) => {
-  const user = await currentBoardUser(locals, request.signal, request)
+const planningOperation = { resource: "board", action: "read" } as const
+
+export const POST: APIRoute = withBoardScope(planningOperation, async (context, scope) => {
+  const { locals, params, request } = context
+  const user = await currentBoardContext(context, true)
   if (!user || !params.id) return apiError("Board unavailable", 404)
   const body = await readBoardRequest(request)
   const action = typeof body?.action === "string" ? body.action : ""
@@ -72,7 +90,7 @@ export const POST: APIRoute = async ({ locals, params, request }) => {
   if (body?.action === "routine-complete" && typeof body.id === "string" && typeof body.period === "string" &&
       /^\d{4}-\d{2}-\d{2}$/.test(body.period)) {
     await ensureSchema()
-    const outcome = await new NamedBoardTaskRepository(getPersistenceClient()).completeRoutine(user.actor, params.id, body.id, body.period)
+    const outcome = await new NamedBoardTaskRepository(getPersistenceClient(), scope).completeRoutine(user.actor, params.id, body.id, body.period)
     if (outcome.ok) return apiJson(outcome.value)
     if (outcome.errorCode === "denied") return apiError("Your Board permissions do not allow completion.", 403)
     if (outcome.errorCode === "stale") return apiError("The Routine period or its ticket changed. Refresh the Board or move the open ticket to Done.", 409)
@@ -86,14 +104,14 @@ export const POST: APIRoute = async ({ locals, params, request }) => {
   )) return apiError("This organizing feature is unavailable.", 404)
   if (!change) return apiError("Choose a planning action and enter valid details.", 400)
   await ensureSchema()
-  const repository = new NamedBoardPlanningRepository(getPersistenceClient())
+  const repository = new NamedBoardPlanningRepository(getPersistenceClient(), scope)
   if (change.action === "goal-share" || change.action === "retire") {
     const outcome = await repository.saveVisibility(user.actor.id, params.id, change)
     if (outcome.status === "locked") return apiError("Named Board access is temporarily locked.", 503)
-    if (outcome.result === "children") return apiError("Remove this Area’s active Projects, Goals, and Routines first.", 409)
     if (outcome.result !== "saved") return apiError("Board or planning selection unavailable", 404)
+    if (outcome.status === "committed") return journaledBoardCommandAck(scope, planningOperation, { accessPending: false })
     return apiJson({ ok: true, accessPending: outcome.status === "committed-locked" })
   }
   if (!await repository.save(user.actor.id, params.id, change)) return apiError("Board or planning selection unavailable", 404)
   return apiJson({ ok: true })
-}
+}, { boardParam: "id" })

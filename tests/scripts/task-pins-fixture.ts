@@ -29,6 +29,7 @@ export function startCoreFixture(work: string, plainHttp = false, restartPort?: 
     PATH: process.env.PATH,
     NODE_ENV: "production",
     MEITHEAL_DB_URL: `file:${join(work, "pins.db")}`,
+    MEITHEAL_BOARD_GRANT_PATH: join(boardDataDirectory ?? work, "meitheal-board-grants.json"),
     MEITHEAL_PIN_FIXTURE: "1",
     MEITHEAL_PIN_FIXTURE_HTTP: plainHttp ? "1" : "0",
     ...(restartPort ? { MEITHEAL_INGRESS_FIXTURE_PORT: String(restartPort) } : {}),
@@ -42,17 +43,18 @@ export function startCoreFixture(work: string, plainHttp = false, restartPort?: 
   return fork(fixture, { cwd: web, env, stdio: ["ignore", "pipe", "pipe", "ipc"] })
 }
 
-export async function pinRequest(page: Page, path: string, method: "POST" | "PUT" | "HEAD", body?: object, context?: string) {
-  return page.evaluate(async ({ path, method, body, context }) => {
+export async function pinRequest(page: Page, path: string, method: "POST" | "PUT" | "HEAD",
+  body?: object, context?: string, boardHeaders?: Record<string, string>) {
+  return page.evaluate(async ({ path, method, body, context, boardHeaders }) => {
     const response = await fetch(path, {
       method, mode: "same-origin", referrerPolicy: "same-origin", cache: "no-store", redirect: "error",
       signal: AbortSignal.timeout(7_000),
-      headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...(context ? { "X-Meitheal-Pin-Context": context } : {}) },
+      headers: { ...boardHeaders, ...(body ? { "Content-Type": "application/json" } : {}), ...(context ? { "X-Meitheal-Pin-Context": context } : {}) },
       ...(body ? { body: JSON.stringify(body) } : {}),
     })
     return {
       status: response.status, cache: response.headers.get("cache-control"),
       body: method === "HEAD" ? null : await response.json(),
     }
-  }, { path, method, body, context })
+  }, { path, method, body, context, boardHeaders })
 }

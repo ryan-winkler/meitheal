@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 
 import { expect, test as base } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { deferred, shouldSkipBrowserSpecs } from "./_helpers"
 
 interface TableTask {
@@ -11,7 +12,7 @@ interface TableTask {
 
 const test = base.extend<{ tableTasks: [TableTask, TableTask] }>({
   tableTasks: async ({ request, baseURL }, use) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const tasks: TableTask[] = []
     const createTask = async (status: string, priority: number): Promise<TableTask> => {
       const data = { title: `Table ${status} fixture ${randomUUID()}`, status, priority }
@@ -40,7 +41,7 @@ test.describe("Table Shell", () => {
     await page.goto("/table")
 
     await expect(page).toHaveURL(/\/tasks\?view=table#table$/)
-    await expect(page.getByRole("heading", { name: "Table View" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Household", exact: true })).toBeVisible()
     const views = page.getByRole("navigation", { name: "Task views" })
     await expect(views.getByRole("link", { name: "Table" })).toHaveAttribute("aria-current", "page")
     const table = page.getByRole("table")
@@ -221,7 +222,7 @@ test.describe("Table Shell", () => {
   test("long titles keep toolbar controls reachable while columns scroll and titles stay editable", async ({ page, request, baseURL, tableTasks }) => {
     const [ordinary] = tableTasks
     const longTitle = "UniqueAuditLongTitle" + "X".repeat(150)
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const created = await request.post("/api/tasks", { headers, data: { title: longTitle } })
     expect(created.status(), await created.text()).toBe(201)
     const { id } = await created.json() as { id: string }
@@ -298,7 +299,7 @@ test.describe("Table Shell", () => {
       await expectToolbarInView(1440)
       await expectScrollableColumns()
     } finally {
-      await request.delete(`/api/tasks/${id}`, { headers })
+      await request.delete(`/api/tasks/${id}`, { headers, data: {} })
     }
   })
 
@@ -329,7 +330,7 @@ test.describe("Table Shell", () => {
     const savedTitles: string[] = []
     await page.route(url => url.pathname === path, async route => {
       const outbound = route.request()
-      if (outbound.method() === "PATCH") {
+      if (outbound.method() === "PUT") {
         savedTitles.push(outbound.postDataJSON().title)
       }
       await route.continue()

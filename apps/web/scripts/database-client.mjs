@@ -1,11 +1,14 @@
 import { createRequire } from "node:module"
-import { statSync } from "node:fs"
+import { constants, lstatSync, statSync } from "node:fs"
+import { open } from "node:fs/promises"
+import { dirname, resolve } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { setTimeout as sleepMs } from "node:timers/promises"
 import { LibsqlBatchError, LibsqlError } from "@libsql/core/api"
 import { expandConfig, isInMemoryConfig } from "@libsql/core/config"
 import { ResultSetImpl } from "@libsql/core/util"
-import { BOARD_LIFECYCLE_SCHEMA_VERSION } from "../drizzle/migrations/0015_board_lifecycle.mjs"
+import { boardGrantRevisionQuery, getBoardGrantPath, registerBoardGrantContext } from "./board-grant-context.mjs"
+import { ORDINARY_BOARD_SCHEMA_VERSION } from "../drizzle/migrations/0016_ordinary_boards.mjs"
 import {
   readTaskBoardMigrationState, taskBoardMigrationStateSteps,
 } from "../drizzle/migrations/task-board-upgrade.mjs"
@@ -21,13 +24,101 @@ import {
 
 const localWriters = new WeakMap()
 const localExecutors = new WeakMap()
+/** @type {WeakMap<object, Pick<Transaction, "execute" | "batch" | "executeMultiple" | "commit" | "rollback" | "close"> & { mode: "read" | "write" }>} */
+const localFileTransactions = new WeakMap()
+/** @type {WeakMap<object, { execute: unknown, read: () => unknown }>} */
+const localGrantRevisionReaders = new WeakMap()
 /** @type {WeakMap<DatabaseSync, import("node:sqlite").StatementSync>} */
 const totalChangesStatements = new WeakMap()
+/** @type {WeakMap<DatabaseSync, import("node:sqlite").StatementSync>} */
+const grantRevisionStatements = new WeakMap()
+/** @typedef {"rows" | "completed"} TodayRead */
+/** @typedef {"task-list" | "task-count" | "task-detail" | "task-search" | "task-locator" | "task-command" | "task-cascade"} TaskProjectionRead */
+/** @typedef {TodayRead | TaskProjectionRead | "board-policy"} ScopedRead */
+/** @type {WeakMap<object, ScopedRead>} */
+const scopedReads = new WeakMap()
+/** @type {WeakMap<DatabaseSync, Partial<Record<ScopedRead, { sql: string, statement: import("node:sqlite").StatementSync }>>>} */
+const scopedReadStatements = new WeakMap()
+
+/** Explicitly tag a source-owned Today query for local read-batch preparation.
+ * @template {Exclude<InStatement, string>} T
+ * @param {T} statement
+ * @param {TodayRead} kind
+ * @returns {T}
+ */
+export function tagTodayRead(statement, kind) {
+  if (kind === "rows" || kind === "completed") scopedReads.set(statement, kind)
+  return statement
+}
+
+/** @template {Exclude<InStatement, string>} T @param {T} statement @returns {T} */
+export function tagBoardPolicyRead(statement) {
+  scopedReads.set(statement, "board-policy")
+  return statement
+}
+
+/** Explicit source-owned projections consume unique named columns only.
+ * @template {Exclude<InStatement, string>} T
+ * @param {T} statement @param {TaskProjectionRead} kind @returns {T}
+ */
+export function tagTaskProjectionRead(statement, kind) {
+  scopedReads.set(statement, kind)
+  return statement
+}
+
+/** Only unmodified transactions using a physically read-only local SQLite handle.
+ * @param {Transaction} transaction
+ */
+export function isLocalReadSnapshot(transaction) {
+  return localFileTransactionMode(transaction) === "read"
+}
+
+/** @param {Transaction} transaction */
+export function isLocalFileWriter(transaction) {
+  return localFileTransactionMode(transaction) === "write"
+}
+
+/** @param {Client} client */
+export function isLocalFileClient(client) {
+  const executor = localExecutors.get(client)
+  return executor?.fileBacked === true && client.execute === executor.execute &&
+    client.transaction === executor.transaction
+}
+
+/** @param {Transaction} transaction */
+function localFileTransactionMode(transaction) {
+  const methods = localFileTransactions.get(transaction)
+  const original = methods !== undefined && !transaction.closed && transaction.execute === methods.execute &&
+    transaction.batch === methods.batch && transaction.executeMultiple === methods.executeMultiple &&
+    transaction.commit === methods.commit && transaction.rollback === methods.rollback && transaction.close === methods.close
+  return original ? methods.mode : undefined
+}
+
+/** Use the reader's own execute method for adapters and decorated clients.
+ * @param {{ execute?: unknown }} reader
+ */
+export function readLocalGrantRevision(reader) {
+  const registered = localGrantRevisionReaders.get(reader)
+  return registered && reader.execute === registered.execute ? registered.read() ?? null : undefined
+}
+
+/** @param {DatabaseSync} db */
+function readGrantRevision(db) {
+  let statement = grantRevisionStatements.get(db)
+  if (!statement) {
+    statement = db.prepare(boardGrantRevisionQuery)
+    grantRevisionStatements.set(db, statement)
+  }
+  return statement.get()?.revision
+}
 
 const DB_DIAGNOSTICS_SYMBOL = Symbol.for("meitheal.sqlite.diagnostics")
 const WRITE_BACKOFF_DELAYS_MS = [5, 15, 30, 60, 120]
 const READ_LEASE_SLOW_MS = 5_000
 const READ_IDLE_EVICT_MS = 30_000
+const MAX_TRANSACTION_CONNECTIONS = 19
+const MAX_QUEUED_READ_TRANSACTIONS = 64
+const READ_TRANSACTION_ADMISSION_MS = 5_000
 
 function getDiagnosticsStore() {
   let store = globalThis[DB_DIAGNOSTICS_SYMBOL]
@@ -64,7 +155,7 @@ export function resetDatabaseDiagnosticsForTests() {
   s.readLeaseSlowWarningsTotal = 0
 }
 
-export const DATABASE_SCHEMA_VERSION = BOARD_LIFECYCLE_SCHEMA_VERSION
+export const DATABASE_SCHEMA_VERSION = ORDINARY_BOARD_SCHEMA_VERSION
 
 const schemaMarkerTable = "SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'app_settings' COLLATE NOCASE"
 const schemaMarkerRows = "SELECT value AS value FROM app_settings WHERE key = 'schema_version' LIMIT 2"
@@ -165,15 +256,50 @@ function getTotalChanges(db) {
   return stmt.get()?.count
 }
 
-/** @param {DatabaseSync} db @param {InStatement} input @param {InArgs} [args] */
-function execute(db, input, args = []) {
+/** @param {DatabaseSync} db @param {InStatement} input @param {InArgs} [args] @param {boolean} [fileReadSnapshot] */
+function execute(db, input, args = [], fileReadSnapshot = false) {
   const sql = typeof input === "string" ? input : input.sql
   const values = typeof input === "string" ? args : input.args ?? []
   const bindings = Array.isArray(values)
     ? values.map(bind)
     : Object.fromEntries(Object.entries(values).map(([key, value]) => [key.replace(/^[@$:]/, ""), bind(value)]))
-  const statement = db.prepare(sql)
-  statement.setReadBigInts(true)
+  const tag = typeof input === "string" ? undefined : scopedReads.get(input)
+  const kind = fileReadSnapshot || tag === "board-policy" ? tag : undefined
+  const slots = kind ? scopedReadStatements.get(db) : undefined
+  const cached = kind ? slots?.[kind] : undefined
+  let statement = cached?.sql === sql ? cached.statement : undefined
+  if (!statement) {
+    if (kind) {
+      statement = db.prepare(sql)
+      // Each query has one slot per handle. Changes in the scoped SQL replace it.
+      if (slots) slots[kind] = { sql, statement }
+      else scopedReadStatements.set(db, { [kind]: { sql, statement } })
+    } else {
+      statement = db.prepare(sql)
+      statement.setReadBigInts(true)
+    }
+  }
+  if (kind) {
+    // Native named rows already have the declared projection keys. SQLite
+    // checks the safe integer range in its number mode. Add libSQL's indexed
+    // fields for both key access and ResultSet JSON serialization.
+    const nativeRows = Array.isArray(bindings) ? statement.all(...bindings) : statement.all(bindings)
+    const metadata = statement.columns()
+    const columns = metadata.map(column => column.name)
+    const rows = /** @type {Row[]} */ (nativeRows.map(nativeRow => {
+      const row = { ...nativeRow }
+      Object.defineProperty(row, "length", { value: columns.length })
+      for (let index = 0; index < columns.length; index++) {
+        const name = columns[index]
+        const value = nativeRow[name]
+        const decoded = value instanceof Uint8Array ? new Uint8Array(value).buffer : value
+        if (decoded !== value) row[name] = decoded
+        Object.defineProperty(row, index, { value: decoded })
+      }
+      return row
+    }))
+    return new ResultSetImpl(columns, metadata.map(column => column.type ?? ""), rows, 0, undefined)
+  }
   if (statement.columns().length) {
     statement.setReturnArrays(true)
     const rawRows = Array.isArray(bindings) ? statement.all(...bindings) : statement.all(bindings)
@@ -202,12 +328,14 @@ function execute(db, input, args = []) {
   return new ResultSetImpl([], [], [], rowsAffected, BigInt(lastInsertRowid))
 }
 
-/** @param {DatabaseSync} db @param {Array<InStatement | [string, InArgs?]>} statements */
-function executeBatch(db, statements) {
+/** @param {DatabaseSync} db @param {Array<InStatement | [string, InArgs?]>} statements @param {boolean} [fileReadSnapshot] */
+function executeBatch(db, statements, fileReadSnapshot = false) {
   return statements.map((statement, index) => {
     try {
       if (!db.isTransaction) throw new LibsqlError("The transaction is closed", "TRANSACTION_CLOSED")
-      return sqliteOperation(() => Array.isArray(statement) ? execute(db, statement[0], statement[1]) : execute(db, statement))
+      return sqliteOperation(() => Array.isArray(statement)
+        ? execute(db, statement[0], statement[1], fileReadSnapshot)
+        : execute(db, statement, undefined, fileReadSnapshot))
     } catch (error) {
       if (!(error instanceof LibsqlError)) throw error
       throw new LibsqlBatchError(error.message, index, error.code, error.extendedCode, error.rawCode,
@@ -477,6 +605,44 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
   let main = openMain()
   let closed = false
   const transactions = new Set()
+  let readReservations = 0
+  let clientGeneration = 0
+  /** @type {Array<{ resolve: () => void, reject: (error: Error) => void, timer: ReturnType<typeof globalThis.setTimeout> }>} */
+  const readWaiters = []
+
+  function admitWaitingReads() {
+    while (!closed && readWaiters.length && transactions.size + readReservations < MAX_TRANSACTION_CONNECTIONS) {
+      const waiter = readWaiters.shift()
+      if (!waiter) break
+      globalThis.clearTimeout(waiter.timer)
+      readReservations += 1
+      waiter.resolve()
+    }
+  }
+
+  /** Queue acquisition only. A query is never started, retried or replayed here. */
+  async function admittedReadTransaction() {
+    if (closed) throw new LibsqlError("The client is closed", "CLIENT_CLOSED")
+    if (memory || !readWaiters.length && transactions.size + readReservations < MAX_TRANSACTION_CONNECTIONS) return transaction("read")
+    if (readWaiters.length >= MAX_QUEUED_READ_TRANSACTIONS) throw new LibsqlError("SQLite read admission queue is full", "TRANSACTION_ACTIVE")
+    const generation = clientGeneration
+    await new Promise((resolve, reject) => {
+      const waiter = { resolve, reject, timer: globalThis.setTimeout(() => {
+        const index = readWaiters.indexOf(waiter)
+        if (index >= 0) readWaiters.splice(index, 1)
+        reject(new LibsqlError("SQLite read admission deadline exceeded", "TRANSACTION_ACTIVE"))
+      }, READ_TRANSACTION_ADMISSION_MS) }
+      readWaiters.push(waiter)
+      admitWaitingReads()
+    })
+    // Consume exactly this caller's reserved slot without another await. A close
+    // or reconnect invalidates queued work even if admission was just signalled.
+    readReservations -= 1
+    try {
+      if (closed || generation !== clientGeneration) throw new LibsqlError("The client is closed", "CLIENT_CLOSED")
+      return transaction("read")
+    } finally { admitWaitingReads() }
+  }
 
   /** @type {DatabaseSync | null} */
   let idleReadHandle = null
@@ -592,7 +758,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
   /** @param {TransactionMode} mode @param {boolean} [exclusive] @returns {Transaction} */
   function transaction(mode, exclusive = false) {
     const primary = idle()
-    if (transactions.size >= 19) throw new LibsqlError("All SQLite transaction connections are in use", "TRANSACTION_ACTIVE")
+    if (transactions.size + readReservations >= MAX_TRANSACTION_CONNECTIONS) throw new LibsqlError("All SQLite transaction connections are in use", "TRANSACTION_ACTIVE")
 
     const diag = getDiagnosticsStore()
     const useReadPool = !memory && mode === "read"
@@ -646,19 +812,21 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       try {
         if (db.isTransaction) db.exec("ROLLBACK")
       } finally {
-        if (memory) {
-          if (restoreReadOnly) db.exec("PRAGMA query_only=OFF")
-        } else if (leasedFromPrimaryReadSlot) {
-          readSlotLeased = false
-          if (closed) {
-            db.close()
+        try {
+          if (memory) {
+            if (restoreReadOnly) db.exec("PRAGMA query_only=OFF")
+          } else if (leasedFromPrimaryReadSlot) {
+            readSlotLeased = false
+            if (closed) {
+              db.close()
+            } else {
+              idleReadHandle = db
+              armReadIdleEviction()
+            }
           } else {
-            idleReadHandle = db
-            armReadIdleEviction()
+            db.close()
           }
-        } else {
-          db.close()
-        }
+        } finally { admitWaitingReads() }
       }
     }
 
@@ -688,16 +856,16 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       if (!active || !db.isTransaction) throw new LibsqlError("The transaction is closed", "TRANSACTION_CLOSED")
     }
 
-    return {
+    const result = {
       get closed() { return !active || !db.isTransaction },
       /** @param {InStatement} statement @param {InArgs} [args] */
       async execute(statement, args) {
         assertActive()
-        return sqliteOperation(() => execute(db, statement, args))
+        return sqliteOperation(() => execute(db, statement, args, useReadPool))
       },
       async batch(statements) {
         assertActive()
-        return executeBatch(db, statements)
+        return executeBatch(db, statements, useReadPool)
       },
       async executeMultiple(sql) {
         assertActive()
@@ -720,11 +888,34 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
         if (active) sqliteOperation(settle)
       },
     }
+    registerBoardGrantContext(result, { markerPath: getBoardGrantPath(client) })
+    localGrantRevisionReaders.set(result, {
+      execute: result.execute,
+      read: () => {
+        assertActive()
+        return sqliteOperation(() => readGrantRevision(db))
+      },
+    })
+    if (!memory && (mode === "read" || mode === "write")) localFileTransactions.set(result, {
+      execute: result.execute,
+      batch: result.batch,
+      executeMultiple: result.executeMultiple,
+      commit: result.commit,
+      rollback: result.rollback,
+      close: result.close,
+      mode,
+    })
+    return result
   }
 
   function close() {
     if (closed) return
     closed = true
+    clientGeneration += 1
+    for (const waiter of readWaiters.splice(0)) {
+      globalThis.clearTimeout(waiter.timer)
+      waiter.reject(new LibsqlError("The client is closed", "CLIENT_CLOSED"))
+    }
     try {
       for (const settle of transactions) settle()
     } finally {
@@ -750,7 +941,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     },
     async migrate(statements) { return batchSync(statements, "deferred", true) },
     /** @param {TransactionMode} [mode] */
-    async transaction(mode = "write") { return transaction(mode) },
+    async transaction(mode = "write") { return mode === "read" ? admittedReadTransaction() : transaction(mode) },
     async sync() {
       idle()
       throw new LibsqlError("Sync is unavailable for local SQLite", "SYNC_NOT_SUPPORTED")
@@ -785,7 +976,11 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
   localExecutors.set(client, {
     executeStatement: executeStatementWithRetry,
     batchWrite: batchWriteWithRetry,
+    fileBacked: !memory,
+    execute: client.execute,
+    transaction: client.transaction,
   })
+  localGrantRevisionReaders.set(client, { execute: client.execute, read: () => onMain(readGrantRevision) })
   return client
 }
 
@@ -818,9 +1013,9 @@ export function openDatabase(url, { readOnly = false } = {}) {
   return createClient({ url })
 }
 
-/** Retry lock acquisition only. Once a write transaction starts, its work runs once. */
+/** Retry startup lock acquisition and read-only verification. An acquired writer runs once. */
 /** @template T @param {() => Promise<T>} operation @returns {Promise<T>} */
-async function retryStartupLock(operation) {
+export async function retryStartupLock(operation) {
   const deadline = performance.now() + 2_500
   for (;;) {
     try {
@@ -848,23 +1043,76 @@ async function inspectStartupSchema(client) {
   }
 }
 
-/** Inspect an existing file read-only before opening it writable. */
-/** @param {string} url @param {{ readOnly?: boolean }} [options] @returns {Promise<Client>} */
-export function openDatabaseForStartup(url, { readOnly = false } = {}) {
+function assertRegularDatabasePath(path) {
+  for (let current = resolve(path); ; current = dirname(current)) {
+    const stats = lstatSync(current, { throwIfNoEntry: false })
+    if (stats?.isSymbolicLink()) throw new Error("Database startup refuses symlink paths")
+    if (current === resolve(path) && stats && !stats.isFile()) throw new Error("Database startup requires a regular file")
+    if (dirname(current) === current) break
+  }
+}
+
+function hasDatabaseFamily(path) {
+  return ["-wal", "-shm", "-journal"].some(suffix => lstatSync(path + suffix, { throwIfNoEntry: false }))
+}
+
+/** Inspect existing data read-only. Only successful exclusive local creation owns first enrollment. */
+/** @param {string} url @param {{ readOnly?: boolean, markerPath?: string, trustedInitialization?: { kind: "isolated-memory" } }} [options] @returns {Promise<Client>} */
+export function openDatabaseForStartup(url, { readOnly = false, markerPath, trustedInitialization } = {}) {
   return retryStartupLock(async () => {
     const local = localDatabaseLocation(url)
     if (!local || local.memory) {
+      if (trustedInitialization && (trustedInitialization.kind !== "isolated-memory" || !local?.memory || !markerPath || readOnly)) {
+        throw new Error("Trusted initialization requires an explicit isolated memory database and marker context")
+      }
       const client = openDatabase(url, { readOnly })
       try {
         await inspectStartupSchema(client)
+        registerBoardGrantContext(client, { markerPath, created: !!trustedInitialization })
+        if (!local) {
+          const transaction = client.transaction.bind(client)
+          client.transaction = async (...args) => {
+            const tx = await transaction(...args)
+            registerBoardGrantContext(tx, { markerPath: getBoardGrantPath(client) })
+            return tx
+          }
+        }
         return client
       } catch (error) {
         client.close()
         throw error
       }
     }
-    if (!readOnly && !statSync(local.path, { throwIfNoEntry: false })) {
-      return openLocal(local.path, false, false, true)
+    if (trustedInitialization) throw new Error("Local database initialization requires exclusive creation")
+    assertRegularDatabasePath(local.path)
+    if (!readOnly && !lstatSync(local.path, { throwIfNoEntry: false })) {
+      if (hasDatabaseFamily(local.path)) throw new Error("Database family residue prevents fresh enrollment")
+      let file
+      try {
+        file = await open(local.path, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600)
+      } catch (error) {
+        // A competing creator owns its capability. Never turn EEXIST into fresh authority.
+        if (error?.code === "EEXIST") throw new Error("Database creation raced; retry startup with existing data")
+        throw error
+      }
+      const created = await file.stat()
+      await file.sync()
+      await file.close()
+      const directory = await open(dirname(resolve(local.path)), constants.O_DIRECTORY | constants.O_RDONLY | constants.O_NOFOLLOW)
+      try { await directory.sync() } finally { await directory.close() }
+      assertRegularDatabasePath(local.path)
+      const actual = lstatSync(local.path)
+      if (!created.isFile() || actual.dev !== created.dev || actual.ino !== created.ino || hasDatabaseFamily(local.path)) {
+        throw new Error("Database creation provenance is ambiguous")
+      }
+      const client = openLocal(local.path, false, false, true)
+      const opened = lstatSync(local.path)
+      if (opened.dev !== created.dev || opened.ino !== created.ino) {
+        client.close()
+        throw new Error("Database identity changed during creation")
+      }
+      registerBoardGrantContext(client, { markerPath, created: true })
+      return client
     }
 
     let inspection
@@ -885,9 +1133,14 @@ export function openDatabaseForStartup(url, { readOnly = false } = {}) {
         throw recoveryError
       }
     }
-    if (readOnly || recovered) return inspection
+    if (readOnly || recovered) {
+      registerBoardGrantContext(inspection, { markerPath })
+      return inspection
+    }
     inspection.close()
-    return openLocal(local.path, false, false, true)
+    const client = openLocal(local.path, false, false, true)
+    registerBoardGrantContext(client, { markerPath })
+    return client
   })
 }
 

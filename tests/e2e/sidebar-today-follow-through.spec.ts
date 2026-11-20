@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { deferred, shouldSkipBrowserSpecs } from "./_helpers"
 
 test.describe("Sidebar and Today follow-through", () => {
@@ -12,8 +13,11 @@ test.describe("Sidebar and Today follow-through", () => {
   test.afterEach(async ({ request, baseURL }) => {
     const headers = { origin: new URL(baseURL!).origin }
     expect((await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: sidebarConfig ?? null } })).ok()).toBe(true)
-    for (const id of createdTaskIds.splice(0)) {
-      expect((await request.delete(`/api/tasks/${id}`, { headers, data: {} })).status()).toBe(204)
+    if (createdTaskIds.length) {
+      const boardHeaders = await currentBoardWriteHeaders(request, "household", headers)
+      for (const id of createdTaskIds.splice(0)) {
+        expect((await request.delete(`/api/tasks/${id}`, { headers: boardHeaders, data: {} })).status()).toBe(204)
+      }
     }
   })
 
@@ -24,7 +28,7 @@ test.describe("Sidebar and Today follow-through", () => {
     })).ok()).toBe(true)
     await page.goto("/tasks")
     await expect(page.locator('#sidebar [data-page="boards"]')).toHaveCount(0)
-    await expect(page.locator("#sidebar-hierarchy-panel")).toHaveCount(0)
+    await expect(page.locator("[data-sidebar-board-children]")).toHaveCount(0)
   })
 
   test("Household Areas remain under Boards with legacy visibility and label settings", async ({ page }) => {
@@ -40,13 +44,9 @@ test.describe("Sidebar and Today follow-through", () => {
     await page.getByRole("textbox", { name: "Custom link URL", exact: true }).fill("/planning#spaces")
     await page.getByRole("button", { name: "Save Sidebar Config", exact: true }).click()
     await expect(page.getByRole("textbox", { name: "Custom label for Areas" })).toHaveValue("Household areas")
-    await expect(page.locator("#project-nav .stree__label")).toHaveText("Household areas")
-    const sidebarOrder = await page.locator("#sidebar .sidebar-scroll").evaluate(scroll => {
-      const targets = Array.from(scroll.querySelectorAll("a[data-page], #sidebar-hierarchy-panel"))
-      return targets.map(target => target.id === "sidebar-hierarchy-panel" ? "areas" : target.getAttribute("data-page"))
-    })
-    expect(sidebarOrder.indexOf("areas")).toBe(sidebarOrder.indexOf("boards") + 1)
-    await expect(page.locator('#sidebar [data-sidebar-group="boards"] #sidebar-hierarchy-panel')).toHaveCount(1)
+    const boardGroup = page.locator('#sidebar [data-sidebar-group="boards"]')
+    const household = boardGroup.locator('[data-named-board-shortcut="household"]')
+    await expect(household.getByRole("button", { name: "Household areas in Household" })).toBeAttached()
     await expect(page.locator('#sidebar [data-sidebar-group="areas"]')).toHaveCount(0)
     await expect(page.locator("#sidebar").getByRole("link", { name: "Notes", exact: true })).toBeVisible()
     await expect(page.locator('#sidebar [data-page="system-pinned"]')).toHaveAttribute("href", "/pinned")
@@ -56,48 +56,46 @@ test.describe("Sidebar and Today follow-through", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321)
     await page.getByRole("checkbox", { name: "Show Areas in sidebar" }).uncheck()
     await page.getByRole("button", { name: "Save Sidebar Config", exact: true }).click()
-    await expect(page.locator("#sidebar-hierarchy-panel")).toHaveCount(0)
+    await expect(household.locator("[data-board-groups]")).toHaveCount(0)
     await page.reload()
     await expect(page.getByRole("checkbox", { name: "Show Areas in sidebar" })).not.toBeChecked()
 
     await page.getByRole("checkbox", { name: "Show Areas in sidebar" }).check()
     await page.getByRole("button", { name: "Save Sidebar Config", exact: true }).click()
-    await expect(page.locator("#sidebar-hierarchy-panel")).toHaveCount(1)
+    await expect(household.locator("[data-board-groups]")).toHaveCount(1)
   })
 
-  test("the entire Areas menu collapses independently and remembers its state without storage dependence", async ({ page }) => {
+  test("Boards and its per-Board Areas disclosure collapse independently and work with blocked storage", async ({ page }) => {
     await page.goto("/today", { waitUntil: "domcontentloaded" })
-    const group = page.locator("#sidebar-areas-group")
-    const toggle = page.locator("#project-nav-group-toggle")
-    const home = page.locator("[data-area-toggle]").first()
-    await expect.poll(() => page.evaluate(() => Boolean((window as unknown as { __meithealAreasDisclosure?: unknown }).__meithealAreasDisclosure))).toBe(true)
-    await expect(group).toHaveAttribute("open", "")
-    await home.press("Enter")
-    await expect(home).toHaveAttribute("aria-expanded", "false")
-    await toggle.press("Enter")
-    await expect(group).not.toHaveAttribute("open")
-    await expect(page.locator("#project-nav-content")).toBeHidden()
-    await expect(page.locator("#sidebar").getByRole("link", { name: "Planning", exact: true })).toBeVisible()
-    await expect.poll(() => page.evaluate(() => localStorage.getItem("meitheal_project_nav_group_collapsed"))).toBe("true")
-    await page.reload({ waitUntil: "domcontentloaded" })
-    await expect(group).not.toHaveAttribute("open")
-    await toggle.press("Space")
-    await expect(group).toHaveAttribute("open", "")
+    const group = page.locator("[data-sidebar-board-children]")
+    const toggle = page.locator("[data-sidebar-boards-toggle]")
+    const home = group.getByRole("button", { name: "Areas in Household" })
+    await expect(group).toBeVisible()
     await expect(home).toHaveAttribute("aria-expanded", "false")
     await home.press("Enter")
     await expect(home).toHaveAttribute("aria-expanded", "true")
+    await toggle.press("Enter")
+    await expect(toggle).toHaveAttribute("aria-expanded", "false")
+    await expect(group).toBeHidden()
+    await expect(page.locator("#sidebar").getByRole("link", { name: "Planning", exact: true })).toBeVisible()
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await expect(group).toBeHidden()
+    await toggle.press("Space")
+    await expect(group).toBeVisible()
+    await expect(home).toHaveAttribute("aria-expanded", "true")
+    await home.press("Enter")
+    await expect(home).toHaveAttribute("aria-expanded", "false")
 
-    // A sidebar-to-drawer resize keeps the current disclosure even with a stale saved value.
-    await page.evaluate(() => localStorage.setItem("meitheal_project_nav_group_collapsed", "true"))
+    // Resizing the sidebar keeps the current disclosure even with a stale saved value.
+    await page.evaluate(() => sessionStorage.setItem("meitheal-boards-collapsed", "true"))
     await page.setViewportSize({ width: 320, height: 812 })
-    await expect(page.locator("#menu-toggle")).toBeEnabled()
     await expect(page.locator("#menu-toggle")).toHaveAttribute("aria-expanded", "true")
     await expect(toggle).toBeInViewport()
-    await expect(group).toHaveAttribute("open", "")
+    await expect(group).toBeVisible()
     await toggle.press("Enter")
-    await expect(group).not.toHaveAttribute("open")
+    await expect(group).toBeHidden()
     await toggle.press("Space")
-    await expect(group).toHaveAttribute("open", "")
+    await expect(group).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321)
     await page.locator("#sidebar-toggle-btn").click()
     await expect(page.locator("#menu-toggle")).toHaveAttribute("aria-expanded", "false")
@@ -108,15 +106,15 @@ test.describe("Sidebar and Today follow-through", () => {
       Storage.prototype.setItem = () => { throw new DOMException("Storage blocked", "SecurityError") }
     })
     await page.reload({ waitUntil: "domcontentloaded" })
-    await expect(group).toHaveAttribute("open", "")
+    await expect(group).toBeVisible()
     await toggle.press("Enter")
-    await expect(group).not.toHaveAttribute("open")
+    await expect(group).toBeHidden()
     await toggle.press("Space")
-    await expect(group).toHaveAttribute("open", "")
+    await expect(group).toBeVisible()
   })
 
   test("Today stays compact, captures work and native sidebar navigation changes its URL", async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const now = new Date().toISOString().slice(0, 10)
     const created = await request.post("/api/tasks", { headers, data: { title: "Due-today follow-through", due_date: now } })
     expect(created.status(), await created.text()).toBe(201)

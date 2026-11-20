@@ -1,4 +1,4 @@
-import { execFileSync, fork, type ChildProcess } from "node:child_process"
+import { execFileSync, fork, type ChildProcess } from "../helpers/isolated-process"
 import { randomUUID } from "node:crypto"
 import { once } from "node:events"
 import { copyFile, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
@@ -25,12 +25,13 @@ let server: ChildProcess | undefined
 let origin: string
 let prefix: string
 
-async function startServer(liveCore = false): Promise<void> {
+async function startServer(liveCore = false, loopbackOperator = false): Promise<void> {
   const env = {
     PATH: process.env.PATH,
     NODE_ENV: "production",
     MEITHEAL_DB_URL: `file:${path.join(work, "meitheal.db")}`,
     ...(liveCore ? { MEITHEAL_TEST_CORE_USER_LOOKUP: "1" } : {}),
+    ...(loopbackOperator ? { MEITHEAL_TEST_LOOPBACK_OPERATOR: "1" } : {}),
   }
   execFileSync(process.execPath, ["scripts/migrate.mjs"], { cwd: web, env })
   server = fork(fixture, { cwd: web, env, stdio: ["ignore", "ignore", "inherit", "ipc"] })
@@ -67,6 +68,15 @@ async function databaseForm(api: APIRequestContext, headers: Record<string, stri
   const token = /name="token" value="([\w.-]+)"/.exec(await settings.text())?.[1]
   expect(token).toBeTruthy()
   return { token: token! }
+}
+
+async function householdWriteHeaders(api: APIRequestContext, headers: Record<string, string> = { origin }, ingress = true) {
+  const response = await api.get(origin + (ingress ? prefix : "") + "/api/boards", { headers })
+  expect(response.status(), await response.text()).toBe(200)
+  const proof = response.headers()["x-meitheal-board-session"]
+  expect(proof).toBeTruthy()
+  expect((await response.json()).boards).toContainEqual(expect.objectContaining({ id: "household" }))
+  return { ...headers, "x-meitheal-board-session": proof!, "x-meitheal-board-id": "household" }
 }
 
 async function setDatabaseCoreRole(role: string) {
@@ -252,7 +262,7 @@ coreTest("Today lets a verified administrator review an Assist prompt before sen
   expect(preference.status(), await preference.text()).toBe(200)
   const title = "Review this synthetic task"
   const created = await page.request.post(origin + prefix + "/api/tasks", {
-    headers: { origin },
+    headers: await householdWriteHeaders(page.request),
     data: { title, due_date: new Date().toISOString().slice(0, 10) },
   })
   expect(created.status(), await created.text()).toBe(201)
@@ -294,7 +304,7 @@ coreTest("a household member opens only an approved destination from Today throu
     previous_provider: null, previous_custom_url: null, previously_shared: false,
   } })
   expect(saved.status(), await saved.text()).toBe(200)
-  const created = await page.request.post(origin + prefix + "/api/tasks", { headers: admin, data: {
+  const created = await page.request.post(origin + prefix + "/api/tasks", { headers: await householdWriteHeaders(page.request, admin), data: {
     title: "Household handoff fixture", description: "This task text stays out of a custom URL.",
     due_date: new Date().toISOString().slice(0, 10),
   } })
@@ -341,15 +351,19 @@ coreTest("database download checks current Core role without reusing a stale own
 
 coreTest("Personal Pillars stay within the verified user across pages, APIs and a stale create form", async ({ playwright }) => {
   const api = await playwright.request.newContext({ baseURL: origin })
-  const owner = { cookie: "feedback-fixture=member", origin }
-  const other = { cookie: "feedback-fixture=member-two", origin }
-  const admin = { cookie: "feedback-fixture=admin", origin }
   const endpoint = prefix + "/api/pillars"
   const page = prefix + "/progress"
   try {
+    const ownerPage = { cookie: "feedback-fixture=member", origin }
+    const otherPage = { cookie: "feedback-fixture=member-two", origin }
+    const adminPage = { cookie: "feedback-fixture=admin", origin }
+    const owner = await householdWriteHeaders(api, ownerPage)
+    const other = await householdWriteHeaders(api, otherPage)
+    const admin = await householdWriteHeaders(api, adminPage)
     const household = await api.post(endpoint, { headers: admin, data: { name: "Household fixture" } })
     expect(household.status(), await household.text()).toBe(201)
-    const progress = await api.get(page, { headers: owner })
+    const progress = await api.get(page, { headers: ownerPage })
+    expect(progress.status()).toBe(200)
     expect(progress.headers()["cache-control"]).toBe("private, no-store")
     const audienceProof = /data-audience-proof="([\w.-]+)"/.exec(await progress.text())?.[1]
     expect(audienceProof).toBeTruthy()
@@ -370,7 +384,7 @@ coreTest("Personal Pillars stay within the verified user across pages, APIs and 
     })
     expect(principle.status(), await principle.text()).toBe(201)
 
-    for (const headers of [other, admin]) {
+    for (const [headers, pageHeaders] of [[other, otherPage], [admin, adminPage]] as const) {
       const unavailable = await api.get(detail, { headers })
       expect(unavailable.status()).toBe(404)
       expect(unavailable.headers()["cache-control"]).toBe("private, no-store")
@@ -379,21 +393,33 @@ coreTest("Personal Pillars stay within the verified user across pages, APIs and 
       expect(deleteDenied.status(), await deleteDenied.text()).toBe(404)
       expect((await api.get(detail + "/principles", { headers })).status()).toBe(404)
       expect((await api.post(detail + "/principles", { headers, data: { statement: "Wrong account" } })).status()).toBe(404)
-      const theirPage = await (await api.get(page, { headers })).text()
+      const theirPage = await (await api.get(page, { headers: pageHeaders })).text()
       expect(theirPage).not.toContain(label)
       expect(theirPage).not.toContain("Private synthetic principle")
       expect(theirPage).not.toContain(pillar.id)
     }
-    const mine = await (await api.get(page, { headers: owner })).text()
+    const mine = await (await api.get(page, { headers: ownerPage })).text()
     expect(mine).toContain(label)
     expect(mine).toContain("Private synthetic principle")
     expect(await (await api.get(endpoint, { headers: owner })).text()).not.toContain(pillar.id)
     expect(await (await api.get(endpoint + "?include_personal=true", { headers: owner })).text()).toContain(pillar.id)
-    expect((await api.get(detail + "/associations", { headers: owner })).status()).toBe(404)
+    const named = await api.post(prefix + "/api/boards", { headers: owner, data: { name: "Fixture private Board" } })
+    expect(named.status(), await named.text()).toBe(201)
+    for (const boardId of ["household", (await named.json()).id]) {
+      const boardProgress = await api.get(page + "?board_id=" + boardId, { headers: ownerPage })
+      expect(boardProgress.status()).toBe(200)
+      const html = await boardProgress.text()
+      expect(html).not.toContain("data-audience-proof=")
+      expect(html).not.toContain(label)
+    }
+    const associations = await api.get(detail + "/associations", { headers: owner })
+    expect(associations.status()).toBe(200)
+    expect(await associations.json()).toEqual({ associations: [] })
+    expect((await api.get(detail + "/associations", { headers: other })).status()).toBe(404)
     expect((await api.patch(detail, { headers: owner, data: { audience: "household" } })).status()).toBe(400)
     const removed = await api.delete(detail, { headers: { ...owner, "content-type": "application/json" } })
     expect(removed.status(), await removed.text()).toBe(200)
-    expect(await (await api.get(page, { headers: owner })).text()).not.toContain(label)
+    expect(await (await api.get(page, { headers: ownerPage })).text()).not.toContain(label)
   } finally {
     await api.dispose()
   }
@@ -414,7 +440,7 @@ coreTest("a superseded foreground check cannot restore Personal Pillars after an
     const proof = await page.getByLabel("Visible to").getAttribute("data-audience-proof")
     const title = "Synthetic private foreground fixture"
     const created = await context.request.post(endpoint, {
-      headers: { origin }, data: { name: title, audience: "personal", audienceProof: proof },
+      headers: await householdWriteHeaders(context.request), data: { name: title, audience: "personal", audienceProof: proof },
     })
     expect(created.status(), await created.text()).toBe(201)
     await page.reload()
@@ -466,7 +492,8 @@ coreTest("going offline closes the Pillar editor and releases page scrolling", a
     await expect(page.locator("#pillar-form-overlay.active")).toBeVisible()
     await page.evaluate(() => document.body.style.setProperty("overflow", "hidden"))
     await context.setOffline(true)
-    await expect(page.getByText("Reconnect and refresh Progress to see your Personal Pillars.")).toBeVisible()
+    await expect(page.getByText(/Reconnect and refresh Progress to see your Personal Pillars|This Board is hidden until access can be verified/)).toBeVisible()
+    await expect(page.locator("#pillar-form-overlay.active")).toBeHidden()
     expect(await page.evaluate(() => document.body.style.overflow)).toBe("")
   } finally {
     await context.close()
@@ -489,7 +516,7 @@ coreTest("database download includes committed writes still in the WAL", async (
       // The fixture can finish startup database work after it starts answering health requests.
       await expect.poll(() => checkpoint.get()).toMatchObject({ busy: 0, log: 0 })
       const title = "Committed WAL task"
-      const created = await api.post(`${prefix}/api/tasks`, { headers: admin, data: { title } })
+      const created = await api.post(`${prefix}/api/tasks`, { headers: await householdWriteHeaders(api, admin), data: { title } })
       expect(created.status()).toBe(201)
       const { id } = await created.json()
       expect(source.prepare("SELECT title FROM tasks WHERE id = ?").get(id)).toMatchObject({ title })
@@ -660,7 +687,7 @@ for (const secure of [true, false]) {
   })
 }
 
-test("Deferred and cross-page Details wait for the new worker through ingress", async ({ browser }) => {
+coreTest("Deferred and cross-page Details wait for the new worker through ingress", async ({ browser }) => {
   const child = server!
   async function selectWorker(old: boolean) {
     const ack = once(child, "message", { signal: AbortSignal.timeout(5000) })
@@ -686,7 +713,7 @@ test("Deferred and cross-page Details wait for the new worker through ingress", 
       if (url.origin === origin) paths.push(url.pathname)
     })
     const at = (route: string) => origin + prefix + route
-    const headers = { origin }
+    const headers = await householdWriteHeaders(context.request)
     const created = await context.request.post(at("/api/tasks"), {
       data: { title: "Deferred older worker fixture", status: "pending" }, headers,
     })
@@ -747,15 +774,17 @@ test("Deferred and cross-page Details wait for the new worker through ingress", 
 })
 
 test("task list frames the same UTF-8 JSON through standalone and ingress", async ({ playwright }) => {
-  const api = await playwright.request.newContext({ baseURL: origin })
+  await stopServer()
+  await startServer(false, true)
+  const api = await playwright.request.newContext()
   const title = "Nótaí 🧪"
   const description = "Cuir ceist ar an bhfoireann."
   try {
-    const created = await api.post("/api/tasks", { headers: { origin }, data: { title, description } })
+    const created = await api.post(origin + "/api/tasks", { headers: await householdWriteHeaders(api, { origin }, false), data: { title, description } })
     expect(created.status()).toBe(201)
     const { id } = await created.json()
     const path = "/api/tasks?limit=50"
-    const direct = await api.get(path)
+    const direct = await api.get(origin + path)
     expect(direct.status()).toBe(200)
     const body = await direct.body()
     expect(JSON.parse(body.toString("utf8"))).toMatchObject({
@@ -766,14 +795,16 @@ test("task list frames the same UTF-8 JSON through standalone and ingress", asyn
     expect(direct.headers()).toMatchObject(framed)
     expect(direct.headers()["transfer-encoding"]).toBeUndefined()
 
+    await stopServer()
+    await startServer(true)
     const member = { cookie: "feedback-fixture=member" }
-    const scoped = await api.get(prefix + path, { headers: member })
+    const scoped = await api.get(origin + prefix + path, { headers: member })
     expect(scoped.status()).toBe(200)
     expect(scoped.headers()).toMatchObject({ ...framed, "x-ingress-path": prefix })
     expect(scoped.headers()["transfer-encoding"]).toBeUndefined()
     expect(await scoped.body()).toEqual(body)
 
-    const head = await api.head(prefix + path, { headers: member })
+    const head = await api.head(origin + prefix + path, { headers: member })
     expect(head.status()).toBe(200)
     expect(head.headers()).toMatchObject(framed)
     expect(await head.body()).toHaveLength(0)
@@ -782,7 +813,7 @@ test("task list frames the same UTF-8 JSON through standalone and ingress", asyn
   }
 })
 
-test("ingress loads board dependencies from the app path", async ({ page, context }) => {
+coreTest("ingress loads board dependencies from the app path", async ({ page, context }) => {
   await context.setExtraHTTPHeaders({})
   await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
 
@@ -804,7 +835,7 @@ test("ingress loads board dependencies from the app path", async ({ page, contex
   expect(escapedAssets).toEqual([])
 })
 
-test("a 2,000-task Table keeps its paged results, assets and views inside ingress", async ({ page, context }) => {
+coreTest("a 2,000-task Table keeps its paged results, assets and views inside ingress", async ({ page, context }) => {
   test.setTimeout(45000)
   const db = new DatabaseSync(path.join(work, "meitheal.db"), { timeout: 5000 })
   try {
@@ -869,7 +900,7 @@ test("a 2,000-task Table keeps its paged results, assets and views inside ingres
   expect(escaped).toEqual([])
 })
 
-test("the service worker precaches inside ingress without opening inactive board views", async ({ browser }) => {
+coreTest("the service worker precaches inside ingress without opening inactive board views", async ({ browser }) => {
   const context = await browser.newContext({ serviceWorkers: "allow", extraHTTPHeaders: {} })
   try {
     await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
@@ -883,7 +914,8 @@ test("the service worker precaches inside ingress without opening inactive board
     await page.waitForFunction(() => navigator.serviceWorker.controller !== null)
 
     expect(workerRequests.some(url => url.pathname === prefix + "/version.json")).toBe(true)
-    expect(workerRequests.some(url => url.pathname === prefix + "/offline")).toBe(true)
+    expect(workerRequests.some(url => url.pathname === prefix + "/offline.html")).toBe(true)
+    expect(workerRequests.some(url => url.pathname === prefix + "/offline")).toBe(false)
     expect(workerRequests.some(url => url.pathname === prefix + "/planning")).toBe(false)
     for (const legacy of ["/areas", "/projects"]) {
       const redirect = await page.request.get(origin + prefix + legacy, { maxRedirects: 0 })
@@ -898,7 +930,7 @@ test("the service worker precaches inside ingress without opening inactive board
   }
 })
 
-test("a Settings section chosen after a search jump is remembered inside ingress", async ({ page, context }) => {
+coreTest("a Settings section chosen after a search jump is remembered inside ingress", async ({ page, context }) => {
   await context.setExtraHTTPHeaders({})
   await context.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
   await page.goto(origin + prefix + "/settings")
@@ -914,10 +946,10 @@ test("a Settings section chosen after a search jump is remembered inside ingress
   expect(await readScopedNavigation(page)).toMatchObject({ path: "/settings#navigation-settings" })
 })
 
-test("ingress Today keeps refreshed completion links in the App", async ({ page, context }) => {
+coreTest("ingress Today keeps refreshed completion links in the App", async ({ page, context }) => {
   const title = "Complete from the ingress Today fixture"
   const created = await page.request.post(origin + prefix + "/api/tasks", {
-    headers: { cookie: "feedback-fixture=admin", origin },
+    headers: await householdWriteHeaders(page.request, { cookie: "feedback-fixture=admin", origin }),
     data: { title, due_date: new Intl.DateTimeFormat("en-CA", {
       timeZone: "Europe/Dublin", dateStyle: "short",
     }).format(new Date()) },
@@ -1228,7 +1260,7 @@ test("member can opt into Home Assistant colors and keep the saved fallback", as
   await expect.poll(() => token("--bg-primary-rgb")).toBe(knightBackground)
 })
 
-test("ingress Auto follows Home Assistant when the cached theme is invalid", async ({ page, context }) => {
+coreTest("ingress Auto follows Home Assistant when the cached theme is invalid", async ({ page, context }) => {
   await context.setExtraHTTPHeaders({})
   await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
   await page.emulateMedia({ colorScheme: "dark" })
@@ -1366,7 +1398,7 @@ coreTest("verified members receive durable receipts and queue APIs fail closed",
     expect((await list.json()).reports).toMatchObject([{ id: receipt.id, message: body.message, state: "open" }])
 
     const enrollment = await api.post(at("/api/agent-tokens"), {
-      headers: { ...admin, origin }, data: { name: "Feedback fixture", scopes: ["mcp:execute", "tasks:write"] },
+      headers: await householdWriteHeaders(api, { ...admin, origin }), data: { name: "Feedback fixture", scopes: ["mcp:execute", "tasks:write"] },
     })
     expect(enrollment.status()).toBe(201)
     const { token } = await enrollment.json()
@@ -1482,9 +1514,12 @@ coreTest("Settings saves and retries feedback, then reviews, downloads and delet
       await route.abort()
     })
     await userPage.goto(appPwa)
+    await expect(userPage.locator("#settings-panels")).not.toHaveAttribute("inert", "")
     const appPanel = userPage.locator("#app-pwa-settings")
     const localFeedback = appPanel.getByRole("link", { name: "Share local feedback", exact: true })
-    await appPanel.getByRole("link", { name: /Changelog/ }).focus()
+    const changelog = appPanel.getByRole("link", { name: /Changelog/ })
+    await changelog.focus()
+    await expect(changelog).toBeFocused()
     await userPage.keyboard.press("Tab")
     await expect(localFeedback).toBeFocused()
     const guides = appPanel.getByRole("link", { name: "Guides", exact: true })

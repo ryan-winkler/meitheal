@@ -1,15 +1,12 @@
 import { randomUUID } from "node:crypto"
-
-import { expect, test } from "@playwright/test"
+import { expect } from "@playwright/test"
+import { test } from "../helpers/stored-assignee-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
-test.use({ serviceWorkers: "block" })
 
 test("Household Kanban keeps distinct assignees through roster recovery and quick unassignment", async ({
-  page, request, baseURL,
+  assigneeFixture: { page, request, app, headers, setStoredAssignee },
 }) => {
-  const origin = new URL(baseURL!).origin
-  const headers = { origin, "content-type": "application/json" }
   const prefix = `Assignee grouping ${randomUUID().slice(0, 8)}`
   const haUser = { id: "ha_0123456789abcdef0123456789abcdef", name: "Alex Home" }
   const otherHaUser = { id: "ha_fedcba9876543210fedcba9876543210", name: "Jordan Home" }
@@ -24,13 +21,14 @@ test("Household Kanban keeps distinct assignees through roster recovery and quic
   } }))
 
   async function createTask(label: string, assigned: string | null) {
-    const response = await request.post("/api/tasks", {
+    const response = await request.post(app + "/api/tasks", {
       headers,
-      data: { title: `${prefix} ${label}`, status: "pending", assigned_to: assigned },
+      data: { title: `${prefix} ${label}`, status: "pending" },
     })
     expect(response.status(), await response.text()).toBe(201)
     const { id } = await response.json() as { id: string }
     taskIds.push(id)
+    setStoredAssignee(id, assigned)
     return id
   }
 
@@ -41,7 +39,7 @@ test("Household Kanban keeps distinct assignees through roster recovery and quic
     const unassignedTask = await createTask("Unassigned task", null)
     const reservedTask = await createTask("Stored legacy assignee", "__unassigned__")
     const cardCount = taskIds.length
-    await page.goto(`/tasks?search=${encodeURIComponent(prefix)}#kanban`)
+    await page.goto(`${app}/tasks?search=${encodeURIComponent(prefix)}#kanban`)
     await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
 
     const lane = page.locator('.kanban-column[data-status="pending"]')
@@ -116,7 +114,7 @@ test("Household Kanban keeps distinct assignees through roster recovery and quic
     await lane.locator(cardSelector(haTask)).locator(".card-assign-btn").press("Enter")
     const assignDialog = page.getByRole("dialog", { name: "Assign User" })
     const write = page.waitForResponse(response => response.request().method() === "PUT" &&
-      new URL(response.url()).pathname === `/api/tasks/${haTask}`)
+      new URL(response.url()).pathname.endsWith(`/api/tasks/${haTask}`))
     await assignDialog.getByRole("menuitem", { name: "Unassigned", exact: true }).press("Enter")
     const result = await write
     expect(result.ok()).toBe(true)
@@ -139,7 +137,7 @@ test("Household Kanban keeps distinct assignees through roster recovery and quic
     await expect(lane).toHaveAttribute("data-total", laneTotal!)
 
     verified = false
-    await page.context().addCookies([{ name: "meitheal-locale", value: "ga", url: origin }])
+    await page.context().addCookies([{ name: "meitheal-locale", value: "ga", url: app }])
     await page.reload()
     await expect(page).toHaveURL(url => url.searchParams.get("groupBy") === "assigned")
     await expect(label(otherHaTask)).toHaveText("Níor fíoraíodh sannaí Home Assistant")
@@ -149,24 +147,22 @@ test("Household Kanban keeps distinct assignees through roster recovery and quic
 
     const removedHeader = await heading(localTask).elementHandle()
     await heading(localTask).focus()
-    expect((await request.put(`/api/tasks/${localTask}`, { headers, data: { assigned_to: null } })).ok()).toBe(true)
+    expect((await request.put(`${app}/api/tasks/${localTask}`, { headers, data: { assigned_to: null } })).ok()).toBe(true)
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })))
     await expect.poll(() => removedHeader!.evaluate(element => element.isConnected)).toBe(false)
     await expect(lane.locator(".kanban-column-header")).toBeFocused()
     await expect(group(unassignedTask).locator(cardSelector(localTask))).toBeVisible()
   } finally {
     for (const taskId of taskIds) {
-      const deleted = await request.delete(`/api/tasks/${taskId}`, { headers })
+      const deleted = await request.delete(`${app}/api/tasks/${taskId}`, { headers })
       expect.soft(deleted.ok(), `Delete fixture task: ${await deleted.text()}`).toBe(true)
     }
   }
 })
 
 test("a refreshed assignee board resolves names while its old directory response is still pending", async ({
-  page, request, baseURL,
+  assigneeFixture: { page, request, app, headers, setStoredAssignee },
 }) => {
-  const origin = new URL(baseURL!).origin
-  const headers = { origin, "content-type": "application/json" }
   const prefix = `Assignee refresh ${randomUUID().slice(0, 8)}`
   const users = [
     { id: "ha_0123456789abcdef0123456789abcdef", name: "Alex Home" },
@@ -193,14 +189,16 @@ test("a refreshed assignee board resolves names while its old directory response
 
   try {
     for (const user of users) {
-      const response = await request.post("/api/tasks", {
+      const response = await request.post(app + "/api/tasks", {
         headers,
-        data: { title: `${prefix} ${user.name}`, status: "pending", assigned_to: user.id },
+        data: { title: `${prefix} ${user.name}`, status: "pending" },
       })
       expect(response.status(), await response.text()).toBe(201)
-      taskIds.push((await response.json() as { id: string }).id)
+      const { id } = await response.json() as { id: string }
+      taskIds.push(id)
+      setStoredAssignee(id, user.id)
     }
-    await page.goto(`/tasks?search=${encodeURIComponent(prefix)}&groupBy=assigned#kanban`, {
+    await page.goto(`${app}/tasks?search=${encodeURIComponent(prefix)}&groupBy=assigned#kanban`, {
       waitUntil: "domcontentloaded",
     })
     const groups = page.locator('.kanban-column[data-status="pending"] .dynamic-group')
@@ -231,13 +229,15 @@ test("a refreshed assignee board resolves names while its old directory response
   } finally {
     releaseOld()
     for (const taskId of taskIds) {
-      const deleted = await request.delete(`/api/tasks/${taskId}`, { headers })
+      const deleted = await request.delete(`${app}/api/tasks/${taskId}`, { headers })
       expect.soft(deleted.ok(), `Delete fixture task: ${await deleted.text()}`).toBe(true)
     }
   }
 })
 
-test("unreadable or missing assignment keys keep all cards grouped", async ({ page, request }) => {
+test("unreadable or missing assignment keys keep all cards grouped", async ({
+  assigneeFixture: { page, request, app, headers, setStoredAssignee },
+}) => {
   const prefix = `Assignment metadata ${randomUUID()}`
   const ids: string[] = []
   const failures: string[] = []
@@ -245,11 +245,14 @@ test("unreadable or missing assignment keys keep all cards grouped", async ({ pa
   await page.route("**/api/users", route => route.fulfill({ json: { users: [], ha_connected: false } }))
   try {
     for (let index = 0; index < 3; index++) {
-      const response = await request.post("/api/tasks", {
-        data: { title: `${prefix} ${index}`, assigned_to: `custom_metadata_${index}` },
+      const response = await request.post(app + "/api/tasks", {
+        headers,
+        data: { title: `${prefix} ${index}` },
       })
       expect(response.status()).toBe(201)
-      ids.push((await response.json()).id)
+      const { id } = await response.json() as { id: string }
+      ids.push(id)
+      setStoredAssignee(id, `custom_metadata_${index}`)
     }
     await page.route("**/tasks?**", async route => {
       const response = await route.fetch()
@@ -258,12 +261,12 @@ test("unreadable or missing assignment keys keep all cards grouped", async ({ pa
         ["data-assignee-key=\"broken\"", "data-assignee-key=\"null\"", ""][index++] ?? "")
       await route.fulfill({ response, body })
     }, { times: 1 })
-    await page.goto(`/tasks?view=kanban&area=&search=${encodeURIComponent(prefix)}&groupBy=assigned#kanban`)
+    await page.goto(`${app}/tasks?view=kanban&area=&search=${encodeURIComponent(prefix)}&groupBy=assigned#kanban`)
     const lane = page.locator('.kanban-column[data-status="pending"]')
     await expect(lane.locator(".dynamic-group")).toHaveCount(3)
     for (const id of ids) await expect(lane.locator(`.dynamic-group .kanban-card[data-id="${id}"]`)).toBeVisible()
     expect(failures).toEqual([])
   } finally {
-    for (const id of ids) await request.delete(`/api/tasks/${id}`)
+    for (const id of ids) await request.delete(`${app}/api/tasks/${id}`, { headers })
   }
 })

@@ -1,5 +1,7 @@
 import { writeFile } from "node:fs/promises"
+import { setTimeout as delay } from "node:timers/promises"
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 // These tests create and remove their own data in the disposable local fixture.
@@ -13,12 +15,18 @@ test.use({
 
 type Placement = "primary" | "More" | "phone"
 
+async function keepBoardsInMore(page: Page) {
+  // Constrain the navbar so the focused Boards branch stays in More.
+  await page.addStyleTag({ content: '#sidebar [data-nav-overflow="sidebar"] { max-width: 180px; }' })
+}
+
 async function removeFixtureEntity(request: APIRequestContext, path: string) {
-  const deleted = await request.delete(path, { data: {} })
+  const headers = await currentBoardWriteHeaders(request, "household", {})
+  const deleted = await request.delete(path, { headers, data: {} })
   expect(deleted.status()).toBe(200)
 }
 
-async function openHierarchy(page: Page, placement?: Placement) {
+async function openHierarchy(page: Page, areaId: string, placement?: Placement) {
   const drawer = page.locator("#menu-toggle")
   if (await drawer.isVisible() && await drawer.getAttribute("aria-expanded") !== "true") await drawer.click()
   const boards = page.locator("[data-sidebar-boards-toggle]")
@@ -32,16 +40,17 @@ async function openHierarchy(page: Page, placement?: Placement) {
     }
   }
   if (await boards.getAttribute("aria-expanded") !== "true") await boards.click()
-  const areas = page.locator("#sidebar-areas-group")
-  if (!(await areas.evaluate(element => (element as HTMLDetailsElement).open))) {
-    await areas.locator(":scope > summary").click()
-  }
-  await expect(page.locator("#project-nav-content")).toBeVisible()
+  const household = page.locator('[data-named-board-shortcut="household"]')
+  const areas = household.locator(".sidebar-board-toggle")
+  if (await areas.getAttribute("aria-expanded") === "false") await areas.click()
+  const projects = household.locator(`[data-area-toggle="${areaId}"]`)
+  if (await projects.getAttribute("aria-expanded") === "false") await projects.click()
+  await expect(household.locator(`[data-board-projects="${areaId}"]`)).toBeVisible()
 }
 
 async function expectHierarchyOpen(page: Page, trigger: Locator, placement: Placement) {
   await expect(page.locator("[data-sidebar-boards-toggle]")).toHaveAttribute("aria-expanded", "true")
-  await expect(page.locator("#sidebar-areas-group")).toHaveJSProperty("open", true)
+  await expect(page.locator('[data-board-groups="household"]')).toBeVisible()
   if (placement === "phone") await expect(page.locator("#menu-toggle")).toHaveAttribute("aria-expanded", "true")
   if (await trigger.evaluate(element => Boolean(element.closest("[data-nav-overflow-menu]")))) {
     await expect(page.locator("#sidebar [data-nav-overflow-more]")).toHaveJSProperty("open", true)
@@ -78,9 +87,18 @@ for (const placement of ["primary", "More", "phone"] as const) {
     let areaName: string
     let projectName: string
 
-    test.beforeEach(async ({ page, request }) => {
+    test.beforeEach(async ({ page, request }, testInfo) => {
       areaId = ""
       projectId = ""
+      // These navigation cases keep one disposable server and can make many background reads.
+      const budget = await request.get("/api/boards")
+      const remaining = Number(budget.headers()["x-ratelimit-remaining"] ?? Infinity)
+      const wait = Math.max(0, Number(budget.headers()["x-ratelimit-reset"]) * 1000 - Date.now())
+      await budget.dispose()
+      if (remaining < 100 && wait > 0) {
+        testInfo.setTimeout(testInfo.timeout + wait)
+        await delay(wait)
+      }
       await page.setViewportSize({ width: { primary: 2200, More: 769, phone: 390 }[placement], height: 1000 })
       await page.addInitScript(() => {
         localStorage.setItem("meitheal-appearance", JSON.stringify({ navigation: "navbar" }))
@@ -88,17 +106,19 @@ for (const placement of ["primary", "More", "phone"] as const) {
       const suffix = crypto.randomUUID().slice(0, 8)
       areaName = `Navbar action Area ${suffix}`
       projectName = `Navbar action Project ${suffix}`
-      const area = await request.post("/api/areas", { data: { name: areaName } })
+      const headers = await currentBoardWriteHeaders(request, "household", {})
+      const area = await request.post("/api/areas", { headers, data: { name: areaName } })
       expect(area.status()).toBe(201)
       areaId = (await area.json()).id
-      const project = await request.post("/api/projects", { data: { title: projectName, area_id: areaId } })
+      const project = await request.post("/api/projects", { headers, data: { title: projectName, area_id: areaId } })
       expect(project.status()).toBe(201)
       projectId = (await project.json()).id
       await page.goto("/today")
       await expect(page.locator("html")).toHaveAttribute("data-appearance-navigation", "navbar")
+      if (placement === "More") await keepBoardsInMore(page)
+      await openHierarchy(page, areaId, placement)
       // Let the asynchronous badge update finish before placing focus inside More.
       await expect(page.locator(`[data-project-task-count="${projectId}"]`)).toHaveAttribute("data-loaded", "true")
-      await openHierarchy(page, placement)
     })
 
     test.afterEach(async ({ request }) => {
@@ -116,7 +136,7 @@ for (const placement of ["primary", "More", "phone"] as const) {
       expect(await trigger.evaluate(element => Boolean(element.closest("[data-nav-overflow-menu]")))).toBe(placement === "More")
       if (placement === "primary") {
         await row.locator(`[data-project-id="${projectId}"]`).click({ button: "right" })
-        await expect(page.locator(`#project-nav-pinned-list [data-project-id="${projectId}"]`)).toBeVisible()
+        await expect(page.locator(`[data-board-pinned-list] [data-project-id="${projectId}"]`)).toBeVisible()
       }
       await row.hover()
       await testInfo.attach("project-action-hit-targets.json", {
@@ -126,9 +146,11 @@ for (const placement of ["primary", "More", "phone"] as const) {
           return { tag: node.tagName, class: node.className, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, pointerEvents: style.pointerEvents, opacity: style.opacity }
         })), null, 2), contentType: "application/json",
       })
+      const location = page.url()
       await trigger.click()
       const menu = page.locator("body > #project-menu-dropdown")
       await expect(menu).toBeVisible()
+      await expect(page).toHaveURL(location)
       await menu.getByRole("button", { name: "Rename", exact: true }).click()
       const input = row.locator(".stree__inline-input")
       await expect(input).toBeVisible()
@@ -169,6 +191,14 @@ for (const placement of ["primary", "More", "phone"] as const) {
       await expect(trigger).toBeFocused()
       await expect(menu).toBeHidden()
       await expect(row).toBeVisible()
+      if (placement === "primary") {
+        const boards = page.locator("[data-sidebar-boards-toggle]")
+        await expect(boards).toHaveAttribute("aria-expanded", "true")
+        await trigger.press("Escape")
+        await expect(boards).toHaveAttribute("aria-expanded", "false")
+        await expect(boards).toBeFocused()
+        await openHierarchy(page, areaId, placement)
+      }
       await trigger.press("Enter")
       await expect(menu).toBeVisible()
       await expect(menu.locator("[data-action=\"manage\"]")).toBeFocused()
@@ -187,6 +217,12 @@ for (const placement of ["primary", "More", "phone"] as const) {
       await expect(trigger).toBeFocused()
       await expect(row).toBeVisible()
       if (placement === "primary") {
+        const boards = page.locator("[data-sidebar-boards-toggle]")
+        await expect(boards).toHaveAttribute("aria-expanded", "true")
+        await trigger.press("Escape")
+        await expect(boards).toHaveAttribute("aria-expanded", "false")
+        await expect(boards).toBeFocused()
+        await openHierarchy(page, areaId, placement)
         await row.hover()
         await trigger.click()
         await menu.getByRole("button", { name: "Rename", exact: true }).click()
@@ -202,9 +238,9 @@ for (const placement of ["primary", "More", "phone"] as const) {
         await expect(input).toHaveCount(0)
         expect((await (await request.get(`/api/projects/${projectId}`)).json()).title).toBe(savedName)
         projectName = savedName
-        await openHierarchy(page)
+        await openHierarchy(page, areaId)
         await expect(trigger).toHaveAttribute("aria-label", `Project options - ${savedName}`)
-        await expect(page.locator(`#project-nav-pinned-list [data-project-id="${projectId}"] .stree__project-name`)).toHaveText(savedName)
+        await expect(page.locator(`[data-board-pinned-list] [data-project-id="${projectId}"] .stree__project-name`)).toHaveText(savedName)
         await row.hover()
         await trigger.click()
         await menu.getByRole("button", { name: "Rename", exact: true }).click()
@@ -229,16 +265,15 @@ for (const placement of ["primary", "More", "phone"] as const) {
         await expect(popover).toBeHidden()
         expect((await (await request.get(`/api/projects/${projectId}`)).json()).icon).toBe("🚀")
         await expect(row.locator(".stree__project-icon use")).toHaveAttribute("href", "#mt-icon-rocket")
-        await expect(page.locator(`#project-nav-pinned-list [data-project-id="${projectId}"] .stree__project-icon use`)).toHaveAttribute("href", "#mt-icon-rocket")
+        await expect(page.locator(`[data-board-pinned-list] [data-project-id="${projectId}"] .stree__project-icon use`)).toHaveAttribute("href", "#mt-icon-rocket")
       }
       await row.hover()
       await trigger.click()
       const manage = menu.getByRole("link", { name: "Edit Project", exact: true })
-      await expect(manage).toHaveAttribute("href", `/projects/${projectId}#settings`)
+      await expect(manage).toHaveAttribute("href", `/boards/household?view=groups&project=${projectId}#project-settings`)
       await manage.click()
-      // The existing legacy entry hands off to the canonical Board Project settings.
       await expect(page).toHaveURL(url => url.pathname === "/boards/household"
-        && url.searchParams.get("project") === projectId && url.hash === "#project-settings")
+        && url.searchParams.get("project") === projectId && url.searchParams.get("view") === "groups" && url.hash === "#project-settings")
       await expect(page.locator("#section-project-settings")).toBeVisible()
       await expect(page.locator("#edit-proj-title")).toHaveValue(projectName)
       await expect(page.locator("#save-proj-btn")).toBeVisible()
@@ -252,11 +287,14 @@ for (const placement of ["primary", "More", "phone"] as const) {
         await expect(page.locator("[data-inactivity-link]")).toBeVisible()
         await page.evaluate(() => Reflect.set(window, "navbarHierarchyReturnProbe", true))
         await page.locator("[data-inactivity-link]").click()
-        await expect(page.locator("#sidebar")).toHaveCount(0)
+        await expect(page.locator("[data-inactivity-page]")).toBeVisible()
+        await expect(page.locator("#sidebar")).toHaveCount(1)
         await page.locator("[data-inactivity-back]").click()
+        await expect(page).toHaveURL(url => url.pathname === "/boards/household")
+        await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
         await expect(page.locator("#sidebar")).toHaveCount(1)
         expect(await page.evaluate(() => Reflect.get(window, "navbarHierarchyReturnProbe"))).toBe(true)
-        await openHierarchy(page, placement)
+        await openHierarchy(page, areaId, placement)
         await row.hover()
         await trigger.click()
         await expect(menu).toBeVisible()
@@ -280,7 +318,7 @@ for (const placement of ["primary", "More", "phone"] as const) {
       expect(await trigger.evaluate(element => Boolean(element.closest("[data-nav-overflow-menu]")))).toBe(placement === "More")
       if (placement === "primary") {
         await row.locator(`[data-project-id="${projectId}"]`).click({ button: "right" })
-        await expect(page.locator(`#project-nav-pinned-list [data-project-id="${projectId}"]`)).toBeVisible()
+        await expect(page.locator(`[data-board-pinned-list] [data-project-id="${projectId}"]`)).toBeVisible()
       }
       await row.hover()
       await trigger.click()
@@ -299,7 +337,7 @@ for (const placement of ["primary", "More", "phone"] as const) {
       expect(persisted.status()).toBe(200)
       expect((await persisted.json()).title).toBe(projectName)
       // Focused destinations may move out of More so their opener remains visible.
-      await openHierarchy(page)
+      await openHierarchy(page, areaId)
       await expect(trigger).toBeVisible()
       if (placement === "primary") {
         await row.hover()
@@ -400,7 +438,7 @@ for (const placement of ["primary", "More", "phone"] as const) {
             && response.request().method() === "POST" && response.status() === 201)
           await creationInput.press("Enter")
           insertedProjectId = (await (await created).json()).id
-          const inserted = page.locator(`#project-nav-list [data-project-id="${insertedProjectId}"]`).locator("xpath=ancestor::div[contains(@class, 'stree__project')][1]")
+          const inserted = page.locator(`[data-board-projects] [data-project-id="${insertedProjectId}"]`).locator("xpath=ancestor::div[contains(@class, 'stree__project')][1]")
           await expect(inserted).toBeVisible()
           await inserted.hover()
           const addTask = inserted.locator("[data-task-add-project]")
@@ -471,7 +509,7 @@ for (const placement of ["primary", "More", "phone"] as const) {
         }
       }
       if (placement === "More") {
-        const project = page.locator(`#project-nav-list [data-project-id="${projectId}"]`)
+        const project = page.locator(`[data-board-projects] [data-project-id="${projectId}"]`)
         await expect(project).toBeVisible()
         await project.focus()
         await expect(project).toBeFocused()
@@ -481,7 +519,7 @@ for (const placement of ["primary", "More", "phone"] as const) {
           viewport: { width: innerWidth, height: innerHeight },
           insideMore: Boolean(element.closest("[data-nav-overflow-menu]")),
           boardsExpanded: document.querySelector("[data-sidebar-boards-toggle]")?.getAttribute("aria-expanded"),
-          areasOpen: (document.querySelector("#sidebar-areas-group") as HTMLDetailsElement | null)?.open,
+          areasOpen: !document.querySelector('[data-board-groups="household"]')?.hasAttribute("hidden"),
         })), null, 2))
         await testInfo.attach("ordinary-link-resize-start.json", { path: handoffPath, contentType: "application/json" })
         await page.setViewportSize({ width: 390, height: 1000 })
@@ -495,24 +533,23 @@ for (const placement of ["primary", "More", "phone"] as const) {
     test("keyboard Unpin preserves the remaining pinned row or the original Project context", async ({ page, request }) => {
       let secondProjectId: string | undefined
       try {
-        const second = await request.post("/api/projects", { data: { title: projectName + " second", area_id: areaId } })
+        const headers = await currentBoardWriteHeaders(request, "household", {})
+        const second = await request.post("/api/projects", { headers, data: { title: projectName + " second", area_id: areaId } })
         expect(second.status()).toBe(201)
         secondProjectId = (await second.json()).id
-        const original = (id: string) => page.locator(`#project-nav-list [data-project-id="${id}"]`)
-        const pinned = (id: string) => page.locator(`#project-nav-pinned-list [data-project-id="${id}"]`)
+        const original = (id: string) => page.locator(`[data-board-projects] [data-project-id="${id}"]`)
+        const pinned = (id: string) => page.locator(`[data-board-pinned-list] [data-project-id="${id}"]`)
         const unpin = (id: string) => pinned(id).locator("xpath=..").getByRole("button", { name: "Unpin project", exact: true })
+        const pin = (id: string) => original(id).press("Shift+F10")
         const refresh = async () => {
           await page.reload()
-          if (placement === "More") {
-            // A genuinely crowded navbar keeps this action in More even when its row receives focus.
-            await page.addStyleTag({ content: "#sidebar [data-nav-overflow=\"sidebar\"] { max-width: 180px; }" })
-          }
+          if (placement === "More") await keepBoardsInMore(page)
+          await openHierarchy(page, areaId, placement)
           await expect(page.locator(`[data-project-task-count="${projectId}"]`)).toHaveAttribute("data-loaded", "true")
           await expect(page.locator(`[data-project-task-count="${secondProjectId}"]`)).toHaveAttribute("data-loaded", "true")
-          await openHierarchy(page, placement)
         }
         await refresh()
-        await original(projectId).click({ button: "right" })
+        await pin(projectId)
         await expect(pinned(projectId)).toBeVisible()
         await refresh()
         expect(await pinned(projectId).evaluate(element => Boolean(element.closest("[data-nav-overflow-menu]")))).toBe(placement === "More")
@@ -527,9 +564,9 @@ for (const placement of ["primary", "More", "phone"] as const) {
         await expect(original(projectId)).toBeFocused()
         await expect(original(projectId)).toBeVisible()
 
-        await original(projectId).click({ button: "right" })
-        await original(secondProjectId!).click({ button: "right" })
+        await pin(projectId)
         await expect(pinned(projectId)).toBeVisible()
+        await pin(secondProjectId!)
         await expect(pinned(secondProjectId!)).toBeVisible()
         await refresh()
         await pinned(secondProjectId!).focus()
@@ -540,7 +577,7 @@ for (const placement of ["primary", "More", "phone"] as const) {
         await expect(pinned(secondProjectId!)).toHaveCount(0)
         await expect(unpin(projectId)).toBeFocused()
         await expect(unpin(projectId)).toBeVisible()
-        await original(secondProjectId!).click({ button: "right" })
+        await pin(secondProjectId!)
         await expect(pinned(secondProjectId!)).toBeVisible()
         await unpin(projectId).press("Enter")
         await expect(pinned(projectId)).toHaveCount(0)

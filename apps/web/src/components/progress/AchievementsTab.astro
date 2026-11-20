@@ -1,4 +1,7 @@
 ---
+import { readBoardPagePlacement } from "@lib/board-page-placement"
+import { boardContextHref } from "@lib/board-workspace"
+import { resolveBoardPageScope } from "@lib/board-http"
 import { organizationLabelsFor } from "@lib/organization-labels"
 const organization = await organizationLabelsFor(Astro)
 /**
@@ -27,6 +30,11 @@ import {
 } from "@domains/gamification"
 import { isFeatureEnabled } from "../../lib/feature-flags"
 
+const scoped = await resolveBoardPageScope(Astro)
+const workScope = scoped.ok ? scoped.scope : null
+const pagePlacement = workScope ? await readBoardPagePlacement(workScope, Astro.url) : null
+const achievementsHref = workScope && pagePlacement?.ok ? boardContextHref({ boardId: workScope.boardId, area: pagePlacement.area?.id, project: pagePlacement.project?.id }, "/progress#achievements") : undefined
+
 const gamificationEnabled = await isFeatureEnabled("gamification")
 
 // Ensure schema exists
@@ -42,20 +50,21 @@ let stats = {
   totalCompleted: 0,
   totalPoints: 0,
 }
+let dataUnavailable = false
 let weekly: Awaited<ReturnType<typeof getWeeklyData>> = []
 let achievementData = { achievements: [] as any[], total: 0, unlocked: 0 }
 let heatmapData: { date: string; count: number }[] = []
 
 try {
-  if (gamificationEnabled) {
+  if (workScope && gamificationEnabled) {
     [stats, weekly, achievementData] = await Promise.all([
-      getStats(),
-      getWeeklyData(),
-      getAllAchievements(),
+      getStats(workScope),
+      getWeeklyData(workScope),
+      getAllAchievements(workScope),
     ])
-    heatmapData = await getYearlyHeatmapData()
+    heatmapData = await getYearlyHeatmapData(workScope)
   }
-} catch { /* graceful fallback */ }
+} catch { dataUnavailable = true }
 
 const level = getLevel(stats.totalPoints)
 const progress = getProgressToNextLevel(stats.totalPoints)
@@ -152,7 +161,7 @@ const categories: readonly { key: string; label: string; icon: IconName }[] = [
 ]
 ---
 
-{!gamificationEnabled ? (
+{!workScope || !achievementsHref || dataUnavailable ? <p role="status">Achievements are unavailable. Reload to try again.</p> : !gamificationEnabled ? (
   <div class="achievements-tab__disabled">
     <div class="achievements-tab__disabled-icon"><Icon name="trophy" size={48} sprite={true} /></div>
     <h2>Gamification is disabled</h2>
@@ -223,7 +232,7 @@ const categories: readonly { key: string; label: string; icon: IconName }[] = [
 
     <!-- Weekly Progress -->
     <section class="achievements-tab__section">
-      <GamificationWidget stats={stats} weekly={weekly} achievements={achievementData.achievements} />
+      <GamificationWidget achievementsHref={achievementsHref} stats={stats} weekly={weekly} achievements={achievementData.achievements} />
     </section>
 
     <!-- Activity Heatmap -->

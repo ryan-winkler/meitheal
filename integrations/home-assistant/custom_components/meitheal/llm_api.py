@@ -21,6 +21,7 @@ from homeassistant.util.json import JsonObjectType
 
 from .api import (
     origin_scope,
+    human_request_scope,
     resolve_origin_headers,
     task_matches_identifier,
     task_path,
@@ -160,7 +161,8 @@ class MeithealReadTool(llm.Tool):
         # Authorization above proved this user exists; "me" resolves to them.
         # Kept per call, not on the tool, which concurrent conversations share.
         caller = assignee_for_user(llm_context.context.user_id)
-        return llm.ToolResult(await self._async_read(coordinator, {**args, _CALLER: caller}))
+        async with human_request_scope(hass, coordinator.api, llm_context.context):
+            return llm.ToolResult(await self._async_read(coordinator, {**args, _CALLER: caller}))
 
     async def _async_read(
         self, coordinator: MeithealCoordinator, args: dict[str, Any]
@@ -435,11 +437,11 @@ class CreateTaskTool(MeithealWriteTool):
             )
         )
         if "meitheal_task_created" not in authority:
-            coordinator.fire_event(
+            await coordinator.fire_event(
                 "meitheal_task_created",
                 {"task_id": created["id"], "title": payload["title"]},
             )
-        coordinator.fire_logbook("Meitheal", f"created task: {payload['title']}")
+        await coordinator.fire_logbook("Meitheal", f"created task: {payload['title']}")
         await coordinator.async_request_refresh()
         return _task_summary(created)
 
@@ -496,7 +498,7 @@ class UpdateTaskTool(MeithealWriteTool):
         changed_fields = ", ".join(payload.keys())
         task_title = str(updated.get("title") or updated["id"])
         if "meitheal_task_updated" not in authority:
-            coordinator.fire_event(
+            await coordinator.fire_event(
                 "meitheal_task_updated",
                 {
                     "task_id": updated["id"],
@@ -504,7 +506,7 @@ class UpdateTaskTool(MeithealWriteTool):
                     "fields": changed_fields,
                 },
             )
-        coordinator.fire_logbook(
+        await coordinator.fire_logbook(
             "Meitheal", f"updated task: {task_title} ({changed_fields})"
         )
         await coordinator.async_request_refresh()

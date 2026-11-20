@@ -59,10 +59,12 @@ export interface MeithealCalendarEventData {
 export async function fireHAEvent(
   eventType: MeithealEventType,
   eventData: MeithealTaskEventData | MeithealAreaEventData | MeithealCalendarEventData,
+  options?: { operationAllowed?: () => boolean | Promise<boolean> },
 ): Promise<boolean> {
   const conn = await getHAConnection();
   if (!conn) return false;
   try {
+    if (options?.operationAllowed && !await options.operationAllowed()) return false
     await conn.sendMessagePromise({
       type: "fire_event", event_type: eventType,
       event_data: { ...eventData, domain: "meitheal", source: "meitheal", timestamp: new Date().toISOString() },
@@ -88,5 +90,5 @@ export const emitTaskDeleted = (d: MeithealTaskEventData) => fireHAEvent("meithe
 export const emitTaskOverdue = (d: MeithealTaskEventData) => fireHAEvent("meitheal_task_overdue", d);
 export const emitTaskCommented = (d: MeithealTaskEventData) => fireHAEvent("meitheal_task_commented", d);
 export const emitAreaUpdated = (d: MeithealAreaEventData) => fireHAEvent("meitheal_area_updated", d);
-export const emitCalendarSynced = (d: MeithealCalendarEventData) => fireHAEvent("meitheal_calendar_synced", d);
+export const emitCalendarSynced = (d: MeithealCalendarEventData, options?: { operationAllowed?: () => boolean | Promise<boolean> }) => fireHAEvent("meitheal_calendar_synced", d, options);
 export const emitCalendarEventCreated = (d: MeithealCalendarEventData) => fireHAEvent("meitheal_calendar_event_created", d);

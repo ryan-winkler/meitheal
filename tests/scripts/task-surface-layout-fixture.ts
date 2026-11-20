@@ -1,14 +1,16 @@
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
 export function registerTaskSurfaceLayout(theme: "light" | "dark" | "knight-rider" | "auto" | "custom"): void {
-  test(`Today, Board and Table keep names, dates, and controls readable in ${theme}`, async ({ page, request }, testInfo) => {
+  test(`Today, Board and Table keep names, dates, and controls readable in ${theme}`, async ({ page, request, baseURL }, testInfo) => {
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const assignee = `Aleksandra Wiśniewska-Kowalczyk (${theme})`
     const person = await request.post("/api/users/custom", { data: { name: assignee } })
     expect(person.status()).toBe(201)
     const { id: assigneeId } = await person.json()
     const now = new Date()
     const date = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin", dateStyle: "short" }).format(now)
-    const response = await request.post("/api/tasks", { data: {
+    const response = await request.post("/api/tasks", { headers, data: {
       title: "Replace the controllers for the greenhouse irrigation system before the next scheduled maintenance",
       description: "<p>Check the <strong>replacement controller</strong> &amp; wiring.</p><p>Keep spare valves ready.</p>",
       due_date: `${date}T20:00:00Z`,
@@ -17,7 +19,7 @@ export function registerTaskSurfaceLayout(theme: "light" | "dark" | "knight-ride
       priority: 1,
       color: "#abc",
     } })
-    expect(response.status()).toBe(201)
+    expect(response.status(), await response.text()).toBe(201)
     const { id } = await response.json()
 
     try {
@@ -137,8 +139,8 @@ export function registerTaskSurfaceLayout(theme: "light" | "dark" | "knight-ride
         await expect(tableAssignee).toHaveText(assignee)
       }
     } finally {
-      await request.delete(`/api/tasks/${id}`)
-      await request.delete(`/api/users/custom?id=${encodeURIComponent(assigneeId)}`)
+      await request.delete(`/api/tasks/${id}`, { headers, data: {} })
+      await request.delete(`/api/users/custom?id=${encodeURIComponent(assigneeId)}`, { data: {} })
     }
   })
 }

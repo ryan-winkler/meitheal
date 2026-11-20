@@ -1,97 +1,71 @@
 ---
 type: "Guide"
-title: "Named Boards"
-description: "Set up private Boards, send-only access and scoped planning."
+title: "Boards, Areas and Projects"
+description: "Keep connected work in its context, with separate sharing and task permissions."
 ---
 
-# Named Boards
+# Boards, Areas and Projects
 
-Open **Boards** from the sidebar inside Home Assistant. **Household** takes you to the existing task workspace. Use **New Board** for work with its own members and workflow. Use **Hide from my sidebar** to change your shortcuts. You can reopen a hidden Board from **Your Boards**.
+A Board holds a body of work and the people allowed to use it. Household is an editable example, just like Work, House or Church. Every Board provides the same task types, views, planning and progress features, subject to your permissions and enabled features.
 
-When creating a named Board, choose the workflow labels that fit the work. The presets use the same task statuses, Board permissions, and Routine completion rules. A preset takes effect on the new Board for all its members. [First-time setup](first-time-setup.md) controls personal preferences.
+Open **Boards** to choose or create a workspace. All your Boards appear together. Expand a Board in the sidebar for its Areas and Projects. **Hide from my sidebar** changes your shortcuts; it does not change membership or privacy. Reopen a hidden Board from the directory.
 
-Expand **Boards** to find Household and your other visible Boards. Expand a Board to see its Areas and an Area to see its Projects. **Show more Projects** preserves the choices already loaded while it checks the next page. If that check fails, retry the same page. Keyboard focus moves to the first new choice only when you remain on the paging control. Losing access clears private shortcuts. The **All Areas** picker filters the selected Board. Project selection keeps its own context.
+When creating a Board, you can choose workflow labels. Presets change labels on its four existing task statuses; they do not change task behavior, permissions or Routine completion. The choice applies to that Board for all members. [First-time setup](first-time-setup.md) controls personal preferences.
 
-Household and named Boards use the same Kanban cards and columns. Select a named Board card to open its details, or focus it and press Enter. You can edit, file, move or remove the ticket when your permissions allow it. Changes use the ticket version, so a concurrent edit requires refreshing before trying again. Creation opens the same detail panel. The named workspace exposes Kanban, and Household also provides Table, Calendar and Timeline.
+The selected Board stays with Dashboard, Today, Upcoming, Tasks, planning and progress. On Today, the page, mobile navigation and sidebar share the same authorized Board selection for the current request. Sidebar Area preferences govern whether Area links appear and what label they use. The Board and Area menus include rename, icon and color, pin, and remove actions where the current Board grants them. Sidebar task-view shortcuts always open the task workspace; Upcoming empty actions, Triage pagination and achievement links keep the same Board and selected Area or Project. Calendar day details are reads, so a Viewer can open permitted work without task creation rights. Use Kanban, Table, Calendar or Timeline for the same work. On phones, the bottom navigation highlights Calendar when you open it on a Board. Tap Tasks to return to the same Board's Kanban. Task capture, including Quick Add, keeps the selected Area or Project. With no selected Area or Project, new work stays unfiled; no Area is invented. Keyboard shortcuts and the Dashboard queue keep the same Board and placement. Check the visible Board name before saving. An unfiled Project can hold tasks without an Area.
 
-Open an Area or Project’s **Tasks** link to use its filtered Kanban. Local planning tabs keep you in the current Area or Project. On a phone, the links wrap so **Settings** remains reachable, including with longer personal names. **Add Task** keeps that context. On a named Board, **N** opens capture for that Board. If another person changes its work while you edit, your input stays available with a refresh notice. Lost authority and deleted context clear private content. Backgrounding and temporary connectivity failures hide it while keeping the current draft on that page for revalidation.
+Hierarchy controls use the current Board and record permissions. Before restricting a Board or disabling shared administrator management, retain an active explicit owner so it stays manageable.
 
-An older Project without a direct Area assignment does not inherit your last Area filter. Its capture keeps the Project and uses its existing default filing.
+## Organize and connect work
 
-If Board verification temporarily fails, the workspace hides its private content and offers **Retry verification**. A successful check restores the same page and retained input. Permanent loss of access clears it and offers a fresh Board view.
+Use **Areas & Projects** to group related work. Group labels use only visible associations; unfiled or unavailable Area metadata uses the same neutral “No area” label. An Area can be Kitchen, Yard or any name you choose. A Project can associate with an Area. Organizing Areas and Home Assistant physical locations are separate fields: changing a physical location does not refile work or change its audience.
 
-## People and ticket permissions
+Open an Area or Project for its tasks, Goals, Routines and settings. Contextual creation retains that association. Empty pages expose the relevant creation actions when you have permission. Existing links continue to open the same records.
 
-Board owners manage access from **Board settings**. Viewers can open the Board and read its tickets. Members can add and edit tickets and move them between the columns their permissions allow. Owners can manage access and set ticket restrictions for everyone or for a specific person. The last active owner must add another active owner before handing over access.
+Goals can associate with Boards, Areas and Projects. A Goal shared into Home shows the progress from Projects each reader can access. Private Work Projects, their names and their contribution to totals remain hidden from Home readers without Work access. Share into the receiving contexts where the Goal should appear; sharing into a whole Board does not automatically associate it with every Area and Project.
 
-Completion restrictions apply when a ticket enters or leaves Done. Deletion restrictions apply to the ticket even when the person attempting the action created it. Reload the Board if the ticket changed while you were editing it.
+Routines use the same templates and occurrence history on every Board. They can be Board-only, associated with an Area, or associated with an unfiled Project. Completing a Routine follows task creation and completion permissions. Existing generated chores remain ordinary tasks; changing Routine configuration does not erase their history. A retry for an already completed occurrence retains its original task. If you try to change its date through a Board ticket, the response explains that the generated task keeps its original occurrence date.
 
-## Send a task
+Pillars can belong to a Board or remain personal. **Only me** keeps a personal Pillar private to its verified owner. Board-owned Pillars and Principles follow the selected Board and its audience controls.
 
-A Board owner can create a named destination, choose a triage column, and select who may send to it. The sender uses **Send a task** from **Boards**. Choose the destination and enter a title and any details. If the owner configured a recipient, **Assign to the recipient** requests direct assignment. If the recipient loses access, the ticket still goes to triage.
+## People and actions
 
-Keep the same submission when retrying unchanged content after a timeout. A submission token remains valid for 24 hours. The sender can retrieve the same acknowledgement through a retry during that period, including after the owner closes intake. Initial limits are 20 outstanding submissions and 60 accepted tasks per sender in a rolling 24-hour period.
+Open **Board settings** to change the Board name and sharing, manage people, and configure send-only destinations and restrictions. The example Board uses these same controls. Pending changes retain your inputs and ask for a refresh before another submission. Viewers read permitted work. Members create and update permitted work. Owners manage access. Ownership does not override a restriction on completion or deletion.
 
-## Areas, Projects, Goals, Routines, and Pillars
+Completion and deletion are separate. A child can be allowed to move and update tasks while marking done and deleting remain blocked. Agent deletion restrictions remain effective even when the credential has a deletion scope. Giving someone a task does not grant access to the Board that holds it. When delegating by name, a unique current directory identity is required. An ambiguous or unavailable name asks you to use an exact identity ID; it does not save the name as an assignee.
 
-Open **Areas** on a named Board and create an Area for related Projects, Goals and Routines. Choose an optional Goal when creating a Project, and use the Project status to track completion. Board owners manage planning, retire records and link Projects to Goals. Board Pillars can have Principles and links to the same Board’s Goals, Routines and tickets. Readers need Board access and availability of the corresponding feature. Remove an Area’s active Projects, Goals and Routines before removing the Area. Create a Pillar for yourself under **Progress → Pillars → New Pillar → Only me**.
+An owner can create a send-only destination with allowed senders, a triage column and an optional recipient. The sender uses **Send a task** without receiving access to other tasks, Board counts or private planning content. Keep the original submission when retrying after a timeout. A receipt confirms that submission; it does not grant task read.
 
-Sharing a Goal with an Area publishes its title and a Project progress summary to readers of the receiving Area’s Board. Each viewer sees progress from Projects on Boards they can access. If a Project belongs to Work, its progress is omitted for Home readers who lack Work access. Select **Goal sharing → Stop sharing** to remove the shared view. A person with access through the Goal’s own Board can still read it.
+After a Goal share or intake change, the API confirms the committed change against the new access revision. The confirmation contains only the outcome, or the new intake's ID for a creation. If publication is still pending, refresh the Board before retrying.
 
-Removing a Household Area, Goal or Project hides it from planning and keeps historical relationships intact. Existing Household tasks are unassigned from a removed Project. Named tickets and their versions stay intact.
+**Delete Board** keeps its saved work in Deleted Boards and pauses incoming work. **Restore Board** uses current permissions and returns the same identities. Personal hiding and Board deletion are different actions.
 
-A Board Routine is completed at most once per UTC day or week starting Monday. Completing it creates a Done ticket on the same Board and requires permission to create and complete tickets. Routine tickets remain on the Board to preserve completion history.
+## Integrations and automation
 
-Open a Project’s settings and create a Routine in that context to keep its generated tickets in the same Area and Project. A completed, archived or removed Project prevents new occurrences. A retry for an already completed occurrence returns the same ticket while the caller still has the required Board permissions.
+In **Board settings → Integrations and automation**, choose an existing source and its destination. An external source requires a Home Assistant administrator who can manage the destination Board. Local Board rules require Board management. Choose optional Area/Project placement and the task actions the source may perform. Private mobile notifications require explicit eligible recipients.
 
-**Routines on your Boards** appears in the Routine library and Today for current Home Assistant members with readable named Boards. Choose **Mark done** to check in. Each row names its Board and frequency and shows **Done** after confirmation. Viewers can read the list. Completion controls follow the Board’s permissions and the Project’s status. The list shows up to 100 Routines; open the Board for the rest.
+Renaming a Board does not retarget a source. Missing, retired or denied destinations pause work. They never silently use a different Board. Changing a global Calendar, CalDAV, Grocy or webhook profile requires management of every affected Board and invalidates pending operations against the old approval.
 
-## Backups
+Home Assistant integration credentials select an explicit Board. Global HA entities, shared events and logbook cannot expose private Board tasks or counts. A human action also needs that person's current Board permission; an automation's broader configured credential does not grant the person more access.
 
-Use Home Assistant App backups for the full instance. See [Home Assistant backups and restore](./home-assistant-backup-and-restore.md) for the Board revision lock and rollback procedure.
+Task deletion can notify an approved Home Assistant event or webhook receiver even if the task never came from a sync source. The receiver must have matching Board and placement approval when the task is deleted. Changing or disabling that approval cancels any pending delivery.
 
-Sender submissions are available on Boards under Recent submissions for up to 24 hours. If a connection drops, retry the original submission there. Accepted submissions remain marked Sent if an owner closes the destination. Board owners can close or reopen destinations in Board settings.
+## Refresh, offline work and recovery
 
-To give an agent access, an administrator issues a scoped token and shares its ID with the Board owner. Add the ID under Board settings → Agent access. The agent needs an explicit Board grant and the scope for each ticket operation. Block deletion by agents applies even if a granted token has task deletion scope. Remove the grant from Board settings or revoke the token in Settings → Agent Tokens.
+A concurrent change asks you to refresh rather than overwriting another person's work. Inspector and Table deletion use the loaded task version too. Table inline and bulk edits keep unconfirmed inputs for review instead of overwriting a newer task; a partially successful bulk action reports only confirmed changes. A pending delete confirmation is canceled when its Board is hidden for verification or access is revoked. Unchanged verification allows a fresh confirmation, while the old confirmation stays canceled. Legacy Board links with `?ticket=` open the same inspector. Page entrypoints handle access failures and planning redirects before rendering their embedded views. If access fails later, embedded panels show an unavailable/retry message. A deleted or unavailable task permalink opens an empty recovery shell with the shared inspector; closing it returns to task navigation without showing another Board's work. Proposed Timeline dates stay available after an unchanged focus verification; review or explicitly discard them. Temporary verification failures hide private content and retain eligible drafts. Confirmed revocation discards the open inspector and its unsaved draft. The inspector hides unavailable completion and deletion actions. Its status menu disables transitions that the Board does not permit. A switched account cannot inherit another person's offline queue.
 
-## Organize work within a Board
+Offline editing uses the existing actor/installation/Board queue. Work pages, APIs and capture receipts require current network verification. The static offline screen contains no personal tasks. A missing capture acknowledgement remains unconfirmed: check the original attempt when connected before creating another task.
 
-Open **Boards** and select **Household** or a named Board. The Board opens its tasks. Open **Areas** to manage ongoing responsibilities such as Kitchen or Operations. An Area can contain standalone tasks and Projects. Open a Project to see its tasks and add work in that context. Quick capture from an unfiltered Board can leave a task Unfiled.
+Use Home Assistant App backups for the complete instance. The separately retained current grant journal is excluded from those archives. Never reconstruct authority from restored rows or an old matching database/marker pair. Follow [Home Assistant backups and restore](home-assistant-backup-and-restore.md) and the release runbook for current custody, stopped-App verification and recovery.
 
-Expand a Board from the sidebar to open one of its Areas. Household's Area shortcuts include the existing Project pins and planning actions. The original Area and Project links continue to open existing work.
+Retiring an Area, Project or Goal preserves historical associations in storage. Public task responses omit unavailable planning references; they do not expose a private or retired destination as an active selection. A successful retirement acknowledges its own committed change while stale readers must refresh.
 
-A named Board member with task edit access can open **File task**, choose an Area or Project in that Board and save. It keeps the ticket and workflow column. If the destination or task has changed, refresh the Board before retrying. Owner settings and send-only access continue to use the existing Board rules.
+A Board directory retains the same verified person and grant revision across its Boards, send-only destinations and Deleted Boards. If authority changes or that identity proof expires while the page loads, the entire directory is withheld and asks for a refresh; a newer current revision cannot admit older private names. The final HTTP boundary completes asynchronous directory rendering, ordinary work pages and compact task refresh fragments before admitting private content. Each keeps its original verified identity, required Board scopes and grant revision through ingress rewriting. A later Layout check cannot substitute newer authority for an older task projection. Revocation or expiry during rendering withholds the entire response and asks for a refresh.
 
-With task edit access, set **Shared due date** when you add a task, or select an existing task’s title to open its edit form. Clear the field and choose **Save changes** to remove the date. People who can read the task can see its due date. A generated Routine ticket keeps the date of its original occurrence and shows it as **Scheduled for** in the edit form.
+Board admission reads the role and Board-wide audience together and evaluates all required effects against that policy. Task and placement queries enforce their own audiences, and the final boundary checks current authority. A private task writer on local SQLite keeps human captures and edits in the transaction until it rechecks every required action and commits. A changed agent assignment requires fresh task-write authority. Today and the common Task views reuse compiled projection statements on native SQLite. Each request binds its own filters and reads its own snapshot.
 
-## Personal names, feature availability and physical location
+Existing `?board=` bookmarks and `?board_id=` links select the same workspace. If both appear they must agree with each other, the Board header and any Board path. Empty, repeated, conflicting or unavailable selectors show an unavailable response rather than selecting the capture default.
 
-Use **Settings → Navigation & Shortcuts → Labels** to give organizing features your own singular and plural names. The choices belong to your verified Home Assistant account and display language. Search accepts the default terms and your names. Record names and saved links keep their existing identities.
+Task references to Areas, Projects and Goals also respect each feature's current visibility. Hiding a feature removes its public reference IDs without erasing stored task associations or granting planning permissions to task-only agents.
 
-An administrator uses **Settings → Tasks & Boards → Organization features** to choose **Everyone**, **Selected people**, or **Nobody** for Boards organizer, Areas, Projects, Planning, Goals, Routines, Pillars, Principles, Achievements and Home Assistant Area. Board membership and permissions govern work on a named Board. The feature audience controls which organizing modules a person can use. Areas and Projects also require the Boards organizer; independent Goal and Routine libraries keep their own availability. See [Settings troubleshooting](settings-troubleshooting.md#choose-who-can-use-organization-features).
-
-When Areas is unavailable to you, an unfiltered Board remains accessible with its existing permissions. Timeline filters can save an empty `area=` for **All Areas**; reloading that link keeps the unfiltered workspace available. A link to a specific Area still requires Areas availability.
-
-The optional **Home Assistant Area** field identifies a task’s physical location, such as Kitchen. Areas organize responsibility and Projects organize related tasks. An administrator can offer the location field through Organization features without changing the task’s Board, Area or Project.
-
-Older `/areas/{id}` and `/projects/{id}` bookmarks open the matching Household Board context. Supported section bookmarks, including settings, keep their destination. `/planning#spaces` opens the Boards directory when Planning is available. Task filters use the Area label and support your personal display name from Settings.
-
-Household Project details use Tabler icons for their tabs and actions. The title and breadcrumb show Tabler equivalents for recognized icons, including the Every Day sun. Custom icons without an equivalent still display as entered. Open **Settings** to see the saved Project icon.
-
-Home Assistant Area participates in the task inspector’s reorderable Properties fields. Move it in the ticket layout editor or Settings. Existing saved field orders retain their sequence and add the new field.
-
-## Delete and restore a Board
-
-Open a named Board’s **Board settings → Delete Board**. An owner with deletion permission can delete either an empty or populated Board. Review its name in the **Delete Board** dialog. **Cancel** receives initial focus and returns you to the delete control without changing the Board. The destructive confirmation also says **Delete Board**. The Board leaves active navigation, incoming destinations and Routine check-ins. Its tickets, filing, membership, permissions and ticket numbers stay saved. **Boards → Deleted Boards → Restore Board** resumes it. Each restore control includes its Board name for assistive technology. Only its eligible owners can see this recovery list; other users and agents cannot restore or delete the Board.
-
-For **Household**, a verified Home Assistant administrator uses **Boards → Household Board settings → Delete Board**. Household’s saved work stays in place. Shared capture, Household task screens, Routine generation, calendar import/write-back and Todo syncing pause until an administrator restores it from Deleted Boards. No replacement Board is created and no records are transferred. Named Boards remain available. Global views exclude the saved Household work while it is deleted. Restoring resumes its existing destinations and settings, so review those settings before restoring an old integration configuration.
-
-A synchronization request already sent to Home Assistant may finish there after deletion. Later local writes pause and preserve the saved links. Deletion does not cancel a provider request already in flight.
-
-Task-driven Calendar and Todo calls recheck Household before dispatch. A Calendar update that fails after retirement cannot start its delete/create fallback. Other Home Assistant service callers keep their existing behavior.
-
-The Routine library and Today continue to show Routines from your active named Boards. Household Routines and shared creation stay paused. Calendar and Todo confirmation links remain saved for restoration.
-
-Deletion restrictions also apply to Board deletion. A child with deletion blocked cannot remove their Board; blocking completion still blocks marking work done and reopening it. Agent tokens cannot delete or restore Boards. Sidebar hiding remains a personal shortcut choice and does not delete a Board.
-
-If the Board changed, refresh before trying again. If access publication is still being verified, the change is saved: refresh Boards to check the result before retrying. Offline or failed requests keep the form available. A network interruption may have happened after the save; reload Boards to establish the saved state.
+Grant and lifecycle changes retain their originating verified identity through durable journal preparation. An expired identity rolls back the change and its proposed epoch. An intentional removal of the caller's old Board entitlement can still succeed while the independently verified identity remains current; refreshing an old permission is not a substitute for either check.

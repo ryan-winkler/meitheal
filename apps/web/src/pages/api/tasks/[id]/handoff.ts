@@ -1,3 +1,4 @@
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { z } from "zod"
 import { hasScope } from "@meitheal/domain-auth"
@@ -23,7 +24,7 @@ const inputSchema = z.discriminatedUnion("action", [
 ])
 const headers = { "Cache-Control": "no-store" }
 
-export const POST: APIRoute = async ({ request, locals, params }) => {
+export const POST: APIRoute = withBoardScope({ resource: "task", action: "propose" }, async ({ request, locals, params }, scope) => {
   const token = locals.agentToken
   if (!token) return apiProblem({
     status: 401, detail: "Use a Meitheal token with the tasks:propose scope.",
@@ -39,9 +40,9 @@ export const POST: APIRoute = async ({ request, locals, params }) => {
   })
 
   await ensureSchema()
-  const result = await new TaskHandoff(getPersistenceClient()).agentAction(params.id!, {
+  const result = await new TaskHandoff(getPersistenceClient(), scope).agentAction(params.id!, {
     id: token.tokenId, name: token.tokenName,
   }, input.data)
   return result.ok ? Response.json(result, { headers })
     : apiProblem({ status: result.status, detail: result.error, extraHeaders: headers })
-}
+})

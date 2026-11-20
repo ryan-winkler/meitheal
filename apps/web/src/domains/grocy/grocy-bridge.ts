@@ -1,22 +1,33 @@
-/**
- * Grocy Bridge — Bidirectional Sync with Grocy
- *
- * Syncs Grocy chores + tasks → Meitheal tasks (inbound)
- * Pushes task completions → Grocy chore/task API (outbound)
- * Consolidates shopping list → single "Go Shopping" task
- *
- * Mirrors todo-bridge.ts pattern: polling timer, confirmations table,
- * no-sync/loop-prevention labels, start/stop/status methods.
- *
- * @domain grocy
- * @bounded-context integration
- */
-import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
-import { STATUS } from "../../lib/status-config";
-import { GrocyAdapter, type GrocyChore, type GrocyTask } from "@meitheal/integration-core";
-import type { SyncTaskMutation } from "@domains/tasks";
-import type { Client } from "@libsql/client";
-import { choreToTask, taskToTask, shoppingListToTask } from "./grocy-mapper.js";
+/** Grocy synchronization uses the common work engine and one explicit approved destination per binding. */
+import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
+import {
+  GrocyAdapter,
+  type GrocyChore,
+  type GrocyTask,
+  type GrocyResult
+} from "@meitheal/integration-core"
+import {
+  TaskRepository,
+  canReadBoardAggregate,
+  getPersistenceClient,
+  ensureSchema,
+  guardWorkPersistence,
+  resolveIntegrationScope,
+  validateIntegrationScope,
+  validateTaskOperation,
+  validateBoardScope,
+  readWorkDestinations,
+  BoardOperationError,
+  sql,
+  boardTaskOwnership,
+  type BoardScope,
+  type IntegrationScope,
+  type WorkOperation,
+  type SyncTaskMutation
+} from "@domains/tasks"
+import { isCurrentConfiguredGrocyClient } from "../../lib/grocy-client"
+import { STATUS, isDoneStatus } from "../../lib/status-config"
+import { choreToTask, taskToTask, shoppingListToTask } from "./grocy-mapper"
 
 const logger = createLogger({
   service: "meitheal-web",
@@ -24,757 +35,767 @@ const logger = createLogger({
   minLevel: "info",
   enabledCategories: ["integrations", "grocy"],
   redactPatterns: defaultRedactionPatterns,
-  auditEnabled: false,
-});
-
-const SYS_REQ = "grocy-sync";
-
-// ═══════ Types ═══════
-
+  auditEnabled: false
+})
+const SYS_REQ = "grocy-sync"
+const read: WorkOperation = { resource: "task", action: "read" }
 export interface GrocySyncConfig {
-  syncEnabled: boolean;
-  syncMode: "import" | "export" | "bidirectional";
-  intervalMs: number;
+  bindingId: string
+  generation: number
+  syncEnabled: boolean
+  syncMode: "import" | "export" | "bidirectional"
+  intervalMs: number
 }
-
-interface GrocySyncState {
-  config: GrocySyncConfig;
-  adapter: GrocyAdapter | null;
-  timer: ReturnType<typeof setInterval> | null;
-  lastSyncAt: number | null;
-  lastSyncError: string | null;
-  itemCount: number;
-  choreCount: number;
-  taskCount: number;
-  shoppingCount: number;
+type GrocySyncResult = { chores: number; tasks: number; shopping: number; errors: number }
+export type GrocySyncStatusEntity = {
+  bindingId: string
+  generation: number
+  active: boolean
+  syncMode: GrocySyncConfig["syncMode"]
+  intervalMs: number
+  lastSyncAt: number | null
+  lastSyncError: string | null
+  itemCount: number | null
+  choreCount: number | null
+  taskCount: number | null
+  shoppingCount: number | null
 }
-
-const state: GrocySyncState = {
-  config: { syncEnabled: false, syncMode: "import", intervalMs: 15 * 60 * 1000 },
-  adapter: null,
-  timer: null,
-  lastSyncAt: null,
-  lastSyncError: null,
-  itemCount: 0,
-  choreCount: 0,
-  taskCount: 0,
-  shoppingCount: 0,
-};
-
-// ═══════ Lifecycle ═══════
-
-/**
- * Start Grocy sync with polling timer.
- */
-export function startGrocySync(config: GrocySyncConfig, adapter: GrocyAdapter): void {
-  stopGrocySync();
-
-  state.config = config;
-  state.adapter = adapter;
-
-  if (!config.syncEnabled) return;
-
-  // Initial sync immediately
-  syncFromGrocy().catch((err) => {
-    logger.log("error", {
-      event: "grocy.sync.initial_failed",
-      domain: "integrations",
-      component: "grocy-bridge",
-      request_id: SYS_REQ,
-      message: `Initial Grocy sync failed: ${err}`,
-    });
-  });
-
-  // Set up polling timer (0 = manual only)
-  if (config.intervalMs > 0) {
-    state.timer = setInterval(() => { // nosemgrep
-      syncFromGrocy().catch((err) => {
-        logger.log("error", {
-          event: "grocy.sync.poll_failed",
-          domain: "integrations",
-          component: "grocy-bridge",
-          request_id: SYS_REQ,
-          message: `Grocy poll sync failed: ${err}`,
-        });
-      });
-    }, config.intervalMs);
+type GrocySyncState = {
+  config: GrocySyncConfig
+  baseAdapter: GrocyAdapter
+  timer: ReturnType<typeof setInterval> | null
+  lastSyncAt: number | null
+  lastSyncError: string | null
+  itemCount: number
+  choreCount: number
+  taskCount: number
+  shoppingCount: number
+}
+const states = new Map<string, GrocySyncState>()
+const destinationChoices = new Map<string, { generation: number; paused: boolean }>()
+const stopListeners = new Set<() => void>()
+let stopAllGeneration = 0
+const activeSyncs = new Map<string, { state: GrocySyncState; promise: Promise<GrocySyncResult> }>()
+const MAX_RETRIES = 2,
+  RETRY_DELAY_MS = 2000
+class GrocyWorkUnavailableError extends Error {
+  constructor() {
+    super("Grocy destination is unavailable; check current binding and provider configuration")
   }
-
-  logger.log("info", {
-    event: "grocy.sync.started",
+}
+function logFailure(event: string) {
+  logger.log("warn", {
+    event,
     domain: "integrations",
     component: "grocy-bridge",
     request_id: SYS_REQ,
-    message: `Grocy sync started (mode: ${config.syncMode}, interval: ${config.intervalMs}ms)`,
-  });
+    message: "Grocy operation failed; check current binding, work permissions and provider access"
+  })
 }
 
-const stopListeners = new Set<() => void>();
-
-/**
- * Register a callback invoked whenever `stopGrocySync()` runs.
- */
+async function resolveContext(
+  config: GrocySyncConfig,
+  originatingActor?: BoardScope,
+  originatingOperation?: WorkOperation
+): Promise<IntegrationScope> {
+  await ensureSchema()
+  const resolved = await resolveIntegrationScope(
+    getPersistenceClient(),
+    config.bindingId,
+    config.generation,
+    read,
+    originatingActor,
+    originatingOperation
+  )
+  if (
+    !resolved.ok ||
+    resolved.value.binding.integration !== "grocy" ||
+    resolved.value.binding.purpose !== "grocy.sync" ||
+    resolved.value.binding.sourceId !== "configured-grocy"
+  )
+    throw new GrocyWorkUnavailableError()
+  return resolved.value
+}
+async function operationAllowed(
+  state: GrocySyncState,
+  context: IntegrationScope
+): Promise<boolean> {
+  try {
+    return (
+      states.get(state.config.bindingId) === state &&
+      state.config.syncEnabled &&
+      state.config.generation === context.binding.generation &&
+      (await isCurrentConfiguredGrocyClient(state.baseAdapter)) &&
+      (await validateIntegrationScope(context, getPersistenceClient(), read)).ok
+    )
+  } catch {
+    return false
+  }
+}
+function scopedAdapter(
+  state: GrocySyncState,
+  context: IntegrationScope,
+  additional?: () => Promise<boolean>
+): GrocyAdapter {
+  return state.baseAdapter.withOperationAllowed(
+    async () => (await operationAllowed(state, context)) && (!additional || (await additional()))
+  )
+}
+async function providerOperation<T>(
+  state: GrocySyncState,
+  context: IntegrationScope,
+  operation: () => Promise<T>
+): Promise<T> {
+  if (!(await operationAllowed(state, context))) throw new GrocyWorkUnavailableError()
+  const result = await operation()
+  if (!(await operationAllowed(state, context))) throw new GrocyWorkUnavailableError()
+  return result
+}
+async function withRetry<T>(
+  state: GrocySyncState,
+  context: IntegrationScope,
+  operation: () => Promise<GrocyResult<T>>
+): Promise<GrocyResult<T>> {
+  for (let attempt = 0; ; attempt++) {
+    const result = await providerOperation(state, context, operation)
+    if (result.ok || !result.retryable || attempt === MAX_RETRIES) return result
+    await new Promise<void>((resolve) => setTimeout(resolve, RETRY_DELAY_MS * (attempt + 1)))
+  }
+}
+export async function startGrocySync(
+  config: GrocySyncConfig,
+  adapter: GrocyAdapter | (() => Promise<GrocyAdapter | null>),
+  approval?: IntegrationScope
+): Promise<boolean> {
+  if (!config.syncEnabled) {
+    stopGrocySync(config.bindingId, config.generation)
+    return false
+  }
+  const choice = destinationChoices.get(config.bindingId)
+  const stopGeneration = stopAllGeneration
+  if (!approval && choice?.paused && choice.generation >= config.generation) return false
+  const resolved = typeof adapter === "function" ? await adapter() : adapter
+  if (!resolved) return false
+  if (!(await isCurrentConfiguredGrocyClient(resolved))) throw new GrocyWorkUnavailableError()
+  const existing = states.get(config.bindingId)
+  if (!approval && existing?.config.generation === config.generation &&
+    await isCurrentConfiguredGrocyClient(existing.baseAdapter)) return false
+  await resolveContext(config)
+  if (
+    approval &&
+    (approval.binding.id !== config.bindingId ||
+      approval.binding.generation !== config.generation ||
+      !(await validateIntegrationScope(approval, getPersistenceClient(), read)).ok)
+  )
+    throw new GrocyWorkUnavailableError()
+  // A destination can be disabled while startup is resolving its credentials or binding.
+  if (stopAllGeneration !== stopGeneration || destinationChoices.get(config.bindingId) !== choice) {
+    if (approval) throw new GrocyWorkUnavailableError()
+    return false
+  }
+  if (approval) destinationChoices.set(config.bindingId, { generation: config.generation, paused: false })
+  if (states.has(config.bindingId)) stopGrocySync(config.bindingId)
+  const state: GrocySyncState = {
+    config: { ...config },
+    baseAdapter: resolved,
+    timer: null,
+    lastSyncAt: null,
+    lastSyncError: null,
+    itemCount: 0,
+    choreCount: 0,
+    taskCount: 0,
+    shoppingCount: 0
+  }
+  states.set(config.bindingId, state)
+  void syncFromGrocy(config.bindingId).catch(() => logFailure("grocy.sync.initial_failed"))
+  const poll = () => {
+    void syncFromGrocy(state.config.bindingId).catch(() => logFailure("grocy.sync.poll_failed"))
+  }
+  const interval = state.config.intervalMs
+  if (Number.isFinite(interval) && interval > 0)
+    state.timer = setInterval(poll, interval)
+  return true
+}
 export function onGrocySyncStopped(listener: () => void): () => void {
-  stopListeners.add(listener);
+  stopListeners.add(listener)
   return () => {
-    stopListeners.delete(listener);
-  };
-}
-
-/**
- * Stop Grocy sync and clean up timer.
- */
-export function stopGrocySync(): void {
-  if (state.timer) {
-    clearInterval(state.timer);
-    state.timer = null;
-  }
-  state.config.syncEnabled = false;
-  state.adapter = null;
-  for (const listener of stopListeners) {
-    listener();
+    stopListeners.delete(listener)
   }
 }
-
-/**
- * Get current sync status.
- */
-export function getGrocySyncStatus() {
+export function stopGrocySync(bindingId?: string, generation?: number): void {
+  if (bindingId === undefined) stopAllGeneration++
+  if (bindingId !== undefined && generation !== undefined) {
+    const choice = destinationChoices.get(bindingId)
+    if (!choice || generation >= choice.generation) destinationChoices.set(bindingId, { generation, paused: true })
+  }
+  for (const [id, state] of states) {
+    if (
+      (bindingId && id !== bindingId) ||
+      (generation !== undefined && state.config.generation !== generation)
+    )
+      continue
+    if (state.timer) clearInterval(state.timer)
+    state.config.syncEnabled = false
+    states.delete(id)
+  }
+  if (bindingId === undefined) for (const listener of stopListeners) listener()
+}
+export function getActiveGrocySyncConfig(bindingId: string): GrocySyncConfig | null {
+  return states.get(bindingId)?.config ?? null
+}
+/** Profile-only adapter; generic stock callers still need their own configuration authority. */
+export function getGrocyAdapter(bindingId: string): GrocyAdapter | null {
+  return states.get(bindingId)?.baseAdapter ?? null
+}
+export async function getGrocySyncStatus(scope?: BoardScope) {
+  const db = getPersistenceClient()
+  if (scope) {
+    const current = await validateBoardScope(scope, db, read)
+    if (!current.ok) throw new BoardOperationError(current.errorCode)
+  }
+  const configuration = await readWorkDestinations(db),
+    aggregate = scope ? await canReadBoardAggregate(db, scope) : false
+  const entities: GrocySyncStatusEntity[] = []
+  for (const state of states.values()) {
+    const binding = configuration?.bindings.find((binding) => binding.id === state.config.bindingId)
+    if (scope && binding?.destination.boardId !== scope.boardId) continue
+    const visible = Boolean(
+      scope && aggregate && binding?.enabled && binding.generation === state.config.generation
+    )
+    entities.push({
+      bindingId: state.config.bindingId,
+      generation: state.config.generation,
+      active: state.config.syncEnabled,
+      syncMode: state.config.syncMode,
+      intervalMs: state.config.intervalMs,
+      lastSyncAt: state.lastSyncAt,
+      lastSyncError: state.lastSyncError,
+      itemCount: visible ? state.itemCount : null,
+      choreCount: visible ? state.choreCount : null,
+      taskCount: visible ? state.taskCount : null,
+      shoppingCount: visible ? state.shoppingCount : null
+    })
+  }
+  if (scope) {
+    const current = await validateBoardScope(scope, db, read)
+    if (!current.ok) throw new BoardOperationError(current.errorCode)
+    if (!(await canReadBoardAggregate(db, scope)))
+      for (const entity of entities)
+        entity.itemCount = entity.choreCount = entity.taskCount = entity.shoppingCount = null
+  }
+  const first = entities[0],
+    sum = (key: "itemCount" | "choreCount" | "taskCount" | "shoppingCount") =>
+      aggregate && entities.every((entity) => entity[key] !== null)
+        ? entities.reduce((total, entity) => total + (entity[key] ?? 0), 0)
+        : null
   return {
-    active: state.config.syncEnabled && state.adapter !== null,
-    syncMode: state.config.syncMode,
-    intervalMs: state.config.intervalMs,
-    lastSyncAt: state.lastSyncAt,
-    lastSyncError: state.lastSyncError,
-    itemCount: state.itemCount,
-    choreCount: state.choreCount,
-    taskCount: state.taskCount,
-    shoppingCount: state.shoppingCount,
-  };
-}
-
-/**
- * Get active config for outbound dispatcher checks.
- */
-export function getActiveGrocySyncConfig(): GrocySyncConfig | null {
-  if (!state.config.syncEnabled || !state.adapter) return null;
-  return state.config;
-}
-
-/**
- * Get the active Grocy adapter instance (if sync is running).
- * Used by the stock API endpoint to avoid creating duplicate adapter instances.
- */
-export function getGrocyAdapter(): GrocyAdapter | null {
-  return state.adapter;
-}
-
-// ═══════ Inbound: Grocy → Meitheal ═══════
-
-const MAX_RETRIES = 2;
-const RETRY_DELAY_MS = 2000;
-
-/** Retry a Grocy API call if the error is retryable. */
-async function withRetry<T>(fn: () => Promise<import("@meitheal/integration-core").GrocyResult<T>>): Promise<import("@meitheal/integration-core").GrocyResult<T>> {
-  let lastResult: import("@meitheal/integration-core").GrocyResult<T> | null = null;
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    lastResult = await fn();
-    if (lastResult.ok) return lastResult;
-    if (!lastResult.retryable || attempt === MAX_RETRIES) return lastResult;
-    await new Promise((r) => setTimeout(r, RETRY_DELAY_MS * (attempt + 1)));
+    active: entities.some((entity) => entity.active),
+    entities,
+    syncMode: first?.syncMode ?? "import",
+    intervalMs: first?.intervalMs ?? 0,
+    lastSyncAt: first?.lastSyncAt ?? null,
+    lastSyncError: entities.find((entity) => entity.lastSyncError)?.lastSyncError ?? null,
+    itemCount: sum("itemCount"),
+    choreCount: sum("choreCount"),
+    taskCount: sum("taskCount"),
+    shoppingCount: sum("shoppingCount")
   }
-  return lastResult!;
 }
-
-/**
- * Pull chores, tasks, and shopping list from Grocy → create/update Meitheal tasks.
- * Includes: retry on retryable errors, product name resolution, stale task cleanup.
- */
-export async function syncFromGrocy(): Promise<{
-  chores: number;
-  tasks: number;
-  shopping: number;
-  errors: number;
-}> {
-  const adapter = state.adapter;
-  if (!adapter) {
-    return { chores: 0, tasks: 0, shopping: 0, errors: 0 };
+/** Coalesce only the same binding generation and current originating authority. */
+export async function syncFromGrocy(
+  bindingId: string,
+  originatingActor?: BoardScope,
+  originatingOperation: WorkOperation = { resource: "task", action: "edit" }
+): Promise<GrocySyncResult> {
+  const state = states.get(bindingId)
+  if (!state) return { chores: 0, tasks: 0, shopping: 0, errors: 1 }
+  let context: IntegrationScope
+  try {
+    context = await resolveContext(state.config, originatingActor, originatingOperation)
+  } catch (error) {
+    if (states.get(bindingId) === state)
+      state.lastSyncError =
+        "Grocy destination is unavailable; check current binding and provider configuration"
+    throw error
   }
-
-  const result = { chores: 0, tasks: 0, shopping: 0, errors: 0 };
-
-  // Only import if mode allows
-  if (state.config.syncMode === "export") {
-    return result;
+  const key = JSON.stringify([
+    bindingId,
+    state.config.generation,
+    originatingActor
+      ? {
+          kind: originatingActor.principal.kind,
+          id: originatingActor.principal.id,
+          epoch: originatingActor.authorityRevision,
+          revision: originatingActor.boardRevision,
+          operation: originatingOperation
+        }
+      : null
+  ])
+  const current = activeSyncs.get(key)
+  if (current?.state === state) return current.promise
+  const promise = performSyncFromGrocy(state, context),
+    run = { state, promise }
+  activeSyncs.set(key, run)
+  void promise
+    .finally(() => {
+      if (activeSyncs.get(key) === run) activeSyncs.delete(key)
+    })
+    .catch(() => {})
+  return promise
+}
+function pausedSync(state: GrocySyncState): GrocySyncResult {
+  state.lastSyncError =
+    "Grocy destination is unavailable; refresh the binding and provider configuration"
+  return { chores: 0, tasks: 0, shopping: 0, errors: 1 }
+}
+async function performSyncFromGrocy(
+  state: GrocySyncState,
+  context: IntegrationScope
+): Promise<GrocySyncResult> {
+  if (!(await operationAllowed(state, context))) return pausedSync(state)
+  const result: GrocySyncResult = { chores: 0, tasks: 0, shopping: 0, errors: 0 }
+  if (state.config.syncMode === "export") return result
+  const adapter = scopedAdapter(state, context)
+  let productNames = new Map<number, string>(),
+    categoryNames = new Map<number, string>()
+  try {
+    const products = await providerOperation(state, context, () => adapter.getProducts())
+    if (products.ok) productNames = products.data
+  } catch (error) {
+    if (error instanceof GrocyWorkUnavailableError) return pausedSync(state)
   }
-
-  // Pre-fetch product name map for shopping list (Fix #2)
-  let productNames = new Map<number, string>();
   try {
-    const productsResult = await adapter.getProducts();
-    if (productsResult.ok) productNames = productsResult.data;
-  } catch { /* product names are best-effort */ }
-
-  // Pre-fetch task categories for board mapping (#12)
-  let categoryNames = new Map<number, string>();
+    const categories = await providerOperation(state, context, () => adapter.getCategories())
+    if (categories.ok) categoryNames = categories.data
+  } catch (error) {
+    if (error instanceof GrocyWorkUnavailableError) return pausedSync(state)
+  }
+  const seen = new Set<string>()
   try {
-    const categoriesResult = await adapter.getCategories();
-    if (categoriesResult.ok) categoryNames = categoriesResult.data;
-  } catch { /* category names are best-effort */ }
-
-  // Track all Grocy entity keys seen this sync for stale detection (Fix #3)
-  const seenEntityKeys = new Set<string>();
-
-  // 1. Sync chores (with retry — Fix #5)
-  try {
-    const choresResult = await withRetry(() => adapter.getChores());
-    if (choresResult.ok) {
-      for (const c of choresResult.data) seenEntityKeys.add(`chore:${c.choreId}`);
-      result.chores = await mergeGrocyChores(choresResult.data);
+    const chores = await withRetry(state, context, () => adapter.getChores())
+    if (chores.ok) {
+      for (const chore of chores.data) seen.add(`chore:${chore.choreId}`)
+      const merged = await mergeGrocyChores(chores.data, context)
+      result.chores = merged.count
+      result.errors += merged.errors
     } else {
-      result.errors++;
-      logger.log("error", {
-        event: "grocy.sync.chores_failed",
-        domain: "integrations",
-        component: "grocy-bridge",
-        request_id: SYS_REQ,
-        message: `Failed to fetch chores: ${choresResult.message}`,
-      });
+      result.errors++
+      logFailure("grocy.sync.chores_failed")
     }
-  } catch (err) {
-    result.errors++;
-    logger.log("error", {
-      event: "grocy.sync.chores_error",
-      domain: "integrations",
-      component: "grocy-bridge",
-      request_id: SYS_REQ,
-      message: `Chore sync error: ${err}`,
-    });
+  } catch {
+    if (!(await operationAllowed(state, context))) return pausedSync(state)
+    result.errors++
+    logFailure("grocy.sync.chores_failed")
   }
-
-  // 2. Sync tasks — fetch ALL (including completed) to detect status drift (Fix #6)
   try {
-    const tasksResult = await withRetry(() => adapter.getTasks(true));
-    if (tasksResult.ok) {
-      for (const t of tasksResult.data) seenEntityKeys.add(`task:${t.taskId}`);
-      result.tasks = await mergeGrocyTasks(tasksResult.data, categoryNames);
+    const tasks = await withRetry(state, context, () => adapter.getTasks(true))
+    if (tasks.ok) {
+      for (const task of tasks.data) seen.add(`task:${task.taskId}`)
+      const merged = await mergeGrocyTasks(tasks.data, context, categoryNames)
+      result.tasks = merged.count
+      result.errors += merged.errors
     } else {
-      result.errors++;
-      logger.log("error", {
-        event: "grocy.sync.tasks_failed",
-        domain: "integrations",
-        component: "grocy-bridge",
-        request_id: SYS_REQ,
-        message: `Failed to fetch tasks: ${tasksResult.message}`,
-      });
+      result.errors++
+      logFailure("grocy.sync.tasks_failed")
     }
-  } catch (err) {
-    result.errors++;
-    logger.log("error", {
-      event: "grocy.sync.tasks_error",
-      domain: "integrations",
-      component: "grocy-bridge",
-      request_id: SYS_REQ,
-      message: `Task sync error: ${err}`,
-    });
+  } catch {
+    if (!(await operationAllowed(state, context))) return pausedSync(state)
+    result.errors++
+    logFailure("grocy.sync.tasks_failed")
   }
-
-  // 3. Consolidate shopping list (with product names — Fix #2)
   try {
-    const shoppingResult = await adapter.getShoppingList();
-    if (shoppingResult.ok && shoppingResult.data.length > 0) {
-      seenEntityKeys.add("shopping:list-1");
-      result.shopping = await mergeShoppingList(
-        shoppingResult.data as { id?: number; productId: number; amount: number; note?: string }[],
-        productNames,
-      );
+    const shopping = await providerOperation(state, context, () => adapter.getShoppingList())
+    if (shopping.ok) {
+      if (shopping.data.length) {
+        seen.add("shopping:list-1")
+        const merged = await mergeShoppingList(
+          shopping.data.map((item) => ({
+            productId: item.productId,
+            amount: item.amount,
+            ...(typeof item.id === "number" ? { id: item.id } : {}),
+            ...(typeof item.note === "string" ? { note: item.note } : {})
+          })),
+          context,
+          productNames
+        )
+        result.shopping = merged.count
+        result.errors += merged.errors
+      }
+    } else {
+      result.errors++
+      logFailure("grocy.sync.shopping_failed")
     }
-  } catch (err) {
-    result.errors++;
-    logger.log("error", {
-      event: "grocy.sync.shopping_error",
-      domain: "integrations",
-      component: "grocy-bridge",
-      request_id: SYS_REQ,
-      message: `Shopping list sync error: ${err}`,
-    });
+  } catch {
+    if (!(await operationAllowed(state, context))) return pausedSync(state)
+    result.errors++
+    logFailure("grocy.sync.shopping_failed")
   }
-
-  // 4. Clean stale tasks — archive Meitheal tasks whose Grocy source was deleted (Fix #3)
+  if (!(await operationAllowed(state, context))) return pausedSync(state)
   if (result.errors === 0) {
     try {
-      await cleanStaleTasks(seenEntityKeys);
-    } catch (err) {
-      logger.log("warn", {
-        event: "grocy.sync.stale_cleanup_failed",
-        domain: "integrations",
-        component: "grocy-bridge",
-        request_id: SYS_REQ,
-        message: `Stale cleanup failed: ${err}`,
-      });
+      result.errors += await cleanStaleTasks(seen, context)
+    } catch {
+      result.errors++
+      logFailure("grocy.sync.stale_cleanup_failed")
     }
   }
-
-  // Update state
-  state.lastSyncAt = Date.now();
-  state.lastSyncError = result.errors > 0 ? `${result.errors} sync error(s)` : null;
-  state.choreCount = result.chores;
-  state.taskCount = result.tasks;
-  state.shoppingCount = result.shopping;
-  state.itemCount = result.chores + result.tasks + result.shopping;
-
-  logger.log("info", {
-    event: "grocy.sync.complete",
-    domain: "integrations",
-    component: "grocy-bridge",
-    request_id: SYS_REQ,
-    message: `Grocy sync: ${result.chores} chores, ${result.tasks} tasks, ${result.shopping} shopping — ${result.errors} errors`,
-  });
-
-  return result;
+  if (!(await operationAllowed(state, context))) return pausedSync(state)
+  state.lastSyncAt = Date.now()
+  state.lastSyncError = result.errors
+    ? "Grocy sync incomplete; check current binding and provider access"
+    : null
+  state.choreCount = result.chores
+  state.taskCount = result.tasks
+  state.shoppingCount = result.shopping
+  state.itemCount = result.chores + result.tasks + result.shopping
+  return result
 }
 
-// ═══════ Outbound: Meitheal → Grocy ═══════
-
-/**
- * Push a task completion to Grocy when a synced task is marked done.
- * Called by the outbound sync dispatcher for tasks with grocy confirmations.
- */
-export async function pushCompletionToGrocy(taskId: string): Promise<boolean> {
-  const adapter = state.adapter;
-  if (!adapter) return false;
-
-  if (state.config.syncMode === "import") return false;
-
-  try {
-    const client = await getClient();
-
-    // Look up the grocy sync confirmation for this task
-    const row = await client.execute({
-      sql: "SELECT grocy_entity_type, grocy_entity_id FROM grocy_sync_confirmations WHERE task_id = ? LIMIT 1",
-      args: [taskId],
-    });
-
-    if (row.rows.length === 0) return false;
-
-    const entityType = String(row.rows[0]!.grocy_entity_type);
-    const entityId = Number(row.rows[0]!.grocy_entity_id);
-
-    if (entityType === "chore") {
-      const result = await adapter.trackChoreExecution(entityId);
-      if (result.ok) {
-        logger.log("info", {
-          event: "grocy.sync.chore_completed",
-          domain: "integrations",
-          component: "grocy-bridge",
-          request_id: SYS_REQ,
-          message: `Marked chore ${entityId} as done in Grocy`,
-        });
-        return true;
-      }
-      logger.log("error", {
-        event: "grocy.sync.chore_completion_failed",
-        domain: "integrations",
-        component: "grocy-bridge",
-        request_id: SYS_REQ,
-        message: `Failed to mark chore ${entityId} done: ${result.message}`,
-      });
-    } else if (entityType === "task") {
-      const result = await adapter.markTaskCompleted(entityId);
-      if (result.ok) {
-        logger.log("info", {
-          event: "grocy.sync.task_completed",
-          domain: "integrations",
-          component: "grocy-bridge",
-          request_id: SYS_REQ,
-          message: `Marked task ${entityId} as done in Grocy`,
-        });
-        return true;
-      }
-      logger.log("error", {
-        event: "grocy.sync.task_completion_failed",
-        domain: "integrations",
-        component: "grocy-bridge",
-        request_id: SYS_REQ,
-        message: `Failed to mark task ${entityId} done: ${result.message}`,
-      });
-    } else if (entityType === "shopping") {
-      // Fix #7: Clear shopping list when "Go Shopping" task is marked done
-      const result = await adapter.clearShoppingList();
-      if (result.ok) {
-        logger.log("info", {
-          event: "grocy.sync.shopping_cleared",
-          domain: "integrations",
-          component: "grocy-bridge",
-          request_id: SYS_REQ,
-          message: "Cleared Grocy shopping list (task marked done)",
-        });
-        return true;
-      }
-      logger.log("error", {
-        event: "grocy.sync.shopping_clear_failed",
-        domain: "integrations",
-        component: "grocy-bridge",
-        request_id: SYS_REQ,
-        message: `Failed to clear shopping list: ${result.message}`,
-      });
-    }
-
-    return false;
-  } catch (err) {
-    logger.log("error", {
-      event: "grocy.sync.push_failed",
-      domain: "integrations",
-      component: "grocy-bridge",
-      request_id: SYS_REQ,
-      message: `Failed to push completion for task ${taskId}: ${err}`,
-    });
-    return false;
-  }
+function stateFor(context: IntegrationScope): GrocySyncState | null {
+  const state = states.get(context.binding.id)
+  return state &&
+    state.config.generation === context.binding.generation &&
+    context.binding.integration === "grocy" &&
+    context.binding.purpose === "grocy.sync" &&
+    context.binding.sourceId === "configured-grocy"
+    ? state
+    : null
 }
-
-/**
- * Fix #10: Push a new task to Grocy when created in Meitheal (bidirectional mode).
- * Only pushes tasks that don't already have a grocy sync confirmation
- * and don't have the "synced from grocy" label (loop prevention).
- */
-export async function pushNewTaskToGrocy(
+/** Actual completion permission remains with the originating actor, even for a read-only receiver. */
+export async function pushCompletionToGrocy(
   taskId: string,
-  title: string,
-  options?: { description?: string | undefined; dueDate?: string | undefined },
+  context: IntegrationScope
 ): Promise<boolean> {
-  const adapter = state.adapter;
-  if (!adapter) return false;
-
-  // Only push in bidirectional mode (export-only doesn't make sense for task creation)
-  if (state.config.syncMode !== "bidirectional") return false;
-
+  const state = stateFor(context)
+  if (!state || state.config.syncMode === "import" || !context.originatingActor) return false
   try {
-    const client = (await getClient());
-
-    // Check if this task already has a grocy confirmation (was synced FROM grocy)
-    const existing = await client.execute({
-      sql: "SELECT 1 FROM grocy_sync_confirmations WHERE task_id = ? LIMIT 1",
-      args: [taskId],
-    });
-    if (existing.rows.length > 0) return false; // Already synced — don't duplicate
-
-    const createOpts: { description?: string; dueDate?: string } = {};
-    if (options?.description) createOpts.description = options.description;
-    if (options?.dueDate) createOpts.dueDate = options.dueDate;
-    const result = await adapter.createTask(title, createOpts);
-
-    if (!result.ok) {
-      logger.log("error", {
-        event: "grocy.sync.create_task_failed",
-        domain: "integrations",
-        component: "grocy-bridge",
-        request_id: SYS_REQ,
-        message: `Failed to create task in Grocy: ${result.message}`,
-      });
-      return false;
-    }
-
-    // Record the confirmation so future syncs don't duplicate
-    const nowMs = Date.now();
-    await client.execute({
-      sql: `INSERT INTO grocy_sync_confirmations (confirmation_id, task_id, grocy_entity_type, grocy_entity_id, sync_direction, payload, created_at, updated_at)
-            VALUES (?, ?, 'task', ?, 'outbound', ?, ?, ?)`,
-      args: [crypto.randomUUID(), taskId, String(result.data.taskId), JSON.stringify({ title }), nowMs, nowMs],
-    });
-
-    logger.log("info", {
-      event: "grocy.sync.task_created",
-      domain: "integrations",
-      component: "grocy-bridge",
-      request_id: SYS_REQ,
-      message: `Created task "${title}" in Grocy (id: ${result.data.taskId})`,
-    });
-    return true;
-  } catch (err) {
-    logger.log("error", {
-      event: "grocy.sync.create_task_error",
-      domain: "integrations",
-      component: "grocy-bridge",
-      request_id: SYS_REQ,
-      message: `Failed to push new task to Grocy: ${err}`,
-    });
-    return false;
+    const db = getPersistenceClient(),
+      repo = new TaskRepository(db, context.scope),
+      task = await repo.findById(taskId)
+    if (!task || !isDoneStatus(task.status)) return false
+    const snapshot = await repo.findSyncConfirmation(taskId, context)
+    if (!snapshot?.confirmation) return false
+    const {
+      rows: [link]
+    } = await db.execute(
+      sql`SELECT grocy_entity_type,grocy_entity_id FROM grocy_sync_confirmations WHERE task_id=${taskId} AND binding_id=${context.binding.id} AND confirmation_id=${snapshot.confirmation.confirmationId}`
+    )
+    if (!link) return false
+    const entityId = Number(link.grocy_entity_id)
+    if (link.grocy_entity_type !== "shopping" && (!Number.isSafeInteger(entityId) || entityId < 1))
+      return false
+    const allowed = async () =>
+      (await operationAllowed(state, context)) &&
+      (await validateTaskOperation(db, context.originatingActor!, taskId, {
+        resource: "task",
+        action: "complete"
+      })) &&
+      (await repo.findSyncConfirmation(taskId, context))?.taskVersion === snapshot.taskVersion &&
+      isDoneStatus((await repo.findById(taskId))?.status ?? "")
+    if (!(await allowed())) return false
+    const adapter = scopedAdapter(state, context, allowed)
+    const result =
+      link.grocy_entity_type === "chore"
+        ? await providerOperation(state, context, () => adapter.trackChoreExecution(entityId))
+        : link.grocy_entity_type === "task"
+          ? await providerOperation(state, context, () => adapter.markTaskCompleted(entityId))
+          : link.grocy_entity_type === "shopping"
+            ? await providerOperation(state, context, () => adapter.clearShoppingList())
+            : null
+    return Boolean(result?.ok && (await allowed()))
+  } catch {
+    logFailure("grocy.sync.push_failed")
+    return false
+  }
+}
+/** Publish authoritative current task fields, never arbitrary caller-provided text. */
+export async function pushNewTaskToGrocy(
+  context: IntegrationScope,
+  taskId: string,
+  _title?: string,
+  _options?: { description?: string | undefined; dueDate?: string | undefined }
+): Promise<boolean> {
+  const state = stateFor(context)
+  if (!state || state.config.syncMode !== "bidirectional") return false
+  try {
+    const db = getPersistenceClient(),
+      repo = new TaskRepository(db, context.scope),
+      task = await repo.findById(taskId),
+      snapshot = await repo.findSyncConfirmation(taskId, context)
+    if (
+      !task ||
+      !snapshot ||
+      snapshot.confirmation ||
+      Number(task.task_version) !== snapshot.taskVersion
+    )
+      return false
+    const allowed = async () =>
+      (await operationAllowed(state, context)) &&
+      (await validateTaskOperation(db, context.scope, taskId, read)) &&
+      (!context.originatingActor ||
+        (await validateTaskOperation(
+          db,
+          context.originatingActor,
+          taskId,
+          context.originatingOperation ?? read
+        ))) &&
+      (await repo.findSyncConfirmation(taskId, context))?.taskVersion === snapshot.taskVersion &&
+      !(await repo.findSyncConfirmation(taskId, context))?.confirmation
+    if (!(await allowed())) return false
+    const adapter = scopedAdapter(state, context, allowed),
+      options: { description?: string; dueDate?: string } = {}
+    if (typeof task.description === "string" && task.description)
+      options.description = task.description
+    if (typeof task.due_date === "string" && task.due_date) options.dueDate = task.due_date
+    const result = await providerOperation(state, context, () =>
+      adapter.createTask(task.title, options)
+    )
+    if (!result.ok || !(await allowed())) return false
+    return repo.saveSyncConfirmationForTask(
+      taskId,
+      {
+        source: "grocy",
+        grocyEntityType: "task",
+        externalId: String(result.data.taskId),
+        syncDirection: "outbound",
+        payload: JSON.stringify({ title: task.title })
+      },
+      context,
+      snapshot.taskVersion
+    )
+  } catch {
+    logFailure("grocy.sync.create_task_failed")
+    return false
   }
 }
 
-// ═══════ Merge Helpers ═══════
-
-let _tasksModule: typeof import("@domains/tasks") | null = null;
-async function getTasksModule() {
-  if (!_tasksModule) _tasksModule = await import("@domains/tasks");
-  return _tasksModule;
+type MergeResult = { count: number; errors: number }
+async function commit(
+  mutations: SyncTaskMutation[],
+  context: IntegrationScope
+): Promise<MergeResult> {
+  const result = await new TaskRepository(
+    getPersistenceClient(),
+    context.scope
+  ).commitSyncMutationChunks(mutations, context)
+  return { count: result.created + result.updated, errors: result.errors.length }
 }
-
-/** Helper: get persistence client + ensure tables exist. */
-async function getClient() {
-  const mod = await getTasksModule();
-  await mod.ensureSchema();
-  const client = mod.getPersistenceClient();
-  await ensureGrocySyncTable(client);
-  return client;
-}
-
-async function mergeGrocyChores(chores: GrocyChore[]): Promise<number> {
-  if (chores.length === 0) return 0;
-  const mod = await getTasksModule();
-  await getClient();
-  const entityIds = chores.map((c) => String(c.choreId));
-  const existing = await mod.findTasksByExternalSyncIds({
-    source: "grocy",
-    grocyEntityType: "chore",
-    externalIds: entityIds,
-  });
-  const nowMs = Date.now();
-  const mutations: SyncTaskMutation[] = [];
-
+async function mergeGrocyChores(
+  chores: GrocyChore[],
+  context: IntegrationScope
+): Promise<MergeResult> {
+  const repo = new TaskRepository(getPersistenceClient(), context.scope),
+    existing = await repo.findTasksByExternalSyncIds(
+      {
+        source: "grocy",
+        grocyEntityType: "chore",
+        externalIds: chores.map((chore) => String(chore.choreId))
+      },
+      context
+    ),
+    mutations: SyncTaskMutation[] = []
   for (const chore of chores) {
-    const taskData = choreToTask(chore);
-    const match = existing.get(String(chore.choreId));
-
+    const data = choreToTask(chore),
+      match = existing.get(String(chore.choreId))
+    if (
+      match?.suppressed ||
+      match?.taskDeleted ||
+      (match && match.taskUpdatedAt > match.syncUpdatedAt)
+    )
+      continue
+    const confirmation = {
+      source: "grocy" as const,
+      grocyEntityType: "chore" as const,
+      externalId: String(chore.choreId),
+      payload: JSON.stringify(chore)
+    }
     if (match) {
-      // Skip if locally modified after last sync
-      if (match.taskUpdatedAt > match.syncUpdatedAt) continue;
-
+      const current = await repo.findById(match.taskId)
+      if (!current || Number(current.task_version) > match.syncUpdatedAt) continue
       mutations.push({
         kind: "update",
         taskId: match.taskId,
-        title: taskData.title,
-        status: taskData.status,
-        dueDate: taskData.dueDate,
+        title: data.title,
+        status: data.status,
+        dueDate: data.dueDate,
         updateDueDate: true,
-        description: taskData.description,
-        updatedAt: nowMs,
-        confirmation: {
-          source: "grocy",
-          grocyEntityType: "chore",
-          externalId: String(chore.choreId),
-          payload: JSON.stringify(chore),
-        },
-      });
-    } else {
+        description: data.description,
+        expected: { title: current.title, status: current.status, dueDate: current.due_date },
+        confirmation
+      })
+    } else
       mutations.push({
         kind: "create",
-        taskId: crypto.randomUUID(),
         idempotencyKey: `grocy-chore-${chore.choreId}`,
-        title: taskData.title,
-        description: taskData.description ?? "",
-        status: taskData.status,
-        priority: taskData.priority,
-        dueDate: taskData.dueDate,
-        labels: taskData.labels,
-        areaId: "default",
+        title: data.title,
+        description: data.description,
+        status: data.status,
+        priority: data.priority,
+        dueDate: data.dueDate,
+        labels: data.labels,
+        areaId: context.binding.destination.areaId,
         taskType: "task",
-        createdAt: nowMs,
-        confirmation: {
-          source: "grocy",
-          grocyEntityType: "chore",
-          externalId: String(chore.choreId),
-          syncDirection: "inbound",
-          payload: JSON.stringify(chore),
-        },
-      });
-    }
+        confirmation: { ...confirmation, syncDirection: "inbound" }
+      })
   }
-
-  const res = await mod.commitSyncMutationChunks(mutations);
-  return res.created + res.updated;
+  return commit(mutations, context)
 }
-
 async function mergeGrocyTasks(
   tasks: GrocyTask[],
-  categoryNames?: Map<number, string>,
-): Promise<number> {
-  if (tasks.length === 0) return 0;
-  const mod = await getTasksModule();
-  await getClient();
-  const entityIds = tasks.map((t) => String(t.taskId));
-  const existing = await mod.findTasksByExternalSyncIds({
-    source: "grocy",
-    grocyEntityType: "task",
-    externalIds: entityIds,
-  });
-  const nowMs = Date.now();
-  const mutations: SyncTaskMutation[] = [];
-
+  context: IntegrationScope,
+  categoryNames?: Map<number, string>
+): Promise<MergeResult> {
+  const repo = new TaskRepository(getPersistenceClient(), context.scope),
+    existing = await repo.findTasksByExternalSyncIds(
+      {
+        source: "grocy",
+        grocyEntityType: "task",
+        externalIds: tasks.map((task) => String(task.taskId))
+      },
+      context
+    ),
+    mutations: SyncTaskMutation[] = []
   for (const task of tasks) {
-    const categoryName = task.categoryId ? categoryNames?.get(task.categoryId) : undefined;
-    const taskData = taskToTask(task, categoryName);
-    const match = existing.get(String(task.taskId));
-
+    const data = taskToTask(
+        task,
+        task.categoryId ? categoryNames?.get(task.categoryId) : undefined
+      ),
+      match = existing.get(String(task.taskId))
+    if (match?.suppressed || match?.taskDeleted) continue
+    const confirmation = {
+      source: "grocy" as const,
+      grocyEntityType: "task" as const,
+      externalId: String(task.taskId),
+      payload: JSON.stringify(task)
+    }
     if (match) {
-      // Fix #6: If locally modified, only allow Grocy-side completion to override
-      if (match.taskUpdatedAt > match.syncUpdatedAt && !task.done) continue;
-
+      const current = await repo.findById(match.taskId)
+      if (!current) continue
+      const modified = Number(current.task_version) > match.syncUpdatedAt
+      if (modified && !task.done) continue
       mutations.push({
         kind: "update",
         taskId: match.taskId,
-        title: taskData.title,
-        status: taskData.status,
-        dueDate: taskData.dueDate,
-        updateDueDate: true,
-        description: taskData.description,
-        areaId: taskData.areaId ?? "default",
-        updatedAt: nowMs,
-        confirmation: {
-          source: "grocy",
-          grocyEntityType: "task",
-          externalId: String(task.taskId),
-          payload: JSON.stringify(task),
-        },
-      });
-    } else {
+        ...(!modified
+          ? {
+              title: data.title,
+              dueDate: data.dueDate,
+              updateDueDate: true,
+              description: data.description
+            }
+          : {}),
+        status: data.status,
+        expected: { title: current.title, status: current.status, dueDate: current.due_date },
+        confirmation
+      })
+    } else
       mutations.push({
         kind: "create",
-        taskId: crypto.randomUUID(),
         idempotencyKey: `grocy-task-${task.taskId}`,
-        title: taskData.title,
-        description: taskData.description ?? "",
-        status: taskData.status,
-        priority: taskData.priority,
-        dueDate: taskData.dueDate,
-        labels: taskData.labels,
-        areaId: taskData.areaId ?? "default",
+        title: data.title,
+        description: data.description,
+        status: data.status,
+        priority: data.priority,
+        dueDate: data.dueDate,
+        labels: data.labels,
+        areaId: context.binding.destination.areaId,
         taskType: "task",
-        createdAt: nowMs,
-        confirmation: {
-          source: "grocy",
-          grocyEntityType: "task",
-          externalId: String(task.taskId),
-          syncDirection: "inbound",
-          payload: JSON.stringify(task),
-        },
-      });
-    }
+        confirmation: { ...confirmation, syncDirection: "inbound" }
+      })
   }
-
-  const res = await mod.commitSyncMutationChunks(mutations);
-  return res.created + res.updated;
+  return commit(mutations, context)
 }
-
-/** Fix #2: Shopping list now accepts product name map for human-readable descriptions. */
 async function mergeShoppingList(
   items: { id?: number; productId: number; amount: number; note?: string }[],
-  productNames?: Map<number, string>,
-): Promise<number> {
-  const mod = await getTasksModule();
-  await getClient();
-  const taskData = shoppingListToTask(items, productNames);
-  const nowMs = Date.now();
-  const existing = await mod.findTasksByExternalSyncIds({
-    source: "grocy",
-    grocyEntityType: "shopping",
-    externalIds: ["list-1"],
-  });
-  const match = existing.get("list-1");
-
+  context: IntegrationScope,
+  productNames?: Map<number, string>
+): Promise<MergeResult> {
+  const repo = new TaskRepository(getPersistenceClient(), context.scope),
+    existing = await repo.findTasksByExternalSyncIds(
+      { source: "grocy", grocyEntityType: "shopping", externalIds: ["list-1"] },
+      context
+    ),
+    match = existing.get("list-1")
+  if (match?.suppressed || match?.taskDeleted) return { count: 0, errors: 0 }
+  const data = shoppingListToTask(items, productNames),
+    confirmation = {
+      source: "grocy" as const,
+      grocyEntityType: "shopping" as const,
+      externalId: "list-1",
+      payload: JSON.stringify({ itemCount: items.length })
+    }
   const mutation: SyncTaskMutation = match
     ? {
         kind: "update",
         taskId: match.taskId,
-        title: taskData.title,
-        description: taskData.description,
+        title: data.title,
+        description: data.description,
         replaceDescription: true,
         status: STATUS.PENDING,
-        updatedAt: nowMs,
-        confirmation: {
-          source: "grocy",
-          grocyEntityType: "shopping",
-          externalId: "list-1",
-          payload: JSON.stringify({ itemCount: items.length }),
-        },
+        confirmation
       }
     : {
         kind: "create",
-        taskId: crypto.randomUUID(),
         idempotencyKey: "grocy-shopping-list-1",
-        title: taskData.title,
-        description: taskData.description,
+        title: data.title,
+        description: data.description,
         status: STATUS.PENDING,
         priority: 3,
-        dueDate: null,
-        labels: taskData.labels,
-        areaId: "default",
+        labels: data.labels,
+        areaId: context.binding.destination.areaId,
         taskType: "task",
-        createdAt: nowMs,
-        confirmation: {
-          source: "grocy",
-          grocyEntityType: "shopping",
-          externalId: "list-1",
-          syncDirection: "inbound",
-          payload: JSON.stringify({ itemCount: items.length }),
-        },
-      };
-
-  const res = await mod.commitSyncMutationChunks([mutation]);
-  return res.created + res.updated;
+        confirmation: { ...confirmation, syncDirection: "inbound" }
+      }
+  return commit([mutation], context)
 }
-
-/**
- * Fix #3: Archive orphaned tasks — Grocy items deleted since last sync.
- * Only runs when all API calls succeeded (no partial data).
- */
-async function cleanStaleTasks(seenEntityKeys: Set<string>): Promise<void> {
-  const client = await getClient();
-  const nowMs = Date.now();
-
-  const allConfirmations = await client.execute({
-    sql: "SELECT confirmation_id, task_id, grocy_entity_type, grocy_entity_id FROM grocy_sync_confirmations",
-    args: [],
-  });
-
-  for (const row of allConfirmations.rows) {
-    const key = `${row.grocy_entity_type}:${row.grocy_entity_id}`;
-    const taskId = String(row.task_id);
-    const confirmationId = String(row.confirmation_id);
-    if (!seenEntityKeys.has(key)) {
-      // This entity no longer exists in Grocy — archive the task
-      await client.execute({
-        sql: `UPDATE tasks SET status = '${STATUS.COMPLETE}', updated_at = ? WHERE id = ? AND task_board_id IS NULL AND status != '${STATUS.COMPLETE}'`,
-        args: [nowMs, taskId],
-      });
-      await client.execute({
-        sql: "DELETE FROM grocy_sync_confirmations WHERE confirmation_id = ?",
-        args: [confirmationId],
-      });
-      logger.log("info", {
-        event: "grocy.sync.stale_archived",
-        domain: "integrations",
-        component: "grocy-bridge",
-        request_id: SYS_REQ,
-        message: `Archived stale task ${row.task_id} (Grocy ${key} no longer exists)`,
-      });
+/** Reconciliation uses the common completion command; confirmation cleanup rechecks the same effect. */
+async function cleanStaleTasks(seen: Set<string>, context: IntegrationScope): Promise<number> {
+  const db = guardWorkPersistence(getPersistenceClient()),
+    repo = new TaskRepository(db, context.scope)
+  const { rows } = await db.execute(
+    sql`SELECT confirmation_id,task_id,grocy_entity_type,grocy_entity_id FROM grocy_sync_confirmations WHERE binding_id=${context.binding.id}`
+  )
+  let errors = 0
+  for (const ref of rows) {
+    const type = String(ref.grocy_entity_type)
+    if (!["chore", "task", "shopping"].includes(type) || seen.has(`${type}:${ref.grocy_entity_id}`))
+      continue
+    const id = String(ref.task_id),
+      task = await repo.findById(id)
+    if (!task) continue
+    const result = await repo.commitSyncMutationChunks(
+      [{ kind: "update", taskId: id, status: STATUS.COMPLETE, expected: { status: task.status } }],
+      context
+    )
+    if (result.errors.length) {
+      errors += result.errors.length
+      continue
+    }
+    const tx = await db.transaction("write")
+    try {
+      if (
+        !(await validateIntegrationScope(context, tx, { resource: "task", action: "complete" }))
+          .ok ||
+        !(await validateTaskOperation(tx, context.scope, id, {
+          resource: "task",
+          action: "complete"
+        })) ||
+        (context.originatingActor &&
+          !(await validateTaskOperation(tx, context.originatingActor, id, {
+            resource: "task",
+            action: "complete"
+          })))
+      ) {
+        errors++
+        continue
+      }
+      await tx.execute(
+        sql`DELETE FROM grocy_sync_confirmations WHERE confirmation_id=${String(ref.confirmation_id)} AND task_id=${id} AND binding_id=${context.binding.id} AND EXISTS(SELECT 1 FROM tasks WHERE tasks.id=${id} AND ${boardTaskOwnership(context.scope)} AND tasks.status=${STATUS.COMPLETE})`
+      )
+      await tx.commit()
+    } finally {
+      tx.close()
     }
   }
-}
-
-// ═══════ Table Bootstrap ═══════
-
-async function ensureGrocySyncTable(client: Client): Promise<void> {
-  await client.execute({
-    sql: `CREATE TABLE IF NOT EXISTS grocy_sync_confirmations (
-      confirmation_id TEXT PRIMARY KEY,
-      task_id TEXT NOT NULL,
-      grocy_entity_type TEXT NOT NULL,
-      grocy_entity_id TEXT NOT NULL,
-      sync_direction TEXT NOT NULL DEFAULT 'inbound',
-      payload TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
-    )`,
-    args: [],
-  });
-  await client.execute({
-    sql: `CREATE INDEX IF NOT EXISTS idx_grocy_sync_entity ON grocy_sync_confirmations(grocy_entity_type, grocy_entity_id)`,
-    args: [],
-  });
-  await client.execute({
-    sql: `CREATE INDEX IF NOT EXISTS idx_grocy_sync_task ON grocy_sync_confirmations(task_id)`,
-    args: [],
-  });
+  return errors
 }

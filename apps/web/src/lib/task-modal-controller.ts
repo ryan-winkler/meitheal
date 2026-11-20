@@ -1,3 +1,5 @@
+import { currentTaskApiContext } from "./task-api"
+import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordVersion } from "./task-api-client"
         import { askAIForTask } from "@domains/ai/ai-context-service";
         import { createClientLogger } from "@lib/client-logger";
         import { copyToClipboard } from "@lib/clipboard"
@@ -37,6 +39,7 @@
         import { lockTaskStatusWrite, taskApi, type AssigneeDirectory } from "@lib/task-api-client"
         import { initTaskDetailLayoutEditor, initTicketSectionOrder } from "@lib/task-detail-layout-controller"
         import { assigneeFallback } from "@lib/task-assignee-display"
+        import { isDoneStatus, normalizeStatus } from "@lib/status-config"
 
         // Use lifecycle signal for all global listeners in this module
         pageLifecycle.onPageLoad(() => {
@@ -58,6 +61,72 @@
           pending: number
           queued?: () => void
         } | undefined
+        let boardWithheld = false
+        let boardRevoked = false
+        document.addEventListener("meitheal:board-hidden", () => {
+          boardWithheld = true
+          tdOverlay.hidden = true
+          tdOverlay.inert = true
+          _modalAbortController?.abort()
+          closeTaskReferences()
+        }, { signal: __signal })
+        document.addEventListener("meitheal:board-revoked", event => {
+          const boardId = (event as CustomEvent<{ boardId?: string }>).detail?.boardId
+          if (boardId && boardId !== currentTaskApiContext()?.boardId) return
+          boardRevoked = true
+          boardWithheld = true
+          _modalAbortController?.abort()
+          detailGeneration++
+          descriptionRenderSequence++
+          searchSession?.lifetime.abort()
+          searchSession?.handoff.onDismiss("history")
+          searchSession = undefined
+          pinnedSession = undefined
+          currentTaskId = null
+          currentTaskVersion = null
+          currentTaskActions.clear()
+          currentTicketKey = null
+          currentTicketNumber = null
+          sessionTicketId = null
+          currentCommentTarget = null
+          taskLoaded = false
+          resumeLoadedTask = undefined
+          pendingDescriptionSave = undefined
+          queuedDescriptionTransition = undefined
+          hasChecklistTextDraft = undefined
+          taskSaveQueues.clear()
+          pendingAreaWrites.clear()
+          commentAttempt = undefined
+          _descOriginalValue = ""
+          _settingsFields = []
+          _previouslyFocused = null
+          if (_descSavedTimer !== null) clearTimeout(_descSavedTimer)
+          clearTimeout(parentSearchTimer)
+          closeTaskReferences()
+          deferral.opening(false)
+          pins.opening()
+          for (const field of tdOverlay.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("input, textarea, select")) field.value = ""
+          tdOverlay.hidden = true
+          tdOverlay.inert = true
+          tdOverlay.classList.remove("active", "closing")
+          delete tdOverlay.dataset.openTaskId
+          tdOverlay.replaceChildren()
+          tdOverlay.remove()
+          document.body.style.overflow = ""
+          document.body.classList.remove("has-docked-inspector")
+        }, { signal: __signal })
+        document.addEventListener("meitheal:board-verified", () => {
+          if (boardRevoked) return
+          boardWithheld = false
+          // A new confirmation after unchanged verification gets a fresh lifetime;
+          // the cancelled confirmation and its original request remain aborted.
+          if (currentTaskId && taskLoaded && _modalAbortController?.signal.aborted) {
+            _modalAbortController = new AbortController()
+            resumeLoadedTask?.()
+          }
+          tdOverlay.hidden = false
+          tdOverlay.inert = false
+        }, { signal: __signal })
         let detailGeneration = 0
         const deferral = initModalDeferral(tdOverlay, __signal)
         const pins = initModalTaskPin(tdOverlay, __signal, () => { if (pinnedSession) pinnedSession.dirty = true })
@@ -66,8 +135,10 @@
         const tdPanel = document.getElementById("task-detail-panel")
         const tdHeading = document.getElementById("td-task-heading")
         const tdActions = document.getElementById("td-task-actions")
+        const tdTitleInput = tdPanel?.querySelector<HTMLTextAreaElement>("#td-title")
         const statusSelect = document.querySelector<HTMLSelectElement>("#td-status")
         const doneButton = document.querySelector<HTMLButtonElement>("#td-toggle-done")
+        const deleteButton = document.querySelector<HTMLButtonElement>("#td-delete")
         const tdError = document.getElementById("td-load-error")
         const copyFallback = document.getElementById("td-copy-link-fallback")
         const copyValue = document.querySelector<HTMLInputElement>("#td-copy-link-value")
@@ -75,9 +146,15 @@
         const commentButton = document.querySelector<HTMLButtonElement>("#td-comment-submit")
         const commentError = document.getElementById("td-comment-error")
         let currentTaskId: string | null = null;
+        let currentTaskVersion: number | null = null
+        const currentTaskActions = new Set<string>()
+        let taskSaveConflict = false
+        const taskSaveQueues = new Map<string, Promise<void>>()
         let sessionTicketId: string | null = null
+        let currentTicketKey: string | null = null
         let currentTicketNumber: number | null = null
         let pendingDescriptionSave: Promise<boolean> | undefined
+        let hasChecklistTextDraft: (() => boolean) | undefined
         let queuedDescriptionTransition: (() => void) | undefined
         let currentCommentTarget: string | null = null
         let commentsReady: Promise<void> = Promise.resolve()
@@ -115,6 +192,7 @@
         let layoutScrollTop = 0
         let focusMode = false
         let taskLoaded = false
+        let resumeLoadedTask: (() => void) | undefined
 
         function setInspectorAriaLabel(label: string) {
           tdOverlay.setAttribute("aria-label", label)
@@ -132,7 +210,7 @@
           document.body.style.overflow = isOpen && !docked ? "hidden" : ""
           if (loadedActions) loadedActions.hidden = !taskLoaded && !focusMode
           if (layoutToggle) layoutToggle.hidden = !taskLoaded
-          if (doneButton) doneButton.hidden = !taskLoaded
+          syncTaskActionControls()
           const label = focusToggle?.querySelector("span")
           if (label && focusToggle) {
             label.textContent = (focusMode ? focusToggle.dataset.exitLabel : focusToggle.dataset.enterLabel) ?? ""
@@ -140,10 +218,9 @@
         }
 
         function resizeTitle(): void {
-          const title = tdPanel?.querySelector<HTMLTextAreaElement>("#td-title")
-          if (!title?.getClientRects().length) return
-          title.style.height = "auto"
-          title.style.height = `${title.scrollHeight + 2}px`
+          if (!tdTitleInput?.getClientRects().length) return
+          tdTitleInput.style.height = "auto"
+          tdTitleInput.style.height = `${tdTitleInput.scrollHeight + 2}px`
         }
 
         function setFocusMode(expanded: boolean): void {
@@ -252,8 +329,9 @@
               saveNavigationState()
               return
             }
-            const legacy = url.searchParams.has("open") || getLegacyTaskId(url.hash) !== null
+            const legacy = url.searchParams.has("open") || url.searchParams.has("ticket") || getLegacyTaskId(url.hash) !== null
             url.searchParams.delete("open")
+            url.searchParams.delete("ticket")
             url.searchParams.delete("comment")
             if (getLegacyTaskId(url.hash) !== null) url.hash = ""
             const state = { ...history.state, ticketDrawer: { returnTo: url.href, session: drawerSession, pushed: !legacy && !replace } }
@@ -270,8 +348,9 @@
               history.replaceState(history.state, "", taskBackgroundUrl(url))
               saveNavigationState()
             }
-          } else if (url.searchParams.has("open") || getLegacyTaskId(url.hash) !== null) {
+          } else if (url.searchParams.has("open") || url.searchParams.has("ticket") || getLegacyTaskId(url.hash) !== null) {
             url.searchParams.delete("open")
+            url.searchParams.delete("ticket")
             url.searchParams.delete("comment")
             if (getLegacyTaskId(url.hash) !== null) url.hash = ""
             history.replaceState(history.state, "", url)
@@ -311,12 +390,30 @@
           return true
         }
 
+        function waitForChecklistTextWrite(next: () => void): boolean {
+          if (!currentTaskId) return false
+          const active = document.activeElement
+          if (active instanceof HTMLTextAreaElement && active.closest("#td-checklists")) active.blur()
+          if (!hasChecklistTextDraft?.()) return false
+          const write = pendingChecklistSave(currentTaskId)
+          if (!write) {
+            document.getElementById("td-checklist-recover")?.focus()
+            return true
+          }
+          const generation = detailGeneration
+          void write.then(saved => {
+            if (saved && !__signal.aborted && !boardWithheld && generation === detailGeneration) next()
+          })
+          return true
+        }
+
         function closeTD(reason: SearchDetailDismissal = "dismiss", updateLocation = true) {
           const search = searchSession
           const immediate = reason === "history" && Boolean(search)
           if (!tdOverlay?.classList.contains("active") || (!immediate && tdOverlay.classList.contains("closing"))) return
           if (!immediate && waitForDetailWrites(() => closeTD(reason, updateLocation))) return
           if (waitForDescriptionWrite(() => closeTD(reason, updateLocation))) return
+          if (!immediate && waitForChecklistTextWrite(() => closeTD(reason, updateLocation))) return
           const closing = ++detailGeneration
           const previousCard = _previouslyFocused?.closest<HTMLElement>(".kanban-card")
           const previousDay = _previouslyFocused?.closest<HTMLElement>(".cal-cell")?.dataset.date
@@ -329,12 +426,15 @@
           // Abort any in-flight fetches
           if (_modalAbortController) { _modalAbortController.abort(); _modalAbortController = null; }
           currentTaskId = null;
+          hasChecklistTextDraft = undefined
           document.dispatchEvent(new CustomEvent("meitheal:ha-location-task"))
           sessionTicketId = null
+          currentTicketKey = null
           currentTicketNumber = null
           pendingDescriptionSave = undefined
           queuedDescriptionTransition = undefined
           taskLoaded = false
+          resumeLoadedTask = undefined
           currentCommentTarget = null
           delete tdOverlay.dataset.openTaskId
           if (updateLocation) setTaskLocation(null)
@@ -393,9 +493,29 @@
           }
         }
 
-        function setStatusLoading(locked: boolean) {
-          if (statusSelect) statusSelect.disabled = locked
-          if (doneButton) doneButton.disabled = locked
+        function statusAllowed(next: string): boolean {
+          const previous = statusSelect?.dataset.savedStatus ?? "pending"
+          const laneStatus = statusSelect?.querySelector<HTMLOptionElement>(`option[value="${CSS.escape(next)}"]`)?.dataset.statusMeaning ?? next
+          return currentTaskActions.has("edit") &&
+            (!(isDoneStatus(laneStatus) || isDoneStatus(previous)) || currentTaskActions.has("complete")) &&
+            (normalizeStatus(laneStatus) !== "archived" || currentTaskActions.has("delete"))
+        }
+
+        function syncTaskActionControls() {
+          const editable = taskLoaded && !_isPopulating && currentTaskActions.has("edit")
+          if (tdTitleInput) tdTitleInput.readOnly = !editable
+          if (statusSelect) {
+            statusSelect.disabled = !editable
+            for (const option of statusSelect.options) option.disabled = !statusAllowed(option.value)
+          }
+          if (doneButton) {
+            doneButton.hidden = !taskLoaded || !currentTaskActions.has("complete")
+            doneButton.disabled = !editable || !currentTaskActions.has("complete")
+          }
+          if (deleteButton) {
+            deleteButton.hidden = !taskLoaded || !currentTaskActions.has("delete")
+            deleteButton.disabled = _isPopulating || deleteButton.hidden
+          }
         }
 
         function setStatusBusy(busy: boolean) {
@@ -410,7 +530,8 @@
             statusSelect.value = status
             statusSelect.dataset.savedStatus = status
           }
-          if (doneButton) doneButton.textContent = status === "complete" ? "Mark as Undone" : "Mark as Done"
+          if (doneButton) doneButton.textContent = isDoneStatus(status) ? "Mark as Undone" : "Mark as Done"
+          syncTaskActionControls()
         }
 
         document.addEventListener("meitheal:today-status-committed", event => {
@@ -419,6 +540,7 @@
         }, { signal: __signal })
 
         async function openTaskDetail(taskId: string, commentTarget: string | null = null, search?: SearchDetailHandoff, updateLocation = true) {
+          if (boardWithheld) return
           if (!tdOverlay?.isConnected || __signal.aborted) return
           const newSession = !tdOverlay.classList.contains("active")
           if (search && !newSession) {
@@ -438,8 +560,11 @@
             return openTaskDetail(taskId, commentTarget, search, updateLocation)
           }
           if (waitForDetailWrites(() => { void openTaskDetail(taskId, commentTarget, search, updateLocation) })) return
+          if (waitForChecklistTextWrite(() => { void openTaskDetail(taskId, commentTarget, search, updateLocation) })) return
           if (search) searchSession = { handoff: search, lifetime: new AbortController(), dirty: false, pending: 0 }
           detailGeneration++
+          const loadedGeneration = detailGeneration
+          resumeLoadedTask = undefined
           closeTaskReferences()
           deferral.opening(newSession)
           pins.opening()
@@ -447,9 +572,13 @@
           if (newSession) _previouslyFocused = search ? null : document.activeElement
           document.dispatchEvent(new CustomEvent("meitheal:ha-location-task"))
           currentTaskId = taskId
+          hasChecklistTextDraft = undefined
+          currentTaskVersion = null
+          currentTaskActions.clear()
           if (!sameTicket) {
             sessionTicketId = null
-            currentTicketNumber = null
+            currentTicketKey = null
+          currentTicketNumber = null
             pendingDescriptionSave = undefined
           }
           taskLoaded = false
@@ -461,7 +590,7 @@
           const modalSignal = _modalAbortController.signal
           document.getElementById("td-ai-response")?.remove()
           _isPopulating = true;
-          setStatusLoading(true)
+          syncTaskActionControls()
           statusSelect?.removeAttribute("data-saved-status")
           setStatusBusy(false)
           const areaField = document.querySelector<HTMLSelectElement>("#td-area")
@@ -549,10 +678,19 @@
               showTaskError(false)
               return
             }
+            if (Array.isArray(t.actions)) {
+              for (const action of t.actions) {
+                if (action === "edit" || action === "complete" || action === "delete") currentTaskActions.add(action)
+              }
+            }
             taskId = String(t.id)
             currentTaskId = taskId
+            currentTaskVersion = taskRecordVersion(t)
+            taskSaveConflict = false
+            document.getElementById("td-write-conflict")?.remove()
             document.dispatchEvent(new CustomEvent("meitheal:ha-location-task", { detail: taskId }))
             sessionTicketId = taskId
+            currentTicketKey = typeof t.ticket_key === "string" ? t.ticket_key : null
             currentTicketNumber = typeof t.ticket_number === "number" ? t.ticket_number : null
             setTaskLocation(taskId, true, commentTarget)
 
@@ -614,6 +752,9 @@
                   // Add the main key as an option
                   const opt = document.createElement("option");
                   opt.value = lane.key;
+                  if (Array.isArray(lane.includes) && lane.includes.some((status: unknown) => typeof status === "string" && isDoneStatus(status))) {
+                    opt.dataset.statusMeaning = "complete"
+                  }
                   opt.textContent = lane.label;
                   statusSelect.appendChild(opt);
                 }
@@ -859,16 +1000,7 @@
               typeIconEl.title = tt.charAt(0).toUpperCase() + tt.slice(1);
             }
 
-            const titleEl = document.getElementById("td-title") as HTMLTextAreaElement;
-            if (titleEl) {
-              titleEl.value = String(t.title ?? "");
-              // Trigger auto-resize inline
-              titleEl.style.height = "auto";
-              // Brief timeout to ensure DOM layout is updated before scrollHeight is read
-              setTimeout(() => {
-                titleEl.style.height = titleEl.scrollHeight + "px";
-              }, 10);
-            }
+            if (tdTitleInput) tdTitleInput.value = String(t.title ?? "")
             // Update aria-label with actual task title for screen readers
             setInspectorAriaLabel(`Task detail: ${String(t.title ?? "Untitled")}`);
 
@@ -1001,7 +1133,7 @@
             const trackedInput = document.getElementById("td-time-tracked") as HTMLInputElement
             trackedInput.value = String(t.time_tracked ?? 0)
             if (areaField && areas) {
-              const savedArea = String(t.area_id ?? "default")
+              const savedArea = String(t.area_id ?? "")
               try {
                 const response = await areas
                 if (!response.ok) throw new Error("Groups unavailable")
@@ -1010,15 +1142,14 @@
                 if (!Array.isArray(choices) || choices.some(area => typeof area?.id !== "string" || !area.id || typeof area.name !== "string")) {
                   throw new Error("Invalid Groups")
                 }
-                areaField.replaceChildren(...choices.map(({ id, name }) => new Option(name, id)))
-                if (!choices.some(area => area.id === savedArea)) {
-                  const label = savedArea === "default" ? "Default" :
-                    window.mI18n?.get("task_detail.unavailable_group_selection") ?? "Saved selection unavailable"
+                areaField.replaceChildren(new Option("Without an Area", ""), ...choices.map(({ id, name }) => new Option(name, id)))
+                if (savedArea && !choices.some(area => area.id === savedArea)) {
+                  const label = window.mI18n?.get("task_detail.unavailable_group_selection") ?? "Saved selection unavailable"
                   const unavailable = new Option(label, savedArea)
                   unavailable.disabled = true
                   areaField.add(unavailable)
                 }
-                areaFieldReady = choices.length > 0
+                areaFieldReady = true
               } catch {
                 if (modalSignal.aborted) return
                 areaField.replaceChildren(new Option(window.mI18n?.get("task_detail.group_options_load_failed") ?? "Options could not load", savedArea))
@@ -1243,7 +1374,8 @@
               tdUpdated.textContent =
                 "Last updated " +
                 new Date(Number(t.updated_at)).toLocaleString();
-            showTaskChecklist(taskId, t.checklists, modalSignal, typeof t.ticket_key === "string" ? t.ticket_key : undefined)
+            hasChecklistTextDraft = showTaskChecklist(taskId, t.checklists, modalSignal, send => saveTaskChecklist(taskId, send),
+              typeof t.ticket_key === "string" ? t.ticket_key : undefined)
             const taskReactions = document.getElementById("td-task-reactions")
             if (taskReactions) {
               taskReactions.replaceChildren()
@@ -1276,21 +1408,24 @@
             tdLoaded?.classList.remove("hidden")
             void renderTaskDescription(description)
             resizeTitle()
-            setTimeout(() => {
-              if (modalSignal.aborted) return
+            const finishLoadedTask = () => {
+              const liveSignal = _modalAbortController?.signal
+              if (!liveSignal || liveSignal.aborted || currentTaskId !== taskId || detailGeneration !== loadedGeneration) return
               _isPopulating = false
               if (descSaveBtn && !pendingDescriptionSave) descSaveBtn.disabled = false
-              setStatusLoading(false)
+              syncTaskActionControls()
               if (areaField) areaField.disabled = !areaFieldReady
               if (unlinkParentButton) unlinkParentButton.disabled = false
               if (projectField) projectField.disabled = !projectFieldReady
               if (assignSelect) assignSelect.disabled = !assigneeReady
-              deferral.loaded(taskId, typeof t.project_id === "string" ? t.project_id : null, t.deferred_at != null, modalSignal, Boolean(searchSession))
-              pins.loaded(taskId, modalSignal)
+              deferral.loaded(taskId, typeof t.project_id === "string" ? t.project_id : null, t.deferred_at != null, liveSignal, Boolean(searchSession))
+              pins.loaded(taskId, liveSignal)
               const transition = queuedDescriptionTransition
               queuedDescriptionTransition = undefined
               transition?.()
-            }, 100)
+            }
+            resumeLoadedTask = finishLoadedTask
+            setTimeout(finishLoadedTask, 100)
           } catch (e) {
             if (modalSignal.aborted) return
             log.error("Failed to load task detail", e);
@@ -1300,8 +1435,60 @@
 
 
 
-        async function saveTaskField(field: string, value: unknown, updatedAt?: number): Promise<boolean> {
-          if (!currentTaskId || _isPopulating) return false
+        function showTaskWriteConflict() {
+          if (document.getElementById("td-write-conflict")) return
+          const notice = document.createElement("div")
+          notice.id = "td-write-conflict"
+          notice.className = "alert alert-warning"
+          notice.setAttribute("role", "alert")
+          notice.append("This task changed or its save could not be confirmed. Your input is kept here. Reload the saved task before making further changes. ")
+          const refresh = document.createElement("button")
+          refresh.type = "button"
+          refresh.className = "btn btn-ghost"
+          refresh.textContent = "Reload saved task"
+          refresh.addEventListener("click", () => { if (currentTaskId) void openTaskDetail(currentTaskId) }, { signal: __signal })
+          notice.append(refresh)
+          document.getElementById("td-loaded-content")?.prepend(notice)
+        }
+
+        function queueTaskWrite<T>(taskId: string, write: () => T | Promise<T>): Promise<T> {
+          const queued = (taskSaveQueues.get(taskId) ?? Promise.resolve()).then(write)
+          const release = () => {
+            if (taskSaveQueues.get(taskId) === drained) taskSaveQueues.delete(taskId)
+          }
+          const drained = queued.then(release, release)
+          taskSaveQueues.set(taskId, drained)
+          return queued
+        }
+
+        function saveTaskChecklist(taskId: string, send: (version: number | null) => Promise<Response>) {
+          const generation = detailGeneration
+          const context = currentTaskApiContext()
+          const stillCurrent = () => generation === detailGeneration && currentTaskId === taskId &&
+            !boardWithheld && currentTaskActions.has("edit") && sameTaskApiContext(context, currentTaskApiContext())
+          return queueTaskWrite(taskId, async () => {
+            if (!stillCurrent()) throw new Error("Task access changed")
+            const version = currentTaskVersion
+            const response = await send(version)
+            if (version === null || !stillCurrent() || (!response.ok && response.status !== 409)) return response
+            const saved = await response.clone().json().catch(() => null)
+            if (!stillCurrent()) return response
+            // Preserve independent checklist edits without silently adopting an external change to other fields.
+            if (response.status === 409 && saved?.errorCode === "TASK_VERSION_CONFLICT") return send(null)
+            if (response.ok && saved?.id === taskId) currentTaskVersion = taskRecordVersion(saved) ?? version
+            return response
+          })
+        }
+
+        function saveTaskField(field: string, value: unknown, updatedAt?: number): Promise<boolean> {
+          if (!currentTaskId || _isPopulating || boardWithheld || !currentTaskActions.has("edit")) return Promise.resolve(false)
+          const generation = detailGeneration
+          return queueTaskWrite(currentTaskId, () => generation === detailGeneration ? saveTaskFieldNow(field, value, updatedAt) : false)
+        }
+
+        async function saveTaskFieldNow(field: string, value: unknown, updatedAt?: number): Promise<boolean> {
+          if (!currentTaskId || _isPopulating || boardWithheld || !currentTaskActions.has("edit") || (field === "status" && !statusAllowed(String(value)))) return false
+          if (taskSaveConflict) { showTaskWriteConflict(); return false }
           const generation = detailGeneration
           const taskId = currentTaskId
           const search = searchSession
@@ -1309,13 +1496,14 @@
           const scopedWrite = search || ["title", "status", "area_id", "project_id", "framework_payload"].includes(field) ? beginScopedWrite() : undefined
           let saved = false
           try {
-            const response = await fetch(`/api/tasks/${taskId}`, {
-              method: "PUT",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ [field]: value, ...(updatedAt === undefined ? {} : { updated_at: updatedAt }) }),
-              ...(scopedWrite ? { signal: scopedWrite.signal } : field === "area_id" ? { signal: AbortSignal.timeout(7_000) } : {}),
-            })
-            saved = response.ok
+            const result = await saveVersionedTask(taskId, { [field]: value }, updatedAt ?? currentTaskVersion, undefined,
+              scopedWrite?.signal ?? AbortSignal.timeout(7_000))
+            saved = result.ok
+            if (result.ok && generation === detailGeneration) currentTaskVersion = result.version
+            if (!result.ok && generation === detailGeneration && (result.errorCode === "conflict" || result.errorCode === "unconfirmed")) {
+              taskSaveConflict = true
+              showTaskWriteConflict()
+            }
             if (saved) {
               if (field === "area_id") {
                 changedAreaTask = taskId
@@ -1329,13 +1517,13 @@
               }
               notifyInactivityTaskChanged(field === "status" ? undefined : taskId)
               if (field === "status") {
-                const task = await response.json()
+                const task = result.ok ? result.task : {}
                 document.dispatchEvent(new CustomEvent("meitheal:task-status-saved", { detail: { id: taskId, status: task.status, deferred: task.deferred_at != null } }))
                 if (value === "complete" && (!search || generation === detailGeneration)) onTaskCompleted(task)
               }
               return field === "area_id" || !search || generation === detailGeneration
             }
-            log.warn(`Failed to save ${field}:`, response.status)
+            if (!result.ok) log.warn(`Failed to save ${field}:`, result.status)
           } catch (err) {
             log.warn(`Network error saving ${field}:`, err)
           } finally {
@@ -1471,7 +1659,6 @@
         }, { signal: __signal });
 
         // Auto-save on change
-        const tdTitleInput = document.getElementById("td-title") as HTMLTextAreaElement;
         if (tdTitleInput) {
           tdTitleInput.addEventListener("blur", (e) =>
             saveTD("title", (e.target as HTMLTextAreaElement).value),
@@ -1522,6 +1709,10 @@
           const id = currentTaskId
           if (!id || !statusSelect || statusSelect.disabled) return
           const previous = statusSelect.dataset.savedStatus ?? statusSelect.value
+          if (!statusAllowed(next)) {
+            statusSelect.value = previous
+            return
+          }
           const unlock = lockTaskStatusWrite(id)
           if (!unlock) {
             statusSelect.value = previous
@@ -1532,7 +1723,7 @@
           setStatusBusy(true)
           try {
             const saved = await saveTaskField("status", next)
-            if (generation === detailGeneration) renderSavedStatus(saved ? next : previous)
+            if (generation === detailGeneration && (saved || !taskSaveConflict)) renderSavedStatus(saved ? next : previous)
           } finally {
             unlock()
             if (generation === detailGeneration) setStatusBusy(false)
@@ -1569,11 +1760,11 @@
           const taskId = currentTaskId
           const areaId = select.value
           const previous = select.dataset.savedArea
-          if (!taskId || !modalSignal || select.disabled || !areaId || areaId === previous) return
-          const ticketKey = formatTicketKey(currentTicketNumber)
+          if (!taskId || !modalSignal || select.disabled || areaId === previous) return
+          const ticketKey = currentTicketKey
           const hadFocus = document.activeElement === select
           select.disabled = true
-          const write = saveTaskField("area_id", areaId).then(saved => saved ? areaId : null).finally(() => {
+          const write = saveTaskField("area_id", areaId || null).then(saved => saved ? areaId : null).finally(() => {
             if (pendingAreaWrites.get(taskId) === write) pendingAreaWrites.delete(taskId)
             if (ticketKey && pendingAreaWrites.get(ticketKey) === write) pendingAreaWrites.delete(ticketKey)
           })
@@ -1581,8 +1772,8 @@
           if (ticketKey) pendingAreaWrites.set(ticketKey, write)
           const savedArea = await write
           if (modalSignal.aborted) return
-          if (savedArea) select.dataset.savedArea = savedArea
-          else select.value = previous ?? ""
+          if (savedArea !== null) select.dataset.savedArea = savedArea
+          else if (!taskSaveConflict) select.value = previous ?? ""
           select.disabled = false
           if (hadFocus && document.activeElement === document.body) select.focus({ preventScroll: true })
         }, { signal: __signal })
@@ -1595,7 +1786,7 @@
           const saved = await saveTaskField("project_id", projectId || null)
           if (modalSignal?.aborted) return
           if (saved) select.dataset.savedProject = projectId
-          else select.value = select.dataset.savedProject ?? ""
+          else if (!taskSaveConflict) select.value = select.dataset.savedProject ?? ""
           select.disabled = false
         }, { signal: __signal })
 
@@ -1826,7 +2017,7 @@
 
 
         doneButton?.addEventListener("click", () => {
-          if (statusSelect) void saveDetailStatus(statusSelect.value === "complete" ? "pending" : "complete")
+          if (statusSelect) void saveDetailStatus(isDoneStatus(statusSelect.value) ? "pending" : "complete")
         }, { signal: __signal })
 
         // Toggle favorite
@@ -1982,42 +2173,41 @@
           .getElementById("td-delete")
           ?.addEventListener("click", async () => {
             const taskId = currentTaskId
-            if (!taskId) return
+            if (!taskId || !currentTaskActions.has("delete") || boardWithheld || !_modalAbortController || _modalAbortController.signal.aborted) return
+            if (taskSaveConflict) { showTaskWriteConflict(); return }
+            const version = currentTaskVersion
+            const context = currentTaskApiContext()
             const search = searchSession
             const generation = detailGeneration
-            const stale = () => search && generation !== detailGeneration
+            const lifetime = _modalAbortController.signal
+            const confirmationSignal = AbortSignal.any([__signal, lifetime, ...(search ? [search.lifetime.signal] : [])])
+            const stale = () => generation !== detailGeneration || boardWithheld || confirmationSignal.aborted || !sameTaskApiContext(context, currentTaskApiContext())
             const ok = await confirmDialog({
               message: "This task will be permanently deleted.",
               variant: "danger",
               confirmText: "Delete Task",
               title: "Delete Task",
-              ...(search ? { signal: search.lifetime.signal } : {}),
+              signal: confirmationSignal,
             });
             if (!ok || stale() || taskId !== currentTaskId) return
             const scopedWrite = beginScopedWrite()
             try {
-              const res = await fetch(
-                `${window.__ingress_path || ""}/api/tasks/${taskId}`,
-                {
-                  method: "DELETE",
-                  ...(scopedWrite ? { signal: scopedWrite.signal } : {}),
-                },
-              );
+              const result = await deleteVersionedTask(taskId, version, context,
+                AbortSignal.any([confirmationSignal, ...(scopedWrite ? [scopedWrite.signal] : []), AbortSignal.timeout(7_000)]))
               if (stale()) return
-              // Treat 204 (deleted) and 404 (already gone) as success
-              if (res.ok || res.status === 404) {
+              if (result.ok) {
                 const deferred = deferral.removing(taskId)
+                hasChecklistTextDraft = undefined
                 closeTD("discard")
-                if (!deferred && !scopedWrite) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-deleted" } }));
-              } else if (search) {
-                const { showToast } = await import("@lib/toast")
-                if (!stale()) showToast("Couldn’t delete the task.", "error")
+                if (!deferred && !scopedWrite) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-deleted" } }))
+              } else {
+                taskSaveConflict = true
+                showTaskWriteConflict()
               }
             } catch {
               if (stale()) return
-              // Network error — still close and refresh to re-sync
-              closeTD("discard")
-              if (!scopedWrite) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-delete-fallback" } }));
+              taskSaveConflict = true
+              showTaskWriteConflict()
             } finally {
               scopedWrite?.finish()
             }
@@ -2110,7 +2300,7 @@
             saveNavigationState()
           }
           const url = new URL(window.location.href)
-          const taskId = ticketIdFromPath(url.pathname, window.__ingress_path) ?? getLegacyTaskId(url.hash) ?? url.searchParams.get("open")
+          const taskId = ticketIdFromPath(url.pathname, window.__ingress_path) ?? getLegacyTaskId(url.hash) ?? url.searchParams.get("open") ?? url.searchParams.get("ticket")
           const commentTarget = url.searchParams.get("comment")
           if (taskId === null) closeTD("discard", false)
           else if (tdOverlay.dataset.suppressUrlOpen !== "true" &&

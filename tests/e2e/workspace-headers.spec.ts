@@ -5,6 +5,7 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, pinRequest, startCoreFixture } from "../scripts/task-pins-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires an isolated built App and HTTPS ingress fixture")
@@ -32,9 +33,11 @@ test("compact workspace headers preserve ingress navigation and distinguish unav
     const app = origin + fixture.configuredPath
     browser = await launchPinBrowser(work)
     const context = await browser.newContext({
+      ignoreHTTPSErrors: true,
       extraHTTPHeaders: {}, viewport: { width: 1440, height: 950 }, reducedMotion: "reduce", serviceWorkers: "block",
     })
     await context.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
+    const boardHeaders = await currentBoardWriteHeaders(context.request, "household", {}, app)
     const page = await context.newPage()
     await page.addInitScript(() => {
       const scroll = Element.prototype.scrollIntoView
@@ -60,7 +63,7 @@ test("compact workspace headers preserve ingress navigation and distinguish unav
 
     for (const [path, id, section] of [["/", "dashboard", "capture"], ["/habits", "habits", "library"]] as const) {
       const scrollPage = await context.newPage()
-      await scrollPage.setViewportSize({ width: 375, height: 450 })
+      await scrollPage.setViewportSize({ width: 375, height: 360 })
       await scrollPage.goto(app + path)
       await scrollPage.waitForLoadState("networkidle")
       const tab = (name: string) => scrollPage.locator(`#${id}-bar-tabs [data-unified-bar-section="${id}-${name}"]`)
@@ -104,19 +107,20 @@ test("compact workspace headers preserve ingress navigation and distinguish unav
       ["active", { title: "Active header fixture", status: "active" }],
       ["overdue", { title: "Overdue header fixture", due_date: "2020-01-01" }],
     ] as const) {
-      const response = await pinRequest(page, fixture.configuredPath + "/api/tasks", "POST", data)
+      const response = await pinRequest(page, fixture.configuredPath + "/api/tasks", "POST", data, undefined, boardHeaders)
       expect(response.status).toBe(201)
       ids.set(status, response.body.id)
     }
     withFixtureDb(db => {
-      db.prepare("INSERT OR REPLACE INTO gamification_stats (date, completed_count, streak_count, points) VALUES (?, 1, 1, 10)")
+      db.prepare("INSERT OR REPLACE INTO gamification_stats (date, board_id, completed_count, streak_count, points) VALUES (?, 'household', 1, 1, 10)")
         .run(new Date().toISOString().slice(0, 10))
     })
     const wideDashboard = await context.newPage()
     await wideDashboard.goto(app + "/")
     const tiles = wideDashboard.locator("#dashboard-overview .stat-card")
     await expect(tiles).toHaveCount(5)
-    await expect(tiles.first()).toHaveAttribute("href", /\/progress#achievements$/)
+    const achievements = fixture.configuredPath + "/progress?board_id=household#achievements"
+    await expect(tiles.first()).toHaveAttribute("href", achievements)
     expect(await tiles.evaluateAll(elements => new Set(elements.map(element => element.getBoundingClientRect().top)).size)).toBe(1)
     await wideDashboard.close()
 
@@ -129,7 +133,7 @@ test("compact workspace headers preserve ingress navigation and distinguish unav
       await expect(link).toBeFocused()
       await expect(link).toHaveCSS("outline-style", "solid")
       await link.press("Enter")
-      const url = new URL(app + "/tasks?status=" + status)
+      const url = new URL(app + "/boards/household?status=" + status)
       await expect(dashboard).toHaveURL(result => result.origin === url.origin && result.pathname === url.pathname && result.search === url.search)
       await expect(dashboard.locator(`.kanban-card[data-id="${ids.get(status)}"]`)).toBeVisible()
       await expect(dashboard.locator(`.kanban-card[data-id="${ids.get(excluded)}"]`)).toHaveCount(0)
@@ -163,10 +167,12 @@ test("compact workspace headers preserve ingress navigation and distinguish unav
     withFixtureDb(db => db.exec("ALTER TABLE tasks RENAME COLUMN due_date TO fixture_due_date"))
     try {
       await partialCounts.goto(app + "/")
-      await expect(partialCounts.getByText("Overdue count couldn’t load.", { exact: false })).toBeVisible()
-      await expect(partialCounts.locator("#stat-active")).toBeVisible()
+      // A missing due-date column invalidates the shared scoped task projection.
+      // The independent streak remains available while task statistics are withheld.
+      await expect(partialCounts.getByText("Task counts couldn’t load.", { exact: false })).toBeVisible()
+      await expect(partialCounts.locator("#stat-active")).toHaveCount(0)
       await expect(partialCounts.locator("#stat-overdue")).toHaveCount(0)
-      await expect(partialCounts.locator("#dashboard-recent .card-subtitle")).toHaveText("Total Tasks 2")
+      await expect(partialCounts.locator("#dashboard-overview .stat-card")).toHaveAttribute("href", achievements)
     } finally {
       await partialCounts.close()
       withFixtureDb(db => db.exec("ALTER TABLE tasks RENAME COLUMN fixture_due_date TO due_date"))
@@ -193,8 +199,9 @@ test("compact workspace headers preserve ingress navigation and distinguish unav
     })
     try {
       await refreshFocus()
-      await expect(favorites).toBeHidden()
       await expect(focus.locator("#my-open-empty")).toContainText("Couldn’t refresh open work.")
+      // Both queues share the same scoped task projection and retain their last successful read.
+      await expect(favorites.getByText("Active header fixture")).toBeVisible()
       await expect(focus.locator("#my-open-list").getByText("Active header fixture")).toBeVisible()
     } finally {
       withFixtureDb(db => db.exec("ALTER TABLE tasks RENAME COLUMN fixture_assigned_to TO assigned_to"))
@@ -218,7 +225,7 @@ test("compact workspace headers preserve ingress navigation and distinguish unav
       await expect(failed.locator(stats)).toHaveCount(0)
       if (path.startsWith("/#")) {
         await expect(failed.locator("#dashboard-overview .stat-card")).toHaveCount(1)
-        await expect(failed.locator("#dashboard-overview .stat-card")).toHaveAttribute("href", /\/progress#achievements$/)
+        await expect(failed.locator("#dashboard-overview .stat-card")).toHaveAttribute("href", achievements)
         await expect(failed.locator("#my-open-count")).toBeHidden()
         await expect(failed.locator("#my-open-empty")).toContainText("Couldn’t refresh open work.")
         await expect(failed.getByText("Recent tasks couldn’t load.", { exact: false })).toBeVisible()
@@ -249,11 +256,12 @@ test("compact workspace headers preserve ingress navigation and distinguish unav
       db.exec("ALTER TABLE fixture_templates_unavailable RENAME TO task_templates")
       db.exec("ALTER TABLE fixture_tasks_unavailable RENAME TO tasks")
     })
-    const savedAfterRecovery = await pinRequest(focus, fixture.configuredPath + "/api/tasks", "POST", { title: "Recovered header fixture" })
+    const savedAfterRecovery = await pinRequest(focus, fixture.configuredPath + "/api/tasks", "POST", { title: "Recovered header fixture" }, undefined, boardHeaders)
     expect(savedAfterRecovery.status).toBe(201)
     await refreshFocus()
     await expect(focus.locator("#my-open-list").getByText("Recovered header fixture")).toBeVisible()
     await expect(focus.locator("#my-open-empty")).toBeHidden()
+    await expect(favorites).toBeHidden()
   } finally {
     try {
       await browser?.close()

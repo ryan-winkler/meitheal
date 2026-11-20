@@ -653,7 +653,7 @@ export function getGroupKey(el: Pick<HTMLElement, "dataset">, groupBy: string): 
     case "priority":
       return el.dataset.priority ?? "3"
     case "area":
-      return el.dataset.area ?? "default"
+      return el.dataset.area ?? ""
     case "assignee":
       return el.dataset.assigned || "__unassigned__"
     case "status":

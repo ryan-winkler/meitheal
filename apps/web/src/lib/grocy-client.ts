@@ -1,6 +1,6 @@
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import { GrocyAdapter, validateGrocyBaseUrl } from "@meitheal/integration-core"
-import { getPersistenceClient, SettingsRepository } from "@domains/tasks"
+import { getPersistenceClient, validateIntegrationScope, type IntegrationScope } from "@domains/tasks"
 import { supervisorFetch } from "./supervisor-fetch"
 
 const logger = createLogger({
@@ -182,13 +182,24 @@ export async function resolveSupervisorGrocySlugForUrl(targetUrl: string): Promi
   }
 }
 
-export async function createGrocyClient(): Promise<GrocyAdapter | null> {
+const grocyProfiles = new WeakMap<GrocyAdapter, string>()
+async function configuredGrocyFingerprint(): Promise<string> {
+  const { rows } = await getPersistenceClient().execute("SELECT key,value FROM settings WHERE key IN ('grocy_url','grocy_api_key') ORDER BY key")
+  return JSON.stringify(rows.map(row => [row.key, row.value]))
+}
+export async function isCurrentConfiguredGrocyClient(adapter: GrocyAdapter): Promise<boolean> {
+  const expected = grocyProfiles.get(adapter)
+  return expected !== undefined && expected === await configuredGrocyFingerprint()
+}
+
+export async function createGrocyClient(context?: IntegrationScope): Promise<GrocyAdapter | null> {
   try {
     const client = getPersistenceClient()
     const readConfig = () => client.execute(
       "SELECT key, value FROM settings WHERE key IN ('grocy_url', 'grocy_api_key')",
     )
-    let { rows } = await readConfig()
+    const fingerprint = await configuredGrocyFingerprint()
+    const { rows } = await readConfig()
     const storedUrl = rows.find((row) => row.key === "grocy_url")?.value
     if (typeof storedUrl !== "string" || !rows.some((row) => row.key === "grocy_api_key")) return null
 
@@ -204,9 +215,9 @@ export async function createGrocyClient(): Promise<GrocyAdapter | null> {
     if (typeof originalUrl === "string" && isLegacySupervisorIngressUrl(originalUrl)) {
       const detected = await resolveSupervisorGrocyAddon(originalUrl)
       if (!detected) return null
-      const repo = new SettingsRepository(client)
-      await repo.replaceIfUnchanged("grocy_url", storedUrl, JSON.stringify(detected.url))
-      rows = (await readConfig()).rows
+      // Resolve the exact legacy add-on in memory. A transport factory never
+      // rewrites shared integration approval or its persisted endpoint.
+      rows.find(row => row.key === "grocy_url")!.value = JSON.stringify(detected.url)
     }
     const baseUrl = decode(rows.find((row) => row.key === "grocy_url")?.value)
     const storedKey = decode(rows.find((row) => row.key === "grocy_api_key")?.value)
@@ -225,18 +236,22 @@ export async function createGrocyClient(): Promise<GrocyAdapter | null> {
       return null
     }
 
-    return new GrocyAdapter({
+    const adapter = new GrocyAdapter({
       baseUrl: urlCheck.normalizedUrl,
       apiKey,
       timeoutMs: 5000,
+      operationAllowed: async () => fingerprint === await configuredGrocyFingerprint() &&
+        (!context || (await validateIntegrationScope(context, getPersistenceClient(), { resource: "task", action: "read" })).ok),
     })
+    grocyProfiles.set(adapter, fingerprint)
+    return await isCurrentConfiguredGrocyClient(adapter) ? adapter : null
   } catch (err) {
     logger.log("error", {
       event: "integration.grocy.config_failed",
       domain: "integrations",
       component: "grocy-client",
       request_id: crypto.randomUUID(),
-      message: err instanceof Error ? err.message : String(err),
+      message: "Grocy configuration is unavailable",
     })
     return null
   }

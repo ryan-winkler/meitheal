@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 const configuredOrigin = process.env.E2E_BASE_URL ? new URL(process.env.E2E_BASE_URL) : null
@@ -10,13 +11,14 @@ test.use({
 })
 
 for (const change of ["navbar", "font"] as const) {
-  test(`a second-tab ${change} preference preserves the focused Area draft without saving`, async ({ page, context, request }) => {
+  test(`a second-tab ${change} preference preserves the focused Area draft without saving`, async ({ page, context, request, baseURL }) => {
     await page.setViewportSize({ width: 2200, height: 1000 })
     await page.addInitScript(() => {
       localStorage.setItem("meitheal-appearance", JSON.stringify({ navigation: "sidebar", sidebar: "hover" }))
     })
     const name = `Appearance draft ${crypto.randomUUID().slice(0, 8)}`
-    const created = await request.post("/api/areas", { data: { name } })
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+    const created = await request.post("/api/areas", { headers, data: { name } })
     expect(created.status()).toBe(201)
     const { id } = await created.json()
     let peer
@@ -29,8 +31,8 @@ for (const change of ["navbar", "font"] as const) {
       await expect(page.locator("body")).not.toHaveClass(/sidebar-collapsed/)
       const boards = page.locator("[data-sidebar-boards-toggle]")
       if (await boards.getAttribute("aria-expanded") !== "true") await boards.click()
-      const areas = page.locator("#sidebar-areas-group")
-      if (!(await areas.evaluate(element => (element as HTMLDetailsElement).open))) await areas.locator(":scope > summary").click()
+      const areas = page.locator('[data-named-board-shortcut="household"]').getByRole("button", { name: "Areas in Household" })
+      if (await areas.getAttribute("aria-expanded") !== "true") await areas.click()
       const trigger = page.locator(`[data-area-menu="${id}"]`)
       await trigger.focus()
       await trigger.press("Enter")
@@ -65,7 +67,7 @@ for (const change of ["navbar", "font"] as const) {
       expect((await (await request.get(`/api/areas/${id}`)).json()).name).toBe(name)
     } finally {
       await peer?.close()
-      expect((await request.delete(`/api/areas/${id}`, { data: {} })).status()).toBe(200)
+      expect((await request.delete(`/api/areas/${id}`, { headers, data: {} })).status()).toBe(200)
     }
   })
 }

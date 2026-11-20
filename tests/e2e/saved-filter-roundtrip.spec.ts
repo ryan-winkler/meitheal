@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { deferred, shouldSkipBrowserSpecs } from "./_helpers"
 
 test.describe("Saved Table filters", () => {
@@ -8,7 +9,7 @@ test.describe("Saved Table filters", () => {
 
   test("Search retains compound, label, kind and column filters in the Table link", async ({ request, baseURL }) => {
     const name = `Table preset ${randomUUID()}`
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const rules = {
       id: "root",
       logic: "AND",
@@ -70,7 +71,7 @@ test.describe("Saved Table filters", () => {
 
   test("Table and Search apply the same rows and body columns", async ({ page, request, baseURL }) => {
     const key = randomUUID()
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const createTask = async (status: string) => {
       const response = await request.post("/api/tasks", {
         headers, data: { title: `Round trip ${key} ${status}`, status },
@@ -116,6 +117,7 @@ test.describe("Saved Table filters", () => {
       await expect(activeRow.locator(".col-status")).toBeVisible()
       await expect(activeRow.locator(".col-due-date")).toBeHidden()
       const fromTable = new URL(page.url()).searchParams
+      fromTable.set("board_id", "household")
 
       await page.goto("/table?status=complete")
       await page.getByRole("button", { name: "Search Meitheal…" }).press("Enter")
@@ -136,7 +138,7 @@ test.describe("Saved Table filters", () => {
   test("the compact Presets panel keeps actions reachable and keyboard Cancel does not save", async ({ page, request, baseURL }) => {
     await page.setViewportSize({ width: 320, height: 680 })
     const name = `Preset${"界".repeat(92)}`
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const response = await request.post("/api/saved-filters", {
       headers,
       data: { name, query_json: {}, icon: "<script>" + "W".repeat(100) },
@@ -205,7 +207,7 @@ test.describe("Saved Table filters", () => {
   test("the packaged preset endpoint rejects aliases and retains canonical DELETE", async ({ request, baseURL }) => {
     const path = "/api/saved-filters"
     const expectedPolicy = "private, no-store"
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     for (const alias of ["/api//saved-filters", "/api/%2573aved-filters/", path + "/"]) {
       const result = await request.get(alias, { maxRedirects: 0 })
       expect(result.status(), alias).toBe(404)
@@ -226,7 +228,7 @@ test.describe("Saved Table filters", () => {
   })
 
   test("restored sorting keeps subgroup totals below the rows after a Table view return", async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin, "content-type": "application/json" }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin, "content-type": "application/json" })
     const key = randomUUID()
     const ids: string[] = []
     try {
@@ -272,7 +274,7 @@ test.describe("Saved Table filters", () => {
   })
 
   test("explicit Area and literal labels take precedence over a remembered profile", async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin, "content-type": "application/json" }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin, "content-type": "application/json" })
     const key = randomUUID()
     const ids: string[] = []
     const areas: string[] = []
@@ -296,9 +298,10 @@ test.describe("Saved Table filters", () => {
         expect(created.status()).toBe(201)
         ids.push((await created.json()).id)
       }
-      await page.addInitScript(({ areaId, key }) => {
-        localStorage.setItem("meitheal-selected-area", JSON.stringify({ areaId, areaName: key + " Second", areaIcon: "📋" }))
-      }, { areaId: areas[1], key })
+      await page.goto("/table?" + new URLSearchParams({ search: key }))
+      await page.locator("#area-selector-trigger").click()
+      await page.getByRole("option", { name: key + " Second", exact: true }).click()
+      await expect(page.locator("[data-area-label]")).toHaveText(key + " Second")
       const params = new URLSearchParams({ search: key, area: areas[0]!, types: "quick_capture", label: literalLabel })
       const visible = page.locator("#task-table .table-row:visible")
       await page.goto("/table?" + params)
@@ -328,13 +331,16 @@ test.describe("Saved Table filters", () => {
   })
 })
 
-test("Table workflow columns and Unassigned combine and survive a shared preset link", async ({ page, request, baseURL }) => {
+test("Table workflow columns and Unassigned combine and survive a shared preset link", async ({ page, context, request, baseURL }) => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
   const name = `Workflow columns ${randomUUID()}`
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const ids: string[] = []
   let presetId: string | undefined
   const finishRefresh = deferred<void>()
+  const user = await request.post("/api/users/custom", { headers, data: { name: name + " Assignee", kind: "human" } })
+  expect(user.status(), await user.text()).toBe(201)
+  const assignee = (await user.json()).id
   try {
     for (const [status, suffix] of [["pending", "A"], ["active", "B"], ["active", "C"], ["complete", "D"]]) {
       const created = await request.post("/api/tasks", { headers, data: { title: `${name} ${suffix}`, status } })
@@ -342,7 +348,7 @@ test("Table workflow columns and Unassigned combine and survive a shared preset 
       const { id } = await created.json()
       ids.push(id)
       const assigned = await request.put(`/api/tasks/${id}`, {
-        headers, data: { assigned_to: suffix === "C" ? "fixture-member" : null },
+        headers, data: { assigned_to: suffix === "C" ? assignee : null },
       })
       expect(assigned.status(), await assigned.text()).toBe(200)
     }
@@ -363,7 +369,7 @@ test("Table workflow columns and Unassigned combine and survive a shared preset 
     await columns.press("Enter")
     const todo = toolbar.getByRole("checkbox", { name: "Todo", exact: true })
     const refreshStarted = deferred<void>()
-    await page.route(url => url.pathname === "/tasks" && url.searchParams.has("tableRefresh"), async route => {
+    await context.route(url => url.searchParams.has("tableRefresh"), async route => {
       refreshStarted.resolve()
       await finishRefresh.promise
       await route.continue()
@@ -453,13 +459,14 @@ test("Table workflow columns and Unassigned combine and survive a shared preset 
     finishRefresh.resolve()
     if (presetId) await request.delete("/api/saved-filters", { headers, params: { id: presetId } })
     for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })
+    await request.delete("/api/users/custom", { headers, params: { id: assignee } })
   }
 })
 
 test("Save Current Filters keeps the applied view when another tab changes preferences", async ({ page, request, baseURL }) => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
   const name = `Applied Table ${randomUUID()}`
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   let presetId: string | undefined
   const other = await page.context().newPage()
   try {
@@ -500,10 +507,10 @@ test("Save Current Filters keeps the applied view when another tab changes prefe
   }
 })
 
-test("Table creation date drafts stay separate from applied filters and saved links", async ({ page, request, baseURL }) => {
+test("Table creation date drafts stay separate from applied filters and saved links", async ({ page, context, request, baseURL }) => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
   const name = `Created date ${randomUUID()}`
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   let taskId: string | undefined
   let presetId: string | undefined
   try {
@@ -578,7 +585,7 @@ test("Table creation date drafts stay separate from applied filters and saved li
     await summary.press("Enter")
     await from.fill("")
     await through.fill("2000-01-01")
-    await page.route(url => url.searchParams.has("tableRefresh") && url.searchParams.get("createdThrough") === "2000-01-01",
+    await context.route(url => url.searchParams.has("tableRefresh") && url.searchParams.get("createdThrough") === "2000-01-01",
       route => route.fulfill({ status: 503 }), { times: 1 })
     await apply.press("Enter")
     const retry = page.locator("[data-table-retry]")
@@ -643,7 +650,7 @@ test("Table creation date drafts stay separate from applied filters and saved li
     await page.goto("/table?" + new URLSearchParams({ area: "", createdFrom: day }))
     const clearAll = toolbar.getByRole("button", { name: "Clear all active filters" })
     await expect(clearAll).toBeVisible()
-    await page.route(url => url.searchParams.has("tableRefresh") && !url.searchParams.has("createdFrom"),
+    await context.route(url => url.searchParams.has("tableRefresh") && !url.searchParams.has("createdFrom"),
       route => route.fulfill({ status: 503 }), { times: 1 })
     await summary.press("Enter")
     await clear.press("Enter")

@@ -3,12 +3,13 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test, type Route } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.skip(shouldSkipBrowserSpecs(), "Requires a disposable built App")
 
-test("explicit NULL-Area Projects ignore remembered Areas in every view and retain canonical default placement through modal, lane and draft capture", async () => {
+test("unfiled Projects ignore remembered Areas in every view and stay unfiled through modal, lane and draft capture", async () => {
   test.setTimeout(90_000)
   const work = await mkdtemp(join(tmpdir(), "unfiled-project-"))
   const child = startCoreFixture(work, false, undefined, undefined, work)
@@ -22,7 +23,7 @@ test("explicit NULL-Area Projects ignore remembered Areas in every view and reta
     browser = await launchPinBrowser(work)
     const context = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {}, serviceWorkers: "block" })
     await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
-    const headers = { origin }
+    const headers = await currentBoardWriteHeaders(context.request, "household", { origin }, app)
     async function create(path: string, data: object) {
       const response = await context.request.post(app + path, { headers, data })
       expect(response.status(), await response.text()).toBe(201)
@@ -39,14 +40,16 @@ test("explicit NULL-Area Projects ignore remembered Areas in every view and reta
     for (const project of projects) {
       expect(project.area_id).toBeNull()
       const existing = await create("/api/tasks", { title: "Existing " + project.title, placement: { projectId: project.id }, due_date: due })
-      expect(existing).toMatchObject({ project_id: project.id, area_id: "default" })
-      expect((await context.request.post(app + "/api/tasks", { headers, data: { title: "Rejected explicit conflict", placement: { areaId: remembered.id, projectId: project.id } } })).status()).toBe(404)
-      expect((await context.request.get(app + `/boards/household?project=${project.id}&area=${remembered.id}`)).status()).toBe(404)
+      expect(existing).toMatchObject({ project_id: project.id, area_id: null })
+      expect((await context.request.post(app + "/api/tasks", { headers, data: { title: "Rejected explicit conflict", placement: { areaId: remembered.id, projectId: project.id } } })).status()).toBe(400)
+      const conflict = await context.request.get(app + `/boards/household?project=${project.id}&area=${remembered.id}`, { maxRedirects: 0 })
+      expect(conflict.status()).toBe(404)
+      expect(conflict.headers()["cache-control"]).toContain("no-store")
       const page = await context.newPage()
       page.setDefaultTimeout(8_000)
-      await page.goto(app + "/boards/household")
       for (const view of ["kanban", "table", "calendar", "timeline"]) {
-        await page.evaluate(area => localStorage.setItem("meitheal-selected-area", JSON.stringify({ areaId: area, areaName: "Unrelated remembered Area", areaIcon: "📁" })), remembered.id)
+        await page.goto(app + `/boards/household?area=${remembered.id}`)
+        await expect(page.locator("#area-selector-trigger")).toHaveAttribute("data-selected-area-id", remembered.id)
         await page.goto(app + `/boards/household?project=${project.id}&view=${view}`)
         await expect(page.locator(`#tasks-view-${view}`)).toBeVisible()
         await expect(page.locator("#area-selector-trigger")).toHaveAttribute("data-selected-area-id", "")
@@ -61,11 +64,11 @@ test("explicit NULL-Area Projects ignore remembered Areas in every view and reta
       }
       await page.goto(app + `/boards/household?project=${project.id}`)
       async function persisted(title: string) {
-        const list = await (await context.request.get(app + "/api/tasks?project_id=" + project.id)).json()
+        const list = await (await context.request.get(app + "/api/tasks?project_id=" + project.id, { headers })).json()
         const listed = list.tasks.find((task: { title: string }) => task.title === title)
         expect(listed).toBeTruthy()
-        const task = await (await context.request.get(app + "/api/tasks/" + listed.id)).json()
-        expect(task).toMatchObject({ area_id: "default", project_id: project.id })
+        const task = await (await context.request.get(app + "/api/tasks/" + listed.id, { headers })).json()
+        expect(task).toMatchObject({ area_id: null, project_id: project.id })
         return task
       }
       const modalTitle = "Modal capture " + project.title

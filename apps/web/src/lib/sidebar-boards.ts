@@ -1,11 +1,18 @@
+import { currentTaskApiContext, taskApiHeaders } from "./task-api"
+import { sameTaskApiContext } from "./task-api-client"
+import { bindSidebarHierarchyActions } from "./sidebar-hierarchy-actions"
 import { boardWorkspaceHref } from "./board-workspace"
 import { safeIngressHref } from "./ingress-navigation"
 
 interface BoardShortcut { id: string; name: string; hidden: boolean; state: string }
-interface GroupChoice { id: string; name: string; icon?: string }
-interface GroupPage { items: GroupChoice[]; selected?: GroupChoice | null; next_cursor: string | null }
+interface GroupChoice { id: string; name: string; icon?: string; color?: string }
+interface GroupPage { items: GroupChoice[]; selected?: GroupChoice | null; next_cursor: string | null; actions?: string[] }
 
 export function bindSidebarBoards(signal: AbortSignal) {
+  const hierarchyList = document.querySelector<HTMLUListElement>("[data-sidebar-boards]")
+  hierarchyList?.classList.add("stree")
+  // The action popup handles Escape before the enclosing Boards disclosure.
+  const actions = hierarchyList && bindSidebarHierarchyActions(hierarchyList, signal)
   const children = document.querySelector<HTMLElement>("[data-sidebar-board-children]")
   const parentToggle = document.querySelector<HTMLButtonElement>("[data-sidebar-boards-toggle]")
   if (children && parentToggle) {
@@ -48,9 +55,10 @@ export function bindSidebarBoards(signal: AbortSignal) {
       parentToggle.focus({ preventScroll: true })
     }, { signal })
   }
-  const root = document.querySelector<HTMLUListElement>("[data-sidebar-boards]")
-  if (!root) return
-  const list = root
+  if (!hierarchyList) return
+  const list = hierarchyList
+  const documentContext = currentTaskApiContext()
+  if (!actions) { list.textContent = "Navigation is unavailable. Reload to try again."; return }
   let directoryRequest: AbortController | undefined
   let directoryKey = ""
   let loadedSession = ""
@@ -61,6 +69,13 @@ export function bindSidebarBoards(signal: AbortSignal) {
   const projectsEnabled = list.dataset.projectsEnabled === "true"
   const areaLabel = list.dataset.boardGroupLabel ?? "Areas"
   const projectLabel = list.dataset.boardProjectLabel ?? "Projects"
+
+  function collapseGroups(row: HTMLElement, container: HTMLElement) {
+    groupRequests.get(row)?.abort()
+    container.setAttribute("aria-busy", "false")
+    container.replaceChildren()
+    row.querySelector(":scope > [data-board-group-notice]")?.remove()
+  }
 
   function clear() {
     directoryRequest?.abort()
@@ -77,13 +92,13 @@ export function bindSidebarBoards(signal: AbortSignal) {
     const groups = row.querySelector<HTMLUListElement>(areaId ? "[data-board-projects]" : "[data-board-groups]")!
     const previousStatus = groups.querySelector<HTMLElement>(":scope > [data-board-group-status]")
     if (!after) groups.querySelectorAll(":scope > [data-group-choice]").forEach(item => item.remove())
-    groups.querySelector(":scope > [data-board-group-notice]")?.remove()
+    row.querySelector(":scope > [data-board-group-notice]")?.remove()
     previousStatus?.querySelector("button")?.setAttribute("aria-disabled", "true")
-    const loading = document.createElement("li")
+    const loading = document.createElement("div")
     loading.dataset.boardGroupNotice = ""
     loading.setAttribute("role", "status")
     loading.textContent = `Loading ${areaId ? projectLabel : areaLabel}…`
-    groups.append(loading)
+    groups.after(loading)
     groups.setAttribute("aria-busy", "true")
     const query = new URLSearchParams({ view: "groups" })
     if (after) query.set("after", after)
@@ -93,15 +108,23 @@ export function bindSidebarBoards(signal: AbortSignal) {
       ? current.searchParams.get(areaId ? "project" : "area") ?? (!areaId ? current.searchParams.get("from") : null) : null
     if (!after && activeGroup) query.set("selected", activeGroup)
     try {
+      if (!documentContext || !sameTaskApiContext(documentContext, currentTaskApiContext())) throw new Error("Original context changed")
       const response = await fetch(`/api/boards/${encodeURIComponent(boardId)}?${query}`, {
+        headers: taskApiHeaders({ ...documentContext, boardId }),
         cache: "no-store",
         signal: AbortSignal.any([signal, request.signal, AbortSignal.timeout(4_000)]),
       })
-      if (request.signal.aborted || signal.aborted || !row.isConnected || groups.hidden) return
+      if (request.signal.aborted || signal.aborted || !row.isConnected || groups.hidden || !sameTaskApiContext(documentContext, currentTaskApiContext())) {
+        if (groupRequests.get(row) === request) loading.remove()
+        return
+      }
       if ([401, 403, 404].includes(response.status)) { clear(); return }
       if (!response.ok) throw new Error("Could not load choices.")
       const data = await response.json() as GroupPage
-      if (request.signal.aborted || signal.aborted || !row.isConnected || groups.hidden) return
+      if (request.signal.aborted || signal.aborted || !row.isConnected || groups.hidden || !sameTaskApiContext(documentContext, currentTaskApiContext())) {
+        if (groupRequests.get(row) === request) loading.remove()
+        return
+      }
       const moveFocus = previousStatus?.contains(document.activeElement)
       previousStatus?.remove()
       loading.remove()
@@ -113,58 +136,69 @@ export function bindSidebarBoards(signal: AbortSignal) {
         if (displayed.has(group.id)) continue
         displayed.add(group.id)
         const child = document.createElement("li")
-        const link = document.createElement("a")
-        link.className = "nav-link"
-        link.href = safeIngressHref(boardWorkspaceHref(boardId, areaId ? { project: group.id, fromArea: areaId } : { area: group.id }))
-        link.textContent = group.name
-        firstNewLink ??= link
         child.dataset.groupChoice = group.id
-        if (current.pathname.endsWith(boardWorkspaceHref(boardId)) && current.searchParams.get(areaId ? "project" : "area") === group.id) {
-          link.setAttribute("aria-current", "page")
-        }
+        child.dataset.workBoard = boardId
+        child.dataset.workActions = (data.actions ?? []).join(" ")
+        groups.append(child)
         if (!areaId && projectsEnabled) {
-          const controls = document.createElement("div")
-          controls.className = "sidebar-board-row"
+          actions?.insertAreaNode(child, group.id, group.name, group.icon ?? "📁", group.color ?? "#146C4E")
+          const area = child.querySelector<HTMLElement>("[data-area-group]")!
+          const controls = area.querySelector<HTMLElement>(".stree__area-row")!
+          const toggle = controls.querySelector<HTMLButtonElement>("[data-area-toggle]")!
+          toggle.dataset.peerAreaToggle = ""
+          const link = document.createElement("a")
+          link.className = "nav-link stree__area-link"
+          link.href = safeIngressHref(boardWorkspaceHref(boardId, { area: group.id }))
+          link.append(...toggle.querySelectorAll(".stree__area-icon, .stree__area-name"))
+          if (current.pathname.endsWith(boardWorkspaceHref(boardId)) && current.searchParams.get("area") === group.id) link.setAttribute("aria-current", "page")
+          toggle.setAttribute("aria-label", `${projectLabel} in ${group.name}`)
+          controls.insertBefore(link, toggle)
+          firstNewLink ??= link
           const projects = document.createElement("ul")
-          projects.id = `board-shortcut-projects-${boardId}-${group.id}`
+          projects.id = toggle.getAttribute("aria-controls")!
           projects.dataset.boardProjects = group.id
+          projects.dataset.areaProjects = group.id
+          projects.className = "stree__children"
+          area.querySelector(".stree__children")!.replaceWith(projects)
           const key = `${boardId}:${group.id}`
           const selected = current.pathname.endsWith(boardWorkspaceHref(boardId)) && current.searchParams.get("from") === group.id
           if (selected) openAreas.add(key)
           projects.hidden = !openAreas.has(key)
-          const toggle = document.createElement("button")
-          toggle.className = "btn btn-ghost sidebar-board-toggle"
-          toggle.type = "button"
-          toggle.textContent = "›"
-          toggle.setAttribute("aria-label", `${projectLabel} in ${group.name}`)
-          toggle.setAttribute("aria-controls", projects.id)
+          projects.inert = projects.hidden
+          projects.dataset.collapsed = String(projects.hidden)
           toggle.setAttribute("aria-expanded", String(!projects.hidden))
+          toggle.title = `${projects.hidden ? "Expand" : "Collapse"} ${toggle.dataset.areaNameLabel ?? group.name}`
           toggle.addEventListener("click", () => {
             projects.hidden = !projects.hidden
+            projects.inert = projects.hidden
+            projects.dataset.collapsed = String(projects.hidden)
             toggle.setAttribute("aria-expanded", String(!projects.hidden))
-            if (projects.hidden) {
-              openAreas.delete(key)
-              groupRequests.get(child)?.abort()
-              projects.replaceChildren()
-            } else {
-              openAreas.add(key)
-              void loadGroups(child, boardId, null, group.id)
-            }
+            toggle.title = `${projects.hidden ? "Expand" : "Collapse"} ${toggle.dataset.areaNameLabel ?? group.name}`
+            if (projects.hidden) { openAreas.delete(key); collapseGroups(child, projects) }
+            else { openAreas.add(key); void loadGroups(child, boardId, null, group.id) }
             savePreference()
           }, { signal })
-          controls.append(link, toggle)
-          child.append(controls, projects)
-          groups.append(child)
           if (!projects.hidden) void loadGroups(child, boardId, null, group.id)
         } else {
-          child.append(link)
-          groups.append(child)
+          actions?.insertProjectNode(child, group.id, group.name, group.icon ?? "📋", group.color ?? "#146C4E", areaId ?? "")
+          const link = child.querySelector<HTMLAnchorElement>("a[data-project-id]")!
+          firstNewLink ??= link
+          if (current.pathname.endsWith(boardWorkspaceHref(boardId)) && current.searchParams.get("project") === group.id) link.setAttribute("aria-current", "page")
         }
+      }
+      actions?.refresh()
+      const boardRow = row.closest<HTMLElement>("[data-named-board-shortcut]")
+      if (!areaId && boardRow) {
+        boardRow.dataset.workActions = (data.actions ?? []).join(" ")
+        const create = boardRow.querySelector<HTMLButtonElement>("[data-board-new-area]")
+        if (create) create.hidden = !data.actions?.includes("area/create")
       }
       if (data.next_cursor || !groups.childElementCount) {
         addStatus(data.next_cursor ? `Show more ${areaId ? projectLabel : areaLabel}` : `No ${areaId ? projectLabel : areaLabel} yet`, data.next_cursor)
       }
-      if (moveFocus) (firstNewLink ?? groups.querySelector<HTMLButtonElement>(":scope > [data-board-group-status] button") ?? row.querySelector<HTMLButtonElement>(`button[aria-controls="${groups.id}"]`))?.focus()
+      if (moveFocus) (firstNewLink
+        ?? groups.querySelector<HTMLButtonElement>(":scope > [data-board-group-status] button")
+        ?? row.querySelector<HTMLButtonElement>(areaId ? "[data-peer-area-toggle]" : ":scope > .sidebar-board-row > .sidebar-board-toggle"))?.focus()
     } catch {
       if (!request.signal.aborted && !signal.aborted && row.isConnected && !groups.hidden) {
         const moveFocus = previousStatus?.contains(document.activeElement)
@@ -172,6 +206,8 @@ export function bindSidebarBoards(signal: AbortSignal) {
         loading.textContent = `Could not load ${areaId ? projectLabel : areaLabel}. Try again.`
         addStatus(`Try loading ${areaId ? projectLabel : areaLabel} again`, after ?? "")
         if (moveFocus) groups.querySelector<HTMLButtonElement>(":scope > [data-board-group-status] button")?.focus()
+      } else if (groupRequests.get(row) === request) {
+        loading.remove()
       }
     } finally {
       if (groupRequests.get(row) === request) {
@@ -201,6 +237,7 @@ export function bindSidebarBoards(signal: AbortSignal) {
   function render(board: BoardShortcut) {
     const item = document.createElement("li")
     item.dataset.namedBoardShortcut = board.id
+    item.dataset.workBoard = board.id
     const controls = document.createElement("div")
     controls.className = "sidebar-board-row"
     const link = document.createElement("a")
@@ -224,8 +261,7 @@ export function bindSidebarBoards(signal: AbortSignal) {
       if (groups.hidden) {
         openBoards.delete(board.id)
         savePreference()
-        groupRequests.get(item)?.abort()
-        groups.replaceChildren()
+        collapseGroups(item, groups)
       } else {
         openBoards.add(board.id)
         savePreference()
@@ -235,7 +271,24 @@ export function bindSidebarBoards(signal: AbortSignal) {
     controls.append(link)
     if (areasEnabled) controls.append(toggle)
     item.append(controls)
+    const pinned = document.createElement("div")
+    pinned.dataset.boardPinned = ""
+    pinned.className = "stree__pinned"
+    pinned.hidden = true
+    const pinnedList = document.createElement("div")
+    pinnedList.dataset.boardPinnedList = ""
+    pinnedList.className = "stree__pinned-list"
+    pinned.append(pinnedList)
+    item.append(pinned)
     if (areasEnabled) item.append(groups)
+    const create = document.createElement("button")
+    create.type = "button"
+    create.className = "stree__new-area"
+    create.dataset.boardNewArea = ""
+    create.textContent = `+ New ${areaLabel.replace(/s$/, "")}`
+    create.hidden = true
+    create.addEventListener("click", () => actions?.newArea(item, () => { groups.hidden = false; openBoards.add(board.id); toggle.setAttribute("aria-expanded", "true"); void loadGroups(item, board.id) }), { signal })
+    item.append(create)
     return item
   }
 
@@ -267,7 +320,7 @@ export function bindSidebarBoards(signal: AbortSignal) {
     const request = new AbortController()
     directoryRequest = request
     let boards: BoardShortcut[] = []
-    let key = "household"
+    let key = ""
     let session = ""
     try {
       const response = await fetch("/api/boards", {
@@ -275,15 +328,13 @@ export function bindSidebarBoards(signal: AbortSignal) {
         signal: AbortSignal.any([signal, request.signal, AbortSignal.timeout(4_000)]),
       })
       if (response.ok) {
-        const data = await response.json() as { boards?: BoardShortcut[]; household?: { state: string } }
-        const household = document.querySelector<HTMLElement>("[data-sidebar-household]")
-        if (household && data.household) household.hidden = data.household.state !== "active"
+        const data = await response.json() as { boards?: BoardShortcut[] }
         boards = (data.boards ?? []).filter(board => !board.hidden && board.state === "active")
         key = response.headers.get("x-meitheal-board-view") ?? key
         session = response.headers.get("x-meitheal-board-session") ?? ""
       }
     } catch {
-      // The shared Board is available even without a private Home Assistant session.
+      // No cached Board is shown while the current directory cannot be verified.
     }
     if (request.signal.aborted || signal.aborted || document.hidden) return
     if (key !== directoryKey) {
@@ -305,7 +356,7 @@ export function bindSidebarBoards(signal: AbortSignal) {
 
   const resume = () => { clear(); void refresh() }
   const timer = setInterval(() => { void refresh() }, 10_000)
-  signal.addEventListener("abort", () => { clearInterval(timer); clear() }, { once: true })
+  signal.addEventListener("abort", () => { clearInterval(timer); actions?.dispose(); clear() }, { once: true })
   document.addEventListener("visibilitychange", resume, { signal })
   window.addEventListener("focus", resume, { signal })
   window.addEventListener("offline", clear, { signal })

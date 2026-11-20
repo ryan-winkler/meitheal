@@ -1,4 +1,5 @@
 import { assertBoardStorageWriter, assertNoInboundReferences, matchesSql, moveBoardStorageTables, normalizeSql, tableDefinitions } from "./board-storage-schema.mjs"
+import { storageEncodingColumn } from "./0016_ordinary_boards.mjs"
 
 const laneColumns = {
   id: "TEXT PRIMARY KEY",
@@ -170,8 +171,10 @@ export async function applyTaskBoardStorage(tx) {
 
 /** Validates the Board storage owned by this migration. */
 export async function validateTaskBoardStorage(db, allowedObjects = []) {
+  const { rows: [version] } = await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")
+  const ordinary = Number(version?.value) >= 26
   const objects = {
-    task_boards: boardTableSql,
+    task_boards: ordinary ? boardTableSql.replace(/\)\s*$/, `, ${storageEncodingColumn})`) : boardTableSql,
     board_members: memberTableSql,
     kanban_lanes: scopedLaneSql,
     ...scopedObjects,

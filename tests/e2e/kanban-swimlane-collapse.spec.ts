@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto"
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
-test("Kanban swimlane headings collapse and remember each lane independently", async ({ page, request }) => {
+test("Kanban swimlane headings collapse and remember each lane independently", async ({ page, request, baseURL }) => {
   test.skip(shouldSkipBrowserSpecs() || process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const label = `Swimlane ${randomUUID()}`
   const ids: string[] = []
   const pending = page.locator('.kanban-column[data-status="pending"]')
@@ -12,6 +14,7 @@ test("Kanban swimlane headings collapse and remember each lane independently", a
   try {
     for (const status of ["pending", "active"]) {
       const created = await request.post("/api/tasks", {
+        headers,
         data: { title: `${label} ${status}`, status, task_type: "task", priority: 2 },
       })
       expect(created.status()).toBe(201)
@@ -72,6 +75,6 @@ test("Kanban swimlane headings collapse and remember each lane independently", a
     await activeType.press("Enter")
     await expect(movedCard).toBeVisible()
   } finally {
-    for (const id of ids) await request.delete(`/api/tasks/${id}`)
+    for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
   }
 })

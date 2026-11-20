@@ -6,6 +6,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { chromium, expect, test, type Browser, type Page } from "@playwright/test"
 import type { TaskDraftSnapshot } from "../../apps/web/src/lib/task-draft-state"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the built App and the HTTPS ingress fixture")
@@ -47,7 +48,7 @@ async function withBrowser(
 
 async function ownerPage(browser: Browser, origin: string, owner: string, timezoneId?: string) {
   const context = await browser.newContext({
-    extraHTTPHeaders: {}, reducedMotion: "reduce", serviceWorkers: "block",
+    extraHTTPHeaders: {}, reducedMotion: "reduce", serviceWorkers: "block", ignoreHTTPSErrors: true,
     viewport: { width: 320, height: 700 }, hasTouch: true, isMobile: true,
     ...(timezoneId ? { timezoneId } : {}),
   })
@@ -62,6 +63,12 @@ async function openCapture(page: Page) {
   await expect(page.locator("#new-task-overlay")).toHaveAttribute("data-new-task-controller", "ready")
   await page.evaluate(() => window.openNewTaskModal?.())
   await expect(page.locator("#new-task-title-input")).toBeFocused()
+}
+
+async function draftOperationMarkers(page: Page) {
+  return page.evaluate(() => Object.keys(sessionStorage)
+    .filter(key => key.startsWith("meitheal-draft-operation:"))
+    .map(key => sessionStorage.getItem(key)))
 }
 
 function draftAction(page: Page, name: string) {
@@ -165,17 +172,34 @@ test("a lost publication acknowledgement resolves once after app restart and rel
     await draftAction(page, "Publish draft").click()
     expect((await outcome)[0]).toEqual({ draftReceiptStatus: 201 })
     await expect(page.locator("#nt-draft-status")).toContainText("could not confirm")
-    const marker = await page.evaluate(() => sessionStorage.getItem("meitheal-draft-operation"))
+    const markers = await draftOperationMarkers(page)
+    expect(markers).toHaveLength(1)
+    const [marker] = markers
     expect(marker).toContain("attemptId")
     expect(marker).not.toContain("Lost acknowledgement")
     expect(marker).not.toContain("context")
 
+    const sessionMeta = page.locator('meta[name="meitheal-work-session"]')
+    const priorSession = await sessionMeta.getAttribute("content")
+    expect(Boolean(priorSession)).toBe(true)
+
+    await page.context().addCookies([{ name: "feedback-fixture", value: "member-two", url: origin }])
+    await page.reload()
+    await openCapture(page)
+    await draftAction(page, "Draft").click()
+    await expect(page.locator("#nt-draft-status")).toHaveText("No saved draft yet.")
+    await expect(draftAction(page, "Open task")).toBeHidden()
+    expect(await draftOperationMarkers(page)).toEqual(markers)
+
+    await page.context().addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
     await restart()
     await page.reload()
+    const currentSession = await sessionMeta.getAttribute("content")
+    expect(Boolean(currentSession && currentSession !== priorSession), "App restart rotated the Board request proof").toBe(true)
     await openCapture(page)
     await expect(page.locator("#nt-draft-status")).toContainText("MTH-1 was published.")
     await expect(draftAction(page, "Open task")).toBeFocused()
-    expect(await page.evaluate(() => sessionStorage.getItem("meitheal-draft-operation"))).toBeNull()
+    expect(await draftOperationMarkers(page)).toEqual([])
     const listed = await page.evaluate(async prefix => await (await fetch(prefix + "/api/tasks")).json(), prefix)
     expect(listed.total).toBe(1)
     expect(listed.tasks[0].title).toBe("Lost acknowledgement synthetic capture")
@@ -366,9 +390,10 @@ test("account switch during a simulated focus change clears the old draft before
     await page.evaluate(() => window.dispatchEvent(new Event("focus")))
     await expect(page.locator("#nt-draft-status")).toContainText("session changed")
     await expect(title).toHaveValue("")
-    await expect(draftAction(page, "Publish draft")).toBeDisabled()
-    await draftAction(page, "Start new task").click()
-    await expect(title).toBeFocused()
+    await expect(draftAction(page, "Publish draft")).toBeHidden()
+    await page.getByRole("button", { name: "Refresh Board", exact: true }).click()
+    await openCapture(page)
+    await expect(title).toHaveValue("")
     await expect(draftAction(page, "Create Task")).toBeEnabled()
     await title.fill("Independent ordinary capture")
     await draftAction(page, "Create Task").click()
@@ -410,20 +435,21 @@ for (const due of ["2026-12-13T15:26:32.456+05:30", "2026-12-13"]) {
         fields: [],
       }
       // Seed a prior valid snapshot through the real guarded API, independently of current form choices.
-      const seeded = await page.evaluate(async ({ prefix, snapshot }) => {
+      const boardHeaders = await currentBoardWriteHeaders(page.request, "household", { origin }, origin + prefix)
+      const seeded = await page.evaluate(async ({ prefix, snapshot, boardHeaders }) => {
         const path = prefix + "/api/task-drafts"
         const transport = { mode: "same-origin", referrerPolicy: "same-origin", cache: "no-store", redirect: "error" } as const
-        const read = await fetch(path, { ...transport, method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "read" }) })
+        const read = await fetch(path, { ...transport, method: "POST", headers: { ...boardHeaders, "content-type": "application/json" }, body: JSON.stringify({ action: "read" }) })
         if (read.status !== 200) throw new Error(`Draft read failed: ${read.status}`)
         const state = await read.json()
-        const verified = await fetch(path, { ...transport, method: "HEAD", headers: { "X-Meitheal-Draft-Context": state.context } })
+        const verified = await fetch(path, { ...transport, method: "HEAD", headers: { ...boardHeaders, "X-Meitheal-Draft-Context": state.context } })
         if (verified.status !== 204) throw new Error(`Draft lease verification failed: ${verified.status}`)
         const saved = await fetch(path, {
-          ...transport, method: "PUT", headers: { "content-type": "application/json", "X-Meitheal-Draft-Context": state.context },
+          ...transport, method: "PUT", headers: { ...boardHeaders, "content-type": "application/json", "X-Meitheal-Draft-Context": state.context },
           body: JSON.stringify({ action: "save", expected: null, attemptId: crypto.randomUUID(), snapshot }),
         })
         return { status: saved.status, body: await saved.json() }
-      }, { prefix, snapshot })
+      }, { prefix, snapshot, boardHeaders })
       expect(seeded.status).toBe(200)
       expect(seeded.body.draft.snapshot).toEqual(snapshot)
       await page.goto(origin + prefix + "/today")
@@ -441,14 +467,14 @@ for (const due of ["2026-12-13T15:26:32.456+05:30", "2026-12-13"]) {
       await page.locator("#new-task-desc-input").fill(edited.description)
       await draftAction(page, "Save draft").click()
       await expect(page.locator("#nt-draft-status")).toHaveText("Draft saved.")
-      const persisted = await page.evaluate(async prefix => {
+      const persisted = await page.evaluate(async ({ prefix, boardHeaders }) => {
         const response = await fetch(prefix + "/api/task-drafts", {
           mode: "same-origin", referrerPolicy: "same-origin", cache: "no-store", redirect: "error",
-          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "read" }),
+          method: "POST", headers: { ...boardHeaders, "content-type": "application/json" }, body: JSON.stringify({ action: "read" }),
         })
         if (response.status !== 200) throw new Error(`Draft readback failed: ${response.status}`)
         return (await response.json()).draft.snapshot
-      }, prefix)
+      }, { prefix, boardHeaders })
       expect(persisted).toEqual(edited)
       await page.reload()
       await openCapture(page)
