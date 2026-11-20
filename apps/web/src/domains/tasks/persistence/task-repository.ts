@@ -1448,7 +1448,7 @@ export class TaskRepository {
     if (isDoneStatus(data.status) || metadata.routineOccurrence?.complete) client = boardOperationClient(client, this.scope, { resource: "task", action: "complete" })
     if (metadata.newLabels?.length) client = boardOperationClient(client, this.scope, { resource: "label", action: "create" })
     metadata.signal?.throwIfAborted()
-    const tx = await client.transaction("write")
+    const tx = await acquirePrivateBoardWriter(client, this.scope, metadata.signal)
     try {
       const result = await this.createWorkInWriter(tx, data, metadata, createdAt)
       if (!result.ok) return result

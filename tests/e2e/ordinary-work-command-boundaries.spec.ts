@@ -143,7 +143,11 @@ test("a private SQLite writer rolls back if its actor expires before commit", as
   const editor = boardOperationClient(db, work, { resource: "task", action: "edit" }, [task.id])
   const tx = await acquirePrivateBoardWriter(editor, work)
   try {
-    expect((await tx.execute("UPDATE tasks SET title = ? WHERE id = ? AND task_board_id IS NULL", ["New title", task.id])).rowsAffected).toBe(1)
+    const result = await tx.execute({
+      sql: "UPDATE tasks SET title = ? WHERE id = ? AND task_board_id IS NULL",
+      args: ["New title", task.id],
+    })
+    expect(result.rowsAffected).toBe(1)
     Date.now = () => expiry
     await expect(tx.commit()).rejects.toMatchObject({ errorCode: "stale" })
   } finally {
