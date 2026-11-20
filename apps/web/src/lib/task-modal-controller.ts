@@ -8,7 +8,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           buildTaskPermalink, findKanbanDetailFocus, getLegacyTaskId, type SearchDetailDismissal, type SearchDetailHandoff,
         } from "@lib/task-detail-handoff"
         import { buildIngressPagePath } from "@lib/page-shell-links"
-        import { restoreTaskBackgroundUrl, taskDetailPath, ticketIdFromPath, taskBackgroundUrl } from "@lib/task-page-url"
+        import { restoreTaskBackgroundUrl, sameTaskLocator, taskDetailPath, ticketIdFromPath, taskBackgroundUrl } from "@lib/task-page-url"
         import { formatTicketKey, parseTicketKey } from "@lib/ticket-key"
 
         const log = createClientLogger("tasks", "detail-modal");
@@ -86,7 +86,6 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           currentTaskVersion = null
           currentTaskActions.clear()
           currentTicketKey = null
-          currentTicketNumber = null
           sessionTicketId = null
           currentCommentTarget = null
           taskLoaded = false
@@ -152,7 +151,6 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         const taskSaveQueues = new Map<string, Promise<void>>()
         let sessionTicketId: string | null = null
         let currentTicketKey: string | null = null
-        let currentTicketNumber: number | null = null
         let pendingDescriptionSave: Promise<boolean> | undefined
         let hasChecklistTextDraft: (() => boolean) | undefined
         let queuedDescriptionTransition: (() => void) | undefined
@@ -321,7 +319,8 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           const url = new URL(window.location.href)
           const ticket = ticketIdFromPath(url.pathname, window.__ingress_path)
           if (taskId) {
-            const target = new URL(buildIngressPagePath(taskDetailPath(taskId)), url.origin)
+            const locator = currentTicketKey !== null && sameTaskLocator(taskId, currentTaskId, currentTicketKey) ? currentTicketKey : taskId
+            const target = new URL(buildIngressPagePath(taskDetailPath(locator)), url.origin)
             if (commentTarget !== null) target.searchParams.set("comment", commentTarget)
             if (target.href === url.href) return
             if (ticket !== null) {
@@ -430,7 +429,6 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           document.dispatchEvent(new CustomEvent("meitheal:ha-location-task"))
           sessionTicketId = null
           currentTicketKey = null
-          currentTicketNumber = null
           pendingDescriptionSave = undefined
           queuedDescriptionTransition = undefined
           taskLoaded = false
@@ -548,8 +546,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             return
           }
           const requestedTicket = parseTicketKey(taskId)
-          const sameTicket = !newSession && (taskId === (sessionTicketId ?? currentTaskId) ||
-            (requestedTicket !== null && requestedTicket === currentTicketNumber))
+          const sameTicket = !newSession && sameTaskLocator(taskId, sessionTicketId ?? currentTaskId, currentTicketKey)
           if (!sameTicket && waitForDescriptionWrite(() => {
             void openTaskDetail(taskId, commentTarget, search, updateLocation)
           })) return
@@ -578,7 +575,6 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           if (!sameTicket) {
             sessionTicketId = null
             currentTicketKey = null
-          currentTicketNumber = null
             pendingDescriptionSave = undefined
           }
           taskLoaded = false
@@ -685,13 +681,13 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             }
             taskId = String(t.id)
             currentTaskId = taskId
+            tdOverlay.dataset.openTaskId = taskId
             currentTaskVersion = taskRecordVersion(t)
             taskSaveConflict = false
             document.getElementById("td-write-conflict")?.remove()
             document.dispatchEvent(new CustomEvent("meitheal:ha-location-task", { detail: taskId }))
             sessionTicketId = taskId
             currentTicketKey = typeof t.ticket_key === "string" ? t.ticket_key : null
-            currentTicketNumber = typeof t.ticket_number === "number" ? t.ticket_number : null
             setTaskLocation(taskId, true, commentTarget)
 
             // Start independent inspector reads together. Each field keeps its own fallback.
@@ -770,7 +766,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             ) as HTMLAnchorElement | null;
             if (parentEl && t.parent_id) {
               parentEl.textContent = `↑ ${t.parent_ticket_key ?? t.parent_title ?? t.parent_id}`;
-              parentEl.href = buildTaskPermalink(String(t.parent_id))
+              parentEl.href = buildTaskPermalink({ id: String(t.parent_id), ticket_key: t.parent_ticket_key })
               parentEl.classList.remove("hidden");
               parentEl.classList.add("flex");
               parentEl.onclick = (e) => {
@@ -1391,7 +1387,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               commentInput.value = ""
               commentInput.dataset.taskId = taskId
             }
-            commentsReady = loadComments(taskId, modalSignal, commentTarget)
+            commentsReady = loadComments({ id: taskId, ticket_key: currentTicketKey }, modalSignal, commentTarget)
 
             // Load attachments (Phase 23)
             loadAttachments(taskId);
@@ -2216,6 +2212,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         let commentAttempt: { taskId: string, draft: string, key: string } | undefined
         commentButton?.addEventListener("click", async () => {
           const taskId = currentTaskId
+          const ticketKey = currentTicketKey
           const signal = _modalAbortController?.signal
           const initialComments = commentsReady
           const draft = commentInput?.value
@@ -2255,7 +2252,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             commentAttempt = undefined
             const { id } = receipt
             await initialComments
-            if (!signal.aborted) await loadComments(taskId, signal, null, id)
+            if (!signal.aborted) await loadComments({ id: taskId, ticket_key: ticketKey }, signal, null, id)
           } catch {
             if (!signal.aborted && commentError) {
               commentError.textContent = (participantDenied ? commentError.dataset.participantRequired
@@ -2272,7 +2269,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         document.getElementById("td-copy-link")?.addEventListener("click", async () => {
           if (!currentTaskId) return
           const taskId = currentTaskId
-          const link = buildTaskPermalink(taskId)
+          const link = buildTaskPermalink(currentTicketKey ?? taskId)
           const copied = await copyToClipboard(link)
           if (__signal.aborted || currentTaskId !== taskId) return
           if (copied) {
@@ -2304,7 +2301,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           const commentTarget = url.searchParams.get("comment")
           if (taskId === null) closeTD("discard", false)
           else if (tdOverlay.dataset.suppressUrlOpen !== "true" &&
-            (taskId !== currentTaskId || commentTarget !== currentCommentTarget || !tdOverlay.classList.contains("active"))) {
+            (!sameTaskLocator(taskId, currentTaskId, currentTicketKey) || commentTarget !== currentCommentTarget || !tdOverlay.classList.contains("active"))) {
             void openTaskDetail(taskId, commentTarget, undefined, false)
             if (fromHistory) {
               const generation = detailGeneration

@@ -7,7 +7,7 @@ import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/s
 import { readWithinLimit } from "@lib/bounded-body"
 import { commentMentionProblem, commentPersonKey, isSameIngressMentionRequest } from "@lib/comment-mention-request"
 import { matchesMentionInboxContext, mentionInboxContextHeader } from "@lib/mention-inbox-context"
-import { buildTaskPath } from "@lib/task-detail-handoff"
+import { taskDetailPath } from "@lib/task-page-url"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
 
 function validId(value: unknown): value is number {
@@ -53,7 +53,7 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "read" 
     }
     const { rows, ...state } = await repo.page(recipient, before as number | null)
     return Response.json({ ...state, items: rows.map(row => ({
-      id: Number(row.id), title: String(row.title), href: buildTaskPath(String(row.task_id), Number(row.comment_id)),
+      id: Number(row.id), title: String(row.title), href: taskDetailPath({ id: String(row.task_id), ticket_key: row.ticket_key }, Number(row.comment_id)),
       read: row.read_at !== null, createdAt: Number(row.created_at),
     })) }, { headers: { "Cache-Control": "private, no-store" } })
   } catch {

@@ -28,7 +28,7 @@ import { formatRegionalDate } from "../lib/regional-date";
 import { formatTicketKey } from "../lib/ticket-key";
 import { taskSurface } from "../lib/task-surface"
 import { taskDescriptionPreview } from "../lib/task-description-preview"
-import { buildTaskPath } from "../lib/task-detail-handoff"
+import { taskDetailPath } from "../lib/task-page-url"
 import {
   ensureSchema,
   getPersistenceClient,
@@ -658,7 +658,7 @@ if (groupByProject) {
                     <div class="kanban-card-header">
                       <div class="kanban-card-title">
                         <a
-                          href={buildTaskPath(String(task.id)) + `?board_id=${encodeURIComponent(boardId)}`}
+                          href={taskDetailPath({ id: String(task.id), ticket_key: ticketKey }) + `?board_id=${encodeURIComponent(boardId)}`}
                           data-task-detail-link={String(task.id)}
                           class="card-open-btn"
                           data-id={String(task.id)}

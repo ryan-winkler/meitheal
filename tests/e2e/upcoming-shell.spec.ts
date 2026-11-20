@@ -48,6 +48,7 @@ test.describe("Upcoming Shell", () => {
       { section: "#upcoming-week", title: "Upcoming controls later", dueDate: new Date(now + 3 * dayMs) },
     ] as const
     const ids: string[] = []
+    const keys: string[] = []
 
     try {
       for (const { title, dueDate } of fixtures) {
@@ -56,7 +57,9 @@ test.describe("Upcoming Shell", () => {
           data: { title, due_date: dueDate.toISOString().slice(0, 10), status: "pending" },
         })
         expect(created.status(), await created.text()).toBe(201)
-        ids.push((await created.json()).id)
+        const task = await created.json()
+        ids.push(task.id)
+        keys.push(task.ticket_key)
       }
 
       await page.reload()
@@ -66,7 +69,7 @@ test.describe("Upcoming Shell", () => {
         const id = ids[index]!
         const link = page.locator(section).getByRole("link", { name: title, exact: true })
         const checkbox = page.locator(section).getByRole("checkbox", { name: `Complete ${title}` })
-        await expect(link).toHaveAttribute("href", `/tickets/${id}`)
+        await expect(link).toHaveAttribute("href", `/tickets/${keys[index]}`)
         await checkbox.focus()
         await page.keyboard.press("Tab")
         await expect(link).toBeFocused()
@@ -110,7 +113,7 @@ test.describe("Upcoming Shell", () => {
         const noScriptPage = await noScript.newPage()
         await noScriptPage.goto("/upcoming")
         await noScriptPage.getByRole("link", { name: title, exact: true }).press("Enter", { timeout: 5000 })
-        await expect(noScriptPage).toHaveURL(`${origin}/tickets/${firstTaskId}`)
+        await expect(noScriptPage).toHaveURL(`${origin}/tickets/${keys[0]}`)
       } finally {
         await noScript.close()
       }

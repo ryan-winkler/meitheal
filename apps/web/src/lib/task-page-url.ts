@@ -2,9 +2,24 @@ import { currentTaskApiContext } from "./task-api"
 
 export const TASK_VIEW_LOCATION_EVENT = "meitheal:task-view-location-changed"
 
-export function taskDetailPath(taskId: string, commentId?: number): string {
-  const path = `/tickets/${encodeURIComponent(taskId)}`
+/** A task ID, ticket key, or a task row that may carry its ticket key. */
+export type TaskLocator = string | { id: string | number, ticket_key?: unknown }
+
+/** The readable ticket key for a task row, falling back to its opaque ID. */
+function taskLocator(task: TaskLocator): string {
+  if (typeof task === "string") return task
+  return typeof task.ticket_key === "string" && task.ticket_key ? task.ticket_key : String(task.id)
+}
+
+/** The one in-app ticket path: `/tickets/MTH-4`, or `/tickets/<id>` while the key is unknown. */
+export function taskDetailPath(task: TaskLocator, commentId?: number): string {
+  const path = `/tickets/${encodeURIComponent(taskLocator(task))}`
   return commentId === undefined ? path : `${path}?${new URLSearchParams({ comment: String(commentId) })}`
+}
+
+/** Ticket keys ignore case; opaque IDs compare exactly. */
+export function sameTaskLocator(locator: string, id: string | null, ticketKey: string | null): boolean {
+  return locator === id || (ticketKey !== null && locator.toUpperCase() === ticketKey.toUpperCase())
 }
 
 export function ticketIdFromPath(pathname: string, ingressPath = ""): string | null {

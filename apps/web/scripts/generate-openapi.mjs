@@ -952,7 +952,7 @@ const paths = {
             remaining: { type: "integer", minimum: 0 },
             completionPercent: { type: "integer", minimum: 0, maximum: 100 },
             completedTasks: { type: "array", maxItems: 20, items: {
-              type: "object", required: ["id", "title"], properties: { id: { type: "string" }, title: { type: "string" } },
+              type: "object", required: ["id", "title"], properties: { id: { type: "string" }, title: { type: "string" }, ticket_key: { type: ["string", "null"] } },
             } },
           },
         }, "Today counters"),

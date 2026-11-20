@@ -11,7 +11,7 @@ import {
   recentActivityPersonKey,
 } from "@domains/tasks"
 import { formatVerifiedAgentAuthor, resolveVerifiedProvenanceLink } from "@lib/recent-activity-actor"
-import { buildTaskPath } from "@lib/task-detail-handoff"
+import { taskDetailPath } from "@lib/task-page-url"
 import { formatTicketKey } from "@lib/ticket-key"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
 import Layout from "../layouts/Layout.astro"
@@ -139,7 +139,7 @@ const date = new Intl.DateTimeFormat(locale === "ga" ? "ga-IE" : "en-IE", { date
                 <li class="activity-entry" data-activity-event={item.id}>
                   <div>
                     <p class="activity-action">{t(`recent_activity.${item.action}`, locale, { author })}</p>
-                    <a href={buildTaskPath(item.taskId)} data-astro-prefetch="false">
+                    <a href={taskDetailPath({ id: item.taskId, ticket_key: item.ticketKey })} data-astro-prefetch="false">
                       {item.ticketNumber && <span>{item.ticketKey ?? formatTicketKey(item.ticketNumber)} </span>}{item.title}
                     </a>
                     {provenanceLink && (

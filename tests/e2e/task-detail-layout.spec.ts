@@ -135,7 +135,7 @@ test("Focus fills the viewport and preserves current edits, history, and Escape 
   await expect(draft).toHaveValue("Uncommitted description in Focus")
   expect(await draft.evaluate(node => (node as HTMLTextAreaElement).selectionStart)).toBe(caret)
   expect(await page.evaluate(() => history.length)).toBe(historyLength)
-  expect(page.url()).toContain(`/tickets/${id}`)
+  expect(new URL(page.url()).pathname).toMatch(/^\/tickets\/MTH-\d+$/)
   expect(writes.length).toBe(writesBeforeExit)
 
   const layout = page.getByRole("button", { name: "Task detail layout", exact: true })

@@ -106,7 +106,7 @@ test("task references preserve text editing and open the saved task through HTTP
     await expect(option).toHaveCSS("outline-width", "2px")
     await expect(description).toHaveAttribute("aria-activedescendant", (await option.getAttribute("id"))!)
     await description.press("Enter")
-    const storedLink = `[${target.ticket_key}](/tickets/${target.id})`
+    const storedLink = `[${target.ticket_key}](/tickets/${target.ticket_key})`
     const editedDescription = `# Friday plan\nFollow ${storedLink} next.`
     await expect(description).toHaveValue(editedDescription)
     await expect(description).toBeFocused()
@@ -123,7 +123,7 @@ test("task references preserve text editing and open the saved task through HTTP
     const preview = page.locator("#td-desc-preview")
     const descriptionLink = preview.getByRole("link", { name: target.ticket_key })
     await expect(preview.getByRole("heading", { name: "Friday plan" })).toBeVisible()
-    await expect(descriptionLink).toHaveAttribute("href", root + "/tickets/" + target.id)
+    await expect(descriptionLink).toHaveAttribute("href", root + "/tickets/" + target.ticket_key)
 
     const composer = page.getByRole("textbox", { name: "Comment", exact: true })
     await composer.fill("Confirm #" + target.ticket_key)
@@ -132,7 +132,7 @@ test("task references preserve text editing and open the saved task through HTTP
     await expect(composer).toHaveValue("Confirm " + storedLink)
     await page.getByRole("button", { name: "Post Comment", exact: true }).click()
     const comment = page.locator("#td-comments article").first()
-    await expect(comment.getByRole("link", { name: target.ticket_key })).toHaveAttribute("href", root + "/tickets/" + target.id)
+    await expect(comment.getByRole("link", { name: target.ticket_key })).toHaveAttribute("href", root + "/tickets/" + target.ticket_key)
 
     await comment.getByRole("button", { name: "Edit comment" }).click()
     const commentEditor = comment.getByRole("textbox", { name: "Edit comment" })
@@ -148,7 +148,7 @@ test("task references preserve text editing and open the saved task through HTTP
     await list.getByRole("option", { name: /Independent orchard fixture/ }).tap()
     await commentEditor.pressSequentially(" " + hostile)
     await comment.getByRole("button", { name: "Save comment" }).click()
-    await expect(comment.getByRole("link", { name: other.ticket_key })).toHaveAttribute("href", root + "/tickets/" + other.id)
+    await expect(comment.getByRole("link", { name: other.ticket_key })).toHaveAttribute("href", root + "/tickets/" + other.ticket_key)
     await expect(comment).toContainText(hostile)
     await expect(comment.getByRole("link", { name: /MTH-9[89]/ })).toHaveCount(0)
 
@@ -173,11 +173,20 @@ test("task references preserve text editing and open the saved task through HTTP
     const renamed = await pinRequest(page, prefix + "/api/tasks/" + target.id, "PUT", { title: "Renamed reference target" }, undefined, headers)
     expect(renamed.status).toBe(200)
     await page.reload()
-    await expect(descriptionLink).toHaveAttribute("href", root + "/tickets/" + target.id)
-    await expect(comment.getByRole("link", { name: other.ticket_key })).toHaveAttribute("href", root + "/tickets/" + other.id)
+    await expect(descriptionLink).toHaveAttribute("href", root + "/tickets/" + target.ticket_key)
+    await expect(comment.getByRole("link", { name: other.ticket_key })).toHaveAttribute("href", root + "/tickets/" + other.ticket_key)
     await descriptionLink.click()
-    await expect(page).toHaveURL(root + "/tickets/" + target.id)
+    await expect(page).toHaveURL(root + "/tickets/" + target.ticket_key)
     await expect(page.locator("#td-title")).toHaveValue("Renamed reference target")
+
+    // References saved before readable links keep their task ID and still open the task.
+    const legacy = await pinRequest(page, prefix + "/api/tasks/" + source.id, "PUT", { description: `Older [${target.ticket_key}](/tickets/${target.id})` }, undefined, headers)
+    expect(legacy.status).toBe(200)
+    await page.goto(root + "/tickets/" + source.ticket_key)
+    await expect(descriptionLink).toHaveAttribute("href", root + "/tickets/" + target.id)
+    await descriptionLink.click()
+    await expect(page.locator("#td-title")).toHaveValue("Renamed reference target")
+    await expect(page).toHaveURL(root + "/tickets/" + target.ticket_key)
     expect(lookups.every(url => url.pathname === prefix + "/api/search")).toBe(true)
   })
 })

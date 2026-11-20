@@ -1,7 +1,7 @@
 import { createClientLogger } from "@lib/client-logger"
 import { buildIngressPagePath } from "@lib/page-shell-links"
 import { waitForFn } from "@lib/wait-for-fn"
-import { taskDetailPath } from "@lib/task-page-url"
+import { taskDetailPath, type TaskLocator } from "@lib/task-page-url"
 
 const log = createClientLogger("tasks", "detail-handoff")
 
@@ -43,12 +43,8 @@ export function findKanbanDetailFocus(board: ParentNode, previous: Element): HTM
   return matchingKanbanControl(lane, previous) ?? fallback
 }
 
-export function buildTaskPath(taskId: string, commentId?: number): string {
-  return taskDetailPath(taskId, commentId)
-}
-
-export function buildTaskPermalink(taskId: string, commentId?: number): string {
-  return new URL(buildIngressPagePath(buildTaskPath(taskId, commentId)), window.location.origin).href
+export function buildTaskPermalink(task: TaskLocator, commentId?: number): string {
+  return new URL(buildIngressPagePath(taskDetailPath(task, commentId)), window.location.origin).href
 }
 
 export function getLegacyTaskId(hash: string): string | null {

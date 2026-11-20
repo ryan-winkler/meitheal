@@ -2396,6 +2396,10 @@ paths:
                           type: string
                         title:
                           type: string
+                        ticket_key:
+                          type:
+                            - string
+                            - "null"
                       additionalProperties: false
                 additionalProperties: false
         "409":

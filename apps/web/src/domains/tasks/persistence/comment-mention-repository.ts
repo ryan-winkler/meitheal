@@ -229,7 +229,7 @@ export class CommentMentionRepository {
       [
         scoped(
           this.scope,
-          sql`SELECT mention.id,mention.task_id,mention.comment_id,mention.created_at,mention.read_at,task.title ${inbox} AND mention.id<${before ?? Number.MAX_SAFE_INTEGER} ORDER BY mention.id DESC LIMIT ${pageSize + 1}`
+          sql`SELECT mention.id,mention.task_id,mention.comment_id,mention.created_at,mention.read_at,task.title,task.ticket_ref AS ticket_key ${inbox} AND mention.id<${before ?? Number.MAX_SAFE_INTEGER} ORDER BY mention.id DESC LIMIT ${pageSize + 1}`
         ),
         scoped(this.scope, sql`SELECT COUNT(*) AS count ${inbox} AND mention.read_at IS NULL`)
       ],

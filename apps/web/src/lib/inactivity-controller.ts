@@ -1,4 +1,4 @@
-import { buildTaskPath } from "@lib/task-detail-handoff"
+import { taskDetailPath } from "@lib/task-page-url"
 import { safeIngressHref } from "@lib/ingress-navigation"
 import type { InactivityFilter } from "@domains/tasks/persistence/task-inactivity-repository"
 import { t, type Locale } from "../i18n/client"
@@ -141,7 +141,7 @@ pageLifecycle.onPageLoad(signal => {
         appendCue(task.deadline <= preview.now ? "ready" : "upcoming", task.deadline)
       }
       const details = document.createElement("a")
-      details.href = safeIngressHref(buildTaskPath(task.id))
+      details.href = safeIngressHref(taskDetailPath(task))
       details.dataset.astroPrefetch = "false"
       details.className = "btn btn-outline"
       details.append(createTablerSvgElement("file-text", 18), t("triage.details", locale))
