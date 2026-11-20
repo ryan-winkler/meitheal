@@ -361,6 +361,8 @@ In the task panel, **Edit comment** and **Delete comment** appear on comments yo
 
 Each comment timestamp is a permanent link. Copy the link from the timestamp and open it in an authorized session. The task detail opens and focuses that comment, even after the author edits it. If the comment was removed or belongs to another task, Meitheal keeps the task open and focuses an unavailable message. Links through Home Assistant keep the current ingress path and still require the recipient’s existing access.
 
+Short ticket links use the ticket key. `/t/MTH-4` and `/mth-4` redirect to `/tickets/MTH-4`, which finds the ticket's Board and applies the usual access checks. Keys ignore case and leading zeros, and any query such as `?comment=` is kept. Other unknown paths still return the not-found page. Push notifications from the App open `/<app-slug>?meitheal=/tickets/MTH-4` inside the Home Assistant sidebar panel. If a short link shows the not-found page, check the key in the task panel header.
+
 Typing `#` in a task description or comment uses the authenticated, private `GET /api/search` route with a five-task limit and only ID and title matching. Stored references use the task ID, and the current Home Assistant ingress prefix is applied when they are displayed. If the picker asks for an update, activate it from Search or reload after the installed app updates. You can continue editing while offline.
 
 If posting fails in the task panel, the text remains in the composer. Retry on that task after resolving the reported problem. Check that the task still exists and use an authenticated Home Assistant session or a credential with task-write scope. Check `api.comments.post.failed` for storage failures.

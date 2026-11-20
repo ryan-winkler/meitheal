@@ -77,8 +77,12 @@ variables:
     {% if '://' in raw %}{% set raw = '/' ~ (raw.split('://', 1)[1].split('/', 1) + [''])[1] %}{% endif %}
     {% set slug = raw.strip('/').split('/')[0] %}
     {% if slug and slug != 'api' and slug | regex_match('^[a-z0-9_-]{1,128}$') %}/{{ slug }}{% else %}/meitheal{% endif %}
+  # Readable ticket keys (MTH-4) when the event has one; the ticket page finds the Board.
+  ticket: >-
+    {% set key = trigger.event.data.get('ticket_key') %}
+    {{ key | trim if key is string and key | trim | regex_match('^[A-Za-z0-9]{1,16}-[0-9]{1,9}$') else task_id }}
   task_url: >-
-    {{ panel_path ~ '?meitheal=' ~ (('/tickets/' ~ (task_id | urlencode)) | urlencode) if task_id else '' }}
+    {{ panel_path ~ '?meitheal=' ~ (('/tickets/' ~ (ticket | urlencode)) | urlencode) if task_id else '' }}
 
 action:
   - device_id: !input notify_device

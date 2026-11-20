@@ -71,6 +71,12 @@ async def test_notification_action_carries_task_id_and_uses_task_permalink(hass:
     action = notification["actions"][1]["action"]
     assert action == f"MEITHEAL_COMPLETE_{TASK_ID}"
 
+    keyed = render_complex(notification_data, event_variables(hass, sender, "meitheal_task_created", {
+        "source": "meitheal", "task_id": TASK_ID, "ticket_key": "MTH-4", "title": "Water plants",
+    }))
+    assert keyed["clickAction"] == keyed["url"] == f"{PANEL_PATH}?meitheal=/tickets/MTH-4"
+    assert keyed["actions"][1]["action"] == f"MEITHEAL_COMPLETE_{TASK_ID}"
+
     tap = event_variables(hass, receiver, "mobile_app_notification_action", {"action": action})
     assert receiver_condition.async_render(tap) is True
     completion = receiver["actions"][0]
