@@ -90,6 +90,9 @@ RUN addgroup -S -g 10001 meitheal \
     && adduser -S -D -H -h /data -s /sbin/nologin -u 10001 -G meitheal meitheal \
     && mkdir -p /data
 
+# Allow run.sh (5s) and serve.mjs (3s) to finish shutdown before s6 escalates.
+ENV S6_SERVICES_GRACETIME=8000
+
 # nosemgrep: dockerfile.security.missing-user.missing-user
 HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
   CMD curl -fsS http://127.0.0.1:3000/api/health || exit 1

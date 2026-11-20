@@ -23,8 +23,9 @@ configuration:
   loki_url:
     name: Loki push URL
     description: >-
-      The full URL of a Grafana Loki push endpoint. The app sends its log to
-      this URL. Keep the default value if you use the Grafana stack app.
+      Optional. Enter the HTTP or HTTPS push URL for Grafana Loki without
+      embedded credentials, for example http://a0d7b954-loki:3100/loki/api/v1/push.
+      Keep this field empty to turn off remote log forwarding.
   license_key:
     name: License key
     description: >-

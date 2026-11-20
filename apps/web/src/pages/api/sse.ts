@@ -186,6 +186,7 @@ export const GET: APIRoute = async context => {
   const { request } = context
   const transport = getIngressTransport()
   const socket = transport?.sseSocket
+  const shutdownSignal = transport?.shutdownSignal
   // Encoded aliases that Astro resolves to this route lack the wrapper's socket guard.
   if (transport && !socket) return new Response(null, { status: 404 })
 
@@ -205,12 +206,15 @@ export const GET: APIRoute = async context => {
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      if (request.signal.aborted) {
+      if (request.signal.aborted || shutdownSignal?.aborted) {
         controller.close()
         return
       }
 
+      let closed = false
       const disconnect = () => {
+        if (closed) return
+        closed = true
         cleanup()
         controller.close()
       }
@@ -281,6 +285,7 @@ export const GET: APIRoute = async context => {
       })
       recordSseClientConnected()
       request.signal.addEventListener("abort", disconnect, { signal: lifetime.signal, once: true })
+      shutdownSignal?.addEventListener("abort", disconnect, { signal: lifetime.signal, once: true })
       send(encodeEvent("connected", { ts: new Date().toISOString() }))
 
       refreshEntitySubscriptions()

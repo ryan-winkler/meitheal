@@ -53,7 +53,7 @@ Canary has its own tokens. If you connect the Meitheal integration to Canary, ma
 | `log_categories` | `auth, tasks, integrations, observability, ha, calendar, todo, api, security, search` | Sets which parts of the app write `debug` and `info` messages. The app always writes `warn` and `error` messages. |
 | `log_redaction` | `true` | Removes tokens, secrets and passwords from the log. |
 | `audit_enabled` | `true` | Records task and token changes in a local audit log. |
-| `loki_url` | `""` | Optional. Sends the log to a Grafana Loki server at this URL. |
+| `loki_url` | `""` | Optional. Sends logs to an HTTP or HTTPS push URL for Grafana Loki without embedded credentials. Keep this field empty to turn off remote log forwarding. |
 | `license_key` | `""` | Optional. An offline Ed25519 license key. Meitheal has all its functions without a key. |
 
 ## 5. Troubleshooting
