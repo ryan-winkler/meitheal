@@ -34,15 +34,9 @@ The app manifest provides the Meitheal icon and Today, Calendar and Settings sho
 
 Meitheal prompts for PWA installation through `apps/web/src/components/pwa/PwaInstallBanner.astro` (triggered by `beforeinstallprompt` on secure origins) and **Settings → App & Companion**. Behind Home Assistant ingress, `apps/web/public/sw.js` derives its `ingressPath` scope from `self.registration.scope` and precaches `/offline.html`, `/manifest.webmanifest`, and `/icon-192.png`.
 
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:e1796012f0dad16e40cca8464babfa11e1899feffd999caed479a1b0c18c5700 -->
-
 Consuming an install prompt immediately clears the shared prompt and hides both install controls while the browser choice is pending. A fresh `beforeinstallprompt` event offers installation again. Only `appinstalled` shows the installed badge; accepting or declining the prompt does not confirm installation.
 
 When an updated Service Worker waits to activate, `#toast-container` shows a persistent update prompt (`#sw-update-btn`), and **Settings → App & Companion** exposes **Update & reload** (`#pwa-update-settings-btn`) and **Force App Update** (`#pwa-force-update-btn`). Clicking any of those controls sets `aria-disabled="true"` and `aria-busy="true"`, announces status via `#sync-announcer` (`announceStatus()`), and clears state on failure or timeout so the user can retry. If activation completes elsewhere (`update-activated`), the persistent toast and idle Settings update prompt clear automatically. See [Toast Notifications Reference](toast-notifications.md) for banner suppression and Top-Layer stacking rules.
-
-<!-- /coderabbit-ai-generated:v1 -->
 
 ## Verification
 
