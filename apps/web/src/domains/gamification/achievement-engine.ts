@@ -144,7 +144,7 @@ export const ACHIEVEMENTS: Achievement[] = [
  * @kcs Uses a Map for O(1) lookup instead of a switch/if chain.
  * The `daily_goal` default is 5 — matches GamificationWidget.astro.
  */
-const CONDITIONS: Record<string, (stats: GamificationStats) => boolean> = {
+const CONDITIONS = new Map(Object.entries<(stats: GamificationStats) => boolean>({
   // Milestone conditions
   first_task: (s) => s.totalCompleted >= 1,
   tasks_10: (s) => s.totalCompleted >= 10,
@@ -177,7 +177,7 @@ const CONDITIONS: Record<string, (stats: GamificationStats) => boolean> = {
   level_5: (s) => getLevel(s.totalPoints) >= 5,
   level_10: (s) => getLevel(s.totalPoints) >= 10,
   level_20: (s) => getLevel(s.totalPoints) >= 20,
-}
+}))
 
 // ── Schema ──────────────────────────────────────────────────────
 
@@ -204,7 +204,7 @@ export async function checkAchievements(
   try {
     const existing = await tx.execute(gamificationRead(scope, "SELECT id FROM board_achievements"))
     const unlocked = new Set(existing.rows.map(row => String(row.id)))
-    const candidates = ACHIEVEMENTS.filter(achievement => !unlocked.has(achievement.id) && CONDITIONS[achievement.id]?.(stats))
+    const candidates = ACHIEVEMENTS.filter(achievement => !unlocked.has(achievement.id) && CONDITIONS.get(achievement.id)?.(stats))
     const unlockedAt = new Date().toISOString()
     if (candidates.length) {
       await tx.batch(candidates.map(achievement => ({
