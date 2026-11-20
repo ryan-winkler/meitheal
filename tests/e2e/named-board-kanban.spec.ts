@@ -119,7 +119,7 @@ test("named Boards use the common Kanban with paged capture, version conflicts, 
     await oldest.locator(".card-open-btn").press("Enter")
     const inspector = page.locator("#task-detail-panel")
     const detailTitle = inspector.locator("#td-title")
-    await expect(detailTitle).toBeVisible()
+    await expect(detailTitle).toBeEditable()
     const version = (await (await owner.request.get(api + "?view=tasks&ticket=" + ids[0])).json()).tasks[0].version
     await detailTitle.fill("Retained conflict draft")
     expect((await owner.request.patch(api + "/tickets/" + ids[0], { headers, data: { title: "Newer server title", description: "Needle", version } })).status()).toBe(200)
@@ -185,11 +185,18 @@ test("named Boards use the common Kanban with paged capture, version conflicts, 
       await expect(capture.locator("#new-task-title-input")).toBeFocused()
       await capture.locator("#new-task-title-input").fill("Planning scope capture " + index)
       const savedPlanning = page.waitForResponse(response => response.request().method() === "POST" && response.url() === captureUrl)
+      const refreshedPlanning = page.waitForResponse(response => {
+        const url = new URL(response.url())
+        return response.request().isNavigationRequest() && url.pathname === fixture.configuredPath + path && url.searchParams.has("open")
+      })
       await capture.locator("#submit-new-task-btn").click()
       const response = await savedPlanning
       expect(response.status()).toBe(201)
       expect(response.request().headers()["x-meitheal-board-id"]).toBe(id)
       const savedTicket = (await response.json()).id
+      expect((await refreshedPlanning).status()).toBe(200)
+      await expect(page).toHaveURL(url => url.searchParams.get("open") === savedTicket)
+      await page.waitForLoadState("load")
       const placed = await (await owner.request.get(api + "?view=tasks&ticket=" + savedTicket)).json()
       expect(placed.tasks[0].placement).toMatchObject({ areaId: scope.areaId, projectId: scope.projectId })
     }
