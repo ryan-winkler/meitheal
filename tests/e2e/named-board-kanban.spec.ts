@@ -184,6 +184,7 @@ test("named Boards use the common Kanban with paged capture, version conflicts, 
       else await page.locator("#sidebar-rail-new-task").click()
       await expect(capture.locator("#new-task-title-input")).toBeFocused()
       await capture.locator("#new-task-title-input").fill("Planning scope capture " + index)
+      const previousDocument = await page.evaluate(() => performance.timeOrigin)
       const savedPlanning = page.waitForResponse(response => response.request().method() === "POST" && response.url() === captureUrl)
       const refreshedPlanning = page.waitForResponse(response => {
         const url = new URL(response.url())
@@ -195,6 +196,7 @@ test("named Boards use the common Kanban with paged capture, version conflicts, 
       expect(response.request().headers()["x-meitheal-board-id"]).toBe(id)
       const savedTicket = (await response.json()).id
       expect((await refreshedPlanning).status()).toBe(200)
+      await page.waitForFunction(start => performance.timeOrigin !== start, previousDocument)
       await expect(page).toHaveURL(url => url.searchParams.get("open") === savedTicket)
       await page.waitForLoadState("load")
       const placed = await (await owner.request.get(api + "?view=tasks&ticket=" + savedTicket)).json()
@@ -249,6 +251,10 @@ test("named Boards use the common Kanban with paged capture, version conflicts, 
     await expect(childPage.locator("#task-detail-overlay")).not.toHaveClass(/active/)
     await expect(childPage.locator("#sidebar-rail-new-task")).toBeDisabled()
     await expect(childPage).toHaveURL(url => url.pathname.endsWith(path))
+    await childPage.locator(".kanban-card .card-open-btn").press("Enter")
+    const viewerTitle = childPage.locator("#td-title")
+    await expect(viewerTitle).toHaveValue("Newer server title")
+    await expect(viewerTitle).not.toBeEditable()
     // The extracted Astro component must preserve a failed refresh's HTTP status.
     const db = new DatabaseSync(join(work, "pins.db"))
     try {

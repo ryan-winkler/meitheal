@@ -135,6 +135,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         const tdPanel = document.getElementById("task-detail-panel")
         const tdHeading = document.getElementById("td-task-heading")
         const tdActions = document.getElementById("td-task-actions")
+        const tdTitleInput = tdPanel?.querySelector<HTMLTextAreaElement>("#td-title")
         const statusSelect = document.querySelector<HTMLSelectElement>("#td-status")
         const doneButton = document.querySelector<HTMLButtonElement>("#td-toggle-done")
         const deleteButton = document.querySelector<HTMLButtonElement>("#td-delete")
@@ -217,10 +218,9 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         }
 
         function resizeTitle(): void {
-          const title = tdPanel?.querySelector<HTMLTextAreaElement>("#td-title")
-          if (!title?.getClientRects().length) return
-          title.style.height = "auto"
-          title.style.height = `${title.scrollHeight + 2}px`
+          if (!tdTitleInput?.getClientRects().length) return
+          tdTitleInput.style.height = "auto"
+          tdTitleInput.style.height = `${tdTitleInput.scrollHeight + 2}px`
         }
 
         function setFocusMode(expanded: boolean): void {
@@ -503,6 +503,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
 
         function syncTaskActionControls() {
           const editable = taskLoaded && !_isPopulating && currentTaskActions.has("edit")
+          if (tdTitleInput) tdTitleInput.readOnly = !editable
           if (statusSelect) {
             statusSelect.disabled = !editable
             for (const option of statusSelect.options) option.disabled = !statusAllowed(option.value)
@@ -999,16 +1000,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               typeIconEl.title = tt.charAt(0).toUpperCase() + tt.slice(1);
             }
 
-            const titleEl = document.getElementById("td-title") as HTMLTextAreaElement;
-            if (titleEl) {
-              titleEl.value = String(t.title ?? "");
-              // Trigger auto-resize inline
-              titleEl.style.height = "auto";
-              // Brief timeout to ensure DOM layout is updated before scrollHeight is read
-              setTimeout(() => {
-                titleEl.style.height = titleEl.scrollHeight + "px";
-              }, 10);
-            }
+            if (tdTitleInput) tdTitleInput.value = String(t.title ?? "")
             // Update aria-label with actual task title for screen readers
             setInspectorAriaLabel(`Task detail: ${String(t.title ?? "Untitled")}`);
 
@@ -1667,7 +1659,6 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         }, { signal: __signal });
 
         // Auto-save on change
-        const tdTitleInput = document.getElementById("td-title") as HTMLTextAreaElement;
         if (tdTitleInput) {
           tdTitleInput.addEventListener("blur", (e) =>
             saveTD("title", (e.target as HTMLTextAreaElement).value),

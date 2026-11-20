@@ -30,6 +30,8 @@ Quick actions sit below the task details and wrap within the card.
 
 Tab and Shift+Tab stay inside task detail while it loads and while you edit. Press Escape to close it and return to the card. When a confirmation is open, Escape dismisses the confirmation first.
 
+The title becomes editable when task details and edit permission are ready. Viewers can read and copy the title.
+
 Closing Details while a task is still loading also clears its pending launch link. Your Board and Project filters remain in the address, so the next task creation or refresh does not reopen the dismissed task.
 
 ### Promote a card
