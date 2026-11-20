@@ -19,7 +19,7 @@ BLUEPRINTS = Path(__file__).resolve().parents[1] / "blueprints"
 SENDER = "meitheal_task_notification"
 RECEIVER = "meitheal_complete_from_notification"
 TASK_ID = "5a74e1f7-d412-4a51-a6fb-c10f51cfe221"
-PANEL_PATH = "/meitheal_canary"
+PANEL_PATH = "/8d9fd00d_meitheal_canary"
 TASK_URL = f"{PANEL_PATH}?meitheal=/tickets/{TASK_ID}"
 
 
@@ -59,7 +59,7 @@ async def test_notification_action_carries_task_id_and_uses_task_permalink(hass:
     sender_condition = sender["conditions"][0]["value_template"]
     receiver_condition = receiver["conditions"][0]["value_template"]
     # Core's Mobile App device action converts and renders its notification data this way.
-    notification_data = cv.template_complex(sender["actions"][0]["data"])
+    notification_data = cv.template_complex(sender["actions"][1]["data"])
 
     web = event_variables(hass, sender, "meitheal_task_created", {
         "source": "meitheal", "task_id": TASK_ID, "title": "Water plants",
@@ -102,27 +102,40 @@ async def test_notification_action_carries_task_id_and_uses_task_permalink(hass:
 
 
 @pytest.mark.parametrize(
-    ("configured", "expected"),
-    [
-        ("/meitheal_canary", "/meitheal_canary"),
-        ("meitheal_canary/", "/meitheal_canary"),
-        ("https://ha.example/meitheal_canary?meitheal=%2Fboards", "/meitheal_canary"),
-        # Supervisor ingress session URLs fail outside the sidebar, so use the stable panel.
-        ("/api/hassio_ingress/abc123/kanban", "/meitheal"),
-        ("https://ha.example/api/hassio_ingress/abc123/", "/meitheal"),
-        ("", "/meitheal"),
-    ],
+    "configured",
+    ["/8d9fd00d_meitheal_canary", "/local_meitheal_canary",
+     "/app/8d9fd00d_meitheal_canary", "/app/local_meitheal"],
 )
-async def test_notification_links_use_the_stable_panel_path(
-    hass: HomeAssistant, configured: str, expected: str
+async def test_notification_links_preserve_the_complete_panel_path(
+    hass: HomeAssistant, configured: str
 ) -> None:
     sender = expand_automation(SENDER, ingress_path=configured)
-    notification_data = cv.template_complex(sender["actions"][0]["data"])
     variables = event_variables(hass, sender, "meitheal_task_created", {
-        "source": "meitheal", "task_id": TASK_ID, "title": "Water plants",
+        "source": "meitheal", "task_id": TASK_ID,
     })
-    notification = render_complex(notification_data, variables)
-    task_url = f"{expected}?meitheal=/tickets/{TASK_ID}"
-    assert notification["clickAction"] == notification["url"] == task_url
-    assert notification["actions"][0]["uri"] == task_url
-    assert notification["actions"][2]["uri"] == expected
+    notification = render_complex(cv.template_complex(sender["actions"][1]["data"]), variables)
+    assert notification["clickAction"] == f"{configured}?meitheal=/tickets/{TASK_ID}"
+    assert notification["actions"][2]["uri"] == configured
+    assert sender["actions"][0]["if"][0]["value_template"].async_render(variables) is False
+
+
+@pytest.mark.parametrize("configured", [
+    "/meitheal", "/meitheal_canary", "/unregistered", "", "/app/unregistered",
+    "/api/hassio_ingress/abc123/kanban", "https://ha.example/local_meitheal",
+    "/local_meitheal/extra", "/local_meitheal?query=1", "//local_meitheal",
+])
+async def test_notification_rejects_unknown_paths_without_substitution(
+    hass: HomeAssistant, configured: str
+) -> None:
+    sender = expand_automation(SENDER, ingress_path=configured)
+    variables = event_variables(hass, sender, "meitheal_task_created", {"source": "meitheal"})
+    assert variables["panel_path"] == ""
+    guard = sender["actions"][0]
+    assert guard["if"][0]["value_template"].async_render(variables) is True
+    assert guard["then"][0]["error"] is True
+
+
+async def test_notification_default_targets_published_canary(hass: HomeAssistant) -> None:
+    sender = expand_automation(SENDER)
+    variables = event_variables(hass, sender, "meitheal_task_created", {"source": "meitheal"})
+    assert variables["panel_path"] == PANEL_PATH

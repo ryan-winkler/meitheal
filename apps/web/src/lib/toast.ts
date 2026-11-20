@@ -716,6 +716,8 @@ function updateRecord(
   record.duration = duration
   if (record.element.matches(":focus-within")) pauseTimer(record, "focus")
   else resumeTimer(record, "focus")
+  if (document.hidden) pauseTimer(record, "hidden")
+  else resumeTimer(record, "hidden")
   startTimer(record, true)
   const container = getContainer(false)
   syncPopoverLayer(container)

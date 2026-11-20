@@ -69,6 +69,24 @@ async function swipeElement(
 }
 
 test.describe("Unified toast, persistent notifications & mobile UX", () => {
+  test("keeps a persistent toast updated to timed while hidden until visible", async ({ page }) => {
+    await page.goto("/")
+    await page.evaluate(() => {
+      window.__meithealToast?.({ id: "hidden-update", message: "Waiting", persistent: true })
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => true })
+      document.dispatchEvent(new Event("visibilitychange"))
+      window.__meithealToast?.({ id: "hidden-update", message: "Finished", duration: 200 })
+    })
+    const card = page.locator('[data-toast-id="hidden-update"]')
+    await page.waitForTimeout(500)
+    await expect(card).toBeVisible()
+    await page.evaluate(() => {
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => false })
+      document.dispatchEvent(new Event("visibilitychange"))
+    })
+    await expect(card).toHaveCount(0)
+  })
+
   test("mounts one persistent #toast-container across pages and ViewTransitions", async ({ page }) => {
     for (const route of ["/", "/today", "/settings", "/habits"]) {
       await page.goto(route)

@@ -36,12 +36,13 @@ blueprint:
     ingress_path:
       name: "Meitheal sidebar path"
       description: >-
-        The Home Assistant path that opens Meitheal from the sidebar, such as
-        /meitheal or /meitheal_canary. Open Meitheal from the sidebar and copy
-        the first part of the address after your Home Assistant host.
-        Do not use an /api/hassio_ingress/ address. It needs a session that
-        only the Home Assistant sidebar creates, so it fails from a notification.
-      default: "/meitheal"
+        Copy the complete path after your Home Assistant host when opening
+        Meitheal from the sidebar. Published Canary uses /8d9fd00d_meitheal_canary;
+        local Canary uses /local_meitheal_canary. The /app/<full-slug> route
+        is also accepted. Only the published or local Meitheal App slugs are
+        supported. Invalid paths stop the automation; no target is substituted.
+        Do not use an /api/hassio_ingress/ session address.
+      default: "/8d9fd00d_meitheal_canary"
       selector:
         text:
 
@@ -70,13 +71,19 @@ variables:
     } %}
     {{ types.get(trigger.event.event_type, 'Meitheal') }}
   ingress_path: !input ingress_path
-  # Relative panel paths open inside the Companion app and use its login.
-  # Older automations stored a Supervisor ingress session URL; use the stable panel instead.
+  # Core registers the full App slug, including the repository prefix.
+  # Keep the complete route; never turn an unknown target into a different App.
   panel_path: >-
-    {% set raw = (ingress_path | string | trim).split('?')[0].split('#')[0] %}
-    {% if '://' in raw %}{% set raw = '/' ~ (raw.split('://', 1)[1].split('/', 1) + [''])[1] %}{% endif %}
-    {% set slug = raw.strip('/').split('/')[0] %}
-    {% if slug and slug != 'api' and slug | regex_match('^[a-z0-9_-]{1,128}$') %}/{{ slug }}{% else %}/meitheal{% endif %}
+    {% set raw = ingress_path | string | trim %}
+    {% set slugs = ['8d9fd00d_meitheal', '8d9fd00d_meitheal_canary',
+                    'local_meitheal', 'local_meitheal_canary'] %}
+    {% set ns = namespace(path='') %}
+    {% for slug in slugs %}
+      {% if raw in ['/' ~ slug, '/app/' ~ slug] %}
+        {% set ns.path = raw %}
+      {% endif %}
+    {% endfor %}
+    {{ ns.path }}
   # Readable ticket keys (MTH-4) when the event has one; the ticket page finds the Board.
   ticket: >-
     {% set key = trigger.event.data.get('ticket_key') %}
@@ -85,6 +92,12 @@ variables:
     {{ panel_path ~ '?meitheal=' ~ (('/tickets/' ~ (ticket | urlencode)) | urlencode) if task_id else '' }}
 
 action:
+  - if:
+      - condition: template
+        value_template: "{{ not panel_path }}"
+    then:
+      - stop: "Invalid Meitheal sidebar path. Copy the complete published or local App path from Home Assistant; ingress session URLs are not supported."
+        error: true
   - device_id: !input notify_device
     domain: mobile_app
     type: notify
