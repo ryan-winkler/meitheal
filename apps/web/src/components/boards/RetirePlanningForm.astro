@@ -1,4 +1,5 @@
 ---
+import Icon from "../ui/Icon.astro"
 interface Props {
   entity: "area" | "goal" | "project" | "routine"
   id: string
@@ -9,6 +10,9 @@ const { entity, id } = Astro.props
   <input type="hidden" name="action" value="retire" />
   <input type="hidden" name="entity" value={entity} />
   <input type="hidden" name="id" value={id} />
-  <p role="status" data-board-feedback></p>
-  <button type="submit" class="btn btn-ghost board-danger">Remove from active planning</button>
+  <p role="status" data-board-feedback class="board-feedback"></p>
+  <button type="submit" class="btn btn-secondary btn-sm board-danger">
+    <Icon name="trash" size={14} sprite />
+    <span>Remove from active planning</span>
+  </button>
 </form>

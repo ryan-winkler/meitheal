@@ -59,9 +59,10 @@ async function readBody(request: Request): Promise<Record<string, unknown> | Res
 
 function validTaskIdentifier(task: unknown): task is string {
   if (typeof task !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(task)) return false
-  if (!/^MTH-/i.test(task)) return true
-  const ticket = parseTicketKey(task)
-  return ticket !== null && Number.isSafeInteger(ticket) && ticket > 0
+  const ticketMatch = /^([A-Za-z][A-Za-z0-9]{1,9})-(\d+)$/.exec(task)
+  if (!ticketMatch) return !/^MTH-/i.test(task)
+  const ticket = Number(ticketMatch[2])
+  return Number.isSafeInteger(ticket) && ticket > 0
 }
 
 function contextChanged() {

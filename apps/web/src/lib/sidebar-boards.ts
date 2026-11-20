@@ -3,6 +3,8 @@ import { sameTaskApiContext } from "./task-api-client"
 import { bindSidebarHierarchyActions } from "./sidebar-hierarchy-actions"
 import { boardWorkspaceHref } from "./board-workspace"
 import { safeIngressHref } from "./ingress-navigation"
+import { createTablerSvgElement } from "./tabler-svg"
+import { SIDEBAR_CONFIG_UPDATED_EVENT, SIDEBAR_TOGGLE_SHORTCUT_PIN_EVENT } from "./sidebar-order"
 
 interface BoardShortcut { id: string; name: string; hidden: boolean; state: string }
 interface GroupChoice { id: string; name: string; icon?: string; color?: string }
@@ -268,7 +270,30 @@ export function bindSidebarBoards(signal: AbortSignal) {
         void loadGroups(item, board.id)
       }
     }, { signal })
-    controls.append(link)
+    const pinId = `board-${board.id}`
+    const pinBtn = document.createElement("button")
+    pinBtn.type = "button"
+    pinBtn.className = "sidebar-board-pin"
+    pinBtn.dataset.sidebarPinBoard = board.id
+    pinBtn.setAttribute("aria-pressed", String(isBoardPinned(pinId)))
+    pinBtn.setAttribute("aria-label", isBoardPinned(pinId) ? `Unpin ${board.name} from sidebar` : `Pin ${board.name} to sidebar`)
+    pinBtn.title = isBoardPinned(pinId) ? `Unpin ${board.name}` : `Pin ${board.name} to sidebar`
+    pinBtn.append(createTablerSvgElement("pin", 14))
+    pinBtn.addEventListener("click", event => {
+      event.preventDefault()
+      event.stopPropagation()
+      window.dispatchEvent(new CustomEvent(SIDEBAR_TOGGLE_SHORTCUT_PIN_EVENT, {
+        detail: {
+          id: pinId,
+          label: board.name,
+          href: boardWorkspaceHref(board.id),
+          icon: "layout-kanban",
+          section: "boards",
+        },
+      }))
+    }, { signal })
+
+    controls.append(link, pinBtn)
     if (areasEnabled) controls.append(toggle)
     item.append(controls)
     const pinned = document.createElement("div")
@@ -354,9 +379,38 @@ export function bindSidebarBoards(signal: AbortSignal) {
     }
   }
 
+  function readPinnedIds(): Set<string> {
+    const raw = document.getElementById("sidebar")?.dataset.sidebarConfig
+    if (!raw) return new Set()
+    try {
+      const parsed = JSON.parse(raw) as { customItems?: Array<{ id?: string }> }
+      return new Set((parsed.customItems ?? []).map(entry => entry.id ?? "").filter(Boolean))
+    } catch {
+      return new Set()
+    }
+  }
+
+  function isBoardPinned(pinId: string): boolean {
+    return readPinnedIds().has(pinId)
+  }
+
+  function syncBoardPinButtons() {
+    const pinnedIds = readPinnedIds()
+    list.querySelectorAll<HTMLButtonElement>("[data-sidebar-pin-board]").forEach(btn => {
+      const boardId = btn.dataset.sidebarPinBoard
+      if (!boardId) return
+      const pinned = pinnedIds.has(`board-${boardId}`)
+      const boardName = btn.closest(".sidebar-board-row")?.querySelector<HTMLElement>(".nav-link")?.textContent?.trim() || "board"
+      btn.setAttribute("aria-pressed", String(pinned))
+      btn.setAttribute("aria-label", pinned ? `Unpin ${boardName} from sidebar` : `Pin ${boardName} to sidebar`)
+      btn.title = pinned ? `Unpin ${boardName}` : `Pin ${boardName} to sidebar`
+    })
+  }
+
   const resume = () => { clear(); void refresh() }
   const timer = setInterval(() => { void refresh() }, 10_000)
   signal.addEventListener("abort", () => { clearInterval(timer); actions?.dispose(); clear() }, { once: true })
+  window.addEventListener(SIDEBAR_CONFIG_UPDATED_EVENT, syncBoardPinButtons, { signal })
   document.addEventListener("visibilitychange", resume, { signal })
   window.addEventListener("focus", resume, { signal })
   window.addEventListener("offline", clear, { signal })

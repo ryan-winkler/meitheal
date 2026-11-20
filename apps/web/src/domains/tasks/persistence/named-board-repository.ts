@@ -22,6 +22,7 @@ import {
   isNamedBoardPreset,
   type NamedBoardPreset
 } from "../named-board-presets"
+import { suggestBoardKey, validateBoardKey } from "../board-key"
 
 export type BoardActor = { kind: VerifiedPrincipal["kind"]; id: string }
 export type BoardRole = "owner" | "member" | "viewer" | "service"
@@ -121,25 +122,62 @@ export class NamedBoardRepository {
   }
 
   /** The caller verifies that the creator is the current active Home Assistant user. */
-  async create(owner: VerifiedPrincipal, name: string, preset?: NamedBoardPreset) {
+  async create(
+    owner: VerifiedPrincipal,
+    name: string,
+    preset?: NamedBoardPreset,
+    requestedPrefix?: string
+  ) {
     if (preset !== undefined && !isNamedBoardPreset(preset))
       throw new Error("Choose an available Board preset.")
     const labels = preset === undefined ? undefined : NAMED_BOARD_PRESETS[preset]
     if (!["ha_user", "local_operator"].includes(owner.kind) || !principalProof(owner))
       return { status: "locked" } as const
+    const explicitKey = requestedPrefix !== undefined && requestedPrefix.trim().length > 0
+    let validatedKey: string | undefined
+    if (explicitKey) {
+      const check = validateBoardKey(requestedPrefix)
+      if (!check.ok) throw new Error(check.error)
+      validatedKey = check.key
+    }
     const boardId = randomUUID()
     return changeBoardGrants(
       this.db,
       owner,
       async (tx) => {
         if (!principalProof(owner)) throw new Error("Current Board creator proof expired")
+        let resolvedPrefix = validatedKey
+        if (resolvedPrefix) {
+          const { rows: existing } = await tx.execute({
+            sql: "SELECT 1 FROM task_boards WHERE UPPER(ticket_prefix) = ? LIMIT 1",
+            args: [resolvedPrefix]
+          })
+          if (existing.length > 0) return { unchanged: "duplicate-key" as const }
+        } else {
+          const base = suggestBoardKey(name)
+          const candidates = [base]
+          for (let suffix = 2; suffix <= 9; suffix++) {
+            candidates.push(`${base.slice(0, 9)}${suffix}`)
+          }
+          for (const candidate of candidates) {
+            const { rows: existing } = await tx.execute({
+              sql: "SELECT 1 FROM task_boards WHERE UPPER(ticket_prefix) = ? LIMIT 1",
+              args: [candidate]
+            })
+            if (existing.length === 0) {
+              resolvedPrefix = candidate
+              break
+            }
+          }
+          resolvedPrefix ??= boardTicketPrefix()
+        }
         const now = Date.now()
         await tx.batch([
           {
             sql: `INSERT INTO task_boards
             (id, name, visibility, ticket_prefix, created_at, updated_at)
             VALUES (?, ?, 'restricted', ?, ?, ?)`,
-            args: [boardId, name, boardTicketPrefix(), now, now]
+            args: [boardId, name, resolvedPrefix, now, now]
           },
           {
             sql: "INSERT INTO board_permissions (board_id) VALUES (?)",
@@ -166,7 +204,7 @@ export class NamedBoardRepository {
             ]
           }))
         ])
-        return { next: { id: boardId } }
+        return { next: { id: boardId, ticketPrefix: resolvedPrefix } }
       },
       this.markerPath
     )
@@ -214,6 +252,61 @@ export class NamedBoardRepository {
           sql: "UPDATE task_boards SET name = ?, revision = revision + 1, updated_at = ? WHERE id = ?",
           args: [name, Date.now(), id]
         })
+        return { next: "saved" as const }
+      },
+      this.markerPath
+    )
+  }
+
+  async updateTicketPrefix(
+    actor: VerifiedPrincipal,
+    id: string,
+    rawPrefix: string,
+    expected: number
+  ) {
+    const check = validateBoardKey(rawPrefix)
+    if (!check.ok) return { status: "unchanged", result: "invalid" as const, error: check.error }
+    const nextPrefix = check.key
+    return changeBoardGrants(
+      this.db,
+      actor,
+      async (tx, epoch) => {
+        const owner = await this.getOwner(tx, actor, id, epoch)
+        if (!owner) return { unchanged: "unavailable" as const }
+        if (owner.revision !== expected) return { unchanged: "stale" as const }
+        if (owner.ticketPrefix.toUpperCase() === nextPrefix) return { unchanged: "saved" as const }
+        const { rows: conflicts } = await tx.execute({
+          sql: "SELECT 1 FROM task_boards WHERE id <> ? AND UPPER(ticket_prefix) = ? LIMIT 1",
+          args: [id, nextPrefix]
+        })
+        if (conflicts.length > 0) return { unchanged: "duplicate-key" as const }
+        const {
+          rows: [boardRow]
+        } = await tx.execute({
+          sql: "SELECT storage_encoding FROM task_boards WHERE id = ?",
+          args: [id]
+        })
+        const isLegacy = String(boardRow?.storage_encoding ?? "") === "legacy_null_v1"
+        const now = Date.now()
+        await tx.batch([
+          {
+            sql: "UPDATE task_boards SET ticket_prefix = ?, revision = revision + 1, updated_at = ? WHERE id = ?",
+            args: [nextPrefix, now, id]
+          },
+          isLegacy
+            ? {
+                sql: `UPDATE tasks
+                  SET ticket_ref = ? || '-' || ticket_number
+                  WHERE task_board_id IS NULL AND ticket_number IS NOT NULL AND ticket_ref IS NOT NULL`,
+                args: [nextPrefix]
+              }
+            : {
+                sql: `UPDATE tasks
+                  SET ticket_ref = ? || substr(ticket_ref, instr(ticket_ref, '-'))
+                  WHERE task_board_id = ? AND ticket_ref IS NOT NULL AND instr(ticket_ref, '-') > 0`,
+                args: [nextPrefix, id]
+              }
+        ])
         return { next: "saved" as const }
       },
       this.markerPath

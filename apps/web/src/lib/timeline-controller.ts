@@ -7,6 +7,7 @@ import { getSelectedAreaId, initAreaSelector } from "@lib/area-selector-controll
 import { hasPriorityOverlay } from "@lib/layout-shortcuts-controller"
 import { isDisabledCharacterShortcut } from "@lib/single-key-shortcuts"
 import { createClientLogger } from "@lib/client-logger"
+import { showToast } from "@lib/toast"
 import { FieldPickerPanel, TASK_FIELD_DEFS, loadVisibleFields } from "./field-picker-panel"
 import { loadFilterState } from "./filter-state"
 import { isDoneStatus as isComplete, normalizeStatus } from "./status-config"
@@ -318,35 +319,6 @@ function svgEl<K extends keyof SVGElementTagNameMap>(
   return el
 }
 
-// ── Toast Helper ───────────────────────────────────────────────────────────
-
-// M3: Track toast timers for cleanup on abort
-let toastTimers: ReturnType<typeof setTimeout>[] = []
-
-function showToast(message: string, type: "success" | "error" = "success") {
-  const existing = document.querySelector(".gantt-toast")
-  if (existing) existing.remove()
-
-  const toast = document.createElement("div")
-  toast.className = `gantt-toast gantt-toast--${type}`
-  toast.textContent = message
-  document.body.appendChild(toast)
-
-  requestAnimationFrame(() => toast.classList.add("gantt-toast--visible"))
-  const hideTimer = setTimeout(() => {
-    toast.classList.remove("gantt-toast--visible")
-    const removeTimer = setTimeout(() => toast.remove(), 300)
-    toastTimers.push(removeTimer)
-  }, 2500)
-  toastTimers.push(hideTimer)
-}
-
-function clearToastTimers() {
-  toastTimers.forEach(t => clearTimeout(t))
-  toastTimers = []
-  document.querySelectorAll(".gantt-toast").forEach(t => t.remove())
-}
-
 // ── PATCH Helper ───────────────────────────────────────────────────────────
 
 let timelineSignal: AbortSignal | undefined
@@ -442,7 +414,11 @@ function mapTasks(tasks: TimelineTask[]): MapTasksResult {
       }
     }
 
-    const ticketPrefix = t.ticket_number ? `MTH-${t.ticket_number} ` : ""
+    const resolvedKey =
+      (t as { ticket_key?: string | null; ticket_ref?: string | null }).ticket_key ||
+      (t as { ticket_ref?: string | null }).ticket_ref ||
+      (t.ticket_number ? `MTH-${t.ticket_number}` : "")
+    const ticketPrefix = resolvedKey ? `${resolvedKey} ` : ""
     const name = `${ticketPrefix}${t.title}`
     const isMilestone = startStr === endStr
 
@@ -1664,7 +1640,11 @@ function renderGantt(
     if (dRow.kind === "unscheduled") {
       const ut = dRow.task
       const ui = dRow.unscheduledIndex
-      const ticketPrefix = ut.ticket_number ? `MTH-${ut.ticket_number} ` : ""
+      const utKey =
+        (ut as { ticket_key?: string | null; ticket_ref?: string | null }).ticket_key ||
+        (ut as { ticket_ref?: string | null }).ticket_ref ||
+        (ut.ticket_number ? `MTH-${ut.ticket_number}` : "")
+      const ticketPrefix = utKey ? `${utKey} ` : ""
       const utName = `${ticketPrefix}${ut.title}`
       const utRow = document.createElement("div")
       utRow.className = `gantt-sidebar-row gantt-sidebar-row--unscheduled${activeFocusedTaskId === ut.id ? " gantt-sidebar-row--focused" : ""}`
@@ -1716,7 +1696,7 @@ function renderGantt(
               const overdue = !complete && date < startOfDay(new Date())
               bars.push({
                 id: ut.id,
-                name: `${ut.ticket_number ? `MTH-${ut.ticket_number} ` : ""}${ut.title}`,
+                name: `${utKey ? `${utKey} ` : ""}${ut.title}`,
                 start: date,
                 end: date,
                 progress: Number(ut.progress ?? 0),
@@ -1806,7 +1786,7 @@ function renderGantt(
           const overdue = !complete && clickedDate < startOfDay(new Date())
           bars.push({
             id: ut.id,
-            name: `${ut.ticket_number ? `MTH-${ut.ticket_number} ` : ""}${ut.title}`,
+            name: `${utKey ? `${utKey} ` : ""}${ut.title}`,
             start: clickedDate,
             end: clickedDate,
             progress: Number(ut.progress ?? 0),
@@ -1951,7 +1931,8 @@ function renderGantt(
         cell.textContent = statusLabel(bar.original.status)
         cell.style.color = bar.isComplete ? "var(--accent-success, #10b981)" : "var(--text-muted)"
       } else if (fieldId === "ticket_number") {
-        cell.textContent = bar.original.ticket_number ? `MTH-${bar.original.ticket_number}` : "—"
+        const orig = bar.original as { ticket_key?: string | null; ticket_ref?: string | null; ticket_number?: number | null }
+        cell.textContent = orig.ticket_key || orig.ticket_ref || (orig.ticket_number ? `MTH-${orig.ticket_number}` : "—")
         cell.style.color = "var(--text-muted)"
       } else if (fieldId === "progress") {
         cell.textContent = `${bar.progress}%`
@@ -3128,6 +3109,5 @@ export function initTimelineController(signal: AbortSignal) {
     delete container.dataset.timelineReady
     container.replaceChildren()
     hideTooltip()
-    clearToastTimers() // M3: Clean up toast timers
   })
 }

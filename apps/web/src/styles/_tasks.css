@@ -333,13 +333,28 @@
   pointer-events: none;
 }
 
-/* Filled task surfaces share the same color precedence across list and card views. */
+/* Filled task surfaces share the same color precedence across list and card views in every theme. */
+:is(.tli, .focus-card, .kanban-card, .bento-card, .task-item, .dashboard-task-card)[data-task-color] {
+  background-color: color-mix(in srgb, var(--knight-task-color) 22%, var(--bg-card));
+  border-color: color-mix(in srgb, var(--knight-task-color) 55%, var(--border));
+  border-inline-start-color: var(--knight-task-color);
+}
+
+:is(.tli, .focus-card, .kanban-card, .bento-card, .task-item, .dashboard-task-card)[data-task-color]:hover {
+  background-color: color-mix(in srgb, var(--knight-task-color) 28%, var(--bg-card));
+  border-color: color-mix(in srgb, var(--knight-task-color) 75%, var(--border));
+}
+
+:is([data-theme="light"], [data-theme="auto"][data-ha-theme="light"]) :is(.tli, .focus-card, .kanban-card, .bento-card, .task-item, .dashboard-task-card)[data-task-color] {
+  background-color: color-mix(in srgb, var(--knight-task-color) 16%, var(--bg-card));
+}
+
 :root[data-theme="knight-rider"] .dashboard-task-card[data-task-color] {
   border-left: 1px solid var(--border);
 }
 
 :root[data-theme="knight-rider"] :is(.tli, .focus-card, .kanban-card, .bento-card, .task-item)[data-task-color] {
-  --knight-selected-task-fill: color-mix(in srgb, var(--knight-task-color) 13%, var(--bg-secondary));
+  --knight-selected-task-fill: color-mix(in srgb, var(--knight-task-color) 20%, var(--bg-secondary));
   background-color: var(--knight-selected-task-fill);
   --knight-tinted-task-muted-rgb: var(--text-secondary-rgb);
   --text-muted-rgb: var(--knight-tinted-task-muted-rgb);
@@ -353,7 +368,6 @@
   --text-muted-rgb: var(--knight-tinted-task-muted-rgb, var(--knight-task-muted-rgb));
   --text-muted: rgb(var(--text-muted-rgb));
 }
-
 
 :root[data-theme="knight-rider"] .tli__custom-chip {
   color: var(--accent-text);

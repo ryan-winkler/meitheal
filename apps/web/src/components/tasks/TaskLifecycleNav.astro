@@ -1,0 +1,54 @@
+---
+import Icon from "../ui/Icon.astro"
+import { t, type Locale } from "../../i18n/translations"
+
+interface Props {
+  active: "deferred" | "inactivity"
+  boardHref: string
+  boardId: string
+  area: string
+  locale: Locale
+  deferredCount?: number
+}
+
+const { active, boardHref, boardId, area, locale, deferredCount } = Astro.props
+const params = new URLSearchParams()
+if (boardId && boardId !== "household") params.set("board_id", boardId)
+if (area) params.set("area", area)
+const query = params.size ? `?${params}` : ""
+const deferredHref = `/deferred${query}`
+const inactivityHref = `/inactivity${query}`
+---
+
+<nav class="work-queue-tabs" aria-label="Task lifecycle views">
+  <a
+    href={boardHref}
+    class="work-queue-tab"
+    data-inactivity-back={active === "inactivity" ? "" : undefined}
+    data-astro-prefetch="false"
+  >
+    <Icon name="layout-kanban" size={16} sprite />
+    <span>{t("deferral.back", locale)}</span>
+  </a>
+  <a
+    href={deferredHref}
+    class={`work-queue-tab${active === "deferred" ? " is-active" : ""}`}
+    aria-current={active === "deferred" ? "page" : undefined}
+    data-astro-prefetch="false"
+  >
+    <Icon name="clock" size={16} sprite />
+    <span>{t("deferral.title", locale)}</span>
+    {typeof deferredCount === "number" && deferredCount > 0 && (
+      <span class="work-queue-tab__badge">{deferredCount}</span>
+    )}
+  </a>
+  <a
+    href={inactivityHref}
+    class={`work-queue-tab${active === "inactivity" ? " is-active" : ""}`}
+    aria-current={active === "inactivity" ? "page" : undefined}
+    data-astro-prefetch="false"
+  >
+    <Icon name="alert-triangle" size={16} sprite />
+    <span>{t("inactivity.title", locale)}</span>
+  </a>
+</nav>

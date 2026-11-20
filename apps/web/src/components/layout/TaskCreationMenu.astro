@@ -314,7 +314,12 @@ const { id, variant, enabled = true } = Astro.props
         const capture = target?.closest<HTMLButtonElement>("[data-create-task-kind]")
         if (!capture) return
         const kind = capture.dataset.createTaskKind
-        if (kind === "standard_action" || kind === "shopping_item" || kind === "checklist" || kind === "calendar_event") {
+        if (kind === "quick_capture") {
+          close(options.contains(capture))
+          void import("../../lib/preferred-quick-add")
+            .then(({ openQuickAdd }) => openQuickAdd(capture, signal))
+            .catch(() => { if (!signal.aborted) window.openNewTaskModal?.() })
+        } else if (kind === "standard_action" || kind === "shopping_item" || kind === "checklist" || kind === "calendar_event") {
           close(options.contains(capture))
           window.openNewTaskModal?.(kind)
         }

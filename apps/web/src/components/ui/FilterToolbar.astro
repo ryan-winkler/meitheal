@@ -325,12 +325,12 @@ const groupOptions = groupByOptions ?? defaultGroupByOptions
   {(view === "kanban" || view === "calendar") && (
     <button
       type="button"
-      class:list={["filter-pill", { "filter-pill--active": Astro.url.searchParams.get("promoted") === "1" }]}
+      class:list={["filter-pill", "filter-pill--promoted", { "filter-pill--active": Astro.url.searchParams.get("promoted") === "1" }]}
       data-filter-promoted
       title={t("kanban.promoted_filter_hint", locale)}
       aria-pressed={Astro.url.searchParams.get("promoted") === "1" ? "true" : "false"}
     >
-      <Icon name="rocket" size={14} />
+      <Icon name="star" size={14} />
       <span class="filter-pill__label">{t("kanban.promoted_only", locale)}</span>
     </button>
   )}

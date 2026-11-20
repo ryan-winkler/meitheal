@@ -118,6 +118,9 @@ export const CANONICAL_TABLER_ICONS = [
   "arrow-down",
   "arrows-maximize",
   "arrows-minimize",
+  "eye",
+  "eye-off",
+  "dots-vertical",
 ]
 
 /**
@@ -141,9 +144,14 @@ export const CLIENT_DYNAMIC_TABLER_ICONS = [
   "chevron-down",
   "clipboard-list",
   "clock",
+  "device-mobile",
+  "dots-vertical",
+  "eye",
+  "eye-off",
   "file-text",
   "flame",
   "folder",
+  "grip-vertical",
   "hash",
   "home",
   "inbox",

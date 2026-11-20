@@ -7,102 +7,47 @@
  * Bounded context: lib (shared UI utility)
  */
 
-import { mountDialogOverlay } from "./dialog-overlay"
+import { dialogText, openManagedDialog } from "./dialog-overlay"
 import { copyToClipboard } from "./clipboard"
 
 export interface ConfirmOptions {
-  title?: string;
-  message: string;
-  details?: readonly string[];
-  confirmText?: string;
+  title?: string
+  message: string
+  details?: readonly string[]
+  confirmText?: string
   /** A validated HTTP(S) destination opened by a native link click. */
-  confirmUrl?: URL;
+  confirmUrl?: URL
   copyPrompt?: { text: string; label: string; success: string; failure: string }
-  cancelText?: string;
-  variant?: "danger" | "warning" | "default";
-  signal?: AbortSignal;
+  cancelText?: string
+  variant?: "danger" | "warning" | "default"
+  signal?: AbortSignal
 }
 
-let dismissCurrent: (() => void) | undefined
-
 export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
-  if (options.signal?.aborted) return Promise.resolve(false);
+  if (options.signal?.aborted) return Promise.resolve(false)
   if (options.confirmUrl && !["http:", "https:"].includes(options.confirmUrl.protocol)) return Promise.resolve(false)
   return new Promise((resolve) => {
-    dismissCurrent?.()
-
-    const variant = options.variant ?? "default";
-    const accentColor =
-      variant === "danger"
-        ? "#dc2626"
-        : variant === "warning"
-          ? "var(--warning, #f0b86d)"
-          : "var(--accent, #69e3b2)";
-    const accentTextColor =
-      variant === "danger"
-        ? "#ffffff"
-        : variant === "warning"
-          ? "var(--on-warning, #161108)"
-          : "var(--personal-accent-foreground, var(--palette-on-accent, #07140f))";
-
-    const overlay = document.createElement("div");
-    overlay.id = "meitheal-confirm-overlay";
-    overlay.setAttribute("role", "alertdialog");
-    overlay.setAttribute("aria-modal", "true");
-    overlay.setAttribute("aria-labelledby", "confirm-title");
-    overlay.setAttribute("aria-describedby", "confirm-message");
-    overlay.style.cssText = `
-      position: fixed; inset: 0; z-index: 9999;
-      display: flex; align-items: center; justify-content: center;
-      background: rgba(0, 0, 0, 0.62);
-      animation: confirmFadeIn 0.15s ease-out;
-    `;
-
-    const dialog = document.createElement("div");
-    dialog.style.cssText = `
-      background: var(--bg-card, #171a18); border: 1px solid var(--border, #344039);
-      border-radius: 12px; padding: 24px; max-width: 420px; width: 90%;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-      animation: confirmSlideIn 0.15s ease-out;
-    `;
-
-    const icon =
-      variant === "danger" ? "🗑️" : variant === "warning" ? "⚠️" : "❓";
+    const variant = options.variant ?? "default"
+    const dialog = document.createElement("div")
+    dialog.className = "m-dialog-card"
+    dialog.dataset.variant = variant
+    const icon = variant === "danger" ? "🗑️" : variant === "warning" ? "⚠️" : "❓"
 
     dialog.innerHTML = `
-      <div data-confirm-icon style="font-size: 32px; text-align: center; margin-bottom: 16px;"></div>
-      <h3 id="confirm-title" style="
-        margin: 0 0 8px; font-size: 16px; font-weight: 600;
-        color: var(--text-primary, #f1f5f9); text-align: center;
-      "></h3>
-      <p id="confirm-message" style="
-        margin: 0 0 24px; font-size: 14px; line-height: 1.5;
-        color: var(--text-secondary, #94a3b8); text-align: center; overflow-wrap: anywhere;
-      "></p>
-      <ul id="confirm-details" hidden style="
-        margin: 0 0 24px; padding-inline-start: 20px; max-block-size: 40vh;
-        overflow: auto; overflow-wrap: anywhere; color: var(--text-secondary, #94a3b8);
-      "></ul>
-      <p id="confirm-copy-status" role="status" hidden style="margin: 0 0 12px; color: var(--text-secondary);"></p>
-      <div style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;">
-        <button type="button" id="confirm-cancel" style="
-          padding: 8px 20px; border-radius: 8px; font-size: 14px; cursor: pointer;
-          background: transparent; border: 1px solid var(--border, #344039);
-          color: var(--text-secondary, #94a3b8);
-          transition: background 0.15s, border-color 0.15s;
-        "></button>
-        <button type="button" id="confirm-ok" style="
-          padding: 8px 20px; border-radius: 8px; font-size: 14px; cursor: pointer;
-          background: var(--accent); border: 1px solid var(--accent);
-          color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f)); font-weight: 500;
-          transition: opacity 0.15s;
-        "></button>
+      <div data-confirm-icon aria-hidden="true" style="font-size: 32px; text-align: center; margin-bottom: 16px;"></div>
+      <h3 id="confirm-title" class="m-dialog-title"></h3>
+      <p id="confirm-message" class="m-dialog-message"></p>
+      <ul id="confirm-details" hidden></ul>
+      <p id="confirm-copy-status" role="status" hidden></p>
+      <div class="m-dialog-actions">
+        <button type="button" id="confirm-cancel" class="m-dialog-btn m-dialog-btn--secondary"></button>
+        <button type="button" id="confirm-ok" class="m-dialog-btn m-dialog-btn--primary"></button>
       </div>
-    `;
+    `
 
     // Dialog options are plain text, including values read back from DOM labels.
     dialog.querySelector<HTMLElement>("[data-confirm-icon]")!.textContent = icon
-    dialog.querySelector<HTMLElement>("#confirm-title")!.textContent = options.title ?? "Confirm"
+    dialog.querySelector<HTMLElement>("#confirm-title")!.textContent = options.title ?? dialogText("common.confirm", "Confirm")
     dialog.querySelector<HTMLElement>("#confirm-message")!.textContent = options.message
     const details = dialog.querySelector<HTMLElement>("#confirm-details")!
     for (const text of options.details ?? []) {
@@ -110,10 +55,12 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
       item.textContent = text
       details.appendChild(item)
     }
+    let describedBy = "confirm-message"
     if (details.childElementCount) {
       details.hidden = false
-      overlay.setAttribute("aria-describedby", "confirm-message confirm-details")
+      describedBy = "confirm-message confirm-details"
     }
+
     const cancelBtn = dialog.querySelector<HTMLButtonElement>("#confirm-cancel")!
     let okBtn: HTMLButtonElement | HTMLAnchorElement = dialog.querySelector<HTMLButtonElement>("#confirm-ok")!
     const copyPrompt = options.copyPrompt
@@ -121,141 +68,64 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
     const copyBtn = copyPrompt ? document.createElement("button") : undefined
     if (copyBtn && copyPrompt) {
       copyBtn.type = "button"
-      copyBtn.style.cssText = cancelBtn.style.cssText
+      copyBtn.className = "m-dialog-btn m-dialog-btn--secondary"
       copyBtn.textContent = copyPrompt.label
       cancelBtn.after(copyBtn)
     }
     if (options.confirmUrl) {
       const link = document.createElement("a")
       link.id = okBtn.id
-      link.style.cssText = okBtn.style.cssText
-      link.style.textDecoration = "none"
+      link.className = "m-dialog-btn m-dialog-btn--primary"
       link.href = options.confirmUrl.href
       link.target = "_blank"
       link.rel = "noopener noreferrer"
       okBtn.replaceWith(link)
       okBtn = link
     }
-    cancelBtn.textContent = options.cancelText ?? "Cancel"
-    okBtn.textContent = options.confirmText ?? "Confirm"
-    okBtn.style.background = accentColor
-    okBtn.style.borderColor = accentColor
-    okBtn.style.color = accentTextColor
+    cancelBtn.textContent = options.cancelText ?? dialogText("common.cancel", "Cancel")
+    okBtn.textContent = options.confirmText ?? dialogText("common.confirm", "Confirm")
 
-    overlay.appendChild(dialog);
-
-
-    // Save previously focused element for restoration
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    mountDialogOverlay(overlay)
+    const { signal, isSettled, close } = openManagedDialog<boolean>({
+      id: "meitheal-confirm-overlay",
+      role: "alertdialog",
+      labelledBy: "confirm-title",
+      describedBy,
+      dialog,
+      cancelValue: false,
+      signal: options.signal,
+      resolve,
+      onBeforeClose: (result) => {
+        if (!result && okBtn instanceof HTMLAnchorElement) okBtn.removeAttribute("href")
+      },
+    })
 
     // Focus the cancel button by default (safer)
-    cancelBtn?.focus();
+    cancelBtn.focus()
 
-    let settled = false
-    let removeTimer: number | undefined
-    const listeners = new AbortController()
-    const abort = () => cleanup(false, true)
-    const dismiss = () => cleanup(false, true, false)
-    dismissCurrent = dismiss
-    function cleanup(result: boolean, immediate = false, restoreFocus = true) {
-      function remove() {
-        window.clearTimeout(removeTimer)
-        listeners.abort()
-        overlay.remove()
-        if (dismissCurrent === dismiss) dismissCurrent = undefined
-        if (restoreFocus && !options.signal?.aborted && previouslyFocused?.isConnected) previouslyFocused.focus()
-      }
-      if (settled) {
-        if (immediate) remove()
-        return
-      }
-      settled = true
-      overlay.style.opacity = "0"
-      overlay.style.pointerEvents = "none"
-      if (!result && okBtn instanceof HTMLAnchorElement) okBtn.removeAttribute("href")
-      if (immediate) remove()
-      else removeTimer = window.setTimeout(remove, 100)
-      resolve(result)
-    }
-
-    cancelBtn?.addEventListener("click", () => cleanup(false), { signal: listeners.signal })
-    okBtn?.addEventListener("click", (event) => {
-      if (settled || options.signal?.aborted) {
+    cancelBtn.addEventListener("click", () => close(false), { signal })
+    okBtn.addEventListener("click", (event) => {
+      if (isSettled() || options.signal?.aborted) {
         event.preventDefault()
         return
       }
-      cleanup(true)
-    }, { signal: listeners.signal })
+      // Keep external target="_blank" anchor mounted briefly so the browser initiates navigation before removal.
+      close(true, !(okBtn instanceof HTMLAnchorElement))
+    }, { signal })
     if (copyBtn && copyPrompt) {
       copyBtn.addEventListener("click", async () => {
-        if (settled || options.signal?.aborted || copyBtn.getAttribute("aria-busy") === "true") return
+        if (isSettled() || options.signal?.aborted || copyBtn.getAttribute("aria-busy") === "true") return
         copyBtn.setAttribute("aria-busy", "true")
         const copied = await copyToClipboard(copyPrompt.text)
-        if (settled || options.signal?.aborted) return
+        if (isSettled() || options.signal?.aborted) return
+        copyStatus.textContent = ""
         copyStatus.hidden = false
-        copyStatus.textContent = copied ? copyPrompt.success : copyPrompt.failure
+        requestAnimationFrame(() => {
+          if (!isSettled() && !options.signal?.aborted && copyStatus.isConnected) {
+            copyStatus.textContent = copied ? copyPrompt.success : copyPrompt.failure
+          }
+        })
         copyBtn.removeAttribute("aria-busy")
-      }, { signal: listeners.signal })
+      }, { signal })
     }
-    overlay.addEventListener("click", (e) => {
-      if (e.target === overlay) cleanup(false);
-    }, { signal: listeners.signal })
-    // Let the buttons handle native activation while keeping app shortcuts outside.
-    overlay.addEventListener(
-      "keydown",
-      (event) => event.stopPropagation(),
-      { signal: listeners.signal },
-    );
-
-    // Escape cancels and Tab keeps focus in the dialog.
-    const focusable = copyBtn ? [cancelBtn, copyBtn, okBtn] : [cancelBtn, okBtn]
-    function onKey(e: KeyboardEvent) {
-      if (settled) {
-        if (e.key === "Escape") {
-          e.preventDefault()
-          e.stopPropagation()
-        }
-        return
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        cleanup(false);
-      } else if (e.key === "Tab" && focusable.length > 0) {
-        // Focus trap — cycle between cancel and confirm
-        const idx = focusable.indexOf(document.activeElement as HTMLButtonElement | HTMLAnchorElement);
-        if (e.shiftKey) {
-          e.preventDefault();
-          focusable[idx <= 0 ? focusable.length - 1 : idx - 1]?.focus();
-        } else {
-          e.preventDefault();
-          focusable[idx >= focusable.length - 1 ? 0 : idx + 1]?.focus();
-        }
-      }
-    }
-    document.addEventListener("keydown", onKey, { capture: true, signal: listeners.signal })
-    options.signal?.addEventListener("abort", abort, { once: true, signal: listeners.signal })
-  });
-}
-
-// Inject keyframe animation styles (once)
-if (typeof document !== "undefined" && !document.getElementById("confirm-dialog-styles")) {
-  const style = document.createElement("style");
-  style.id = "confirm-dialog-styles";
-  style.textContent = `
-    @keyframes confirmFadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-    @keyframes confirmSlideIn {
-      from { opacity: 0; transform: scale(0.95) translateY(-10px); }
-      to { opacity: 1; transform: scale(1) translateY(0); }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      @keyframes confirmFadeIn { from { opacity: 1; } to { opacity: 1; } }
-      @keyframes confirmSlideIn { from { opacity: 1; } to { opacity: 1; } }
-    }
-  `;
-  document.head.appendChild(style);
+  })
 }

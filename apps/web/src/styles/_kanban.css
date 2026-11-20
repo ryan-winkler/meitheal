@@ -5,22 +5,135 @@
  * Owns: .kanban-board, .kanban-column, .kanban-card, .drag-over, .lane-*
  * Does NOT own: task items (_tasks.css), generic cards (_cards.css)
  * ============================================= */
-/* --- Kanban board --- */
+/* --- Kanban board & intuitive desktop horizontal scroll --- */
+.kanban-scroll-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.kanban-scroll-wrap::before,
+.kanban-scroll-wrap::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 16px;
+  width: 36px;
+  pointer-events: none;
+  z-index: 8;
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+.kanban-scroll-wrap::before {
+  inset-inline-start: 0;
+  background: linear-gradient(90deg, var(--bg-primary) 0%, transparent 100%);
+}
+
+.kanban-scroll-wrap::after {
+  inset-inline-end: 0;
+  background: linear-gradient(270deg, var(--bg-primary) 0%, transparent 100%);
+}
+
+.kanban-scroll-wrap[data-scroll-left="true"]::before {
+  opacity: 1;
+}
+
+.kanban-scroll-wrap[data-scroll-right="true"]::after {
+  opacity: 1;
+}
+
+.kanban-scroll-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 12;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-card) 94%, transparent);
+  color: var(--text-primary);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.24);
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.kanban-scroll-btn[hidden] {
+  display: none;
+}
+
+.kanban-scroll-btn--left {
+  inset-inline-start: 8px;
+}
+
+.kanban-scroll-btn--right {
+  inset-inline-end: 8px;
+}
+
+.kanban-scroll-btn:hover,
+.kanban-scroll-btn:focus-visible {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: translateY(-50%) scale(1.06);
+}
+
+.kanban-scroll-btn:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.kanban-scroll-icon--left {
+  transform: rotate(90deg);
+}
+
+.kanban-scroll-icon--right {
+  transform: rotate(-90deg);
+}
+
+@media (max-width: 640px), (pointer: coarse) {
+  .kanban-scroll-btn {
+    display: none;
+  }
+}
+
 .kanban-board {
   @apply flex gap-4 overflow-x-auto pb-4 px-6 min-h-[60vh];
   max-height: calc(100dvh - 200px);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
   /* P0-2: Enable native touch scrolling in HA WebView iframe */
   -webkit-overflow-scrolling: touch;
   touch-action: pan-x pan-y;
-  /* P0-3: Promote to GPU compositing layer for smooth scroll */
-  /* will-change removed per research — static application wastes GPU memory */
 }
 
 .kanban-column {
-  @apply min-w-[260px] max-w-[300px] bg-bg-secondary rounded-lg border border-border flex flex-col;
+  @apply bg-bg-secondary rounded-lg border border-border flex flex-col;
+  min-width: 288px;
+  max-width: 340px;
+  flex: 1 0 288px;
   box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
   max-height: 100%;
   overflow: hidden;
+}
+
+@media (max-width: 640px) {
+  .kanban-board {
+    padding-inline: 12px;
+    gap: 12px;
+    scroll-snap-type: x proximity;
+    max-height: none;
+  }
+  .kanban-column {
+    min-width: min(85vw, 320px);
+    max-width: min(85vw, 320px);
+    scroll-snap-align: start;
+  }
 }
 
 /* Column top-border accent — matches status dot color */
@@ -101,8 +214,10 @@
 }
 
 .kanban-cards {
-  @apply flex flex-col gap-2 p-3 flex-1 min-h-[100px];
+  @apply flex flex-col gap-2.5 p-3 flex-1 min-h-[100px];
+  padding-top: 14px;
   overflow-y: auto;
+  overflow-x: visible;
   min-height: 0; /* Allow flex child to shrink below content size for scroll */
 }
 
@@ -127,11 +242,18 @@
   @apply bg-bg-card border border-border rounded-md p-3 cursor-grab shadow-sm relative;
   /* Cards keep their content height; the lane scrolls instead of squeezing them. */
   flex-shrink: 0;
+  content-visibility: auto;
+  contain-intrinsic-size: auto var(--kanban-card-block-size, 128px);
   transition:
     transform 0.15s ease,
     box-shadow 0.15s ease,
     border-color 0.15s ease,
     background-color 0.15s ease;
+}
+
+.kanban-card[data-promoted="true"] {
+  border-color: color-mix(in srgb, var(--tblr-yellow, #f59f00) 48%, var(--border));
+  box-shadow: 0 2px 10px -2px color-mix(in srgb, var(--tblr-yellow, #f59f00) 18%, transparent);
 }
 
 .kanban-card:hover {
@@ -142,22 +264,78 @@
   transform: translateY(-2px);
 }
 
-/* Drag handle grip indicator on hover */
+/* Subtle Tabler-inspired left accent grip line on hover (no braille glyph) */
 .kanban-card::before {
-  content: "⠿";
+  content: "";
   position: absolute;
-  left: 4px;
+  left: 3px;
   top: 50%;
+  width: 2px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--text-muted);
   transform: translateY(-50%);
-  font-size: 12px;
-  color: var(--text-muted);
   opacity: 0;
   transition: opacity 0.15s ease;
   pointer-events: none;
-  line-height: 1;
 }
-.kanban-card:hover::before { opacity: 0.5; }
+.kanban-card:hover::before { opacity: 0.35; }
 .kanban-card.dragging::before { opacity: 0; }
+
+/* Board & card async skeleton/loader states (Nielsen Visibility of System Status) */
+.kanban-board {
+  position: relative;
+}
+.kanban-board[aria-busy="true"]::after {
+  content: "";
+  position: sticky;
+  top: 0;
+  left: 0;
+  grid-column: 1 / -1;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--accent) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.2s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 20;
+}
+.kanban-board[aria-busy="true"] .kanban-card {
+  opacity: 0.65;
+  transition: opacity 150ms ease;
+}
+.kanban-card[aria-busy="true"] {
+  position: relative;
+  overflow: visible;
+  opacity: 0.78;
+}
+.kanban-card[aria-busy="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--accent) 8%, transparent) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.2s ease-in-out infinite;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .kanban-board[aria-busy="true"]::after,
+  .kanban-card[aria-busy="true"]::after {
+    animation: none;
+    opacity: 0.5;
+  }
+}
 
 /* Keyboard focus ring (accessibility) */
 .kanban-card:focus-visible {
@@ -230,14 +408,26 @@
   row-gap: 4px;
 }
 
+/* Tabler card-actions (.btn-action) aesthetic: crisp borderless icon targets */
 .card-action-btn {
-  @apply bg-bg-hover/80 border-none rounded px-1.5 py-0.5 cursor-pointer text-xs transition-colors;
-  transition: opacity 0.15s ease, background-color 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 1.75rem;
+  min-block-size: 1.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 140ms ease, background-color 140ms ease, opacity 140ms ease;
 }
 
-
-.card-action-btn:hover {
-  @apply bg-accent/20;
+.card-action-btn:hover,
+.card-action-btn:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 /* More actions and lane choice */

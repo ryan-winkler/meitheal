@@ -8,6 +8,7 @@ import ProjectWorkspace from "../../pages/projects/[id].astro"
 import BoardPlanning from "./BoardPlanning.astro"
 import BoardIntegrationDestinations from "./BoardIntegrationDestinations.astro"
 import BoardWorkspaceNav from "./BoardWorkspaceNav.astro"
+import Icon from "../ui/Icon.astro"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import Layout from "../../layouts/Layout.astro"
 import "../../styles/boards.css"
@@ -46,6 +47,7 @@ const fromArea = scope?.project && selection.fromArea === scope.area?.id ? scope
 const grouping = { area: scope?.project ? undefined : scope?.area?.id, project: scope?.project?.id, groups: selection.planning, fromArea }
 const title = scope?.project?.title ?? scope?.area?.name ?? view?.board.name ?? "Board"
 const nextAction = view?.summary?.next
+const availableNewMembers = user && view ? [...user.roster].filter(([id]) => !view.members.some(member => member.id === id)) : []
 ---
 {taskWorkspace ? <TaskWorkspace {boardId} {workScope} />
   : selection.projectId ? <ProjectWorkspace workspaceProjectId={selection.projectId} {boardId} {workScope} />
@@ -53,7 +55,15 @@ const nextAction = view?.summary?.next
   : <Layout title={label("board")} scopeGuard={false}>
   <span slot="page-title">{label("board")}</span>
   <div class="boards-workspace">
-    {!view || !boardId || !user ? <p role="status">This Board is unavailable. Reload to try again.</p> :
+    {!view || !boardId || !user ? (
+      <div class="board-empty-card board-empty-card--notice" role="status">
+        <div class="board-empty-card__icon">
+          <Icon name="alert-triangle" size={28} sprite />
+        </div>
+        <h2>This Board is unavailable</h2>
+        <p>Reload to try again or return to your <a href="/boards">Boards directory</a>.</p>
+      </div>
+    ) : (
       <div data-board-directory data-board-verify={verifyPath} data-board-key={boardViewKey(view, user.actor.id)}
         data-board-authority={boardAuthorityKey(view, user.actor.id)}
         data-board-session={boardSessionProof(user.actor.id)} data-board-id={boardId}
@@ -63,144 +73,265 @@ const nextAction = view?.summary?.next
           project={scope?.project ? { id: scope.project.id, name: scope.project.title } : undefined}
           {fromArea} active={readBoardPlanningSection(Astro.url.searchParams)}
           settingsHref={policy ? boardWorkspaceHref(boardId, { groups: true }, "settings") : undefined} />
-        <header class="boards-heading">
-          <div>
-            <h1>{title}</h1>
-            {scope?.project && <p class="board-note">Project status: {scope.project.status} · {view.summary?.count ?? 0} open
-              {nextAction ? <> · Next action: <a href={boardWorkspaceHref(boardId, { ticket: nextAction.id })}>{nextAction.title}</a></> : " · No next action"}
-            </p>}
-            {view.board.state === "archived" && <p>Archived Board</p>}
+        <header class="boards-heading boards-heading--workspace">
+          <div class="boards-heading__intro">
+            <div class="board-heading-row">
+              <h1>{title}</h1>
+              {!scope?.area && !scope?.project && (
+                <code class="board-key-code" title={`Tickets on this Board use ${view.board.ticketPrefix}-1`}>{view.board.ticketPrefix}</code>
+              )}
+              {view.board.state === "archived" && <span class="board-role-badge board-role-badge--muted">Archived Board</span>}
+            </div>
+            {scope?.project && (
+              <p class="board-note-plain">
+                Project status: <strong>{scope.project.status}</strong> · {view.summary?.count ?? 0} open
+                {nextAction ? <> · Next action: <a href={boardWorkspaceHref(boardId, { ticket: nextAction.id })} class="board-inline-link">{nextAction.title}</a></> : " · No next action"}
+              </p>
+            )}
           </div>
-          {canCreate && (!scope?.project || scope.project.status === "active") && <button type="button" class="btn btn-primary" data-board-new-task>{newLabel("task")}</button>}
+          {canCreate && (!scope?.project || scope.project.status === "active") && (
+            <button type="button" class="btn btn-primary" data-board-new-task>
+              <Icon name="plus" size={16} sprite />
+              <span>{newLabel("task")}</span>
+            </button>
+          )}
         </header>
 
-        {scope?.area && !scope.project && !selection.planning && <p>
-          <a href={boardWorkspaceHref(boardId, { area: scope.area.id, groups: true }, "projects")}>{label("project", true)} in {scope.area.name}</a>
-        </p>}
+        {scope?.area && !scope.project && !selection.planning && (
+          <p class="board-context-link">
+            <a href={boardWorkspaceHref(boardId, { area: scope.area.id, groups: true }, "projects")}>
+              <Icon name="folder" size={15} sprite />
+              <span>{label("project", true)} in {scope.area.name}</span>
+            </a>
+          </p>
+        )}
         {view.planning && <BoardPlanning {workScope} boardId={boardId} areaId={scope?.area?.id} projectId={scope?.project?.id} planning={view.planning} canManage={canManage && view.board.state === "active"} canComplete={Boolean(canComplete)} routinesEnabled={routinesEnabled} tickets={view.tasks} />}
-        {policy && !scope?.area && !scope?.project && !selection.ticketId && <details id="settings" class="named-boards board-settings">
-          <summary>{label("board")} settings</summary>
-          <div class="board-settings-grid">
-            <form data-board-form="rename" class="board-form">
-              <h2>Board name</h2>
-              <input type="hidden" name="revision" value={view.board.revision} />
-              <label>Name <input name="name" value={view.board.name} required maxlength="100" autocomplete="off" /></label>
-              <p class="board-note">Choose a name that fits your work, such as House, Work, or Church.</p>
-              <p role="status" aria-live="polite" data-board-feedback></p>
-              <button type="submit" class="btn btn-ghost">Save name</button>
-              <button type="button" class="btn btn-ghost" data-board-form-refresh hidden>Refresh Board</button>
-            </form>
-            <form data-board-form="sharing" class="board-form">
-              <h2>Visibility and sharing</h2>
-              <input type="hidden" name="revision" value={view.board.revision} />
-              <label>Who can access this Board? <select name="visibility">
-                <option value="restricted" selected={policy.visibility === "restricted"}>People you add</option>
-                <option value="shared" selected={policy.visibility === "shared"}>All active Home Assistant users</option>
-              </select></label>
-              <fieldset data-board-shared-settings hidden={policy.visibility !== "shared"}>
-                <legend>Access for Home Assistant users</legend>
-                <label>Default role <select name="sharedRole">
-                  <option value="viewer" selected={policy.sharedRole === "viewer"}>Viewer</option>
-                  <option value="member" selected={policy.sharedRole === "member"}>Member</option>
-                </select></label>
-                <label class="check"><input type="checkbox" name="sharedAdminManagement" checked={policy.sharedAdminManagement} /> Allow Home Assistant administrators to manage this Board</label>
-              </fieldset>
-              <p class="board-note">Viewers can read work. Members can create and update it, subject to ticket permissions. Manage individual roles below.</p>
-              <p role="status" aria-live="polite" data-board-feedback></p>
-              <button type="submit" class="btn btn-ghost">Save sharing</button>
-              <button type="button" class="btn btn-ghost" data-board-form-refresh hidden>Refresh Board</button>
-            </form>
-            <form data-board-form="policy" class="board-form">
-              <h2>Ticket permissions</h2>
-              <label class="check"><input type="checkbox" name="denyCompletion" checked={policy.denyCompletion} /> Block marking tickets done or reopening them</label>
-              <label class="check"><input type="checkbox" name="denyDeletion" checked={policy.denyDeletion} /> Block ticket deletion</label>
-              <label class="check"><input type="checkbox" name="denyAgentDeletion" checked={policy.denyAgentDeletion} /> Block deletion by agents</label>
-              <p role="status" data-board-feedback></p>
-              <button type="submit" class="btn btn-ghost">Save permissions</button>
-            </form>
-            <div>
-              <h2>People with access</h2>
-              {view.members.map(member => <form data-board-form="member" class="board-form board-member">
-                <h3>{user.roster.get(member.id) || "Inactive Home Assistant user"}</h3>
-                <input type="hidden" name="memberId" value={member.id} />
-                <label>Role <select name="role">
-                  <option value="viewer" selected={member.role === "viewer"}>Viewer</option>
-                  <option value="member" selected={member.role === "member"}>Member</option>
-                  <option value="owner" selected={member.role === "owner"}>Owner</option>
-                  <option value="remove">Remove access</option>
-                </select></label>
-                <label class="check"><input type="checkbox" name="denyCompletion" checked={member.denyCompletion} /> Block marking done</label>
-                <label class="check"><input type="checkbox" name="denyDeletion" checked={member.denyDeletion} /> Block deletion</label>
-                <p role="status" data-board-feedback></p>
-                <button type="submit" class="btn btn-ghost">Save access</button>
-              </form>)}
-              <form data-board-form="member" class="board-form board-member">
-                <label>Add a person <select name="memberId" required>
-                  <option value="">Choose a person</option>
-                  {[...user.roster].filter(([id]) => !view.members.some(member => member.id === id)).map(([id, name]) => <option value={id}>{name}</option>)}
-                </select></label>
-                <label>Role <select name="role"><option value="viewer">Viewer</option><option value="member">Member</option><option value="owner">Owner</option></select></label>
-                <p role="status" data-board-feedback></p>
-                <button type="submit" class="btn btn-ghost">Add person</button>
+        {policy && !scope?.area && !scope?.project && !selection.ticketId && (
+          <details id="settings" class="named-boards board-settings board-settings-shell board-disclosure">
+            <summary class="board-disclosure__summary board-section-summary">
+              <Icon name="settings" size={18} sprite />
+              <span>{label("board")} settings</span>
+              <Icon name="chevron-down" size={16} class="board-disclosure__chevron" sprite />
+            </summary>
+            <div class="board-settings-grid">
+              <form data-board-form="rename" class="board-form board-settings-card">
+                <div class="board-settings-card__head">
+                  <Icon name="pencil" size={16} sprite />
+                  <h2>Board name</h2>
+                </div>
+                <input type="hidden" name="revision" value={view.board.revision} />
+                <label>Name <input name="name" value={view.board.name} required maxlength="100" autocomplete="off" /></label>
+                <p class="board-note-plain">Choose a name that fits your work, such as House, Work, or Garden.</p>
+                <p role="status" aria-live="polite" data-board-feedback class="board-feedback"></p>
+                <div class="board-form-actions">
+                  <button type="submit" class="btn btn-secondary btn-sm">Save name</button>
+                  <button type="button" class="btn btn-ghost btn-sm" data-board-form-refresh hidden>Refresh Board</button>
+                </div>
               </form>
-            </div>
-            <section aria-labelledby="board-agent-settings">
-              <h2 id="board-agent-settings">Agent access</h2>
-              {view.agents.map(tokenId => <form data-board-form="agent" class="board-form board-member">
-                <span class="board-note">{tokenId}</span>
-                <input type="hidden" name="tokenId" value={tokenId} />
-                <input type="hidden" name="enabled" value="false" />
-                <p role="status" data-board-feedback></p>
-                <button type="submit" class="btn btn-ghost">Remove token access</button>
-              </form>)}
-              <form data-board-form="agent" class="board-form">
-                <label>Agent token ID <input name="tokenId" maxlength="36" autocomplete="off" required /></label>
-                <p class="board-note">Use the ID from Settings → Agent Tokens. The token needs task read access.</p>
-                <input type="hidden" name="enabled" value="true" />
-                <p role="status" data-board-feedback></p>
-                <button type="submit" class="btn btn-ghost">Grant token access</button>
+
+              <form data-board-form="ticket-prefix" class="board-form board-settings-card">
+                <div class="board-settings-card__head">
+                  <Icon name="hash" size={16} sprite />
+                  <h2>Board key</h2>
+                </div>
+                <input type="hidden" name="revision" value={view.board.revision} />
+                <input type="hidden" name="currentKey" value={view.board.ticketPrefix} />
+                <label>Ticket prefix
+                  <input
+                    name="ticketPrefix"
+                    value={view.board.ticketPrefix}
+                    required
+                    minlength="2"
+                    maxlength="10"
+                    autocomplete="off"
+                    spellcheck="false"
+                    class="board-key-input"
+                    data-board-key-input
+                  />
+                </label>
+                <p class="board-key-preview" data-board-key-preview>
+                  Tickets on this Board use <code>{view.board.ticketPrefix}-1</code>
+                </p>
+                <div class="board-key-warning" role="note">
+                  <Icon name="alert-triangle" size={16} sprite />
+                  <div>
+                    <strong>Changing this key may break historical links.</strong>
+                    <p>Every ticket on this Board updates to the new prefix (for example <code>{view.board.ticketPrefix}-30</code>). Saved bookmarks, shared URLs, and external automations or webhooks referencing the old key may stop working. Search updates immediately.</p>
+                  </div>
+                </div>
+                <p role="status" aria-live="polite" data-board-feedback class="board-feedback"></p>
+                <div class="board-form-actions">
+                  <button type="submit" class="btn btn-secondary btn-sm">Change Board key</button>
+                  <button type="button" class="btn btn-ghost btn-sm" data-board-form-refresh hidden>Refresh Board</button>
+                </div>
               </form>
-            </section>
-            <section aria-labelledby="board-intake-settings">
-              <h2 id="board-intake-settings">Send-only access</h2>
-              {view.intakes.map(intake => <form data-board-form="intake-toggle" class="board-form board-member">
-                <h3>{intake.label}</h3>
-                <span class="board-note">{intake.enabled ? "Accepting tasks" : "Closed"}</span>
-                <input type="hidden" name="id" value={intake.id} />
-                <input type="hidden" name="enabled" value={intake.enabled ? "false" : "true"} />
-                <p role="status" data-board-feedback></p>
-                <button type="submit" class="btn btn-ghost">{intake.enabled ? "Close destination" : "Reopen destination"}</button>
-              </form>)}
-              <form data-board-form="intake-create" class="board-form">
-                <label>Destination name <input name="label" maxlength="100" required /></label>
-                <label>Triage column <select name="laneId" required>
-                  {view.lanes.filter(lane => !isDoneStatus(lane.key)).map(lane => <option value={lane.id}>{lane.label}</option>)}
+
+              <form data-board-form="sharing" class="board-form board-settings-card">
+                <div class="board-settings-card__head">
+                  <Icon name="users" size={16} sprite />
+                  <h2>Visibility and sharing</h2>
+                </div>
+                <input type="hidden" name="revision" value={view.board.revision} />
+                <label>Who can access this Board? <select name="visibility">
+                  <option value="restricted" selected={policy.visibility === "restricted"}>People you add</option>
+                  <option value="shared" selected={policy.visibility === "shared"}>All active Home Assistant users</option>
                 </select></label>
-                <fieldset class="board-people"><legend>Allowed senders</legend>
-                  {[...user.roster].map(([id, name]) => <label class="check"><input type="checkbox" name="senderIds" value={id} /> {name}</label>)}
+                <fieldset data-board-shared-settings hidden={policy.visibility !== "shared"} class="board-fieldset">
+                  <legend>Access for Home Assistant users</legend>
+                  <label>Default role <select name="sharedRole">
+                    <option value="viewer" selected={policy.sharedRole === "viewer"}>Viewer</option>
+                    <option value="member" selected={policy.sharedRole === "member"}>Member</option>
+                  </select></label>
+                  <label class="check"><input type="checkbox" name="sharedAdminManagement" checked={policy.sharedAdminManagement} /> Allow Home Assistant administrators to manage this Board</label>
                 </fieldset>
-                <label>Allow assignment to <select name="recipientId">
-                  <option value="">No one</option>
-                  {view.members.filter(member => user.roster.has(member.id)).map(member => <option value={member.id}>{user.roster.get(member.id)}</option>)}
-                </select></label>
-                <p role="status" data-board-feedback></p>
-                <button type="submit" class="btn btn-ghost">Create destination</button>
+                <p class="board-note-plain">Viewers can read work. Members can create and update it, subject to ticket permissions. Manage individual roles below.</p>
+                <p role="status" aria-live="polite" data-board-feedback class="board-feedback"></p>
+                <div class="board-form-actions">
+                  <button type="submit" class="btn btn-secondary btn-sm">Save sharing</button>
+                  <button type="button" class="btn btn-ghost btn-sm" data-board-form-refresh hidden>Refresh Board</button>
+                </div>
               </form>
-            </section>
-            <BoardIntegrationDestinations scope={workScope} session={boardSessionProof(user.actor.id)} people={view.members.map(member => ({ id: member.id, name: user.roster.get(member.id) ?? "Inactive user" }))} />
-            {!view.board.denyDeletion && <form data-board-form="lifecycle" class="board-form">
-              <h2>Delete Board</h2>
-              <p>Keep its saved work in Deleted Boards. Incoming work and Routines pause until you restore it.</p>
-              <input type="hidden" name="action" value="retire" />
-              <input type="hidden" name="revision" value={view.board.revision} />
-              <input type="hidden" name="boardName" value={view.board.name} />
-              <p role="status" data-board-feedback></p>
-              <button type="submit" class="btn btn-danger">Delete Board</button>
-            </form>}
-          </div>
-        </details>}
-      </div>}
-    <p hidden data-board-expired role="status">Your Board view changed. <button type="button" class="btn btn-ghost" data-board-refresh>Refresh Board</button></p>
+
+              <form data-board-form="policy" class="board-form board-settings-card">
+                <div class="board-settings-card__head">
+                  <Icon name="adjustments-horizontal" size={16} sprite />
+                  <h2>Ticket permissions</h2>
+                </div>
+                <label class="check"><input type="checkbox" name="denyCompletion" checked={policy.denyCompletion} /> Block marking tickets done or reopening them</label>
+                <label class="check"><input type="checkbox" name="denyDeletion" checked={policy.denyDeletion} /> Block ticket deletion</label>
+                <label class="check"><input type="checkbox" name="denyAgentDeletion" checked={policy.denyAgentDeletion} /> Block deletion by agents</label>
+                <p role="status" data-board-feedback class="board-feedback"></p>
+                <div class="board-form-actions">
+                  <button type="submit" class="btn btn-secondary btn-sm">Save permissions</button>
+                </div>
+              </form>
+
+              <section class="board-settings-card" aria-labelledby="board-people-settings">
+                <div class="board-settings-card__head">
+                  <Icon name="users" size={16} sprite />
+                  <h2 id="board-people-settings">People with access</h2>
+                </div>
+                {view.members.length === 0 && <p class="board-note-plain">No individual member overrides added yet.</p>}
+                {view.members.map(member => (
+                  <form data-board-form="member" class="board-form board-member">
+                    <h3>{user.roster.get(member.id) || "Inactive Home Assistant user"}</h3>
+                    <input type="hidden" name="memberId" value={member.id} />
+                    <label>Role <select name="role">
+                      <option value="viewer" selected={member.role === "viewer"}>Viewer</option>
+                      <option value="member" selected={member.role === "member"}>Member</option>
+                      <option value="owner" selected={member.role === "owner"}>Owner</option>
+                      <option value="remove">Remove access</option>
+                    </select></label>
+                    <label class="check"><input type="checkbox" name="denyCompletion" checked={member.denyCompletion} /> Block marking done</label>
+                    <label class="check"><input type="checkbox" name="denyDeletion" checked={member.denyDeletion} /> Block deletion</label>
+                    <p role="status" data-board-feedback class="board-feedback"></p>
+                    <button type="submit" class="btn btn-secondary btn-sm">Save access</button>
+                  </form>
+                ))}
+                <form data-board-form="member" class="board-form board-member">
+                  <label>Add a person <select name="memberId" required>
+                    <option value="">{availableNewMembers.length > 0 ? "Choose a person" : "All household members already added"}</option>
+                    {availableNewMembers.map(([id, name]) => <option value={id}>{name}</option>)}
+                  </select></label>
+                  <label>Role <select name="role"><option value="viewer">Viewer</option><option value="member">Member</option><option value="owner">Owner</option></select></label>
+                  <p role="status" data-board-feedback class="board-feedback"></p>
+                  <button type="submit" class="btn btn-secondary btn-sm">Add person</button>
+                </form>
+              </section>
+
+              <section class="board-settings-card" aria-labelledby="board-agent-settings">
+                <div class="board-settings-card__head">
+                  <Icon name="plug" size={16} sprite />
+                  <h2 id="board-agent-settings">Agent access</h2>
+                </div>
+                {view.agents.length === 0 && <p class="board-note-plain">No agent tokens have been granted access to this Board yet.</p>}
+                {view.agents.map(tokenId => (
+                  <form data-board-form="agent" class="board-form board-member">
+                    <code class="board-token-code">{tokenId}</code>
+                    <input type="hidden" name="tokenId" value={tokenId} />
+                    <input type="hidden" name="enabled" value="false" />
+                    <p role="status" data-board-feedback class="board-feedback"></p>
+                    <button type="submit" class="btn btn-secondary btn-sm">Remove token access</button>
+                  </form>
+                ))}
+                <form data-board-form="agent" class="board-form">
+                  <label>Agent token ID <input name="tokenId" maxlength="36" autocomplete="off" required placeholder="Paste token ID" /></label>
+                  <p class="board-note-plain">Use the ID from Settings / Agent Tokens. The token needs task read access.</p>
+                  <input type="hidden" name="enabled" value="true" />
+                  <p role="status" data-board-feedback class="board-feedback"></p>
+                  <button type="submit" class="btn btn-secondary btn-sm">Grant token access</button>
+                </form>
+              </section>
+
+              <section class="board-settings-card" aria-labelledby="board-intake-settings">
+                <div class="board-settings-card__head">
+                  <Icon name="inbox" size={16} sprite />
+                  <h2 id="board-intake-settings">Send-only access</h2>
+                </div>
+                {view.intakes.length === 0 && <p class="board-note-plain">Create a send-only destination so others can submit tasks without viewing this Board.</p>}
+                {view.intakes.map(intake => (
+                  <form data-board-form="intake-toggle" class="board-form board-member">
+                    <div class="board-member__head">
+                      <h3>{intake.label}</h3>
+                      <span class:list={["board-role-badge", intake.enabled ? "board-role-badge--member" : "board-role-badge--muted"]}>
+                        {intake.enabled ? "Accepting tasks" : "Closed"}
+                      </span>
+                    </div>
+                    <input type="hidden" name="id" value={intake.id} />
+                    <input type="hidden" name="enabled" value={intake.enabled ? "false" : "true"} />
+                    <p role="status" data-board-feedback class="board-feedback"></p>
+                    <button type="submit" class="btn btn-secondary btn-sm">{intake.enabled ? "Close destination" : "Reopen destination"}</button>
+                  </form>
+                ))}
+                <form data-board-form="intake-create" class="board-form">
+                  <label>Destination name <input name="label" maxlength="100" required placeholder="e.g. Repairs Inbox" /></label>
+                  <label>Triage column <select name="laneId" required>
+                    {view.lanes.filter(lane => !isDoneStatus(lane.key)).map(lane => <option value={lane.id}>{lane.label}</option>)}
+                  </select></label>
+                  <fieldset class="board-people"><legend>Allowed senders</legend>
+                    {[...user.roster].map(([id, name]) => <label class="check"><input type="checkbox" name="senderIds" value={id} /> {name}</label>)}
+                  </fieldset>
+                  <label>Allow assignment to <select name="recipientId">
+                    <option value="">No one</option>
+                    {view.members.filter(member => user.roster.has(member.id)).map(member => <option value={member.id}>{user.roster.get(member.id)}</option>)}
+                  </select></label>
+                  <p role="status" data-board-feedback class="board-feedback"></p>
+                  <button type="submit" class="btn btn-secondary btn-sm">Create destination</button>
+                </form>
+              </section>
+
+              <BoardIntegrationDestinations scope={workScope} session={boardSessionProof(user.actor.id)} people={view.members.map(member => ({ id: member.id, name: user.roster.get(member.id) ?? "Inactive user" }))} />
+
+              {!view.board.denyDeletion && (
+                <form data-board-form="lifecycle" class="board-form board-settings-card board-settings-card--danger">
+                  <div class="board-settings-card__head">
+                    <Icon name="trash" size={16} sprite />
+                    <h2>Delete Board</h2>
+                  </div>
+                  <p class="board-note-plain">Keep its saved work in Deleted Boards. Incoming work and Routines pause until you restore it.</p>
+                  <input type="hidden" name="action" value="retire" />
+                  <input type="hidden" name="revision" value={view.board.revision} />
+                  <input type="hidden" name="boardName" value={view.board.name} />
+                  <p role="status" data-board-feedback class="board-feedback"></p>
+                  <button type="submit" class="btn btn-danger btn-sm">
+                    <Icon name="trash" size={15} sprite />
+                    <span>Delete Board</span>
+                  </button>
+                </form>
+              )}
+            </div>
+          </details>
+        )}
+      </div>
+    )}
+    <p hidden data-board-expired role="status" class="board-expired-banner">
+      <Icon name="info-circle" size={16} sprite />
+      <span>Your Board view changed.</span>
+      <button type="button" class="btn btn-ghost btn-sm" data-board-refresh>
+        <Icon name="refresh" size={14} sprite />
+        <span>Refresh Board</span>
+      </button>
+    </p>
   </div>
 </Layout>}
 

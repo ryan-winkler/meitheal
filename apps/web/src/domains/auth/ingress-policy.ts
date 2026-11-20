@@ -35,19 +35,17 @@ export function isCsrfAllowed(input: CsrfValidationInput): boolean {
 }
 
 export function buildSecurityHeaders(behindIngress: boolean, isDev: boolean): Record<string, string> {
-  const frameAncestors = behindIngress ? "*" : "'self'";
+  const frameAncestors = "*";
   return {
     "X-Content-Type-Options": "nosniff",
-    // X-Frame-Options: ALLOW-FROM is deprecated and unsupported in modern
-    // browsers. When behind ingress (or in HA addon), omit it entirely — CSP
-    // frame-ancestors handles the policy. For standalone, use SAMEORIGIN.
-    ...(!behindIngress ? { "X-Frame-Options": "SAMEORIGIN" } : {}),
+    // Omit X-Frame-Options and rely on CSP frame-ancestors so Home Assistant
+    // ingress and cross-origin preview iframes can embed the app cleanly.
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
     "Content-Security-Policy": [
       "default-src 'self'",
       // data: removed from script-src — it allows trivial XSS bypass via data: URIs
-      "script-src 'self' 'unsafe-inline'",
+      isDev ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'" : "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:", // blob: for attachment previews
       "font-src 'self' data:",

@@ -229,8 +229,11 @@ if (backlogMode === "hidden" || backlogMode === "disabled") {
 import {
   PRIORITY_COLORS as priorityColors,
   PRIORITY_CSS_CLASSES as priorityClasses,
-  PRIORITY_ICONS as priorityIcons,
 } from "../lib/priority-config";
+import type { IconName } from "../generated/icon-registry";
+
+const priorityTablerIcon = (priority: number): IconName =>
+  priority <= 1 ? "flame" : priority === 2 ? "arrow-up" : priority >= 4 ? "arrow-down" : "arrows-left-right";
 
 const priorityLabels: Record<number, string> = {
   1: t("priority.critical", locale),
@@ -254,6 +257,9 @@ const kanbanPages = renderedView === "kanban"
   : null
 const inactivityEnabled = renderedView === "kanban" &&
   await new TaskInactivityRepository(db, scope).hasEnabledPolicy(kanbanFilters.area || null).catch(() => false)
+const deferredCount = renderedView === "kanban"
+  ? await repo.findDeferredPage(1, kanbanFilters.area || "").then((result) => result.total).catch(() => 0)
+  : 0
 const boardAreaQuery = `?${new URLSearchParams({ board_id: boardId, ...(kanbanFilters.area ? { area: kanbanFilters.area } : {}) })}`
 const kanbanTaskCount = Array.from(kanbanPages?.values() ?? []).reduce((sum, lane) => sum + lane.matches, 0)
 
@@ -349,6 +355,7 @@ if (groupByProject) {
         data-deferred-link data-astro-prefetch="false">
         <Icon name="clock" size={16} />
         {t("deferral.title", locale)}
+        {deferredCount > 0 && <span class="kanban-toolbar-badge">{deferredCount}</span>}
       </a>
       <a href={`/inactivity${boardAreaQuery}`} class="btn btn-outline btn-sm kanban-toolbar-btn"
         data-inactivity-link data-astro-prefetch="false">
@@ -471,23 +478,34 @@ if (groupByProject) {
   <p class="kanban-project-notice" role="status" data-project-catalog-unavailable hidden={!projectCatalogUnavailable}>
     {t("kanban.project_catalog_failed", locale)}
   </p>
-  <div
-    id="kanban-board"
-    class="kanban-board"
-    data-available={String(Boolean(kanbanPages))}
-    data-inactivity-enabled={String(inactivityEnabled)}
-    data-inactivity-ready={t("inactivity.ready", locale)}
-    data-inactivity-upcoming={t("inactivity.upcoming", locale)}
-    data-inactivity-stalled={t("inactivity.stalled", locale)}
-    data-group-by={kanbanFilters.groupBy}
-    data-no-epic-label={t("kanban.group_no_epic", locale)}
-    data-no-area-label={t("recent_activity.no_area", locale)}
-    data-unavailable-area-label={t("kanban.unavailable_area", locale)}
-    data-backlog-mode={backlogMode}
-    data-kanban-moving={t("kanban.moving_task", locale)}
-    data-reaction-count-label={t("reactions.card_count", locale)}
-    style={`padding: 0 0 8px; grid-template-columns: repeat(${columns.length}, 1fr);`}
-  >
+  <div class="kanban-scroll-wrap" data-kanban-scroll-wrap>
+    <button
+      type="button"
+      class="kanban-scroll-btn kanban-scroll-btn--left"
+      data-kanban-scroll="left"
+      aria-label="Scroll lanes left"
+      title="Scroll lanes left"
+      hidden
+    >
+      <Icon name="chevron-down" size={18} class="kanban-scroll-icon--left" sprite />
+    </button>
+    <div
+      id="kanban-board"
+      class="kanban-board"
+      data-available={String(Boolean(kanbanPages))}
+      data-inactivity-enabled={String(inactivityEnabled)}
+      data-inactivity-ready={t("inactivity.ready", locale)}
+      data-inactivity-upcoming={t("inactivity.upcoming", locale)}
+      data-inactivity-stalled={t("inactivity.stalled", locale)}
+      data-group-by={kanbanFilters.groupBy}
+      data-no-epic-label={t("kanban.group_no_epic", locale)}
+      data-no-area-label={t("recent_activity.no_area", locale)}
+      data-unavailable-area-label={t("kanban.unavailable_area", locale)}
+      data-backlog-mode={backlogMode}
+      data-kanban-moving={t("kanban.moving_task", locale)}
+      data-reaction-count-label={t("reactions.card_count", locale)}
+      style={`padding: 0 0 8px; grid-template-columns: repeat(${columns.length}, 1fr);`}
+    >
     {
       columns.map((col) => {
         const lane = kanbanPages?.get(col.key)
@@ -543,9 +561,9 @@ if (groupByProject) {
                     <button type="button" class="swimlane-header" aria-expanded="true">
                       <span
                         aria-hidden="true"
-                        class={`swimlane-toggle ${count === 0 ? "opacity-30 pointer-events-none" : ""}`}
+                        class={`swimlane-toggle inline-flex items-center ${count === 0 ? "opacity-30 pointer-events-none" : ""}`}
                       >
-                        ▼
+                        <Icon name="chevron-down" size={14} sprite />
                       </span>
                       <TaskTypeIcon type={type} size={16} />
                       <span class="swimlane-label">{tc.label}</span>
@@ -676,29 +694,46 @@ if (groupByProject) {
                           {String(task.title)}
                         </span>
                       </div>
-                      {Number(task.is_favorite ?? 0) === 1 && (
-                        <span
-                          class="kanban-fav"
-                          title={t("kanban.favorite", locale)}
-                        >
-                          ★
+                      <div class="kanban-card-header-controls">
+                        {!promoted && Number(task.is_favorite ?? 0) === 1 && (
+                          <span
+                            class="kanban-fav"
+                            title={t("kanban.favorite", locale)}
+                          >
+                            <Icon name="star" size={14} sprite />
+                          </span>
+                        )}
+                        <span class="kanban-reaction-count" data-kanban-reaction-count role="img" hidden>
+                          <Icon name="heart" size={12} sprite />
+                          <span data-reaction-count-value></span>
                         </span>
-                      )}
-                      <span class="kanban-reaction-count" data-kanban-reaction-count role="img" hidden></span>
-                      {<button
-                        type="button"
-                        class="card-action-btn card-more-btn"
-                        data-id={String(task.id)}
-                        title={t("kanban.more_actions", locale)}
-                        aria-label={t("kanban.more_actions_for", locale, { title: String(task.title) })}
-                        aria-expanded="false"
-                        aria-controls="kanban-card-menu"
-                      >
-                        ⋯
-                      </button>}
+                        <button
+                          type="button"
+                          class="kanban-promote-star"
+                          data-promote-toggle
+                          data-id={String(task.id)}
+                          aria-pressed={String(promoted)}
+                          title={promoted ? t("kanban.demote_card", locale) : t("kanban.promote_card", locale)}
+                          aria-label={`${promoted ? t("kanban.demote_card", locale) : t("kanban.promote_card", locale)}: ${String(task.title)}`}
+                        >
+                          <span class="kanban-promote-sash" aria-hidden="true">
+                            <Icon name="star" size={15} sprite />
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          class="card-action-btn card-more-btn"
+                          data-id={String(task.id)}
+                          title={t("kanban.more_actions", locale)}
+                          aria-label={t("kanban.more_actions_for", locale, { title: String(task.title) })}
+                          aria-expanded="false"
+                          aria-controls="kanban-card-menu"
+                        >
+                          <Icon name="dots-vertical" size={15} sprite />
+                        </button>
+                      </div>
                     </div>
                     <span class="kanban-work-status"><StatusBadge status={String(task.status)} /></span>
-                    {promoted && <span class="kanban-promoted" aria-hidden="true"><Icon name="rocket" size={12} sprite /> {t("kanban.promoted", locale)}</span>}
                     {/* Attachment Placeholder */}
                     <img
                       class="kanban-attachment hidden"
@@ -711,9 +746,10 @@ if (groupByProject) {
                     <div data-inactivity-slot></div>
                     <div class="kanban-card-meta">
                       <span
-                        class={`priority-label ${priorityClasses[p] ?? "priority-medium"}`}
+                        class={`priority-label inline-flex items-center gap-1 ${priorityClasses[p] ?? "priority-medium"}`}
                       >
-                        {priorityIcons[p] ?? "→"} {priorityLabels[p]}
+                        <Icon name={priorityTablerIcon(p)} size={13} sprite />
+                        <span>{priorityLabels[p]}</span>
                       </span>
                       {task.due_date ? (
                         <span
@@ -732,10 +768,11 @@ if (groupByProject) {
                       ) : null}
                       {childCount > 0 && (
                         <span
-                          class="kanban-meta-subtasks"
+                          class="kanban-meta-subtasks inline-flex items-center gap-1"
                           title={`${childCount} sub-tasks`}
                         >
-                          ↳ {childCount}
+                          <Icon name="list-check" size={12} sprite />
+                          <span>{childCount}</span>
                         </span>
                       )}
                       {rice ? (
@@ -770,10 +807,11 @@ if (groupByProject) {
                             ).length;
                             return (
                               <span
-                                class={`kanban-meta-checklist${done === cl.length ? " checklist-complete" : ""}`}
+                                class={`kanban-meta-checklist inline-flex items-center gap-1${done === cl.length ? " checklist-complete" : ""}`}
                                 title={`Checklist: ${done}/${cl.length}`}
                               >
-                                ✓ {done}/{cl.length}
+                                <Icon name="checkbox" size={12} sprite />
+                                <span>{done}/{cl.length}</span>
                               </span>
                             );
                           }
@@ -907,9 +945,7 @@ if (groupByProject) {
                         title="Add child task"
                         aria-label={`Add subtask to: ${String(task.title ?? "").slice(0, 50)}`}
                       >
-                        <svg aria-hidden="true" width="12" height="12">
-                          <use href="#icon-child" />
-                        </svg>
+                        <Icon name="plus" size={14} sprite />
                       </button>
                       <button
                         class="card-action-btn card-assign-btn"
@@ -919,9 +955,7 @@ if (groupByProject) {
                         aria-label={`Assign user to: ${String(task.title ?? "").slice(0, 50)}`}
                         aria-haspopup="true"
                       >
-                        <svg aria-hidden="true" width="12" height="12">
-                          <use href="#icon-assign" />
-                        </svg>
+                        <Icon name="user" size={14} sprite />
                       </button>
                       <button
                         class="card-action-btn card-color-btn"
@@ -931,9 +965,7 @@ if (groupByProject) {
                         aria-label={`Set color for: ${String(task.title ?? "").slice(0, 50)}`}
                         aria-haspopup="true"
                       >
-                        <svg aria-hidden="true" width="12" height="12">
-                          <use href="#icon-palette" />
-                        </svg>
+                        <Icon name="palette" size={14} sprite />
                       </button></>}
                     </div>
                   </div>
@@ -956,6 +988,16 @@ if (groupByProject) {
                 </div>
               </nav>
             )}
+            {col.key === "backlog" && (
+              <a
+                href={`/deferred${boardAreaQuery}`}
+                class="kanban-backlog-deferred-link"
+                data-astro-prefetch="false"
+              >
+                <Icon name="clock" size={14} sprite />
+                <span>{deferredCount > 0 ? `${t("deferral.title", locale)} (${deferredCount} parked)` : `${t("deferral.title", locale)} & stalled`}</span>
+              </a>
+            )}
             <button
               class="kanban-add-btn"
               data-status={col.key}
@@ -968,17 +1010,19 @@ if (groupByProject) {
         );
       })
     }
+    </div>
+    <button
+      type="button"
+      class="kanban-scroll-btn kanban-scroll-btn--right"
+      data-kanban-scroll="right"
+      aria-label="Scroll lanes right"
+      title="Scroll lanes right"
+      hidden
+    >
+      <Icon name="chevron-down" size={18} class="kanban-scroll-icon--right" sprite />
+    </button>
   </div>
 
-    </div>
-
-    <div
-      id="toast-container"
-      class="toast-container"
-      aria-live="polite"
-      role="status"
-      data-no-scroll-lock="true"
-    >
     </div>
 
   </div><!-- /tasks-view-kanban -->
@@ -1280,6 +1324,40 @@ if (groupByProject) {
     font-size: var(--font-size-xs, .75rem);
     overflow-wrap: anywhere;
   }
+  .kanban-toolbar-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    color: var(--accent);
+  }
+  .kanban-backlog-deferred-link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    margin-bottom: 6px;
+    padding: 6px 10px;
+    border-radius: var(--radius-sm);
+    border: 1px dashed var(--border);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: border-color 150ms ease, color 150ms ease, background-color 150ms ease;
+  }
+  .kanban-backlog-deferred-link:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+    background: var(--bg-hover);
+  }
   .kanban-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
@@ -1515,29 +1593,38 @@ if (groupByProject) {
   }
   .kanban-card-actions {
     display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    border-top: 1px solid var(--border);
-    padding-block-start: 5px;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 2px;
+    border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+    padding-block-start: 6px;
+    margin-block-start: 6px;
   }
   .card-action-btn {
-    background: var(--bg-hover);
-    border: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
-    cursor: pointer;
-    font-size: 12px;
-    padding: 3px 8px;
-    border-radius: var(--radius-sm);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-inline-size: 1.75rem;
+    min-block-size: 1.75rem;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
     color: var(--text-muted);
+    cursor: pointer;
     transition:
-      background 150ms,
-      color 150ms,
-      border-color 150ms,
-      opacity 150ms,
-      transform 150ms;
+      background-color 140ms ease,
+      color 140ms ease,
+      opacity 140ms ease,
+      transform 120ms ease;
   }
-  .card-action-btn:hover {
+  .card-action-btn:hover,
+  .card-action-btn:focus-visible {
     background: var(--bg-hover);
-    border-color: var(--border);
+    color: var(--text-primary);
+  }
+  .card-action-btn:active {
+    transform: scale(0.94);
   }
   .card-edit-btn:hover {
     color: var(--info);
@@ -1712,26 +1799,156 @@ if (groupByProject) {
     outline: 2px solid var(--border-focus);
     outline-offset: -2px;
   }
-  /* Card header with favorite */
+  /* Card header & Tabler Promoted Ribbon Sash (preview.tabler.io/tasks.html) */
   .kanban-card-header {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 4px;
+    gap: 6px;
   }
-  .kanban-fav {
-    color: var(--warning);
-    font-size: 14px;
+  .kanban-card[data-promoted="true"] .kanban-card-header {
+    padding-inline-end: 36px;
+  }
+  .kanban-card-header-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
     flex-shrink: 0;
   }
-  .kanban-promoted {
-    display: inline-block;
-    margin-top: 4px;
-    padding: 2px 6px;
-    border: 1px solid currentColor;
-    border-radius: var(--radius-sm);
-    color: var(--text-primary);
-    font-size: 0.75rem;
+  .kanban-fav {
+    display: inline-flex;
+    align-items: center;
+    color: var(--warning);
+    flex-shrink: 0;
+  }
+  .kanban-fav :global(svg) {
+    fill: currentColor;
+  }
+  .kanban-promote-star {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-inline-size: 2rem;
+    min-block-size: 2rem;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: color 140ms ease, background-color 140ms ease, opacity 140ms ease, transform 160ms ease;
+  }
+  .kanban-promote-sash {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 100%;
+    block-size: 100%;
+  }
+  .kanban-promote-star[aria-pressed="false"]:hover,
+  .kanban-promote-star[aria-pressed="false"]:focus-visible {
+    background: var(--bg-hover);
+    color: var(--tblr-yellow, #f59f00);
+  }
+  .kanban-promote-star:active {
+    transform: scale(0.94);
+  }
+  /* Promoted state: authentic Tabler yellow bookmark ribbon hanging from top-right corner */
+  .kanban-promote-star[aria-pressed="true"] {
+    position: absolute;
+    inset-block-start: -5px;
+    inset-inline-end: 10px;
+    z-index: 3;
+    min-inline-size: 28px;
+    inline-size: 28px;
+    min-block-size: 36px;
+    block-size: 36px;
+    border-radius: 0 4px 0 0;
+    background: transparent;
+    color: #ffffff;
+    opacity: 1;
+    filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.24));
+    animation: kanban-ribbon-unfurl 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  /* Folded top-left ribbon ear wrapping over card's top border */
+  .kanban-promote-star[aria-pressed="true"]::before {
+    content: "";
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: -5px;
+    width: 5px;
+    height: 5px;
+    background: color-mix(in srgb, var(--tblr-yellow, #f59f00) 64%, #000000);
+    clip-path: polygon(100% 0, 0 100%, 100% 100%);
+    pointer-events: none;
+  }
+  .kanban-promote-star[aria-pressed="true"] .kanban-promote-sash {
+    background: var(--tblr-yellow, #f59f00);
+    border-start-end-radius: 4px;
+    padding-block-end: 5px;
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%);
+    transition: background-color 140ms ease, transform 140ms ease;
+  }
+  .kanban-promote-star[aria-pressed="true"] :global(svg) {
+    fill: none;
+    stroke: #ffffff;
+    stroke-width: 2;
+  }
+  .kanban-promote-star[aria-pressed="true"]:hover .kanban-promote-sash,
+  .kanban-promote-star[aria-pressed="true"]:focus-visible .kanban-promote-sash {
+    background: color-mix(in srgb, var(--tblr-yellow, #f59f00) 88%, #ffffff);
+  }
+  .kanban-promote-star[aria-pressed="true"]:focus-visible {
+    outline: 2px solid var(--border-focus);
+    outline-offset: 2px;
+  }
+  @keyframes kanban-ribbon-unfurl {
+    from {
+      opacity: 0.4;
+      transform: translateY(-6px) scaleY(0.8);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scaleY(1);
+    }
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .kanban-promote-star[aria-pressed="false"] {
+      opacity: 0;
+    }
+    .kanban-card:hover .kanban-promote-star[aria-pressed="false"],
+    .kanban-card:focus-within .kanban-promote-star[aria-pressed="false"] {
+      opacity: 0.72;
+    }
+    .kanban-card:hover .kanban-promote-star[aria-pressed="false"]:hover,
+    .kanban-promote-star[aria-pressed="false"]:focus-visible {
+      opacity: 1;
+    }
+    .kanban-card-actions {
+      opacity: 0;
+      transition: opacity 140ms ease;
+    }
+    .kanban-card:hover .kanban-card-actions,
+    .kanban-card:focus-within .kanban-card-actions {
+      opacity: 1;
+    }
+  }
+  @media (pointer: coarse) {
+    .kanban-promote-star[aria-pressed="false"] {
+      min-inline-size: 40px;
+      min-block-size: 40px;
+      opacity: 0.5;
+    }
+    .kanban-promote-star[aria-pressed="true"] {
+      inline-size: 30px;
+      block-size: 38px;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .kanban-promote-star[aria-pressed="true"] {
+      animation: none;
+    }
   }
   .kanban-reaction-count:not([hidden]) {
     display: inline-flex;
@@ -1743,9 +1960,6 @@ if (groupByProject) {
     background: var(--bg-hover);
     color: var(--text-primary);
     font-size: 0.75rem;
-  }
-  .kanban-reaction-count::before {
-    content: "☺";
   }
 
   /* Progress bar */

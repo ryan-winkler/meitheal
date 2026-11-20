@@ -123,6 +123,10 @@ export async function prepareTaskCreation(
   const progress = Math.min(100, Math.max(0, Math.round(progress_raw)))
   const color = typeof body.color === "string" && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(body.color) ? body.color : null
   const is_favorite = body.is_favorite ? 1 : 0
+  if (body.is_promoted !== undefined && typeof body.is_promoted !== "boolean") {
+    return { ok: false, error: "is_promoted must be a boolean" }
+  }
+  const is_promoted = body.is_promoted ? 1 : 0
 
   // Assignments: assigned_to user ID (nullable)
   let assigned_to: string | null = typeof body.assigned_to === "string" ? body.assigned_to.trim() : null
@@ -181,7 +185,7 @@ export async function prepareTaskCreation(
   return { ok: true, task: {
     id, title, description, status, priority, due_date, labels,
     framework_payload, parent_id, area_id, custom_fields, project_id, goal_id,
-    start_date, end_date, progress, color, is_favorite,
+    start_date, end_date, progress, color, is_favorite, is_promoted,
     task_type, task_kind, assigned_to, checklists,
     urgency, importance, effort_minutes, effort_type, blocked_by,
     recurrence_rule, source, created_by,
@@ -191,13 +195,13 @@ export async function prepareTaskCreation(
 export function taskCreationPayload(task: TaskCreationData, ticket_number: number, now: number) {
   const {
     id, title, description, status, priority, due_date, labels, parent_id, area_id, project_id, goal_id,
-    custom_fields, start_date, end_date, progress, color, is_favorite, task_type, task_kind,
+    custom_fields, start_date, end_date, progress, color, is_favorite, is_promoted, task_type, task_kind,
     assigned_to, urgency, importance, effort_minutes, effort_type, blocked_by, source, created_by,
   } = task
   return {
     id, ticket_number, ticket_key: formatTicketKey(ticket_number), title, description, status, priority,
     due_date, labels, parent_id, area_id, project_id, goal_id, custom_fields, time_tracked: 0, start_date,
-    end_date, progress, color, is_favorite, task_type, task_kind, assigned_to, urgency, importance,
+    end_date, progress, color, is_favorite, is_promoted: Boolean(is_promoted), task_type, task_kind, assigned_to, urgency, importance,
     effort_minutes, effort_type, blocked_by, source: source ?? "user", created_by: created_by ?? null,
     eisenhower_quadrant: deriveEisenhowerQuadrant(urgency ?? 0, importance ?? 0),
     eisenhower_override: 0, created_at: now, updated_at: now,

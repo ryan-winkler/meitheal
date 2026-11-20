@@ -3,6 +3,7 @@ import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
 import { boardWorkspaceHref } from "@lib/board-workspace"
 import Layout from "../layouts/Layout.astro"
 import Icon from "../components/ui/Icon.astro"
+import TaskLifecycleNav from "../components/tasks/TaskLifecycleNav.astro"
 import { t } from "../i18n/translations"
 import "../styles/work-queue.css"
 
@@ -16,18 +17,21 @@ const boardHref = boardWorkspaceHref(scoped.scope.boardId, area ? { area } : {})
 
 <Layout title={text("title")} hideSearchHub hideGlobalSearch suppressTaskUrlOpen>
   <section class="work-queue" data-inactivity-page data-locale={locale} data-timezone={Astro.locals.timezone} aria-labelledby="inactivity-heading">
+    <TaskLifecycleNav active="inactivity" {boardHref} boardId={scoped.scope.boardId} {area} {locale} />
     <header class="work-queue-header">
-      <a href={boardHref} class="btn btn-outline" data-inactivity-back data-astro-prefetch="false">
-        <Icon name="layout-kanban" size={18} /> {text("back")}
-      </a>
-      <h1 id="inactivity-heading"><Icon name="calendar-event" size={24} />{text("title")}</h1>
+      <h1 id="inactivity-heading"><Icon name="alert-triangle" size={24} />{text("title")}</h1>
       <p>{text("description")}</p>
     </header>
     <div class="work-queue-controls">
       <p data-inactivity-status role="status" aria-atomic="true">{text("loading")}</p>
-      <button type="button" class="btn btn-outline" data-inactivity-retry hidden>
-        <Icon name="refresh" size={18} /> {text("retry")}
+      <button type="button" class="btn btn-outline btn-sm" data-inactivity-retry hidden>
+        <Icon name="refresh" size={16} sprite /> {text("retry")}
       </button>
+    </div>
+    <div class="work-queue-skeleton" data-inactivity-skeleton aria-hidden="true">
+      <div class="work-queue-skeleton__line w-1/3"></div>
+      <div class="work-queue-skeleton__card"></div>
+      <div class="work-queue-skeleton__card"></div>
     </div>
     <div data-inactivity-content hidden>
       <div class="work-queue-panel">

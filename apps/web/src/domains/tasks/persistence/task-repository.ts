@@ -347,7 +347,7 @@ export type TaskCreationData = {
   framework_payload: string; parent_id: string | null;
   area_id: string | null; custom_fields: string; project_id?: string | null; goal_id?: string | null; start_date: string | null;
   end_date: string | null; progress: number; color: string | null;
-  is_favorite: number; task_type: string; task_kind?: string;
+  is_favorite: number; is_promoted?: number; task_type: string; task_kind?: string;
   assigned_to: string | null; checklists?: string | null;
   recurrence_rule?: string | null;
   urgency?: number; importance?: number;
@@ -397,7 +397,7 @@ export function taskInsertStatement(scope: BoardScope, data: TaskCreationData, c
     data.framework_payload, STATUS.PENDING, data.parent_id, 0,
     scoped ? null : data.project_id ?? null, scoped ? null : data.goal_id ?? null,
     scoped ? "__meitheal_no_area__" : data.area_id ?? "__meitheal_no_area__", data.custom_fields,
-    data.start_date, data.end_date, data.progress, data.color, data.is_favorite,
+    data.start_date, data.end_date, data.progress, data.color, data.is_favorite, data.is_promoted ?? 0,
     data.task_type, data.task_kind ?? "standard_action", scoped ? null : ticketNumber, data.assigned_to,
     data.checklists ?? "[]", data.recurrence_rule ?? null, data.urgency ?? 0, data.importance ?? 0,
     data.effort_minutes ?? null, data.effort_type ?? null, data.blocked_by ?? null,
@@ -407,7 +407,7 @@ export function taskInsertStatement(scope: BoardScope, data: TaskCreationData, c
   ]
   return sql`INSERT INTO tasks (id, title, description, status, priority, due_date, labels,
     framework_payload, calendar_sync_state, parent_id, time_tracked, project_id, goal_id,
-    area_id, custom_fields, start_date, end_date, progress, color, is_favorite,
+    area_id, custom_fields, start_date, end_date, progress, color, is_favorite, is_promoted,
     task_type, task_kind, ticket_number, assigned_to, checklists, recurrence_rule,
     urgency, importance, effort_minutes, effort_type, blocked_by, source, created_by,
     idempotency_key, request_id, created_at, updated_at, task_board_id, board_column_id, ticket_ref,

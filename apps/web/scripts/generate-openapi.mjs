@@ -174,7 +174,7 @@ const schemas = {
       description: { type: "string", nullable: true, maxLength: 10000, description: "Rich text task description. Oversized create or update requests are rejected without truncation." },
       status: { type: "string", description: "Current workflow status. Also supports custom workflow statuses.", example: "pending" },
       priority: { type: "integer", minimum: 0, maximum: 5, description: "Priority level: 0=none, 1=lowest, 5=critical" },
-      is_promoted: { type: "boolean", description: "Shared Kanban promotion, returned for task detail and updates." },
+      is_promoted: { type: "boolean", description: "Shared Kanban promotion — pins card to top of lane with Tabler ribbon sash." },
       actions: { type: "array", items: { type: "string", enum: ["edit", "complete", "delete"] }, description: "Detail-only hints for the current caller. Each write verifies current permission separately." },
       due_date: { type: "string", format: "date-time", nullable: true },
       assigned_to: { type: "string", nullable: true, description: "User ID prefixed with 'ha_' or 'custom_'" },
@@ -1024,6 +1024,7 @@ const paths = {
               properties: {
                 title: { type: "string", description: "Task title (required)" },
                 description: { type: "string", maxLength: 10000 },
+                is_promoted: { type: "boolean", description: "Pin the new task to the top of its Kanban lane with a promoted ribbon sash." },
                 assigned_to: { type: "string", maxLength: 255, nullable: true, description: "Must start with 'ha_' or 'custom_'" },
                 frameworkPayload: { type: "object" },
                 calendar: {

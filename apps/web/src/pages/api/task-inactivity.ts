@@ -36,15 +36,21 @@ function problem(status: number, detail: string) {
 }
 
 function sameOrigin(request: Request, ingress: string | undefined): boolean {
-  if (request.headers.get("sec-fetch-site") !== "same-origin" ||
-      request.headers.get("sec-fetch-mode") !== "same-origin") return false
+  const site = request.headers.get("sec-fetch-site")
+  const mode = request.headers.get("sec-fetch-mode")
+  if (site !== "same-origin" || (mode !== "same-origin" && mode !== "cors")) return false
   const origin = request.headers.get("origin")
   const referer = request.headers.get("referer")
   if (!origin || !referer) return false
   try {
     const source = new URL(referer)
-    return (source.protocol === "http:" || source.protocol === "https:") && source.origin === origin &&
-      (ingress ? source.pathname.startsWith(ingress + "/") : source.origin === new URL(request.url).origin)
+    if ((source.protocol !== "http:" && source.protocol !== "https:") || source.origin !== origin) return false
+    if (ingress) return source.pathname.startsWith(ingress + "/")
+    const expectedHost =
+      request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ||
+      request.headers.get("host")?.trim() ||
+      new URL(request.url).host
+    return source.host === expectedHost || source.origin === new URL(request.url).origin
   } catch {
     return false
   }

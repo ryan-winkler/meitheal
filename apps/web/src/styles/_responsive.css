@@ -271,10 +271,43 @@
     padding-bottom: max(72px, calc(var(--mobile-tab-bar-height) + env(safe-area-inset-bottom))) !important;
   }
 
-  /* Raise toast notifications above the mobile tab bar */
-  .fixed.bottom-4 {
-    bottom: calc(60px + env(safe-area-inset-bottom, 0px)) !important;
+  /* Mobile: keep toasts cleanly above the mobile tab bar and any bottom-right FAB */
+  .toast-container {
+    align-items: stretch;
+    inset-inline-start: calc(12px + env(safe-area-inset-left, 0px));
+    inset-inline-end: calc(12px + env(safe-area-inset-right, 0px));
+    width: auto;
+    max-width: none;
+    bottom: calc(var(--floating-action-bottom) + var(--toast-fab-clearance, 0px));
   }
+
+  .toast {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    touch-action: none;
+  }
+}
+
+.toast-container:is([data-dock-top="true"], [data-keyboard-open="true"]) {
+  bottom: auto;
+  top: calc(max(var(--toast-vv-top, 0px), env(safe-area-inset-top, 0px)) + 12px);
+  max-height: calc(
+    var(--toast-vv-max-h, calc(100dvh - 24px)) -
+    max(0px, env(safe-area-inset-top, 0px) - var(--toast-vv-top, 0px))
+  );
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  pointer-events: auto;
+  flex-direction: column;
+}
+
+.toast-container:is([data-dock-top="true"], [data-keyboard-open="true"]) .toast {
+  touch-action: none;
+}
+
+.toast-container[data-scrollable="true"] .toast {
+  touch-action: pan-y;
 }
 
 /* ===== PRA-16: Mobile Bottom Tab Bar ===== */
@@ -547,7 +580,16 @@
 
   .badge,
   .kanban-count {
-    border: 1px solid ButtonText;
+    border: 2px solid CanvasText;
+  }
+
+  .toast {
+    border: 1px solid CanvasText;
+    border-inline-start-width: 4px;
+  }
+
+  .toast.error {
+    border-inline-start-color: Highlight;
   }
 }
 

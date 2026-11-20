@@ -55,7 +55,7 @@
 }
 
 .sidebar-footer {
-  @apply py-4 border-t border-border;
+  @apply pt-3 pb-0 border-t border-border;
 }
 
 .board-switcher {

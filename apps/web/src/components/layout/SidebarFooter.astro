@@ -1,64 +1,490 @@
 ---
-import { resolveBoardPageScope } from "@lib/board-http"
-import { readBoardNavigationContext } from "@lib/board-workspace"
-import { t } from "../../i18n/translations";
-import type { Locale } from "../../lib/locale";
-import Icon from "../ui/Icon.astro";
+import {
+  AVATAR_COLOR_PRESETS,
+  profileInitials,
+  profileSubtitle,
+  type UserProfile,
+} from "@domains/auth/user-profile"
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import Icon from "../ui/Icon.astro"
+import TablerModal from "../ui/TablerModal.astro"
 
 export interface Props {
-  locale: Locale;
+  locale: Locale
+  profile: UserProfile
 }
-const { locale } = Astro.props;
-const scoped = await resolveBoardPageScope(Astro).catch(() => null)
-const boardId = scoped?.ok ? scoped.scope.boardId : readBoardNavigationContext(Astro.url)?.boardId
-const settingsHref = boardId ? `/settings?board_id=${encodeURIComponent(boardId)}` : "/settings"
+
+const { locale, profile } = Astro.props
+const initials = profileInitials(profile)
+const subtitle = profileSubtitle(profile)
 ---
 
-<div class="sidebar-footer mt-auto">
-  <a
-    href={settingsHref}
-    data-astro-prefetch="viewport"
-    class="nav-link w-full"
-    data-page="settings"
-    data-tooltip={t("nav.settings", locale)}
-    aria-label={t("nav.settings", locale)}
-    aria-describedby="connection-status"
+<div class="sidebar-footer mt-auto" data-sidebar-user-footer data-user-profile={JSON.stringify(profile)}>
+  <button
+    type="button"
+    id="sidebar-user-trigger"
+    class="sidebar-user-card"
+    aria-haspopup="menu"
+    aria-expanded="false"
+    aria-controls="sidebar-user-popover"
+    data-tooltip={`${profile.displayName} (${subtitle})`}
+    aria-label={`${profile.displayName} account menu`}
   >
-    <span class="nav-icon"><Icon name="settings" /></span>
-    <span class="nav-label">{t("nav.settings", locale)}</span>
-  </a>
-  <span
-    class="status-indicator sidebar-readiness"
-    id="connection-status"
-    role="status"
-    aria-live="polite"
-    data-ready={t("status.app_ready", locale)}
-    data-storage-offline={t("status.db_offline", locale)}
-    data-unreachable={t("status.app_unreachable", locale)}
-  >
-    <span class="status-dot w-2 h-2 rounded-full bg-gray-400" aria-hidden="true"></span>
-    <span class="status-text sr-only">{t("status.checking", locale)}</span>
-  </span>
+    <span
+      class="sidebar-user-avatar"
+      data-user-profile-avatar
+      style={`background-color: ${profile.avatarColor};`}
+      aria-hidden="true"
+    >
+      {initials}
+    </span>
+    <span class="sidebar-user-identity">
+      <span class="sidebar-user-name" data-user-profile-name>{profile.displayName}</span>
+      <span class="sidebar-user-subtitle" data-user-profile-subtitle>{subtitle}</span>
+    </span>
+    <span class="sidebar-user-more" aria-hidden="true">
+      <Icon name="dots-vertical" size={16} />
+    </span>
+  </button>
 </div>
+
+<!-- Floating Account Submenu (Music Assistant style) -->
+<div
+  id="sidebar-user-popover"
+  class="sidebar-user-popover"
+  role="menu"
+  aria-label="Account and menu options"
+  hidden
+>
+  <div class="sidebar-user-popover__header">
+    <span
+      class="sidebar-user-avatar sidebar-user-avatar--popover"
+      data-user-profile-avatar
+      style={`background-color: ${profile.avatarColor};`}
+      aria-hidden="true"
+    >
+      {initials}
+    </span>
+    <div class="sidebar-user-identity">
+      <span class="sidebar-user-name" data-user-profile-name>{profile.displayName}</span>
+      <span class="sidebar-user-subtitle" data-user-profile-subtitle>{subtitle}</span>
+    </div>
+  </div>
+  <div class="sidebar-user-popover__divider" role="separator"></div>
+  <div class="sidebar-user-popover__actions">
+    <button type="button" class="sidebar-user-popover__item" role="menuitem" data-user-menu-action="edit-profile">
+      <span class="sidebar-user-popover__icon" aria-hidden="true"><Icon name="user" size={17} /></span>
+      <span>{t("sidebar.edit_profile", locale)}</span>
+    </button>
+    <button type="button" class="sidebar-user-popover__item" role="menuitem" data-user-menu-action="edit-menu">
+      <span class="sidebar-user-popover__icon" aria-hidden="true"><Icon name="pencil" size={17} /></span>
+      <span>{t("sidebar.edit_menu", locale)}</span>
+    </button>
+    <button type="button" class="sidebar-user-popover__item" role="menuitem" data-user-menu-action="start-tour">
+      <span class="sidebar-user-popover__icon" aria-hidden="true"><Icon name="sparkles" size={17} /></span>
+      <span>Interactive tour</span>
+    </button>
+  </div>
+</div>
+
+<!-- Edit Profile Modal (official Tabler modal surface) -->
+<TablerModal
+  id="sidebar-profile-modal"
+  title={t("sidebar.edit_profile_title", locale)}
+  descriptionId="sidebar-profile-modal-desc"
+  size="sm"
+>
+  <p id="sidebar-profile-modal-desc" class="sidebar-profile-modal__subtitle">
+    {t("sidebar.edit_profile_subtitle", locale)}
+  </p>
+
+  <div class="sidebar-profile-modal__preview">
+    <span
+      class="sidebar-user-avatar sidebar-user-avatar--preview"
+      data-profile-preview-avatar
+      style={`background-color: ${profile.avatarColor};`}
+      aria-hidden="true"
+    >
+      {initials}
+    </span>
+    <div class="sidebar-user-identity">
+      <span class="sidebar-user-name" data-profile-preview-name>{profile.displayName}</span>
+      <span class="sidebar-user-subtitle" data-profile-preview-subtitle>{subtitle}</span>
+    </div>
+  </div>
+
+  <form id="sidebar-profile-form" class="sidebar-profile-form" autocomplete="off" novalidate>
+    <div class="sidebar-profile-field">
+      <label for="profile-display-name" class="form-label">{t("sidebar.profile_display_name", locale)}</label>
+      <input
+        id="profile-display-name"
+        name="profileDisplayName"
+        type="text"
+        class="form-input"
+        value={profile.displayName}
+        maxlength="60"
+        required
+        autocomplete="off"
+        data-bwignore="true"
+        data-1p-ignore="true"
+        data-lpignore="true"
+        data-form-type="other"
+        data-tabler-initial-focus
+      />
+    </div>
+
+    <div class="sidebar-profile-field">
+      <label for="profile-handle" class="form-label">{t("sidebar.profile_username", locale)}</label>
+      <input
+        id="profile-handle"
+        name="profileHandle"
+        type="text"
+        class="form-input"
+        value={profile.username}
+        maxlength="40"
+        placeholder="winks"
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="off"
+        spellcheck="false"
+        data-bwignore="true"
+        data-1p-ignore="true"
+        data-lpignore="true"
+        data-form-type="other"
+      />
+    </div>
+
+    <div class="sidebar-profile-field">
+      <label for="profile-role" class="form-label">{t("sidebar.profile_role", locale)}</label>
+      <input
+        id="profile-role"
+        name="profileSubtitle"
+        type="text"
+        class="form-input"
+        value={profile.role}
+        maxlength="60"
+        placeholder="Household Admin (optional)"
+        autocomplete="off"
+        data-bwignore="true"
+        data-1p-ignore="true"
+        data-lpignore="true"
+        data-form-type="other"
+      />
+    </div>
+
+    <div class="sidebar-profile-field">
+      <span class="form-label">{t("sidebar.profile_avatar_color", locale)}</span>
+      <input id="profile-avatar-color" name="profileAvatarColor" type="hidden" value={profile.avatarColor} />
+      <div class="sidebar-profile-swatches" role="group" aria-label={t("sidebar.profile_avatar_color", locale)}>
+        {AVATAR_COLOR_PRESETS.map(swatch => (
+          <button
+            type="button"
+            class={`sidebar-profile-swatch ${swatch.hex.toLowerCase() === profile.avatarColor.toLowerCase() ? "is-selected" : ""}`}
+            data-avatar-swatch={swatch.hex}
+            style={`background-color: ${swatch.hex};`}
+            title={swatch.label}
+            aria-label={swatch.label}
+            aria-pressed={swatch.hex.toLowerCase() === profile.avatarColor.toLowerCase() ? "true" : "false"}
+          />
+        ))}
+      </div>
+    </div>
+
+    <p class="sidebar-profile-error" data-profile-form-error role="alert" hidden></p>
+  </form>
+
+  <Fragment slot="footer">
+    <button type="button" class="btn btn-secondary" data-profile-modal-close>Cancel</button>
+    <button type="submit" form="sidebar-profile-form" class="btn btn-primary" data-profile-save-btn>
+      {t("sidebar.profile_save", locale)}
+    </button>
+  </Fragment>
+</TablerModal>
 
 <style>
   .sidebar-footer {
     position: relative;
-    padding-block: 0.5rem 0;
+    padding: 0.625rem 0 0;
+    margin-top: 0.375rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
   }
 
-  .sidebar-readiness {
+  .sidebar-user-card {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    inline-size: 100%;
+    padding: 0.45rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 150ms ease, border-color 150ms ease;
+  }
+
+  .sidebar-user-card:hover,
+  .sidebar-user-card:focus-visible,
+  .sidebar-user-card[aria-expanded="true"] {
+    background: var(--bg-hover);
+    border-color: rgb(var(--accent-rgb) / 0.45);
+  }
+
+  .sidebar-user-card:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .sidebar-user-avatar {
     display: inline-flex;
-    position: absolute;
-    inset-inline-end: 12px;
-    top: calc(50% + 0.25rem);
-    transform: translateY(-50%);
-    pointer-events: none;
-    flex: none;
+    align-items: center;
+    justify-content: center;
+    inline-size: 34px;
+    block-size: 34px;
+    border-radius: 8px;
+    color: #ffffff;
+    font-size: 0.875rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    flex-shrink: 0;
+    user-select: none;
+  }
+
+  .sidebar-user-avatar--popover {
+    inline-size: 36px;
+    block-size: 36px;
+  }
+
+  .sidebar-user-avatar--preview {
+    inline-size: 44px;
+    block-size: 44px;
+    border-radius: 10px;
+    font-size: 1rem;
+  }
+
+  .sidebar-user-identity {
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+    flex: 1;
+    line-height: 1.25;
+  }
+
+  .sidebar-user-name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .sidebar-user-subtitle {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .sidebar-user-more {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  /* ── Floating Account Submenu ── */
+  .sidebar-user-popover {
+    position: fixed;
+    z-index: 260;
+    inline-size: 236px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-card);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.34);
+    overflow: hidden;
+  }
+
+  .sidebar-user-popover[hidden] {
+    display: none;
+  }
+
+  .sidebar-user-popover__header {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.75rem 0.875rem;
+  }
+
+  .sidebar-user-popover__divider {
+    block-size: 1px;
+    background: var(--border);
+  }
+
+  .sidebar-user-popover__actions {
+    display: flex;
+    flex-direction: column;
+    padding: 0.375rem;
+    gap: 2px;
+  }
+
+  .sidebar-user-popover__item {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    inline-size: 100%;
+    padding: 0.5rem 0.625rem;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 120ms ease;
+  }
+
+  .sidebar-user-popover__item:hover,
+  .sidebar-user-popover__item:focus-visible {
+    background: var(--bg-hover);
+    outline: none;
+  }
+
+  .sidebar-user-popover__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+  }
+
+  /* ── Edit Profile Tabler Modal Body ── */
+  :global(#sidebar-profile-modal .modal-content) {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.36);
+  }
+
+  :global(#sidebar-profile-modal .modal-header) {
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-card);
+  }
+
+  :global(#sidebar-profile-modal .modal-footer) {
+    border-top: 1px solid var(--border);
+    background: var(--bg-card);
+  }
+
+  .sidebar-profile-modal__subtitle {
+    margin: 0 0 0.875rem;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+  }
+
+  .sidebar-profile-modal__preview {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    margin-bottom: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-secondary);
+  }
+
+  .sidebar-profile-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+  }
+
+  .sidebar-profile-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .sidebar-profile-field .form-input {
+    inline-size: 100%;
+    min-block-size: 38px;
+    padding: 0.45rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-input, var(--bg-secondary));
+    color: var(--text-primary);
+  }
+
+  .sidebar-profile-field .form-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.2);
+  }
+
+  .sidebar-profile-swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding-top: 0.125rem;
+  }
+
+  .sidebar-profile-swatch {
+    inline-size: 28px;
+    block-size: 28px;
+    border-radius: 8px;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: transform 120ms ease, box-shadow 120ms ease;
+  }
+
+  .sidebar-profile-swatch:hover {
+    transform: scale(1.08);
+  }
+
+  .sidebar-profile-swatch.is-selected {
+    border-color: var(--text-primary);
+    box-shadow: 0 0 0 2px var(--bg-card), 0 0 0 4px var(--accent);
+  }
+
+  .sidebar-profile-error {
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--danger, #ef4444);
+  }
+
+  /* ── Collapsed Rail Adaptations ── */
+  @media (min-width: 769px) {
+    :global(body.sidebar-collapsed) .sidebar-footer {
+      border-top-color: var(--border);
+      padding-top: 0.5rem;
+      align-items: center;
+    }
+
+    :global(body.sidebar-collapsed) .sidebar-user-card {
+      inline-size: 40px;
+      block-size: 40px;
+      justify-content: center;
+      padding: 0;
+      margin-inline: auto;
+      border-color: transparent;
+      background: transparent;
+    }
+
+    :global(body.sidebar-collapsed) .sidebar-user-avatar {
+      inline-size: 36px;
+      block-size: 36px;
+    }
+
+    :global(body.sidebar-collapsed) .sidebar-user-card .sidebar-user-identity,
+    :global(body.sidebar-collapsed) .sidebar-user-card .sidebar-user-more {
+      display: none;
+    }
   }
 </style>
-
-<script>
-  // Health check is managed by layout-controller.ts (singleton 30s interval, P0-4).
-  // Previously this component ran its own duplicate interval — removed in Phase 25 T5.
-</script>

@@ -63,18 +63,13 @@ export function bindDashboardLayoutEditor(
   function startDrag(): void {
     if (dragStarted) return
     dragStarted = true
-    void import("sortablejs").then(({ default: Sortable }) => {
+    void import("./list-drag-reorder").then(({ attachVerticalListDragReorder }) => {
       if (signal.aborted) return
-      const motion = window.matchMedia("(prefers-reduced-motion: reduce)")
-      const sorter = Sortable.create(list, {
-        animation: motion.matches ? 0 : 150,
-        easing: "cubic-bezier(0.23, 1, 0.32, 1)",
+      attachVerticalListDragReorder(list, {
         handle: "[data-dashboard-drag]",
-        draggable: "[data-dashboard-editor-widget]",
+        item: "[data-dashboard-editor-widget]",
         ghostClass: "dashboard-widget-drag-ghost",
-        direction: "vertical",
-        forceFallback: true,
-        fallbackTolerance: 4,
+        signal,
         onStart: () => { dragging = true },
         onEnd: () => {
           dragging = false
@@ -82,8 +77,6 @@ export function bindDashboardLayoutEditor(
         },
       })
       list.dataset.dashboardDragReady = ""
-      motion.addEventListener("change", () => sorter.option("animation", motion.matches ? 0 : 150), { signal })
-      signal.addEventListener("abort", () => sorter.destroy(), { once: true })
     }).catch(() => {
       dragStarted = false
       if (!signal.aborted) feedback("Dragging couldn’t load. Use the arrow buttons to move widgets.")

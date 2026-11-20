@@ -972,7 +972,6 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
                 navigator.clipboard.writeText(
                   t.ticket_key ? String(t.ticket_key) : String(t.id),
                 );
-                const { showToast } = await import("@lib/toast");
                 showToast("common.id_copied", "success");
               };
             }
@@ -1250,17 +1249,29 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               const descEl = document.getElementById("td-recurrence-desc");
               if (descEl) {
                 descEl.textContent = t.recurrence_rule
-                  ? `🔁 ${recurrenceSelect.selectedOptions[0]?.textContent ?? ""}`
+                  ? (recurrenceSelect.selectedOptions[0]?.textContent ?? "")
                   : "";
               }
             }
 
-            const isFav = Number(t.is_favorite ?? 0);
-            const favBtn = document.getElementById("td-fav-btn");
-            if (favBtn)
-              favBtn.textContent = isFav
-                ? "★ Favorited"
-                : "⭐ Add to Favorites";
+            const isFav = Number(t.is_favorite ?? 0) === 1;
+            const favBtn = document.getElementById("td-toggle-favorite") as HTMLButtonElement | null;
+            if (favBtn) {
+              favBtn.setAttribute("aria-pressed", String(isFav));
+              const favLabel = isFav ? "Remove from favorites" : "Add to favorites";
+              favBtn.title = favLabel;
+              favBtn.setAttribute("aria-label", favLabel);
+            }
+            const isPromoted = Boolean(t.is_promoted);
+            const promoteBtn = document.getElementById("td-toggle-promote") as HTMLButtonElement | null;
+            if (promoteBtn) {
+              promoteBtn.setAttribute("aria-pressed", String(isPromoted));
+              const promoteLabel = isPromoted
+                ? (window.mI18n?.get("kanban.demote_card") ?? "Remove promotion")
+                : (window.mI18n?.get("kanban.promote_card") ?? "Promote to top");
+              promoteBtn.title = promoteLabel;
+              promoteBtn.setAttribute("aria-label", promoteLabel);
+            }
 
             // Load settings-defined custom fields
             _settingsFields = [];
@@ -1528,7 +1539,6 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           }
           const sessionBound = search || field === "description"
           if (sessionBound && generation !== detailGeneration) return false
-          const { showToast } = await import("@lib/toast")
           if (!sessionBound || generation === detailGeneration) showToast("common.failed_update", "error")
           return false
         }
@@ -1571,14 +1581,14 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           descPreview.replaceChildren(fallback)
 
           try {
-            const [{ marked }, { sanitizeClient }] = await Promise.all([
-              import("marked"),
+            const [{ renderMarkdownToHtml }, { sanitizeClient }] = await Promise.all([
+              import("@lib/markdown-client"),
               import("@lib/sanitize-client"),
             ])
             if (__signal.aborted || generation !== detailGeneration ||
                 sequence !== descriptionRenderSequence || !descPreview.isConnected) return
 
-            const sanitized = sanitizeClient(marked.parse(markdown, { async: false }))
+            const sanitized = sanitizeClient(renderMarkdownToHtml(markdown))
             const parsedDoc = new DOMParser().parseFromString(sanitized, "text/html")
             resolveDescriptionTaskReferences(parsedDoc.body)
             descPreview.replaceChildren(...Array.from(parsedDoc.body.childNodes))
@@ -1688,7 +1698,6 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
                 loadAttachments(currentTaskId!);
               } catch (err) {
                 log.error("Failed to save attachment", err);
-                const { showToast } = await import("@lib/toast");
                 showToast(
                   "Failed to save attachment due to storage limits or error.",
                   "error",
@@ -1830,7 +1839,6 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             const label = val
               ? (sel.options[sel.selectedIndex]?.textContent ?? val)
               : "Unassigned";
-            const { showToast } = await import("@lib/toast");
             showToast(val ? `Assigned to ${label}` : "Unassigned");
           }, { signal: __signal });
         // UX2: Keyboard shortcut 'A' to focus assignee dropdown in detail panel
@@ -2016,7 +2024,41 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           if (statusSelect) void saveDetailStatus(isDoneStatus(statusSelect.value) ? "pending" : "complete")
         }, { signal: __signal })
 
-        // Toggle favorite
+        // Toggle promoted (sash highlight & top of lane)
+        document
+          .getElementById("td-toggle-promote")
+          ?.addEventListener("click", async () => {
+            if (!currentTaskId) return;
+            const search = searchSession
+            const generation = detailGeneration
+            const btn = document.getElementById("td-toggle-promote") as HTMLButtonElement | null;
+            if (!btn || btn.disabled) return;
+            const wasPromoted = btn.getAttribute("aria-pressed") === "true";
+            const nextPromoted = !wasPromoted;
+            btn.disabled = true;
+            btn.setAttribute("aria-pressed", String(nextPromoted));
+            try {
+              const saved = await saveTD("is_promoted", nextPromoted);
+              if (search && generation !== detailGeneration) return;
+              if (saved === false) {
+                btn.setAttribute("aria-pressed", String(wasPromoted));
+                return;
+              }
+              const promoteLabel = nextPromoted
+                ? (window.mI18n?.get("kanban.demote_card") ?? "Remove promotion")
+                : (window.mI18n?.get("kanban.promote_card") ?? "Promote to top");
+              btn.title = promoteLabel;
+              btn.setAttribute("aria-label", promoteLabel);
+              showToast(nextPromoted
+                ? (window.mI18n?.get("kanban.card_promoted") ?? "Promoted to the top of the lane")
+                : (window.mI18n?.get("kanban.card_demoted") ?? "Promotion removed"));
+              document.dispatchEvent(new CustomEvent("kanban:detail-changed", { detail: { id: currentTaskId } }));
+            } finally {
+              btn.disabled = false;
+            }
+          }, { signal: __signal });
+
+        // Toggle favorite (keeps Tabler icon intact)
         document
           .getElementById("td-toggle-favorite")
           ?.addEventListener("click", async () => {
@@ -2025,11 +2067,16 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             const generation = detailGeneration
             const btn = document.getElementById(
               "td-toggle-favorite",
-            ) as HTMLElement;
-            const isFav = btn.textContent?.startsWith("★");
-            await saveTD("is_favorite", isFav ? 0 : 1);
-            if (search && generation !== detailGeneration) return
-            btn.textContent = isFav ? "⭐ Add to Favorites" : "★ Favorited";
+            ) as HTMLButtonElement | null;
+            if (!btn) return;
+            const isFav = btn.getAttribute("aria-pressed") === "true";
+            const nextFav = !isFav;
+            btn.setAttribute("aria-pressed", String(nextFav));
+            await saveTD("is_favorite", nextFav ? 1 : 0);
+            if (search && generation !== detailGeneration) return;
+            const favLabel = nextFav ? "Remove from favorites" : "Add to favorites";
+            btn.title = favLabel;
+            btn.setAttribute("aria-label", favLabel);
           }, { signal: __signal });
 
         // Duplicate task
@@ -2041,8 +2088,6 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             const generation = detailGeneration
             const write = search ? beginScopedWrite() : undefined
             const stale = () => search && generation !== detailGeneration
-            const toast = document.createElement("div");
-            toast.className = "toast";
             try {
               const res = await fetch(
                 `${window.__ingress_path || ""}/api/tasks/${currentTaskId}/duplicate`,
@@ -2053,25 +2098,16 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               );
               if (stale()) return
               if (!res.ok) {
-                toast.className = "toast error";
-                toast.textContent = "Failed to duplicate";
-                document.querySelector(".toast-container")?.appendChild(toast);
-                setTimeout(() => toast.remove(), 2500);
+                showToast("Failed to duplicate", "error")
                 return;
               }
               const data = await res.json();
               if (stale()) return
-              toast.className = "toast success";
-              toast.textContent = `Duplicated → ${data.title}`;
-              document.querySelector(".toast-container")?.appendChild(toast);
-              setTimeout(() => toast.remove(), 2500);
+              showToast(`Duplicated → ${data.title}`, "success")
               if (!search?.queued) void openTaskDetail(data.id)
             } catch {
               if (stale()) return
-              toast.className = "toast error";
-              toast.textContent = "Network error";
-              document.querySelector(".toast-container")?.appendChild(toast);
-              setTimeout(() => toast.remove(), 2500);
+              showToast("common.network_error", "error")
             } finally {
               write?.finish()
             }
@@ -2155,8 +2191,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
                 loadAttachments(currentTaskId!);
               } catch (err) {
                 log.error("Attachment failed", err);
-                const { showToast: toast } = await import("@lib/toast");
-                toast("Failed to save attachment.", "error");
+                showToast("Failed to save attachment.", "error")
               } finally {
                 input.value = ""; // reset
               }
@@ -2274,7 +2309,6 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           if (__signal.aborted || currentTaskId !== taskId) return
           if (copied) {
             copyFallback?.setAttribute("hidden", "")
-            const { showToast } = await import("@lib/toast")
             showToast("task_modal.link_copied", "success")
           } else if (copyFallback && copyValue) {
             copyFallback.removeAttribute("hidden")

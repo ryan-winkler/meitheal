@@ -2,6 +2,7 @@
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import { organizationLabelsFor } from "@lib/organization-labels"
 import { boardNavigationLinks, boardWorkspaceHref, type BoardPlanningSection } from "@lib/board-workspace"
+import Icon from "../ui/Icon.astro"
 
 interface Props {
   boardId: string
@@ -16,25 +17,45 @@ const { boardId, boardName, area, project, fromArea, active = "tasks", settingsH
 const label = await organizationLabelsFor(Astro)
 const context = { boardId, area: area?.id, project: project?.id, fromArea }
 const links = boardNavigationLinks(context)
-const scope = { area: project ? undefined : area?.id, project: project?.id, fromArea }
-const sectionHref = (section: BoardPlanningSection) => boardWorkspaceHref(boardId, { ...scope, groups: true, section }, "groups")
 
 ---
 <div class="board-workspace-navigation" data-board-workspace-navigation={boardId}>
   <nav class="board-breadcrumb" aria-label="Board location">
-    <a href="/boards">{label("board", true)}</a>
-    <span aria-hidden="true">/</span><a href={boardWorkspaceHref(boardId)}>{boardName}</a>
-    {area && <><span aria-hidden="true">/</span><a href={boardWorkspaceHref(boardId, { area: area.id })}>{area.name}</a></>}
-    {project && <><span aria-hidden="true">/</span><span>{project.name}</span></>}
+    <a href="/boards" class="board-breadcrumb__root">
+      <Icon name="layout-kanban" size={14} sprite />
+      <span>{label("board", true)}</span>
+    </a>
+    <span class="board-breadcrumb__sep" aria-hidden="true">/</span>
+    <a href={boardWorkspaceHref(boardId)} class="board-breadcrumb__current">{boardName}</a>
+    {area && <><span class="board-breadcrumb__sep" aria-hidden="true">/</span><a href={boardWorkspaceHref(boardId, { area: area.id })}>{area.name}</a></>}
+    {project && <><span class="board-breadcrumb__sep" aria-hidden="true">/</span><span class="board-breadcrumb__leaf">{project.name}</span></>}
   </nav>
   <nav class="board-context-tabs" aria-label="Board workspace">
-    <a data-board-section="tasks" href={links.tasks} aria-current={active === "tasks" ? "page" : undefined}>{label("task", true)}</a>
+    <a data-board-section="tasks" href={links.tasks} aria-current={active === "tasks" ? "page" : undefined}>
+      <Icon name="checkbox" size={15} sprite />
+      <span>{label("task", true)}</span>
+    </a>
     {available("organizer") && (available("groups") || available("projects")) &&
-      <a data-board-section="planning" href={links.planning} aria-current={active === "planning" ? "page" : undefined}>{label("group", true)} &amp; {label("project", true)}</a>}
-    {available("goals") && <a data-board-section="goals" href={links.progress} aria-current={active === "goals" ? "page" : undefined}>{label("goal", true)}</a>}
-    {available("routines") && <a data-board-section="routines" href={links.routines} aria-current={active === "routines" ? "page" : undefined}>{label("routine", true)}</a>}
-    {available("pillars") && <a data-board-section="pillars" href={links.pillars} aria-current={active === "pillars" ? "page" : undefined}>{label("pillar", true)}</a>}
-    {settingsHref && <a href={settingsHref}>{label("board")} settings</a>}
+      <a data-board-section="planning" href={links.planning} aria-current={active === "planning" ? "page" : undefined}>
+        <Icon name="folder" size={15} sprite />
+        <span>{label("group", true)} &amp; {label("project", true)}</span>
+      </a>}
+    {available("goals") && <a data-board-section="goals" href={links.progress} aria-current={active === "goals" ? "page" : undefined}>
+      <Icon name="target" size={15} sprite />
+      <span>{label("goal", true)}</span>
+    </a>}
+    {available("routines") && <a data-board-section="routines" href={links.routines} aria-current={active === "routines" ? "page" : undefined}>
+      <Icon name="repeat" size={15} sprite />
+      <span>{label("routine", true)}</span>
+    </a>}
+    {available("pillars") && <a data-board-section="pillars" href={links.pillars} aria-current={active === "pillars" ? "page" : undefined}>
+      <Icon name="sparkles" size={15} sprite />
+      <span>{label("pillar", true)}</span>
+    </a>}
+    {settingsHref && <a href={settingsHref} class="board-context-tabs__settings">
+      <Icon name="settings" size={15} sprite />
+      <span>{label("board")} settings</span>
+    </a>}
   </nav>
 </div>
 

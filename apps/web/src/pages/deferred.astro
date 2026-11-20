@@ -4,6 +4,7 @@ import { boardWorkspaceHref } from "@lib/board-workspace"
 
 import Layout from "../layouts/Layout.astro"
 import Icon from "../components/ui/Icon.astro"
+import TaskLifecycleNav from "../components/tasks/TaskLifecycleNav.astro"
 import { AreaRepository, type AreaRow } from "@domains/tasks/persistence/area-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
@@ -63,10 +64,8 @@ function pageHref(target: number, open?: string) {
 
 <Layout title={t("deferral.title", locale)} suppressTaskUrlOpen>
   <section class="work-queue" data-deferred-root aria-labelledby="deferred-heading">
+    <TaskLifecycleNav active="deferred" {boardHref} boardId={workScope.boardId} {area} {locale} deferredCount={total} />
     <header class="work-queue-header">
-      <a href={boardHref} class="btn btn-outline" data-astro-prefetch="false">
-        <Icon name="layout-kanban" size={18} /> {t("deferral.back", locale)}
-      </a>
       <h1 id="deferred-heading" tabindex="-1"><Icon name="clock" size={24} />{t("deferral.title", locale)}</h1>
       <p>{t("deferral.description", locale)}</p>
     </header>
@@ -116,19 +115,37 @@ function pageHref(target: number, open?: string) {
                       </p>
                     </div>
                     <div class="work-queue-controls">
-                      <a href={pageHref(page, task.id)} class="btn btn-outline" data-deferred-details data-astro-prefetch="false">
-                        <Icon name="file-text" size={18} />
+                      <a href={pageHref(page, task.id)} class="btn btn-outline btn-sm" data-deferred-details data-astro-prefetch="false">
+                        <Icon name="file-text" size={16} sprite />
                         {t("triage.details", locale)}
                       </a>
-                      <button type="button" class="btn btn-primary" data-deferred-resume>
-                        <Icon name="refresh" size={18} /> {t("deferral.resume", locale)}
+                      <button type="button" class="btn btn-secondary btn-sm" data-deferred-backlog>
+                        <Icon name="inbox" size={16} sprite /> Move to Backlog
+                      </button>
+                      <button type="button" class="btn btn-primary btn-sm" data-deferred-resume>
+                        <Icon name="refresh" size={16} sprite /> {t("deferral.resume", locale)}
                       </button>
                     </div>
                   </li>
                 )
               })}
             </ul>
-          ) : <p class="work-queue-empty">{t(area ? "deferral.area_empty" : "deferral.empty", locale)}</p>}
+          ) : (
+            <div class="work-queue-empty">
+              <div class="work-queue-empty__inner">
+                <Icon name="clock" size={28} sprite />
+                <p>{t(area ? "deferral.area_empty" : "deferral.empty", locale)}</p>
+                <div class="work-queue-controls">
+                  <a href={boardHref} class="btn btn-primary btn-sm" data-astro-prefetch="false">
+                    <Icon name="layout-kanban" size={16} sprite /> {t("deferral.back", locale)}
+                  </a>
+                  <a href={`/inactivity${namedBoardId || area ? `?${new URLSearchParams({ ...(namedBoardId ? { board_id: namedBoardId } : {}), ...(area ? { area } : {}) })}` : ""}`} class="btn btn-outline btn-sm" data-astro-prefetch="false">
+                    <Icon name="alert-triangle" size={16} sprite /> {t("inactivity.title", locale)}
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
           {total > 25 && (
             <nav class="work-queue-controls" aria-label={t("deferral.pagination", locale)}>
               <span>{t("triage.range", locale, { first: String(first), last: String(last), total: String(total) })}</span>

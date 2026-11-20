@@ -131,6 +131,16 @@ details.filter-dropdown summary::-webkit-details-marker {
   color: var(--accent-text);
 }
 
+.filter-pill--promoted.filter-pill--active {
+  background: color-mix(in srgb, #f59f00 14%, var(--bg-secondary));
+  border-color: rgba(245, 159, 0, 0.55);
+  color: #f59f00;
+}
+
+.filter-pill--promoted.filter-pill--active svg {
+  fill: currentColor;
+}
+
 @media (max-width: 768px), (pointer: coarse) {
   [data-filter-promoted] { min-block-size: 44px; }
 }

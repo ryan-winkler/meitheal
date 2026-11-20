@@ -127,6 +127,10 @@
             "type": "string",
             "maxLength": 10000
           },
+          "is_promoted": {
+            "type": "boolean",
+            "description": "Pin the new task to the top of its Kanban lane with a promoted ribbon sash."
+          },
           "assigned_to": {
             "type": "string",
             "maxLength": 255,

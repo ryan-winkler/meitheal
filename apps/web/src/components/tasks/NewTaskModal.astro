@@ -132,18 +132,23 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
         <div class="nt-form-grid">
           <div class="nt-field">
             <label for="new-task-priority">{t("tasks.priority_label", locale)}</label>
-            <select id="new-task-priority" name="priority" class="form-select">
-              <option value="1">{t("task_modal.priority_urgent", locale)}</option>
-              <option value="2">{t("task_modal.priority_high", locale)}</option>
-              <option value="3" selected>{t("task_modal.priority_normal", locale)}</option>
-              <option value="4">{t("task_modal.priority_low", locale)}</option>
-              <option value="5">{t("tasks.priority_label", locale)} 5</option>
-            </select>
+            <div class="nt-priority-select-wrap">
+              <span id="nt-priority-icon" class="nt-priority-icon priority-medium" aria-hidden="true">
+                <Icon name="arrows-left-right" size={15} sprite={true} />
+              </span>
+              <select id="new-task-priority" name="priority" class="form-select nt-priority-select">
+                <option value="1">{t("task_modal.priority_urgent", locale)}</option>
+                <option value="2">{t("task_modal.priority_high", locale)}</option>
+                <option value="3" selected>{t("task_modal.priority_normal", locale)}</option>
+                <option value="4">{t("task_modal.priority_low", locale)}</option>
+                <option value="5">{t("tasks.priority_label", locale)} 5</option>
+              </select>
+            </div>
           </div>
           <div id="nt-ctx-due-row" class="nt-field">
             <label id="nt-due-label">{t("tasks.due_date", locale)}</label>
             <input type="hidden" id="nt-contextual-due" name="due_date" />
-            <div id="nt-due-date-picker" class="nt-due-picker" role="group" aria-labelledby="nt-due-label"></div>
+            <div id="nt-due-date-picker" class="nt-due-picker" role="group" aria-labelledby="nt-due-label" data-placeholder={t("task_modal.due_date_placeholder", locale)}></div>
           </div>
           <div class="nt-field" id="nt-assignee-field">
             <label for="new-task-assigned-to">{t("task_modal.assignee_label", locale)}</label>
@@ -181,11 +186,11 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       <div id="nt-custom-fields" class="nt-options-section">
         <div class="flex items-center justify-between p-2">
           <button type="button" id="nt-custom-fields-toggle" aria-controls="nt-custom-fields-container" aria-expanded="false" class="flex items-center gap-1.5 text-xs font-semibold text-text-muted uppercase tracking-wider hover:text-text-primary transition-colors">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"></path></svg>
+            <Icon name="chevron-down" size={13} sprite={true} />
             {t("task_modal.custom_fields_label", locale)}
           </button>
           <button type="button" id="nt-add-custom-field-btn" aria-controls="nt-add-field-dropdown" aria-expanded="false" class="text-xs font-medium flex items-center gap-1">
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            <Icon name="plus" size={12} sprite={true} />
             {t("task_modal.custom_field_add", locale)}
           </button>
         </div>
@@ -270,10 +275,10 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
 <script>
   import { currentTaskApiContext, taskApiHeaders, type TaskApiContext } from "@lib/task-api"
   import { taskCapturePlacement } from "@lib/task-capture-placement"
-  import { showToast, showTaskCreatedToast } from "@lib/toast";
+  import { showTaskCreatedToast, showToast } from "@lib/toast"
   import { renderSpriteIconSvg, type IconName } from "../../generated/icon-registry";
   import { InlineDatePicker } from "../shared/InlineDatePicker"
-  import { createTablerSvgElement, renderIconOrCustomEmoji, type TablerIconName } from "@lib/tabler-svg";
+  import { renderIconOrCustomEmoji, type TablerIconName } from "@lib/tabler-svg"
   import { checklistLines, createChecklistItem } from "@lib/checklist-items"
   import { createClientLogger } from "@lib/client-logger";
   import { pageLifecycle } from "@lib/page-lifecycle";
@@ -394,6 +399,19 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     const kindTabs = document.querySelectorAll("#nt-kind-tabs button");
     const kindInput = document.getElementById("new-task-kind") as HTMLInputElement | null;
 
+    const prioritySelect = overlay.querySelector<HTMLSelectElement>("#new-task-priority")
+    const priorityIconEl = overlay.querySelector<HTMLElement>("#nt-priority-icon")
+    function syncPriorityIcon() {
+      if (!prioritySelect || !priorityIconEl) return
+      const p = Number(prioritySelect.value || 3)
+      const iconName: IconName = p <= 1 ? "flame" : p === 2 ? "arrow-up" : p >= 4 ? "arrow-down" : "arrows-left-right"
+      const cls = p <= 1 ? "priority-critical" : p === 2 ? "priority-high" : p >= 4 ? "priority-low" : "priority-medium"
+      priorityIconEl.className = `nt-priority-icon ${cls}`
+      priorityIconEl.innerHTML = renderSpriteIconSvg(iconName, { size: 15 })
+    }
+    prioritySelect?.addEventListener("change", syncPriorityIcon, { signal })
+    syncPriorityIcon()
+
     function createButtonLabel(kind = kindInput?.value) {
       const labels = submitBtn?.dataset
       if (kind === "shopping_item") return labels?.labelShopping || "Create Shopping List"
@@ -419,8 +437,8 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       dueRow?.classList.toggle("hidden", event)
       if (titleInput) {
         const labels = titleInput.dataset
-        titleInput.placeholder = (shopping ? labels.placeholderShopping : checklist ? labels.placeholderChecklist
-          : event ? labels.placeholderEvent : labels.placeholderTask) || "Task name"
+        titleInput.placeholder = (shopping ? labels.placeholderShopping
+          : checklist ? labels.placeholderChecklist : event ? labels.placeholderEvent : labels.placeholderTask) || "Task name"
       }
     }
 
@@ -910,6 +928,8 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     if (dueMount && dueInput) {
       duePicker = new InlineDatePicker(dueMount, {
         value: null,
+        placeholderText: dueMount.dataset.placeholder || "Set due date",
+        showIconWithDate: true,
         formatFn: date => dateOnly.test(dueInput.value) ? date.toLocaleDateString() : date.toLocaleString(),
         onChange(date) {
           dueInput.value = date.toISOString()
@@ -1082,7 +1102,10 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
 
         const priority = input("new-task-priority")
         const recurrence = overlay?.querySelector<HTMLSelectElement>("#new-task-recurrence")
-        if (priority) priority.value = String(snapshot.priority)
+        if (priority) {
+          priority.value = String(snapshot.priority)
+          syncPriorityIcon()
+        }
         recurrence?.querySelector("[data-saved-recurrence]")?.remove()
         if (recurrence) {
           if (snapshot.recurrence && ![...recurrence.options].some(option => option.value === snapshot.recurrence)) {
@@ -1189,6 +1212,8 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       if (submitBtn) {
         submitBtn.disabled = disabled || !canRetryCreate()
         submitBtn.formNoValidate = bound
+        submitBtn.classList.toggle("btn-loading", submitting)
+        submitBtn.setAttribute("aria-busy", String(submitting))
         submitBtn.textContent = bound ? taskDraftText("publish") : submitting ? submitBtn.dataset.labelCreating || "Creating…" : createButtonLabel()
       }
       if (anotherBtn) {
@@ -1648,7 +1673,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
           if (created.task_kind !== "quick_capture") queueCreatedTask(created.id)
           submitting = false
           closeNewTaskModal()
-          showTaskCreatedToast(created.ticket_key ?? null, created.id, title)
+          showTaskCreatedToast(created.ticket_key ?? null, created.id, finalTitle)
         } catch {
           if (session !== captureSession || signal.aborted) return
           if (confirmed) {
@@ -1684,10 +1709,80 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
 
 <style>
   #nt-status-pills :global(.filter-toolbar__type-btn:not(.active)) { opacity: 1; }
-  .nt-due-picker { min-height: 44px; }
-  .nt-due-picker :global(.idp-trigger) { min-width: 44px; min-height: 44px; color: var(--text-primary); opacity: 1; white-space: normal; }
-  .nt-due-picker :global(.idp-date-text) { white-space: normal; overflow-wrap: anywhere; }
-  .nt-due-picker :global(.idp-clear-btn) { display: inline; min-width: 44px; min-height: 44px; }
+  .nt-priority-select-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .nt-priority-icon {
+    position: absolute;
+    inset-inline-start: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .nt-priority-select {
+    padding-inline-start: 32px !important;
+    width: 100%;
+  }
+  .nt-due-picker {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    min-height: 44px;
+  }
+  .nt-due-picker :global(.idp-trigger) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    flex: 1;
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 8px 10px;
+    border: 1px solid var(--control-border, var(--border));
+    border-radius: var(--radius-sm);
+    background: var(--bg-input);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    opacity: 1;
+    text-align: left;
+    transition: border-color 150ms ease, background-color 150ms ease;
+  }
+  .nt-due-picker :global(.idp-trigger:hover) {
+    background: var(--bg-hover);
+    border-color: var(--border-focus, var(--accent));
+  }
+  .nt-due-picker :global(.idp-placeholder) {
+    color: var(--text-muted);
+  }
+  .nt-due-picker :global(.idp-placeholder-text) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .nt-due-picker :global(.idp-date-text) { white-space: normal; overflow-wrap: anywhere; font-size: 0.875rem; }
+  .nt-due-picker :global(.idp-clear-btn) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    min-width: 38px;
+    min-height: 44px;
+    border: 1px solid var(--control-border, var(--border));
+    border-radius: var(--radius-sm);
+    background: var(--bg-input);
+    color: var(--text-muted);
+    opacity: 1;
+  }
+  .nt-due-picker :global(.idp-clear-btn:hover) {
+    color: var(--danger, #ef4444);
+    border-color: var(--danger, #ef4444);
+  }
   :global(.nt-due-date-panel) { width: min(420px, calc(100vw - 16px)); min-width: 0; max-height: calc(100dvh - 16px); overflow: auto; }
   @media (max-width: 440px) {
     :global(.nt-due-date-panel) { flex-direction: column; }

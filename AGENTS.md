@@ -205,7 +205,7 @@ Meitheal uses a **three-branch, two-channel release strategy** (see `docs/kcs/re
 | `main` | Beta channel (mostly unused) | **No** (explicit maintainer promotion only) | Staging / Beta |
 | `release` | Full production release (`meitheal-hub/`) | **No** (explicit maintainer release promotion only) | Strict SemVer `0.0.{digit}` (`stable`) |
 
-- **Canary (`dev`)**: Pushes to `dev` trigger `publish-canary-images.yml` (`build-only` multi-arch smoke checks). It must never automatically push to `main` or `release`.
+- **Canary (`dev`)**: Pushes to `dev` trigger the multi-arch smoke workflow. The release host publishes the exact candidate after a passing physical Green benchmark and prepares the App Store change for review. Canary does not push to the source `main` or `release` branches.
 - **Beta (`main`)**: Kept mostly unused; reserved for explicit maintainer beta promotion before full release.
 - **Stable (`release`)**: Only explicit maintainer promotions to `release` or matching `v*` tags trigger `publish-addon-images.yml`. The system validates version sync across manifests and builds multi-arch release images.
 - **SemVer Policy (Mandatory)**: Do not boost versions without explicit reason and maintainer approval. Keep versions on the `0.0.{one digit}` line (for example `0.0.1`) and increment strictly by `+0.0.1` via `node scripts/bump-version.mjs patch` unless explicitly told otherwise (`--force-semver`).

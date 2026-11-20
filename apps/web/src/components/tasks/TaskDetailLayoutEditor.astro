@@ -1,15 +1,29 @@
 ---
+import { ensureSchema, getPersistenceClient, SettingsRepository } from "@domains/tasks"
 import { organizationLabelsFor } from "@lib/organization-labels"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import type { OrganizationFeature } from "@lib/organization-availability"
 import Icon from "../ui/Icon.astro"
-import { taskDetailSections } from "@lib/task-detail-layout"
+import { taskDetailSections, taskDetailServerSettingKey } from "@lib/task-detail-layout"
 import { t, type Locale } from "../../i18n/translations"
 
 interface Props {
   locale: Locale
+  scope?: "server" | "personal"
+  serverLayoutJson?: string | null
 }
-const { locale } = Astro.props
+const { locale, scope = "personal", serverLayoutJson: passedServerLayout } = Astro.props
+let serverLayoutJson = passedServerLayout ?? null
+if (scope === "server" && passedServerLayout === undefined) {
+  try {
+    const client = getPersistenceClient()
+    await ensureSchema(client)
+    const stored = await new SettingsRepository(client).getByKeys([taskDetailServerSettingKey])
+    const raw = stored[taskDetailServerSettingKey]
+    if (typeof raw === "string" && raw.trim()) serverLayoutJson = raw
+  } catch { /* fallback to built-in layout defaults */ }
+}
+
 const organization = await organizationLabelsFor(Astro)
 const fieldFeatures: Partial<Record<string, OrganizationFeature>> = { area: "groups", project: "projects", pillar: "pillars", principle: "principles", "home-assistant-area": "home_assistant_area" }
 const fieldLabel = (id: string, fallback: string) => id === "area" ? organization("group")
@@ -18,6 +32,7 @@ const fieldLabel = (id: string, fallback: string) => id === "area" ? organizatio
 const sections = taskDetailSections.map(section => ({
   id: section.id,
   label: section.label,
+  icon: section.icon,
   ...("fields" in section && {
     fields: section.fields
       .filter(([id]) => !fieldFeatures[id] || available(fieldFeatures[id]!))
@@ -26,6 +41,8 @@ const sections = taskDetailSections.map(section => ({
 }))
 ---
 <div class="td-layout-editor" data-task-layout-editor
+  data-layout-scope={scope}
+  data-server-layout={serverLayoutJson ?? undefined}
   data-layout-sections={JSON.stringify(sections)}
   data-layout-fields-label={t("task_layout.fields", locale)}
   data-layout-move-up={t("task_layout.move_up", locale)}
@@ -35,32 +52,99 @@ const sections = taskDetailSections.map(section => ({
   data-save-failed={t("task_layout.save_failed", locale)}
   data-drag-failed={t("task_layout.drag_failed", locale)}
 >
+  {scope === "server" ? (
+    <div class="td-layout-scope td-layout-scope--server" role="note">
+      <span class="td-layout-scope__icon" aria-hidden="true"><Icon name="world" size={18} sprite /></span>
+      <div class="td-layout-scope__body">
+        <div class="td-layout-scope__head">
+          <strong>Server-wide default</strong>
+          <span class="td-layout-scope__badge">All users</span>
+        </div>
+        <p>Changes saved here alter Task Detail for every user on this server who has not customized their own layout.</p>
+      </div>
+    </div>
+  ) : (
+    <div class="td-layout-scope td-layout-scope--personal">
+      <span class="td-layout-scope__badge" data-layout-scope-badge>Using server default</span>
+      <p>Changes here apply only to this browser and override the server default.</p>
+    </div>
+  )}
+
+  {scope === "server" && (
+    <div class="td-layout-personal-notice" data-layout-personal-notice hidden>
+      <span class="td-layout-personal-notice__text">
+        <Icon name="info-circle" size={16} sprite />
+        <span>This browser has a personal override that takes priority over the server default for you.</span>
+      </span>
+      <button type="button" class="btn btn-secondary btn-sm" data-layout-clear-personal>Clear my browser override</button>
+    </div>
+  )}
+
   <div class="td-layout-editor__intro">
-    <p>{t("task_layout.instructions", locale)}</p>
-    <button type="button" class="btn btn-secondary" data-layout-reset>{t("task_layout.reset", locale)}</button>
+    <p>{scope === "server"
+      ? "Drag grips or use arrows to reorder, click the pencil to rename, or toggle the eye icon to show or hide sections and fields."
+      : t("task_layout.instructions", locale)}</p>
+    <button type="button" class="btn btn-secondary btn-sm" data-layout-reset>
+      <Icon name="refresh" size={14} sprite />
+      <span>{scope === "server" ? "Reset to defaults" : "Reset to server default"}</span>
+    </button>
   </div>
   <p class="td-layout-editor__error" data-layout-error hidden></p>
   <p class="sr-only" role="status" data-layout-status></p>
   <ol class="td-layout-editor__list" data-layout-order="sections" aria-label={t("task_layout.sections", locale)}></ol>
+
+  {scope === "server" && (
+    <div class="settings-dirty-bar" data-layout-dirty-bar role="status" aria-live="polite" hidden>
+      <span class="settings-dirty-bar__info">
+        <span class="settings-dirty-bar__icon" aria-hidden="true"><Icon name="alert-triangle" size={16} sprite /></span>
+        <span data-layout-dirty-text>Unsaved server-wide layout changes.</span>
+      </span>
+      <div class="settings-dirty-bar__actions">
+        <button type="button" class="btn btn-secondary btn-sm" data-layout-discard>
+          <Icon name="refresh" size={14} sprite />
+          <span>Discard</span>
+        </button>
+        <button type="button" class="btn btn-primary btn-sm" data-layout-save>
+          <Icon name="check" size={14} sprite />
+          <span>Save server default</span>
+        </button>
+      </div>
+    </div>
+  )}
+
   <template data-layout-row>
     <li class="td-layout-editor__item" data-layout-item>
       <div class="td-layout-editor__row">
         <span class="td-layout-editor__handle" data-layout-handle aria-hidden="true">
-          <Icon name="grip-vertical" size={20} sprite />
+          <Icon name="grip-vertical" size={18} sprite />
         </span>
+        <span class="td-layout-editor__icon" data-layout-icon aria-hidden="true"></span>
         <span class="td-layout-editor__label" data-layout-label></span>
-        <button type="button" class="td-layout-icon-btn" data-layout-move="up">
-          <Icon name="arrow-up" size={18} sprite />
-        </button>
-        <button type="button" class="td-layout-icon-btn" data-layout-move="down">
-          <Icon name="arrow-down" size={18} sprite />
-        </button>
+        <div class="td-layout-editor__actions">
+          <button type="button" class="td-layout-icon-btn" data-layout-rename title="Rename">
+            <Icon name="pencil" size={15} sprite />
+          </button>
+          <button type="button" class="td-layout-icon-btn" data-layout-toggle-vis aria-pressed="false" title="Hide">
+            <Icon name="eye" size={16} sprite class="td-layout-eye-on" />
+            <Icon name="eye-off" size={16} sprite class="td-layout-eye-off" />
+          </button>
+          <button type="button" class="td-layout-icon-btn" data-layout-move="up">
+            <Icon name="arrow-up" size={16} sprite />
+          </button>
+          <button type="button" class="td-layout-icon-btn" data-layout-move="down">
+            <Icon name="arrow-down" size={16} sprite />
+          </button>
+        </div>
       </div>
     </li>
   </template>
   <template data-layout-fields>
     <details class="td-layout-editor__fields">
-      <summary></summary>
+      <summary>
+        <Icon name="chevron-down" size={15} sprite class="td-layout-editor__chevron" />
+        <span data-layout-fields-title></span>
+        <span class="td-layout-editor__count" data-layout-fields-count></span>
+      </summary>
       <ol class="td-layout-editor__list" data-layout-order></ol>
     </details>
   </template>

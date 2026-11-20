@@ -110,3 +110,14 @@ export { prepareWorkIntegrationSettings, validateWorkIntegrationSettingsApproval
 export { parseRRule } from "./recurrence"
 
 export { taskActionHints, type TaskActionHint } from "./task-action-hints"
+export {
+  BOARD_KEY_MAX_LENGTH,
+  BOARD_KEY_MIN_LENGTH,
+  BOARD_KEY_PATTERN,
+  formatBoardTicketKey,
+  normalizeBoardKey,
+  rewriteTicketRefPrefix,
+  suggestBoardKey,
+  validateBoardKey,
+  type BoardKeyValidation,
+} from "./board-key"

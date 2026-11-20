@@ -1,5 +1,7 @@
 import { isOrganizationFeatureAvailable } from "../../lib/organization-request-context"
 import {
+  BoardAccessService,
+  BoardRepository,
   scopePermits,
   type BoardScope,
   AreaRepository,
@@ -108,6 +110,13 @@ export async function searchMeithealCatalog(
 
   const sections: SearchResultSection[] = []
 
+  const canDirectory =
+    scope.principal.kind === "ha_user" || scope.principal.kind === "local_operator"
+  const accessibleBoards =
+    canDirectory && (options.scope === "all" || options.scope === "views" || options.scope === "tasks")
+      ? await new BoardRepository(client).findDirectory(scope.principal)
+      : []
+
   if (options.scope === "all" || options.scope === "tasks") {
     const searchOptions: Parameters<typeof taskRepo.searchCatalog>[0] = {
       query: options.query,
@@ -122,8 +131,44 @@ export async function searchMeithealCatalog(
     if (options.assignedTo) searchOptions.assignedTo = options.assignedTo
 
     const rows = await taskRepo.searchCatalog(searchOptions)
-
     const taskItems = rows.map((row) => buildTaskSearchItem(row, scope))
+
+    // When the query matches another accessible Board's key (e.g. "GRD" or "GRD-1"),
+    // search that Board with its own verified BoardScope so ticket-key lookup works globally.
+    if (options.query && accessibleBoards.length > 0 && taskItems.length < options.limit) {
+      const normalizedQuery = options.query.trim().toUpperCase()
+      const keyPrefix = /^([A-Z][A-Z0-9]{1,9})(?:-\d*)?$/.exec(normalizedQuery)?.[1]
+      if (keyPrefix) {
+        const otherBoards = accessibleBoards.filter(
+          (board) =>
+            board.id !== scope.boardId &&
+            (board.ticketPrefix.toUpperCase() === keyPrefix ||
+              board.ticketPrefix.toUpperCase().startsWith(keyPrefix))
+        )
+        const accessService = new BoardAccessService(client)
+        const seenTaskIds = new Set(taskItems.map((item) => item.id))
+        for (const board of otherBoards.slice(0, 3)) {
+          if (taskItems.length >= options.limit) break
+          const resolved = await accessService.resolve(scope.principal, board.id, {
+            resource: "task",
+            action: "read"
+          })
+          if (!resolved.ok) continue
+          const crossRepo = new TaskRepository(client, resolved.scope)
+          const crossRows = await crossRepo.searchCatalog({
+            ...searchOptions,
+            limit: Math.max(1, options.limit - taskItems.length)
+          })
+          for (const row of crossRows) {
+            const item = buildTaskSearchItem(row, resolved.scope)
+            if (seenTaskIds.has(item.id)) continue
+            seenTaskIds.add(item.id)
+            item.subtitle = `${item.subtitle} · ${board.name}`
+            taskItems.push(item)
+          }
+        }
+      }
+    }
 
     if (taskItems.length > 0) {
       sections.push({
@@ -137,6 +182,38 @@ export async function searchMeithealCatalog(
   }
 
   if (options.scope === "all" || options.scope === "views") {
+    if (accessibleBoards.length > 0) {
+      const needle = options.query.trim().toLowerCase()
+      const boardItems: SearchResultItem[] = accessibleBoards
+        .filter((board) => {
+          if (!needle) return true
+          return (
+            board.name.toLowerCase().includes(needle) ||
+            board.ticketPrefix.toLowerCase().includes(needle)
+          )
+        })
+        .slice(0, Math.min(6, options.limit))
+        .map((board) => ({
+          id: `board-${board.id}`,
+          kind: "board" as const,
+          title: board.name,
+          subtitle: `${board.ticketPrefix} · ${board.state === "archived" ? "Archived Board" : "Board"}`,
+          href: `/boards/${encodeURIComponent(board.id)}`,
+          meta: {
+            board_id: board.id,
+            ticket_prefix: board.ticketPrefix,
+            matched_fields:
+              needle && board.ticketPrefix.toLowerCase().includes(needle) ? ["Key"] : undefined
+          }
+        }))
+      if (boardItems.length > 0) {
+        sections.push({
+          id: "boards",
+          label: organization?.("board", true, "Boards") ?? "Boards",
+          items: boardItems
+        })
+      }
+    }
     const areas = isOrganizationFeatureAvailable("groups") ? await areaRepo.findAll() : []
     const areaItems = filterByQuery(
       areas.map((area) => ({

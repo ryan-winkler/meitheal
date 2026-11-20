@@ -130,6 +130,7 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
       progress: Number(r.progress ?? 0),
       color: r.color ?? null,
       is_favorite: Number(r.is_favorite ?? 0),
+      is_promoted: Boolean(r.is_promoted),
       task_type: r.task_type ?? "task",
       task_kind: r.task_kind ?? "standard_action",
       assigned_to: r.assigned_to ?? null,

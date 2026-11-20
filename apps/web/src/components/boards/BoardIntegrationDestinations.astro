@@ -2,6 +2,7 @@
 import { HierarchyRepository, SettingsRepository, getPersistenceClient, readWorkDestinations, type BoardScope } from "@domains/tasks"
 import { getCalendarEntities, getTodoEntities } from "@domains/ha"
 import { currentSettingsAccess } from "@lib/current-settings-access"
+import Icon from "../ui/Icon.astro"
 const { scope, session, people = [] } = Astro.props as { scope: BoardScope, session: string, people?: { id: string, name: string }[] }
 const db = getPersistenceClient()
 const config = await readWorkDestinations(db)
@@ -35,29 +36,40 @@ if (admin) {
 }
 const payload = { sources, bindings, revision: config?.revision, boardId: scope.boardId }
 ---
-<section class="board-form board-integrations" data-board-integrations data-config={JSON.stringify(payload)} data-session={session}>
-  <h2>Integrations and automation</h2>
-  <p>Choose where connected work belongs. Each source keeps its own permissions. Missing or retired destinations pause work.</p>
+<section class="board-form board-settings-card board-integrations" data-board-integrations data-config={JSON.stringify(payload)} data-session={session}>
+  <div class="board-settings-card__head">
+    <Icon name="plug" size={16} sprite />
+    <h2>Integrations and automation</h2>
+  </div>
+  <p class="board-note-plain">Choose where connected work belongs. Each source keeps its own permissions. Missing or retired destinations pause work.</p>
   {bindings.length ? <ul class="integration-list">{bindings.map(binding => <li>
     <div><strong>{sources.find(source => source.integration === binding.integration && source.sourceId === binding.sourceId && source.purpose === binding.purpose)?.label ?? binding.sourceId}</strong>
       <span>{binding.destination.projectId ? projects.find(project => project.id === binding.destination.projectId)?.title ?? "Unavailable Project" : binding.destination.areaId ? areas.find(area => area.id === binding.destination.areaId)?.name ?? "Unavailable Area" : "Whole Board"} · {binding.retired ? "Replaced source" : binding.enabled ? "Approved" : "Paused"}</span></div>
-    <button type="button" class="btn btn-ghost" data-edit-binding={binding.id} disabled={binding.retired}>Edit</button>
-  </li>)}</ul> : <p>No sources send work to this Board yet.</p>}
-  {!admin && <p>Board owners can configure local rules. A Home Assistant administrator with Board management access configures external sources.</p>}
-  <details data-binding-editor>
-    <summary>Add a source</summary>
-    <form data-binding-form>
-      <label>Source<select name="source" required>{sources.map((source, index) => <option value={index}>{source.label}</option>)}</select></label>
-      <label>Area<select name="area"><option value="">Whole Board</option>{areas.map(area => <option value={area.id}>{area.name}</option>)}</select></label>
-      <label>Project<select name="project"><option value="">No Project</option>{projects.map(project => <option value={project.id} data-area={project.area_id ?? ""}>{project.title}</option>)}</select></label>
-      <fieldset><legend>Allowed task actions</legend>{["read", "create", "edit", "complete", "reopen", "delete"].map(action => <label class="check"><input type="checkbox" name="action" value={action} checked={action === "read" || action === "edit"} />{({ read: "Read for this integration", create: "Create", edit: "Update details", complete: "Mark done", reopen: "Reopen", delete: "Delete" } as Record<string,string>)[action]}</label>)}</fieldset>
-      <fieldset data-recipients hidden><legend>People who can receive this mobile notification</legend>{people.map(person => <label class="check"><input type="checkbox" name="recipient" value={person.id} />{person.name}</label>)}<p>Every selected person must still be able to read the task when it is sent.</p></fieldset>
-      <label class="check"><input type="checkbox" name="enabled" checked /> Enable this source</label>
-      <button type="submit" class="btn btn-primary">Save source</button>
-      <button type="button" class="btn btn-ghost" data-cancel-binding>Cancel</button>
-    </form>
+    <button type="button" class="btn btn-secondary btn-sm" data-edit-binding={binding.id} disabled={binding.retired}>Edit</button>
+  </li>)}</ul> : <p class="board-note-plain">No sources send work to this Board yet.</p>}
+  {!admin && <p class="board-note-plain">Board owners can configure local rules. A Home Assistant administrator with Board management access configures external sources.</p>}
+  <details data-binding-editor class="board-disclosure">
+    <summary class="board-disclosure__summary">
+      <Icon name="plus" size={14} sprite />
+      <span>Add a source</span>
+      <Icon name="chevron-down" size={14} class="board-disclosure__chevron" sprite />
+    </summary>
+    <div class="board-disclosure__body">
+      <form data-binding-form>
+        <label>Source<select name="source" required>{sources.map((source, index) => <option value={index}>{source.label}</option>)}</select></label>
+        <label>Area<select name="area"><option value="">Whole Board</option>{areas.map(area => <option value={area.id}>{area.name}</option>)}</select></label>
+        <label>Project<select name="project"><option value="">No Project</option>{projects.map(project => <option value={project.id} data-area={project.area_id ?? ""}>{project.title}</option>)}</select></label>
+        <fieldset><legend>Allowed task actions</legend>{["read", "create", "edit", "complete", "reopen", "delete"].map(action => <label class="check"><input type="checkbox" name="action" value={action} checked={action === "read" || action === "edit"} />{({ read: "Read for this integration", create: "Create", edit: "Update details", complete: "Mark done", reopen: "Reopen", delete: "Delete" } as Record<string,string>)[action]}</label>)}</fieldset>
+        <fieldset data-recipients hidden><legend>People who can receive this mobile notification</legend>{people.map(person => <label class="check"><input type="checkbox" name="recipient" value={person.id} />{person.name}</label>)}<p class="board-note-plain">Every selected person must still be able to read the task when it is sent.</p></fieldset>
+        <label class="check"><input type="checkbox" name="enabled" checked /> Enable this source</label>
+        <div class="board-form-actions">
+          <button type="submit" class="btn btn-primary btn-sm">Save source</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-cancel-binding>Cancel</button>
+        </div>
+      </form>
+    </div>
   </details>
-  <p data-binding-feedback role="status" aria-live="polite"></p>
+  <p data-binding-feedback role="status" aria-live="polite" class="board-feedback"></p>
 </section>
 <script>
   import { pageLifecycle } from "@lib/page-lifecycle"

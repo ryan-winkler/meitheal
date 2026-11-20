@@ -180,6 +180,7 @@ function initDashboardShell(shell: HTMLElement, reveal: ((id: DashboardSectionId
 function initQuickAddForm(): void {
   const form = document.getElementById("quick-add-form") as HTMLFormElement | null
   const input = document.getElementById("quick-title") as HTMLInputElement | null
+  const submitBtn = form?.querySelector<HTMLButtonElement>('button[type="submit"]') ?? null
   const taskList = document.getElementById("task-list")
   const openCount = document.getElementById("dashboard-stat-open-count")
   if (!form || !input) return
@@ -188,7 +189,7 @@ function initQuickAddForm(): void {
     event.preventDefault()
 
     const text = input.value.trim()
-    if (!text) return
+    if (!text || submitBtn?.disabled) return
     const { payload } = quickAddPayload(text)
     const captureContext = currentTaskApiContext()
     const placement = taskCapturePlacement()
@@ -224,6 +225,12 @@ function initQuickAddForm(): void {
       openCount.textContent = String(Number(openCount.textContent ?? "0") + 1)
     }
 
+    if (submitBtn) {
+      submitBtn.disabled = true
+      submitBtn.classList.add("btn-loading")
+      submitBtn.setAttribute("aria-busy", "true")
+    }
+
     try {
       await taskApi.createTask({
         ...payload,
@@ -239,6 +246,12 @@ function initQuickAddForm(): void {
       if (!input.value) input.value = text
       if (openCount) {
         openCount.textContent = String(Math.max(0, Number(openCount.textContent ?? "1") - 1))
+      }
+    } finally {
+      if (submitBtn) {
+        submitBtn.disabled = false
+        submitBtn.classList.remove("btn-loading")
+        submitBtn.setAttribute("aria-busy", "false")
       }
     }
   })

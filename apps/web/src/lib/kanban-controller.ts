@@ -6,6 +6,7 @@ import { createClientLogger } from "@lib/client-logger";
 import { initTouchDrag } from "@lib/controllers/kanban-touch-drag";
 import { initQuickActions } from "@lib/controllers/kanban-quick-actions";
 import { initContextMenu } from "@lib/controllers/kanban-context-menu";
+import { toggleCardPromotion } from "@lib/controllers/kanban-promotion";
 import { initKeyboardAndSearch } from "@lib/controllers/kanban-keyboard";
 import { initKanbanGrouping } from "@lib/controllers/kanban-grouping";
 import type { KanbanRefreshFocus } from "@lib/controllers/kanban-page-controller"
@@ -54,6 +55,7 @@ export function initKanbanArea(
     if (!boardElement) return
     const board = boardElement
     const pendingMoves = new Map<HTMLElement, HTMLElement>()
+    const pendingPromotions = new Set<string>()
     let hoveredLane: HTMLElement | null = null
 
     function setHoveredLane(lane: HTMLElement | null) {
@@ -276,190 +278,167 @@ export function initKanbanArea(
       const anchor = before ?? peers.at(-1)
       return anchor ? { anchor, before: Boolean(before) } : undefined
     }
-    // Kanban card action handlers
-    // T-1903: Edit button opens inline task detail panel (not redirect)
-    board.querySelectorAll<HTMLButtonElement>(".card-open-btn, .card-edit-btn").forEach(btn => {
-      btn.addEventListener("click", event => {
-        if (event.defaultPrevented || btn instanceof HTMLAnchorElement) return
+    // O(1) delegated Kanban card interactions (1-click Tabler Star promote, open/edit, AI, duplicate, body click)
+    board.addEventListener("click", async (event) => {
+      const target = event.target instanceof Element ? event.target : null
+      if (!target) return
+
+      const starBtn = target.closest<HTMLButtonElement>(".kanban-promote-star")
+      if (starBtn) {
         event.stopPropagation()
-        if (btn.dataset.id) openTaskDetailHandoff(btn.dataset.id)
-      }, { signal: __signal })
-    })
+        const card = starBtn.closest<HTMLElement>(".kanban-card")
+        if (card) void toggleCardPromotion({ card, buildTaskApiUrl, refreshBoard, pendingPromotions, signal: __signal })
+        return
+      }
 
-    // Card body click → open task detail (Teamhood parity)
-    // Excludes: action buttons, inline-editing, checkbox clicks
-    document.querySelectorAll<HTMLElement>(".kanban-card").forEach((card) => {
-      card.addEventListener("click", (e) => {
-        // Skip if clicking action buttons, links, or inputs
-        const target = e.target as HTMLElement | null
-        if (target?.closest(".kanban-card-actions") ||
-            target?.closest("button") ||
-            target?.closest("a") ||
-            target?.closest("input") ||
-            target?.closest("[contenteditable='true']")) return
+      const openOrEdit = target.closest<HTMLElement>(".card-open-btn, .card-edit-btn")
+      if (openOrEdit) {
+        if (event.defaultPrevented || openOrEdit instanceof HTMLAnchorElement) return
+        event.stopPropagation()
+        if (openOrEdit.dataset.id) openTaskDetailHandoff(openOrEdit.dataset.id)
+        return
+      }
 
-        const id = card.dataset.id
-        if (!id) return
+      const aiBtn = target.closest<HTMLElement>(".card-ai-btn")
+      if (aiBtn) {
+        event.stopPropagation()
+        const title = aiBtn.dataset.title ?? ""
+        const desc = aiBtn.dataset.desc ?? ""
+        const status = aiBtn.dataset.status ?? "pending"
+        const priority = aiBtn.dataset.priority ?? "3"
+        const prompt = `I have a task:\n\nTitle: ${title}\nStatus: ${status}\nPriority: ${priority}/5\n${desc ? `Description: ${desc}` : ""}\n\nCan you help me break this down, suggest next steps, estimate effort, or identify blockers?`
+        window.open(`https://chatgpt.com/?q=${encodeURIComponent(prompt)}`, "_blank")
+        return
+      }
 
-        // Debounce: skip if we just finished a drag
-        if (card.classList.contains("dragging")) return
-
-        openTaskDetailHandoff(id)
-      }, { signal: __signal })
-    })
-
-    // Inline quick-edit: double-click card title to edit in place
-    document.querySelectorAll<HTMLElement>(".kanban-title-text").forEach((titleSpan) => {
-      titleSpan.addEventListener("dblclick", (e) => {
-        e.stopPropagation()
-        e.preventDefault()
-        if (titleSpan.contentEditable === "true") return
-
-        const card = titleSpan.closest<HTMLElement>(".kanban-card")
-        const taskId = titleSpan.dataset.taskId
-        if (!taskId || card?.hasAttribute("data-title-saving")) return
-
-        // Save original for revert
-        const originalText = titleSpan.textContent
-
-        // Enter edit mode
-        titleSpan.contentEditable = "true"
-        titleSpan.focus()
-
-        // Select all text for easy replacement
-        const range = document.createRange()
-        range.selectNodeContents(titleSpan)
-        const sel = window.getSelection()
-        sel?.removeAllRanges()
-        sel?.addRange(range)
-
-        // Prevent drag while editing
-        if (card) card.setAttribute("draggable", "false")
-
-        // Save handler
-        async function saveEdit() {
-          const newTitle = titleSpan.textContent?.trim() ?? ""
-          titleSpan.contentEditable = "false"
-          if (card) card.draggable = !pendingMoves.has(card)
-
-          // Remove listeners
-          titleSpan.removeEventListener("blur", saveEdit)
-          titleSpan.removeEventListener("keydown", handleKeys)
-
-          if (!newTitle || newTitle === originalText) {
-            titleSpan.textContent = originalText
+      const dupBtn = target.closest<HTMLButtonElement>(".card-dup-btn")
+      if (dupBtn) {
+        event.stopPropagation()
+        const id = dupBtn.dataset.id
+        if (!id || dupBtn.disabled) return
+        try {
+          dupBtn.disabled = true
+          dupBtn.classList.add("btn-loading")
+          const res = await fetch(buildTaskApiUrl(id)) // nosemgrep
+          if (!res.ok) {
+            dupBtn.disabled = false
+            dupBtn.classList.remove("btn-loading")
             return
           }
-
-          card?.setAttribute("data-title-saving", "")
-          try {
-            const res = await fetch(buildTaskApiUrl(taskId!), { // nosemgrep
-              method: "PUT",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ title: newTitle }),
-            })
-            if (!res.ok) throw new Error("save failed")
-            if (!__signal.aborted) await refreshBoard()
-          } catch {
-            titleSpan.textContent = originalText
-            if (window.showToast) window.showToast("Failed to save title", "error")
-          } finally {
-            card?.removeAttribute("data-title-saving")
-          }
-        }
-
-        // Key handler
-        function handleKeys(ev: KeyboardEvent) {
-          if (ev.key === "Enter") {
-            ev.preventDefault()
-            titleSpan.blur()
-          } else if (ev.key === "Escape") {
-            titleSpan.textContent = originalText
-            titleSpan.contentEditable = "false"
-            if (card) card.draggable = !pendingMoves.has(card)
-            titleSpan.removeEventListener("blur", saveEdit)
-            titleSpan.removeEventListener("keydown", handleKeys)
-          }
-        }
-
-        titleSpan.addEventListener("blur", saveEdit)
-        titleSpan.addEventListener("keydown", handleKeys)
-      }, { signal: __signal })
-    })
-
-    // AI: open ChatGPT with task context prompt
-    document.querySelectorAll<HTMLElement>(".card-ai-btn").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const el = btn;
-        const title = el.dataset.title ?? "";
-        const desc = el.dataset.desc ?? "";
-        const status = el.dataset.status ?? "pending";
-        const priority = el.dataset.priority ?? "3";
-        const prompt = `I have a task:\n\nTitle: ${title}\nStatus: ${status}\nPriority: ${priority}/5\n${desc ? `Description: ${desc}` : ""}\n\nCan you help me break this down, suggest next steps, estimate effort, or identify blockers?`;
-        window.open(
-          `https://chatgpt.com/?q=${encodeURIComponent(prompt)}`,
-          "_blank",
-        );
-      }, { signal: __signal });
-    });
-
-    // Duplicate: clone task via API
-    document.querySelectorAll<HTMLButtonElement>(".card-dup-btn").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        const id = btn.dataset.id;
-        if (!id) return;
-        try {
-          // P1-2: Double-submit prevention
-          const dupBtn = btn;
-          dupBtn.disabled = true;
-          dupBtn.classList.add("btn-loading");
-          const res = await fetch(buildTaskApiUrl(id)); // nosemgrep
-          if (!res.ok) {
-            dupBtn.disabled = false;
-            dupBtn.classList.remove("btn-loading");
-            return;
-          }
-          const task = await res.json();
-          const dupRes = await fetch(
-            "/api/tasks",
-            {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                title: `${task.title} (Copy)`,
-                description: task.description ?? "",
-                priority: task.priority ?? 3,
-                status: "pending",
-                due_date: task.due_date ?? null,
-                labels: task.labels ?? "[]",
-                framework_payload: task.framework_payload ?? "{}",
-              }),
-            },
-          );
-          if (dupRes.ok) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-duplicate" } }));
+          const task = await res.json()
+          const dupRes = await fetch("/api/tasks", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              title: `${task.title} (Copy)`,
+              description: task.description ?? "",
+              priority: task.priority ?? 3,
+              status: "pending",
+              due_date: task.due_date ?? null,
+              labels: task.labels ?? "[]",
+              framework_payload: task.framework_payload ?? "{}",
+            }),
+          })
+          if (dupRes.ok) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-duplicate" } }))
           else {
-            dupBtn.disabled = false;
-            dupBtn.classList.remove("btn-loading");
+            dupBtn.disabled = false
+            dupBtn.classList.remove("btn-loading")
           }
         } catch (err) {
-          log.warn("Duplicate task failed", err);
-          btn.disabled = false;
-          btn.classList.remove("btn-loading");
+          log.warn("Duplicate task failed", err)
+          dupBtn.disabled = false
+          dupBtn.classList.remove("btn-loading")
         }
-      }, { signal: __signal });
-    });
+        return
+      }
+
+      const card = target.closest<HTMLElement>(".kanban-card")
+      if (!card || card.classList.contains("dragging")) return
+      if (target.closest(".kanban-card-actions") ||
+          target.closest("button") ||
+          target.closest("a") ||
+          target.closest("input") ||
+          target.closest("[contenteditable='true']")) return
+      if (card.dataset.id) openTaskDetailHandoff(card.dataset.id)
+    }, { signal: __signal })
+
+    // O(1) delegated inline title double-click edit
+    board.addEventListener("dblclick", (e) => {
+      const titleSpan = (e.target instanceof Element ? e.target : null)?.closest<HTMLElement>(".kanban-title-text")
+      if (!titleSpan || titleSpan.contentEditable === "true") return
+      e.stopPropagation()
+      e.preventDefault()
+
+      const card = titleSpan.closest<HTMLElement>(".kanban-card")
+      const taskId = titleSpan.dataset.taskId
+      if (!taskId || card?.hasAttribute("data-title-saving")) return
+
+      const originalText = titleSpan.textContent
+      titleSpan.contentEditable = "true"
+      titleSpan.focus()
+
+      const range = document.createRange()
+      range.selectNodeContents(titleSpan)
+      const sel = window.getSelection()
+      sel?.removeAllRanges()
+      sel?.addRange(range)
+
+      if (card) card.setAttribute("draggable", "false")
+
+      async function saveEdit() {
+        const newTitle = titleSpan!.textContent?.trim() ?? ""
+        titleSpan!.contentEditable = "false"
+        if (card) card.draggable = !pendingMoves.has(card)
+
+        titleSpan!.removeEventListener("blur", saveEdit)
+        titleSpan!.removeEventListener("keydown", handleKeys)
+
+        if (!newTitle || newTitle === originalText) {
+          titleSpan!.textContent = originalText
+          return
+        }
+
+        card?.setAttribute("data-title-saving", "")
+        try {
+          const res = await fetch(buildTaskApiUrl(taskId!), { // nosemgrep
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ title: newTitle }),
+          })
+          if (!res.ok) throw new Error("save failed")
+          if (!__signal.aborted) await refreshBoard()
+        } catch {
+          titleSpan!.textContent = originalText
+          showToast("Failed to save title", "error")
+        } finally {
+          card?.removeAttribute("data-title-saving")
+        }
+      }
+
+      function handleKeys(ev: KeyboardEvent) {
+        if (ev.key === "Enter") {
+          ev.preventDefault()
+          titleSpan!.blur()
+        } else if (ev.key === "Escape") {
+          titleSpan!.textContent = originalText
+          titleSpan!.contentEditable = "false"
+          if (card) card.draggable = !pendingMoves.has(card)
+          titleSpan!.removeEventListener("blur", saveEdit)
+          titleSpan!.removeEventListener("keydown", handleKeys)
+        }
+      }
+
+      titleSpan.addEventListener("blur", saveEdit)
+      titleSpan.addEventListener("keydown", handleKeys)
+    }, { signal: __signal })
 
     // Quick actions: popover, child task, assign user, set color
     // Extracted to @lib/controllers/kanban-quick-actions.ts
     try { initQuickActions(buildTaskApiUrl, __signal, refreshBoard) } catch (e) { log.warn("Quick actions init failed", e) }
 
-    // T-1903: Click anywhere on kanban card is natively handled by Layout.astro delegated click listener.
-
     // Context menu for the More button (delete/archive)
     // Extracted to @lib/controllers/kanban-context-menu.ts
-    try { initContextMenu(board, buildTaskApiUrl, moveTask, refreshBoard, __signal) } catch (e) { log.warn("Context menu init failed", e) }
+    try { initContextMenu(board, buildTaskApiUrl, moveTask, refreshBoard, __signal, pendingPromotions) } catch (e) { log.warn("Context menu init failed", e) }
 
     // Keyboard shortcuts, WIP limits, quick-add, search, board navigation
     // Extracted to @lib/controllers/kanban-keyboard.ts

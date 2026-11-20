@@ -138,9 +138,9 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, saveTD, sig
       // Render outbound links (this task → other task)
       for (const link of outbound) {
         const label = LINK_TYPE_LABELS[link.link_type] || link.link_type
-        const ticketKey = link.target_ticket_number
-          ? `MTH-${link.target_ticket_number}`
-          : ""
+        const ticketKey =
+          (link as { target_ticket_key?: string | null }).target_ticket_key ||
+          (link.target_ticket_number ? `MTH-${link.target_ticket_number}` : "")
         container.appendChild(
           createLinkRow(
             label,
@@ -155,9 +155,9 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, saveTD, sig
       // Render inbound links (other task → this task)
       for (const link of inbound) {
         const label = INVERSE_LABELS[link.link_type] || link.link_type
-        const ticketKey = link.source_ticket_number
-          ? `MTH-${link.source_ticket_number}`
-          : ""
+        const ticketKey =
+          (link as { source_ticket_key?: string | null }).source_ticket_key ||
+          (link.source_ticket_number ? `MTH-${link.source_ticket_number}` : "")
         container.appendChild(
           createLinkRow(
             label,
@@ -255,9 +255,15 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, saveTD, sig
                 : t.task_type === "story"
                   ? "📖"
                   : "✅"
-            const ticketKey = t.ticket_number
-              ? `MTH-${t.ticket_number} `
-              : ""
+            const resolvedLinkKey =
+              typeof t.ticket_key === "string" && t.ticket_key
+                ? t.ticket_key
+                : typeof t.ticket_ref === "string" && t.ticket_ref
+                  ? t.ticket_ref
+                  : t.ticket_number
+                    ? `MTH-${t.ticket_number}`
+                    : ""
+            const ticketKey = resolvedLinkKey ? `${resolvedLinkKey} ` : ""
 
             const resultEl = document.createElement("div")
             resultEl.className =

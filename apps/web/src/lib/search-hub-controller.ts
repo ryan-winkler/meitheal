@@ -69,6 +69,8 @@ function resolveSearchIconName(item: SearchResultItem): TablerIconName {
   switch (item.kind) {
     case "task":
       return "checkbox"
+    case "board":
+      return "kanban"
     case "area":
       return "folder"
     case "saved_filter":
