@@ -300,7 +300,7 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
     }
   })
 
-  test("500-task virtualized GANTT stays <= 450 DOM nodes & <= 2 ms scroll pass while preserving drag, keyboard, Month dividers, external labels & scrolled PNG export", async ({
+  test("500-task virtualized GANTT stays <= 450 DOM nodes and <= 6 ms median scroll pass while preserving drag, keyboard, Month dividers, external labels and scrolled PNG export", async ({
     page,
     request,
     baseURL,
@@ -508,13 +508,16 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
       expect(navState.activeAriaRowIndex).toBe(55)
       expect(navState.focusedSidebarRowIndex).toBe(54)
 
-      // 4. Vertical scroll pass to row 250: <= 2 ms windowing pass, <= 450 DOM nodes, <= 60 bars, visible scrolled sidebar rows, & off-screen dependency partner arrow
+      // 4. Check the median windowing time, node budget, scrolled rows and off-screen dependency arrow.
       const scrollAudit = await page.evaluate(async () => {
         const sw = document.querySelector<HTMLElement>(".gantt-scroll-wrapper")!
         const sidebarViewport = document.querySelector<HTMLElement>(".gantt-sidebar-rows")!
         const durations: number[] = []
 
-        for (const targetRow of [140, 200, 250]) {
+        for (const targetRow of [45, 105, 165, 225, 285, 345, 405, 465, 250]) {
+          // Let the scroll and resize work from the previous window finish so
+          // the sampled callback belongs to this change in scroll position.
+          await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
           const duration = await new Promise<number>((resolve) => {
             const origRaf = window.requestAnimationFrame
             window.requestAnimationFrame = (cb: FrameRequestCallback) =>
@@ -531,7 +534,7 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
         }
 
         durations.sort((a, b) => a - b)
-        const medianMs = durations[1]!
+        const medianMs = durations[Math.floor(durations.length / 2)]!
         const totalNodes = document.querySelectorAll(
           "#tasks-view-timeline .gantt-sidebar *, #tasks-view-timeline svg.gantt-native *",
         ).length
@@ -549,6 +552,7 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
 
         return {
           medianMs,
+          durations,
           totalNodes,
           barGroups,
           rowVisibleInSidebar,
@@ -557,7 +561,7 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
         }
       })
 
-      expect(scrollAudit.medianMs).toBeLessThanOrEqual(6)
+      expect(scrollAudit.medianMs, `Measured scroll passes: ${scrollAudit.durations.join(", ")}`).toBeLessThanOrEqual(6)
       expect(scrollAudit.totalNodes).toBeLessThanOrEqual(450)
       expect(scrollAudit.barGroups).toBeLessThanOrEqual(60)
       expect(scrollAudit.rowVisibleInSidebar).toBe(true)

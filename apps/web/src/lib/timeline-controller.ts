@@ -2188,16 +2188,18 @@ function renderGantt(
 
     const sidebarFrag = document.createDocumentFragment()
     const svgFrag = document.createDocumentFragment()
-    for (const idx of wanted) {
-      if (!mountedRows.has(idx)) {
-        const mounted = mountDisplayRow(idx, sidebarFrag, svgFrag)
-        if (mounted) {
-          const next = [...mountedRows].filter(([index]) => index > idx).sort(([a], [b]) => a - b)[0]?.[1]
-          sidebarTrack.insertBefore(mounted.sidebarEl, next?.sidebarEl ?? null)
-          mountedRows.set(idx, mounted)
-        }
+    // Insert a whole run of new rows at the next retained row. Keeping the
+    // retained nodes in place also preserves keyboard focus and drag state.
+    for (const idx of [...wanted].sort((a, b) => a - b)) {
+      const retained = mountedRows.get(idx)
+      if (retained) {
+        if (sidebarFrag.hasChildNodes()) sidebarTrack.insertBefore(sidebarFrag, retained.sidebarEl)
+        continue
       }
+      const mounted = mountDisplayRow(idx, sidebarFrag, svgFrag)
+      if (mounted) mountedRows.set(idx, mounted)
     }
+    if (sidebarFrag.hasChildNodes()) sidebarTrack.appendChild(sidebarFrag)
     if (svgFrag.childNodes.length > 0) barsGroup.appendChild(svgFrag)
 
     // Mount dependency <path> connectors whenever at least one endpoint row is mounted

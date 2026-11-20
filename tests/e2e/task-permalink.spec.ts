@@ -275,21 +275,22 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     const commentApiPath = `/api/tasks/${id}/comments/${comment}`
 
     const commentsUrl = entry + `/api/tasks/${id}/comments`
-    const openWithComments = async (page: Page, url: string, content: string) => {
-      const [commentsRead] = await Promise.all([
+    const showLinkedComments = async (page: Page, navigate: () => ReturnType<Page["goto"]>, content: string) => {
+      const [commentsRead, documentResponse] = await Promise.all([
         page.waitForResponse(
           response => response.url() === commentsUrl && response.request().method() === "GET",
           { timeout: 12_000 },
         ),
-        page.goto(url),
+        navigate(),
       ])
+      expect(documentResponse?.status()).toBe(200)
       expect(commentsRead.status()).toBe(200)
       expect(await commentsRead.json()).toMatchObject({
         comments: expect.arrayContaining([expect.objectContaining({ id: comment, content })]),
       })
     }
     const sourcePage = await source.newPage()
-    await openWithComments(sourcePage, taskUrl, "The linked comment")
+    await showLinkedComments(sourcePage, () => sourcePage.goto(taskUrl), "The linked comment")
     const list = sourcePage.locator("#td-comments")
     await expect(list).toContainText("The linked comment")
     const authorRow = sourcePage.locator(`#td-comment-${comment}`)
@@ -365,7 +366,7 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     await expect(editor).toBeHidden()
 
     const page = await recipient.newPage()
-    await openWithComments(page, href, "Edited linked comment")
+    await showLinkedComments(page, () => page.goto(href), "Edited linked comment")
     const target = page.locator(`#td-comment-${comment}`)
     await expect(target).toContainText("Edited linked comment")
     await expect(target).toBeFocused()
@@ -376,7 +377,8 @@ test("a comment link focuses the edited comment through ingress and recovers aft
       entry + "/sw.js",
       { timeout: 15_000 },
     )
-    await page.reload()
+    await showLinkedComments(page, () => page.reload(), "Edited linked comment")
+    await expect(page).toHaveURL(href)
     await expect(target).toBeFocused()
 
     const missing = page.locator("#td-comment-link-status")
