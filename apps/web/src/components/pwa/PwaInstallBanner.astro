@@ -334,12 +334,7 @@ const locale = Astro.props.locale ?? getLocale(Astro)
     }
 
     document.getElementById("pwa-install-btn")?.addEventListener("click", async () => {
-      const outcome = await consumePwaInstallPrompt()
-      if (outcome === "accepted") dismissBanner()
-      else if (outcome === "dismissed") {
-        setSessionHidden(true)
-        hideBanner()
-      } else if (outcome === "error") hideBanner()
+      await consumePwaInstallPrompt()
     }, { signal })
 
     document.getElementById("pwa-dismiss-btn")?.addEventListener("click", dismissBanner, { signal })

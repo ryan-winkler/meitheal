@@ -39,6 +39,8 @@ window.addEventListener("appinstalled", () => {
 export async function consumePwaInstallPrompt(): Promise<"accepted" | "dismissed" | "error" | "none"> {
   const prompt = window.__pwa_install_prompt
   if (!prompt) return "none"
+  window.__pwa_install_prompt = null
+  window.dispatchEvent(new Event("meitheal-pwa-prompt-consumed"))
   let outcome: "accepted" | "dismissed" | "error" = "error"
   try {
     await prompt.prompt()
@@ -46,8 +48,6 @@ export async function consumePwaInstallPrompt(): Promise<"accepted" | "dismissed
   } catch {
     outcome = "error"
   }
-  window.__pwa_install_prompt = null
-  window.dispatchEvent(new Event("meitheal-pwa-prompt-consumed"))
   return outcome
 }
 

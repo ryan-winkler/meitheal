@@ -91,7 +91,7 @@ export function promptDialog(options: PromptOptions): Promise<string | null> {
       close(value || null)
     }
 
-    const { overlay, signal, close } = openManagedDialog<string | null>({
+    const { signal, close } = openManagedDialog<string | null>({
       id: "meitheal-prompt-overlay",
       role: "dialog",
       labelledBy: "prompt-title",
@@ -120,7 +120,7 @@ export function promptDialog(options: PromptOptions): Promise<string | null> {
         return
       }
       const active = document.activeElement
-      if (active && active !== document.body && !overlay.contains(active)) return
+      if (active && active !== document.body) return
       input.focus()
       input.select()
     })

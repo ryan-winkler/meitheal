@@ -158,7 +158,15 @@ Controls appended by client code outside an Astro component need global CSS sele
 
 `confirmDialog` and `promptDialog` accept plain text. Titles, messages and button labels render through `textContent`; prompt values and placeholders use input properties. Pass raw strings, including names read from API records, DOM labels or datasets. Do not pre-escape these options: a name such as `Home & garden` or literal `&amp;` should remain exactly that text. Neither helper supports rich HTML.
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:5c6ae055e0a4e4cab42d85a8818dc1140d908fbcfc68b8d4a02fd1495ad8cd6c -->
+
+The prompt’s animation-frame focus retry runs only while it owns the foreground managed dialog and focus has fallen to the document body. It preserves focus on buttons and controls in newer dialogs.
+
 The shared static templates retain the existing dialog appearance, variant icons and colors, focus traps, Escape/backdrop cancellation and AbortSignal handling. Prompts still select the initial value, trim submitted input, enforce required/custom validation and display validation errors as text. Empty optional messages remain absent. Call the window confirmation alias with an options object, for example `window.confirmDialog?.({ message: "Remove this area?" })`.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 For regressions, use a disposable App server and run `pnpm --filter @meitheal/tests test e2e/dialog-text-security.spec.ts`. Check all text options with angle brackets, literal entities, quotes and Unicode; check prompt default values and placeholders containing attribute-shaped text. The dialog must show the exact characters without creating images, SVG, scripts or event-handler attributes. Verify normal confirm/cancel, prompt validation and trimming, keyboard focus, cancellation and abort. The task permalink, saved-filter, Settings, Today and Table browser suites cover the surrounding callers.
 

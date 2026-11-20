@@ -505,7 +505,6 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
     const versionEl = document.getElementById("pwa-compact-version")
     const installBtn = document.getElementById("pwa-install-settings-btn")
     const updateBtn = document.getElementById("pwa-update-settings-btn")
-    const installedBadge = document.getElementById("pwa-installed-badge")
     if (!dot || !label || !badge) return
 
     const isSecure = window.isSecureContext
@@ -582,10 +581,7 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
 
       installBtn.addEventListener("click", async (e: Event) => {
         e.preventDefault()
-        if ((await consumePwaInstallPrompt()) === "accepted") {
-          installBtn.style.display = "none"
-          if (installedBadge) installedBadge.style.display = "inline-flex"
-        }
+        await consumePwaInstallPrompt()
       }, { signal })
     }
 
