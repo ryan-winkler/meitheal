@@ -4,9 +4,9 @@ set -euo pipefail
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 
 case "${1:-}:$#" in
-  build:2|publish:6|stage:7) ;;
+  build:2|publish:6|stage:7|promote:6) ;;
   *)
-    fail 'Usage: publish-canary-local.sh build ARCH | publish ARCH IMAGE_ID GHCR_USER ARM64_IMAGE_ID GREEN_RECEIPT | stage AMD64_DIGEST AMD64_IMAGE_ID ARM64_DIGEST ARM64_IMAGE_ID APP_CHECKOUT GREEN_RECEIPT'
+    fail 'Usage: publish-canary-local.sh build ARCH | promote AMD64_IMAGE_ID ARM64_IMAGE_ID GHCR_USER APP_CHECKOUT GREEN_RECEIPT | publish ARCH IMAGE_ID GHCR_USER ARM64_IMAGE_ID GREEN_RECEIPT | stage AMD64_DIGEST AMD64_IMAGE_ID ARM64_DIGEST ARM64_IMAGE_ID APP_CHECKOUT GREEN_RECEIPT'
     ;;
 esac
 
@@ -47,9 +47,10 @@ image_metadata() {
     node scripts/app-release.mjs image canary "$1" "$version" "$revision"
 }
 
-if [[ "$1" != build ]]; then
-  python3 scripts/verify-canary-green.py "$receipt" "$5" "$version"
-fi
+case "$1" in
+  promote) python3 scripts/verify-canary-green.py "$receipt" "$3" "$version" ;;
+  publish|stage) python3 scripts/verify-canary-green.py "$receipt" "$5" "$version" ;;
+esac
 
 scratch="$(mktemp -d)"
 cleanup() {
@@ -97,22 +98,79 @@ verify_public_pull() {
     fail "Unexpected image ID or release metadata for $image"
 }
 
+check_app_checkout() {
+  local destination=$1 app_main
+  [[ "$(git -C "$destination" rev-parse --show-toplevel)" == "$destination" ]] || fail 'Expected a separate App repository checkout'
+  [[ -z "$(git -C "$destination" status --porcelain)" ]] || fail 'Use a clean App repository checkout'
+  app_main="$(gh api --hostname github.com repos/ryan-winkler/meitheal-ha-addon/git/ref/heads/main --jq .object.sha)"
+  [[ "$(git -C "$destination" rev-parse HEAD)" == "$app_main" ]] || fail 'App checkout must match current main'
+}
+
+write_stage() {
+  local destination=$1
+  require_current_source
+  check_app_checkout "$destination"
+  node scripts/app-release.mjs stage canary "$version" "$destination"
+  printf 'Version: %s\nSource: %s\namd64: %s (%s)\naarch64: %s (%s)\n' "$version" "$revision" "$2" "$3" "$4" "$5"
+}
+
+registry_login() {
+  release_podman login --tls-verify=true --authfile "$scratch/publisher.json" --username "$1" --password-stdin ghcr.io
+}
+
+# Call only after the exact local candidate has passed smoke and the Green receipt has passed.
+publish_image() {
+  local arch=$1 qualified_id=$2 metadata image platform image_id existing_id digest
+  local -n result=$3
+  require_current_source
+  metadata="$(image_metadata "$arch")"
+  image="$(jq -er .image <<< "$metadata")"
+  platform="$(jq -er .platform <<< "$metadata")"
+  image_id="${qualified_id#sha256:}"
+  if isolated_podman publisher manifest inspect --tls-verify=true --authfile "$scratch/publisher.json" "$image" > /dev/null 2> "$scratch/manifest-error"; then
+    existing_id="$(isolated_podman publisher pull --tls-verify=true --quiet --authfile "$scratch/publisher.json" --platform "$platform" "$image")"
+    [[ "$existing_id" == "$image_id" ]] || fail 'Published version already points to a different image'
+    digest="$(repo_digest publisher "$image")"
+  elif grep -Eq ': (manifest|name) unknown$' "$scratch/manifest-error"; then
+    require_current_source
+    release_podman push --format v2s2 --tls-verify=true --authfile "$scratch/publisher.json" --digestfile "$scratch/digest" "$image_id" "docker://$image" >&2
+    digest="$(cat "$scratch/digest")"
+  else
+    cat "$scratch/manifest-error" >&2
+    fail 'Could not confirm the version tag is absent'
+  fi
+
+  [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'Expected a single published digest'
+  verify_public_pull "$arch" "$digest" "$qualified_id" >&2
+  result=$digest
+}
+
 if [[ "$1" == stage ]]; then
   require_current_source
   for digest_or_id in "$2" "$3" "$4" "$5"; do
     [[ "$digest_or_id" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'Expected both published digests and qualified image IDs'
   done
-  destination="$(realpath "$6")"
-  [[ "$(git -C "$destination" rev-parse --show-toplevel)" == "$destination" ]] || fail 'Expected a separate App repository checkout'
-  [[ -z "$(git -C "$destination" status --porcelain)" ]] || fail 'Use a clean App repository checkout'
-  app_main="$(gh api --hostname github.com repos/ryan-winkler/meitheal-ha-addon/git/ref/heads/main --jq .object.sha)"
-  [[ "$(git -C "$destination" rev-parse HEAD)" == "$app_main" ]] || fail 'App checkout must match current main'
-
+  destination="$(realpath -e -- "$6")"
+  check_app_checkout "$destination"
   verify_public_pull amd64 "$2" "$3"
   verify_public_pull aarch64 "$4" "$5"
+  write_stage "$destination" "$2" "$3" "$4" "$5"
+  exit
+fi
+
+if [[ "$1" == promote ]]; then
   require_current_source
-  node scripts/app-release.mjs stage canary "$version" "$destination"
-  printf 'Version: %s\nSource: %s\namd64: %s (%s)\naarch64: %s (%s)\n' "$version" "$revision" "$2" "$3" "$4" "$5"
+  [[ "$2" =~ ^sha256:[a-f0-9]{64}$ && "$3" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'Expected both qualified local image IDs'
+  destination="$(realpath -e -- "$5")"
+  check_app_checkout "$destination"
+  bash scripts/smoke-app-release-image.sh podman "${3#sha256:}" "$revision" aarch64 linux/arm64 "$version" "$3"
+  bash scripts/smoke-app-release-image.sh podman "${2#sha256:}" "$revision" amd64 linux/amd64 "$version" "$2"
+  require_current_source
+  check_app_checkout "$destination"
+  registry_login "$4"
+  publish_image aarch64 "$3" arm_digest
+  publish_image amd64 "$2" amd_digest
+  write_stage "$destination" "$amd_digest" "$2" "$arm_digest" "$3"
   exit
 fi
 
@@ -155,20 +213,6 @@ else
 fi
 bash scripts/smoke-app-release-image.sh podman "$image_id" "$revision" "$arch" "$platform" "$version" "$3"
 
-release_podman login --tls-verify=true --authfile "$scratch/publisher.json" --username "$4" --password-stdin ghcr.io
-if isolated_podman publisher manifest inspect --tls-verify=true --authfile "$scratch/publisher.json" "$image" > /dev/null 2> "$scratch/manifest-error"; then
-  existing_id="$(isolated_podman publisher pull --tls-verify=true --quiet --authfile "$scratch/publisher.json" --platform "$platform" "$image")"
-  [[ "$existing_id" == "$image_id" ]] || fail 'Published version already points to a different image'
-  digest="$(repo_digest publisher "$image")"
-elif grep -Eq ': (manifest|name) unknown$' "$scratch/manifest-error"; then
-  require_current_source
-  release_podman push --format v2s2 --tls-verify=true --authfile "$scratch/publisher.json" --digestfile "$scratch/digest" "$image_id" "docker://$image"
-  digest="$(cat "$scratch/digest")"
-else
-  cat "$scratch/manifest-error" >&2
-  fail 'Could not confirm the version tag is absent'
-fi
-
-[[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'Expected a single published digest'
-verify_public_pull "$arch" "$digest" "$3" >&2
-printf 'image=%s\ndigest=%s\n' "$image" "$digest"
+registry_login "$4"
+publish_image "$arch" "$3" published_digest
+printf 'image=%s\ndigest=%s\n' "$image" "$published_digest"
