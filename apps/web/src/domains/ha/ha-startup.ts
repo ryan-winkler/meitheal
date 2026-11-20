@@ -432,7 +432,7 @@ export async function autoStartGrocySync(
 ): Promise<void> {
   const runEpoch = grocyStartupEpoch
   try {
-    const { getGrocySyncStatus, onGrocySyncStopped, startGrocySync } = await import("@domains/grocy")
+    const { onGrocySyncStopped, startGrocySync } = await import("@domains/grocy")
     if (!grocyStopHookRegistered) {
       onGrocySyncStopped(clearGrocyStartupRetry)
       grocyStopHookRegistered = true
@@ -498,11 +498,6 @@ export async function autoStartGrocySync(
     // Validate & migrate Grocy URL through createGrocyClient before starting sync bridge
     const { createGrocyClient, isLegacySupervisorIngressUrl } = await import("../../lib/grocy-client")
 
-    if (retryAttempt > 0 && (await getGrocySyncStatus()).active) {
-      resetGrocyStartupRetryTimer()
-      return
-    }
-
     const adapter = await createGrocyClient()
     if (runEpoch !== grocyStartupEpoch) return
 
@@ -532,10 +527,13 @@ export async function autoStartGrocySync(
     }
 
     resetGrocyStartupRetryTimer()
+    let started = false
     for (const binding of (await readWorkDestinations(client))?.bindings ?? []) {
+      if (runEpoch !== grocyStartupEpoch) return
       if (!binding.enabled || binding.integration !== "grocy" || binding.purpose !== "grocy.sync" || binding.sourceId !== "configured-grocy") continue
-      await startGrocySync({ bindingId: binding.id, generation: binding.generation, syncEnabled: true, syncMode, intervalMs }, adapter)
+      if (await startGrocySync({ bindingId: binding.id, generation: binding.generation, syncEnabled: true, syncMode, intervalMs }, adapter)) started = true
     }
+    if (!started) return
 
     logger.log("info", {
       event: "ha.startup.grocy.started",

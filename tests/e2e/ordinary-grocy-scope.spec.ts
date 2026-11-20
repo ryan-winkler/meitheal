@@ -45,6 +45,7 @@ import {
   startGrocySync,
   stopGrocySync,
   syncFromGrocy,
+  getActiveGrocySyncConfig,
   getGrocySyncStatus,
   pushCompletionToGrocy,
   pushNewTaskToGrocy
@@ -391,6 +392,28 @@ test("Grocy publishes authoritative new task fields through a read-only receiver
   expect(
     provider.calls.filter((call) => call.path === "/api/objects/tasks" && call.method === "POST")
   ).toHaveLength(1)
+})
+
+test("a later Grocy enable wins over an earlier request still resolving the adapter", async () => {
+  const db = getPersistenceClient()
+  const id = await board(parent(), "Grocy Startup Control")
+  const binding = await bind(id)
+  const approval = await resolveIntegrationScope(db, binding.id, binding.generation, { resource: "task", action: "read" })
+  const adapter = await createGrocyClient()
+  if (!approval.ok || !adapter) throw new Error("Approved test destination and adapter required")
+  const config = { bindingId: binding.id, generation: binding.generation, syncEnabled: true, syncMode: "import" as const, intervalMs: 0 }
+  let release!: (value: GrocyAdapter) => void
+  const pendingAdapter = new Promise<GrocyAdapter>(resolve => { release = resolve })
+  const superseded = expect(startGrocySync(config, () => pendingAdapter, approval.value)).rejects.toThrow("Grocy destination is unavailable")
+  stopGrocySync(binding.id, binding.generation)
+  expect(getActiveGrocySyncConfig(binding.id)).toBeNull()
+  try {
+    expect(await startGrocySync({ ...config, syncMode: "export" }, adapter, approval.value)).toBe(true)
+  } finally {
+    release(adapter)
+    await superseded
+  }
+  expect(getActiveGrocySyncConfig(binding.id)?.syncMode).toBe("export")
 })
 
 test("Grocy rejects unproven adapters and profile changes fence a held provider request", async () => {

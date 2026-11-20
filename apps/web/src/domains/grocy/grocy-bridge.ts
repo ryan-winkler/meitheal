@@ -72,7 +72,9 @@ type GrocySyncState = {
   shoppingCount: number
 }
 const states = new Map<string, GrocySyncState>()
+const destinationChoices = new Map<string, { generation: number; paused: boolean }>()
 const stopListeners = new Set<() => void>()
+let stopAllGeneration = 0
 const activeSyncs = new Map<string, { state: GrocySyncState; promise: Promise<GrocySyncResult> }>()
 const MAX_RETRIES = 2,
   RETRY_DELAY_MS = 2000
@@ -162,14 +164,22 @@ async function withRetry<T>(
 }
 export async function startGrocySync(
   config: GrocySyncConfig,
-  adapter: GrocyAdapter,
+  adapter: GrocyAdapter | (() => Promise<GrocyAdapter | null>),
   approval?: IntegrationScope
-): Promise<void> {
+): Promise<boolean> {
   if (!config.syncEnabled) {
     stopGrocySync(config.bindingId, config.generation)
-    return
+    return false
   }
-  if (!(await isCurrentConfiguredGrocyClient(adapter))) throw new GrocyWorkUnavailableError()
+  const choice = destinationChoices.get(config.bindingId)
+  const stopGeneration = stopAllGeneration
+  if (!approval && choice?.paused && choice.generation >= config.generation) return false
+  const resolved = typeof adapter === "function" ? await adapter() : adapter
+  if (!resolved) return false
+  if (!(await isCurrentConfiguredGrocyClient(resolved))) throw new GrocyWorkUnavailableError()
+  const existing = states.get(config.bindingId)
+  if (!approval && existing?.config.generation === config.generation &&
+    await isCurrentConfiguredGrocyClient(existing.baseAdapter)) return false
   await resolveContext(config)
   if (
     approval &&
@@ -178,10 +188,16 @@ export async function startGrocySync(
       !(await validateIntegrationScope(approval, getPersistenceClient(), read)).ok)
   )
     throw new GrocyWorkUnavailableError()
+  // A destination can be disabled while startup is resolving its credentials or binding.
+  if (stopAllGeneration !== stopGeneration || destinationChoices.get(config.bindingId) !== choice) {
+    if (approval) throw new GrocyWorkUnavailableError()
+    return false
+  }
+  if (approval) destinationChoices.set(config.bindingId, { generation: config.generation, paused: false })
   if (states.has(config.bindingId)) stopGrocySync(config.bindingId)
   const state: GrocySyncState = {
     config: { ...config },
-    baseAdapter: adapter,
+    baseAdapter: resolved,
     timer: null,
     lastSyncAt: null,
     lastSyncError: null,
@@ -198,6 +214,7 @@ export async function startGrocySync(
   const interval = state.config.intervalMs
   if (Number.isFinite(interval) && interval > 0)
     state.timer = setInterval(poll, interval)
+  return true
 }
 export function onGrocySyncStopped(listener: () => void): () => void {
   stopListeners.add(listener)
@@ -206,7 +223,11 @@ export function onGrocySyncStopped(listener: () => void): () => void {
   }
 }
 export function stopGrocySync(bindingId?: string, generation?: number): void {
-  let changed = false
+  if (bindingId === undefined) stopAllGeneration++
+  if (bindingId !== undefined && generation !== undefined) {
+    const choice = destinationChoices.get(bindingId)
+    if (!choice || generation >= choice.generation) destinationChoices.set(bindingId, { generation, paused: true })
+  }
   for (const [id, state] of states) {
     if (
       (bindingId && id !== bindingId) ||
@@ -216,9 +237,8 @@ export function stopGrocySync(bindingId?: string, generation?: number): void {
     if (state.timer) clearInterval(state.timer)
     state.config.syncEnabled = false
     states.delete(id)
-    changed = true
   }
-  if (changed || bindingId === undefined) for (const listener of stopListeners) listener()
+  if (bindingId === undefined) for (const listener of stopListeners) listener()
 }
 export function getActiveGrocySyncConfig(bindingId: string): GrocySyncConfig | null {
   return states.get(bindingId)?.config ?? null

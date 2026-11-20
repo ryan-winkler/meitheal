@@ -1,6 +1,8 @@
 import { integrationFixture, integrationRoute } from "../helpers/ordinary-integration-fixture"
 import { ordinaryTask } from "../helpers/ordinary-sync-fixture"
+import { fixturePrincipal } from "../helpers/current-board-scope"
 import { TaskRepository, readTaskDeletionReceipt, resolveIntegrationScope } from "../../apps/web/src/domains/tasks"
+import { NamedBoardRepository } from "../../apps/web/src/domains/tasks/persistence/named-board-repository"
 import { execFileSync } from "../helpers/isolated-process"
 import dns from "node:dns"
 import { mkdtempSync, rmSync } from "node:fs"
@@ -489,7 +491,12 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
         args: [k, v, now],
       })
     }
-    const grocy = await integrationFixture({ integration: "grocy", sourceId: "configured-grocy", purpose: "grocy.sync" })
+    const otherBoard = await new NamedBoardRepository(client).create(fixturePrincipal(), "Other Grocy Board")
+    if (otherBoard.status !== "committed") throw new Error("Could not create the second Grocy Board")
+    const grocyDestination = { integration: "grocy", sourceId: "configured-grocy", purpose: "grocy.sync" }
+    await integrationFixture(grocyDestination)
+    const other = await integrationFixture({ ...grocyDestination, boardId: otherBoard.result.id })
+    const grocy = await integrationFixture(grocyDestination)
     await haStartup.initHAIntegrations()
     await grocyBridge.syncFromGrocy(grocy.binding.id)
     expect((await grocyBridge.getGrocySyncStatus(grocy.scope)).active).toBe(true)
@@ -497,24 +504,27 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
     expect(recordedCommands.length).toBeGreaterThan(0)
 
     // Bounded startup retry when a legacy Supervisor ingress URL is temporarily unresolvable on boot,
-    // and disabling Grocy sync cancels any pending retry so sync stays off even if URL becomes valid.
+    // and disabling the destination prevents startup from activating it when the URL becomes valid.
     grocyBridge.stopGrocySync()
     await client.execute({
       sql: "UPDATE settings SET value = ?, updated_at = ? WHERE key = 'grocy_url'",
       args: [JSON.stringify("http://supervisor/api/hassio_ingress/tok_retry"), now],
     })
-    await haStartup.autoStartGrocySync(0, 20)
+    await haStartup.autoStartGrocySync(0, 150)
     expect((await grocyBridge.getGrocySyncStatus(grocy.scope)).active).toBe(false)
+    const { POST: postGrocySync } = await import("../../apps/web/src/pages/api/grocy/sync")
+    const disableRes = await integrationRoute(postGrocySync, "/api/grocy/sync?board_id=household", { action: "disable", bindingId: grocy.binding.id, generation: grocy.binding.generation })
+    expect(disableRes.status).toBe(200)
     await client.execute({
       sql: "UPDATE settings SET value = ?, updated_at = ? WHERE key = 'grocy_url'",
       args: [JSON.stringify(`http://grocy.local:${port}`), now],
     })
-    const { POST: postGrocySync } = await import("../../apps/web/src/pages/api/grocy/sync")
-    const disableRes = await integrationRoute(postGrocySync, "/api/grocy/sync?board_id=household", { action: "disable", bindingId: grocy.binding.id, generation: grocy.binding.generation })
-    expect(disableRes.status).toBe(200)
-    await new Promise<void>((resolve) => setTimeout(resolve, 45))
+    await expect.poll(() => grocyBridge.getActiveGrocySyncConfig(other.binding.id)?.generation).toBe(other.binding.generation)
     expect((await grocyBridge.getGrocySyncStatus(grocy.scope)).active).toBe(false)
-    haStartup.clearGrocyStartupRetry()
+    const enableRes = await integrationRoute(postGrocySync, "/api/grocy/sync?board_id=household", { action: "enable", bindingId: grocy.binding.id, generation: grocy.binding.generation, interval_ms: 0 })
+    expect(enableRes.status).toBe(200)
+    expect((await grocyBridge.getGrocySyncStatus(grocy.scope)).active).toBe(true)
+    grocyBridge.stopGrocySync()
 
     // A temporary lookup failure also has a recovery path when sync stays enabled.
     await client.batch([

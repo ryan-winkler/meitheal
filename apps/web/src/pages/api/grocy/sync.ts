@@ -60,13 +60,7 @@ export const POST: APIRoute = async (context) => {
             interval > 2147483647
           )
             return apiError("Choose a valid Grocy mode and interval.", 400)
-          const adapter = await createGrocyClient()
-          if (!adapter)
-            return apiError(
-              "Grocy configuration is unavailable. Check its URL and API key in Settings.",
-              409
-            )
-          await startGrocySync(
+          const started = await startGrocySync(
             {
               bindingId: binding.id,
               generation: binding.generation,
@@ -74,9 +68,14 @@ export const POST: APIRoute = async (context) => {
               syncMode: mode as "import" | "export" | "bidirectional",
               intervalMs: interval
             },
-            adapter,
+            createGrocyClient,
             approved.value
           )
+          if (!started)
+            return apiError(
+              "Grocy configuration is unavailable. Check its URL and API key in Settings.",
+              409
+            )
           return apiJson({ ok: true, message: "Grocy sync enabled for this destination." })
         }
         const active = getActiveGrocySyncConfig(binding.id)
