@@ -14,7 +14,8 @@ import {
 } from "../helpers/persistence-fixture"
 import {
   createAgentToken,
-  ensureAgentTokenSchema
+  ensureAgentTokenSchema,
+  updateAgentToken
 } from "../../apps/web/src/domains/auth/agent-token-store"
 import { resolveAgentAuth } from "../../apps/web/src/lib/agent-token-guard"
 import {
@@ -304,6 +305,18 @@ test("composite publication and writer rechecks reject epoch changes and token r
     ok: false,
     errorCode: "stale"
   })
+})
+
+test("an edited agent assignment requires fresh task write authority", async () => {
+  const work = await nativeScope()
+  const db = getPersistenceClient()
+  const assignment = randomUUID()
+  const edit = { resource: "task", action: "edit" } as const
+  await new IdentityRepository(db).createCustomUser(assignment, "Task agent", "#123456", "agent")
+  expect(await validateBoardScope(work, db, edit)).toMatchObject({ ok: true })
+  expect(await updateAgentToken(tokenId, { scopes: ["tasks:read", "tasks:write:assigned"], assigneeId: assignment })).toBe(true)
+  expect(await validateBoardScope(work, db, edit)).toMatchObject({ ok: false, errorCode: "stale" })
+  expect(await validateBoardScope(work, db, { resource: "task", action: "read" })).toMatchObject({ ok: true })
 })
 
 test("selected human audiences never widen primary-agent task or feature policies", async () => {

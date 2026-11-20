@@ -25,7 +25,7 @@ import {
 const localWriters = new WeakMap()
 const localExecutors = new WeakMap()
 const localReadSnapshots = new WeakSet()
-/** @type {WeakMap<object, () => unknown>} */
+/** @type {WeakMap<object, { execute: unknown, read: () => unknown }>} */
 const localGrantRevisionReaders = new WeakMap()
 /** @type {WeakMap<DatabaseSync, import("node:sqlite").StatementSync>} */
 const totalChangesStatements = new WeakMap()
@@ -53,10 +53,12 @@ export function isLocalReadSnapshot(transaction) {
   return localReadSnapshots.has(transaction)
 }
 
-/** Undefined means an unregistered reader must use its own execute method. */
+/** Use the reader's own execute method for adapters and decorated clients.
+ * @param {{ execute?: unknown }} reader
+ */
 export function readLocalGrantRevision(reader) {
-  const read = localGrantRevisionReaders.get(reader)
-  return read ? read() ?? null : undefined
+  const registered = localGrantRevisionReaders.get(reader)
+  return registered && reader.execute === registered.execute ? registered.read() ?? null : undefined
 }
 
 /** @param {DatabaseSync} db */
@@ -820,9 +822,12 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       },
     }
     registerBoardGrantContext(result, { markerPath: getBoardGrantPath(client) })
-    localGrantRevisionReaders.set(result, () => {
-      assertActive()
-      return sqliteOperation(() => readGrantRevision(db))
+    localGrantRevisionReaders.set(result, {
+      execute: result.execute,
+      read: () => {
+        assertActive()
+        return sqliteOperation(() => readGrantRevision(db))
+      },
     })
     if (useReadPool) localReadSnapshots.add(result)
     return result
@@ -897,7 +902,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     executeStatement: executeStatementWithRetry,
     batchWrite: batchWriteWithRetry,
   })
-  localGrantRevisionReaders.set(client, () => onMain(readGrantRevision))
+  localGrantRevisionReaders.set(client, { execute: client.execute, read: () => onMain(readGrantRevision) })
   return client
 }
 

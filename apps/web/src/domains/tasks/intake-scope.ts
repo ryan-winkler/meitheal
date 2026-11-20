@@ -107,8 +107,8 @@ export async function resolveIntakeSubmissionScope(
         recipientUserId: destination.recipientUserId,
         status: destination.status
       },
-      validate: async (reader, operation) => {
-        if (!operationAllowed(operation)) return { ok: false, errorCode: "denied" }
+      validate: async (reader, operations) => {
+        if (!operations.every(operationAllowed)) return { ok: false, errorCode: "denied" }
         if (!principalProof(principal) || !(await boardGrantStillCurrent(reader, revision)))
           return { ok: false, errorCode: "stale" }
         const current = await selectIntake(reader, principal, intakeId, revision)

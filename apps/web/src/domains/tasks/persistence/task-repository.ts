@@ -2027,9 +2027,13 @@ export class TaskRepository {
         // checks as well as this command's own awaited effect loop.
         if (signal) await requireBoardWriterCheck(tx, this.scope, async () => { signal.throwIfAborted() })
         const { rows: [original] } = await tx.execute(scopedTaskRead(this.scope, sql`SELECT * FROM scoped_tasks AS tasks WHERE id = ${id}`))
-        // An owned writer already admitted this exact edit target and checked
-        // its assignment and placement. A compound writer must prove it here.
-        if (!original || existingWriter && !await validateTaskOperation(tx, this.scope, id, { resource: "task", action: "edit" })) return { ok: false, errorCode: "unavailable" }
+        if (!original) return { ok: false, errorCode: "unavailable" }
+        // The owned writer admitted this target. Project-backed tasks still
+        // require a current owned Project, and borrowed writers prove edit here.
+        if ((existingWriter || (typeof original.project_id === "string" && original.project_id)) &&
+          !await validateTaskOperation(tx, this.scope, id, { resource: "task", action: "edit" })) {
+          return { ok: false, errorCode: "unavailable" }
+        }
         // The original row and the status transition share the same writer.
         previousStatus = String(original.status ?? "")
         const statusIntent: WorkAction[] = typeof fields.status !== "string" ? [] : completing ? ["complete"] : isDoneStatus(previousStatus) ? ["reopen"] : []

@@ -1,7 +1,7 @@
 import type { Client, InArgs, InStatement, Transaction } from "@libsql/client"
 import { acquireWriteTransaction, isLocalReadSnapshot } from "../../../../scripts/database-client.mjs"
 import { databaseRevision, getBoardGrantPath, readBoardGrantRevision } from "../../../../scripts/board-grant-journal.mjs"
-import { principalProof, registerFencedScopeReader, validateBoardScope } from "../board-scope"
+import { principalProof, registerFencedScopeReader, validateBoardOperations } from "../board-scope"
 import { boardGrantStillCurrent, currentBoardGrantRevision } from "./board-grant-fence"
 
 export class ContinuityLockedError extends Error {
@@ -104,9 +104,9 @@ export function guardClientContinuity(client: Client): Client {
         return typeof value === "function" ? value.bind(target) : value
       },
     })
-    registerFencedScopeReader(guarded, async (scope, operation) => {
+    registerFencedScopeReader(guarded, async (scope, operations) => {
       await check()
-      const result = await validateBoardScope(scope, raw, operation)
+      const result = await validateBoardOperations(scope, raw, operations)
       if (!result.ok) return result
       await check()
       return principalProof(scope.principal) ? result : { ok: false, errorCode: "stale" }
@@ -151,9 +151,9 @@ export function guardClientContinuity(client: Client): Client {
   guardedClients.add(guarded)
   clientGuards.set(client, guarded)
   guardSources.set(guarded, client)
-  registerFencedScopeReader(guarded, async (scope, operation) => {
+  registerFencedScopeReader(guarded, async (scope, operations) => {
     // BoardAccessService binds the initial authority read to the scoped epoch.
-    const result = await validateBoardScope(scope, client, operation)
+    const result = await validateBoardOperations(scope, client, operations)
     if (!result.ok) return result
     if (!await boardGrantStillCurrent(client, scope.authorityRevision, marker) || !principalProof(scope.principal)) {
       return { ok: false, errorCode: "stale" }

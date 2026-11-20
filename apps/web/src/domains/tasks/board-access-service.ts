@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { ownedPlanning } from "./persistence/board-storage"
-import { sql } from "./persistence/sql-fragment"
+import { joinSql, sql } from "./persistence/sql-fragment"
 import { parseWorkDestinations } from "./integration-destinations"
 import { featureAudienceAllowed, organizationAudienceAllowed } from "./board-feature-policy"
 import type { Client } from "@libsql/client"
@@ -8,9 +8,10 @@ import { boardGrantStillCurrent, currentBoardGrantRevision } from "./persistence
 import {
   principalProof,
   limitBoardScope,
+  scopeAssignedTo,
   scopeLimits,
   scopePermits,
-  validateBoardScope,
+  validateBoardOperations,
   scopeServiceBindingFingerprint,
   registerBoardScope,
   requireBoardScope,
@@ -107,15 +108,15 @@ function audienceAllows(row: Record<string, unknown>, principal: VerifiedPrincip
   }
 }
 
-async function featureAllowed(
+async function allowedFeatures(
   principal: VerifiedPrincipal,
   db: Pick<Client, "execute">,
-  feature: string
-): Promise<boolean> {
-  const {
-    rows: [row]
-  } = await db.execute(sql`SELECT ${featureAudienceAllowed(principal, feature)} AS allowed`)
-  return row?.allowed === 1
+  features: readonly string[]
+): Promise<Set<string>> {
+  if (!features.length) return new Set()
+  const { rows } = await db.execute(joinSql(features.map(feature => sql`SELECT ${feature} AS feature,
+    ${featureAudienceAllowed(principal, feature)} AS allowed`), " UNION ALL "))
+  return new Set(rows.filter(row => row.allowed === 1).map(row => String(row.feature)))
 }
 
 export async function validateBoardFeature(
@@ -127,7 +128,7 @@ export async function validateBoardFeature(
   for (const current of [scope, ...scopeLimits(scope)]) {
     if (
       !principalProof(current.principal) ||
-      !(await featureAllowed(current.principal, db, feature))
+      !(await allowedFeatures(current.principal, db, [feature])).has(feature)
     )
       return false
   }
@@ -187,7 +188,7 @@ export class BoardAccessService {
       return { ok: false, errorCode: "unavailable" }
     const revision = await currentBoardGrantRevision(this.db)
     if (!revision) return { ok: false, errorCode: "continuity_locked" }
-    const result = await this.select(this.db, principal, boardId, operation, revision)
+    const result = await this.select(this.db, principal, boardId, [operation], revision)
     if (!result.ok) return result
     if (!(await boardGrantStillCurrent(this.db, revision))) return { ok: false, errorCode: "stale" }
     return result
@@ -196,9 +197,11 @@ export class BoardAccessService {
   async revalidate(
     scope: BoardScope,
     db: Pick<Client, "execute">,
-    operation: WorkOperation
+    operation: WorkOperation | readonly WorkOperation[]
   ): Promise<ScopeResult> {
     requireBoardScope(scope)
+    const operations = "resource" in operation ? [operation] : operation
+    if (!operations.length) return { ok: false, errorCode: "denied" }
     if (!principalProof(scope.principal)) return { ok: false, errorCode: "stale" }
     if (!(await boardGrantStillCurrent(db, scope.authorityRevision)))
       return { ok: false, errorCode: "stale" }
@@ -206,18 +209,13 @@ export class BoardAccessService {
       db,
       scope.principal,
       scope.boardId,
-      operation,
+      operations,
       scope.authorityRevision,
-      false
+      scope
     )
     if (!result.ok) return result
-    if (
-      result.scope.boardRevision !== scope.boardRevision ||
-      scopeServiceBindingFingerprint(result.scope) !== scopeServiceBindingFingerprint(scope)
-    )
-      return { ok: false, errorCode: "stale" }
     for (const limit of scopeLimits(scope)) {
-      const current = await validateBoardScope(limit, db, operation)
+      const current = await validateBoardOperations(limit, db, operations)
       if (!current.ok) return current
     }
     return { ok: true, scope }
@@ -232,16 +230,16 @@ export class BoardAccessService {
   ): Promise<ScopeResult> {
     if (!principalProof(principal) || !(await boardGrantStillCurrent(db, revision)))
       return { ok: false, errorCode: "stale" }
-    return this.select(db, principal, boardId, operation, revision)
+    return this.select(db, principal, boardId, [operation], revision)
   }
 
   private async select(
     db: Pick<Client, "execute">,
     principal: VerifiedPrincipal,
     boardId: string,
-    operation: WorkOperation,
+    operations: readonly WorkOperation[],
     revision: string,
-    includeCapabilities = true
+    existingScope?: BoardScope
   ): Promise<ScopeResult> {
     const proof = principalProof(principal)
     if (!proof) return { ok: false, errorCode: "stale" }
@@ -378,16 +376,10 @@ export class BoardAccessService {
     // Revalidation proves the requested effect; only initial resolution needs
     // the complete UI capability catalogue. This avoids multiplying unrelated
     // feature queries at every SQL/commit boundary.
-    const requestedFeatures = includeCapabilities
+    const requestedFeatures = !existingScope
       ? Object.values(features).flat()
-      : (features[operation.resource] ?? [])
-    const rights = new Map(
-      await Promise.all(
-        [...new Set(requestedFeatures)].map(
-          async (feature) => [feature, await featureAllowed(principal, db, feature)] as const
-        )
-      )
-    )
+      : operations.flatMap(operation => features[operation.resource] ?? [])
+    const rights = await allowedFeatures(principal, db, [...new Set(requestedFeatures)])
     const allowed = (intent: WorkOperation) => {
       if (intent.action === "search" && intent.resource !== "task") return false
       if (
@@ -397,7 +389,7 @@ export class BoardAccessService {
         assignedTo === null
       )
         return false
-      if (!(features[intent.resource] ?? []).every((feature) => rights.get(feature))) return false
+      if (!(features[intent.resource] ?? []).every((feature) => rights.has(feature))) return false
       if (
         row.state !== "active" &&
         !(intent.resource === "board" && ["read", "restore"].includes(intent.action))
@@ -440,8 +432,17 @@ export class BoardAccessService {
         return false
       return true
     }
-    if (!allowed(operation) || row.audience_allowed !== 1 || !principalProof(principal))
+    if (!operations.every(allowed) || row.audience_allowed !== 1 || !principalProof(principal))
       return { ok: false, errorCode: "denied" }
+    if (existingScope) {
+      const taskWrite = operations.some(item => item.resource === "task" && item.action !== "read" && item.action !== "search")
+      if (Number(row.revision) !== existingScope.boardRevision ||
+        (taskWrite && assignedTo !== scopeAssignedTo(existingScope)) ||
+        serviceBindingFingerprint !== scopeServiceBindingFingerprint(existingScope)) {
+        return { ok: false, errorCode: "stale" }
+      }
+      return { ok: true, scope: existingScope }
+    }
     const scope = registerBoardScope(
       {
         boardId,
@@ -449,11 +450,9 @@ export class BoardAccessService {
         authorityRevision: revision,
         boardRevision: Number(row.revision),
         capabilities: {
-          operations: includeCapabilities
-            ? resources
-                .flatMap((resource) => actions.map((action) => ({ resource, action })))
-                .filter(allowed)
-            : [operation]
+          operations: resources
+            .flatMap((resource) => actions.map((action) => ({ resource, action })))
+            .filter(allowed)
         }
       },
       {
@@ -491,11 +490,11 @@ export class BoardAccessService {
         validate: (transaction, requested) => this.revalidate(scope, transaction, requested)
       }
     )
-    if (includeCapabilities && proof.ingressPrincipal) {
-      const limit = await this.select(db, proof.ingressPrincipal, boardId, operation, revision)
+    if (proof.ingressPrincipal) {
+      const limit = await this.select(db, proof.ingressPrincipal, boardId, operations, revision)
       if (!limit.ok) return limit
       const constrained = limitBoardScope(scope, limit.scope)
-      if (!scopePermits(constrained, operation)) return { ok: false, errorCode: "denied" }
+      if (!operations.every(operation => scopePermits(constrained, operation))) return { ok: false, errorCode: "denied" }
       return { ok: true, scope: constrained }
     }
     return { ok: true, scope }

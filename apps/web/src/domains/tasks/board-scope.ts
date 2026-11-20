@@ -90,16 +90,16 @@ type ScopeState = {
     recipientUserId: string | null
     status: string
   }>
-  validate: (db: Pick<Client, "execute">, operation: WorkOperation) => Promise<ScopeResult>
+  validate: (db: Pick<Client, "execute">, operations: readonly WorkOperation[]) => Promise<ScopeResult>
 }
 const principals = new WeakMap<VerifiedPrincipal, PrincipalProof>()
 const scopes = new WeakMap<BoardScope, ScopeState>()
-const fencedScopeReaders = new WeakMap<object, (scope: BoardScope, operation: WorkOperation) => Promise<ScopeResult>>()
+const fencedScopeReaders = new WeakMap<object, (scope: BoardScope, operations: readonly WorkOperation[]) => Promise<ScopeResult>>()
 
 /** Only continuity adapters register their metadata-only validation path. */
 export function registerFencedScopeReader(
   reader: Pick<Client, "execute">,
-  validate: (scope: BoardScope, operation: WorkOperation) => Promise<ScopeResult>
+  validate: (scope: BoardScope, operations: readonly WorkOperation[]) => Promise<ScopeResult>
 ): void {
   fencedScopeReaders.set(reader, validate)
 }
@@ -255,18 +255,28 @@ export function scopeMentionRecipientKey(scope: BoardScope): string | null {
     : null
 }
 
-export async function validateBoardScope(
+export function validateBoardScope(
   scope: BoardScope,
   db: Pick<Client, "execute">,
   operation: WorkOperation
 ): Promise<ScopeResult> {
+  return validateBoardOperations(scope, db, [operation])
+}
+
+/** Admit all requested effects against the same observed Board policy. */
+export async function validateBoardOperations(
+  scope: BoardScope,
+  db: Pick<Client, "execute">,
+  operations: readonly WorkOperation[]
+): Promise<ScopeResult> {
   requireBoardScope(scope)
+  if (!operations.length) return { ok: false, errorCode: "denied" }
   const fenced = fencedScopeReaders.get(db)
-  if (fenced) return fenced(scope, operation)
-  const result = await scopes.get(scope)!.validate(db, operation)
+  if (fenced) return fenced(scope, operations)
+  const result = await scopes.get(scope)!.validate(db, operations)
   if (!result.ok) return result
   for (const limit of scopeLimits(scope)) {
-    const current = await validateBoardScope(limit, db, operation)
+    const current = await validateBoardOperations(limit, db, operations)
     if (!current.ok) return current
   }
   return { ok: true, scope }
