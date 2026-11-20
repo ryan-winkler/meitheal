@@ -25,6 +25,7 @@ test.describe("Tasks Page — /tasks default view", () => {
 
 test.describe("Progress Parent Page — /progress", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
+  test.use({ reducedMotion: "reduce" })
 
   test.beforeEach(async ({ page }) => {
     await page.goto("/progress")
