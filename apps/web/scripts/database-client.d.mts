@@ -20,6 +20,7 @@ export function assertSupportedDatabaseSchema(client: Pick<Client, "execute">): 
 export function openDatabase(url: string, options?: { readOnly?: boolean }): Client
 export function isMemoryDatabase(url: string): boolean
 export function isLocalReadSnapshot(transaction: Transaction): boolean
+export function isLocalFileWriter(transaction: Transaction): boolean
 export function tagTodayRead<T extends Exclude<InStatement, string>>(statement: T, kind: "rows" | "completed"): T
 export function tagBoardPolicyRead<T extends Exclude<InStatement, string>>(statement: T): T
 export interface DatabaseStartupOptions {

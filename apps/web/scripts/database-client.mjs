@@ -24,8 +24,8 @@ import {
 
 const localWriters = new WeakMap()
 const localExecutors = new WeakMap()
-/** @type {WeakMap<object, Pick<Transaction, "execute" | "batch" | "executeMultiple">>} */
-const localReadSnapshots = new WeakMap()
+/** @type {WeakMap<object, Pick<Transaction, "execute" | "batch" | "executeMultiple" | "commit" | "rollback" | "close"> & { mode: "read" | "write" }>} */
+const localFileTransactions = new WeakMap()
 /** @type {WeakMap<object, { execute: unknown, read: () => unknown }>} */
 const localGrantRevisionReaders = new WeakMap()
 /** @type {WeakMap<DatabaseSync, import("node:sqlite").StatementSync>} */
@@ -60,9 +60,21 @@ export function tagBoardPolicyRead(statement) {
  * @param {Transaction} transaction
  */
 export function isLocalReadSnapshot(transaction) {
-  const methods = localReadSnapshots.get(transaction)
-  return methods !== undefined && transaction.execute === methods.execute &&
-    transaction.batch === methods.batch && transaction.executeMultiple === methods.executeMultiple
+  return localFileTransactionMode(transaction) === "read"
+}
+
+/** @param {Transaction} transaction */
+export function isLocalFileWriter(transaction) {
+  return localFileTransactionMode(transaction) === "write"
+}
+
+/** @param {Transaction} transaction */
+function localFileTransactionMode(transaction) {
+  const methods = localFileTransactions.get(transaction)
+  const original = methods !== undefined && !transaction.closed && transaction.execute === methods.execute &&
+    transaction.batch === methods.batch && transaction.executeMultiple === methods.executeMultiple &&
+    transaction.commit === methods.commit && transaction.rollback === methods.rollback && transaction.close === methods.close
+  return original ? methods.mode : undefined
 }
 
 /** Use the reader's own execute method for adapters and decorated clients.
@@ -842,10 +854,14 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
         return sqliteOperation(() => readGrantRevision(db))
       },
     })
-    if (useReadPool) localReadSnapshots.set(result, {
+    if (!memory && (mode === "read" || mode === "write")) localFileTransactions.set(result, {
       execute: result.execute,
       batch: result.batch,
       executeMultiple: result.executeMultiple,
+      commit: result.commit,
+      rollback: result.rollback,
+      close: result.close,
+      mode,
     })
     return result
   }

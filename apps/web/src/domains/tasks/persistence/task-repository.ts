@@ -12,7 +12,7 @@ import { createHash } from "node:crypto"
 import { scopedTaskRead, taskReadPlacement, type TaskReadPlacement } from "./board-work-query"
 import { sql, sourceSql, joinSql } from "./sql-fragment"
 import { taskOwnedBy, ownedPlanning, storageBoardId, taskField, requireBoardScope } from "./board-storage"
-import { boardOperationClient, requireBoardWriterIntent, requireBoardWriterCheck, validateTaskOperation, BoardOperationError } from "./board-operation-client"
+import { acquirePrivateBoardWriter, boardOperationClient, requireBoardWriterIntent, requireBoardWriterCheck, validateTaskOperation, BoardOperationError } from "./board-operation-client"
 import { validateBoardScope, scopeAssignedTo, scopeServicePurpose, scopeServiceDestination, scopeServiceSourceId, scopeIntakeSubmission, scopeBoardAccess, type BoardScope, type WorkAction, type WorkOperation } from "../board-scope"
 import { guardClientContinuity } from "./continuity-client"
 /**
@@ -2018,7 +2018,7 @@ export class TaskRepository {
         }
         return writeResults
       }
-      const tx = existingWriter ?? await acquireWriteTransaction(commandClient, { signal })
+      const tx = existingWriter ?? await acquirePrivateBoardWriter(commandClient, this.scope, signal)
       try {
         signal?.throwIfAborted()
         // Retain cancellation through any borrowed compound writer's precommit

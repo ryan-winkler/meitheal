@@ -1,5 +1,5 @@
 import type { Client, InArgs, InStatement, Transaction } from "@libsql/client"
-import { acquireWriteTransaction, isLocalReadSnapshot } from "../../../../scripts/database-client.mjs"
+import { acquireWriteTransaction, isLocalFileWriter, isLocalReadSnapshot } from "../../../../scripts/database-client.mjs"
 import { databaseRevision, getBoardGrantPath, readBoardGrantRevision } from "../../../../scripts/board-grant-journal.mjs"
 import { principalProof, registerFencedScopeReader, validateBoardOperations } from "../board-scope"
 import { boardGrantStillCurrent, currentBoardGrantRevision } from "./board-grant-fence"
@@ -17,9 +17,15 @@ const guardedClients = new WeakSet<Client>()
 const clientGuards = new WeakMap<Client, Client>()
 const guardSources = new WeakMap<object, Client>()
 const fencedReadSnapshots = new WeakSet<Transaction>()
+const fencedLocalWriters = new WeakMap<Transaction, Transaction>()
 
 export function isFencedReadSnapshot(transaction: Transaction): boolean {
   return fencedReadSnapshots.has(transaction)
+}
+
+export function isFencedLocalWriter(transaction: Transaction): boolean {
+  const raw = fencedLocalWriters.get(transaction)
+  return raw !== undefined && isLocalFileWriter(raw)
 }
 
 /** Only controlled journal writers and synthetic fixtures may bypass an actual guard.
@@ -122,6 +128,7 @@ export function guardClientContinuity(client: Client): Client {
       return principalProof(scope.principal) ? result : { ok: false, errorCode: "stale" }
     })
     if (pinnedLocalRead) fencedReadSnapshots.add(guarded)
+    if (isLocalFileWriter(raw)) fencedLocalWriters.set(guarded, raw)
     return guarded
   }
 

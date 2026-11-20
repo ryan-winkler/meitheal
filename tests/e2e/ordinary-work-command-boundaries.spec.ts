@@ -10,7 +10,7 @@ import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/tas
 import { HierarchyRepository } from "../../apps/web/src/domains/tasks/persistence/hierarchy-repository"
 import { prepareTaskCreation } from "../../apps/web/src/domains/tasks/task-creation-service"
 import { readTaskDeletionReceipt } from "../../apps/web/src/domains/tasks/persistence/task-deletion-receipt"
-import { boardOperationClient, boardReadTransactionClient } from "../../apps/web/src/domains/tasks/persistence/board-operation-client"
+import { acquirePrivateBoardWriter, boardOperationClient, boardReadTransactionClient } from "../../apps/web/src/domains/tasks/persistence/board-operation-client"
 import { getTimerState, startFocus, skipToBreak, getSessionHistory, getTimeEntries, startTimeEntryForTask, resetPomodoroForTests } from "../../apps/web/src/domains/pomodoro/pomodoro-service"
 import { TaskDraftRepository } from "../../apps/web/src/domains/tasks/persistence/task-draft-repository"
 import { createLabel, deleteLabel, UnusedLabelRepository } from "../../apps/web/src/domains/labels"
@@ -132,6 +132,25 @@ test("an admitted SQLite read snapshot expires with the original actor", async (
     Date.now = clock
     tx.close()
   }
+})
+test("a private SQLite writer rolls back if its actor expires before commit", async () => {
+  const db = getPersistenceClient()
+  const clock = Date.now
+  const expiry = clock() + 60_000
+  const actor = registerVerifiedPrincipal({ kind: "ha_user", id: "parent" }, { administrator: true, expiresAt: expiry })
+  const work = await scope("household", actor)
+  const task = await create(work, { title: "Original title" })
+  const editor = boardOperationClient(db, work, { resource: "task", action: "edit" }, [task.id])
+  const tx = await acquirePrivateBoardWriter(editor, work)
+  try {
+    expect((await tx.execute("UPDATE tasks SET title = ? WHERE id = ? AND task_board_id IS NULL", ["New title", task.id])).rowsAffected).toBe(1)
+    Date.now = () => expiry
+    await expect(tx.commit()).rejects.toMatchObject({ errorCode: "stale" })
+  } finally {
+    Date.now = clock
+    tx.close()
+  }
+  expect((await new TaskRepository(db, work).findById(task.id))?.title).toBe("Original title")
 })
 test("write-authorized task selectors use a read snapshot while another connection holds the writer", async () => {
   const db = getPersistenceClient(), work = await scope("household"), repo = new TaskRepository(db, work)

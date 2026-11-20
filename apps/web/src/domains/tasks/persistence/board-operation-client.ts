@@ -1,14 +1,15 @@
 import type { Client, InArgs, InStatement, Transaction } from "@libsql/client"
+import { acquireWriteTransaction } from "../../../../scripts/database-client.mjs"
 import { principalProof, requireBoardScope, scopeAssignedTo, scopeLimits, validateBoardOperations, validateBoardScope, type BoardScope, type WorkOperation } from "../board-scope"
 import { boardGrantStillCurrent, currentBoardGrantRevision } from "./board-grant-fence"
-import { guardClientContinuity, isFencedReadSnapshot } from "./continuity-client"
+import { guardClientContinuity, isFencedLocalWriter, isFencedReadSnapshot } from "./continuity-client"
 import { validateBoardPlacement } from "../board-access-service"
 import { ownedPlanning, taskField, taskOwnedBy } from "./board-storage"
 import { sql, joinSql, sourceSql } from "./sql-fragment"
 
 type WriterIntentResolver = (reader: Pick<Client, "execute">) => Promise<readonly WorkOperation[]>
 type WriterCheck = (reader: Pick<Client, "execute">) => Promise<void>
-type OperationClient = { source: Client, scope: BoardScope, operations: readonly WorkOperation[], targets: readonly string[], intents: readonly WriterIntentResolver[], checks: readonly WriterCheck[] }
+type OperationClient = { source: Client, scope: BoardScope, operations: readonly WorkOperation[], targets: readonly string[], intents: readonly WriterIntentResolver[], checks: readonly WriterCheck[], beginPrivateWrite: () => Promise<Transaction> }
 const operationClients = new WeakMap<object, OperationClient>()
 const admittedReads = new WeakMap<object, { scope: BoardScope, live: Client, snapshot: Transaction }>()
 const admittedWriters = new WeakMap<object, { scope: BoardScope, require: (operation: WorkOperation) => Promise<void>, check: (validate: () => Promise<void>) => Promise<void> }>()
@@ -69,7 +70,7 @@ export function boardOperationClient(client: Client, scope: BoardScope, operatio
 
   async function transaction(
     mode: "read" | "write" | "deferred" = write ? "write" : "read",
-    holdReadResult = false,
+    holdResult = false,
   ): Promise<Transaction> {
     // A read entitlement cannot be used to acquire a writable transaction.
     if (!write && mode !== "read") throw new BoardOperationError("denied")
@@ -93,9 +94,14 @@ export function boardOperationClient(client: Client, scope: BoardScope, operatio
     // Admission already proved every operation on this immutable SQLite snapshot.
     // Its own guard still checks snapshot and live continuity at each operation.
     const reuseSnapshotAuthority = mode === "read" && isFencedReadSnapshot(tx)
-    const withholdUntilCommit = reuseSnapshotAuthority && holdReadResult
+    const withholdUntilCommit = reuseSnapshotAuthority && holdResult
+    // A private file-backed writer excludes other SQLite writers and keeps its
+    // data private until a fresh check of all effects on the actual commit.
+    // Token and provider policy still revalidate on each use.
+    const privateWriter = mode === "write" && holdResult &&
+      (scope.principal.kind === "ha_user" || scope.principal.kind === "local_operator") && isFencedLocalWriter(tx)
     async function checkSnapshot(requested: readonly WorkOperation[] = operations) {
-      if (!reuseSnapshotAuthority) return check(tx, requested)
+      if (!reuseSnapshotAuthority && !(privateWriter && isFencedLocalWriter(tx))) return check(tx, requested)
       if (!principalProof(scope.principal) || scopeLimits(scope).some(limit => !principalProof(limit.principal))) {
         throw new BoardOperationError("stale")
       }
@@ -111,7 +117,8 @@ export function boardOperationClient(client: Client, scope: BoardScope, operatio
           return result
         }
         if (property === "commit") return async () => {
-          await checkSnapshot(requiredIntents)
+          if (privateWriter) await check(tx, requiredIntents)
+          else await checkSnapshot(requiredIntents)
           if (mode !== "read") for (const validate of checks) await validate(tx)
           for (const validate of requiredChecks) await validate()
           if (!withholdUntilCommit && (mode === "read" || mode === "deferred")) { await check(db); await checkTargets(db) }
@@ -154,8 +161,15 @@ export function boardOperationClient(client: Client, scope: BoardScope, operatio
       return typeof value === "function" ? value.bind(target) : value
     },
   })
-  operationClients.set(guarded, { source, scope, operations, targets, intents, checks })
+  operationClients.set(guarded, { source, scope, operations, targets, intents, checks, beginPrivateWrite: () => transaction("write", true) })
   return guarded
+}
+
+/** The task repository retains the command result until this writer commits. */
+export function acquirePrivateBoardWriter(client: Client, scope: BoardScope, signal?: AbortSignal): Promise<Transaction> {
+  const command = operationClients.get(client)
+  if (!command || command.scope !== scope) throw new BoardOperationError("denied")
+  return acquireWriteTransaction({ transaction: command.beginPrivateWrite }, { signal })
 }
 
 /** Private compound-command gate: an enclosing writer retains every derived intent until commit. */

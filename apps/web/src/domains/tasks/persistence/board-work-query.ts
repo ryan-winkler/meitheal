@@ -20,14 +20,18 @@ function visiblePlacement(scope: BoardScope): SqlFragment {
   const human = scope.principal.kind === "ha_user"
   const area = sql`COALESCE((SELECT visibility_project.area_id FROM projects AS visibility_project
     WHERE visibility_project.id = ${taskField(scope, "project_id", "work_task")} AND ${ownedPlanning(scope, "visibility_project")}), ${taskField(scope, "area_id", "work_task")})`
-  return sql`NOT EXISTS (SELECT 1 FROM organization_access_policies AS work_policy
+  // An unrestricted Board needs no per-task placement policy lookup. Both
+  // checks read the same statement snapshot, including newly restricted work.
+  return sql`(NOT EXISTS (SELECT 1 FROM organization_access_policies
+    WHERE board_id = ${scope.boardId} AND scope IN ('group', 'project') AND audience <> 'everyone')
+    OR NOT EXISTS (SELECT 1 FROM organization_access_policies AS work_policy
     WHERE work_policy.board_id = ${scope.boardId} AND (
       (work_policy.scope = 'group' AND work_policy.scope_id = ${area}) OR
       (work_policy.scope = 'project' AND work_policy.scope_id = ${taskField(scope, "project_id", "work_task")})
     ) AND NOT (work_policy.audience = 'everyone' OR
       (${human ? 1 : 0} = 1 AND work_policy.audience = 'selected' AND EXISTS (
         SELECT 1 FROM json_each(CASE WHEN json_valid(work_policy.selected_users) THEN work_policy.selected_users ELSE '[]' END)
-        WHERE value = ${scope.principal.id}))))`
+        WHERE value = ${scope.principal.id})))))`
 }
 
 export function planningVisible(scope: BoardScope, resource: "areas" | "projects" | "goals"): SqlFragment {
