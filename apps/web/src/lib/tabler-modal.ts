@@ -1,4 +1,5 @@
 import type Modal from "@tabler/core/js/src/bootstrap/modal"
+import { notifyOverlayChange } from "./dialog-overlay"
 import { pageLifecycle } from "./page-lifecycle"
 import { ensureTablerStyles } from "./tabler-styles"
 
@@ -19,6 +20,7 @@ export async function openTablerModal(dialog: HTMLElement, trigger?: HTMLElement
     modal.dispose()
     openModals.delete(dialog)
     signal.removeEventListener("abort", close)
+    notifyOverlayChange("closed")
   }
   const close = () => {
     modal.hide()
@@ -31,6 +33,7 @@ export async function openTablerModal(dialog: HTMLElement, trigger?: HTMLElement
     dialog.removeEventListener("hidden.bs.modal", cleanup)
     cleanup()
   } else {
+    notifyOverlayChange("opened")
     dialog.querySelector<HTMLElement>("[data-tabler-initial-focus]")?.focus({ preventScroll: true })
   }
 }

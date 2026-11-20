@@ -99,6 +99,7 @@ export const CLIENT_DYNAMIC_ICON_NAMES = [
   "chevron-down",
   "clipboard-list",
   "clock",
+  "device-mobile",
   "file-text",
   "flame",
   "folder",

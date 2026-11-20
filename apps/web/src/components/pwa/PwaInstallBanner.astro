@@ -1,44 +1,50 @@
 ---
 /**
- * PWA Install Banner — Dismissible bottom banner
+ * PWA Install Banner — Dismissible prompt banner
  *
  * Appears when `beforeinstallprompt` fires (secure context only).
- * Dismissal persists permanently to localStorage.
- * Does not render server-side — all logic is client-only.
+ * Auto-hide hides for the current browser session without permanently silencing;
+ * explicit dismiss or swipe-up persists dismissal to localStorage.
  *
  * Bounded context: pwa / offline domain
  *
- * @kcs PWA install requires HTTPS. Behind HA ingress over HTTP,
- * this banner never appears (graceful degradation).
+ * @kcs PWA install requires a secure context (HTTPS or localhost). Behind HA
+ *      ingress over HTTP, this banner never appears (graceful degradation).
  */
+import { getLocale, t } from "@lib/i18n"
+import type { Locale } from "../../lib/locale"
 import Icon from "../ui/Icon.astro"
+
+interface Props {
+  locale?: Locale
+}
+
+const locale = Astro.props.locale ?? getLocale(Astro)
 ---
 
 <div
   id="pwa-install-banner"
   class="pwa-banner"
   role="complementary"
-  aria-label="Install app"
-  aria-live="polite"
-  data-no-scroll-lock="true"
+  aria-label={t("toast.pwa_install_title", locale)}
   style="display: none;"
 >
   <div class="pwa-banner__content">
-    <div class="pwa-banner__icon"><Icon name="phone" size={24} sprite={true} /></div>
+    <div class="pwa-banner__icon" aria-hidden="true"><Icon name="phone" size={22} sprite={true} /></div>
     <div class="pwa-banner__text">
-      <strong>Install Meitheal</strong>
-      <span>Get offline access, quick launch, and push notifications</span>
+      <strong>{t("toast.pwa_install_title", locale)}</strong>
+      <span>{t("toast.pwa_install_desc", locale)}</span>
     </div>
   </div>
   <div class="pwa-banner__actions">
-    <button type="button" id="pwa-install-btn" class="pwa-banner__install">
-      Install
+    <button type="button" id="pwa-install-btn" class="btn btn-primary pwa-banner__install">
+      {t("toast.pwa_install_btn", locale)}
     </button>
     <button
       type="button"
       id="pwa-dismiss-btn"
       class="pwa-banner__dismiss"
-      aria-label="Dismiss install banner"
+      aria-label={t("toast.pwa_install_dismiss", locale)}
     >
       <Icon name="x" size={16} sprite={true} />
     </button>
@@ -48,36 +54,49 @@ import Icon from "../ui/Icon.astro"
 <style>
   .pwa-banner {
     position: fixed;
-    top: 12px;
-    right: 12px;
-    left: auto;
-    z-index: 50;
+    top: calc(env(safe-area-inset-top, 0px) + 12px);
+    inset-inline-end: calc(12px + env(safe-area-inset-right, 0px));
+    inset-inline-start: auto;
+    z-index: 180;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    padding: 10px 16px;
+    padding: 10px 14px;
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-    transform: translateY(-120%);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    transform: translate3d(0, calc(-100% - 24px), 0);
     opacity: 0;
     transition:
-      transform 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-      opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-    max-width: 420px;
+      transform 220ms var(--ease-out),
+      opacity 200ms var(--ease-out);
+    max-width: min(420px, calc(100vw - 24px));
+    touch-action: none;
   }
 
   .pwa-banner--visible {
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0);
     opacity: 1;
+  }
+
+  .pwa-banner[data-swiping="true"] {
+    transition: none !important;
+    user-select: none;
+  }
+
+  .pwa-banner[data-keyboard-suppressed="true"],
+  :global(body:has(.toast-container:is([data-dock-top="true"], [data-keyboard-open="true"]) .toast)) .pwa-banner {
+    opacity: 0;
+    pointer-events: none;
+    visibility: hidden;
   }
 
   .pwa-banner__content {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 12px;
     flex: 1;
     min-width: 0;
   }
@@ -85,7 +104,12 @@ import Icon from "../ui/Icon.astro"
   .pwa-banner__icon {
     display: inline-flex;
     align-items: center;
-    color: var(--accent);
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-card));
+    color: var(--accent-text);
     flex-shrink: 0;
   }
 
@@ -97,176 +121,290 @@ import Icon from "../ui/Icon.astro"
   }
 
   .pwa-banner__text strong {
-    font-size: 14px;
+    font-size: 0.875rem;
     font-weight: 600;
     color: var(--text-primary);
   }
 
   .pwa-banner__text span {
-    font-size: 12px;
+    font-size: 0.75rem;
     color: var(--text-secondary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
   }
 
   .pwa-banner__actions {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     flex-shrink: 0;
   }
 
   .pwa-banner__install {
-    padding: 8px 20px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
-    background: var(--accent);
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    transition:
-      background 0.15s,
-      transform 0.1s;
+    padding: 0 14px;
+    min-height: 34px;
+    font-size: 0.8125rem;
     white-space: nowrap;
   }
 
-  .pwa-banner__install:hover {
-    background: var(--accent-hover);
-    transform: scale(1.02);
-  }
-
-  .pwa-banner__install:active {
-    transform: scale(0.98);
-  }
-
-  .pwa-banner__dismiss {
-    padding: 6px 8px;
-    font-size: 14px;
-    color: var(--text-muted, #64748b);
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    transition:
-      color 0.15s,
-      background 0.15s;
-    line-height: 1;
-  }
-
-  .pwa-banner__dismiss:hover {
-    color: var(--text-primary, #f1f5f9);
-    background: rgba(255, 255, 255, 0.06);
-  }
-
-  /* HA ingress: account for sidebar */
-  :global(body.ha-ingress) .pwa-banner {
-    left: 0;
-  }
-
-  /* Mobile: full width toast */
-  @media (max-width: 480px) {
+  /* Mobile: full-width top banner respecting horizontal safe areas */
+  @media (max-width: 768px) {
     .pwa-banner {
-      left: 12px;
-      right: 12px;
+      inset-inline-start: calc(12px + env(safe-area-inset-left, 0px));
+      inset-inline-end: calc(12px + env(safe-area-inset-right, 0px));
       max-width: none;
+    }
+  }
+
+  @media (max-width: 768px), (pointer: coarse) {
+    .pwa-banner__install {
+      min-height: 44px;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pwa-banner {
+      transform: none;
+      transition: opacity 150ms ease;
     }
   }
 </style>
 
 <script>
-  const DISMISS_KEY = "meitheal-pwa-dismissed";
+  import { canRestoreFocusTarget } from "@lib/dialog-overlay"
+  import { consumePwaInstallPrompt } from "@lib/layout-pwa-controller"
+  import { bindSwipeDismiss } from "@lib/swipe-dismiss"
+  import { isSoftwareKeyboardOpen } from "@lib/toast"
 
-  function isDismissed(): boolean {
-    return localStorage.getItem(DISMISS_KEY) !== null;
+  const DISMISS_KEY = "meitheal-pwa-dismissed"
+  const SESSION_HIDDEN_KEY = "meitheal-pwa-session-hidden"
+  const AUTO_HIDE_MS = 10_000
+  let autoHideTimer: number | undefined
+  let finalizeTimer: number | undefined
+  let remainingHideMs = AUTO_HIDE_MS
+  let timerStartedAt = 0
+  let sessionAutoHidden = false
+  let bannerReturnFocus: HTMLElement | null = null
+  let vvAc: AbortController | null = null
+  const pauseReasons = new Set<string>()
+
+  function detachVv(): void {
+    vvAc?.abort()
+    vvAc = null
   }
 
-  function showBanner() {
-    const banner = document.getElementById("pwa-install-banner");
-    if (!banner || isDismissed()) return;
-    banner.style.display = "flex";
-    void banner.offsetHeight;
-    banner.classList.add("pwa-banner--visible");
-    // Auto-dismiss permanently after 10s
-    setTimeout(() => {
-      if (banner.classList.contains("pwa-banner--visible")) {
-        dismissBanner();
-      }
-    }, 10000);
-  }
-
-  function hideBanner() {
-    const banner = document.getElementById("pwa-install-banner");
-    if (!banner) return;
-    banner.classList.remove("pwa-banner--visible");
-    // P0: Clear any scroll lock that may have been applied while banner was visible
-    // (editor heuristics or modal systems may lock body scroll on fixed overlays)
-    document.body.style.overflow = "";
-    document.body.classList.remove("antigravity-scroll-lock");
-    setTimeout(() => {
-      banner.style.display = "none";
-    }, 350);
-  }
-
-  function dismissBanner() {
-    localStorage.setItem(DISMISS_KEY, "permanent");
-    hideBanner();
-  }
-
-  // Bind DOM event listeners — re-runs after each ClientRouter swap
-  function bindBannerListeners() {
-    const banner = document.getElementById("pwa-install-banner");
-    if (!banner) return;
-    // Guard: prevent duplicate listener accumulation on ClientRouter
-    if ((banner as HTMLElement).dataset.bannerBound) return;
-    (banner as HTMLElement).dataset.bannerBound = "true";
-
-    // Install button
-    document
-      .getElementById("pwa-install-btn")
-      ?.addEventListener("click", async () => {
-        const prompt = window.__pwa_install_prompt;
-        if (!prompt) return;
-        try {
-          await prompt.prompt();
-          const result = await prompt.userChoice;
-          if (result.outcome === "accepted") {
-            dismissBanner();
-          }
-        } catch {
-          // prompt() can only be called once
-        }
-        window.__pwa_install_prompt = null;
-      });
-
-    // Dismiss button — permanent dismiss
-    document
-      .getElementById("pwa-dismiss-btn")
-      ?.addEventListener("click", dismissBanner);
-
-    // If prompt already captured, show banner
-    if (window.__pwa_install_prompt && !isDismissed()) {
-      showBanner();
+  function setSessionHidden(hidden: boolean): void {
+    sessionAutoHidden = hidden
+    try {
+      if (hidden) sessionStorage.setItem(SESSION_HIDDEN_KEY, "1")
+      else sessionStorage.removeItem(SESSION_HIDDEN_KEY)
+    } catch {
+      /* sessionStorage unavailable */
     }
   }
 
-  // Window-level listeners — guarded to prevent accumulation across ClientRouter
-  if (!window.__pwaBannerListenersBound) {
-    window.__pwaBannerListenersBound = true;
-
-    // Listen for installable event (fires from Layout.astro)
-    window.addEventListener("meitheal-pwa-installable", () => {
-      showBanner();
-    });
-
-    // Listen for installed event — hide permanently
-    window.addEventListener("meitheal-pwa-installed", () => {
-      dismissBanner();
-    });
+  function isDismissed(): boolean {
+    if (sessionAutoHidden) return true
+    try {
+      return localStorage.getItem(DISMISS_KEY) !== null || sessionStorage.getItem(SESSION_HIDDEN_KEY) !== null
+    } catch {
+      return false
+    }
   }
 
-  // Initial bind + re-bind after ClientRouter page swap
-  bindBannerListeners();
-  document.addEventListener("astro:page-load", bindBannerListeners);
+  function startAutoHideTimer(banner: HTMLElement, reset = false): void {
+    window.clearTimeout(autoHideTimer)
+    autoHideTimer = undefined
+    if (reset) remainingHideMs = AUTO_HIDE_MS
+    if (pauseReasons.size > 0 || !banner.classList.contains("pwa-banner--visible")) return
+    timerStartedAt = performance.now()
+    autoHideTimer = window.setTimeout(() => {
+      autoHideTimer = undefined
+      if (banner.classList.contains("pwa-banner--visible")) {
+        setSessionHidden(true)
+        hideBanner()
+      }
+    }, Math.max(0, remainingHideMs))
+  }
+
+  function pauseBannerTimer(_banner: HTMLElement, reason: string): void {
+    if (pauseReasons.has(reason)) return
+    if (pauseReasons.size === 0 && autoHideTimer !== undefined) {
+      remainingHideMs = Math.max(1200, remainingHideMs - (performance.now() - timerStartedAt))
+    }
+    pauseReasons.add(reason)
+    window.clearTimeout(autoHideTimer)
+    autoHideTimer = undefined
+  }
+
+  function resumeBannerTimer(banner: HTMLElement, reason: string): void {
+    if (pauseReasons.delete(reason) && pauseReasons.size === 0) {
+      startAutoHideTimer(banner)
+    }
+  }
+
+  function syncBannerKeyboardSuppression(banner: HTMLElement): void {
+    const suppressed =
+      banner.classList.contains("pwa-banner--visible") &&
+      (isSoftwareKeyboardOpen() ||
+        Boolean(document.querySelector('.toast-container:is([data-dock-top="true"], [data-keyboard-open="true"]) .toast')))
+    if (suppressed) {
+      banner.dataset.keyboardSuppressed = "true"
+      pauseBannerTimer(banner, "keyboard")
+    } else {
+      delete banner.dataset.keyboardSuppressed
+      resumeBannerTimer(banner, "keyboard")
+    }
+  }
+
+  function showBanner() {
+    const banner = document.getElementById("pwa-install-banner")
+    if (!banner || isDismissed()) return
+    window.clearTimeout(finalizeTimer)
+    finalizeTimer = undefined
+    pauseReasons.clear()
+    if (document.hidden) pauseReasons.add("hidden")
+    banner.style.display = "flex"
+    void banner.offsetHeight
+    banner.classList.add("pwa-banner--visible")
+
+    detachVv()
+    vvAc = new AbortController()
+    const syncVv = () => syncBannerKeyboardSuppression(banner)
+    window.visualViewport?.addEventListener("resize", syncVv, { signal: vvAc.signal })
+    window.addEventListener("resize", syncVv, { signal: vvAc.signal })
+
+    syncBannerKeyboardSuppression(banner)
+    startAutoHideTimer(banner, true)
+  }
+
+  function hideBanner() {
+    detachVv()
+    window.clearTimeout(autoHideTimer)
+    window.clearTimeout(finalizeTimer)
+    autoHideTimer = undefined
+    finalizeTimer = undefined
+    pauseReasons.clear()
+    const banner = document.getElementById("pwa-install-banner")
+    if (!banner) return
+    const restoreFocus = banner.contains(document.activeElement) ? bannerReturnFocus : null
+    banner.classList.remove("pwa-banner--visible")
+    delete banner.dataset.keyboardSuppressed
+    const finalize = () => {
+      finalizeTimer = undefined
+      if (!banner.classList.contains("pwa-banner--visible")) {
+        banner.style.display = "none"
+        banner.style.transform = ""
+        banner.style.opacity = ""
+        if (canRestoreFocusTarget(restoreFocus)) {
+          try { restoreFocus.focus({ preventScroll: true }) } catch { /* noop */ }
+        }
+      }
+    }
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      finalize()
+      return
+    }
+    finalizeTimer = window.setTimeout(finalize, 240)
+  }
+
+  function dismissBanner() {
+    try {
+      localStorage.setItem(DISMISS_KEY, "permanent")
+    } catch {
+      /* storage unavailable */
+    }
+    hideBanner()
+  }
+
+  function bindBannerListeners() {
+    window.__pwaBannerTeardown?.()
+    const banner = document.getElementById("pwa-install-banner")
+    if (!banner) return
+
+    const ac = new AbortController()
+    const { signal } = ac
+    window.__pwaBannerTeardown = () => {
+      detachVv()
+      window.clearTimeout(autoHideTimer)
+      window.clearTimeout(finalizeTimer)
+      autoHideTimer = undefined
+      finalizeTimer = undefined
+      pauseReasons.clear()
+      ac.abort()
+    }
+
+    document.getElementById("pwa-install-btn")?.addEventListener("click", async () => {
+      await consumePwaInstallPrompt()
+    }, { signal })
+
+    document.getElementById("pwa-dismiss-btn")?.addEventListener("click", dismissBanner, { signal })
+
+    banner.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault()
+        e.stopPropagation()
+        dismissBanner()
+      }
+    }, { signal })
+    banner.addEventListener("focusin", (e) => {
+      if (e.relatedTarget instanceof HTMLElement && !banner.contains(e.relatedTarget)) {
+        bannerReturnFocus = e.relatedTarget
+      }
+      pauseBannerTimer(banner, "focus")
+    }, { signal })
+    banner.addEventListener("focusout", () => {
+      if (!banner.matches(":focus-within")) resumeBannerTimer(banner, "focus")
+    }, { signal })
+    banner.addEventListener("pointerenter", (e) => {
+      if (e.pointerType === "mouse") pauseBannerTimer(banner, "hover")
+    }, { signal })
+    banner.addEventListener("pointerleave", (e) => {
+      if (e.pointerType === "mouse") resumeBannerTimer(banner, "hover")
+    }, { signal })
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) pauseBannerTimer(banner, "hidden")
+      else resumeBannerTimer(banner, "hidden")
+    }, { signal })
+    document.addEventListener("meitheal:toast-dock-changed", () => syncBannerKeyboardSuppression(banner), { signal })
+
+    bindSwipeDismiss({
+      element: banner,
+      signal,
+      canStart: () => banner.classList.contains("pwa-banner--visible"),
+      allowHorizontal: false,
+      verticalSign: () => -1,
+      verticalThreshold: 32,
+      onDragStart: () => pauseBannerTimer(banner, "swipe"),
+      onDragCancel: () => resumeBannerTimer(banner, "swipe"),
+      onDismiss: () => {
+        // Flush after cleanupDrag cleared data-swiping so exit transform transitions smoothly.
+        void banner.offsetWidth
+        banner.style.transform = ""
+        banner.style.opacity = ""
+        dismissBanner()
+      },
+    })
+
+    if (window.__pwa_install_prompt && !isDismissed()) {
+      showBanner()
+    }
+  }
+
+  window.__pwaBannerGlobalAc?.abort()
+  const globalAc = new AbortController()
+  window.__pwaBannerGlobalAc = globalAc
+
+  window.addEventListener("meitheal-pwa-installable", () => {
+    setSessionHidden(false)
+    showBanner()
+  }, { signal: globalAc.signal })
+  window.addEventListener("meitheal-pwa-installed", dismissBanner, { signal: globalAc.signal })
+  window.addEventListener("meitheal-pwa-prompt-consumed", hideBanner, { signal: globalAc.signal })
+  window.addEventListener("meitheal-pwa-hints-reset", () => {
+    setSessionHidden(false)
+  }, { signal: globalAc.signal })
+  document.addEventListener("astro:before-swap", () => window.__pwaBannerTeardown?.(), { signal: globalAc.signal })
+  document.addEventListener("astro:page-load", bindBannerListeners, { signal: globalAc.signal })
+
+  bindBannerListeners()
 </script>

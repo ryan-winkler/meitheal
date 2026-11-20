@@ -2,6 +2,7 @@
 //   attachStrategicLens
 
         import { confirmDialog } from "@lib/confirm-dialog";
+        import { findModalTrapTarget } from "@lib/dialog-overlay"
         import { promptDialog } from "@lib/prompt-dialog";
         import { createClientLogger, registerGlobalLogger } from "@lib/client-logger";
         import { containTabFocus } from "@lib/focus-trap"
@@ -271,12 +272,7 @@
               }
 
               if (e.key === "Tab") {
-                if (hasPriorityOverlay()) return
-                const task = document.body.classList.contains("has-docked-inspector")
-                  ? null
-                  : document.querySelector<HTMLElement>("#task-detail-overlay.active")
-                const search = document.querySelector<HTMLElement>("#search-hub-overlay:not(.hidden)")
-                const activeOverlay = search ?? task
+                const activeOverlay = findModalTrapTarget()
                 if (activeOverlay) containTabFocus(activeOverlay, e)
                 return
               }

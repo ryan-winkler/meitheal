@@ -311,12 +311,22 @@ dialog[open] .modal-content,
 }
 
 /* Keep help mounted so the covering dialog can return focus to its Close button. */
-body:has(dialog[open], #meitheal-confirm-overlay, #meitheal-prompt-overlay) .shortcut-modal-overlay {
+body:has(
+  dialog[open],
+  [data-meitheal-tabler-modal].show,
+  #meitheal-confirm-overlay,
+  #meitheal-prompt-overlay,
+  #search-hub-overlay:not(.hidden),
+  .habit-modal-overlay:not(.hidden),
+  #ask-ha-overlay.active,
+  #ask-ha-overlay:not(.modal-overlay, .hidden),
+  [role="dialog"][aria-modal="true"].active:not(#shortcut-modal)
+) .shortcut-modal-overlay {
   visibility: hidden;
 }
 
 @supports selector(:popover-open) {
-  body:has([popover]:popover-open) .shortcut-modal-overlay {
+  body:has([popover]:popover-open:not(#toast-container)) .shortcut-modal-overlay {
     visibility: hidden;
   }
 }

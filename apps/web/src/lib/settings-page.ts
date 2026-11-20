@@ -22,6 +22,7 @@ function initPwaNotificationTest(): void {
   pageLifecycle.on(button, "click", async () => {
     if (button.getAttribute("aria-disabled") === "true") return
     button.setAttribute("aria-disabled", "true")
+    button.setAttribute("aria-busy", "true")
     result.textContent = copy.sending ?? ""
     try {
       const permission = isPwaSupported() ? await requestNotificationPermission() : "unsupported"
@@ -42,6 +43,7 @@ function initPwaNotificationTest(): void {
       if (!signal.aborted) result.textContent = copy.unavailable ?? ""
     } finally {
       button.removeAttribute("aria-disabled")
+      button.removeAttribute("aria-busy")
     }
   })
 }

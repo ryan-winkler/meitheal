@@ -36,21 +36,31 @@ Vite HMR re-evaluates `<script>` blocks without aborting the previous Astro life
 
 | Approach | When to use |
 |----------|-------------|
-| `cloneNode(true)` + `replaceWith()` | Forms — strips ALL listeners from the element |
+| DOM `dataset` idempotency guard | Long-lived overlays/forms with child lifecycle controllers — e.g. `dataset.newTaskController = "ready"`, cleared on `signal` abort |
+| `cloneNode(true)` + `replaceWith()` | Simple forms without child lifecycle controllers — strips ALL listeners from the element |
 | Window-scoped guard flag | Cross-scope state — `(window as any).__flagName` |
 | Module-scoped guard | **Does NOT work** — each HMR eval creates a new scope |
 
-### Example: Clone-Form Pattern (NewTaskModal.astro)
+### Example: Preserved Form Lifecycle Pattern (NewTaskModal.astro)
+
+Preserve long-lived overlays and form controls that hold child lifecycle listeners (`NewTaskModal.astro`), guarding re-entry with a DOM `dataset` attribute cleared on `pageLifecycle` signal abort before binding `{ signal }`:
 
 ```ts
-if (form) {
-  const freshForm = form.cloneNode(true) as HTMLFormElement
-  form.replaceWith(freshForm)
-  freshForm.addEventListener("submit", async (e) => {
+pageLifecycle.onPageLoad((signal) => {
+  const overlay = document.getElementById("new-task-overlay")
+  if (!overlay || overlay.dataset.newTaskController === "ready") return
+  overlay.dataset.newTaskController = "ready"
+  signal.addEventListener("abort", () => {
+    delete overlay.dataset.newTaskController
+  }, { once: true })
+
+  // Preserve the form so its child controls keep their lifecycle-bound handlers.
+  const form = document.getElementById("new-task-form")
+  form?.addEventListener("submit", async (e) => {
     e.preventDefault()
     // ...handler
   }, { signal })
-}
+})
 ```
 
 Eisenhower keeps one window-scoped controller owner for the current page and lifecycle signal. Repeated `astro:page-load` events reuse that owner. Replacing the owner aborts its listeners, including the delegated triage and weekly review listeners. The page signal also retires that owner on navigation. Keep drag, capture, focus, tabs and action handlers on the same owned signal.
@@ -75,21 +85,23 @@ Run `pnpm --filter @meitheal/tests test e2e/shared-shell-ux.spec.ts` against a d
 
 ## Toast System
 
-Located at `apps/web/src/lib/toast.ts`.
+Mounted once in [`ToastRegion.astro`](../../apps/web/src/components/ui/ToastRegion.astro) (`#toast-container`) and managed by [`toast.ts`](../../apps/web/src/lib/toast.ts). See the [Toast Notifications Reference](toast-notifications.md) for Top-Layer popover stacking, mobile safe areas, and swipe gestures.
 
 | Function | Purpose | Auto-dismiss |
 |----------|---------|-------------|
-| `showToast(msg, type)` | General notification | 3s success, 5s error |
-| `showUndoToast(msg, onUndo)` | Action with undo button | 5s |
-| `showRetryToast(msg, onRetry)` | Action with retry button | 8s |
-| `showTaskCreatedToast(key, id, title)` | Task created with clickable ticket key | 4s |
+| `pushToast(options)` | Full-featured notification & persistent update prompt | Configurable (`persistent: true` pins) |
+| `showToast(msg, type, options)` | Standard notification (`success`, `info`, `warning`, `error`) | 3.5s `success`/`info`, 4.5s `warning`, 5.5s `error` |
+| `showUndoToast(msg, onUndo, onCommit, timeout)` | Action with Undo button (`pagehide` / `astro:before-swap` commit) | `5s` (`5000` ms default) |
+| `showRetryToast(msg, onRetry)` | Error notification with Retry button | `8s` |
+| `showTaskCreatedToast(ticketKey, id, title)` | Task created with clickable ticket key (nullable; localized `"Open"` fallback) | `5s` |
+| `dismissToast(id?)` | Dismiss one toast by id or all active toasts | — |
 
 ### Toast Conventions
 
-- Max 5 visible toasts; oldest evicted when exceeded
-- All toasts must have `role="alert"`, `aria-live`, and dismiss button
-- i18n strings loaded from `window.mI18n` (set by `Layout.astro`)
-- `showTaskCreatedToast` renders clickable `MTH-XX` that calls `window.openTaskDetail(id)`
+- Max 5 live toasts (`MAX_ACTIVE_TOASTS = 5`): Pass 1 evicts oldest non-persistent/non-commit toast; Pass 2 evicts uncommitted `onForceCommit` items; Pass 3 enforces the cap across persistent items
+- `"error"` & `"warning"` use `role="alert"` (`aria-live="assertive"`); `"success"` & `"info"` use `role="status"` (`aria-live="polite"`); dismiss button rendered unless `dismissible: false`
+- Single-arg `window.mI18n.get(key)` resolves against the SSR locale catalog set by `Layout.astro`
+- `showTaskCreatedToast` renders clickable `MTH-XX` (or localized `toast.open_task` fallback) calling `window.openTaskDetail(id)`
 
 ## Task API Response Contract
 
@@ -131,13 +143,11 @@ These are set during modal lifecycle and must be cleaned up on signal abort:
 
 | Property | Purpose |
 |----------|---------|
-| `window.__ntFormSubmitting` | Double-submit guard |
-| `window._removeNTCItem` | Checklist item removal |
-| `window.__ntShoppingItems` | Shopping items state |
-| `window.__meitheal_users` | User list cache |
-| `window.__ntDatePickers` | Date picker instances |
-| `window.openNewTaskModal` | Modal open function |
-| `window.openTaskDetail` | Detail modal open function |
+| `window.__meitheal_users` | User list cache for task assignment |
+| `window.openNewTaskModal` | Task creation modal open function |
+| `window.openTaskDetail` | Task detail modal open function |
+| `window.__pwaBannerTeardown` | Active PWA banner listener & timer teardown |
+| `window.startPomodoro` | Floating Pomodoro timer trigger |
 
 ## Embedded navigation and generated controls
 
@@ -147,6 +157,8 @@ Controls appended by client code outside an Astro component need global CSS sele
 ## Confirmation and prompt text
 
 `confirmDialog` and `promptDialog` accept plain text. Titles, messages and button labels render through `textContent`; prompt values and placeholders use input properties. Pass raw strings, including names read from API records, DOM labels or datasets. Do not pre-escape these options: a name such as `Home & garden` or literal `&amp;` should remain exactly that text. Neither helper supports rich HTML.
+
+The prompt’s animation-frame focus retry runs only while it owns the foreground managed dialog and focus has fallen to the document body. It preserves focus on buttons and controls in newer dialogs.
 
 The shared static templates retain the existing dialog appearance, variant icons and colors, focus traps, Escape/backdrop cancellation and AbortSignal handling. Prompts still select the initial value, trim submitted input, enforce required/custom validation and display validation errors as text. Empty optional messages remain absent. Call the window confirmation alias with an options object, for example `window.confirmDialog?.({ message: "Remove this area?" })`.
 

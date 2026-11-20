@@ -7,40 +7,6 @@
  * No external dependencies — fully Astro-native and HA-native.
  */
 
-/* ── Toast Notifications ────────────────────────────────────────────────── */
-
-.gantt-toast {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%) translateY(20px);
-  padding: 10px 20px;
-  border-radius: var(--radius-md, 8px);
-  font-size: 13px;
-  font-weight: 500;
-  z-index: 10000;
-  opacity: 0;
-  transition: opacity 0.3s, transform 0.3s;
-  pointer-events: none;
-}
-
-.gantt-toast--success {
-  background: var(--accent);
-  color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
-  box-shadow: 0 4px 16px rgb(var(--accent-rgb) / 0.3);
-}
-
-.gantt-toast--error {
-  background: var(--accent-danger, #ef4444);
-  color: #fff;
-  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.3);
-}
-
-.gantt-toast--visible {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
-
 /* ── B7: ClickUp-style Controls Bar (above sidebar/chart) ────────────── */
 
 .timeline-controls-bar {
@@ -291,15 +257,8 @@
   100% { opacity: 0.4; }
 }
 
-/* O3: Respect prefers-reduced-motion for toast and skeleton animations */
+/* O3: Respect prefers-reduced-motion for skeleton animations */
 @media (prefers-reduced-motion: reduce) {
-  .gantt-toast {
-    transition: none;
-    transform: translateX(-50%);
-  }
-  .gantt-toast--visible {
-    transform: translateX(-50%);
-  }
   .skel-label,
   .skel-bar {
     animation: none;

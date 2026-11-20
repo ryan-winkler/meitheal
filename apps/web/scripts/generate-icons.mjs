@@ -141,6 +141,7 @@ export const CLIENT_DYNAMIC_TABLER_ICONS = [
   "chevron-down",
   "clipboard-list",
   "clock",
+  "device-mobile",
   "file-text",
   "flame",
   "folder",

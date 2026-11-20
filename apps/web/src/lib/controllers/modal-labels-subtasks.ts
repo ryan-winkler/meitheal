@@ -7,6 +7,8 @@
  *      Subtasks: inline form with type inference from parent.
  */
 
+import { showToast } from "@lib/toast"
+
 export interface LabelsSubtasksDeps {
   saveTD: (field: string, value: unknown) => Promise<void>
   getCurrentTaskId: () => string | null
@@ -122,15 +124,12 @@ export function initLabelsAndSubtasks({ saveTD, getCurrentTaskId, openTaskDetail
           addSubForm.classList.add("hidden")
           addSubBtn.classList.remove("hidden")
           openTaskDetail(String(currentTaskId))
-          const { showToast } = await import("@lib/toast")
           showToast(`Subtask "${title}" created`)
         } else {
           const err = await res.json().catch(() => ({ error: "Failed to create subtask" }))
-          const { showToast } = await import("@lib/toast")
           showToast(err.error ?? "Failed to create subtask", "error")
         }
       } catch {
-        const { showToast } = await import("@lib/toast")
         showToast("Network error creating subtask", "error")
       } finally {
         addSubInput.disabled = false

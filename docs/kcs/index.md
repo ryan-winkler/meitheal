@@ -35,6 +35,7 @@
 # Development and operations
 
 - [Client-Side Patterns & HMR Gotchas](client-side-patterns.md) - Implement client controls that work with the application lifecycle.
+- [Toast notifications](toast-notifications.md) - Unified notification container, Top-Layer overlay contracts, mobile gestures, and lifecycle guards.
 - [Browser translations](browser-translations.md) - Maintain browser locale behavior and avoid duplicate translation catalogs.
 - [Import a framework from YAML](framework-yaml-import.md) - Import a framework and diagnose validation or size errors.
 - [Memory-Safe Event Listener Patterns](memory-safety-patterns.md) - Manage browser event listeners and clean up their resources.

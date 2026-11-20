@@ -71,8 +71,7 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
           <span
             class="pwa-compact-dot"
             id="pwa-compact-dot"
-            role="status"
-            aria-label="PWA status indicator"></span>
+            aria-hidden="true"></span>
           <span
             style="font-size: 13px; color: var(--text-secondary);"
             id="pwa-compact-label"
@@ -114,11 +113,16 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
             id="pwa-popout-btn"
             class="pwa-subtle-link"
             title={t("settings.pwa_open_browser_title", locale)}
-            >{t("settings.pwa_open_browser", locale)}</a
+            >{t("settings.pwa_open_browser", locale)}<span class="sr-only"> {t("settings.pwa_new_tab_sr", locale)}</span></a
           >
           <span class="pwa-link-separator" aria-hidden="true">·</span>
-          <a href="#" id="pwa-uninstall-btn" class="pwa-subtle-link"
-            >{t("settings.pwa_uninstall", locale)}</a
+          <button
+            type="button"
+            id="pwa-uninstall-btn"
+            class="pwa-subtle-link"
+            aria-expanded="false"
+            aria-controls="pwa-uninstall-info"
+            >{t("settings.pwa_uninstall", locale)}</button
           >
         </div>
         <!-- Uninstall instructions (hidden by default) -->
@@ -126,9 +130,6 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
           id="pwa-uninstall-info"
           style="display: none; margin-top: 6px; font-size: 12px; color: var(--text-muted); line-height: 1.6; padding: 8px 12px; background: var(--bg-secondary); border-radius: 8px;"
         >
-          <strong style="color: var(--text-secondary);"
-            >How to uninstall:</strong
-          ><br />
           <p set:html={t("settings.pwa_uninstall_how", locale)}></p>
           <small style="margin-top: 4px; display: block;"
             >{t("settings.pwa_uninstall_safe", locale)}</small
@@ -139,7 +140,7 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
           style="display: none; margin-top: 6px;"
         >
           <summary
-            style="font-size: 12px; color: var(--accent); cursor: pointer; list-style: none;"
+            style="font-size: 12px; color: var(--accent-text); cursor: pointer; list-style: none;"
           >
             {t("settings.pwa_why_unavailable", locale)}
           </summary>
@@ -153,7 +154,7 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
         <details id="pwa-troubleshoot" style="margin-top: 6px;">
           <summary
             class="pwa-subtle-link"
-            style="list-style: none; cursor: pointer; display: inline;"
+            style="list-style: none; cursor: pointer; display: inline-flex; align-items: center;"
             >{t("settings.pwa_troubleshooting", locale)}</summary
           >
           <div class="pwa-troubleshoot-panel">
@@ -179,6 +180,7 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
                 type="button"
                 id="pwa-clear-offline-btn"
                 class="btn btn-ghost pwa-troubleshoot-btn"
+                data-unattributed-notice={t("settings.pwa_unattributed_offline", locale)}
                 ><Icon name="database" size={13} sprite={true} /> <span>{t("settings.pwa_clear_offline", locale)}</span></button
               >
             </div>
@@ -214,6 +216,15 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
             ></p>
             <div
               id="pwa-troubleshoot-result"
+              role="status"
+              aria-live="polite"
+              data-clear-cache-ok={t("settings.pwa_clear_cache_ok", locale)}
+              data-clear-cache-err={t("settings.pwa_clear_cache_err", locale)}
+              data-sw-unavailable={t("settings.pwa_sw_unavailable", locale)}
+              data-clear-offline-ok={t("settings.pwa_clear_offline_ok", locale)}
+              data-clear-offline-err={t("settings.pwa_clear_offline_err", locale)}
+              data-hints-reset-ok={t("settings.pwa_hints_reset_ok", locale)}
+              data-hints-reset-none={t("settings.pwa_hints_reset_none", locale)}
               style="display: none; margin-top: 6px; font-size: 11px; padding: 6px 10px; border-radius: 6px; background: var(--bg-secondary); border: 1px solid var(--border);"
             >
             </div>
@@ -375,7 +386,11 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
     box-shadow: 0 0 6px rgb(var(--accent-rgb) / 0.4);
   }
   .pwa-compact-dot--unavailable {
-    background: #f59e0b;
+    background: var(--warning);
+  }
+  #pwa-installed-badge {
+    align-items: center;
+    gap: 4px;
   }
   .pwa-subtle-link {
     font-size: 11px;
@@ -390,7 +405,27 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
     font-family: inherit;
   }
   .pwa-subtle-link:hover {
-    color: var(--accent);
+    color: var(--accent-text);
+  }
+  .pwa-subtle-link[aria-disabled="true"],
+  .pwa-troubleshoot-btn[aria-disabled="true"] {
+    opacity: 0.6;
+    cursor: wait;
+    pointer-events: none;
+  }
+  @media (max-width: 768px), (pointer: coarse) {
+    .pwa-subtle-link {
+      min-width: 44px;
+      justify-content: center;
+    }
+    .pwa-subtle-link,
+    #pwa-troubleshoot > summary,
+    #pwa-compact-details > summary {
+      display: inline-flex;
+      align-items: center;
+      min-height: 44px;
+      padding-inline: 4px;
+    }
   }
   .pwa-link-separator {
     font-size: 11px;
@@ -454,12 +489,15 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
 </style>
 
 <script>
-  import { activateServiceWorker, getAppServiceWorkerRegistration, type SwUpdateEventDetail } from "@domains/offline/sw-register"
+  import { getAppServiceWorkerRegistration, type SwUpdateEventDetail } from "@domains/offline/sw-register"
   import { clearCurrentOfflineCache, hasUnattributedOfflineData } from "@domains/offline/offline-store"
+  import { activateSwWithButtonUi, consumePwaInstallPrompt } from "@lib/layout-pwa-controller"
   import { pageLifecycle } from "../../lib/page-lifecycle"
-  import { showToast } from "@lib/toast"
 
-  function initPwaCompact() {
+  let troubleshootTimer: number | undefined
+  let troubleshootRaf: number | undefined
+
+  function initPwaCompact(signal: AbortSignal) {
     const dot = document.getElementById("pwa-compact-dot")
     const label = document.getElementById("pwa-compact-label")
     const badge = document.getElementById("pwa-compact-badge")
@@ -467,7 +505,6 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
     const versionEl = document.getElementById("pwa-compact-version")
     const installBtn = document.getElementById("pwa-install-settings-btn")
     const updateBtn = document.getElementById("pwa-update-settings-btn")
-    const installedBadge = document.getElementById("pwa-installed-badge")
     if (!dot || !label || !badge) return
 
     const isSecure = window.isSecureContext
@@ -482,21 +519,19 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
       }
       badge.style.fontSize = "11px"
 
-      // Query SW version — use abort signal for cleanup
+      // Query SW version — use combined abort signal for nav + HMR cleanup
       if (navigator.serviceWorker.controller && versionEl) {
-        const swContainer = navigator.serviceWorker as EventTarget
-        pageLifecycle.on(swContainer as unknown as HTMLElement, "message", ((e: MessageEvent) => {
+        navigator.serviceWorker.addEventListener("message", (e: MessageEvent) => {
           if (e.data?.type === "VERSION") {
-            versionEl.textContent = `SW v${e.data.version}`
+            versionEl.textContent = `v${e.data.version}`
             versionEl.style.display = ""
           }
-        }) as EventListener)
+        }, { signal })
         navigator.serviceWorker.controller.postMessage({ type: "GET_VERSION" })
       }
 
       // Check for waiting SW (update available)
       if (updateBtn) {
-        const signal = pageLifecycle.signal
         let offered: ServiceWorker | null = null
         const offerUpdate = (worker: ServiceWorker) => {
           if (signal.aborted) return
@@ -508,22 +543,16 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
         }).catch(() => {})
         window.addEventListener("meitheal-sw-update", (event) => {
           const { detail } = event as CustomEvent<SwUpdateEventDetail>
-          if (detail?.type === "update-available") offerUpdate(detail.worker)
-        }, { signal })
-        updateBtn.addEventListener("click", async () => {
-          if (!offered || updateBtn.getAttribute("aria-disabled") === "true") return
-          const label = updateBtn.textContent
-          updateBtn.setAttribute("aria-disabled", "true")
-          updateBtn.textContent = window.mI18n?.get("settings.pwa_refresh_pending") ?? "Updating…"
-          const ready = await activateServiceWorker(offered, signal)
-          if (signal.aborted) return
-          if (ready) {
-            window.location.reload()
-            return
+          if (detail?.type === "update-available") {
+            offerUpdate(detail.worker)
+          } else if (detail?.type === "update-activated" && updateBtn.getAttribute("aria-disabled") !== "true") {
+            offered = null
+            updateBtn.style.display = "none"
           }
-          updateBtn.removeAttribute("aria-disabled")
-          updateBtn.textContent = label
-          showToast("settings.pwa_refresh_failed", "error")
+        }, { signal })
+        updateBtn.addEventListener("click", () => {
+          if (!offered) return
+          void activateSwWithButtonUi({ button: updateBtn, target: offered, signal })
         }, { signal })
       }
     } else {
@@ -545,162 +574,150 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
         }
       }
       showInstallBtn()
-      pageLifecycle.on(window as unknown as HTMLElement, "meitheal-pwa-installable", showInstallBtn)
+      window.addEventListener("meitheal-pwa-installable", showInstallBtn, { signal })
+      window.addEventListener("meitheal-pwa-prompt-consumed", () => {
+        installBtn.style.display = "none"
+      }, { signal })
 
-      pageLifecycle.on(installBtn, "click", async (e: Event) => {
+      installBtn.addEventListener("click", async (e: Event) => {
         e.preventDefault()
-        const prompt = (window as any).__pwa_install_prompt
-        if (!prompt) return
-        try {
-          await prompt.prompt()
-          const result = await prompt.userChoice
-          if (result.outcome === "accepted") {
-            installBtn.style.display = "none"
-            if (installedBadge) installedBadge.style.display = ""
-          }
-        } catch {
-          /* prompt can only be called once */
-        }
-        ;(window as any).__pwa_install_prompt = null
-      })
+        await consumePwaInstallPrompt()
+      }, { signal })
     }
 
-    // Listen for installed event — pageLifecycle handles cleanup
-    pageLifecycle.on(window as unknown as HTMLElement, "meitheal-pwa-installed", () => {
+    window.addEventListener("meitheal-pwa-installed", () => {
       const ib = document.getElementById("pwa-install-settings-btn")
       const iBadge = document.getElementById("pwa-installed-badge")
       if (ib) ib.style.display = "none"
-      if (iBadge) iBadge.style.display = ""
-    })
+      if (iBadge) iBadge.style.display = "inline-flex"
+    }, { signal })
   }
 
   // ── Pop out to browser (escape HA iframe for PWA install) ──
-  function initPwaPopout() {
+  function initPwaPopout(signal: AbortSignal) {
     const popoutBtn = document.getElementById("pwa-popout-btn")
     const uninstallBtn = document.getElementById("pwa-uninstall-btn")
     const uninstallInfo = document.getElementById("pwa-uninstall-info")
     if (!popoutBtn) return
 
-    pageLifecycle.on(popoutBtn, "click", (e: Event) => {
+    popoutBtn.addEventListener("click", (e: Event) => {
       e.preventDefault()
       const ingressPath = (window as any).__ingress_path || ""
-      let targetUrl: string
-
+      let origin = window.location.origin
       if (ingressPath) {
         try {
-          const parentOrigin =
-            window.top?.location?.origin || window.location.origin
-          targetUrl = parentOrigin + ingressPath + "/settings#app-pwa-settings"
+          origin = window.top?.location?.origin || origin
         } catch {
-          const referrer = document.referrer
-          if (referrer) {
-            const refUrl = new URL(referrer)
-            targetUrl =
-              refUrl.origin + ingressPath + "/settings#app-pwa-settings"
-          } else {
-            targetUrl = ingressPath + "/settings#app-pwa-settings"
-          }
+          origin = document.referrer ? new URL(document.referrer).origin : ""
         }
-      } else {
-        targetUrl = window.location.origin + "/settings#app-pwa-settings"
       }
-
-      window.open(targetUrl, "_blank", "noopener")
-    })
+      window.open(origin + ingressPath + "/settings#app-pwa-settings", "_blank", "noopener")
+    }, { signal })
 
     if (uninstallBtn) {
-      pageLifecycle.on(uninstallBtn, "click", (e: Event) => {
-        e.preventDefault()
+      uninstallBtn.addEventListener("click", () => {
         if (uninstallInfo) {
           const showing = uninstallInfo.style.display !== "none"
           uninstallInfo.style.display = showing ? "none" : "block"
+          uninstallBtn.setAttribute("aria-expanded", String(!showing))
         }
-      })
+      }, { signal })
     }
   }
 
   // ── PWA Troubleshooting Actions ──
-  function showTroubleshootResult(msg: string, ok = true) {
+  function showTroubleshootResult(msg: string, ok: boolean, signal: AbortSignal) {
     const el = document.getElementById("pwa-troubleshoot-result")
-    if (!el) return
-    el.textContent = msg
+    if (!el || signal.aborted) return
+    window.clearTimeout(troubleshootTimer)
+    if (troubleshootRaf !== undefined) window.cancelAnimationFrame(troubleshootRaf)
+    el.textContent = ""
     el.style.display = "block"
-    el.style.color = ok ? "var(--accent)" : "var(--danger)"
-    setTimeout(() => {
-      el.style.display = "none"
+    el.style.color = ok ? "var(--success-text, var(--success))" : "var(--danger-text, var(--danger))"
+    troubleshootRaf = window.requestAnimationFrame(() => {
+      troubleshootRaf = undefined
+      if (!signal.aborted && el.isConnected) el.textContent = msg
+    })
+    troubleshootTimer = window.setTimeout(() => {
+      troubleshootTimer = undefined
+      if (el.isConnected) el.style.display = "none"
     }, 4000)
   }
 
-  function initPwaTroubleshooting() {
+  function initPwaTroubleshooting(signal: AbortSignal) {
     const clearCacheBtn = document.getElementById("pwa-clear-cache-btn")
     const forceUpdateBtn = document.getElementById("pwa-force-update-btn")
     const clearOfflineBtn = document.getElementById("pwa-clear-offline-btn")
     const resetHintsBtn = document.getElementById("pwa-reset-hints-btn")
+    const copy = document.getElementById("pwa-troubleshoot-result")?.dataset
     if (!clearCacheBtn) return
 
-    pageLifecycle.on(clearCacheBtn, "click", async () => {
+    signal.addEventListener("abort", () => {
+      window.clearTimeout(troubleshootTimer)
+      if (troubleshootRaf !== undefined) window.cancelAnimationFrame(troubleshootRaf)
+      troubleshootTimer = undefined
+      troubleshootRaf = undefined
+    }, { once: true })
+
+    clearCacheBtn.addEventListener("click", async () => {
       try {
         const names = await caches.keys()
         await Promise.all(names.map((n) => caches.delete(n)))
         showTroubleshootResult(
-          `✓ Cleared ${names.length} cache(s). Reload to re-populate.`,
+          (copy?.clearCacheOk ?? "✓ Cleared {count} cache(s). Reload to re-populate.").replace("{count}", String(names.length)),
+          true,
+          signal,
         )
       } catch {
-        showTroubleshootResult("✗ Failed to clear caches.", false)
+        showTroubleshootResult(copy?.clearCacheErr ?? "✗ Failed to clear caches.", false, signal)
       }
-    })
+    }, { signal })
 
     if (forceUpdateBtn) {
-      const signal = pageLifecycle.signal
-      pageLifecycle.on(forceUpdateBtn, "click", async () => {
-        if (forceUpdateBtn.getAttribute("aria-disabled") === "true") return
-        const label = forceUpdateBtn.textContent
-        forceUpdateBtn.setAttribute("aria-disabled", "true")
-        forceUpdateBtn.textContent = window.mI18n?.get("settings.pwa_refresh_pending") ?? "Updating…"
-        try {
-          if (!("serviceWorker" in navigator)) {
-            showTroubleshootResult("Service workers not available.", false)
-            return
-          }
-          const selected = getAppServiceWorkerRegistration().then(async registration => {
+      forceUpdateBtn.addEventListener("click", () => {
+        void activateSwWithButtonUi({
+          button: forceUpdateBtn,
+          target: () => getAppServiceWorkerRegistration().then(async registration => {
             if (!registration) return null
             await registration.update()
             return registration.installing ?? registration.waiting ?? registration.active
-          })
-          const ready = await activateServiceWorker(selected, signal)
-          if (signal.aborted) return
-          if (ready) {
-            window.location.reload()
-            return
-          }
-          showToast("settings.pwa_refresh_failed", "error")
-        } finally {
-          forceUpdateBtn.removeAttribute("aria-disabled")
-          forceUpdateBtn.textContent = label
-        }
-      })
+          }),
+          signal,
+          onBeforeActivate: () => {
+            if ("serviceWorker" in navigator) return false
+            showTroubleshootResult(copy?.swUnavailable ?? "Service workers not available.", false, signal)
+            return true
+          },
+        })
+      }, { signal })
     }
 
     void hasUnattributedOfflineData().then(found => {
-      if (!found || !clearOfflineBtn?.isConnected) return
+      if (!found || signal.aborted || !clearOfflineBtn?.isConnected || document.getElementById("pwa-unattributed-notice")) return
       const notice = document.createElement("p")
+      notice.id = "pwa-unattributed-notice"
       notice.setAttribute("role", "status")
-      notice.textContent = "Offline work from an older version is retained separately. It has no verified account or Board, so it cannot be shown or sent automatically. Keep this browser’s data until an administrator can recover it."
+      notice.textContent = clearOfflineBtn.dataset.unattributedNotice ??
+        "Offline work from an older version is retained separately. It has no verified account or Board, so it cannot be shown or sent automatically. Keep this browser’s data until an administrator can recover it."
       clearOfflineBtn.parentElement?.after(notice)
-    })
+    }).catch(() => {})
     if (clearOfflineBtn) {
-      pageLifecycle.on(clearOfflineBtn, "click", async () => {
+      clearOfflineBtn.addEventListener("click", async () => {
         try {
           await clearCurrentOfflineCache()
-          showTroubleshootResult("✓ Cleared this Board’s cached tasks. Pending work and other accounts remain saved.")
+          showTroubleshootResult(copy?.clearOfflineOk ?? "✓ Cleared this Board’s cached tasks. Pending work and other accounts remain saved.", true, signal)
         } catch (error) {
-          showTroubleshootResult(error instanceof Error ? error.message : "Offline data was not cleared.", false)
+          showTroubleshootResult(
+            error instanceof Error ? error.message : (copy?.clearOfflineErr ?? "Offline data was not cleared."),
+            false,
+            signal,
+          )
         }
-      })
+      }, { signal })
     }
 
     if (resetHintsBtn) {
-      pageLifecycle.on(resetHintsBtn, "click", () => {
+      resetHintsBtn.addEventListener("click", () => {
         const keys = [
           "meitheal-pwa-dismissed",
           "meitheal_shortcut_hint_dismissed",
@@ -712,22 +729,35 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
             cleared++
           }
         })
+        try {
+          if (sessionStorage.getItem("meitheal-pwa-session-hidden") !== null) {
+            sessionStorage.removeItem("meitheal-pwa-session-hidden")
+            cleared++
+          }
+        } catch { /* non-fatal */ }
+        window.dispatchEvent(new Event("meitheal-pwa-hints-reset"))
         showTroubleshootResult(
           cleared > 0
-            ? `✓ Reset ${cleared} hint(s). They'll reappear on next page load.`
-            : "No dismissed hints to reset.",
+            ? (copy?.hintsResetOk ?? "✓ Reset {count} hint(s). They’ll reappear on next page load.").replace("{count}", String(cleared))
+            : (copy?.hintsResetNone ?? "No dismissed hints to reset."),
+          true,
+          signal,
         )
-      })
+      }, { signal })
     }
   }
 
-  let initialized: AbortSignal | undefined
-  pageLifecycle.onPageLoad((signal) => {
-    if (initialized === signal || !document.getElementById("app-pwa-settings")) return
-    initialized = signal
-    initPwaCompact()
-    initPwaPopout()
-    initPwaTroubleshooting()
+  window.__pwaSettingsHmrAc?.abort()
+  const hmrAc = new AbortController()
+  window.__pwaSettingsHmrAc = hmrAc
+  let initializedSignal: AbortSignal | undefined
+  pageLifecycle.onPageLoad((pageSignal) => {
+    if (hmrAc.signal.aborted || initializedSignal === pageSignal || !document.getElementById("app-pwa-settings")) return
+    initializedSignal = pageSignal
+    const signal = AbortSignal.any([pageSignal, hmrAc.signal])
+    initPwaCompact(signal)
+    initPwaPopout(signal)
+    initPwaTroubleshooting(signal)
   })
 </script>
 

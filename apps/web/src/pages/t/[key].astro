@@ -1,0 +1,7 @@
+---
+import { ticketAliasTarget } from "../../lib/ticket-alias"
+
+const target = ticketAliasTarget(Astro.params.key, Astro.url.search, Astro.locals.ingressPath || "")
+if (!target) return Astro.rewrite("/404")
+return Astro.redirect(target, 302)
+---
