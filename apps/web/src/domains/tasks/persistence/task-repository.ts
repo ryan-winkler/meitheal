@@ -1065,8 +1065,9 @@ export class TaskRepository {
   private ticketNumberForScope(value: string): number | null {
     const prefix = scopeBoardAccess(this.scope).ticketPrefix
     if (!/^[A-Z0-9]+$/i.test(prefix)) return null
-    const match = new RegExp(`^${prefix}-(\\d+)$`, "i").exec(value)
-    const number = match ? Number(match[1]) : 0
+    const match = /^([A-Z0-9]+)-(\d+)$/i.exec(value)
+    if (!match || match[1]?.toUpperCase() !== prefix.toUpperCase()) return null
+    const number = Number(match[2])
     return Number.isSafeInteger(number) && number > 0 ? number : null
   }
 
