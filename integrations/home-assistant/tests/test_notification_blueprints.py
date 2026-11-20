@@ -104,7 +104,9 @@ async def test_notification_action_carries_task_id_and_uses_task_permalink(hass:
 @pytest.mark.parametrize(
     "configured",
     ["/8d9fd00d_meitheal_canary", "/local_meitheal_canary",
-     "/app/8d9fd00d_meitheal_canary", "/app/local_meitheal"],
+     "/app/8d9fd00d_meitheal_canary", "/app/local_meitheal",
+     # A repository URL with a .git suffix hashes differently.
+     "/3231ea4e_meitheal_canary"],
 )
 async def test_notification_links_preserve_the_complete_panel_path(
     hass: HomeAssistant, configured: str
@@ -123,6 +125,7 @@ async def test_notification_links_preserve_the_complete_panel_path(
     "/meitheal", "/meitheal_canary", "/unregistered", "", "/app/unregistered",
     "/api/hassio_ingress/abc123/kanban", "https://ha.example/local_meitheal",
     "/local_meitheal/extra", "/local_meitheal?query=1", "//local_meitheal",
+    "/8D9FD00D_meitheal", "/8d9fd00_meitheal", "/8d9fd00d_meitheal_other",
 ])
 async def test_notification_rejects_unknown_paths_without_substitution(
     hass: HomeAssistant, configured: str

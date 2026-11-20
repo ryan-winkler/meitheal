@@ -39,7 +39,7 @@ blueprint:
         Copy the complete path after your Home Assistant host when opening
         Meitheal from the sidebar. Published Canary uses /8d9fd00d_meitheal_canary;
         local Canary uses /local_meitheal_canary. The /app/<full-slug> route
-        is also accepted. Only the published or local Meitheal App slugs are
+        is also accepted. Only Meitheal and Meitheal Canary App slugs are
         supported. Invalid paths stop the automation; no target is substituted.
         Do not use an /api/hassio_ingress/ session address.
       default: "/8d9fd00d_meitheal_canary"
@@ -75,15 +75,7 @@ variables:
   # Keep the complete route; never turn an unknown target into a different App.
   panel_path: >-
     {% set raw = ingress_path | string | trim %}
-    {% set slugs = ['8d9fd00d_meitheal', '8d9fd00d_meitheal_canary',
-                    'local_meitheal', 'local_meitheal_canary'] %}
-    {% set ns = namespace(path='') %}
-    {% for slug in slugs %}
-      {% if raw in ['/' ~ slug, '/app/' ~ slug] %}
-        {% set ns.path = raw %}
-      {% endif %}
-    {% endfor %}
-    {{ ns.path }}
+    {% if raw | regex_match('^/(app/)?([0-9a-f]{8}|local)_meitheal(_canary)?$') %}{{ raw }}{% endif %}
   # Readable ticket keys (MTH-4) when the event has one; the ticket page finds the Board.
   ticket: >-
     {% set key = trigger.event.data.get('ticket_key') %}

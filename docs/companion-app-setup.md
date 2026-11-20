@@ -4,10 +4,6 @@ title: "Companion App Setup"
 description: "Set up Meitheal in the Home Assistant companion app."
 ---
 
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:44e3fd0e8c016b9206d476bb99095c5d82ea5d1baf91939935d7f5d3028f8d37 -->
-
 # Companion App Setup
 
 Open Meitheal in the Home Assistant Companion app on Android or iOS. Add shortcuts or set up notifications and voice controls for the jobs you use regularly.
@@ -71,7 +67,7 @@ Set up the optional Core integration so Home Assistant can call `meitheal.comple
 3. Create an automation from each blueprint. Choose the same notification device, then set the task event and the Meitheal sidebar path, such as `/8d9fd00d_meitheal_canary` or `/local_meitheal_canary`, in the sender.
 4. Save and enable both automations. Send a notification for a sample task and check that **Complete** marks it done.
 
-Tapping a notification opens Meitheal inside the Companion app. Notifications for events with a task ID open that ticket and include **View task** and **Complete**. Older automations with session URLs or unprefixed slugs now stop with an error. Set the complete sidebar path instead. The blueprint accepts published (`8d9fd00d_`) and local (`local_`) Stable and Canary slugs as `/<full-slug>` or `/app/<full-slug>`. Other paths are rejected without substituting a target. The selected App must be installed and accessible to the Companion user. Other events, such as a board update, link to the Meitheal dashboard. If an App event is missing, check that its type is enabled in the Canary's event settings.
+Tapping a notification opens Meitheal inside the Companion app. Notifications for events with a task ID open that ticket and include **View task** and **Complete**. Older automations with session URLs or unprefixed slugs now stop with an error. Set the complete sidebar path instead. The blueprint accepts Meitheal and Meitheal Canary slugs with their repository prefix (such as `8d9fd00d_`) or `local_` as `/<full-slug>` or `/app/<full-slug>`. Other paths are rejected without substituting a target. The selected App must be installed and accessible to the Companion user. Other events, such as a board update, link to the Meitheal dashboard. If an App event is missing, check that its type is enabled in the Canary's event settings.
 
 ### Widgets
 
@@ -141,6 +137,3 @@ These scripts are callable from shortcuts, Siri, widgets, and automations:
 | `meitheal_task_notification.yaml` | Actionable notifications on task events |
 | `meitheal_quick_add.yaml` | Reply-to-create task from notification |
 | `meitheal_complete_from_notification.yaml` | Complete task from notification button |
-
-
-<!-- /coderabbit-ai-generated:v1 -->
