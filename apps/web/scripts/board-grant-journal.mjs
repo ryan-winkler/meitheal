@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from "node:fs"
 import { mkdir, open, readdir, rename, rm } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
-import { acquireWriteTransaction, retryStartupLock } from "./database-client.mjs"
+import { acquireWriteTransaction, readLocalGrantRevision, retryStartupLock } from "./database-client.mjs"
 import { boardGrantPath, boardGrantRevisionQuery, consumeDatabaseCreation, getBoardGrantPath, unwrapBoardGrantClient } from "./board-grant-context.mjs"
 import { consumeOperatorAdmission, registerStartupBoardAdmission } from "./startup-board-admission.mjs"
 
@@ -37,8 +37,9 @@ export async function readBoardGrantRevision(path = boardGrantPath) {
 
 export async function databaseRevision(db) {
   db = unwrapBoardGrantClient(db)
-  const { rows: [current] } = await db.execute(boardGrantRevisionQuery)
-  return typeof current?.revision === "string" && revisionPattern.test(current.revision) ? current.revision : null
+  const local = readLocalGrantRevision(db)
+  const revision = local === undefined ? (await db.execute(boardGrantRevisionQuery)).rows[0]?.revision : local
+  return typeof revision === "string" && revisionPattern.test(revision) ? revision : null
 }
 
 export async function syncDirectory(path) {

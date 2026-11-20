@@ -1,4 +1,5 @@
 import { projectPublicTaskFields } from "@domains/tasks"
+import { tagTodayRead } from "../../scripts/database-client.mjs"
 import type { BoardScope } from "../domains/tasks/board-scope"
 import { boardOperationClient } from "../domains/tasks/persistence/board-operation-client"
 import { scopedTaskRead, taskReadPlacement, type TaskReadPlacement } from "../domains/tasks/persistence/board-work-query"
@@ -388,10 +389,11 @@ function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "
 
 function completedTodayQuery(scope: BoardScope, filter: ReturnType<typeof todayCompletionFilter>, placement?: TaskReadPlacement) {
   const context = taskReadPlacement(placement)
-  return scopedTaskRead(scope, sourceSql(`SELECT id, title FROM scoped_tasks AS tasks WHERE ${filter.sql} AND ${context.sql}
+  const query = scopedTaskRead(scope, sourceSql(`SELECT id, title FROM scoped_tasks AS tasks WHERE ${filter.sql} AND ${context.sql}
           ORDER BY CASE WHEN typeof(updated_at) = 'text' AND updated_at NOT LIKE '%T%' AND updated_at NOT LIKE '%:%'
             THEN ? ELSE ${taskTimestampMs("updated_at")} END DESC, rowid DESC
           LIMIT 20`, [...filter.args, ...context.args, filter.firstInstant]))
+  return tagTodayRead(query, "completed")
 }
 
 function completedTodaySummaries(rows: Row[]) {
@@ -512,7 +514,8 @@ export async function getTodayTaskRows(
     `,
     args: [...completionFilter.args, ...context.args, ...context.args, includeUnscheduled ? 1 : 0],
   }
-  const [taskResult, completed] = await client.batch([scopedTaskRead(scope, sourceSql(tasksQuery.sql, tasksQuery.args), "with"), completedTodayQuery(scope, completionFilter, placement)], "read")
+  const overview = tagTodayRead(scopedTaskRead(scope, sourceSql(tasksQuery.sql, tasksQuery.args), "with"), "rows")
+  const [taskResult, completed] = await client.batch([overview, completedTodayQuery(scope, completionFilter, placement)], "read")
   const rows = taskResult?.rows ?? []
 
   return {

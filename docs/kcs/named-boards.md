@@ -62,6 +62,8 @@ Retiring an Area, Project or Goal preserves historical associations in storage. 
 
 A Board directory retains the same verified person and grant revision across its Boards, send-only destinations and Deleted Boards. If authority changes or that identity proof expires while the page loads, the entire directory is withheld and asks for a refresh; a newer current revision cannot admit older private names. The final HTTP boundary completes asynchronous directory rendering, ordinary work pages and compact task refresh fragments before admitting private content. Each keeps its original verified identity, required Board scopes and grant revision through ingress rewriting. A later Layout check cannot substitute newer authority for an older task projection. Revocation or expiry during rendering withholds the entire response and asks for a refresh.
 
+Board admission reads the role and Board-wide audience together. Task and placement queries still enforce their own audiences, and the final boundary checks current authority. Today reuses only the compiled read statements on the native SQLite connection. Each request binds its own filters and reads its own snapshot.
+
 Existing `?board=` bookmarks and `?board_id=` links select the same workspace. If both appear they must agree with each other, the Board header and any Board path. Empty, repeated, conflicting or unavailable selectors show an unavailable response rather than selecting the capture default.
 
 Task references to Areas, Projects and Goals also respect each feature's current visibility. Hiding a feature removes its public reference IDs without erasing stored task associations or granting planning permissions to task-only agents.

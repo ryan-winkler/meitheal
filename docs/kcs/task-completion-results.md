@@ -5,7 +5,7 @@ description: "Understand committed completion rewards and optional failures."
 ---
 # Task completion results
 
-Complete a task through `PUT` or `PATCH /api/tasks/{id}`. The server reads the prior status and saves the mutation in the same writer transaction. Only an actual transition into a completed status earns completion statistics, emits the completion event and starts recurrence processing. Concurrent requests or repeated writes to an already-complete task do not earn additional points. Existing version, checklist and dependency guards still apply.
+Complete a task through `PUT` or `PATCH /api/tasks/{id}`. The server reads the prior status and saves the mutation in the same writer transaction. Only an actual transition into a completed status earns completion statistics and emits the completion event. The saved recurrence rule determines whether to start recurrence processing, including when the request sets or clears that rule while completing the task. Concurrent requests or repeated writes to an already-complete task do not earn additional points. Existing version, checklist and dependency guards still apply.
 
 The acknowledged task response may include `gamification` with the earned XP, current statistics and optional celebrations. The Board writer increments the daily total and resolves its streak together. Achievement checks award new unlocks from a single writer snapshot. Browser callers use the saved result. `POST /api/gamification` is retired and returns HTTP 410. Habit check-ins and other non-task actions do not manufacture a task completion reward.
 

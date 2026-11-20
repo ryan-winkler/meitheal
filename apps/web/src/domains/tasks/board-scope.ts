@@ -94,6 +94,15 @@ type ScopeState = {
 }
 const principals = new WeakMap<VerifiedPrincipal, PrincipalProof>()
 const scopes = new WeakMap<BoardScope, ScopeState>()
+const fencedScopeReaders = new WeakMap<object, (scope: BoardScope, operation: WorkOperation) => Promise<ScopeResult>>()
+
+/** Only continuity adapters register their metadata-only validation path. */
+export function registerFencedScopeReader(
+  reader: Pick<Client, "execute">,
+  validate: (scope: BoardScope, operation: WorkOperation) => Promise<ScopeResult>
+): void {
+  fencedScopeReaders.set(reader, validate)
+}
 
 // Internal factories: deliberately omitted from the tasks public barrel. Only the
 // trusted HTTP/automation adapters may register independently verified identities.
@@ -252,6 +261,8 @@ export async function validateBoardScope(
   operation: WorkOperation
 ): Promise<ScopeResult> {
   requireBoardScope(scope)
+  const fenced = fencedScopeReaders.get(db)
+  if (fenced) return fenced(scope, operation)
   const result = await scopes.get(scope)!.validate(db, operation)
   if (!result.ok) return result
   for (const limit of scopeLimits(scope)) {

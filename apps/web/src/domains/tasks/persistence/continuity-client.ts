@@ -1,7 +1,7 @@
 import type { Client, InArgs, InStatement, Transaction } from "@libsql/client"
 import { acquireWriteTransaction, isLocalReadSnapshot } from "../../../../scripts/database-client.mjs"
 import { databaseRevision, getBoardGrantPath, readBoardGrantRevision } from "../../../../scripts/board-grant-journal.mjs"
-import { principalProof, validateBoardScope, type BoardScope, type ScopeResult, type WorkOperation } from "../board-scope"
+import { principalProof, registerFencedScopeReader, validateBoardScope } from "../board-scope"
 import { boardGrantStillCurrent, currentBoardGrantRevision } from "./board-grant-fence"
 
 export class ContinuityLockedError extends Error {
@@ -16,20 +16,10 @@ export class ContinuityLockedError extends Error {
 const guardedClients = new WeakSet<Client>()
 const clientGuards = new WeakMap<Client, Client>()
 const guardSources = new WeakMap<object, Client>()
-const authorityChecks = new WeakMap<object, (scope: BoardScope, operation: WorkOperation) => Promise<ScopeResult>>()
 const fencedReadSnapshots = new WeakSet<Transaction>()
 
 export function isFencedReadSnapshot(transaction: Transaction): boolean {
   return fencedReadSnapshots.has(transaction)
-}
-
-/** Keep registered authority metadata reads inside one continuity check.
- * The underlying client stays private. Unknown wrappers retain normal checks. */
-export function validateFencedBoardScope(
-  scope: BoardScope, reader: Pick<Client, "execute">, operation: WorkOperation,
-): Promise<ScopeResult> {
-  const validate = authorityChecks.get(reader)
-  return validate ? validate(scope, operation) : validateBoardScope(scope, reader, operation)
 }
 
 /** Only controlled journal writers and synthetic fixtures may bypass an actual guard.
@@ -114,7 +104,7 @@ export function guardClientContinuity(client: Client): Client {
         return typeof value === "function" ? value.bind(target) : value
       },
     })
-    authorityChecks.set(guarded, async (scope, operation) => {
+    registerFencedScopeReader(guarded, async (scope, operation) => {
       await check()
       const result = await validateBoardScope(scope, raw, operation)
       if (!result.ok) return result
@@ -161,7 +151,7 @@ export function guardClientContinuity(client: Client): Client {
   guardedClients.add(guarded)
   clientGuards.set(client, guarded)
   guardSources.set(guarded, client)
-  authorityChecks.set(guarded, async (scope, operation) => {
+  registerFencedScopeReader(guarded, async (scope, operation) => {
     // BoardAccessService binds the initial authority read to the scoped epoch.
     const result = await validateBoardScope(scope, client, operation)
     if (!result.ok) return result

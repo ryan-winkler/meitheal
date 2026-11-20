@@ -1,7 +1,7 @@
 import type { Client, InArgs, InStatement, Transaction } from "@libsql/client"
 import { principalProof, requireBoardScope, scopeAssignedTo, scopeLimits, validateBoardScope, type BoardScope, type WorkOperation } from "../board-scope"
 import { boardGrantStillCurrent, currentBoardGrantRevision } from "./board-grant-fence"
-import { guardClientContinuity, isFencedReadSnapshot, validateFencedBoardScope } from "./continuity-client"
+import { guardClientContinuity, isFencedReadSnapshot } from "./continuity-client"
 import { validateBoardPlacement } from "../board-access-service"
 import { ownedPlanning, taskField, taskOwnedBy } from "./board-storage"
 import { sql, joinSql, sourceSql } from "./sql-fragment"
@@ -46,7 +46,7 @@ export function boardOperationClient(client: Client, scope: BoardScope, operatio
   const targets = [...new Set([...(prior?.targets ?? []), ...taskIds])]
   const check = async (reader: Pick<Client, "execute">, requestedOperations: readonly WorkOperation[] = operations) => {
     for (const requested of requestedOperations) {
-      const result = await validateFencedBoardScope(scope, reader, requested)
+      const result = await validateBoardScope(scope, reader, requested)
       if (!result.ok) throw new BoardOperationError(result.errorCode)
     }
   }
@@ -80,7 +80,7 @@ export function boardOperationClient(client: Client, scope: BoardScope, operatio
     const requiredIntents = [...operations]
     const requiredChecks: Array<() => Promise<void>> = []
     const requireIntent = async (intent: WorkOperation) => {
-      const allowed = await validateFencedBoardScope(scope, tx, intent)
+      const allowed = await validateBoardScope(scope, tx, intent)
       if (!allowed.ok) throw new BoardOperationError(allowed.errorCode)
       if (!requiredIntents.some(item => item.resource === intent.resource && item.action === intent.action)) requiredIntents.push(intent)
     }

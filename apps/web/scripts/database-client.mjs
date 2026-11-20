@@ -25,14 +25,48 @@ import {
 const localWriters = new WeakMap()
 const localExecutors = new WeakMap()
 const localReadSnapshots = new WeakSet()
+/** @type {WeakMap<object, () => unknown>} */
+const localGrantRevisionReaders = new WeakMap()
 /** @type {WeakMap<DatabaseSync, import("node:sqlite").StatementSync>} */
 const totalChangesStatements = new WeakMap()
 /** @type {WeakMap<DatabaseSync, import("node:sqlite").StatementSync>} */
 const grantRevisionStatements = new WeakMap()
+/** @typedef {"rows" | "completed"} TodayRead */
+/** @type {WeakMap<object, TodayRead>} */
+const todayReads = new WeakMap()
+/** @type {WeakMap<DatabaseSync, Partial<Record<TodayRead, { sql: string, statement: import("node:sqlite").StatementSync }>>>} */
+const todayReadStatements = new WeakMap()
+
+/** Explicitly tag a source-owned Today query for local read-batch preparation.
+ * @template {Exclude<InStatement, string>} T
+ * @param {T} statement
+ * @param {TodayRead} kind
+ * @returns {T}
+ */
+export function tagTodayRead(statement, kind) {
+  if (kind === "rows" || kind === "completed") todayReads.set(statement, kind)
+  return statement
+}
 
 /** Only transactions using a physically read-only local SQLite handle. */
 export function isLocalReadSnapshot(transaction) {
   return localReadSnapshots.has(transaction)
+}
+
+/** Undefined means an unregistered reader must use its own execute method. */
+export function readLocalGrantRevision(reader) {
+  const read = localGrantRevisionReaders.get(reader)
+  return read ? read() ?? null : undefined
+}
+
+/** @param {DatabaseSync} db */
+function readGrantRevision(db) {
+  let statement = grantRevisionStatements.get(db)
+  if (!statement) {
+    statement = db.prepare(boardGrantRevisionQuery)
+    grantRevisionStatements.set(db, statement)
+  }
+  return statement.get()?.revision
 }
 
 const DB_DIAGNOSTICS_SYMBOL = Symbol.for("meitheal.sqlite.diagnostics")
@@ -179,20 +213,25 @@ function getTotalChanges(db) {
   return stmt.get()?.count
 }
 
-/** @param {DatabaseSync} db @param {InStatement} input @param {InArgs} [args] */
-function execute(db, input, args = []) {
+/** @param {DatabaseSync} db @param {InStatement} input @param {InArgs} [args] @param {boolean} [localReadBatch] */
+function execute(db, input, args = [], localReadBatch = false) {
   const sql = typeof input === "string" ? input : input.sql
   const values = typeof input === "string" ? args : input.args ?? []
   const bindings = Array.isArray(values)
     ? values.map(bind)
     : Object.fromEntries(Object.entries(values).map(([key, value]) => [key.replace(/^[@$:]/, ""), bind(value)]))
-  // Reuse the fixed statement per connection. The result is read from SQLite
-  // on every continuity check, including after another connection commits.
-  let statement = sql === boardGrantRevisionQuery ? grantRevisionStatements.get(db) : undefined
+  const kind = localReadBatch && typeof input !== "string" ? todayReads.get(input) : undefined
+  const slots = kind ? todayReadStatements.get(db) : undefined
+  const cached = kind ? slots?.[kind] : undefined
+  let statement = cached?.sql === sql ? cached.statement : undefined
   if (!statement) {
     statement = db.prepare(sql)
     statement.setReadBigInts(true)
-    if (sql === boardGrantRevisionQuery) grantRevisionStatements.set(db, statement)
+    if (kind) {
+      // Each query has one slot per handle. Changes in the scoped SQL replace it.
+      if (slots) slots[kind] = { sql, statement }
+      else todayReadStatements.set(db, { [kind]: { sql, statement } })
+    }
   }
   if (statement.columns().length) {
     statement.setReturnArrays(true)
@@ -222,12 +261,12 @@ function execute(db, input, args = []) {
   return new ResultSetImpl([], [], [], rowsAffected, BigInt(lastInsertRowid))
 }
 
-/** @param {DatabaseSync} db @param {Array<InStatement | [string, InArgs?]>} statements */
-function executeBatch(db, statements) {
+/** @param {DatabaseSync} db @param {Array<InStatement | [string, InArgs?]>} statements @param {boolean} [localReadBatch] */
+function executeBatch(db, statements, localReadBatch = false) {
   return statements.map((statement, index) => {
     try {
       if (!db.isTransaction) throw new LibsqlError("The transaction is closed", "TRANSACTION_CLOSED")
-      return sqliteOperation(() => Array.isArray(statement) ? execute(db, statement[0], statement[1]) : execute(db, statement))
+      return sqliteOperation(() => Array.isArray(statement) ? execute(db, statement[0], statement[1]) : execute(db, statement, undefined, localReadBatch))
     } catch (error) {
       if (!(error instanceof LibsqlError)) throw error
       throw new LibsqlBatchError(error.message, index, error.code, error.extendedCode, error.rawCode,
@@ -757,7 +796,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       },
       async batch(statements) {
         assertActive()
-        return executeBatch(db, statements)
+        return executeBatch(db, statements, useReadPool)
       },
       async executeMultiple(sql) {
         assertActive()
@@ -781,6 +820,10 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       },
     }
     registerBoardGrantContext(result, { markerPath: getBoardGrantPath(client) })
+    localGrantRevisionReaders.set(result, () => {
+      assertActive()
+      return sqliteOperation(() => readGrantRevision(db))
+    })
     if (useReadPool) localReadSnapshots.add(result)
     return result
   }
@@ -854,6 +897,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     executeStatement: executeStatementWithRetry,
     batchWrite: batchWriteWithRetry,
   })
+  localGrantRevisionReaders.set(client, () => onMain(readGrantRevision))
   return client
 }
 

@@ -56,7 +56,6 @@ export async function getHAConfiguration({ requireComplete = false } = {}): Prom
   const { SettingsRepository } = await import("../tasks/persistence/settings-repository")
   await ensureSchema()
   const repo = new SettingsRepository(getPersistenceClient())
-  await repo.ensureSettingsTable()
   const settings = await repo.getByKeys(["ha_url", "ha_token"])
   const configuration = resolveHAConfiguration(process.env, settings)
   if (!configuration && requireComplete && [settings.ha_url, settings.ha_token, process.env.HA_BASE_URL, process.env.HA_TOKEN]

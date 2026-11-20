@@ -1961,14 +1961,8 @@ export class TaskRepository {
       diagnostics.push({ ...dependencies, sql: `${dependencies.sql} ORDER BY t.id LIMIT 5` })
     }
 
-    // A status transition and its prior state share the same writer transaction.
-    // Callers must use this snapshot for once-only completion side effects.
     const completing = typeof fields.status === "string" && isDoneStatus(fields.status)
     const reassigning = fields.assigned_to !== undefined
-    const statusIndex = diagnostics.length
-    if (typeof fields.status === "string") {
-      diagnostics.push(scopedTaskRead(this.scope, sourceSql("SELECT status, date('now') AS completion_day FROM scoped_tasks AS tasks WHERE id = ? AND 1", [id]), "select"))
-    }
     const assigneeDiagIndex = reassigning ? diagnostics.length : -1
     if (reassigning) {
       diagnostics.push(scopedTaskRead(this.scope, sourceSql("SELECT assigned_to FROM scoped_tasks AS tasks WHERE id = ? AND 1", [id]), "select"))
@@ -1988,12 +1982,13 @@ export class TaskRepository {
     }
 
     let results: ResultSet[]
+    let previousStatus: string
     let recurrence: RecurrenceOutcome
     let assignmentEventId: string | undefined
     {
       const repo = this
       const steps = function* (): Generator<
-        InStatement[], { results: ResultSet[]; recurrence: RecurrenceOutcome }, ResultSet[]
+        InStatement[], ResultSet[], ResultSet[]
       > {
         const txNow = Date.now()
         const { statements } = buildBatch(txNow)
@@ -2008,9 +2003,6 @@ export class TaskRepository {
             yield [scopedTaskRead(repo.scope, sourceSql("UPDATE integration_attempts SET status = 'superseded', updated_at = ? WHERE integration = 'task.reassignment' AND task_id = ? AND status = 'completed' AND (? IS NULL OR idempotency_key != ?)", [commitTs, id, keepKey, keepKey]), "select")]
           }
         }
-        const prior = completing ? writeResults[statusIndex]?.rows[0] : undefined
-        const previousStatus = String(prior?.status ?? "")
-        const next: RecurrenceOutcome = undefined
         if (updatedRow) {
           if (placementChanged && storageBoardId(repo.scope) !== null) {
             const [previous] = yield [sql`SELECT area_id, project_id, goal_id FROM board_task_planning WHERE task_id = ${id}`]
@@ -2026,7 +2018,7 @@ export class TaskRepository {
           if (!projection?.rows[0]) throw new BoardOperationError("unavailable")
           writeResults[writeIndex] = projection
         }
-        return { results: writeResults, recurrence: next }
+        return writeResults
       }
       const tx = existingWriter ?? await acquireWriteTransaction(commandClient, { signal })
       try {
@@ -2035,13 +2027,21 @@ export class TaskRepository {
         // checks as well as this command's own awaited effect loop.
         if (signal) await requireBoardWriterCheck(tx, this.scope, async () => { signal.throwIfAborted() })
         const { rows: [original] } = await tx.execute(scopedTaskRead(this.scope, sql`SELECT * FROM scoped_tasks AS tasks WHERE id = ${id}`))
-        if (!original || !await validateTaskOperation(tx, this.scope, id, { resource: "task", action: "edit" })) return { ok: false, errorCode: "unavailable" }
-        const statusIntent: WorkAction[] = typeof fields.status !== "string" ? [] : isDoneStatus(fields.status) ? ["complete"] : isDoneStatus(String(original.status)) ? ["reopen"] : []
+        // An owned writer already admitted this exact edit target and checked
+        // its assignment and placement. A compound writer must prove it here.
+        if (!original || existingWriter && !await validateTaskOperation(tx, this.scope, id, { resource: "task", action: "edit" })) return { ok: false, errorCode: "unavailable" }
+        // The original row and the status transition share the same writer.
+        previousStatus = String(original.status ?? "")
+        const statusIntent: WorkAction[] = typeof fields.status !== "string" ? [] : completing ? ["complete"] : isDoneStatus(previousStatus) ? ["reopen"] : []
         const intents: WorkAction[] = ["edit", ...statusIntent,
           ...(reassigning ? ["assign" as const] : []), ...(placementChanged || targetLaneId ? ["move" as const] : [])]
         for (const action of intents) {
           signal?.throwIfAborted()
-          await requireBoardWriterIntent(tx, this.scope, { resource: "task", action })
+          // The owned adapter retains these static intents throughout every
+          // operation and commit. Derived and compound intents still join it.
+          if (existingWriter || (action !== "edit" && action !== "complete")) {
+            await requireBoardWriterIntent(tx, this.scope, { resource: "task", action })
+          }
           if (integrationContext) await this.requireIntegrationWriter(tx, integrationContext, action, id)
         }
         if (Object.hasOwn(fields, "goal_id")) await requireBoardWriterCheck(tx, this.scope, async () => {
@@ -2109,15 +2109,14 @@ export class TaskRepository {
           signal?.throwIfAborted()
           step = iterator.next(batch)
         }
-        const completion = step.value
-        if (completing && completion.results[writeIndex]?.rows[0] && !isDoneStatus(String(original.status))) {
+        results = step.value
+        const written = results[writeIndex]?.rows[0]
+        // The final projection includes any rule added or cleared by this same command.
+        if (completing && !isDoneStatus(previousStatus) && typeof written?.recurrence_rule === "string" && written.recurrence_rule) {
           signal?.throwIfAborted()
-          completion.recurrence = await this.createRecurrenceSuccessor(tx, id, new Date().toISOString().slice(0, 10), recurrenceAssignment)
+          recurrence = await this.createRecurrenceSuccessor(tx, id, new Date().toISOString().slice(0, 10), recurrenceAssignment)
           signal?.throwIfAborted()
         }
-        results = completion.results
-        recurrence = completion.recurrence
-        const written = completion.results[writeIndex]?.rows[0]
         signal?.throwIfAborted()
         if (written && activity) {
           const actor = this.scope.principal.kind === "agent" ? writerActivity?.provenance?.tokenName ?? "Agent" : "user"
@@ -2148,7 +2147,7 @@ export class TaskRepository {
     const successor = recurrence === "invalid" ? undefined : recurrence
     const row = results[writeIndex]?.rows[0]
     if (row) return { ok: true, task: row as unknown as TaskRow,
-      ...(typeof fields.status === "string" ? { previousStatus: String(results[statusIndex]?.rows[0]?.status ?? "") } : {}),
+      ...(typeof fields.status === "string" ? { previousStatus } : {}),
       ...(successor ? { successor } : {}),
       ...(assignmentEventId ? { assignmentEventId } : {}),
     }
