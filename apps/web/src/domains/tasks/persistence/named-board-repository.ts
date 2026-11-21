@@ -141,7 +141,7 @@ export class NamedBoardRepository {
       validatedKey = check.key
     }
     const boardId = randomUUID()
-    return changeBoardGrants(
+    return changeBoardGrants<{ id: string; ticketPrefix: string }, "duplicate-key">(
       this.db,
       owner,
       async (tx) => {
@@ -265,7 +265,7 @@ export class NamedBoardRepository {
     expected: number
   ) {
     const check = validateBoardKey(rawPrefix)
-    if (!check.ok) return { status: "unchanged", result: "invalid" as const, error: check.error }
+    if (!check.ok) return { status: "unchanged" as const, result: "invalid" as const, error: check.error }
     const nextPrefix = check.key
     return changeBoardGrants(
       this.db,

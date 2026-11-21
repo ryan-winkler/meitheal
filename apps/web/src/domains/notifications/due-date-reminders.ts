@@ -1,3 +1,5 @@
+import { serializeCalendarDelivery } from "@domains/calendar/calendar-delivery"
+import { decodeCalendarSetting, ticketDetailsEnabled } from "@domains/calendar/calendar-policy"
 import { isClosedStatus } from "@lib/status-config"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import {
@@ -44,6 +46,13 @@ export function stopDueDateReminders(): void {
   interval = null
 }
 
+/** Reset in-memory reminder dedup state between test runs. */
+export function resetDueDateRemindersForTests(): void {
+  stopDueDateReminders()
+  sentReminders.clear()
+  processing = false
+}
+
 async function resolveObserver(binding: WorkBinding): Promise<IntegrationScope | null> {
   const result = await resolveIntegrationScope(getPersistenceClient(), binding.id, binding.generation, { resource: "task", action: "read" })
   return result.ok ? result.value : null
@@ -55,6 +64,58 @@ async function calendarReminder(context: IntegrationScope, task: Awaited<ReturnT
   const db = getPersistenceClient()
   const resolved = await resolveIntegrationScope(db, receiver.id, receiver.generation, { resource: "task", action: "read" }, context.scope, { resource: "task", action: "read" })
   if (!resolved.ok) return false
+
+  // Respect active calendar sync mode & writeTicketDetails preference (fail-closed on import-only)
+  const repo = new TaskRepository(db, resolved.value.scope)
+  let writeTicketDetails = true
+  try {
+    const calSettings = await repo.getSettings(["calendar_sync_mode", "calendar_sync_modes", "calendar_write_ticket_details"])
+    let perEntityMode: string | undefined
+    if (calSettings.calendar_sync_modes) {
+      try {
+        const parsed: unknown = JSON.parse(calSettings.calendar_sync_modes)
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const val = (parsed as Record<string, unknown>)[receiver.sourceId]
+          if (typeof val === "string") perEntityMode = val
+        }
+      } catch { /* ignore invalid JSON */ }
+    }
+    const dbMode = perEntityMode ?? decodeCalendarSetting(calSettings.calendar_sync_mode)
+    if (dbMode === "import") return false
+    writeTicketDetails = ticketDetailsEnabled(calSettings.calendar_write_ticket_details)
+
+    const { getCalendarSyncConfigs } = await import("@domains/calendar")
+    const bindings = (await readWorkDestinations(db))?.bindings ?? []
+    const activeConfig = getCalendarSyncConfigs().find(c => c.entityId === receiver.sourceId &&
+      bindings.some(b => b.enabled && b.integration === "calendar" && b.purpose === "calendar.sync" &&
+        b.destination.boardId === context.scope.boardId && b.sourceId === c.entityId &&
+        b.id === c.bindingId && b.generation === c.generation))
+    if (activeConfig) {
+      if (activeConfig.syncMode === "import") return false
+      if (calSettings.calendar_write_ticket_details === undefined && activeConfig.writeTicketDetails === false) {
+        writeTicketDetails = false
+      }
+    }
+  } catch { return false }
+
+  // Loop prevention: skip tasks already synced to this calendar, or already reminded for this receiver & due timestamp
+  const reminderRequestId = `due-reminder-${receiver.id}-${task.id}-${task.due_ms}`
+  const covered = async () => {
+    const existingConf = await db.execute({
+      sql: `SELECT confirmation_id FROM calendar_confirmations
+            WHERE task_id = ?
+              AND (
+                (source != 'ha.due_reminder' AND json_extract(payload, '$.entity_id') = ?)
+                OR request_id = ?
+                OR provider_event_id = ?
+              )
+            LIMIT 1`,
+      args: [task.id, receiver.sourceId, reminderRequestId, reminderRequestId],
+    })
+    return existingConf.rows.length > 0
+  }
+  if (await covered()) return false
+
   const operationAllowed = async () => {
     if (!(await validateIntegrationScope(context, db, { resource: "task", action: "read" })).ok ||
       !(await validateIntegrationScope(resolved.value, db, { resource: "task", action: "read" })).ok ||
@@ -64,13 +125,78 @@ async function calendarReminder(context: IntegrationScope, task: Awaited<ReturnT
       current.deferred_at == null && !isClosedStatus(current.status))
   }
   if (!await operationAllowed()) return false
-  const { callHAService } = await import("@domains/ha")
-  await callHAService("calendar", "create_event", {
-    summary: `📋 ${task.ticket_key}: ${task.title} — DUE`,
-    start_date_time: new Date(task.due_ms).toISOString(), end_date_time: new Date(task.due_ms + 15 * 60_000).toISOString(),
-    description: `Task ${task.ticket_key} is due.${link ? ` Open in Meitheal: ${link}` : ""}`,
-  }, { entity_id: receiver.sourceId }, { operationAllowed })
-  return true
+
+  let fullLink: string | undefined
+  if (link && link.startsWith("/")) {
+    try {
+      const { getHABaseUrl } = await import("@domains/ha")
+      const baseUrl = await getHABaseUrl()
+      if (baseUrl && ["http:", "https:"].includes(new URL(baseUrl).protocol)) fullLink = `${baseUrl.replace(/\/$/, "")}${link}`
+    } catch { /* omit unavailable link */ }
+  }
+
+  const summary = writeTicketDetails
+    ? `📋 ${task.ticket_key}: ${task.title} — DUE`
+    : `📋 ${task.title} — DUE`
+  const startIso = new Date(task.due_ms).toISOString()
+  const endIso = new Date(task.due_ms + 15 * 60_000).toISOString()
+  const detailLines: string[] = []
+  if (writeTicketDetails) {
+    detailLines.push(`📋 ${task.ticket_key}`)
+    if (fullLink) detailLines.push(`Open ${task.ticket_key} in Meitheal: ${fullLink}`)
+  }
+  detailLines.push("Added from Meitheal")
+  const headerLine = writeTicketDetails ? `Task ${task.ticket_key} is due.` : "Task reminder."
+  const description = `${headerLine}\n\n${detailLines.join("\n")}`
+
+  const { createCalendarEvent } = await import("@domains/ha")
+  return serializeCalendarDelivery(task.id, receiver.sourceId, async () => {
+    if (await covered()) return false
+    const reservation = await db.execute({
+      sql: `INSERT INTO calendar_reminder_deliveries
+        (request_id, task_id, entity_id, due_ms, payload, created_at) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT DO NOTHING`,
+      args: [reminderRequestId, task.id, receiver.sourceId, task.due_ms,
+        JSON.stringify({ entity_id: receiver.sourceId, summary, start: startIso, end: endIso }), Date.now()],
+    })
+    if (!reservation.rowsAffected) return false
+    const created = await createCalendarEvent(receiver.sourceId, { summary, start: startIso, end: endIso, description },
+      { operationAllowed: async () => await operationAllowed() && !await covered() })
+    if (!created) {
+      await db.execute({ sql: "DELETE FROM calendar_reminder_deliveries WHERE request_id=?", args: [reminderRequestId] })
+      return false
+    }
+    await db.execute({ sql: "UPDATE calendar_reminder_deliveries SET acknowledged=1 WHERE request_id=?", args: [reminderRequestId] })
+    await finishReminderBookkeeping()
+    return true
+  })
+}
+
+// Each local insert and its completion flag commit together. Neither retry path contacts HA.
+async function finishReminderBookkeeping(): Promise<void> {
+  const db = getPersistenceClient()
+  const pending = await db.execute("SELECT request_id FROM calendar_reminder_deliveries WHERE acknowledged=1 AND (confirmed=0 OR logged=0)")
+  for (const row of pending.rows) {
+    const args = [String(row.request_id)]
+    for (const [flag, insert] of [
+      ["confirmed", `INSERT INTO calendar_confirmations (confirmation_id, task_id, request_id, provider_event_id, source, payload, created_at)
+        SELECT request_id, task_id, request_id, request_id, 'ha.due_reminder', payload, created_at`],
+      ["logged", `INSERT INTO task_activity_log (task_id, field, new_value, actor, actor_type, event_type, summary, correlation_id, created_at)
+        SELECT task_id, 'calendar_sync', request_id, 'calendar-sync', 'calendar_sync', 'calendar_sync',
+          'Calendar due reminder sent to ' || entity_id, request_id, created_at`],
+    ] as const) {
+      try {
+        await db.batch([
+          { sql: insert + ` FROM calendar_reminder_deliveries WHERE request_id=? AND ${flag}=0` +
+            (flag === "confirmed" ? " ON CONFLICT(task_id, request_id) DO NOTHING" : ""), args },
+          { sql: `UPDATE calendar_reminder_deliveries SET ${flag}=1 WHERE request_id=?`, args },
+        ], "write")
+      } catch {
+        logger.log("warn", { event: "calendar.reminder.bookkeeping_pending", domain: "notifications",
+          component: "due-date-reminders", request_id: "due-date-reminder", message: "Calendar reminder bookkeeping will retry" })
+      }
+    }
+  }
 }
 
 /** One scheduler, independent observers for every approved Board and receiver. */
@@ -80,6 +206,7 @@ export async function checkDueDates(now = Date.now()): Promise<void> {
   try {
     await ensureSchema()
     const db = getPersistenceClient()
+    await finishReminderBookkeeping()
     const configuration = await readWorkDestinations(db)
     if (!configuration) return
     // Overdue domain observation remains independent of delivery preferences.

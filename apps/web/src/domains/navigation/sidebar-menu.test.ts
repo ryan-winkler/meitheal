@@ -21,13 +21,13 @@ import {
   toggleItemVisibility,
   toggleSectionVisibility,
   unpinCustomItem,
-} from "./sidebar-menu.ts"
+} from "./sidebar-menu"
 import {
   normalizeUserProfile,
   profileInitials,
   profileSubtitle,
   validateUserProfile,
-} from "../auth/user-profile.ts"
+} from "../auth/user-profile"
 
 const TEST_KEYS = [
   "dashboard",

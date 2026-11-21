@@ -201,7 +201,7 @@ function isExternal(href: string): boolean {
                           type="button"
                           class="task-view-pin"
                           data-task-view-pin={view.id}
-                          aria-pressed={String(isPinned)}
+                          aria-pressed={isPinned ? "true" : "false"}
                           aria-label={isPinned ? `Unpin ${view.label} from sidebar` : `Pin ${view.label} to sidebar`}
                           title={isPinned ? `Unpin ${view.label}` : `Pin ${view.label}`}
                         >

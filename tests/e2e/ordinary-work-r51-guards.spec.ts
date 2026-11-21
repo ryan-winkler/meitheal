@@ -150,7 +150,7 @@ for (const encoding of ["legacy", "scoped"] as const) {
         const value = Reflect.get(target, key); return typeof value === "function" ? value.bind(target) : value
       } }) as Client
       const command = new TaskRepository(wrapped, scope)
-      const fields = phase === "edit" ? { title: "Cancelled edit" } : (phase === "complete" || phase === "recurrence-successor") ? { status: "complete" } : { assigned_to: "custom_target" }
+      const fields: Record<string, string> = phase === "edit" ? { title: "Cancelled edit" } : (phase === "complete" || phase === "recurrence-successor") ? { status: "complete" } : { assigned_to: "custom_target" }
       const requestId = crypto.randomUUID()
       const pending = command.updateTask(task.id, fields, { signal: controller.signal, activity: { kind: "human", personKey: actor.id },
         ...(phase === "assignment-receipt" ? { reassignmentReceipt: { key: `owned:${requestId}`, requestId, assignedTo: "custom_target" } } : {}) }).then(value => ({ value, error: null }), error => ({ value: null, error }))

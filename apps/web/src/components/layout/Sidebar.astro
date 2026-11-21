@@ -261,8 +261,8 @@ const pinnedTaskViews: TaskView[] = TASK_VIEW_ITEM_KEYS
 const sidebarDefaultOrder = flattenSidebarOrder(sidebarMenuConfig)
 const serializedSidebarConfig = serializeSidebarConfig(sidebarMenuConfig)
 
-const haDisplayName = (Astro.locals as Record<string, unknown>).hassDisplayName
-const haUsername = (Astro.locals as Record<string, unknown>).hassUserName ?? Astro.locals.hassUserId
+const haDisplayName = (Astro.locals as unknown as Record<string, unknown>).hassDisplayName
+const haUsername = (Astro.locals as unknown as Record<string, unknown>).hassUserName ?? Astro.locals.hassUserId
 const userProfile: UserProfile = normalizeUserProfile(rawUserProfile, {
   displayName: typeof haDisplayName === "string" && haDisplayName.trim()
     ? haDisplayName

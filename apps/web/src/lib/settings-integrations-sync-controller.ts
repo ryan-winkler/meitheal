@@ -121,11 +121,13 @@ export function initCalendarTodoSettings(): void {
     const caldavUsername = (document.getElementById("caldav-username") as HTMLInputElement).value
     const caldavPassword = (document.getElementById("caldav-password") as HTMLInputElement).value
     const writeBack = (document.getElementById("cal-write-back") as HTMLInputElement)?.checked ?? false
+    const writeTicketDetails = (document.getElementById("cal-write-ticket-details") as HTMLInputElement)?.checked ?? true
     const intervalMs = Number((document.getElementById("cal-sync-interval") as HTMLSelectElement)?.value ?? "300000")
     await saveSettings({
       calendar_entities: enabledEntities,
       calendar_entity: enabledEntities[0] ?? "",
       calendar_write_back: writeBack,
+      calendar_write_ticket_details: writeTicketDetails,
       calendar_sync_interval_ms: String(intervalMs),
       calendar_sync_mode: globalMode,
       calendar_sync_modes: syncModes,
@@ -138,7 +140,7 @@ export function initCalendarTodoSettings(): void {
       })
     }
     await applySyncConfiguration("/api/integrations/calendar/sync", "calendar_sync_enabled", enabledEntities.length > 0
-      ? { action: "enable", entity_id: enabledEntities[0], entities: enabledEntities, write_back: writeBack, interval_ms: intervalMs, sync_mode: globalMode, sync_modes: syncModes }
+      ? { action: "enable", entity_id: enabledEntities[0], entities: enabledEntities, write_back: writeBack, write_ticket_details: writeTicketDetails, interval_ms: intervalMs, sync_mode: globalMode, sync_modes: syncModes }
       : { action: "disable" })
     const statusEl = document.getElementById("cal-status")
     if (statusEl) {
@@ -657,6 +659,12 @@ export function restoreCalendarTodoSettings(s: Record<string, unknown>): void {
   if (s.calendar_write_back) {
     const wb = document.getElementById("cal-write-back") as HTMLInputElement | null
     if (wb) wb.checked = s.calendar_write_back === true || s.calendar_write_back === "true"
+  }
+  const wtd = document.getElementById("cal-write-ticket-details") as HTMLInputElement | null
+  if (wtd) {
+    wtd.checked = s.calendar_write_ticket_details === undefined
+      ? true
+      : s.calendar_write_ticket_details !== false && s.calendar_write_ticket_details !== "false"
   }
   if (s.calendar_sync_interval_ms) {
     const intervalSel = document.getElementById("cal-sync-interval") as HTMLSelectElement | null

@@ -289,7 +289,7 @@ async function autoStartCalendarSync(): Promise<void> {
     const res = await client.execute({
       sql: `SELECT key, value FROM settings WHERE key IN (
         ${CALENDAR_ENTITY_SETTINGS.map(() => "?").join(", ")},
-        'calendar_sync_enabled', 'calendar_write_back', 'calendar_sync_interval_ms',
+        'calendar_sync_enabled', 'calendar_write_back', 'calendar_write_ticket_details', 'calendar_sync_interval_ms',
         'calendar_sync_mode', 'calendar_sync_modes',
         'caldav_url'
       )`,
@@ -307,8 +307,9 @@ async function autoStartCalendarSync(): Promise<void> {
       }
     }
 
-    const enabled = settings.calendar_sync_enabled !== "false";
-    const writeBack = settings.calendar_write_back === "true";
+    const enabled = settings.calendar_sync_enabled !== "false" && (settings.calendar_sync_enabled as unknown) !== false;
+    const writeBack = settings.calendar_write_back === "true" || (settings.calendar_write_back as unknown) === true;
+    const writeTicketDetails = settings.calendar_write_ticket_details !== "false" && (settings.calendar_write_ticket_details as unknown) !== false;
     const syncIntervalMs = Number(settings.calendar_sync_interval_ms) || 5 * 60 * 1000;
 
     const entityIds = configuredCalendarEntityIds(settings)
@@ -359,6 +360,7 @@ async function autoStartCalendarSync(): Promise<void> {
         syncEnabled: true,
         syncMode: mode,
         writeBack: mode !== "import" ? writeBack : false,
+        writeTicketDetails: mode !== "import" ? writeTicketDetails : false,
         syncIntervalMs,
       };
     });

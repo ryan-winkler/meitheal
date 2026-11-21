@@ -185,8 +185,23 @@ Use this after changing the Calendar shell, `calendar-controller.ts`, or route-s
 - `#calendar-flow`
 
 3. Confirm `TaskViewTabs` still preserve the current query string when switching routes.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:9805a281206b9935337b0984b7da14d4a16ea60f07264e5fb72e2b404bedea16 -->
+
 4. Confirm clicking a month cell opens the day drawer.
 5. Confirm `Add Task` from the day drawer opens the shared task modal.
+
+### Calendar Sync Loop & Ticket Details Check
+
+Use this after changing `calendar-bridge.ts`, `calendar-event-identity.ts`, `due-date-reminders.ts`, or `cleanup-corrupt-titles.ts`.
+
+1. Run `pnpm --filter @meitheal/tests test e2e/calendar-duplication-loop.spec.ts e2e/calendar-sync-failures.spec.ts e2e/caldav-sync-failures.spec.ts e2e/due-date-reminder-shutdown.spec.ts`.
+2. Confirm an imported Google Calendar or WebDAV/CalDAV event does not spawn a duplicate due-date reminder event on the same calendar and that HTML-wrapped or reminder-shaped echoes are skipped on inbound sync.
+3. Confirm bidirectional calendars expose `calendar_write_ticket_details` (default on) to append a blank line, ticket key, and direct Meitheal link while preserving `Added from Meitheal` attribution when disabled.
+4. Confirm outbound calendar syncs and due-date calendar reminders record a `calendar_sync` confirmation entry in `task_activity_log`.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 ## Kanban Shell Verification
 

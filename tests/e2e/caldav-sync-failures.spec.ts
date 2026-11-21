@@ -187,6 +187,7 @@ for (const legacy of [false, true]) {
       sourceId: "configured-caldav",
       purpose: "calendar.sync"
     })
+    bundle.settings.calendar_write_ticket_details = false
     const restored = await integrationRoute(importSettings, "/api/import/settings", bundle)
     expect(restored.status).toBe(200)
     dav.events.good = ["restored-credentials"]

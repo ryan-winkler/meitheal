@@ -1,13 +1,21 @@
 {
   "name": "@meitheal/domain-tasks",
-  "version": "0.0.1",
   "private": true,
+  "version": "0.1.0",
   "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
     "./status-values": {
       "types": "./src/status-values.d.mts",
       "default": "./src/status-values.mjs"
     }
+  },
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
   }
 }

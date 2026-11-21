@@ -1,4 +1,10 @@
+import { serializeCalendarDelivery } from "./calendar-delivery"
 import { createHash } from "node:crypto"
+import { homeAssistantWorkLink } from "@lib/ha-app-link"
+import {
+  isMeithealOriginatedEvent,
+  normalizeCalendarDescription,
+} from "./calendar-event-identity"
 import {
   guardWorkPersistence,
   resolveIntegrationScope,
@@ -69,11 +75,13 @@ const SYS_REQ = "ha-system"
  * 📝 Checklist header + ✅/☐ items — everything buildCalendarDescription appends.
  */
 function stripMeithealAttribution(desc: string | null | undefined): string | null {
-  if (!desc) return null
-  const lines = desc.split("\n").filter((line) => {
+  const normalized = normalizeCalendarDescription(desc)
+  if (!normalized) return null
+  const lines = normalized.split("\n").filter((line) => {
     const t = line.trim()
     if (!t) return true // preserve blank lines in user content
     if (/^Added from Meitheal$/i.test(t)) return false
+    if (/^Open\s+(?:(?:[A-Z0-9]{2,10}-[1-9]\d*|Task)\s+)?in\s+Meitheal:/i.test(t)) return false
     if (/^📋\s/.test(t)) return false // ticket key + status + priority line
     if (/^🏷️\s/.test(t)) return false // labels line
     if (/^📝\s*Checklist\b/.test(t)) return false // checklist header
@@ -101,6 +109,7 @@ export interface CalendarSyncConfig {
   syncEnabled: boolean
   syncMode: CalendarSyncMode // per-entity direction control
   writeBack: boolean // legacy compat — derived from syncMode at runtime
+  writeTicketDetails?: boolean // include blank line + MTH key + link (default true on bidirectional/export)
   syncIntervalMs: number
 }
 
@@ -111,6 +120,7 @@ export interface CalendarSyncStatusEntity {
   source: "ha" | "caldav"
   syncMode: CalendarSyncMode
   writeBack: boolean
+  writeTicketDetails?: boolean
   syncIntervalMs: number
   lastSyncAt: number | null
   lastSyncEventCount: number | null
@@ -1185,10 +1195,10 @@ async function _syncEntityFromHAInner(
     let updated = 0
     let skipped = 0
 
-    // ── Loop prevention: skip events that Meitheal pushed outbound ──
+    // ── Loop prevention: skip events that Meitheal pushed outbound or reminded ──
     const inboundEvents: CalendarEvent[] = []
     for (const evt of events) {
-      if (evt.description && /Added from Meitheal/i.test(evt.description)) {
+      if (isMeithealOriginatedEvent(evt.summary, evt.description)) {
         skipped++
       } else {
         inboundEvents.push(evt)
@@ -1834,53 +1844,68 @@ export interface TaskCalendarMeta {
   priority?: number | undefined
   labels?: string[] | undefined
   checklists?: Array<{ text: string; done: boolean }> | undefined
-  ticketKey?: string | undefined // e.g. "MTH-42"
+  ticketKey?: string | undefined // e.g. "MTH-42" or custom board key
+  ticketUrl?: string | undefined // e.g. "https://ha.local/meitheal_canary?meitheal=..."
 }
 
 const PRIORITY_LABELS = ["", "🔴 Critical", "🟠 High", "🟡 Medium", "🔵 Low", "⚪ Lowest"] as const
 
 /** Build a rich, human-readable description for a calendar event from task data */
-function buildCalendarDescription(
+export function buildCalendarDescription(
   description: string | undefined,
-  meta?: TaskCalendarMeta
+  meta?: TaskCalendarMeta,
+  options?: { writeTicketDetails?: boolean | undefined }
 ): string {
-  const parts: string[] = []
+  const includeDetails = options?.writeTicketDetails !== false
+  const bodyParts: string[] = []
 
   // Task description
   if (description?.trim()) {
-    parts.push(description.trim())
+    bodyParts.push(description.trim())
   }
 
-  // Status + Priority line
-  const statusParts: string[] = []
-  if (meta?.ticketKey) statusParts.push(`📋 ${meta.ticketKey}`)
-  if (meta?.status) statusParts.push(`Status: ${meta.status}`)
-  if (meta?.priority && meta.priority >= 1 && meta.priority <= 5) {
-    statusParts.push(PRIORITY_LABELS[meta.priority]!)
-  }
-  if (statusParts.length > 0) parts.push(statusParts.join(" · "))
+  const detailParts: string[] = []
+  if (includeDetails) {
+    // Status + Priority line
+    const statusParts: string[] = []
+    if (meta?.ticketKey) statusParts.push(`📋 ${meta.ticketKey}`)
+    if (meta?.status) statusParts.push(`Status: ${meta.status}`)
+    if (meta?.priority && meta.priority >= 1 && meta.priority <= 5) {
+      statusParts.push(PRIORITY_LABELS[meta.priority]!)
+    }
+    if (statusParts.length > 0) detailParts.push(statusParts.join(" · "))
 
-  // Labels (exclude internal ones)
-  const displayLabels = (meta?.labels ?? []).filter(
-    (l) => l !== "calendar-sync" && l !== "no-sync" && !l.startsWith("synced from ")
-  )
-  if (displayLabels.length > 0) {
-    parts.push(`🏷️ ${displayLabels.join(", ")}`)
-  }
+    // Pretty direct ticket link (plain-text safe for CalDAV, auto-linked in Google Calendar)
+    if (meta?.ticketUrl) {
+      const linkLabel = meta.ticketKey ? `Open ${meta.ticketKey} in Meitheal` : "Open in Meitheal"
+      detailParts.push(`${linkLabel}: ${meta.ticketUrl}`)
+    }
 
-  // Checklists
-  if (meta?.checklists && meta.checklists.length > 0) {
-    const done = meta.checklists.filter((c) => c.done).length
-    parts.push(`📝 Checklist (${done}/${meta.checklists.length})`)
-    for (const item of meta.checklists) {
-      parts.push(`  ${item.done ? "✅" : "☐"} ${item.text}`)
+    // Labels (exclude internal ones)
+    const displayLabels = (meta?.labels ?? []).filter(
+      (l) => l !== "calendar-sync" && l !== "no-sync" && !l.startsWith("synced from ")
+    )
+    if (displayLabels.length > 0) {
+      detailParts.push(`🏷️ ${displayLabels.join(", ")}`)
+    }
+
+    // Checklists
+    if (meta?.checklists && meta.checklists.length > 0) {
+      const done = meta.checklists.filter((c) => c.done).length
+      detailParts.push(`📝 Checklist (${done}/${meta.checklists.length})`)
+      for (const item of meta.checklists) {
+        detailParts.push(`  ${item.done ? "✅" : "☐"} ${item.text}`)
+      }
     }
   }
 
-  // Attribution
-  parts.push("Added from Meitheal")
+  // Attribution (always included for loop prevention)
+  detailParts.push("Added from Meitheal")
 
-  return parts.join("\n")
+  if (bodyParts.length > 0) {
+    return `${bodyParts.join("\n")}\n\n${detailParts.join("\n")}`
+  }
+  return detailParts.join("\n")
 }
 
 /**
@@ -1916,6 +1941,11 @@ export async function pushTaskToCalendar(
   _description?: string,
   _meta?: TaskCalendarMeta
 ): Promise<boolean> {
+  return serializeCalendarDelivery(taskId, context.binding.sourceId, waited =>
+    pushCurrentTaskToCalendar(context, taskId, waited))
+}
+
+async function pushCurrentTaskToCalendar(context: IntegrationScope, taskId: string, waited: boolean): Promise<boolean> {
   await ensureSchemaOnce()
   const mod = await getStoreModule(),
     client = guardWorkPersistence(mod.getPersistenceClient()),
@@ -1980,8 +2010,22 @@ export async function pushTaskToCalendar(
       return []
     }
   }
+  const writeTicketDetails = config.writeTicketDetails !== false
+  let ticketUrl: string | undefined
+  if (writeTicketDetails) {
+    const workPath = await homeAssistantWorkLink(context.scope.boardId, taskId).catch(() => null)
+    if (workPath) {
+      let baseUrl: string | null = null
+      try {
+        const { getHABaseUrl } = await import("../ha/ha-connection")
+        baseUrl = await getHABaseUrl()
+      } catch { /* standalone or unavailable */ }
+      ticketUrl = baseUrl ? `${baseUrl.replace(/\/$/, "")}${workPath}` : workPath
+    }
+  }
   const meta: TaskCalendarMeta = {
     ticketKey: task.ticket_key ?? undefined,
+    ticketUrl,
     status: task.status,
     priority: task.priority ?? undefined,
     labels: array(task.labels).filter((item): item is string => typeof item === "string"),
@@ -1996,7 +2040,8 @@ export async function pushTaskToCalendar(
   }
   const description = buildCalendarDescription(
     typeof task.description === "string" ? task.description : undefined,
-    meta
+    meta,
+    { writeTicketDetails }
   )
   const snapshot = await repo.findSyncConfirmation(taskId, context)
   if (
@@ -2006,6 +2051,13 @@ export async function pushTaskToCalendar(
     return false
   expectedTaskVersion = snapshot.taskVersion
   if (!(await operationAllowed())) return false
+  if (waited && !snapshot.confirmation) {
+    const reminder = await mod.getPersistenceClient().execute({
+      sql: "SELECT 1 FROM calendar_reminder_deliveries WHERE task_id=? AND entity_id=? AND due_ms=?",
+      args: [taskId, config.entityId, Date.parse(task.due_date)],
+    })
+    if (reminder.rows.length) return false
+  }
   const externalId = snapshot.confirmation?.externalId ?? `writeback-${taskId}`
   const event = { summary: title, start, end, description }
   const success = snapshot.confirmation
@@ -2016,7 +2068,7 @@ export async function pushTaskToCalendar(
       )
     : await createCalendarEvent(config.entityId, event, { operationAllowed })
   if (!success || !(await operationAllowed())) return false
-  return repo.saveSyncConfirmationForTask(
+  const saved = await repo.saveSyncConfirmationForTask(
     taskId,
     {
       source: "calendar",
@@ -2029,6 +2081,23 @@ export async function pushTaskToCalendar(
     context,
     snapshot.taskVersion
   )
+  if (saved) {
+    await mod.getPersistenceClient().execute({
+      sql: `INSERT INTO task_activity_log
+              (task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at)
+            VALUES (?, 'calendar_sync', NULL, ?, 'calendar-sync', 'calendar_sync', 'calendar_sync', ?, ?, ?)`,
+      args: [
+        taskId,
+        externalId,
+        snapshot.confirmation
+          ? `Updated calendar event on ${config.entityId}`
+          : `Synced to calendar ${config.entityId}`,
+        externalId,
+        Date.now(),
+      ],
+    }).catch(() => {})
+  }
+  return saved
 }
 
 /** Only durable matching deletion evidence may authorize a provider delete after the task is gone. */
@@ -2187,6 +2256,7 @@ export async function getCalendarSyncStatus(scope?: BoardScope) {
       source: "ha" as const,
       syncMode: state.config.syncMode ?? "bidirectional",
       writeBack: state.config.writeBack,
+      writeTicketDetails: state.config.writeTicketDetails !== false,
       syncIntervalMs: state.config.syncIntervalMs,
       lastSyncAt: state.lastSyncAt,
       lastSyncEventCount: count(
@@ -2518,9 +2588,9 @@ async function importCalDAVEvents(
           end,
           { operationAllowed: providerAllowed }
         )
-        // Events Meitheal itself wrote to a calendar are never imported back as new tasks.
+        // Events Meitheal itself wrote or reminded to a calendar are never imported back as new tasks.
         const events = listed.filter(
-          (evt) => !(evt.description && /Added from Meitheal/i.test(evt.description))
+          (evt) => !isMeithealOriginatedEvent(evt.summary, evt.description)
         )
         const groupedByUid = new Map<string, typeof events>()
         for (const evt of events) {

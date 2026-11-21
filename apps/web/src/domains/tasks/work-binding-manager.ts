@@ -236,7 +236,7 @@ export async function saveWorkIntegrationSettings(
         throw new Error("Integration profile approval changed")
     return { next: true }
   })
-  return (result.status === "committed" || result.status === "unchanged") && result.result
+  return (result.status === "committed" || result.status === "unchanged") && Boolean(result.result)
 }
 
 const purposes: Record<string, readonly string[]> = {

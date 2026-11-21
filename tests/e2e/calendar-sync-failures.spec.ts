@@ -16,6 +16,7 @@ import {
 import { closeHAConnection, getHAConnection } from "../../apps/web/src/domains/ha/ha-connection"
 import { stopEntitySubscription } from "../../apps/web/src/domains/ha/ha-entities"
 import {
+  getCalendarSyncConfigs,
   getCalendarSyncStatus,
   startCalendarSync,
   stopCalendarSync,
@@ -207,4 +208,17 @@ test("stale reconciliation failure reports partial committed imports through bot
     (await db.execute("SELECT status FROM tasks WHERE title = 'removed'")).rows[0]?.status
   ).toBe("complete")
   expect((await getCalendarSyncStatus(fixture.scope)).lastSyncError).toBeNull()
+})
+
+test("enable validates mode without coercion and preserves saved ticket privacy", async ({ environment: { db } }) => {
+  const enable = (mode: unknown, extra = {}) => integrationRoute(manualSync, "/api/integrations/calendar/sync?board_id=household", {
+    action: "enable", binding_id: fixture.binding.id, sync_mode: mode, interval_ms: 0, ...extra,
+  })
+  await db.execute({ sql: "INSERT OR REPLACE INTO settings(key,value) VALUES (?,?)",
+    args: ["calendar_write_ticket_details", JSON.stringify("false")] })
+  expect((await enable(["import"])).status).toBe(400)
+  expect((await enable("export")).status).toBe(200)
+  expect(getCalendarSyncConfigs()[0]?.writeTicketDetails).toBe(false)
+  expect((await enable("import", { write_ticket_details: true })).status).toBe(200)
+  expect(getCalendarSyncConfigs()[0]).toMatchObject({ syncMode: "import", writeTicketDetails: false })
 })
