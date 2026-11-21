@@ -1,11 +1,12 @@
 import type { APIRoute } from "astro"
-import { getPersistenceClient, readWorkDestinations, type WorkOperation } from "@domains/tasks"
+import { TaskRepository, getPersistenceClient, readWorkDestinations, type WorkOperation } from "@domains/tasks"
 import { getCalendarSyncStatus, syncFromHA, syncCalDAVEvents, startCalendarSync,
   stopCalendarSync, stopCalDAVSync, type CalendarSyncMode } from "@domains/calendar"
 import { withBoardScope } from "@lib/board-http"
 import { currentSettingsAccess } from "@lib/current-settings-access"
 import { apiJson, apiError } from "@lib/api-response"
 import { requestIntegrationBinding } from "@lib/integration-binding-access"
+import { ticketDetailsEnabled } from "@domains/calendar/calendar-policy"
 import { calendarSyncResult } from "@domains/calendar/calendar-sync-result"
 
 export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async (_context, scope) =>
@@ -49,14 +50,18 @@ export const POST: APIRoute = async context => {
       }
       if (binding.integration !== "calendar") return apiError("Save and enable the approved CalDAV profile before syncing.", 409)
       const modes = body.sync_modes && typeof body.sync_modes === "object" && !Array.isArray(body.sync_modes) ? body.sync_modes as Record<string, unknown> : {}
-      const mode = modes[binding.sourceId] ?? body.sync_mode ?? "bidirectional"
+      const mode = Object.hasOwn(modes, binding.sourceId) ? modes[binding.sourceId] :
+        body.sync_mode === undefined ? "bidirectional" : body.sync_mode
       const interval = body.interval_ms ?? 300000
-      if (!["import", "export", "bidirectional"].includes(String(mode)) || typeof interval !== "number" || !Number.isFinite(interval) || interval < 0 ||
+      if (typeof mode !== "string" || !["import", "export", "bidirectional"].includes(mode) || typeof interval !== "number" || !Number.isFinite(interval) || interval < 0 ||
         (body.write_back !== undefined && typeof body.write_back !== "boolean") ||
         (body.write_ticket_details !== undefined && typeof body.write_ticket_details !== "boolean")) return apiError("Choose a valid Calendar mode and interval.", 400)
       const approved = await requestIntegrationBinding(scope, "calendar", "calendar.sync", { binding_id: binding.id, generation: binding.generation }, operation)
       if (!approved?.ok) return apiError("Calendar approval changed.", 409)
-      const writeTicketDetails = body.write_ticket_details ?? true
+      const saved = mode !== "import" && body.write_ticket_details === undefined
+        ? (await new TaskRepository(getPersistenceClient(), scope).getSettings(["calendar_write_ticket_details"])).calendar_write_ticket_details
+        : undefined
+      const writeTicketDetails = body.write_ticket_details ?? ticketDetailsEnabled(saved)
       await startCalendarSync({ bindingId: binding.id, generation: binding.generation, entityId: binding.sourceId, syncEnabled: true,
         syncMode: mode as CalendarSyncMode, writeBack: mode !== "import" && body.write_back === true,
         writeTicketDetails: mode !== "import" ? writeTicketDetails : false, syncIntervalMs: interval })

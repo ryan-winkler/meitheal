@@ -44,13 +44,14 @@ type HAFixture = Awaited<ReturnType<typeof startHAWebSocketFixture>>
 
 const ENTITY = "calendar.google_family"
 
-const test = base.extend<{ env: { db: Database; ha: HAFixture } }>({
+const test = base.extend<{ env: { db: Database; ha: HAFixture; holdServices: { domain: string; service: string }[] } }>({
   env: async ({}, use) => {
     const previous = Object.fromEntries(
       ["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_BASE_URL", "HA_TOKEN"].map((k) => [k, process.env[k]]),
     )
     const directory = await mkdtemp(join(tmpdir(), "meitheal-cal-dup-"))
-    const ha = await startHAWebSocketFixture()
+    const holdServices: { domain: string; service: string }[] = []
+    const ha = await startHAWebSocketFixture({ holdServices })
     delete process.env.SUPERVISOR_TOKEN
     process.env.HA_BASE_URL = ha.url
     process.env.HA_TOKEN = "calendar-dup-fixture"
@@ -62,7 +63,7 @@ const test = base.extend<{ env: { db: Database; ha: HAFixture } }>({
       await ensureSchema()
       db = getPersistenceClient()
       expect(await getHAConnection()).not.toBeNull()
-      await use({ db, ha })
+      await use({ db, ha, holdServices })
     } finally {
       stopCalendarSync()
       stopCalDAVSync()
@@ -144,7 +145,7 @@ test("repro: one Google Calendar invite stays 1 task across due-date reminders a
   ])
 })
 
-test("native task due-date reminder & outbound write-back include line break, ticket key, attribution, and in-ticket confirmation, and HTML echoes are skipped", async ({ env: { db, ha } }) => {
+test("native task due-date reminder & outbound write-back include line break, ticket key, attribution, and in-ticket confirmation, and HTML echoes are skipped", async ({ env: { db, ha, holdServices } }) => {
   const now = Date.now()
   const dueIso = new Date(now + 30 * 60 * 1000).toISOString()
 
@@ -193,7 +194,28 @@ test("native task due-date reminder & outbound write-back include line break, ti
   })
   await expect.poll(async () => (await syncFromHA(calFixture.binding.id, freshScope, { resource: "task", action: "create" })).skipped ?? null).toBeNull()
 
+  // Simulate independent local failures after HA accepts delivery.
+  await db.execute("CREATE TRIGGER fail_reminder_receipt BEFORE INSERT ON calendar_confirmations WHEN NEW.source='ha.due_reminder' BEGIN SELECT RAISE(ABORT, 'fixture'); END")
+  await db.execute("CREATE TRIGGER fail_reminder_log BEFORE INSERT ON task_activity_log WHEN NEW.event_type='calendar_sync' BEGIN SELECT RAISE(ABORT, 'fixture'); END")
+  const ctx = await resolveIntegrationScope(db, calFixture.binding.id, calFixture.binding.generation, { resource: "task", action: "read" })
+  if (!ctx.ok) throw new Error("Missing fixture scope")
+  holdServices.push({ domain: "calendar", service: "create_event" })
+  const reminding = checkDueDates(now)
+  await expect.poll(() => ha.serviceCalls.filter(c => c.service === "create_event").length).toBe(1)
+  const competing = pushTaskToCalendar(ctx.value, taskId, createdTask.title, dueIso)
+  holdServices.pop()
+  ha.releaseService("calendar", "create_event")
+  await reminding
+  expect(await competing).toBe(false)
+  await db.execute("DROP TRIGGER fail_reminder_log")
+  resetDueDateRemindersForTests()
   await checkDueDates(now)
+  expect((await db.execute("SELECT 1 FROM task_activity_log WHERE event_type='calendar_sync'")).rows).toHaveLength(1)
+  expect((await db.execute("SELECT 1 FROM calendar_confirmations WHERE source='ha.due_reminder'")).rows).toHaveLength(0)
+  await db.execute("DROP TRIGGER fail_reminder_receipt")
+  resetDueDateRemindersForTests()
+  await checkDueDates(now)
+  expect((await db.execute("SELECT 1 FROM calendar_confirmations WHERE source='ha.due_reminder'")).rows).toHaveLength(1)
 
   const createdCalls = ha.serviceCalls.filter((c) => c.domain === "calendar" && c.service === "create_event")
   expect(createdCalls).toHaveLength(1)
@@ -212,13 +234,16 @@ test("native task due-date reminder & outbound write-back include line break, ti
 
   // Echo the created reminder back from Google Calendar wrapped in HTML and without uid
   ha.setCalendarEvents([{
-    summary: String(sentData.summary),
+    summary: "Electricity payment",
     start: String(sentData.start_date_time),
     end: String(sentData.end_date_time),
-    description: `<p>Task ${createdTask.ticket_key} is due.</p><br><p>📋 ${createdTask.ticket_key}<br>Added from Meitheal</p>`,
+    description: "<p>Added from Meitheal</p>",
   }])
 
   const echoSync = await syncFromHA(calFixture.binding.id, freshScope, { resource: "task", action: "create" })
+  expect(echoSync.failed).toBeUndefined()
+  expect(echoSync.skipped).toBeUndefined()
+  expect(echoSync.total).toBe(1)
   expect(echoSync.created).toBe(0)
   expect(Number((await db.execute("SELECT COUNT(*) AS c FROM tasks")).rows[0]?.c)).toBe(1)
 
@@ -295,11 +320,20 @@ test("native task due-date reminder & outbound write-back include line break, ti
   const callsAfter = ha.serviceCalls.filter((c) => c.domain === "calendar" && c.service === "create_event").length
   expect(callsAfter).toBe(callsBefore)
 
+  stopCalendarSync()
+  resetDueDateRemindersForTests()
+  await db.execute({ sql: "INSERT OR REPLACE INTO settings(key,value) VALUES (?,?)",
+    args: ["calendar_sync_mode", JSON.stringify("import")] })
+  await checkDueDates(now)
+  expect(ha.serviceCalls.filter(c => c.service === "create_event")).toHaveLength(callsBefore)
+  await db.execute({ sql: "INSERT OR REPLACE INTO settings(key,value) VALUES (?,?)",
+    args: ["calendar_sync_modes", JSON.stringify({ [ENTITY]: "bidirectional" })] })
+
   // Verify calendar_write_ticket_details=false hides ticket key in reminder summary & description
   resetDueDateRemindersForTests()
   await db.execute({
     sql: "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-    args: ["calendar_write_ticket_details", "false"],
+    args: ["calendar_write_ticket_details", JSON.stringify("false")],
   })
   await startCalendarSync({
     ...calendarFixtureConfig(calFixture.binding, 0),

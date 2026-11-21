@@ -1,3 +1,4 @@
+import { serializeCalendarDelivery } from "./calendar-delivery"
 import { createHash } from "node:crypto"
 import { homeAssistantWorkLink } from "@lib/ha-app-link"
 import {
@@ -1940,6 +1941,11 @@ export async function pushTaskToCalendar(
   _description?: string,
   _meta?: TaskCalendarMeta
 ): Promise<boolean> {
+  return serializeCalendarDelivery(taskId, context.binding.sourceId, waited =>
+    pushCurrentTaskToCalendar(context, taskId, waited))
+}
+
+async function pushCurrentTaskToCalendar(context: IntegrationScope, taskId: string, waited: boolean): Promise<boolean> {
   await ensureSchemaOnce()
   const mod = await getStoreModule(),
     client = guardWorkPersistence(mod.getPersistenceClient()),
@@ -2045,6 +2051,13 @@ export async function pushTaskToCalendar(
     return false
   expectedTaskVersion = snapshot.taskVersion
   if (!(await operationAllowed())) return false
+  if (waited && !snapshot.confirmation) {
+    const reminder = await mod.getPersistenceClient().execute({
+      sql: "SELECT 1 FROM calendar_reminder_deliveries WHERE task_id=? AND entity_id=? AND due_ms=?",
+      args: [taskId, config.entityId, Date.parse(task.due_date)],
+    })
+    if (reminder.rows.length) return false
+  }
   const externalId = snapshot.confirmation?.externalId ?? `writeback-${taskId}`
   const event = { summary: title, start, end, description }
   const success = snapshot.confirmation

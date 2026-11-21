@@ -130,5 +130,7 @@ test("filter-engine evaluates all operators, arrays, nested groups, and element 
 test("sanitizeTodoTitle strips recursive MTH prefixes, trailing DUE markers, and notification leaks", () => {
   expect(sanitizeTodoTitle("MTH-82: MTH-81: Bleed radiators — DUE — DUE")).toBe("Bleed radiators")
   expect(sanitizeTodoTitle("MTH-4: MTH-3: Check filter Task MTH-3 is due. Open in Meitheal: /tasks")).toBe("Check filter")
+  expect(sanitizeTodoTitle("ISO-9001: Renew certification")).toBe("ISO-9001: Renew certification")
+  expect(sanitizeTodoTitle("HOME-12: ISO-9001: Renew certification", "HOME")).toBe("ISO-9001: Renew certification")
   expect(sanitizeTodoTitle("MTH-1: ")).toBe("MTH-1: ")
 })

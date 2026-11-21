@@ -56,6 +56,11 @@ test("packaged task history preserves JSON and protects successes, errors and en
       expect(result.headers()["location"], alias).toBeUndefined()
     }
   }
+  for (const actor of ["n8n", "nodered"]) {
+    const filtered = await request.get(path + "/timeline?actor_type=" + actor + "&event_type=calendar_sync")
+    expect(filtered.status()).toBe(200)
+    expect(await filtered.json()).toMatchObject({ events: [], total: 0 })
+  }
   const invalid = await request.get(path + "/timeline?actor_type=not-an-actor")
   expect(invalid.status()).toBe(400)
   expect(invalid.headers()["cache-control"]).toBe(noStore)

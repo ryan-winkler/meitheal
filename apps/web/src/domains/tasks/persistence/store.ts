@@ -271,6 +271,15 @@ async function initializeRuntimeTables(client: Transaction): Promise<void> {
   `);
 
   await client.execute(`
+    CREATE TABLE IF NOT EXISTS calendar_reminder_deliveries (
+      request_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, entity_id TEXT NOT NULL,
+      due_ms INTEGER NOT NULL, payload TEXT NOT NULL, created_at INTEGER NOT NULL,
+      acknowledged INTEGER NOT NULL DEFAULT 0, confirmed INTEGER NOT NULL DEFAULT 0,
+      logged INTEGER NOT NULL DEFAULT 0, UNIQUE(task_id, entity_id, due_ms)
+    )
+  `);
+
+  await client.execute(`
     CREATE TABLE IF NOT EXISTS calendar_confirmations (
       confirmation_id TEXT PRIMARY KEY,
       task_id TEXT NOT NULL,

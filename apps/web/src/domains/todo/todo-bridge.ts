@@ -2,7 +2,7 @@ import type { Client } from "@libsql/client"
 import {
   ensureSchema, getPersistenceClient, TaskRepository, resolveIntegrationScope, validateIntegrationScope,
   validateTaskOperation, readTaskDeletionReceipt,
-  type BoardScope, type IntegrationScope, type TaskDeletionReceipt, type SyncTaskMutation,
+  scopeBoardAccess, type BoardScope, type IntegrationScope, type TaskDeletionReceipt, type SyncTaskMutation,
 } from "@domains/tasks"
 import { getTodoItems, addTodoItem, updateTodoItem, removeTodoItem, subscribeTodoItems, type TodoItem } from "@domains/ha"
 import { sanitizeTodoTitle } from "@lib/cleanup-corrupt-titles"
@@ -146,7 +146,7 @@ export async function syncTodoFromHA(bindingId?: string, actor?: BoardScope): Pr
 export async function mergeHATodoItems(context: IntegrationScope, items: HATodoItem[]): Promise<void> {
   const db = await client()
   if (context.binding.purpose !== "todo.sync" || context.binding.integration !== "todo" || !(await validateIntegrationScope(context, db, readOperation)).ok) throw new Error("Todo binding unavailable")
-  if (items.some(item => typeof item.uid !== "string" || !item.uid || typeof item.summary !== "string" || !sanitizeTodoTitle(item.summary)) || new Set(items.map(item => item.uid)).size !== items.length) throw new Error("Todo snapshot needs unique provider IDs and valid titles")
+  if (items.some(item => typeof item.uid !== "string" || !item.uid || typeof item.summary !== "string" || !sanitizeTodoTitle(item.summary, scopeBoardAccess(context.scope).ticketPrefix)) || new Set(items.map(item => item.uid)).size !== items.length) throw new Error("Todo snapshot needs unique provider IDs and valid titles")
   const candidates = items
   const repository = new TaskRepository(db, context.scope)
   const matches = await repository.findTasksByExternalSyncIds({ source: "ha_todo", entityId: context.binding.sourceId, externalIds: candidates.map(item => item.uid!) }, context)
@@ -156,7 +156,7 @@ export async function mergeHATodoItems(context: IntegrationScope, items: HATodoI
     const match = matches.get(uid)
     if (match?.taskDeleted || match?.suppressed) continue
     if (!match && /Added from Meitheal$/i.test(item.description ?? "")) continue
-    const title = sanitizeTodoTitle(item.summary)
+    const title = sanitizeTodoTitle(item.summary, scopeBoardAccess(context.scope).ticketPrefix)
     const status = haStatusToMeitheal(item.status ?? "needs_action")
     let description = item.description ?? null
     const previousPayload = match?.payload ? parsePayload(match.payload) : {}

@@ -1,3 +1,5 @@
+import { serializeCalendarDelivery } from "@domains/calendar/calendar-delivery"
+import { decodeCalendarSetting, ticketDetailsEnabled } from "@domains/calendar/calendar-policy"
 import { isClosedStatus } from "@lib/status-config"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import {
@@ -78,23 +80,27 @@ async function calendarReminder(context: IntegrationScope, task: Awaited<ReturnT
         }
       } catch { /* ignore invalid JSON */ }
     }
-    const dbMode = perEntityMode ?? calSettings.calendar_sync_mode
+    const dbMode = perEntityMode ?? decodeCalendarSetting(calSettings.calendar_sync_mode)
     if (dbMode === "import") return false
-    if (calSettings.calendar_write_ticket_details === "false") writeTicketDetails = false
+    writeTicketDetails = ticketDetailsEnabled(calSettings.calendar_write_ticket_details)
 
     const { getCalendarSyncConfigs } = await import("@domains/calendar")
-    const activeConfig = getCalendarSyncConfigs().find((c) => c.entityId === receiver.sourceId)
+    const bindings = (await readWorkDestinations(db))?.bindings ?? []
+    const activeConfig = getCalendarSyncConfigs().find(c => c.entityId === receiver.sourceId &&
+      bindings.some(b => b.enabled && b.integration === "calendar" && b.purpose === "calendar.sync" &&
+        b.destination.boardId === context.scope.boardId && b.sourceId === c.entityId &&
+        b.id === c.bindingId && b.generation === c.generation))
     if (activeConfig) {
       if (activeConfig.syncMode === "import") return false
       if (calSettings.calendar_write_ticket_details === undefined && activeConfig.writeTicketDetails === false) {
         writeTicketDetails = false
       }
     }
-  } catch { /* defaults */ }
+  } catch { return false }
 
   // Loop prevention: skip tasks already synced to this calendar, or already reminded for this receiver & due timestamp
   const reminderRequestId = `due-reminder-${receiver.id}-${task.id}-${task.due_ms}`
-  try {
+  const covered = async () => {
     const existingConf = await db.execute({
       sql: `SELECT confirmation_id FROM calendar_confirmations
             WHERE task_id = ?
@@ -106,8 +112,9 @@ async function calendarReminder(context: IntegrationScope, task: Awaited<ReturnT
             LIMIT 1`,
       args: [task.id, receiver.sourceId, reminderRequestId, reminderRequestId],
     })
-    if (existingConf.rows.length > 0) return false
-  } catch { /* continue if query fails */ }
+    return existingConf.rows.length > 0
+  }
+  if (await covered()) return false
 
   const operationAllowed = async () => {
     if (!(await validateIntegrationScope(context, db, { resource: "task", action: "read" })).ok ||
@@ -119,13 +126,13 @@ async function calendarReminder(context: IntegrationScope, task: Awaited<ReturnT
   }
   if (!await operationAllowed()) return false
 
-  let fullLink = link
+  let fullLink: string | undefined
   if (link && link.startsWith("/")) {
     try {
-      const { getHABaseUrl } = await import("@domains/ha/ha-connection")
+      const { getHABaseUrl } = await import("@domains/ha")
       const baseUrl = await getHABaseUrl()
-      if (baseUrl) fullLink = `${baseUrl.replace(/\/$/, "")}${link}`
-    } catch { /* keep relative link */ }
+      if (baseUrl && ["http:", "https:"].includes(new URL(baseUrl).protocol)) fullLink = `${baseUrl.replace(/\/$/, "")}${link}`
+    } catch { /* omit unavailable link */ }
   }
 
   const summary = writeTicketDetails
@@ -143,42 +150,53 @@ async function calendarReminder(context: IntegrationScope, task: Awaited<ReturnT
   const description = `${headerLine}\n\n${detailLines.join("\n")}`
 
   const { createCalendarEvent } = await import("@domains/ha")
-  const created = await createCalendarEvent(receiver.sourceId, {
-    summary,
-    start: startIso,
-    end: endIso,
-    description,
-  }, { operationAllowed })
-  if (!created) return false
+  return serializeCalendarDelivery(task.id, receiver.sourceId, async () => {
+    if (await covered()) return false
+    const reservation = await db.execute({
+      sql: `INSERT INTO calendar_reminder_deliveries
+        (request_id, task_id, entity_id, due_ms, payload, created_at) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT DO NOTHING`,
+      args: [reminderRequestId, task.id, receiver.sourceId, task.due_ms,
+        JSON.stringify({ entity_id: receiver.sourceId, summary, start: startIso, end: endIso }), Date.now()],
+    })
+    if (!reservation.rowsAffected) return false
+    const created = await createCalendarEvent(receiver.sourceId, { summary, start: startIso, end: endIso, description },
+      { operationAllowed: async () => await operationAllowed() && !await covered() })
+    if (!created) {
+      await db.execute({ sql: "DELETE FROM calendar_reminder_deliveries WHERE request_id=?", args: [reminderRequestId] })
+      return false
+    }
+    await db.execute({ sql: "UPDATE calendar_reminder_deliveries SET acknowledged=1 WHERE request_id=?", args: [reminderRequestId] })
+    await finishReminderBookkeeping()
+    return true
+  })
+}
 
-  await db.execute({
-    sql: `INSERT OR IGNORE INTO calendar_confirmations
-            (confirmation_id, task_id, request_id, provider_event_id, source, payload, created_at)
-          VALUES (?, ?, ?, ?, 'ha.due_reminder', ?, ?)`,
-    args: [
-      crypto.randomUUID(),
-      task.id,
-      reminderRequestId,
-      reminderRequestId,
-      JSON.stringify({ entity_id: receiver.sourceId, summary, start: startIso, end: endIso }),
-      Date.now(),
-    ],
-  }).catch(() => {})
-
-  await db.execute({
-    sql: `INSERT INTO task_activity_log
-            (task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at)
-          VALUES (?, 'calendar_sync', NULL, ?, 'calendar-sync', 'calendar_sync', 'calendar_sync', ?, ?, ?)`,
-    args: [
-      task.id,
-      reminderRequestId,
-      `Calendar due reminder sent to ${receiver.sourceId}`,
-      reminderRequestId,
-      Date.now(),
-    ],
-  }).catch(() => {})
-
-  return true
+// Each local insert and its completion flag commit together. Neither retry path contacts HA.
+async function finishReminderBookkeeping(): Promise<void> {
+  const db = getPersistenceClient()
+  const pending = await db.execute("SELECT request_id FROM calendar_reminder_deliveries WHERE acknowledged=1 AND (confirmed=0 OR logged=0)")
+  for (const row of pending.rows) {
+    const args = [String(row.request_id)]
+    for (const [flag, insert] of [
+      ["confirmed", `INSERT INTO calendar_confirmations (confirmation_id, task_id, request_id, provider_event_id, source, payload, created_at)
+        SELECT request_id, task_id, request_id, request_id, 'ha.due_reminder', payload, created_at`],
+      ["logged", `INSERT INTO task_activity_log (task_id, field, new_value, actor, actor_type, event_type, summary, correlation_id, created_at)
+        SELECT task_id, 'calendar_sync', request_id, 'calendar-sync', 'calendar_sync', 'calendar_sync',
+          'Calendar due reminder sent to ' || entity_id, request_id, created_at`],
+    ] as const) {
+      try {
+        await db.batch([
+          { sql: insert + ` FROM calendar_reminder_deliveries WHERE request_id=? AND ${flag}=0` +
+            (flag === "confirmed" ? " ON CONFLICT(task_id, request_id) DO NOTHING" : ""), args },
+          { sql: `UPDATE calendar_reminder_deliveries SET ${flag}=1 WHERE request_id=?`, args },
+        ], "write")
+      } catch {
+        logger.log("warn", { event: "calendar.reminder.bookkeeping_pending", domain: "notifications",
+          component: "due-date-reminders", request_id: "due-date-reminder", message: "Calendar reminder bookkeeping will retry" })
+      }
+    }
+  }
 }
 
 /** One scheduler, independent observers for every approved Board and receiver. */
@@ -188,6 +206,7 @@ export async function checkDueDates(now = Date.now()): Promise<void> {
   try {
     await ensureSchema()
     const db = getPersistenceClient()
+    await finishReminderBookkeeping()
     const configuration = await readWorkDestinations(db)
     if (!configuration) return
     // Overdue domain observation remains independent of delivery preferences.

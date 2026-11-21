@@ -199,3 +199,21 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
     await request.delete(`/api/tasks/${id}`, { headers, data: {} })
   }
 })
+
+test("Details restores the promotion button after a rejected save", async ({ page, request }) => {
+  const headers = await currentBoardWriteHeaders(request, "household", {})
+  const created = await request.post("/api/tasks", { headers, data: { title: "Promotion rollback fixture" } })
+  expect(created.status()).toBe(201)
+  const { id } = await created.json()
+  await page.goto("/tasks#kanban")
+  await page.locator(`.kanban-card[data-id="${id}"] .card-open-btn`).click()
+  const button = page.locator("#td-toggle-promote")
+  await expect(button).toHaveAttribute("aria-pressed", "false")
+  await page.route(`**/api/tasks/${id}`, route => route.request().method() === "PUT"
+    ? route.fulfill({ status: 403, json: { error: "denied" } }) : route.continue())
+  const rejected = page.waitForResponse(response => response.url().endsWith("/api/tasks/" + id) && response.status() === 403)
+  await button.click()
+  await rejected
+  await expect(button).toBeEnabled()
+  await expect(button).toHaveAttribute("aria-pressed", "false")
+})
