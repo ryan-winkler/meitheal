@@ -67,37 +67,42 @@ async function calendarReminder(context: IntegrationScope, task: Awaited<ReturnT
   const repo = new TaskRepository(db, resolved.value.scope)
   let writeTicketDetails = true
   try {
+    const calSettings = await repo.getSettings(["calendar_sync_mode", "calendar_sync_modes", "calendar_write_ticket_details"])
+    let perEntityMode: string | undefined
+    if (calSettings.calendar_sync_modes) {
+      try {
+        const parsed: unknown = JSON.parse(calSettings.calendar_sync_modes)
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const val = (parsed as Record<string, unknown>)[receiver.sourceId]
+          if (typeof val === "string") perEntityMode = val
+        }
+      } catch { /* ignore invalid JSON */ }
+    }
+    const dbMode = perEntityMode ?? calSettings.calendar_sync_mode
+    if (dbMode === "import") return false
+    if (calSettings.calendar_write_ticket_details === "false") writeTicketDetails = false
+
     const { getCalendarSyncConfigs } = await import("@domains/calendar")
     const activeConfig = getCalendarSyncConfigs().find((c) => c.entityId === receiver.sourceId)
     if (activeConfig) {
       if (activeConfig.syncMode === "import") return false
-      writeTicketDetails = activeConfig.writeTicketDetails !== false
-    } else {
-      const calSettings = await repo.getSettings(["calendar_sync_mode", "calendar_sync_modes", "calendar_write_ticket_details"])
-      let perEntityMode: string | undefined
-      if (calSettings.calendar_sync_modes) {
-        try {
-          const parsed: unknown = JSON.parse(calSettings.calendar_sync_modes)
-          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-            const val = (parsed as Record<string, unknown>)[receiver.sourceId]
-            if (typeof val === "string") perEntityMode = val
-          }
-        } catch { /* ignore invalid JSON */ }
+      if (calSettings.calendar_write_ticket_details === undefined && activeConfig.writeTicketDetails === false) {
+        writeTicketDetails = false
       }
-      const mode = perEntityMode ?? calSettings.calendar_sync_mode
-      if (mode === "import") return false
-      if (calSettings.calendar_write_ticket_details === "false") writeTicketDetails = false
     }
   } catch { /* defaults */ }
 
-  // Loop prevention: skip tasks that already originated from or are synced to this calendar
-  const dueDateStr = new Date(task.due_ms).toISOString().slice(0, 10)
-  const reminderRequestId = `due-reminder-${task.id}-${dueDateStr}`
+  // Loop prevention: skip tasks already synced to this calendar, or already reminded for this receiver & due timestamp
+  const reminderRequestId = `due-reminder-${receiver.id}-${task.id}-${task.due_ms}`
   try {
     const existingConf = await db.execute({
       sql: `SELECT confirmation_id FROM calendar_confirmations
             WHERE task_id = ?
-              AND (json_extract(payload, '$.entity_id') = ? OR request_id = ? OR provider_event_id = ?)
+              AND (
+                (source != 'ha.due_reminder' AND json_extract(payload, '$.entity_id') = ?)
+                OR request_id = ?
+                OR provider_event_id = ?
+              )
             LIMIT 1`,
       args: [task.id, receiver.sourceId, reminderRequestId, reminderRequestId],
     })
@@ -123,7 +128,9 @@ async function calendarReminder(context: IntegrationScope, task: Awaited<ReturnT
     } catch { /* keep relative link */ }
   }
 
-  const summary = `📋 ${task.ticket_key}: ${task.title} — DUE`
+  const summary = writeTicketDetails
+    ? `📋 ${task.ticket_key}: ${task.title} — DUE`
+    : `📋 ${task.title} — DUE`
   const startIso = new Date(task.due_ms).toISOString()
   const endIso = new Date(task.due_ms + 15 * 60_000).toISOString()
   const detailLines: string[] = []
@@ -132,7 +139,8 @@ async function calendarReminder(context: IntegrationScope, task: Awaited<ReturnT
     if (fullLink) detailLines.push(`Open ${task.ticket_key} in Meitheal: ${fullLink}`)
   }
   detailLines.push("Added from Meitheal")
-  const description = `Task ${task.ticket_key} is due.\n\n${detailLines.join("\n")}`
+  const headerLine = writeTicketDetails ? `Task ${task.ticket_key} is due.` : "Task reminder."
+  const description = `${headerLine}\n\n${detailLines.join("\n")}`
 
   const { createCalendarEvent } = await import("@domains/ha")
   const created = await createCalendarEvent(receiver.sourceId, {

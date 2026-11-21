@@ -95,7 +95,7 @@ async function addCalendarReminderBinding(db: Database, entityId: string, boardI
     destination: { boardId },
     allowedOperations: [{ resource: "task", action: "read" }],
   })
-  if (!admitted.ok) throw new Error(`Reminder binding approval failed: ${admitted.message}`)
+  if (!admitted.ok) throw new Error("Reminder binding approval failed")
   return admitted.binding
 }
 
@@ -137,7 +137,7 @@ test("repro: one Google Calendar invite stays 1 task across due-date reminders a
 
   // Re-sync from HA — still 1 task
   const freshScope1 = await currentBoardScope(db, "household")
-  const second = await syncFromHA(calFixture.binding.id, freshScope1, { resource: "task", action: "write" })
+  const second = await syncFromHA(calFixture.binding.id, freshScope1, { resource: "task", action: "create" })
   expect(second.created).toBe(0)
   expect((await db.execute("SELECT title FROM tasks")).rows).toEqual([
     expect.objectContaining({ title: "Veterinário Fiona" }),
@@ -167,15 +167,16 @@ test("native task due-date reminder & outbound write-back include line break, ti
     due_date: dueIso,
     labels: "[]",
     framework_payload: "{}",
-    calendar_sync_state: "pending",
     area_id: "default",
     custom_fields: "{}",
     task_type: "task",
     progress: 0,
     is_favorite: 0,
-    position: 0,
-    idempotency_key: `native-${taskId}`,
-    request_id: `req-${taskId}`,
+    parent_id: null,
+    start_date: null,
+    end_date: null,
+    color: null,
+    assigned_to: null,
   })
   const createdTask = {
     id: taskId,
@@ -190,7 +191,7 @@ test("native task due-date reminder & outbound write-back include line break, ti
     writeBack: true,
     writeTicketDetails: true,
   })
-  await expect.poll(async () => (await syncFromHA(calFixture.binding.id, freshScope, { resource: "task", action: "write" })).skipped ?? null).toBeNull()
+  await expect.poll(async () => (await syncFromHA(calFixture.binding.id, freshScope, { resource: "task", action: "create" })).skipped ?? null).toBeNull()
 
   await checkDueDates(now)
 
@@ -217,7 +218,7 @@ test("native task due-date reminder & outbound write-back include line break, ti
     description: `<p>Task ${createdTask.ticket_key} is due.</p><br><p>📋 ${createdTask.ticket_key}<br>Added from Meitheal</p>`,
   }])
 
-  const echoSync = await syncFromHA(calFixture.binding.id, freshScope, { resource: "task", action: "write" })
+  const echoSync = await syncFromHA(calFixture.binding.id, freshScope, { resource: "task", action: "create" })
   expect(echoSync.created).toBe(0)
   expect(Number((await db.execute("SELECT COUNT(*) AS c FROM tasks")).rows[0]?.c)).toBe(1)
 
@@ -274,15 +275,16 @@ test("native task due-date reminder & outbound write-back include line break, ti
     due_date: dueIso,
     labels: "[]",
     framework_payload: "{}",
-    calendar_sync_state: "pending",
     area_id: "default",
     custom_fields: "{}",
     task_type: "task",
     progress: 0,
     is_favorite: 0,
-    position: 0,
-    idempotency_key: `native-${task2Id}`,
-    request_id: `req-${task2Id}`,
+    parent_id: null,
+    start_date: null,
+    end_date: null,
+    color: null,
+    assigned_to: null,
   })
   await startCalendarSync({
     ...calendarFixtureConfig(calFixture.binding, 0),
@@ -292,6 +294,26 @@ test("native task due-date reminder & outbound write-back include line break, ti
   await checkDueDates(now)
   const callsAfter = ha.serviceCalls.filter((c) => c.domain === "calendar" && c.service === "create_event").length
   expect(callsAfter).toBe(callsBefore)
+
+  // Verify calendar_write_ticket_details=false hides ticket key in reminder summary & description
+  resetDueDateRemindersForTests()
+  await db.execute({
+    sql: "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+    args: ["calendar_write_ticket_details", "false"],
+  })
+  await startCalendarSync({
+    ...calendarFixtureConfig(calFixture.binding, 0),
+    syncMode: "bidirectional",
+    writeBack: true,
+    writeTicketDetails: true,
+  })
+  await checkDueDates(now)
+  const afterToggleOff = ha.serviceCalls.filter((c) => c.domain === "calendar" && c.service === "create_event")
+  expect(afterToggleOff).toHaveLength(callsBefore + 1)
+  const minimalReminder = afterToggleOff[afterToggleOff.length - 1]!.service_data
+  expect(minimalReminder.summary).toBe("📋 Renew passport — DUE")
+  expect(String(minimalReminder.description)).toBe("Task reminder.\n\nAdded from Meitheal")
+  expect(isMeithealOriginatedEvent(String(minimalReminder.summary), String(minimalReminder.description))).toBe(true)
 })
 
 test("WebDAV/CalDAV inbound sync skips Meitheal due-date reminders and custom-board-key loop artifacts while preserving normal events", async ({ env: { db } }) => {
@@ -381,7 +403,7 @@ END:VCALENDAR</c:calendar-data></d:prop></d:propstat>
       generation: caldavFixture.binding.generation,
     })
     await expect.poll(async () => {
-      const res = await syncCalDAVEvents(caldavFixture.binding.id, caldavFixture.scope, { resource: "task", action: "write" })
+      const res = await syncCalDAVEvents(caldavFixture.binding.id, caldavFixture.scope, { resource: "task", action: "create" })
       return res.skipped ?? null
     }).toBeNull()
 
@@ -399,13 +421,19 @@ END:VCALENDAR</c:calendar-data></d:prop></d:propstat>
 test("event identity helpers handle custom board keys, HTML descriptions, plain angle brackets, and title sanitization", () => {
   expect(isMeithealOriginatedEvent("📋 MTH-30: Veterinário Fiona — DUE", "")).toBe(true)
   expect(isMeithealOriginatedEvent("📋 HOME-12: Pay rent — DUE", "")).toBe(true)
+  expect(isMeithealOriginatedEvent("📋 Pay rent — DUE", "")).toBe(true)
   expect(isMeithealOriginatedEvent("📋 MTH-34: 📋 MTH-30: Veterinário Fiona", "")).toBe(true)
   expect(isMeithealOriginatedEvent("Dentist", "<p>Notes</p><br>Added from Meitheal")).toBe(true)
   expect(isMeithealOriginatedEvent("Dentist", "Task HOME-12 is due.")).toBe(true)
   expect(isMeithealOriginatedEvent("Dentist", "Regular appointment")).toBe(false)
+  // Ordinary human note mentioning a ticket key must NOT be discarded
+  expect(isMeithealOriginatedEvent("Planning", "Discuss whether Task HOME-12 is due.")).toBe(false)
+  // Very long malformed input stays bounded and linear
+  expect(isMeithealOriginatedEvent("📋 " + "A".repeat(10_000), "<div".repeat(5_000))).toBe(false)
 
   expect(normalizeCalendarDescription("Budget < 500 > 200")).toBe("Budget < 500 > 200")
   expect(normalizeCalendarDescription("<p>Line 1</p><br>Line 2 &amp; more")).toBe("Line 1\n\nLine 2 & more")
+  expect(normalizeCalendarDescription("<div>Call Alice</div><div>Call Bob</div>")).toBe("Call Alice\nCall Bob")
 
   expect(sanitizeTodoTitle("MTH-34: 📋 MTH-30: Veterinário Fiona — DUE — DUE")).toBe("Veterinário Fiona")
   expect(sanitizeTodoTitle("📋 HOME-9: Water plants — DUE")).toBe("Water plants")

@@ -30,7 +30,7 @@ test("scoped MCP resolves native schemas and rejects false mutation successes", 
     expect((await agentApi.get(base + "/api/tasks", { headers })).status()).toBe(403)
     const rpc = async (method: string, params?: Record<string, unknown>, modern = false) => {
       const version = "2026-07-28"
-      const modernHeaders = modern ? { "mcp-protocol-version": version, "mcp-method": method, "mcp-name": String(params?.name ?? "") } : {}
+      const modernHeaders: Record<string, string> = modern ? { "mcp-protocol-version": version, "mcp-method": method, "mcp-name": String(params?.name ?? "") } : {}
       const supplied = modern ? { ...params, _meta: { "io.modelcontextprotocol/protocolVersion": version, "io.modelcontextprotocol/clientCapabilities": {} } } : params
       const response = await agentApi.post(origin + "/api/mcp", { headers: { ...headers, ...modernHeaders }, data: { jsonrpc: "2.0", id: 1, method, params: supplied } })
       expect(response.status()).toBe(200)

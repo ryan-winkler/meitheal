@@ -20,28 +20,29 @@ import {
   publishCommittedMarker
 } from "../../../../scripts/board-grant-journal.mjs"
 
-type GrantChange<T> = { next: T } | { unchanged: T }
-type GrantChangeResult<T> =
-  | { status: "committed" | "committed-locked" | "unchanged"; result: T }
+type GrantChange<TNext, TUnchanged = TNext> = { next: TNext } | { unchanged: TUnchanged }
+type GrantChangeResult<TNext, TUnchanged = TNext> =
+  | { status: "committed" | "committed-locked"; result: TNext }
+  | { status: "unchanged"; result: TUnchanged }
   | { status: "locked" }
 
 /**
  * The caller checks current Board authority inside the supplied writer.
  * Journal the next audience outside App backups and commit SQLite before publication.
  */
-export async function changeBoardGrants<T>(
+export async function changeBoardGrants<TNext, TUnchanged = TNext>(
   db: Pick<Client, "transaction">,
   principal: VerifiedPrincipal,
-  change: (tx: Transaction, revision: string | null) => Promise<GrantChange<T>>,
+  change: (tx: Transaction, revision: string | null) => Promise<GrantChange<TNext, TUnchanged>>,
   path = getBoardGrantPath(db)
-): Promise<GrantChangeResult<T>> {
+): Promise<GrantChangeResult<TNext, TUnchanged>> {
   // The journal owns its epoch update and publication boundary. A normal
   // continuity guard would reject its intentional epoch change before commit.
   db = unwrapRegisteredContinuityClient(db)
   const transaction = await acquireWriteTransaction(db)
   let next: string | undefined
   let commitAttempted = false
-  let committed: T
+  let committed: TNext
   try {
     const revision = await databaseRevision(transaction)
     // Only enrolled, independently current installations can change authority.

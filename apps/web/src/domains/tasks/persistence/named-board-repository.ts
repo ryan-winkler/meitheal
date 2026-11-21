@@ -141,7 +141,7 @@ export class NamedBoardRepository {
       validatedKey = check.key
     }
     const boardId = randomUUID()
-    return changeBoardGrants<{ id: string; ticketPrefix: string } | "duplicate-key">(
+    return changeBoardGrants<{ id: string; ticketPrefix: string }, "duplicate-key">(
       this.db,
       owner,
       async (tx) => {
