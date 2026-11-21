@@ -52,11 +52,14 @@ export const POST: APIRoute = async context => {
       const mode = modes[binding.sourceId] ?? body.sync_mode ?? "bidirectional"
       const interval = body.interval_ms ?? 300000
       if (!["import", "export", "bidirectional"].includes(String(mode)) || typeof interval !== "number" || !Number.isFinite(interval) || interval < 0 ||
-        body.write_back !== undefined && typeof body.write_back !== "boolean") return apiError("Choose a valid Calendar mode and interval.", 400)
+        (body.write_back !== undefined && typeof body.write_back !== "boolean") ||
+        (body.write_ticket_details !== undefined && typeof body.write_ticket_details !== "boolean")) return apiError("Choose a valid Calendar mode and interval.", 400)
       const approved = await requestIntegrationBinding(scope, "calendar", "calendar.sync", { binding_id: binding.id, generation: binding.generation }, operation)
       if (!approved?.ok) return apiError("Calendar approval changed.", 409)
+      const writeTicketDetails = body.write_ticket_details ?? true
       await startCalendarSync({ bindingId: binding.id, generation: binding.generation, entityId: binding.sourceId, syncEnabled: true,
-        syncMode: mode as CalendarSyncMode, writeBack: mode !== "import" && body.write_back === true, syncIntervalMs: interval })
+        syncMode: mode as CalendarSyncMode, writeBack: mode !== "import" && body.write_back === true,
+        writeTicketDetails: mode !== "import" ? writeTicketDetails : false, syncIntervalMs: interval })
     }
     return apiJson({ ok: true })
   }, { write: true })(context)

@@ -44,6 +44,13 @@ export function stopDueDateReminders(): void {
   interval = null
 }
 
+/** Reset in-memory reminder dedup state between test runs. */
+export function resetDueDateRemindersForTests(): void {
+  stopDueDateReminders()
+  sentReminders.clear()
+  processing = false
+}
+
 async function resolveObserver(binding: WorkBinding): Promise<IntegrationScope | null> {
   const result = await resolveIntegrationScope(getPersistenceClient(), binding.id, binding.generation, { resource: "task", action: "read" })
   return result.ok ? result.value : null
@@ -55,6 +62,48 @@ async function calendarReminder(context: IntegrationScope, task: Awaited<ReturnT
   const db = getPersistenceClient()
   const resolved = await resolveIntegrationScope(db, receiver.id, receiver.generation, { resource: "task", action: "read" }, context.scope, { resource: "task", action: "read" })
   if (!resolved.ok) return false
+
+  // Respect active calendar sync mode & writeTicketDetails preference (fail-closed on import-only)
+  const repo = new TaskRepository(db, resolved.value.scope)
+  let writeTicketDetails = true
+  try {
+    const { getCalendarSyncConfigs } = await import("@domains/calendar")
+    const activeConfig = getCalendarSyncConfigs().find((c) => c.entityId === receiver.sourceId)
+    if (activeConfig) {
+      if (activeConfig.syncMode === "import") return false
+      writeTicketDetails = activeConfig.writeTicketDetails !== false
+    } else {
+      const calSettings = await repo.getSettings(["calendar_sync_mode", "calendar_sync_modes", "calendar_write_ticket_details"])
+      let perEntityMode: string | undefined
+      if (calSettings.calendar_sync_modes) {
+        try {
+          const parsed: unknown = JSON.parse(calSettings.calendar_sync_modes)
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            const val = (parsed as Record<string, unknown>)[receiver.sourceId]
+            if (typeof val === "string") perEntityMode = val
+          }
+        } catch { /* ignore invalid JSON */ }
+      }
+      const mode = perEntityMode ?? calSettings.calendar_sync_mode
+      if (mode === "import") return false
+      if (calSettings.calendar_write_ticket_details === "false") writeTicketDetails = false
+    }
+  } catch { /* defaults */ }
+
+  // Loop prevention: skip tasks that already originated from or are synced to this calendar
+  const dueDateStr = new Date(task.due_ms).toISOString().slice(0, 10)
+  const reminderRequestId = `due-reminder-${task.id}-${dueDateStr}`
+  try {
+    const existingConf = await db.execute({
+      sql: `SELECT confirmation_id FROM calendar_confirmations
+            WHERE task_id = ?
+              AND (json_extract(payload, '$.entity_id') = ? OR request_id = ? OR provider_event_id = ?)
+            LIMIT 1`,
+      args: [task.id, receiver.sourceId, reminderRequestId, reminderRequestId],
+    })
+    if (existingConf.rows.length > 0) return false
+  } catch { /* continue if query fails */ }
+
   const operationAllowed = async () => {
     if (!(await validateIntegrationScope(context, db, { resource: "task", action: "read" })).ok ||
       !(await validateIntegrationScope(resolved.value, db, { resource: "task", action: "read" })).ok ||
@@ -64,12 +113,63 @@ async function calendarReminder(context: IntegrationScope, task: Awaited<ReturnT
       current.deferred_at == null && !isClosedStatus(current.status))
   }
   if (!await operationAllowed()) return false
-  const { callHAService } = await import("@domains/ha")
-  await callHAService("calendar", "create_event", {
-    summary: `📋 ${task.ticket_key}: ${task.title} — DUE`,
-    start_date_time: new Date(task.due_ms).toISOString(), end_date_time: new Date(task.due_ms + 15 * 60_000).toISOString(),
-    description: `Task ${task.ticket_key} is due.${link ? ` Open in Meitheal: ${link}` : ""}`,
-  }, { entity_id: receiver.sourceId }, { operationAllowed })
+
+  let fullLink = link
+  if (link && link.startsWith("/")) {
+    try {
+      const { getHABaseUrl } = await import("@domains/ha/ha-connection")
+      const baseUrl = await getHABaseUrl()
+      if (baseUrl) fullLink = `${baseUrl.replace(/\/$/, "")}${link}`
+    } catch { /* keep relative link */ }
+  }
+
+  const summary = `📋 ${task.ticket_key}: ${task.title} — DUE`
+  const startIso = new Date(task.due_ms).toISOString()
+  const endIso = new Date(task.due_ms + 15 * 60_000).toISOString()
+  const detailLines: string[] = []
+  if (writeTicketDetails) {
+    detailLines.push(`📋 ${task.ticket_key}`)
+    if (fullLink) detailLines.push(`Open ${task.ticket_key} in Meitheal: ${fullLink}`)
+  }
+  detailLines.push("Added from Meitheal")
+  const description = `Task ${task.ticket_key} is due.\n\n${detailLines.join("\n")}`
+
+  const { createCalendarEvent } = await import("@domains/ha")
+  const created = await createCalendarEvent(receiver.sourceId, {
+    summary,
+    start: startIso,
+    end: endIso,
+    description,
+  }, { operationAllowed })
+  if (!created) return false
+
+  await db.execute({
+    sql: `INSERT OR IGNORE INTO calendar_confirmations
+            (confirmation_id, task_id, request_id, provider_event_id, source, payload, created_at)
+          VALUES (?, ?, ?, ?, 'ha.due_reminder', ?, ?)`,
+    args: [
+      crypto.randomUUID(),
+      task.id,
+      reminderRequestId,
+      reminderRequestId,
+      JSON.stringify({ entity_id: receiver.sourceId, summary, start: startIso, end: endIso }),
+      Date.now(),
+    ],
+  }).catch(() => {})
+
+  await db.execute({
+    sql: `INSERT INTO task_activity_log
+            (task_id, field, old_value, new_value, actor, actor_type, event_type, summary, correlation_id, created_at)
+          VALUES (?, 'calendar_sync', NULL, ?, 'calendar-sync', 'calendar_sync', 'calendar_sync', ?, ?, ?)`,
+    args: [
+      task.id,
+      reminderRequestId,
+      `Calendar due reminder sent to ${receiver.sourceId}`,
+      reminderRequestId,
+      Date.now(),
+    ],
+  }).catch(() => {})
+
   return true
 }
 
