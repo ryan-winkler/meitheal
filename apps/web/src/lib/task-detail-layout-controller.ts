@@ -24,7 +24,7 @@ function applyOrder(list: HTMLElement, order: readonly string[]): void {
   const items = layoutItems(list)
   const byId = new Map(items.map(item => [item.dataset.layoutItem, item]))
   const focus = document.activeElement
-  let next = items[0] ?? null
+  let next: HTMLElement | null = items[0] ?? null
 
   for (const id of order) {
     const item = byId.get(id)

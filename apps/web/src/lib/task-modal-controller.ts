@@ -2038,7 +2038,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             btn.disabled = true;
             btn.setAttribute("aria-pressed", String(nextPromoted));
             try {
-              const saved = await saveTD("is_promoted", nextPromoted);
+              const saved: unknown = await saveTD("is_promoted", nextPromoted);
               if (search && generation !== detailGeneration) return;
               if (saved === false) {
                 btn.setAttribute("aria-pressed", String(wasPromoted));

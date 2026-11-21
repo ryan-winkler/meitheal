@@ -17,7 +17,7 @@ let serverLayoutJson = passedServerLayout ?? null
 if (scope === "server" && passedServerLayout === undefined) {
   try {
     const client = getPersistenceClient()
-    await ensureSchema(client)
+    await ensureSchema()
     const stored = await new SettingsRepository(client).getByKeys([taskDetailServerSettingKey])
     const raw = stored[taskDetailServerSettingKey]
     if (typeof raw === "string" && raw.trim()) serverLayoutJson = raw

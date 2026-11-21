@@ -52,7 +52,7 @@ const createBoard: APIRoute = async (context) => {
   if (result.status === "unchanged" && result.result === "duplicate-key")
     return apiError("That Board key is already in use by another Board. Choose a unique key.", 409)
   if (result.status === "committed") return apiJson(result.result, 201)
-  if (result.status === "committed-locked")
+  if (result.status === "committed-locked" && result.result && typeof result.result === "object")
     return apiJson({ ...result.result, accessPending: true }, 202)
   return apiError("Board access is temporarily locked.", 503)
 }

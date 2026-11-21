@@ -1670,10 +1670,10 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
             continueCapture(form.dataset.toastCreated || "Task created!")
             return
           }
-          if (created.task_kind !== "quick_capture") queueCreatedTask(created.id)
+          if (created && created.task_kind !== "quick_capture") queueCreatedTask(created.id)
           submitting = false
           closeNewTaskModal()
-          showTaskCreatedToast(created.ticket_key ?? null, created.id, finalTitle)
+          showTaskCreatedToast(created?.ticket_key ?? null, created?.id ?? "", finalTitle)
         } catch {
           if (session !== captureSession || signal.aborted) return
           if (confirmed) {

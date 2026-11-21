@@ -22,7 +22,7 @@ const mentionUser = verifiedIngressUser(Astro.locals)
 let serverLayoutJson: string | null = null
 try {
   const client = getPersistenceClient()
-  await ensureSchema(client)
+  await ensureSchema()
   const stored = await new SettingsRepository(client).getByKeys([taskDetailServerSettingKey])
   const raw = stored[taskDetailServerSettingKey]
   if (typeof raw === "string" && raw.trim()) serverLayoutJson = raw

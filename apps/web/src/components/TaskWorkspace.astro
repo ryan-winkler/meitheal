@@ -712,7 +712,7 @@ if (groupByProject) {
                           class="kanban-promote-star"
                           data-promote-toggle
                           data-id={String(task.id)}
-                          aria-pressed={String(promoted)}
+                          aria-pressed={promoted ? "true" : "false"}
                           title={promoted ? t("kanban.demote_card", locale) : t("kanban.promote_card", locale)}
                           aria-label={`${promoted ? t("kanban.demote_card", locale) : t("kanban.promote_card", locale)}: ${String(task.title)}`}
                         >
