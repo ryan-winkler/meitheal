@@ -402,31 +402,33 @@ function bindAppearanceForm(form: HTMLFormElement): void {
       btn.disabled = true
       btn.classList.add("btn-loading")
     }
+    // Persist the draft as it was when Save was pressed; later edits stay unsaved.
+    const submitted = cloneAppearanceSnapshot(draft)
     try {
       // 1. Persist Theme (server-backed setting) if changed
-      if (isLookAndFeel && draft.theme && draft.theme !== committed.theme) {
-        if (draft.theme === "custom" && !readAppearanceValue("meitheal-custom-theme-css")) {
+      if (isLookAndFeel && submitted.theme && submitted.theme !== committed.theme) {
+        if (submitted.theme === "custom" && !readAppearanceValue("meitheal-custom-theme-css")) {
           showToast("Import a CSS file first to use a custom theme.", "error")
           return
         }
-        if (isThemeMode(draft.theme)) {
-          await saveSetting("theme", draft.theme)
+        if (isThemeMode(submitted.theme)) {
+          await saveSetting("theme", submitted.theme)
           await clearSetupTheme()
-          setTheme(draft.theme)
+          setTheme(submitted.theme)
         }
       }
 
       // 2. Persist Match HA Theme & Accent to localStorage
       if (isLookAndFeel) {
-        if (draft.matchHaTheme) localStorage.setItem(HA_THEME_MATCH_KEY, "1")
+        if (submitted.matchHaTheme) localStorage.setItem(HA_THEME_MATCH_KEY, "1")
         else localStorage.removeItem(HA_THEME_MATCH_KEY)
 
-        if (draft.accent) localStorage.setItem(ACCENT_KEY, draft.accent)
+        if (submitted.accent) localStorage.setItem(ACCENT_KEY, submitted.accent)
         else localStorage.removeItem(ACCENT_KEY)
       }
 
       // 3. Persist appearance preferences to localStorage, keeping keys from newer versions
-      const nextStored = resolveFullAppearance(draft.appearance)
+      const nextStored = resolveFullAppearance(submitted.appearance)
       let previous: Record<string, unknown> = {}
       try {
         const stored: unknown = JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY) ?? "{}")
@@ -436,10 +438,11 @@ function bindAppearanceForm(form: HTMLFormElement): void {
       applyAppearancePreferences(nextStored)
       if (isLookAndFeel) {
         refreshHAThemeMatch()
-        if (!matchesHaPalette()) applyPersonalAccent(root, draft.accent ?? null)
+        if (!matchesHaPalette()) applyPersonalAccent(root, submitted.accent ?? null)
       }
 
-      committed = cloneAppearanceSnapshot(draft)
+      committed = submitted
+      if (isAppearanceDraftDirty(committed, draft)) applySnapshotPreview(draft)
       updateDirtyUi()
       status.textContent = status.dataset.saved ?? "Saved."
       showToast("common.updated")
