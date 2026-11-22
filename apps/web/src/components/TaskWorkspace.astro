@@ -1216,11 +1216,20 @@ if (groupByProject) {
 
   /* View-specific toolbar actions: see <style is:global> block above */
   .kanban-fields-panel {
-    margin-bottom: 12px;
-    max-width: 280px;
+    position: absolute;
+    top: 0;
+    inset-inline-end: 37px;
+    z-index: 245;
+    width: min(310px, calc(100vw - 24px));
+    margin-bottom: 0;
     opacity: 1;
     transform: translateY(0);
     transition: opacity 200ms ease, transform 200ms ease;
+  }
+  @media (max-width: 768px) {
+    .kanban-fields-panel {
+      inset-inline-end: 12px;
+    }
   }
   .kanban-fields-panel.hidden {
     display: none !important;

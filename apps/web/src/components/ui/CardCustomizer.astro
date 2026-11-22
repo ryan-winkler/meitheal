@@ -61,8 +61,8 @@ const { class: className, boardId = "household" } = Astro.props
   </div>
 </div>
 
-<style>
-/* Reusing column-customizer styles but scoped */
+<style is:global>
+/* Reusing column-customizer styles but scoped by .card-customizer BEM classes */
 .card-customizer {
   display: block;
 }
@@ -110,6 +110,11 @@ const { class: className, boardId = "household" } = Astro.props
   padding: 0.25rem;
   border-radius: var(--radius-sm);
 }
+.card-customizer__label input[type="checkbox"] {
+  accent-color: var(--accent);
+  flex-shrink: 0;
+  margin: 0;
+}
 .card-customizer__label:hover {
   background: var(--bg-hover);
 }
@@ -150,12 +155,13 @@ const { class: className, boardId = "household" } = Astro.props
   padding: 2px;
 }
 .card-density-btn {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.25rem;
-  padding: 0.25rem 0.5rem;
+  padding: 0.25rem 0.375rem;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -340,7 +346,11 @@ const { class: className, boardId = "household" } = Astro.props
       checkbox.checked = activeSet.includes(def.name)
 
       const span = document.createElement("span")
-      span.textContent = def.name
+      const builtInLabels: Record<string, string> = {
+        sprint: "Sprint",
+        story_points: "Story points",
+      }
+      span.textContent = builtInLabels[def.name] ?? def.name
 
       checkbox.addEventListener("change", () => {
         const checked = Array.from(list.querySelectorAll<HTMLInputElement>("input[data-custom-field-name]"))
