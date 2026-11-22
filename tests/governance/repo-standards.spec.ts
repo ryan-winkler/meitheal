@@ -277,7 +277,6 @@ test("Evergreen Carbon surface rules, indigo chrome allowlist, and Bucket 2 opti
 
   for (const file of listFilesRecursive(webSrcRoot, [".css", ".astro", ".ts", ".tsx", ".mjs"])) {
     const rel = relative(webSrcRoot, file).replace(/\\/g, "/");
-    if (rel.endsWith(".test.ts")) continue;
     const content = readFileSync(file, "utf8");
 
     if (/backdrop-filter|backdrop-blur-/.test(content)) {
