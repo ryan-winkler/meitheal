@@ -119,9 +119,9 @@ registry_login() {
 }
 
 # Call only after the exact local candidate has passed smoke and the Green receipt has passed.
+# Sets published_digest to the verified registry digest.
 publish_image() {
   local arch=$1 qualified_id=$2 metadata image platform image_id existing_id digest
-  local -n result=$3
   require_current_source
   metadata="$(image_metadata "$arch")"
   image="$(jq -er .image <<< "$metadata")"
@@ -142,7 +142,7 @@ publish_image() {
 
   [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'Expected a single published digest'
   verify_public_pull "$arch" "$digest" "$qualified_id" >&2
-  result=$digest
+  published_digest=$digest
 }
 
 if [[ "$1" == stage ]]; then
@@ -168,8 +168,10 @@ if [[ "$1" == promote ]]; then
   require_current_source
   check_app_checkout "$destination"
   registry_login "$4"
-  publish_image aarch64 "$3" arm_digest
-  publish_image amd64 "$2" amd_digest
+  publish_image aarch64 "$3"
+  arm_digest=$published_digest
+  publish_image amd64 "$2"
+  amd_digest=$published_digest
   write_stage "$destination" "$amd_digest" "$2" "$arm_digest" "$3"
   exit
 fi
@@ -214,5 +216,5 @@ fi
 bash scripts/smoke-app-release-image.sh podman "$image_id" "$revision" "$arch" "$platform" "$version" "$3"
 
 registry_login "$4"
-publish_image "$arch" "$3" published_digest
+publish_image "$arch" "$3"
 printf 'image=%s\ndigest=%s\n' "$image" "$published_digest"
