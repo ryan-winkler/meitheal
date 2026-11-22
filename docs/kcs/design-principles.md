@@ -1,4 +1,7 @@
 ---
+type: "Reference"
+title: "Design engineering and UX principles"
+description: "Visual, interaction and usability standards for Meitheal interfaces."
 okf_version: "0.2"
 ---
 
