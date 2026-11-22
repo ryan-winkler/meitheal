@@ -425,9 +425,14 @@ function bindAppearanceForm(form: HTMLFormElement): void {
         else localStorage.removeItem(ACCENT_KEY)
       }
 
-      // 3. Persist appearance preferences to localStorage
+      // 3. Persist appearance preferences to localStorage, keeping keys from newer versions
       const nextStored = resolveFullAppearance(draft.appearance)
-      localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(nextStored))
+      let previous: Record<string, unknown> = {}
+      try {
+        const stored: unknown = JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY) ?? "{}")
+        if (stored && typeof stored === "object" && !Array.isArray(stored)) previous = stored as Record<string, unknown>
+      } catch { /* A valid save replaces malformed stored preferences. */ }
+      localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify({ ...previous, ...nextStored }))
       applyAppearancePreferences(nextStored)
       if (isLookAndFeel) {
         refreshHAThemeMatch()
