@@ -7,6 +7,8 @@
  *      Subtasks: inline form with type inference from parent.
  */
 
+import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
+import { defaultChildTaskType, normalizeEditableTaskType } from "@lib/task-editor-fields"
 import { showToast } from "@lib/toast"
 
 export interface LabelsSubtasksDeps {
@@ -101,20 +103,25 @@ export function initLabelsAndSubtasks({ saveTD, getCurrentTaskId, openTaskDetail
     const submitSubtask = async () => {
       const title = addSubInput.value.trim()
       if (!title) return
-      addSubInput.disabled = true
       const currentTaskId = getCurrentTaskId()
+      if (!currentTaskId) return
+      addSubInput.disabled = true
       try {
         const parentAreaEl = document.getElementById("td-area") as HTMLSelectElement | null
+        const parentProjectEl = document.getElementById("td-project") as HTMLSelectElement | null
         const parentTypeEl = document.getElementById("td-task-type") as HTMLSelectElement | null
-        const parentType = parentTypeEl?.value ?? "task"
-        const childType = parentType === "epic" ? "story" : "task"
-        const res = await fetch(`${window.__ingress_path || ""}/api/tasks`, {
+        const childType = defaultChildTaskType(parentTypeEl?.value)
+        const ctx = currentTaskApiContext()
+        const areaId = parentAreaEl?.value || null
+        const projectId = parentProjectEl?.value || null
+        const res = await fetch("/api/tasks", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" },
           body: JSON.stringify({
             title,
             parent_id: currentTaskId,
-            area_id: parentAreaEl?.value ?? "default",
+            ...(areaId ? { area_id: areaId } : {}),
+            ...(projectId ? { project_id: projectId } : {}),
             task_type: childType,
             status: "pending",
           }),
@@ -122,20 +129,43 @@ export function initLabelsAndSubtasks({ saveTD, getCurrentTaskId, openTaskDetail
         if (res.ok) {
           addSubInput.value = ""
           addSubForm.classList.add("hidden")
+          addSubForm.classList.remove("flex")
           addSubBtn.classList.remove("hidden")
           openTaskDetail(String(currentTaskId))
-          showToast(`Subtask "${title}" created`)
+          document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "child-created" } }))
+          showToast(`Child item "${title}" created`)
         } else {
-          const err = await res.json().catch(() => ({ error: "Failed to create subtask" }))
-          showToast(err.error ?? "Failed to create subtask", "error")
+          const err = await res.json().catch(() => ({ error: "Failed to create child item" }))
+          showToast(err.error ?? err.detail ?? "Failed to create child item", "error")
         }
       } catch {
-        showToast("Network error creating subtask", "error")
+        showToast("Network error creating child item", "error")
       } finally {
         addSubInput.disabled = false
       }
     }
     addSubSubmit.addEventListener("click", submitSubtask, opts)
+    document.getElementById("td-add-subtask-full-btn")?.addEventListener("click", () => {
+      const currentTaskId = getCurrentTaskId()
+      if (!currentTaskId || !window.openNewTaskModal) return
+      const titleInput = document.getElementById("td-title") as HTMLTextAreaElement | null
+      const idEl = document.getElementById("td-id")
+      const parentTypeEl = document.getElementById("td-task-type") as HTMLSelectElement | null
+      const parentAreaEl = document.getElementById("td-area") as HTMLSelectElement | null
+      const parentProjectEl = document.getElementById("td-project") as HTMLSelectElement | null
+      const ticketText = idEl?.textContent?.trim() ?? ""
+      window.openNewTaskModal("standard_action", {
+        parent: {
+          parentId: currentTaskId,
+          parentTitle: titleInput?.value.trim() || "Parent item",
+          parentTicketKey: ticketText.startsWith("#") ? null : ticketText || null,
+          parentType: normalizeEditableTaskType(parentTypeEl?.value),
+          areaId: parentAreaEl?.value || null,
+          projectId: parentProjectEl?.value || null,
+        },
+        resumeOriginTaskId: currentTaskId,
+      })
+    }, opts)
     addSubInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") submitSubtask()
     }, opts)

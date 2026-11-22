@@ -47,6 +47,11 @@ function carryCardBlockSizes(current: HTMLElement, replacement: HTMLElement): vo
   }
 }
 
+let kanbanMutationEpoch = 0
+export function bumpKanbanMutationEpoch(): number {
+  return ++kanbanMutationEpoch
+}
+
 export function initKanbanPage(signal: AbortSignal): void {
   const shell = document.getElementById("kanban-shell")
   const initialBoard = shell?.querySelector<HTMLElement>("#kanban-board")
@@ -136,6 +141,7 @@ export function initKanbanPage(signal: AbortSignal): void {
     document.addEventListener("focusin", markFocusMoved, { signal: focusLifetime.signal })
     document.addEventListener("pointerdown", markFocusMoved, { signal: focusLifetime.signal })
     const statusSaved = focus?.afterSave === "status" || focus?.afterSave === "lane-move"
+    const loadEpoch = kanbanMutationEpoch
     board.setAttribute("aria-busy", "true")
     if (!dataOnly) renderStatus(window.mI18n?.get("kanban.board_loading") ?? "Loading board…")
 
@@ -154,7 +160,7 @@ export function initKanbanPage(signal: AbortSignal): void {
       const html = new DOMParser().parseFromString(await response.text(), "text/html")
       const replacement = html.querySelector<HTMLElement>('#kanban-board[data-available="true"]')
       if (request.signal.aborted || signal.aborted) return
-      if (dataOnly && location.href !== origin) {
+      if (dataOnly && (location.href !== origin || loadEpoch !== kanbanMutationEpoch)) {
         renderStatus("")
         return
       }
@@ -178,8 +184,16 @@ export function initKanbanPage(signal: AbortSignal): void {
         ? focusMovedCard
         : activeInBoard || (focus && (!focus.afterSave || statusSaved) && active === document.body))
       const previousControl = activeInBoard && !focusMovedCard && (focus?.afterSave || grouping === "project") ? active : null
-      const scroll = new Map(Array.from(board.querySelectorAll<HTMLElement>(".kanban-column"), lane =>
-        [lane.dataset.status, lane.querySelector(".kanban-cards")?.scrollTop ?? 0] as const))
+      const scroll = new Map<string, number>()
+      for (const lane of board.querySelectorAll<HTMLElement>(".kanban-column")) {
+        const laneKey = lane.dataset.status ?? ""
+        scroll.set(`lane::${laneKey}`, lane.querySelector(".kanban-cards")?.scrollTop ?? 0)
+        for (const group of lane.querySelectorAll<HTMLElement>(".swimlane-group")) {
+          const groupKey = group.dataset.groupKey ?? group.dataset.swimlaneType ?? ""
+          const list = group.querySelector<HTMLElement>(".swimlane-cards")
+          if (groupKey && list) scroll.set(`group::${groupKey}::${laneKey}`, list.scrollTop)
+        }
+      }
       const horizontal = board.scrollLeft
       for (const cssClass of board.classList) {
         if (cssClass.startsWith("density-") || cssClass.startsWith("hide-field-")) replacement.classList.add(cssClass)
@@ -211,10 +225,18 @@ export function initKanbanPage(signal: AbortSignal): void {
       const promotedNote = shell?.querySelector<HTMLElement>("[data-kanban-promoted-note]")
       if (promotedNote) promotedNote.hidden = html.querySelector("[data-kanban-promoted-note]")?.hasAttribute("hidden") !== false
       for (const lane of board.querySelectorAll<HTMLElement>(".kanban-column")) {
+        const laneKey = lane.dataset.status ?? ""
         if (lane.dataset.status) setKanbanPage(url, lane.dataset.status, Number(lane.dataset.page))
         const list = lane.querySelector(".kanban-cards")
         const revealDestination = lane.dataset.status === focus?.lane && (!laneMove || focusMovedCard)
-        if (list && !reset && !revealDestination) list.scrollTop = scroll.get(lane.dataset.status) ?? 0
+        if (list && !reset && !revealDestination) list.scrollTop = scroll.get(`lane::${laneKey}`) ?? 0
+        if (!reset && !revealDestination) {
+          for (const group of lane.querySelectorAll<HTMLElement>(".swimlane-group")) {
+            const groupKey = group.dataset.groupKey ?? group.dataset.swimlaneType ?? ""
+            const groupList = group.querySelector<HTMLElement>(".swimlane-cards")
+            if (groupKey && groupList) groupList.scrollTop = scroll.get(`group::${groupKey}::${laneKey}`) ?? 0
+          }
+        }
       }
       // A view or task-detail navigation can change the hash while a board request is in flight.
       url.hash = taskBackgroundUrl().hash

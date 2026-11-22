@@ -7,6 +7,7 @@ import {
   isValidImportance,
   isValidTaskKind,
   isValidUrgency,
+  validateParentChildType,
   VALID_TASK_TYPES,
   type TaskType,
 } from "@meitheal/domain-tasks"
@@ -36,7 +37,7 @@ export async function prepareTaskCreation(
   { id = crypto.randomUUID(), useDefaultAssignee = true }: { id?: string, useDefaultAssignee?: boolean } = {},
 ): Promise<{ ok: true; task: TaskCreationData } | { ok: false; error: string }> {
   // OA-604: Input sanitization
-  const { sanitize } = await import("../../lib/sanitize")
+  const { sanitize, sanitizeMarkdownInput } = await import("../../lib/sanitize")
   const rawTitle = typeof body.title === "string" ? body.title.trim() : ""
   const title = sanitize(rawTitle)
   if (!title) return { ok: false, error: "title is required" }
@@ -46,12 +47,12 @@ export async function prepareTaskCreation(
   const rawPriority = typeof body.priority === "number" ? body.priority : 3
   const priority = Math.min(5, Math.max(1, Math.round(rawPriority)))
 
-  // Sanitize description (strip HTML tags like title)
+  // Preserve safe Markdown syntax while stripping executable HTML outside code blocks
   if (typeof body.description === "string" && body.description.length > 10000) {
     return { ok: false, error: "description must be 10000 characters or less" }
   }
   const rawDesc = typeof body.description === "string" ? body.description : ""
-  const description = sanitize(rawDesc)
+  const description = sanitizeMarkdownInput(rawDesc)
 
   // Validate status — any non-empty alphanumeric/underscore string up to 50 chars
   const rawStatus = typeof body.status === "string" ? body.status.trim().toLowerCase().replace(/[^a-z0-9_]/g, "") : ""
@@ -81,22 +82,28 @@ export async function prepareTaskCreation(
   }
 
   // Phase 20: Agile hierarchy type
-  const rawTaskType = typeof body.task_type === "string" ? body.task_type.trim().toLowerCase() : "task"
-  const task_type: TaskType = VALID_TASK_TYPES.includes(rawTaskType as TaskType) ? (rawTaskType as TaskType) : "task"
+  let task_type: TaskType = "task"
+  if (body.task_type !== undefined && body.task_type !== null && body.task_type !== "") {
+    if (typeof body.task_type !== "string") return { ok: false, error: "task_type must be epic, story, or task" }
+    const rawTaskType = body.task_type.trim().toLowerCase()
+    if (!VALID_TASK_TYPES.includes(rawTaskType as TaskType)) {
+      return { ok: false, error: "task_type must be epic, story, or task" }
+    }
+    task_type = rawTaskType as TaskType
+  }
 
   // Validate parent_id (optional reference to another task)
-  const parent_id = typeof body.parent_id === "string" ? body.parent_id : null
+  if (body.parent_id !== undefined && body.parent_id !== null && typeof body.parent_id !== "string") {
+    return { ok: false, error: "parent_id must be a task ID string or null" }
+  }
+  const parent_id = typeof body.parent_id === "string" && body.parent_id.trim() ? body.parent_id.trim() : null
 
-  // Phase 1: Epic→Story→Task nesting validation
+  // Epic -> Sub-Epic / Story -> Task nesting validation
   if (parent_id) {
     const parentType = await repo.getParentTaskType(parent_id)
     if (parentType === null) return { ok: false, error: "Parent task not found" }
-    if (parentType === "task" && (task_type === "epic" || task_type === "story")) {
-      return { ok: false, error: `Cannot nest ${task_type} under a task — tasks can only contain other tasks` }
-    }
-    if (parentType === "story" && task_type === "epic") {
-      return { ok: false, error: "Cannot nest an epic under a story — stories can only contain tasks" }
-    }
+    const violation = validateParentChildType(parentType, task_type)
+    if (violation) return { ok: false, error: violation }
   }
 
   // Area and custom fields
@@ -122,7 +129,9 @@ export async function prepareTaskCreation(
   const progress_raw = typeof body.progress === "number" ? body.progress : 0
   const progress = Math.min(100, Math.max(0, Math.round(progress_raw)))
   const color = typeof body.color === "string" && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(body.color) ? body.color : null
-  const is_favorite = body.is_favorite ? 1 : 0
+  if (body.is_favorite !== undefined) {
+    return { ok: false, error: "is_favorite has been retired; use is_promoted instead." }
+  }
   if (body.is_promoted !== undefined && typeof body.is_promoted !== "boolean") {
     return { ok: false, error: "is_promoted must be a boolean" }
   }
@@ -185,7 +194,7 @@ export async function prepareTaskCreation(
   return { ok: true, task: {
     id, title, description, status, priority, due_date, labels,
     framework_payload, parent_id, area_id, custom_fields, project_id, goal_id,
-    start_date, end_date, progress, color, is_favorite, is_promoted,
+    start_date, end_date, progress, color, is_promoted,
     task_type, task_kind, assigned_to, checklists,
     urgency, importance, effort_minutes, effort_type, blocked_by,
     recurrence_rule, source, created_by,
@@ -195,13 +204,13 @@ export async function prepareTaskCreation(
 export function taskCreationPayload(task: TaskCreationData, ticket_number: number, now: number) {
   const {
     id, title, description, status, priority, due_date, labels, parent_id, area_id, project_id, goal_id,
-    custom_fields, start_date, end_date, progress, color, is_favorite, is_promoted, task_type, task_kind,
+    custom_fields, start_date, end_date, progress, color, is_promoted, task_type, task_kind,
     assigned_to, urgency, importance, effort_minutes, effort_type, blocked_by, source, created_by,
   } = task
   return {
     id, ticket_number, ticket_key: formatTicketKey(ticket_number), title, description, status, priority,
     due_date, labels, parent_id, area_id, project_id, goal_id, custom_fields, time_tracked: 0, start_date,
-    end_date, progress, color, is_favorite, is_promoted: Boolean(is_promoted), task_type, task_kind, assigned_to, urgency, importance,
+    end_date, progress, color, is_promoted: Boolean(is_promoted), task_type, task_kind, assigned_to, urgency, importance,
     effort_minutes, effort_type, blocked_by, source: source ?? "user", created_by: created_by ?? null,
     eisenhower_quadrant: deriveEisenhowerQuadrant(urgency ?? 0, importance ?? 0),
     eisenhower_override: 0, created_at: now, updated_at: now,

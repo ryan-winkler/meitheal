@@ -23,3 +23,9 @@ If creation fails, the form keeps its entries and reports the failure. Review th
 Run the focused `new-task-modal.spec.ts` and `new-task-capture-options.spec.ts` browser checks against a disposable local Astro dev server. They cover keyboard focus, grouped controls, 320-pixel layout, goals without assignees, delayed option reads, failed-create retry and stable multiline checklist IDs. Draft publication and ingress checks use `task-draft-browser.spec.ts` with the built App and its isolated HTTPS fixture. The legacy-draft cases seed valid prior snapshots through the guarded API and verify that unrelated edits, saving, reloading and publication preserve their values across browser timezones.
 
 A viewport resize can produce the browser's benign ResizeObserver delivery diagnostic. It does not trigger a global failure toast; actual uncaught application failures still do. The regression check covers both outcomes.
+
+
+## URL-Prefilled Creation & Parent→Child Draft Stack
+
+- **Prefill Deep Links (`?create=1`)**: Open the New Task editor pre-populated with URL query parameters (`title`, `description`, `priority`, `status`, `due_date`, `area_id`, `project_id`, `parent_id`, `task_type`, and custom fields via `apps/web/src/lib/task-url-prefill.ts`). Meitheal opens an editable draft without auto-submitting, and strips the query parameters with `history.replaceState` after hydrating so reloads do not recreate duplicate drafts. Use **Copy prefill link** inside `NewTaskModal.astro` to share or bookmark a prefilled template.
+- **Shared Editor Fields & Description Modes**: Both `NewTaskModal.astro` and `TaskDetailModal.astro` share field formatting (`task-editor-fields.ts`), draft stacking (`task-editor-draft-stack.ts`), and the **Markdown | Visual | Preview** description editor (`task-description-editor.ts`) with write-time code-preserving sanitization (`sanitizeMarkdownInput`).

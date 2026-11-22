@@ -19,6 +19,7 @@ export interface LaneRow {
   key: unknown
   label: unknown
   icon: unknown
+  color?: unknown
   position: unknown
   wip_limit: unknown
   includes: unknown
@@ -46,14 +47,14 @@ export class LaneRepository {
     const { rows: [row] } = await this.db().execute(sql`SELECT MAX(position) AS maxp FROM kanban_lanes WHERE board_id = ${this.scope.boardId}`)
     return Number(row?.maxp ?? -1)
   }
-  async create(data: { id: string; key: string; label: string; icon: string; position: number; wipLimit: number; includes: string }): Promise<void> {
+  async create(data: { id: string; key: string; label: string; icon: string; color?: string | null; position: number; wipLimit: number; includes: string }): Promise<void> {
     const now = Date.now()
     const db = this.definitionWriter(data.includes)
-    await db.execute(sql`INSERT INTO kanban_lanes (id, board_id, key, label, icon, position, wip_limit, includes, built_in, created_at, updated_at)
-      VALUES (${data.id}, ${this.scope.boardId}, ${data.key}, ${data.label}, ${data.icon}, ${data.position}, ${data.wipLimit}, ${data.includes}, 0, ${now}, ${now})`)
+    await db.execute(sql`INSERT INTO kanban_lanes (id, board_id, key, label, icon, color, position, wip_limit, includes, built_in, created_at, updated_at)
+      VALUES (${data.id}, ${this.scope.boardId}, ${data.key}, ${data.label}, ${data.icon}, ${data.color ?? null}, ${data.position}, ${data.wipLimit}, ${data.includes}, 0, ${now}, ${now})`)
   }
   async update(id: string, fields: Record<string, InValue>): Promise<LaneRow | null> {
-    const allowed = new Set(["label", "icon", "position", "wip_limit", "includes"])
+    const allowed = new Set(["label", "icon", "color", "position", "wip_limit", "includes"])
     if (Object.keys(fields).some(column => !allowed.has(column))) throw new Error("Unsupported lane field")
     const sets = Object.entries(fields).map(([column, value]) => sql`${sourceSql(column)} = ${value}`)
     if (!sets.length) return null
@@ -61,6 +62,24 @@ export class LaneRepository {
     const db = fields.includes === undefined ? this.db(true) : this.definitionWriter(String(fields.includes))
     const { rows } = await db.execute(sql`UPDATE kanban_lanes SET ${joinSql(sets)} WHERE board_id = ${this.scope.boardId} AND id = ${id} RETURNING *`)
     return rows[0] as unknown as LaneRow ?? null
+  }
+  async reorder(orderedIds: string[]): Promise<boolean> {
+    if (!orderedIds.length || new Set(orderedIds).size !== orderedIds.length) return false
+    const tx = await this.db(true).transaction("write")
+    try {
+      if (!await canReadBoardAggregate(tx, this.scope)) throw new BoardOperationError("unavailable")
+      const { rows } = await tx.execute(sql`SELECT id FROM kanban_lanes WHERE board_id = ${this.scope.boardId} ORDER BY position, id`)
+      const validIds = new Set(rows.map(r => String(r.id)))
+      if (!orderedIds.every(id => validIds.has(id))) return false
+      const rest = rows.map(r => String(r.id)).filter(id => !orderedIds.includes(id))
+      const finalOrder = [...orderedIds, ...rest]
+      const now = Date.now()
+      for (let idx = 0; idx < finalOrder.length; idx++) {
+        await tx.execute(sql`UPDATE kanban_lanes SET position = ${idx}, updated_at = ${now} WHERE board_id = ${this.scope.boardId} AND id = ${finalOrder[idx]!}`)
+      }
+      await tx.commit()
+      return true
+    } finally { tx.close() }
   }
   private definitionWriter(includes: string) {
     let statuses: unknown
@@ -74,19 +93,31 @@ export class LaneRepository {
     db = boardOperationClient(db, this.scope, { resource: "task", action: "complete" })
     return boardOperationClient(db, this.scope, { resource: "task", action: "reopen" })
   }
-  async delete(id: string, laneKey: string): Promise<void> {
+  async delete(id: string, laneKey: string, targetLaneId?: string): Promise<void> {
     let db = this.db(true)
     db = boardOperationClient(db, this.scope, { resource: "task", action: "edit" })
     db = boardOperationClient(db, this.scope, { resource: "task", action: "reopen" })
     const tx = await db.transaction("write")
     try {
       if (!await canReadBoardAggregate(tx, this.scope)) throw new BoardOperationError("unavailable")
-      const { rows: [lane] } = await tx.execute(sql`SELECT id FROM kanban_lanes WHERE board_id = ${this.scope.boardId} AND id = ${id} AND key = ${laneKey} AND built_in = 0`)
+      const { rows: [lane] } = await tx.execute(sql`SELECT id, includes FROM kanban_lanes WHERE board_id = ${this.scope.boardId} AND id = ${id} AND key = ${laneKey} AND built_in = 0`)
       if (!lane) return
-      const { rows: [replacement] } = await tx.execute(sql`SELECT id FROM kanban_lanes WHERE board_id = ${this.scope.boardId} AND id <> ${id} AND EXISTS (SELECT 1 FROM json_each(includes) WHERE value = ${STATUS.PENDING}) ORDER BY position, id LIMIT 1`)
-      if (!replacement) throw new Error("Keep a lane for pending work")
-      await tx.execute(sql`UPDATE tasks SET status = ${STATUS.PENDING}, board_column_id = ${storageBoardId(this.scope) === null ? null : String(replacement.id)}, updated_at = ${Date.now()}
-        WHERE ${taskOwnedBy(this.scope)} AND (board_column_id = ${id} OR (board_column_id IS NULL AND status = ${laneKey}))`)
+      const { rows: [replacement] } = targetLaneId
+        ? await tx.execute(sql`SELECT id, key, includes FROM kanban_lanes WHERE board_id = ${this.scope.boardId} AND id = ${targetLaneId} AND id <> ${id} LIMIT 1`)
+        : await tx.execute(sql`SELECT id, key, includes FROM kanban_lanes WHERE board_id = ${this.scope.boardId} AND id <> ${id} AND EXISTS (SELECT 1 FROM json_each(includes) WHERE value = ${STATUS.PENDING}) ORDER BY position, id LIMIT 1`)
+      if (!replacement) throw new Error("Keep a destination lane for existing tasks")
+      let targetStatus: string = STATUS.PENDING
+      try {
+        const inc = JSON.parse(String(replacement.includes ?? "[]"))
+        if (Array.isArray(inc) && typeof inc[0] === "string" && inc[0]) targetStatus = inc[0]
+      } catch { /* fallback to pending */ }
+      let oldStatuses = [laneKey]
+      try {
+        const inc = JSON.parse(String(lane.includes ?? "[]"))
+        if (Array.isArray(inc) && inc.length) oldStatuses = inc.filter((s): s is string => typeof s === "string")
+      } catch { /* fallback to laneKey */ }
+      await tx.execute(sql`UPDATE tasks SET status = ${targetStatus}, board_column_id = ${storageBoardId(this.scope) === null ? null : String(replacement.id)}, updated_at = ${Date.now()}
+        WHERE ${taskOwnedBy(this.scope)} AND (board_column_id = ${id} OR (board_column_id IS NULL AND status IN (${joinSql(oldStatuses.map(s => sql`${s}`))})))`)
       await tx.execute(sql`DELETE FROM kanban_lanes WHERE board_id = ${this.scope.boardId} AND id = ${id} AND built_in = 0`)
       await tx.commit()
     } finally { tx.close() }

@@ -52,11 +52,14 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "edit" 
 
     await ensureSchema()
     const repo = new TaskRepository(getPersistenceClient(), scope)
+    const ok = body.scope === "table"
+      ? await repo.reorderTableTasks(body.ordered_ids)
+      : await repo.reorderTasks(body.ordered_ids)
 
-    if (!await repo.reorderTasks(body.ordered_ids)) {
-      return apiJson({ error: "The requested cards are no longer available to reorder", errorCode: "TASK_ORDER_CONFLICT" }, 409)
+    if (!ok) {
+      return apiJson({ error: "The requested tasks are no longer available to reorder", errorCode: "TASK_ORDER_CONFLICT" }, 409)
     }
-    apiLogger.log("info", { event: "reorder.success", domain: "tasks", component: "reorder", request_id: "kanban-reorder", message: `Reordered ${body.ordered_ids.length} tasks` })
+    apiLogger.log("info", { event: "reorder.success", domain: "tasks", component: "reorder", request_id: body.scope === "table" ? "table-reorder" : "kanban-reorder", message: `Reordered ${body.ordered_ids.length} tasks` })
 
     return new Response(
       JSON.stringify({ ok: true, count: body.ordered_ids.length }),

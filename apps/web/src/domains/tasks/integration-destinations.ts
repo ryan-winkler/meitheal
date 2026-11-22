@@ -5,7 +5,9 @@ export const WORK_DESTINATIONS_KEY = "work-destinations"
 
 /** Authority metadata and other users' choices are not generic settings payloads. */
 export function isPrivateWorkSetting(key: string): boolean {
-  return key === WORK_DESTINATIONS_KEY || key === "capture-board-preferences"
+  return key === WORK_DESTINATIONS_KEY
+    || key === "capture-board-preferences"
+    || key.startsWith("custom_fields:board:")
 }
 
 export type WorkDestination = Readonly<{ boardId: string, areaId?: string, projectId?: string }>

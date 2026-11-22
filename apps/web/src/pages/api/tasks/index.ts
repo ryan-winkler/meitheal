@@ -12,6 +12,7 @@ import type { ResultSet } from "@libsql/client"
 import { deriveEisenhowerQuadrant, VALID_TASK_TYPES, type TaskType } from "@meitheal/domain-tasks"
 import { normalizeLabelTitle } from "@domains/labels"
 import {
+  defaultTaskSortOrder,
   dispatchTaskCreation,
   ensureSchema,
   getPersistenceClient,
@@ -51,14 +52,22 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
     return receipt ? Response.json(receipt) : apiError("Capture receipt unavailable.", 404)
   }
   const sort = url.searchParams.get("sort") ?? "created_at"
-  const order = url.searchParams.get("order") === "asc" ? "ASC" as const : "DESC" as const
+  const rawOrder = url.searchParams.get("order")?.toLowerCase()
+  const order = rawOrder === "asc"
+    ? "ASC" as const
+    : rawOrder === "desc"
+      ? "DESC" as const
+      : defaultTaskSortOrder(sort)
   const limit = Math.min(500, Math.max(1, Number(url.searchParams.get("limit")) || 100))
   const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0)
 
   const taskType = url.searchParams.get("task_type")
 
+  if (url.searchParams.has("favorite")) {
+    return apiError("is_favorite has been retired; use is_promoted instead.", 400)
+  }
+
   const findOpts: Parameters<typeof repo.findAll>[0] = {
-    favorite: url.searchParams.get("favorite") === "1",
     sort,
     order,
     limit,
@@ -129,7 +138,6 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
       end_date: r.end_date ?? null,
       progress: Number(r.progress ?? 0),
       color: r.color ?? null,
-      is_favorite: Number(r.is_favorite ?? 0),
       is_promoted: Boolean(r.is_promoted),
       task_type: r.task_type ?? "task",
       task_kind: r.task_kind ?? "standard_action",
@@ -216,6 +224,9 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "create
     ...(locals.writeAbortSignal ? { signal: locals.writeAbortSignal } : {}),
   })
   if (!result.ok) {
+    if (result.errorCode === "hierarchy_invalid") {
+      return Response.json({ error: result.message ?? "Invalid task hierarchy.", errorCode: result.errorCode }, { status: 400 })
+    }
     const status = ["capture_conflict", "conflict", "legacy_key_owner_unverified"].includes(result.errorCode) ? 409
       : result.errorCode === "unavailable" ? 404 : result.errorCode === "denied" ? 403 : 400
     return Response.json({ error: result.errorCode === "capture_conflict" ? "Capture already submitted. Check its receipt before retrying."

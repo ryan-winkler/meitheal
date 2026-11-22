@@ -332,3 +332,30 @@ export function getBotName(owner: Owner): string | null {
   if (!owner.startsWith("bot:")) return null
   return owner.slice(4)
 }
+
+// --- Agile Task Hierarchy Invariants (Epic / Story / Task) ---
+
+export const MAX_TASK_HIERARCHY_DEPTH = 4
+
+export const ALLOWED_CHILD_TYPES = {
+  epic: ["epic", "story", "task"],
+  story: ["task"],
+  task: ["task"],
+} as const satisfies Record<"epic" | "story" | "task", readonly ("epic" | "story" | "task")[]>
+
+export function isAllowedChildType(parentType: string, childType: string): boolean {
+  const allowed = ALLOWED_CHILD_TYPES[parentType as keyof typeof ALLOWED_CHILD_TYPES]
+  return Array.isArray(allowed) ? (allowed as readonly string[]).includes(childType) : false
+}
+
+/** Return a clear human-readable violation when parent/child types cannot nest, or null when valid. */
+export function validateParentChildType(parentType: string, childType: string): string | null {
+  if (isAllowedChildType(parentType, childType)) return null
+  if (parentType === "task" && (childType === "epic" || childType === "story")) {
+    return `Cannot nest ${childType} under a task — tasks can only contain other tasks.`
+  }
+  if (parentType === "story" && (childType === "epic" || childType === "story")) {
+    return `Cannot nest ${childType} under a story — stories can only contain tasks.`
+  }
+  return `Cannot nest a ${childType} under a ${parentType}.`
+}

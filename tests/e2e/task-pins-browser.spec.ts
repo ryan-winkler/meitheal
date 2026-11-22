@@ -55,7 +55,7 @@ test("personal pins work in the mobile drawer and reconcile Details without chan
       const records = []
       for (let i = 0; i < 26; i++) {
         const title = i === 25 ? longTitle : `Synthetic pin ${i + 1}`
-        const { id } = await post("/api/tasks", { title, is_favorite: i === 25 ? 1 : 0 })
+        const { id } = await post("/api/tasks", { title, is_promoted: i === 25 })
         await post("/api/task-pins", { task: id, pinned: true }, "PUT", context)
         records.push({ id, title })
       }
@@ -121,7 +121,7 @@ test("personal pins work in the mobile drawer and reconcile Details without chan
       const response = await fetch(prefix + "/api/tasks/" + id)
       return response.json()
     }, { prefix, id: last?.id })
-    expect(task.is_favorite).toBe(1)
+    expect(task.is_promoted).toBe(true)
 
     stage = "checking delayed shared write reconciliation"
     const edited = seed.at(-2)

@@ -2285,10 +2285,27 @@ const paths = {
     },
   },
 
+  // ── Custom Fields (Board-scoped) ──
+  "/api/custom-fields": {
+    get: { operationId: "listCustomFields", tags: ["Tasks"], summary: "List custom field definitions for the current board", responses: { 200: { description: "Board custom field definitions" } } },
+    put: {
+      operationId: "updateCustomFields", tags: ["Tasks"], summary: "Replace custom field definitions for the current board",
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["fields"], properties: {
+          fields: { type: "array", items: { type: "object", required: ["name", "type"], properties: {
+            name: { type: "string" }, type: { type: "string" }, options: { type: "array", items: { type: "string" } },
+          } } },
+        },
+      } } } },
+      responses: { 200: { description: "Updated board custom field definitions" }, 400: { description: "Invalid payload" } },
+    },
+  },
+
   // ── Lanes (Kanban) ──
   "/api/lanes": {
     get: { operationId: "listLanes", tags: ["Views"], summary: "List kanban board lanes", responses: { 200: { description: "Lanes" } } },
     post: { operationId: "createLane", tags: ["Views"], summary: "Create a kanban lane", responses: { 201: { description: "Created" } } },
+    put: { operationId: "reorderLanes", tags: ["Views"], summary: "Reorder kanban board lanes", requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["orderedIds"], properties: { orderedIds: { type: "array", items: { type: "string" } } } } } } }, responses: { 200: { description: "Reordered" } } },
   },
   "/api/lanes/{id}": {
     put: { operationId: "updateLane", tags: ["Views"], summary: "Update a kanban lane", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Updated" } } },

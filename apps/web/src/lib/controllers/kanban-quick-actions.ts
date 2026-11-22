@@ -8,9 +8,12 @@
 import { createSpriteIconElement } from "../../generated/icon-registry"
 import { createClientLogger } from "@lib/client-logger"
 import { notifyInactivityTaskChanged } from "@lib/inactivity-client"
+import { promptDialog } from "@lib/prompt-dialog"
 import { sanitizeCssColor } from "@lib/safe-html"
+import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
 import { taskApi } from "@lib/task-api-client"
 import { assigneeFallback } from "@lib/task-assignee-display"
+import { defaultChildTaskType, normalizeEditableTaskType } from "@lib/task-editor-fields"
 import { showToast } from "@lib/toast"
 import type { KanbanRefreshFocus } from "./kanban-page-controller"
 
@@ -192,35 +195,54 @@ export function initQuickActions(
       if (!parentId) return
 
       const card = btn.closest(".kanban-card") as HTMLElement | null
-      const areaId = card?.dataset.area || ""
+      const areaId = card?.dataset.area || null
+      const projectId = card?.dataset.areaId || null
+      const parentType = normalizeEditableTaskType(card?.dataset.taskType)
+      const parentTicketKey = card?.querySelector(".kanban-ticket-key")?.textContent?.trim() || null
+
+      if (window.openNewTaskModal) {
+        window.openNewTaskModal("standard_action", {
+          parent: { parentId, parentTitle, parentTicketKey, parentType, areaId, projectId },
+          priority: Number(parentPriority) || 3,
+        })
+        return
+      }
+
+      const title = await promptDialog({
+        title: "New child item",
+        message: `Create child item under ${parentTitle}:`,
+        placeholder: "Child item title...",
+        signal: __signal,
+      })
+      if (!title?.trim()) return
 
       btn.disabled = true
       btn.classList.add("btn-loading")
       try {
+        const ctx = currentTaskApiContext()
         const res = await fetch("/api/tasks", {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" },
           body: JSON.stringify({
-            title: `${parentTitle.slice(0, 80)} — Subtask`,
+            title: title.trim(),
             parent_id: parentId,
             status: "pending",
-            priority: Number(parentPriority),
-            area_id: areaId || undefined,
-            task_type: "task",
+            priority: Number(parentPriority) || 3,
+            ...(areaId ? { area_id: areaId } : {}),
+            ...(projectId ? { project_id: projectId } : {}),
+            task_type: defaultChildTaskType(parentType),
           }),
         })
         if (res.ok) {
-          _qa.toast("Child task created", "success")
-          // P1-6: Refresh to show new card
-          const scrollLeft = document.querySelector(".kanban-scroll-area")?.scrollLeft || 0
-          sessionStorage.setItem("meitheal-kanban-scroll", String(scrollLeft))
+          _qa.toast("Child item created", "success")
           document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-child-created" } }))
         } else {
-          _qa.toast("Failed to create child task", "error")
+          const err = await res.json().catch(() => null) as { error?: string; detail?: string } | null
+          _qa.toast(err?.error ?? err?.detail ?? "Failed to create child item", "error")
         }
       } catch (err) {
         log.warn("Add child failed", err)
-        _qa.toast("Failed to create child task", "error")
+        _qa.toast("Failed to create child item", "error")
       } finally {
         btn.disabled = false
         btn.classList.remove("btn-loading")

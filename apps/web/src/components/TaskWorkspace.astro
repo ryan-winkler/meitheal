@@ -28,6 +28,7 @@ import { formatRegionalDate } from "../lib/regional-date";
 import { formatTicketKey } from "../lib/ticket-key";
 import { taskSurface } from "../lib/task-surface"
 import { taskDescriptionPreview } from "../lib/task-description-preview"
+import { formatCardCustomFieldValue } from "../lib/custom-field-defs"
 import { taskDetailPath } from "../lib/task-page-url"
 import {
   ensureSchema,
@@ -131,6 +132,7 @@ let columns: {
   key: string;
   label: string;
   icon: string;
+  color?: string | null;
   includes: string[];
   builtIn: boolean;
   wipLimit: number;
@@ -251,7 +253,6 @@ const typeConfig: Record<string, { label: string; color: string }> = {
   bug: { label: "Bug", color: "#ef4444" },
 };
 const kanbanFilters = readKanbanFilters(currentUrl.searchParams)
-type KanbanPages = Awaited<ReturnType<typeof loadKanbanBoard>>
 const kanbanPages = renderedView === "kanban"
   ? await loadKanbanBoard(repo, columns, completedCutoffMs, currentUrl.searchParams, timezone, homeAreaFilter).catch(() => null)
   : null
@@ -392,7 +393,7 @@ if (groupByProject) {
 
     <!-- Card field customizer panel (toggled by Fields toolbar icon) -->
     <div class="kanban-fields-panel hidden" id="kanban-fields-panel">
-      <CardCustomizer />
+      <CardCustomizer boardId={scope.boardId} />
     </div>
 
       <div class="lane-mgmt hidden" id="lane-mgmt">
@@ -524,9 +525,9 @@ if (groupByProject) {
             role="region"
             aria-label={`${col.label} Swimlane`}
           >
-            <div class="kanban-column-header" data-column-key={col.key} tabindex="-1">
+            <div class="kanban-column-header" data-column-key={col.key} tabindex="-1" style={col.color ? `--lane-accent: ${col.color}` : undefined}>
               <span class="kanban-column-title">
-                <span class={`column-status-dot status-${col.key}`} />
+                <span class={`column-status-dot status-${col.key}`} style={col.color ? `background: ${col.color}` : undefined} />
                 {col.label}
               </span>
               <span class="kanban-header-right">
@@ -695,18 +696,21 @@ if (groupByProject) {
                         </span>
                       </div>
                       <div class="kanban-card-header-controls">
-                        {!promoted && Number(task.is_favorite ?? 0) === 1 && (
-                          <span
-                            class="kanban-fav"
-                            title={t("kanban.favorite", locale)}
-                          >
-                            <Icon name="star" size={14} sprite />
-                          </span>
-                        )}
                         <span class="kanban-reaction-count" data-kanban-reaction-count role="img" hidden>
                           <Icon name="heart" size={12} sprite />
                           <span data-reaction-count-value></span>
                         </span>
+                        <button
+                          type="button"
+                          class="card-action-btn card-more-btn"
+                          data-id={String(task.id)}
+                          title={t("kanban.more_actions", locale)}
+                          aria-label={t("kanban.more_actions_for", locale, { title: String(task.title) })}
+                          aria-expanded="false"
+                          aria-controls="kanban-card-menu"
+                        >
+                          <Icon name="dots-vertical" size={15} sprite />
+                        </button>
                         <button
                           type="button"
                           class="kanban-promote-star"
@@ -719,17 +723,6 @@ if (groupByProject) {
                           <span class="kanban-promote-sash" aria-hidden="true">
                             <Icon name="star" size={15} sprite />
                           </span>
-                        </button>
-                        <button
-                          type="button"
-                          class="card-action-btn card-more-btn"
-                          data-id={String(task.id)}
-                          title={t("kanban.more_actions", locale)}
-                          aria-label={t("kanban.more_actions_for", locale, { title: String(task.title) })}
-                          aria-expanded="false"
-                          aria-controls="kanban-card-menu"
-                        >
-                          <Icon name="dots-vertical" size={15} sprite />
                         </button>
                       </div>
                     </div>
@@ -878,23 +871,23 @@ if (groupByProject) {
                           );
                         }
                         // Generic custom fields — skip non-primitive values (arrays, objects)
-                        const displayKeys = Object.keys(cf).filter(k => {
-                          const v = cf[k];
-                          return v !== null && v !== undefined && typeof v !== "object";
-                        });
+                        const displayKeys = Object.keys(cf).filter(k => formatCardCustomFieldValue(cf[k]) !== null);
                         if (displayKeys.length > 0) {
                           return (
                             <div class="kanban-custom-fields">
-                              {displayKeys.slice(0, 4).map((k) => (
+                              {displayKeys.slice(0, 8).map((k, idx) => (
                                 <span
                                   class="kanban-cf-chip"
-                                  title={`${k}: ${cf[k]}`}
+                                  data-cf-name={k}
+                                  data-cf-default-hidden={idx >= 4 ? "true" : undefined}
+                                  hidden={idx >= 4}
+                                  title={`${k}: ${String(cf[k])}`}
                                 >
-                                  {k}: {String(cf[k]).slice(0, 20)}
+                                  {k}: {formatCardCustomFieldValue(cf[k])}
                                 </span>
                               ))}
                               {displayKeys.length > 4 && (
-                                <span class="kanban-cf-chip">
+                                <span class="kanban-cf-chip kanban-cf-more">
                                   +{displayKeys.length - 4} more
                                 </span>
                               )}
@@ -1038,7 +1031,7 @@ if (groupByProject) {
   {renderedView === "timeline" && <TasksTimelineView {scope} />}
 
   </div>
-  <p class="boards-workspace" data-board-expired hidden>Board access changed. <button type="button" class="btn btn-ghost" data-board-refresh>Refresh Board</button></p>
+  <p class="boards-workspace board-expired-banner" data-board-expired role="status" hidden>Board access changed. <button type="button" class="btn btn-ghost btn-sm" data-board-refresh>Refresh Board</button></p>
   <script>
     import { bindBoardPage } from "@lib/boards-page"
     import { initTasksViewSwitcher } from "@lib/tasks-view-controller"
@@ -1502,8 +1495,24 @@ if (groupByProject) {
   .kanban-page-actions a {
     min-block-size: 2.75rem;
   }
+  #kanban-shell {
+    position: relative;
+  }
   .kanban-loading-status {
-    margin-block: 0.5rem;
+    margin: 0;
+  }
+  .kanban-loading-status:not([hidden]) {
+    position: absolute;
+    inset-block-start: 0.75rem;
+    inset-inline-end: 0.75rem;
+    z-index: 30;
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    box-shadow: var(--shadow-sm, 0 4px 12px rgba(0, 0, 0, 0.14));
   }
 
   .kanban-empty {
@@ -1593,12 +1602,15 @@ if (groupByProject) {
   }
   .kanban-card-actions {
     display: flex;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     align-items: center;
     gap: 2px;
     border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
     padding-block-start: 6px;
     margin-block-start: 6px;
+    background: var(--bg-card);
+    opacity: 1;
+    pointer-events: auto;
   }
   .card-action-btn {
     display: inline-flex;
@@ -1926,12 +1938,8 @@ if (groupByProject) {
       opacity: 1;
     }
     .kanban-card-actions {
-      opacity: 0;
-      transition: opacity 140ms ease;
-    }
-    .kanban-card:hover .kanban-card-actions,
-    .kanban-card:focus-within .kanban-card-actions {
       opacity: 1;
+      pointer-events: auto;
     }
   }
   @media (pointer: coarse) {
@@ -2021,6 +2029,10 @@ if (groupByProject) {
     max-width: 120px;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .kanban-cf-chip[hidden],
+  .kanban-custom-fields[hidden] {
+    display: none;
   }
 
   :global([data-theme="knight-rider"]) .kanban-cf-chip {

@@ -44,6 +44,17 @@ try {
         aria-label="Task detail"
         class="modal-content w-full max-w-[1000px] h-[90vh] max-h-[900px] bg-bg-card border border-border shadow-2xl rounded-2xl flex flex-col overflow-hidden relative m-4 md:m-8"
       >
+        <div
+          id="td-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-controls="task-detail-panel"
+          aria-label="Resize task sidebar"
+          aria-valuemin="360"
+          aria-valuemax="840"
+          aria-valuenow="420"
+          tabindex="0"
+        ></div>
         {namedBoard ? <slot /> : <>
         <!-- Sticky Header Bar -->
         <div class="td-toolbar flex-none bg-bg-card z-20">
@@ -65,9 +76,6 @@ try {
             <div id="td-task-actions" hidden class="flex gap-1.5 items-center">
               <button id="td-toggle-promote" type="button" aria-pressed="false" class="p-1.5 hover:bg-bg-hover hover:text-warning text-text-secondary rounded transition-colors aria-pressed:text-warning aria-pressed:bg-warning/15" title={t("kanban.promote_card", locale)} aria-label={t("kanban.promote_card", locale)}>
                 <Icon name="star" size={18} />
-              </button>
-              <button id="td-toggle-favorite" type="button" aria-pressed="false" class="p-1.5 hover:bg-bg-hover hover:text-text-primary text-text-secondary rounded transition-colors aria-pressed:text-danger aria-pressed:bg-danger/10" title="Favorite" aria-label="Favorite">
-                <Icon name="heart" size={18} />
               </button>
               <button id="td-copy-link" type="button" class="p-1.5 hover:bg-bg-hover hover:text-text-primary text-text-secondary rounded transition-colors" title={t("task_modal.copy_link", locale)} aria-label={t("task_modal.copy_link", locale)}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 15l6 -6" /><path d="M11 6l.463 -.536a5 5 0 0 1 7.071 7.072l-.534 .464" /><path d="M13 18l-.397 .534a5.068 5.068 0 0 1 -7.127 0a4.972 4.972 0 0 1 0 -7.071l.524 -.463" /></svg>
@@ -395,7 +403,8 @@ try {
             <TaskDetailSection name="scoring"><StrategicEvaluator embedded /></TaskDetailSection>
 
             <TaskDetailSection name="checklists">
-              <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center justify-between mb-2 gap-2">
+                <span class="text-[11px] text-text-muted">Lightweight steps inside this task</span>
                 <button type="button" id="td-add-checklist-item" class="text-xs text-accent hover:text-accent-hover transition-colors font-medium flex items-center gap-1">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                     <span>Add Item</span>
@@ -432,7 +441,7 @@ try {
                 <div class="grid grid-cols-1 @3xl/task-inspector:grid-cols-2 gap-6">
                   <!-- Parent -->
                   <div>
-                    <span class="text-xs text-text-muted font-bold uppercase tracking-wider mb-2 block">Parent Epic/Story</span>
+                    <span class="text-xs text-text-muted font-bold uppercase tracking-wider mb-2 block">Parent Item</span>
                     <div id="td-link-parent-display" class="flex items-center gap-1 mb-2">
                       <span class="text-xs text-text-muted italic">None</span>
                     </div>
@@ -443,7 +452,7 @@ try {
                   </div>
                   <!-- Children -->
                   <div>
-                    <span class="text-xs text-text-muted font-bold uppercase tracking-wider mb-2 block">Child Subtasks</span>
+                    <span class="text-xs text-text-muted font-bold uppercase tracking-wider mb-2 block">Child Items <span class="font-normal normal-case text-[11px]">(tracked on board)</span></span>
                     <div id="td-link-children" class="space-y-1.5 mb-2"></div>
                     <div id="td-subtask-progress" class="hidden mb-3">
                       <div class="flex items-center justify-between text-xs text-text-secondary mb-1">
@@ -454,14 +463,17 @@ try {
                       </div>
                     </div>
                     <div id="td-add-subtask">
-                      <button type="button" id="td-add-subtask-btn" class="text-xs text-accent hover:text-accent-hover flex items-center gap-1 font-medium transition-colors">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                        Add subtask
-                      </button>
+                      <div class="flex items-center gap-3 flex-wrap">
+                        <button type="button" id="td-add-subtask-btn" class="text-xs text-accent hover:text-accent-hover flex items-center gap-1 font-medium transition-colors">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                          Add child item
+                        </button>
+                        <button type="button" id="td-add-subtask-full-btn" class="text-xs text-text-secondary hover:text-text-primary transition-colors">Full form…</button>
+                      </div>
                       <div id="td-add-subtask-form" class="hidden mt-2 gap-2">
-                        <input id="td-add-subtask-input" class="form-input text-sm py-1.5 flex-1 bg-bg-input" placeholder="Subtask title..." autocomplete="off"/>
+                        <input id="td-add-subtask-input" class="form-input text-sm py-1.5 flex-1 bg-bg-input" placeholder="Child item title..." autocomplete="off"/>
                         <button type="button" id="td-add-subtask-submit" class="btn btn-primary text-xs px-3 py-1.5 shadow-sm">Add</button>
-                        <button type="button" id="td-add-subtask-cancel" aria-label="Cancel subtask" class="btn bg-bg-input border border-border hover:bg-bg-hover text-text-primary text-xs px-2 py-1.5"><Icon name="x" size={14} sprite={true} /></button>
+                        <button type="button" id="td-add-subtask-cancel" aria-label="Cancel child item" class="btn bg-bg-input border border-border hover:bg-bg-hover text-text-primary text-xs px-2 py-1.5"><Icon name="x" size={14} sprite={true} /></button>
                       </div>
                     </div>
                   </div>
@@ -521,6 +533,7 @@ try {
                 <p data-reaction-status role="status" class="text-sm text-text-secondary [&:not(:empty)]:my-2"></p>
                 <p data-reaction-error role="alert" class="text-sm text-text-primary [&:not(:empty)]:my-2"></p>
                 <button type="button" data-reaction-retry class="btn btn-ghost min-h-11" hidden>{t("reactions.retry", locale)}</button>
+                <div data-reaction-groups class="flex flex-wrap gap-1.5 my-2" hidden></div>
                 <ul data-reaction-list class="space-y-1" role="list"></ul>
                 <div class="flex flex-wrap gap-2">
                   <button type="button" data-reaction-newest class="btn btn-ghost min-h-11" hidden>{t("reactions.newest", locale)}</button>

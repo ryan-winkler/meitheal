@@ -161,10 +161,6 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
   // Categorized field groups for the dropdown
   const fieldCategories: { label: string; fields: string[] }[] = [
     {
-      label: "🎯 RICE Framework",
-      fields: ["Reach", "Impact", "Confidence", "Effort"],
-    },
-    {
       label: "📋 Agile & Planning",
       fields: [
         "Estimate",

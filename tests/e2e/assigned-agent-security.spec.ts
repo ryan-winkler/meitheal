@@ -40,7 +40,6 @@ function makeTaskData(overrides: Partial<TaskCreationData> = {}): TaskCreationDa
     end_date: null,
     progress: 0,
     color: null,
-    is_favorite: 0,
     task_type: "task",
     assigned_to: null,
     ...overrides,

@@ -5,6 +5,7 @@
  * agent protocol (A2A / WebMCP / MCP) toggles, and agent token management.
  */
 import { WEBMCP_SETTING } from "@domains/agents/webmcp-protocol"
+import { applyHideAskAi, readHideAskAi, saveHideAskAi } from "@lib/ai-ui-preference"
 import { parseAiHandoffUrl } from "@lib/ai-handoff-url"
 import { withAsyncButton } from "@lib/async-button"
 import { safeIngressHref } from "@lib/ingress-navigation"
@@ -203,6 +204,36 @@ export function initAISettings(): void {
   initHaAgentSettings()
   initAgentTokensSettings()
   fixProtocolLinks()
+
+  const hideAskAiToggle = document.querySelector<HTMLInputElement>("#toggle-hide-ask-ai")
+  if (hideAskAiToggle) {
+    const initialHidden = readHideAskAi()
+    hideAskAiToggle.checked = initialHidden
+    applyHideAskAi(initialHidden)
+    pageLifecycle.on(hideAskAiToggle, "change", () => {
+      saveHideAskAi(hideAskAiToggle.checked)
+      showToast(hideAskAiToggle.checked ? "Ask AI buttons hidden in this browser." : "Ask AI buttons shown in this browser.", "info")
+    })
+  }
+
+  const disableAiAssistToggle = document.querySelector<HTMLInputElement>("#toggle-disable-ai-assist")
+  if (disableAiAssistToggle) {
+    pageLifecycle.on(disableAiAssistToggle, "change", async () => {
+      const next = disableAiAssistToggle.checked
+      disableAiAssistToggle.disabled = true
+      try {
+        await saveSetting("ai_assist_disabled", next)
+        document.documentElement.toggleAttribute("data-ai-assist-disabled", next)
+        settingsStore.invalidate()
+        showToast(next ? "AI Assist disabled; MCP and agent tokens remain independent." : "AI Assist re-enabled.", "info")
+      } catch (err) {
+        disableAiAssistToggle.checked = !next
+        showSettingsSaveError(err)
+      } finally {
+        disableAiAssistToggle.disabled = false
+      }
+    })
+  }
   const checkDiscovery = document.querySelector<HTMLButtonElement>("#refresh-agent-discovery")
   if (checkDiscovery) pageLifecycle.on(checkDiscovery, "click", withAsyncButton(checkDiscovery, refreshProtocolDiscovery, {
     loadingText: checkDiscovery.dataset.checking ?? "",
@@ -348,6 +379,13 @@ export function restoreAISettings(s: Record<string, unknown>): void {
   if (mcpEnabled !== undefined)
     (document.getElementById("agent-mcp-enabled") as HTMLInputElement).checked =
       mcpEnabled === true || mcpEnabled === "true"
+
+  const disableAiEl = document.querySelector<HTMLInputElement>("#toggle-disable-ai-assist")
+  if (disableAiEl) {
+    const disabled = s.ai_assist_disabled === true || s.ai_assist_disabled === "true"
+    disableAiEl.checked = disabled
+    document.documentElement.toggleAttribute("data-ai-assist-disabled", disabled)
+  }
 
   void refreshProtocolDiscovery()
 }

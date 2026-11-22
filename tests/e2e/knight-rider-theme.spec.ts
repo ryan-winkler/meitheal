@@ -204,7 +204,7 @@ test("Knight Rider persists and fills active work and task colors on Today and B
     }
     await page.evaluate(() => localStorage.removeItem("meitheal-appearance"))
 
-    const favorite = await request.put(`/api/tasks/${coloredId}`, { headers: boardHeaders, data: { is_favorite: 1 } })
+    const favorite = await request.put(`/api/tasks/${coloredId}`, { headers: boardHeaders, data: { is_promoted: true } })
     expect(favorite.ok()).toBe(true)
     await page.goto("/")
     await page.mouse.move(0, 0)

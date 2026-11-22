@@ -72,12 +72,23 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
   // Derive human-readable ticket keys
   const ticketNum = row.ticket_number != null ? Number(row.ticket_number) : null
   const parentTicketNum = row.parent_ticket_number != null ? Number(row.parent_ticket_number) : null
+  const detail = taskDetailHttpProjection(row, scope.boardId, scope.principal.kind === "ha_user" && await readCurrentHARole(scope.principal.id, request.signal) === "admin")
+  const visibleParent = detail.parent_id != null
+  const parentTicketKey = visibleParent
+    ? (typeof row.parent_ticket_ref === "string" && row.parent_ticket_ref
+        ? row.parent_ticket_ref
+        : formatTicketKey(parentTicketNum))
+    : null
+  const subtasks = await repo.findSubtasks(resolved.id)
   const enriched = {
-    ...taskDetailHttpProjection(row, scope.boardId, scope.principal.kind === "ha_user" && await readCurrentHARole(scope.principal.id, request.signal) === "admin"),
+    ...detail,
     actions: taskActionHints(scope, row),
     is_promoted: Boolean(row.is_promoted),
     ticket_key: row.ticket_key ?? row.ticket_ref ?? formatTicketKey(ticketNum),
-    parent_ticket_key: formatTicketKey(parentTicketNum),
+    parent_ticket_key: parentTicketKey,
+    parent_title: visibleParent ? (row.parent_title ?? null) : null,
+    parent_task_type: visibleParent ? (row.parent_task_type ?? null) : null,
+    subtasks,
   }
 
   return new Response(JSON.stringify(enriched), {
@@ -231,7 +242,7 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
   if ("nfc_tag_id" in body) sanitized.nfc_tag_id = typeof body.nfc_tag_id === "string" ? body.nfc_tag_id.trim() : null
 
   if (typeof body.title === "string" || typeof body.description === "string") {
-    const { sanitize } = await import("../../../lib/sanitize")
+    const { sanitize, sanitizeMarkdownInput } = await import("../../../lib/sanitize")
     if (typeof body.title === "string") {
       const t = sanitize(body.title.trim())
       if (!t) {
@@ -248,7 +259,7 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     }
     if (typeof body.description === "string") {
       if (body.description.length > 10000) return apiError("description must be 10000 characters or less", 400)
-      sanitized.description = sanitize(body.description)
+      sanitized.description = sanitizeMarkdownInput(body.description)
     }
   }
   if (typeof body.status === "string") {
@@ -319,48 +330,30 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     sanitized.color = typeof body.color === "string" && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(body.color) ? body.color : null
   }
   if (body.is_favorite !== undefined) {
-    sanitized.is_favorite = body.is_favorite ? 1 : 0
+    return apiError("is_favorite has been retired; use is_promoted instead.", 400)
   }
   if (body.is_promoted !== undefined) {
     if (typeof body.is_promoted !== "boolean") return apiError("is_promoted must be a boolean", 400)
     sanitized.is_promoted = body.is_promoted ? 1 : 0
   }
-  if (typeof body.parent_id === "string" || body.parent_id === null) {
-    sanitized.parent_id = body.parent_id
-  }
-  // Phase 1: Epic→Story→Task nesting validation on parent_id change
-  if (sanitized.parent_id !== undefined && sanitized.parent_id !== null) {
-    const parentType = await repo.getParentTaskType(String(sanitized.parent_id))
-    if (parentType === null) {
-      return new Response(JSON.stringify({ error: "Parent task not found" }), {
-        status: 400, headers: { "content-type": "application/json" },
-      })
+  if (body.parent_id !== undefined) {
+    if (body.parent_id !== null && typeof body.parent_id !== "string") {
+      return apiError("parent_id must be a task ID string or null", 400)
     }
-    // Determine child type: use sanitized.task_type if changing, else fetch current
-    let childType = typeof sanitized.task_type === "string" ? sanitized.task_type : null
-    if (!childType) {
-      const current = await repo.findTaskForCommand(resolvedId, "edit")
-      childType = String(current?.task_type ?? "task")
-    }
-    if (parentType === "task" && (childType === "epic" || childType === "story")) {
-      return new Response(JSON.stringify({
-        error: `Cannot nest ${childType} under a task — tasks can only contain other tasks`,
-      }), { status: 400, headers: { "content-type": "application/json" } })
-    }
-    if (parentType === "story" && childType === "epic") {
-      return new Response(JSON.stringify({
-        error: "Cannot nest an epic under a story — stories can only contain tasks",
-      }), { status: 400, headers: { "content-type": "application/json" } })
-    }
+    sanitized.parent_id = typeof body.parent_id === "string" && body.parent_id.trim() ? body.parent_id.trim() : null
   }
   if (typeof body.time_tracked === "number") {
     sanitized.time_tracked = Math.max(0, Math.round(body.time_tracked))
   }
-  if (typeof body.task_type === "string") {
-    const tt = body.task_type.trim().toLowerCase()
-    if (VALID_TASK_TYPES.includes(tt as TaskType)) {
-      sanitized.task_type = tt
+  if (body.task_type !== undefined) {
+    if (typeof body.task_type !== "string") {
+      return apiError("task_type must be epic, story, or task", 400)
     }
+    const tt = body.task_type.trim().toLowerCase()
+    if (!VALID_TASK_TYPES.includes(tt as TaskType)) {
+      return apiError("task_type must be epic, story, or task", 400)
+    }
+    sanitized.task_type = tt
   }
   if (body.assigned_to !== undefined) {
     const nextAssignee = normalizeReassignedTarget(body.assigned_to)
@@ -515,6 +508,12 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     if (update.errorCode === "assignee_mismatch") {
       return (await replayedAgentReassignment(repo, agentToken, resolvedId, body, expectedActor, scope.boardId)) ??
         apiError("Agent can only update tasks assigned to it", 403)
+    }
+    if (update.errorCode === "hierarchy_invalid") {
+      return apiError(update.message, 400)
+    }
+    if (update.errorCode === "hierarchy_conflict") {
+      return apiError(update.message, 409)
     }
     if (update.errorCode === "conflict") {
       return taskVersionConflict(update.updatedAt, clientVersion!)

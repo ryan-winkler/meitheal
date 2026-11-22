@@ -1,7 +1,7 @@
 import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import type { InValue } from "@libsql/client"
-import { hasBoardSelection, rejectBoardSelectionInJson, unavailableBoardResponse } from "@domains/tasks/board-availability"
+import { hasBoardSelection, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { LaneRepository } from "@domains/tasks/persistence/lane-repository"
 import { stripHtml } from "../../../lib/strip-html"
@@ -49,19 +49,36 @@ export const PUT: APIRoute = withBoardScope({ resource: "board", action: "manage
     if (typeof body.icon === "string") {
       fields.icon = body.icon.slice(0, 4)
     }
+    if (body.color === null || body.color === "") {
+      fields.color = null
+    } else if (typeof body.color === "string") {
+      const color = body.color.trim()
+      if (!/^#[0-9a-fA-F]{6}$/.test(color)) {
+        return apiError("Invalid lane color (expected #RRGGBB)", 400)
+      }
+      fields.color = color
+    }
     if (typeof body.position === "number") {
       fields.position = Math.max(0, Math.round(body.position))
     }
     if (typeof body.wip_limit === "number") {
       fields.wip_limit = Math.max(0, Math.round(body.wip_limit))
     }
-    if (typeof body.includes === "string") {
+    if (Array.isArray(body.includes)) {
+      const valid = body.includes.filter((s): s is string => typeof s === "string" && /^[a-z0-9_]{1,50}$/.test(s))
+      if (!valid.length) return apiError("Choose valid lane statuses", 400)
+      fields.includes = JSON.stringify([...new Set(valid)])
+    } else if (typeof body.includes === "string") {
       try {
         const parsed = JSON.parse(body.includes)
-        if (Array.isArray(parsed)) {
-          fields.includes = body.includes
+        if (Array.isArray(parsed) && parsed.length && parsed.every((s): s is string => typeof s === "string" && /^[a-z0-9_]{1,50}$/.test(s))) {
+          fields.includes = JSON.stringify([...new Set(parsed)])
+        } else {
+          return apiError("Choose valid lane statuses", 400)
         }
-      } catch { /* skip invalid JSON */ }
+      } catch {
+        return apiError("Choose valid lane statuses", 400)
+      }
     }
 
     if (Object.keys(fields).length === 0) {
@@ -78,6 +95,7 @@ export const PUT: APIRoute = withBoardScope({ resource: "board", action: "manage
       key: updated.key,
       label: updated.label,
       icon: updated.icon,
+      color: typeof updated.color === "string" && /^#[0-9a-fA-F]{6}$/.test(updated.color) ? updated.color : null,
       position: Number(updated.position ?? 0),
       wip_limit: Number(updated.wip_limit ?? 0),
       includes: typeof updated.includes === "string" ? JSON.parse(String(updated.includes)) : [],
@@ -99,8 +117,9 @@ export const PUT: APIRoute = withBoardScope({ resource: "board", action: "manage
 
 export const DELETE: APIRoute = withBoardScope({ resource: "board", action: "manage" }, async ({ params, request }, scope) => {
   try {
-    const boardSelection = await rejectBoardSelectionInJson(request)
-    if (boardSelection) return boardSelection
+    const rawBody = await request.clone().json().catch(() => null) as Record<string, unknown> | null
+    if (hasBoardSelection(rawBody)) return unavailableBoardResponse()
+    const targetLaneId = typeof rawBody?.target_lane_id === "string" && rawBody.target_lane_id ? rawBody.target_lane_id : undefined
     await ensureSchema()
     const repo = new LaneRepository(getPersistenceClient(), scope)
 
@@ -114,9 +133,9 @@ export const DELETE: APIRoute = withBoardScope({ resource: "board", action: "man
     }
 
     const key = String(existing.key)
-    await repo.delete(params.id!, key)
+    await repo.delete(params.id!, key, targetLaneId)
 
-    return apiJson({ deleted: true, tasksReassigned: key })
+    return apiJson({ deleted: true, tasksReassigned: targetLaneId ?? key })
   } catch (err) {
     logger.log("error", {
       event: "api.lanes.delete.failed",

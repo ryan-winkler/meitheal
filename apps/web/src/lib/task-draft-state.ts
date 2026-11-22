@@ -34,10 +34,14 @@ export const taskDraftVersion = z.strictObject({
 })
 
 const placement = z.strictObject({ areaId: reference.nullable(), projectId: reference.nullable() })
+const taskType = z.enum(["epic", "story", "task"])
 
 export const taskDraftSnapshot = z.strictObject({
   version: z.literal(1),
   placement: placement.optional(),
+  taskType: taskType.optional(),
+  parentId: reference.nullable().optional(),
+  parentTitle: z.string().max(500).optional(),
   title: z.string().max(500),
   description: z.string().max(16384),
   taskKind,
@@ -65,6 +69,8 @@ export const taskDraftSnapshot = z.strictObject({
 const publishDate = z.union([z.iso.date(), z.iso.datetime({ local: true, offset: true }).max(64)])
 export const taskDraftPublication = z.strictObject({
   placement: placement.optional(),
+  task_type: taskType.optional(),
+  parent_id: reference.nullable().optional(),
   title: z.string().min(1).max(500),
   description: z.string().max(16384),
   task_kind: taskKind,

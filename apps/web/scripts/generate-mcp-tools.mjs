@@ -49,6 +49,7 @@ export const EXCLUDED_OPS = new Set([
   "savePrivateBoardPlanning",
   "getOrganizationFeatureAvailability", "saveOrganizationFeatureAvailability", "verifyOrganizationFeatureAdministration",
   "verifyHomeAssistantAreaContext",
+  "sendHAAssist",
   "getHouseholdTaskHomeAssistantArea", "setHouseholdTaskHomeAssistantArea",
   "getNamedBoardTaskHomeAssistantArea", "setNamedBoardTaskHomeAssistantArea",
   "getPersonalOrganizationLabels", "savePersonalOrganizationLabels", "verifyPersonalOrganizationLabels", "getHomeAssistantAreaChoices",

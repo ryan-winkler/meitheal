@@ -95,7 +95,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
   data-rice={task.rice !== null ? String(task.rice) : ""}
   data-area={task.area_id}
   data-overdue={task.is_overdue ? "true" : "false"}
-  data-favorite={task.is_favorite ? "true" : "false"}
+  data-promoted={task.is_promoted ? "true" : "false"}
   data-title={task.title.toLowerCase()}
   data-search={searchText}
   data-due={task.due_date ?? ""}
@@ -108,14 +108,14 @@ const customEntries = Object.entries(task.custom_fields).filter(
     <span class="tli__color" style={`background: ${task.color}`} />
   )}
 
-  {/* Favorite star */}
+  {/* Promoted star */}
   <button
     type="button"
-    class:list={["tli__fav", { "is-fav": task.is_favorite }]}
+    class:list={["tli__fav", { "is-fav": task.is_promoted }]}
     data-id={task.id}
-    aria-label="Favorite"
-    title={task.is_favorite ? "Remove from favorites" : "Add to favorites"}
-    aria-pressed={task.is_favorite}
+    aria-label={task.is_promoted ? "Remove promotion" : "Promote to top"}
+    title={task.is_promoted ? "Remove promotion" : "Promote to top"}
+    aria-pressed={task.is_promoted}
   >
     <Icon name="star" size={15} />
   </button>

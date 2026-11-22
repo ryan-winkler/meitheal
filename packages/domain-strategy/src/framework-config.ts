@@ -38,6 +38,7 @@ export interface FrameworkField {
   weight: number
   min?: number | undefined
   max?: number | undefined
+  step?: number | undefined
   options?: FrameworkFieldOption[] | undefined
   helpText: string
 }
@@ -148,6 +149,7 @@ export function parseFrameworkConfig(id: string, raw: Record<string, unknown>): 
         weight: Number(f.weight ?? 1),
         min: f.min !== undefined ? Number(f.min) : undefined,
         max: f.max !== undefined ? Number(f.max) : undefined,
+        step: f.step !== undefined ? Number(f.step) : undefined,
         options: Array.isArray(f.options)
           ? (f.options as Record<string, unknown>[]).map((o) => ({
               value: o.value as string | number,
@@ -325,6 +327,7 @@ export function frameworkConfigToRaw(config: FrameworkConfig): Record<string, un
       weight: f.weight,
       min: f.min,
       max: f.max,
+      ...(f.step !== undefined ? { step: f.step } : {}),
       options: f.options,
       help_text: f.helpText,
     })),

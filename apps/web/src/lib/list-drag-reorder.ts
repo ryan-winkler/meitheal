@@ -20,60 +20,62 @@ export function attachVerticalListDragReorder(
   const { handle, item: itemSelector, ghostClass, signal, onStart, onEnd } = options
   let dragged: HTMLElement | null = null
   let oldIndex = -1
+  let activeMode: "pointer" | "touch" | null = null
+  let activePointerId: number | null = null
 
   const items = (): HTMLElement[] =>
     Array.from(list.children).filter((child): child is HTMLElement =>
       child instanceof HTMLElement && child.matches(itemSelector),
     )
 
-  const syncDraggable = () => {
+  const syncHandles = () => {
     for (const el of items()) {
       el.draggable = false
       const grip = el.querySelector<HTMLElement>(handle)
-      if (grip) grip.style.touchAction = "none"
+      if (grip) {
+        grip.style.touchAction = "none"
+        grip.style.userSelect = "none"
+      }
     }
   }
-  syncDraggable()
+  syncHandles()
 
-  list.addEventListener("pointerdown", event => {
-    const target = event.target instanceof Element ? event.target : null
-    if (!target?.closest(handle)) return
-    const row = target.closest<HTMLElement>(itemSelector)
-    if (row && row.parentElement === list) row.draggable = true
-  }, { signal })
-
-  const clearDraggable = () => {
-    for (const el of items()) el.draggable = false
-  }
-  list.addEventListener("pointerup", clearDraggable, { signal })
-  list.addEventListener("pointercancel", clearDraggable, { signal })
-
-  list.addEventListener("dragstart", event => {
-    const row = (event.target as Element | null)?.closest<HTMLElement>(itemSelector)
-    if (!row || row.parentElement !== list || !row.draggable) {
-      event.preventDefault()
-      return
+  const reorderToY = (clientY: number) => {
+    if (!dragged) return
+    const siblings = items()
+    const draggedIdx = siblings.indexOf(dragged)
+    const draggedHeight = dragged.getBoundingClientRect().height || 36
+    for (let targetIdx = 0; targetIdx < siblings.length; targetIdx++) {
+      if (targetIdx === draggedIdx) continue
+      const target = siblings[targetIdx]!
+      const box = target.getBoundingClientRect()
+      const threshold = Math.min(box.height, draggedHeight) / 2
+      if (draggedIdx < targetIdx && clientY > box.top + threshold) {
+        list.insertBefore(dragged, target.nextElementSibling)
+        break
+      }
+      if (draggedIdx > targetIdx && clientY < box.bottom - threshold) {
+        list.insertBefore(dragged, target)
+        break
+      }
     }
+  }
+
+  const startDrag = (target: EventTarget | null, mode: "pointer" | "touch", pointerId: number | null): boolean => {
+    if (dragged) return false
+    const el = target instanceof Element ? target : null
+    const grip = el?.closest<HTMLElement>(handle)
+    const row = grip?.closest<HTMLElement>(itemSelector)
+    if (!grip || !row || row.parentElement !== list) return false
+    grip.style.touchAction = "none"
     dragged = row
     oldIndex = items().indexOf(row)
+    activeMode = mode
+    activePointerId = pointerId
     row.classList.add(ghostClass)
-    if (event.dataTransfer) {
-      event.dataTransfer.effectAllowed = "move"
-      event.dataTransfer.setData("text/plain", String(oldIndex))
-    }
     onStart?.()
-  }, { signal })
-
-  list.addEventListener("dragover", event => {
-    if (!dragged) return
-    event.preventDefault()
-    if (event.dataTransfer) event.dataTransfer.dropEffect = "move"
-    const target = (event.target as Element | null)?.closest<HTMLElement>(itemSelector)
-    if (!target || target === dragged || target.parentElement !== list) return
-    const box = target.getBoundingClientRect()
-    const insertBefore = event.clientY < box.top + box.height / 2
-    list.insertBefore(dragged, insertBefore ? target : target.nextElementSibling)
-  }, { signal })
+    return true
+  }
 
   const finishDrag = () => {
     if (!dragged) return
@@ -81,23 +83,65 @@ export function attachVerticalListDragReorder(
     const startIdx = oldIndex
     dragged = null
     oldIndex = -1
+    activeMode = null
+    activePointerId = null
     moved.classList.remove(ghostClass)
-    moved.draggable = false
     const newIndex = items().indexOf(moved)
     onEnd?.({ item: moved, oldIndex: startIdx, newIndex })
   }
 
-  list.addEventListener("drop", event => {
-    if (!dragged) return
+  list.addEventListener("pointerdown", event => {
+    if (event.pointerType === "mouse" && event.button !== 0) return
+    if (!startDrag(event.target, "pointer", event.pointerId)) return
     event.preventDefault()
-    finishDrag()
+    event.stopPropagation()
   }, { signal })
 
-  list.addEventListener("dragend", finishDrag, { signal })
+  list.addEventListener("touchstart", event => {
+    if (event.touches.length !== 1) return
+    const targetEl = event.target instanceof Element ? event.target : null
+    const grip = targetEl?.closest<HTMLElement>(handle)
+    const row = grip?.closest<HTMLElement>(itemSelector)
+    if (!row || row.parentElement !== list) return
+    if (!dragged) {
+      if (!startDrag(event.target, "touch", null)) return
+    }
+    event.preventDefault()
+    event.stopPropagation()
+  }, { passive: false, signal })
+
+  window.addEventListener("pointermove", event => {
+    if (!dragged || activeMode !== "pointer" || event.pointerId !== activePointerId) return
+    reorderToY(event.clientY)
+  }, { signal })
+
+  window.addEventListener("touchmove", event => {
+    if (!dragged) return
+    event.preventDefault()
+    if (activeMode !== "touch") return
+    const touch = event.touches[0]
+    if (touch) reorderToY(touch.clientY)
+  }, { passive: false, signal })
+
+  const endPointer = (event: PointerEvent) => {
+    if (!dragged || activeMode !== "pointer" || event.pointerId !== activePointerId) return
+    finishDrag()
+  }
+  const endTouch = () => {
+    if (!dragged || activeMode !== "touch") return
+    finishDrag()
+  }
+
+  window.addEventListener("pointerup", endPointer, { signal })
+  window.addEventListener("pointercancel", endPointer, { signal })
+  window.addEventListener("touchend", endTouch, { signal })
+  window.addEventListener("touchcancel", endTouch, { signal })
 
   signal.addEventListener("abort", () => {
     if (dragged) dragged.classList.remove(ghostClass)
     dragged = null
-    clearDraggable()
+    oldIndex = -1
+    activeMode = null
+    activePointerId = null
   }, { once: true })
 }

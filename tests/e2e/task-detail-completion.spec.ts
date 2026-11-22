@@ -10,7 +10,7 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
   await page.emulateMedia({ reducedMotion: "reduce" })
   const title = "Finish the active card from Details"
   const headers = await currentBoardWriteHeaders(request, "household", {})
-  const created = await request.post("/api/tasks", { headers, data: { title, status: "active", is_favorite: true } })
+  const created = await request.post("/api/tasks", { headers, data: { title, status: "active", is_promoted: true } })
   expect(created.status()).toBe(201)
   const { id } = await created.json()
   const other = await request.post("/api/tasks", { headers, data: { title: "Another Board card" } })

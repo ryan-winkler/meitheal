@@ -1820,6 +1820,51 @@
       }
     },
     {
+      "name": "listCustomFields",
+      "description": "List custom field definitions for the current board",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "updateCustomFields",
+      "description": "Replace custom field definitions for the current board",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "type"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "fields"
+        ]
+      }
+    },
+    {
       "name": "listLanes",
       "description": "List kanban board lanes",
       "inputSchema": {
@@ -1833,6 +1878,24 @@
       "inputSchema": {
         "type": "object",
         "properties": {}
+      }
+    },
+    {
+      "name": "reorderLanes",
+      "description": "Reorder kanban board lanes",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "orderedIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "orderedIds"
+        ]
       }
     },
     {
@@ -2477,18 +2540,6 @@
       "inputSchema": {
         "type": "object",
         "properties": {}
-      }
-    },
-    {
-      "name": "sendHAAssist",
-      "description": "Send a message to HA Assist",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "text": {
-            "type": "string"
-          }
-        }
       }
     },
     {
@@ -3358,6 +3409,20 @@
       "pathParams": [],
       "queryParams": []
     },
+    "listCustomFields": {
+      "method": "GET",
+      "path": "/api/custom-fields",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "updateCustomFields": {
+      "method": "PUT",
+      "path": "/api/custom-fields",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
     "listLanes": {
       "method": "GET",
       "path": "/api/lanes",
@@ -3367,6 +3432,13 @@
     },
     "createLane": {
       "method": "POST",
+      "path": "/api/lanes",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "reorderLanes": {
+      "method": "PUT",
       "path": "/api/lanes",
       "hasBody": true,
       "pathParams": [],
@@ -3752,13 +3824,6 @@
       "method": "GET",
       "path": "/api/ha/agents",
       "hasBody": false,
-      "pathParams": [],
-      "queryParams": []
-    },
-    "sendHAAssist": {
-      "method": "POST",
-      "path": "/api/ha/assist",
-      "hasBody": true,
       "pathParams": [],
       "queryParams": []
     },

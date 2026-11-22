@@ -34,6 +34,13 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       data-save-failed={t("task_modal.form_save_failed", locale)}
     >
       <input type="hidden" name="task_kind" id="new-task-kind" value="standard_action" />
+      <input type="hidden" name="parent_id" id="new-task-parent-id" value="" />
+      <div id="nt-parent-banner" class="nt-context" hidden>
+        <div class="flex items-center justify-between gap-2 text-xs">
+          <span id="nt-parent-banner-text" class="font-medium text-text-primary"></span>
+          <button type="button" id="nt-parent-detach" class="btn btn-ghost btn-sm text-xs">Detach parent</button>
+        </div>
+      </div>
       <fieldset class="nt-group">
         <legend>{t("task_modal.type_label", locale)}</legend>
         <div class="nt-kind-grid" id="nt-kind-tabs">
@@ -130,6 +137,14 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
           </div>
         </div>
         <div class="nt-form-grid">
+          <div class="nt-field" id="nt-task-type-field">
+            <label for="new-task-type">Work type</label>
+            <select id="new-task-type" name="task_type" class="form-select">
+              <option value="task" selected>Task</option>
+              <option value="story">Story</option>
+              <option value="epic">Epic</option>
+            </select>
+          </div>
           <div class="nt-field">
             <label for="new-task-priority">{t("tasks.priority_label", locale)}</label>
             <div class="nt-priority-select-wrap">
@@ -251,6 +266,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       <button type="button" class="btn btn-ghost text-text-muted hover:text-text-primary text-sm font-semibold px-1 rounded-lg" id="cancel-new-task">{t("task_modal.btn_cancel", locale)}</button>
 
       <div class="nt-footer-actions">
+        <button type="button" id="nt-copy-prefill-link" class="btn btn-ghost text-sm">{t("task_modal.copy_prefill_link", locale)}</button>
         <button type="button" id="nt-draft-toggle" class="btn btn-ghost text-sm"
           aria-controls="nt-draft-panel" aria-expanded="false" hidden>{t("task_draft.draft", locale)}</button>
         <button
@@ -290,6 +306,10 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
   import { buildIngressPagePath } from "@lib/page-shell-links"
   import { browserUuid } from "@lib/browser-uuid"
   import type { TaskDraftSnapshot, TaskDraftPublication } from "@lib/task-draft-state"
+  import { defaultChildTaskType, formatTicketDisplay, normalizeEditableTaskType, syncTaskTypeSelect } from "@lib/task-editor-fields"
+  import { popTaskEditorDraft, pushTaskEditorDraft, type OpenNewTaskOptions, type TaskParentContext } from "@lib/task-editor-draft-stack"
+  import { enhanceDescriptionEditor } from "@lib/task-description-editor"
+  import { buildTaskPrefillUrl, parseTaskUrlPrefill, stripTaskUrlPrefillParams } from "@lib/task-url-prefill"
 
   const log = createClientLogger("tasks", "new-task-modal");
 
@@ -313,7 +333,9 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
 
     const closeBtn = overlay.querySelector<HTMLButtonElement>("#close-new-task-modal")
     const cancelBtn = overlay.querySelector<HTMLButtonElement>("#cancel-new-task")
+    const copyPrefillBtn = overlay.querySelector<HTMLButtonElement>("#nt-copy-prefill-link")
     const form = document.getElementById("new-task-form") as HTMLFormElement | null;
+    let urlPrefillCustomFields: Record<string, string | number | boolean> | undefined
 
     // ── Cached DOM refs (avoid per-click lookups) ──
     const contextualDiv = document.getElementById("nt-contextual-fields");
@@ -323,6 +345,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     const dueRow = document.getElementById("nt-ctx-due-row");
     const titleInput = document.getElementById("new-task-title-input") as HTMLTextAreaElement | null;
     const descInput = document.getElementById("new-task-desc-input") as HTMLTextAreaElement | null;
+    const descEditor = enhanceDescriptionEditor(descInput, { signal });
     const submitBtn = document.getElementById("submit-new-task-btn") as HTMLButtonElement | null;
     const anotherBtn = overlay.querySelector<HTMLButtonElement>("#submit-new-task-another")
     const captureFeedback = overlay.querySelector<HTMLElement>("#nt-capture-feedback")
@@ -334,6 +357,13 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     const pillsContainer = document.getElementById("nt-status-pills")
     const statusInput = document.querySelector<HTMLInputElement>("#new-task-status")
     const goalSelect = document.querySelector<HTMLSelectElement>("#new-task-goal")
+    const taskTypeSelect = document.getElementById("new-task-type") as HTMLSelectElement | null
+    const parentInput = document.getElementById("new-task-parent-id") as HTMLInputElement | null
+    const parentBanner = document.getElementById("nt-parent-banner")
+    const parentBannerText = document.getElementById("nt-parent-banner-text")
+    const parentDetachBtn = document.getElementById("nt-parent-detach")
+    const modalHeading = document.getElementById("new-task-title")
+    const defaultModalHeading = modalHeading?.textContent ?? ""
     let captureOptionsRequest: AbortController | undefined
     let lanesLoaded = false
     let goalsLoaded = false
@@ -343,6 +373,10 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     let isHydrating = false
     let capturePlacement: TaskDraftSnapshot["placement"]
     let contextPlacement: TaskDraftSnapshot["placement"]
+    let activeParentContext: TaskParentContext | undefined
+    let contextParent: TaskParentContext | undefined
+    let pendingCreateOptions: OpenNewTaskOptions | undefined
+    let resumeOriginTaskId: string | undefined
     let captureNeedsRefresh = false
     let captureContinues = false
     let unconfirmedAttempt: string | undefined
@@ -361,6 +395,25 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     let editedWhileLoading = false
     let retainedRoutine = false
     let retainedEventDetails = { location: "", allDay: false, calendar: "" }
+
+    function applyParentContext(parent?: TaskParentContext) {
+      activeParentContext = parent
+      if (parentInput) parentInput.value = parent?.parentId ?? ""
+      if (parentBanner) parentBanner.hidden = !parent
+      if (parentBannerText) {
+        parentBannerText.textContent = parent
+          ? `Child of ${formatTicketDisplay(parent.parentTicketKey, parent.parentTitle, parent.parentId)} (${parent.parentType})`
+          : ""
+      }
+      if (modalHeading) modalHeading.textContent = parent ? "New child item" : defaultModalHeading
+      syncTaskTypeSelect(taskTypeSelect, parent?.parentType)
+    }
+
+    parentDetachBtn?.addEventListener("click", () => {
+      applyParentContext(undefined)
+      contextParent = undefined
+      markEdited()
+    }, { signal })
 
     function resizeTitle() {
       if (!titleInput) return
@@ -683,6 +736,23 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
           captureNeedsRefresh = false
           document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "created" } }))
         }
+        if (!calendarCaptureTask && !unconfirmedAttempt) {
+          const stacked = popTaskEditorDraft()
+          if (stacked?.snapshot) {
+            overlay.classList.add("active")
+            restoreCapture(stacked.snapshot)
+            if (stacked.parentContext) applyParentContext(stacked.parentContext)
+            resumeOriginTaskId = stacked.resumeOriginTaskId
+            focusTrap.activate()
+            showToast("Previous draft restored")
+          } else if (resumeOriginTaskId) {
+            const originId = resumeOriginTaskId
+            resumeOriginTaskId = undefined
+            window.openTaskDetail?.(originId)
+          }
+        } else {
+          resumeOriginTaskId = undefined
+        }
       }
       if (reducedMotion) { finishClose(); return; }
       overlay.classList.add("closing");
@@ -772,12 +842,26 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     }, { signal })
 
     // Expose global open method
-    window.openNewTaskModal = (kind) => {
-      if (signal.aborted || boardWithheld || overlay.classList.contains("active")) return
+    window.openNewTaskModal = (kind, options) => {
+      if (signal.aborted || boardWithheld) return
+      if (overlay.classList.contains("active")) {
+        if (!options) return
+        pushTaskEditorDraft({
+          snapshot: captureSnapshot(),
+          ...(activeParentContext ? { parentContext: activeParentContext } : {}),
+          ...(resumeOriginTaskId ? { resumeOriginTaskId } : {}),
+        })
+      }
       // If the detail panel is open, close it to avoid dual modal
+      const detailOverlayEl = document.getElementById("task-detail-overlay")
+      const hadDetailOpen = Boolean(detailOverlayEl?.classList.contains("active"))
       document.getElementById("task-detail-panel")?.classList.remove("open");
-      document.getElementById("task-detail-overlay")?.classList.remove("active");
+      detailOverlayEl?.classList.remove("active");
       document.body.classList.remove("has-docked-inspector");
+
+      resumeOriginTaskId = options?.resumeOriginTaskId ?? (hadDetailOpen ? detailOverlayEl?.dataset.openTaskId : undefined)
+      pendingCreateOptions = options
+      contextParent = options?.parent
 
       if (!unconfirmedAttempt) {
         clearCapture()
@@ -786,7 +870,13 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       if (!captureContext) return
       const captureBoardLabel = document.getElementById("nt-capture-board")
       if (captureBoardLabel) captureBoardLabel.textContent = `Board: ${captureContext.boardName ?? "Selected Board"}`
-      contextPlacement = unconfirmedAttempt ? capturePlacement : taskCapturePlacement()
+      contextPlacement = unconfirmedAttempt
+        ? capturePlacement
+        : options?.areaId !== undefined || options?.projectId !== undefined
+          ? { areaId: options.areaId ?? null, projectId: options.projectId ?? null }
+          : options?.parent && (options.parent.areaId !== undefined || options.parent.projectId !== undefined)
+            ? { areaId: options.parent.areaId ?? null, projectId: options.parent.projectId ?? null }
+            : taskCapturePlacement()
       contextDue = window.__prefillTaskDate ?? ""
       contextKind = kind && [...kindTabs].some(tab => (tab as HTMLElement).dataset.kind === kind) ? kind : ""
       if (captureFeedback) captureFeedback.textContent = ""
@@ -841,13 +931,16 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     }
 
     // Swimlanes Loader → Status Pills
+    document.addEventListener("meitheal:lanes-changed", () => { lanesLoaded = false }, { signal })
+
     async function loadStatusPills(requestSignal: AbortSignal) {
       if (!pillsContainer || !statusInput) return
 
       try {
+        const headers = captureContext ? taskApiHeaders(captureContext) : undefined
         const [lanesRes, modeRes] = await Promise.all([
-          fetch("/api/lanes", { signal: requestSignal }),
-          fetch("/api/settings?key=backlog_mode", { signal: requestSignal }),
+          fetch("/api/lanes", { signal: requestSignal, ...(headers ? { headers } : {}) }),
+          fetch("/api/settings?key=backlog_mode", { signal: requestSignal, ...(headers ? { headers } : {}) }),
         ])
         if (!lanesRes.ok) return
         const { lanes } = await lanesRes.json()
@@ -1062,9 +1155,12 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     }
 
     function captureSnapshot(): TaskDraftSnapshot {
+      const currentType = normalizeEditableTaskType(taskTypeSelect?.value)
       return {
         version: 1,
         ...(capturePlacement ? { placement: capturePlacement } : {}),
+        ...(currentType !== "task" ? { taskType: currentType } : {}),
+        ...(activeParentContext?.parentId ? { parentId: activeParentContext.parentId, parentTitle: activeParentContext.parentTitle } : {}),
         title: titleInput?.value ?? "",
         description: descInput?.value ?? "",
         taskKind: (kindInput?.value || "standard_action") as TaskDraftSnapshot["taskKind"],
@@ -1098,7 +1194,17 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
         }
         if (descInput) {
           descInput.value = snapshot.description
+          descEditor?.syncFromTextarea()
         }
+        if (snapshot.parentId) {
+          applyParentContext(activeParentContext?.parentId === snapshot.parentId
+            ? activeParentContext
+            : { parentId: snapshot.parentId, parentTitle: snapshot.parentTitle ?? snapshot.parentId.slice(0, 8), parentType: "task" })
+        } else {
+          applyParentContext(undefined)
+        }
+        if (taskTypeSelect) taskTypeSelect.value = snapshot.taskType ?? "task"
+        syncTaskTypeSelect(taskTypeSelect, activeParentContext?.parentType)
 
         const priority = input("new-task-priority")
         const recurrence = overlay?.querySelector<HTMLSelectElement>("#new-task-recurrence")
@@ -1174,6 +1280,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       unconfirmedAttempt = recoveredTaskId = undefined
       pendingContext = null
       repeatAfterReceipt = false
+      urlPrefillCustomFields = undefined
       if (uncertain) uncertain.hidden = true
       if (uncertainAlert) uncertainAlert.hidden = false
       if (receiptStatus) receiptStatus.textContent = ""
@@ -1188,10 +1295,37 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
         checklist: { items: [], input: "" }, shopping: { items: [], input: "", quantity: "1", category: "" },
         event: { start: "", end: "", location: "", allDay: false, calendar: "" }, fields: [],
       })
+      void descEditor?.setMode("markdown", false)
     }
 
     function restoreCaptureContext() {
       capturePlacement = contextPlacement
+      applyParentContext(contextParent)
+      if (taskTypeSelect) {
+        taskTypeSelect.value = pendingCreateOptions?.taskType
+          ?? (contextParent ? defaultChildTaskType(contextParent.parentType) : "task")
+        syncTaskTypeSelect(taskTypeSelect, contextParent?.parentType)
+      }
+      if (pendingCreateOptions?.title && titleInput) {
+        titleInput.value = pendingCreateOptions.title
+        resizeTitle()
+      }
+      if (pendingCreateOptions?.description && descInput) descInput.value = pendingCreateOptions.description
+      if (pendingCreateOptions?.priority && prioritySelect) {
+        prioritySelect.value = String(pendingCreateOptions.priority)
+        syncPriorityIcon()
+      }
+      if (pendingCreateOptions?.status) selectStatus(pendingCreateOptions.status)
+      if (pendingCreateOptions?.dueDate && !contextDue) contextDue = pendingCreateOptions.dueDate
+      if (pendingCreateOptions?.labels?.length) {
+        labelPicker?.dispatchEvent(new CustomEvent("meitheal:set-draft-labels", {
+          detail: { labels: pendingCreateOptions.labels, newLabels: [] },
+        }))
+      }
+      if (pendingCreateOptions?.customFields) {
+        urlPrefillCustomFields = { ...pendingCreateOptions.customFields }
+      }
+      pendingCreateOptions = undefined
       if (contextKind) selectKind(contextKind)
       if (contextKind === "calendar_event") restoreEventDate("nt-event-start", contextDue)
       else restoreDue(contextDue)
@@ -1552,6 +1686,8 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
             ...(capturePlacement ? { placement: capturePlacement } : {}),
             description: descInputEl?.value.trim() || "",
             task_kind: kindInputEl?.value || "standard_action",
+            task_type: normalizeEditableTaskType(taskTypeSelect?.value),
+            ...(parentInput?.value ? { parent_id: parentInput.value } : {}),
             priority: Number(prioritySelectEl?.value),
             status: statusSelectEl?.value || "pending",
             labels: JSON.stringify(allLabels),
@@ -1594,6 +1730,11 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
             const end = eventDateValue("nt-event-end")
             if (start) body.start_date = start
             if (end) body.end_date = end
+          }
+
+          if (urlPrefillCustomFields) {
+            const existing = body.custom_fields ? JSON.parse(String(body.custom_fields)) : {}
+            body.custom_fields = JSON.stringify({ ...urlPrefillCustomFields, ...existing })
           }
 
           // Custom fields
@@ -1680,6 +1821,32 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       }, { signal });
     }
 
+    // ── Copy prefilled link action ──
+    copyPrefillBtn?.addEventListener("click", async () => {
+      let labels: string[] = []
+      try {
+        const parsed = JSON.parse(labelValue?.value || "[]")
+        if (Array.isArray(parsed)) labels = parsed.map(String).filter(Boolean)
+      } catch { /* ignore */ }
+      const url = buildTaskPrefillUrl(location.href, {
+        title: titleInput?.value ?? "",
+        description: descInput?.value ?? "",
+        priority: Number(value("new-task-priority")) || 3,
+        dueDate: value("nt-contextual-due") || undefined,
+        taskType: normalizeEditableTaskType(taskTypeSelect?.value),
+        parentId: activeParentContext?.parentId || undefined,
+        areaId: contextPlacement?.areaId ?? undefined,
+        projectId: contextPlacement?.projectId ?? undefined,
+        labels,
+      })
+      try {
+        await navigator.clipboard.writeText(url)
+        showToast(copyPrefillBtn.dataset.copiedLabel || "Prefilled task link copied")
+      } catch {
+        window.prompt("Copy prefilled task link", url)
+      }
+    }, { signal })
+
     // ── Memory cleanup on signal abort (page navigation) ──
     signal.addEventListener('abort', () => {
       delete (window as any).__meitheal_users;
@@ -1688,13 +1855,50 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
   });
   pageLifecycle.onPageLoad(signal => {
     const url = new URL(location.href)
-    if (url.searchParams.get("capture") !== "1") return
-    requestAnimationFrame(() => {
-      if (signal.aborted) return
-      url.searchParams.delete("capture")
-      history.replaceState(history.state, "", url.pathname + url.search + url.hash)
-      window.openNewTaskModal?.()
-    })
+    if (url.searchParams.get("capture") === "1") {
+      requestAnimationFrame(() => {
+        if (signal.aborted) return
+        url.searchParams.delete("capture")
+        history.replaceState(history.state, "", url.pathname + url.search + url.hash)
+        window.openNewTaskModal?.()
+      })
+      return
+    }
+    if (url.searchParams.get("create") === "1") {
+      void (async () => {
+        let allowCustomFields = false
+        if (url.searchParams.has("custom_fields")) {
+          try {
+            const res = await fetch("/api/settings?key=allow_url_custom_field_prefill", { cache: "no-store", signal })
+            if (res.ok) {
+              const data = await res.json().catch(() => null) as { value?: unknown } | null
+              allowCustomFields = data?.value === true || data?.value === "true"
+            }
+          } catch { /* default fail-closed */ }
+        }
+        if (signal.aborted) return
+        const prefill = parseTaskUrlPrefill(url.searchParams, { allowCustomFields })
+        history.replaceState(history.state, "", stripTaskUrlPrefillParams(url))
+        if (!prefill) return
+        requestAnimationFrame(() => {
+          if (signal.aborted) return
+          window.openNewTaskModal?.("standard_action", {
+            ...(prefill.title ? { title: prefill.title } : {}),
+            ...(prefill.description ? { description: prefill.description } : {}),
+            ...(prefill.priority !== undefined ? { priority: prefill.priority } : {}),
+            ...(prefill.dueDate ? { dueDate: prefill.dueDate } : {}),
+            ...(prefill.taskType ? { taskType: prefill.taskType } : {}),
+            ...(prefill.areaId ? { areaId: prefill.areaId } : {}),
+            ...(prefill.projectId ? { projectId: prefill.projectId } : {}),
+            ...(prefill.labels ? { labels: prefill.labels } : {}),
+            ...(prefill.customFields ? { customFields: prefill.customFields } : {}),
+            ...(prefill.parentId
+              ? { parent: { parentId: prefill.parentId, parentTitle: prefill.parentId.slice(0, 8), parentType: "epic" } }
+              : {}),
+          })
+        })
+      })()
+    }
   })
 </script>
 

@@ -1,5 +1,7 @@
-import { currentTaskApiContext } from "./task-api"
+import { currentTaskApiContext, taskApiHeaders } from "./task-api"
 import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordVersion } from "./task-api-client"
+import { formatTicketDisplay } from "./task-editor-fields"
+import { enhanceDescriptionEditor } from "./task-description-editor"
         import { askAIForTask } from "@domains/ai/ai-context-service";
         import { createClientLogger } from "@lib/client-logger";
         import { copyToClipboard } from "@lib/clipboard"
@@ -132,6 +134,75 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         const closeTaskReferences = initModalTaskReferences(tdOverlay, __signal)
         const tdClose = document.getElementById("td-close")
         const tdPanel = document.getElementById("task-detail-panel")
+        const tdResizeHandle = document.getElementById("td-resize-handle")
+        const SIDEBAR_WIDTH_KEY = "meitheal:task-sidebar-width:v1"
+        const DEFAULT_SIDEBAR_WIDTH = 420
+        const MIN_SIDEBAR_WIDTH = 360
+        const maxSidebarWidth = () => Math.max(MIN_SIDEBAR_WIDTH, Math.min(840, window.innerWidth - MIN_SIDEBAR_WIDTH))
+        const clampSidebarWidth = (w: number) => Math.max(MIN_SIDEBAR_WIDTH, Math.min(maxSidebarWidth(), Math.round(w)))
+        const applySidebarWidth = (width: number, persist: boolean) => {
+          const clamped = clampSidebarWidth(width)
+          document.documentElement.style.setProperty("--task-inspector-width", `${clamped}px`)
+          if (tdResizeHandle) {
+            tdResizeHandle.setAttribute("aria-valuemax", String(maxSidebarWidth()))
+            tdResizeHandle.setAttribute("aria-valuenow", String(clamped))
+          }
+          if (persist) {
+            try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(clamped)) } catch { /* ignore storage errors */ }
+          }
+          return clamped
+        }
+        const readStoredSidebarWidth = (): number | null => {
+          try {
+            const raw = Number.parseInt(localStorage.getItem(SIDEBAR_WIDTH_KEY) ?? "", 10)
+            return Number.isFinite(raw) && raw >= MIN_SIDEBAR_WIDTH ? raw : null
+          } catch { return null }
+        }
+        if (tdResizeHandle) {
+          let dragStartX = 0
+          let dragStartWidth = DEFAULT_SIDEBAR_WIDTH
+          let activeWidth = readStoredSidebarWidth() ?? DEFAULT_SIDEBAR_WIDTH
+          if (readStoredSidebarWidth() !== null) applySidebarWidth(activeWidth, false)
+          tdResizeHandle.addEventListener("pointerdown", (e) => {
+            if (!document.body.classList.contains("has-docked-inspector")) return
+            dragStartX = e.clientX
+            dragStartWidth = tdOverlay.getBoundingClientRect().width || DEFAULT_SIDEBAR_WIDTH
+            activeWidth = dragStartWidth
+            tdResizeHandle.setAttribute("data-resizing", "")
+            tdResizeHandle.setPointerCapture?.(e.pointerId)
+            e.preventDefault()
+          }, { signal: __signal })
+          tdResizeHandle.addEventListener("pointermove", (e) => {
+            if (!tdResizeHandle.hasAttribute("data-resizing")) return
+            activeWidth = applySidebarWidth(dragStartWidth + (dragStartX - e.clientX), false)
+          }, { signal: __signal })
+          const finishDrag = () => {
+            if (!tdResizeHandle.hasAttribute("data-resizing")) return
+            tdResizeHandle.removeAttribute("data-resizing")
+            applySidebarWidth(activeWidth, true)
+          }
+          tdResizeHandle.addEventListener("pointerup", finishDrag, { signal: __signal })
+          tdResizeHandle.addEventListener("pointercancel", finishDrag, { signal: __signal })
+          tdResizeHandle.addEventListener("dblclick", () => {
+            activeWidth = DEFAULT_SIDEBAR_WIDTH
+            document.documentElement.style.removeProperty("--task-inspector-width")
+            tdResizeHandle.setAttribute("aria-valuenow", String(DEFAULT_SIDEBAR_WIDTH))
+            try { localStorage.removeItem(SIDEBAR_WIDTH_KEY) } catch { /* ignore */ }
+          }, { signal: __signal })
+          tdResizeHandle.addEventListener("keydown", (e) => {
+            if (!document.body.classList.contains("has-docked-inspector")) return
+            const step = e.shiftKey ? 64 : 24
+            const cur = tdOverlay.getBoundingClientRect().width || readStoredSidebarWidth() || DEFAULT_SIDEBAR_WIDTH
+            if (e.key === "ArrowLeft") { e.preventDefault(); activeWidth = applySidebarWidth(cur + step, true) }
+            else if (e.key === "ArrowRight") { e.preventDefault(); activeWidth = applySidebarWidth(cur - step, true) }
+            else if (e.key === "Home") { e.preventDefault(); activeWidth = applySidebarWidth(MIN_SIDEBAR_WIDTH, true) }
+            else if (e.key === "End") { e.preventDefault(); activeWidth = applySidebarWidth(maxSidebarWidth(), true) }
+          }, { signal: __signal })
+          window.addEventListener("resize", () => {
+            const stored = readStoredSidebarWidth()
+            if (stored !== null) applySidebarWidth(stored, false)
+          }, { signal: __signal })
+        }
         const tdHeading = document.getElementById("td-task-heading")
         const tdActions = document.getElementById("td-task-actions")
         const tdTitleInput = tdPanel?.querySelector<HTMLTextAreaElement>("#td-title")
@@ -848,7 +919,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               const progressBar = document.getElementById("td-subtask-progress-bar");
               try {
                 const childRes = await fetch( // nosemgrep
-                  `${window.__ingress_path || ""}/api/tasks?parent_id=${taskId}`, // nosemgrep
+                  `/api/tasks?parent_id=${encodeURIComponent(taskId)}`, // nosemgrep
                   requestOptions,
                 );
                 if (modalSignal.aborted) return
@@ -859,25 +930,55 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
                   if (children.length === 0) {
                     const empty = document.createElement("span")
                     empty.className = "text-xs text-text-muted italic"
-                    empty.textContent = "No children"
+                    empty.textContent = "No child items"
                     childrenDiv.replaceChildren(empty)
                     if (progressWrap) progressWrap.classList.add("hidden");
                   } else {
                     let doneCount = 0;
                     children.forEach((c: Record<string, unknown>) => {
-                      const isDone = c.status === "complete";
+                      const isDone = isDoneStatus(String(c.status ?? ""));
                       if (isDone) doneCount++;
+                      const row = document.createElement("div");
+                      row.className = "flex items-center justify-between gap-2 text-xs";
                       const chip = document.createElement("a");
                       chip.href = "#";
-                      chip.className = `text-xs block flex items-center gap-1 ${isDone ? "text-text-muted line-through" : "text-accent hover:underline"}`;
-                      const typeIcon = c.task_type === "epic" ? "🎯" : c.task_type === "story" ? "📖" : "";
-                      const statusIcon = isDone ? "✓" : "⏳";
-                      chip.textContent = `${statusIcon} ${typeIcon}${typeIcon ? " " : ""}↳ ${c.ticket_key ? c.ticket_key + " " : ""}${String(c.title ?? c.id).slice(0, 50)}`;
+                      chip.className = `flex items-center gap-1.5 min-w-0 truncate ${isDone ? "text-text-muted line-through" : "text-accent hover:underline"}`;
+                      const iconSpan = document.createElement("span");
+                      iconSpan.className = "shrink-0 inline-flex";
+                      const iconDoc = new DOMParser().parseFromString(renderTypeIconSvg(String(c.task_type ?? "task"), 14), "text/html");
+                      iconSpan.replaceChildren(...Array.from(iconDoc.body.childNodes));
+                      const label = document.createElement("span");
+                      label.className = "truncate";
+                      label.textContent = formatTicketDisplay(c.ticket_key, String(c.title ?? c.id).slice(0, 60), c.id);
+                      chip.append(iconSpan, label);
                       chip.addEventListener("click", (e) => {
                         e.preventDefault();
                         openTaskDetail(String(c.id));
-                      });
-                      childrenDiv.appendChild(chip);
+                      }, { signal: modalSignal });
+
+                      const detachBtn = document.createElement("button");
+                      detachBtn.type = "button";
+                      detachBtn.className = "text-text-muted hover:text-danger px-1 shrink-0";
+                      detachBtn.title = "Detach from parent";
+                      detachBtn.setAttribute("aria-label", `Detach child item ${String(c.title ?? c.id)}`);
+                      detachBtn.textContent = "✕";
+                      detachBtn.addEventListener("click", async () => {
+                        if (detachBtn.disabled || currentTaskId !== taskId) return;
+                        const ver = taskRecordVersion(c);
+                        detachBtn.disabled = true;
+                        const res = await saveVersionedTask(String(c.id), { parent_id: null }, ver, undefined, modalSignal);
+                        if (modalSignal.aborted) return;
+                        if (res.ok) {
+                          document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "child-detached" } }));
+                          openTaskDetail(taskId);
+                        } else {
+                          detachBtn.disabled = false;
+                          showToast(res.message ?? "Could not detach child item", "error");
+                        }
+                      }, { signal: modalSignal });
+
+                      row.append(chip, detachBtn);
+                      childrenDiv.appendChild(row);
                     });
                     // Update progress bar (SUB-03)
                     if (progressWrap && progressLabel && progressBar) {
@@ -1221,7 +1322,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             if (principleSelect) try {
               if (currentPillarId && currentPillarId !== "null" && currentPillarId !== "undefined") {
                 const prinRes = await fetch( // nosemgrep
-                  (window.__ingress_path || "") + `/api/pillars/${currentPillarId}/principles`, // nosemgrep
+                  `/api/pillars/${encodeURIComponent(currentPillarId)}/principles`, // nosemgrep
                   requestOptions,
                 );
                 if (modalSignal.aborted) return
@@ -1246,9 +1347,12 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               principleSelect.replaceChildren(new Option(currentPrincipleId, currentPrincipleId));
             }
             // Phase 20: Agile hierarchy type
-            (
-              document.getElementById("td-task-type") as HTMLSelectElement
-            ).value = String(t.task_type ?? "task");
+            const tdTaskTypeEl = document.getElementById("td-task-type") as HTMLSelectElement | null;
+            if (tdTaskTypeEl) {
+              const ttVal = String(t.task_type ?? "task");
+              tdTaskTypeEl.value = ttVal;
+              tdTaskTypeEl.dataset.savedTaskType = ttVal;
+            }
 
             // Phase 1 (REC-04): Set recurrence select to current value
             const recurrenceSelect = document.getElementById("td-recurrence") as HTMLSelectElement | null;
@@ -1262,14 +1366,6 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               }
             }
 
-            const isFav = Number(t.is_favorite ?? 0) === 1;
-            const favBtn = document.getElementById("td-toggle-favorite") as HTMLButtonElement | null;
-            if (favBtn) {
-              favBtn.setAttribute("aria-pressed", String(isFav));
-              const favLabel = isFav ? "Remove from favorites" : "Add to favorites";
-              favBtn.title = favLabel;
-              favBtn.setAttribute("aria-label", favLabel);
-            }
             const isPromoted = Boolean(t.is_promoted);
             const promoteBtn = document.getElementById("td-toggle-promote") as HTMLButtonElement | null;
             if (promoteBtn) {
@@ -1281,15 +1377,30 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               promoteBtn.setAttribute("aria-label", promoteLabel);
             }
 
-            // Load settings-defined custom fields
+            // Load board-scoped custom fields (falling back to settings on household)
             _settingsFields = [];
             let allSettings: Record<string, unknown> = {};
+            const cfContext = currentTaskApiContext();
             try {
-              const settingsRes = await settings
+              const [settingsRes, cfRes] = await Promise.all([
+                settings,
+                fetch("/api/custom-fields", {
+                  cache: "no-store",
+                  signal: modalSignal,
+                  ...(cfContext ? { headers: taskApiHeaders(cfContext) } : {}),
+                }).catch(() => null),
+              ])
+              if (cfRes?.ok) {
+                const cfData = await cfRes.json().catch(() => null) as { fields?: unknown } | null
+                if (modalSignal.aborted || currentTaskId !== taskId) return
+                if (Array.isArray(cfData?.fields)) {
+                  _settingsFields = cfData.fields as Array<{ name: string; type: string; options?: string[] }>
+                }
+              }
               if (settingsRes.ok) {
                 allSettings = await settingsRes.json();
                 if (modalSignal.aborted || currentTaskId !== taskId) return
-                if (allSettings?.custom_fields) {
+                if (_settingsFields.length === 0 && allSettings?.custom_fields && (!cfContext || cfContext.boardId === "household")) {
                   try {
                     const parsed = JSON.parse(
                       allSettings.custom_fields as string,
@@ -1528,6 +1639,17 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
                 }
               } else if (field === "parent_id" || field === "task_type" || field === "title") {
                 epicGroupingDirty = true
+                if (field === "task_type") {
+                  const sel = document.getElementById("td-task-type") as HTMLSelectElement | null
+                  if (sel) sel.dataset.savedTaskType = String(value)
+                  const typeIconEl = document.getElementById("td-type-icon")
+                  if (typeIconEl) {
+                    const tt = String(value || "task").toLowerCase()
+                    const iconDoc = new DOMParser().parseFromString(renderTypeIconSvg(tt, 16), "text/html")
+                    typeIconEl.replaceChildren(...Array.from(iconDoc.body.childNodes))
+                    typeIconEl.title = tt.charAt(0).toUpperCase() + tt.slice(1)
+                  }
+                }
                 if (!tdOverlay.classList.contains("active")) reconcileEpicGrouping()
               }
               notifyInactivityTaskChanged(field === "status" ? undefined : taskId)
@@ -1538,7 +1660,18 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               }
               return field === "area_id" || !search || generation === detailGeneration
             }
-            if (!result.ok) log.warn(`Failed to save ${field}:`, result.status)
+            if (!result.ok) {
+              log.warn(`Failed to save ${field}:`, result.status)
+              if (field === "task_type") {
+                const sel = document.getElementById("td-task-type") as HTMLSelectElement | null
+                if (sel && sel.dataset.savedTaskType) sel.value = sel.dataset.savedTaskType
+              }
+              if (result.message && result.errorCode !== "conflict" && result.errorCode !== "unconfirmed") {
+                const sessionBound = search || field === "description"
+                if (!sessionBound || generation === detailGeneration) showToast(result.message, "error")
+                return false
+              }
+            }
           } catch (err) {
             log.warn(`Network error saving ${field}:`, err)
           } finally {
@@ -1569,6 +1702,10 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         let _descOriginalValue = "";
         let _descSavedTimer: number | null = null;
         let descriptionRenderSequence = 0
+        const descEditor = enhanceDescriptionEditor(tdDescription, {
+          signal: __signal,
+          afterPreviewRender: resolveDescriptionTaskReferences,
+        })
 
         async function renderTaskDescription(markdown: string): Promise<void> {
           if (!descPreview || __signal.aborted) return
@@ -1609,6 +1746,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           _descOriginalValue = tdDescription?.value ?? "";
           descEditContainer?.classList.remove("hidden");
           descView?.classList.add("hidden");
+          void descEditor?.setMode("markdown");
           tdDescription?.focus();
         }
 
@@ -1950,8 +2088,10 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           }
           parentSearchTimer = setTimeout(async () => {
             try {
+              const ctx = currentTaskApiContext()
               const res = await fetch(
                 `/api/tasks?q=${encodeURIComponent(q)}&limit=10`,
+                ctx ? { headers: taskApiHeaders(ctx) } : undefined,
               );
               if (!res.ok || !parentResultsDiv) return;
               const data = await res.json();
@@ -1967,20 +2107,15 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               } else {
                 parentResultsDiv.replaceChildren(
                   ...tasks.map((t: Record<string, unknown>) => {
-                    const typeIcon =
-                      t.task_type === "epic"
-                        ? "🎯"
-                        : t.task_type === "story"
-                          ? "📖"
-                          : "✅";
                     const row = document.createElement("div");
                     row.className = "td-parent-result px-3 py-2 text-sm cursor-pointer hover:bg-bg-hover flex items-center gap-2";
                     row.dataset.id = String(t.id ?? "");
                     const iconSpan = document.createElement("span");
-                    iconSpan.textContent = typeIcon;
+                    const iconDoc = new DOMParser().parseFromString(renderTypeIconSvg(String(t.task_type ?? "task"), 14), "text/html");
+                    iconSpan.replaceChildren(...Array.from(iconDoc.body.childNodes));
                     const titleSpan = document.createElement("span");
                     titleSpan.className = "truncate";
-                    titleSpan.textContent = String(t.title ?? "").slice(0, 60);
+                    titleSpan.textContent = formatTicketDisplay(t.ticket_key, String(t.title ?? "").slice(0, 60), t.id);
                     const typeSpan = document.createElement("span");
                     typeSpan.className = "text-xs text-text-muted ml-auto";
                     typeSpan.textContent = String(t.task_type ?? "task");
@@ -1996,11 +2131,10 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
                       const newParentId = (el as HTMLElement).dataset.id;
                       if (newParentId) {
                         const modalSignal = _modalAbortController?.signal
-                        await saveTD("parent_id", newParentId);
-                        if (modalSignal?.aborted) return
+                        const ok = await saveTaskField("parent_id", newParentId);
+                        if (modalSignal?.aborted || !ok) return
                         parentSearchInput.value = "";
                         parentResultsDiv.style.display = "none";
-                        // Refresh the panel to show the new parent
                         openTaskDetail(currentTaskId!);
                       }
                     }, { signal: __signal });
@@ -2067,27 +2201,6 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             } finally {
               btn.disabled = false;
             }
-          }, { signal: __signal });
-
-        // Toggle favorite (keeps Tabler icon intact)
-        document
-          .getElementById("td-toggle-favorite")
-          ?.addEventListener("click", async () => {
-            if (!currentTaskId) return;
-            const search = searchSession
-            const generation = detailGeneration
-            const btn = document.getElementById(
-              "td-toggle-favorite",
-            ) as HTMLButtonElement | null;
-            if (!btn) return;
-            const isFav = btn.getAttribute("aria-pressed") === "true";
-            const nextFav = !isFav;
-            btn.setAttribute("aria-pressed", String(nextFav));
-            await saveTD("is_favorite", nextFav ? 1 : 0);
-            if (search && generation !== detailGeneration) return;
-            const favLabel = nextFav ? "Remove from favorites" : "Add to favorites";
-            btn.title = favLabel;
-            btn.setAttribute("aria-label", favLabel);
           }, { signal: __signal });
 
         // Duplicate task
@@ -2429,6 +2542,14 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         document.body.addEventListener("keydown", handleTaskActivation, {
           signal: __signal,
         });
+
+        // === Refresh open detail panel when checklist step converts to child task ===
+        document.addEventListener("meitheal:refresh-task-detail", (event) => {
+          const requestedId = (event as CustomEvent<{ taskId?: string }>).detail?.taskId
+          if (requestedId && requestedId === currentTaskId && tdOverlay.classList.contains("active")) {
+            void openTaskDetail(requestedId)
+          }
+        }, { signal: __signal })
 
         // === Command Palette (extracted) ===
         initCommandPalette({ openTaskDetail, __signal })

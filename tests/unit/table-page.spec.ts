@@ -8,7 +8,7 @@ function task(id: string, fields: Partial<TaskViewItem> = {}): TaskViewItem {
   return {
     id, title: id, description: null, status: "pending", priority: 3, due_date: null,
     labels: [], rice: null, calendar_sync_state: null, area_id: "default", project_id: null,
-    custom_fields: {}, start_date: null, end_date: null, progress: 0, color: null, is_favorite: false,
+    custom_fields: {}, start_date: null, end_date: null, progress: 0, color: null, is_promoted: false,
     task_type: "task", task_kind: null, parent_id: null, ticket_number: null, ticket_key: null, assigned_to: null,
     checklists: null, created_at: "", updated_at: "", deferred_at: null, is_overdue: false,
     is_done: false, framework_payload: {}, urgency: 0, importance: 0, eisenhower_quadrant: "",

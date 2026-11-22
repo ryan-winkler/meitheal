@@ -87,8 +87,8 @@ try {
 
   // Partition tasks into sections
   for (const task of tasks) {
-    // Shared favorites
-    if (task.is_favorite) {
+    // Promoted tasks
+    if (task.is_promoted) {
       pinnedTasks.push(task)
     }
 
@@ -485,13 +485,13 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
           aria-controls="today-pinned-list" aria-expanded="true">
           <Icon name="chevron-down" size={14} class="today-section__icon" />
           <span class="today-section__title">
-            <Icon name="star" size={16} /> Shared favorites
+            <Icon name="star" size={16} /> Promoted
           </span>
           <span class="today-section__count" id="today-pinned-list-count">{pinnedTasks.length}</span>
         </button>
         <div class="today-section__list" id="today-pinned-list" data-today-task-list>
           {pinnedTasks.map(task => (
-            <TaskListItem task={task} showSnooze showActions focusDueLabel={focusCandidateIds.has(task.id) ? focusDueLabel(task) : undefined} section="Shared favorites" />
+            <TaskListItem task={task} showSnooze showActions focusDueLabel={focusCandidateIds.has(task.id) ? focusDueLabel(task) : undefined} section="Promoted" />
           ))}
         </div>
       </div>

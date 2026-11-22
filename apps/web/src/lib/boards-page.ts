@@ -4,6 +4,7 @@ import { confirmDialog, type ConfirmOptions } from "./confirm-dialog"
 import { safeIngressHref, syncIngressDestination } from "./ingress-navigation"
 import { stripIngressPrefix } from "./ingress-state-persistence"
 import { safeFetch } from "./safe-fetch"
+import { normalizeCustomFieldDefs, type CustomFieldDef } from "./custom-field-defs"
 import { normalizeBoardKey, suggestBoardKey, validateBoardKey } from "@domains/tasks/board-key"
 
 class BoardRequestError extends Error {
@@ -20,16 +21,18 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
 
   const stale = document.createElement("p")
   stale.dataset.boardStale = ""
+  stale.className = "alert alert-warning board-verification-banner"
   stale.setAttribute("role", "status")
   stale.hidden = true
   root.prepend(stale)
   const recovery = document.createElement("p")
   recovery.dataset.boardVerification = ""
+  recovery.className = "alert alert-warning board-verification-banner"
   recovery.setAttribute("role", "status")
   recovery.hidden = true
   const retry = document.createElement("button")
   retry.type = "button"
-  retry.className = "btn btn-ghost"
+  retry.className = "btn btn-ghost btn-sm"
   retry.textContent = "Retry verification"
   recovery.append("This Board is hidden until access can be verified. Your input is kept on this page. ", retry)
   status.before(recovery)
@@ -318,17 +321,15 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
     if (!(form instanceof HTMLFormElement) || !form.dataset.boardForm) return
     event.preventDefault()
     if (expired || signal.aborted || navigating || form.dataset.boardPending) return
-    const { boardForm, ticketId, version } = form.dataset
+    const { boardForm } = form.dataset
     const data = new FormData(form)
     const value = (name: string) => String(data.get(name) ?? "")
     const content = { title: value("title"), description: value("description") }
     const boardId = form.dataset.boardId || root.dataset.boardId
     const api = boardId ? `boards/${encodeURIComponent(boardId)}` : "boards"
-    const ticket = ticketId ? `${api}/tickets/${encodeURIComponent(ticketId)}` : api
     const feedback = form.querySelector<HTMLElement>("[data-board-feedback]")
     const button = form.querySelector<HTMLButtonElement>('[type="submit"]')
     if (!button || button.disabled || button.hidden) return
-    if (boardForm === "task-delete" && !await confirmBoard({ message: "Delete this task?" })) return
     if (boardForm === "planning" && value("action") === "retire" && !await confirmBoard({ message: "Remove this item from active planning?" })) return
     if (boardForm === "lifecycle" && value("action") === "retire" && !await confirmBoard({
       title: "Delete Board",
@@ -435,27 +436,6 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
             denyDeletion: data.has("denyDeletion"), denyAgentDeletion: data.has("denyAgentDeletion"),
           })
           break
-        case "task-create":
-          await jsonRequest(api + "/tickets", "POST", {
-            ...content, laneId: value("laneId"), ...(value("due_date") ? { due_date: value("due_date") } : {}),
-            ...(value("home_assistant_area_id") ? { home_assistant_area_id: value("home_assistant_area_id") } : {}),
-            placement: { areaId: value("areaId") || null, projectId: value("projectId") || null },
-          })
-          break
-        case "task-edit":
-          await jsonRequest(ticket, "PATCH", { ...content, version: Number(version), ...(data.has("due_date") ? { due_date: value("due_date") || null } : {}) })
-          break
-        case "task-file":
-          await jsonRequest(ticket, "PATCH", {
-            action: "file", version: Number(version), areaId: value("areaId") || null, projectId: value("projectId") || null,
-          })
-          break
-        case "task-move":
-          await jsonRequest(ticket, "PATCH", { laneId: value("laneId"), version: Number(version) })
-          break
-        case "task-delete":
-          await jsonRequest(ticket, "DELETE", { version: Number(version) })
-          break
         case "planning": {
           const linkedEntity = value("linkedEntity")
           const [entityType, linkedId] = linkedEntity.split("/", 2)
@@ -488,6 +468,44 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
         case "intake-toggle":
           await jsonRequest(api + "/intakes", "PATCH", { id: value("id"), enabled: value("enabled") === "true" })
           break
+        case "custom-field-add":
+        case "custom-field-remove": {
+          const activeBoardId = root!.dataset.boardId
+          const cfHeaders = {
+            "Content-Type": "application/json",
+            "X-Meitheal-Board-Session": root!.dataset.boardSession!,
+            ...(activeBoardId ? { "X-Meitheal-Board-Id": activeBoardId } : {}),
+          }
+          const loaded = await safeFetch("/api/custom-fields", {
+            cache: "no-store", headers: cfHeaders, mode: "same-origin", redirect: "error", timeoutMs: 10_000, signal,
+          })
+          if (!loaded.ok) throw new BoardRequestError("Could not load Board custom fields.", loaded.status)
+          const parsed = await loaded.json().catch(() => null) as { fields?: unknown } | null
+          const currentFields = normalizeCustomFieldDefs(parsed?.fields)
+          let nextFields: CustomFieldDef[]
+          if (boardForm === "custom-field-remove") {
+            const targetName = value("name")
+            nextFields = currentFields.filter(f => f.name !== targetName)
+          } else {
+            const name = value("name").trim()
+            if (!name) throw new Error("Enter a field name.")
+            const type = value("type").trim() || "text"
+            const rawOpts = value("options").split(",").map(s => s.trim()).filter(Boolean)
+            nextFields = normalizeCustomFieldDefs([
+              ...currentFields,
+              { name, type, ...(type === "select" && rawOpts.length ? { options: rawOpts } : {}) },
+            ])
+          }
+          const saved = await safeFetch("/api/custom-fields", {
+            method: "PUT", headers: cfHeaders, body: JSON.stringify({ fields: nextFields }),
+            mode: "same-origin", redirect: "error", timeoutMs: 10_000, signal,
+          })
+          if (!saved.ok) {
+            const err = await saved.json().catch(() => null) as { error?: string } | null
+            throw new BoardRequestError(err?.error ?? "Could not save Board custom fields.", saved.status)
+          }
+          break
+        }
         case "send": {
           if (!content.title.trim()) throw new Error("Enter a task title.")
           const payload = { ...content, id: value("destination"), assignToRecipient: !recipient?.hidden && data.has("assign") }

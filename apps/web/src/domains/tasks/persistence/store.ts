@@ -365,9 +365,6 @@ async function initializeRuntimeTables(client: Transaction): Promise<void> {
   if (!(await hasColumn(client, "tasks", "color"))) {
     await client.execute("ALTER TABLE tasks ADD COLUMN color TEXT");
   }
-  if (!(await hasColumn(client, "tasks", "is_favorite"))) {
-    await client.execute("ALTER TABLE tasks ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0");
-  }
   // Phase 20: Agile hierarchy — epic/story/task type
   if (!(await hasColumn(client, "tasks", "task_type"))) {
     await client.execute("ALTER TABLE tasks ADD COLUMN task_type TEXT NOT NULL DEFAULT 'task'");
@@ -490,7 +487,6 @@ async function initializeRuntimeTables(client: Transaction): Promise<void> {
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_created_at_idx ON tasks(created_at)");
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_due_date_idx ON tasks(due_date)");
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_updated_at_idx ON tasks(updated_at)");
-  await client.execute("CREATE INDEX IF NOT EXISTS tasks_is_favorite_idx ON tasks(is_favorite)");
   await client.execute("CREATE INDEX IF NOT EXISTS tasks_reminder_at_idx ON tasks(reminder_at)");
 
   if (!(await hasColumn(client, "tasks", "source"))) {

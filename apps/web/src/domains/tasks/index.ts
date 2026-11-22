@@ -76,6 +76,7 @@ export {
 export { rewriteLabelReferences, findUsedLabelDefinitions, removeBoardLabelJunctions } from "./persistence/label-reference-repository"
 export { TaskHandoff } from "./persistence/task-handoff"
 export {
+  defaultTaskSortOrder,
   taskInsertStatement,
   TaskRepository,
   type CalendarFilterRow,

@@ -21,8 +21,8 @@ const ALLOWED_TAGS = new Set([
 
 /** Attributes allowed per-tag. `*` applies to all tags. */
 const ALLOWED_ATTRS: Record<string, Set<string>> = {
-  a: new Set(["href", "name", "target"]),
-  "*": new Set(["class", "id"]),
+  a: new Set(["href", "name", "target", "rel"]),
+  "*": new Set(["class"]),
 }
 
 /** Allowed URL schemes for href/src. */
@@ -30,16 +30,17 @@ const ALLOWED_SCHEMES = new Set(["http:", "https:", "mailto:"])
 
 /** Dangerous URI schemes to block (case-insensitive). */
 const BLOCKED_SCHEMES = /^\s*(javascript|vbscript|data|blob):/i
+const SAFE_RELATIVE_URL = /^(?:#|\/(?!\/)|\.\.?\/)/
 
 function isAllowedUrl(value: string): boolean {
-  // Block dangerous schemes first (case-insensitive to prevent bypass)
-  if (BLOCKED_SCHEMES.test(value)) return false
+  const trimmed = value.trim()
+  if (!trimmed || BLOCKED_SCHEMES.test(trimmed)) return false
+  if (SAFE_RELATIVE_URL.test(trimmed)) return true
   try {
-    const url = new URL(value, window.location.origin)
+    const url = new URL(trimmed, window.location.origin)
     return ALLOWED_SCHEMES.has(url.protocol)
   } catch {
-    // Relative URLs that didn't parse are fine (e.g. "#anchor", "/path")
-    return true
+    return false
   }
 }
 
@@ -75,6 +76,9 @@ function sanitizeNode(node: Node): Node | null {
       }
       clone.setAttribute(name, attr.value)
     }
+  }
+  if (tag === "a" && clone.getAttribute("target") === "_blank") {
+    clone.setAttribute("rel", "noopener noreferrer")
   }
 
   // Recursively sanitize children

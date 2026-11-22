@@ -213,28 +213,30 @@ function setupEventDelegation(container: HTMLElement, refreshReopened: (id: stri
 
     if (target.closest(".tli__completion")) return
 
-    // ── Favorite toggle ──
+    // ── Promoted star toggle ──
     if (target.classList.contains("tli__fav")) {
       e.stopPropagation()
       const el = target as HTMLElement
       const id = el.dataset.id
       if (!id) return
 
-      const isFav = el.classList.contains("is-fav")
-      const newFav = !isFav
+      const isPromoted = el.classList.contains("is-fav")
+      const nextPromoted = !isPromoted
 
-      function renderFavorite(favorite: boolean): void {
-        el.classList.toggle("is-fav", favorite)
-        el.title = favorite ? "Remove from favorites" : "Add to favorites"
-        el.setAttribute("aria-pressed", String(favorite))
+      function renderPromoted(promoted: boolean): void {
+        el.classList.toggle("is-fav", promoted)
+        const label = promoted ? "Remove promotion" : "Promote to top"
+        el.title = label
+        el.setAttribute("aria-label", label)
+        el.setAttribute("aria-pressed", String(promoted))
       }
-      renderFavorite(newFav)
+      renderPromoted(nextPromoted)
 
       try {
-        await taskApi.updateTask(id, { is_favorite: newFav ? 1 : 0 })
-        showToast(newFav ? "common.favorited" : "common.unfavorited")
+        await taskApi.updateTask(id, { is_promoted: nextPromoted })
+        showToast(nextPromoted ? "common.promoted" : "common.demoted")
       } catch {
-        renderFavorite(isFav)
+        renderPromoted(isPromoted)
         showToast("common.failed", "error")
       }
       return

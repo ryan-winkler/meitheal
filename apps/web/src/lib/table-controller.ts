@@ -23,6 +23,7 @@ import { pageLifecycle } from "@lib/page-lifecycle"
 import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { escapeHtml, sanitizeCssColor } from "@lib/safe-html"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
+import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
 import { hydrateTaskAssignees } from "@lib/task-assignee-display"
 import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "@lib/task-page-url"
 import { TASK_REFRESH_FRAGMENT_HEADER } from "@lib/task-view-route"
@@ -158,6 +159,8 @@ function init(signal: AbortSignal) {
     applyGrouping(currentGroupBy, applied.subGroupBy ?? "none", stats, areas)
     applyColumns(applied.columns)
     updateTableSort(applied.sort)
+    const manualBtn = document.getElementById("table-manual-order-btn")
+    if (manualBtn) manualBtn.setAttribute("aria-pressed", String(applied.sort === "manual-asc" && (!applied.groupBy || applied.groupBy === "none")))
     shell.dataset.tableFilters = JSON.stringify(applied)
     const createdRange = tableCreationRangeLabel(applied.createdFrom, applied.createdThrough)
     shell.querySelector("[data-table-created-summary]")?.classList.toggle("filter-pill--active", Boolean(createdRange))
@@ -299,6 +302,88 @@ function init(signal: AbortSignal) {
   setupRowClicks(table, signal, refreshAfterWrite, writes)
   setupBulkActions({ signal, onTasksChanged: refreshAfterWrite, writes })
   setupSortableHeaders(signal, (column, direction) => void refresh({ ...desired, sort: `${column}-${direction}` }, true), () => desired.sort)
+  const manualOrderBtn = document.getElementById("table-manual-order-btn")
+  manualOrderBtn?.addEventListener("click", () => {
+    const isManual = desired.sort === "manual-asc" && (!desired.groupBy || desired.groupBy === "none")
+    void refresh(isManual ? { ...desired, sort: undefined } : { ...desired, sort: "manual-asc", groupBy: "none", subGroupBy: "none" }, true)
+  }, { signal })
+
+  const persistTableOrder = async (movedRow: HTMLElement, rollback: () => void) => {
+    const needsSwitch = (desired.groupBy && desired.groupBy !== "none") || (desired.sort && !desired.sort.startsWith("manual"))
+    if (needsSwitch) {
+      rollback()
+      const approved = await confirmDialog({
+        title: "Switch to Manual order?",
+        message: "Reordering rows switches the table to ungrouped Manual order.",
+        confirmText: "Switch & Reorder",
+        signal,
+      })
+      if (!approved || signal.aborted) return
+      desired = { ...desired, sort: "manual-asc", groupBy: "none", subGroupBy: "none" }
+      await refresh(desired, true)
+      showToast("Manual order enabled — drag or press Alt+Up/Down to position rows")
+      return
+    }
+    const orderedIds = Array.from(tbody.querySelectorAll<HTMLElement>(".table-row[data-id]"))
+      .map(row => row.dataset.id)
+      .filter((id): id is string => Boolean(id))
+    if (!orderedIds.length) return
+    try {
+      const ctx = currentTaskApiContext()
+      const res = await fetch("/api/tasks/reorder", {
+        method: "POST",
+        headers: ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" },
+        body: JSON.stringify({ scope: "table", ordered_ids: orderedIds }),
+        signal,
+      })
+      if (!res.ok) throw new Error("Table reorder failed")
+      if (!desired.sort) desired = { ...desired, sort: "manual-asc" }
+      await refresh(desired)
+    } catch {
+      rollback()
+      if (!signal.aborted) showToast("Could not save table order", "error")
+    }
+  }
+
+  let preDragAnchor: Element | null = null
+  void import("@lib/list-drag-reorder")
+    .then(({ attachVerticalListDragReorder }) => {
+      if (signal.aborted) return
+      attachVerticalListDragReorder(tbody, {
+        handle: ".table-row-drag-handle",
+        item: ".table-row",
+        ghostClass: "dragging",
+        signal,
+        onStart: () => { preDragAnchor = tbody.querySelector(".table-row.dragging")?.nextElementSibling ?? null },
+        onEnd: ({ item, oldIndex, newIndex }) => {
+          const nextAfter = preDragAnchor
+          preDragAnchor = null
+          if (oldIndex === newIndex) return
+          void persistTableOrder(item, () => {
+            if (item.parentElement === tbody) tbody.insertBefore(item, nextAfter)
+          })
+        },
+      })
+    })
+    .catch(() => {})
+
+  tbody.addEventListener("keydown", (event) => {
+    if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return
+    const handle = (event.target as Element | null)?.closest<HTMLElement>(".table-row-drag-handle")
+    const row = handle?.closest<HTMLElement>(".table-row")
+    if (!handle || !row || row.parentElement !== tbody) return
+    event.preventDefault()
+    const rows = Array.from(tbody.querySelectorAll<HTMLElement>(":scope > .table-row"))
+    const idx = rows.indexOf(row)
+    const target = event.key === "ArrowUp" ? rows[idx - 1] : rows[idx + 1]
+    if (!target) return
+    const prevNext = row.nextElementSibling
+    if (event.key === "ArrowUp") tbody.insertBefore(row, target)
+    else tbody.insertBefore(target, row)
+    handle.focus()
+    void persistTableOrder(row, () => { tbody.insertBefore(row, prevNext) })
+  }, { signal })
+
   setupTableOverflow()
   retry.addEventListener("click", () => {
     shell.querySelector<HTMLElement>("#table-search")?.focus()

@@ -202,7 +202,7 @@ const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "t
   </div>
   <div id="settings-task-detail-layout" class="mt-6">
     <SettingsPanelCard title={t("task_layout.layout", locale)} subtitle={t("task_layout.settings_subtitle", locale)}>
-      <TaskDetailLayoutEditor locale={locale} scope="server" />
+      <TaskDetailLayoutEditor locale={locale} allowServerSave={true} />
     </SettingsPanelCard>
   </div>
 </section>

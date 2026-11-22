@@ -11,31 +11,101 @@ import { escapeHtml } from "@lib/safe-html"
 import { settingsStore } from "@lib/settings-store"
 import { exportFilename } from "@lib/export-filename"
 import { showToast } from "@lib/toast"
+import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
+import { normalizeCustomFieldDefs, type CustomFieldDef } from "@lib/custom-field-defs"
 import { flushRulesSave, withConfigurationMutation, withRulesReplacement } from "@lib/settings-rules-controller"
-import { saveSetting, log } from "@lib/settings-utils"
+import { log } from "@lib/settings-utils"
 
-type CustomField = { name: string; type: string; options?: string[] }
+type CustomField = CustomFieldDef
 let pendingCustomFields = Promise.resolve()
 
-function parseCustomFields(value: unknown): CustomField[] {
-  if (value == null) return []
-  const fields = typeof value === "string" ? JSON.parse(value) : value
-  if (!Array.isArray(fields)) throw new Error("Invalid custom fields")
-  return fields as CustomField[]
+async function fetchBoardCustomFields(signal: AbortSignal): Promise<CustomField[]> {
+  const ctx = currentTaskApiContext()
+  const response = await fetch("/api/custom-fields", {
+    cache: "no-store",
+    signal,
+    ...(ctx ? { headers: taskApiHeaders(ctx) } : {}),
+  })
+  if (!response.ok) throw new Error(`Custom fields could not load: ${response.status}`)
+  const data = await response.json() as { fields?: unknown }
+  return normalizeCustomFieldDefs(data.fields)
 }
 
 function updateCustomFields(update: (fields: CustomField[]) => CustomField[]): Promise<void> {
   const signal = pageLifecycle.signal
   const save = pendingCustomFields.then(async () => {
-    const response = await fetch("/api/settings", { cache: "no-store", signal })
-    if (!response.ok) throw new Error(`Custom fields could not load: ${response.status}`)
-    const settings = await response.json()
+    const ctx = currentTaskApiContext()
+    const current = await fetchBoardCustomFields(signal)
     signal.throwIfAborted()
-    const fields = update(parseCustomFields(settings.custom_fields))
-    await saveSetting("custom_fields", JSON.stringify(fields))
+    const fields = update(current)
+    const headers = new Headers(ctx ? taskApiHeaders(ctx) : undefined)
+    headers.set("content-type", "application/json")
+    const response = await fetch("/api/custom-fields", {
+      method: "PUT",
+      signal,
+      headers,
+      body: JSON.stringify({ fields }),
+    })
+    if (!response.ok) throw new Error(`Custom fields could not save: ${response.status}`)
   })
   pendingCustomFields = save.catch(() => {})
   return save
+}
+
+function renderCustomFieldRows(fields: CustomField[]): void {
+  const list = document.getElementById("custom-fields-list")
+  if (!list) return
+  list.querySelectorAll('[data-cf-saved-row="true"]').forEach(el => el.remove())
+  for (const field of fields) {
+    const row = document.createElement("div")
+    row.className = "custom-field-row"
+    row.dataset.cfSavedRow = "true"
+
+    const nameInput = document.createElement("input")
+    nameInput.type = "text"
+    nameInput.className = "form-input"
+    nameInput.setAttribute("aria-label", "Field name")
+    nameInput.value = field.name
+    nameInput.disabled = true
+
+    const typeSelect = document.createElement("select")
+    typeSelect.className = "form-select"
+    typeSelect.setAttribute("aria-label", `${field.name} field type`)
+    typeSelect.disabled = true
+    const opt = document.createElement("option")
+    opt.value = field.type
+    opt.selected = true
+    opt.textContent = field.type.charAt(0).toUpperCase() + field.type.slice(1)
+    typeSelect.appendChild(opt)
+
+    const savedSpan = document.createElement("span")
+    savedSpan.style.color = "var(--text-muted)"
+    savedSpan.style.fontSize = "12px"
+    savedSpan.textContent = "Saved"
+
+    const removeBtn = document.createElement("button")
+    removeBtn.type = "button"
+    removeBtn.className = "btn btn-ghost"
+    removeBtn.style.padding = "4px 8px"
+    removeBtn.style.color = "var(--danger)"
+    removeBtn.title = "Remove field definition (data on existing tasks is preserved)"
+    removeBtn.setAttribute("aria-label", `Remove ${field.name}`)
+    removeBtn.textContent = "×"
+
+    row.append(nameInput, typeSelect, savedSpan, removeBtn)
+    pageLifecycle.on(removeBtn, "click", async () => {
+      removeBtn.disabled = true
+      try {
+        await updateCustomFields((existing) => existing.filter((item) => item.name !== field.name))
+        row.remove()
+        showToast("settings.field_removed")
+      } catch {
+        showToast("common.failed_delete", "error")
+        removeBtn.disabled = false
+      }
+    })
+    list.appendChild(row)
+  }
 }
 
 export function initDataSettings(): void {
@@ -138,6 +208,16 @@ export function initDataSettings(): void {
     })
   }
 
+  // Restore custom fields via board-scoped API, falling back to loaded settings payload
+  const cfList = document.getElementById("custom-fields-list")
+  if (cfList) {
+    void fetchBoardCustomFields(pageLifecycle.signal)
+      .then((fields) => {
+        if (!pageLifecycle.signal.aborted) renderCustomFieldRows(fields)
+      })
+      .catch(() => { /* fallback handled by restoreDataSettings */ })
+  }
+
   // Add custom field
   const addFieldBtn = document.getElementById("add-custom-field")
   if (addFieldBtn) {
@@ -238,64 +318,11 @@ export function initDataSettings(): void {
 
 /** Restore data/export-related settings from loaded settings object */
 export function restoreDataSettings(settings: Record<string, unknown>): void {
-
-
-  // Restore custom fields
   try {
-    if (settings.custom_fields) {
-      const fields = parseCustomFields(settings.custom_fields)
-      const list = document.getElementById("custom-fields-list")
-      if (list && fields.length > 0) {
-        for (const field of fields) {
-          const row = document.createElement("div")
-          row.className = "custom-field-row"
-
-          const nameInput = document.createElement("input")
-          nameInput.type = "text"
-          nameInput.className = "form-input"
-          nameInput.setAttribute("aria-label", "Field name")
-          nameInput.value = field.name
-          nameInput.disabled = true
-
-          const typeSelect = document.createElement("select")
-          typeSelect.className = "form-select"
-          typeSelect.setAttribute("aria-label", `${field.name} field type`)
-          typeSelect.disabled = true
-          const opt = document.createElement("option")
-          opt.value = field.type
-          opt.selected = true
-          opt.textContent = field.type.charAt(0).toUpperCase() + field.type.slice(1)
-          typeSelect.appendChild(opt)
-
-          const savedSpan = document.createElement("span")
-          savedSpan.style.color = "var(--text-muted)"
-          savedSpan.style.fontSize = "12px"
-          savedSpan.textContent = "Saved"
-
-          const removeBtn = document.createElement("button")
-          removeBtn.type = "button"
-          removeBtn.className = "btn btn-ghost"
-          removeBtn.style.padding = "4px 8px"
-          removeBtn.style.color = "var(--danger)"
-          removeBtn.title = "Remove field definition (data on existing tasks is preserved)"
-          removeBtn.textContent = "×"
-
-          row.append(nameInput, typeSelect, savedSpan, removeBtn)
-          const remove = row.querySelector("button")
-          if (remove) pageLifecycle.on(remove, "click", async () => {
-            remove.disabled = true
-            try {
-              await updateCustomFields((fields) => fields.filter((item) => item.name !== field.name))
-              row.remove()
-              showToast("settings.field_removed")
-            } catch {
-              showToast("common.failed_delete", "error")
-              remove.disabled = false
-            }
-          })
-          list.appendChild(row)
-        }
-      }
+    const list = document.getElementById("custom-fields-list")
+    if (list && settings.custom_fields && list.querySelector('[data-cf-saved-row="true"]') === null) {
+      const fields = normalizeCustomFieldDefs(settings.custom_fields)
+      if (fields.length > 0) renderCustomFieldRows(fields)
     }
   } catch {
     /* skip */

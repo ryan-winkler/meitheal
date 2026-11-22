@@ -7,6 +7,7 @@ import { createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { DatabaseSync } from "node:sqlite"
+import { DATABASE_SCHEMA_VERSION } from "../../apps/web/scripts/database-client.mjs"
 import { expect, test, type TestInfo } from "@playwright/test"
 import { DATABASE_SCHEMA_VERSION } from "../../apps/web/scripts/database-client.mjs"
 

@@ -87,6 +87,12 @@ const priorityClasses: Record<number, string> = {
     <div class="table-filter-bar">
       <FilterToolbar view="table" showSearch showGroupBy workflowColumns={displayedWorkflowColumns} {workflowColumnsUnavailable} />
       <div class="table-filter-actions">
+        <button
+          type="button"
+          id="table-manual-order-btn"
+          class="btn btn-outline btn-sm aria-pressed:border-accent aria-pressed:bg-accent/15 aria-pressed:text-accent"
+          aria-pressed={filters.sort === "manual-asc" ? "true" : "false"}
+        >Manual order</button>
         <SavedFilterPresets />
         <ColumnCustomizer />
       </div>
@@ -235,12 +241,21 @@ const priorityClasses: Record<number, string> = {
                     style={depth > 0 ? `--subtask-depth: ${depth}` : undefined}
                   >
                     <td class="col-checkbox">
-                      <input
-                        type="checkbox"
-                        class="row-check"
-                        data-id={task.id}
-                        aria-label={`Select task: ${task.title}`}
-                      />
+                      <div class="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          class="table-row-drag-handle btn-icon"
+                          data-id={task.id}
+                          aria-label={`Reorder row: ${task.title}`}
+                          title="Drag or press Alt+Up/Down to reorder"
+                        >⋮⋮</button>
+                        <input
+                          type="checkbox"
+                          class="row-check"
+                          data-id={task.id}
+                          aria-label={`Select task: ${task.title}`}
+                        />
+                      </div>
                     </td>
                     <td class="col-key">
                       <a
@@ -605,6 +620,23 @@ const priorityClasses: Record<number, string> = {
   }
   .subtask-row {
     border-left: 2px solid var(--accent);
+  }
+  .table-row-drag-handle {
+    cursor: grab;
+    min-width: 24px;
+    min-height: 24px;
+    padding: 0 2px;
+    font-size: 12px;
+    color: var(--text-muted);
+    background: transparent;
+    border: 0;
+  }
+  .table-row-drag-handle:hover,
+  .table-row-drag-handle:focus-visible {
+    color: var(--text-primary);
+  }
+  .table-row.dragging {
+    opacity: 0.55;
   }
 
   .filter-bar {

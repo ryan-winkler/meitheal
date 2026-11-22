@@ -1,6 +1,6 @@
 ---
 import type { TaskRow } from "@domains/tasks/persistence/task-repository"
-import { frameworkPayloadObject, readRiceInputs, RICE_FIELDS, riceLensScore } from "@lib/rice-lens"
+import { frameworkPayloadObject, readRiceAssessment, RICE_FIELDS } from "@lib/rice-lens"
 import { formatTicketKey } from "@lib/ticket-key"
 import type { Locale } from "@lib/locale"
 import { t } from "../../i18n/translations"
@@ -20,9 +20,10 @@ try {
   // Older imports may lack a framework payload.
 }
 const nested = frameworkPayloadObject(payload.rice)
-const inputs = readRiceInputs(payload)
-const values = inputs ?? { ...payload, ...nested }
-const score = inputs ? riceLensScore(inputs) : null
+const assessment = readRiceAssessment(payload)
+const legacyAmbiguous = assessment.status === "legacy_ambiguous" ? assessment : null
+const values = assessment.status !== "unscored" ? assessment.inputs : { ...payload, ...nested }
+const score = assessment.status === "scored" ? assessment.score : null
 ---
 
 <form
@@ -39,6 +40,21 @@ const score = inputs ? riceLensScore(inputs) : null
   <h3 id="rice-editor-heading" tabindex="-1">
     {t("planning_rice.edit", locale)} <span>{formatTicketKey(task.ticket_number ?? 0)} {task.title}</span>
   </h3>
+  {legacyAmbiguous && (
+    <div class="alert alert-warning mb-3" role="note" data-rice-legacy-banner>
+      <div>
+        This score uses a legacy Confidence value ({legacyAmbiguous.legacyConfidence}). Confirm whether it means {legacyAmbiguous.suggestedPercent}% or {legacyAmbiguous.legacyConfidence}% before saving:
+      </div>
+      <div class="d-flex gap-2 mt-2">
+        <button type="button" class="btn btn-sm btn-warning" data-rice-legacy-convert={String(legacyAmbiguous.suggestedPercent)}>
+          Convert to {legacyAmbiguous.suggestedPercent}%
+        </button>
+        <button type="button" class="btn btn-sm btn-outline" data-rice-legacy-keep={String(legacyAmbiguous.legacyConfidence)}>
+          Keep as {legacyAmbiguous.legacyConfidence}%
+        </button>
+      </div>
+    </div>
+  )}
   <div class="rice-fields">
     {RICE_FIELDS.map(field => (
       <label>
@@ -48,7 +64,7 @@ const score = inputs ? riceLensScore(inputs) : null
       </label>
     ))}
   </div>
-  <p>{t("planning_rice.preview", locale)} <output>{score ?? "—"}</output></p>
+  <p>{t("planning_rice.preview", locale)} <output>{score ?? "—"}</output> <small class="text-muted" data-rice-breakdown></small></p>
   <p role="status" aria-atomic="true" data-rice-message></p>
   <div class="rice-editor-actions">
     <button class="btn btn-primary" type="submit" disabled>{t("planning_rice.save", locale)}</button>
@@ -73,7 +89,20 @@ const score = inputs ? riceLensScore(inputs) : null
     if (!form || !output || !message || !save || !reload || !saved || !id || form.dataset.ready) return
 
     const payload = frameworkPayloadObject(JSON.parse(form.dataset.ricePayload ?? "{}"))
+    const legacyBanner = form?.querySelector<HTMLElement>("[data-rice-legacy-banner]")
+    const breakdown = form?.querySelector<HTMLElement>("[data-rice-breakdown]")
+    const confidenceInput = form?.querySelector<HTMLInputElement>('input[name="confidence"]')
     const inputs = () => parseRiceInputs(Object.fromEntries(new FormData(form)))
+    const updatePreview = () => {
+      const estimate = inputs()
+      const currentScore = estimate && estimate.confidence <= 100 ? riceLensScore(estimate) : null
+      output.value = String(currentScore ?? "—")
+      if (breakdown) {
+        breakdown.textContent = estimate && currentScore !== null
+          ? `((${estimate.reach} × ${estimate.impact} × ${estimate.confidence}%) ÷ ${estimate.effort})`
+          : ""
+      }
+    }
     const active = () => !signal.aborted && form.isConnected
     const version = Number(form.dataset.riceVersion)
     if (!Number.isSafeInteger(version) || version < 0) return
@@ -81,15 +110,26 @@ const score = inputs ? riceLensScore(inputs) : null
 
     form.dataset.ready = "true"
     save.disabled = false
+    updatePreview()
     if (location.hash === "#rice") requestAnimationFrame(() => {
       if (active() && location.hash === "#rice") form.querySelector<HTMLElement>("h3")?.focus()
     })
 
-    form.addEventListener("input", () => {
-      const estimate = inputs()
-      const score = estimate && estimate.confidence <= 100 ? riceLensScore(estimate) : null
-      output.value = String(score ?? "—")
+    form.querySelector<HTMLButtonElement>("[data-rice-legacy-convert]")?.addEventListener("click", event => {
+      const pct = (event.currentTarget as HTMLButtonElement).dataset.riceLegacyConvert
+      if (pct && confidenceInput) {
+        confidenceInput.value = pct
+        legacyBanner?.remove()
+        updatePreview()
+      }
     }, { signal })
+
+    form.querySelector<HTMLButtonElement>("[data-rice-legacy-keep]")?.addEventListener("click", () => {
+      legacyBanner?.remove()
+      updatePreview()
+    }, { signal })
+
+    form.addEventListener("input", updatePreview, { signal })
 
     reload.addEventListener("click", () => location.reload(), { signal })
     form.addEventListener("submit", async event => {
@@ -107,7 +147,7 @@ const score = inputs ? riceLensScore(inputs) : null
       message.textContent = ""
       const frameworkPayload = JSON.stringify({
         ...payload,
-        rice: { ...frameworkPayloadObject(payload.rice), ...estimates, score, _evaluatedAt: new Date().toISOString() },
+        rice: { ...frameworkPayloadObject(payload.rice), ...estimates, confidence_unit: "percent", score, _evaluatedAt: new Date().toISOString() },
       })
       try {
         const result = await fetch(`/api/tasks/${encodeURIComponent(id)}`, {

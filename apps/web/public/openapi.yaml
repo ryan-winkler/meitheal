@@ -7219,6 +7219,52 @@ paths:
           description: Saved AI provider, URL or sharing choice changed
         "503":
           description: Home Assistant could not verify current access
+  /api/custom-fields:
+    get:
+      operationId: listCustomFields
+      tags:
+        - Tasks
+      summary: List custom field definitions for the current board
+      responses:
+        "200":
+          description: Board custom field definitions
+    put:
+      operationId: updateCustomFields
+      tags:
+        - Tasks
+      summary: Replace custom field definitions for the current board
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - fields
+              properties:
+                fields:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - name
+                      - type
+                    properties:
+                      name:
+                        type: string
+                      type:
+                        type: string
+                      options:
+                        type: array
+                        items:
+                          type: string
+                    additionalProperties: false
+              additionalProperties: false
+      responses:
+        "200":
+          description: Updated board custom field definitions
+        "400":
+          description: Invalid payload
   /api/lanes:
     get:
       operationId: listLanes
@@ -7236,6 +7282,28 @@ paths:
       responses:
         "201":
           description: Created
+    put:
+      operationId: reorderLanes
+      tags:
+        - Views
+      summary: Reorder kanban board lanes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - orderedIds
+              properties:
+                orderedIds:
+                  type: array
+                  items:
+                    type: string
+              additionalProperties: false
+      responses:
+        "200":
+          description: Reordered
   /api/lanes/{id}:
     put:
       operationId: updateLane

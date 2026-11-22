@@ -54,7 +54,27 @@ export class TaskReactionRepository {
       .slice(0, pageSize)
       .filter((row) => row.id !== null)
       .map((row) => toReaction(row, Number(row.can_manage) === 1))
-    return { reactions, next_cursor: rows.length > pageSize ? String(reactions.at(-1)!.id) : null }
+    const { rows: groupRows } = await boardOperationClient(this.client, this.scope, { resource: "task", action: "read" }, [taskId]).execute(
+      scopedTaskRead(
+        this.scope,
+        sql`SELECT reaction.content, COUNT(*) AS count, MAX(CASE WHEN reaction.owner_key=${owner} THEN reaction.id ELSE NULL END) AS my_reaction_id
+          FROM scoped_tasks AS task
+          JOIN task_reactions AS reaction ON reaction.task_id=task.id AND reaction.comment_id IS ${commentId}
+          WHERE task.id=${taskId} AND (${commentId} IS NULL OR EXISTS(SELECT 1 FROM comments WHERE id=${commentId} AND task_id=task.id))
+          GROUP BY reaction.content ORDER BY count DESC, MIN(reaction.id) ASC`
+      )
+    )
+    const groups = groupRows.map((row) => ({
+      content: String(row.content),
+      count: Number(row.count),
+      reacted: row.my_reaction_id !== null && row.my_reaction_id !== undefined,
+      my_reaction_id: row.my_reaction_id != null ? Number(row.my_reaction_id) : null,
+    }))
+    return {
+      reactions,
+      next_cursor: rows.length > pageSize ? String(reactions.at(-1)!.id) : null,
+      ...(groups.length ? { groups } : {}),
+    }
   }
   async add({ taskId, commentId }: ReactionTarget, content: string, author: string, owner: string) {
     if (owner !== scopeCommentOwnerKey(this.scope)) return null

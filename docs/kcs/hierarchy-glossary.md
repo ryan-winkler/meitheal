@@ -148,3 +148,21 @@ Changing a Household Routine’s Area affects tasks generated afterward. The exi
 In **Progress → Pillars → New Pillar**, choose **Household** or **Only me** before saving. Household Pillars remain shared as before. Only the active Home Assistant user who created a Personal Pillar can read or edit it and its Principles. The audience is fixed when the Pillar is saved. Personal Pillars are available online through Home Assistant. If the browser goes offline or changes accounts, Progress hides the previous view. Reconnect and refresh Progress to return. Personal Principles stay out of AI handoffs. Whole-database backups include them.
 
 Open **Progress** from the main navigation to reach Personal Pillars. Opening Progress from a Board, Area or Project shows Pillars for that workspace.
+
+
+## Task Hierarchy, Child Items, and Checklist Steps
+
+Within a Board, Meitheal organizes work on a single `tasks` model using `task_type` (`epic`, `story`, `task`) and optional same-Board acyclic `parent_id` links (`MAX_TASK_HIERARCHY_DEPTH = 4` in `packages/domain-tasks/src/domain-model.ts`):
+
+- **Parent / Child Rules (`ALLOWED_CHILD_TYPES`)**:
+  - **Epic** can contain **Epic**, **Story**, or **Task** child items.
+  - **Story** can contain **Task** child items.
+  - **Task** can contain nested **Task** child items.
+  - Standalone tasks with no Area, Project, or Parent remain valid across all Board and Personal workspaces.
+- **Child Items vs. Checklist Steps vs. Markdown Task Lists**:
+  - **Child Items** (`parent_id`) are tracked work items on the Board with their own ticket keys, status lanes, assignees, and due dates. Selecting **Full form…** from **Child Items** opens `NewTaskModal` with the parent prelinked while preserving any unsaved draft on the parent (`task-editor-draft-stack.ts`).
+  - **Checklist Steps** (`tasks.checklists`) are lightweight steps stored inside one task and never double-counted as child tickets. Use **Convert to child task** on a checklist item to promote an individual step into its own tracked work item.
+  - **Markdown `- [ ]` lists** inside descriptions remain plain formatted text unless explicitly added as structured Checklist Steps.
+- **Promoted vs. Pins**:
+  - **Promoted** (`is_promoted`) is the shared Board prominence flag that pins a card near the top of its Kanban lane and highlights it in Today/Dashboard.
+  - **Pins** (`task_pins`) remain strictly private bookmarks per user. Legacy `is_favorite` is retired into `archived_task_favorites` (`0018_task_experience.mjs`).

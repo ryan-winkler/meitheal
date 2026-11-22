@@ -315,7 +315,7 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
       return
     }
 
-    if (button.hasAttribute("data-layout-save") && isServerScope) {
+    if (button.hasAttribute("data-layout-save")) {
       if (saving) return
       saving = true
       if (saveBtn) { saveBtn.disabled = true; saveBtn.classList.add("btn-loading") }
@@ -328,7 +328,7 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
         })
         if (!res.ok) throw new Error("Save failed")
         serverCommitted = readServerTaskDetailLayoutFromJson(serialized) ?? createDefaultTaskDetailLayoutConfig()
-        draft = cloneConfig(serverCommitted)
+        if (isServerScope) draft = cloneConfig(serverCommitted)
         root.dataset.serverLayout = serialized
         renderConfig(draft)
         showError(undefined)
@@ -409,13 +409,20 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
         ghostClass: "td-layout-editor__ghost",
         signal,
         onStart: () => { dragging = true },
-        onEnd: ({ oldIndex, newIndex }) => {
+        onEnd: ({ item: movedItem, oldIndex, newIndex }) => {
           dragging = false
           if (oldIndex === newIndex) { renderConfig(draft); return }
           const group = list.dataset.layoutOrder
           if (!group) return
-          draft.orders[group] = layoutItems(list).map((row) => row.dataset.layoutItem ?? "")
-          commitDraft()
+          const rows = layoutItems(list)
+          draft.orders[group] = rows.map((row) => row.dataset.layoutItem ?? "")
+          const id = movedItem.dataset.layoutItem ?? ""
+          const label = draft.labels[id] ?? movedItem.dataset.defaultLabel ?? id
+          const msg = (root.dataset.moved ?? "")
+            .replace("{item}", label)
+            .replace("{position}", String(rows.indexOf(movedItem) + 1))
+            .replace("{total}", String(rows.length))
+          commitDraft(msg)
         },
       })
     }

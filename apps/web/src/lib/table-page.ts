@@ -60,6 +60,7 @@ function sortValue(task: TaskViewItem, column: string): string | number | null {
       return Number.isFinite(date) ? date : null
     }
     case "rice": return task.rice ?? 0
+    case "manual": return task.table_position ?? null
     default: return 0
   }
 }

@@ -9,11 +9,12 @@
  */
 interface Props {
   class?: string
+  boardId?: string
 }
-const { class: className } = Astro.props
+const { class: className, boardId = "household" } = Astro.props
 ---
 
-<div class={`card-customizer ${className ?? ''}`}>
+<div class={`card-customizer ${className ?? ''}`} data-board-id={boardId}>
   <div class="card-customizer__panel" id="card-customizer-panel" role="region" aria-label="Card Customization">
     <div class="card-customizer__header">
       <h4>Customize Cards</h4>
@@ -47,6 +48,10 @@ const { class: className } = Astro.props
     <ul class="card-customizer__list" id="card-customizer-list">
       <!-- Populated by JS -->
     </ul>
+
+    <div class="card-customizer__divider" id="card-customizer-cf-divider" hidden></div>
+    <span class="card-customizer__section-label card-customizer__section-label--padded" id="card-customizer-cf-label" hidden>Board Custom Fields (max 4)</span>
+    <ul class="card-customizer__list" id="card-customizer-cf-list" hidden></ul>
 
     <div class="card-customizer__footer">
       <button type="button" class="btn text-xs" id="card-customizer-reset">
@@ -177,7 +182,17 @@ const { class: className } = Astro.props
 </style>
 
 <script>
+  import {
+    BUILT_IN_CUSTOM_FIELDS,
+    KANBAN_CARD_FIELDS_PREFIX,
+    MAX_KANBAN_CARD_CUSTOM_FIELDS,
+    normalizeCustomFieldDefs,
+    parseVisibleCardCustomFields,
+    type CustomFieldDef,
+  } from "@lib/custom-field-defs"
   import { pageLifecycle } from "@lib/page-lifecycle"
+  import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
+  import { showToast } from "@lib/toast"
 
   const FIELD_PREFS_KEY = "meitheal-kanban-fields-preferences"
   const DENSITY_KEY = "meitheal-kanban-card-density"
@@ -236,6 +251,44 @@ const { class: className } = Astro.props
     localStorage.setItem(FIELD_PREFS_KEY, JSON.stringify(prefs))
   }
 
+  function activeBoardId(): string {
+    return document.querySelector<HTMLElement>(".card-customizer")?.dataset.boardId
+      || currentTaskApiContext()?.boardId
+      || "household"
+  }
+
+  function loadBoardCustomFieldSelection(): string[] | null {
+    try {
+      return parseVisibleCardCustomFields(localStorage.getItem(`${KANBAN_CARD_FIELDS_PREFIX}${activeBoardId()}`))
+    } catch {
+      return null
+    }
+  }
+
+  function saveBoardCustomFieldSelection(fields: string[]): void {
+    localStorage.setItem(`${KANBAN_CARD_FIELDS_PREFIX}${activeBoardId()}`, JSON.stringify(fields.slice(0, MAX_KANBAN_CARD_CUSTOM_FIELDS)))
+  }
+
+  function applyCustomFieldVisibility() {
+    const area = document.querySelector(".kanban-board")
+    if (!area) return
+    const selected = loadBoardCustomFieldSelection()
+    area.querySelectorAll<HTMLElement>(".kanban-custom-fields").forEach(container => {
+      const chips = Array.from(container.querySelectorAll<HTMLElement>(".kanban-cf-chip[data-cf-name]"))
+      if (chips.length === 0) return
+      let shown = 0
+      for (const chip of chips) {
+        const name = chip.dataset.cfName ?? ""
+        const visible = selected ? selected.includes(name) : chip.dataset.cfDefaultHidden !== "true"
+        chip.hidden = !visible
+        if (visible) shown++
+      }
+      const more = container.querySelector<HTMLElement>(".kanban-cf-more")
+      if (more) more.hidden = Boolean(selected)
+      container.hidden = shown === 0 && Boolean(selected)
+    })
+  }
+
   function applyFieldVisibility() {
     const prefs = loadFieldPrefs()
     const area = document.querySelector(".kanban-board")
@@ -245,6 +298,67 @@ const { class: className } = Astro.props
       const isVisible = field.alwaysVisible || (prefs[field.id] !== undefined ? prefs[field.id] : field.defaultVisible)
       area.classList.toggle(`hide-field-${field.id}`, !isVisible)
     })
+    applyCustomFieldVisibility()
+  }
+
+  function renderBoardCustomFieldList(defs: CustomFieldDef[], signal: AbortSignal) {
+    const divider = document.getElementById("card-customizer-cf-divider")
+    const heading = document.getElementById("card-customizer-cf-label")
+    const list = document.getElementById("card-customizer-cf-list")
+    if (!divider || !heading || !list) return
+    list.replaceChildren()
+
+    const combined: CustomFieldDef[] = []
+    const seen = new Set<string>()
+    for (const def of [...BUILT_IN_CUSTOM_FIELDS, ...defs]) {
+      const key = def.name.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      combined.push(def)
+    }
+
+    const hasFields = combined.length > 0
+    divider.hidden = !hasFields
+    heading.hidden = !hasFields
+    list.hidden = !hasFields
+    if (!hasFields) return
+
+    const savedSelection = loadBoardCustomFieldSelection()
+    const defaultSelected = combined.slice(0, MAX_KANBAN_CARD_CUSTOM_FIELDS).map(d => d.name)
+
+    for (const def of combined) {
+      const li = document.createElement("li")
+      li.className = "card-customizer__item"
+
+      const label = document.createElement("label")
+      label.className = "card-customizer__label"
+
+      const checkbox = document.createElement("input")
+      checkbox.type = "checkbox"
+      checkbox.dataset.customFieldName = def.name
+      const activeSet = savedSelection ?? defaultSelected
+      checkbox.checked = activeSet.includes(def.name)
+
+      const span = document.createElement("span")
+      span.textContent = def.name
+
+      checkbox.addEventListener("change", () => {
+        const checked = Array.from(list.querySelectorAll<HTMLInputElement>("input[data-custom-field-name]"))
+          .filter(el => el.checked)
+          .map(el => el.dataset.customFieldName!)
+        if (checked.length > MAX_KANBAN_CARD_CUSTOM_FIELDS) {
+          checkbox.checked = false
+          showToast(`Up to ${MAX_KANBAN_CARD_CUSTOM_FIELDS} custom fields can be shown on cards`, "info")
+          return
+        }
+        saveBoardCustomFieldSelection(checked)
+        applyCustomFieldVisibility()
+      }, { signal })
+
+      label.append(checkbox, span)
+      li.appendChild(label)
+      list.appendChild(li)
+    }
   }
 
   function renderFieldList(signal: AbortSignal) {
@@ -299,8 +413,39 @@ const { class: className } = Astro.props
 
     if (!panel) return
 
+    let loadedBoardCustomFields: CustomFieldDef[] = []
+    let customFieldsPromise: Promise<void> | null = null
+    const loadBoardCustomFields = () => {
+      if (customFieldsPromise || signal.aborted) return customFieldsPromise
+      const cfCtx = currentTaskApiContext()
+      customFieldsPromise = fetch("/api/custom-fields", {
+        cache: "no-store",
+        signal,
+        ...(cfCtx ? { headers: taskApiHeaders(cfCtx) } : {}),
+      })
+        .then(async res => {
+          if (!res.ok || signal.aborted) return
+          const payload = await res.json().catch(() => null) as { fields?: unknown } | null
+          if (signal.aborted) return
+          loadedBoardCustomFields = normalizeCustomFieldDefs(payload?.fields)
+          renderBoardCustomFieldList(loadedBoardCustomFields, signal)
+        })
+        .catch(() => {
+          customFieldsPromise = null
+        })
+      return customFieldsPromise
+    }
+
     renderFieldList(signal)
     applyFieldVisibility() // Apply initial state on load
+    renderBoardCustomFieldList([], signal)
+    const fieldsHost = panel.closest("#kanban-fields-panel")
+    if (fieldsHost && !fieldsHost.classList.contains("hidden")) {
+      void loadBoardCustomFields()
+    }
+    document.getElementById("toggle-fields-btn")?.addEventListener("click", () => {
+      void loadBoardCustomFields()
+    }, { signal })
 
     // Card density mode
     const initialDensity = loadDensity()
@@ -320,8 +465,10 @@ const { class: className } = Astro.props
     if (resetBtn) {
       resetBtn.addEventListener("click", () => {
         localStorage.removeItem(FIELD_PREFS_KEY)
+        localStorage.removeItem(`${KANBAN_CARD_FIELDS_PREFIX}${activeBoardId()}`)
         localStorage.removeItem(DENSITY_KEY)
         renderFieldList(signal)
+        renderBoardCustomFieldList(loadedBoardCustomFields, signal)
         applyFieldVisibility()
         applyDensity(DEFAULT_DENSITY)
       }, { signal })

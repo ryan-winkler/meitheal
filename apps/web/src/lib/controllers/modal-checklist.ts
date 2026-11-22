@@ -1,7 +1,9 @@
-import { escapeHtml } from "@lib/safe-html"
 import { createChecklistItem } from "@lib/checklist-items"
 import { notifyInactivityTaskChanged } from "@lib/inactivity-client"
+import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
+import { defaultChildTaskType } from "@lib/task-editor-fields"
 import { formatTicketKey, parseTicketKey } from "@lib/ticket-key"
+import { showToast } from "@lib/toast"
 
 type Item = { id?: string; text: string; done: boolean }
 
@@ -149,6 +151,13 @@ export function showTaskChecklist(
       editor.dataset.content = item.text
       editor.appendChild(text)
 
+      const promoteBtn = document.createElement("button")
+      promoteBtn.type = "button"
+      promoteBtn.className = "text-accent opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-xs px-1"
+      promoteBtn.setAttribute("aria-label", `Convert checklist item ${index + 1} to child task`)
+      promoteBtn.title = "Convert to child task"
+      promoteBtn.textContent = "↳"
+
       const delBtn = document.createElement("button")
       delBtn.type = "button"
       delBtn.className = "text-danger opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-xs p-1"
@@ -156,7 +165,7 @@ export function showTaskChecklist(
       delBtn.title = "Delete item"
       delBtn.textContent = "×"
 
-      row.append(checkbox, editor, delBtn)
+      row.append(checkbox, editor, promoteBtn, delBtn)
       text.addEventListener("input", () => { editor.dataset.content = text.value }, { signal })
       checkbox.addEventListener("change", () => {
         const current = items[index]
@@ -180,7 +189,48 @@ export function showTaskChecklist(
         event.preventDefault()
         text.blur()
       }, { signal })
-      row.querySelector("button")!.addEventListener("click", () => {
+      promoteBtn.addEventListener("click", async () => {
+        const current = items[index]
+        if (!current || promoteBtn.disabled || signal.aborted) return
+        const childTitle = current.text.trim()
+        if (!childTitle) return
+        promoteBtn.disabled = true
+        try {
+          const ctx = currentTaskApiContext()
+          const parentArea = (document.getElementById("td-area") as HTMLSelectElement | null)?.value || null
+          const parentProject = (document.getElementById("td-project") as HTMLSelectElement | null)?.value || null
+          const parentType = (document.getElementById("td-task-type") as HTMLSelectElement | null)?.value
+          const res = await fetch("/api/tasks", { // nosemgrep
+            method: "POST",
+            headers: ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" },
+            body: JSON.stringify({
+              title: childTitle,
+              parent_id: taskId,
+              task_type: defaultChildTaskType(parentType),
+              status: current.done ? "complete" : "pending",
+              ...(parentArea ? { area_id: parentArea } : {}),
+              ...(parentProject ? { project_id: parentProject } : {}),
+            }),
+            signal,
+          })
+          if (!res.ok) {
+            const err = await res.json().catch(() => null) as { error?: string; detail?: string } | null
+            showToast(err?.error ?? err?.detail ?? "Could not convert step to child task", "error")
+            return
+          }
+          items.splice(index, 1)
+          render()
+          void save()
+          document.dispatchEvent(new CustomEvent("meitheal:refresh-task-detail", { detail: { taskId } }))
+          document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "checklist-promoted" } }))
+          showToast("Converted step to child task", "success")
+        } catch {
+          if (!signal.aborted) showToast("Network error converting step", "error")
+        } finally {
+          if (!signal.aborted) promoteBtn.disabled = false
+        }
+      }, { signal })
+      delBtn.addEventListener("click", () => {
         items.splice(index, 1)
         render({ index: Math.min(index, items.length - 1), selector: "button" })
         void save()
@@ -225,9 +275,10 @@ export function showTaskChecklist(
     try {
       while (!equal(saved, items)) {
         const pending = JSON.stringify(items)
+        const ctx = currentTaskApiContext()
         const response = await write(version => fetch(path, { // nosemgrep
           method: "PUT",
-          headers: { "content-type": "application/json" },
+          headers: ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" },
           body: JSON.stringify({ checklists: pending, expected_checklists: savedRaw, ...(version === null ? {} : { updated_at: version }) }),
           signal: AbortSignal.timeout(10_000),
         }))

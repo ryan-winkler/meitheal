@@ -127,7 +127,7 @@
     --success-text: color-mix(in srgb, var(--success) 60%, var(--text-primary));
     --info: #38BDF8;
     --border: #344039;
-    --border-focus: var(--personal-accent-text-dark, #ADF8D7);
+    --border-focus: #ADF8D7;
     --color-success: rgba(105, 227, 178, 0.9);
     --color-error: rgba(239, 68, 68, 0.9);
     --color-warning: rgba(240, 184, 109, 0.9);
@@ -219,7 +219,7 @@
     --palette-on-accent: #131314;
     --accent-text: var(--personal-accent-text-dark, #ACC5FC);
     --border: rgb(var(--border-rgb));
-    --border-focus: var(--personal-accent-text-dark, rgb(var(--border-focus-rgb)));
+    --border-focus: rgb(var(--border-focus-rgb));
     --color-success: rgb(var(--success-rgb) / 0.9);
     --success: #76C99B;
     --success-rgb: 118 201 155;
@@ -254,7 +254,7 @@
     --danger: #DC2626;
     --info: #0369A1;
     --border: #C9D1CB;
-    --border-focus: var(--personal-accent-text-light, #0E533B);
+    --border-focus: #0E533B;
     --shadow-sm: 0 1px 3px rgba(16, 35, 27, 0.07);
     --shadow-md: 0 4px 12px rgba(16, 35, 27, 0.09);
     --shadow-lg: 0 8px 24px rgba(16, 35, 27, 0.12);
@@ -315,7 +315,7 @@
       --danger: #DC2626;
       --info: #0369A1;
       --border: #C9D1CB;
-      --border-focus: var(--personal-accent-text-light, #0E533B);
+      --border-focus: #0E533B;
       --shadow-sm: 0 1px 3px rgba(16, 35, 27, 0.07);
       --shadow-md: 0 4px 12px rgba(16, 35, 27, 0.09);
       --shadow-lg: 0 8px 24px rgba(16, 35, 27, 0.12);

@@ -34,7 +34,7 @@ export function sameTaskApiContext(a: TaskApiContext | null, b: TaskApiContext |
 }
 
 export type VersionedTaskSave = { ok: true; task: Record<string, unknown>; version: number }
-  | { ok: false; status: number; errorCode: "conflict" | "unavailable" | "unconfirmed" }
+  | { ok: false; status: number; errorCode: "conflict" | "unavailable" | "unconfirmed" | "hierarchy_invalid" | "hierarchy_conflict"; message?: string }
 
 /** Existing browser writes retain their loaded version and original actor/Board through publication. */
 export async function saveVersionedTask(id: string, fields: Record<string, unknown>, version: number | null,
@@ -50,7 +50,14 @@ export async function saveVersionedTask(id: string, fields: Record<string, unkno
     })
     status = response.status
     if (!sameTaskApiContext(context, currentTaskApiContext()) || signal?.aborted) return { ok: false, status, errorCode: "unavailable" }
-    if (!response.ok) return { ok: false, status, errorCode: status === 409 ? "conflict" : "unavailable" }
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as Record<string, unknown> | null
+      const serverCode = typeof payload?.errorCode === "string" ? payload.errorCode : ""
+      const message = typeof payload?.error === "string" ? payload.error : typeof payload?.detail === "string" ? payload.detail : undefined
+      if (status === 409 && serverCode === "hierarchy_conflict") return { ok: false, status, errorCode: "hierarchy_conflict", message }
+      if (status === 400 && serverCode === "hierarchy_invalid") return { ok: false, status, errorCode: "hierarchy_invalid", message }
+      return { ok: false, status, errorCode: status === 409 ? "conflict" : "unavailable", message }
+    }
     const task: unknown = await response.json()
     if (!sameTaskApiContext(context, currentTaskApiContext()) || signal?.aborted) return { ok: false, status, errorCode: "unavailable" }
     if (!task || typeof task !== "object" || Array.isArray(task) || !("id" in task) || task.id !== id) return { ok: false, status, errorCode: "unconfirmed" }
@@ -110,7 +117,7 @@ export interface TaskPatchPayload {
   labels?: string
   area_id?: string
   color?: string | null
-  is_favorite?: number
+  is_promoted?: boolean
   task_type?: string
   parent_id?: string | null
   assigned_to?: string | null
