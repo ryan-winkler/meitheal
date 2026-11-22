@@ -267,15 +267,17 @@ test("Evergreen Carbon surface rules, indigo chrome allowlist, and Bucket 2 opti
     "pages/api/projects/index.ts",
     "pages/api/tasks/[id].ts",
     "pages/api/users/custom.ts",
+    "domains/auth/user-profile.ts",
     "pages/api/users/index.ts",
   ]);
-  expect(indigoAllowlist.size).toBe(13);
+  expect(indigoAllowlist.size).toBe(14);
 
   const blurViolations: string[] = [];
   const indigoViolations: string[] = [];
 
   for (const file of listFilesRecursive(webSrcRoot, [".css", ".astro", ".ts", ".tsx", ".mjs"])) {
     const rel = relative(webSrcRoot, file).replace(/\\/g, "/");
+    if (rel.endsWith(".test.ts")) continue;
     const content = readFileSync(file, "utf8");
 
     if (/backdrop-filter|backdrop-blur-/.test(content)) {

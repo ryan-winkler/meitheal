@@ -56,6 +56,10 @@ test("filter-state and appearance-preferences cover filtering, serialization, gr
       },
     },
     addEventListener: addListener,
+    dispatchEvent: (event: Event) => {
+      listeners.get(event.type)?.forEach(listener => listener(event))
+      return true
+    },
   }
   const fakeDocument = {
     cookie: "",
@@ -85,6 +89,7 @@ test("filter-state and appearance-preferences cover filtering, serialization, gr
     },
     getElementById: () => null,
     querySelector: () => null,
+    querySelectorAll: () => [],
     addEventListener: addListener,
     dispatchEvent: (event: Event) => {
       listeners.get(event.type)?.forEach(listener => listener(event))
