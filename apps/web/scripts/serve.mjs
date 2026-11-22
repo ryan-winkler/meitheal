@@ -8,6 +8,7 @@ import { finalizeStartupBoardGrant } from "./board-grant-journal.mjs"
 import { boardRouteSelection } from "./board-route-selection.mjs"
 import { isMemoryDatabase, openDatabaseForStartup, withStartupWriteTransaction } from "./database-client.mjs"
 import { runWithIngressTransport, waitForDownloadDrain } from "./ingress-transport.mjs"
+import { DEFAULT_WEBSERVER_PORT, parsePortSpec } from "./port-spec.mjs"
 import { recordIngressStreamAbort } from "./runtime-counters.mjs"
 import { autoBackupDb } from "./startup-backup.mjs"
 import { applyStartupBoardSchema, validateStartupTaskSchema } from "./task-schema-startup.mjs"
@@ -37,7 +38,7 @@ function writeJsonLine(fd, payload) {
   }
 }
 
-let server
+const servers = []
 let hasListened = false
 let shuttingDown = false
 let inStartupDatabase = false
@@ -54,23 +55,29 @@ function shutdown(signal, exitCode = 0) {
     signal,
     time: new Date().toISOString(),
   })
-  if (!server) {
+  if (servers.length === 0) {
     if (!inStartupDatabase) process.exit(exitCode)
     return
   }
   // Force exit after 3s, before run.sh stop_child sends SIGKILL at 5s.
   const forceTimer = setTimeout(() => {
-    server.closeAllConnections?.()
+    for (const srv of servers) srv.closeAllConnections?.()
     // Wait 50 ms so stream close cleanup hooks run before exit.
     setTimeout(() => process.exit(exitCode), 50).unref()
   }, 3_000)
   forceTimer.unref()
-  server.close(() => {
-    clearTimeout(forceTimer)
-    process.exit(exitCode)
-  })
+  let remaining = servers.length
+  for (const srv of servers) {
+    srv.close(() => {
+      remaining -= 1
+      if (remaining <= 0) {
+        clearTimeout(forceTimer)
+        process.exit(exitCode)
+      }
+    })
+  }
   shutdownController.abort()
-  server.closeIdleConnections?.()
+  for (const srv of servers) srv.closeIdleConnections?.()
 }
 
 process.on("SIGTERM", () => shutdown("SIGTERM"))
@@ -178,9 +185,12 @@ try {
 }
 if (shuttingDown) process.exit(0)
 
-const port = Number(process.env.PORT ?? 3000)
-const host = process.env.HOST ?? "0.0.0.0"
-server = http.createServer((req, res) => {
+const parsedPorts = parsePortSpec(process.env.MEITHEAL_PORTS ?? process.env.PORT ?? DEFAULT_WEBSERVER_PORT)
+const ports = parsedPorts.ok ? parsedPorts.ports : [DEFAULT_WEBSERVER_PORT]
+const host = process.env.MEITHEAL_HOST?.trim() || process.env.HOST?.trim() || "0.0.0.0"
+
+function createRequestListener(boundServer) {
+  return (req, res) => {
   // An IPv4 connection to an IPv6 listener may have a mapped address.
   const peer = req.socket.remoteAddress?.replace(/^::ffff:/, "") ?? ""
   const fromSupervisor = Boolean(supervisorToken) && peer === SUPERVISOR_ADDRESS
@@ -274,7 +284,7 @@ server = http.createServer((req, res) => {
     rawPath,
   }
   res.once("finish", () => {
-    if (shuttingDown) server.closeIdleConnections?.()
+    if (shuttingDown) boundServer.closeIdleConnections?.()
   })
   res.once("close", () => {
     if (
@@ -292,27 +302,32 @@ server = http.createServer((req, res) => {
   })
 
   runWithIngressTransport(transportContext, () => handler(req, res))
-})
-
-server.on("error", (err) => {
-  const isBindError = !hasListened
-  writeJsonLine(2, {
-    level: "error",
-    event: isBindError ? "web.listen_error" : "web.server_error",
-    code: err?.code ?? "UNKNOWN",
-    host,
-    port,
-    message: err?.message ?? String(err),
-    time: new Date().toISOString(),
-  })
-  if (isBindError) {
-    process.exit(1)
-    return
   }
-  if (!shuttingDown) shutdown("SERVER_ERROR", 1)
-})
+}
 
-server.listen(port, host, () => {
-  hasListened = true
-  console.log(`Meitheal server listening on http://${host}:${port}`)
-})
+for (const listenPort of ports) {
+  const srv = http.createServer()
+  srv.on("request", createRequestListener(srv))
+  srv.on("error", (err) => {
+    const isBindError = !hasListened
+    writeJsonLine(2, {
+      level: "error",
+      event: isBindError ? "web.listen_error" : "web.server_error",
+      code: err?.code ?? "UNKNOWN",
+      host,
+      port: listenPort,
+      message: err?.message ?? String(err),
+      time: new Date().toISOString(),
+    })
+    if (isBindError) {
+      process.exit(1)
+      return
+    }
+    if (!shuttingDown) shutdown("SERVER_ERROR", 1)
+  })
+  servers.push(srv)
+  srv.listen(listenPort, host, () => {
+    hasListened = true
+    console.log(`Meitheal server listening on http://${host}:${listenPort}`)
+  })
+}

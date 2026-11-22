@@ -269,10 +269,11 @@ export async function searchMeithealCatalog(
   }
 
   if (options.scope === "all" || options.scope === "settings") {
+    const defaultSections = options.scope === "settings" ? SETTINGS_SECTIONS : SETTINGS_SECTIONS.slice(0, 4)
     const settingsItems = (
       options.query
         ? searchSettingsRegistry(options.query)
-        : SETTINGS_SECTIONS.slice(0, 4).map((section) => ({
+        : defaultSections.map((section) => ({
             id: section.id,
             label: section.label,
             description: section.description,

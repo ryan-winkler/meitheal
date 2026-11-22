@@ -937,6 +937,8 @@
     "appearance_sidebar_folded": "Start folded",
     "appearance_sidebar_hover": "Expand on hover or focus",
     "appearance_sidebar_help": "Choose how the desktop sidebar opens. Hover mode also expands when navigating with the keyboard.",
+    "appearance_title": "Typography & Surface Style",
+    "appearance_discard": "Discard",
     "appearance_reset": "Reset to defaults",
     "appearance_save": "Save appearance",
     "appearance_saved": "Appearance saved on this device.",

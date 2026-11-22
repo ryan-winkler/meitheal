@@ -146,9 +146,11 @@ Run `e2e/navigation-overflow-recovery.spec.ts`, `e2e/nav-overflow-hidden-links.s
 
 ## Task Link Verification
 
-Open a task and select **Copy task link**. If the browser cannot access the clipboard, copy the selected link from the text field. Links use `/tickets/{id}` with the immutable task ID. Opening the ordinary task drawer updates the address bar. Comment links append `?comment={id}`. Recipients use their existing installation access.
+Open a task and select **Copy task link**. If the browser cannot access the clipboard, copy the selected link from the text field. Links use the ticket key, such as `/tickets/MTH-4`. Card, list, Today, Upcoming, Activity, Review, pin and comment links use the same path, and opening the ordinary task drawer shows it in the address bar and in the Home Assistant panel route. Comment links append `?comment={id}`. Recipients use their existing installation access.
 
-1. Open the copied link in a fresh authorized browser tab. Reload and confirm the same title and ticket number.
+A ticket keeps its Board and its number, but its key follows the Board's ticket prefix. When a Board owner changes the prefix, every key on that Board changes with it, and links that use the old prefix stop opening the ticket. Links that use the task ID, such as `/tickets/3f2a…`, keep working after a prefix change, and lower-case keys work too. The address bar then shows the current key. A link uses the task ID only when the key is not known yet. If a key link shows the unavailable message but the ID link works, compare the key with the one in the task panel header; the Board's prefix may have changed.
+
+1. Open the copied link in a fresh authorized browser tab. Reload and confirm the same title and ticket number. Open the task's older ID link and confirm the address bar changes to the key without reopening the drawer.
 2. Repeat through Home Assistant. Confirm the URL keeps its ingress prefix and that the destination still requires Home Assistant access. Use Back and Forward to close and reopen the ordinary drawer. Modified clicks on task links open the ticket in another tab.
 3. Open old `/tasks?open=…` and `/tasks#task-MTH-…` links. Confirm they open the task at its ticket URL and restore the original view when closed. Pin and search drawers keep their existing return flow.
 4. Delete a disposable task and reopen its link. Confirm the unavailable message appears and **Close detail** returns to the Tasks view.
@@ -376,7 +378,7 @@ In the task panel, **Edit comment** and **Delete comment** appear on comments yo
 
 Each comment timestamp is a permanent link. Copy the link from the timestamp and open it in an authorized session. The task detail opens and focuses that comment, even after the author edits it. If the comment was removed or belongs to another task, Meitheal keeps the task open and focuses an unavailable message. Links through Home Assistant keep the current ingress path and still require the recipient’s existing access.
 
-Typing `#` in a task description or comment uses the authenticated, private `GET /api/search` route with a five-task limit and only ID and title matching. Stored references use the task ID, and the current Home Assistant ingress prefix is applied when they are displayed. If the picker asks for an update, activate it from Search or reload after the installed app updates. You can continue editing while offline.
+Typing `#` in a task description or comment uses the authenticated, private `GET /api/search` route with a five-task limit and only ID and title matching. Stored references save the task ID, such as `[MTH-4](/tickets/<task-id>)`, so they keep working after a Board prefix change. Opening one shows the current key in the address bar. The current Home Assistant ingress prefix is applied when they are displayed. If the picker asks for an update, activate it from Search or reload after the installed app updates. You can continue editing while offline.
 
 If posting fails in the task panel, the text remains in the composer. Retry on that task after resolving the reported problem. Check that the task still exists and use an authenticated Home Assistant session or a credential with task-write scope. Check `api.comments.post.failed` for storage failures.
 

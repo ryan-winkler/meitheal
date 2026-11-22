@@ -1,133 +1,67 @@
----
-type: "Reference"
-title: "Meitheal Design System & Appearance"
-description: "Canonical Evergreen Carbon & Living Mint brand identity from meitheal.io, opaque structural elevation rules, Tabler 1.75px icon sprites, Home Assistant storefront specifications, docked workspace inspector, and local appearance behavior."
-design_md_format: "spec"
-aesthetic: "Calm Architectural Household Utility — opaque Evergreen Carbon surfaces, Living Mint signal, Warm Paper light mode"
-surfaces:
-  backdrop_filter: "none"
-  elevation: "Opaque luminance steps with 1px solid var(--border) hairlines; zero backdrop-filter, zero radial glow pseudo-elements, zero decorative AI pulse badges"
-colors:
-  dark:
-    background: "#101210"
-    surface_lowest: "#0D0F0E"
-    surface_low: "#171A18"
-    surface_card: "#1D211F"
-    surface_hover: "#252B28"
-    brand_tile: "#10231B"
-    accent: "#69E3B2"
-    accent_hover: "#8AF0C5"
-    accent_text: "#ADF8D7"
-    on_accent: "#07140F"
-    text_primary: "#F1EFE8"
-    text_secondary: "#C2CBC3"
-    text_muted: "#A9B7B0"
-    border: "#344039"
-    warning: "#F0B86D"
-    danger: "#EF4444"
-  light:
-    background: "#F6F5F0"
-    surface_low: "#ECEBE4"
-    surface_card: "#FFFFFF"
-    surface_hover: "#E2E4DE"
-    accent: "#146C4E"
-    accent_hover: "#0E533B"
-    accent_text: "#0E533B"
-    on_accent: "#FFFFFF"
-    text_primary: "#10231B"
-    text_secondary: "#34473F"
-    text_muted: "#4A5E55"
-    border: "#C9D1CB"
-    warning: "#B45309"
-    danger: "#DC2626"
-typography:
-  heading: "'Geist Variable', 'Inter Variable', -apple-system, sans-serif"
-  sans: "'Geist Variable', 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif"
-  mono: "'JetBrains Mono', ui-monospace, monospace"
-  body_default: "14px"
-  preload: "Geist Variable Latin woff2 only"
-  wordmark: "meitheal. (Geist Variable 500, -0.05em tracking) + /meh·hal/ (JetBrains Mono 400, 0.09em tracking)"
-iconography:
-  catalog: "Build-extracted Tabler Outline SVGs (24x24 viewBox, 1.75px stroke, vector-effect: non-scaling-stroke)"
-  sprites: "Per-request <IconSpriteDefs /> streaming <symbol id='mt-icon-...'> emission"
-rounded:
-  xs: "4px"
-  sm: "6px"
-  md: "10px"
-  lg: "16px"
-  full: "9999px"
-spacing:
-  base_unit: "4px"
-  sidebar_width: "240px"
-  docked_inspector_width: "420px"
-  docked_inspector_breakpoint: "1440px"
-  mobile_tab_bar_height: "56px"
-  coarse_pointer_target: "44px"
----
+# DESIGN.md — Meitheal Design Engineering Constitution & Taste Ledger
 
-# Meitheal Design System & Appearance
+This file is the canonical design-engineering specification and `learn-taste` ledger for Meitheal. Every UI change must obey these rules before merging.
 
-## Brand Identity (`meitheal.io`)
+## 1. Visual System & Tabler Craft
 
-**Meitheal** (`/meh·hal/`) comes from the Irish word for neighbors coming together to share the work none of them could carry alone. Visually and verbally, Meitheal avoids loud corporate project-management clichés and cold DevOps neon in favor of a calm, tactile household utility aesthetic: *"Keep track of the work your home needs."*
+- **Tabler First**: Use official Tabler patterns, tokens, and icons (`apps/web/src/generated/icon-registry.ts`, `https://preview.tabler.io/`). Prefer Tabler `form-imagecheck` visual vector tiles (`96×64` inline `<svg>` driven by live CSS custom properties) and `form-colorinput` rounded-square swatches over generic `<select>` dropdowns for visual preferences.
+- **Self-Hosted Local Typefaces**: Render all typography locally (`Geist Variable`, `Outfit`, `JetBrains Mono`, `Comic Neue`, and local serif stack) with zero external font network calls. Form controls (`button`, `input`, `select`, `textarea`) must inherit the active typeface.
+- **Theme-Aware Identity & Contrast**: Never hardcode static accent or avatar colors. The default profile avatar tracks `var(--accent)` dynamically and adapts on colored (`navTone="accent"`) and dark surfaces. Every personal accent computes WCAG AA (`>= 4.8:1`) dark and light foreground/text tokens (`--accent-text`, `--border-focus`).
+- **Home Assistant Native**: Keep Home Assistant theme matching (`matchHaTheme`), HA ingress prefix safety, and local-first speed as primary constraints.
 
-### Design Direction & Opaque Structural Elevation
+## 2. Gestalt Principles (Non-Negotiable)
 
-- **Opaque Structural Elevation**: Surfaces separate cleanly through luminance steps and `1px solid var(--border)` hairlines with `backdrop-filter: none` (`0` `backdrop-filter` / `backdrop-blur-*` utilities across the application), solid `rgba(0, 0, 0, 0.62)` modal scrims, zero radial glow pseudo-elements, and zero decorative AI pulse badges. This eliminates GPU backdrop-sampling overhead on Raspberry Pi / Home Assistant Green WebViews and ensures crisp legibility across Home Assistant dashboards, mobile Companion WebViews, and desktop monitors.
+- **Law of Common Region & Hierarchy**: Peer setting domains (such as *Theme & Accent*, *Navigation Layout & Hover Behavior*, and *Typography & Surface Style*) must sit at the **same top-level card hierarchy** (`SettingsPanelCard`). Never nest a peer top-level capability inside a secondary disclosure box under another card.
+- **Law of Proximity & Unified Rhythm**: Maintain intentional, consistent spacing across all sections:
+  - `20px` vertical gap between top-level cards (`look-feel-stack` / `settings-grid`).
+  - `20px` internal padding on `SettingsPanelCard` bodies and `20px` vertical rhythm between field groups.
+  - Never let adjacent bordered containers touch edge-to-edge (`0px` gap).
+- **Law of Similarity**: Peer actions in the same header or toolbar (for example, *Customize menu* and *Shortcuts & links*) must share the same button weight and visual treatment (`.btn.btn-secondary.btn-sm` with Tabler icons), never one styled button paired with bare text.
+- **Law of Figure-Ground**: Floating popovers, docked menu editors, and sub-view dropdowns (`#nav-utility-popover`, `#tasks-nav-submenu`, docked Top Nav edit sheet) must sit on elevated `var(--bg-card)` surfaces with crisp `1px solid var(--border)` separation and high `z-index` (`240–260`) so they never clip behind sticky bars or page headers.
 
-### Canonical Mark & Wordmark Lockup
+## 3. Nielsen's 10 Usability Heuristics
 
-- **App Mark (`64×64` geometry)**: Rounded evergreen tile (`#10231B`, `rx="13"`), warm off-white continuous double-arch `m` (`#EDF5EF`, `stroke-width="5"`, `stroke-linecap="round"`), and a living mint completion dot (`#75E9BE`, `cx="52" cy="40" r="3.5"`).
-- **Wordmark**: Lowercase `meitheal.` in `Geist Variable` (`font-weight: 500`, `letter-spacing: -0.05em`) paired with `/meh·hal/` in `JetBrains Mono` (`letter-spacing: 0.09em`).
-- **Home Assistant Storefront Assets**:
-  - `icon.png`: `256×256` 8-bit RGBA PNG with transparent outer corners around the `#10231B` rounded-square mark (Canary adds a crisp `#F0B86D` warm amber corner pip).
-  - `logo.png`: `500×200` (2.5:1 Retina) 8-bit RGBA PNG rendered as a self-contained `#10231B` rounded architectural badge (`#344039` border, transparent exterior) so the lockup maintains >12:1 contrast on both Home Assistant Light and Dark themes without white bars or checkerboard artifacts.
+1. **Visibility of System Status**: Appearance changes preview live with an explicit unsaved-changes bar (`#appearance-dirty-bar`); async saves show loading state and clear confirmation toasts.
+2. **Match Between System & Real World**: Use household-friendly labels (*Navigation*, *Quick add*, *Task form*) rather than implementation jargon (*sidebar* when in top navigation mode).
+3. **User Control & Freedom**: Users can hide or show any navigation item — including *Settings* — because *Settings* remains permanently reachable in the global Keyboard utility menu (`#nav-utility-popover`). Every preview supports Discard and Reset.
+4. **Consistency & Standards**: One trigger, one mental model. Clicking the Profile card directly opens *Edit Profile*; clicking the Keyboard utility button on the right opens *Navigation, Shortcuts & Settings*. Never duplicate the same menu across two adjacent triggers.
+5. **Error Prevention**: Validate URLs (`https://`, `http://`, or `/`), colors, and profile inputs cleanly before saving. Guard mobile drawers and hover sidebars against accidental collapse while Menu Edit Mode is active.
+6. **Recognition Rather Than Recall**: Use visual SVG layout tiles, `Aa` font previews, inline shortcut keycaps (`?`), and contextual `?` help popups instead of abstract option names.
+7. **Flexibility & Efficiency of Use**: Support customizable keyboard shortcuts, live Menu Edit Mode across every navigation mode (Sidebar Expanded/Folded/Hover, Top Nav `nav-overflow`, and Mobile), and direct Task sub-view pinning (`Calendar`, `Kanban`, `Timeline`, `Table`) in both Sidebar and Top Navigation.
+8. **Aesthetic & Minimalist Design**: Keep controls purposeful and free of duplicate popovers, telemetry clutter, or unused chrome.
+9. **Help Users Recognize, Diagnose, and Recover from Errors**: Inline `role="alert"` validation messages with actionable next steps; zero raw stack traces or silent failures.
+10. **Help & Documentation**: Contextual `?` buttons on complex settings and direct links to KCS guides (including the Plugin Development Guide).
 
-### Color & Contrast Architecture
+## 4. Interaction Engineering (`emil-design-eng`)
 
-- **Emerald Isle (Dark — Evergreen Carbon + Living Mint)**:
-  - Surfaces step cleanly by luminance: `--bg-input: #0D0F0E` → `--bg-primary: #101210` → `--bg-secondary: #171A18` → `--bg-card: #1D211F` → `#252B28` (hover), framed by `--border: #344039` hairline borders.
-  - Primary Brand Accent `--accent: #69E3B2` pairs with deep forest ink `--palette-on-accent: #07140F` (11.9:1 contrast) on filled buttons and badges, and `--accent-text: #ADF8D7` on dark surfaces; Warning `#F0B86D`, Danger `#EF4444`.
-- **Knight Rider (Charcoal + Cornflower Blue)**:
-  - Near-black `#131314` canvas, low-contrast dividers, and blue actions and focus. Form controls use a stronger border than dividers.
-  - Idle Today rows sit on the canvas. An Active task fills its row or Board card with rose. Choosing a task color tints its full surface, with the rose bottom edge identifying active work. The task status label remains visible.
-  - Theme choice is saved as `knight-rider`. Personal neutral and accent choices still override preset defaults.
-- **Light Mode (Warm Architectural Paper + Forest Emerald)**:
-  - Warm paper canvas `--bg-primary: #F6F5F0` with `--bg-secondary: #ECEBE4` chrome, crisp `--bg-card: #FFFFFF` cards, and `--border: #C9D1CB` borders.
-  - Deep Forest Emerald `--accent: #146C4E` and `--accent-hover` / `--accent-text: #0E533B` pair with `--palette-on-accent: #FFFFFF` (6.4:1–8.9:1 contrast) so every text link, badge, and filled primary action passes WCAG AA 4.5:1; Warning `#B45309`, Danger `#DC2626`.
-- **Personal Accent CSS Binding**: Dynamic accent chrome binds directly to `var(--accent)` / `var(--accent-hover)` and `var(--personal-accent-foreground, var(--palette-on-accent))` rather than static RGB utility classes or legacy `#6366f1` / `#7c3aed` fallbacks.
+- **Animation Decision Framework**: Animate only when motion clarifies spatial cause-and-effect (popover entry, sidebar expand/collapse, active press feedback). High-frequency repeated actions (typing, toggling checkboxes, switching dense views) stay instant or sub-160ms.
+- **Custom Easing & Tactile Press States**:
+  - Use crisp ease-out curves (`cubic-bezier(0.23, 1, 0.32, 1)`) for entrances and transitions — never sluggish `ease-in` or bouncy `scale(0)` pops.
+  - Interactive cards and icon triggers use subtle tactile press feedback (`transform: scale(0.97–0.98)` on `:active`).
+  - Popovers animate from their actual anchor origin (`transform-origin: top right` below top-nav triggers, `bottom left` beside sidebar triggers) starting from `scale(0.96)` + subtle `4px` offset over `140ms`.
+- **Reduced Motion**: Every animated rule must have a `@media (prefers-reduced-motion: reduce)` override disabling transitions and transforms.
+- **Before / After / Why Reviews**: Record significant UI design changes in terms of *Before*, *After*, and *Why* so taste compounds over time.
 
-### Typography
+## 5. User Mastery (`Badass: Making Users Awesome` — Kathy Sierra)
 
-- **Operational Type**: Headings and UI Body render in self-hosted `Geist Variable` (with `Inter Variable` fallback; `14px` operational body default). Tickets, timestamps, RICE scores, and IPA use `JetBrains Mono` (`font-variant-numeric: tabular-nums`).
-- **Lazy Appearance Fonts & Ingress Safety**: `Layout.astro` preloads only `Geist Variable` Latin `woff2`; optional `Outfit` and `Comic Neue` appearance presets load lazily via CSS `@font-face` only when selected in Appearance settings. All `@fontsource` assets resolve via relative `./` paths to satisfy strict `font-src 'self'` Content Security Policy behind Home Assistant Ingress.
+- Optimize for making the user awesome at running their household, not for showing off app settings.
+- Put high-frequency workflows (*New task opens: Quick add vs Task form*) directly under *Tasks & Boards* where users expect them, not buried only in one-time setup.
+- Reduce cognitive friction on first interaction: visual tiles show what a layout does before clicking; pinning `Kanban` or `Calendar` takes one click in both Sidebar and Top Nav.
 
-### Iconography & 5-Bucket Emoji Safety Policy
+## 6. `learn-taste` Ledger (Distilled Session Corrections)
 
-- **Tabler `1.75px` Outline Catalog**: UI chrome and task-type icons use build-extracted `@tabler/icons` Outline SVGs (`24×24` `viewBox`, `stroke-width="1.75"`, `stroke-linecap="round"`, `stroke-linejoin="round"`, `vector-effect="non-scaling-stroke"`), deduplicated per SSR response via `<IconSpriteDefs />` (`<symbol id="mt-icon-...">`).
-- **5-Bucket Emoji Governance**:
-  1. **Bucket 1 (Sync & Cleanup Parsers — Untouched)**: Bidirectional calendar attribution markers and corrupt-title cleanup parsers remain intact.
-  2. **Bucket 2 (User Entities, Pickers, Reactions & Native `<option>` Text — Untouched)**: User-authored area/project/lane emoji icons, `IconPicker`, comment reactions, `I18nText` swap attributes, and native `<select><option>` plain-text labels remain intact.
-  3. **Bucket 3 (Component Defaults — Tabler)**: `EmptyState` (`clipboard-list`) and `TaskTypeIcon` (`bolt` / `book` / `bug` / `checkbox`) default to Tabler outline icons while rendering user-authored Bucket 2 emoji strings when passed.
-  4. **Bucket 4 & 5 (Static Chrome & Non-`<option>` Locale Strings — Tabler)**: Decorative emojis in static UI chrome, Settings headings/buttons, `SearchHub`, and toasts are replaced by `1.75px` Tabler `<Icon />` elements.
+| Area | Before (Mistake) | After (Rule) | Why |
+|------|------------------|--------------|-----|
+| Navigation footer menus | Profile card had a 3-dot popover duplicating Edit Menu & Look & Feel next to a separate Keyboard menu on its left. | Profile card opens Edit Profile directly (zero 3-dots); Keyboard utility button sits on the **right** and owns Edit Menu, Add Link, Shortcuts, Settings, Look & Feel, and Tour. | Eliminates redundant menus (Nielsen #4/#8) and establishes one clear trigger per intent. |
+| Settings visibility safety | Locking Settings permanently in the nav bar or hiding it without a fallback. | Allow hiding/showing *Settings* in Edit Mode & Settings while keeping *Settings* always present in the Keyboard utility popover. | User freedom without lockout risk (Nielsen #3/#5). |
+| Look & Feel card hierarchy | *Navigation Layout* and *Customize Appearance* were nested disclosures touching each other with `0px` gap inside *Theme & Accent*. | Three equal peer `SettingsPanelCard` sections separated by unified `20px` spacing. | Gestalt Law of Common Region & Proximity; equal capabilities deserve equal hierarchy. |
+| Visual preference controls | `<select>` dropdowns or hand-drawn CSS boxes for layout and radius options. | Tabler `ThemeSettings.astro` `96×64` vector SVG tiles + rounded-square color swatches + local `Aa` font cards. | Recognition over recall (Nielsen #6) and authentic Tabler craft. |
+| Top Nav sub-views | `Tasks ▾` submenu used `position: absolute` inside the top bar, clipping or failing to pin `Kanban`/`Calendar` cleanly. | Fixed viewport-anchored popover (`z-index: 260`) + full inline editing of task views in Top Nav Edit Mode. | Parity across Sidebar, Top Nav (`nav-overflow`), and Mobile. |
+| Task capture mode discoverability | *New task opens (Quick add vs Task form)* existed only inside `/setup` Advanced Setup. | Exposed in *Settings -> Tasks & Boards* backed by the same `workspace-preferences` store (DRY). | Settings belong in their DDD domain section so users can tune workflows anytime. |
+| Perf budget discipline | Adding component CSS to bundled `<style>` bloated `Layout.*.css` past `commonClientBytesMax`. | Keep component-specific BEM styles in `<style is:inline>` where appropriate and verify `npm run perf:budget --workspace=apps/web`. | Keeps client JS/CSS payload fast on low-power Home Assistant hardware. |
+| Modal portal stacking & input focus | Portaling `#sidebar-profile-modal` inside sticky `.layout-navigation` trapped it behind Tabler's `z-index: 10000` `.modal-backdrop`, and `_modal.css` stripped unfocused input borders. | Always portal `.tabler-surface` modals onto `document.body` (`--modal-zindex: 10001`), focus `[data-tabler-initial-focus]` on open, and keep explicit input borders on modal forms. | Guarantees immediate keyboard focus and unmistakable field affordances (Nielsen #4/#6). |
+| Tinted nav form contrast | Accent/Dark nav tones overrode `--text-primary` to white without overriding `--bg-input`, creating white-on-white invisible inputs in Add Custom Link. | Always pair `--bg-input` (`rgba(15, 23, 42, 0.36)`) with dark/accent nav tone overrides and provide a visual 16-icon Tabler picker. | Preserves WCAG AA legibility across every theme and navigation color (Gestalt Figure-Ground). |
+| Server vs Per-user menu UX | Settings Sidebar Configuration used confusing per-row `<select>` dropdowns and inline inputs without clarifying server vs personal scope. | Unify Settings Sidebar Configuration with the Task Detail Layout Editor (`td-layout-editor`), explicitly badge **Server-wide default (`All users`)** vs **Per-user (`Only you · This browser`)**, and support Add/Delete custom sections in both places. | Consistent mental model across layout editors with zero accidental household-wide overwrites (Nielsen #4/#5). |
+| Tinted nav shortcut & tree contrast | Accent/Dark nav tones overrode `--text-secondary` to white without overriding `--bg-surface`, `--bg-primary-rgb`, or `--border-rgb`, turning shortcut `<kbd>` badges into white-on-cream pills and Boards trees into washed-out pale panels. | Always override `--bg-surface`, `--bg-primary-rgb`, and `--border-rgb` on dark/accent nav tones, give `.shortcut-badge` explicit high-contrast dark-slate pills on tinted navs, and remove redundant Settings status dots. | Guarantees WCAG AA/AAA readability across every theme, accent color, and nav tone (Gestalt Figure-Ground, Nielsen #8). |
+| `transition:persist` portals & submenus | Moving `#nav-utility-popover` and `#sidebar-profile-modal` permanently to `document.body` caused Astro ClientRouter body swaps to destroy them while keeping the persisted `#sidebar`, silently breaking both triggers; uncoordinated `focusout` (`relatedTarget === null`) and `window.focus` clears broke submenus. | Dock closed portals inside `#sidebar` (portaling to `document.body` only while open and redocking on close/`abort`), coordinate all nav submenus via `meitheal:nav-submenu-open`, guard `focusout` with `relatedTarget instanceof Node`, and refresh Boards without wiping DOM on focus. | Keeps every navigation trigger, submenu, and modal 100% responsive across all page transitions and focus changes (Nielsen #3/#4). |
 
-### Layout, Touch & Motion
-
-- **Spatial Grid & Adaptive Containers**: `4px` base spacing grid, single-scroll `body`, and CSS `@container` component queries (`container-name: task-inspector`) so panels adapt to their own inline width rather than viewport breakpoints.
-- **Docked Workspace Inspector (`>= 1440px`)**: At `>= 1440px` desktop widths, opening a task docks `#task-detail-panel` as a `420px` non-modal right rail (`body.has-docked-inspector`, `role="region"`, `aria-modal="false"`, unlocked `body` scroll, active `SearchHub` and single-key navigation outside panel inputs); below `1440px`, the same live DOM node presents as a `role="dialog"` (`aria-modal="true"`) modal without losing unsaved drafts.
-- **Coarse-Pointer Hit Targets**: Interactive controls enforce `@media (pointer: coarse)` `44px × 44px` minimum hit targets for Home Assistant Companion touch screens and wall tablets.
-- **Keyboard Speed & GPU-Composited Motion**: High-frequency surfaces such as `SearchHub` (`Ctrl+K` / `/`) open instantaneously with zero artificial entrance delay. Tactile press feedback (`transform: scale(0.97)`), sheets/drawers (`--ease-drawer: cubic-bezier(0.32, 0.72, 0, 1)`), and disclosures use `transform`/`opacity` transitions (`<= 160ms`, `--ease-out: cubic-bezier(0.23, 1, 0.32, 1)`) with zero mount fade loops or floating icon animations, and disable cleanly under `prefers-reduced-motion: reduce`.
-
----
-
-## Meitheal appearance
-
-Meitheal uses the existing Astro layout, native Settings forms, shared CSS tokens and Home Assistant ingress paths. Appearance customization changes presentation without changing household data or automation authority.
-
-The Customize appearance panel exposes ten preferences: navigation, navigation tone, font, neutral palette, radius, content width, header behavior, navigation edges, panel style and sidebar behavior. All choices are validated against `appearance-preferences.ts`. Save applies a complete local preference draft only after browser storage accepts it. Reset stages defaults for the next save. Unknown stored fields survive a save. The existing theme, accent, custom CSS, language and regional controls keep their contracts.
-
-Defaults preserve the current interface. Desktop users may select a vertical sidebar or a horizontal navigation bar; destination links remain native and a single More disclosure holds overflow from both destination lists when space is limited. The current route remains visible when it fits. Crowded Tasks view links use the same primitive and preserve their route semantics. The controller moves existing link nodes, retaining IDs, hrefs and listeners; it restores focus during reflow and uses keyboard arrows, Home/End and Escape within the disclosure. ResizeObserver only schedules width changes into a later animation frame. Areas uses its existing native disclosure in either layout. Phones keep their existing mobile navigation. Hover expansion also responds to keyboard focus and leaves the main content in place.
-
-Fonts are self-hosted, including Comic Neue. Neutral palettes update both CSS variables and RGB utility tokens for light and dark modes. Accent navigation uses a dark tint so labels remain readable with pale accent choices. Filled primary actions use the deeper palette accent by default. A custom accent pairs with black or white text using measured luminance, separately for its normal and shaded hover surface; the same helper runs before paint and when Settings changes it. Native form widgets follow the effective app color scheme, including Auto with Home Assistant. Focus does not fade placeholder guidance. Shared radius tokens apply to existing controls and cards. Floating panel rules affect existing non-docked task, search and day-drawer surfaces without replacing their controllers.
-
-See [Settings troubleshooting](docs/kcs/settings-troubleshooting.md) for save/reset behavior and local preference recovery. Domain boundaries, ingress handling, lifecycle cleanup and accessible focus behavior remain part of the implementation contract.

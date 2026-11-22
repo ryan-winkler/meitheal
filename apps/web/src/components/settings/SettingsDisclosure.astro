@@ -32,7 +32,7 @@ const {
   </div>
 </details>
 
-<style>
+<style is:inline>
   .settings-disclosure {
     border: 1px solid var(--border);
     border-radius: 14px;
@@ -87,11 +87,11 @@ const {
     line-height: 1.65;
   }
 
-  .settings-disclosure__body :global(p:first-child) {
+  .settings-disclosure__body p:first-child {
     margin-top: 0;
   }
 
-  .settings-disclosure__body :global(p:last-child) {
+  .settings-disclosure__body p:last-child {
     margin-bottom: 0;
   }
 </style>

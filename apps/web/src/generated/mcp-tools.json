@@ -2135,6 +2135,295 @@
       }
     },
     {
+      "name": "getWebserverSettings",
+      "description": "Requires an administrator session. Returns normalized webserver configuration (ports single/list/range, internal/external/Home Assistant URLs, bind interface, TLS status with private key redacted), live MCP server endpoint with Home Assistant deep-link, security posture notices, and Home Assistant Supervisor services/network snapshot.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "updateWebserverSettings",
+      "description": "Requires an administrator session. Validates single port, comma list, or port range (max 32 ports), HTTP/HTTPS domains, bind IP, and TLS material. Persists settings and optionally synchronizes Home Assistant Supervisor add-on options.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "serverName": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "internalUrl": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "externalUrl": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "homeAssistantUrl": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "portsSpec": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              }
+            ]
+          },
+          "bindAddress": {
+            "type": "string"
+          },
+          "tlsEnabled": {
+            "type": "boolean"
+          },
+          "sslCertificate": {
+            "type": "string"
+          },
+          "sslPrivateKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "syncHaOptions": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "verifyWebserverSettings",
+      "description": "Requires an administrator session. Runs deterministic port, domain, bind interface, TLS pairing, MCP endpoint, and Home Assistant Supervisor checks without mutating persisted settings.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "listPlugins",
+      "description": "Returns the full plugin catalog, fleetHealth summary, per-plugin EGM health reports, and Safe Mode state for administrators, or enabled runtime bundles (without secrets) when ?runtime=1 is requested by an active browser session.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "runtime": {
+            "type": "string",
+            "enum": [
+              "1"
+            ],
+            "description": "Return active runtime bundles only."
+          }
+        }
+      }
+    },
+    {
+      "name": "managePlugins",
+      "description": "Administrator only. Supports multipart ZIP upload, JSON install_bundle (AI builder), set_safe_mode, and remove_all_uploaded with full size, zip-bomb, Zip Slip, manifest, SVG, and dataSharing validation.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getPlugin",
+      "description": "Get details for one plugin",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "updatePlugin",
+      "description": "Enable, disable, approve updated permissions, or save plugin configuration",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "uninstallPlugin",
+      "description": "Uninstall an uploaded plugin and delete its storage and secrets",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "readPluginStorage",
+      "description": "Read isolated key-value storage for an active plugin",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          },
+          "key": {
+            "type": "string",
+            "description": "key parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "writePluginStorage",
+      "description": "Write isolated key-value storage for an active plugin (256 KB quota)",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "deletePluginStorage",
+      "description": "Delete one key from a plugin's isolated storage",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          },
+          "key": {
+            "type": "string",
+            "description": "key parameter"
+          }
+        },
+        "required": [
+          "id",
+          "key"
+        ]
+      }
+    },
+    {
+      "name": "listPluginSecrets",
+      "description": "List configured write-only secret keys (values are never returned)",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "setPluginSecret",
+      "description": "Save or rotate a write-only plugin secret",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "deletePluginSecret",
+      "description": "Remove a write-only plugin secret",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          },
+          "key": {
+            "type": "string",
+            "description": "key parameter"
+          }
+        },
+        "required": [
+          "id",
+          "key"
+        ]
+      }
+    },
+    {
+      "name": "proxyPluginHttp",
+      "description": "Enforces allowedHosts, HTTPS policy, DNS/private-IP CIDR blocking, redirect blocking, and server-side {{secret:key}} header substitution.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "runPluginConnector",
+      "description": "Test or idempotently sync an external connector plugin",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
       "name": "getHAConnection",
       "description": "Get HA WebSocket connection status",
       "inputSchema": {
@@ -2168,7 +2457,7 @@
     },
     {
       "name": "getHAServices",
-      "description": "List HA services",
+      "description": "Returns Home Assistant Core services, Supervisor Services registry entries, and (for administrators) Meitheal webserver add-on options.",
       "inputSchema": {
         "type": "object",
         "properties": {}
@@ -3278,6 +3567,148 @@
       "path": "/api/license/status",
       "hasBody": false,
       "pathParams": [],
+      "queryParams": []
+    },
+    "getWebserverSettings": {
+      "method": "GET",
+      "path": "/api/webserver",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "updateWebserverSettings": {
+      "method": "PUT",
+      "path": "/api/webserver",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "verifyWebserverSettings": {
+      "method": "POST",
+      "path": "/api/webserver/verify",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "listPlugins": {
+      "method": "GET",
+      "path": "/api/plugins",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": [
+        "runtime"
+      ]
+    },
+    "managePlugins": {
+      "method": "POST",
+      "path": "/api/plugins",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getPlugin": {
+      "method": "GET",
+      "path": "/api/plugins/{id}",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "updatePlugin": {
+      "method": "PATCH",
+      "path": "/api/plugins/{id}",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "uninstallPlugin": {
+      "method": "DELETE",
+      "path": "/api/plugins/{id}",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "readPluginStorage": {
+      "method": "GET",
+      "path": "/api/plugins/{id}/storage",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": [
+        "key"
+      ]
+    },
+    "writePluginStorage": {
+      "method": "PUT",
+      "path": "/api/plugins/{id}/storage",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "deletePluginStorage": {
+      "method": "DELETE",
+      "path": "/api/plugins/{id}/storage",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": [
+        "key"
+      ]
+    },
+    "listPluginSecrets": {
+      "method": "GET",
+      "path": "/api/plugins/{id}/secrets",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "setPluginSecret": {
+      "method": "PUT",
+      "path": "/api/plugins/{id}/secrets",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "deletePluginSecret": {
+      "method": "DELETE",
+      "path": "/api/plugins/{id}/secrets",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": [
+        "key"
+      ]
+    },
+    "proxyPluginHttp": {
+      "method": "POST",
+      "path": "/api/plugins/{id}/http",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "runPluginConnector": {
+      "method": "POST",
+      "path": "/api/plugins/{id}/connector",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
       "queryParams": []
     },
     "getHAConnection": {

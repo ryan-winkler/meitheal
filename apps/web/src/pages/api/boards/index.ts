@@ -30,6 +30,9 @@ export const HEAD = GET
 
 const createBoard: APIRoute = async (context) => {
   const { request } = context
+  if (!available("organizer")) return apiError("The Boards organizer is unavailable.", 404)
+  const user = await currentBoardContext(context, true)
+  if (!user) return apiError("Use your current authenticated session to create a Board.", 403)
   const body = await readBoardRequest(request)
   const name = typeof body?.name === "string" ? stripHtml(body.name.trim()) : ""
   if (!name || name.length > 100) return apiError("Enter a Board name of 1 to 100 characters.", 400)
@@ -43,16 +46,13 @@ const createBoard: APIRoute = async (context) => {
     if (!check.ok) return apiError(check.error, 400)
     ticketPrefix = check.key
   }
-  if (!available("organizer")) return apiError("The Boards organizer is unavailable.", 404)
-  const user = await currentBoardContext(context, true)
-  if (!user) return apiError("Use your current authenticated session to create a Board.", 403)
   await ensureSchema()
   const repository = new NamedBoardRepository(getPersistenceClient())
   const result = await repository.create(user.principal, name, preset, ticketPrefix)
   if (result.status === "unchanged" && result.result === "duplicate-key")
     return apiError("That Board key is already in use by another Board. Choose a unique key.", 409)
   if (result.status === "committed") return apiJson(result.result, 201)
-  if (result.status === "committed-locked" && result.result && typeof result.result === "object")
+  if (result.status === "committed-locked" && typeof result.result === "object" && result.result !== null)
     return apiJson({ ...result.result, accessPending: true }, 202)
   return apiError("Board access is temporarily locked.", 503)
 }

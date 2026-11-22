@@ -24,9 +24,16 @@ import {
   updateAgentToken,
 } from "@domains/auth"
 import { verifyCurrentHAAdministrator } from "@domains/ha"
-import { ensureSchema, getPersistenceClient, IdentityRepository } from "@domains/tasks"
+import {
+  ensureSchema,
+  getPersistenceClient,
+  IdentityRepository,
+  listBoardGrantsForAgentTokens,
+} from "@domains/tasks"
 import { apiJson, apiProblem } from "@lib/api-response"
+import { readBoardDirectory } from "@lib/board-view"
 import { readWithinLimit } from "@lib/bounded-body"
+import { currentBoardContext } from "@lib/named-board-request"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
 import { resolveBoardRequestScope } from "@lib/board-request-context"
 import { canManageSystemSettings } from "@lib/settings-security"
@@ -104,8 +111,8 @@ function authorizeAdminContext(
     const secFetchSite = request.headers.get("sec-fetch-site")
     const untrustedFetchSite = secFetchSite !== null && secFetchSite !== "same-origin" && secFetchSite !== "none"
     const untrustedOrigin = (origin !== null || referer !== null) && !isCsrfAllowed({
-      behindIngress: false,
-      isDev: false,
+      behindIngress: locals.behindIngress === true,
+      isDev: import.meta.env?.DEV === true,
       host: request.headers.get("host") ?? new URL(request.url).host,
       origin,
       referer: origin ? null : referer,
@@ -382,7 +389,26 @@ export const GET: APIRoute = async ({ request, locals }) => {
 
   const includeRevoked = new URL(request.url).searchParams.get("include_revoked") === "1"
   const tokens = await listAgentTokens(includeRevoked)
-  return noStore(apiJson(tokens.map(toPublicToken)))
+
+  let grants = new Map<string, Array<{ id: string; name: string; ticketPrefix: string }>>()
+  if (tokens.length > 0) {
+    try {
+      const boardCtx = await currentBoardContext({ request, locals }, false)
+      if (boardCtx) {
+        const directory = await readBoardDirectory(boardCtx.actor, request)
+        const allowedBoardIds = new Set(directory.boards.map((b) => b.id))
+        grants = await listBoardGrantsForAgentTokens(
+          getPersistenceClient(),
+          tokens.map((t) => t.id),
+          allowedBoardIds
+        )
+      }
+    } catch {
+      /* Board projection is optional; token list still loads safely. */
+    }
+  }
+
+  return noStore(apiJson(tokens.map((t) => ({ ...toPublicToken(t), boards: grants.get(t.id) ?? [] }))))
 }
 
 // ── PATCH: Update Token ──────────────────────────────────────────────────────

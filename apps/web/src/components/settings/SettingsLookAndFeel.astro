@@ -1,11 +1,10 @@
 ---
 import { t } from "../../i18n/translations"
-import { APPEARANCE_PREFERENCES, type AppearancePreferenceName } from "../../lib/appearance-preferences"
+import { APPEARANCE_PREFERENCES } from "../../lib/appearance-preferences"
 import { INDIGO_SWATCH } from "../../lib/design-tokens"
 import type { Locale } from "../../lib/locale"
 import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
 import { canManageSystemSettings } from "../../lib/settings-security"
-import SettingsDisclosure from "./SettingsDisclosure.astro"
 import SettingsPanelCard from "./SettingsPanelCard.astro"
 import SettingsSectionIntro from "./SettingsSectionIntro.astro"
 import Icon from "../ui/Icon.astro"
@@ -18,14 +17,245 @@ const canManageTheme = canManageSystemSettings(Astro.request, Astro.locals)
 
 const lookAndFeelSection = SETTINGS_SECTIONS.find((section) => section.id === "look-and-feel-settings")!
 
-const VISUAL_PREFERENCE_KEYS: readonly AppearancePreferenceName[] = [
-  "font",
-  "base",
-  "radius",
-  "width",
-  "header",
-  "panelStyle",
+const THEME_OPTIONS = [
+  { value: "auto", label: t("settings.theme_auto", locale), short: "Auto" },
+  { value: "light", label: t("settings.theme_light", locale), short: "Light" },
+  { value: "dark", label: t("settings.theme_dark", locale), short: "Emerald Isle" },
+  { value: "knight-rider", label: t("settings.theme_knight_rider", locale), short: "Knight Rider" },
+  ...(canManageTheme ? [{ value: "custom", label: t("settings.theme_custom", locale), short: "Custom CSS" }] : []),
 ]
+
+const ACCENT_SWATCHES = [
+  { color: "#69E3B2", label: t("settings.accent_mint", locale) },
+  { color: INDIGO_SWATCH, label: t("settings.accent_indigo", locale) },
+  { color: "#14b8a6", label: t("settings.accent_teal", locale) },
+  { color: "#3b82f6", label: t("settings.accent_blue", locale) },
+  { color: "#6495ed", label: t("settings.accent_cornflower", locale) },
+  { color: "#8b5cf6", label: t("settings.accent_violet", locale) },
+  { color: "#ec4899", label: t("settings.accent_pink", locale) },
+  { color: "#f59e0b", label: t("settings.accent_amber", locale) },
+  { color: "#ef4444", label: t("settings.accent_red", locale) },
+]
+
+const FONT_CARDS = [
+  { value: "sans", label: t("settings.appearance_font_sans", locale), stack: "'Geist Variable', -apple-system, BlinkMacSystemFont, sans-serif" },
+  { value: "serif", label: t("settings.appearance_font_serif", locale), stack: "'Iowan Old Style', 'Palatino Linotype', Georgia, serif" },
+  { value: "mono", label: t("settings.appearance_font_mono", locale), stack: "'JetBrains Mono', ui-monospace, monospace" },
+  { value: "comic", label: t("settings.appearance_font_comic", locale), stack: "'Comic Neue', 'Comic Sans MS', cursive" },
+  { value: "outfit", label: t("settings.appearance_font_outfit", locale), stack: "'Outfit', 'Geist Variable', sans-serif" },
+]
+
+const BASE_PALETTE_CARDS = [
+  { value: "slate", label: t("settings.appearance_base_slate", locale), shades: ["#f1f5f9", "#cbd5e1", "#64748b", "#334155", "#0f172a"] },
+  { value: "gray", label: t("settings.appearance_base_gray", locale), shades: ["#f3f4f6", "#d1d5db", "#6b7280", "#374151", "#111827"] },
+  { value: "zinc", label: t("settings.appearance_base_zinc", locale), shades: ["#f4f4f5", "#d4d4d8", "#71717a", "#3f3f46", "#18181b"] },
+  { value: "neutral", label: t("settings.appearance_base_neutral", locale), shades: ["#f5f5f5", "#d4d4d4", "#737373", "#404040", "#171717"] },
+  { value: "stone", label: t("settings.appearance_base_stone", locale), shades: ["#f5f5f4", "#d6d3d1", "#78716c", "#44403c", "#1c1917"] },
+  { value: "mist", label: t("settings.appearance_base_mist", locale), shades: ["#eff3f4", "#ced9dc", "#6d858c", "#334449", "#162023"] },
+]
+
+const RADIUS_CARDS = [
+  { value: "0", label: t("settings.appearance_radius_0", locale) },
+  { value: "0.5", label: t("settings.appearance_radius_0_5", locale) },
+  { value: "1", label: t("settings.appearance_radius_1", locale) },
+  { value: "1.5", label: t("settings.appearance_radius_1_5", locale) },
+  { value: "2", label: t("settings.appearance_radius_2", locale) },
+]
+
+const NAV_LAYOUT_CARDS = [
+  { value: "sidebar", label: t("settings.appearance_navigation_sidebar", locale), desc: "Collapsible left rail" },
+  { value: "navbar", label: t("settings.appearance_navigation_navbar", locale), desc: "Tabler condensed bar" },
+]
+
+const NAV_TONE_CARDS = [
+  { value: "match", label: t("settings.appearance_navTone_match", locale) },
+  { value: "dark", label: t("settings.appearance_navTone_dark", locale) },
+  { value: "accent", label: t("settings.appearance_navTone_accent", locale) },
+]
+
+const NAV_STYLE_CARDS = [
+  { value: "attached", label: t("settings.appearance_navStyle_attached", locale) },
+  { value: "floating", label: t("settings.appearance_navStyle_floating", locale) },
+]
+
+const SIDEBAR_BEHAVIOR_CARDS = [
+  { value: "remember", label: t("settings.appearance_sidebar_remember", locale) },
+  { value: "expanded", label: t("settings.appearance_sidebar_expanded", locale) },
+  { value: "folded", label: t("settings.appearance_sidebar_folded", locale) },
+  { value: "hover", label: t("settings.appearance_sidebar_hover", locale) },
+]
+
+const WIDTH_CARDS = [
+  { value: "default", label: t("settings.appearance_width_default", locale) },
+  { value: "fluid", label: t("settings.appearance_width_fluid", locale) },
+  { value: "boxed", label: t("settings.appearance_width_boxed", locale) },
+]
+
+const HEADER_CARDS = [
+  { value: "sticky", label: t("settings.appearance_header_sticky", locale) },
+  { value: "default", label: t("settings.appearance_header_default", locale) },
+]
+
+const PANEL_STYLE_CARDS = [
+  { value: "attached", label: t("settings.appearance_panelStyle_attached", locale) },
+  { value: "floating", label: t("settings.appearance_panelStyle_floating", locale) },
+]
+
+const ALL_PREFERENCE_NAMES = Object.keys(APPEARANCE_PREFERENCES) as (keyof typeof APPEARANCE_PREFERENCES)[]
+
+/**
+ * Tabler ThemeSettings.astro 96×64 vector tiles adapted to Meitheal design tokens.
+ * Tiles stay mode- and accent-aware via CSS custom properties.
+ */
+const PAGE = "var(--bg-secondary)"
+const SURFACE = "var(--bg-card)"
+const BORDER = "var(--border)"
+const PRIMARY = "var(--accent)"
+const ON_ACCENT = "rgba(255, 255, 255, 0.78)"
+
+const wrapSvg = (inner: string) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 64" class="tabler-tile-svg" aria-hidden="true" focusable="false">${inner}</svg>`
+const frame = (fill: string) => `<rect x="0.5" y="0.5" width="95" height="63" rx="6" fill="${fill}" stroke="${BORDER}" />`
+const outline = `<rect x="0.5" y="0.5" width="95" height="63" rx="6" fill="none" stroke="${BORDER}" />`
+const topBar = (fill: string) =>
+  `<path d="M6.5 0.5h83a6 6 0 0 1 6 6v13.5h-95v-13.5a6 6 0 0 1 6 -6z" fill="${fill}" /><rect x="0.5" y="19.5" width="95" height="0.5" fill="${BORDER}" />`
+const rail = (w: number, fill: string) =>
+  `<path d="M6.5 0.5h${w - 6}v63h-${w - 6}a6 6 0 0 1 -6 -6v-51a6 6 0 0 1 6 -6z" fill="${fill}" /><rect x="${w}" y="0.5" width="0.5" height="63" fill="${BORDER}" />`
+const lines = (x: number, y: number, widths: number[], fill: string, step = 11) =>
+  widths.map((w, i) => `<rect x="${x}" y="${y + i * step}" width="${w}" height="5" rx="2.5" fill="${fill}" />`).join("")
+const dots = (x: number, y: number, count: number, fill: string) =>
+  Array.from({ length: count }, (_, i) => `<circle cx="${x}" cy="${y + i * 11}" r="2.5" fill="${fill}" />`).join("")
+const cardBox = (x: number, y: number, w: number, h: number) =>
+  `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="${SURFACE}" stroke="${BORDER}" />` +
+  lines(x + 6, y + 7, [Math.round(w * 0.6), Math.round(w * 0.8), Math.round(w * 0.4)], BORDER, 9)
+const thumb = (y: number) => `<rect x="90" y="${y}" width="3" height="14" rx="1.5" fill="${BORDER}" />`
+
+function themeTileSvg(value: string): string {
+  const lightBg = "#f6f7f5"
+  const lightBar = "#ffffff"
+  const lightLine = "#d4dcd7"
+  const darkBg = "#111614"
+  const darkBar = "#1a2420"
+  const darkLine = "#32443c"
+  if (value === "auto") {
+    return wrapSvg(
+      `<path d="M6.5 0.5h41.5v63h-41.5a6 6 0 0 1 -6 -6v-51a6 6 0 0 1 6 -6z" fill="${lightBg}" />` +
+      `<path d="M48 0.5h41.5a6 6 0 0 1 6 6v51a6 6 0 0 1 -6 6h-41.5z" fill="${darkBg}" />` +
+      `<path d="M6.5 0.5h41.5v19.5h-47.5v-13.5a6 6 0 0 1 6 -6z" fill="${lightBar}" />` +
+      `<path d="M48 0.5h41.5a6 6 0 0 1 6 6v13.5h-47.5z" fill="${darkBar}" />` +
+      `<rect x="0.5" y="19.5" width="95" height="0.5" fill="${BORDER}" />` +
+      lines(12, 30, [30, 32, 22], lightLine) +
+      lines(54, 30, [26, 30, 18], darkLine) +
+      outline,
+    )
+  }
+  if (value === "light") {
+    return wrapSvg(frame(lightBg) + topBar(lightBar) + lines(12, 30, [46, 72, 30], lightLine) + outline)
+  }
+  if (value === "knight-rider") {
+    return wrapSvg(
+      frame("#0c0d11") +
+      topBar("#181b24") +
+      `<rect x="10" y="8" width="28" height="4" rx="2" fill="#e11d48" />` +
+      lines(12, 30, [46, 72, 30], "#2c3244") +
+      outline,
+    )
+  }
+  if (value === "custom") {
+    return wrapSvg(
+      frame(PAGE) +
+      topBar(PRIMARY) +
+      `<rect x="12" y="29" width="28" height="22" rx="3" fill="${SURFACE}" stroke="${BORDER}" stroke-dasharray="3 2" />` +
+      lines(46, 31, [38, 28], BORDER, 9) +
+      outline,
+    )
+  }
+  // Emerald Isle (dark)
+  return wrapSvg(
+    frame(darkBg) +
+    topBar(darkBar) +
+    `<rect x="10" y="8" width="28" height="4" rx="2" fill="#69E3B2" />` +
+    lines(12, 30, [46, 72, 30], darkLine) +
+    outline,
+  )
+}
+
+function tileSvg(key: string, value: string): string {
+  switch (key) {
+    case "navigation":
+      return value === "sidebar"
+        ? wrapSvg(frame(PAGE) + rail(30, PRIMARY) + lines(7, 10, [16, 16, 16, 16], ON_ACCENT, 10) + lines(40, 12, [40, 48, 28], BORDER) + outline)
+        : wrapSvg(frame(PAGE) + topBar(PRIMARY) + [8, 26, 44].map((x) => `<rect x="${x}" y="8" width="14" height="4" rx="2" fill="${ON_ACCENT}" />`).join("") + lines(12, 30, [46, 72, 30], BORDER) + outline)
+    case "navTone":
+      if (value === "dark") {
+        return wrapSvg(frame(PAGE) + topBar("#111827") + [8, 26, 44].map((x) => `<rect x="${x}" y="8" width="14" height="4" rx="2" fill="rgba(248,250,252,0.75)" />`).join("") + lines(12, 30, [46, 72, 30], BORDER) + outline)
+      }
+      if (value === "accent") {
+        return wrapSvg(frame(PAGE) + topBar(PRIMARY) + [8, 26, 44].map((x) => `<rect x="${x}" y="8" width="14" height="4" rx="2" fill="${ON_ACCENT}" />`).join("") + lines(12, 30, [46, 72, 30], BORDER) + outline)
+      }
+      return wrapSvg(frame(PAGE) + topBar(SURFACE) + [8, 26, 44].map((x) => `<rect x="${x}" y="8" width="14" height="4" rx="2" fill="${BORDER}" />`).join("") + lines(12, 30, [46, 72, 30], BORDER) + outline)
+    case "navStyle":
+      return value === "floating"
+        ? wrapSvg(frame(PAGE) + `<rect x="5" y="5" width="86" height="14" rx="4" fill="${PRIMARY}" />` + [11, 29, 47].map((x) => `<rect x="${x}" y="10" width="14" height="4" rx="2" fill="${ON_ACCENT}" />`).join("") + lines(12, 30, [46, 72, 30], BORDER) + outline)
+        : wrapSvg(frame(PAGE) + topBar(PRIMARY) + [8, 26, 44].map((x) => `<rect x="${x}" y="8" width="14" height="4" rx="2" fill="${ON_ACCENT}" />`).join("") + lines(12, 30, [46, 72, 30], BORDER) + outline)
+    case "sidebar":
+      if (value === "folded") {
+        return wrapSvg(frame(PAGE) + rail(16, PRIMARY) + dots(8, 12, 4, ON_ACCENT) + lines(26, 12, [50, 60, 34], BORDER) + outline)
+      }
+      if (value === "hover") {
+        return wrapSvg(
+          frame(PAGE) +
+          rail(16, PRIMARY) +
+          dots(8, 12, 4, ON_ACCENT) +
+          lines(26, 12, [50, 60, 34], BORDER) +
+          `<rect x="16" y="0.5" width="4" height="63" fill="#0f172a" opacity="0.14" />` +
+          `<rect x="16.5" y="0.5" width="28" height="63" fill="${SURFACE}" stroke="${BORDER}" />` +
+          lines(21, 9.5, [18, 18, 18, 18], BORDER, 11) +
+          outline,
+        )
+      }
+      if (value === "remember") {
+        return wrapSvg(
+          frame(PAGE) +
+          rail(28, SURFACE) +
+          lines(6, 10, [16, 12, 16], BORDER, 10) +
+          `<circle cx="22" cy="50" r="4" fill="${PRIMARY}" />` +
+          lines(38, 12, [42, 48, 28], BORDER) +
+          outline,
+        )
+      }
+      return wrapSvg(frame(PAGE) + rail(30, PRIMARY) + lines(7, 10, [16, 16, 16, 16], ON_ACCENT, 10) + lines(40, 12, [40, 48, 28], BORDER) + outline)
+    case "width":
+      if (value === "boxed") {
+        return wrapSvg(`<rect x="0.5" y="0.5" width="95" height="63" rx="6" fill="var(--text-primary)" opacity="0.16" /><rect x="12" y="8" width="72" height="48" rx="4" fill="${PAGE}" />` + cardBox(18, 16, 60, 32) + outline)
+      }
+      return value === "fluid"
+        ? wrapSvg(frame(PAGE) + cardBox(4, 8, 88, 48) + outline)
+        : wrapSvg(frame(PAGE) + cardBox(22, 8, 52, 48) + outline)
+    case "header":
+      return value === "sticky"
+        ? wrapSvg(frame(PAGE) + lines(12, 4, [46, 72, 30, 60], BORDER) + thumb(44) + `<rect x="0.5" y="19.5" width="95" height="5" fill="#0f172a" opacity="0.18" />` + topBar(PRIMARY) + outline)
+        : wrapSvg(frame(PAGE) + topBar(PRIMARY) + lines(12, 30, [46, 72, 30], BORDER) + thumb(24) + outline)
+    case "panelStyle":
+      return value === "floating"
+        ? wrapSvg(frame(PAGE) + lines(10, 12, [40, 48, 28], BORDER) + `<rect x="0.5" y="0.5" width="95" height="63" rx="6" fill="#0f172a" opacity="0.16" /><rect x="53" y="5" width="38" height="54" rx="4" fill="${SURFACE}" stroke="${BORDER}" />` + lines(59, 12, [20, 26, 14], BORDER) + outline)
+        : wrapSvg(frame(PAGE) + lines(10, 12, [40, 48, 28], BORDER) + `<rect x="0.5" y="0.5" width="95" height="63" rx="6" fill="#0f172a" opacity="0.16" /><path d="M58 0.5h31.5a6 6 0 0 1 6 6v51a6 6 0 0 1 -6 6h-31.5z" fill="${SURFACE}" /><rect x="57.5" y="0.5" width="0.5" height="63" fill="${BORDER}" />` + lines(64, 12, [20, 26, 14], BORDER) + outline)
+    case "radius": {
+      const r = Number(value) * 10
+      return wrapSvg(frame(PAGE) + `<rect x="28" y="12" width="40" height="40" rx="${r}" fill="${PRIMARY}" />` + outline)
+    }
+    default:
+      return wrapSvg(frame(PAGE) + outline)
+  }
+}
+
+function baseTileSvg(shades: readonly string[]): string {
+  return wrapSvg(
+    frame(SURFACE) +
+    shades.map((hex, i) => `<rect x="${10 + i * 16}" y="22" width="12" height="20" rx="3" fill="${hex}" />`).join("") +
+    outline,
+  )
+}
 ---
 
 <section
@@ -34,35 +264,79 @@ const VISUAL_PREFERENCE_KEYS: readonly AppearancePreferenceName[] = [
   data-settings-shell-section
 >
   <SettingsSectionIntro section={lookAndFeelSection} />
-  <div class="settings-grid">
+
+  <form
+    id="appearance-preferences-form"
+    data-appearance-form="look-and-feel"
+    class="appearance-preferences-form look-feel-stack"
+    aria-describedby="appearance-scope"
+  >
+    <!-- Hidden native selects kept in sync for form serialization & controller compatibility -->
+    <div class="sr-only" aria-hidden="true">
+      <select id="theme-select" name="theme" tabindex="-1">
+        {THEME_OPTIONS.map((opt) => (
+          <option value={opt.value}>{opt.label}</option>
+        ))}
+      </select>
+      {ALL_PREFERENCE_NAMES.map((name) => {
+        const pref = APPEARANCE_PREFERENCES[name]
+        return (
+          <select id={`appearance-${name}`} name={name} tabindex="-1">
+            {pref.options.map((value) => (
+              <option value={value} selected={value === pref.defaultValue}>{value}</option>
+            ))}
+          </select>
+        )
+      })}
+    </div>
+
+    <!-- Peer Card 1: Theme & Accent -->
     <SettingsPanelCard
       title={t("settings.look_feel_theme_title", locale)}
       subtitle={t("settings.look_feel_theme_subtitle", locale)}
     >
-      <form
-        id="appearance-preferences-form"
-        data-appearance-form="look-and-feel"
-        class="appearance-preferences-form"
-        aria-describedby="appearance-scope"
-      >
-        <p id="appearance-scope" class="settings-hint mt-2">{t("settings.appearance_scope", locale)}</p>
+      <div class="tabler-card-sections">
+        <p id="appearance-scope" class="settings-hint m-0">{t("settings.appearance_scope", locale)}</p>
 
-        <div class="form-group mt-3">
-          <label class="form-label" for="theme-select">{t("settings.theme_title", locale)}</label>
-          <select class="form-select settings-input-compact" id="theme-select" name="theme">
-            <option value="dark">{t("settings.theme_dark", locale)}</option>
-            <option value="knight-rider">{t("settings.theme_knight_rider", locale)}</option>
-            <option value="light">{t("settings.theme_light", locale)}</option>
-            <option value="auto">{t("settings.theme_auto", locale)}</option>
-            {canManageTheme && <option value="custom">{t("settings.theme_custom", locale)}</option>}
-          </select>
+        <!-- Color Scheme -->
+        <div class="tabler-opt-group">
+          <div class="settings-field-head">
+            <span id="theme-group-label" class="tabler-opt-heading">{t("settings.theme_title", locale)}</span>
+            <button type="button" class="settings-help-btn" data-settings-help="theme" aria-label="Help for Theme Mode">
+              <Icon name="help" size={16} sprite={true} />
+            </button>
+          </div>
+          <p class="settings-hint tabler-opt-sub">Choose your preferred color mode. Profile avatar and surfaces adapt automatically.</p>
+          <div class="tabler-visual-grid tabler-visual-grid--5" role="radiogroup" aria-labelledby="theme-group-label" data-visual-group="theme">
+            {THEME_OPTIONS.map((opt, idx) => (
+              <button
+                type="button"
+                role="radio"
+                class="tabler-visual-card"
+                data-visual-field="theme"
+                data-visual-option={opt.value}
+                aria-checked={idx === 0 ? "true" : "false"}
+                tabindex={idx === 0 ? 0 : -1}
+              >
+                <span class="tabler-card-radio" aria-hidden="true"></span>
+                <span class="tabler-tile-frame" set:html={themeTileSvg(opt.value)} />
+                <span class="tabler-visual-card__label">{opt.short}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div class="form-group mt-3">
-          <label class="flex items-center gap-2">
-            <input id="match-ha-theme" type="checkbox" aria-describedby="match-ha-theme-help match-ha-theme-status" />
-            {t("settings.match_ha_theme", locale)}
-          </label>
+        <!-- Match Home Assistant Theme -->
+        <div class="tabler-ha-row">
+          <div class="settings-field-head">
+            <label class="inline-flex items-center gap-2 cursor-pointer font-medium text-sm text-text-primary">
+              <input id="match-ha-theme" type="checkbox" aria-describedby="match-ha-theme-help match-ha-theme-status" />
+              <span>{t("settings.match_ha_theme", locale)}</span>
+            </label>
+            <button type="button" class="settings-help-btn" data-settings-help="matchHaTheme" aria-label="Help for Match Home Assistant Theme">
+              <Icon name="help" size={16} sprite={true} />
+            </button>
+          </div>
           <p id="match-ha-theme-help" class="settings-hint">{t("settings.match_ha_theme_help", locale)}</p>
           <p
             id="match-ha-theme-status"
@@ -74,61 +348,10 @@ const VISUAL_PREFERENCE_KEYS: readonly AppearancePreferenceName[] = [
           ></p>
         </div>
 
-        <!-- Accent Color -->
-        <div class="form-group mt-3">
-          <label class="form-label">{t("settings.accent_title", locale)}</label>
-          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-            <button type="button" class="accent-swatch" data-color="#69E3B2" title={t("settings.accent_mint", locale)} style="background: #69E3B2;"></button>
-            <button type="button" class="accent-swatch" data-color={INDIGO_SWATCH} title={t("settings.accent_indigo", locale)} style={`background: ${INDIGO_SWATCH};`}></button>
-            <button type="button" class="accent-swatch" data-color="#14b8a6" title={t("settings.accent_teal", locale)} style="background: #14b8a6;"></button>
-            <button type="button" class="accent-swatch" data-color="#3b82f6" title={t("settings.accent_blue", locale)} style="background: #3b82f6;"></button>
-            <button type="button" class="accent-swatch" data-color="#6495ed" title={t("settings.accent_cornflower", locale)} style="background: #6495ed;"></button>
-            <button type="button" class="accent-swatch" data-color="#8b5cf6" title={t("settings.accent_violet", locale)} style="background: #8b5cf6;"></button>
-            <button type="button" class="accent-swatch" data-color="#ec4899" title={t("settings.accent_pink", locale)} style="background: #ec4899;"></button>
-            <button type="button" class="accent-swatch" data-color="#f59e0b" title={t("settings.accent_amber", locale)} style="background: #f59e0b;"></button>
-            <button type="button" class="accent-swatch" data-color="#ef4444" title={t("settings.accent_red", locale)} style="background: #ef4444;"></button>
-            <input
-              type="color"
-              id="accent-color-custom"
-              title={t("settings.accent_custom", locale)}
-              style="width: 28px; height: 28px; border: 2px solid var(--border); border-radius: 50%; padding: 0; cursor: pointer; background: transparent;"
-            />
-            <button
-              type="button"
-              id="accent-reset"
-              class="btn btn-ghost"
-              style="font-size: 12px; padding: 4px 10px;"
-            >{t("settings.accent_reset", locale)}</button>
-          </div>
-          <small class="settings-hint" style="display: block;">{t("settings.accent_hint", locale)}</small>
-        </div>
-
-        <div class="form-group mt-4">
-          <button
-            type="button"
-            id="look-feel-customize-menu"
-            class="btn btn-primary customize-menu-cta"
-            data-customize-sidebar-menu
-          >
-            <Icon name="pencil" size={16} sprite={true} />
-            <span>{t("sidebar.customize_menu", locale)}</span>
-          </button>
-          <small class="settings-hint mt-1" style="display: block;">
-            {t("sidebar.customize_menu_hint", locale)}
-          </small>
-        </div>
-
         {canManageTheme && (
-          <div
-            id="custom-theme-section"
-            class="form-group"
-            style="margin-top: 12px; display: none;"
-          >
-            <div id="custom-theme-empty" style="display: flex; align-items: center; gap: 8px;">
-              <label
-                class="settings-file-picker btn btn-secondary"
-                style="cursor: pointer; margin: 0; padding: 6px 16px; display: inline-flex; align-items: center; gap: 6px;"
-              >
+          <div id="custom-theme-section" class="form-group" style="display: none;">
+            <div id="custom-theme-empty" class="flex items-center gap-2 flex-wrap">
+              <label class="settings-file-picker btn btn-secondary" style="cursor: pointer; margin: 0;">
                 {t("settings.theme_import", locale)}
                 <input type="file" id="custom-theme-input" accept=".css" />
               </label>
@@ -142,7 +365,7 @@ const VISUAL_PREFERENCE_KEYS: readonly AppearancePreferenceName[] = [
               <a
                 id="custom-theme-filename"
                 href="#"
-                style="flex: 1; font-size: 13px; font-weight: 500; color: var(--accent); cursor: pointer;"
+                style="flex: 1; font-size: 13px; font-weight: 500; color: var(--accent-text); cursor: pointer;"
               ></a>
               <button
                 type="button"
@@ -156,94 +379,635 @@ const VISUAL_PREFERENCE_KEYS: readonly AppearancePreferenceName[] = [
           </div>
         )}
 
-        <SettingsDisclosure id="appearance-settings" title={t("settings.appearance_customize", locale)} open={true}>
-          <div class="appearance-preferences-grid">
-            {VISUAL_PREFERENCE_KEYS.map((name) => {
-              const preference = APPEARANCE_PREFERENCES[name]
-              return (
-                <div class="form-group">
-                  <label class="form-label" for={`appearance-${name}`}>{t(`settings.appearance_${name}`, locale)}</label>
-                  <select class="form-select" id={`appearance-${name}`} name={name} aria-describedby={`appearance-${name}-help`}>
-                    {preference.options.map((value) => (
-                      <option value={value} selected={value === preference.defaultValue}>
-                        {t(`settings.appearance_${name}_${value.replace(".", "_")}`, locale)}
-                      </option>
-                    ))}
-                  </select>
-                  <p id={`appearance-${name}-help`} class="settings-hint">{t(`settings.appearance_${name}_help`, locale)}</p>
-                </div>
-              )
-            })}
-          </div>
-        </SettingsDisclosure>
-
-        <div class="flex flex-wrap items-center justify-between gap-2 appearance-preferences-form__footer mt-4">
-          <button type="reset" class="btn btn-secondary">{t("settings.appearance_reset", locale)}</button>
-          <button type="submit" class="btn btn-primary" data-appearance-save>
-            <Icon name="check" size={15} sprite={true} />
-            <span>{t("settings.appearance_save", locale)}</span>
-          </button>
-        </div>
-
-        <div class="settings-dirty-bar" data-appearance-dirty-bar role="status" aria-live="polite" hidden>
-          <span class="settings-dirty-bar__info">
-            <span class="settings-dirty-bar__icon" aria-hidden="true"><Icon name="alert-triangle" size={16} sprite={true} /></span>
-            <span data-appearance-dirty-text>Unsaved changes — previewing live.</span>
-          </span>
-          <div class="settings-dirty-bar__actions">
-            <button type="button" class="btn btn-secondary btn-sm" data-appearance-discard>
-              <Icon name="refresh" size={14} sprite={true} />
-              <span>Discard</span>
-            </button>
-            <button type="submit" class="btn btn-primary btn-sm" data-appearance-save>
-              <Icon name="check" size={14} sprite={true} />
-              <span>{t("settings.appearance_save", locale)}</span>
+        <!-- Accent Color -->
+        <div class="tabler-opt-group">
+          <div class="settings-field-head">
+            <span class="tabler-opt-heading">{t("settings.accent_title", locale)}</span>
+            <button type="button" class="settings-help-btn" data-settings-help="accentColor" aria-label="Help for Accent Color">
+              <Icon name="help" size={16} sprite={true} />
             </button>
           </div>
+          <p class="settings-hint tabler-opt-sub">{t("settings.accent_hint", locale)}</p>
+          <div class="accent-swatch-row">
+            {ACCENT_SWATCHES.map((swatch) => (
+              <button
+                type="button"
+                class="accent-swatch"
+                data-color={swatch.color}
+                title={swatch.label}
+                aria-label={swatch.label}
+                style={`background-color: ${swatch.color};`}
+              ></button>
+            ))}
+            <label class="accent-custom-wrap" title={t("settings.accent_custom", locale)}>
+              <input
+                type="color"
+                id="accent-color-custom"
+                aria-label={t("settings.accent_custom", locale)}
+                class="accent-color-custom"
+              />
+            </label>
+            <button type="button" id="accent-reset" class="btn btn-ghost btn-sm">{t("settings.accent_reset", locale)}</button>
+          </div>
         </div>
-
-        <p
-          id="appearance-save-status"
-          data-appearance-status
-          class="settings-hint mt-2"
-          role="status"
-          data-saved={t("settings.appearance_saved", locale)}
-          data-reset={t("settings.appearance_reset_staged", locale)}
-          data-error={t("settings.appearance_save_error", locale)}
-        ></p>
-      </form>
+      </div>
     </SettingsPanelCard>
-  </div>
+
+    <!-- Peer Card 2: Navigation Layout & Hover Behavior (Top-Level Hierarchy) -->
+    <div id="navigation-appearance-form">
+      <SettingsPanelCard
+        title={t("settings.nav_layout_card_title", locale)}
+        subtitle={t("settings.nav_layout_card_subtitle", locale)}
+      >
+        <div slot="actions" class="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            id="look-feel-customize-menu"
+            class="btn btn-secondary btn-sm"
+            data-customize-sidebar-menu
+          >
+            <Icon name="pencil" size={14} sprite={true} />
+            <span>{t("sidebar.customize_menu", locale)}</span>
+          </button>
+          <a href="#navigation-settings" class="btn btn-secondary btn-sm" data-settings-section-link>
+            <Icon name="link" size={14} sprite={true} />
+            <span>Shortcuts &amp; links</span>
+          </a>
+        </div>
+
+        <div class="tabler-card-sections">
+          <!-- Navigation layout + Navigation edges -->
+          <div class="tabler-opt-row">
+            <div class="tabler-opt-group" data-appearance-field-group="navigation">
+              <div class="settings-field-head">
+                <span id="nav-layout-label" class="tabler-opt-heading">{t("settings.appearance_navigation", locale)}</span>
+                <button type="button" class="settings-help-btn" data-settings-help="navLayout" aria-label="Help for Navigation layout">
+                  <Icon name="help" size={16} sprite={true} />
+                </button>
+              </div>
+              <div class="tabler-visual-grid tabler-visual-grid--2" role="radiogroup" aria-labelledby="nav-layout-label" data-visual-group="navigation">
+                {NAV_LAYOUT_CARDS.map((card, idx) => (
+                  <button
+                    type="button"
+                    role="radio"
+                    class="tabler-visual-card"
+                    data-visual-field="navigation"
+                    data-visual-option={card.value}
+                    aria-checked={idx === 0 ? "true" : "false"}
+                    tabindex={idx === 0 ? 0 : -1}
+                  >
+                    <span class="tabler-card-radio" aria-hidden="true"></span>
+                    <span class="tabler-tile-frame" set:html={tileSvg("navigation", card.value)} />
+                    <span class="tabler-visual-card__label">{card.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div class="tabler-opt-group" data-appearance-field-group="navStyle">
+              <div class="settings-field-head">
+                <span id="nav-style-label" class="tabler-opt-heading">{t("settings.appearance_navStyle", locale)}</span>
+                <button type="button" class="settings-help-btn" data-settings-help="navStyle" aria-label="Help for Navigation edges">
+                  <Icon name="help" size={16} sprite={true} />
+                </button>
+              </div>
+              <div class="tabler-visual-grid tabler-visual-grid--2" role="radiogroup" aria-labelledby="nav-style-label" data-visual-group="navStyle">
+                {NAV_STYLE_CARDS.map((card, idx) => (
+                  <button
+                    type="button"
+                    role="radio"
+                    class="tabler-visual-card"
+                    data-visual-field="navStyle"
+                    data-visual-option={card.value}
+                    aria-checked={idx === 0 ? "true" : "false"}
+                    tabindex={idx === 0 ? 0 : -1}
+                  >
+                    <span class="tabler-card-radio" aria-hidden="true"></span>
+                    <span class="tabler-tile-frame" set:html={tileSvg("navStyle", card.value)} />
+                    <span class="tabler-visual-card__label">{card.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <!-- Navigation color -->
+          <div class="tabler-opt-group" data-appearance-field-group="navTone">
+            <div class="settings-field-head">
+              <span id="nav-tone-label" class="tabler-opt-heading">{t("settings.appearance_navTone", locale)}</span>
+              <button type="button" class="settings-help-btn" data-settings-help="navTone" aria-label="Help for Navigation color">
+                <Icon name="help" size={16} sprite={true} />
+              </button>
+            </div>
+            <div class="tabler-visual-grid tabler-visual-grid--3" role="radiogroup" aria-labelledby="nav-tone-label" data-visual-group="navTone">
+              {NAV_TONE_CARDS.map((card, idx) => (
+                <button
+                  type="button"
+                  role="radio"
+                  class="tabler-visual-card"
+                  data-visual-field="navTone"
+                  data-visual-option={card.value}
+                  aria-checked={idx === 0 ? "true" : "false"}
+                  tabindex={idx === 0 ? 0 : -1}
+                >
+                  <span class="tabler-card-radio" aria-hidden="true"></span>
+                  <span class="tabler-tile-frame" set:html={tileSvg("navTone", card.value)} />
+                  <span class="tabler-visual-card__label">{card.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <!-- Sidebar behavior -->
+          <div class="tabler-opt-group" data-appearance-field-group="sidebar">
+            <div class="settings-field-head">
+              <span id="sidebar-mode-label" class="tabler-opt-heading">{t("settings.appearance_sidebar", locale)}</span>
+              <button type="button" class="settings-help-btn" data-settings-help="sidebarBehavior" aria-label="Help for Sidebar behavior">
+                <Icon name="help" size={16} sprite={true} />
+              </button>
+            </div>
+            <div class="tabler-visual-grid tabler-visual-grid--4" role="radiogroup" aria-labelledby="sidebar-mode-label" data-visual-group="sidebar">
+              {SIDEBAR_BEHAVIOR_CARDS.map((card, idx) => (
+                <button
+                  type="button"
+                  role="radio"
+                  class="tabler-visual-card"
+                  data-visual-field="sidebar"
+                  data-visual-option={card.value}
+                  aria-checked={idx === 0 ? "true" : "false"}
+                  tabindex={idx === 0 ? 0 : -1}
+                >
+                  <span class="tabler-card-radio" aria-hidden="true"></span>
+                  <span class="tabler-tile-frame" set:html={tileSvg("sidebar", card.value)} />
+                  <span class="tabler-visual-card__label">{card.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </SettingsPanelCard>
+    </div>
+
+    <!-- Peer Card 3: Typography & Surface Style (Top-Level Hierarchy) -->
+    <SettingsPanelCard
+      title={t("settings.appearance_title", locale)}
+      subtitle="Self-hosted local typefaces, neutral theme base, corner roundness, content width, and panel surfaces."
+    >
+      <button
+        slot="actions"
+        type="button"
+        class="settings-help-btn"
+        data-settings-help="typographySurface"
+        aria-label="Help for Typography and Surface Density"
+      >
+        <Icon name="help" size={16} sprite={true} />
+      </button>
+
+      <div class="tabler-card-sections">
+        <!-- Font family (Tabler Aa cards) -->
+        <div class="tabler-opt-group" data-appearance-field-group="font">
+          <span id="font-family-label" class="tabler-opt-heading">{t("settings.appearance_font", locale)}</span>
+          <div class="tabler-visual-grid tabler-visual-grid--5" role="radiogroup" aria-labelledby="font-family-label" data-visual-group="font">
+            {FONT_CARDS.map((card, idx) => (
+              <button
+                type="button"
+                role="radio"
+                class="tabler-visual-card tabler-visual-card--font"
+                data-visual-field="font"
+                data-visual-option={card.value}
+                aria-checked={idx === 0 ? "true" : "false"}
+                tabindex={idx === 0 ? 0 : -1}
+              >
+                <span class="tabler-card-radio" aria-hidden="true"></span>
+                <span class="tabler-font-glyph" style={`font-family: ${card.stack};`} aria-hidden="true">Aa</span>
+                <span class="tabler-visual-card__label">{card.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <!-- Theme base (Tabler 5-shade gray scale tiles) -->
+        <div class="tabler-opt-group" data-appearance-field-group="base">
+          <span id="theme-base-label" class="tabler-opt-heading">{t("settings.appearance_base", locale)}</span>
+          <div class="tabler-visual-grid tabler-visual-grid--6" role="radiogroup" aria-labelledby="theme-base-label" data-visual-group="base">
+            {BASE_PALETTE_CARDS.map((card, idx) => (
+              <button
+                type="button"
+                role="radio"
+                class="tabler-visual-card"
+                data-visual-field="base"
+                data-visual-option={card.value}
+                aria-checked={idx === 0 ? "true" : "false"}
+                tabindex={idx === 0 ? 0 : -1}
+              >
+                <span class="tabler-card-radio" aria-hidden="true"></span>
+                <span class="tabler-tile-frame" set:html={baseTileSvg(card.shades)} />
+                <span class="tabler-visual-card__label">{card.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <!-- Corner roundness (Tabler square-to-circle tiles) -->
+        <div class="tabler-opt-group" data-appearance-field-group="radius">
+          <span id="corner-radius-label" class="tabler-opt-heading">{t("settings.appearance_radius", locale)}</span>
+          <div class="tabler-visual-grid tabler-visual-grid--5" role="radiogroup" aria-labelledby="corner-radius-label" data-visual-group="radius">
+            {RADIUS_CARDS.map((card) => (
+              <button
+                type="button"
+                role="radio"
+                class="tabler-visual-card"
+                data-visual-field="radius"
+                data-visual-option={card.value}
+                aria-checked={card.value === "1" ? "true" : "false"}
+                tabindex={card.value === "1" ? 0 : -1}
+              >
+                <span class="tabler-card-radio" aria-hidden="true"></span>
+                <span class="tabler-tile-frame" set:html={tileSvg("radius", card.value)} />
+                <span class="tabler-visual-card__label">{card.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <!-- Content width, Page headers, Panel style (Tabler SVG tiles) -->
+        <div class="tabler-opt-group" data-appearance-field-group="width">
+          <span id="content-width-label" class="tabler-opt-heading">{t("settings.appearance_width", locale)}</span>
+          <div class="tabler-visual-grid tabler-visual-grid--3" role="radiogroup" aria-labelledby="content-width-label" data-visual-group="width">
+            {WIDTH_CARDS.map((card, idx) => (
+              <button
+                type="button"
+                role="radio"
+                class="tabler-visual-card"
+                data-visual-field="width"
+                data-visual-option={card.value}
+                aria-checked={idx === 0 ? "true" : "false"}
+                tabindex={idx === 0 ? 0 : -1}
+              >
+                <span class="tabler-card-radio" aria-hidden="true"></span>
+                <span class="tabler-tile-frame" set:html={tileSvg("width", card.value)} />
+                <span class="tabler-visual-card__label">{card.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div class="tabler-opt-row">
+          <div class="tabler-opt-group" data-appearance-field-group="header">
+            <span id="page-header-label" class="tabler-opt-heading">{t("settings.appearance_header", locale)}</span>
+            <div class="tabler-visual-grid tabler-visual-grid--2" role="radiogroup" aria-labelledby="page-header-label" data-visual-group="header">
+              {HEADER_CARDS.map((card, idx) => (
+                <button
+                  type="button"
+                  role="radio"
+                  class="tabler-visual-card"
+                  data-visual-field="header"
+                  data-visual-option={card.value}
+                  aria-checked={idx === 0 ? "true" : "false"}
+                  tabindex={idx === 0 ? 0 : -1}
+                >
+                  <span class="tabler-card-radio" aria-hidden="true"></span>
+                  <span class="tabler-tile-frame" set:html={tileSvg("header", card.value)} />
+                  <span class="tabler-visual-card__label">{card.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div class="tabler-opt-group" data-appearance-field-group="panelStyle">
+            <span id="panel-style-label" class="tabler-opt-heading">{t("settings.appearance_panelStyle", locale)}</span>
+            <div class="tabler-visual-grid tabler-visual-grid--2" role="radiogroup" aria-labelledby="panel-style-label" data-visual-group="panelStyle">
+              {PANEL_STYLE_CARDS.map((card, idx) => (
+                <button
+                  type="button"
+                  role="radio"
+                  class="tabler-visual-card"
+                  data-visual-field="panelStyle"
+                  data-visual-option={card.value}
+                  aria-checked={idx === 0 ? "true" : "false"}
+                  tabindex={idx === 0 ? 0 : -1}
+                >
+                  <span class="tabler-card-radio" aria-hidden="true"></span>
+                  <span class="tabler-tile-frame" set:html={tileSvg("panelStyle", card.value)} />
+                  <span class="tabler-visual-card__label">{card.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </SettingsPanelCard>
+
+    <!-- Live Unsaved Preview Bar -->
+    <div id="appearance-dirty-bar" class="settings-dirty-bar" data-appearance-dirty-bar role="status" aria-live="polite" hidden>
+      <span class="settings-dirty-bar__info">
+        <span class="settings-dirty-bar__icon" aria-hidden="true">
+          <Icon name="alert-triangle" size={16} sprite={true} />
+        </span>
+        <span data-appearance-dirty-text>Unsaved appearance changes — previewing live.</span>
+      </span>
+      <div class="settings-dirty-bar__actions">
+        <button type="button" class="btn btn-ghost btn-sm" data-appearance-discard>
+          <Icon name="rotate" size={14} sprite={true} />
+          <span>{t("settings.appearance_discard", locale)}</span>
+        </button>
+        <button type="submit" class="btn btn-primary btn-sm" data-appearance-save>
+          <Icon name="check" size={14} sprite={true} />
+          <span>{t("settings.appearance_save", locale)}</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Unified Save / Reset Footer -->
+    <div class="look-feel-footer">
+      <button type="button" class="btn btn-secondary" data-appearance-reset>
+        {t("settings.appearance_reset", locale)}
+      </button>
+      <button type="submit" id="appearance-save-btn" class="btn btn-primary" data-appearance-save>
+        <Icon name="check" size={15} sprite={true} />
+        <span>{t("settings.appearance_save", locale)}</span>
+      </button>
+    </div>
+
+    <p
+      id="appearance-save-status"
+      data-appearance-status
+      class="settings-hint m-0"
+      role="status"
+      data-saved={t("settings.appearance_saved", locale)}
+      data-reset={t("settings.appearance_reset_staged", locale)}
+      data-error={t("settings.appearance_save_error", locale)}
+    ></p>
+  </form>
 </section>
 
-<style>
-  .accent-swatch {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    border: 2px solid transparent;
-    cursor: pointer;
-    transition: background 0.2s, color 0.2s, border-color 0.2s, opacity 0.2s, transform 0.2s;
-    padding: 0;
-  }
-  @media (pointer: coarse) {
-    .accent-swatch {
-      width: 44px;
-      height: 44px;
-    }
-  }
-  .accent-swatch.active {
-    border-color: var(--text-primary);
-    box-shadow:
-      0 0 0 2px var(--bg-secondary),
-      0 0 0 4px currentColor;
+<style is:inline>
+  /* ── Unified Look & Feel Card Stack & Tabler Image-Check Tiles ── */
+  .look-feel-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
   }
 
-  .customize-menu-cta {
-    width: 100%;
-    min-height: 42px;
-    justify-content: center;
-    gap: 0.5rem;
+  .tabler-card-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .tabler-opt-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .tabler-opt-heading {
+    font-size: 0.875rem;
     font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.3;
+  }
+
+  .tabler-opt-sub {
+    margin: -2px 0 4px;
+  }
+
+  .tabler-opt-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+    gap: 20px;
+    align-items: start;
+  }
+
+  .tabler-ha-row {
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 10px);
+    background: var(--bg-secondary);
+  }
+
+  .tabler-ha-row input[type="checkbox"] {
+    accent-color: var(--accent);
+    width: 16px;
+    height: 16px;
+  }
+
+  .tabler-visual-grid {
+    display: grid;
+    gap: 12px;
+  }
+
+  .tabler-visual-grid--2 {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 148px), 1fr));
+  }
+
+  .tabler-visual-grid--3 {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 148px), 1fr));
+  }
+
+  .tabler-visual-grid--4 {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 148px), 1fr));
+  }
+
+  .tabler-visual-grid--5 {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 136px), 1fr));
+  }
+
+  .tabler-visual-grid--6 {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 120px), 1fr));
+  }
+
+  .tabler-visual-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 8px 8px 10px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-md, 10px);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 150ms cubic-bezier(0.23, 1, 0.32, 1), background-color 150ms ease, box-shadow 150ms ease, transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .tabler-visual-card:hover {
+    border-color: rgb(var(--accent-rgb) / 0.55);
+    background: var(--bg-hover);
+  }
+
+  .tabler-visual-card:active {
+    transform: scale(0.98);
+  }
+
+  .tabler-visual-card:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .tabler-visual-card[aria-checked="true"] {
+    border-color: var(--accent);
+    background: rgb(var(--accent-rgb) / 0.08);
+    box-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.25);
+  }
+
+  .tabler-card-radio {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    z-index: 2;
+    inline-size: 16px;
+    block-size: 16px;
+    border-radius: 9999px;
+    border: 1.5px solid var(--border);
+    background: var(--bg-card);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 150ms ease, background-color 150ms ease;
+  }
+
+  .tabler-visual-card[aria-checked="true"] .tabler-card-radio {
+    border-color: var(--accent);
+    background: var(--accent);
+  }
+
+  .tabler-visual-card[aria-checked="true"] .tabler-card-radio::after {
+    content: "";
+    inline-size: 6px;
+    block-size: 6px;
+    border-radius: 9999px;
+    background: var(--accent-fg, #ffffff);
+  }
+
+  .tabler-tile-frame {
+    display: block;
+    inline-size: 100%;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .tabler-tile-svg {
+    display: block;
+    inline-size: 100%;
+    block-size: auto;
+  }
+
+  .tabler-visual-card__label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.25;
+  }
+
+  /* ── Font Preview Card ── */
+  .tabler-visual-card--font {
+    padding-top: 16px;
+  }
+
+  .tabler-font-glyph {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-block-size: 54px;
+    font-size: 2rem;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+  }
+
+  /* ── Tabler Rounded-Square Accent Swatches ── */
+  .accent-swatch-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .accent-swatch {
+    position: relative;
+    inline-size: 32px;
+    block-size: 32px;
+    border-radius: var(--radius-sm, 8px);
+    border: 2px solid transparent;
+    cursor: pointer;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.14);
+    transition: transform 120ms cubic-bezier(0.23, 1, 0.32, 1), box-shadow 140ms ease;
+  }
+
+  .accent-swatch:hover {
+    transform: translateY(-1px) scale(1.06);
+  }
+
+  .accent-swatch:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .accent-swatch.active {
+    box-shadow: 0 0 0 2px var(--bg-card), 0 0 0 4px var(--accent);
+  }
+
+  .accent-swatch.active::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    inline-size: 10px;
+    block-size: 6px;
+    border-left: 2.25px solid #ffffff;
+    border-bottom: 2.25px solid #ffffff;
+    transform: translateY(-1px) rotate(-45deg);
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
+  }
+
+  .accent-custom-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 32px;
+    block-size: 32px;
+    border-radius: var(--radius-sm, 8px);
+    border: 1.5px solid var(--border);
+    background: var(--bg-secondary);
+    cursor: pointer;
+    overflow: hidden;
+  }
+
+  .accent-color-custom {
+    inline-size: 40px;
+    block-size: 40px;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .look-feel-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 14px 20px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 10px);
+    background: var(--bg-card);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tabler-visual-card,
+    .accent-swatch {
+      transition: none;
+    }
+    .tabler-visual-card:active,
+    .accent-swatch:hover {
+      transform: none;
+    }
   }
 </style>

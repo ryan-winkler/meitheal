@@ -221,4 +221,5 @@
   .board-context-tabs__settings { margin-left: 0; }
   .board-card-link__label { display: none; }
   .board-inline-control { flex-direction: column; align-items: stretch; }
+  .board-inline-control select { flex: 0 0 auto; width: 100%; }
 }

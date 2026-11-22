@@ -35,11 +35,11 @@ export function isCsrfAllowed(input: CsrfValidationInput): boolean {
 }
 
 export function buildSecurityHeaders(behindIngress: boolean, isDev: boolean): Record<string, string> {
-  const frameAncestors = "*";
+  const allowFraming = behindIngress || isDev;
+  const frameAncestors = allowFraming ? "*" : "'self'";
   return {
     "X-Content-Type-Options": "nosniff",
-    // Omit X-Frame-Options and rely on CSP frame-ancestors so Home Assistant
-    // ingress and cross-origin preview iframes can embed the app cleanly.
+    ...(allowFraming ? {} : { "X-Frame-Options": "SAMEORIGIN" }),
     "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
     "Content-Security-Policy": [
@@ -49,6 +49,7 @@ export function buildSecurityHeaders(behindIngress: boolean, isDev: boolean): Re
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:", // blob: for attachment previews
       "font-src 'self' data:",
+      "worker-src 'self'",
       behindIngress
         ? "connect-src 'self' ws: wss: http://supervisor http://supervisor:*"
         : isDev

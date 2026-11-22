@@ -3,10 +3,14 @@ import test from "node:test"
 import {
   DEFAULT_SECTION_IDS,
   TASK_VIEW_ITEM_KEYS,
+  addSection,
+  deleteSection,
   findItemSection,
   flattenSidebarOrder,
+  isBuiltinSidebarSectionId,
   isItemHidden,
   isSectionHidden,
+  isSidebarConfigEqual,
   moveItemByStep,
   moveItemToSection,
   moveSectionByStep,
@@ -16,6 +20,7 @@ import {
   renameSection,
   reorderItem,
   reorderSections,
+  sanitizeCustomLinkIcon,
   serializeSidebarConfig,
   setItemVisible,
   toggleItemVisibility,
@@ -192,3 +197,47 @@ test("user profile domain normalizes, validates, and derives initials", () => {
     assert.equal(profileInitials(valid.profile), "RW")
   }
 })
+
+test("custom sections can be added, renamed, populated, round-tripped, and deleted safely", () => {
+  let config = normalizeSidebarConfig(null, TEST_KEYS)
+  const initial = config
+
+  const added = addSection(config, "Smart Home")
+  config = added.config
+  assert.equal(added.sectionId, "section-smart-home")
+  assert.equal(isBuiltinSidebarSectionId(added.sectionId), false)
+  assert.ok(config.sectionOrder.includes(added.sectionId))
+  assert.equal(config.sectionLabels[added.sectionId], "Smart Home")
+  assert.equal(isSidebarConfigEqual(initial, config), false)
+
+  // Pin a custom link with a chosen Tabler icon into the custom section
+  config = pinCustomItem(config, {
+    id: "custom-ha",
+    label: "Home Assistant",
+    href: "https://homeassistant.local:8123",
+    icon: "home",
+  }, added.sectionId)
+  assert.equal(findItemSection(config, "custom-ha"), added.sectionId)
+  assert.equal(config.customItems.find(item => item.id === "custom-ha")?.icon, "home")
+
+  // Round-trip through serialize -> normalize preserves custom section and icon
+  const restored = normalizeSidebarConfig(serializeSidebarConfig(config), TEST_KEYS)
+  assert.ok(restored.sectionOrder.includes(added.sectionId))
+  assert.equal(restored.sectionLabels[added.sectionId], "Smart Home")
+  assert.equal(findItemSection(restored, "custom-ha"), added.sectionId)
+  assert.equal(isSidebarConfigEqual(config, restored), true)
+
+  // Built-in sections cannot be deleted
+  const protectedConfig = deleteSection(restored, "workspace")
+  assert.ok(protectedConfig.sectionOrder.includes("workspace"))
+
+  // Deleting a custom section migrates its items safely to workspace
+  const afterDelete = deleteSection(restored, added.sectionId)
+  assert.equal(afterDelete.sectionOrder.includes(added.sectionId), false)
+  assert.equal(findItemSection(afterDelete, "custom-ha"), "workspace")
+
+  // Icon sanitization rejects untrusted names and preserves valid Tabler icons
+  assert.equal(sanitizeCustomLinkIcon("home"), "home")
+  assert.equal(sanitizeCustomLinkIcon("<script>alert(1)</script>"), "link")
+})
+

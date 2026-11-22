@@ -146,29 +146,48 @@ export function initDataSettings(): void {
     if (!list) return
     const row = document.createElement("div")
     row.className = "custom-field-row"
-    row.innerHTML = `
-      <input type="text" class="form-input" aria-label="Field name" placeholder="Field name" />
-      <select class="form-select cf-type-select" aria-label="Field type">
-        <option value="text">Text</option>
-        <option value="number">Number</option>
-        <option value="url">URL</option>
-        <option value="select">Select</option>
-        <option value="date">Date</option>
-        <option value="checkbox">Checkbox</option>
-      </select>
-      <input type="text" class="form-input cf-options-input" aria-label="Field options" placeholder="Options (comma-separated)" style="display:none; flex:2;" />
-      <button type="button" class="btn btn-primary custom-field-save" style="padding: 4px 12px; font-size: 12px;">Save</button>
-      <button type="button" class="btn btn-ghost" aria-label="Discard new field" style="padding: 4px 8px; color: var(--danger);" onclick="this.closest('.custom-field-row')?.remove()">×</button>
-    `
+    const nameInput = document.createElement("input")
+    nameInput.type = "text"
+    nameInput.className = "form-input"
+    nameInput.setAttribute("aria-label", "Field name")
+    nameInput.placeholder = "Field name"
+
+    const typeSelect = document.createElement("select")
+    typeSelect.className = "form-select cf-type-select"
+    typeSelect.setAttribute("aria-label", "Field type")
+    for (const [val, label] of [["text", "Text"], ["number", "Number"], ["url", "URL"], ["select", "Select"], ["date", "Date"], ["checkbox", "Checkbox"]]) {
+      typeSelect.add(new Option(label, val))
+    }
+
+    const optionsInput = document.createElement("input")
+    optionsInput.type = "text"
+    optionsInput.className = "form-input cf-options-input"
+    optionsInput.setAttribute("aria-label", "Field options")
+    optionsInput.placeholder = "Options (comma-separated)"
+    optionsInput.style.cssText = "display:none;flex:2;"
+
+    const saveBtnEl = document.createElement("button")
+    saveBtnEl.type = "button"
+    saveBtnEl.className = "btn btn-primary custom-field-save"
+    saveBtnEl.style.cssText = "padding:4px 12px;font-size:12px;"
+    saveBtnEl.textContent = "Save"
+
+    const discardBtn = document.createElement("button")
+    discardBtn.type = "button"
+    discardBtn.className = "btn btn-ghost"
+    discardBtn.setAttribute("aria-label", "Discard new field")
+    discardBtn.style.cssText = "padding:4px 8px;color:var(--danger);"
+    discardBtn.textContent = "×"
+    pageLifecycle.on(discardBtn, "click", () => row.remove())
+
+    row.append(nameInput, typeSelect, optionsInput, saveBtnEl, discardBtn)
     list.appendChild(row)
 
-    const typeSelect = row.querySelector(".cf-type-select") as HTMLSelectElement
-    const optionsInput = row.querySelector(".cf-options-input") as HTMLInputElement
     pageLifecycle.on(typeSelect, "change", () => {
       optionsInput.style.display = typeSelect.value === "select" ? "block" : "none"
     })
 
-    row.querySelector("input")?.focus()
+    nameInput.focus()
 
     const saveButton = row.querySelector<HTMLButtonElement>(".custom-field-save")
     if (!saveButton) return

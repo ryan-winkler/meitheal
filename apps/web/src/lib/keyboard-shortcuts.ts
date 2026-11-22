@@ -1,12 +1,19 @@
-import { TASK_VIEWS } from "./task-view-route"
+import {
+  formatShortcutKeys,
+  SHORTCUT_DEFINITIONS,
+  type ShortcutActionId,
+  type ShortcutCategory,
+} from "@domains/navigation/keyboard-shortcuts"
 
 /**
  * The one list of keyboard shortcuts shown to people. The Help dialog (`?`)
- * and Settings both render from it, so add a key here when a handler ships.
+ * and Settings both render from the navigation domain model.
  */
 export type KeyboardShortcutScope = "global" | "tasks" | "settings"
 
 export interface KeyboardShortcut {
+  id: ShortcutActionId
+  category: ShortcutCategory
   /** Keys pressed together, shown as separate keycaps. */
   keys: readonly string[]
   /** i18n key for what the shortcut does. One label per destination. */
@@ -14,6 +21,7 @@ export interface KeyboardShortcut {
   /** Optional i18n key for a page where the key does something else. */
   noteKey?: string
   scope: KeyboardShortcutScope
+  editable: boolean
 }
 
 export interface KeyboardShortcutGroup {
@@ -28,26 +36,15 @@ const SCOPE_HEADINGS: Record<KeyboardShortcutScope, string> = {
   settings: "settings.shortcut_settings_page",
 }
 
-export const KEYBOARD_SHORTCUTS: readonly KeyboardShortcut[] = [
-  { keys: ["/"], labelKey: "settings.shortcut_search", scope: "global" },
-  { keys: ["n"], labelKey: "settings.shortcut_new_task", noteKey: "settings.shortcut_new_task_note", scope: "global" },
-  { keys: ["d"], labelKey: "settings.shortcut_dashboard", scope: "global" },
-  { keys: ["k"], labelKey: "settings.shortcut_kanban", noteKey: "settings.shortcut_kanban_note", scope: "global" },
-  { keys: ["t"], labelKey: "settings.shortcut_table", scope: "global" },
-  { keys: ["y"], labelKey: "settings.shortcut_today", scope: "global" },
-  { keys: ["u"], labelKey: "settings.shortcut_upcoming", scope: "global" },
-  { keys: ["c"], labelKey: "settings.shortcut_calendar", noteKey: "settings.shortcut_calendar_note", scope: "global" },
-  { keys: ["Ctrl/Cmd", "K"], labelKey: "settings.shortcut_cmd_palette", scope: "global" },
-  { keys: ["Ctrl/Cmd", "B"], labelKey: "settings.shortcut_toggle_sidebar", noteKey: "settings.shortcut_toggle_sidebar_note", scope: "global" },
-  { keys: ["?"], labelKey: "settings.shortcut_help", scope: "global" },
-  { keys: ["Esc"], labelKey: "settings.shortcut_close", scope: "global" },
-  ...TASK_VIEWS.map((view, index): KeyboardShortcut => ({
-    keys: [String(index + 1)],
-    labelKey: `settings.shortcut_${view}`,
-    scope: "tasks",
-  })),
-  { keys: ["Home"], labelKey: "settings.scroll_to_top", scope: "settings" },
-]
+export const KEYBOARD_SHORTCUTS: readonly KeyboardShortcut[] = SHORTCUT_DEFINITIONS.map(def => ({
+  id: def.id,
+  category: def.category,
+  keys: formatShortcutKeys(def.defaultCombo),
+  labelKey: def.labelKey,
+  noteKey: def.noteKey,
+  scope: def.category === "navigation" ? "global" : def.category,
+  editable: def.editable,
+}))
 
 export function keyboardShortcutGroups(
   scopes: readonly KeyboardShortcutScope[] = ["global", "tasks", "settings"],

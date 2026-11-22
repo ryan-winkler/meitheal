@@ -16,6 +16,8 @@ import { scopePermits, type BoardScope } from "@domains/tasks/board-scope"
 import { boardWorkspaceHref, readBoardWorkspaceSelection, readBoardPlanningSection } from "@lib/board-workspace"
 import { boardAuthorityKey, boardViewKey, readBoardView } from "@lib/board-view"
 import { boardSessionProof, currentBoardContext } from "@lib/named-board-request"
+import { ensureAgentTokenSchema, isAgentTokenActive, isAgentTokenExpired, listAgentTokens } from "@domains/auth"
+import { canManageSystemSettings } from "@lib/settings-security"
 import { isFeatureEnabled } from "@lib/feature-flags"
 import { isDoneStatus } from "@lib/status-config"
 
@@ -48,6 +50,36 @@ const grouping = { area: scope?.project ? undefined : scope?.area?.id, project: 
 const title = scope?.project?.title ?? scope?.area?.name ?? view?.board.name ?? "Board"
 const nextAction = view?.summary?.next
 const availableNewMembers = user && view ? [...user.roster].filter(([id]) => !view.members.some(member => member.id === id)) : []
+interface BoardAgentTokenSummary {
+  id: string
+  name: string
+  tokenPrefix: string
+  scopes: string[]
+  revoked: boolean
+  expiresAt: string | null
+}
+const canEnumerateSystemTokens = canManageSystemSettings(Astro.request, Astro.locals) && !Astro.locals.agentToken
+let boardAgentTokens: BoardAgentTokenSummary[] = []
+if (policy && view && (canEnumerateSystemTokens || view.agents.length > 0)) {
+  await ensureAgentTokenSchema()
+  const grantedSet = new Set(view.agents)
+  const rawTokens = await listAgentTokens(true)
+  boardAgentTokens = rawTokens
+    .filter(t => canEnumerateSystemTokens || grantedSet.has(t.id))
+    .map(t => ({
+      id: t.id,
+      name: t.name,
+      tokenPrefix: t.tokenPrefix,
+      scopes: t.scopes,
+      revoked: t.revoked,
+      expiresAt: t.expiresAt,
+    }))
+}
+const agentTokenById = new Map(boardAgentTokens.map(t => [t.id, t]))
+const grantedAgentSet = new Set(view?.agents ?? [])
+const availableAgentTokens = canEnumerateSystemTokens
+  ? boardAgentTokens.filter(t => isAgentTokenActive(t) && !grantedAgentSet.has(t.id))
+  : []
 ---
 {taskWorkspace ? <TaskWorkspace {boardId} {workScope} />
   : selection.projectId ? <ProjectWorkspace workspaceProjectId={selection.projectId} {boardId} {workScope} />
@@ -245,22 +277,74 @@ const availableNewMembers = user && view ? [...user.roster].filter(([id]) => !vi
                   <h2 id="board-agent-settings">Agent access</h2>
                 </div>
                 {view.agents.length === 0 && <p class="board-note-plain">No agent tokens have been granted access to this Board yet.</p>}
-                {view.agents.map(tokenId => (
-                  <form data-board-form="agent" class="board-form board-member">
-                    <code class="board-token-code">{tokenId}</code>
-                    <input type="hidden" name="tokenId" value={tokenId} />
-                    <input type="hidden" name="enabled" value="false" />
+                {view.agents.map(tokenId => {
+                  const token = agentTokenById.get(tokenId)
+                  const expired = token ? isAgentTokenExpired(token.expiresAt) : false
+                  const statusLabel = !token ? "Deleted" : token.revoked ? "Revoked" : expired ? "Expired" : "Active"
+                  const isActive = statusLabel === "Active"
+                  return (
+                    <form data-board-form="agent" class="board-form board-member">
+                      <div class="board-member__head">
+                        <h3>{token?.name ?? "Deleted or unknown token"}</h3>
+                        <span class:list={["board-role-badge", isActive ? "board-role-badge--member" : "board-role-badge--muted"]}>
+                          {statusLabel}
+                        </span>
+                      </div>
+                      <p class="board-note-plain">
+                        {token ? (
+                          <>
+                            <code class="board-token-code">{token.tokenPrefix}{token.tokenPrefix.includes("...") ? "" : "…"}</code>
+                            {" · "}
+                            {token.scopes.join(", ")}
+                          </>
+                        ) : (
+                          <code class="board-token-code">{tokenId}</code>
+                        )}
+                      </p>
+                      <input type="hidden" name="tokenId" value={tokenId} />
+                      <input type="hidden" name="enabled" value="false" />
+                      <p role="status" data-board-feedback class="board-feedback"></p>
+                      <button type="submit" class="btn btn-secondary btn-sm">Remove access</button>
+                    </form>
+                  )
+                })}
+                {canEnumerateSystemTokens ? (
+                  availableAgentTokens.length > 0 ? (
+                    <form data-board-form="agent" class="board-form">
+                      <label>Add an agent token
+                        <select name="tokenId" required>
+                          <option value="">Choose an active agent token</option>
+                          {availableAgentTokens.map(token => (
+                            <option value={token.id}>
+                              {token.name} ({token.tokenPrefix}{token.tokenPrefix.includes("...") ? "" : "…"} · {token.scopes.join(", ")})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <input type="hidden" name="enabled" value="true" />
+                      <p role="status" data-board-feedback class="board-feedback"></p>
+                      <button type="submit" class="btn btn-secondary btn-sm">Grant token access</button>
+                    </form>
+                  ) : (
+                    <p class="board-note-plain">
+                      {boardAgentTokens.some(t => isAgentTokenActive(t))
+                        ? "All active agent tokens already have access to this Board."
+                        : "No active agent tokens exist yet."}
+                    </p>
+                  )
+                ) : (
+                  <form data-board-form="agent" class="board-form">
+                    <label>Agent token ID <input name="tokenId" maxlength="36" autocomplete="off" required placeholder="Paste token ID from administrator" /></label>
+                    <input type="hidden" name="enabled" value="true" />
                     <p role="status" data-board-feedback class="board-feedback"></p>
-                    <button type="submit" class="btn btn-secondary btn-sm">Remove token access</button>
+                    <button type="submit" class="btn btn-secondary btn-sm">Grant token access</button>
                   </form>
-                ))}
-                <form data-board-form="agent" class="board-form">
-                  <label>Agent token ID <input name="tokenId" maxlength="36" autocomplete="off" required placeholder="Paste token ID" /></label>
-                  <p class="board-note-plain">Use the ID from Settings / Agent Tokens. The token needs task read access.</p>
-                  <input type="hidden" name="enabled" value="true" />
-                  <p role="status" data-board-feedback class="board-feedback"></p>
-                  <button type="submit" class="btn btn-secondary btn-sm">Grant token access</button>
-                </form>
+                )}
+                {canEnumerateSystemTokens && (
+                  <p class="board-note-plain">
+                    <a href="/settings#ai-agents-settings" class="board-inline-link">Manage &amp; create Agent Tokens in Settings</a>
+                  </p>
+                )}
               </section>
 
               <section class="board-settings-card" aria-labelledby="board-intake-settings">

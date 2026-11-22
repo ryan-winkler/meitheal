@@ -824,8 +824,10 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
                     }
                   }, { signal: modalSignal });
               } else {
-                linkParentDisplay.innerHTML =
-                  '<span class="text-xs text-text-muted italic">None</span>';
+                const none = document.createElement("span")
+                none.className = "text-xs text-text-muted italic"
+                none.textContent = "None"
+                linkParentDisplay.replaceChildren(none)
               }
             }
 
@@ -855,7 +857,10 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
                   if (modalSignal.aborted) return
                   const children = childData.tasks ?? [];
                   if (children.length === 0) {
-                    childrenDiv.innerHTML = `<span class="text-xs text-text-muted italic">No children</span>`;
+                    const empty = document.createElement("span")
+                    empty.className = "text-xs text-text-muted italic"
+                    empty.textContent = "No children"
+                    childrenDiv.replaceChildren(empty)
                     if (progressWrap) progressWrap.classList.add("hidden");
                   } else {
                     let doneCount = 0;
@@ -889,7 +894,10 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
                 }
               } catch {
                 if (modalSignal.aborted) return
-                childrenDiv.innerHTML = `<span class="text-xs text-text-muted italic">—</span>`;
+                const dash = document.createElement("span")
+                dash.className = "text-xs text-text-muted italic"
+                dash.textContent = "—"
+                childrenDiv.replaceChildren(dash)
                 if (progressWrap) progressWrap.classList.add("hidden");
               }
             }
@@ -1952,7 +1960,10 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
                 (t: Record<string, unknown>) => t.id !== currentTaskId,
               );
               if (tasks.length === 0) {
-                parentResultsDiv.innerHTML = `<div class="px-3 py-2 text-xs text-text-muted italic">No matches</div>`;
+                const empty = document.createElement("div")
+                empty.className = "px-3 py-2 text-xs text-text-muted italic"
+                empty.textContent = "No matches"
+                parentResultsDiv.replaceChildren(empty)
               } else {
                 parentResultsDiv.replaceChildren(
                   ...tasks.map((t: Record<string, unknown>) => {

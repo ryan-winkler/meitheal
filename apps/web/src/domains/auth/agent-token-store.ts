@@ -8,7 +8,12 @@
  * @bounded-context agent-authorization
  * @kcs Token plaintext is never stored. Only SHA-256 hashes are persisted.
  */
-import { getPersistenceClient, createBoardAgentCredential, type BoardScope } from "@domains/tasks"
+import {
+  getPersistenceClient,
+  createBoardAgentCredential,
+  removeAgentBoardGrants,
+  type BoardScope,
+} from "@domains/tasks"
 import type { Client } from "@libsql/client"
 import type { AgentTokenRecord, AgentScope } from "@meitheal/domain-auth"
 
@@ -178,14 +183,18 @@ export async function revokeAgentToken(id: string): Promise<boolean> {
   return (result.rowsAffected ?? 0) > 0
 }
 
-/** Hard-delete a token */
+/** Hard-delete a token and clean up its Board access grants */
 export async function deleteAgentToken(id: string): Promise<boolean> {
   const db = getPersistenceClient()
   const result = await db.execute({
     sql: `DELETE FROM agent_tokens WHERE id = ?`,
     args: [id]
   })
-  return (result.rowsAffected ?? 0) > 0
+  const deleted = (result.rowsAffected ?? 0) > 0
+  if (deleted) {
+    await removeAgentBoardGrants(db, id).catch(() => undefined)
+  }
+  return deleted
 }
 
 /** Update token name and/or scopes */

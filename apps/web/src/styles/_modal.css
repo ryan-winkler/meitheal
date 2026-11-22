@@ -235,63 +235,8 @@ dialog[open] .modal-content,
 #nt-priority-dropdown .glass-dropdown__item[data-value="3"]::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #3b82f6; flex-shrink: 0; }
 #nt-priority-dropdown .glass-dropdown__item[data-value="4"]::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #6b7280; flex-shrink: 0; }
 
-/* Prominent toggle switches */
-.nt-feature-card .switch-toggle {
-  width: 44px;
-  height: 24px;
-}
-
-/* ── New Task Modal: utility classes (replaces inline styles) ── */
-
-.nt-modal-header {
-  border-bottom: none;
-  background: transparent;
-  min-height: auto;
-}
-
-.nt-assignment-row {
-  margin-top: 0.25rem;
-}
-
-.nt-assignment-row .filter-toolbar__select {
-  max-width: 180px;
-}
-
 .nt-footer {
   border-top: 1px solid var(--border);
-}
-
-/* Unified toggle switch — replaces 3× duplicated inline Tailwind */
-.nt-toggle {
-  position: relative;
-  width: 2.25rem;  /* 36px / w-9 */
-  height: 1.25rem; /* 20px / h-5 */
-  background: var(--bg-input, var(--bg-secondary));
-  border: 1px solid var(--border);
-  border-radius: 9999px;
-  transition: background-color 0.15s ease, border-color 0.15s ease;
-  cursor: pointer;
-}
-.nt-toggle::after {
-  content: '';
-  position: absolute;
-  top: 0.125rem;   /* 2px / top-0.5 */
-  left: 0.125rem;  /* 2px / left-0.5 */
-  width: 1rem;     /* 16px / w-4 */
-  height: 1rem;    /* 16px / h-4 */
-  background: white;
-  border-radius: 9999px;
-  transition: transform 0.15s ease;
-}
-.peer:checked ~ .nt-toggle {
-  background: var(--accent);
-  border-color: transparent;
-}
-.peer:checked ~ .nt-toggle::after {
-  transform: translateX(1rem);
-}
-.peer:focus ~ .nt-toggle {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 /* Keyboard shortcuts modal */
 .shortcut-modal-overlay {

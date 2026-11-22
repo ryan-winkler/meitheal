@@ -611,7 +611,15 @@ const licenseStatus = !license.valid ? "invalid" : "grace" in license ? "grace" 
           origin = document.referrer ? new URL(document.referrer).origin : ""
         }
       }
-      window.open(origin + ingressPath + "/settings#app-pwa-settings", "_blank", "noopener")
+      try {
+        const dest = new URL(`${ingressPath}/settings#app-pwa-settings`, origin || window.location.origin)
+        if (dest.protocol === "http:" || dest.protocol === "https:") {
+          const opened = window.open(dest.href, "_blank", "noopener,noreferrer")
+          if (opened) opened.opener = null
+        }
+      } catch {
+        /* ignore invalid origin */
+      }
     }, { signal })
 
     if (uninstallBtn) {

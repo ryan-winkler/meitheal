@@ -86,7 +86,7 @@
   font-family: 'Outfit';
   font-style: normal;
   font-display: swap;
-  font-weight: 400 700;
+  font-weight: 100 900;
   src: url('@fontsource-variable/outfit/files/outfit-latin-wght-normal.woff2') format('woff2-variations');
 }
 
@@ -95,7 +95,7 @@
   font-family: 'JetBrains Mono';
   font-style: normal;
   font-display: swap;
-  font-weight: 400 500;
+  font-weight: 100 800;
   src: url('@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2') format('woff2-variations');
 }
 
@@ -117,7 +117,7 @@
     --palette-on-accent: #07140F;
     --palette-accent-light: rgba(105, 227, 178, 0.12);
     --accent: var(--personal-accent, var(--palette-accent));
-    --accent-text: #ADF8D7;
+    --accent-text: var(--personal-accent-text-dark, #ADF8D7);
     --accent-hover: var(--personal-accent-hover, var(--personal-accent, var(--palette-accent-hover)));
     --accent-light: var(--personal-accent-light, var(--personal-accent, var(--palette-accent-light)));
     --warning: #F0B86D;
@@ -127,7 +127,7 @@
     --success-text: color-mix(in srgb, var(--success) 60%, var(--text-primary));
     --info: #38BDF8;
     --border: #344039;
-    --border-focus: #ADF8D7;
+    --border-focus: var(--personal-accent-text-dark, #ADF8D7);
     --color-success: rgba(105, 227, 178, 0.9);
     --color-error: rgba(239, 68, 68, 0.9);
     --color-warning: rgba(240, 184, 109, 0.9);
@@ -140,7 +140,7 @@
     --text-primary-rgb: 241 239 232;
     --text-secondary-rgb: 194 203 195;
     --text-muted-rgb: 169 183 176;
-    --accent-rgb: 105 227 178;
+    --accent-rgb: var(--personal-accent-rgb, 105 227 178);
     --accent-hover-rgb: 138 240 197;
     --warning-rgb: 240 184 109;
     --danger-rgb: 239 68 68;
@@ -201,7 +201,7 @@
     --text-secondary-rgb: 205 205 210;
     --knight-task-muted-rgb: 185 183 190;
     --text-muted-rgb: var(--knight-task-muted-rgb);
-    --accent-rgb: 100 149 237;
+    --accent-rgb: var(--personal-accent-rgb, 100 149 237);
     --accent-hover-rgb: 125 165 246;
     --border-rgb: 54 54 58;
     --border-focus-rgb: 166 192 249;
@@ -217,9 +217,9 @@
     --palette-accent-hover: rgb(var(--accent-hover-rgb));
     --palette-accent-light: rgb(var(--accent-rgb) / 0.14);
     --palette-on-accent: #131314;
-    --accent-text: #ACC5FC;
+    --accent-text: var(--personal-accent-text-dark, #ACC5FC);
     --border: rgb(var(--border-rgb));
-    --border-focus: rgb(var(--border-focus-rgb));
+    --border-focus: var(--personal-accent-text-dark, rgb(var(--border-focus-rgb)));
     --color-success: rgb(var(--success-rgb) / 0.9);
     --success: #76C99B;
     --success-rgb: 118 201 155;
@@ -244,7 +244,7 @@
     --text-secondary: #34473F;
     --text-muted: #4A5E55;
     --palette-accent: #146C4E;
-    --accent-text: #0E533B;
+    --accent-text: var(--personal-accent-text-light, #0E533B);
     --palette-accent-hover: #0E533B;
     --palette-on-accent: #FFFFFF;
     --palette-accent-light: rgba(20, 108, 78, 0.1);
@@ -254,7 +254,7 @@
     --danger: #DC2626;
     --info: #0369A1;
     --border: #C9D1CB;
-    --border-focus: #0E533B;
+    --border-focus: var(--personal-accent-text-light, #0E533B);
     --shadow-sm: 0 1px 3px rgba(16, 35, 27, 0.07);
     --shadow-md: 0 4px 12px rgba(16, 35, 27, 0.09);
     --shadow-lg: 0 8px 24px rgba(16, 35, 27, 0.12);
@@ -267,7 +267,7 @@
     --text-primary-rgb: 16 35 27;
     --text-secondary-rgb: 52 71 63;
     --text-muted-rgb: 74 94 85;
-    --accent-rgb: 20 108 78;
+    --accent-rgb: var(--personal-accent-rgb, 20 108 78);
     --accent-hover-rgb: 14 83 59;
     --warning-rgb: 180 83 9;
     --danger-rgb: 220 38 38;
@@ -305,7 +305,7 @@
       --text-secondary: #34473F;
       --text-muted: #4A5E55;
       --palette-accent: #146C4E;
-      --accent-text: #0E533B;
+      --accent-text: var(--personal-accent-text-light, #0E533B);
       --palette-accent-hover: #0E533B;
       --palette-on-accent: #FFFFFF;
       --palette-accent-light: rgba(20, 108, 78, 0.1);
@@ -315,7 +315,7 @@
       --danger: #DC2626;
       --info: #0369A1;
       --border: #C9D1CB;
-      --border-focus: #0E533B;
+      --border-focus: var(--personal-accent-text-light, #0E533B);
       --shadow-sm: 0 1px 3px rgba(16, 35, 27, 0.07);
       --shadow-md: 0 4px 12px rgba(16, 35, 27, 0.09);
       --shadow-lg: 0 8px 24px rgba(16, 35, 27, 0.12);
@@ -328,7 +328,7 @@
       --text-primary-rgb: 16 35 27;
       --text-secondary-rgb: 52 71 63;
       --text-muted-rgb: 74 94 85;
-      --accent-rgb: 20 108 78;
+      --accent-rgb: var(--personal-accent-rgb, 20 108 78);
       --accent-hover-rgb: 14 83 59;
       --warning-rgb: 180 83 9;
       --danger-rgb: 220 38 38;

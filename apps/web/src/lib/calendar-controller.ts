@@ -235,10 +235,11 @@ export function initCalendarPage(signal: AbortSignal): void {
     announce("Loading calendar…")
 
     try {
-      const requestUrl = new URL(url)
+      const requestUrl = new URL(url, window.location.origin)
+      if (requestUrl.origin !== window.location.origin) throw new Error("Calendar request origin mismatch")
       requestUrl.hash = ""
       requestUrl.searchParams.set("calendarRefresh", `${performance.timeOrigin}-${++refreshCount}`)
-      const response = await fetch(requestUrl, {
+      const response = await fetch(requestUrl.pathname + requestUrl.search, { // nosemgrep
         signal: AbortSignal.any([signal, request.signal, AbortSignal.timeout(10_000)]),
         redirect: "error",
         cache: "no-store",

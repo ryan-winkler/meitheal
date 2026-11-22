@@ -1,3 +1,6 @@
+import { matchesShortcutEvent, readResolvedShortcuts } from "@domains/navigation/keyboard-shortcuts"
+import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
+
 export const APPEARANCE_STORAGE_KEY = "meitheal-appearance"
 
 interface Preference {
@@ -39,7 +42,9 @@ export function readAppearancePreferences(): AppearancePreferences {
 
 function setSidebarCollapsed(collapsed: boolean): void {
   document.body.classList.toggle("sidebar-collapsed", collapsed)
-  const label = collapsed ? "Expand sidebar (Ctrl+B)" : "Collapse sidebar (Ctrl+B)"
+  const shortcut = readResolvedShortcuts().toggleSidebar
+  const suffix = shortcut ? ` (${shortcut})` : ""
+  const label = `${collapsed ? "Expand sidebar" : "Collapse sidebar"}${suffix}`
   const toggles = [
     document.getElementById("sidebar-edge-toggle"),
     ...document.querySelectorAll<HTMLElement>("[data-sidebar-collapse-toggle]"),
@@ -66,6 +71,10 @@ function hasVisibleSidebarFocus(): boolean {
 function syncSidebarState(preserveExpanded = hasVisibleSidebarFocus() && !document.body.classList.contains("sidebar-collapsed")): void {
   const root = document.documentElement.dataset
   const desktopSidebar = innerWidth > 768 && root.appearanceNavigation !== "navbar"
+  if (desktopSidebar && document.getElementById("sidebar")?.hasAttribute("data-sidebar-editing")) {
+    setSidebarCollapsed(false)
+    return
+  }
   let collapsed = desktopSidebar && ["folded", "hover"].includes(root.appearanceSidebar ?? "")
   if (desktopSidebar && root.appearanceSidebar === "remember") {
     try {
@@ -87,6 +96,7 @@ export function applyAppearancePreferences(preferences: AppearancePreferences): 
   }
   syncSidebarState(preserveExpanded)
   if (previousNavigation !== document.documentElement.dataset.appearanceNavigation) syncNavbarAreas(preserveFocus)
+  window.dispatchEvent(new CustomEvent("meitheal:appearance-changed", { detail: preferences }))
 }
 
 function syncNavbarAreas(preserveFocus = hasVisibleSidebarFocus()): void {
@@ -136,6 +146,8 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
   window.addEventListener("meitheal:sidebar-ensure-expanded", () => {
     if (innerWidth <= 768) {
       sidebar?.classList.add("open")
+      document.body.classList.add("sidebar-open")
+      document.getElementById("menu-toggle")?.setAttribute("aria-expanded", "true")
       return
     }
     if (document.documentElement.dataset.appearanceNavigation === "navbar") return
@@ -146,10 +158,16 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
       }
     }
   }, { signal })
+  window.addEventListener("meitheal:sidebar-edit-finished", () => {
+    if (innerWidth > 768 && document.documentElement.dataset.appearanceNavigation !== "navbar") {
+      syncSidebarState(false)
+    }
+  }, { signal })
   document.addEventListener("keydown", event => {
-    if (event.defaultPrevented || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "b" || event.repeat) return
+    if (event.defaultPrevented || event.repeat || document.documentElement.hasAttribute("data-shortcut-recording")) return
     if ((event.target as HTMLElement)?.closest("input, textarea, select, [contenteditable=true]")) return
     if (innerWidth <= 768 || document.documentElement.dataset.appearanceNavigation === "navbar") return
+    if (!matchesShortcutEvent(event, readResolvedShortcuts().toggleSidebar, singleKeyShortcutsEnabled())) return
     event.preventDefault()
     toggle()
   }, { signal })
@@ -166,6 +184,7 @@ export function bindAppearanceNavigation(signal: AbortSignal): void {
   }
   const focusInside = () => sidebar?.contains(document.activeElement) || Boolean(ownedPopup(document.activeElement))
   const closeHover = () => {
+    if (sidebar?.hasAttribute("data-sidebar-editing")) return
     if (hoverEnabled() && !pointerInside() && !focusInside()) setSidebarCollapsed(true)
   }
   // Hover or focus on the edge button itself must leave it in place for activation.

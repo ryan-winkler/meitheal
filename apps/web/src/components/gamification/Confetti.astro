@@ -111,7 +111,7 @@
 
     // Cleanup after animation
     setTimeout(() => {
-      container.innerHTML = ""
+      container.replaceChildren()
     }, 2500)
   }
 

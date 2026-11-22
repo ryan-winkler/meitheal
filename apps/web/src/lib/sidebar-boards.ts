@@ -10,27 +10,72 @@ interface BoardShortcut { id: string; name: string; hidden: boolean; state: stri
 interface GroupChoice { id: string; name: string; icon?: string; color?: string }
 interface GroupPage { items: GroupChoice[]; selected?: GroupChoice | null; next_cursor: string | null; actions?: string[] }
 
-export function bindSidebarBoards(signal: AbortSignal) {
+export function bindSidebarBoards(pageSignal: AbortSignal) {
+  const runtime = window as typeof window & { __meithealSidebarBoards?: AbortController }
+  runtime.__meithealSidebarBoards?.abort()
+  const localController = new AbortController()
+  runtime.__meithealSidebarBoards = localController
+  const signal = AbortSignal.any([pageSignal, localController.signal])
+
   const hierarchyList = document.querySelector<HTMLUListElement>("[data-sidebar-boards]")
   hierarchyList?.classList.add("stree")
   // The action popup handles Escape before the enclosing Boards disclosure.
   const actions = hierarchyList && bindSidebarHierarchyActions(hierarchyList, signal)
   const children = document.querySelector<HTMLElement>("[data-sidebar-board-children]")
   const parentToggle = document.querySelector<HTMLButtonElement>("[data-sidebar-boards-toggle]")
+  let triggerRefresh: (() => void) | undefined
   if (children && parentToggle) {
     const navbar = () => innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar"
     const popup = () => navbar() && !children.closest("[data-nav-overflow-menu]")
+    const positionBoardPopup = () => {
+      if (children.hidden || !popup()) {
+        children.style.removeProperty("--board-menu-top")
+        children.style.removeProperty("--board-menu-left")
+        return
+      }
+      const rect = parentToggle.getBoundingClientRect()
+      const menuWidth = children.offsetWidth || 240
+      const menuHeight = children.offsetHeight || 180
+      const left = Math.max(12, Math.min(rect.left - 80, innerWidth - menuWidth - 12))
+      const top = Math.max(8, Math.min(rect.bottom + 8, innerHeight - menuHeight - 12))
+      children.style.setProperty("--board-menu-top", `${Math.round(top)}px`)
+      children.style.setProperty("--board-menu-left", `${Math.round(left)}px`)
+    }
     const setCollapsed = (collapsed: boolean) => {
       children.hidden = collapsed
       parentToggle.setAttribute("aria-expanded", String(!children.hidden))
-      try { sessionStorage.setItem("meitheal-boards-collapsed", String(children.hidden)) } catch { /* Optional preference */ }
+      if (!collapsed) {
+        if (popup()) window.dispatchEvent(new CustomEvent("meitheal:nav-submenu-open", { detail: { id: "boards" } }))
+        positionBoardPopup()
+        requestAnimationFrame(positionBoardPopup)
+        if (hierarchyList && !hierarchyList.querySelector(":scope > [data-named-board-shortcut]")) triggerRefresh?.()
+      }
+      if (!navbar()) {
+        try { sessionStorage.setItem("meitheal-boards-collapsed", String(children.hidden)) } catch { /* Optional preference */ }
+      }
     }
     try {
       const remembered = sessionStorage.getItem("meitheal-boards-collapsed")
-      children.hidden = remembered === null ? navbar() : remembered === "true"
+      children.hidden = navbar() ? true : remembered === "true"
     } catch { children.hidden = navbar() }
     parentToggle.setAttribute("aria-expanded", String(!children.hidden))
-    parentToggle.addEventListener("click", () => setCollapsed(!children.hidden), { signal })
+    if (!children.hidden && popup()) {
+      positionBoardPopup()
+      requestAnimationFrame(positionBoardPopup)
+    }
+    parentToggle.addEventListener("click", event => {
+      event.stopPropagation()
+      setCollapsed(!children.hidden)
+    }, { signal })
+    window.addEventListener("meitheal:nav-submenu-open", event => {
+      const id = (event as CustomEvent<{ id?: string }>).detail?.id
+      if (id !== "boards" && popup() && !children.hidden) setCollapsed(true)
+    }, { signal })
+    window.addEventListener("resize", positionBoardPopup, { signal })
+    window.addEventListener("scroll", positionBoardPopup, { signal, passive: true })
+    window.addEventListener("meitheal:appearance-changed", () => {
+      if (navbar() && !children.hidden) setCollapsed(true)
+    }, { signal })
     const escapePopup = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.key !== "Escape" || !popup() || children.hidden) return
       event.preventDefault()
@@ -59,15 +104,13 @@ export function bindSidebarBoards(signal: AbortSignal) {
   }
   if (!hierarchyList) return
   const list = hierarchyList
-  const documentContext = currentTaskApiContext()
-  if (!actions) { list.textContent = "Navigation is unavailable. Reload to try again."; return }
   let directoryRequest: AbortController | undefined
   let directoryKey = ""
   let loadedSession = ""
   const groupRequests = new Map<HTMLElement, AbortController>()
   const openBoards = new Set<string>()
   const openAreas = new Set<string>()
-  const areasEnabled = list.dataset.areasEnabled === "true"
+  const areasEnabled = list.dataset.areasEnabled === "true" && Boolean(actions)
   const projectsEnabled = list.dataset.projectsEnabled === "true"
   const areaLabel = list.dataset.boardGroupLabel ?? "Areas"
   const projectLabel = list.dataset.boardProjectLabel ?? "Projects"
@@ -110,20 +153,21 @@ export function bindSidebarBoards(signal: AbortSignal) {
       ? current.searchParams.get(areaId ? "project" : "area") ?? (!areaId ? current.searchParams.get("from") : null) : null
     if (!after && activeGroup) query.set("selected", activeGroup)
     try {
-      if (!documentContext || !sameTaskApiContext(documentContext, currentTaskApiContext())) throw new Error("Original context changed")
+      const requestContext = currentTaskApiContext()
+      if (!requestContext) throw new Error("Board context unavailable")
       const response = await fetch(`/api/boards/${encodeURIComponent(boardId)}?${query}`, {
-        headers: taskApiHeaders({ ...documentContext, boardId }),
+        headers: taskApiHeaders({ ...requestContext, boardId }),
         cache: "no-store",
         signal: AbortSignal.any([signal, request.signal, AbortSignal.timeout(4_000)]),
       })
-      if (request.signal.aborted || signal.aborted || !row.isConnected || groups.hidden || !sameTaskApiContext(documentContext, currentTaskApiContext())) {
+      if (request.signal.aborted || signal.aborted || !row.isConnected || groups.hidden || !sameTaskApiContext(requestContext, currentTaskApiContext())) {
         if (groupRequests.get(row) === request) loading.remove()
         return
       }
       if ([401, 403, 404].includes(response.status)) { clear(); return }
       if (!response.ok) throw new Error("Could not load choices.")
       const data = await response.json() as GroupPage
-      if (request.signal.aborted || signal.aborted || !row.isConnected || groups.hidden || !sameTaskApiContext(documentContext, currentTaskApiContext())) {
+      if (request.signal.aborted || signal.aborted || !row.isConnected || groups.hidden || !sameTaskApiContext(requestContext, currentTaskApiContext())) {
         if (groupRequests.get(row) === request) loading.remove()
         return
       }
@@ -170,7 +214,8 @@ export function bindSidebarBoards(signal: AbortSignal) {
           projects.dataset.collapsed = String(projects.hidden)
           toggle.setAttribute("aria-expanded", String(!projects.hidden))
           toggle.title = `${projects.hidden ? "Expand" : "Collapse"} ${toggle.dataset.areaNameLabel ?? group.name}`
-          toggle.addEventListener("click", () => {
+          toggle.addEventListener("click", event => {
+            event.stopPropagation()
             projects.hidden = !projects.hidden
             projects.inert = projects.hidden
             projects.dataset.collapsed = String(projects.hidden)
@@ -257,7 +302,8 @@ export function bindSidebarBoards(signal: AbortSignal) {
     toggle.setAttribute("aria-controls", groups.id)
     toggle.setAttribute("aria-expanded", String(openBoards.has(board.id)))
     groups.hidden = !openBoards.has(board.id)
-    toggle.addEventListener("click", () => {
+    toggle.addEventListener("click", event => {
+      event.stopPropagation()
       groups.hidden = !groups.hidden
       toggle.setAttribute("aria-expanded", String(!groups.hidden))
       if (groups.hidden) {
@@ -355,21 +401,31 @@ export function bindSidebarBoards(signal: AbortSignal) {
       if (response.ok) {
         const data = await response.json() as { boards?: BoardShortcut[] }
         boards = (data.boards ?? []).filter(board => !board.hidden && board.state === "active")
-        key = response.headers.get("x-meitheal-board-view") ?? key
+        const headerKey = response.headers.get("x-meitheal-board-view")?.trim() ?? ""
+        key = headerKey || JSON.stringify(boards.map(board => [board.id, board.name]))
         session = response.headers.get("x-meitheal-board-session") ?? ""
       }
     } catch {
       // No cached Board is shown while the current directory cannot be verified.
     }
     if (request.signal.aborted || signal.aborted || document.hidden) return
-    if (key !== directoryKey) {
+    const needsRender = key !== directoryKey || (boards.length > 0 && !list.querySelector(":scope > [data-named-board-shortcut]"))
+    if (needsRender) {
       loadPreference(session, boards)
       const active = boards.find(board => location.pathname.endsWith(boardWorkspaceHref(board.id)))
       if (active && (new URL(location.href).searchParams.has("area") || new URL(location.href).searchParams.has("from"))) openBoards.add(active.id)
       for (const pending of groupRequests.values()) pending.abort()
       groupRequests.clear()
-      list.querySelectorAll(":scope > [data-named-board-shortcut]").forEach(item => item.remove())
-      list.append(...boards.map(render))
+      list.querySelectorAll(":scope > [data-named-board-shortcut], :scope > [data-board-empty]").forEach(item => item.remove())
+      if (boards.length > 0) {
+        list.append(...boards.map(render))
+      } else {
+        const empty = document.createElement("li")
+        empty.dataset.boardEmpty = ""
+        empty.className = "sidebar-board-empty"
+        empty.textContent = "No boards yet"
+        list.append(empty)
+      }
       directoryKey = key
       for (const groupList of list.querySelectorAll<HTMLElement>("[data-board-groups]:not([hidden])")) {
         const row = groupList.closest("li")
@@ -407,9 +463,16 @@ export function bindSidebarBoards(signal: AbortSignal) {
     })
   }
 
-  const resume = () => { clear(); void refresh() }
+  const resume = () => { if (!document.hidden) void refresh() }
+  triggerRefresh = resume
   const timer = setInterval(() => { void refresh() }, 10_000)
-  signal.addEventListener("abort", () => { clearInterval(timer); actions?.dispose(); clear() }, { once: true })
+  signal.addEventListener("abort", () => {
+    clearInterval(timer)
+    directoryRequest?.abort()
+    for (const request of groupRequests.values()) request.abort()
+    groupRequests.clear()
+    actions?.dispose()
+  }, { once: true })
   window.addEventListener(SIDEBAR_CONFIG_UPDATED_EVENT, syncBoardPinButtons, { signal })
   document.addEventListener("visibilitychange", resume, { signal })
   window.addEventListener("focus", resume, { signal })

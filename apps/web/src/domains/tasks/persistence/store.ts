@@ -151,7 +151,12 @@ function toTask(row: Record<string, unknown>): PersistedTask {
   };
 }
 
+const SAFE_SQL_IDENTIFIER_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
 async function hasColumn(client: Pick<Client, "execute">, tableName: string, columnName: string): Promise<boolean> {
+  if (!SAFE_SQL_IDENTIFIER_RE.test(tableName)) {
+    throw new Error(`Invalid SQLite table identifier: ${tableName}`);
+  }
   const result = await client.execute(`PRAGMA table_info(${tableName})`);
   return result.rows.some((row) => String((row as Record<string, unknown>).name) === columnName);
 }

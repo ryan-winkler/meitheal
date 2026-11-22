@@ -2,26 +2,37 @@
 import Icon from "../ui/Icon.astro"
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
-import type { SettingsSectionDescriptor } from "../../lib/settings-registry"
+import {
+  getGroupedSettingsSections,
+  type SettingsSectionDescriptor,
+} from "../../lib/settings-registry"
 
 interface Props {
   sections: SettingsSectionDescriptor[]
   locale: Locale
 }
 const { sections, locale } = Astro.props
+const groupedSections = getGroupedSettingsSections(sections)
 ---
 
 <nav id="settings-directory" class="settings-directory" aria-label={t("settings.sections", locale)}>
-  <ul>
-    {sections.map((section) => (
-      <li>
-        <a href={`#${section.id}`} data-settings-nav={section.id} aria-current={section.id === "look-and-feel-settings" ? "location" : undefined}>
-          <Icon name={section.outlineIcon} class="settings-directory__marker" size={18} sprite={false} />
-          <span>{section.label}</span>
-        </a>
-      </li>
-    ))}
-  </ul>
+  {groupedSections.map((group) => (
+    <div class="settings-directory__group" role="group" aria-labelledby={`settings-group-${group.id}`}>
+      <div id={`settings-group-${group.id}`} class="settings-directory__group-label">
+        {group.label}
+      </div>
+      <ul>
+        {group.sections.map((section) => (
+          <li>
+            <a href={`#${section.id}`} data-settings-nav={section.id} aria-current={section.id === "look-and-feel-settings" ? "location" : undefined}>
+              <Icon name={section.outlineIcon} class="settings-directory__marker" size={18} sprite={false} />
+              <span>{section.label}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  ))}
 </nav>
 
 <style>
@@ -31,10 +42,31 @@ const { sections, locale } = Astro.props
     z-index: 20;
     min-width: 0;
     padding: 4px 0;
+    display: grid;
+    gap: 14px;
   }
 
   .settings-directory[hidden] {
     display: none;
+  }
+
+  .settings-directory__group {
+    display: grid;
+    gap: 4px;
+  }
+
+  .settings-directory__group + .settings-directory__group {
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+
+  .settings-directory__group-label {
+    padding: 0 10px 2px;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
   }
 
   ul {
@@ -42,20 +74,14 @@ const { sections, locale } = Astro.props
     padding: 0;
     list-style: none;
     display: grid;
-    gap: 4px;
-  }
-
-  li:last-child {
-    margin-top: 8px;
-    padding-top: 8px;
-    border-top: 1px solid var(--border);
+    gap: 2px;
   }
 
   a {
     display: flex;
     align-items: center;
     gap: 10px;
-    min-height: 44px;
+    min-height: 40px;
     padding: 6px 10px;
     border-inline-start: 3px solid transparent;
     border-radius: 7px;
@@ -96,7 +122,7 @@ const { sections, locale } = Astro.props
       max-height: calc(100dvh - 140px);
       overflow: auto;
       margin-block-end: 12px;
-      padding: 8px;
+      padding: 10px;
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: 10px;
@@ -104,7 +130,7 @@ const { sections, locale } = Astro.props
     }
 
     .settings-directory:not([hidden]) {
-      display: block;
+      display: grid;
     }
   }
 </style>

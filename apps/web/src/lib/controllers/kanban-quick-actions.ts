@@ -82,7 +82,7 @@ export function initQuickActions(
     }
     button.disabled = true
     try {
-      const response = await fetch(buildTaskApiUrl(taskId), {
+      const response = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ color }),

@@ -122,6 +122,8 @@ function bindAppearanceForm(form: HTMLFormElement): void {
   const swatches = isLookAndFeel ? Array.from(form.querySelectorAll<HTMLButtonElement>(".accent-swatch")) : []
   const picker = isLookAndFeel ? form.querySelector<HTMLInputElement>("#accent-color-custom") : null
   const accentReset = isLookAndFeel ? form.querySelector<HTMLButtonElement>("#accent-reset") : null
+  const sidebarFieldGroup = form.querySelector<HTMLElement>('[data-appearance-field-group="sidebar"]')
+  const sidebarNavbarNote = form.querySelector<HTMLElement>("#appearance-sidebar-navbar-note")
 
   const readCommitted = (): AppearanceDraftSnapshot => {
     const storedMap = readStoredAppearanceMap()
@@ -160,22 +162,57 @@ function bindAppearanceForm(form: HTMLFormElement): void {
     if (picker && /^#[0-9a-f]{6}$/i.test(activeColor)) picker.value = activeColor
   }
 
+  const visualOptions = Array.from(form.querySelectorAll<HTMLButtonElement>("[data-visual-field][data-visual-option]"))
+
+  const syncVisualGroup = (fieldName: string, activeValue: string): void => {
+    const groupButtons = visualOptions.filter((btn) => btn.dataset.visualField === fieldName)
+    if (!groupButtons.length) return
+    const hasMatch = groupButtons.some((btn) => btn.dataset.visualOption === activeValue)
+    groupButtons.forEach((btn, index) => {
+      const selected = hasMatch ? btn.dataset.visualOption === activeValue : index === 0
+      btn.setAttribute("aria-checked", String(selected))
+      btn.tabIndex = selected ? 0 : -1
+    })
+  }
+
+  const syncNavigationState = (snap: AppearanceDraftSnapshot): void => {
+    const navMode = snap.appearance.navigation ?? "sidebar"
+    const isNavbar = navMode === "navbar"
+    sidebarFieldGroup?.classList.toggle("is-inactive", isNavbar)
+    if (sidebarNavbarNote) sidebarNavbarNote.hidden = !isNavbar
+    const navSummary = document.getElementById("nav-layout-active-summary")
+    if (navSummary) {
+      const layoutLabel = isNavbar ? "Top navigation" : "Sidebar"
+      const toneMap: Record<string, string> = { match: "Match theme", dark: "Dark nav", accent: "Colored nav" }
+      const toneLabel = toneMap[snap.appearance.navTone ?? "match"] ?? "Match theme"
+      const sidebarMap: Record<string, string> = { remember: "Remember state", expanded: "Expanded", folded: "Folded", hover: "Hover expand" }
+      navSummary.textContent = isNavbar
+        ? `${layoutLabel} · ${toneLabel} · Tabler overflow`
+        : `${layoutLabel} · ${toneLabel} · ${sidebarMap[snap.appearance.sidebar ?? "remember"] ?? "Remember state"}`
+    }
+  }
+
   const syncInputsFromSnapshot = (snap: AppearanceDraftSnapshot): void => {
     for (const field of fields) {
-      field.select.value = snap.appearance[field.name] ?? field.defaultValue
+      const resolved = snap.appearance[field.name] ?? field.defaultValue
+      field.select.value = resolved
+      syncVisualGroup(field.name, resolved)
     }
     if (themeSelect && snap.theme) {
       themeSelect.value = snap.theme
+      syncVisualGroup("theme", snap.theme)
       showCustomThemeSection(snap.theme === "custom")
     }
     if (matchHaCheckbox && snap.matchHaTheme !== undefined) {
       matchHaCheckbox.checked = snap.matchHaTheme
     }
     syncAccentSelection(snap.accent ?? null)
+    syncNavigationState(snap)
   }
 
   const applySnapshotPreview = (snap: AppearanceDraftSnapshot): void => {
     applyAppearancePreferences(resolveFullAppearance(snap.appearance))
+    syncNavigationState(snap)
     if (isLookAndFeel) {
       if (snap.theme && isThemeMode(snap.theme)) {
         applyTheme(snap.theme, snap.theme === "auto")
@@ -218,25 +255,71 @@ function bindAppearanceForm(form: HTMLFormElement): void {
         committed.theme = mode
         draft.theme = mode
         if (themeSelect) themeSelect.value = mode
+        syncVisualGroup("theme", mode)
         showCustomThemeSection(mode === "custom")
       }
     }
   }
+
+  const selectVisualOption = (fieldName: string, value: string): void => {
+    if (fieldName === "theme") {
+      draft.theme = value
+      if (themeSelect) themeSelect.value = value
+      syncVisualGroup("theme", value)
+      previewDraft()
+      return
+    }
+    const field = fields.find((f) => f.name === fieldName)
+    if (!field) return
+    const nextValue = field.options.includes(value) ? value : field.defaultValue
+    draft.appearance[field.name] = nextValue
+    field.select.value = nextValue
+    syncVisualGroup(field.name, nextValue)
+    previewDraft()
+  }
+
+  // Visual radio card click & ARIA radiogroup arrow-key support
+  pageLifecycle.on(form, "click", (event) => {
+    const btn = (event.target instanceof Element ? event.target : null)?.closest<HTMLButtonElement>("[data-visual-field][data-visual-option]")
+    if (!btn) return
+    const fieldName = btn.dataset.visualField
+    const value = btn.dataset.visualOption
+    if (fieldName && value !== undefined) selectVisualOption(fieldName, value)
+  })
+
+  pageLifecycle.on(form, "keydown", (event) => {
+    const btn = (event.target instanceof Element ? event.target : null)?.closest<HTMLButtonElement>("[data-visual-field][data-visual-option]")
+    if (!btn) return
+    const fieldName = btn.dataset.visualField
+    if (!fieldName) return
+    const keys = ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp", "Home", "End"]
+    if (!keys.includes(event.key)) return
+    const groupButtons = visualOptions.filter((candidate) => candidate.dataset.visualField === fieldName)
+    const idx = groupButtons.indexOf(btn)
+    if (idx === -1 || groupButtons.length < 2) return
+    event.preventDefault()
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? groupButtons.length - 1
+        : (idx + (event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : -1) + groupButtons.length) % groupButtons.length
+    const nextBtn = groupButtons[nextIndex]
+    if (nextBtn?.dataset.visualOption !== undefined) {
+      selectVisualOption(fieldName, nextBtn.dataset.visualOption)
+      nextBtn.focus()
+    }
+  })
 
   // Live preview on select/checkbox change
   pageLifecycle.on(form, "change", (event) => {
     const target = event.target
     if (target instanceof HTMLSelectElement) {
       if (target === themeSelect) {
-        draft.theme = target.value
-        previewDraft()
+        selectVisualOption("theme", target.value)
         return
       }
       const field = fields.find((f) => f.select === target)
-      if (field) {
-        draft.appearance[field.name] = field.options.includes(target.value) ? target.value : field.defaultValue
-        previewDraft()
-      }
+      if (field) selectVisualOption(field.name, target.value)
       return
     }
     if (target === matchHaCheckbox && matchHaCheckbox) {

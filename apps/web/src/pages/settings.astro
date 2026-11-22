@@ -16,12 +16,16 @@ import SettingsRules from "../components/settings/SettingsRules.astro"
 import SettingsSectionIntro from "../components/settings/SettingsSectionIntro.astro"
 import SettingsShellNav from "../components/settings/SettingsShellNav.astro"
 import SettingsTasksBoards from "../components/settings/SettingsTasksBoards.astro"
+import SettingsPlugins from "../components/settings/SettingsPlugins.astro"
+import SettingsWebserver from "../components/settings/SettingsWebserver.astro"
 import Icon from "../components/ui/Icon.astro"
+import TablerModal from "../components/ui/TablerModal.astro"
 import Layout from "../layouts/Layout.astro"
 import { t } from "../i18n/translations"
 import type { Locale } from "../lib/locale"
 import { issueDatabaseDownloadToken } from "../lib/database-download-token"
 import { SETTINGS_SECTIONS } from "../lib/settings-registry"
+import { safeJsonForScript, SETTINGS_HELP_TOPICS } from "@domains/navigation/settings-help-topics"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks"
 import { verifyCurrentHAOwner } from "@domains/ha/current-admin"
 import { verifiedIngressUser } from "../lib/verified-ingress-user"
@@ -131,6 +135,12 @@ const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "c
         </div>
       </section>
 
+      <!-- 8b. Plugins -->
+      <SettingsPlugins locale={locale} />
+
+      <!-- 8c. Webserver -->
+      <SettingsWebserver locale={locale} />
+
       <!-- 9. App & Companion -->
       <SettingsAppPwa locale={locale} />
 
@@ -139,6 +149,22 @@ const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "c
       </div>
     </div>
   </div>
+
+  <TablerModal
+    id="settings-help-modal"
+    title="Help"
+    descriptionId="settings-help-body"
+    size="sm"
+    statusTone="primary"
+  >
+    <div id="settings-help-body" class="settings-help-modal__body" data-help-body></div>
+    <p class="settings-help-modal__tip" data-help-tip hidden></p>
+    <p class="settings-help-modal__env" data-help-env hidden></p>
+    <Fragment slot="footer">
+      <button type="button" class="btn btn-primary btn-sm" data-tabler-modal-close data-tabler-initial-focus>Got it</button>
+    </Fragment>
+  </TablerModal>
+  <script type="application/json" id="settings-help-topics" set:html={safeJsonForScript(SETTINGS_HELP_TOPICS)}></script>
 
   <button
     id="settings-go-top"
@@ -366,11 +392,11 @@ const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "c
 
   .settings-shell :global([id]),
   .settings-shell :global([data-settings-destination]) {
-    scroll-margin-block-start: 80px;
+    scroll-margin-block-start: 88px;
     scroll-margin-block-end: 80px;
   }
 
-  .settings-shell :global([data-settings-destination]:focus) {
+  .settings-shell :global([data-settings-destination]:focus-visible) {
     outline: 2px solid var(--text-primary);
     outline-offset: 3px;
   }
@@ -397,6 +423,11 @@ const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "c
       display: block;
     }
 
+    .settings-shell :global([id]),
+    .settings-shell :global([data-settings-destination]) {
+      scroll-margin-block-start: 132px;
+    }
+
     .settings-bar kbd {
       display: none;
     }
@@ -410,5 +441,81 @@ const connectionsSection = SETTINGS_SECTIONS.find((section) => section.id === "c
     .settings-bar button svg {
       display: none;
     }
+  }
+</style>
+
+<style is:inline>
+  .settings-field-head {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    flex-wrap: nowrap;
+    min-width: 0;
+  }
+
+  .settings-field-head > label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    width: auto;
+    margin: 0;
+  }
+
+  .settings-help-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 26px;
+    block-size: 26px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 9999px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+  }
+
+  .settings-help-btn:hover,
+  .settings-help-btn:focus-visible {
+    color: var(--accent-text);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+
+  .settings-help-modal__body {
+    display: grid;
+    gap: 10px;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    line-height: 1.55;
+  }
+
+  .settings-help-modal__body p {
+    margin: 0;
+  }
+
+  .settings-help-modal__tip {
+    margin: 12px 0 0;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm, 8px);
+    border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+    background: color-mix(in srgb, var(--accent) 8%, var(--bg-secondary));
+    color: var(--text-primary);
+    font-size: 0.84rem;
+    line-height: 1.45;
+  }
+
+  .settings-help-modal__env {
+    margin: 12px 0 0;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm, 8px);
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.8rem;
   }
 </style>

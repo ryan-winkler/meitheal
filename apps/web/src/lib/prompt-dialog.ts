@@ -33,40 +33,51 @@ export function promptDialog(options: PromptOptions): Promise<string | null> {
     const dialog = document.createElement("div")
     dialog.className = "m-dialog-card"
 
-    dialog.innerHTML = `
-      <h3 id="prompt-title" class="m-dialog-title"></h3>
-      <p id="prompt-message" class="m-dialog-message"></p>
-      <input
-        type="text"
-        id="prompt-input"
-        aria-labelledby="prompt-title"
-        autocomplete="off"
-        maxlength="200"
-        placeholder=""
-        value=""
-      />
-      <div id="prompt-error" role="alert" aria-live="assertive"></div>
-      <div class="m-dialog-actions">
-        <button type="button" id="prompt-cancel" class="m-dialog-btn m-dialog-btn--secondary"></button>
-        <button type="button" id="prompt-ok" class="m-dialog-btn m-dialog-btn--primary"></button>
-      </div>
-    `
+    const titleEl = document.createElement("h3")
+    titleEl.id = "prompt-title"
+    titleEl.className = "m-dialog-title"
+    titleEl.textContent = options.title ?? dialogText("common.input", "Input")
 
-    // Assign text and input properties without parsing option values as HTML.
-    dialog.querySelector<HTMLElement>("#prompt-title")!.textContent = options.title ?? dialogText("common.input", "Input")
-    const message = dialog.querySelector<HTMLElement>("#prompt-message")!
-    if (options.message) message.textContent = options.message
-    else message.remove()
-    const input = dialog.querySelector<HTMLInputElement>("#prompt-input")!
-    const errorDiv = dialog.querySelector<HTMLElement>("#prompt-error")!
-    const cancelBtn = dialog.querySelector<HTMLButtonElement>("#prompt-cancel")!
-    const okBtn = dialog.querySelector<HTMLButtonElement>("#prompt-ok")!
-    if (options.message) input.setAttribute("aria-describedby", "prompt-message")
+    const input = document.createElement("input")
+    input.type = "text"
+    input.id = "prompt-input"
+    input.setAttribute("aria-labelledby", "prompt-title")
+    input.autocomplete = "off"
+    input.maxLength = 200
     input.placeholder = options.placeholder ?? ""
     input.value = options.defaultValue ?? ""
     input.defaultValue = input.value
+
+    const errorDiv = document.createElement("div")
+    errorDiv.id = "prompt-error"
+    errorDiv.setAttribute("role", "alert")
+    errorDiv.setAttribute("aria-live", "assertive")
+
+    const actions = document.createElement("div")
+    actions.className = "m-dialog-actions"
+    const cancelBtn = document.createElement("button")
+    cancelBtn.type = "button"
+    cancelBtn.id = "prompt-cancel"
+    cancelBtn.className = "m-dialog-btn m-dialog-btn--secondary"
     cancelBtn.textContent = options.cancelText ?? dialogText("common.cancel", "Cancel")
+
+    const okBtn = document.createElement("button")
+    okBtn.type = "button"
+    okBtn.id = "prompt-ok"
+    okBtn.className = "m-dialog-btn m-dialog-btn--primary"
     okBtn.textContent = options.confirmText ?? dialogText("common.ok", "OK")
+
+    actions.append(cancelBtn, okBtn)
+    dialog.appendChild(titleEl)
+    if (options.message) {
+      const message = document.createElement("p")
+      message.id = "prompt-message"
+      message.className = "m-dialog-message"
+      message.textContent = options.message
+      input.setAttribute("aria-describedby", "prompt-message")
+      dialog.appendChild(message)
+    }
+    dialog.append(input, errorDiv, actions)
 
     const showValidationError = (msg: string) => {
       errorDiv.textContent = msg

@@ -1,6 +1,11 @@
 /** Public task persistence and board-availability operations used across contexts. */
 export { BoardAccessService, validateBoardFeature, validateBoardPlacement } from "./board-access-service"
-export { createBoardAgentCredential } from "./agent-board-authority"
+export {
+  createBoardAgentCredential,
+  listBoardGrantsForAgentTokens,
+  removeAgentBoardGrants,
+  type AgentTokenBoardGrant,
+} from "./agent-board-authority"
 export { resolveHAAssignmentProof, type AssignmentProof } from "./assignment-proof"
 export { listSharedGoals } from "./persistence/shared-goal-repository"
 export { TemplateRepository } from "./persistence/template-repository"

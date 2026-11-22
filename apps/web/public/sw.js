@@ -26,7 +26,7 @@
  *
  * @kcs Kept in sync automatically via astro.config.mjs build hook.
  */
-let CACHE_VERSION = "0.0.1";
+let CACHE_VERSION = "0.0.2";
 const SYNC_TAG = "meitheal-background-sync";
 
 /**
@@ -267,6 +267,11 @@ function isNetworkOnlyPage(path, params) {
     (path === "/today" && params.has("unscheduledPage"))
 }
 
+function isDevModuleRequest(path, params) {
+  return /^\/(?:@vite|@fs|@id|src|node_modules)\//.test(path) ||
+    params.has("t") || params.has("astro") || params.has("direct") || params.has("import")
+}
+
 async function purgeSensitiveCacheEntries() {
   const names = (await caches.keys()).filter(name => meithealCacheName.test(name))
   await Promise.all(names.map(async name => {
@@ -274,7 +279,8 @@ async function purgeSensitiveCacheEntries() {
     const requests = await cache.keys()
     await Promise.all(requests.filter(request => {
       const url = new URL(request.url)
-      return privateResourcePath(url) || isNetworkOnlyPage(appRoutePath(url.pathname), url.searchParams)
+      const path = appRoutePath(url.pathname)
+      return privateResourcePath(url) || isNetworkOnlyPage(path, url.searchParams) || isDevModuleRequest(path, url.searchParams)
     }).map(request => cache.delete(request, { ignoreVary: true })))
   }))
 }
@@ -347,7 +353,8 @@ self.addEventListener("fetch", (event) => {
         : offlineWorkPage(headers)))
     return
   }
-  if (privatePath || /^\/api\/(?:settings|ha\/connection|feedback|agent-tokens|export\/database\.sqlite)(?:\/|$)/.test(apiPath)) return;
+  if (privatePath || isDevModuleRequest(routePath, url.searchParams) ||
+      /^\/api\/(?:settings|ha\/connection|feedback|agent-tokens|plugins|webserver|export\/database\.sqlite)(?:\/|$)/.test(apiPath)) return;
   if (pagePath === "/planning") {
     event.respondWith(navigationHandler(event.request))
     return

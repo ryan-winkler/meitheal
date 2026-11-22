@@ -157,6 +157,20 @@ export const POST: APIRoute = async ({ locals, request }) => {
       source.close()
     }
 
+    // Scrub write-only plugin secrets from downloadable database copies.
+    const snapshotDb = new DatabaseSync(snapshotPath)
+    try {
+      const hasPluginSecrets = snapshotDb
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'plugin_secrets' LIMIT 1")
+        .get()
+      if (hasPluginSecrets) {
+        snapshotDb.exec("DELETE FROM plugin_secrets")
+        snapshotDb.exec("VACUUM")
+      }
+    } finally {
+      snapshotDb.close()
+    }
+
     await requireOriginalAuthority()
     file = await open(snapshotPath, "r")
     await requireOriginalAuthority()

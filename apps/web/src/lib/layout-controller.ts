@@ -4,6 +4,7 @@
         import { confirmDialog } from "@lib/confirm-dialog";
         import { findModalTrapTarget } from "@lib/dialog-overlay"
         import { promptDialog } from "@lib/prompt-dialog";
+        import { attemptStaleChunkReload, isStaleChunkError } from "@lib/chunk-recovery"
         import { createClientLogger, registerGlobalLogger } from "@lib/client-logger";
         import { containTabFocus } from "@lib/focus-trap"
         import { applyAppearancePreferences, bindAppearanceNavigation, readAppearancePreferences } from "@lib/appearance-preferences"
@@ -17,6 +18,14 @@
         import { pageLifecycle } from "@lib/page-lifecycle";
         import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
         import { attachShortcutTooltips, injectShortcutStyles } from "@lib/shortcut-tooltip";
+        import {
+          formatShortcutKeys,
+          KEYBOARD_SHORTCUTS_CHANGED_EVENT,
+          KEYBOARD_SHORTCUTS_STORAGE_KEY,
+          matchesShortcutEvent,
+          readResolvedShortcuts,
+          type ShortcutActionId,
+        } from "@domains/navigation/keyboard-shortcuts"
 
         const log = createClientLogger("app", "layout");
 
@@ -74,6 +83,10 @@
           log.error("Unhandled error", e.error ?? e.message);
         });
         window.addEventListener("unhandledrejection", (e) => {
+          if (isStaleChunkError(e.reason)) {
+            e.preventDefault()
+            if (attemptStaleChunkReload(window.sessionStorage, Date.now(), () => window.location.reload())) return
+          }
           log.error("Unhandled promise rejection", e.reason);
         });
 
@@ -98,30 +111,58 @@
           // Also remove editor-injected scroll lock class (e.g. from PWA banner)
           document.body.classList.remove("antigravity-scroll-lock");
 
-          // Phase 25 T10: Keyboard shortcut tooltip badges on hover
-          // Dynamically annotate known shortcut-bound elements
-          const shortcutMap: Record<string, string> = {
-            dashboard: "D", kanban: "K", table: "T",
-            today: "Y", upcoming: "U", calendar: "C",
-          }
-          for (const [page, key] of Object.entries(shortcutMap)) {
-            const links = Array.from(
-              document.querySelectorAll<HTMLElement>(`[data-page="${page}"]`),
-            )
-            const link = links.find((candidate) => !candidate.closest("#mobile-tab-bar"))
-            if (link && !link.dataset.shortcut) link.dataset.shortcut = key
-          }
-          // Search trigger
-          const searchBtn = document.querySelector<HTMLElement>("[data-search-trigger]")
-          if (searchBtn && !searchBtn.dataset.shortcut) searchBtn.dataset.shortcut = "/"
-
-          injectShortcutStyles();
-          attachShortcutTooltips(document.body);
-          if (bindKeyboard) window.addEventListener("storage", (event) => {
-            if (event.key === SINGLE_KEY_SHORTCUTS_STORAGE_KEY || event.key === null) {
-              attachShortcutTooltips(document.body)
+          // Phase 25 T10: Keyboard shortcut tooltip badges & Help modal keycap sync
+          const syncShortcutHints = () => {
+            const resolved = readResolvedShortcuts()
+            const pageActionMap: Record<string, ShortcutActionId> = {
+              dashboard: "goDashboard", kanban: "goKanban", table: "goTable",
+              today: "goToday", upcoming: "goUpcoming", calendar: "goCalendar",
             }
-          }, { signal })
+            for (const [page, action] of Object.entries(pageActionMap)) {
+              const links = Array.from(document.querySelectorAll<HTMLElement>(`[data-page="${page}"]`))
+              const link = links.find((candidate) => !candidate.closest("#mobile-tab-bar"))
+              if (!link) continue
+              const combo = resolved[action]
+              if (combo) link.dataset.shortcut = combo
+              else delete link.dataset.shortcut
+            }
+            const searchBtn = document.querySelector<HTMLElement>("[data-search-trigger]")
+            if (searchBtn) {
+              if (resolved.search) searchBtn.dataset.shortcut = resolved.search
+              else delete searchBtn.dataset.shortcut
+            }
+            document.querySelectorAll<HTMLElement>("#shortcut-modal [data-shortcut-action]").forEach((el) => {
+              const action = el.dataset.shortcutAction as ShortcutActionId | undefined
+              if (!action || !(action in resolved)) return
+              const keys = formatShortcutKeys(resolved[action])
+              el.replaceChildren()
+              if (keys.length === 0) {
+                const none = document.createElement("span")
+                none.className = "shortcut-note"
+                none.textContent = "Unbound"
+                el.append(none)
+                return
+              }
+              keys.forEach((key, idx) => {
+                if (idx > 0) el.append(document.createTextNode(" + "))
+                const kbd = document.createElement("kbd")
+                kbd.textContent = key
+                el.append(kbd)
+              })
+            })
+            attachShortcutTooltips(document.body)
+          }
+
+          injectShortcutStyles()
+          syncShortcutHints()
+          if (bindKeyboard) {
+            window.addEventListener("storage", (event) => {
+              if (event.key === SINGLE_KEY_SHORTCUTS_STORAGE_KEY || event.key === KEYBOARD_SHORTCUTS_STORAGE_KEY || event.key === null) {
+                syncShortcutHints()
+              }
+            }, { signal })
+            window.addEventListener(KEYBOARD_SHORTCUTS_CHANGED_EVENT, syncShortcutHints, { signal })
+          }
 
           const navigationContext = () => {
             const url = new URL(location.href)
@@ -281,48 +322,59 @@
 
               if (hasPriorityOverlay()) return;
 
+              if (document.documentElement.hasAttribute("data-shortcut-recording")) return
+
               // Suppress most shortcuts when modal task detail overlay is open (not when docked)
-              // Allow ? and Escape through so users can access help and close
+              // Allow help and Escape through so users can access help and close
+              const shortcuts = readResolvedShortcuts()
+              const singleEnabled = singleKeyShortcutsEnabled()
+              const isHelpHit = !e.repeat && matchesShortcutEvent(e, shortcuts.showHelp, singleEnabled)
               const taskDetailOpen = document
                 .getElementById("task-detail-overlay")
                 ?.classList.contains("active") ?? false;
               const isDockedInspector = document.body.classList.contains("has-docked-inspector");
               const modalTaskDetailOpen = taskDetailOpen && !isDockedInspector;
-              if (
-                modalTaskDetailOpen &&
-                e.key !== "?" &&
-                e.key !== "Escape"
-              )
-                return;
+              if (modalTaskDetailOpen && !isHelpHit && e.key !== "Escape") return
 
-              if (e.defaultPrevented || e.ctrlKey || e.metaKey || !singleKeyShortcutsEnabled()) return
+              if (isHelpHit) {
+                if (openShortcutModal?.()) e.preventDefault()
+                return
+              }
 
-              if (e.key === "n" || e.key === "N") {
+              if (matchesShortcutEvent(e, shortcuts.newTask, singleEnabled)) {
                 e.preventDefault()
                 openNewTaskAction()
+                return
               }
-              if (e.key === "t" && !(isDockedInspector && document.getElementById("task-detail-panel")?.contains(document.activeElement))) {
-                SHORTCUT_NAV.table()
-              }
-              if (e.key === "d") {
-                SHORTCUT_NAV.dashboard()
-              }
-              if (e.key === "y") {
-                SHORTCUT_NAV.today()
-              }
-              if (e.key === "u") {
-                SHORTCUT_NAV.upcoming()
-              }
-              if (e.key === "c") {
-                SHORTCUT_NAV.calendar()
-              }
-              if (e.key === "?" && !e.repeat && !e.altKey && openShortcutModal?.()) {
+              if (matchesShortcutEvent(e, shortcuts.goTable, singleEnabled) && !(isDockedInspector && document.getElementById("task-detail-panel")?.contains(document.activeElement))) {
                 e.preventDefault()
+                SHORTCUT_NAV.table()
+                return
+              }
+              if (matchesShortcutEvent(e, shortcuts.goDashboard, singleEnabled)) {
+                e.preventDefault()
+                SHORTCUT_NAV.dashboard()
+                return
+              }
+              if (matchesShortcutEvent(e, shortcuts.goToday, singleEnabled)) {
+                e.preventDefault()
+                SHORTCUT_NAV.today()
+                return
+              }
+              if (matchesShortcutEvent(e, shortcuts.goUpcoming, singleEnabled)) {
+                e.preventDefault()
+                SHORTCUT_NAV.upcoming()
+                return
+              }
+              if (matchesShortcutEvent(e, shortcuts.goCalendar, singleEnabled)) {
+                e.preventDefault()
+                SHORTCUT_NAV.calendar()
+                return
               }
 
               // Phase 20 (ADHD Optimization): T/S/E shortcuts for detail panel task_type
               // Only active when task detail is modal OR focus resides inside the docked panel
-              if (modalTaskDetailOpen || (taskDetailOpen && document.getElementById("task-detail-panel")?.contains(document.activeElement))) {
+              if (!e.ctrlKey && !e.metaKey && !e.altKey && singleEnabled && (modalTaskDetailOpen || (taskDetailOpen && document.getElementById("task-detail-panel")?.contains(document.activeElement)))) {
                 const tdTag = (e.target as HTMLElement)?.tagName;
                 const tdIsEditing =
                   ["INPUT", "TEXTAREA", "SELECT"].includes(tdTag) ||
@@ -353,12 +405,14 @@
           // Today and Timeline can consume K in document listeners, including after rerenders.
           if (bindKeyboard) {
             window.addEventListener("keydown", event => {
-              if (event.key !== "k" || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || !singleKeyShortcutsEnabled()) return
+              if (event.defaultPrevented || document.documentElement.hasAttribute("data-shortcut-recording")) return
               const target = event.target
               if (target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable)) return
               const modalTdOpen = (document.getElementById("task-detail-overlay")?.classList.contains("active") ?? false) &&
                 !document.body.classList.contains("has-docked-inspector")
               if (hasPriorityOverlay() || modalTdOpen) return
+              if (!matchesShortcutEvent(event, readResolvedShortcuts().goKanban, singleKeyShortcutsEnabled())) return
+              event.preventDefault()
               SHORTCUT_NAV.kanban()
             }, { signal })
           }

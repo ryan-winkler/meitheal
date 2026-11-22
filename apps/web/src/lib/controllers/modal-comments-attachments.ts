@@ -236,7 +236,14 @@ export async function loadAttachments(taskId: string): Promise<void> {
       return
     }
 
+    const SAFE_IMAGE_DATA_URL_RE = /^data:image\/(?:png|jpe?g|gif|webp|avif);base64,[A-Za-z0-9+/=]+$/i
+
     attachments.forEach((att) => {
+      const safeSrc = typeof att.base64Data === "string" && SAFE_IMAGE_DATA_URL_RE.test(att.base64Data.trim())
+        ? att.base64Data.trim()
+        : null
+      if (!safeSrc) return
+
       const thumb = document.createElement("div")
       thumb.className =
         "relative group cursor-pointer border border-border rounded-md overflow-hidden hover:border-accent transition-colors"
@@ -244,7 +251,8 @@ export async function loadAttachments(taskId: string): Promise<void> {
       thumb.style.height = "64px"
 
       const img = document.createElement("img")
-      img.src = att.base64Data
+      img.src = safeSrc
+      img.alt = att.filename || "Attachment"
       img.className = "w-full h-full object-cover"
       img.title = att.filename
 
@@ -253,8 +261,10 @@ export async function loadAttachments(taskId: string): Promise<void> {
       delOverlay.className =
         "absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
       const delBtn = document.createElement("button")
-      delBtn.className = "text-white text-xs hover:text-danger p-2"
-      delBtn.textContent = "🗑"
+      delBtn.type = "button"
+      delBtn.className = "text-white text-sm font-semibold hover:text-danger p-2"
+      delBtn.setAttribute("aria-label", `Delete ${att.filename || "attachment"}`)
+      delBtn.textContent = "×"
       delBtn.onclick = async (e) => {
         e.stopPropagation()
         const ok = await confirmDialog({
@@ -270,11 +280,27 @@ export async function loadAttachments(taskId: string): Promise<void> {
       }
       delOverlay.appendChild(delBtn)
 
-      // Lightbox view on click
+      // Safe in-page lightbox dialog (no raw HTML blob or window.open)
       thumb.onclick = () => {
-        const html = `<html><body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${att.base64Data}" style="max-width:100%;max-height:100vh;" /></body></html>`
-        const blob = new Blob([html], { type: "text/html" })
-        window.open(URL.createObjectURL(blob), "_blank")
+        const dialog = document.createElement("dialog")
+        dialog.className = "m-attachment-lightbox"
+        dialog.style.cssText = "padding:0;border:none;background:transparent;max-width:92vw;max-height:92vh;overflow:visible;"
+        const fullImg = document.createElement("img")
+        fullImg.src = safeSrc
+        fullImg.alt = att.filename || "Attachment preview"
+        fullImg.style.cssText = "display:block;max-width:90vw;max-height:86vh;border-radius:8px;box-shadow:0 16px 48px rgba(0,0,0,0.6);"
+        const closeBtn = document.createElement("button")
+        closeBtn.type = "button"
+        closeBtn.textContent = "×"
+        closeBtn.setAttribute("aria-label", "Close attachment preview")
+        closeBtn.style.cssText = "position:absolute;top:-14px;right:-14px;width:32px;height:32px;border-radius:999px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:18px;cursor:pointer;"
+        const dismiss = () => { dialog.close(); dialog.remove() }
+        closeBtn.addEventListener("click", dismiss)
+        dialog.addEventListener("click", (ev) => { if (ev.target === dialog) dismiss() })
+        dialog.addEventListener("close", () => dialog.remove(), { once: true })
+        dialog.append(fullImg, closeBtn)
+        document.body.appendChild(dialog)
+        dialog.showModal()
       }
 
       thumb.appendChild(img)

@@ -9,6 +9,7 @@
 
 import { dialogText, openManagedDialog } from "./dialog-overlay"
 import { copyToClipboard } from "./clipboard"
+import { createSpriteIconElement } from "../generated/icon-registry"
 
 export interface ConfirmOptions {
   title?: string
@@ -31,25 +32,29 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
     const dialog = document.createElement("div")
     dialog.className = "m-dialog-card"
     dialog.dataset.variant = variant
-    const icon = variant === "danger" ? "🗑️" : variant === "warning" ? "⚠️" : "❓"
+    const iconName = variant === "danger" ? "trash" : variant === "warning" ? "alert-triangle" : "info-circle"
 
-    dialog.innerHTML = `
-      <div data-confirm-icon aria-hidden="true" style="font-size: 32px; text-align: center; margin-bottom: 16px;"></div>
-      <h3 id="confirm-title" class="m-dialog-title"></h3>
-      <p id="confirm-message" class="m-dialog-message"></p>
-      <ul id="confirm-details" hidden></ul>
-      <p id="confirm-copy-status" role="status" hidden></p>
-      <div class="m-dialog-actions">
-        <button type="button" id="confirm-cancel" class="m-dialog-btn m-dialog-btn--secondary"></button>
-        <button type="button" id="confirm-ok" class="m-dialog-btn m-dialog-btn--primary"></button>
-      </div>
-    `
+    const iconWrap = document.createElement("div")
+    iconWrap.dataset.confirmIcon = ""
+    iconWrap.setAttribute("aria-hidden", "true")
+    iconWrap.style.cssText = "display:flex;justify-content:center;margin-bottom:14px;color:var(--accent);"
+    if (variant === "danger") iconWrap.style.color = "var(--danger, #dc2626)"
+    else if (variant === "warning") iconWrap.style.color = "var(--warning, #d97706)"
+    iconWrap.appendChild(createSpriteIconElement(iconName, { size: 28 }))
 
-    // Dialog options are plain text, including values read back from DOM labels.
-    dialog.querySelector<HTMLElement>("[data-confirm-icon]")!.textContent = icon
-    dialog.querySelector<HTMLElement>("#confirm-title")!.textContent = options.title ?? dialogText("common.confirm", "Confirm")
-    dialog.querySelector<HTMLElement>("#confirm-message")!.textContent = options.message
-    const details = dialog.querySelector<HTMLElement>("#confirm-details")!
+    const titleEl = document.createElement("h3")
+    titleEl.id = "confirm-title"
+    titleEl.className = "m-dialog-title"
+    titleEl.textContent = options.title ?? dialogText("common.confirm", "Confirm")
+
+    const messageEl = document.createElement("p")
+    messageEl.id = "confirm-message"
+    messageEl.className = "m-dialog-message"
+    messageEl.textContent = options.message
+
+    const details = document.createElement("ul")
+    details.id = "confirm-details"
+    details.hidden = true
     for (const text of options.details ?? []) {
       const item = document.createElement("li")
       item.textContent = text
@@ -61,10 +66,27 @@ export function confirmDialog(options: ConfirmOptions): Promise<boolean> {
       describedBy = "confirm-message confirm-details"
     }
 
-    const cancelBtn = dialog.querySelector<HTMLButtonElement>("#confirm-cancel")!
-    let okBtn: HTMLButtonElement | HTMLAnchorElement = dialog.querySelector<HTMLButtonElement>("#confirm-ok")!
+    const copyStatus = document.createElement("p")
+    copyStatus.id = "confirm-copy-status"
+    copyStatus.setAttribute("role", "status")
+    copyStatus.hidden = true
+
+    const actions = document.createElement("div")
+    actions.className = "m-dialog-actions"
+    const cancelBtn = document.createElement("button")
+    cancelBtn.type = "button"
+    cancelBtn.id = "confirm-cancel"
+    cancelBtn.className = "m-dialog-btn m-dialog-btn--secondary"
+
+    let okBtn: HTMLButtonElement | HTMLAnchorElement = document.createElement("button")
+    okBtn.type = "button"
+    okBtn.id = "confirm-ok"
+    okBtn.className = "m-dialog-btn m-dialog-btn--primary"
+
+    actions.append(cancelBtn, okBtn)
+    dialog.append(iconWrap, titleEl, messageEl, details, copyStatus, actions)
+
     const copyPrompt = options.copyPrompt
-    const copyStatus = dialog.querySelector<HTMLElement>("#confirm-copy-status")!
     const copyBtn = copyPrompt ? document.createElement("button") : undefined
     if (copyBtn && copyPrompt) {
       copyBtn.type = "button"

@@ -12,4 +12,4 @@ export {
   updateAgentToken,
   updateAgentTokenLastUsed,
 } from "./agent-token-store"
-export { isActiveAgentToken } from "./active-agent-token"
+export { isActiveAgentToken, isAgentTokenActive, isAgentTokenExpired } from "./active-agent-token"

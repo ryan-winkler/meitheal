@@ -2,6 +2,7 @@
 import { readBoardPagePlacement } from "@lib/board-page-placement"
 import { createHash } from "node:crypto"
 import { getPersistenceClient, scopeBoardAccess, scopePermits, taskActionHints } from "@domains/tasks"
+import { getPluginService } from "@domains/plugins"
 import type { BoardScope } from "@domains/tasks"
 import { resolveBoardRequestScope } from "@lib/board-request-context"
 import { boardScopeAuthorityKey, retainBoardResponseScope } from "@lib/board-view"
@@ -48,6 +49,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
 // Feature flags — read from settings DB (SSR)
 const featureFlags = await getFeatureFlags();
+const hasActivePlugins = await getPluginService().hasActivePlugins().catch(() => false);
 const organizationState = await readRequestOrganizationLabels(Astro)
 const organizationUser = verifiedIngressUser(Astro.locals)
 const workspaceScope = organizationUser
@@ -148,7 +150,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
 ---
 
 <!doctype html>
-<html lang={locale} dir="ltr" data-workspace-scope={workspaceScope} data-custom-theme-admin={canManageSystemSettings(Astro.request, Astro.locals) ? "" : undefined}>
+<html lang={locale} dir="ltr" data-workspace-scope={workspaceScope} data-custom-theme-admin={canManageSystemSettings(Astro.request, Astro.locals) ? "" : undefined} data-plugins-active={hasActivePlugins ? "1" : undefined}>
   <head>
     {boardContext && <><meta name="meitheal-work-board" content={boardContext.boardId} /><meta name="meitheal-work-session" content={boardContext.session} /><meta name="meitheal-work-actor" content={boardContext.actorKey} /><meta name="meitheal-work-board-name" content={boardContext.boardName} />{layoutTaskCreate !== undefined && <meta name="meitheal-task-create" content={String(layoutTaskCreate)} />}{layoutTaskActions && <meta name="meitheal-task-actions" content={JSON.stringify(layoutTaskActions)} />}</>}
     <!-- Scroll-lock guard: prevent external tools from locking body scroll (P0) -->
@@ -800,6 +802,21 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
 
     <script>
       import "@lib/layout-body-controller";
+      function syncPluginsHost() {
+        if (document.documentElement.dataset.pluginsActive === "1") {
+          import("@lib/plugin-host").then((m) => m.bootPluginHost()).catch(() => {});
+        } else {
+          import("@lib/plugin-host").then((m) => m.teardownPluginHost()).catch(() => {});
+        }
+      }
+      if (document.documentElement.dataset.pluginsActive === "1") syncPluginsHost();
+      if (!(window as unknown as Record<string, boolean>).__meithealPluginsBound) {
+        (window as unknown as Record<string, boolean>).__meithealPluginsBound = true;
+        window.addEventListener("meitheal:plugins-changed", syncPluginsHost);
+        document.addEventListener("astro:page-load", () => {
+          if (document.documentElement.dataset.pluginsActive === "1") syncPluginsHost();
+        });
+      }
     </script>
 
     {!privatePageShell && <>
@@ -837,6 +854,10 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
           <button id="shortcut-modal-close" type="button" class="btn-icon shortcut-modal-close" aria-label={t("settings.shortcut_modal_close", locale)}><Icon name="x" size={18} sprite={true} /></button>
         </div>
         <KeyboardShortcutList locale={locale} variant="dialog" scopes={["global", "tasks"]} />
+        <div class="shortcut-modal-footer flex items-center justify-between gap-2 pt-3 mt-3 border-t border-border">
+          <span class="text-xs text-text-muted">Edit any shortcut key or manage custom nav links in Settings.</span>
+          <a href="/settings#navigation-settings" class="btn btn-secondary btn-sm">Customize shortcuts</a>
+        </div>
       </div>
     </div>
 

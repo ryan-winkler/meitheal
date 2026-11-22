@@ -1,6 +1,7 @@
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { applySidebarOrder, sidebarOrderChanged, SIDEBAR_ORDER_STORAGE_KEY } from "@lib/sidebar-order"
 import { SIDEBAR_FOCUS_REVEAL_EVENT } from "@lib/mobile-sidebar-controller"
+import { computeNavOverflow, type NavOverflowItem } from "@domains/navigation/nav-overflow"
 
 interface OverflowBinding {
   pageSignal: AbortSignal
@@ -14,7 +15,7 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
   const previous = bindings.get(root)
   if (previous?.pageSignal === pageSignal && !previous.controller.signal.aborted) return
   previous?.controller.abort()
-  const primaries = [...root.querySelectorAll<HTMLElement>("[data-nav-overflow-primary]")]
+  let primaries = [...root.querySelectorAll<HTMLElement>("[data-nav-overflow-primary]")]
   const moreElement = root.querySelector<HTMLDetailsElement>("[data-nav-overflow-more]")
   const menuElement = moreElement?.querySelector<HTMLElement>("[data-nav-overflow-menu]")
   const toggleElement = moreElement?.querySelector<HTMLElement>("summary")
@@ -39,6 +40,7 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
   let sidebarOrderPending = sidebar
 
   function refreshSources() {
+    primaries = [...root.querySelectorAll<HTMLElement>("[data-nav-overflow-primary]")]
     sources = primaries.map(primary => ({ primary, items: [...primary.children] as HTMLElement[] }))
   }
 
@@ -131,7 +133,8 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     const focused = active && root.contains(active) ? active
       : portalOwner?.closest<HTMLElement>("[data-sidebar-group]")?.querySelector<HTMLElement>("[data-sidebar-boards-toggle]") ?? null
     const focusedInMenu = focused !== null && menu.contains(focused)
-    const enabled = getComputedStyle(root).getPropertyValue("--nav-overflow-enabled").trim() === "1" && root.clientWidth > 0
+    const editingSidebar = Boolean(root.closest("#sidebar")?.hasAttribute("data-sidebar-editing"))
+    const enabled = !editingSidebar && getComputedStyle(root).getPropertyValue("--nav-overflow-enabled").trim() === "1" && root.clientWidth > 0
     root.setAttribute("data-nav-overflow-reflowing", "")
     restoreItems()
     if (sidebarOrderPending) {
@@ -142,62 +145,69 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
       refreshSources()
       sourcesChanged = false
     }
-    const availableItems = refreshLinks().filter(item => !item.hidden)
+    const isItemVisible = (item: HTMLElement) => !item.hidden
+      && !item.hasAttribute("data-sidebar-item-hidden")
+      && !item.closest("[data-sidebar-section-hidden], [data-sidebar-section-empty]")
+    const availableItems = refreshLinks().filter(isItemVisible)
     root.toggleAttribute("data-nav-overflow-active", enabled)
     let visible = new Set(availableItems)
+    let overflowHasActive = false
     if (enabled && availableItems.length) {
       // Width is constrained by the parent, independently of the links or menu.
       more.hidden = false
       const style = getComputedStyle(root)
       const available = root.clientWidth - (Number.parseFloat(style.paddingLeft) || 0) - (Number.parseFloat(style.paddingRight) || 0)
       const gap = Number.parseFloat(style.columnGap) || 0
+      // Exclude wrappers that contain primary lists (e.g. .sidebar-sections) so items are never double-counted.
       const fixed = [...root.children].filter((child): child is HTMLElement => child instanceof HTMLElement
-        && child !== more && !primaries.includes(child) && getComputedStyle(child).display !== "none")
+        && child !== more
+        && !primaries.some(primary => child === primary || child.contains(primary))
+        && getComputedStyle(child).display !== "none"
+        && child.getBoundingClientRect().width > 0)
       const fixedWidth = fixed.reduce((sum, child) => sum + child.getBoundingClientRect().width, 0)
-      const widths = new Map(availableItems.map(item => [item, item.getBoundingClientRect().width]))
       const moreWidth = more.getBoundingClientRect().width
-      const measuredSources = sources.map(({ primary, items }) => ({
-        items,
-        gap: Number.parseFloat(getComputedStyle(primary).columnGap) || 0,
-      }))
-      const required = (selection: Set<HTMLElement>, showMore: boolean) => {
-        let width = fixedWidth + (showMore ? moreWidth : 0)
-        let groups = fixed.length + Number(showMore)
-        for (const { items: sourceItems, gap: itemGap } of measuredSources) {
-          let itemCount = 0
-          let itemWidth = 0
-          for (const item of sourceItems) {
-            if (!selection.has(item)) continue
-            itemCount += 1
-            itemWidth += widths.get(item) ?? 0
-          }
-          if (itemCount === 0) continue
-          groups += 1
-          width += itemWidth + itemGap * (itemCount - 1)
+      const groupGaps = sources.map(({ primary }) => Number.parseFloat(getComputedStyle(primary).columnGap) || 0)
+      const itemById = new Map<string, HTMLElement>()
+      const layoutItems: NavOverflowItem[] = []
+      const activeItem = availableItems.find(currentItem)
+      const focusedItem = focused ? availableItems.find(item => item.contains(focused)) : undefined
+      let seq = 0
+      sources.forEach(({ items: sourceItems }, groupIndex) => {
+        for (const item of sourceItems) {
+          if (!isItemVisible(item)) continue
+          const id = String(seq++)
+          itemById.set(id, item)
+          layoutItems.push({
+            id,
+            width: item.getBoundingClientRect().width,
+            groupIndex,
+            priority: item === activeItem || item === focusedItem,
+          })
         }
-        return width + gap * Math.max(0, groups - 1)
-      }
-      if (required(visible, false) > available + 0.5) {
-        visible = new Set()
-        const tryKeep = (item: HTMLElement) => {
-          if (visible.has(item)) return true
-          visible.add(item)
-          if (required(visible, true) <= available + 0.5) return true
-          visible.delete(item)
-          return false
+      })
+      const packed = computeNavOverflow({
+        items: layoutItems,
+        groupGaps,
+        availableWidth: available,
+        fixedWidth,
+        fixedCount: fixed.length,
+        moreWidth,
+        containerGap: gap,
+      })
+      visible = new Set([...packed.visibleIds].map(id => itemById.get(id)!).filter(Boolean))
+      overflowHasActive = packed.overflowHasPriority
+      if (packed.showMore) {
+        for (const id of packed.overflowIds) {
+          const item = itemById.get(id)
+          if (item) menu.append(item)
         }
-        // Keep the route and the focused destination visible whenever they fit.
-        for (const item of [availableItems.find(currentItem), availableItems.find(item => focused && item.contains(focused))]) {
-          if (item) tryKeep(item)
-        }
-        for (const item of availableItems) {
-          if (!tryKeep(item)) break
-        }
-        for (const item of availableItems) if (!visible.has(item)) menu.append(item)
       }
     }
-    for (const { primary, items: sourceItems } of sources) primary.toggleAttribute("data-nav-overflow-empty", !sourceItems.some(item => visible.has(item)))
+    for (const { primary, items: sourceItems } of sources) {
+      primary.toggleAttribute("data-nav-overflow-empty", !editingSidebar && !sourceItems.some(item => visible.has(item)))
+    }
     more.hidden = !enabled || visible.size === availableItems.length
+    more.toggleAttribute("data-nav-overflow-has-active", !more.hidden && overflowHasActive)
     if (more.hidden || (focusedInMenu && !menu.contains(focused))) more.open = false
     if (focused) {
       if (menu.contains(focused)) more.open = true
@@ -232,14 +242,31 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
   }
   const appearance = new MutationObserver(syncTaskNavDom)
   const content = new MutationObserver(records => {
-    if (records.some(record => record.attributeName === "hidden" || record.attributeName === "inert")) syncTabStops()
-    if (records.some(record => record.attributeName === "hidden"
+    const insideSubmenu = (node: Node) => {
+      const el = node instanceof Element ? node : node.parentElement
+      return Boolean(el?.closest("[data-sidebar-board-children], [data-nav-overflow-submenu]"))
+    }
+    const relevant = records.filter(record => !insideSubmenu(record.target))
+    if (!relevant.length) return
+    if (relevant.some(record => record.attributeName === "hidden" || record.attributeName === "inert")) syncTabStops()
+    if (relevant.some(record => record.attributeName === "hidden"
       ? (record.target as Element).hasAttribute("data-sidebar-pin-presence")
       : record.type !== "childList" || (record.target !== menu && !primaries.includes(record.target as HTMLElement)))) schedule()
   })
   resize.observe(root)
-  appearance.observe(document.documentElement, { attributes: true, attributeFilter: ["data-appearance-navigation", "data-appearance-font", "data-appearance-radius"] })
-  content.observe(root, { subtree: true, characterData: true, childList: true, attributes: true, attributeFilter: ["aria-current", "aria-selected", "hidden", "inert"] })
+  const sidebarHost = root.closest<HTMLElement>("#sidebar")
+  if (sidebarHost && sidebarHost !== root) resize.observe(sidebarHost)
+  if (sidebarHost) {
+    appearance.observe(sidebarHost, {
+      attributes: true,
+      attributeFilter: ["data-sidebar-editing"],
+    })
+  }
+  appearance.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-appearance-navigation", "data-appearance-nav-style", "data-appearance-nav-tone", "data-appearance-font", "data-appearance-radius"],
+  })
+  content.observe(root, { subtree: true, characterData: true, childList: true, attributes: true, attributeFilter: ["aria-current", "aria-selected", "hidden", "inert", "data-sidebar-item-hidden", "data-sidebar-section-hidden", "data-sidebar-section-empty"] })
 
   root.addEventListener("keydown", event => {
     if (event.defaultPrevented) return
@@ -282,8 +309,19 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     if (event.target !== more) syncTabStops()
   }, { capture: true, signal })
   more.addEventListener("toggle", () => {
-    if (!more.open && menu.contains(document.activeElement)) toggle.focus({ preventScroll: true })
+    if (more.open) {
+      window.dispatchEvent(new CustomEvent("meitheal:nav-submenu-open", { detail: { id: "nav-overflow-more" } }))
+    } else if (menu.contains(document.activeElement)) {
+      toggle.focus({ preventScroll: true })
+    }
     syncTabStops()
+  }, { signal })
+  window.addEventListener("meitheal:nav-submenu-open", event => {
+    const id = (event as CustomEvent<{ id?: string }>).detail?.id
+    if (!more.open || id === "nav-overflow-more") return
+    if (id === "tasks-views" && menu.querySelector("#tasks-nav-submenu")) return
+    if (id === "boards" && menu.querySelector("#sidebar-board-children")) return
+    closeMenu()
   }, { signal })
   document.addEventListener("click", event => {
     if (!more.open || !(event.target instanceof Node) || more.contains(event.target)) return

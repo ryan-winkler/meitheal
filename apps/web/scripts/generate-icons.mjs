@@ -121,6 +121,9 @@ export const CANONICAL_TABLER_ICONS = [
   "eye",
   "eye-off",
   "dots-vertical",
+  "help",
+  "copy",
+  "external-link",
 ]
 
 /**

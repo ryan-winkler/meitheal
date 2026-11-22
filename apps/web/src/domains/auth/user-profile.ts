@@ -19,7 +19,10 @@ export interface AvatarColorPreset {
   textColor: string
 }
 
+export const THEME_AVATAR_COLOR = "theme"
+
 export const AVATAR_COLOR_PRESETS: readonly AvatarColorPreset[] = [
+  { id: "theme", label: "Match theme", hex: THEME_AVATAR_COLOR, textColor: "auto" },
   { id: "sky", label: "Sky", hex: "#0ea5e9", textColor: "#ffffff" },
   { id: "mint", label: "Mint", hex: "#10b981", textColor: "#ffffff" },
   { id: "indigo", label: "Indigo", hex: "#6366f1", textColor: "#ffffff" },
@@ -34,10 +37,29 @@ export const DEFAULT_USER_PROFILE: Readonly<UserProfile> = {
   displayName: "Household Member",
   username: "local",
   role: "",
-  avatarColor: "#0ea5e9",
+  avatarColor: THEME_AVATAR_COLOR,
 }
 
 const VALID_HEX_COLOR = /^#[0-9a-fA-F]{6}$/
+
+export function isThemeAvatarColor(color: string | undefined | null): boolean {
+  return !color || color === THEME_AVATAR_COLOR
+}
+
+export function avatarContrastForeground(hex: string): "#000000" | "#ffffff" {
+  if (!VALID_HEX_COLOR.test(hex)) return "#ffffff"
+  const rgb = hex.slice(1).match(/../g)!.map(pair => parseInt(pair, 16))
+  const linear = rgb.map(channel => {
+    const value = channel / 255
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+  })
+  const luminance = linear[0]! * 0.2126 + linear[1]! * 0.7152 + linear[2]! * 0.0722
+  return (luminance + 0.05) / 0.05 >= 1.05 / (luminance + 0.05) ? "#000000" : "#ffffff"
+}
+
+function isValidAvatarColor(value: unknown): value is string {
+  return value === THEME_AVATAR_COLOR || (typeof value === "string" && VALID_HEX_COLOR.test(value))
+}
 
 function cleanText(value: unknown, maxLength: number): string {
   if (typeof value !== "string") return ""
@@ -83,19 +105,17 @@ export function normalizeUserProfile(
     displayName: cleanText(fallback?.displayName, 60) || DEFAULT_USER_PROFILE.displayName,
     username: cleanUsername(fallback?.username) || DEFAULT_USER_PROFILE.username,
     role: cleanText(fallback?.role, 60) || DEFAULT_USER_PROFILE.role,
-    avatarColor:
-      typeof fallback?.avatarColor === "string" && VALID_HEX_COLOR.test(fallback.avatarColor)
-        ? fallback.avatarColor
-        : DEFAULT_USER_PROFILE.avatarColor,
+    avatarColor: isValidAvatarColor(fallback?.avatarColor)
+      ? fallback.avatarColor
+      : DEFAULT_USER_PROFILE.avatarColor,
   }
 
   const displayName = cleanText(source.displayName, 60) || base.displayName
   const username = cleanUsername(source.username) || base.username
   const role = typeof source.role === "string" ? cleanText(source.role, 60) : base.role
-  const avatarColor =
-    typeof source.avatarColor === "string" && VALID_HEX_COLOR.test(source.avatarColor)
-      ? source.avatarColor
-      : base.avatarColor
+  const avatarColor = isValidAvatarColor(source.avatarColor)
+    ? source.avatarColor
+    : base.avatarColor
 
   return { displayName, username, role, avatarColor }
 }
@@ -122,11 +142,11 @@ export function validateUserProfile(input: {
     typeof input.avatarColor === "string" && input.avatarColor.trim()
       ? input.avatarColor.trim()
       : DEFAULT_USER_PROFILE.avatarColor
-  if (!VALID_HEX_COLOR.test(avatarColor)) {
+  if (!isValidAvatarColor(avatarColor)) {
     return {
       ok: false,
       errorCode: "INVALID_COLOR",
-      message: "Avatar color must be a valid hex color.",
+      message: "Avatar color must match the theme or be a valid hex color.",
     }
   }
   const username = cleanUsername(input.username) || displayName.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 24) || "local"

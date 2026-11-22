@@ -19,6 +19,7 @@ import { currentSettingsAccess } from "../../lib/current-settings-access"
 import { isThemeMode } from "../../lib/theme-mode"
 import { isLegacySupervisorIngressUrl, resolveSupervisorGrocyAddon } from "../../lib/grocy-client"
 import { canManageSystemSettings, isSecretSetting, isSystemSetting, requireSystemSettingsAdmin, REDACTED_SETTING_VALUE } from "../../lib/settings-security"
+import { KEYBOARD_SHORTCUTS_SETTING_KEY, sanitizeShortcutOverrides } from "@domains/navigation/keyboard-shortcuts"
 
 function settingsJson(data: unknown): Response {
   const response = apiJson(data)
@@ -236,6 +237,12 @@ export const PUT: APIRoute = async ({ request, locals }) => {
         }
         normalizedSettingValue = urlCheck.normalizedUrl
       }
+    }
+    if (key === KEYBOARD_SHORTCUTS_SETTING_KEY) {
+      if (normalizedSettingValue !== null && (typeof normalizedSettingValue !== "object" || Array.isArray(normalizedSettingValue))) {
+        return apiProblem({ status: 400, detail: "Keyboard shortcuts must be a JSON object mapping action IDs to key combinations." })
+      }
+      normalizedSettingValue = normalizedSettingValue ? sanitizeShortcutOverrides(normalizedSettingValue) : {}
     }
 
     const value = JSON.stringify(normalizedSettingValue)

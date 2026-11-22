@@ -45,6 +45,13 @@
       letter-spacing: -0.015em;
     }
 
+  button,
+  input,
+  select,
+  textarea {
+    font-family: inherit;
+  }
+
   code,
   kbd,
   pre,

@@ -50,6 +50,7 @@ const ALLOWED_KEYS = new Set([
   "caldav_url",
   "calendar_sync_enabled",
   "calendar_write_back",
+  "calendar_write_ticket_details",
   "calendar_sync_interval_ms",
   "calendar_sync_mode",
   "calendar_sync_modes",

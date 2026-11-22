@@ -314,7 +314,7 @@ import Icon from "../ui/Icon.astro"
 
 <script>
   import { canRestoreFocusTarget } from "@lib/dialog-overlay"
-  import { renderSpriteIconSvg } from "../../generated/icon-registry"
+  import { createSpriteIconElement } from "../../generated/icon-registry"
 
   const CIRCUMFERENCE = 2 * Math.PI * 52
 
@@ -383,7 +383,7 @@ import Icon from "../ui/Icon.astro"
         const iconName = localPhase.includes("break") ? "mug" : "today"
         if (iconName !== lastPillIcon) {
           lastPillIcon = iconName
-          els.pillIcon.innerHTML = renderSpriteIconSvg(iconName, { size: 16 })
+          els.pillIcon.replaceChildren(createSpriteIconElement(iconName, { size: 16 }))
         }
       }
     }

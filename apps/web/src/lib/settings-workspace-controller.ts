@@ -1,5 +1,6 @@
 import { createClientLogger } from "./client-logger"
 import { settingsWriteHeaders } from "./settings-store"
+import { readWorkspacePreferences, saveWorkspacePreferences } from "./workspace-preferences"
 
 const log = createClientLogger("settings", "workspace")
 
@@ -32,6 +33,46 @@ interface NotificationPrefs {
   mobile_targets?: string[]
   due_date_reminders?: boolean
   reminder_window_minutes?: number
+}
+
+function initTaskCaptureMode(signal: AbortSignal): void {
+  const select = document.getElementById("task-capture-mode-select") as HTMLSelectElement | null
+  const saveBtn = document.getElementById("save-task-capture-mode")
+  const helpEl = document.getElementById("task-capture-mode-help")
+  if (!select) return
+
+  const updateHelp = (): void => {
+    if (!helpEl) return
+    helpEl.textContent = select.value === "quick"
+      ? (helpEl.dataset.modeQuick ?? "")
+      : (helpEl.dataset.modeForm ?? "")
+  }
+
+  const prefs = readWorkspacePreferences()
+  select.value = prefs.capture === "quick" ? "quick" : "form"
+  updateHelp()
+
+  select.addEventListener("change", updateHelp, { signal })
+  saveBtn?.addEventListener(
+    "click",
+    () => {
+      const capture = select.value === "quick" ? "quick" : "form"
+      void saveWorkspacePreferences({ capture }).then((ok) => {
+        if (signal.aborted) return
+        if (ok) {
+          window.showToast?.(
+            capture === "quick"
+              ? "New task now opens Quick add on this browser"
+              : "New task now opens the full Task form on this browser",
+            "success",
+          )
+        } else {
+          window.showToast?.("settings.save_error", "error")
+        }
+      })
+    },
+    { signal },
+  )
 }
 
 function initBacklogMode(signal: AbortSignal): void {
@@ -780,6 +821,7 @@ function initPeopleAndNotifications(signal: AbortSignal): void {
 }
 
 export function initSettingsWorkspace(signal: AbortSignal): void {
+  initTaskCaptureMode(signal)
   initBacklogMode(signal)
   initCompletedRetention(signal)
   initFeatureToggles(signal)

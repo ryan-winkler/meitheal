@@ -5,7 +5,7 @@ import {
   buildCompanionXCallbackUrl,
   buildIngressPagePath,
 } from "@lib/page-shell-links"
-import { resolveSettingsSectionId, type SettingsSectionId } from "@lib/settings-registry"
+import { resolveSettingsSectionId, type SettingsSectionId } from "@lib/settings-section-ids"
 import { showToast } from "@lib/toast"
 import { initUnifiedBarSearchLauncher } from "@lib/unified-bar-controller"
 
@@ -125,6 +125,9 @@ export function initSettingsShell(): void {
     if (body) window.expandIntegrationCard?.(body.id)
     for (let node: HTMLElement | null = target; node && node !== section; node = node.parentElement) {
       if (node instanceof HTMLDetailsElement) node.open = true
+      if (node.hasAttribute("data-settings-card") && node.dataset.cardCollapsed === "true") {
+        setSettingsCardOpen(node, true)
+      }
     }
     const destination = target === section
       ? section.querySelector<HTMLElement>("h2")
@@ -143,7 +146,11 @@ export function initSettingsShell(): void {
     }
     focusTarget.dataset.settingsDestination = ""
     focusTarget.focus({ preventScroll: true })
-    focusTarget.scrollIntoView({ block: "nearest", behavior: "instant" })
+    if (target === section) {
+      window.scrollTo({ top: 0, behavior: "instant" })
+    } else {
+      focusTarget.scrollIntoView({ block: "nearest", behavior: "instant" })
+    }
   }
 
   pageLifecycle.on(toggle, "click", () => {
@@ -158,7 +165,26 @@ export function initSettingsShell(): void {
     toggle.focus()
   })
 
+  function setSettingsCardOpen(card: HTMLElement, open: boolean): void {
+    const body = card.querySelector<HTMLElement>(":scope > [data-settings-card-body]")
+    const primaryToggle = card.querySelector<HTMLButtonElement>(":scope > .settings-panel-card__header .settings-panel-card__toggle")
+    card.toggleAttribute("data-card-collapsed", !open)
+    if (!open) card.dataset.cardCollapsed = "true"
+    else delete card.dataset.cardCollapsed
+    if (body) body.hidden = !open
+    if (primaryToggle) primaryToggle.setAttribute("aria-expanded", String(open))
+  }
+
   pageLifecycle.on(shell, "click", (event) => {
+    const cardToggle = (event.target as Element | null)?.closest<HTMLElement>("[data-settings-card-toggle]")
+    if (cardToggle) {
+      const card = cardToggle.closest<HTMLElement>("[data-settings-card]")
+      if (card) {
+        event.preventDefault()
+        setSettingsCardOpen(card, card.dataset.cardCollapsed === "true")
+      }
+      return
+    }
     if (!(event instanceof MouseEvent) || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     const link = (event.target as Element | null)?.closest<HTMLAnchorElement>('a[href^="#"][data-settings-nav], a[href^="#"][data-settings-section-link]')
     if (!link) return

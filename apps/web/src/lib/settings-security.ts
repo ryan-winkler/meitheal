@@ -3,11 +3,12 @@ import { apiProblem } from "./api-response"
 
 export const REDACTED_SETTING_VALUE = "••••••••"
 
-const credentialName = /(?:^|[-_])(?:api[-_]?key|credential|password|secret|token)(?:$|[-_])/i
-const systemSettingPrefix = /^(?:agent[-_]protocols|ai|cal|caldav|calendar|grocy|ha|loki|n8n|todo|vikunja|webhook)[-_]/i
+const credentialName = /(?:^|[-_])(?:api[-_]?key|private[-_]?key|credential|password|secret|token)(?:$|[-_])/i
+const systemSettingPrefix = /^(?:agent[-_]protocols|ai|cal|caldav|calendar|grocy|ha|loki|n8n|plugin|todo|vikunja|webhook|webserver)[-_]/i
 const localHosts = new Set(["localhost", "127.0.0.1", "[::1]"])
 const localPeers = new Set(["127.0.0.1", "::1"])
-const standalonePreviewHost = /(?:^|\.)(?:run\.app|googleusercontent\.com|web\.app)$/i
+const devPreviewHost = /(?:^|\.)(?:run\.app|googleusercontent\.com|usercontent\.goog|web\.app)$/i
+const cloudRunPreviewHost = /^(?:ais-(?:dev|pre)-[a-z0-9-]+(?:\.[a-z0-9-]+)?\.run\.app|.*\.(?:googleusercontent\.com|usercontent\.goog))$/i
 
 export function isSecretSetting(key: string): boolean {
   return credentialName.test(key) || key.toLowerCase() === "license_key"
@@ -23,12 +24,15 @@ export function canManageSystemSettings(request: Request, locals: Pick<App.Local
   if (locals.hassIsAdmin) return true
   if (process.env.SUPERVISOR_TOKEN) return false
   const hostname = new URL(request.url).hostname
+  const isDev = import.meta.env?.DEV === true
   const isLocalHost = localHosts.has(hostname)
-  const isPreviewHost = standalonePreviewHost.test(hostname)
-  if (!isLocalHost && !isPreviewHost) return false
+  const isDevPreviewHost = isDev && devPreviewHost.test(hostname)
+  const isCloudRunPreviewHost = Boolean(process.env.K_SERVICE) && cloudRunPreviewHost.test(hostname)
+  if (!isLocalHost && !isDevPreviewHost && !isCloudRunPreviewHost) return false
+  if (isDevPreviewHost || isCloudRunPreviewHost) return true
   const peer = getIngressTransport()?.peer
-  if (peer) return localPeers.has(peer) || isPreviewHost
-  return import.meta.env?.DEV === true || isPreviewHost
+  if (peer) return localPeers.has(peer)
+  return isDev
 }
 
 export function requireSystemSettingsAdmin(request: Request, locals: Pick<App.Locals, "hassIsAdmin" | "agentToken">): Response | null {

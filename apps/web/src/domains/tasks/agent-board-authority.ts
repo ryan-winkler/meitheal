@@ -77,3 +77,56 @@ export async function createBoardAgentCredential<T>(
     return { next: value }
   })
 }
+
+export interface AgentTokenBoardGrant {
+  id: string
+  name: string
+  ticketPrefix: string
+}
+
+/** Read active Board grants for a set of agent token IDs, optionally restricted to visible Board IDs. */
+export async function listBoardGrantsForAgentTokens(
+  db: Pick<Client, "execute">,
+  tokenIds: readonly string[],
+  allowedBoardIds?: ReadonlySet<string>
+): Promise<Map<string, AgentTokenBoardGrant[]>> {
+  const grants = new Map<string, AgentTokenBoardGrant[]>()
+  if (tokenIds.length === 0) return grants
+  const placeholders = tokenIds.map(() => "?").join(", ")
+  const result = await db.execute({
+    sql: `SELECT g.principal_id AS token_id, b.id AS board_id, b.name AS board_name, b.ticket_prefix
+      FROM board_access_grants AS g
+      INNER JOIN task_boards AS b ON b.id = g.board_id
+      WHERE g.principal_type = 'agent'
+        AND b.state = 'active'
+        AND g.principal_id IN (${placeholders})
+      ORDER BY b.name COLLATE NOCASE ASC`,
+    args: [...tokenIds]
+  })
+  for (const row of result.rows) {
+    const tokenId = String(row.token_id ?? "")
+    const boardId = String(row.board_id ?? "")
+    if (!tokenId || !boardId) continue
+    if (allowedBoardIds && !allowedBoardIds.has(boardId)) continue
+    const list = grants.get(tokenId) ?? []
+    list.push({
+      id: boardId,
+      name: String(row.board_name ?? "Board"),
+      ticketPrefix: String(row.ticket_prefix ?? "")
+    })
+    grants.set(tokenId, list)
+  }
+  return grants
+}
+
+/** Clean up orphaned Board access grants when an agent token is permanently deleted. */
+export async function removeAgentBoardGrants(
+  db: Pick<Client, "execute">,
+  tokenId: string
+): Promise<void> {
+  await db.execute({
+    sql: "DELETE FROM board_access_grants WHERE principal_type = 'agent' AND principal_id = ?",
+    args: [tokenId]
+  })
+}
+

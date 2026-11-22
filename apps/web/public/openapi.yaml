@@ -103,6 +103,300 @@ components:
           uniqueItems: true
           items:
             type: string
+    WebserverConfig:
+      type: object
+      required:
+        - serverName
+        - internalUrl
+        - externalUrl
+        - homeAssistantUrl
+        - portsSpec
+        - ports
+        - bindAddress
+        - tlsEnabled
+        - sslCertificate
+        - sslPrivateKeyConfigured
+        - syncHaOptions
+      properties:
+        serverName:
+          type: string
+          maxLength: 100
+          description: Human-readable server display name.
+        internalUrl:
+          type: string
+          maxLength: 2048
+          description: Internal LAN URL or domain (http:// or https://).
+        externalUrl:
+          type: string
+          maxLength: 2048
+          description: External public URL or domain (https:// recommended).
+        homeAssistantUrl:
+          type: string
+          maxLength: 2048
+          description: Home Assistant base URL used for integration links.
+        portsSpec:
+          type: string
+          maxLength: 256
+          description: Port specification supporting a single port (3000), comma list (3000, 8095), or range (3000-3005).
+        ports:
+          type: array
+          maxItems: 32
+          items:
+            type: integer
+            minimum: 1
+            maximum: 65535
+          description: Resolved sorted list of listening TCP ports.
+        bindAddress:
+          type: string
+          description: IPv4 or IPv6 bind interface (default 0.0.0.0).
+        tlsEnabled:
+          type: boolean
+          description: Whether direct SSL/TLS encryption is enabled.
+        sslCertificate:
+          type: string
+          description: Certificate path (e.g. /ssl/fullchain.pem) or inline PEM.
+        sslPrivateKeyConfigured:
+          type: boolean
+          readOnly: true
+          description: Whether an SSL private key is stored (never returned in plaintext).
+        syncHaOptions:
+          type: boolean
+          description: Whether changes synchronize with Home Assistant Supervisor add-on options.
+      additionalProperties: false
+    WebserverMcpEndpoints:
+      type: object
+      required:
+        - mcpServerUrl
+        - mcpManifestUrl
+        - baseUrl
+        - source
+        - homeAssistantConnected
+      properties:
+        mcpServerUrl:
+          type: string
+          description: Resolved MCP JSON-RPC endpoint URL.
+        mcpManifestUrl:
+          type: string
+          description: Resolved MCP discovery manifest URL.
+        baseUrl:
+          type: string
+        source:
+          type: string
+          enum:
+            - external
+            - internal
+            - current_origin
+            - port_fallback
+        homeAssistantUrl:
+          type:
+            - string
+            - "null"
+        homeAssistantAiUrl:
+          type:
+            - string
+            - "null"
+          description: Direct link to Home Assistant AI & Model Context Protocol page ({haDomain}/config/ai).
+        homeAssistantMcpIntegrationUrl:
+          type:
+            - string
+            - "null"
+          description: Alias for Home Assistant AI & MCP setup page ({haDomain}/config/ai).
+        homeAssistantIntegrationsUrl:
+          type:
+            - string
+            - "null"
+        homeAssistantConnected:
+          type: boolean
+      additionalProperties: false
+    PluginManifest:
+      type: object
+      required:
+        - id
+        - name
+        - version
+        - minMeithealVersion
+        - type
+        - description
+        - author
+        - license
+        - permissions
+        - allowedHosts
+        - dataSharing
+      properties:
+        id:
+          type: string
+          pattern: ^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$
+        name:
+          type: string
+        version:
+          type: string
+        minMeithealVersion:
+          type: string
+        type:
+          type: string
+          enum:
+            - extension
+            - connector
+        description:
+          type: string
+        author:
+          type: string
+        license:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        hooks:
+          type: array
+          items:
+            type: string
+        allowedHosts:
+          type: array
+          items:
+            type: string
+        dataSharing:
+          type: object
+          required:
+            - outbound
+            - destinations
+            - dataTypes
+            - summary
+          properties:
+            outbound:
+              type: boolean
+            destinations:
+              type: array
+              items:
+                type: object
+                required:
+                  - host
+                  - purpose
+                properties:
+                  host:
+                    type: string
+                  purpose:
+                    type: string
+                additionalProperties: false
+            dataTypes:
+              type: array
+              items:
+                type: string
+            summary:
+              type: string
+          additionalProperties: false
+      additionalProperties: false
+    PluginHealthReport:
+      type: object
+      required:
+        - pluginId
+        - overall
+        - operationalState
+        - operationalLabel
+        - securityTone
+        - securityLabel
+        - passedChecks
+        - totalChecks
+        - checks
+      properties:
+        pluginId:
+          type: string
+        overall:
+          type: string
+          enum:
+            - healthy
+            - warning
+            - critical
+            - inactive
+        operationalState:
+          type: string
+          enum:
+            - operational
+            - paused_safe_mode
+            - needs_config
+            - blocked_reconsent
+            - error
+            - disabled
+        operationalLabel:
+          type: string
+        securityTone:
+          type: string
+          enum:
+            - healthy
+            - warning
+            - critical
+            - inactive
+        securityLabel:
+          type: string
+        passedChecks:
+          type: integer
+        totalChecks:
+          type: integer
+        remediation:
+          type: string
+        checks:
+          type: array
+          items:
+            type: object
+            required:
+              - id
+              - label
+              - category
+              - status
+              - detail
+            properties:
+              id:
+                type: string
+              label:
+                type: string
+              category:
+                type: string
+                enum:
+                  - elephant
+                  - goldfish
+              status:
+                type: string
+                enum:
+                  - pass
+                  - warn
+                  - fail
+              detail:
+                type: string
+            additionalProperties: false
+      additionalProperties: false
+    PluginView:
+      type: object
+      required:
+        - id
+        - source
+        - enabled
+        - needsReconsent
+        - manifest
+        - sha256
+        - health
+      properties:
+        id:
+          type: string
+        source:
+          type: string
+          enum:
+            - builtin
+            - uploaded
+        enabled:
+          type: boolean
+        needsReconsent:
+          type: boolean
+        manifest:
+          $ref: "#/components/schemas/PluginManifest"
+        sha256:
+          type: string
+        approvedUserServer:
+          type:
+            - string
+            - "null"
+        health:
+          $ref: "#/components/schemas/PluginHealthReport"
+      additionalProperties: false
     AgentContext:
       type: object
       required:
@@ -7498,6 +7792,361 @@ paths:
       responses:
         "200":
           description: License status
+  /api/webserver:
+    get:
+      operationId: getWebserverSettings
+      tags:
+        - System
+      summary: Get webserver, ports, domains, MCP URL, and Supervisor status
+      description: Requires an administrator session. Returns normalized webserver configuration (ports single/list/range,
+        internal/external/Home Assistant URLs, bind interface, TLS status with private key redacted), live MCP server
+        endpoint with Home Assistant deep-link, security posture notices, and Home Assistant Supervisor services/network
+        snapshot.
+      responses:
+        "200":
+          description: Webserver settings and Supervisor snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  config:
+                    $ref: "#/components/schemas/WebserverConfig"
+                  mcp:
+                    $ref: "#/components/schemas/WebserverMcpEndpoints"
+                  provenance:
+                    type: object
+                    description: Per-field source of truth across database, supervisor, process_env, dotenv, and default.
+                  activeRuntime:
+                    type: object
+                    description: Live active HTTP listener ports/host, .env detection state, and restartRequired indicator.
+                additionalProperties: false
+        "403":
+          description: Administrator required
+    put:
+      operationId: updateWebserverSettings
+      tags:
+        - System
+      summary: Save webserver ports, domains, TLS, and bind interface settings
+      description: Requires an administrator session. Validates single port, comma list, or port range (max 32 ports),
+        HTTP/HTTPS domains, bind IP, and TLS material. Persists settings and optionally synchronizes Home Assistant
+        Supervisor add-on options.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                serverName:
+                  type: string
+                  maxLength: 100
+                internalUrl:
+                  type: string
+                  maxLength: 2048
+                externalUrl:
+                  type: string
+                  maxLength: 2048
+                homeAssistantUrl:
+                  type: string
+                  maxLength: 2048
+                portsSpec:
+                  oneOf:
+                    - type: string
+                    - type: integer
+                    - type: array
+                      items:
+                        type: integer
+                bindAddress:
+                  type: string
+                tlsEnabled:
+                  type: boolean
+                sslCertificate:
+                  type: string
+                sslPrivateKey:
+                  type:
+                    - string
+                    - "null"
+                syncHaOptions:
+                  type: boolean
+              additionalProperties: false
+      responses:
+        "200":
+          description: Saved webserver configuration and Supervisor sync status
+        "400":
+          description: Validation failed
+        "403":
+          description: Administrator required
+  /api/webserver/verify:
+    post:
+      operationId: verifyWebserverSettings
+      tags:
+        - System
+      summary: Verify proposed webserver settings before saving
+      description: Requires an administrator session. Runs deterministic port, domain, bind interface, TLS pairing, MCP
+        endpoint, and Home Assistant Supervisor checks without mutating persisted settings.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Verification checklist and resolved MCP endpoints
+        "400":
+          description: Malformed request body
+        "403":
+          description: Administrator required
+  /api/plugins:
+    get:
+      operationId: listPlugins
+      tags:
+        - Plugins
+      summary: List built-in and uploaded plugins, fleet health, or active runtime bundles
+      description: Returns the full plugin catalog, fleetHealth summary, per-plugin EGM health reports, and Safe Mode state
+        for administrators, or enabled runtime bundles (without secrets) when ?runtime=1 is requested by an active
+        browser session.
+      parameters:
+        - name: runtime
+          in: query
+          schema:
+            type: string
+            enum:
+              - "1"
+          description: Return active runtime bundles only.
+      responses:
+        "200":
+          description: Plugin catalog with health telemetry or active runtime bundles
+        "403":
+          description: Administrator or active session required
+    post:
+      operationId: managePlugins
+      tags:
+        - Plugins
+      summary: Upload a plugin ZIP, install an AI JSON bundle, toggle Safe Mode, or remove all uploaded plugins
+      description: Administrator only. Supports multipart ZIP upload, JSON install_bundle (AI builder), set_safe_mode, and
+        remove_all_uploaded with full size, zip-bomb, Zip Slip, manifest, SVG, and dataSharing validation.
+      responses:
+        "200":
+          description: Administrative plugin action completed
+        "201":
+          description: Uploaded or AI-built plugin installed
+        "400":
+          description: Archive, bundle, or manifest validation failed
+        "403":
+          description: Administrator required
+  /api/plugins/{id}:
+    get:
+      operationId: getPlugin
+      tags:
+        - Plugins
+      summary: Get details for one plugin
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Plugin view
+        "403":
+          description: Administrator required
+        "404":
+          description: Plugin not found
+    patch:
+      operationId: updatePlugin
+      tags:
+        - Plugins
+      summary: Enable, disable, approve updated permissions, or save plugin configuration
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated plugin
+        "400":
+          description: Validation failed
+        "403":
+          description: Administrator required
+        "409":
+          description: Re-consent required
+    delete:
+      operationId: uninstallPlugin
+      tags:
+        - Plugins
+      summary: Uninstall an uploaded plugin and delete its storage and secrets
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Plugin uninstalled
+        "400":
+          description: Built-in plugins cannot be uninstalled
+        "403":
+          description: Administrator required
+  /api/plugins/{id}/storage:
+    get:
+      operationId: readPluginStorage
+      tags:
+        - Plugins
+      summary: Read isolated key-value storage for an active plugin
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: key
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stored value(s)
+        "403":
+          description: Plugin disabled, Safe Mode active, or permission denied
+    put:
+      operationId: writePluginStorage
+      tags:
+        - Plugins
+      summary: Write isolated key-value storage for an active plugin (256 KB quota)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stored
+        "403":
+          description: Permission denied
+        "413":
+          description: Storage quota exceeded
+    delete:
+      operationId: deletePluginStorage
+      tags:
+        - Plugins
+      summary: Delete one key from a plugin's isolated storage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: key
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+        "403":
+          description: Permission denied
+  /api/plugins/{id}/secrets:
+    get:
+      operationId: listPluginSecrets
+      tags:
+        - Plugins
+      summary: List configured write-only secret keys (values are never returned)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Configured secret keys
+        "403":
+          description: Administrator required
+    put:
+      operationId: setPluginSecret
+      tags:
+        - Plugins
+      summary: Save or rotate a write-only plugin secret
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Secret configured
+        "403":
+          description: Administrator required
+    delete:
+      operationId: deletePluginSecret
+      tags:
+        - Plugins
+      summary: Remove a write-only plugin secret
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: key
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Secret deleted
+        "403":
+          description: Administrator required
+  /api/plugins/{id}/http:
+    post:
+      operationId: proxyPluginHttp
+      tags:
+        - Plugins
+      summary: Send an SSRF-guarded outbound HTTPS request on behalf of an active plugin
+      description: Enforces allowedHosts, HTTPS policy, DNS/private-IP CIDR blocking, redirect blocking, and server-side
+        {{secret:key}} header substitution.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Upstream response
+        "403":
+          description: Host blocked or permission denied
+        "502":
+          description: Redirect blocked or upstream error
+  /api/plugins/{id}/connector:
+    post:
+      operationId: runPluginConnector
+      tags:
+        - Plugins
+      summary: Test or idempotently sync an external connector plugin
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Connector test or sync result
+        "400":
+          description: Configuration error
+        "403":
+          description: Administrator required
   /api/ha/connection:
     get:
       operationId: getHAConnection
@@ -7538,10 +8187,12 @@ paths:
       operationId: getHAServices
       tags:
         - HomeAssistant
-      summary: List HA services
+      summary: List HA services, Supervisor services, and webserver options
+      description: Returns Home Assistant Core services, Supervisor Services registry entries, and (for administrators)
+        Meitheal webserver add-on options.
       responses:
         "200":
-          description: Services
+          description: Services and webserver options
   /api/ha/addons:
     get:
       operationId: getHAAddons

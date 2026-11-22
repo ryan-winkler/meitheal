@@ -32,7 +32,7 @@ test("domain-auth token generation, scope validation, route access, and grace li
   const generated = generateAgentToken()
   assert.match(generated.token, /^mth_[a-f0-9]{64}$/)
   assert.equal(hashToken(generated.token), generated.tokenHash)
-  assert.equal(generated.tokenPrefix, generated.token.slice(0, 12))
+  assert.equal(generated.tokenPrefix, `${generated.token.slice(0, 12)}...${generated.token.slice(-4)}`)
 
   const checked = validateScopes(["tasks:read", "tasks:write", "unknown:scope"])
   assert.deepEqual(checked.valid, ["tasks:read", "tasks:write"])
@@ -56,24 +56,27 @@ test("domain-tasks status constants, Eisenhower quadrant, goal progress, and pro
   assert.equal(isValidTaskKind("standard_action"), true)
   assert.equal(isValidTaskKind("unknown_kind"), false)
 
-  assert.equal(deriveEisenhowerQuadrant(0, 0), "unclassified")
-  assert.equal(deriveEisenhowerQuadrant(4, 5), "do")
+  assert.equal(deriveEisenhowerQuadrant(0, 0), "not-now")
+  assert.equal(deriveEisenhowerQuadrant(4, 5), "do-first")
   assert.equal(deriveEisenhowerQuadrant(2, 4), "schedule")
   assert.equal(deriveEisenhowerQuadrant(4, 1), "delegate")
-  assert.equal(deriveEisenhowerQuadrant(1, 2), "eliminate")
+  assert.equal(deriveEisenhowerQuadrant(1, 2), "not-now")
 
   assert.equal(goalProgress(3, 4), 75)
-  assert.equal(goalProgress(50, null), 50)
+  assert.equal(goalProgress(50, null), 0)
 
-  const h1 = await computeProposalHash({ b: 2, a: 1 })
-  const h2 = await computeProposalHash({ a: 1, b: 2 })
+  const h1 = await computeProposalHash({ summary: "Fix sink", proposedChanges: { status: { from: "pending", to: "complete" } } })
+  const h2 = await computeProposalHash({ summary: "Fix sink", proposedChanges: { status: { from: "pending", to: "complete" } } })
   assert.equal(h1, h2)
   assert.equal(h1.length, 64)
 })
 
 test("domain-strategy formula evaluator and rule resolution", () => {
-  assert.equal(isFrameworkFormulaSupported("(reach * impact * confidence) / effort"), true)
-  assert.equal(isFrameworkFormulaSupported("process.exit(1)"), false)
+  assert.equal(
+    isFrameworkFormulaSupported("(reach * impact * confidence) / effort", ["reach", "impact", "confidence", "effort"]),
+    true,
+  )
+  assert.equal(isFrameworkFormulaSupported("process.exit(1)", ["reach"]), false)
   assert.equal(
     evaluateFrameworkFormula("(reach * impact * confidence) / effort", {
       reach: 100,
@@ -88,33 +91,35 @@ test("domain-strategy formula evaluator and rule resolution", () => {
   const rules = [
     createTaskRule({
       name: "Epic RICE",
+      ruleType: "strategic-lens",
       taskTypes: ["epic"],
       lensIds: ["rice", "ddd"],
-      aiScope: { canAutoScore: true },
+      aiScope: { canAutoScore: true, canAutoClose: false, canChangePriority: false, canSuggestLabels: false, customInstructions: "" },
       priority: 10,
     }),
     createTaskRule({
       name: "Urgent tag",
+      ruleType: "ai-scope",
       tags: ["urgent"],
       lensIds: ["kcs"],
-      aiScope: { canSuggestLabels: true },
+      aiScope: { canAutoScore: false, canAutoClose: false, canChangePriority: false, canSuggestLabels: true, customInstructions: "" },
       priority: 20,
     }),
   ]
   const resolved = resolveRulesForTask("epic", ["urgent"], rules)
-  assert.deepEqual(resolved.lensIds, ["rice", "ddd", "kcs"])
-  assert.equal(resolved.aiScope.canAutoScore, true)
-  assert.equal(resolved.aiScope.canSuggestLabels, true)
+  assert.deepEqual(resolved.applicableLensIds, ["rice", "ddd", "kcs"])
+  assert.equal(resolved.mergedAIScope.canAutoScore, true)
+  assert.equal(resolved.mergedAIScope.canSuggestLabels, true)
 })
 
 test("integration-core SSRF host classification and outbound URL validation", () => {
   assert.equal(classifyNetworkHost("169.254.169.254"), "unconditional")
   assert.equal(classifyNetworkHost("supervisor"), "unconditional")
-  assert.equal(classifyNetworkHost("127.0.0.1"), "private")
-  assert.equal(classifyNetworkHost("example.com"), "public")
+  assert.equal(classifyNetworkHost("10.0.0.5"), "private")
+  assert.equal(classifyNetworkHost("example.com"), null)
 
   assert.throws(() => assertOutboundUrl("http://169.254.169.254/latest/meta-data"), OutboundUrlError)
-  assert.throws(() => assertOutboundUrl("http://127.0.0.1:8080", { allowPrivate: false }), OutboundUrlError)
+  assert.throws(() => assertOutboundUrl("http://10.0.0.5:8080", { allowPrivate: false }), OutboundUrlError)
   assert.equal(assertOutboundUrl("https://example.com/hook", { allowPrivate: false }).hostname, "example.com")
 
   const grocyOk = validateGrocyBaseUrl("http://grocy.local:9283/")

@@ -46,11 +46,7 @@ function sameOrigin(request: Request, ingress: string | undefined): boolean {
     const source = new URL(referer)
     if ((source.protocol !== "http:" && source.protocol !== "https:") || source.origin !== origin) return false
     if (ingress) return source.pathname.startsWith(ingress + "/")
-    const expectedHost =
-      request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ||
-      request.headers.get("host")?.trim() ||
-      new URL(request.url).host
-    return source.host === expectedHost || source.origin === new URL(request.url).origin
+    return source.origin === new URL(request.url).origin
   } catch {
     return false
   }

@@ -1,13 +1,14 @@
 /**
  * Sidebar Menu Domain Model
  *
- * Canonical DDD aggregate for sidebar sections, navigation items (including
- * independently pinnable nested views and boards), visibility, custom labels,
- * and ordering. Shared across SSR rendering, live Sidebar Edit Mode, and
- * Settings Navigation (DRY single source of truth).
+ * Canonical DDD aggregate for sidebar sections (built-in + custom), navigation
+ * items (including independently pinnable nested views and boards), visibility,
+ * custom labels, custom icons, and ordering. Shared across SSR rendering,
+ * per-user live Edit Mode, and Server-wide Settings Navigation (DRY).
  */
 
-export type SidebarSectionId = "workspace" | "planning" | "boards" | "system"
+export type BuiltinSidebarSectionId = "workspace" | "planning" | "boards" | "system"
+export type SidebarSectionId = string
 
 export interface CustomNavItem {
   id: string
@@ -17,7 +18,7 @@ export interface CustomNavItem {
 }
 
 export interface SidebarSectionSpec {
-  id: SidebarSectionId
+  id: BuiltinSidebarSectionId
   defaultLabel: string
   i18nKey: string
   defaultItems: readonly string[]
@@ -27,7 +28,7 @@ export interface SidebarMenuConfig {
   sectionOrder: SidebarSectionId[]
   hiddenSections: SidebarSectionId[]
   sectionLabels: Record<string, string>
-  sectionItems: Record<SidebarSectionId, string[]>
+  sectionItems: Record<string, string[]>
   hiddenItems: string[]
   itemLabels: Record<string, string>
   customItems: CustomNavItem[]
@@ -40,11 +41,56 @@ export interface SerializedSidebarConfig {
     hidden: SidebarSectionId[]
     labels: Record<string, string>
   }
-  sectionItems: Record<SidebarSectionId, string[]>
+  sectionItems: Record<string, string[]>
   hiddenItems: string[]
   order: string[]
   labels: Record<string, string>
   customItems: CustomNavItem[]
+}
+
+export const SIDEBAR_PERSONAL_STORAGE_KEY = "meitheal-sidebar-personal-config"
+
+export const CUSTOM_LINK_ICONS = [
+  "link",
+  "home",
+  "star",
+  "heart",
+  "calendar",
+  "checkbox",
+  "shopping-cart",
+  "list-check",
+  "folder",
+  "book",
+  "bolt",
+  "flame",
+  "clock",
+  "bell",
+  "settings",
+  "world",
+] as const
+
+const CUSTOM_LINK_ICON_SET: ReadonlySet<string> = new Set([
+  ...CUSTOM_LINK_ICONS,
+  "layout-kanban",
+  "layout-dashboard",
+  "layout-grid",
+  "pin",
+  "external-link",
+  "inbox",
+  "trophy",
+  "table",
+  "chart-bar",
+  "tag",
+  "target",
+  "users",
+  "plug",
+  "sparkles",
+])
+
+export function sanitizeCustomLinkIcon(raw: unknown): string {
+  if (typeof raw !== "string") return "link"
+  const clean = raw.trim()
+  return CUSTOM_LINK_ICON_SET.has(clean) ? clean : "link"
 }
 
 export const TASK_VIEW_ITEM_KEYS = [
@@ -99,12 +145,13 @@ export const DEFAULT_SIDEBAR_SECTIONS: readonly SidebarSectionSpec[] = [
   },
 ] as const
 
-export const DEFAULT_SECTION_IDS: readonly SidebarSectionId[] = DEFAULT_SIDEBAR_SECTIONS.map(section => section.id)
+export const DEFAULT_SECTION_IDS: readonly BuiltinSidebarSectionId[] = DEFAULT_SIDEBAR_SECTIONS.map(section => section.id)
 
-const SECTION_ID_SET: ReadonlySet<string> = new Set(DEFAULT_SECTION_IDS)
+const BUILTIN_SECTION_ID_SET: ReadonlySet<string> = new Set(DEFAULT_SECTION_IDS)
+const CUSTOM_SECTION_ID_PATTERN = /^section-[a-z0-9][a-z0-9-]{0,48}$/
 const DEFAULT_HIDDEN_SET: ReadonlySet<string> = new Set(DEFAULT_HIDDEN_ITEMS)
 
-export const DEFAULT_ITEM_SECTION: Readonly<Record<string, SidebarSectionId>> = Object.fromEntries(
+export const DEFAULT_ITEM_SECTION: Readonly<Record<string, BuiltinSidebarSectionId>> = Object.fromEntries(
   DEFAULT_SIDEBAR_SECTIONS.flatMap(section => section.defaultItems.map(item => [item, section.id])),
 )
 
@@ -126,23 +173,73 @@ export const DEFAULT_SIDEBAR_ITEM_LABELS: Readonly<Record<string, string>> = {
   settings: "Settings",
 }
 
-export const DEFAULT_NAV_ORDER: readonly string[] = DEFAULT_SIDEBAR_SECTIONS.flatMap(section => [...section.defaultItems])
-
-export function isSidebarSectionId(value: string): value is SidebarSectionId {
-  return SECTION_ID_SET.has(value)
+export const DEFAULT_SIDEBAR_ITEM_ICONS: Readonly<Record<string, string>> = {
+  dashboard: "layout-dashboard",
+  today: "clock",
+  upcoming: "calendar",
+  tasks: "layout-kanban",
+  "view-calendar": "calendar",
+  "view-kanban": "layout-kanban",
+  "view-timeline": "chart-bar",
+  "view-table": "table",
+  "system-pinned": "pin",
+  activity: "bolt",
+  mentionInbox: "inbox",
+  progress: "trophy",
+  planning: "layout-grid",
+  boards: "layout-kanban",
+  settings: "settings",
 }
 
-export function defaultSectionForItem(key: string): SidebarSectionId {
+export const DEFAULT_NAV_ORDER: readonly string[] = DEFAULT_SIDEBAR_SECTIONS.flatMap(section => [...section.defaultItems])
+
+export function isBuiltinSidebarSectionId(value: string): value is BuiltinSidebarSectionId {
+  return BUILTIN_SECTION_ID_SET.has(value)
+}
+
+export function isSidebarSectionId(value: string): value is SidebarSectionId {
+  return BUILTIN_SECTION_ID_SET.has(value) || CUSTOM_SECTION_ID_PATTERN.test(value)
+}
+
+export function defaultSectionForItem(key: string): BuiltinSidebarSectionId {
   if (key.startsWith("board-")) return "boards"
   return DEFAULT_ITEM_SECTION[key] ?? "workspace"
 }
 
 export function defaultSectionLabel(sectionId: SidebarSectionId): string {
-  return DEFAULT_SIDEBAR_SECTIONS.find(section => section.id === sectionId)?.defaultLabel ?? sectionId
+  const builtin = DEFAULT_SIDEBAR_SECTIONS.find(section => section.id === sectionId)
+  if (builtin) return builtin.defaultLabel
+  return sectionId
+    .replace(/^section-/, "")
+    .replace(/-/g, " ")
+    .replace(/\b\w/g, ch => ch.toUpperCase()) || "Custom"
 }
 
 export function sanitizeLabel(raw: string): string {
   return raw.replace(/\s+/g, " ").trim().slice(0, 64)
+}
+
+function slugifySectionId(label: string, existing: readonly string[]): string {
+  const baseSlug = sanitizeLabel(label)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32) || "custom"
+  const taken = new Set(existing)
+  let candidate = `section-${baseSlug}`
+  let suffix = 2
+  while (taken.has(candidate)) {
+    candidate = `section-${baseSlug}-${suffix++}`
+  }
+  return candidate
+}
+
+function cloneSectionItems(config: SidebarMenuConfig): Record<string, string[]> {
+  const next: Record<string, string[]> = {}
+  for (const sectionId of config.sectionOrder) {
+    next[sectionId] = [...(config.sectionItems[sectionId] ?? [])]
+  }
+  return next
 }
 
 function parseRawConfigObject(raw: unknown): Record<string, unknown> {
@@ -180,7 +277,7 @@ function parseCustomItems(raw: unknown): CustomNavItem[] {
     result.push({
       id,
       href,
-      icon: typeof item.icon === "string" && item.icon.trim() ? item.icon.trim() : "link",
+      icon: sanitizeCustomLinkIcon(item.icon),
       label: typeof item.label === "string" && item.label.trim() ? sanitizeLabel(item.label) : id,
     })
   }
@@ -201,7 +298,7 @@ function parseStringRecord(raw: unknown): Record<string, string> {
 
 /**
  * Normalizes either legacy flat `sidebar_config` or section-aware `sidebar_config`
- * into a guaranteed-valid `SidebarMenuConfig`.
+ * (including user-added custom sections) into a guaranteed-valid `SidebarMenuConfig`.
  */
 export function normalizeSidebarConfig(
   raw: unknown,
@@ -224,9 +321,10 @@ export function normalizeSidebarConfig(
     ? sectionsMeta.order.filter((id): id is SidebarSectionId => typeof id === "string" && isSidebarSectionId(id))
     : []
   const sectionOrder: SidebarSectionId[] = [...new Set([...rawSectionOrder, ...DEFAULT_SECTION_IDS])]
+  const sectionOrderSet = new Set(sectionOrder)
 
   const hiddenSections: SidebarSectionId[] = Array.isArray(sectionsMeta.hidden)
-    ? [...new Set(sectionsMeta.hidden.filter((id): id is SidebarSectionId => typeof id === "string" && isSidebarSectionId(id)))]
+    ? [...new Set(sectionsMeta.hidden.filter((id): id is SidebarSectionId => typeof id === "string" && sectionOrderSet.has(id)))]
     : []
 
   const sectionLabels = parseStringRecord(sectionsMeta.labels)
@@ -235,8 +333,6 @@ export function normalizeSidebarConfig(
     if (!itemLabels[custom.id] && custom.label) itemLabels[custom.id] = custom.label
   }
 
-  // Hidden items: merge explicit hiddenItems array + legacy boolean flags (`config[key] === false`),
-  // and default-hide optional nested views unless explicitly enabled.
   const hasExplicitHiddenArray = Array.isArray(source.hiddenItems)
   const hiddenSet = new Set<string>()
   if (hasExplicitHiddenArray) {
@@ -248,7 +344,6 @@ export function normalizeSidebarConfig(
     if (source[key] === false) {
       hiddenSet.add(key)
     } else if (DEFAULT_HIDDEN_SET.has(key) && source[key] !== true) {
-      // Optional nested views stay hidden by default unless explicitly pinned/shown
       const alreadyMentionedInSectionItems = Boolean(
         source.sectionItems &&
         typeof source.sectionItems === "object" &&
@@ -262,13 +357,8 @@ export function normalizeSidebarConfig(
     }
   }
 
-  // Section item assignments: prefer explicit sectionItems, else derive from legacy flat order
-  const sectionItems: Record<SidebarSectionId, string[]> = {
-    workspace: [],
-    planning: [],
-    boards: [],
-    system: [],
-  }
+  const sectionItems: Record<string, string[]> = {}
+  for (const sectionId of sectionOrder) sectionItems[sectionId] = []
   const assigned = new Set<string>()
 
   const rawSectionItems = (source.sectionItems && typeof source.sectionItems === "object" && !Array.isArray(source.sectionItems))
@@ -283,7 +373,7 @@ export function normalizeSidebarConfig(
         if (typeof rawKey !== "string") continue
         const mapped = rawKey === "areas" && !validKeySet.has("areas") && validKeySet.has("boards") ? "boards" : rawKey
         if (!validKeySet.has(mapped) || assigned.has(mapped)) continue
-        sectionItems[sectionId].push(mapped)
+        sectionItems[sectionId]!.push(mapped)
         assigned.add(mapped)
       }
     }
@@ -293,16 +383,15 @@ export function normalizeSidebarConfig(
       const mapped = rawKey === "areas" && !validKeySet.has("areas") && validKeySet.has("boards") ? "boards" : rawKey
       if (!validKeySet.has(mapped) || assigned.has(mapped)) continue
       const targetSection = defaultSectionForItem(mapped)
-      sectionItems[targetSection].push(mapped)
+      sectionItems[targetSection]!.push(mapped)
       assigned.add(mapped)
     }
   }
 
-  // Append any remaining available items into their canonical default section
   for (const key of validKeys) {
     if (assigned.has(key)) continue
     const targetSection = defaultSectionForItem(key)
-    sectionItems[targetSection].push(key)
+    sectionItems[targetSection]!.push(key)
     assigned.add(key)
   }
 
@@ -325,6 +414,64 @@ export function isItemHidden(config: SidebarMenuConfig, key: string): boolean {
   return config.hiddenItems.includes(key)
 }
 
+export function addSection(
+  config: SidebarMenuConfig,
+  label: string,
+  explicitId?: string,
+): { config: SidebarMenuConfig; sectionId: SidebarSectionId } {
+  const cleanLabel = sanitizeLabel(label) || "New section"
+  const candidateId = explicitId && !isBuiltinSidebarSectionId(explicitId) && isSidebarSectionId(explicitId) && !config.sectionOrder.includes(explicitId)
+    ? explicitId
+    : slugifySectionId(cleanLabel, config.sectionOrder)
+
+  const sectionOrder = [...config.sectionOrder, candidateId]
+  const sectionLabels = { ...config.sectionLabels, [candidateId]: cleanLabel }
+  const sectionItems = cloneSectionItems(config)
+  sectionItems[candidateId] = []
+
+  return {
+    sectionId: candidateId,
+    config: {
+      ...config,
+      sectionOrder,
+      sectionLabels,
+      sectionItems,
+    },
+  }
+}
+
+/**
+ * Deletes a custom section. Built-in sections cannot be deleted (only hidden).
+ * Any items inside the deleted section are safely moved to `workspace` so zero items are lost.
+ */
+export function deleteSection(
+  config: SidebarMenuConfig,
+  sectionId: SidebarSectionId,
+): SidebarMenuConfig {
+  if (isBuiltinSidebarSectionId(sectionId) || !config.sectionOrder.includes(sectionId)) return config
+
+  const orphanedItems = config.sectionItems[sectionId] ?? []
+  const sectionOrder = config.sectionOrder.filter(id => id !== sectionId)
+  const hiddenSections = config.hiddenSections.filter(id => id !== sectionId)
+  const sectionLabels = { ...config.sectionLabels }
+  delete sectionLabels[sectionId]
+
+  const sectionItems = cloneSectionItems(config)
+  delete sectionItems[sectionId]
+  const fallbackSection = sectionOrder.includes("workspace") ? "workspace" : sectionOrder[0]
+  if (fallbackSection && orphanedItems.length > 0) {
+    sectionItems[fallbackSection] = [...(sectionItems[fallbackSection] ?? []), ...orphanedItems]
+  }
+
+  return {
+    ...config,
+    sectionOrder,
+    hiddenSections,
+    sectionLabels,
+    sectionItems,
+  }
+}
+
 export function toggleSectionVisibility(
   config: SidebarMenuConfig,
   sectionId: SidebarSectionId,
@@ -342,7 +489,7 @@ export function renameSection(
 ): SidebarMenuConfig {
   const clean = sanitizeLabel(nextLabel)
   const sectionLabels = { ...config.sectionLabels }
-  if (!clean || clean === defaultSectionLabel(sectionId)) {
+  if (!clean || (isBuiltinSidebarSectionId(sectionId) && clean === defaultSectionLabel(sectionId))) {
     delete sectionLabels[sectionId]
   } else {
     sectionLabels[sectionId] = clean
@@ -400,7 +547,7 @@ export function setItemVisible(
 }
 
 /**
- * Pins a nested shortcut (e.g. a named board or area) as an independent,
+ * Pins a nested shortcut (e.g. a named board or custom link) as an independent,
  * movable first-class item in the sidebar. If already pinned, ensures it is visible.
  */
 export function pinCustomItem(
@@ -409,26 +556,27 @@ export function pinCustomItem(
   targetSection: SidebarSectionId = defaultSectionForItem(item.id),
 ): SidebarMenuConfig {
   const cleanLabel = sanitizeLabel(item.label) || item.id
+  const cleanIcon = sanitizeCustomLinkIcon(item.icon)
   const exists = config.customItems.some(entry => entry.id === item.id)
   const customItems = exists
-    ? config.customItems.map(entry => (entry.id === item.id ? { ...entry, href: item.href, icon: item.icon || entry.icon } : entry))
-    : [...config.customItems, { ...item, label: cleanLabel }]
+    ? config.customItems.map(entry => (entry.id === item.id ? { id: entry.id, href: item.href, icon: cleanIcon || entry.icon, label: entry.label } : entry))
+    : [...config.customItems, { id: item.id, href: item.href, icon: cleanIcon, label: cleanLabel }]
 
-  const sectionItems: Record<SidebarSectionId, string[]> = {
-    workspace: [...config.sectionItems.workspace],
-    planning: [...config.sectionItems.planning],
-    boards: [...config.sectionItems.boards],
-    system: [...config.sectionItems.system],
-  }
+  const sectionItems = cloneSectionItems(config)
+  const resolvedTarget = config.sectionOrder.includes(targetSection) ? targetSection : "workspace"
   const existingSection = findItemSection(config, item.id)
   if (!existingSection) {
-    sectionItems[targetSection].push(item.id)
+    sectionItems[resolvedTarget] = [...(sectionItems[resolvedTarget] ?? []), item.id]
   }
+  const itemLabels = config.itemLabels[item.id]
+    ? config.itemLabels
+    : { ...config.itemLabels, [item.id]: cleanLabel }
 
   return {
     ...config,
     customItems,
     sectionItems,
+    itemLabels,
     hiddenItems: config.hiddenItems.filter(key => key !== item.id),
   }
 }
@@ -438,11 +586,9 @@ export function unpinCustomItem(
   itemId: string,
 ): SidebarMenuConfig {
   const customItems = config.customItems.filter(entry => entry.id !== itemId)
-  const sectionItems: Record<SidebarSectionId, string[]> = {
-    workspace: config.sectionItems.workspace.filter(key => key !== itemId),
-    planning: config.sectionItems.planning.filter(key => key !== itemId),
-    boards: config.sectionItems.boards.filter(key => key !== itemId),
-    system: config.sectionItems.system.filter(key => key !== itemId),
+  const sectionItems = cloneSectionItems(config)
+  for (const sectionId of Object.keys(sectionItems)) {
+    sectionItems[sectionId] = sectionItems[sectionId]!.filter(key => key !== itemId)
   }
   const itemLabels = { ...config.itemLabels }
   delete itemLabels[itemId]
@@ -495,14 +641,9 @@ export function reorderItem(
   const targetSection = findItemSection(config, targetItemKey)
   if (!sourceSection || !targetSection) return config
 
-  const nextSectionItems: Record<SidebarSectionId, string[]> = {
-    workspace: [...config.sectionItems.workspace],
-    planning: [...config.sectionItems.planning],
-    boards: [...config.sectionItems.boards],
-    system: [...config.sectionItems.system],
-  }
-  nextSectionItems[sourceSection] = nextSectionItems[sourceSection].filter(key => key !== itemKey)
-  const targetList = nextSectionItems[targetSection]
+  const nextSectionItems = cloneSectionItems(config)
+  nextSectionItems[sourceSection] = nextSectionItems[sourceSection]!.filter(key => key !== itemKey)
+  const targetList = nextSectionItems[targetSection]!
   const targetIndex = targetList.indexOf(targetItemKey)
   if (targetIndex < 0) return config
   targetList.splice(targetIndex + Number(after), 0, itemKey)
@@ -516,15 +657,10 @@ export function moveItemToSection(
   targetSectionId: SidebarSectionId,
 ): SidebarMenuConfig {
   const sourceSection = findItemSection(config, itemKey)
-  if (!sourceSection) return config
-  const nextSectionItems: Record<SidebarSectionId, string[]> = {
-    workspace: [...config.sectionItems.workspace],
-    planning: [...config.sectionItems.planning],
-    boards: [...config.sectionItems.boards],
-    system: [...config.sectionItems.system],
-  }
-  nextSectionItems[sourceSection] = nextSectionItems[sourceSection].filter(key => key !== itemKey)
-  nextSectionItems[targetSectionId].push(itemKey)
+  if (!sourceSection || !config.sectionOrder.includes(targetSectionId)) return config
+  const nextSectionItems = cloneSectionItems(config)
+  nextSectionItems[sourceSection] = nextSectionItems[sourceSection]!.filter(key => key !== itemKey)
+  nextSectionItems[targetSectionId]!.push(itemKey)
   return { ...config, sectionItems: nextSectionItems }
 }
 
@@ -535,7 +671,7 @@ export function moveItemByStep(
 ): SidebarMenuConfig {
   const sectionId = findItemSection(config, itemKey)
   if (!sectionId) return config
-  const items = [...config.sectionItems[sectionId]]
+  const items = [...(config.sectionItems[sectionId] ?? [])]
   const index = items.indexOf(itemKey)
   const targetIndex = index + step
   if (index < 0 || targetIndex < 0 || targetIndex >= items.length) return config
@@ -554,6 +690,10 @@ export function flattenSidebarOrder(config: SidebarMenuConfig): string[] {
   return config.sectionOrder.flatMap(sectionId => config.sectionItems[sectionId] ?? [])
 }
 
+export function isSidebarConfigEqual(a: SidebarMenuConfig, b: SidebarMenuConfig): boolean {
+  return JSON.stringify(serializeSidebarConfig(a)) === JSON.stringify(serializeSidebarConfig(b))
+}
+
 /**
  * Serializes the section-aware config while maintaining legacy flat keys so
  * existing consumers and settings exports stay compatible.
@@ -567,16 +707,16 @@ export function serializeSidebarConfig(config: SidebarMenuConfig): SerializedSid
       hidden: [...config.hiddenSections],
       labels: { ...config.sectionLabels },
     },
-    sectionItems: {
-      workspace: [...config.sectionItems.workspace],
-      planning: [...config.sectionItems.planning],
-      boards: [...config.sectionItems.boards],
-      system: [...config.sectionItems.system],
-    },
+    sectionItems: cloneSectionItems(config),
     hiddenItems: [...config.hiddenItems],
     order: flatOrder,
     labels: { ...config.itemLabels },
-    customItems: config.customItems.map(item => ({ ...item })),
+    customItems: config.customItems.map(item => ({
+      id: item.id,
+      href: item.href,
+      icon: sanitizeCustomLinkIcon(item.icon),
+      label: item.label,
+    })),
   }
 
   for (const key of flatOrder) {
@@ -584,4 +724,44 @@ export function serializeSidebarConfig(config: SidebarMenuConfig): SerializedSid
   }
 
   return serialized
+}
+
+export function hasPersonalSidebarConfig(): boolean {
+  if (typeof window === "undefined") return false
+  try {
+    return Boolean(window.localStorage.getItem(SIDEBAR_PERSONAL_STORAGE_KEY))
+  } catch {
+    return false
+  }
+}
+
+export function readPersonalSidebarConfig(availableKeys?: readonly string[]): SidebarMenuConfig | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = window.localStorage.getItem(SIDEBAR_PERSONAL_STORAGE_KEY)
+    if (!raw) return null
+    return normalizeSidebarConfig(raw, availableKeys)
+  } catch {
+    return null
+  }
+}
+
+export function savePersonalSidebarConfig(config: SidebarMenuConfig): SerializedSidebarConfig | null {
+  const payload = serializeSidebarConfig(config)
+  if (typeof window === "undefined") return payload
+  try {
+    window.localStorage.setItem(SIDEBAR_PERSONAL_STORAGE_KEY, JSON.stringify(payload))
+    return payload
+  } catch {
+    return null
+  }
+}
+
+export function clearPersonalSidebarConfig(): void {
+  if (typeof window === "undefined") return
+  try {
+    window.localStorage.removeItem(SIDEBAR_PERSONAL_STORAGE_KEY)
+  } catch {
+    /* Storage may be unavailable */
+  }
 }

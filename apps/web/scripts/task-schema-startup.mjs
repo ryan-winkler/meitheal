@@ -213,6 +213,7 @@ export async function applyStartupBoardSchema(client, tx, prepareRuntime, { oper
   const transition = await admitStartupBoardTransition(client, tx, operatorAdmission)
   if (!transition) return { applied, state: "continuity_locked", pending: [ORDINARY_BOARD_MIGRATION], revision: null }
   await applyOrdinaryBoardMigration(tx, transition.admission)
+  applied.push(ORDINARY_BOARD_MIGRATION)
   if (await applyCustomBoardKeysMigration(tx)) applied.push(CUSTOM_BOARD_KEYS_MIGRATION)
-  return { applied: [...applied, ORDINARY_BOARD_MIGRATION], state: "ready", pending: [], revision: transition.revision }
+  return { applied, state: "ready", pending: [], revision: transition.revision }
 }

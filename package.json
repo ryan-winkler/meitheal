@@ -1,29 +1,27 @@
 {
-  "name": "meitheal-monorepo",
+  "name": "meitheal",
   "private": true,
-  "version": "0.0.1",
-  "description": "Home Assistant-native household and homelab execution hub for tasks, routines, planning, and AI-assisted coordination.",
-  "license": "AGPL-3.0-only",
-  "homepage": "https://github.com/ryan-winkler/meitheal",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/ryan-winkler/meitheal.git"
-  },
-  "bugs": {
-    "url": "https://github.com/ryan-winkler/meitheal/issues"
-  },
   "type": "module",
-  "packageManager": "pnpm@12.21.0",
-  "engines": {
-    "node": ">=22.0.0"
-  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "pnpm --filter @meitheal/web dev",
-    "build": "pnpm --filter @meitheal/web build",
+    "dev": "npm run dev --workspace=apps/web",
+    "build": "npm run build --workspace=apps/web",
     "start": "node apps/web/scripts/serve.mjs",
-    "build:image": "bash scripts/build-image.sh",
-    "check": "pnpm -r --if-present check",
-    "test": "pnpm -r --if-present test",
-    "lint": "pnpm -r --if-present lint"
+    "check": "npm run check --workspace=apps/web",
+    "lint": "npm run check --workspace=apps/web"
+  },
+  "overrides": {
+    "esbuild": "^0.25.12"
+  },
+  "pnpm": {
+    "overrides": {
+      "esbuild": "^0.25.12"
+    }
+  },
+  "dependencies": {
+    "undici": "^8.13.1"
   }
 }

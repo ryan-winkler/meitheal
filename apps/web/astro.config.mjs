@@ -1,7 +1,7 @@
 import { defineConfig, passthroughImageService } from "astro/config";
 import node from "@astrojs/node";
 import tailwindcss from "@tailwindcss/vite";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { minify } from "terser";
 
@@ -36,6 +36,7 @@ export default defineConfig({
   output: "server",
   trailingSlash: "never",
   adapter: node({ mode: "standalone" }),
+  devToolbar: { enabled: false },
   image: { service: passthroughImageService() },
   integrations: [{
     name: "compact-server-output",
@@ -48,7 +49,7 @@ export default defineConfig({
       },
     },
   }, {
-    name: "compact-service-worker",
+    name: "compact-client-assets",
     hooks: {
       "astro:build:done": async ({ dir }) => {
         const worker = new URL("sw.js", dir)
@@ -57,7 +58,22 @@ export default defineConfig({
           mangle: { toplevel: true },
           format: { comments: "some" },
         })
-        writeFileSync(worker, code)
+        if (code) writeFileSync(worker, code)
+        const astroDir = new URL("_astro/", dir)
+        const jsFiles = readdirSync(astroDir).filter((name) => name.endsWith(".js"))
+        await Promise.all(jsFiles.map(async (name) => {
+          const target = new URL(name, astroDir)
+          const source = readFileSync(target, "utf8")
+          const result = await minify(source, {
+            module: true,
+            compress: { passes: 3 },
+            mangle: true,
+            format: { comments: false },
+          })
+          if (result.code && result.code.length < source.length) {
+            writeFileSync(target, result.code)
+          }
+        }))
       },
     },
   }],
@@ -70,6 +86,9 @@ export default defineConfig({
     checkOrigin: false,
   },
   vite: {
+    build: {
+      cssMinify: "lightningcss",
+    },
     server: {
       allowedHosts: true,
       hmr: false,
@@ -109,7 +128,7 @@ export default defineConfig({
     optimizeDeps: {
       // Pre-bundle dependencies that Vite discovers at runtime, preventing
       // "optimized dependencies changed. reloading" mid-session (causes 504 errors).
-      include: [],
+      include: ["dompurify", "date-fns-tz", "sortablejs"],
     },
   },
 });

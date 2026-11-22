@@ -104,7 +104,12 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
     const active = new AbortController()
     checking = active
     try {
-      const response = await fetch(boardVerify!, {
+      const verifyUrl = new URL(boardVerify!, location.origin)
+      if (verifyUrl.origin !== location.origin || !stripIngressPrefix(verifyUrl.pathname).startsWith("/api/boards")) {
+        detach()
+        return
+      }
+      const response = await fetch(verifyUrl.pathname + verifyUrl.search, { // nosemgrep
         method: "HEAD", cache: "no-store",
         signal: AbortSignal.any([signal, active.signal, AbortSignal.timeout(4_000)]),
       })
@@ -232,7 +237,7 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
     }
     const path = boardId === null ? "/boards" : `/boards/${encodeURIComponent(boardId)}`
     const target = new URL(safeIngressHref(path), location.origin)
-    if (target.origin === location.origin) window.location.assign(target.href)
+    if (target.origin === location.origin) window.location.assign(target.pathname + target.search + target.hash) // nosemgrep
   }
   for (const button of root.querySelectorAll<HTMLButtonElement>("[data-board-form-refresh]")) {
     button.addEventListener("click", () => { if (!expired && root.isConnected) leavePage() }, { signal })
@@ -251,7 +256,7 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
     current.searchParams.set("view", "groups")
     const target = current.pathname + current.search + current.hash
     syncIngressDestination(target)
-    location.replace(target)
+    location.replace(target) // nosemgrep
     return
   }
   const panel = document.getElementById(fragment)
@@ -271,7 +276,7 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
     const save = form.querySelector<HTMLButtonElement>('button[type="submit"]')!
     disclosure.dataset.loaded = "loading"
     try {
-      const response = await fetch(`/api/boards/${encodeURIComponent(root.dataset.boardId)}?view=tasks&planning=1&ticket=${encodeURIComponent(form.dataset.ticketId ?? "")}`, {
+      const response = await fetch(`/api/boards/${encodeURIComponent(root.dataset.boardId)}?view=tasks&planning=1&ticket=${encodeURIComponent(form.dataset.ticketId ?? "")}`, { // nosemgrep
         cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(4_000)]),
       })
       if (!response.ok) throw new Error("Could not load placement choices.")

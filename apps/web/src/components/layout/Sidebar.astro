@@ -1,6 +1,6 @@
 ---
 import { newOrganizationLabel, organizationLabelsFor, type OrganizationTerm } from "@lib/organization-labels"
-import "../../styles/_sidebar-reorder.css"
+import sidebarReorderCss from "../../styles/_sidebar-reorder.css?raw"
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import Icon from "../ui/Icon.astro"
@@ -22,9 +22,11 @@ import { boardNavigationLinks, readBoardNavigationContext } from "@lib/board-wor
 import { getFeatureFlags } from "../../lib/feature-flags"
 import { TASK_VIEW_ICONS, TASK_VIEW_LABELS, taskViewUrl, type TaskView } from "../../lib/task-view-route"
 import {
+  CUSTOM_LINK_ICONS,
   DEFAULT_SIDEBAR_SECTIONS,
   TASK_VIEW_ITEM_KEYS,
   flattenSidebarOrder,
+  isBuiltinSidebarSectionId,
   isItemHidden,
   isSectionHidden,
   normalizeSidebarConfig,
@@ -250,6 +252,7 @@ const sections: SidebarSectionView[] = sidebarMenuConfig.sectionOrder.map(sectio
     defaultLabel,
     hidden,
     hasVisibleItems,
+    removable: !isBuiltinSidebarSectionId(sectionId),
     items,
   }
 })
@@ -282,6 +285,7 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas")
   role="navigation"
   aria-label="Main Navigation"
   data-sidebar-config={JSON.stringify(serializedSidebarConfig)}
+  data-sidebar-server-config={JSON.stringify(serializedSidebarConfig)}
   data-storage-error={t("sidebar.reorder_storage_error", locale)}
 >
   <button
@@ -374,19 +378,65 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas")
     </div>
   </div>
 
-  <!-- Edit Mode Actions: Subtle Custom Link Adder + Leave Edit Mode -->
+  <!-- Edit Mode Actions: Per-User Scope, Add Section, Add Custom Link + Icon Picker, Leave Edit Mode -->
   <div class="sidebar-edit-footer" data-sidebar-leave-edit hidden>
-    <button
-      type="button"
-      id="sidebar-add-link-btn"
-      class="sidebar-add-link-trigger"
-      data-sidebar-add-link-trigger
-      aria-expanded="false"
-      aria-controls="sidebar-add-link-form"
-    >
-      <Icon name="link" size={14} />
-      <span>Add custom link</span>
-    </button>
+    <div class="sidebar-edit-scope" role="note">
+      <span class="sidebar-edit-scope__badge">
+        <Icon name="user" size={12} />
+        <span>Per-user menu</span>
+      </span>
+      <button
+        type="button"
+        class="sidebar-edit-scope__reset"
+        data-sidebar-reset-personal
+        hidden
+      >
+        Reset to server default
+      </button>
+    </div>
+
+    <div class="sidebar-edit-quick-actions">
+      <button
+        type="button"
+        id="sidebar-add-section-btn"
+        class="sidebar-add-link-trigger"
+        data-sidebar-add-section-trigger
+        aria-expanded="false"
+        aria-controls="sidebar-add-section-form"
+      >
+        <Icon name="folder" size={14} />
+        <span>Add section</span>
+      </button>
+
+      <button
+        type="button"
+        id="sidebar-add-link-btn"
+        class="sidebar-add-link-trigger"
+        data-sidebar-add-link-trigger
+        aria-expanded="false"
+        aria-controls="sidebar-add-link-form"
+      >
+        <Icon name="link" size={14} />
+        <span>Add custom link</span>
+      </button>
+    </div>
+
+    <form id="sidebar-add-section-form" class="sidebar-add-link-form" data-sidebar-add-section-form hidden novalidate>
+      <input
+        type="text"
+        name="sectionLabel"
+        class="form-input"
+        placeholder="Section name (e.g. Smart Home)"
+        maxlength="64"
+        required
+        aria-label="New section name"
+      />
+      <p class="sidebar-add-link-error" data-sidebar-add-section-error role="alert" hidden></p>
+      <div class="sidebar-add-link-actions">
+        <button type="button" class="btn btn-ghost" data-sidebar-add-section-cancel>Cancel</button>
+        <button type="submit" class="btn btn-primary">Add section</button>
+      </div>
+    </form>
 
     <form id="sidebar-add-link-form" class="sidebar-add-link-form" data-sidebar-add-link-form hidden novalidate>
       <input
@@ -411,6 +461,24 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas")
           <option value={sec.id}>{sec.label}</option>
         ))}
       </select>
+      <div class="sidebar-icon-picker-wrap">
+        <span class="sidebar-icon-picker__label">Icon</span>
+        <input type="hidden" name="icon" value="link" />
+        <div class="sidebar-icon-picker" role="group" aria-label="Choose link icon" data-link-icon-picker>
+          {CUSTOM_LINK_ICONS.map(iconName => (
+            <button
+              type="button"
+              class={`sidebar-icon-choice${iconName === "link" ? " is-selected" : ""}`}
+              data-link-icon-choice={iconName}
+              aria-pressed={iconName === "link" ? "true" : "false"}
+              aria-label={`Icon: ${iconName.replace(/-/g, " ")}`}
+              title={iconName.replace(/-/g, " ")}
+            >
+              <Icon name={iconName} size={15} />
+            </button>
+          ))}
+        </div>
+      </div>
       <p class="sidebar-add-link-error" data-sidebar-add-link-error role="alert" hidden></p>
       <div class="sidebar-add-link-actions">
         <button type="button" class="btn btn-ghost" data-sidebar-add-link-cancel>Cancel</button>
@@ -431,7 +499,7 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas")
     </div>
   )}
 
-  <SidebarFooter locale={locale} profile={userProfile} />
+  <SidebarFooter locale={locale} profile={userProfile} settingsHref={settingsHref} />
 </nav>
 
 <script>
@@ -471,19 +539,6 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas")
 </script>
 
 <style>
-  .sidebar-board-children { list-style: none; margin: 0; padding-inline-start: 0.75rem; }
-  .sidebar-board-children[hidden] { display: none; }
-  .sidebar-household { margin-inline-start: 0; }
-  :global(:root[data-appearance-navigation="navbar"]) .sidebar-household { margin-inline-start: 0; }
-  :global(body.sidebar-collapsed) .sidebar-board-children { display: none; }
-  .sidebar-board-children :global([data-named-board-shortcut] a) { display: block; padding: 0.3rem 0.5rem; overflow-wrap: anywhere; }
-  .sidebar-board-children :global(.sidebar-board-row) { display: flex; align-items: center; gap: 2px; }
-  .sidebar-board-children :global(.sidebar-board-row .nav-link) { flex: 1; min-width: 0; }
-  .sidebar-board-children :global(.sidebar-board-toggle[aria-expanded="true"]) { transform: rotate(90deg); }
-  .sidebar-board-children :global([data-board-groups]), .sidebar-board-children :global([data-board-projects]) { list-style: none; padding-left: 1rem; }
-  .sidebar-board-children :global([data-board-group-notice]) { padding-inline-start: 1rem; margin: 0; }
-  .sidebar-household[hidden] { display: none; }
-
   .sidebar {
     display: flex;
     flex-direction: column;
@@ -501,69 +556,6 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas")
     overflow: visible;
   }
 
-  .sidebar-edge-toggle {
-    position: absolute;
-    top: 37px;
-    right: -16px;
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    z-index: 50;
-    color: var(--text-secondary);
-    transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
-  }
-
-  .sidebar-edge-toggle__circle {
-    width: 28px;
-    height: 28px;
-    border-radius: var(--sidebar-toggle-radius, var(--radius-md, 10px));
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    transition:
-      background-color 180ms cubic-bezier(0.23, 1, 0.32, 1),
-      border-color 180ms cubic-bezier(0.23, 1, 0.32, 1),
-      border-radius 180ms cubic-bezier(0.23, 1, 0.32, 1),
-      color 180ms cubic-bezier(0.23, 1, 0.32, 1),
-      transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
-  }
-
-  .sidebar-edge-toggle:hover .sidebar-edge-toggle__circle,
-  .sidebar-edge-toggle:focus-visible .sidebar-edge-toggle__circle {
-    background: var(--bg-hover);
-    border-color: var(--accent);
-    color: var(--text-primary);
-  }
-
-  .sidebar-edge-toggle:active .sidebar-edge-toggle__circle {
-    transform: scale(0.94);
-  }
-
-  .sidebar-edge-toggle__icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
-    transform: rotate(90deg);
-  }
-
-  :global(body.sidebar-collapsed) .sidebar-edge-toggle {
-    top: 22px;
-  }
-
-  :global(body.sidebar-collapsed) .sidebar-edge-toggle__icon {
-    transform: rotate(-90deg);
-  }
-
   @media (min-width: 769px) {
     .sidebar-toggle-top {
       display: none !important;
@@ -571,61 +563,6 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas")
   }
 
   .sidebar-main { display: contents; }
-
-  .sidebar-cta-wrap {
-    padding: 0 0 0.625rem;
-    flex-shrink: 0;
-  }
-
-  .sidebar-rail-cta {
-    width: 100%;
-    min-height: 38px;
-    padding: 0 0.75rem;
-    border-radius: 10px;
-    border: 1px solid rgb(var(--accent-rgb) / 0.38);
-    background: rgb(var(--accent-rgb) / 0.14);
-    color: var(--text-primary);
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 0.625rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition:
-      background-color 180ms cubic-bezier(0.23, 1, 0.32, 1),
-      border-color 180ms cubic-bezier(0.23, 1, 0.32, 1),
-      transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
-  }
-
-  .sidebar-rail-cta:hover,
-  .sidebar-rail-cta:focus-visible {
-    background: rgb(var(--accent-rgb) / 0.22);
-    border-color: var(--accent);
-  }
-
-  .sidebar-rail-cta:active {
-    transform: scale(0.97);
-  }
-
-  .sidebar-rail-cta__icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .sidebar-rail-cta__label {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  @media (max-width: 768px) {
-    .sidebar-edge-toggle {
-      display: none !important;
-    }
-  }
 
   .sidebar .sidebar-compact-areas {
     display: none;
@@ -785,6 +722,292 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas")
     :global(.sidebar .nav-link:active),
     :global(.sidebar .nav-link:hover) {
       transform: none;
+    }
+  }
+</style>
+
+<style is:inline set:html={sidebarReorderCss} />
+<style is:inline>
+  .sidebar-board-children { list-style: none; margin: 0; padding-inline-start: 0.75rem; }
+  .sidebar-board-children[hidden] { display: none !important; }
+  .sidebar-household { margin-inline-start: 0; }
+  body.sidebar-collapsed .sidebar-board-children { display: none; }
+  .sidebar-board-children [data-named-board-shortcut] a { display: block; padding: 0.3rem 0.5rem; overflow-wrap: anywhere; }
+  .sidebar-board-children .sidebar-board-row { display: flex; align-items: center; gap: 2px; }
+  .sidebar-board-children .sidebar-board-row .nav-link { flex: 1; min-width: 0; }
+  .sidebar-board-children .sidebar-board-toggle { min-inline-size: 26px; inline-size: 26px; block-size: 26px; padding: 0; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--text-secondary); }
+  .sidebar-board-children .sidebar-board-toggle:hover,
+  .sidebar-board-children .sidebar-board-toggle:focus-visible { background: var(--bg-hover); color: var(--text-primary); }
+  .sidebar-board-children .sidebar-board-toggle[aria-expanded="true"] { transform: rotate(90deg); }
+  .sidebar-board-children [data-board-groups], .sidebar-board-children [data-board-projects] { list-style: none; padding-left: 1rem; }
+  .sidebar-board-children [data-board-group-notice] { padding-inline-start: 1rem; margin: 0; }
+  .sidebar-household[hidden] { display: none; }
+
+  [data-appearance-nav-tone]:not([data-appearance-nav-tone="match"]) #sidebar .sidebar-board-children.stree {
+    background: rgba(15, 23, 42, 0.24);
+    border-color: var(--appearance-nav-border);
+    color: var(--appearance-nav-text);
+  }
+  [data-appearance-nav-tone]:not([data-appearance-nav-tone="match"]) #sidebar .sidebar-board-children :is(.nav-link, .sidebar-board-toggle, .sidebar-board-pin, .stree__toggle, .stree__area-link, .stree__project-link, .stree__new-area) {
+    color: var(--appearance-nav-text);
+  }
+  [data-appearance-nav-tone]:not([data-appearance-nav-tone="match"]) #sidebar .sidebar-board-children :is(.sidebar-board-toggle, .sidebar-board-pin, .stree__toggle):hover,
+  [data-appearance-nav-tone]:not([data-appearance-nav-tone="match"]) #sidebar .sidebar-board-children :is(.sidebar-board-toggle, .sidebar-board-pin, .stree__toggle):focus-visible {
+    background: var(--appearance-nav-hover);
+    border-color: var(--appearance-nav-border);
+  }
+
+  .sidebar-edge-toggle {
+    position: absolute; top: 37px; right: -16px; width: 32px; height: 32px; padding: 0; border: 0;
+    background: transparent; display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer; z-index: 50; color: var(--text-secondary);
+    transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .sidebar-edge-toggle__circle {
+    width: 28px; height: 28px; border-radius: var(--sidebar-toggle-radius, var(--radius-md, 10px));
+    background: var(--bg-card); border: 1px solid var(--border); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: background-color 180ms cubic-bezier(0.23, 1, 0.32, 1), border-color 180ms cubic-bezier(0.23, 1, 0.32, 1), border-radius 180ms cubic-bezier(0.23, 1, 0.32, 1), color 180ms cubic-bezier(0.23, 1, 0.32, 1), transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .sidebar-edge-toggle:hover .sidebar-edge-toggle__circle,
+  .sidebar-edge-toggle:focus-visible .sidebar-edge-toggle__circle { background: var(--bg-hover); border-color: var(--accent); color: var(--text-primary); }
+  .sidebar-edge-toggle:active .sidebar-edge-toggle__circle { transform: scale(0.94); }
+  .sidebar-edge-toggle__icon { display: inline-flex; align-items: center; justify-content: center; transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1); transform: rotate(90deg); }
+  body.sidebar-collapsed .sidebar-edge-toggle { top: 22px; }
+  body.sidebar-collapsed .sidebar-edge-toggle__icon { transform: rotate(-90deg); }
+  @media (max-width: 768px) { .sidebar-edge-toggle { display: none !important; } }
+
+  .sidebar-cta-wrap { padding: 0 0 0.625rem; flex-shrink: 0; }
+  .sidebar-rail-cta {
+    width: 100%; min-height: 38px; padding: 0 0.75rem; border-radius: 10px;
+    border: 1px solid rgb(var(--accent-rgb) / 0.38); background: rgb(var(--accent-rgb) / 0.14);
+    color: var(--text-primary); display: flex; align-items: center; justify-content: flex-start;
+    gap: 0.625rem; font-size: 0.875rem; font-weight: 600; cursor: pointer;
+    transition: background-color 180ms cubic-bezier(0.23, 1, 0.32, 1), border-color 180ms cubic-bezier(0.23, 1, 0.32, 1), transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .sidebar-rail-cta:hover, .sidebar-rail-cta:focus-visible { background: rgb(var(--accent-rgb) / 0.22); border-color: var(--accent); }
+  .sidebar-rail-cta:active { transform: scale(0.97); }
+  .sidebar-rail-cta__icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .sidebar-rail-cta__label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ── Top Navigation Docked Menu Editor Sheet ── */
+  @media (min-width: 769px) {
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing] .sidebar-scroll {
+      --nav-overflow-enabled: 0;
+      position: fixed;
+      inset-block-start: calc(var(--appearance-navbar-offset, 64px) + 10px);
+      inset-block-end: 120px;
+      inset-inline-end: 12px;
+      inline-size: min(360px, calc(100vw - 24px));
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 6px;
+      padding: 12px 12px 16px;
+      overflow-y: auto;
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md, 10px);
+      box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
+      z-index: 240;
+    }
+
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing]:has(#sidebar-add-section-form:not([hidden])) .sidebar-scroll {
+      inset-block-end: 236px;
+    }
+
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing]:has(#sidebar-add-link-form:not([hidden])) .sidebar-scroll {
+      inset-block-end: 374px;
+    }
+
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing] .sidebar-scroll .sidebar-cta-wrap {
+      display: none;
+    }
+
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing] .sidebar-scroll .sidebar-sections,
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing] .sidebar-scroll .sidebar-section {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      flex: none;
+      inline-size: 100%;
+    }
+
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing] .sidebar-scroll .sidebar-sections {
+      gap: 10px;
+    }
+
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing] .sidebar-scroll:not([data-nav-overflow-active]) .nav-list,
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing] .sidebar-scroll .nav-list {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      flex: none;
+      inline-size: 100%;
+      overflow: visible;
+      gap: 2px;
+    }
+
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing] .sidebar-scroll .sidebar-section__header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 4.75rem 4px 1.625rem;
+    }
+
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing] .sidebar-scroll .nav-link {
+      min-block-size: 36px;
+      padding: 6px 4.75rem 6px 8px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing] .sidebar-edit-footer {
+      position: fixed;
+      inset-block-end: 12px;
+      inset-inline-end: 12px;
+      inline-size: min(360px, calc(100vw - 24px));
+      max-block-size: calc(100dvh - 140px);
+      overflow-y: auto;
+      padding: 10px 12px 12px;
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md, 10px);
+      box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
+      z-index: 245;
+    }
+
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing] .nav-overflow__more {
+      display: none !important;
+    }
+  }
+
+  #sidebar[data-sidebar-editing] #sidebar-board-children {
+    display: none !important;
+  }
+
+  .sidebar-board-empty {
+    padding: 0.4rem 0.625rem;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+  }
+
+  /* ── Per-User Scope Row, Quick Actions & Visual Tabler Icon Picker ── */
+  #sidebar .sidebar-edit-scope {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 2px 2px 4px;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+  }
+
+  #sidebar .sidebar-edit-scope__badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 6px);
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  #sidebar .sidebar-edit-scope__reset {
+    padding: 2px 4px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  #sidebar .sidebar-edit-scope__reset:hover,
+  #sidebar .sidebar-edit-scope__reset:focus-visible {
+    color: var(--text-primary);
+  }
+
+  #sidebar .sidebar-edit-quick-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  #sidebar .sidebar-icon-picker-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  #sidebar .sidebar-icon-picker__label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  #sidebar .sidebar-icon-picker {
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  #sidebar .sidebar-icon-choice {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    block-size: 28px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-input, var(--bg-secondary));
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  }
+
+  #sidebar .sidebar-icon-choice:hover,
+  #sidebar .sidebar-icon-choice:focus-visible {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  #sidebar .sidebar-icon-choice.is-selected {
+    border-color: var(--accent);
+    background: rgb(var(--accent-rgb) / 0.22);
+    color: var(--text-primary);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+
+  #sidebar .sidebar-add-link-form .form-input,
+  #sidebar .sidebar-add-link-form .form-select {
+    background: var(--bg-input, var(--bg-secondary));
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+  }
+
+  #sidebar .sidebar-add-link-form .form-input::placeholder {
+    color: var(--text-muted);
+    opacity: 0.88;
+  }
+
+  #sidebar .sidebar-add-link-form .form-select option {
+    background: var(--bg-card);
+    color: var(--text-primary);
+  }
+
+  /* ── Mobile Touch-Friendly Edit Controls ── */
+  @media (max-width: 768px) {
+    #sidebar[data-sidebar-editing] .sidebar-edit-grip,
+    #sidebar[data-sidebar-editing] .sidebar-edit-actions {
+      opacity: 1 !important;
+      visibility: visible !important;
     }
   }
 </style>

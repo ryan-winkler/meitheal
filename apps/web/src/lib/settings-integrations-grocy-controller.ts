@@ -151,7 +151,9 @@ export function initGrocySettings(): void {
       if (resultEl) {
         resultEl.style.display = "block"
         resultEl.className = "integration-callout integration-callout--warning"
-        resultEl.innerHTML = "<strong>⚠ URL and API key required</strong>"
+        const strong = document.createElement("strong")
+        strong.textContent = "URL and API key required"
+        resultEl.replaceChildren(strong)
       }
       return
     }

@@ -307,7 +307,8 @@ export function initKanbanArea(
         const status = aiBtn.dataset.status ?? "pending"
         const priority = aiBtn.dataset.priority ?? "3"
         const prompt = `I have a task:\n\nTitle: ${title}\nStatus: ${status}\nPriority: ${priority}/5\n${desc ? `Description: ${desc}` : ""}\n\nCan you help me break this down, suggest next steps, estimate effort, or identify blockers?`
-        window.open(`https://chatgpt.com/?q=${encodeURIComponent(prompt)}`, "_blank")
+        const opened = window.open(`https://chatgpt.com/?q=${encodeURIComponent(prompt)}`, "_blank", "noopener,noreferrer")
+        if (opened) opened.opener = null
         return
       }
 

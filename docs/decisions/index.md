@@ -28,3 +28,4 @@
 - [Temporary build-only Picomatch audit exception](0023-temporary-build-only-picomatch-audit.md) - Bounds GHSA-fc5q-39xc-vjpf handling to verified build dependencies through November 23, 2026.
 
 - [Trusted Board continuity at startup and recovery](0026-board-continuity-enrollment.md) - First enrollment, current operator custody and fail-closed recovery.
+- [ADR 0028: Sandboxed Plugin Bounded Context and Extension Contract](0028-plugin-bounded-context-and-sandbox.md) - Defines the dedicated plugins bounded context, dual-layer browser sandbox, server HTTP gateway, and permission model.

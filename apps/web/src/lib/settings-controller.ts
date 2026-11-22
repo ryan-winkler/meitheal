@@ -33,6 +33,10 @@ import { initN8nSettings, restoreN8nSettings } from "@lib/settings-integrations-
 import { initGrocySettings } from "@lib/settings-integrations-grocy-controller"
 import { initCalendarTodoSettings, restoreCalendarTodoSettings } from "@lib/settings-integrations-sync-controller"
 import { initRulesSettings } from "@lib/settings-rules-controller"
+import { initWebserverSettings } from "@lib/settings-webserver-controller"
+import { initPluginsSettings } from "@lib/settings-plugins-controller"
+import { initSettingsHelp } from "@lib/settings-help-controller"
+import { initShortcutsSettings, restoreShortcutsSettings } from "@lib/settings-shortcuts-controller"
 
 const log = createClientLogger("settings")
 
@@ -70,6 +74,10 @@ export function initSettingsController(): void {
   initGrocySettings()
   initCalendarTodoSettings()
   initRulesSettings()
+  initWebserverSettings()
+  initPluginsSettings()
+  initSettingsHelp()
+  initShortcutsSettings()
 
   const status = document.getElementById("settings-load-status")
   const loading = document.getElementById("settings-loading")
@@ -111,4 +119,5 @@ async function loadSettings(): Promise<void> {
   try { restoreHASettings(settings) } catch (e) { log.error("HA restore error", e) }
   try { restoreN8nSettings(settings) } catch (e) { log.error("n8n restore error", e) }
   try { restoreCalendarTodoSettings(settings) } catch (e) { log.error("Calendar/Todo restore error", e) }
+  try { restoreShortcutsSettings(settings) } catch (e) { log.error("Shortcuts restore error", e) }
 }

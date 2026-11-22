@@ -9,6 +9,7 @@
  * @kcs Phase 29 T5 — crash protection
  */
 
+import { attemptStaleChunkReload, isStaleChunkError } from "@lib/chunk-recovery"
 import { createClientLogger } from "@lib/client-logger"
 import { showToast } from "@lib/toast"
 
@@ -23,6 +24,16 @@ export function initGlobalErrorHandler(): void {
   const w = window as any
   if (w[GUARD_KEY]) return
   w[GUARD_KEY] = true
+
+  const recoverStaleChunk = (): boolean =>
+    attemptStaleChunkReload(window.sessionStorage, Date.now(), () => window.location.reload())
+
+  window.addEventListener("vite:preloadError", (event) => {
+    event.preventDefault()
+    if (!recoverStaleChunk()) {
+      log.warn("Module preload failed after reload cooldown")
+    }
+  })
 
   window.addEventListener("error", (event) => {
     // Match the layout logger: the browser defers these resize notifications without an application failure.
@@ -42,6 +53,11 @@ export function initGlobalErrorHandler(): void {
 
   window.addEventListener("unhandledrejection", (event) => {
     const reason = event.reason
+
+    if (isStaleChunkError(reason)) {
+      event.preventDefault()
+      if (recoverStaleChunk()) return
+    }
 
     // Extract useful error info
     const message = reason instanceof Error

@@ -220,7 +220,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
             data-checking={t("task_modal.checking_save", locale)}
             data-confirmed={t("task_modal.toast_created", locale)}
             data-unconfirmed={t("task_modal.save_unconfirmed", locale)}>{t("task_modal.check_save", locale)}</button>
-          <a id="nt-check-tasks" class="btn btn-ghost" target="_blank" rel="noopener">{t("task_modal.check_tasks", locale)}</a>
+          <a id="nt-check-tasks" class="btn btn-ghost" target="_blank" rel="noopener noreferrer">{t("task_modal.check_tasks", locale)}</a>
         </div>
       </div>
     </form>
@@ -276,7 +276,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
   import { currentTaskApiContext, taskApiHeaders, type TaskApiContext } from "@lib/task-api"
   import { taskCapturePlacement } from "@lib/task-capture-placement"
   import { showTaskCreatedToast, showToast } from "@lib/toast"
-  import { renderSpriteIconSvg, type IconName } from "../../generated/icon-registry";
+  import { createSpriteIconElement, type IconName } from "../../generated/icon-registry"
   import { InlineDatePicker } from "../shared/InlineDatePicker"
   import { renderIconOrCustomEmoji, type TablerIconName } from "@lib/tabler-svg"
   import { checklistLines, createChecklistItem } from "@lib/checklist-items"
@@ -407,7 +407,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       const iconName: IconName = p <= 1 ? "flame" : p === 2 ? "arrow-up" : p >= 4 ? "arrow-down" : "arrows-left-right"
       const cls = p <= 1 ? "priority-critical" : p === 2 ? "priority-high" : p >= 4 ? "priority-low" : "priority-medium"
       priorityIconEl.className = `nt-priority-icon ${cls}`
-      priorityIconEl.innerHTML = renderSpriteIconSvg(iconName, { size: 15 })
+      priorityIconEl.replaceChildren(createSpriteIconElement(iconName, { size: 15 }))
     }
     prioritySelect?.addEventListener("change", syncPriorityIcon, { signal })
     syncPriorityIcon()
@@ -477,7 +477,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       const remove = document.createElement("button")
       remove.type = "button"
       remove.className = "btn btn-ghost inline-flex items-center justify-center"
-      remove.innerHTML = renderSpriteIconSvg("x", { size: 14 })
+      remove.replaceChildren(createSpriteIconElement("x", { size: 14 }))
       remove.setAttribute("aria-label", `Remove ${item.text}`)
       remove.addEventListener("click", () => {
         checklistItems.delete(row)
@@ -538,7 +538,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       const remove = document.createElement("button")
       remove.type = "button"
       remove.className = "btn btn-ghost text-text-muted inline-flex items-center justify-center"
-      remove.innerHTML = renderSpriteIconSvg("x", { size: 14 })
+      remove.replaceChildren(createSpriteIconElement("x", { size: 14 }))
       remove.setAttribute("aria-label", `Remove ${name}${suffix}`)
       remove.addEventListener("click", () => {
         shoppingListItems.splice(shoppingListItems.indexOf(item), 1)
@@ -608,7 +608,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       } else {
         const icon = document.createElement("span")
         icon.className = "text-xs text-text-muted inline-flex items-center"
-        icon.innerHTML = renderSpriteIconSvg(iconMap[type] ?? "file-text", { size: 14 })
+        icon.replaceChildren(createSpriteIconElement(iconMap[type] ?? "file-text", { size: 14 }))
         entry.appendChild(icon)
       }
 
@@ -624,7 +624,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       const removeBtn = document.createElement("button")
       removeBtn.type = "button"
       removeBtn.className = "text-text-muted hover:text-red-400 text-xs inline-flex items-center justify-center"
-      removeBtn.innerHTML = renderSpriteIconSvg("x", { size: 14 })
+      removeBtn.replaceChildren(createSpriteIconElement("x", { size: 14 }))
       removeBtn.addEventListener("click", () => { entry.remove(); markEdited() }, { signal })
       removeBtn.setAttribute("aria-label", `Remove ${type} field`)
       entry.appendChild(removeBtn)
@@ -1484,28 +1484,19 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
             })
             .trim();
 
-          // Extract date semantics
-          const dateKeywords: Record<string, () => Date> = {
-            today: () => new Date(),
-            tomorrow: () => {
-              const d = new Date();
-              d.setDate(d.getDate() + 1);
-              return d;
-            },
-            "next week": () => {
-              const d = new Date();
-              d.setDate(d.getDate() + 7);
-              return d;
-            },
-            monday: () => nextWeekday(1),
-            tuesday: () => nextWeekday(2),
-            wednesday: () => nextWeekday(3),
-            thursday: () => nextWeekday(4),
-            friday: () => nextWeekday(5),
-          };
+          // Extract date semantics with static literal patterns
+          const dateKeywords: Array<[RegExp, () => Date]> = [
+            [/\btoday\b/i, () => new Date()],
+            [/\btomorrow\b/i, () => { const d = new Date(); d.setDate(d.getDate() + 1); return d }],
+            [/\bnext week\b/i, () => { const d = new Date(); d.setDate(d.getDate() + 7); return d }],
+            [/\bmonday\b/i, () => nextWeekday(1)],
+            [/\btuesday\b/i, () => nextWeekday(2)],
+            [/\bwednesday\b/i, () => nextWeekday(3)],
+            [/\bthursday\b/i, () => nextWeekday(4)],
+            [/\bfriday\b/i, () => nextWeekday(5)],
+          ];
 
-          for (const [kw, getDate] of Object.entries(dateKeywords)) {
-            const regex = new RegExp(`\\b${kw}\\b`, "i");
+          for (const [regex, getDate] of dateKeywords) {
             if (regex.test(title)) {
               extractedDue = getDate().toISOString().slice(0, 16);
               title = title.replace(regex, "").trim();

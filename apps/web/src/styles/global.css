@@ -7,8 +7,11 @@
  * Design tokens defined via @theme in _tokens.css.
  * ============================================= */
 
-/* Generate utilities from the application source directory. */
+/* Generate utilities from UI source directories only (skip server-only domains, API routes, and generated JSON). */
 @import "tailwindcss" source("../");
+@source not "../generated";
+@source not "../pages/api";
+@source not "../domains";
 
 /* 1. Design tokens: fonts, CSS vars, themes, @theme overrides */
 @import './_tokens.css';

@@ -133,7 +133,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   import { createClientLogger } from "@lib/client-logger";
   import { pageLifecycle } from "@lib/page-lifecycle"
   import { fetchHaAgents, renderHaAgentOptions } from "@lib/ha-agent-picker"
-  import { renderSpriteIconSvg, type IconName } from "../../generated/icon-registry"
+  import { createSpriteIconElement, type IconName } from "../../generated/icon-registry"
 
   pageLifecycle.onPageLoad((pageSignal) => {
   const overlay = document.getElementById("ask-ha-overlay");
@@ -304,7 +304,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     if (!isUser && responseType) {
       const icon = document.createElement("span");
       icon.className = "ask-bubble__icon inline-flex items-center";
-      icon.innerHTML = renderSpriteIconSvg(getResponseIcon(responseType), { size: 15 });
+      icon.replaceChildren(createSpriteIconElement(getResponseIcon(responseType), { size: 15 }))
       icon.setAttribute("aria-hidden", "true");
       bubble.appendChild(icon);
     }
@@ -324,11 +324,11 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     typing.className = "ask-typing";
     typing.id = "ask-typing-indicator";
     typing.setAttribute("aria-label", "Assistant is thinking");
-    typing.innerHTML = `
-      <span class="ask-typing__dot"></span>
-      <span class="ask-typing__dot"></span>
-      <span class="ask-typing__dot"></span>
-    `;
+    for (let i = 0; i < 3; i += 1) {
+      const dot = document.createElement("span")
+      dot.className = "ask-typing__dot"
+      typing.appendChild(dot)
+    }
     chatContainer.appendChild(typing);
     chatContainer.scrollTop = chatContainer.scrollHeight;
     return typing;

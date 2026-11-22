@@ -20,6 +20,7 @@ import {
   IdentityRepository,
   TaskRepository,
 } from "@domains/tasks"
+import { getUnifiedAllowedMcpOrigins } from "@domains/webserver"
 import { apiJson, apiError, apiProblem } from "@lib/api-response"
 import { resolveBoardRequestScope } from "@lib/board-request-context"
 import { readWithinLimit } from "@lib/bounded-body"
@@ -627,7 +628,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
 }
 
-function matchesOrigin(request: Request, behindIngress: boolean): boolean {
+async function matchesOrigin(request: Request, behindIngress: boolean): Promise<boolean> {
   const header = request.headers.get("origin")
   if (header === null) return true
   const origin = URL.parse(header)
@@ -640,8 +641,9 @@ function matchesOrigin(request: Request, behindIngress: boolean): boolean {
     return origin.protocol === protocol && origin.host === request.headers.get("host")?.toLowerCase()
   }
   // Do not trust arbitrary Host values for direct traffic. Native clients omit Origin.
-  const configured = URL.parse(process.env.SITE_URL ?? "")?.origin
-  if (header === configured) return true
+  // Unify allowed origins across saved DB webserver settings, process.env, and .env.
+  const configuredOrigins = await getUnifiedAllowedMcpOrigins()
+  if (configuredOrigins.includes(header)) return true
   return ["127.0.0.1", "localhost", "[::1]"].includes(origin.hostname) &&
     origin.protocol === requestUrl.protocol && origin.host === request.headers.get("host")?.toLowerCase()
 }
@@ -672,7 +674,7 @@ async function checkMcpTransport(request: Request, locals: App.Locals) {
     })
   }
   if (!hasScope(agent.scopes, "mcp:execute")) return apiError("MCP requires the mcp:execute scope.", 403)
-  if (!matchesOrigin(request, locals.behindIngress)) return apiError("MCP Origin is not allowed.", 403)
+  if (!(await matchesOrigin(request, locals.behindIngress))) return apiError("MCP Origin is not allowed.", 403)
   const unavailable = await checkMcpAvailability()
   if (unavailable) return unavailable
   return { agent, authorization }

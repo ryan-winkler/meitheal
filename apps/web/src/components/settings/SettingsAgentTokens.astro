@@ -1,13 +1,14 @@
 ---
 import { AVAILABLE_SCOPES } from "@meitheal/domain-auth"
+import { canManageSystemSettings } from "@lib/settings-security"
 import SettingsPanelCard from "./SettingsPanelCard.astro"
 import Icon from "../ui/Icon.astro"
 
 /**
- * SettingsAgentTokens — Manage scoped agent API tokens.
+ * SettingsAgentTokens — Manage scoped agent API tokens and their Board access.
  *
- * Shows existing tokens with scope badges, lets admins create
- * new tokens (show-once plaintext), revoke, and delete.
+ * Shows existing tokens with scope badges and granted Boards, lets admins
+ * create new tokens (show-once plaintext), grant/revoke Boards, revoke, and delete.
  * Client interactivity is wired via settings-agent-tokens-controller.ts.
  *
  * @domain settings
@@ -15,7 +16,7 @@ import Icon from "../ui/Icon.astro"
  * @kcs Agent tokens enable zero-trust API access for n8n, Node-RED, and LLM agents.
  */
 
-const canManageTokens = Astro.locals.hassIsAdmin === true && !Astro.locals.agentToken
+const canManageTokens = canManageSystemSettings(Astro.request, Astro.locals) && !Astro.locals.agentToken
 
 const scopeGroups = [
   { label: "Tasks", category: "tasks" },
@@ -44,7 +45,7 @@ const scopeGroups = [
     <!-- Token List -->
     <div id="agent-tokens-list" class="agent-tokens__list">
       <div class="agent-tokens__status" id="agent-tokens-status" role="status" aria-live="polite" hidden={canManageTokens}>
-        {!canManageTokens && "Home Assistant administrator access is required to view or issue agent tokens."}
+        {!canManageTokens && "Administrator access is required to view or issue agent tokens."}
       </div>
       <div class="agent-tokens__empty" id="agent-tokens-empty" hidden>
         <span class="inline-flex items-center justify-center text-text-muted" aria-hidden="true"><Icon name="settings" size={24} /></span>
@@ -71,6 +72,16 @@ const scopeGroups = [
           autocomplete="off"
           data-lpignore="true"
         />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="agent-token-board">Board access</label>
+        <select class="form-select" id="agent-token-board" aria-describedby="agent-token-board-hint">
+          <option value="">Default Board</option>
+        </select>
+        <p class="agent-tokens__hint" id="agent-token-board-hint">
+          Grants initial access to this Board. You can add or remove Boards per token below or in Board Settings.
+        </p>
       </div>
 
       <div class="form-group">
@@ -150,176 +161,43 @@ const scopeGroups = [
 </div>
 
 <style is:inline>
-  #agent-tokens-card [hidden] {
-    display: none;
-  }
-  .agent-tokens__list {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    background: var(--border);
-    border-top: 1px solid var(--border);
-  }
-  .agent-tokens__list:not(:has(> .agent-tokens__row, > #agent-tokens-status:not([hidden]))) {
-    background: transparent;
-    border-top: none;
-  }
-  .agent-tokens__empty:not([hidden]) {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    padding: 32px 16px;
-    color: var(--text-muted);
-    font-size: 13px;
-    text-align: center;
-    background: var(--bg-card);
-  }
-  .agent-tokens__empty-hint {
-    font-size: 12px;
-    color: var(--text-secondary);
-  }
-  .agent-tokens__status {
-    padding: 16px;
-    text-align: center;
-    color: var(--text-muted);
-    font-size: 13px;
-    background: var(--bg-card);
-  }
-  .agent-tokens__row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    background: var(--bg-card);
-    font-size: 13px;
-  }
-  .agent-tokens__row-info {
-    flex: 1;
-    min-width: 0;
-  }
-  .agent-tokens__row-name {
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-  .agent-tokens__row-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    margin-top: 4px;
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-  .agent-tokens__scope-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 1px 6px;
-    border-radius: 4px;
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
-    color: var(--accent-text);
-    font-size: 10px;
-    font-family: "JetBrains Mono", monospace;
-  }
-  .agent-tokens__row-prefix,
-  .agent-tokens__row-id {
-    font-family: "JetBrains Mono", monospace;
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-  .agent-tokens__row-actions {
-    display: flex;
-    gap: 4px;
-    flex-shrink: 0;
-  }
-  .agent-tokens__form:not([hidden]) {
-    padding: 16px;
-    border-top: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-  .agent-tokens__form-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .agent-tokens__scope-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 8px;
-  }
-  .agent-tokens__scope-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .agent-tokens__scope-group-label {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  .agent-tokens__scope-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    cursor: pointer;
-  }
-  .agent-tokens__scope-item code {
-    font-size: 11px;
-    font-family: "JetBrains Mono", monospace;
-  }
-  .agent-tokens__reveal:not([hidden]) {
-    padding: 16px;
-    border-top: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-  .agent-tokens__reveal-warning {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--warning-text, var(--warning, #f59e0b));
-    padding: 8px 12px;
-    border-radius: 8px;
-    background: color-mix(in srgb, var(--warning, #f59e0b) 10%, var(--bg-card));
-    border: 1px solid color-mix(in srgb, var(--warning, #f59e0b) 30%, transparent);
-  }
-  .agent-tokens__reveal-token {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 12px;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    font-family: "JetBrains Mono", monospace;
-    font-size: 12px;
-    word-break: break-all;
-  }
-  .agent-tokens__reveal-token code {
-    flex: 1;
-    min-width: 0;
-    color: var(--text-primary);
-  }
-  .agent-tokens__hint {
-    margin: 4px 0 0;
-    font-size: 12px;
-    color: var(--text-secondary);
-  }
-  .agent-tokens__assignee-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 1px 6px;
-    border-radius: 4px;
-    border: 1px solid var(--border);
-    color: var(--text-primary);
-    font-size: 11px;
-  }
-  .agent-tokens__revoked .agent-tokens__row-name {
-    text-decoration: line-through;
-    color: var(--text-muted);
-  }
+  #agent-tokens-card [hidden] { display: none; }
+  .agent-tokens__list { display: flex; flex-direction: column; gap: 1px; background: var(--border); border-top: 1px solid var(--border); }
+  .agent-tokens__list:not(:has(> .agent-tokens__row, > #agent-tokens-status:not([hidden]))) { background: transparent; border-top: none; }
+  .agent-tokens__empty:not([hidden]) { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 32px 16px; color: var(--text-muted); font-size: 13px; text-align: center; background: var(--bg-card); }
+  .agent-tokens__empty-hint { font-size: 12px; color: var(--text-secondary); }
+  .agent-tokens__status { padding: 16px; text-align: center; color: var(--text-muted); font-size: 13px; background: var(--bg-card); }
+  .agent-tokens__row { display: flex; align-items: flex-start; gap: 12px; padding: 12px 16px; background: var(--bg-card); font-size: 13px; }
+  .agent-tokens__row-info { flex: 1; min-width: 0; }
+  .agent-tokens__row-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .agent-tokens__row-name { font-weight: 600; color: var(--text-primary); }
+  .agent-tokens__row-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 5px; font-size: 11px; color: var(--text-muted); }
+  .agent-tokens__scope-badge { display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent-text); font-size: 10px; font-family: "JetBrains Mono", monospace; }
+  .agent-tokens__row-prefix { font-family: "JetBrains Mono", monospace; font-size: 11px; color: var(--text-muted); }
+  .agent-tokens__copy-id { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-secondary); color: var(--text-secondary); font-size: 10px; cursor: pointer; }
+  .agent-tokens__copy-id:hover { border-color: var(--accent); color: var(--text-primary); }
+  .agent-tokens__boards { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; padding-top: 7px; border-top: 1px dashed var(--border); font-size: 11px; }
+  .agent-tokens__boards-label { color: var(--text-muted); font-weight: 600; }
+  .agent-tokens__board-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-secondary); color: var(--text-primary); }
+  .agent-tokens__board-link { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+  .agent-tokens__board-link:hover { color: var(--accent); text-decoration: underline; }
+  .agent-tokens__board-remove { display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; color: var(--text-muted); cursor: pointer; padding: 1px; border-radius: 3px; }
+  .agent-tokens__board-remove:hover { color: var(--danger, #ef4444); background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent); }
+  .agent-tokens__board-add { font-size: 11px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-input, var(--bg-secondary)); color: var(--text-primary); max-width: 180px; }
+  .agent-tokens__row-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+  .agent-tokens__form:not([hidden]) { padding: 16px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px; }
+  .agent-tokens__form-header { display: flex; justify-content: space-between; align-items: center; }
+  .agent-tokens__scope-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px; }
+  .agent-tokens__scope-group { display: flex; flex-direction: column; gap: 4px; }
+  .agent-tokens__scope-group-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .agent-tokens__scope-item { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
+  .agent-tokens__scope-item code { font-size: 11px; font-family: "JetBrains Mono", monospace; }
+  .agent-tokens__reveal:not([hidden]) { padding: 16px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px; }
+  .agent-tokens__reveal-warning { font-size: 13px; font-weight: 600; color: var(--warning-text, var(--warning, #f59e0b)); padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, var(--warning, #f59e0b) 10%, var(--bg-card)); border: 1px solid color-mix(in srgb, var(--warning, #f59e0b) 30%, transparent); }
+  .agent-tokens__reveal-token { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; font-family: "JetBrains Mono", monospace; font-size: 12px; word-break: break-all; }
+  .agent-tokens__reveal-token code { flex: 1; min-width: 0; color: var(--text-primary); }
+  .agent-tokens__hint { margin: 4px 0 0; font-size: 12px; color: var(--text-secondary); }
+  .agent-tokens__assignee-badge { display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); color: var(--text-primary); font-size: 11px; }
+  .agent-tokens__revoked .agent-tokens__row-name { text-decoration: line-through; color: var(--text-muted); }
+  @media (max-width: 640px) { .agent-tokens__row { flex-direction: column; } .agent-tokens__row-actions { align-self: flex-end; } }
 </style>

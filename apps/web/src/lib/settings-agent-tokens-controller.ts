@@ -1,14 +1,20 @@
 /**
- * Agent Tokens settings panel controller.
+ * Agent Tokens settings panel controller — unified token + Board access management.
  *
- * Bootstrapped from settings-page.ts via initAISettings() so Astro ClientRouter
- * navigations and section switches bind cleanly without component-owned scripts.
+ * Bootstrapped from settings-page.ts via initAISettings().
  */
 import { withAsyncButton } from "@lib/async-button"
 import { confirmDialog } from "@lib/confirm-dialog"
+import { safeIngressHref } from "@lib/ingress-navigation"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { showToast } from "@lib/toast"
 import { createTablerSvgElement } from "@lib/tabler-svg"
+import { showToast } from "@lib/toast"
+
+interface BoardGrant {
+  id: string
+  name: string
+  ticketPrefix: string
+}
 
 interface TokenInfo {
   id: string
@@ -18,8 +24,8 @@ interface TokenInfo {
   assigneeId?: string | null
   createdAt: string
   expiresAt: string | null
-  lastUsedAt?: string | null
   revoked?: boolean
+  boards?: BoardGrant[]
 }
 
 interface DirectoryUser {
@@ -28,23 +34,41 @@ interface DirectoryUser {
   kind?: string
 }
 
+interface BoardEntry extends BoardGrant {
+  role?: string
+  state?: string
+}
+
+const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T | null
+const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string) => {
+  const node = document.createElement(tag)
+  if (className) node.className = className
+  if (text !== undefined) node.textContent = text
+  return node
+}
+const isExpired = (iso: string | null) =>
+  iso !== null && (!Number.isFinite(Date.parse(iso)) || Date.parse(iso) <= Date.now())
+const metaContent = (name: string) =>
+  document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`)?.content.trim() || ""
+
 export function initAgentTokensSettings(): void {
-  const listEl = document.getElementById("agent-tokens-list")
-  const statusEl = document.getElementById("agent-tokens-status")
-  const emptyEl = document.getElementById("agent-tokens-empty")
-  const createBtn = document.getElementById("agent-token-create-btn")
-  const formEl = document.getElementById("agent-token-form")
-  const cancelBtn = document.getElementById("agent-token-form-cancel")
-  const saveBtn = document.getElementById("agent-token-save") as HTMLButtonElement | null
-  const revealEl = document.getElementById("agent-token-reveal")
-  const plaintextEl = document.getElementById("agent-token-plaintext")
-  const copyBtn = document.getElementById("agent-token-copy")
-  const doneBtn = document.getElementById("agent-token-reveal-done")
-  const nameInput = document.getElementById("agent-token-name") as HTMLInputElement | null
-  const assigneeSelect = document.getElementById("agent-token-assignee") as HTMLSelectElement | null
-  const newAssigneeGroup = document.getElementById("agent-token-new-assignee")
-  const newAssigneeName = document.getElementById("agent-token-new-assignee-name") as HTMLInputElement | null
-  const expiresSelect = document.getElementById("agent-token-expires") as HTMLSelectElement | null
+  const listEl = byId("agent-tokens-list")
+  const statusEl = byId("agent-tokens-status")
+  const emptyEl = byId("agent-tokens-empty")
+  const createBtn = byId<HTMLButtonElement>("agent-token-create-btn")
+  const formEl = byId("agent-token-form")
+  const cancelBtn = byId("agent-token-form-cancel")
+  const saveBtn = byId<HTMLButtonElement>("agent-token-save")
+  const revealEl = byId("agent-token-reveal")
+  const plaintextEl = byId("agent-token-plaintext")
+  const copyBtn = byId("agent-token-copy")
+  const doneBtn = byId("agent-token-reveal-done")
+  const nameInput = byId<HTMLInputElement>("agent-token-name")
+  const boardSelect = byId<HTMLSelectElement>("agent-token-board")
+  const assigneeSelect = byId<HTMLSelectElement>("agent-token-assignee")
+  const newAssigneeGroup = byId("agent-token-new-assignee")
+  const newAssigneeName = byId<HTMLInputElement>("agent-token-new-assignee-name")
+  const expiresSelect = byId<HTMLSelectElement>("agent-token-expires")
 
   if (
     !listEl || !statusEl || !emptyEl || !createBtn || !formEl || !cancelBtn ||
@@ -54,36 +78,47 @@ export function initAgentTokensSettings(): void {
 
   const signal = pageLifecycle.signal
   const agentNames = new Map<string, string>()
+  let manageableBoards: BoardGrant[] = []
+  let boardSession = metaContent("meitheal-work-session")
   let copyTimer: ReturnType<typeof setTimeout> | undefined
   let loadSeq = 0
-  let activeLoadController: AbortController | null = null
+  let formGen = 0
+  let loadCtrl: AbortController | null = null
+  let createCtrl: AbortController | null = null
 
-  function toggleNewAssignee() {
-    if (!newAssigneeGroup || !assigneeSelect) return
+  const boardHeaders = (boardId?: string): Record<string, string> => ({
+    "Content-Type": "application/json",
+    ...(boardId ? { "X-Meitheal-Board-Id": boardId } : {}),
+    ...(boardSession ? { "X-Meitheal-Board-Session": boardSession } : {}),
+  })
+
+  const toggleNewAssignee = () => {
+    if (!newAssigneeGroup) return
     const creating = assigneeSelect.value === "__new__"
     newAssigneeGroup.hidden = !creating
     if (!creating && newAssigneeName) newAssigneeName.value = ""
   }
 
-  function setCopyButtonState(copied: boolean) {
-    copyBtn!.replaceChildren(
+  const setCopyState = (copied: boolean) => {
+    copyBtn.replaceChildren(
       createTablerSvgElement(copied ? "check" : "clipboard-list", 14),
       document.createTextNode(copied ? " Copied" : " Copy"),
     )
   }
 
-  function clearReveal() {
+  const clearReveal = () => {
     if (copyTimer) {
       clearTimeout(copyTimer)
       copyTimer = undefined
     }
-    setCopyButtonState(false)
-    plaintextEl!.textContent = ""
-    revealEl!.hidden = true
+    setCopyState(false)
+    plaintextEl.textContent = ""
+    revealEl.hidden = true
   }
 
   signal.addEventListener("abort", () => {
-    activeLoadController?.abort()
+    loadCtrl?.abort()
+    createCtrl?.abort()
     clearReveal()
   }, { once: true })
   window.addEventListener("pagehide", clearReveal, { signal })
@@ -101,64 +136,77 @@ export function initAgentTokensSettings(): void {
       const data = await res.json() as { users?: DirectoryUser[] }
       if (signal.aborted) return
       const current = assigneeSelect!.value
-      const createOption = assigneeSelect!.querySelector<HTMLOptionElement>('option[value="__new__"]')
-      assigneeSelect!.querySelectorAll("option[data-agent-option]").forEach(opt => opt.remove())
+      const createOpt = assigneeSelect!.querySelector<HTMLOptionElement>('option[value="__new__"]')
+      assigneeSelect!.querySelectorAll("option[data-agent-option]").forEach(o => o.remove())
       agentNames.clear()
-      for (const user of data.users ?? []) {
-        if (user?.kind !== "agent" || typeof user.id !== "string" || !user.id || typeof user.name !== "string") continue
-        agentNames.set(user.id, user.name)
-        const opt = new Option(user.name, user.id)
+      for (const u of data.users ?? []) {
+        if (u?.kind !== "agent" || !u.id || !u.name) continue
+        agentNames.set(u.id, u.name)
+        const opt = new Option(u.name, u.id)
         opt.dataset.agentOption = "1"
-        assigneeSelect!.insertBefore(opt, createOption ?? null)
+        assigneeSelect!.insertBefore(opt, createOpt ?? null)
       }
-      if (current && (current === "__new__" || agentNames.has(current))) {
-        assigneeSelect!.value = current
-      } else {
-        assigneeSelect!.value = ""
-      }
+      assigneeSelect!.value = current === "__new__" || agentNames.has(current) ? current : ""
       toggleNewAssignee()
-    } catch {
-      /* Optional directory enrichment; manual token creation remains available. */
-    }
+    } catch { /* Optional enrichment */ }
   }
 
-  function clearTokenStatus() {
-    statusEl!.hidden = true
-    statusEl!.replaceChildren()
+  async function loadManageableBoards() {
+    try {
+      const res = await fetch("/api/boards", { cache: "no-store", signal })
+      if (!res.ok || signal.aborted) return
+      const refreshed = res.headers.get("x-meitheal-board-session")
+      if (refreshed) boardSession = refreshed
+      const data = await res.json() as { boards?: BoardEntry[] }
+      if (signal.aborted) return
+      manageableBoards = (data.boards ?? [])
+        .filter(b => b.state === "active" && b.role === "owner" && b.id)
+        .map(b => ({ id: b.id, name: b.name, ticketPrefix: b.ticketPrefix || "" }))
+      if (boardSelect) {
+        const selected = boardSelect.value || metaContent("meitheal-work-board")
+        boardSelect.replaceChildren()
+        if (manageableBoards.length === 0) {
+          boardSelect.add(new Option("Default Board", ""))
+        } else {
+          for (const b of manageableBoards) {
+            const label = b.ticketPrefix ? `${b.ticketPrefix} · ${b.name}` : b.name
+            boardSelect.add(new Option(label, b.id, false, b.id === selected))
+          }
+        }
+      }
+    } catch { /* Non-fatal: default board fallback remains active */ }
   }
 
-  function showTokenStatus(...nodes: Array<Node | string>) {
-    listEl!.querySelectorAll(".agent-tokens__row").forEach(el => el.remove())
-    emptyEl!.hidden = true
-    statusEl!.hidden = false
-    statusEl!.replaceChildren(...nodes)
+  const showStatus = (...nodes: Array<Node | string>) => {
+    listEl.querySelectorAll(".agent-tokens__row").forEach(n => n.remove())
+    emptyEl.hidden = true
+    statusEl.hidden = false
+    statusEl.replaceChildren(...nodes)
   }
 
-  function showTokenAdminNotice() {
+  const showAdminNotice = () => {
     clearReveal()
-    formEl!.hidden = true
-    if (createBtn instanceof HTMLButtonElement) createBtn.disabled = true
-    showTokenStatus("Home Assistant administrator access is required to view or issue agent tokens.")
+    formEl.hidden = true
+    createBtn.disabled = true
+    showStatus("Administrator access is required to view or issue agent tokens.")
   }
 
-  function showTokenError(focusRetry = false) {
-    const retryBtn = document.createElement("button")
+  const showError = (focusRetry = false) => {
+    const retryBtn = el("button", "btn btn-ghost btn-sm", "Retry")
     retryBtn.type = "button"
-    retryBtn.className = "btn btn-ghost btn-sm"
     retryBtn.id = "tokens-retry"
     retryBtn.style.marginLeft = "8px"
-    retryBtn.textContent = "Retry"
-    showTokenStatus("Failed to load tokens.\n", retryBtn)
-    if (focusRetry) {
-      retryBtn.focus()
-    }
+    showStatus("Failed to load tokens.\n", retryBtn)
+    if (focusRetry) retryBtn.focus()
   }
 
-  async function revokeToken(id: string) {
+  async function mutateToken(id: string, hard: boolean) {
     const confirmed = await confirmDialog({
-      message: "Revoke this token? It will immediately stop working.",
-      variant: "warning",
-      confirmText: "Revoke",
+      message: hard
+        ? "Permanently delete this token? This cannot be undone."
+        : "Revoke this token? It will immediately stop working.",
+      variant: hard ? "danger" : "warning",
+      confirmText: hard ? "Delete" : "Revoke",
       signal,
     })
     if (!confirmed || signal.aborted) return
@@ -166,188 +214,188 @@ export function initAgentTokensSettings(): void {
       const res = await fetch("/api/agent-tokens", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
+        body: JSON.stringify(hard ? { id, hard: true } : { id }),
         signal,
       })
       if (signal.aborted) return
-      if (res.ok) {
-        showToast("Token revoked", "success")
-        await loadTokens()
-        const deleteBtn = listEl!.querySelector<HTMLButtonElement>(`[data-delete="${CSS.escape(id)}"]`)
-        ;(deleteBtn ?? createBtn)?.focus()
-      } else {
-        showToast("Failed to revoke token", "error")
+      if (!res.ok) {
+        showToast(hard ? "Failed to delete token" : "Failed to revoke token", "error")
+        return
       }
+      showToast(hard ? "Token deleted" : "Token revoked", "success")
+      await loadTokens()
+      const next = hard ? createBtn : listEl!.querySelector<HTMLButtonElement>(`[data-delete="${CSS.escape(id)}"]`)
+      ;(next ?? createBtn).focus()
     } catch {
-      if (!signal.aborted) showToast("Failed to revoke token", "error")
+      if (!signal.aborted) showToast(hard ? "Failed to delete token" : "Failed to revoke token", "error")
     }
   }
 
-  async function deleteToken(id: string) {
-    const deleteConfirmed = await confirmDialog({
-      message: "Permanently delete this token? This cannot be undone.",
-      variant: "danger",
-      confirmText: "Delete",
-      signal,
-    })
-    if (!deleteConfirmed || signal.aborted) return
+  async function updateBoardAccess(boardId: string, tokenId: string, enabled: boolean) {
     try {
-      const res = await fetch("/api/agent-tokens", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, hard: true }),
+      const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}`, {
+        method: "PATCH",
+        headers: boardHeaders(boardId),
+        body: JSON.stringify({ action: "agent", tokenId, enabled }),
         signal,
       })
       if (signal.aborted) return
-      if (res.ok) {
-        showToast("Token deleted", "success")
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string; detail?: string }
+        showToast(err.error || err.detail || "Could not update Board access", "error")
         await loadTokens()
-        createBtn?.focus()
-      } else {
-        showToast("Failed to delete token", "error")
+        return
       }
+      showToast(enabled ? "Board access granted" : "Board access removed", "success")
+      await loadTokens()
     } catch {
-      if (!signal.aborted) showToast("Failed to delete token", "error")
+      if (!signal.aborted) showToast("Could not update Board access", "error")
     }
   }
 
   function renderTokens(tokens: TokenInfo[], focusCreate = false) {
-    clearTokenStatus()
-    listEl!.querySelectorAll(".agent-tokens__row").forEach(el => el.remove())
-    if (createBtn instanceof HTMLButtonElement) createBtn.disabled = false
+    statusEl!.hidden = true
+    statusEl!.replaceChildren()
+    listEl!.querySelectorAll(".agent-tokens__row").forEach(n => n.remove())
+    createBtn!.disabled = false
 
     if (tokens.length === 0) {
       emptyEl!.hidden = false
       if (focusCreate) createBtn!.focus()
       return
     }
-
     emptyEl!.hidden = true
 
     for (const token of tokens) {
-      const row = document.createElement("div")
-      row.className = `agent-tokens__row${token.revoked ? " agent-tokens__revoked" : ""}`
+      const expired = isExpired(token.expiresAt)
+      const inactive = Boolean(token.revoked || expired)
+      const row = el("div", `agent-tokens__row${inactive ? " agent-tokens__revoked" : ""}`)
       row.dataset.tokenId = token.id
 
-      const info = document.createElement("div")
-      info.className = "agent-tokens__row-info"
+      const info = el("div", "agent-tokens__row-info")
+      const head = el("div", "agent-tokens__row-head")
+      head.append(el("span", "agent-tokens__row-name", token.name))
+      if (token.revoked) head.append(el("span", "badge badge-pending", "Revoked"))
+      else if (expired) head.append(el("span", "badge badge-pending", "Expired"))
 
-      const nameEl = document.createElement("div")
-      nameEl.className = "agent-tokens__row-name"
-      nameEl.textContent = token.name
+      const meta = el("div", "agent-tokens__row-meta")
+      meta.append(el("span", "agent-tokens__row-prefix", `${token.tokenPrefix}${token.tokenPrefix.includes("...") ? "" : "…"}`))
 
-      const meta = document.createElement("div")
-      meta.className = "agent-tokens__row-meta"
+      const copyIdBtn = el("button", "agent-tokens__copy-id")
+      copyIdBtn.type = "button"
+      copyIdBtn.dataset.copyId = token.id
+      copyIdBtn.title = `Copy token ID (${token.id})`
+      copyIdBtn.append(createTablerSvgElement("copy", 11), document.createTextNode(" Copy ID"))
+      meta.append(copyIdBtn)
 
-      const prefixEl = document.createElement("span")
-      prefixEl.className = "agent-tokens__row-prefix"
-      prefixEl.textContent = `${token.tokenPrefix}${token.tokenPrefix.includes("...") ? "" : "…"}`
-      meta.appendChild(prefixEl)
-      const idEl = document.createElement("span")
-      idEl.className = "agent-tokens__row-id"
-      idEl.textContent = `ID: ${token.id}`
-      meta.append(idEl)
-
-      for (const s of token.scopes) {
-        const badge = document.createElement("span")
-        badge.className = "agent-tokens__scope-badge"
-        badge.textContent = s
-        meta.appendChild(badge)
-      }
-
+      for (const s of token.scopes) meta.append(el("span", "agent-tokens__scope-badge", s))
       if (token.assigneeId) {
-        const assigneeBadge = document.createElement("span")
-        assigneeBadge.className = "agent-tokens__assignee-badge"
-        const agentLabel = agentNames.get(token.assigneeId) ?? token.assigneeId
-        assigneeBadge.textContent = `Acts as ${agentLabel}`
-        meta.appendChild(assigneeBadge)
+        meta.append(el("span", "agent-tokens__assignee-badge", `Acts as ${agentNames.get(token.assigneeId) ?? token.assigneeId}`))
+      }
+      meta.append(
+        el("span", undefined, `Created ${new Date(token.createdAt).toLocaleDateString()}`),
+        el("span", undefined, `· ${token.expiresAt ? `Expires ${new Date(token.expiresAt).toLocaleDateString()}` : "No expiry"}`),
+      )
+
+      const boardsBar = el("div", "agent-tokens__boards")
+      boardsBar.append(el("span", "agent-tokens__boards-label", "Boards:"))
+      const granted = token.boards ?? []
+      const grantedIds = new Set(granted.map(b => b.id))
+      const manageableIds = new Set(manageableBoards.map(b => b.id))
+
+      if (granted.length === 0) {
+        boardsBar.append(el("span", undefined, "None"))
+      } else {
+        for (const b of granted) {
+          const chip = el("span", "agent-tokens__board-chip")
+          const link = el("a", "agent-tokens__board-link", b.ticketPrefix ? `${b.ticketPrefix} · ${b.name}` : b.name)
+          link.href = safeIngressHref(`/boards/${encodeURIComponent(b.id)}?view=groups#settings`)
+          link.title = `Open ${b.name} Board Settings`
+          chip.append(link)
+          if (manageableIds.has(b.id)) {
+            const rm = el("button", "agent-tokens__board-remove")
+            rm.type = "button"
+            rm.dataset.boardRemove = b.id
+            rm.dataset.boardToken = token.id
+            rm.title = `Remove ${b.name} access`
+            rm.setAttribute("aria-label", `Remove ${b.name} access for ${token.name}`)
+            rm.append(createTablerSvgElement("x", 11))
+            chip.append(rm)
+          }
+          boardsBar.append(chip)
+        }
       }
 
-      const createdEl = document.createElement("span")
-      createdEl.textContent = `Created ${new Date(token.createdAt).toLocaleDateString()}`
-      meta.appendChild(createdEl)
+      const addable = inactive ? [] : manageableBoards.filter(b => !grantedIds.has(b.id))
+      if (addable.length > 0) {
+        const addSel = el("select", "agent-tokens__board-add")
+        addSel.dataset.boardAddToken = token.id
+        addSel.setAttribute("aria-label", `Grant Board access for ${token.name}`)
+        addSel.add(new Option("+ Grant Board…", ""))
+        for (const b of addable) addSel.add(new Option(b.ticketPrefix ? `${b.ticketPrefix} · ${b.name}` : b.name, b.id))
+        boardsBar.append(addSel)
+      }
 
-      const expiresEl = document.createElement("span")
-      expiresEl.textContent = `· ${
-        token.expiresAt
-          ? `Expires ${new Date(token.expiresAt).toLocaleDateString()}`
-          : "No expiry"
-      }`
-      meta.appendChild(expiresEl)
+      info.append(head, meta, boardsBar)
 
-      info.append(nameEl, meta)
-
-      const actions = document.createElement("div")
-      actions.className = "agent-tokens__row-actions"
-
-      if (token.revoked) {
-        const revokedBadge = document.createElement("span")
-        revokedBadge.className = "badge badge-pending"
-        revokedBadge.textContent = "Revoked"
-        actions.appendChild(revokedBadge)
-      } else {
-        const revokeBtn = document.createElement("button")
+      const actions = el("div", "agent-tokens__row-actions")
+      if (!token.revoked) {
+        const revokeBtn = el("button", "btn btn-ghost btn-sm")
         revokeBtn.type = "button"
-        revokeBtn.className = "btn btn-ghost btn-sm"
         revokeBtn.dataset.revoke = token.id
         revokeBtn.title = "Revoke"
         revokeBtn.setAttribute("aria-label", `Revoke token ${token.name}`)
-        revokeBtn.appendChild(createTablerSvgElement("x", 14))
-        actions.appendChild(revokeBtn)
+        revokeBtn.append(createTablerSvgElement("x", 14))
+        actions.append(revokeBtn)
       }
-
-      const deleteBtn = document.createElement("button")
+      const deleteBtn = el("button", "btn btn-ghost btn-sm")
       deleteBtn.type = "button"
-      deleteBtn.className = "btn btn-ghost btn-sm"
       deleteBtn.dataset.delete = token.id
       deleteBtn.title = "Delete permanently"
       deleteBtn.setAttribute("aria-label", `Delete token ${token.name} permanently`)
-      deleteBtn.appendChild(createTablerSvgElement("trash", 14))
-      actions.appendChild(deleteBtn)
+      deleteBtn.append(createTablerSvgElement("trash", 14))
+      actions.append(deleteBtn)
 
       row.append(info, actions)
-      listEl!.appendChild(row)
+      listEl!.append(row)
     }
-
     if (focusCreate) createBtn!.focus()
   }
 
   async function loadTokens(focusRetry = false) {
     const seq = ++loadSeq
-    activeLoadController?.abort()
-    const controller = new AbortController()
-    activeLoadController = controller
+    loadCtrl?.abort()
+    const ctrl = new AbortController()
+    loadCtrl = ctrl
     try {
-      const res = await fetch("/api/agent-tokens?include_revoked=1", {
-        cache: "no-store",
-        signal: controller.signal,
-      })
+      const [res] = await Promise.all([
+        fetch("/api/agent-tokens?include_revoked=1", { cache: "no-store", signal: ctrl.signal }),
+        loadManageableBoards(),
+      ])
       if (signal.aborted || seq !== loadSeq) return
       if (res.status === 403) {
-        showTokenAdminNotice()
+        showAdminNotice()
         return
       }
       if (!res.ok) {
-        showTokenError(focusRetry)
+        showError(focusRetry)
         return
       }
       const tokens: TokenInfo[] = await res.json()
       if (signal.aborted || seq !== loadSeq) return
-      if (tokens.some(token => token.assigneeId) && agentNames.size === 0) {
+      if (tokens.some(t => t.assigneeId) && agentNames.size === 0) {
         await populateAssignees()
         if (signal.aborted || seq !== loadSeq) return
       }
       renderTokens(tokens, focusRetry)
     } catch {
-      if (!signal.aborted && !controller.signal.aborted && seq === loadSeq) {
-        showTokenError(focusRetry)
-      }
+      if (!signal.aborted && !ctrl.signal.aborted && seq === loadSeq) showError(focusRetry)
     }
   }
 
   pageLifecycle.on(listEl, "click", event => {
     const target = event.target instanceof Element
-      ? event.target.closest<HTMLElement>("[data-revoke], [data-delete], #tokens-retry")
+      ? event.target.closest<HTMLElement>("[data-revoke], [data-delete], [data-copy-id], [data-board-remove], #tokens-retry")
       : null
     if (!target) return
     if (target.id === "tokens-retry") {
@@ -355,50 +403,61 @@ export function initAgentTokensSettings(): void {
       void loadTokens(true)
       return
     }
-    const revokeId = target.getAttribute("data-revoke")
-    if (revokeId) {
-      void revokeToken(revokeId)
+    if (target.dataset.copyId) {
+      void navigator.clipboard.writeText(target.dataset.copyId)
+        .then(() => showToast("Token ID copied", "success"))
+        .catch(() => showToast("Could not copy token ID", "error"))
       return
     }
-    const deleteId = target.getAttribute("data-delete")
-    if (deleteId) void deleteToken(deleteId)
+    if (target.dataset.boardRemove && target.dataset.boardToken) {
+      if (target instanceof HTMLButtonElement) target.disabled = true
+      void updateBoardAccess(target.dataset.boardRemove, target.dataset.boardToken, false)
+      return
+    }
+    if (target.dataset.revoke) void mutateToken(target.dataset.revoke, false)
+    else if (target.dataset.delete) void mutateToken(target.dataset.delete, true)
+  })
+
+  pageLifecycle.on(listEl, "change", event => {
+    const select = event.target
+    if (!(select instanceof HTMLSelectElement) || !select.dataset.boardAddToken || !select.value) return
+    const boardId = select.value
+    const tokenId = select.dataset.boardAddToken
+    select.disabled = true
+    void updateBoardAccess(boardId, tokenId, true)
   })
 
   pageLifecycle.on(assigneeSelect, "change", () => {
     toggleNewAssignee()
     if (assigneeSelect.value === "__new__") {
-      const checkboxes = Array.from(document.querySelectorAll<HTMLInputElement>('[name="agent-token-scopes"]'))
-      if (checkboxes.every(cb => !cb.checked)) {
+      const boxes = Array.from(document.querySelectorAll<HTMLInputElement>('[name="agent-token-scopes"]'))
+      if (boxes.every(cb => !cb.checked)) {
         const defaults = new Set(["mcp:execute", "tasks:read", "tasks:write:assigned", "search:read"])
-        checkboxes.forEach(cb => { cb.checked = defaults.has(cb.value) })
+        boxes.forEach(cb => { cb.checked = defaults.has(cb.value) })
       }
       newAssigneeName?.focus()
     }
   })
 
-  let formGeneration = 0
-  let activeCreateController: AbortController | null = null
-
   pageLifecycle.on(createBtn, "click", () => {
-    formGeneration++
-    activeCreateController?.abort()
-    activeCreateController = null
+    formGen++
+    createCtrl?.abort()
+    createCtrl = null
     clearReveal()
     formEl.hidden = false
     nameInput.value = ""
     assigneeSelect.value = ""
     toggleNewAssignee()
     expiresSelect.value = ""
-    document.querySelectorAll<HTMLInputElement>('[name="agent-token-scopes"]')
-      .forEach(cb => { cb.checked = false })
+    document.querySelectorAll<HTMLInputElement>('[name="agent-token-scopes"]').forEach(cb => { cb.checked = false })
     nameInput.focus()
-    void populateAssignees()
+    void Promise.all([populateAssignees(), loadManageableBoards()])
   })
 
   pageLifecycle.on(cancelBtn, "click", () => {
-    formGeneration++
-    activeCreateController?.abort()
-    activeCreateController = null
+    formGen++
+    createCtrl?.abort()
+    createCtrl = null
     assigneeSelect.value = ""
     toggleNewAssignee()
     formEl.hidden = true
@@ -412,99 +471,80 @@ export function initAgentTokensSettings(): void {
       nameInput.focus()
       return
     }
-
-    const scopes: string[] = []
-    document.querySelectorAll<HTMLInputElement>('[name="agent-token-scopes"]:checked')
-      .forEach(cb => scopes.push(cb.value))
-
+    const scopes = Array.from(document.querySelectorAll<HTMLInputElement>('[name="agent-token-scopes"]:checked')).map(cb => cb.value)
     if (scopes.length === 0) {
       showToast("Select at least one scope", "error")
       formEl.querySelector<HTMLInputElement>('[name="agent-token-scopes"]')?.focus()
       return
     }
-
-    const creatingNewAgent = assigneeSelect.value === "__new__"
-    const newAgentLabel = creatingNewAgent ? (newAssigneeName?.value.trim() ?? "") : ""
-    if (creatingNewAgent && !newAgentLabel) {
+    const creatingNew = assigneeSelect.value === "__new__"
+    const newLabel = creatingNew ? (newAssigneeName?.value.trim() ?? "") : ""
+    if (creatingNew && !newLabel) {
       showToast("Agent name is required", "error")
       newAssigneeName?.focus()
       return
     }
-
-    let assigneeId: string | null = creatingNewAgent ? null : (assigneeSelect.value.trim() || null)
-    if (scopes.includes("tasks:write:assigned") && !scopes.includes("tasks:write") && !creatingNewAgent && !assigneeId) {
+    let assigneeId: string | null = creatingNew ? null : (assigneeSelect.value.trim() || null)
+    if (scopes.includes("tasks:write:assigned") && !scopes.includes("tasks:write") && !creatingNew && !assigneeId) {
       showToast("Select an agent assignee for tasks:write:assigned", "error")
       assigneeSelect.focus()
       return
     }
+    const days = ({ "7d": 7, "30d": 30, "90d": 90, "1y": 365 } as Record<string, number>)[expiresSelect.value]
+    const expiresAt = days ? new Date(Date.now() + days * 86400000).toISOString() : null
 
-    let expiresAt: string | null = null
-    const exp = expiresSelect.value
-    if (exp) {
-      const now = Date.now()
-      const ms = exp === "7d" ? 7 * 86400000 : exp === "30d" ? 30 * 86400000
-        : exp === "90d" ? 90 * 86400000 : exp === "1y" ? 365 * 86400000 : 0
-      if (ms) expiresAt = new Date(now + ms).toISOString()
-    }
-
-    const generation = formGeneration
-    activeCreateController?.abort()
-    const createController = new AbortController()
-    activeCreateController = createController
-    const reqSignal = AbortSignal.any([signal, createController.signal])
-    const stale = () => signal.aborted || createController.signal.aborted || generation !== formGeneration
+    const gen = formGen
+    createCtrl?.abort()
+    const ctrl = new AbortController()
+    createCtrl = ctrl
+    const reqSignal = AbortSignal.any([signal, ctrl.signal])
+    const stale = () => signal.aborted || ctrl.signal.aborted || gen !== formGen
 
     try {
-      if (creatingNewAgent) {
-        const createdUserRes = await fetch("/api/users/custom", {
+      if (creatingNew) {
+        const uRes = await fetch("/api/users/custom", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: newAgentLabel, kind: "agent" }),
+          body: JSON.stringify({ name: newLabel, kind: "agent" }),
           signal: reqSignal,
         })
         if (stale()) return
-        if (!createdUserRes.ok) {
-          const err = await createdUserRes.json().catch(() => ({}))
+        if (!uRes.ok) {
+          const err = await uRes.json().catch(() => ({})) as { error?: string; detail?: string }
           showToast(err.error || err.detail || "Failed to create agent assignee", "error")
           newAssigneeName?.focus()
           return
         }
-        const createdUser = await createdUserRes.json() as DirectoryUser
-        agentNames.set(createdUser.id, createdUser.name)
-        const createOption = assigneeSelect.querySelector<HTMLOptionElement>('option[value="__new__"]')
-        const opt = new Option(createdUser.name, createdUser.id)
+        const created = await uRes.json() as DirectoryUser
+        agentNames.set(created.id, created.name)
+        const opt = new Option(created.name, created.id)
         opt.dataset.agentOption = "1"
-        assigneeSelect.insertBefore(opt, createOption ?? null)
-        if (!stale()) {
-          assigneeSelect.value = createdUser.id
-          toggleNewAssignee()
-        }
-        assigneeId = createdUser.id
+        assigneeSelect.insertBefore(opt, assigneeSelect.querySelector('option[value="__new__"]'))
+        assigneeSelect.value = created.id
+        toggleNewAssignee()
+        assigneeId = created.id
       }
 
+      const selectedBoard = boardSelect?.value.trim() || undefined
       const res = await fetch("/api/agent-tokens", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: boardHeaders(selectedBoard),
         body: JSON.stringify({ name, scopes, assigneeId, expiresAt }),
         signal: reqSignal,
       })
-
       if (stale()) return
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        showToast(err.detail || "Failed to create token", "error")
+        const err = await res.json().catch(() => ({})) as { error?: string; detail?: string }
+        showToast(err.detail || err.error || "Failed to create token", "error")
         setTimeout(() => { if (!stale()) saveBtn.focus() }, 0)
         return
       }
-
-      const data = await res.json()
+      const data = await res.json() as { token: string }
       if (stale()) return
-
       formEl.hidden = true
       revealEl.hidden = false
       plaintextEl.textContent = data.token
       copyBtn.focus()
-
       showToast("Token created — copy it now!", "success")
       void loadTokens()
     } catch {
@@ -513,7 +553,7 @@ export function initAgentTokensSettings(): void {
         setTimeout(() => { if (!stale()) saveBtn.focus() }, 0)
       }
     } finally {
-      if (activeCreateController === createController) activeCreateController = null
+      if (createCtrl === ctrl) createCtrl = null
     }
   }, { loadingText: "Creating…" }))
 
@@ -522,11 +562,9 @@ export function initAgentTokensSettings(): void {
       await navigator.clipboard.writeText(plaintextEl.textContent || "")
       if (signal.aborted) return
       showToast("Token copied to clipboard", "success")
-      setCopyButtonState(true)
+      setCopyState(true)
       if (copyTimer) clearTimeout(copyTimer)
-      copyTimer = setTimeout(() => {
-        if (!signal.aborted) setCopyButtonState(false)
-      }, 2000)
+      copyTimer = setTimeout(() => { if (!signal.aborted) setCopyState(false) }, 2000)
     } catch {
       if (!signal.aborted) showToast("Failed to copy — select and copy manually", "error")
     }
@@ -538,13 +576,13 @@ export function initAgentTokensSettings(): void {
   })
 
   if (createBtn.dataset.canManageTokens === "false") {
-    showTokenAdminNotice()
+    showAdminNotice()
     return
   }
 
-  const section = document.getElementById("automation-ai-settings")?.closest<HTMLElement>("[data-settings-shell-section]")
-    ?? document.getElementById("ai-agents-settings")
-    ?? document.getElementById("automation-ai-settings")
+  const section = byId("automation-ai-settings")?.closest<HTMLElement>("[data-settings-shell-section]")
+    ?? byId("ai-agents-settings")
+    ?? byId("automation-ai-settings")
   if (!section || !section.hidden) {
     void loadTokens()
   } else {

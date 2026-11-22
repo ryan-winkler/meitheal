@@ -29,6 +29,7 @@
 - [WebMCP and A2A Setup](webmcp-a2a-setup.md) - Understand the current MCP and A2A interfaces and WebMCP status.
 - [Webhook Setup Guide](webhook-setup-guide.md) - Connect an external automation receiver.
 - [n8n / Node-RED Integration Examples](n8n-integration-example.md) - Connect Meitheal events to n8n or Node-RED.
+- [Plugin Development Guide](plugin-development.md) - Build, package, secure, and test sandboxed Meitheal plugins and external connectors.
 
 - [Mention someone in a comment](comment-mentions.md) - Send an in-app inbox item to another household member.
 

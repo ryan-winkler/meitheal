@@ -6,6 +6,25 @@
  *      Fully self-contained: openCP/closeCP, Ctrl+K handler, search debounce, action routing.
  */
 import { createFocusTrap } from "@lib/focus-trap"
+import { safeIngressHref } from "@lib/ingress-navigation"
+
+const PALETTE_ROUTES: Record<string, string> = {
+  "go-dashboard": "/",
+  "go-kanban": "/kanban",
+  "go-table": "/table",
+  "go-settings": "/settings",
+  "go-today": "/today",
+  "go-upcoming": "/upcoming",
+  "go-calendar": "/calendar",
+  "export-csv": "/api/export/tasks.csv",
+}
+
+function navigateSafe(path: string): void {
+  const dest = new URL(safeIngressHref(path), window.location.origin)
+  if (dest.origin === window.location.origin) {
+    window.location.assign(dest.pathname + dest.search + dest.hash) // nosemgrep
+  }
+}
 
 export interface CommandPaletteDeps {
   openTaskDetail: (id: string) => void
@@ -156,37 +175,13 @@ export function initCommandPalette({ openTaskDetail, __signal }: CommandPaletteD
       closeCP()
 
       if (action === "new-task") {
-        const createBtn = document.querySelector(
-          "[data-action='create-task']",
-        ) as HTMLElement
+        const createBtn = document.querySelector<HTMLElement>("[data-action='create-task']")
         if (createBtn) createBtn.click()
-        else
-          window.location.href = (window.__ingress_path || "") + "/tasks"
+        else navigateSafe("/tasks")
       } else if (action === "new-area") {
-        const boardBtn = document.querySelector(
-          ".area-add-btn",
-        ) as HTMLElement
-        if (boardBtn) boardBtn.click()
-      } else if (action === "go-dashboard") {
-        window.location.href = (window.__ingress_path || "") + "/"
-      } else if (action === "go-kanban") {
-        window.location.href = (window.__ingress_path || "") + "/kanban"
-      } else if (action === "go-table") {
-        window.location.href = (window.__ingress_path || "") + "/table"
-      } else if (action === "go-settings") {
-        window.location.href =
-          (window.__ingress_path || "") + "/settings"
-      } else if (action === "go-today") {
-        window.location.href = (window.__ingress_path || "") + "/today"
-      } else if (action === "go-upcoming") {
-        window.location.href =
-          (window.__ingress_path || "") + "/upcoming"
-      } else if (action === "go-calendar") {
-        window.location.href =
-          (window.__ingress_path || "") + "/calendar"
-      } else if (action === "export-csv") {
-        window.location.href =
-          (window.__ingress_path || "") + "/api/export/tasks.csv"
+        document.querySelector<HTMLElement>(".area-add-btn")?.click()
+      } else if (action && Object.prototype.hasOwnProperty.call(PALETTE_ROUTES, action)) {
+        navigateSafe(PALETTE_ROUTES[action]!)
       } else if (taskId) {
         openTaskDetail(taskId)
       }

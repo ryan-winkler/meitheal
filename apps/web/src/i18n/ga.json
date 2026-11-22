@@ -48,6 +48,7 @@
     "eisenhower": "Eisenhower",
     "progress": "Dul Chun Cinn & Fás",
     "planning": "Pleanáil",
+    "gamification": "Cluichíocht",
     "skip_to_content": "Léim go dtí an t-ábhar"
   },
   "sidebar": {
@@ -107,7 +108,33 @@
     "area_deleted": "Réimse scriosta",
     "project_deleted": "Tionscadal scriosta",
     "area_created": "Réimse cruthaithe",
-    "updated": "Nuashonraithe"
+    "updated": "Nuashonraithe",
+    "customize_menu": "Saincheap an roghchlár",
+    "customize_menu_hint": "Taispeáin, folaigh, athainmnigh agus athoibrigh rannóga agus míreanna go díreach sa nascleanúint.",
+    "leave_edit_mode": "Fág mód eagarthóireachta",
+    "edit_menu": "Cuir roghchlár in eagar",
+    "edit_profile": "Próifíl",
+    "edit_profile_title": "Cuir próifíl in eagar",
+    "edit_profile_subtitle": "Saincheap conas a thaispeántar d'ainm agus d'abhaitéar sa bharra taoibh.",
+    "profile_display_name": "Ainm taispeána",
+    "profile_username": "Ainm gearr / láimhseáil",
+    "profile_role": "Ról nó fotheideal",
+    "profile_avatar_color": "Dath an abhaitéir",
+    "profile_save": "Sábháil próifíl",
+    "profile_saved": "Próifíl nuashonraithe",
+    "section_workspace": "Spás Oibre",
+    "section_planning": "Pleanáil",
+    "section_boards": "Cláir",
+    "section_system": "Córas",
+    "rename_section": "Athainmnigh rannóg {label}",
+    "rename_item": "Athainmnigh {label}",
+    "hide_section": "Folaigh rannóg {label}",
+    "show_section": "Taispeáin rannóg {label}",
+    "hide_item": "Folaigh {label}",
+    "show_item": "Taispeáin {label}",
+    "reorder_section": "Athordaigh rannóg {label}",
+    "collapse_sidebar": "Laghdaigh an barra taoibh",
+    "expand_sidebar": "Leathnaigh an barra taoibh"
   },
   "topbar": {
     "search_placeholder": "Cuardaigh Meitheal...",
@@ -227,7 +254,9 @@
     "unassigned": "Gan Sannta",
     "assign_hint": "Leid: Úsáid @ainm sa teideal le huathshannú",
     "overdue": "Thar Téarma",
-    "clear_filters": "Glan Ar Fad"
+    "clear_filters": "Glan Ar Fad",
+    "task_summary": "{total} tasc · {active} gníomhach · {overdue} thar téarma",
+    "due_prefix": "Dlite"
   },
   "kanban": {
     "no_project": "Gan Tionscadal",
@@ -908,6 +937,8 @@
     "appearance_sidebar_folded": "Tosaigh fillte",
     "appearance_sidebar_hover": "Leathnaigh ar foluain nó le fócas",
     "appearance_sidebar_help": "Roghnaigh conas a osclaítear an barra taoibh ar an deasc. Leathnaítear é le fócas méarchláir sa mhód foluain freisin.",
+    "appearance_title": "Clóghrafaíocht & Stíl Dromchla",
+    "appearance_discard": "Cuir i leataobh",
     "appearance_reset": "Cuir na réamhshocruithe ar ais",
     "appearance_save": "Sábháil an chuma",
     "appearance_saved": "Sábháladh an chuma ar an ngléas seo.",
@@ -1507,7 +1538,19 @@
     "daily_goal": "Sprioc Laethúil",
     "weekly_chart": "An tSeachtain Seo",
     "xp_earned": "+{points} XP",
-    "level": "Leibhéal {level}"
+    "level": "Leibhéal {level}",
+    "level_progress": "{current} / {next} XP",
+    "xp_to_next": "{xp} XP go dtí an chéad leibhéal eile",
+    "achievements": "Éachtaí",
+    "achievements_unlocked": "{count} / {total} díghlasáilte",
+    "achievement_locked": "Coinnigh ort chun é seo a dhíghlasáil!",
+    "page_title": "Cluichíocht",
+    "page_subtitle": "Rianaigh do dhul chun cinn, tuill éachtaí agus ardaigh leibhéal",
+    "stats_section": "Do Staitisticí",
+    "heatmap_title": "Léarscáil Teasa Gníomhaíochta",
+    "total_completed": "Tascanna Críochnaithe",
+    "best_streak": "An Stríoc is Fearr",
+    "current_level": "Leibhéal Reatha"
   },
   "en": {
     "settings.grocy_title": "Grocy",

@@ -31,6 +31,7 @@ export interface SidebarSectionView {
   defaultLabel: string
   hidden: boolean
   hasVisibleItems: boolean
+  removable?: boolean
   items: SidebarNavItemView[]
 }
 
@@ -55,6 +56,7 @@ function isExternal(href: string): boolean {
       data-sidebar-section={section.id}
       data-sidebar-section-hidden={section.hidden ? "true" : undefined}
       data-sidebar-section-empty={!section.hasVisibleItems ? "true" : undefined}
+      data-sidebar-section-removable={section.removable ? "true" : undefined}
       aria-label={section.label}
     >
       <div class="sidebar-section__header" data-sidebar-section-header={section.id}>
@@ -101,6 +103,17 @@ function isExternal(href: string): boolean {
             <span class="sidebar-eye-visible"><Icon name="eye" size={14} /></span>
             <span class="sidebar-eye-hidden"><Icon name="eye-off" size={14} /></span>
           </button>
+          {section.removable && (
+            <button
+              type="button"
+              class="sidebar-edit-btn sidebar-edit-btn--danger"
+              data-sidebar-section-delete={section.id}
+              aria-label={`Delete ${section.label} section`}
+              title={`Delete ${section.label} section`}
+            >
+              <Icon name="trash" size={14} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -247,7 +260,6 @@ function isExternal(href: string): boolean {
                   data-tooltip={item.label}
                   data-astro-prefetch={item.key === "system-pinned" || item.key === "activity" || item.key === "mentionInbox" || item.taskView ? "false" : external ? undefined : "viewport"}
                   aria-current={item.isActive ? "page" : undefined}
-                  aria-describedby={item.key === "settings" ? "connection-status" : undefined}
                   aria-label={`${item.label}${external ? " (opens in new tab)" : ""}`}
                   {...(external
                     ? { target: "_blank", rel: "noopener noreferrer" }
@@ -259,20 +271,6 @@ function isExternal(href: string): boolean {
                   <span class="nav-label" data-sidebar-item-label={item.key} data-default-label={item.defaultLabel}>
                     {item.label}
                   </span>
-                  {item.key === "settings" && (
-                    <span
-                      class="status-indicator sidebar-settings-readiness"
-                      id="connection-status"
-                      role="status"
-                      aria-live="polite"
-                      data-ready={t("status.app_ready", locale)}
-                      data-storage-offline={t("status.db_offline", locale)}
-                      data-unreachable={t("status.app_unreachable", locale)}
-                    >
-                      <span class="status-dot w-2 h-2 rounded-full bg-gray-400" aria-hidden="true"></span>
-                      <span class="status-text sr-only">{t("status.checking", locale)}</span>
-                    </span>
-                  )}
                   {external && (
                     <span class="nav-external-icon" aria-hidden="true">↗</span>
                   )}
@@ -422,25 +420,20 @@ function isExternal(href: string): boolean {
 
     :global(body.sidebar-collapsed) .task-view-submenu,
     :global(:root[data-appearance-navigation="navbar"]) .task-view-submenu {
-      position: absolute;
-      inset-block-start: calc(100% + 4px);
-      inset-inline-start: 0;
-      z-index: 45;
+      position: fixed;
+      inset-block-start: var(--task-views-top, 64px);
+      inset-inline-start: var(--task-views-left, 72px);
+      z-index: 260;
       inline-size: max-content;
-      min-inline-size: 11rem;
+      min-inline-size: 12rem;
+      max-block-size: calc(100dvh - 16px);
+      overflow: auto;
       margin: 0;
       padding: 4px;
       border: 1px solid var(--border);
       border-radius: var(--radius-md, 8px);
       background: var(--bg-card);
-      box-shadow: var(--shadow-md);
-    }
-    :global(body.sidebar-collapsed) .task-view-submenu {
-      position: fixed;
-      inset-block-start: var(--task-views-top, 8px);
-      inset-inline-start: 72px;
-      max-block-size: calc(100dvh - 16px);
-      overflow: auto;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.26);
     }
     :global(:root[data-appearance-nav-style="floating"] body.sidebar-collapsed) .task-view-submenu {
       inset-inline-start: 78px;
@@ -575,22 +568,54 @@ function isExternal(href: string): boolean {
     const trigger = group?.querySelector<HTMLButtonElement>("#tasks-submenu-toggle")
     if (!nav || !group || !submenu || !trigger) return
 
-    const positionCompactMenu = () => {
-      if (submenu.hidden || !document.body.classList.contains("sidebar-collapsed")) return
-      const top = Math.max(8, Math.min(trigger.getBoundingClientRect().top, innerHeight - submenu.offsetHeight - 8))
-      submenu.style.setProperty("--task-views-top", `${Math.round(top)}px`)
+    const positionSubmenu = () => {
+      if (submenu.hidden) return
+      const inOverflowMenu = Boolean(group.closest(".nav-overflow__menu"))
+      const isNavbar = document.documentElement.dataset.appearanceNavigation === "navbar" && innerWidth > 768
+      const isCollapsed = !isNavbar && document.body.classList.contains("sidebar-collapsed") && innerWidth > 768
+      if (inOverflowMenu || (!isNavbar && !isCollapsed)) {
+        submenu.style.removeProperty("--task-views-top")
+        submenu.style.removeProperty("--task-views-left")
+        return
+      }
+      const rect = trigger.getBoundingClientRect()
+      const menuWidth = submenu.offsetWidth || 196
+      const menuHeight = submenu.offsetHeight || 180
+      if (isNavbar) {
+        const left = Math.max(12, Math.min(rect.left - 48, innerWidth - menuWidth - 12))
+        const top = Math.max(8, Math.min(rect.bottom + 8, innerHeight - menuHeight - 12))
+        submenu.style.setProperty("--task-views-top", `${Math.round(top)}px`)
+        submenu.style.setProperty("--task-views-left", `${Math.round(left)}px`)
+      } else {
+        const top = Math.max(8, Math.min(rect.top, innerHeight - menuHeight - 8))
+        const left = document.documentElement.dataset.appearanceNavStyle === "floating" ? 78 : 72
+        submenu.style.setProperty("--task-views-top", `${Math.round(top)}px`)
+        submenu.style.setProperty("--task-views-left", `${left}px`)
+      }
     }
     const setOpen = (open: boolean) => {
       submenu.hidden = !open
       trigger.setAttribute("aria-expanded", String(open))
-      positionCompactMenu()
+      if (open) {
+        window.dispatchEvent(new CustomEvent("meitheal:nav-submenu-open", { detail: { id: "tasks-views" } }))
+        positionSubmenu()
+        requestAnimationFrame(positionSubmenu)
+      }
       updateActiveNavLink()
     }
 
-    trigger.addEventListener("click", () => setOpen(Boolean(submenu.hidden)), { signal })
+    trigger.addEventListener("click", event => {
+      event.stopPropagation()
+      setOpen(Boolean(submenu.hidden))
+    }, { signal })
+    window.addEventListener("meitheal:nav-submenu-open", event => {
+      const id = (event as CustomEvent<{ id?: string }>).detail?.id
+      if (id !== "tasks-views" && !submenu.hidden) setOpen(false)
+    }, { signal })
     group.addEventListener("focusout", event => {
+      const next = event.relatedTarget
       if (!submenu.hidden && !nav.hasAttribute("data-nav-overflow-reflowing") &&
-          !group.contains(event.relatedTarget as Node | null)) setOpen(false)
+          next instanceof Node && !group.contains(next)) setOpen(false)
     }, { signal })
     group.addEventListener("keydown", event => {
       if (event.key === "Escape" && !submenu.hidden) {
@@ -616,8 +641,8 @@ function isExternal(href: string): boolean {
     document.addEventListener("click", event => {
       if (!submenu.hidden && event.target instanceof Node && !group.contains(event.target)) setOpen(false)
     }, { signal })
-    nav.addEventListener("scroll", positionCompactMenu, { signal, passive: true })
-    window.addEventListener("resize", positionCompactMenu, { signal })
+    nav.addEventListener("scroll", positionSubmenu, { signal, passive: true })
+    window.addEventListener("resize", positionSubmenu, { signal })
   }
 
   let boundSignal: AbortSignal | undefined

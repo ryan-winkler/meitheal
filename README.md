@@ -213,7 +213,7 @@ Meitheal splits application source from Store manifests so low-memory Home Assis
 - [Create your first task](docs/first-task.md)
 - [Home Assistant add-on setup](meitheal-hub/DOCS.md) · [Companion app setup](docs/companion-app-setup.md)
 - [PWA & offline usage](docs/kcs/pwa-offline-guide.md) · [Search Hub guide](docs/kcs/search-hub-guide.md)
-- [Automations & agents](docs/kcs/agent-automation-guide.md) · [WebMCP & MCP guide](WEBMCP.md)
+- [Automations & agents](docs/kcs/agent-automation-guide.md) · [WebMCP & MCP guide](WEBMCP.md) · [Plugin development guide](docs/kcs/plugin-development.md)
 - [Design system & appearance](DESIGN.md) · [Architecture overview](docs/architecture.md) · [Security assurance case](docs/security-assurance-case.md)
 - [Browse all KCS guides & runbooks](docs/index.md)
 

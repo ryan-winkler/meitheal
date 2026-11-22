@@ -137,15 +137,15 @@ const { id, variant, enabled = true } = Astro.props
     position: absolute;
     inset-block-start: calc(100% + 4px);
     inset-inline-start: 0;
-    z-index: 45;
-    inline-size: max(100%, 12rem);
+    z-index: 260;
+    inline-size: max(100%, 13rem);
     max-block-size: min(24rem, calc(100dvh - 7rem));
     overflow-y: auto;
     padding: 4px;
     border: 1px solid var(--border);
     border-radius: var(--radius-md, 8px);
     background: var(--bg-card);
-    box-shadow: var(--shadow-md);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.26);
   }
 
   .task-creation__list {
@@ -172,6 +172,15 @@ const { id, variant, enabled = true } = Astro.props
     :global(:root[data-appearance-navigation="navbar"]) .task-creation--sidebar {
       flex-direction: row;
       align-items: center;
+    }
+
+    :global(:root[data-appearance-navigation="navbar"]) .task-creation__options {
+      position: fixed;
+      inset-block-start: var(--task-creation-top, 64px);
+      inset-inline-start: var(--task-creation-left, 12px);
+      inset-inline-end: auto;
+      z-index: 260;
+      inline-size: 13.5rem;
     }
 
     .task-creation--toolbar .task-creation__pins,
@@ -290,6 +299,24 @@ const { id, variant, enabled = true } = Astro.props
         }
         pins.hidden = prefs.pinned.length === 0
       }
+      const positionOptions = () => {
+        if (options.hidden) return
+        const isNavbar = document.documentElement.dataset.appearanceNavigation === "navbar" && innerWidth > 768
+        if (!isNavbar) {
+          options.style.removeProperty("--task-creation-top")
+          options.style.removeProperty("--task-creation-left")
+          return
+        }
+        const rect = trigger.getBoundingClientRect()
+        const menuWidth = options.offsetWidth || 216
+        const menuHeight = options.offsetHeight || 220
+        const preferRightAligned = root.dataset.taskCreation === "toolbar"
+        const rawLeft = preferRightAligned ? rect.right - menuWidth : rect.left - 80
+        const left = Math.max(12, Math.min(rawLeft, innerWidth - menuWidth - 12))
+        const top = Math.max(8, Math.min(rect.bottom + 8, innerHeight - menuHeight - 12))
+        options.style.setProperty("--task-creation-top", `${Math.round(top)}px`)
+        options.style.setProperty("--task-creation-left", `${Math.round(left)}px`)
+      }
       const close = (returnFocus = false) => {
         if (returnFocus) trigger.focus()
         trigger.setAttribute("aria-expanded", "false")
@@ -299,18 +326,33 @@ const { id, variant, enabled = true } = Astro.props
       render()
 
       matchMedia("(min-width: 769px)").addEventListener("change", () => close(), { signal })
-      trigger.addEventListener("click", () => {
+      window.addEventListener("resize", positionOptions, { signal })
+      window.addEventListener("scroll", positionOptions, { signal, passive: true })
+      trigger.addEventListener("click", event => {
+        event.stopPropagation()
         if (!options.hidden) close()
         else {
+          window.dispatchEvent(new CustomEvent("meitheal:nav-submenu-open", { detail: { id: root.id } }))
           options.hidden = false
           trigger.setAttribute("aria-expanded", "true")
+          positionOptions()
+          requestAnimationFrame(positionOptions)
         }
+      }, { signal })
+      window.addEventListener("meitheal:nav-submenu-open", event => {
+        const id = (event as CustomEvent<{ id?: string }>).detail?.id
+        if (id !== root.id && !options.hidden) close()
       }, { signal })
       root.addEventListener("click", event => {
         const target = event.target instanceof Element ? event.target : null
         const pin = target?.closest<HTMLElement>("[data-task-nav-pin]")
         const entry = getTaskNavTypeById(pin?.dataset.taskNavPin ?? "")
-        if (entry) toggleTaskNavPin(readTaskNavPrefs(), entry.id)
+        if (entry) {
+          event.preventDefault()
+          event.stopPropagation()
+          toggleTaskNavPin(readTaskNavPrefs(), entry.id)
+          return
+        }
         const capture = target?.closest<HTMLButtonElement>("[data-create-task-kind]")
         if (!capture) return
         const kind = capture.dataset.createTaskKind
@@ -324,9 +366,9 @@ const { id, variant, enabled = true } = Astro.props
           window.openNewTaskModal?.(kind)
         }
       }, { signal })
-      const split = trigger.parentElement
-      split?.addEventListener("focusout", event => {
-        if (!options.hidden && !split.contains(event.relatedTarget as Node | null)) close()
+      root.addEventListener("focusout", event => {
+        const next = event.relatedTarget
+        if (!options.hidden && next instanceof Node && !root.contains(next)) close()
       }, { signal })
       root.addEventListener("keydown", event => {
         if (event.key !== "Escape" || options.hidden) return

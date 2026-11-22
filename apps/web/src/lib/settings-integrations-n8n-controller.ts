@@ -264,7 +264,12 @@ export function initN8nSettings(): void {
     if (!urlInput) return
     if (healthDetail) healthDetail.textContent = "Checking..."
     if (workflowsList) {
-      workflowsList.innerHTML = `<div class="cal-empty-state"><span class="cal-empty-icon">⏳</span><span>Fetching workflows...</span></div>`
+      const box = document.createElement("div")
+      box.className = "cal-empty-state"
+      const txt = document.createElement("span")
+      txt.textContent = "Fetching workflows…"
+      box.appendChild(txt)
+      workflowsList.replaceChildren(box)
     }
     try {
       const res = await fetch("/api/integrations/n8n/health", { signal: pageLifecycle.signal })
@@ -377,21 +382,25 @@ export function initN8nSettings(): void {
     const busStatusEl = document.getElementById("n8n-ha-bus-status")
     const haVersionEl = document.getElementById("n8n-ha-version")
     if (!busStatusEl) return
+    const setBusStatus = (text: string, color: string, bold = false) => {
+      const span = document.createElement("span")
+      span.style.color = color
+      if (bold) span.style.fontWeight = "600"
+      span.textContent = text
+      busStatusEl.replaceChildren(span)
+    }
     try {
       const res = await fetch("/api/integrations/status", { signal: pageLifecycle.signal })
       const data = await res.json()
       if (data.ha_connection) {
-        if (data.ha_connection.connected)
-          busStatusEl.innerHTML = `<span style="color: var(--success); font-weight: 600;">✓ Connected</span>`
-        else if (data.ha_connection.supervisor_token_present)
-          busStatusEl.innerHTML = `<span style="color: var(--warning);">Disconnected</span>`
-        else
-          busStatusEl.innerHTML = `<span style="color: var(--text-muted);">Not running as HA addon</span>`
+        if (data.ha_connection.connected) setBusStatus("Connected", "var(--success)", true)
+        else if (data.ha_connection.supervisor_token_present) setBusStatus("Disconnected", "var(--warning)")
+        else setBusStatus("Not running as HA addon", "var(--text-muted)")
         if (haVersionEl && data.ha_connection.version)
           haVersionEl.textContent = data.ha_connection.version
       }
     } catch {
-      if (busStatusEl) busStatusEl.innerHTML = `<span style="color: var(--error);">Failed to check</span>`
+      setBusStatus("Failed to check", "var(--error)")
     }
   }
   setTimeout(() => {

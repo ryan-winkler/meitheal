@@ -236,6 +236,16 @@ Changes **must** be verified in the correct environment tier before completion.
 - Keep non-ADR decision records, individual agent run logs, persona audits, review receipts, and working progress notes outside Git under `.planning/` — never inside `docs/`
 - Error messages should support self-service debugging
 
+## Design Engineering & UX Governance (Mandatory)
+
+All UI and UX changes must comply with [DESIGN.md](DESIGN.md) and [docs/kcs/design-principles.md](docs/kcs/design-principles.md):
+
+- **Tabler First**: Use Tabler icons (`src/generated/icon-registry.ts`), Tabler `nav-overflow`, Tabler modals, and Tabler `ThemeSettings.astro` visual SVG tiles (`96×64`) for appearance/layout pickers instead of raw dropdowns.
+- **Gestalt Principles**: Keep peer setting groups at the same top-level `SettingsPanelCard` hierarchy with unified `20px` spacing (never nest peer domains in touching disclosure boxes); match visual weight for peer buttons; elevate popovers (`z-index: 240–260`) so sticky headers never clip them.
+- **Nielsen's Heuristics & Kathy Sierra ("Badass")**: Avoid duplicate triggers/popovers (Profile opens Edit Profile directly; Keyboard utility on the right holds Edit Menu, Add Link, Shortcuts, Settings, Look & Feel, and Tour). Allow hiding *Settings* in navigation while keeping it permanently reachable in the Keyboard utility menu. Place workflow settings (such as *New task opens: Quick add vs Task form*) in their owning DDD section (*Tasks & Boards*).
+- **Interaction Craft (`emil-design-eng`) & Continuous Taste (`learn-taste`)**: Use `cubic-bezier(0.23, 1, 0.32, 1)` ease-out transitions, subtle `:active` press feedback (`scale(0.97–0.98)`), origin-aware popover entry, and `@media (prefers-reduced-motion: reduce)` fallbacks. Record recurring UI corrections in `DESIGN.md` as **Before / After / Why** entries.
+- **Local-First & Security (OWASP Top 10)**: Self-host all fonts locally, compute WCAG AA contrast tokens for dynamic accents and theme-matched avatars, enforce authorization checks before parsing request bodies, and keep `npm run perf:budget --workspace=apps/web` within baseline.
+
 ## Licensing Boundaries
 
 Use [LICENSE](LICENSE) for Meitheal-owned material and [NOTICE](NOTICE) for separately licensed material. The current release excludes the historical compatibility API and alternate runtime.

@@ -3,6 +3,7 @@
  * @domain navigation
  */
 import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
+import { matchesShortcutEvent, readResolvedShortcuts } from "@domains/navigation/keyboard-shortcuts"
 import { hasPriorityOverlay } from "@lib/layout-shortcuts-controller"
 import { getLegacyTaskId, openTaskDetailHandoff } from "@lib/task-detail-handoff"
 import { parseTaskView, requestedTaskView, TASK_VIEWS, taskViewUrl, type TaskView } from "@lib/task-view-route"
@@ -53,10 +54,14 @@ export function initTasksViewSwitcher(rendered: TaskView, signal: AbortSignal): 
   }, { signal })
   window.addEventListener("keydown", e => {
     const target = e.target as HTMLElement | null
-    if (e.defaultPrevented || hasPriorityOverlay() || target?.isContentEditable || target?.closest("input, textarea, select, [role='dialog']") ||
-        e.ctrlKey || e.altKey || e.metaKey || e.shiftKey || e.isComposing) return
-    if (!/^[1-4]$/.test(e.key) || !singleKeyShortcutsEnabled()) return
-    const view = TASK_VIEWS[Number(e.key) - 1]
+    if (e.defaultPrevented || document.documentElement.hasAttribute("data-shortcut-recording") || hasPriorityOverlay() ||
+        target?.isContentEditable || target?.closest("input, textarea, select, [role='dialog']") || e.isComposing) return
+    const shortcuts = readResolvedShortcuts()
+    const singleEnabled = singleKeyShortcutsEnabled()
+    const actionKeys = ["taskView1", "taskView2", "taskView3", "taskView4"] as const
+    const matchedIndex = actionKeys.findIndex(action => matchesShortcutEvent(e, shortcuts[action], singleEnabled))
+    if (matchedIndex === -1) return
+    const view = TASK_VIEWS[matchedIndex]
     if (view && view !== rendered) {
       e.preventDefault()
       location.assign(taskViewUrl(taskBackgroundUrl(), view, true))
