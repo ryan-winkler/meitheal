@@ -34,7 +34,8 @@
 
 .badge-error {
   background: rgba(239, 68, 68, 0.15);
-  color: var(--danger);
+  /* Readable danger text; the raw danger hue falls below 4.5:1 on this tint. */
+  color: var(--danger-text);
 }
 
 .badge-disabled {

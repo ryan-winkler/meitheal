@@ -19,12 +19,13 @@ async function openSettings(page: Page) {
   await expect(preference(page)).toBeVisible()
 }
 
-const GLOBAL_SHORTCUT_KEYS = ["/", "n", "d", "k", "t", "y", "u", "c", "Ctrl/Cmd + K", "Ctrl/Cmd + B", "?", "Esc"]
+// General actions first, then views; single keys display as uppercase keycaps.
+const GLOBAL_SHORTCUT_KEYS = ["/", "Ctrl/Cmd + K", "N", "Ctrl/Cmd + B", "?", "Esc", "D", "Y", "U", "K", "T", "C"]
 const GLOBAL_SHORTCUT_LABELS = [
-  "Search", /^\s*New task\s*\.\s*Adds to that column when a board card has focus\s*$/, "Dashboard",
-  /^\s*Kanban view\s*\.\s*Moves up on Today and Timeline\s*$/, "Table view", "Today view", "Upcoming view",
-  /^\s*Calendar view\s*\.\s*Collapses swimlanes when a grouped board card has focus\s*$/, "Command palette",
+  "Search", "Command palette", /^\s*New task\s*\.\s*Adds to that column when a board card has focus\s*$/,
   /^\s*Toggle sidebar\s*\.\s*Wide screens with side navigation\s*$/, "Show shortcuts", "Close modal",
+  "Dashboard", "Today view", "Upcoming view", /^\s*Kanban view\s*\.\s*Moves up on Today and Timeline\s*$/, "Table view",
+  /^\s*Calendar view\s*\.\s*Collapses swimlanes when a grouped board card has focus\s*$/,
 ]
 const TASK_VIEW_LABELS = ["Kanban view", "Table view", "Calendar view", "Timeline view"]
 
@@ -35,11 +36,13 @@ async function blurActive(page: Page) {
 test("the Settings preference persists and preserves search with a modifier or a button", async ({ page, context }) => {
   await openSettings(page)
   const settingsList = page.locator("#navigation-settings")
-  await expect(settingsList.getByRole("heading", { name: "Everywhere" })).toBeVisible()
-  await expect(settingsList.getByRole("heading", { name: "On the Tasks page" })).toBeVisible()
-  await expect(settingsList.locator("[data-shortcut-scope=global]")).toHaveText(GLOBAL_SHORTCUT_LABELS)
-  await expect(settingsList.locator("[data-shortcut-scope=tasks]")).toHaveText(TASK_VIEW_LABELS)
-  await expect(settingsList.locator(".shortcut-keys")).toHaveText([...GLOBAL_SHORTCUT_KEYS, "1", "2", "3", "4", "Home"])
+  // Settings edits shortcuts by group; the help dialog keeps the read-only list.
+  for (const heading of ["Global Shortcuts (application-wide)", "Navigation", "Tasks (on the Tasks page)"]) {
+    await expect(settingsList.getByRole("heading", { name: heading, exact: true })).toBeVisible()
+  }
+  const editable = await settingsList.locator("[data-shortcut-field]").evaluateAll(fields =>
+    fields.map(field => field.getAttribute("data-shortcut-label")))
+  expect(editable).toEqual(expect.arrayContaining(["Search", "Command palette", "Dashboard", "Today view", "Calendar view"]))
   await expect(settingsList).not.toContainText("List view")
   const enabled = preference(page)
   const search = page.locator("#settings-bar-search-launcher")
@@ -137,8 +140,14 @@ test("shortcut help contains focus and restores its opener after Escape and afte
   expect(target).not.toBeNull()
   expect(target!.width).toBeGreaterThanOrEqual(44)
   expect(target!.height).toBeGreaterThanOrEqual(44)
+  // Focus cycles between Close and Customize shortcuts without leaving the dialog.
+  const customize = dialog.getByRole("link", { name: "Customize shortcuts", exact: true })
+  await page.keyboard.press("Tab")
+  await expect(customize).toBeFocused()
   await page.keyboard.press("Tab")
   await expect(close).toBeFocused()
+  await page.keyboard.press("Shift+Tab")
+  await expect(customize).toBeFocused()
   await page.keyboard.press("Shift+Tab")
   await expect(close).toBeFocused()
   await viewHelp.click()
