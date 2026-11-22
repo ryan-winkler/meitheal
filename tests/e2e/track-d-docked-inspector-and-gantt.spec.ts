@@ -280,14 +280,14 @@ test.describe("Track D — @container Docked Task Inspector, Ingress Reload Pers
 
       const storedState = await readScopedNavigation(page)
       expect(storedState).not.toBeNull()
-      expect(storedState.path).toBe(`/tickets/${seeded.id}`)
+      expect(storedState.path).toBe(`/tickets/${seeded.ticket_key}`)
       expect(storedState.path).not.toContain(prefix)
 
       // Simulate Home Assistant Ingress iframe recreation landing at the bare Ingress mount path
       await page.goto(`${origin}${prefix}/`)
       await page.waitForLoadState("networkidle")
 
-      expect(new URL(page.url()).pathname).toBe(`${prefix}/tickets/${seeded.id}`)
+      expect(new URL(page.url()).pathname).toBe(`${prefix}/tickets/${seeded.ticket_key}`)
       expect(page.url()).not.toContain(`${prefix}${prefix}`)
       await expect(page.locator("#td-title")).toHaveValue("Ingress reload MTH-1 fixture")
     } finally {

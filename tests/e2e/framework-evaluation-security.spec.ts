@@ -76,7 +76,8 @@ test("switching tickets during Assist resets the reused action and ignores the a
     await started.promise
     await expect(page.locator("#se-ask-ai")).toBeDisabled()
     await page.evaluate(id => window.openTaskDetail?.(id), second)
-    await expect.poll(() => new URL(page.url()).pathname).toBe(`/tickets/${second}`)
+    const secondKey = (await (await request.get(`/api/tasks/${second}`)).json()).ticket_key
+    await expect.poll(() => new URL(page.url()).pathname).toBe(`/tickets/${secondKey}`)
     await expect(page.getByLabel("Scoring framework", { exact: true })).toBeEnabled()
     await expect(page.locator("#se-ask-ai")).toBeEnabled()
     release.resolve()
