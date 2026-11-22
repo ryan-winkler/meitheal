@@ -354,9 +354,15 @@ test("promotion stages only after both architectures pass anonymous readback and
   const env = { FIXTURE_TRACE_ARCH: "1", FIXTURE_AMD_DIGEST: amdDigest }
   const registryWrites = () => readFileSync(harness.trace, "utf8").split("\n").filter(event => /^(login|push)/.test(event))
 
-  const anonymousFailure = harness.run(args, { ...env, FIXTURE_AMD_PUBLIC_DIGEST: digest })
-  expect(anonymousFailure.status).toBe(1)
-  expect(anonymousFailure.stderr).toMatch(/Unexpected published digest for .*\/meitheal-canary-amd64:/)
+  const armAnonymousFailure = harness.run(args, { ...env, FIXTURE_PUBLIC_DIGEST: amd })
+  expect(armAnonymousFailure.status).toBe(1)
+  expect(armAnonymousFailure.stderr).toMatch(/Unexpected published digest for .*\/meitheal-canary-aarch64:/)
+  expect(registryWrites()).toEqual(["login", "push:aarch64"])
+  expect(existsSync(canary)).toBe(false)
+
+  const amdAnonymousFailure = harness.run(args, { ...env, FIXTURE_AMD_PUBLIC_DIGEST: digest })
+  expect(amdAnonymousFailure.status).toBe(1)
+  expect(amdAnonymousFailure.stderr).toMatch(/Unexpected published digest for .*\/meitheal-canary-amd64:/)
   expect(registryWrites()).toEqual(["login", "push:aarch64", "push:amd64"])
   expect(existsSync(canary)).toBe(false)
 
