@@ -393,18 +393,18 @@ function bindAppearanceForm(form: HTMLFormElement): void {
     if (isAppearanceDraftDirty(committed, draft)) applySnapshotPreview(committed)
   }, { once: true })
 
-  // Save commits atomically
+  // Keep subsequent edits separate from the submitted values.
   pageLifecycle.on(form, "submit", async (event) => {
     event.preventDefault()
     if (saving) return
+    const submitted = cloneAppearanceSnapshot(draft)
     saving = true
     for (const btn of saveBtns) {
       btn.disabled = true
       btn.classList.add("btn-loading")
     }
-    // Persist the draft as it was when Save was pressed; later edits stay unsaved.
-    const submitted = cloneAppearanceSnapshot(draft)
     try {
+      const nextStored = resolveFullAppearance(submitted.appearance)
       // 1. Persist Theme (server-backed setting) if changed
       if (isLookAndFeel && submitted.theme && submitted.theme !== committed.theme) {
         if (submitted.theme === "custom" && !readAppearanceValue("meitheal-custom-theme-css")) {
@@ -428,25 +428,27 @@ function bindAppearanceForm(form: HTMLFormElement): void {
       }
 
       // 3. Persist appearance preferences to localStorage, keeping keys from newer versions
-      const nextStored = resolveFullAppearance(submitted.appearance)
       let previous: Record<string, unknown> = {}
       try {
         const stored: unknown = JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY) ?? "{}")
         if (stored && typeof stored === "object" && !Array.isArray(stored)) previous = stored as Record<string, unknown>
       } catch { /* A valid save replaces malformed stored preferences. */ }
       localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify({ ...previous, ...nextStored }))
-      applyAppearancePreferences(nextStored)
-      if (isLookAndFeel) {
-        refreshHAThemeMatch()
-        if (!matchesHaPalette()) applyPersonalAccent(root, submitted.accent ?? null)
-      }
-
       committed = submitted
-      if (isAppearanceDraftDirty(committed, draft)) applySnapshotPreview(draft)
+      if (isAppearanceDraftDirty(committed, draft)) {
+        applySnapshotPreview(draft)
+      } else {
+        applyAppearancePreferences(nextStored)
+        if (isLookAndFeel) {
+          refreshHAThemeMatch()
+          if (!matchesHaPalette()) applyPersonalAccent(root, submitted.accent ?? null)
+        }
+        status.textContent = status.dataset.saved ?? "Saved."
+      }
       updateDirtyUi()
-      status.textContent = status.dataset.saved ?? "Saved."
       showToast("common.updated")
     } catch (error) {
+      if (isAppearanceDraftDirty(submitted, draft)) applySnapshotPreview(draft)
       status.textContent = status.dataset.error ?? ""
       showSettingsSaveError(error)
     } finally {

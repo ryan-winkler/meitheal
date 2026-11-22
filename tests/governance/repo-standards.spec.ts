@@ -268,11 +268,9 @@ test("Evergreen Carbon surface rules, indigo chrome allowlist, and Bucket 2 opti
     "pages/api/tasks/[id].ts",
     "pages/api/users/custom.ts",
     "domains/auth/user-profile.ts",
-    "domains/auth/user-profile.test.ts",
-    "lib/accent-colors.test.ts",
     "pages/api/users/index.ts",
   ]);
-  expect(indigoAllowlist.size).toBe(16);
+  expect(indigoAllowlist.size).toBe(14);
 
   const blurViolations: string[] = [];
   const indigoViolations: string[] = [];

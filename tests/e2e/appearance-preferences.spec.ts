@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test"
 import { APPEARANCE_PREFERENCES } from "../../apps/web/src/lib/appearance-preferences"
 import { currentBoardWriteHeaders } from "../helpers/current-board-http"
-import { shouldSkipBrowserSpecs } from "./_helpers"
+import { deferred, shouldSkipBrowserSpecs } from "./_helpers"
 import { saveAppearance } from "../helpers/appearance-settings"
 
 test.describe("Appearance preferences", () => {
@@ -150,6 +150,47 @@ test.describe("Appearance preferences", () => {
     await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--bg-primary-rgb").trim())).toBe("250 250 249")
     await page.emulateMedia({ colorScheme: "dark" })
     await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--bg-primary-rgb").trim())).toBe("28 25 23")
+  })
+
+  test("a pending save commits its submitted choices and leaves later edits in preview", async ({ page }) => {
+    const root = page.locator("html")
+    const theme = page.locator("#theme-select")
+    const form = page.locator("#appearance-preferences-form")
+    const font = form.locator('[name="font"]')
+    const save = form.locator("#appearance-save-btn")
+    const saveGate = deferred<void>()
+    await page.route("**/api/settings", async (route) => {
+      if (route.request().method() === "PUT") await saveGate.promise
+      await route.continue()
+    })
+
+    await theme.selectOption("light")
+    await font.selectOption("mono")
+    const themeRequest = page.waitForRequest((request) =>
+      request.method() === "PUT" && new URL(request.url()).pathname === "/api/settings")
+    await save.click()
+    try {
+      expect((await themeRequest).postDataJSON()).toEqual({ key: "theme", value: "light" })
+      await form.locator("[data-appearance-reset]").click()
+      await theme.selectOption("dark")
+      await expect(font).toHaveValue("sans")
+    } finally {
+      saveGate.resolve()
+    }
+
+    await expect(save).toBeEnabled()
+    await expect(root).toHaveAttribute("data-theme", "dark")
+    await expect(root).toHaveAttribute("data-appearance-font", "sans")
+    await expect(form.locator("[data-appearance-dirty-bar]")).toBeVisible()
+    expect(await page.evaluate(() => ({
+      theme: localStorage.getItem("meitheal-theme"),
+      font: JSON.parse(localStorage.getItem("meitheal-appearance")!).font,
+    }))).toEqual({ theme: "light", font: "mono" })
+
+    await form.locator("[data-appearance-discard]").click()
+    await expect(root).toHaveAttribute("data-theme", "light")
+    await expect(root).toHaveAttribute("data-appearance-font", "mono")
+    await expect(form.locator("[data-appearance-dirty-bar]")).toBeHidden()
   })
 
   test("appearance preserves other saved preferences and keeps the draft if storage rejects it", async ({ page }) => {

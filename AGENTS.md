@@ -244,7 +244,13 @@ All UI and UX changes must comply with [DESIGN.md](DESIGN.md) and [docs/kcs/desi
 - **Gestalt Principles**: Keep peer setting groups at the same top-level `SettingsPanelCard` hierarchy with unified `20px` spacing (never nest peer domains in touching disclosure boxes); match visual weight for peer buttons; elevate popovers (`z-index: 240–260`) so sticky headers never clip them.
 - **Nielsen's Heuristics & Kathy Sierra ("Badass")**: Avoid duplicate triggers/popovers (Profile opens Edit Profile directly; Keyboard utility on the right holds Edit Menu, Add Link, Shortcuts, Settings, Look & Feel, and Tour). Allow hiding *Settings* in navigation while keeping it permanently reachable in the Keyboard utility menu. Place workflow settings (such as *New task opens: Quick add vs Task form*) in their owning DDD section (*Tasks & Boards*).
 - **Interaction Craft (`emil-design-eng`) & Continuous Taste (`learn-taste`)**: Use `cubic-bezier(0.23, 1, 0.32, 1)` ease-out transitions, subtle `:active` press feedback (`scale(0.97–0.98)`), origin-aware popover entry, and `@media (prefers-reduced-motion: reduce)` fallbacks. Record recurring UI corrections in `DESIGN.md` as **Before / After / Why** entries.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:16762d8fa5f899ed875d9f993f4bdc3239effa983701ffaed3dfe410db21ca2f -->
+
 - **Local-First & Security (OWASP Top 10)**: Self-host all fonts locally, compute WCAG AA contrast tokens for dynamic accents and theme-matched avatars, enforce authorization checks before parsing request bodies, and keep `pnpm --filter @meitheal/web perf:budget` within baseline.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 ## Licensing Boundaries
 
