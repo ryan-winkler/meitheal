@@ -39,10 +39,6 @@ Meitheal applies six complementary disciplines together:
 - No duplicate menus or redundant triggers appear in navigation chrome.
 - Navigation editing and task view pinning work in Sidebar (Expanded, Folded, Hover), Top Navigation (`nav-overflow`), and Mobile (`<= 768px`).
 - All visual tokens (theme, accent, avatar contrast, self-hosted fonts) render locally with zero external font calls and pass WCAG AA contrast.
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:d917afa0adf725f3368964e034c0217c6874205853e53c76513d4f90484c66db -->
 
 - `pnpm --filter @meitheal/web perf:budget` stays within `apps/web/scripts/perf-budget-baseline.json`.
 
-<!-- /coderabbit-ai-generated:v1 -->

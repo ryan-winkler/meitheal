@@ -51,11 +51,10 @@ for (const locale of ["en", "ga"] as const) {
   })
 }
 
-test("missing Irish strings use English and script payloads cannot close their element", () => {
-  const missing = keys(en).filter(key => !key.startsWith("en.") && !key.startsWith("ga."))
-    .find(key => t(key, "en") === t(key, "ga") && !keys(ga).includes(key))!
-  expect(missing).toBeTruthy()
-  expect(client("ga").get(missing)).toBe(t(missing, "en"))
+test("the Irish catalog covers every English string and script payloads cannot close their element", () => {
+  // Every English string has an Irish translation; unknown keys still fall back to the key.
+  const irish = new Set(keys(ga))
+  expect(keys(en).filter(key => !key.startsWith("en.") && !key.startsWith("ga.") && !irish.has(key))).toEqual([])
   for (const payload of [...Object.values(clientTranslationJson), ...Object.values(alternateClientTranslationJson)]) {
     expect(payload).not.toContain("<")
   }

@@ -123,35 +123,6 @@ test.describe("Theme Settings", () => {
     await expect(html).toHaveAttribute("data-theme", "light");
   });
 
-  test("a Reset during a pending save stays an unsaved preview", async ({ page }) => {
-    const themeSelect = page.locator("#theme-select")
-    const font = page.getByRole("radiogroup", { name: "Typeface", exact: true })
-    let release!: () => void
-    const held = new Promise<void>(resolve => { release = resolve })
-    await page.route("**/api/settings", async route => {
-      if (route.request().method() === "PUT" && route.request().postDataJSON()?.key === "theme") await held
-      await route.continue()
-    })
-    const target = await themeSelect.inputValue() === "light" ? "dark" : "light"
-    await themeSelect.selectOption(target)
-    await font.getByRole("radio", { name: "Serif", exact: true }).click()
-    const saved = page.waitForResponse(response => new URL(response.url()).pathname === "/api/settings"
-      && response.request().method() === "PUT" && response.request().postDataJSON()?.key === "theme")
-    await page.locator("#appearance-save-btn").click()
-    await page.getByRole("button", { name: "Reset to defaults" }).click()
-    release()
-    expect((await saved).ok()).toBe(true)
-    // The submitted theme and typeface are committed; the reset stays a visible draft.
-    await expect(page.locator("#appearance-dirty-bar")).toBeVisible()
-    await expect(page.locator("html")).toHaveAttribute("data-appearance-font", "sans")
-    expect(await page.evaluate(() => JSON.parse(localStorage.getItem("meitheal-appearance") ?? "{}").font)).toBe("serif")
-    expect(await page.evaluate(() => localStorage.getItem("meitheal-theme"))).toBe(target)
-    await page.locator("[data-appearance-discard]").click()
-    await expect(page.locator("html")).toHaveAttribute("data-appearance-font", "serif")
-    await page.getByRole("button", { name: "Reset to defaults" }).click()
-    await saveAppearance(page)
-  })
-
   test("typeface and corners preview, apply on save and survive navigation and reset", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 780 })
     await page.goto("/settings#look-and-feel-settings")

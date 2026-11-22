@@ -187,9 +187,6 @@ Use this after changing the Calendar shell, `calendar-controller.ts`, or route-s
 - `#calendar-flow`
 
 3. Confirm `TaskViewTabs` still preserve the current query string when switching routes.
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:9805a281206b9935337b0984b7da14d4a16ea60f07264e5fb72e2b404bedea16 -->
 
 4. Confirm clicking a month cell opens the day drawer.
 5. Confirm `Add Task` from the day drawer opens the shared task modal.
@@ -202,8 +199,6 @@ Use this after changing `calendar-bridge.ts`, `calendar-event-identity.ts`, `due
 2. Confirm an imported Google Calendar or WebDAV/CalDAV event does not spawn a duplicate due-date reminder event on the same calendar and that HTML-wrapped or reminder-shaped echoes are skipped on inbound sync.
 3. Confirm bidirectional calendars expose `calendar_write_ticket_details` (default on) to append a blank line, ticket key, and direct Meitheal link while preserving `Added from Meitheal` attribution when disabled.
 4. Confirm outbound calendar syncs and due-date calendar reminders record a `calendar_sync` confirmation entry in `task_activity_log`.
-
-<!-- /coderabbit-ai-generated:v1 -->
 
 ## Kanban Shell Verification
 
@@ -651,7 +646,6 @@ After building the App, run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tes
 6. From an active named Project’s settings, submit **New Routine** through the browser. Verify the saved template and its first completed ticket retain that Project and Area. Check the Routine in both its library and Today, mark it done once and verify the same occurrence is shown as Done. A viewer can read the row and a completion-denied member cannot mark it done.
 7. Close the Project and verify a new occurrence cannot be created. Retry a previously completed period with current Board permissions and confirm it returns the original ticket. Revoke Board access or change the signed-in account and confirm the Routine list clears after revalidation. Reconnect and refresh after a failed check-in before retrying.
 
-
 ### Historical predecessor: Board deletion and paused Household recovery (schema 25)
 
 This section records the pre-26 migration and its compatibility checks. For the current schema-26 model, use [Boards, Areas and Projects](named-boards.md): every Board, including the editable example, uses the same work engine, lifecycle and configured audience. Its historical identifier only preserves existing storage and ticket identities. Do not use the predecessor distinction to configure new work.
@@ -679,7 +673,6 @@ Recovery lock is different from a deleted Household Board. Missing, invalid or m
 For a genuinely new database, verify initial enrollment completes in the migrator and survives a separate server process and restart. For an already enrolled installation, verify its current epoch remains compatible. For a never-enrolled legacy upgrade, require the one-shot offline current-checkpoint procedure; the identical historical data without that external proof must stay locked. Rehearse missing-marker and stale-epoch snapshots against Household API reads/writes/counts/exports, agent/MCP paths and cached background delivery. Do not start an older binary that cannot enforce later restrictions.
 
 The public runtime database client guards direct services and timers as well as repositories. Verify `continuity-public-client.spec.ts` for task-time writes, Pomodoro callbacks and valid grant/lifecycle transitions. Content-free health remains available during lock. Grocy must stop polling and retries, refuse a newly dispatched cached task and withhold late confirmations when current Household authority is lost; concurrent calls to one active adapter coalesce. Verify `grocy-continuity.spec.ts` and the existing adapter/bridge controls. A SQLite download must stop before publication if its admitted revision changes during backup, and abort remaining reads if it changes after headers. Verify `continuity-sqlite-export.spec.ts`, retaining cancellation, temp-file cleanup and one-download-at-a-time checks. Do not describe a stream aborted after headers as an HTTP 503 response.
-
 
 ## Ordinary Board workspace checks
 
