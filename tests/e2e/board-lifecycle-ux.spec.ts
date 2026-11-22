@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite"
 
 import { expect, test as base, type BrowserContext, type Page } from "@playwright/test"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
+import { DATABASE_SCHEMA_VERSION } from "../../apps/web/scripts/database-client.mjs"
 
 const test = base.extend<{ boards: { page: Page; member: BrowserContext; admin: BrowserContext; app: string; origin: string; work: string } }>({
   boards: async ({}, use) => {
@@ -324,7 +325,7 @@ test("a markerless existing schema26 fixture cannot inherit access or bootstrap 
       }
     } finally { database.close() }
   }
-  expect(snapshot().version).toEqual({ value: "26" })
+  expect(snapshot().version).toEqual({ value: String(DATABASE_SCHEMA_VERSION) })
   expect(snapshot().boards.map(board => board.id)).toEqual([selected])
   const database = new DatabaseSync(join(work, "pins.db"))
   try { database.exec("DELETE FROM board_access_epoch") } finally { database.close() }

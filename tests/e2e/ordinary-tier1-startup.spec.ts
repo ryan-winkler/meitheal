@@ -5,6 +5,7 @@ import { test, expect } from "@playwright/test"
 import { ensureSchema, resetPersistenceForTests, getSchemaVersion, getPersistenceClient } from "../../apps/web/src/domains/tasks/persistence/store"
 import { registerVerifiedPrincipal } from "../../apps/web/src/domains/tasks/board-scope"
 import { NamedBoardRepository } from "../../apps/web/src/domains/tasks/persistence/named-board-repository"
+import { DATABASE_SCHEMA_VERSION } from "../../apps/web/scripts/database-client.mjs"
 
 test("real runtime preparation reopens admitted schema26 without repairing or rejecting its known triggers", async () => {
   const directory = await mkdtemp(join(tmpdir(), "ordinary-runtime-restart-"))
@@ -23,7 +24,7 @@ test("real runtime preparation reopens admitted schema26 without repairing or re
     // Production ensureSchema supplies initializeRuntimeTables to the admitted
     // startup writer, unlike read-only schema checks or migration-only fixtures.
     await ensureSchema({ markerPath })
-    expect(getSchemaVersion()).toBe(26)
+    expect(getSchemaVersion()).toBe(DATABASE_SCHEMA_VERSION)
     expect((await getPersistenceClient().execute("SELECT name,sql FROM sqlite_schema WHERE type='trigger' ORDER BY name")).rows).toEqual(triggers)
     expect((await getPersistenceClient().execute("SELECT id,name,revision FROM task_boards ORDER BY id")).rows).toEqual(boards)
   } finally {
