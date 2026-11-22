@@ -26,7 +26,7 @@ export function mountReactions(host: HTMLElement, url: string, signal: AbortSign
   if (!template || signal.aborted) return
 
   const panel = document.createElement("details")
-  panel.className = "mt-2 rounded-md border border-border px-3"
+  panel.className = `${taskId === undefined ? "mt-2 " : ""}rounded-md border border-border px-3`
   panel.dataset.reactionPanel = taskId === undefined ? "comment" : "task"
   const summary = document.createElement("summary")
   summary.className = "min-h-11 cursor-pointer py-3 text-sm font-medium text-text-primary focus-visible:outline-2 focus-visible:outline-accent"

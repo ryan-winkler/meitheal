@@ -13,7 +13,7 @@
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.62);
-  z-index: 200;
+  z-index: 270;
   display: none;
   align-items: center;
   justify-content: center;
@@ -1008,7 +1008,7 @@ body.has-docked-inspector #task-detail-panel {
 }
 #new-task-overlay .nt-modal {
   --nt-inset: 24px;
-  width: min(100%, 38rem);
+  width: min(100%, 42rem);
   max-width: none;
   max-height: min(92dvh, 52rem);
   margin: 0;
