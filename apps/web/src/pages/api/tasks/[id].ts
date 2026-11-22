@@ -27,6 +27,7 @@ import { checkAssignedTask, isAssignedWriteOnly, restrictedAssigneeId } from "..
 import { db503Response, isDbUnavailable } from "../../../lib/db-fallback"
 import { resolveRecentActivityActor } from "../../../lib/recent-activity-actor"
 import { STATUS, normalizeStatus, isDoneStatus } from "../../../lib/status-config"
+import { stripHtml } from "../../../lib/strip-html"
 import { sendTaskNotification, notificationOperationAllowed } from "@domains/notifications"
 import { agentActivityActor } from "../../../lib/agent-activity-actor"
 
@@ -241,26 +242,24 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
   const sanitized: Record<string, InValue> = {}
   if ("nfc_tag_id" in body) sanitized.nfc_tag_id = typeof body.nfc_tag_id === "string" ? body.nfc_tag_id.trim() : null
 
-  if (typeof body.title === "string" || typeof body.description === "string") {
-    const { sanitize, sanitizeMarkdownInput } = await import("../../../lib/sanitize")
-    if (typeof body.title === "string") {
-      const t = sanitize(body.title.trim())
-      if (!t) {
-        return new Response(JSON.stringify({ error: "title cannot be empty" }), {
-          status: 400, headers: { "content-type": "application/json" },
-        })
-      }
-      if (t.length > 500) {
-        return new Response(JSON.stringify({ error: "title must be 500 characters or less" }), {
-          status: 400, headers: { "content-type": "application/json" },
-        })
-      }
-      sanitized.title = t
+  if (typeof body.title === "string") {
+    const t = stripHtml(body.title.trim()).trim()
+    if (!t) {
+      return new Response(JSON.stringify({ error: "title cannot be empty" }), {
+        status: 400, headers: { "content-type": "application/json" },
+      })
     }
-    if (typeof body.description === "string") {
-      if (body.description.length > 10000) return apiError("description must be 10000 characters or less", 400)
-      sanitized.description = sanitizeMarkdownInput(body.description)
+    if (t.length > 500) {
+      return new Response(JSON.stringify({ error: "title must be 500 characters or less" }), {
+        status: 400, headers: { "content-type": "application/json" },
+      })
     }
+    sanitized.title = t
+  }
+  if (typeof body.description === "string") {
+    const { sanitizeMarkdownInput } = await import("../../../lib/sanitize")
+    if (body.description.length > 10000) return apiError("description must be 10000 characters or less", 400)
+    sanitized.description = sanitizeMarkdownInput(body.description)
   }
   if (typeof body.status === "string") {
     const st = body.status.trim().toLowerCase().replace(/[^a-z0-9_]/g, "")

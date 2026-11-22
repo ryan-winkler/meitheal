@@ -196,6 +196,15 @@ test("R17/R18/R19: LaneRepository colors/reorder, reorderTableTasks, reaction gr
       reacted: true,
       my_reaction_id: added!.id,
     }])
+
+    // Title tag stripping preserves literal ampersands without &amp; entity corruption
+    const createdTitle = await prepareTaskCreation(tasks, {
+      title: "  <b>Winter</b> Energy & Heating Audit  ",
+    })
+    expect(createdTitle.ok).toBe(true)
+    if (createdTitle.ok) {
+      expect(createdTitle.task.title).toBe("Winter Energy & Heating Audit")
+    }
   } finally {
     resetPersistenceForTests()
     if (prevUrl === undefined) delete process.env.MEITHEAL_DB_URL

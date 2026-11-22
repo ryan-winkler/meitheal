@@ -13,6 +13,7 @@ import {
 } from "@meitheal/domain-tasks"
 import { logApiError } from "../../lib/api-logger"
 import { normalizeStatus, STATUS } from "../../lib/status-config"
+import { stripHtml } from "../../lib/strip-html"
 
 /**
  * Accept labels as an array of strings or as a JSON-encoded string array.
@@ -36,10 +37,10 @@ export async function prepareTaskCreation(
   body: Record<string, unknown>,
   { id = crypto.randomUUID(), useDefaultAssignee = true }: { id?: string, useDefaultAssignee?: boolean } = {},
 ): Promise<{ ok: true; task: TaskCreationData } | { ok: false; error: string }> {
-  // OA-604: Input sanitization
-  const { sanitize, sanitizeMarkdownInput } = await import("../../lib/sanitize")
+  // OA-604: Input sanitization (strip HTML tags from plain-text titles without escaping &)
+  const { sanitizeMarkdownInput } = await import("../../lib/sanitize")
   const rawTitle = typeof body.title === "string" ? body.title.trim() : ""
-  const title = sanitize(rawTitle)
+  const title = stripHtml(rawTitle).trim()
   if (!title) return { ok: false, error: "title is required" }
   if (title.length > 500) return { ok: false, error: "title must be 500 characters or less" }
 
