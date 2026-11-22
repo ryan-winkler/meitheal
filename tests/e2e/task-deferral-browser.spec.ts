@@ -54,7 +54,7 @@ test("keyboard Defer removes a board card and keyboard Resume brings it back", a
   await row.getByRole("button", { name: "Resume", exact: true }).press("Enter")
   await expect(row).toHaveCount(0)
   await expect(page.locator(neighbor ? `[data-deferred-card="${neighbor}"] [data-deferred-details]` : "#deferred-heading")).toBeFocused()
-  await page.getByRole("link", { name: "Back to Tasks" }).click()
+  await page.getByRole("navigation", { name: "Task lifecycle views" }).getByRole("link", { name: "Back to Tasks" }).click()
   await expect(card).toBeVisible()
 })
 
@@ -156,13 +156,14 @@ test("Deferred preserves the Board Area and can widen to all Areas", async ({ pa
   await defer(request, boardHeaders, elsewhere)
 
   await page.goto(`/tasks?area=${areaId}#kanban`)
-  await page.getByRole("link", { name: "Deferred", exact: true }).click()
+  // The toolbar link carries a count badge, so it is named "Deferred 2".
+  await page.locator("[data-deferred-link]").click()
   const areaFilter = page.getByRole("combobox", { name: "Area", exact: true })
   await expect(areaFilter).toHaveValue(areaId)
   await expect(page.locator(`[data-deferred-card="${local.id}"]`)).toBeVisible()
   await expect(page.locator(`[data-deferred-card="${elsewhere.id}"]`)).toHaveCount(0)
   await expect(page.locator("[data-deferred-count]")).toContainText("1 deferred task")
-  await expect(page.getByRole("link", { name: "Back to Tasks" })).toHaveAttribute("href", `/tasks?area=${areaId}#kanban`)
+  await expect(page.getByRole("navigation", { name: "Task lifecycle views" }).getByRole("link", { name: "Back to Tasks" })).toHaveAttribute("href", `/tasks?area=${areaId}#kanban`)
   await expect(page.getByRole("link", { name: "Reload Deferred" })).toBeHidden()
 
   await areaFilter.selectOption({ label: "All areas" })
@@ -170,7 +171,7 @@ test("Deferred preserves the Board Area and can widen to all Areas", async ({ pa
   await expect(areaFilter).toHaveValue("")
   await expect(page.locator(`[data-deferred-card="${elsewhere.id}"]`)).toBeVisible()
   await expect(page.locator(`[data-deferred-card="${local.id}"]`)).toBeVisible()
-  await page.getByRole("link", { name: "Back to Tasks" }).click()
+  await page.getByRole("navigation", { name: "Task lifecycle views" }).getByRole("link", { name: "Back to Tasks" }).click()
   await expect(page).toHaveURL(/\/tasks\?area=#kanban$/)
 
   for (const task of [local, elsewhere]) await request.delete(`/api/tasks/${task.id}`, { headers: boardHeaders, data: {} })
@@ -183,7 +184,7 @@ test("a missing Deferred Area stays visible on the Board until the user widens i
     await page.goto(`/deferred?area=${id}`)
     const area = page.getByRole("combobox", { name: "Area", exact: true })
     await expect(area).toHaveValue(id)
-    await page.getByRole("link", { name: "Back to Tasks" }).click()
+    await page.getByRole("navigation", { name: "Task lifecycle views" }).getByRole("link", { name: "Back to Tasks" }).click()
     const trigger = page.locator("#area-selector-trigger")
     await expect(trigger).toContainText("Area unavailable")
     const add = page.getByRole("button", { name: "Add task to Backlog" })

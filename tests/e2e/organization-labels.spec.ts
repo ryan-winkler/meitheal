@@ -74,7 +74,7 @@ test("People can change personal display labels without changing routes, account
 
     await page.locator('#sidebar a[data-page="boards"]').click()
     await expect(page).toHaveURL(app + "/boards")
-    await expect(page.getByText("New Workshop", { exact: true })).toBeVisible()
+    await expect(page.locator(".board-add__trigger").getByText("New Workshop", { exact: true })).toBeVisible()
     await page.waitForFunction(() => typeof window.openSearchHub === "function")
     await page.locator("#global-search").click()
     const search = page.locator("#search-hub-input")

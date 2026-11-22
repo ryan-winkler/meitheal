@@ -86,7 +86,7 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await queue.getByRole("button", { name: "Apply area" }).click()
     await expect(page).toHaveURL(origin + prefix + "/deferred?area=")
     await expect(queueArea).toHaveValue("")
-    await queue.getByRole("link", { name: "Back to Tasks" }).click()
+    await queue.getByRole("navigation", { name: "Task lifecycle views" }).getByRole("link", { name: "Back to Tasks" }).click()
     await expect(page).toHaveURL(origin + prefix + "/tasks?area=#kanban")
 
     await page.goto(origin + prefix + "/tasks?area=default#kanban")
@@ -94,8 +94,8 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await page.getByRole("link", { name: "Inactivity", exact: true }).click()
     await expect(page).toHaveURL(base + "?board_id=household&area=default")
     await expect(page.getByRole("combobox", { name: "Area", exact: true })).toHaveValue("default")
-    await expect(page.getByRole("link", { name: "Back to Tasks" })).toHaveAttribute("href", origin + prefix + "/boards/household?area=default")
-    await page.getByRole("link", { name: "Back to Tasks" }).click()
+    await expect(page.getByRole("navigation", { name: "Task lifecycle views" }).getByRole("link", { name: "Back to Tasks" })).toHaveAttribute("href", origin + prefix + "/boards/household?area=default")
+    await page.getByRole("navigation", { name: "Task lifecycle views" }).getByRole("link", { name: "Back to Tasks" }).click()
     await expect(page).toHaveURL(url => url.pathname === prefix + "/boards/household" && url.searchParams.get("area") === "default")
     await page.goto(base)
     const content = page.locator("[data-inactivity-content]")
@@ -192,7 +192,7 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await changed
     expect((await pinRequest(page, api, "POST", requestBody)).status).toBe(403)
     expect((await pinRequest(page, api, "POST", { action: "board", ids: ["browser-card"] })).status).toBe(403)
-    await page.getByLabel("Show").selectOption("ready")
+    await page.locator("[data-inactivity-filter]").selectOption("ready")
     await expect(status).toHaveText("Your browser account could not access this action.")
     await expect(content).toBeHidden()
     await expect(rows.locator("li")).toHaveCount(0)
@@ -573,7 +573,7 @@ test("Deferred keeps the named Board through Area filtering, Details and Back to
     await details.click()
     await expect(page.locator("#td-title")).toHaveValue("Deferred workshop task")
     await page.getByRole("button", { name: "Close detail" }).click()
-    await page.getByRole("link", { name: "Back to Tasks" }).click()
+    await page.getByRole("navigation", { name: "Task lifecycle views" }).getByRole("link", { name: "Back to Tasks" }).click()
     await expect(page).toHaveURL(root + `/boards/${boardId}?area=${areaId}#kanban`)
   } finally {
     await browser?.close()

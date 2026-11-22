@@ -38,7 +38,8 @@ function problem(status: number, detail: string) {
 function sameOrigin(request: Request, ingress: string | undefined): boolean {
   const site = request.headers.get("sec-fetch-site")
   const mode = request.headers.get("sec-fetch-mode")
-  if (site !== "same-origin" || (mode !== "same-origin" && mode !== "cors")) return false
+  // The inactivity client always sends same-origin mode; reject other modes.
+  if (site !== "same-origin" || mode !== "same-origin") return false
   const origin = request.headers.get("origin")
   const referer = request.headers.get("referer")
   if (!origin || !referer) return false
