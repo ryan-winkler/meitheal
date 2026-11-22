@@ -34,10 +34,11 @@ function makeSupervisorSnapshot(
     detectedHaExternalUrl: null,
     detectedHaUrl: null,
     interfaces: [
-      { address: "0.0.0.0", label: "0.0.0.0 [default — all IPv4 interfaces]" },
-      { address: "127.0.0.1", label: "127.0.0.1 [loopback only]" },
+      { address: "0.0.0.0", label: "0.0.0.0 [default — all IPv4 interfaces]", source: "default" },
+      { address: "127.0.0.1", label: "127.0.0.1 [loopback only]", source: "default" },
     ],
     supervisorServices: [],
+    addonOptionsSupported: false,
     ...overrides,
   }
 }

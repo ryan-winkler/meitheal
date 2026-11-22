@@ -27,7 +27,7 @@ function createInMemoryBoardDb() {
   `)
   return {
     sqlite,
-    client: {
+    client: ({
       async execute(stmt: { sql: string; args?: unknown[] } | string) {
         const sql = typeof stmt === "string" ? stmt : stmt.sql
         const args = typeof stmt === "string" ? [] : (stmt.args ?? [])
@@ -39,7 +39,7 @@ function createInMemoryBoardDb() {
         prepared.run(...(args as Array<string | number | null>))
         return { rows: [] } as never
       },
-    },
+    }) as unknown as Parameters<typeof listBoardGrantsForAgentTokens>[0],
   }
 }
 

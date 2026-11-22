@@ -197,7 +197,7 @@ const terminology: Partial<Record<string, OrganizationTerm>> = {
   boards: "board", tasks: "task", planning: "planning", progress: "progress",
 }
 
-const sectionMetaMap = new Map(DEFAULT_SIDEBAR_SECTIONS.map(section => [section.id, section]))
+const sectionMetaMap = new Map<string, (typeof DEFAULT_SIDEBAR_SECTIONS)[number]>(DEFAULT_SIDEBAR_SECTIONS.map(section => [section.id, section]))
 
 const sections: SidebarSectionView[] = sidebarMenuConfig.sectionOrder.map(sectionId => {
   const spec = sectionMetaMap.get(sectionId)

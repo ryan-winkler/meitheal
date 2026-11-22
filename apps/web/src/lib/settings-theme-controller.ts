@@ -288,6 +288,7 @@ function bindAppearanceForm(form: HTMLFormElement): void {
   })
 
   pageLifecycle.on(form, "keydown", (event) => {
+    if (!(event instanceof KeyboardEvent)) return
     const btn = (event.target instanceof Element ? event.target : null)?.closest<HTMLButtonElement>("[data-visual-field][data-visual-option]")
     if (!btn) return
     const fieldName = btn.dataset.visualField
