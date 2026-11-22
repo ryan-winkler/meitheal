@@ -376,7 +376,7 @@
 .unified-bar__view-pills > .nav-overflow__primary {
   display: flex;
   align-items: center;
-  flex: 1 1 0;
+  flex: 0 1 auto;
   min-width: 0;
   gap: 2px;
   overflow-x: auto;
@@ -388,6 +388,9 @@
   min-width: 0;
   gap: 4px;
   overflow: visible;
+}
+.unified-bar__view-pills[data-nav-overflow-active] > .nav-overflow__primary {
+  overflow: hidden;
 }
 .nav-overflow__more { position: relative; flex: none; }
 .nav-overflow__toggle {
