@@ -91,7 +91,8 @@ const existing = process.env.FIXTURE_EXISTING_ID || (arch === "aarch64" && proce
 const event = command === "push" && process.env.FIXTURE_TRACE_ARCH ? command + ":" + arch : command
 appendFileSync(process.env.FIXTURE_TRACE, event + "\\n")
 if (command === "image" && args.includes("--format")) {
-  console.log(target.replace(/:[^:]+$/, "") + "@" + (process.env.FIXTURE_PUBLIC_DIGEST || digest))
+  const amdPublicDigest = arch === "amd64" && store.endsWith("/public/storage") && process.env.FIXTURE_AMD_PUBLIC_DIGEST
+  console.log(target.replace(/:[^:]+$/, "") + "@" + (amdPublicDigest || process.env.FIXTURE_PUBLIC_DIGEST || digest))
 } else if (command === "image") {
   console.log(JSON.stringify([{ Os: "linux", Architecture: arch === "aarch64" ? "arm64" : "amd64", Id: id,
     Config: { Labels: { "org.opencontainers.image.licenses": "LicenseRef-Proprietary", "org.opencontainers.image.revision": arch === "aarch64" && process.env.FIXTURE_ARM_REVISION || revision,
@@ -353,9 +354,10 @@ test("promotion stages only after both architectures pass anonymous readback and
   const env = { FIXTURE_TRACE_ARCH: "1", FIXTURE_AMD_DIGEST: amdDigest }
   const registryWrites = () => readFileSync(harness.trace, "utf8").split("\n").filter(event => /^(login|push)/.test(event))
 
-  const anonymousFailure = harness.run(args, { ...env, FIXTURE_PUBLIC_DIGEST: amd })
-  expect(anonymousFailure.stderr).toContain("Unexpected published digest")
-  expect(registryWrites()).toEqual(["login", "push:aarch64"])
+  const anonymousFailure = harness.run(args, { ...env, FIXTURE_AMD_PUBLIC_DIGEST: digest })
+  expect(anonymousFailure.status).toBe(1)
+  expect(anonymousFailure.stderr).toMatch(/Unexpected published digest for .*\/meitheal-canary-amd64:/)
+  expect(registryWrites()).toEqual(["login", "push:aarch64", "push:amd64"])
   expect(existsSync(canary)).toBe(false)
 
   const interrupted = harness.run(args, { ...env, FIXTURE_FAIL_AMD_PUSH: "1" })
