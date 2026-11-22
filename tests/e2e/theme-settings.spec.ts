@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { shouldSkipBrowserSpecs } from "./_helpers";
+import { saveAppearance } from "../helpers/appearance-settings";
 
 test("an invalid browser theme stays Auto when Settings has no saved theme", async ({ page }) => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
@@ -46,6 +47,7 @@ test.describe("Theme Settings", () => {
     await match.check()
     await expect(page.locator("#match-ha-theme-status")).toContainText("unavailable here")
     await expect(theme).toHaveValue("dark")
+    await saveAppearance(page)
     await page.reload()
     await expect(match).toBeChecked()
     await expect(theme).toHaveValue("dark")
@@ -69,7 +71,7 @@ test.describe("Theme Settings", () => {
     await expect(html).toHaveAttribute("lang", "ga")
     expect(await lookup()).toBe("Inniu")
     await page.goto("/settings#look-and-feel-settings")
-    await expect(page.locator("#appearance-settings > summary")).toHaveText("Saincheap an chuma")
+    await expect(page.locator("#appearance-save-btn")).toHaveText("Sábháil an chuma")
 
     await page.goto("/settings#language-time-settings")
     await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
@@ -108,9 +110,9 @@ test.describe("Theme Settings", () => {
   test("Theme persists across page reload", async ({ page }) => {
     const themeSelect = page.locator("#theme-select");
 
-    // Select light
+    // Select light and save the previewed draft
     await themeSelect.selectOption("light");
-    await page.waitForTimeout(500);
+    await saveAppearance(page, { theme: true });
 
     // Re-open the page to verify persistence across a fresh navigation
     await page.goto("/settings#look-and-feel-settings");
@@ -121,26 +123,30 @@ test.describe("Theme Settings", () => {
     await expect(html).toHaveAttribute("data-theme", "light");
   });
 
-  test("typeface and corners apply on save and survive navigation and reset", async ({ page }) => {
+  test("typeface and corners preview, apply on save and survive navigation and reset", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 780 })
-    await page.goto("/settings#appearance-settings")
+    await page.goto("/settings#look-and-feel-settings")
     const root = page.locator("html")
-    const summary = page.locator("#appearance-settings > summary")
-    const font = page.getByLabel("Typeface", { exact: true })
-    const radius = page.getByLabel("Corner roundness", { exact: true })
-    const save = page.getByRole("button", { name: "Save appearance" })
+    const font = page.getByRole("radiogroup", { name: "Typeface", exact: true })
+    const radius = page.getByRole("radiogroup", { name: "Corner roundness", exact: true })
+    const serif = font.getByRole("radio", { name: "Serif", exact: true })
+    const sans = font.getByRole("radio", { name: "Default (Sans serif)", exact: true })
+    const square = radius.getByRole("radio", { name: "Square", exact: true })
+    const defaultRadius = radius.getByRole("radio", { name: "Default", exact: true })
+    const save = page.locator("#appearance-save-btn")
     const status = page.locator("#appearance-save-status")
-    await expect(summary).toBeFocused()
-    await expect(font).toBeVisible()
-    await expect(radius).toHaveValue("1")
-    await font.selectOption("serif")
-    await radius.selectOption("0")
-    await expect(root).toHaveAttribute("data-appearance-font", "sans")
-    await expect(root).toHaveAttribute("data-appearance-radius", "1")
+    const dirty = page.locator("#appearance-dirty-bar")
+    await expect(defaultRadius).toHaveAttribute("aria-checked", "true")
+    await serif.click()
+    await square.click()
+    // Choices preview live and stay a draft until saved.
+    await expect(root).toHaveAttribute("data-appearance-font", "serif")
+    await expect(root).toHaveAttribute("data-appearance-radius", "0")
+    await expect(dirty).toBeVisible()
     await save.click()
     await expect(status).toHaveText("Appearance saved on this device.")
+    await expect(dirty).toBeHidden()
     await expect(page.locator("body")).toHaveCSS("font-family", /Georgia/)
-    await expect(page.locator("#settings-bar h1")).toHaveCSS("font-family", /Georgia/)
     await expect(save).toHaveCSS("border-radius", "0px")
 
     await page.setViewportSize({ width: 1440, height: 900 })
@@ -153,18 +159,17 @@ test.describe("Theme Settings", () => {
     await expect(root).toHaveAttribute("data-appearance-font", "serif")
     await expect(root).toHaveAttribute("data-appearance-radius", "0")
 
-    await page.goto("/settings#appearance-settings")
-    await expect(font).toHaveValue("serif")
-    await expect(radius).toHaveValue("0")
+    await page.goto("/settings#look-and-feel-settings")
+    await expect(serif).toHaveAttribute("aria-checked", "true")
+    await expect(square).toHaveAttribute("aria-checked", "true")
     await page.getByRole("button", { name: "Reset to defaults" }).click()
     await expect(status).toHaveText("Default choices selected. Save to apply them.")
-    await expect(root).toHaveAttribute("data-appearance-font", "serif")
-    await expect(font).toHaveValue("sans")
-    await expect(radius).toHaveValue("1")
+    await expect(sans).toHaveAttribute("aria-checked", "true")
+    await expect(defaultRadius).toHaveAttribute("aria-checked", "true")
     await save.click()
     await expect(root).toHaveAttribute("data-appearance-font", "sans")
     await expect(root).toHaveAttribute("data-appearance-radius", "1")
-    await expect(page.locator("#settings-bar h1")).toHaveCSS("font-family", /Geist Variable/)
+    await expect(page.locator("body")).toHaveCSS("font-family", /Geist Variable/)
     await expect(save).toHaveCSS("border-radius", "6px")
   })
 

@@ -50,6 +50,7 @@ test.describe("New Task Modal", () => {
       const saved = page.waitForResponse(response => new URL(response.url()).pathname === "/api/settings"
         && response.request().method() === "PUT" && response.request().postDataJSON()?.key === "theme")
       await page.locator("#theme-select").selectOption(theme)
+      await page.locator("#appearance-save-btn").click()
       expect((await saved).ok()).toBe(true)
       await page.goto("/today")
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
