@@ -46,11 +46,11 @@ function buildCacheNames() {
 }
 let CACHES = buildCacheNames();
 
-/** Eviction limits per cache bucket. */
+/** Eviction limits per cache bucket, keyed by bucket so they follow version changes. */
 const EVICTION_POLICY = {
-  [CACHES.static]:  { maxEntries: 100, maxAgeMs: 7  * 24 * 60 * 60 * 1000 },
-  [CACHES.api]:     { maxEntries: 50,  maxAgeMs: 1  * 60 * 60 * 1000 },
-  [CACHES.nav]:     { maxEntries: 20,  maxAgeMs: 24 * 60 * 60 * 1000 },
+  static: { maxEntries: 100, maxAgeMs: 7  * 24 * 60 * 60 * 1000 },
+  api:    { maxEntries: 50,  maxAgeMs: 1  * 60 * 60 * 1000 },
+  nav:    { maxEntries: 20,  maxAgeMs: 24 * 60 * 60 * 1000 },
   // precache: no eviction policy — cleaned entirely on version bump
 };
 
@@ -97,11 +97,11 @@ async function matchCacheable(request, cacheName) {
  * Prevents disk bloat from dynamic IPs, stale ingress tokens,
  * or long-running browser sessions accumulating responses.
  */
-async function evictCache(cacheName) {
-  const policy = EVICTION_POLICY[cacheName];
+async function evictCache(bucket) {
+  const policy = EVICTION_POLICY[bucket];
   if (!policy) return;
 
-  const cache = await caches.open(cacheName);
+  const cache = await caches.open(CACHES[bucket]);
   const requests = await cache.keys();
   const now = Date.now();
 
@@ -139,9 +139,9 @@ async function evictCache(cacheName) {
 /** Run eviction on all runtime caches. */
 async function evictAllCaches() {
   await Promise.all([
-    evictCache(CACHES.static),
-    evictCache(CACHES.api),
-    evictCache(CACHES.nav),
+    evictCache("static"),
+    evictCache("api"),
+    evictCache("nav"),
   ]);
 }
 
