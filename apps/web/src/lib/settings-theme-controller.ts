@@ -215,7 +215,10 @@ function bindAppearanceForm(form: HTMLFormElement): void {
     syncNavigationState(snap)
     if (isLookAndFeel) {
       if (snap.theme && isThemeMode(snap.theme)) {
-        applyTheme(snap.theme, snap.theme === "auto")
+        // Custom has nothing to preview until CSS is imported, so keep the saved theme.
+        const preview = snap.theme === "custom" && !readAppearanceValue("meitheal-custom-theme-css")
+          && committed.theme && isThemeMode(committed.theme) ? committed.theme : snap.theme
+        applyTheme(preview, preview === "auto")
         showCustomThemeSection(snap.theme === "custom")
       }
       refreshHAThemeMatch({ matchHaTheme: Boolean(snap.matchHaTheme), accent: snap.accent ?? null })
@@ -251,13 +254,17 @@ function bindAppearanceForm(form: HTMLFormElement): void {
     pageLifecycle.on(window, "meitheal:theme-changed", () => syncAccentSelection(draft.accent ?? null))
 
     syncCommittedTheme = (mode: string) => {
-      if (!isAppearanceDraftDirty(committed, draft)) {
-        committed.theme = mode
+      // Importing or removing custom CSS commits the theme immediately, so an
+      // unsaved Custom choice follows it; other unsaved choices stay drafts.
+      const follow = !isAppearanceDraftDirty(committed, draft) || draft.theme === "custom"
+      committed.theme = mode
+      if (follow) {
         draft.theme = mode
         if (themeSelect) themeSelect.value = mode
         syncVisualGroup("theme", mode)
         showCustomThemeSection(mode === "custom")
       }
+      updateDirtyUi()
     }
   }
 

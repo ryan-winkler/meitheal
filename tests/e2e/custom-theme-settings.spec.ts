@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises"
 import { test, expect } from "@playwright/test"
 import { shouldSkipBrowserSpecs } from "./_helpers"
+import { saveAppearance } from "../helpers/appearance-settings"
 
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
 
@@ -20,6 +21,7 @@ test("Custom CSS activates after import and can be downloaded, reused and remove
   const applied = () => root.evaluate(element => getComputedStyle(element).getPropertyValue("--fixture-theme-probe").trim())
   expect((await readSettings()).custom_theme_css ?? "").toBe("")
   await themeSelect.selectOption("light")
+  await saveAppearance(page, { theme: true })
   await expect(root).toHaveAttribute("data-theme", "light")
   await expect(customSection).toBeHidden()
 
@@ -57,6 +59,7 @@ test("Custom CSS activates after import and can be downloaded, reused and remove
   expect(await readFile(await download.path(), "utf8")).toBe(css)
 
   await themeSelect.selectOption("light")
+  await saveAppearance(page, { theme: true })
   await expect(root).toHaveAttribute("data-theme", "light")
   await expect(customSection).toBeHidden()
   expect(await applied()).toBe("")
