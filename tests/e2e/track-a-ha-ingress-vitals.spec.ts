@@ -388,7 +388,8 @@ test("A4/A5/A8: live serve.mjs leaves Ingress HTML uncompressed, keeps attribute
             return res
           }
         }
-        return listener(req, res)
+        // serve.mjs attaches its handler with on("request"), after this one.
+        if (typeof listener === "function") return listener(req, res)
       })
       srv.once("listening", () => {
         const addr = srv.address()
