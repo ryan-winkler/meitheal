@@ -569,11 +569,18 @@ const priorityClasses: Record<number, string> = {
 
 
   /* Subtask hierarchy styles (Phase 1: SUB-01) */
+  .col-title {
+    min-width: 16rem;
+  }
   .task-title-cell {
     display: flex;
     align-items: center;
     gap: 4px;
     position: relative;
+  }
+  .task-title-cell > .editable-cell {
+    flex: 1 1 auto;
+    min-width: 10rem;
   }
   .subtask-row .task-title-cell::before {
     content: '';
