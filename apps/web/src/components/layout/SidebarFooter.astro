@@ -38,7 +38,6 @@ const lookFeelHref = `${settingsHref}#look-and-feel-settings`
       aria-haspopup="dialog"
       aria-controls="sidebar-profile-modal"
       data-tooltip={`${profile.displayName} (${subtitle}) — Edit profile`}
-      aria-label={`${profile.displayName} — Edit profile`}
     >
       <span
         class="sidebar-user-avatar"
@@ -53,6 +52,7 @@ const lookFeelHref = `${settingsHref}#look-and-feel-settings`
         <span class="sidebar-user-name" data-user-profile-name>{profile.displayName}</span>
         <span class="sidebar-user-subtitle" data-user-profile-subtitle>{subtitle}</span>
       </span>
+      <span class="sr-only">Edit profile</span>
     </button>
 
     <button

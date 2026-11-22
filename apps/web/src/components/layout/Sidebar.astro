@@ -28,6 +28,7 @@ import {
   flattenSidebarOrder,
   isBuiltinSidebarSectionId,
   isItemHidden,
+  isStoredItemHidden,
   isSectionHidden,
   normalizeSidebarConfig,
   serializeSidebarConfig,
@@ -276,7 +277,7 @@ const userProfile: UserProfile = normalizeUserProfile(rawUserProfile, {
   role: Astro.locals.hassIsAdmin ? "Admin" : "",
 })
 
-const areasVisible = !isItemHidden(sidebarMenuConfig, "areas")
+const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemHidden(rawSidebarConfig, "areas")
 ---
 
 <nav

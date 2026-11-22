@@ -52,7 +52,6 @@ function applyProfileToDom(profile: UserProfile): void {
   const trigger = document.getElementById("sidebar-user-trigger")
   if (trigger) {
     trigger.dataset.tooltip = `${profile.displayName} (${subtitle}) — Edit profile`
-    trigger.setAttribute("aria-label", `${profile.displayName} — Edit profile`)
   }
 }
 
