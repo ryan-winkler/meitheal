@@ -509,7 +509,13 @@ test("reuses one writer between transactions and never pools a writer that chang
 
     const fifth = await client.transaction("write")
     await expect(fifth.execute("SELECT value FROM other")).rejects.toThrow(/no such table/)
-    fifth.close()
+    // SQLite ignores leading comments; so does the reuse decision.
+    await fifth.execute("/* setup */ -- note\n CREATE TEMP TABLE commented(value)")
+    await fifth.commit()
+
+    const sixth = await client.transaction("write")
+    await expect(sixth.execute("SELECT value FROM commented")).rejects.toThrow(/no such table/)
+    sixth.close()
   } finally {
     client.close()
     await rm(directory, { recursive: true, force: true })
@@ -556,6 +562,11 @@ test("snapshot generations change exactly when a local reader can observe new da
     await writer.execute("UPDATE notes SET body = 'changed' WHERE id = 1")
     expect(localSnapshotGeneration(writer)).not.toBe(before)
     await writer.commit()
+
+    // A reconnect starts new counters, so it must never repeat an earlier token.
+    const beforeReconnect = localSnapshotGeneration(client)
+    client.reconnect()
+    expect(localSnapshotGeneration(client)).not.toBe(beforeReconnect)
 
     // Decorated clients and in-memory databases never reuse derived results.
     expect(localSnapshotGeneration({ execute: client.execute.bind(client) })).toBeUndefined()

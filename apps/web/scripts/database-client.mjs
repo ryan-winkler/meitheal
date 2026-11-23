@@ -40,10 +40,18 @@ const preparedStatements = new WeakMap()
 // projections dominates repeated reads on low-power hosts; their compiled
 // programs cost a few kilobytes each.
 const MAX_PREPARED_STATEMENTS = 256
+// SQLite treats comments as whitespace before the first keyword. An
+// unterminated comment leaves no keyword, which classifies conservatively.
+const leadingTrivia = /^(?:\s+|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)*/
+/** @param {string} sql @returns {string} */
+function leadingKeyword(sql) {
+  return /^[A-Za-z]+/.exec(sql.replace(leadingTrivia, ""))?.[0].toUpperCase() ?? ""
+}
 // Only side-effect-free statements are cached, so one can safely run again.
-const cacheableStatementPattern = /^\s*SELECT\b/i
-// Statements whose effects can outlive a transaction on its connection.
-const connectionStatePattern = /^\s*(?:CREATE|DROP|ALTER|PRAGMA|ATTACH|DETACH|VACUUM|REINDEX|ANALYZE)\b/i
+/** @param {string} sql */
+const isPlainSelect = sql => leadingKeyword(sql) === "SELECT"
+// Only row reads and changes leave no connection state behind a transaction.
+const rowStatementKeywords = new Set(["SELECT", "INSERT", "UPDATE", "DELETE", "REPLACE", "WITH", "VALUES"])
 /** @typedef {"rows" | "completed"} TodayRead */
 /** @typedef {"task-list" | "task-count" | "task-detail" | "task-search" | "task-locator" | "task-command" | "task-cascade"} TaskProjectionRead */
 /** @typedef {TodayRead | TaskProjectionRead | "board-policy"} ScopedRead */
@@ -280,7 +288,7 @@ function decode(value) {
  * @param {DatabaseSync} db @param {string} sql
  */
 function preparedStatement(db, sql) {
-  if (!cacheableStatementPattern.test(sql)) {
+  if (!isPlainSelect(sql)) {
     const statement = db.prepare(sql)
     statement.setReadBigInts(true)
     return statement
@@ -421,7 +429,7 @@ function execute(db, input, args = [], fileReadSnapshot = false) {
     // Node.js 22 sizes rows before that step. A cached SELECT then returns the
     // previous width once; discard it and run the recompiled query again.
     const staleWidth = /** @type {unknown[][]} */ (/** @type {unknown} */ (rawRows)).some(values => values.length !== metadata.length)
-    if (staleWidth && cacheableStatementPattern.test(sql)) {
+    if (staleWidth && isPlainSelect(sql)) {
       forgetPreparedStatement(db, sql)
       statement = preparedStatement(db, sql)
       statement.setReturnArrays(true)
@@ -1053,8 +1061,8 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       if (useReadPool) return
       const text = Array.isArray(statement) ? statement[0] : statement
       const sql = typeof text === "string" ? text : text.sql
-      if (!/^\s*SELECT\b/i.test(sql)) generation += 1
-      if (connectionStatePattern.test(sql)) reusable = false
+      if (!isPlainSelect(sql)) generation += 1
+      if (!rowStatementKeywords.has(leadingKeyword(sql))) reusable = false
     }
     const result = {
       get closed() { return !active || !db.isTransaction },
@@ -1188,7 +1196,8 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     fileBacked: !memory,
     execute: client.execute,
     transaction: client.transaction,
-    generation: () => onMain(readDataVersion),
+    // A reconnect starts a new connection whose counters can repeat earlier values.
+    generation: () => clientGeneration + ":" + onMain(readDataVersion),
   })
   localGrantRevisionReaders.set(client, { execute: client.execute, read: () => onMain(readGrantRevision) })
   return client
