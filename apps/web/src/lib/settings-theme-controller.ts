@@ -139,6 +139,18 @@ function bindAppearanceForm(form: HTMLFormElement): void {
 
   let committed = readCommitted()
   let draft = cloneAppearanceSnapshot(committed)
+  // A save that finished after its page closed updates what Discard returns to.
+  pageLifecycle.on(window, APPEARANCE_SAVED_EVENT, (event) => {
+    const saved = (event as CustomEvent<AppearanceDraftSnapshot>).detail
+    if (!saved) return
+    const hadDraft = isAppearanceDraftDirty(committed, draft)
+    committed = cloneAppearanceSnapshot(saved)
+    if (!hadDraft) {
+      draft = cloneAppearanceSnapshot(saved)
+      syncInputsFromSnapshot(committed)
+    }
+    updateDirtyUi()
+  })
   let saving = false
 
   const syncMatchHaStatus = (): void => {
@@ -448,6 +460,8 @@ function bindAppearanceForm(form: HTMLFormElement): void {
       // previewing its own unsaved draft.
       if (lifecycleSignal.aborted) {
         if (!document.querySelector('form[data-dirty="true"]')) applyAppearancePreferences(nextStored)
+        // The next page's form adopts this save as its committed state, keeping any draft.
+        window.dispatchEvent(new CustomEvent(APPEARANCE_SAVED_EVENT, { detail: submitted }))
         return
       }
       if (isAppearanceDraftDirty(committed, draft)) {
@@ -484,6 +498,8 @@ function initAppearanceSettings(): void {
   document.querySelectorAll<HTMLFormElement>("[data-appearance-form]").forEach((form) => forms.add(form))
   forms.forEach((form) => bindAppearanceForm(form))
 }
+
+const APPEARANCE_SAVED_EVENT = "meitheal:appearance-saved-elsewhere"
 
 export function initThemeSettings(): void {
   const singleKeys = document.querySelector<HTMLInputElement>("#single-key-shortcuts")
