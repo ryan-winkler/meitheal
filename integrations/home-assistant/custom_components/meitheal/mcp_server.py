@@ -11,11 +11,12 @@ The MCP spec is tool-based: client sends a tool call, server executes
 and returns the result. This module processes incoming tool calls and
 routes them to the coordinator.
 
-Tools (16 — separate from the HA LLM API surface):
+Tools (18 — separate from the HA LLM API surface):
   - createTask, searchTasks, completeTask, updateTask, deleteTask, getTask
   - getOverdueTasks, getTodaysTasks, getTaskSummary, dailyBriefing
   - getCalendarEvents, getUpcoming, batchComplete
   - linkTask, unlinkTask, getTaskLinks
+  - listRoutines, completeRoutine
 
 See: https://modelcontextprotocol.io/
 """
@@ -25,7 +26,7 @@ from __future__ import annotations
 import json
 import logging
 import math
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from typing import Any
 from urllib.parse import unquote
 
@@ -40,10 +41,11 @@ from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import Context
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.loader import async_get_integration
+from homeassistant.util import dt as dt_util
 
 from .api import human_request_scope
 from .const import DOMAIN
-from .coordinator import MeithealCoordinator
+from .coordinator import SHOPPING_CATEGORIES, TASK_KINDS, MeithealCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -71,13 +73,43 @@ _VALID_LINK_TYPES = [
     "duplicates",
     "duplicated_by",
 ]
-_UPDATE_TASK_FIELDS = frozenset({"title", "status", "priority", "due_date", "description"})
+_UPDATE_TASK_FIELDS = frozenset({
+    "title",
+    "status",
+    "priority",
+    "due_date",
+    "description",
+    "task_kind",
+    "start_date",
+    "end_date",
+    "checklists",
+    "custom_fields",
+})
+_SHOPPING_ITEM_SCHEMA = {
+    "type": "object",
+    "required": ["name"],
+    "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "qty": {"type": "string"},
+        "category": {"type": "string", "enum": list(SHOPPING_CATEGORIES)},
+        "checked": {"type": "boolean"},
+    },
+}
+_CHECKLIST_ITEM_SCHEMA = {
+    "type": "object",
+    "required": ["text"],
+    "properties": {
+        "id": {"type": "string"},
+        "text": {"type": "string", "minLength": 1},
+        "done": {"type": "boolean"},
+    },
+}
 
 # MCP tool definitions with full JSON Schema inputSchemas
 MCP_TOOLS = [
     {
         "name": "createTask",
-        "description": "Create a new task with title, description, priority, due date, and assignee",
+        "description": "Create a new task, event, or shopping list with optional schedule, checklists, and custom fields",
         "inputSchema": {
             "type": "object",
             "required": ["title"],
@@ -85,14 +117,25 @@ MCP_TOOLS = [
                 "title": {"type": "string", "description": "Task title"},
                 "description": {"type": "string", "description": "Task description"},
                 "priority": {"type": "integer", "minimum": 1, "maximum": 5, "description": "Priority 1-5 (1=urgent)"},
-                "due_date": {"type": "string", "format": "date", "description": "Due date YYYY-MM-DD"},
+                "due_date": {"type": "string", "format": "date", "description": "Due date YYYY-MM-DD or ISO timestamp"},
+                "start_date": {"type": "string", "description": "Start date or ISO timestamp (used for events)"},
+                "end_date": {"type": "string", "description": "End date or ISO timestamp (used for events)"},
+                "task_kind": {"type": "string", "enum": list(TASK_KINDS), "description": "Behavioral kind (standard_action, calendar_event, shopping_item, checklist, quick_capture)"},
                 "assigned_to": {"type": "string", "description": "Assignee identifier (user ID or agent ID)"},
+                "checklists": {"type": "array", "items": _CHECKLIST_ITEM_SCHEMA, "description": "Checklist items"},
+                "custom_fields": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "properties": {
+                        "items": {"type": "array", "items": _SHOPPING_ITEM_SCHEMA, "description": "Structured shopping list items"},
+                    },
+                },
             },
         },
     },
     {
         "name": "searchTasks",
-        "description": "Search tasks by keyword, status, priority, labels, custom fields, comments, or task IDs",
+        "description": "Search tasks by keyword, status, priority, task_kind, labels, custom fields, comments, or task IDs",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -100,6 +143,7 @@ MCP_TOOLS = [
                 "q": {"type": "string", "description": "Search keyword (alias for query)"},
                 "status": {"type": "string", "enum": _VALID_STATUSES},
                 "priority": {"type": "integer", "minimum": 1, "maximum": 5},
+                "task_kind": {"type": "string", "enum": list(TASK_KINDS)},
                 "include_completed": {"type": "boolean"},
             },
         },
@@ -117,7 +161,7 @@ MCP_TOOLS = [
     },
     {
         "name": "updateTask",
-        "description": "Update task fields (title, status, priority, due_date, description)",
+        "description": "Update task fields (title, status, priority, due_date, start_date, end_date, task_kind, description, checklists, custom_fields)",
         "inputSchema": {
             "type": "object",
             "required": ["id"],
@@ -127,7 +171,18 @@ MCP_TOOLS = [
                 "status": {"type": "string", "enum": _VALID_STATUSES},
                 "priority": {"type": "integer", "minimum": 1, "maximum": 5},
                 "due_date": {"type": "string", "format": "date"},
+                "start_date": {"type": "string"},
+                "end_date": {"type": "string"},
+                "task_kind": {"type": "string", "enum": list(TASK_KINDS)},
                 "description": {"type": "string"},
+                "checklists": {"type": "array", "items": _CHECKLIST_ITEM_SCHEMA},
+                "custom_fields": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "properties": {
+                        "items": {"type": "array", "items": _SHOPPING_ITEM_SCHEMA},
+                    },
+                },
             },
         },
     },
@@ -251,6 +306,28 @@ MCP_TOOLS = [
             "required": ["task_id"],
             "properties": {
                 "task_id": {"type": "string", "description": "Task UUID"},
+            },
+        },
+    },
+    {
+        "name": "listRoutines",
+        "description": "List household routines with cadence, streak, and current-period completion status",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "area_id": {"type": "string", "description": "Filter by Area ID or 'default'"},
+                "project_id": {"type": "string", "description": "Filter by Project ID"},
+            },
+        },
+    },
+    {
+        "name": "completeRoutine",
+        "description": "Complete a household routine occurrence for the current period by template ID",
+        "inputSchema": {
+            "type": "object",
+            "required": ["template_id"],
+            "properties": {
+                "template_id": {"type": "string", "description": "Routine template UUID"},
             },
         },
     },
@@ -478,6 +555,93 @@ def _parse_optional_priority(args: dict[str, Any], tool_name: str) -> int | None
     return priority
 
 
+def _parse_optional_task_kind(args: dict[str, Any], tool_name: str) -> str | None:
+    """Validate optional task_kind argument against Meitheal's canonical kinds."""
+    if "task_kind" not in args or args["task_kind"] is None:
+        return None
+    raw = args["task_kind"]
+    if not isinstance(raw, str) or not raw.strip():
+        raise ValueError(f"{tool_name} task_kind must be one of: {', '.join(TASK_KINDS)}")
+    normalized = raw.strip().lower()
+    if normalized not in TASK_KINDS:
+        raise ValueError(f"{tool_name} task_kind must be one of: {', '.join(TASK_KINDS)}")
+    return normalized
+
+
+def _parse_optional_checklists(
+    args: dict[str, Any], tool_name: str
+) -> list[dict[str, Any]] | None:
+    """Validate optional checklist items list."""
+    if "checklists" not in args or args["checklists"] is None:
+        return None
+    raw = args["checklists"]
+    if not isinstance(raw, list):
+        raise ValueError(f"{tool_name} checklists must be a list of checklist objects")
+    items: list[dict[str, Any]] = []
+    for entry in raw:
+        if not isinstance(entry, dict) or not isinstance(entry.get("text"), str) or not entry["text"].strip():
+            raise ValueError(f"{tool_name} checklist entries require a non-empty string text")
+        if "done" in entry and type(entry["done"]) is not bool:
+            raise ValueError(f"{tool_name} checklist entry done must be a boolean")
+        if "id" in entry and not isinstance(entry["id"], str):
+            raise ValueError(f"{tool_name} checklist entry id must be a string")
+        normalized_item: dict[str, Any] = {
+            "text": entry["text"].strip(),
+            "done": bool(entry.get("done", False)),
+        }
+        if isinstance(entry.get("id"), str) and entry["id"]:
+            normalized_item["id"] = entry["id"]
+        items.append(normalized_item)
+    return items
+
+
+def _parse_optional_custom_fields(
+    args: dict[str, Any], tool_name: str
+) -> dict[str, Any] | None:
+    """Validate optional custom_fields object including 8-category shopping items."""
+    if "custom_fields" not in args or args["custom_fields"] is None:
+        return None
+    raw = args["custom_fields"]
+    if not isinstance(raw, dict):
+        raise ValueError(f"{tool_name} custom_fields must be an object")
+    out = dict(raw)
+    if "items" in out:
+        raw_items = out["items"]
+        if not isinstance(raw_items, list):
+            raise ValueError(f"{tool_name} custom_fields.items must be a list")
+        normalized_items: list[dict[str, Any]] = []
+        for entry in raw_items:
+            if not isinstance(entry, dict):
+                raise ValueError(f"{tool_name} custom_fields.items entries must be objects")
+            name = entry.get("name")
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError(f"{tool_name} shopping item name must be a non-empty string")
+            item: dict[str, Any] = {"name": name.strip()}
+            if "qty" in entry and entry["qty"] is not None:
+                if not isinstance(entry["qty"], str):
+                    raise ValueError(f"{tool_name} shopping item qty must be a string")
+                if entry["qty"].strip():
+                    item["qty"] = entry["qty"].strip()
+            if "category" in entry and entry["category"] is not None:
+                if not isinstance(entry["category"], str):
+                    raise ValueError(
+                        f"{tool_name} shopping item category must be one of: {', '.join(SHOPPING_CATEGORIES)}"
+                    )
+                cat = entry["category"].strip().lower()
+                if cat not in SHOPPING_CATEGORIES:
+                    raise ValueError(
+                        f"{tool_name} shopping item category must be one of: {', '.join(SHOPPING_CATEGORIES)}"
+                    )
+                item["category"] = cat
+            if "checked" in entry and entry["checked"] is not None:
+                if type(entry["checked"]) is not bool:
+                    raise ValueError(f"{tool_name} shopping item checked must be a boolean")
+                item["checked"] = entry["checked"]
+            normalized_items.append(item)
+        out["items"] = normalized_items
+    return out
+
+
 async def _execute_tool(
     coordinator: MeithealCoordinator,
     tool_name: str,
@@ -511,12 +675,29 @@ async def _execute_tool(
         priority = _parse_optional_priority(args, "createTask")
         due_date = _optional_str(args, "due_date", "createTask", non_empty=True)
         assigned_to = _optional_str(args, "assigned_to", "createTask", non_empty=True)
+        extra_kwargs: dict[str, Any] = {}
+        task_kind = _parse_optional_task_kind(args, "createTask")
+        if task_kind is not None:
+            extra_kwargs["task_kind"] = task_kind
+        start_date = _optional_str(args, "start_date", "createTask", non_empty=True)
+        if start_date is not None:
+            extra_kwargs["start_date"] = start_date
+        end_date = _optional_str(args, "end_date", "createTask", non_empty=True)
+        if end_date is not None:
+            extra_kwargs["end_date"] = end_date
+        checklists = _parse_optional_checklists(args, "createTask")
+        if checklists is not None:
+            extra_kwargs["checklists"] = checklists
+        custom_fields = _parse_optional_custom_fields(args, "createTask")
+        if custom_fields is not None:
+            extra_kwargs["custom_fields"] = custom_fields
         await coordinator.async_create_task(
             title=title,
             description=description,
             priority=priority,
             due_date=due_date,
             assigned_to=assigned_to,
+            **extra_kwargs,
             **origin_kwargs,
         )
         return {"status": "created", "title": title}
@@ -545,7 +726,12 @@ async def _execute_tool(
                 raise ValueError(f"updateTask {field_name} cannot be null")
         title = _optional_str(args, "title", "updateTask", non_empty=True)
         due_date = _optional_str(args, "due_date", "updateTask", non_empty=True)
+        start_date = _optional_str(args, "start_date", "updateTask", non_empty=True)
+        end_date = _optional_str(args, "end_date", "updateTask", non_empty=True)
         description = _optional_str(args, "description", "updateTask")
+        task_kind = _parse_optional_task_kind(args, "updateTask")
+        checklists = _parse_optional_checklists(args, "updateTask")
+        custom_fields = _parse_optional_custom_fields(args, "updateTask")
         status = args.get("status")
         if status is not None and (not isinstance(status, str) or status not in _VALID_STATUSES):
             raise ValueError(f"updateTask status must be one of: {', '.join(_VALID_STATUSES)}")
@@ -559,8 +745,18 @@ async def _execute_tool(
             updates["priority"] = priority
         if due_date is not None:
             updates["due_date"] = due_date
+        if start_date is not None:
+            updates["start_date"] = start_date
+        if end_date is not None:
+            updates["end_date"] = end_date
+        if task_kind is not None:
+            updates["task_kind"] = task_kind
         if description is not None:
             updates["description"] = description
+        if checklists is not None:
+            updates["checklists"] = checklists
+        if custom_fields is not None:
+            updates["custom_fields"] = custom_fields
         if not updates:
             raise ValueError("updateTask requires at least one updatable field")
         await coordinator.async_update_task(task_id, updates, **origin_kwargs)
@@ -576,15 +772,19 @@ async def _execute_tool(
         if status is not None and (not isinstance(status, str) or status not in _VALID_STATUSES):
             raise ValueError(f"searchTasks status must be one of: {', '.join(_VALID_STATUSES)}")
         priority = _parse_optional_priority(args, "searchTasks")
+        task_kind = _parse_optional_task_kind(args, "searchTasks")
         include_completed = args.get("include_completed")
         if include_completed is not None and type(include_completed) is not bool:
             raise ValueError("searchTasks include_completed must be a boolean")
-        return await coordinator.async_search_tasks(
-            query=query,
-            status=status,
-            priority=priority,
-            include_completed=include_completed,
-        )
+        search_kwargs: dict[str, Any] = {
+            "query": query,
+            "status": status,
+            "priority": priority,
+            "include_completed": include_completed,
+        }
+        if task_kind is not None:
+            search_kwargs["task_kind"] = task_kind
+        return await coordinator.async_search_tasks(**search_kwargs)
 
     elif tool_name == "getTask":
         task_id = _require_str(args, "id", "getTask")
@@ -594,8 +794,10 @@ async def _execute_tool(
             if t.id == task_id:
                 return {
                     "id": t.id, "title": t.title, "status": t.status,
-                    "priority": t.priority, "due_date": t.due_date,
+                    "priority": t.priority, "task_kind": t.task_kind,
+                    "due_date": t.due_date, "start_date": t.start_date, "end_date": t.end_date,
                     "description": t.description, "labels": t.labels,
+                    "checklists": t.checklists, "custom_fields": t.custom_fields,
                     "created_at": t.created_at, "updated_at": t.updated_at,
                     "is_overdue": t.is_overdue,
                 }
@@ -605,7 +807,13 @@ async def _execute_tool(
         if not data:
             return {"tasks": [], "count": 0}
         overdue = [
-            {"id": t.id, "title": t.title, "due_date": t.due_date, "priority": t.priority}
+            {
+                "id": t.id,
+                "title": t.title,
+                "due_date": t.effective_scheduled_date or t.due_date,
+                "priority": t.priority,
+                "task_kind": t.task_kind,
+            }
             for t in data.tasks if t.is_overdue
         ]
         return {"tasks": overdue, "count": len(overdue)}
@@ -613,15 +821,21 @@ async def _execute_tool(
     elif tool_name == "getTodaysTasks":
         if not data:
             return {"tasks": [], "count": 0}
-        today_str = datetime.now().astimezone().strftime("%Y-%m-%d")
+        local_now = dt_util.now()
         results = []
         for t in data.tasks:
             if t.status == "done":
                 continue
-            if t.is_overdue or (t.due_date and t.due_date.startswith(today_str)):
+            if t.is_overdue or t.is_due_on(local_now):
                 results.append({
-                    "id": t.id, "title": t.title, "due_date": t.due_date,
-                    "priority": t.priority, "is_overdue": t.is_overdue,
+                    "id": t.id,
+                    "title": t.title,
+                    "task_kind": t.task_kind,
+                    "due_date": t.effective_scheduled_date or t.due_date,
+                    "start_date": t.start_date,
+                    "end_date": t.end_date,
+                    "priority": t.priority,
+                    "is_overdue": t.is_overdue,
                 })
         return {"tasks": results, "count": len(results)}
 
@@ -637,17 +851,16 @@ async def _execute_tool(
     elif tool_name == "dailyBriefing":
         if not data:
             return {"greeting": "Hello", "tasks": {"active": 0, "overdue": 0, "total": 0}}
-        now = datetime.now().astimezone()
-        today_str = now.strftime("%Y-%m-%d")
+        now = dt_util.now()
         hour = now.hour
         greeting = "Good morning" if hour < 12 else ("Good afternoon" if hour < 17 else "Good evening")
         today_tasks = [
-            {"title": t.title, "priority": t.priority}
+            {"title": t.title, "priority": t.priority, "task_kind": t.task_kind}
             for t in data.tasks
-            if t.status != "done" and t.due_date and t.due_date.startswith(today_str)
+            if t.is_due_on(now)
         ][:5]
         overdue = [
-            {"title": t.title, "due_date": t.due_date}
+            {"title": t.title, "due_date": t.effective_scheduled_date or t.due_date}
             for t in data.tasks if t.is_overdue
         ][:5]
         urgent = [
@@ -667,45 +880,57 @@ async def _execute_tool(
         days_ahead = _parse_days_ahead(args, "getCalendarEvents")
         if not data:
             return {"events": [], "count": 0}
-        now = datetime.now(UTC)
-        cutoff = now + timedelta(days=days_ahead)
-        today_str = now.strftime("%Y-%m-%d")
-        cutoff_str = cutoff.strftime("%Y-%m-%d")
+        local_now = dt_util.now()
+        today_day = local_now.date()
+        cutoff_day = today_day + timedelta(days=days_ahead)
         events = []
         for t in data.tasks:
             sync_state = getattr(t, "calendar_sync_state", None)
-            if sync_state not in ("synced", "confirmed"):
+            if t.task_kind != "calendar_event" and sync_state not in ("synced", "confirmed"):
                 continue
-            if t.due_date and today_str <= t.due_date[:10] <= cutoff_str:
+            event_day = t.scheduled_local_date(local_now)
+            scheduled = t.effective_scheduled_date
+            if scheduled and event_day is not None and today_day <= event_day <= cutoff_day:
                 events.append({
-                    "title": t.title, "date": t.due_date,
-                    "description": t.description or "", "source": "ha_calendar",
+                    "id": t.id,
+                    "title": t.title,
+                    "date": scheduled,
+                    "start_date": t.start_date,
+                    "end_date": t.end_date,
+                    "task_kind": t.task_kind,
+                    "description": t.description or "",
+                    "source": "ha_calendar" if sync_state in ("synced", "confirmed") else "meitheal",
                 })
-        events.sort(key=lambda e: e["date"])
+        events.sort(key=lambda e: str(e["date"]))
         return {"events": events, "count": len(events)}
 
     elif tool_name == "getUpcoming":
         days_ahead = _parse_days_ahead(args, "getUpcoming")
         if not data:
             return {"items": [], "count": 0}
-        now = datetime.now(UTC)
-        cutoff = now + timedelta(days=days_ahead)
-        today_str = now.strftime("%Y-%m-%d")
-        cutoff_str = cutoff.strftime("%Y-%m-%d")
+        local_now = dt_util.now()
+        today_day = local_now.date()
+        cutoff_day = today_day + timedelta(days=days_ahead)
         items = []
         for t in data.tasks:
-            if t.status == "done" or not t.due_date:
+            if t.status == "done":
                 continue
-            due_str = t.due_date[:10]
-            if due_str < today_str or due_str > cutoff_str:
+            due_day = t.scheduled_local_date(local_now)
+            scheduled = t.effective_scheduled_date
+            if not scheduled or due_day is None or due_day < today_day or due_day > cutoff_day:
                 continue
             sync_state = getattr(t, "calendar_sync_state", None)
+            is_event = t.task_kind == "calendar_event" or sync_state in ("synced", "confirmed")
             items.append({
-                "title": t.title, "date": t.due_date,
-                "type": "calendar_event" if sync_state in ("synced", "confirmed") else "task",
-                "priority": t.priority, "is_overdue": t.is_overdue,
+                "id": t.id,
+                "title": t.title,
+                "date": scheduled,
+                "task_kind": t.task_kind,
+                "type": "calendar_event" if is_event else "task",
+                "priority": t.priority,
+                "is_overdue": t.is_overdue,
             })
-        items.sort(key=lambda e: e["date"])
+        items.sort(key=lambda e: str(e["date"]))
         return {
             "items": items, "count": len(items),
             "calendar_events": sum(1 for i in items if i["type"] == "calendar_event"),
@@ -787,6 +1012,21 @@ async def _execute_tool(
     elif tool_name == "getTaskLinks":
         task_id = _require_str(args, "task_id", "getTaskLinks")
         return await coordinator.async_get_task_links(task_id=task_id)
+
+    elif tool_name == "listRoutines":
+        area_id = _optional_str(args, "area_id", "listRoutines", non_empty=True)
+        project_id = _optional_str(args, "project_id", "listRoutines", non_empty=True)
+        routines = await coordinator.async_list_routines(
+            area_id=area_id, project_id=project_id
+        )
+        return {"routines": routines, "count": len(routines)}
+
+    elif tool_name == "completeRoutine":
+        template_id = _require_str(args, "template_id", "completeRoutine")
+        return await coordinator.async_complete_routine(
+            template_id=template_id,
+            **origin_kwargs,
+        )
 
     else:
         raise ValueError(f"Unknown tool: {tool_name}")

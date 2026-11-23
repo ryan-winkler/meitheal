@@ -632,3 +632,148 @@ async def test_mcp_create_complete_batch_and_boundary_errors(hass: HomeAssistant
     response = await MeithealMcpView().post(bad_json_request)  # type: ignore[arg-type]
     assert response.status == 400
     assert json.loads(response.body or b"{}")["error"]["code"] == -32700
+
+
+async def test_mcp_routines_events_and_shopping_parity(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exercise listRoutines, completeRoutine, calendar_event queries, and shopping_item custom fields."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from homeassistant.util import dt as dt_util
+
+    coordinator = _mock_coordinator(hass)
+    fixed_now = datetime(2026, 6, 15, 9, 0, tzinfo=ZoneInfo("Europe/Dublin"))
+    monkeypatch.setattr(dt_util, "now", lambda: fixed_now)
+
+    coordinator.async_list_routines = AsyncMock(  # type: ignore[method-assign]
+        return_value=[{"id": "hab-1", "name": "Water plants", "cadence": "daily", "currentStreak": 2}]
+    )
+    coordinator.async_complete_routine = AsyncMock(  # type: ignore[method-assign]
+        return_value={"taskId": "occ-1", "completed": True, "alreadyExisted": False, "newlyCompleted": True}
+    )
+    coordinator.async_create_task = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    coordinator.data = MeithealCoordinatorData(
+        [
+            MeithealTask(
+                {
+                    "id": "evt-1",
+                    "title": "Dentist appointment",
+                    "status": "pending",
+                    "priority": 2,
+                    "task_kind": "calendar_event",
+                    "start_date": "2026-06-15T14:00:00+01:00",
+                    "end_date": "2026-06-15T15:00:00+01:00",
+                }
+            ),
+            MeithealTask(
+                {
+                    "id": "shop-1",
+                    "title": "Weekend groceries",
+                    "status": "pending",
+                    "priority": 3,
+                    "task_kind": "shopping_item",
+                    "checklists": '[{"text":"Apples","done":false}]',
+                    "custom_fields": '{"items":[{"name":"Apples","qty":"6","category":"produce"}]}',
+                }
+            ),
+        ]
+    )
+
+    import json
+
+    routines = await handle_mcp_request(
+        coordinator,
+        {"jsonrpc": "2.0", "id": 40, "method": "tools/call", "params": {"name": "listRoutines", "arguments": {}}},
+    )
+    assert routines is not None and routines["result"]["isError"] is False
+    assert json.loads(routines["result"]["content"][0]["text"])["count"] == 1
+
+    completed = await handle_mcp_request(
+        coordinator,
+        {
+            "jsonrpc": "2.0",
+            "id": 41,
+            "method": "tools/call",
+            "params": {"name": "completeRoutine", "arguments": {"template_id": "hab-1"}},
+        },
+    )
+    assert completed is not None and completed["result"]["isError"] is False
+    assert json.loads(completed["result"]["content"][0]["text"])["completed"] is True
+
+    cal = await handle_mcp_request(
+        coordinator,
+        {"jsonrpc": "2.0", "id": 42, "method": "tools/call", "params": {"name": "getCalendarEvents", "arguments": {"days_ahead": 7}}},
+    )
+    assert cal is not None and cal["result"]["isError"] is False
+    cal_payload = json.loads(cal["result"]["content"][0]["text"])
+    assert cal_payload["count"] == 1
+    assert cal_payload["events"][0]["title"] == "Dentist appointment"
+    assert cal_payload["events"][0]["task_kind"] == "calendar_event"
+
+    today = await handle_mcp_request(
+        coordinator,
+        {"jsonrpc": "2.0", "id": 43, "method": "tools/call", "params": {"name": "getTodaysTasks", "arguments": {}}},
+    )
+    assert today is not None and today["result"]["isError"] is False
+    assert json.loads(today["result"]["content"][0]["text"])["count"] == 1
+
+    detail = await handle_mcp_request(
+        coordinator,
+        {"jsonrpc": "2.0", "id": 44, "method": "tools/call", "params": {"name": "getTask", "arguments": {"id": "shop-1"}}},
+    )
+    assert detail is not None and detail["result"]["isError"] is False
+    shop_detail = json.loads(detail["result"]["content"][0]["text"])
+    assert shop_detail["task_kind"] == "shopping_item"
+    assert shop_detail["custom_fields"]["items"][0]["category"] == "produce"
+
+    bad_shop = await handle_mcp_request(
+        coordinator,
+        {
+            "jsonrpc": "2.0",
+            "id": 45,
+            "method": "tools/call",
+            "params": {
+                "name": "createTask",
+                "arguments": {
+                    "title": "Groceries",
+                    "task_kind": "shopping_item",
+                    "custom_fields": {"items": [{"name": "Eggs", "category": "unknown"}]},
+                },
+            },
+        },
+    )
+    assert bad_shop is not None and bad_shop["result"]["isError"] is True
+    assert "shopping item category must be one of" in bad_shop["result"]["content"][0]["text"]
+
+    created_evt = await handle_mcp_request(
+        coordinator,
+        {
+            "jsonrpc": "2.0",
+            "id": 46,
+            "method": "tools/call",
+            "params": {
+                "name": "createTask",
+                "arguments": {
+                    "title": "Vet visit",
+                    "task_kind": "calendar_event",
+                    "start_date": "2026-06-20T10:00:00+01:00",
+                    "end_date": "2026-06-20T11:00:00+01:00",
+                },
+            },
+        },
+    )
+    assert created_evt is not None and created_evt["result"]["isError"] is False
+    coordinator.async_create_task.assert_awaited_with(
+        title="Vet visit",
+        description=None,
+        priority=None,
+        due_date=None,
+        assigned_to=None,
+        task_kind="calendar_event",
+        start_date="2026-06-20T10:00:00+01:00",
+        end_date="2026-06-20T11:00:00+01:00",
+        origin_kind="mcp",
+        origin_name="Home Assistant MCP",
+        origin_target=None,
+    )

@@ -628,3 +628,64 @@ async def test_setup_service_errors_and_optional_bootstrap_warnings(hass):
         await hass.services.async_call(DOMAIN, "sync_todo", {}, blocking=True)
     with pytest.raises(HomeAssistantError):
         await hass.services.async_call(DOMAIN, "complete_task_by_tag", {"tag_id": "tag-1"}, blocking=True)
+
+
+async def test_events_shopping_overdue_clock_and_routines_contracts(coordinator, monkeypatch):
+    """Verify event schedules, 8-category shopping fields, local overdue comparison, and routine API calls."""
+    now = datetime(2026, 6, 15, 23, 30, tzinfo=ZoneInfo("America/New_York"))
+    monkeypatch.setattr(dt_util, "now", lambda: now)
+
+    due_today = MeithealTask(task("today-date", due_date="2026-06-15"))
+    overdue_yesterday = MeithealTask(task("yesterday-date", due_date="2026-06-14"))
+    event_today = MeithealTask(
+        task(
+            "evt-today",
+            task_kind="calendar_event",
+            start_date="2026-06-16T03:45:00Z",
+            end_date="2026-06-16T04:00:00Z",
+        )
+    )
+    event_past = MeithealTask(
+        task(
+            "evt-past",
+            task_kind="calendar_event",
+            start_date="2026-06-15T18:00:00-04:00",
+        )
+    )
+    shop = MeithealTask(
+        task(
+            "shop-1",
+            task_kind="shopping_item",
+            checklists='[{"text":"Broccoli","done":false}]',
+            custom_fields='{"items":[{"name":"Broccoli","qty":"1 head","category":"produce"}],"grocy_id":9}',
+        )
+    )
+
+    assert due_today.is_due_on(now) is True
+    assert due_today.is_overdue is False
+    assert overdue_yesterday.is_overdue is True
+    assert event_today.effective_scheduled_date == "2026-06-16T03:45:00Z"
+    assert event_today.is_due_on(now) is True
+    assert event_today.is_overdue is False
+    assert event_past.is_overdue is True
+    assert shop.checklists == [{"text": "Broccoli", "done": False}]
+    assert shop.custom_fields["grocy_id"] == 9
+    assert shop.custom_fields["items"][0]["category"] == "produce"
+
+    coordinator.async_request_refresh = AsyncMock()
+    coordinator.api.async_request.return_value = {
+        "habits": [{"id": "hab-1", "name": "Stretch", "cadence": "daily"}]
+    }
+    routines = await coordinator.async_list_routines(area_id="default", project_id="proj-1")
+    assert routines == [{"id": "hab-1", "name": "Stretch", "cadence": "daily"}]
+    coordinator.api.async_request.assert_awaited_with(
+        "GET", "/api/habits", params={"area_id": "default", "project_id": "proj-1"}, read_json=True
+    )
+
+    coordinator.api.async_request.return_value = {
+        "taskId": "occ-42", "completed": True, "alreadyExisted": False, "newlyCompleted": True
+    }
+    completion = await coordinator.async_complete_routine("hab-1")
+    assert completion["taskId"] == "occ-42"
+    assert completion["completed"] is True
+    coordinator.async_request_refresh.assert_awaited_once()

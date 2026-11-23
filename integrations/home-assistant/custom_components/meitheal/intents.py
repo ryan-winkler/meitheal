@@ -32,6 +32,7 @@ import voluptuous as vol
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import intent
+from homeassistant.util import dt as dt_util
 
 from .api import origin_scope, human_request_scope
 from .coordinator import MeithealCoordinator
@@ -245,8 +246,6 @@ class MeithealTodayHandler(_MeithealAdminIntent):
         self, intent_obj: intent.Intent
     ) -> intent.IntentResponse:
         """List today's tasks."""
-        from datetime import datetime, timezone
-
         hass = intent_obj.hass
         coordinator = _get_coordinator(hass)
 
@@ -255,7 +254,7 @@ class MeithealTodayHandler(_MeithealAdminIntent):
             response.async_set_speech("No tasks found.")
             return response
 
-        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        local_now = dt_util.now()
         today_tasks = []
         overdue = []
 
@@ -265,7 +264,7 @@ class MeithealTodayHandler(_MeithealAdminIntent):
                 continue
             if t.is_overdue:
                 overdue.append(t)
-            elif t.due_date and t.due_date.startswith(today_str):
+            elif t.is_due_on(local_now):
                 today_tasks.append(t)
 
         parts = []
@@ -371,12 +370,9 @@ class MeithealBriefingHandler(_MeithealAdminIntent):
         self, intent_obj: intent.Intent
     ) -> intent.IntentResponse:
         """Provide a daily briefing via voice."""
-        from datetime import datetime, timezone
-
         hass = intent_obj.hass
-        now = datetime.now(timezone.utc)
-        today_str = now.strftime("%Y-%m-%d")
-        hour = now.hour
+        local_now = dt_util.now()
+        hour = local_now.hour
 
         greeting = "Good morning" if hour < 12 else (
             "Good afternoon" if hour < 17 else "Good evening"
@@ -394,8 +390,7 @@ class MeithealBriefingHandler(_MeithealAdminIntent):
             # Today's tasks
             today_tasks = [
                 t for t in data.tasks
-                if t.status != "done" and t.due_date
-                and t.due_date.startswith(today_str)
+                if t.is_due_on(local_now)
             ]
             if today_tasks:
                 names = ", ".join(t.title for t in today_tasks[:3])

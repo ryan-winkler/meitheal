@@ -332,12 +332,15 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
         assert set(tools) == {
             SEARCH, GET_TASK, "meitheal_list_tasks", "meitheal_get_task_comments",
             "meitheal_create_task", "meitheal_update_task", "meitheal_complete_task",
-            "meitheal_add_comment",
+            "meitheal_add_comment", "meitheal_list_routines", "meitheal_complete_routine",
         }
         for name, tool in tools.items():
             assert probatio.to_openapi(tool.parameters)["type"] == "object"
             assert tool.annotations.read_only is (
-                name in (SEARCH, GET_TASK, "meitheal_list_tasks", "meitheal_get_task_comments")
+                name in (
+                    SEARCH, GET_TASK, "meitheal_list_tasks",
+                    "meitheal_get_task_comments", "meitheal_list_routines",
+                )
             )
             assert not tool.annotations.destructive
 
@@ -496,6 +499,56 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
         await async_call(instance, "meitheal_complete_task", {"task_id": "open"})
         coordinator.async_complete_task.assert_awaited_once_with(task_id="open")
 
+        client.async_request.return_value = {
+            "habits": [
+                {"id": "hab-1", "name": "Evening reset", "cadence": "daily", "currentStreak": 5, "completedThisPeriod": False}
+            ]
+        }
+        routines_res = await async_call(instance, "meitheal_list_routines", {"area_id": "default"})
+        assert routines_res.data["count"] == 1
+        assert routines_res.data["routines"][0]["name"] == "Evening reset"
+        client.async_request.assert_awaited_with(
+            "GET", "/api/habits", params={"area_id": "default"}, read_json=True
+        )
+
+        client.async_request.return_value = {
+            "taskId": "occ-1", "completed": True, "alreadyExisted": False, "newlyCompleted": True
+        }
+        done_routine = await async_call(instance, "meitheal_complete_routine", {"template_id": "hab-1"})
+        assert done_routine.data == {
+            "taskId": "occ-1", "completed": True, "alreadyExisted": False, "newlyCompleted": True
+        }
+        client.async_request.assert_awaited_with(
+            "POST",
+            "/api/habits",
+            payload={"action": "complete", "templateId": "hab-1"},
+            read_json=True,
+            event_authority=ANY,
+            extra_headers=expected_origin_headers,
+        )
+
+        client.async_request.return_value = {
+            "id": "shop-1",
+            "title": "Weekly shop",
+            "task_kind": "shopping_item",
+            "status": "pending",
+            "priority": 3,
+        }
+        shop_res = await async_call(
+            instance,
+            "meitheal_create_task",
+            {
+                "title": "Weekly shop",
+                "task_kind": "shopping_item",
+                "checklists": [{"text": "Oat milk", "done": False}],
+                "custom_fields": {
+                    "items": [{"name": "Oat milk", "qty": "2L", "category": "beverages"}],
+                    "grocy_list": "main",
+                },
+            },
+        )
+        assert shop_res.data["task_kind"] == "shopping_item"
+
         # A rejected or mismatched receipt is never reported as a successful change.
         for receipt in (None, {}, {"id": "other"}, {"id": "open", "error": "Rejected"}):
             client.async_request.return_value = receipt
@@ -515,6 +568,7 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
             ("meitheal_update_task", {"task_id": "..", "title": "x"}),
             ("meitheal_add_comment", {"task_id": "open", "comment": ""}),
             ("meitheal_complete_task", {}),
+            ("meitheal_create_task", {"title": "Bad", "custom_fields": {"items": [{"name": "Salt", "category": "invalid_aisle"}]}}),
         ):
             with pytest.raises(HomeAssistantError, match="invalid_tool_arguments"):
                 await async_call(instance, name, arguments)
