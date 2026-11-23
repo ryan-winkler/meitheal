@@ -55,20 +55,6 @@ function getTicketLabelEl(item: HTMLElement, isSection: boolean): HTMLElement | 
       ?? item.querySelector<HTMLElement>(":scope > label")
 }
 
-// A field label can wrap its control, so read and write only the label's own text.
-function labelTextNode(labelEl: HTMLElement): Text | undefined {
-  return [...labelEl.childNodes].find((node): node is Text => node.nodeType === Node.TEXT_NODE && Boolean(node.textContent?.trim()))
-}
-
-function setLabelText(labelEl: HTMLElement, text: string): void {
-  if (labelEl.childElementCount === 0) labelEl.textContent = text
-  else {
-    const node = labelTextNode(labelEl)
-    if (node) node.textContent = text
-    else labelEl.prepend(text)
-  }
-}
-
 export function initTicketSectionOrder(sections: HTMLElement, signal: AbortSignal): () => void {
   const lists = [sections, ...sections.querySelectorAll<HTMLElement>("[data-layout-order]")]
   const apply = () => {
@@ -85,9 +71,9 @@ export function initTicketSectionOrder(sections: HTMLElement, signal: AbortSigna
         const labelEl = getTicketLabelEl(item, isSection)
         if (labelEl) {
           if (labelEl.dataset.defaultLabel === undefined) {
-            labelEl.dataset.defaultLabel = (labelEl.childElementCount ? labelTextNode(labelEl)?.textContent : labelEl.textContent)?.trim() ?? ""
+            labelEl.dataset.defaultLabel = labelEl.textContent?.trim() ?? ""
           }
-          setLabelText(labelEl, config.labels[id] ?? labelEl.dataset.defaultLabel)
+          labelEl.textContent = config.labels[id] ?? labelEl.dataset.defaultLabel
         }
       }
     }

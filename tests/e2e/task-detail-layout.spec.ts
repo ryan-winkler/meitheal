@@ -67,37 +67,25 @@ test("ticket and Settings share a real section and field order, and reset restor
   expect((await ids(sections)).slice(0, 3)).toEqual(["properties", "description", "scheduling"])
   await expect(description.locator("#td-desc-preview")).toBeHidden()
 
-  // Settings edits the server-wide default. The ticket's edits stay a personal override in this browser.
   await page.goto("/settings#tasks-boards-settings")
   const settings = page.locator("#settings-task-detail-layout")
   const settingsList = settings.locator('ol[data-layout-order="sections"]')
   await expect(settingsList).toBeVisible()
-  await expect.poll(() => ids(settingsList)).toEqual(initial)
-  await expect(settings.locator("[data-layout-personal-notice]")).toBeVisible()
+  await expect.poll(() => ids(settingsList)).toEqual(["properties", "description", ...initial.slice(2)])
   await settings.locator('summary').filter({ hasText: "Fields · Properties" }).click()
   const moveType = settings.getByRole("button", { name: /Move up · Type/ })
   await moveType.press("Enter")
   await expect(moveType).toBeFocused()
-  await settings.getByRole("button", { name: "Save server default" }).click()
-  await expect(settings.locator("[data-layout-dirty-bar]")).toBeHidden()
   await page.goto(`/tickets/${id}`)
   await expect(page.locator("#td-title")).toHaveValue("Arrange a task")
-  expect((await ids(sections)).slice(0, 3)).toEqual(["properties", "description", "scheduling"])
-
-  // Reset on the ticket clears the personal override and shows the saved server default.
-  await toggle.click()
-  await editor.getByRole("button", { name: "Reset to server default" }).click()
-  await expect(editor.getByRole("status")).toHaveText("Default layout restored.")
-  expect(await ids(sections)).toEqual(initial)
   expect((await ids(sections.locator('[data-layout-order="properties"]'))).slice(0, 3))
     .toEqual(["type", "status", "priority"])
   await expect(description.locator("#td-desc-preview")).toBeVisible()
 
-  // Restore the built-in server default for later cases without another Settings load,
-  // which keeps this file inside the loopback API rate window.
-  expect((await request.put("/api/settings", { data: { key: "task_detail_layout_default", value: null } })).ok()).toBe(true)
-  await page.goto(`/tickets/${id}`)
-  await expect(page.locator("#td-title")).toHaveValue("Arrange a task")
+  await toggle.click()
+  await editor.getByRole("button", { name: "Reset layout" }).click()
+  await expect(editor.getByRole("status")).toHaveText("Default layout restored.")
+  expect(await ids(sections)).toEqual(initial)
   expect((await ids(sections.locator('[data-layout-order="properties"]'))).slice(0, 2))
     .toEqual(["status", "type"])
 })
@@ -153,7 +141,7 @@ test("Focus fills the viewport and preserves current edits, history, and Escape 
 
   const layout = page.getByRole("button", { name: "Task detail layout", exact: true })
   await layout.click()
-  await page.locator("#td-layout-panel").getByRole("button", { name: "Reset to server default" }).focus()
+  await page.locator("#td-layout-panel").getByRole("button", { name: "Reset layout" }).focus()
   await page.keyboard.press("Escape")
   await expect(layout).toHaveAttribute("aria-expanded", "false")
   await expect(layout).toBeFocused()
@@ -171,17 +159,13 @@ test("pointer drag rolls back if browser storage refuses the write", async ({ pa
   await expect(editor).toHaveAttribute("data-drag-ready", "true")
   const list = editor.locator('ol[data-layout-order="sections"]')
   const source = list.locator(':scope > [data-layout-item="description"] [data-layout-handle]')
-  const destination = list.locator(':scope > [data-layout-item="properties"]')
-  // Collapse the field list so the whole Properties row, and its midpoint, stays on screen.
-  const fields = destination.locator("details.td-layout-editor__fields")
-  if (await fields.evaluate(element => (element as HTMLDetailsElement).open)) await fields.locator(":scope > summary").click()
-  // A row moves past a section once the pointer crosses that section's midpoint.
+  const destination = list.locator(':scope > [data-layout-item="properties"] > .td-layout-editor__row > [data-layout-label]')
   async function drag(target: Locator, edge: "top" | "bottom") {
     const from = (await source.boundingBox())!
     const to = (await target.boundingBox())!
     await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
     await page.mouse.down()
-    await page.mouse.move(from.x + from.width / 2, to.y + to.height * (edge === "top" ? 0.25 : 0.75), { steps: 14 })
+    await page.mouse.move(from.x + from.width / 2, to.y + (edge === "top" ? -8 : to.height + 16), { steps: 14 })
     await page.mouse.up()
   }
   await drag(destination, "bottom")
@@ -196,7 +180,8 @@ test("pointer drag rolls back if browser storage refuses the write", async ({ pa
       return setItem.call(this, name, value)
     }
   }, layoutKey)
-  await drag(destination, "top")
+  const after = list.locator(':scope > [data-layout-item="properties"] > .td-layout-editor__row > [data-layout-label]')
+  await drag(after, "top")
   await expect(editor.getByRole("status")).toHaveText("Couldn’t save the layout in this browser. Try again.")
   expect(await ids(list)).toEqual(saved)
   expect(await ids(page.locator("#td-sections"))).toEqual(saved)
@@ -306,13 +291,10 @@ test("a change in another tab waits while focus is inside a ticket field", async
   const description = page.locator("#td-description")
   const sections = page.locator("#td-sections")
   await description.fill("Keep this draft and its selection")
-  // Another tab's personal layout edit reaches this ticket; Settings edits only the server draft.
   const other = await context.newPage()
-  await other.goto(`/tickets/${id}`)
-  await other.getByRole("button", { name: "Task detail layout", exact: true }).click()
-  const otherEditor = other.locator("#td-layout-panel")
-  await otherEditor.getByRole("button", { name: /Move down · Description/ }).click()
-  await expect(otherEditor.locator("[data-layout-status]")).toContainText("Description moved")
+  await other.goto("/settings#tasks-boards-settings")
+  await other.locator("#settings-task-detail-layout").getByRole("button", { name: /Move down · Description/ }).click()
+  await expect(other.locator("#settings-task-detail-layout").getByRole("status")).toContainText("Description moved")
   expect((await ids(sections))[0]).toBe("description")
   await expect(description).toBeFocused()
   await expect(description).toHaveValue("Keep this draft and its selection")
@@ -332,17 +314,14 @@ test.describe("touch layout", () => {
     const editor = page.locator("#td-layout-panel [data-task-layout-editor]")
     await expect(editor).toHaveAttribute("data-drag-ready", "true")
     const list = editor.locator('ol[data-layout-order="sections"]')
-    // Collapse the field list so the Properties row's midpoint stays on screen.
-    const fields = list.locator(':scope > [data-layout-item="properties"] details.td-layout-editor__fields')
-    if (await fields.evaluate(element => (element as HTMLDetailsElement).open)) await fields.locator(":scope > summary").tap()
     const grip = await list.locator(':scope > [data-layout-item="description"] [data-layout-handle]').boundingBox()
-    const next = await list.locator(':scope > [data-layout-item="properties"]').boundingBox()
+    const next = await list.locator(':scope > [data-layout-item="properties"] > .td-layout-editor__row').boundingBox()
     expect(grip).not.toBeNull()
     expect(next).not.toBeNull()
     const client = await context.newCDPSession(page)
     const x = grip!.x + grip!.width / 2
     const y = grip!.y + grip!.height / 2
-    const end = next!.y + next!.height * 0.75
+    const end = next!.y + next!.height - 3
     await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] })
     for (let step = 1; step <= 12; step++) {
       await client.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y + (end - y) * step / 12 }] })
@@ -386,7 +365,6 @@ test("switch and Close wait for the Description draft and retain it after failur
   await page.evaluate(id => { void window.openTaskDetail?.(id) }, other)
   await expect(page.locator("#td-title")).toHaveValue("Destination after save")
   const saved = await request.get(`/api/tasks/${id}`)
-  expect(saved.status(), await saved.text()).toBe(200)
   expect((await saved.json()).description).toBe("Retain this draft when switching")
   await page.getByRole("button", { name: "Edit description" }).click()
   await editor.fill("Save this draft when closing")

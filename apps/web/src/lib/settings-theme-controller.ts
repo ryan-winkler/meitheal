@@ -459,7 +459,15 @@ function bindAppearanceForm(form: HTMLFormElement): void {
       // After navigation the save is persisted. Show it on the next page unless that page is
       // previewing its own unsaved draft.
       if (lifecycleSignal.aborted) {
-        if (!document.querySelector('form[data-dirty="true"]')) applyAppearancePreferences(nextStored)
+        if (!document.querySelector('form[data-dirty="true"]')) {
+          applyAppearancePreferences(nextStored)
+          // Storage events do not reach the writing document, so refresh the HA palette here.
+          if (isLookAndFeel) {
+            setHAThemePreview()
+            refreshHAThemeMatch()
+            if (!matchesHaPalette()) applyPersonalAccent(root, submitted.accent ?? null)
+          }
+        }
         // The next page's form adopts this save as its committed state, keeping any draft.
         window.dispatchEvent(new CustomEvent(APPEARANCE_SAVED_EVENT, { detail: submitted }))
         return

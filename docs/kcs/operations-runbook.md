@@ -239,7 +239,7 @@ In a disposable ingress session, open **Planning → Triage**. Confirm the queue
 
 ### Verify sidebar navigation and task pins
 
-In a disposable browser session, select **Expand on hover or focus**, open the rail with the edge arrow, and close it with the arrow. Move the pointer within the rail after closing with **Ctrl+B**, then leave and re-enter to verify hover expansion. Choose **Edit menu** in the keyboard menu, reorder **Tasks** and **Boards**, reload, and check that Household, Areas and Projects move with Boards. On a phone, use **Move up** or **Move down** in the drawer's edit mode.
+In a disposable browser session, select **Expand on hover or focus**, open the rail with the edge arrow, and close it with the arrow. Move the pointer within the rail after closing with **Ctrl+B**, then leave and re-enter to verify hover expansion. Choose **Edit menu** in the keyboard menu, reorder **Tasks** and **Boards**, reload, and check that Household, Areas and Projects move with Boards. On a phone, check that the drawer's move handles are at least 44px.
 
 In disposable HTTPS ingress, pin a Household task in Details. Open **Pinned tasks** from the sidebar and use the row’s thumbtack to remove the last pin. The sidebar destination should disappear. Switch to a second Home Assistant user and confirm their navigation uses their own pins. Run `e2e/sidebar-personalization.spec.ts` and `e2e/sidebar-pin-presence.spec.ts` against a built App for browser coverage.
 

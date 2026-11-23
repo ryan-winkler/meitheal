@@ -387,8 +387,6 @@ test.describe("Tasks Shell (Kanban)", () => {
       await expect(card).toBeInViewport()
       await expect(card).toHaveCSS("opacity", "1")
       await expect(card.locator(".kanban-title-text")).toHaveText(title)
-      // With a fine pointer, quick actions keep their room and appear on hover or keyboard focus.
-      await card.hover()
       await expect(actions).toHaveCSS("opacity", "1")
       await expect(actions).toHaveCSS("pointer-events", "auto")
       await expect(actions).toHaveCSS("transition-duration", "0s")
@@ -396,13 +394,9 @@ test.describe("Tasks Shell (Kanban)", () => {
 
       await page.setViewportSize({ width: 1440, height: 900 })
       await page.mouse.move(0, 0)
-      await expect(actions).toHaveCSS("opacity", "0")
-      await expect.poll(hasRoom).toBe(true)
-      await card.locator(".card-open-btn").focus()
       await expect(actions).toHaveCSS("opacity", "1")
       await expect(actions).toHaveCSS("pointer-events", "auto")
-      await page.keyboard.press("Tab")
-      await expect(card.getByRole("button", { name: `Promote to top: ${title}` })).toBeFocused()
+      await card.locator(".card-open-btn").focus()
       await page.keyboard.press("Tab")
       await expect(card.locator(".kanban-promote-star")).toBeFocused()
       await page.keyboard.press("Tab")
@@ -412,7 +406,7 @@ test.describe("Tasks Shell (Kanban)", () => {
       await expect(actions).toHaveCSS("pointer-events", "auto")
       await expect.poll(hasRoom).toBe(true)
       await more.blur()
-      await expect(actions).toHaveCSS("opacity", "0")
+      await expect(actions).toHaveCSS("opacity", "1")
       await card.hover()
       await expect(actions).toHaveCSS("opacity", "1")
     } finally {

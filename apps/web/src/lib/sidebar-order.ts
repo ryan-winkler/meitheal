@@ -34,7 +34,6 @@ import {
 } from "@domains/navigation/sidebar-menu"
 import { createTablerSvgElement, type TablerIconName } from "@lib/tabler-svg"
 import { safeIngressHref } from "@lib/ingress-navigation"
-import { readTaskNavPrefs, writeTaskNavPrefs } from "@lib/task-nav-types"
 import { showToast } from "@lib/toast"
 
 export const SIDEBAR_ORDER_STORAGE_KEY = "meitheal-sidebar-order"
@@ -83,21 +82,6 @@ function buildActionBtn(
   btn.title = label
   btn.append(createTablerSvgElement(iconName, 14))
   return btn
-}
-
-/** Touch-sized step controls; CSS shows them only for coarse pointers, which cannot use arrow keys. */
-function addMoveButtons(item: HTMLElement): void {
-  const key = item.dataset.sidebarItemKey
-  const actions = item.querySelector<HTMLElement>(":scope > .nav-row > .sidebar-edit-actions")
-  if (!key || !actions || actions.querySelector("[data-sidebar-item-move]")) return
-  const label = item.querySelector<HTMLElement>("[data-sidebar-item-label]")?.dataset.defaultLabel || key
-  const buttons = (["up", "down"] as const).map(direction => {
-    const button = buildActionBtn("sidebar-edit-btn sidebar-edit-move", direction === "up" ? "arrow-up" : "arrow-down",
-      `Move ${label} ${direction}`, "data-sidebar-item-move", key)
-    button.dataset.sidebarMoveStep = direction === "up" ? "-1" : "1"
-    return button
-  })
-  actions.prepend(...buttons)
 }
 
 function buildEyeToggleBtn(dataAttr: string, dataVal: string, hidden: boolean, label: string): HTMLButtonElement {
@@ -221,7 +205,6 @@ function buildDynamicSidebarItem(item: CustomNavItem, hidden: boolean): HTMLLIEl
 
   row.append(grip, link, actions)
   li.append(row)
-  addMoveButtons(li)
   return li
 }
 
@@ -652,20 +635,6 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     syncPersonalResetButton()
   }
 
-  root.querySelectorAll<HTMLElement>("[data-sidebar-item-key]").forEach(addMoveButtons)
-
-  // Task views pinned before the sidebar editor become visible view items once.
-  const legacyPrefs = readTaskNavPrefs()
-  if (legacyPrefs.pinnedViews.length) {
-    let next = config
-    for (const view of legacyPrefs.pinnedViews) {
-      const key = `view-${view}`
-      if (isItemHidden(next, key)) next = toggleItemVisibility(next, key)
-    }
-    // Save the pins as a personal override, even when today's server default already shows
-    // them, and keep the legacy pins until that save succeeds.
-    if (commitPersonalConfig(next)) writeTaskNavPrefs({ ...legacyPrefs, pinnedViews: [] }, false)
-  }
 
   // External triggers: Global utility "Edit menu", Settings "Customize my menu"
   window.addEventListener(SIDEBAR_EDIT_MODE_EVENT, event => {
@@ -867,20 +836,6 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     if (!editing) return
     const target = event.target instanceof Element ? event.target : null
     if (!target) return
-
-    const moveBtn = target.closest<HTMLButtonElement>("[data-sidebar-item-move]")
-    if (moveBtn) {
-      event.preventDefault()
-      event.stopPropagation()
-      const key = moveBtn.dataset.sidebarItemMove
-      if (!key) return
-      const next = moveItemByStep(config, key, Number(moveBtn.dataset.sidebarMoveStep) < 0 ? -1 : 1)
-      if (next !== config) {
-        commitPersonalConfig(next, `Moved ${config.itemLabels[key] || DEFAULT_SIDEBAR_ITEM_LABELS[key] || key}.`)
-        moveBtn.focus({ preventScroll: true })
-      }
-      return
-    }
 
     const sectionRenameBtn = target.closest<HTMLButtonElement>("[data-sidebar-section-rename]")
     if (sectionRenameBtn) {

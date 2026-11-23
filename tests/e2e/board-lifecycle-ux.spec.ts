@@ -95,9 +95,7 @@ test("Delete Board defaults to Cancel and restores two distinctly named Boards",
     expect((await restored).status()).toBe(200)
     await navigated
     await expect(page.locator("[data-board-directory]")).toHaveAttribute("data-bound", "true")
-    const card = page.locator("[data-board-directory] a.board-card-identity")
-      .filter({ has: page.locator(".board-name").getByText(name, { exact: true }) })
-    await expect(card).toBeVisible()
+    await expect(page.locator("[data-board-directory]").getByRole("link", { name, exact: true })).toBeVisible()
     await expect(page.getByRole("button", { name: "Restore Board " + name, exact: true })).toHaveCount(0)
     expect((await (await member.request.get(app + "/api/boards/" + ids[index])).json()).board.state).toBe("active")
   }
