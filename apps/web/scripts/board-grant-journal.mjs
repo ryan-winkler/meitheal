@@ -18,19 +18,43 @@ function rejectSymlinkPath(path) {
   }
 }
 
+/** @type {Map<string, { identity: string, revision: string | null }>} */
+const markerReads = new Map()
+const MARKER_SETTLED_MS = 1_000
+
+/** @param {import("node:fs").BigIntStats} stats */
+function markerIdentity(stats) {
+  return `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeNs}:${stats.ctimeNs}:${stats.birthtimeNs}`
+}
+
 export async function readBoardGrantRevision(path = boardGrantPath) {
   try {
+    // Every authority boundary checks the marker. One lstat proves the same
+    // file is still in place: publication renames a new file over it and any
+    // in-place change moves its change time. Only then reuse the parsed epoch.
+    const current = lstatSync(path, { bigint: true, throwIfNoEntry: false })
+    if (!current?.isFile() || current.size > 160n) return null
+    const identity = markerIdentity(current)
+    const known = markerReads.get(path)
+    if (known?.identity === identity) return known.revision
     // The marker is a bounded local file. Read the opened descriptor without
     // queueing each stat, read and close separately on the I/O worker pool.
     const file = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
     try {
-      const stats = fstatSync(file)
-      if (!stats.isFile() || stats.size > 160) return null
+      const stats = fstatSync(file, { bigint: true })
+      if (!stats.isFile() || stats.size > 160n) return null
       const bytes = Buffer.alloc(161)
       const bytesRead = readSync(file, bytes, 0, bytes.length, 0)
-      if (bytesRead !== stats.size) return null
-      const revision = JSON.parse(bytes.toString("utf8", 0, bytesRead))?.epoch
-      return typeof revision === "string" && revisionPattern.test(revision) ? revision : null
+      if (BigInt(bytesRead) !== stats.size) return null
+      const parsed = JSON.parse(bytes.toString("utf8", 0, bytesRead))?.epoch
+      const revision = typeof parsed === "string" && revisionPattern.test(parsed) ? parsed : null
+      // Remember only bytes read while the file kept the identity observed
+      // before opening. File times can be coarser than successive writes, so a
+      // marker changed within the last second is always read again.
+      const settled = Date.now() - Number(current.ctimeMs) > MARKER_SETTLED_MS
+      if (settled && markerIdentity(fstatSync(file, { bigint: true })) === identity) markerReads.set(path, { identity, revision })
+      else markerReads.delete(path)
+      return revision
     } finally { closeSync(file) }
   } catch { return null }
 }
