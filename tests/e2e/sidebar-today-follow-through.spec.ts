@@ -86,14 +86,24 @@ test.describe("Sidebar and Today follow-through", () => {
     // Reset changes only the Areas flag here, so it alone must make the draft dirty.
     await reset()
     await expect(dirtyBar).toBeVisible()
+    const save = page.locator("#save-sidebar")
+    const saveSidebar = async (click: () => Promise<void>) => {
+      const response = page.waitForResponse(res => new URL(res.url()).pathname === "/api/settings"
+        && res.request().method() === "PUT" && res.request().postDataJSON()?.key === "sidebar_config")
+      await click()
+      expect((await response).ok()).toBe(true)
+      await expect(save).toBeEnabled()
+      await expect(save).not.toHaveAttribute("aria-busy", "true")
+    }
     await page.locator("#discard-sidebar").click()
     await expect(dirtyBar).toBeHidden()
-    await page.locator("#save-sidebar").evaluate(button => (button as HTMLButtonElement).click())
+    // Saving the discarded draft must write the committed Areas flag back unchanged.
+    await saveSidebar(() => save.evaluate(button => (button as HTMLButtonElement).click()))
     expect(await storedConfig()).toMatchObject({ areas: false })
 
     await reset()
     await expect(dirtyBar).toBeVisible()
-    await page.locator("#save-sidebar").click()
+    await saveSidebar(() => save.click())
     await expect(dirtyBar).toBeHidden()
     const saved = await storedConfig()
     expect(saved.areas).not.toBe(false)
