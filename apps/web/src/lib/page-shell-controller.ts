@@ -314,10 +314,13 @@ export function initPageShellSectionTracking<SectionId extends string>(
   }
 
   if (sections.length > 0) {
+    let wasAtTop = window.scrollY <= 0
     pageLifecycle.on(window, "scroll", () => {
       syncLinkedSectionVisibility()
-      // The observer may not fire on reaching the top, so apply the top rule here too.
-      if (!linkedSection && window.scrollY <= 0) resumeSectionTracking()
+      // The observer may not fire on reaching or leaving the top, so recalculate then too.
+      const atTop = window.scrollY <= 0
+      if (!linkedSection && (atTop || wasAtTop)) resumeSectionTracking()
+      wasAtTop = atTop
     }, { passive: true })
     pageLifecycle.on(document, "scrollend", () => {
       if (linkedSection && !linkedSection.wasVisible) resumeSectionTracking()

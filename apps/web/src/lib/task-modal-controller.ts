@@ -2070,7 +2070,8 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               document.dispatchEvent(new CustomEvent("kanban:detail-changed", { detail: { id: currentTaskId } }));
             } finally {
               btn.removeAttribute("aria-busy");
-              syncTaskActionControls();
+              // A save that outlives its page must not change the next page's controls.
+              if (!__signal.aborted) syncTaskActionControls();
             }
           }, { signal: __signal });
 

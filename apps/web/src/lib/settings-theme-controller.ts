@@ -444,8 +444,12 @@ function bindAppearanceForm(form: HTMLFormElement): void {
       } catch { /* A valid save replaces malformed stored preferences. */ }
       localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify({ ...previous, ...nextStored }))
       committed = submitted
-      // After navigation the save is persisted, but the next page owns the preview.
-      if (lifecycleSignal.aborted) return
+      // After navigation the save is persisted. Show it on the next page unless that page is
+      // previewing its own unsaved draft.
+      if (lifecycleSignal.aborted) {
+        if (!document.querySelector('form[data-dirty="true"]')) applyAppearancePreferences(nextStored)
+        return
+      }
       if (isAppearanceDraftDirty(committed, draft)) {
         applySnapshotPreview(draft)
       } else {
