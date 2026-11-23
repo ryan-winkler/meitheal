@@ -499,7 +499,7 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     root!.dispatchEvent(new Event(sidebarOrderChanged))
   }
 
-  function commitPersonalConfig(next: SidebarMenuConfig, announcement?: string) {
+  function commitPersonalConfig(next: SidebarMenuConfig, announcement?: string): boolean {
     config = next
     const saved = savePersonalSidebarConfig(config)
     syncDomFromConfig()
@@ -509,6 +509,7 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     } else if (!signal.aborted) {
       showToast(sidebar.dataset.storageError || "Could not save personal menu.", "error")
     }
+    return Boolean(saved)
   }
 
   // The control that opened edit mode receives focus again when it closes.
@@ -548,7 +549,8 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     if (active) {
       syncAddLinkSectionOptions()
       if (openAddLink) setAddLinkOpen(true)
-      else focusFirstGrip()
+      // The overflow layout restores navbar items in a later frame.
+      else requestAnimationFrame(() => { if (editing) focusFirstGrip() })
       announce("Per-user navigation edit mode enabled.")
     } else {
       root!.querySelectorAll<HTMLInputElement>(".sidebar-inline-rename-input").forEach(input => input.blur())
@@ -626,8 +628,8 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
       const key = `view-${view}`
       if (isItemHidden(next, key)) next = toggleItemVisibility(next, key)
     }
-    if (next !== config) commitPersonalConfig(next)
-    writeTaskNavPrefs({ ...legacyPrefs, pinnedViews: [] }, false)
+    // Keep the legacy pins until their sidebar items are saved.
+    if (next === config || commitPersonalConfig(next)) writeTaskNavPrefs({ ...legacyPrefs, pinnedViews: [] }, false)
   }
 
   // External triggers: Global utility "Edit menu", Settings "Customize my menu"

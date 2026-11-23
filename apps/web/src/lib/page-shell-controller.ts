@@ -322,6 +322,11 @@ export function initPageShellSectionTracking<SectionId extends string>(
       (entries) => {
         // Keep the linked section current during the jump and until it leaves view.
         if (linkedSection) return
+        // At the top of the page the first section stays current.
+        if (window.scrollY <= 0) {
+          resumeSectionTracking()
+          return
+        }
         const active = entries
           .filter((entry) => entry.isIntersecting)
           .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0]

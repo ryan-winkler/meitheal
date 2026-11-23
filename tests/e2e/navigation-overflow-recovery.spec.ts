@@ -215,6 +215,13 @@ test.describe("Native navigation overflow", () => {
       await settings.focus()
       await expect(settings).toBeFocused()
       expect((await (await request.get("/api/settings")).json()).sidebar_config.labels.areas).toBe(longLabel)
+      // The utility menu's Settings action is visible and opens Settings.
+      await settings.press("Enter")
+      const settingsAction = page.locator("#nav-utility-popover").getByRole("menuitem", { name: "Settings", exact: true })
+      await expect(settingsAction).toBeVisible()
+      await expect(settingsAction).toBeInViewport()
+      await settingsAction.click()
+      await expect(page).toHaveURL(url => url.pathname === "/settings")
     } finally {
       expect((await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: previous ?? null } })).ok()).toBe(true)
       expect((await request.delete(`/api/areas/${id}`, { headers, data: {} })).ok()).toBe(true)

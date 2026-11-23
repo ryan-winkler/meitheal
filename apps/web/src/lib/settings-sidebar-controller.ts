@@ -89,8 +89,10 @@ function cloneConfig(config: SidebarMenuConfig): SidebarMenuConfig {
 let serverCommitted: SidebarMenuConfig = normalizeSidebarConfig(null, SETTINGS_DEFAULT_KEYS)
 let draftConfig: SidebarMenuConfig = cloneConfig(serverCommitted)
 // Board Areas visibility is a legacy flag outside the Settings navigation keys.
-// Normalization drops it, so carry the stored value through server-wide saves.
+// Normalization drops it, so carry it with the draft: saves keep it, Reset
+// clears it and Discard restores the committed value.
 let storedAreasHidden = false
+let draftAreasHidden = false
 
 export function initSidebarSettings(): void {
   document.querySelectorAll<HTMLButtonElement>("[data-customize-sidebar-menu]").forEach(button => {
@@ -128,6 +130,7 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
     serverCommitted = normalizeSidebarConfig(settings.sidebar_config, SETTINGS_DEFAULT_KEYS)
     draftConfig = cloneConfig(serverCommitted)
     storedAreasHidden = isStoredItemHidden(settings.sidebar_config, "areas")
+    draftAreasHidden = storedAreasHidden
 
     let dragKind: "section" | "item" | null = null
     let dragId: string | null = null
@@ -581,6 +584,7 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
     // Discard unsaved server-wide draft
     discardBtn?.addEventListener("click", () => {
       draftConfig = cloneConfig(serverCommitted)
+      draftAreasHidden = storedAreasHidden
       renderTree()
     }, { signal })
 
@@ -588,11 +592,12 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
     if (saveBtn) {
       saveBtn.addEventListener("click", withAsyncButton(saveBtn, async () => {
         const payload = serializeSidebarConfig(draftConfig)
-        if (storedAreasHidden) {
+        if (draftAreasHidden) {
           payload.areas = false
           if (!payload.hiddenItems.includes("areas")) payload.hiddenItems.push("areas")
         }
         await saveSetting("sidebar_config", payload)
+        storedAreasHidden = draftAreasHidden
         try { localStorage.removeItem(SIDEBAR_ORDER_STORAGE_KEY) } catch { /* Storage may be blocked. */ }
         serverCommitted = normalizeSidebarConfig(payload, SETTINGS_DEFAULT_KEYS)
         draftConfig = cloneConfig(serverCommitted)
@@ -612,6 +617,7 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
         })
         if (!confirmed) return
         draftConfig = normalizeSidebarConfig(null, SETTINGS_DEFAULT_KEYS)
+        draftAreasHidden = false
         renderTree()
         showToast("Built-in defaults staged — click Save server default to apply for all users.")
       }, { onError: showSettingsSaveError }), { signal })

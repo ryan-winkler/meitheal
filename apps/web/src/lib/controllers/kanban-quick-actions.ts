@@ -95,6 +95,7 @@ export function initQuickActions(
       }
     }
     button.disabled = true
+    let written = false
     try {
       const response = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
         method: "PUT",
@@ -102,11 +103,17 @@ export function initQuickActions(
         body: JSON.stringify({ color }),
       })
       if (!response.ok) throw new Error("Color write rejected")
+      written = true
       notifyInactivityTaskChanged(taskId)
       await refreshBoard({ taskId })
       toast(color ? "Color updated" : "Color cleared", "success")
     } catch {
       if (__signal.aborted) return
+      // Keep a saved color even when the Board refresh afterwards fails.
+      if (written) {
+        toast(color ? "Color updated. Refresh the Board to see every change." : "Color cleared. Refresh the Board to see every change.", "warning")
+        return
+      }
       restore()
       toast(color ? "Failed to set color" : "Failed to clear color", "error")
     } finally {
