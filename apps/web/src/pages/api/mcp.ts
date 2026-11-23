@@ -393,7 +393,7 @@ customHandlers.set("searchTasks", async (args, requestApi) => {
   const params = new URLSearchParams()
   const query = args.q != null ? args.q : args.query
   if (query != null) params.set("q", String(query))
-  for (const key of ["status", "priority", "assigned_to", "limit", "sort", "task_fields"]) {
+  for (const key of ["status", "priority", "assigned_to", "task_kind", "limit", "sort", "task_fields"]) {
     if (args[key] != null) params.set(key, String(args[key]))
   }
   const includeCompleted = args.include_completed === true ||
@@ -407,13 +407,17 @@ customHandlers.set("searchTasks", async (args, requestApi) => {
   }
   const taskSection = data.sections?.find((s) => s.id === "tasks")
   return {
-    tasks: (taskSection?.items ?? []).map((item) => ({ // nosemgrep
-      id: item.taskId ?? item.id,
-      title: item.title,
-      description: item.description,
-      status: (item.meta as Record<string, unknown> | undefined)?.status,
-      priority: (item.meta as Record<string, unknown> | undefined)?.priority,
-    })),
+    tasks: (taskSection?.items ?? []).map((item) => { // nosemgrep
+      const meta = item.meta as Record<string, unknown> | undefined
+      return {
+        id: item.taskId ?? item.id,
+        title: item.title,
+        description: item.description,
+        status: meta?.status,
+        priority: meta?.priority,
+        task_kind: meta?.task_kind ?? "standard_action",
+      }
+    }),
     count: taskSection?.items?.length ?? 0,
   }
 })
@@ -439,7 +443,10 @@ function taskSummary(task: Record<string, unknown>): Record<string, unknown> {
     description: task.description ?? "",
     status: task.status,
     priority: task.priority,
+    task_kind: task.task_kind ?? "standard_action",
     due_date: task.due_date ?? null,
+    start_date: task.start_date ?? null,
+    end_date: task.end_date ?? null,
     labels: task.labels,
     parent_id: task.parent_id ?? null,
     updated_at: task.updated_at,

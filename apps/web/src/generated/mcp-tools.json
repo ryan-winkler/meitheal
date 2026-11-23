@@ -34,6 +34,18 @@
             "type": "string",
             "description": "project_id parameter"
           },
+          "task_kind": {
+            "type": "string",
+            "enum": [
+              "standard_action",
+              "shopping_item",
+              "checklist",
+              "routine_instance",
+              "calendar_event",
+              "quick_capture"
+            ],
+            "description": "Filter tasks by behavioral kind."
+          },
           "assigned_to": {
             "type": "string",
             "description": "assigned_to parameter"
@@ -127,6 +139,45 @@
             "type": "string",
             "maxLength": 10000
           },
+          "priority": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 5,
+            "description": "Priority 1-5 (1=urgent, 3=normal, 5=lowest); rounded and clamped to 1..5."
+          },
+          "due_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Due date (YYYY-MM-DD or ISO timestamp)"
+          },
+          "start_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Start date or ISO timestamp"
+          },
+          "end_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "End date or ISO timestamp"
+          },
+          "task_kind": {
+            "type": "string",
+            "enum": [
+              "standard_action",
+              "shopping_item",
+              "checklist",
+              "routine_instance",
+              "calendar_event",
+              "quick_capture"
+            ],
+            "description": "Behavioral kind — determines UI rendering and lifecycle rules"
+          },
           "is_promoted": {
             "type": "boolean",
             "description": "Pin the new task to the top of its Kanban lane with a promoted ribbon sash."
@@ -136,6 +187,104 @@
             "maxLength": 255,
             "nullable": true,
             "description": "Must start with 'ha_' or 'custom_'"
+          },
+          "labels": {
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "string",
+                "description": "JSON-encoded array of label names"
+              }
+            ],
+            "description": "Label names, as an array or as a JSON-encoded array."
+          },
+          "checklists": {
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "text"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "done": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              {
+                "type": "string",
+                "description": "JSON-encoded checklist array"
+              }
+            ]
+          },
+          "custom_fields": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "name"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "Item name"
+                        },
+                        "qty": {
+                          "type": "string",
+                          "description": "Optional quantity label (e.g. '2L', '1 bunch')"
+                        },
+                        "category": {
+                          "type": "string",
+                          "enum": [
+                            "produce",
+                            "dairy",
+                            "meat",
+                            "pantry",
+                            "frozen",
+                            "beverages",
+                            "household",
+                            "other"
+                          ],
+                          "description": "Aisle category"
+                        },
+                        "checked": {
+                          "type": "boolean",
+                          "description": "Whether the item has been picked up"
+                        }
+                      }
+                    },
+                    "description": "Structured shopping items (with optional qty, category, checked) for shopping_item tasks"
+                  }
+                }
+              },
+              {
+                "type": "string",
+                "description": "JSON-encoded custom fields object"
+              }
+            ]
           },
           "frameworkPayload": {
             "type": "object"
@@ -288,7 +437,31 @@
             "type": "boolean",
             "description": "Show the task above regular cards in its Kanban lane."
           },
+          "task_kind": {
+            "type": "string",
+            "enum": [
+              "standard_action",
+              "shopping_item",
+              "checklist",
+              "routine_instance",
+              "calendar_event",
+              "quick_capture"
+            ],
+            "description": "Behavioral kind — routine_instance cannot be assigned to non-routine tasks."
+          },
           "due_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "start_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end_date": {
             "type": [
               "string",
               "null"
@@ -344,6 +517,60 @@
               "null"
             ],
             "description": "Exact previous checklist value returned by GET"
+          },
+          "custom_fields": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "name"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "Item name"
+                        },
+                        "qty": {
+                          "type": "string",
+                          "description": "Optional quantity label (e.g. '2L', '1 bunch')"
+                        },
+                        "category": {
+                          "type": "string",
+                          "enum": [
+                            "produce",
+                            "dairy",
+                            "meat",
+                            "pantry",
+                            "frozen",
+                            "beverages",
+                            "household",
+                            "other"
+                          ],
+                          "description": "Aisle category"
+                        },
+                        "checked": {
+                          "type": "boolean",
+                          "description": "Whether the item has been picked up"
+                        }
+                      }
+                    },
+                    "description": "Structured shopping items for shopping_item tasks"
+                  }
+                }
+              },
+              {
+                "type": "string",
+                "description": "JSON-encoded custom fields object"
+              }
+            ]
           },
           "updated_at": {
             "type": "integer",
@@ -912,7 +1139,7 @@
     },
     {
       "name": "searchTasks",
-      "description": "Search tasks by query text, status, priority, or assignee. Returns a clean list of matching tasks.",
+      "description": "Search tasks by query text, status, priority, task_kind, or assignee. Returns a clean list of matching tasks.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -962,6 +1189,18 @@
           "priority": {
             "type": "integer",
             "description": "priority parameter"
+          },
+          "task_kind": {
+            "type": "string",
+            "enum": [
+              "standard_action",
+              "shopping_item",
+              "checklist",
+              "routine_instance",
+              "calendar_event",
+              "quick_capture"
+            ],
+            "description": "Filter tasks by behavioral kind."
           },
           "task_fields": {
             "type": "string",
@@ -1673,13 +1912,17 @@
           "area_id": {
             "type": "string",
             "description": "List Routines in an existing Area, or use default for unassigned Routines."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Filter Routines by Project ID."
           }
         }
       }
     },
     {
       "name": "createHabit",
-      "description": "Create with a name and optional area_id. Send templateId for complete, update, or delete.",
+      "description": "Create with a name and optional area_id or project_id. Send templateId for complete, update, or delete.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1708,6 +1951,13 @@
             "type": "string",
             "description": "Area for new work. Use default for unassigned work."
           },
+          "project_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Project for new work."
+          },
           "cadence": {
             "type": "string",
             "enum": [
@@ -1730,7 +1980,10 @@
             "type": "string"
           },
           "priority": {
-            "type": "number"
+            "type": "number",
+            "minimum": 1,
+            "maximum": 5,
+            "description": "Default priority 1-5 (clamped by server)."
           },
           "checklists": {
             "type": "array",
@@ -1753,7 +2006,7 @@
           "templateJson": {
             "type": "object",
             "additionalProperties": true,
-            "description": "Template fields to update, including area_id."
+            "description": "Template fields to update, including area_id and project_id."
           }
         }
       }
@@ -2778,6 +3031,7 @@
         "deferred",
         "area_id",
         "project_id",
+        "task_kind",
         "assigned_to",
         "priority",
         "due_date",
@@ -3094,6 +3348,7 @@
         "status",
         "assigned_to",
         "priority",
+        "task_kind",
         "task_fields"
       ]
     },
@@ -3331,7 +3586,8 @@
       "hasBody": false,
       "pathParams": [],
       "queryParams": [
-        "area_id"
+        "area_id",
+        "project_id"
       ]
     },
     "createHabit": {
