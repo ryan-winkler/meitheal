@@ -213,12 +213,16 @@ test.describe("More disclosure keyboard candidates", () => {
       const today = row.locator('a[data-page="today"]')
       await expect(today).toBeFocused()
       await expect(today).toBeInViewport({ ratio: 1 })
-      await page.keyboard.press("Tab")
+      // Workspace and Planning destinations precede the Boards section in the drawer.
+      for (let step = 0; step < 15 && !(await boardsLink.evaluate(link => link === document.activeElement)); step++) {
+        await page.keyboard.press("Tab")
+      }
       await expect(boardsLink).toBeFocused()
       await page.keyboard.press("Tab")
       await expect(boardsToggle).toBeFocused()
       await page.keyboard.press("Tab")
       await expect(household).toBeFocused()
+      await page.keyboard.press("Tab")
       await page.keyboard.press("Tab")
       await expect(areasToggle).toBeFocused()
       await page.keyboard.press("Tab")

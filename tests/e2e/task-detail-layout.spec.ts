@@ -93,11 +93,9 @@ test("ticket and Settings share a real section and field order, and reset restor
     .toEqual(["type", "status", "priority"])
   await expect(description.locator("#td-desc-preview")).toBeVisible()
 
-  // Restore the built-in server default for later cases.
-  await page.goto("/settings#tasks-boards-settings")
-  await settings.getByRole("button", { name: "Reset to defaults" }).click()
-  await settings.getByRole("button", { name: "Save server default" }).click()
-  await expect(settings.locator("[data-layout-dirty-bar]")).toBeHidden()
+  // Restore the built-in server default for later cases without another Settings load,
+  // which keeps this file inside the loopback API rate window.
+  expect((await request.put("/api/settings", { data: { key: "task_detail_layout_default", value: null } })).ok()).toBe(true)
   await page.goto(`/tickets/${id}`)
   await expect(page.locator("#td-title")).toHaveValue("Arrange a task")
   expect((await ids(sections.locator('[data-layout-order="properties"]'))).slice(0, 2))
@@ -334,14 +332,17 @@ test.describe("touch layout", () => {
     const editor = page.locator("#td-layout-panel [data-task-layout-editor]")
     await expect(editor).toHaveAttribute("data-drag-ready", "true")
     const list = editor.locator('ol[data-layout-order="sections"]')
+    // Collapse the field list so the Properties row's midpoint stays on screen.
+    const fields = list.locator(':scope > [data-layout-item="properties"] details.td-layout-editor__fields')
+    if (await fields.evaluate(element => (element as HTMLDetailsElement).open)) await fields.locator(":scope > summary").tap()
     const grip = await list.locator(':scope > [data-layout-item="description"] [data-layout-handle]').boundingBox()
-    const next = await list.locator(':scope > [data-layout-item="properties"] > .td-layout-editor__row').boundingBox()
+    const next = await list.locator(':scope > [data-layout-item="properties"]').boundingBox()
     expect(grip).not.toBeNull()
     expect(next).not.toBeNull()
     const client = await context.newCDPSession(page)
     const x = grip!.x + grip!.width / 2
     const y = grip!.y + grip!.height / 2
-    const end = next!.y + next!.height - 3
+    const end = next!.y + next!.height * 0.75
     await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] })
     for (let step = 1; step <= 12; step++) {
       await client.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x, y: y + (end - y) * step / 12 }] })
@@ -385,6 +386,7 @@ test("switch and Close wait for the Description draft and retain it after failur
   await page.evaluate(id => { void window.openTaskDetail?.(id) }, other)
   await expect(page.locator("#td-title")).toHaveValue("Destination after save")
   const saved = await request.get(`/api/tasks/${id}`)
+  expect(saved.status(), await saved.text()).toBe(200)
   expect((await saved.json()).description).toBe("Retain this draft when switching")
   await page.getByRole("button", { name: "Edit description" }).click()
   await editor.fill("Save this draft when closing")

@@ -409,13 +409,20 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
         ghostClass: "td-layout-editor__ghost",
         signal,
         onStart: () => { dragging = true },
-        onEnd: ({ oldIndex, newIndex }) => {
+        onEnd: ({ item, oldIndex, newIndex }) => {
           dragging = false
           if (oldIndex === newIndex) { renderConfig(draft); return }
           const group = list.dataset.layoutOrder
           if (!group) return
-          draft.orders[group] = layoutItems(list).map((row) => row.dataset.layoutItem ?? "")
-          commitDraft()
+          const items = layoutItems(list)
+          draft.orders[group] = items.map((row) => row.dataset.layoutItem ?? "")
+          // Announce a drag the same way as an arrow move.
+          const id = item.dataset.layoutItem ?? ""
+          const label = draft.labels[id] ?? item.dataset.defaultLabel ?? id
+          commitDraft((root.dataset.moved ?? "")
+            .replace("{item}", label)
+            .replace("{position}", String(newIndex + 1))
+            .replace("{total}", String(items.length)))
         },
       })
     }

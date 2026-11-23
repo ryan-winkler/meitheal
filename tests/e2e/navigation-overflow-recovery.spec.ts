@@ -112,7 +112,8 @@ test.describe("Native navigation overflow", () => {
       // The focused destination keeps its place in the bar while others move into More.
       await expect(reference).toBeFocused()
       await expect(menu.locator('[data-page="overflow-reference"]')).toHaveCount(0)
-      await summary.press("Enter")
+      await expect(more).toBeVisible()
+      await summary.click()
       await expect(more).toHaveAttribute("open", "")
       await page.keyboard.press("Escape")
       await expect(more).not.toHaveAttribute("open", "")

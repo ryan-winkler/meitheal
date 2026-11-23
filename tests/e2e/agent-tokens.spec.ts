@@ -629,21 +629,22 @@ settingsBrowserTest("Settings Agent Tokens UI handles deferred load, retry, focu
   await expect(page.locator("#agent-token-create-btn")).toBeFocused()
 })
 
-test("standalone ClientRouter navigation enforces non-admin notice and cleans up without errors", async ({ page }) => {
+test("standalone ClientRouter navigation keeps local token management and cleans up without errors", async ({ page }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Set MEITHEAL_TEST_BROWSER=1 to start the standalone fixture")
   const errors: string[] = []
   page.on("pageerror", error => errors.push(error.message))
 
+  // A standalone installation on a local host is administered locally, so tokens are manageable.
   await page.goto("/settings#automation-ai-settings")
-  await expect(page.locator("#agent-tokens-status")).toContainText("Home Assistant administrator access is required")
-  await expect(page.locator("#agent-token-create-btn")).toBeDisabled()
+  await expect(page.locator("#agent-token-create-btn")).toBeEnabled()
+  await expect(page.locator("#agent-tokens-status")).toBeHidden()
   await expect(page.locator("#agent-token-form")).toBeHidden()
   await expect(page.locator("#agent-token-reveal")).toBeHidden()
 
   await page.locator("#bot-allow-proposals").click()
   await expect(page).toHaveURL(/\/review$/)
   await page.goBack()
-  await expect(page.locator("#agent-tokens-status")).toContainText("Home Assistant administrator access is required")
-  await expect(page.locator("#agent-token-create-btn")).toBeDisabled()
+  await expect(page.locator("#agent-token-create-btn")).toBeEnabled()
+  await expect(page.locator("#agent-tokens-status")).toBeHidden()
   expect(errors).toEqual([])
 })

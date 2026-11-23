@@ -35,11 +35,45 @@ export function attachVerticalListDragReorder(
   }
   syncDraggable()
 
+  const rowAt = (x: number, y: number): HTMLElement | null => {
+    // A nested list's row stands for the row of this list that contains it.
+    let row = document.elementFromPoint(x, y)?.closest<HTMLElement>(itemSelector) ?? null
+    while (row && row.parentElement !== list) row = row.parentElement?.closest<HTMLElement>(itemSelector) ?? null
+    return row
+  }
+
   list.addEventListener("pointerdown", event => {
     const target = event.target instanceof Element ? event.target : null
     if (!target?.closest(handle)) return
     const row = target.closest<HTMLElement>(itemSelector)
-    if (row && row.parentElement === list) row.draggable = true
+    if (!row || row.parentElement !== list) return
+    if (event.pointerType !== "touch") {
+      row.draggable = true
+      return
+    }
+    // Native drag and drop does not start from touch, so follow the finger with pointer events.
+    event.preventDefault()
+    const pointerId = event.pointerId
+    dragged = row
+    oldIndex = items().indexOf(row)
+    row.classList.add(ghostClass)
+    onStart?.()
+    const touch = new AbortController()
+    const scope = AbortSignal.any([signal, touch.signal])
+    document.addEventListener("pointermove", move => {
+      if (move.pointerId !== pointerId || !dragged) return
+      const over = rowAt(move.clientX, move.clientY)
+      if (!over || over === dragged) return
+      const box = over.getBoundingClientRect()
+      list.insertBefore(dragged, move.clientY < box.top + box.height / 2 ? over : over.nextElementSibling)
+    }, { signal: scope })
+    const end = (up: PointerEvent) => {
+      if (up.pointerId !== pointerId) return
+      touch.abort()
+      finishDrag()
+    }
+    document.addEventListener("pointerup", end, { signal: scope })
+    document.addEventListener("pointercancel", end, { signal: scope })
   }, { signal })
 
   const clearDraggable = () => {
@@ -68,9 +102,7 @@ export function attachVerticalListDragReorder(
     if (!dragged) return
     event.preventDefault()
     if (event.dataTransfer) event.dataTransfer.dropEffect = "move"
-    // A nested list's row stands for the row of this list that contains it.
-    let target = (event.target as Element | null)?.closest<HTMLElement>(itemSelector) ?? null
-    while (target && target.parentElement !== list) target = target.parentElement?.closest<HTMLElement>(itemSelector) ?? null
+    const target = rowAt(event.clientX, event.clientY)
     if (!target || target === dragged) return
     const box = target.getBoundingClientRect()
     const insertBefore = event.clientY < box.top + box.height / 2
