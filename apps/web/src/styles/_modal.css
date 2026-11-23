@@ -229,12 +229,6 @@ dialog[open] .modal-content,
   z-index: 5;
 }
 
-/* Priority color indicators (scoped to priority dropdown) */
-#nt-priority-dropdown .glass-dropdown__item[data-value="1"]::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #ef4444; flex-shrink: 0; }
-#nt-priority-dropdown .glass-dropdown__item[data-value="2"]::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #f97316; flex-shrink: 0; }
-#nt-priority-dropdown .glass-dropdown__item[data-value="3"]::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #3b82f6; flex-shrink: 0; }
-#nt-priority-dropdown .glass-dropdown__item[data-value="4"]::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #6b7280; flex-shrink: 0; }
-
 .nt-footer {
   border-top: 1px solid var(--border);
 }
@@ -791,90 +785,6 @@ body.has-docked-inspector #task-detail-panel {
   color: var(--text-secondary);
 }
 
-/* Strategic Lens Button Animation */
-#td-evaluate-btn:hover svg.text-accent {
-  transform: rotate(15deg) scale(1.1);
-  transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-/* --- NewTask Kind Pills (Tab Switcher) --- */
-.nt-kind-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.4rem 0.85rem;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  border-radius: 9999px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--color-text-muted, #a1a1aa);
-  cursor: pointer;
-  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
-  white-space: nowrap;
-  line-height: 1.2;
-}
-
-.nt-kind-pill svg {
-  opacity: 0.6;
-  transition: opacity 0.18s ease;
-}
-
-.nt-kind-pill:hover {
-  background: color-mix(in srgb, var(--color-text-muted, #a1a1aa) 8%, transparent);
-  color: var(--color-text-primary, #fff);
-}
-.nt-kind-pill:hover svg {
-  opacity: 0.85;
-}
-
-.nt-kind-pill.active {
-  background: color-mix(in srgb, var(--color-accent, #69e3b2) 14%, transparent);
-  border-color: color-mix(in srgb, var(--color-accent, #69e3b2) 32%, transparent);
-  color: var(--accent-text);
-  font-weight: 600;
-}
-.nt-kind-pill.active svg {
-  opacity: 1;
-  stroke: var(--accent-text);
-}
-
-/* --- NewTask Status Pills (matching filter-pill design) --- */
-.nt-status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  height: 28px;
-  font-size: 12px;
-  font-weight: 500;
-  border-radius: var(--radius-full, 9999px);
-  border: 1px solid var(--border, rgba(255, 255, 255, 0.1));
-  background: var(--bg-secondary, rgba(255, 255, 255, 0.05));
-  color: var(--text-muted, #a1a1aa);
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-  white-space: nowrap;
-  user-select: none;
-}
-
-.nt-status-pill:hover {
-  background: var(--bg-hover, rgba(255, 255, 255, 0.1));
-  border-style: solid;
-  color: var(--text-primary, #fff);
-}
-
-.nt-status-pill.active {
-  background: rgb(var(--accent-rgb) / 0.14);
-  border: 1px solid rgb(var(--accent-rgb) / 0.34);
-  color: var(--accent-text);
-}
-
-.nt-status-pill-icon {
-  font-size: 0.8rem;
-  line-height: 1;
-}
-
 /* Transitions for inputs/selects on hover/focus */
 .modal-content input[type="text"]:not(:focus),
 .modal-content input[type="date"]:not(:focus),
@@ -963,8 +873,11 @@ body.has-docked-inspector #task-detail-panel {
 #new-task-overlay .nt-form-grid { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 #new-task-overlay .nt-kind-grid { display: flex; flex-wrap: wrap; gap: 6px; }
 #new-task-overlay .nt-kind-pill {
+  display: inline-flex;
+  align-items: center;
   flex: 1 1 auto;
   justify-content: center;
+  gap: 0.375rem;
   min-height: 44px;
   padding: 6px 10px;
   border: 1px solid var(--control-border, var(--border));
@@ -972,15 +885,22 @@ body.has-docked-inspector #task-detail-panel {
   color: var(--text-secondary);
   background: var(--bg-input);
   font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.2;
   white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
-#new-task-overlay .nt-kind-pill svg { flex-shrink: 0; }
+#new-task-overlay .nt-kind-pill svg { flex-shrink: 0; opacity: 0.7; }
+#new-task-overlay .nt-kind-pill:hover { background: var(--bg-hover); color: var(--text-primary); }
 #new-task-overlay .nt-kind-pill[aria-pressed="true"] {
   background: var(--accent-light, var(--accent-transparent));
   border-color: var(--accent-text);
   color: var(--accent-text);
   font-weight: 650;
 }
+#new-task-overlay .nt-kind-pill[aria-pressed="true"] svg { opacity: 1; }
+.nt-status-pill-icon { font-size: 0.8rem; line-height: 1; }
 #new-task-overlay :is(.form-input, .form-select) {
   min-width: 0;
   width: 100%;

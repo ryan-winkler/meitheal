@@ -133,10 +133,13 @@ export function initPageShellNavigation<SectionId extends string>({
   document.querySelectorAll<HTMLElement>(selectors.join(", ")).forEach((link) => {
     pageLifecycle.on(link, "click", (event) => {
       const href = link.getAttribute("href")
-      if (!href?.startsWith("#")) return
+      const targetId = link instanceof HTMLAnchorElement
+        ? (link.pathname === location.pathname ? link.hash.slice(1) : "")
+        : (href?.startsWith("#") ? href.slice(1) : "")
+      if (!targetId) return
 
       event.preventDefault()
-      scrollToAnchor(href.replace("#", ""))
+      scrollToAnchor(targetId)
     })
   })
 
@@ -267,10 +270,18 @@ export function initPageShellSectionTracking<SectionId extends string>(
   let linkedSection: {
     element: HTMLElement
     wasVisible: boolean
+    leftTop: boolean
   } | null = null
 
-  function resumeSectionTracking(): void {
+  function resumeSectionTracking(preferTop = false): void {
     linkedSection = null
+    if (preferTop && sections[0]) {
+      const topId = resolveSectionId(sections[0].id)
+      if (topId) {
+        updateActiveState(topId)
+        return
+      }
+    }
     let mostVisibleSectionId: SectionId | null = null
     let greatestVisibleHeight = 0
     // At the top of the page the first section is current, even when a taller
@@ -294,9 +305,14 @@ export function initPageShellSectionTracking<SectionId extends string>(
     if (mostVisibleSectionId) updateActiveState(mostVisibleSectionId)
   }
 
-  function syncLinkedSectionVisibility(): void {
+  function syncLinkedSectionVisibility(fromScroll = false): void {
     if (!linkedSection) return
+    if (window.scrollY > 2) linkedSection.leftTop = true
     const { top, bottom } = linkedSection.element.getBoundingClientRect()
+    if (fromScroll && linkedSection.wasVisible && linkedSection.leftTop && window.scrollY <= 2 && sections[0] && linkedSection.element !== sections[0]) {
+      resumeSectionTracking(true)
+      return
+    }
     if (bottom > 0 && top < window.innerHeight) {
       linkedSection.wasVisible = true
     } else if (linkedSection.wasVisible) {
@@ -306,17 +322,17 @@ export function initPageShellSectionTracking<SectionId extends string>(
 
   function trackLinkedSection(sectionId: SectionId | null, awaitVisibility = true): void {
     const element = sectionId ? document.getElementById(sectionId) : null
-    linkedSection = element ? { element, wasVisible: false } : null
+    linkedSection = element ? { element, wasVisible: false, leftTop: window.scrollY > 2 } : null
     syncLinkedSectionVisibility()
-    // A restored or retained scroll position can leave the requested section
-    // out of view; follow the section that is actually visible instead.
-    if (!awaitVisibility && !linkedSection?.wasVisible) resumeSectionTracking()
+    if (!awaitVisibility && !linkedSection?.wasVisible) {
+      resumeSectionTracking()
+    }
   }
 
   if (sections.length > 0) {
     let wasAtTop = window.scrollY <= 0
     pageLifecycle.on(window, "scroll", () => {
-      syncLinkedSectionVisibility()
+      syncLinkedSectionVisibility(true)
       // The observer may not fire on reaching or leaving the top, so recalculate then too.
       const atTop = window.scrollY <= 0
       if (!linkedSection && (atTop || wasAtTop)) resumeSectionTracking()

@@ -4,7 +4,7 @@ import { joinSql, sql } from "./persistence/sql-fragment"
 import { parseWorkDestinations } from "./integration-destinations"
 import { featureAudienceAllowed, organizationAudienceAllowed } from "./board-feature-policy"
 import type { Client } from "@libsql/client"
-import { tagBoardPolicyRead } from "../../../scripts/database-client.mjs"
+import { localSnapshotGeneration, tagBoardPolicyRead } from "../../../scripts/database-client.mjs"
 import { boardGrantStillCurrent, currentBoardGrantRevision } from "./persistence/board-grant-fence"
 import {
   principalProof,
@@ -50,6 +50,34 @@ const actions: WorkAction[] = [
   "restore"
 ]
 const management = new Set<WorkAction>(["manage", "retire", "restore"])
+const snapshotReads = new WeakMap<object, WeakMap<VerifiedPrincipal, Map<string, { generation: string; value: unknown }>>>()
+
+/**
+ * Policy rows are a pure function of the principal and what one unchanged
+ * SQLite view returns. Reuse them for the same reader until its data,
+ * schema or own writes change. Every caller still evaluates the complete
+ * decision, the grant marker, the live epoch and the principal proof.
+ */
+async function snapshotRead<T>(
+  db: Pick<Client, "execute">,
+  principal: VerifiedPrincipal,
+  key: string,
+  read: () => Promise<T>
+): Promise<T> {
+  const generation = localSnapshotGeneration(db)
+  if (generation === undefined) return read()
+  let byPrincipal = snapshotReads.get(db)
+  if (!byPrincipal) snapshotReads.set(db, (byPrincipal = new WeakMap()))
+  let values = byPrincipal.get(principal)
+  if (!values) byPrincipal.set(principal, (values = new Map()))
+  const known = values.get(key)
+  if (known?.generation === generation) return known.value as T
+  const value = await read()
+  // Keep a result only if nothing changed while it was being read.
+  if (localSnapshotGeneration(db) === generation) values.set(key, { generation, value })
+  else values.delete(key)
+  return value
+}
 
 function parsed(value: unknown): Record<string, unknown> | null {
   try {
@@ -75,11 +103,35 @@ function includesOperation(value: unknown, operation: WorkOperation): boolean {
   )
 }
 
+function agentHasOperationSnapshot(operations: unknown, intent: WorkOperation): boolean {
+  if (includesOperation(operations, intent)) return true
+  if (intent.action === "search" && includesOperation(operations, { resource: "task", action: "read" })) return true
+  // Support legacy agent credentials minted before routine operations were snapshotted.
+  if (intent.resource === "routine") {
+    if (intent.action === "read") return includesOperation(operations, { resource: "task", action: "read" })
+    if (intent.action === "create") return includesOperation(operations, { resource: "task", action: "create" })
+    if (intent.action === "edit") {
+      return (
+        includesOperation(operations, { resource: "task", action: "create" }) &&
+        includesOperation(operations, { resource: "task", action: "edit" })
+      )
+    }
+    if (intent.action === "delete") return includesOperation(operations, { resource: "task", action: "delete" })
+  }
+  return false
+}
+
 function tokenAllows(scopes: readonly string[], operation: WorkOperation): boolean {
   if (operation.resource === "board")
     return operation.action === "read" && scopes.includes("tasks:read")
   if (operation.resource === "project")
     return scopes.includes(`projects:${operation.action === "read" ? "read" : "write"}`)
+  if (operation.resource === "routine") {
+    if (operation.action === "read") return scopes.includes("tasks:read")
+    if (operation.action === "create" || operation.action === "edit") return scopes.includes("tasks:write")
+    if (operation.action === "delete") return scopes.includes("tasks:delete")
+    return false
+  }
   // Existing token vocabulary intentionally does not expose arbitrary planning,
   // policy or Pillar commands just because a token has a Board grant.
   if (operation.resource !== "task") return false
@@ -115,9 +167,12 @@ async function allowedFeatures(
   features: readonly string[]
 ): Promise<Set<string>> {
   if (!features.length) return new Set()
-  const { rows } = await db.execute(joinSql(features.map(feature => sql`SELECT ${feature} AS feature,
-    ${featureAudienceAllowed(principal, feature)} AS allowed`), " UNION ALL "))
-  return new Set(rows.filter(row => row.allowed === 1).map(row => String(row.feature)))
+  const allowed = await snapshotRead(db, principal, `features:${JSON.stringify(features)}`, async () => {
+    const { rows } = await db.execute(joinSql(features.map(feature => sql`SELECT ${feature} AS feature,
+      ${featureAudienceAllowed(principal, feature)} AS allowed`), " UNION ALL "))
+    return rows.filter(row => row.allowed === 1).map(row => String(row.feature))
+  })
+  return new Set(allowed)
 }
 
 export async function validateBoardFeature(
@@ -244,9 +299,10 @@ export class BoardAccessService {
   ): Promise<ScopeResult> {
     const proof = principalProof(principal)
     if (!proof) return { ok: false, errorCode: "stale" }
-    const {
-      rows: [row]
-    } = await db.execute(tagBoardPolicyRead(sql`SELECT board.id, board.name, board.ticket_prefix, board.state, board.revision, board.visibility, board.storage_encoding,
+    const row = await snapshotRead(db, principal, `policy:${JSON.stringify([boardId, revision])}`, async () => {
+      const {
+        rows: [policy]
+      } = await db.execute(tagBoardPolicyRead(sql`SELECT board.id, board.name, board.ticket_prefix, board.state, board.revision, board.visibility, board.storage_encoding,
           policy.shared_role, policy.shared_admin_management,
           policy.deny_completion AS board_deny_completion, policy.deny_deletion AS board_deny_deletion,
           policy.deny_agent_deletion, access.role, access.deny_completion, access.deny_deletion, access.authority_limits,
@@ -260,6 +316,8 @@ export class BoardAccessService {
         WHERE board.id = ${boardId} AND EXISTS (
           SELECT 1 FROM board_access_epoch WHERE singleton = 1 AND revision = ${revision}
         )`))
+      return policy
+    })
     if (!row) return { ok: false, errorCode: "unavailable" }
     let role = typeof row.role === "string" ? row.role : null
     if (!role && principal.kind === "ha_user" && row.visibility === "shared") {
@@ -385,7 +443,14 @@ export class BoardAccessService {
       if (intent.action === "search" && intent.resource !== "task") return false
       if (
         principal.kind === "agent" &&
-        intent.resource === "task" &&
+        intent.resource === "routine" &&
+        intent.action !== "read" &&
+        assignedTo !== undefined
+      )
+        return false
+      if (
+        principal.kind === "agent" &&
+        intent.resource !== "board" &&
         !["read", "search"].includes(intent.action) &&
         assignedTo === null
       )
@@ -417,12 +482,7 @@ export class BoardAccessService {
         return false
       if (
         principal.kind === "agent" &&
-        (!tokenAllows(tokenScopes!, intent) ||
-          !(
-            includesOperation(limits?.operations, intent) ||
-            (intent.action === "search" &&
-              includesOperation(limits?.operations, { resource: "task", action: "read" }))
-          ))
+        (!tokenAllows(tokenScopes!, intent) || !agentHasOperationSnapshot(limits?.operations, intent))
       )
         return false
       if (
@@ -436,7 +496,12 @@ export class BoardAccessService {
     if (!operations.every(allowed) || row.audience_allowed !== 1 || !principalProof(principal))
       return { ok: false, errorCode: "denied" }
     if (existingScope) {
-      const taskWrite = operations.some(item => item.resource === "task" && item.action !== "read" && item.action !== "search")
+      const taskWrite = operations.some(
+        (item) =>
+          (item.resource === "task" || item.resource === "routine") &&
+          item.action !== "read" &&
+          item.action !== "search"
+      )
       if (Number(row.revision) !== existingScope.boardRevision ||
         (taskWrite && assignedTo !== scopeAssignedTo(existingScope)) ||
         serviceBindingFingerprint !== scopeServiceBindingFingerprint(existingScope)) {

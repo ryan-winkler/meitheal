@@ -65,7 +65,7 @@ test.describe("workspace setup", () => {
     const rerun = page.getByRole("link", { name: "Run setup again" })
     await expect(rerun).toBeFocused()
     await rerun.press("Enter")
-    await expect(page).toHaveURL(/\/setup(?:[?#]|$)/)
+    await expect(page).toHaveURL(/\/setup$/)
     await page.getByText("Advanced", { exact: true }).click()
     await expect(page.getByRole("combobox", { name: "Theme" })).toHaveValue("dark")
     await page.getByText("AI Setup", { exact: true }).click()

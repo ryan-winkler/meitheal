@@ -21,7 +21,7 @@ import { taskTimestampMs } from "@domains/tasks/persistence/task-timestamp";
 import type { InValue, Row } from "@libsql/client";
 import { deriveEisenhowerQuadrant } from "@meitheal/domain-tasks";
 import { parseCalendarDay } from "./calendar-day"
-import { calendarDayFromInput, calendarToday, householdDayRanges, isDueOverdue, isValidTimezone, resolveTimezone, shiftCalendarDay } from "./date"
+import { calendarDayFromInput, calendarEventSpanDays, calendarToday, householdDayRanges, isTaskOverdue, isValidTimezone, resolveTimezone, shiftCalendarDay } from "./date"
 import { frameworkPayloadObject, readRiceInputs, riceLensScore } from "./rice-lens"
 
 // =============================================================================
@@ -119,23 +119,10 @@ function safeParseLabels(value: unknown): string[] {
 }
 
 // =============================================================================
-// Overdue Detection
-// =============================================================================
-
-/** Date-only due dates are overdue after their household day; timed ones once their time passes. */
-function isDueDayOverdue(dueDate: string | null, today: string, timezone = "Europe/Dublin"): boolean {
-  if (!dueDate) return false;
-  return isDueOverdue(dueDate, timezone, today);
-}
-
-function isOverdue(dueDate: string | null, isDone: boolean, timezone: string, now: Date): boolean {
-  if (isDone) return false;
-  return isDueOverdue(dueDate, timezone, calendarToday(timezone, now), now.getTime())
-}
-
-// =============================================================================
 // Main Query
 // =============================================================================
+
+const SCHEDULED_DATE_SQL = "CASE WHEN task_kind = 'calendar_event' THEN COALESCE(NULLIF(start_date, ''), NULLIF(due_date, ''), NULLIF(end_date, '')) ELSE due_date END";
 
 const TASK_VIEW_COLUMNS = `
   id, title, description, status, priority, due_date, labels,
@@ -280,13 +267,13 @@ export async function getTasksForView(options: TaskViewOptions = {}, scope: Boar
             FROM scoped_tasks AS tasks WHERE 1
           `, [])),
         scopedTaskRead(scope, sourceSql(`
-            SELECT due_date
+            SELECT task_kind, due_date, start_date, end_date, calendar_sync_state
             FROM scoped_tasks AS tasks
-            WHERE 1 AND status != 'complete'
+            WHERE 1 AND status != 'complete' AND status != 'archived'
               AND deferred_at IS NULL
-              AND due_date IS NOT NULL
-              AND due_date != ''
-              AND substr(due_date, 1, 10) < ?
+              AND ${SCHEDULED_DATE_SQL} IS NOT NULL
+              AND ${SCHEDULED_DATE_SQL} != ''
+              AND substr(${SCHEDULED_DATE_SQL}, 1, 10) < ?
           `, [upperBound])),
       ], "read");
       rows = tasksRes!.rows as Record<string, unknown>[];
@@ -297,7 +284,13 @@ export async function getTasksForView(options: TaskViewOptions = {}, scope: Boar
       counts.active = Number(cr.active ?? 0);
       counts.pending = Number(cr.pending ?? 0);
       counts.overdue = overdueRes!.rows.filter((row) =>
-        isDueDayOverdue(String(row.due_date ?? ""), resolvedToday, timezone),
+        isTaskOverdue({
+          task_kind: row.task_kind ? String(row.task_kind) : null,
+          due_date: row.due_date ? String(row.due_date) : null,
+          start_date: row.start_date ? String(row.start_date) : null,
+          end_date: row.end_date ? String(row.end_date) : null,
+          calendar_sync_state: row.calendar_sync_state ? String(row.calendar_sync_state) : null,
+        }, false, timezone, resolvedToday),
       ).length;
 
     } else {
@@ -330,11 +323,15 @@ function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "
   const priority = Number(row.priority ?? 3);
   const isDone = status === "complete";
   const dueDate = row.due_date ? String(row.due_date) : null;
+  const startDate = row.start_date ? String(row.start_date) : null;
+  const endDate = row.end_date ? String(row.end_date) : null;
+  const taskKind = row.task_kind ? String(row.task_kind) : "standard_action";
   const fp = frameworkPayloadObject(safeParseJson(row.framework_payload, {}))
   const riceInputs = readRiceInputs(fp)
   const rice = riceInputs ? riceLensScore(riceInputs) : null
   const deferredAt = row.deferred_at == null ? null : Number(row.deferred_at)
-  const overdue = deferredAt === null && isOverdue(dueDate, isDone, timezone, now)
+  const calendarSyncState = row.calendar_sync_state ? String(row.calendar_sync_state) : null
+  const overdue = deferredAt === null && isTaskOverdue({ task_kind: taskKind, due_date: dueDate, start_date: startDate, end_date: endDate, calendar_sync_state: calendarSyncState }, isDone, timezone, undefined, now.getTime())
 
   const publicTask = projectPublicTaskFields(row)
   const item: TaskViewItem = {
@@ -495,7 +492,7 @@ export async function getTodayTaskRows(
       totals AS (
         SELECT COUNT(*) FILTER (WHERE ${completionFilter.sql}) AS completed_today,
                COUNT(*) FILTER (
-                 WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND (due_date IS NULL OR due_date = '')
+                 WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND (${SCHEDULED_DATE_SQL} IS NULL OR ${SCHEDULED_DATE_SQL} = '')
                ) AS open_unscheduled
         FROM scoped_tasks AS tasks WHERE ${context.sql}
       )
@@ -506,7 +503,7 @@ export async function getTodayTaskRows(
         AND deferred_at IS NULL
         AND (
           ? = 1
-          OR (due_date IS NOT NULL AND due_date <> '')
+          OR (${SCHEDULED_DATE_SQL} IS NOT NULL AND ${SCHEDULED_DATE_SQL} <> '')
           OR is_favorite NOT IN (0, '')
           OR framework_payload NOT IN ('{}', '')
         )
@@ -560,16 +557,17 @@ export async function getTodayTaskCounts(now = new Date(), timezone: string | un
   const context = taskReadPlacement(placement)
   const countsQuery = {
     sql: `
-      SELECT NULL AS due_date, COUNT(*) FILTER (WHERE ${completionFilter.sql}) AS completed_today,
+      SELECT NULL AS due_date, NULL AS task_kind, NULL AS start_date, NULL AS end_date, NULL AS calendar_sync_state,
+             COUNT(*) FILTER (WHERE ${completionFilter.sql}) AS completed_today,
              COUNT(*) FILTER (WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND is_favorite NOT IN (0, '')) AS pinned_count,
              0 AS dated_count
       FROM scoped_tasks AS tasks WHERE ${context.sql}
       UNION ALL
-      SELECT due_date, 0, 0, COUNT(*)
+      SELECT due_date, task_kind, start_date, end_date, calendar_sync_state, 0, 0, COUNT(*)
       FROM scoped_tasks AS tasks
       WHERE ${context.sql} AND status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND COALESCE(is_favorite, 0) IN (0, '')
-        AND due_date IS NOT NULL AND due_date <> ''
-      GROUP BY due_date
+        AND ${SCHEDULED_DATE_SQL} IS NOT NULL AND ${SCHEDULED_DATE_SQL} <> ''
+      GROUP BY due_date, task_kind, start_date, end_date, calendar_sync_state
     `,
     args: [...completionFilter.args, ...context.args, ...context.args],
   }
@@ -583,15 +581,25 @@ export async function getTodayTaskCounts(now = new Date(), timezone: string | un
   let completedToday = 0
   let pinned = 0
   for (const row of rows) {
-    if (row.due_date === null) {
+    if (row.due_date === null && row.start_date === null && row.end_date === null) {
       completedToday = Number(row.completed_today)
       pinned = Number(row.pinned_count)
       continue
     }
 
-    const section = todayDueSection(String(row.due_date), today, resolvedTimezone)
-    if (section === "due") dueToday += Number(row.dated_count)
-    if (section === "carried") carriedForward += Number(row.dated_count)
+    const rowSpan = calendarEventSpanDays({
+      task_kind: row.task_kind ? String(row.task_kind) : null,
+      due_date: row.due_date ? String(row.due_date) : null,
+      start_date: row.start_date ? String(row.start_date) : null,
+      end_date: row.end_date ? String(row.end_date) : null,
+      calendar_sync_state: row.calendar_sync_state ? String(row.calendar_sync_state) : null,
+    }, resolvedTimezone)
+    if (!rowSpan) continue
+    if (rowSpan.startDay === today || (rowSpan.startDay < today && rowSpan.endDay >= today)) {
+      dueToday += Number(row.dated_count)
+    } else if (rowSpan.endDay < today) {
+      carriedForward += Number(row.dated_count)
+    }
   }
 
   const remaining = dueToday + carriedForward + pinned

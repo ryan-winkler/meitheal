@@ -18,6 +18,8 @@ const routes = new Map<string, MethodScopes>([
   ["/api/tasks/reaction-counts", taskRead],
   ["/api/users", { GET: "tasks:read" }],
   ["/api/agent-context", { GET: "tasks:read" }],
+  ["/api/habits", { GET: "tasks:read", POST: "tasks:write" }],
+  ["/api/boards/routines", { GET: "tasks:read" }],
   ["/api/projects", { GET: "projects:read", POST: "projects:write" }],
   ["/api/search", { GET: "search:read" }],
   ["/api/mcp", { GET: "mcp:execute", POST: "mcp:execute" }],
@@ -100,9 +102,15 @@ export interface AgentRouteAccess {
 
 /** Decide whether a token may use a route, including the assigned-only write grant. */
 export function resolveAgentRouteAccess(pathname: string, method: string, scopes: AgentScope[]): AgentRouteAccess {
+  const verb = method === "HEAD" ? "GET" : method
   const scope = resolveAgentRouteScope(pathname, method)
   if (!scope) return { scope, allowed: false }
   if (hasScope(scopes, scope)) return { scope, allowed: true }
+  // POST /api/habits dispatches create/update (tasks:write) and delete (tasks:delete);
+  // keep tasks:write:assigned excluded because /api/habits is not an assigned-task route.
+  if (pathname === "/api/habits" && verb === "POST" && hasScope(scopes, "tasks:delete")) {
+    return { scope: "tasks:delete", allowed: true }
+  }
   if (scope !== "tasks:write" || !hasScope(scopes, "tasks:write:assigned")) return { scope, allowed: false }
 
   // Each of these names one existing task, so its assignee can be checked.

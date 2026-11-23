@@ -4,6 +4,7 @@ import { showToast } from "@lib/toast"
 import { createFocusTrap } from "@lib/focus-trap"
 import { safeIngressHref } from "@lib/ingress-navigation"
 import { createClientLogger } from "@lib/client-logger"
+import { mapEntityEmojiToTabler } from "@lib/tabler-svg"
 import { initHabitsShellNav } from "@lib/controllers/habits-shell-nav"
 import {
   renderHabits,
@@ -83,8 +84,8 @@ function normalizeHabitData(raw: unknown): HabitData | null {
 
   return {
     id: String(record.id ?? ""),
-    name: String(record.name ?? "Untitled habit").trim() || "Untitled habit",
-    icon: String(record.icon ?? "✅").trim() || "✅",
+    name: String(record.name ?? "Untitled routine").trim() || "Untitled routine",
+    icon: String(record.icon ?? "check").trim() || "check",
     cadence: cadenceValue,
     todayCompleted: Boolean(record.todayCompleted),
     todayTaskId:
@@ -98,6 +99,7 @@ function normalizeHabitData(raw: unknown): HabitData | null {
     currentStreak: Number(record.currentStreak ?? 0) || 0,
     longestStreak: Number(record.longestStreak ?? 0) || 0,
     totalCompletions: Number(record.totalCompletions ?? 0) || 0,
+    projectActive: record.projectActive === undefined ? true : Boolean(record.projectActive),
     description: templatePayload.description,
     priority: templatePayload.priority,
     areaId: templatePayload.areaId,
@@ -137,6 +139,7 @@ async function readErrorMessage(response: Response): Promise<string> {
 async function refreshHabits(): Promise<void> {
   const shell = document.getElementById("habits-shell")
   const query = new URLSearchParams()
+  if (shell?.dataset.boardId) query.set("board_id", shell.dataset.boardId)
   if (shell?.dataset.areaId) query.set("area_id", shell.dataset.areaId)
   if (shell?.dataset.projectId) query.set("project_id", shell.dataset.projectId)
   const response = await fetch("/api/habits?" + query, {
@@ -158,7 +161,7 @@ async function refreshHabits(): Promise<void> {
 }
 
 async function completeHabit(habitId: string): Promise<void> {
-  const card = document.querySelector<HTMLElement>(`.habit-card[data-habit-id="${habitId}"]`)
+  const card = document.querySelector<HTMLElement>(`.habit-card[data-habit-id="${CSS.escape(habitId)}"]`)
   try {
     card?.classList.add("just-completed")
 
@@ -180,18 +183,18 @@ async function completeHabit(habitId: string): Promise<void> {
       // Gamification is optional.
     }
 
-    showToast("Habit completed")
+    showToast("Routine completed")
     await refreshHabits()
   } catch (error) {
-    log.error("Failed to complete habit", error)
-    showToast((error as Error).message || "Failed to complete habit", "error")
+    log.error("Failed to complete routine", error)
+    showToast((error as Error).message || "Failed to complete routine", "error")
   } finally {
     card?.classList.remove("just-completed")
   }
 }
 
 async function deleteHabit(habitId: string): Promise<void> {
-  const confirmed = await confirmDialog({ message: "Delete this habit? Associated tasks stay in your task history.", variant: "danger", confirmText: "Delete" })
+  const confirmed = await confirmDialog({ message: "Delete this routine? Associated tasks stay in your task history.", variant: "danger", confirmText: "Delete" })
   if (!confirmed) {
     return
   }
@@ -208,11 +211,11 @@ async function deleteHabit(habitId: string): Promise<void> {
       throw new Error(await readErrorMessage(response))
     }
 
-    showToast("Habit deleted")
+    showToast("Routine deleted")
     await refreshHabits()
   } catch (error) {
-    log.error("Failed to delete habit", error)
-    showToast((error as Error).message || "Failed to delete habit", "error")
+    log.error("Failed to delete routine", error)
+    showToast((error as Error).message || "Failed to delete routine", "error")
   }
 }
 
@@ -282,14 +285,45 @@ function initHabitsCrud(): void {
     }
   }
 
+  function syncIconPicker(rawIcon: string): void {
+    const normalized = mapEntityEmojiToTabler(rawIcon) ?? (rawIcon.trim() || "check")
+    iconInput!.value = normalized
+    const picker = document.getElementById("habit-icon-picker")
+    if (!picker) return
+    for (const optionBtn of picker.querySelectorAll<HTMLButtonElement>("[data-habit-icon-option]")) {
+      const selected = optionBtn.dataset.habitIconOption === normalized
+      optionBtn.classList.toggle("is-selected", selected)
+      optionBtn.setAttribute("aria-pressed", String(selected))
+    }
+  }
+
+  function filterProjectsByArea(areaId: string): void {
+    for (const option of projectSelect!.options) {
+      if (!option.value) {
+        option.hidden = false
+        option.disabled = false
+        continue
+      }
+      const optionArea = option.dataset.areaId ?? ""
+      const matches = !areaId || !optionArea || optionArea === areaId
+      option.hidden = !matches
+      option.disabled = !matches
+    }
+    const selectedOption = projectSelect!.selectedOptions[0]
+    if (selectedOption && selectedOption.disabled) {
+      projectSelect!.value = ""
+    }
+  }
+
   function openCreateModal(): void {
     editIdInput!.value = ""
     modalTitle!.textContent = modalTitle!.dataset.createTitle ?? "New Routine"
     nameInput!.value = ""
-    iconInput!.value = "✅"
+    syncIconPicker("check")
     cadenceSelect!.value = "daily"
     prioritySelect!.value = "3"
     areaSelect!.value = shell?.dataset.areaId ?? ""
+    filterProjectsByArea(areaSelect!.value)
     projectSelect!.value = shell?.dataset.projectId ?? ""
     projectSelect!.disabled = Boolean(shell?.dataset.projectId)
     areaSelect!.disabled = Boolean(shell?.dataset.areaId)
@@ -307,11 +341,12 @@ function initHabitsCrud(): void {
     editIdInput!.value = habit.id
     modalTitle!.textContent = modalTitle!.dataset.editTitle ?? "Edit Routine"
     nameInput!.value = habit.name
-    iconInput!.value = habit.icon
+    syncIconPicker(habit.icon)
     cadenceSelect!.value = habit.cadence
     prioritySelect!.value = String(habit.priority)
     areaSelect!.value = habit.areaId ?? ""
     initialArea = habit.areaId ?? ""
+    filterProjectsByArea(areaSelect!.value)
     projectSelect!.value = habit.projectId ?? ""
     initialProject = habit.projectId ?? ""
     projectSelect!.disabled = false
@@ -325,6 +360,20 @@ function initHabitsCrud(): void {
     trap.activate()
     nameInput!.focus()
   }
+
+  const iconPicker = document.getElementById("habit-icon-picker")
+  if (iconPicker) {
+    pageLifecycle.on(iconPicker, "click", (event) => {
+      const btn = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-habit-icon-option]")
+      const selected = btn?.dataset.habitIconOption
+      if (!selected) return
+      syncIconPicker(selected)
+    })
+  }
+
+  pageLifecycle.on(areaSelect, "change", () => {
+    filterProjectsByArea(areaSelect!.value)
+  })
 
   function closeModal(): void {
     if (save?.disabled) return
@@ -381,7 +430,7 @@ function initHabitsCrud(): void {
 
     const name = nameInput!.value.trim()
     if (!name) {
-      showToast("Habit name is required", "warning")
+      showToast("Routine name is required", "warning")
       return
     }
 
@@ -413,7 +462,7 @@ function initHabitsCrud(): void {
             action: "update",
             templateId: editId,
             name,
-            icon: iconInput!.value.trim() || "✅",
+            icon: iconInput!.value.trim() || "check",
             cadence: cadenceSelect!.value,
             templateJson,
           }),
@@ -424,7 +473,7 @@ function initHabitsCrud(): void {
           throw new Error(await readErrorMessage(response))
         }
 
-        showToast("Habit updated")
+        showToast("Routine updated")
       } else {
         const response = await fetch("/api/habits", {
           method: "POST",
@@ -432,7 +481,7 @@ function initHabitsCrud(): void {
           body: JSON.stringify({
             action: "create",
             name,
-            icon: iconInput!.value.trim() || "✅",
+            icon: iconInput!.value.trim() || "check",
             cadence: cadenceSelect!.value,
             priority: Number(prioritySelect!.value),
             description: descInput!.value.trim(),
@@ -447,15 +496,15 @@ function initHabitsCrud(): void {
           throw new Error(await readErrorMessage(response))
         }
 
-        showToast("Habit created")
+        showToast("Routine created")
       }
 
       save.disabled = false
       closeModal()
       if (!returnPath) await refreshHabits()
     } catch (error) {
-      log.error("Failed to save habit", error)
-      showToast((error as Error).message || "Failed to save habit", "error")
+      log.error("Failed to save routine", error)
+      showToast((error as Error).message || "Failed to save routine", "error")
     } finally {
       save.disabled = false
     }
@@ -498,7 +547,7 @@ function bootHabitsPage(): void {
   habits = parseBootstrapHabits()
 
   initHabitsShellNav()
-  if (shell.dataset.householdActive === "false") return
+  if (shell.dataset.boardActive === "false" || shell.dataset.householdActive === "false") return
   initHabitsCrud()
   updateStats(habits)
 }

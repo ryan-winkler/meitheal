@@ -240,8 +240,7 @@ test.describe("Appearance preferences", () => {
   })
 
   test("expanded Boards and Areas survive More, wide navbar and phone drawer handoffs", async ({ page, request, baseURL }) => {
-    // Earlier Settings reloads in this file can fill the loopback API rate window.
-    test.setTimeout(120_000)
+    test.slow()
     const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin }, "", true)
     const areaResponse = await request.post("/api/areas", { headers, data: { name: "Resize Area" } })
     expect(areaResponse.status()).toBe(201)

@@ -2,13 +2,16 @@ import { journaledBoardCommandAck, withBoardScope } from "@lib/board-http"
 import type { GoalShareTarget } from "@domains/tasks/persistence/shared-goal-repository"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import type { APIRoute } from "astro"
+import { ROUTINE_NEWLY_COMPLETED } from "@domains/tasks"
 import { NamedBoardPlanningRepository } from "@domains/tasks/persistence/named-board-planning-repository"
 import { NamedBoardTaskRepository } from "@domains/tasks/persistence/named-board-task-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { apiError, apiJson } from "@lib/api-response"
+import { isValidTimezone } from "@lib/date"
 import { isFeatureEnabled } from "@lib/feature-flags"
 import { currentBoardContext, readBoardRequest } from "@lib/named-board-request"
 import { stripHtml } from "@lib/strip-html"
+import { readStoredHouseholdTimezone } from "@lib/task-queries"
 
 function shareTarget(value: unknown): GoalShareTarget | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null
@@ -90,8 +93,26 @@ export const POST: APIRoute = withBoardScope(planningOperation, async (context, 
   if (body?.action === "routine-complete" && typeof body.id === "string" && typeof body.period === "string" &&
       /^\d{4}-\d{2}-\d{2}$/.test(body.period)) {
     await ensureSchema()
-    const outcome = await new NamedBoardTaskRepository(getPersistenceClient(), scope).completeRoutine(user.actor, params.id, body.id, body.period)
-    if (outcome.ok) return apiJson(outcome.value)
+    const rawTz = locals?.timezone?.trim() ?? ""
+    const timezone = isValidTimezone(rawTz) ? rawTz : await readStoredHouseholdTimezone()
+    const outcome = await new NamedBoardTaskRepository(getPersistenceClient(), scope).completeRoutine(user.actor, params.id, body.id, body.period, timezone)
+    if (outcome.ok) {
+      let gamification: Record<string, unknown> | undefined
+      if (Boolean((outcome.value as Record<symbol, unknown>)[ROUTINE_NEWLY_COMPLETED])) {
+        try {
+          if (await isFeatureEnabled("gamification")) {
+            const { recordTaskCompletion, checkAchievements, getLevel } = await import("@domains/gamification")
+            const xp = 30
+            const stats = await recordTaskCompletion(scope, xp, new Date(), timezone)
+            if (stats) {
+              const achievements = await checkAchievements(scope, stats)
+              gamification = { stats, xp, newAchievements: achievements.newlyUnlocked, level: getLevel(stats.totalPoints) }
+            }
+          }
+        } catch { /* best-effort gamification */ }
+      }
+      return apiJson({ id: outcome.value.id, ...(gamification ? { gamification } : {}) })
+    }
     if (outcome.errorCode === "denied") return apiError("Your Board permissions do not allow completion.", 403)
     if (outcome.errorCode === "stale") return apiError("The Routine period or its ticket changed. Refresh the Board or move the open ticket to Done.", 409)
     return apiError("Board or Routine unavailable", 404)

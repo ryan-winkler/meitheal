@@ -100,6 +100,7 @@ export function initQuickActions(
       } else {
         card.removeAttribute("data-task-color")
         card.style.removeProperty("--knight-task-color")
+        card.style.removeProperty("--card-accent")
       }
     }
     const applied = card ? snapshot(card) : null

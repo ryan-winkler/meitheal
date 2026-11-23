@@ -162,7 +162,7 @@ export const DEFAULT_SIDEBAR_ITEM_LABELS: Readonly<Record<string, string>> = {
   tasks: "Tasks",
   "view-calendar": "Calendar",
   "view-kanban": "Kanban",
-  "view-timeline": "Timeline",
+  "view-timeline": "Timeline (Gantt)",
   "view-table": "Table",
   "system-pinned": "Pinned",
   activity: "Recent activity",
@@ -216,7 +216,7 @@ export function defaultSectionLabel(sectionId: SidebarSectionId): string {
 }
 
 export function sanitizeLabel(raw: string): string {
-  return raw.replace(/\s+/g, " ").trim().slice(0, 64)
+  return raw.replace(/\s+/g, " ").trim().slice(0, 1024)
 }
 
 function slugifySectionId(label: string, existing: readonly string[]): string {
@@ -388,10 +388,18 @@ export function normalizeSidebarConfig(
     }
   }
 
+  const taskViewSet = new Set<string>(TASK_VIEW_ITEM_KEYS)
   for (const key of validKeys) {
     if (assigned.has(key)) continue
     const targetSection = defaultSectionForItem(key)
-    sectionItems[targetSection]!.push(key)
+    const list = sectionItems[targetSection]!
+    if (taskViewSet.has(key) && list.includes("tasks")) {
+      let insertAt = list.indexOf("tasks") + 1
+      while (insertAt < list.length && taskViewSet.has(list[insertAt]!)) insertAt += 1
+      list.splice(insertAt, 0, key)
+    } else {
+      list.push(key)
+    }
     assigned.add(key)
   }
 

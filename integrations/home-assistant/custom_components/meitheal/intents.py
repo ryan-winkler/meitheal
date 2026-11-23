@@ -29,12 +29,14 @@ import logging
 from typing import ClassVar
 
 import voluptuous as vol
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import intent
+from homeassistant.util import dt as dt_util
 
 from .api import origin_scope, human_request_scope
-from .coordinator import MeithealCoordinator
+from .coordinator import CLOSED_STATUSES, MeithealCoordinator
 from .helpers import assignee_for_user
 
 _LOGGER = logging.getLogger(__name__)
@@ -62,8 +64,10 @@ def _get_coordinator(hass: HomeAssistant) -> MeithealCoordinator | None:
     from .const import DOMAIN
 
     for entry in hass.config_entries.async_entries(DOMAIN):
-        if hasattr(entry, "runtime_data") and isinstance(
-            entry.runtime_data, MeithealCoordinator
+        if (
+            entry.state is ConfigEntryState.LOADED
+            and hasattr(entry, "runtime_data")
+            and isinstance(entry.runtime_data, MeithealCoordinator)
         ):
             return entry.runtime_data
     return None
@@ -183,7 +187,7 @@ class MeithealShowTasksHandler(_MeithealAdminIntent):
             return response
 
         data = await coordinator.async_data_for_context()
-        active = [t for t in data.tasks if t.status != "done"]
+        active = [t for t in data.tasks if t.status not in CLOSED_STATUSES]
         if not active:
             response = intent_obj.create_response()
             response.async_set_speech("You're all caught up! No active tasks.")
@@ -245,8 +249,6 @@ class MeithealTodayHandler(_MeithealAdminIntent):
         self, intent_obj: intent.Intent
     ) -> intent.IntentResponse:
         """List today's tasks."""
-        from datetime import datetime, timezone
-
         hass = intent_obj.hass
         coordinator = _get_coordinator(hass)
 
@@ -255,17 +257,17 @@ class MeithealTodayHandler(_MeithealAdminIntent):
             response.async_set_speech("No tasks found.")
             return response
 
-        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        local_now = dt_util.now()
         today_tasks = []
         overdue = []
 
         data = await coordinator.async_data_for_context()
         for t in data.tasks:
-            if t.status == "done":
+            if t.status in CLOSED_STATUSES:
                 continue
             if t.is_overdue:
                 overdue.append(t)
-            elif t.due_date and t.due_date.startswith(today_str):
+            elif t.is_due_on(local_now):
                 today_tasks.append(t)
 
         parts = []
@@ -371,12 +373,9 @@ class MeithealBriefingHandler(_MeithealAdminIntent):
         self, intent_obj: intent.Intent
     ) -> intent.IntentResponse:
         """Provide a daily briefing via voice."""
-        from datetime import datetime, timezone
-
         hass = intent_obj.hass
-        now = datetime.now(timezone.utc)
-        today_str = now.strftime("%Y-%m-%d")
-        hour = now.hour
+        local_now = dt_util.now()
+        hour = local_now.hour
 
         greeting = "Good morning" if hour < 12 else (
             "Good afternoon" if hour < 17 else "Good evening"
@@ -394,8 +393,7 @@ class MeithealBriefingHandler(_MeithealAdminIntent):
             # Today's tasks
             today_tasks = [
                 t for t in data.tasks
-                if t.status != "done" and t.due_date
-                and t.due_date.startswith(today_str)
+                if t.is_due_on(local_now)
             ]
             if today_tasks:
                 names = ", ".join(t.title for t in today_tasks[:3])
@@ -404,7 +402,7 @@ class MeithealBriefingHandler(_MeithealAdminIntent):
             # Urgent items
             urgent = [
                 t for t in data.tasks
-                if t.status != "done" and t.priority <= 2
+                if t.status not in CLOSED_STATUSES and t.priority <= 2
             ]
             if urgent:
                 names = ", ".join(t.title for t in urgent[:2])

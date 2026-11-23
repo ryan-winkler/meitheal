@@ -147,7 +147,9 @@ test("pinned types fit narrow desktop top navigation and stay available in the m
   await page.screenshot({ path: testInfo.outputPath("narrow-navbar-task-types.png"), animations: "disabled" })
   await page.keyboard.press("Escape")
 
-  const more = page.locator("[data-nav-overflow=sidebar] [data-nav-overflow-more]")
+  const navRow = page.locator("[data-nav-overflow=sidebar]")
+  await navRow.evaluate(el => { el.style.maxWidth = "110px" })
+  const more = navRow.locator("[data-nav-overflow-more]")
   const taskViewToggle = page.getByRole("button", { name: "Task views", exact: true })
   // Tasks is the active route, so it may stay in the bar; open More only when Tasks moved there.
   await expect(taskViewToggle).toBeAttached()
@@ -167,6 +169,8 @@ test("pinned types fit narrow desktop top navigation and stay available in the m
     await expect(taskViewToggle).toHaveAttribute("aria-expanded", "true")
   }
   await page.keyboard.press("Escape")
+  await navRow.evaluate(el => { el.style.maxWidth = "" })
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
 
   await sidebarMenu.evaluate(menu => { menu.dataset.persistedTaskTypes = "yes" })
   const today = sidebar.locator('a[data-page="today"]')

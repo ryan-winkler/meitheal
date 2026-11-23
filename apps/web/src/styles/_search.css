@@ -11,18 +11,6 @@
   @apply flex items-center justify-between px-6 py-3 bg-bg-secondary border-b border-border sticky top-0 z-30;
 }
 
-.logo {
-  @apply flex items-center gap-2;
-}
-
-.logo-icon {
-  @apply text-2xl;
-}
-
-.logo-text {
-  @apply text-lg font-bold text-accent;
-}
-
 .nav-links {
   @apply flex-1 py-3 list-none p-0 m-0;
 }
@@ -41,13 +29,4 @@
 
 .menu-toggle:hover {
   @apply bg-bg-hover text-text-primary;
-}
-/* Search results metadata + empty state
- * Restored from pre-split global.css */
-.search-meta {
-@apply text-xs text-text-muted;
-}
-
-.search-empty {
-@apply px-4 py-3 text-sm text-text-muted text-center;
 }

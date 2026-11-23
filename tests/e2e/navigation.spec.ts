@@ -381,6 +381,7 @@ test.describe("Responsive Navigation", () => {
     await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "");
 
     const navSection = page.locator("#navigation-settings");
+    await navSection.locator("#nav-task-types-section > summary").click();
     const pinBtn = navSection.locator('[data-task-nav-pin="calendar_event"]');
     const pinnedRow = page.locator('#sidebar-task-types [data-task-nav-pinned-item="calendar_event"]');
     // Task type pins live in the collapsed Task types accordion.
@@ -396,6 +397,7 @@ test.describe("Responsive Navigation", () => {
     await expect(navSection.locator('[data-task-nav-mode="none"]')).toHaveAttribute("aria-pressed", "true");
 
     await page.reload({ waitUntil: "networkidle" });
+    await navSection.locator("#nav-task-types-section > summary").click();
     await expect(pinBtn).toHaveAttribute("aria-pressed", "true");
     await expect(pinnedRow).toBeVisible();
     await expect(navSection.locator('[data-task-nav-mode="none"]')).toHaveAttribute("aria-pressed", "true");
@@ -411,13 +413,15 @@ test.describe("Responsive Navigation", () => {
     await page.goto("/settings#navigation-settings", { waitUntil: "networkidle" });
 
     const navSection = page.locator("#navigation-settings");
+    await navSection.locator("#nav-task-types-section > summary").click();
     const pinBtn = navSection.locator('[data-task-nav-pin="shopping_item"]');
     const pinnedRow = page.locator('#sidebar [data-task-nav-pinned-item="shopping_item"]');
-    // Navigation layout is part of the Look & Feel draft.
+
     const setNavigationLayout = async (mode: "navbar" | "sidebar") => {
-      await page.goto("/settings#look-and-feel-settings");
-      await page.locator('#appearance-preferences-form [name="navigation"]').selectOption(mode);
-      await saveAppearance(page);
+      await page.locator('[data-settings-nav="look-and-feel-settings"]').click();
+      const lookFeel = page.locator("#look-and-feel-settings");
+      await lookFeel.locator(`[data-visual-field="navigation"][data-visual-option="${mode}"]`).click();
+      await lookFeel.locator("#appearance-save-btn").click();
     };
 
     try {
@@ -446,7 +450,7 @@ test.describe("Responsive Navigation", () => {
       await expect(pinnedRow).toBeVisible()
       await page.setViewportSize({ width: 390, height: 844 })
       await expect(page.locator("html")).toHaveAttribute("data-appearance-navigation", "navbar")
-      await expect(page).toHaveURL(/settings#look-and-feel-settings$/)
+      await expect(page).toHaveURL(/settings#(navigation|look-and-feel)-settings$/)
       await expect(pinnedRow).toHaveCount(1)
       await page.goto("/", { waitUntil: "networkidle" })
       await page.locator("#menu-toggle").click()

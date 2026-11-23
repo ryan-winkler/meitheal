@@ -1,4 +1,5 @@
 import { resolveTaskEpics } from "@domains/tasks"
+import { effectiveTaskScheduledDate } from "@meitheal/domain-tasks"
 
 import { getEpicGroupLabel } from "./epic-group-labels"
 import { parseCalendarDay } from "./calendar-day"
@@ -56,7 +57,7 @@ function sortValue(task: TaskViewItem, column: string): string | number | null {
     case "status": return task.status
     case "priority": return task.priority
     case "due_date": {
-      const date = Date.parse(task.due_date ?? "")
+      const date = Date.parse(effectiveTaskScheduledDate(task) ?? "")
       return Number.isFinite(date) ? date : null
     }
     case "rice": return task.rice ?? 0

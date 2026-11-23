@@ -19,6 +19,8 @@ import FrameworkBadge from "../ui/FrameworkBadge.astro"
 import LabelBadges from "../ui/LabelBadges.astro"
 import TaskTypeIcon from "../ui/TaskTypeIcon.astro"
 import { taskSurface } from "../../lib/task-surface"
+import { effectiveTaskScheduledDate } from "@meitheal/domain-tasks"
+import { calendarDayFromInput } from "../../lib/date"
 import { formatTicketKey } from "../../lib/ticket-key"
 import { taskDetailPath } from "../../lib/task-page-url"
 import type { TaskViewItem } from "../../lib/task-queries"
@@ -75,9 +77,13 @@ if (task.checklists === null) {
   }
 }
 
-// Custom fields
+// Custom fields (filter structured objects such as shopping items)
+const scheduledDate = effectiveTaskScheduledDate(task)
+const scheduledDisplayDay = scheduledDate
+  ? (calendarDayFromInput(scheduledDate, Astro.locals.timezone || "Europe/Dublin") ?? scheduledDate.split("T")[0])
+  : null
 const customEntries = Object.entries(task.custom_fields).filter(
-  ([, v]) => v !== "" && v !== null && v !== undefined
+  ([, v]) => v !== "" && v !== null && v !== undefined && typeof v !== "object"
 )
 ---
 
@@ -98,10 +104,10 @@ const customEntries = Object.entries(task.custom_fields).filter(
   data-favorite={task.is_favorite ? "true" : "false"}
   data-title={task.title.toLowerCase()}
   data-search={searchText}
-  data-due={task.due_date ?? ""}
+  data-due={scheduledDate ?? ""}
   data-focus-due-label={focusDueLabel}
   role="group"
-  aria-label={`${task.title}, priority ${task.priority}${task.due_date ? `, due ${task.due_date}` : ""}${section ? `, in ${section}` : ""}`}
+  aria-label={`${task.title}, priority ${task.priority}${scheduledDate ? `, ${task.task_kind === "calendar_event" ? "starts" : "due"} ${scheduledDate}` : ""}${section ? `, in ${section}` : ""}`}
 >
   {/* Color indicator */}
   {task.color && (
@@ -137,15 +143,15 @@ const customEntries = Object.entries(task.custom_fields).filter(
       {ticketKey && (
         <span class="tli__ticket">{ticketKey}</span>
       )}
-      <TaskTypeIcon type={task.task_type} size={14} role="img" />
+      <TaskTypeIcon type={task.task_type} kind={task.task_kind} size={14} role="img" />
       <a class="tli__title-text" title={task.title} href={taskDetailPath(task)} data-task-detail-link={task.id}>{task.title}</a>
     </div>
 
     <div class="tli__meta">
       <PriorityLabel priority={task.priority} />
-      {task.due_date && (
+      {scheduledDisplayDay && (
         <span class="tli__due-date">
-          · Due {task.due_date.split("T")[0]}
+          · {task.task_kind === "calendar_event" ? "Starts" : "Due"} {scheduledDisplayDay}
           <span class="tli__overdue-tag">overdue</span>
         </span>
       )}
@@ -181,7 +187,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
         style={`color: ${checklistDone === checklistTotal ? "var(--success-text)" : "var(--text-muted)"}`}
         title={`Checklist: ${checklistDone}/${checklistTotal}`}
       >
-        ✓ {checklistDone}/{checklistTotal}
+        <Icon name="check" size={12} sprite /> {checklistDone}/{checklistTotal}
       </span>
     )}
 
@@ -198,7 +204,6 @@ const customEntries = Object.entries(task.custom_fields).filter(
   </div>
 
   {/* Recurrence badge */}
-  {task.checklists && false /* placeholder — checklists already shown above */}
   {(task as any).recurrence_rule && (
     <span class="tli__recurrence" title="Recurring task"><Icon name="repeat" size={14} /></span>
   )}
@@ -225,7 +230,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
       title="Set due date to today"
       aria-label={`Focus today: ${task.title}`}
     >
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      <Icon name="plus" size={12} sprite />
        Today
     </button>
   )}

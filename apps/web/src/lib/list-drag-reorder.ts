@@ -20,129 +20,83 @@ export function attachVerticalListDragReorder(
   const { handle, item: itemSelector, ghostClass, signal, onStart, onEnd } = options
   let dragged: HTMLElement | null = null
   let oldIndex = -1
+  let dragAc: AbortController | null = null
 
   const items = (): HTMLElement[] =>
     Array.from(list.children).filter((child): child is HTMLElement =>
       child instanceof HTMLElement && child.matches(itemSelector),
     )
 
-  const syncDraggable = () => {
-    for (const el of items()) {
-      el.draggable = false
-      const grip = el.querySelector<HTMLElement>(handle)
-      if (grip) grip.style.touchAction = "none"
-    }
+  for (const el of items()) {
+    const grip = el.querySelector<HTMLElement>(handle)
+    if (grip) grip.style.touchAction = "none"
   }
-  syncDraggable()
-
-  const rowAt = (x: number, y: number): HTMLElement | null => {
-    // A nested list's row stands for the row of this list that contains it.
-    let row = document.elementFromPoint(x, y)?.closest<HTMLElement>(itemSelector) ?? null
-    while (row && row.parentElement !== list) row = row.parentElement?.closest<HTMLElement>(itemSelector) ?? null
-    return row
-  }
-
-  list.addEventListener("pointerdown", event => {
-    const target = event.target instanceof Element ? event.target : null
-    if (!target?.closest(handle)) return
-    const row = target.closest<HTMLElement>(itemSelector)
-    // One gesture at a time: a second finger cannot take over an active drag.
-    if (!row || row.parentElement !== list || dragged) return
-    if (event.pointerType !== "touch") {
-      row.draggable = true
-      return
-    }
-    // Native drag and drop does not start from touch, so follow the finger with pointer events.
-    event.preventDefault()
-    const pointerId = event.pointerId
-    dragged = row
-    oldIndex = items().indexOf(row)
-    row.classList.add(ghostClass)
-    onStart?.()
-    const touch = new AbortController()
-    const scope = AbortSignal.any([signal, touch.signal])
-    document.addEventListener("pointermove", move => {
-      if (move.pointerId !== pointerId || !dragged) return
-      const over = rowAt(move.clientX, move.clientY)
-      if (!over || over === dragged) return
-      const box = over.getBoundingClientRect()
-      list.insertBefore(dragged, move.clientY < box.top + box.height / 2 ? over : over.nextElementSibling)
-    }, { signal: scope })
-    document.addEventListener("pointerup", up => {
-      if (up.pointerId !== pointerId) return
-      touch.abort()
-      finishDrag()
-    }, { signal: scope })
-    // A cancelled touch puts the row back without committing a reorder.
-    document.addEventListener("pointercancel", cancel => {
-      if (cancel.pointerId !== pointerId || !dragged) return
-      touch.abort()
-      const moved = dragged
-      const startIdx = oldIndex
-      list.insertBefore(moved, items().filter(row => row !== moved)[startIdx] ?? null)
-      dragged = null
-      oldIndex = -1
-      moved.classList.remove(ghostClass)
-      onEnd?.({ item: moved, oldIndex: startIdx, newIndex: startIdx })
-    }, { signal: scope })
-  }, { signal })
-
-  const clearDraggable = () => {
-    for (const el of items()) el.draggable = false
-  }
-  list.addEventListener("pointerup", clearDraggable, { signal })
-  list.addEventListener("pointercancel", clearDraggable, { signal })
-
-  list.addEventListener("dragstart", event => {
-    const row = (event.target as Element | null)?.closest<HTMLElement>(itemSelector)
-    if (!row || row.parentElement !== list || !row.draggable) {
-      event.preventDefault()
-      return
-    }
-    dragged = row
-    oldIndex = items().indexOf(row)
-    row.classList.add(ghostClass)
-    if (event.dataTransfer) {
-      event.dataTransfer.effectAllowed = "move"
-      event.dataTransfer.setData("text/plain", String(oldIndex))
-    }
-    onStart?.()
-  }, { signal })
-
-  list.addEventListener("dragover", event => {
-    if (!dragged) return
-    event.preventDefault()
-    if (event.dataTransfer) event.dataTransfer.dropEffect = "move"
-    const target = rowAt(event.clientX, event.clientY)
-    if (!target || target === dragged) return
-    const box = target.getBoundingClientRect()
-    const insertBefore = event.clientY < box.top + box.height / 2
-    list.insertBefore(dragged, insertBefore ? target : target.nextElementSibling)
-  }, { signal })
 
   const finishDrag = () => {
+    dragAc?.abort()
+    dragAc = null
     if (!dragged) return
     const moved = dragged
     const startIdx = oldIndex
     dragged = null
     oldIndex = -1
     moved.classList.remove(ghostClass)
-    moved.draggable = false
-    const newIndex = items().indexOf(moved)
-    onEnd?.({ item: moved, oldIndex: startIdx, newIndex })
+    onEnd?.({ item: moved, oldIndex: startIdx, newIndex: items().indexOf(moved) })
   }
 
-  list.addEventListener("drop", event => {
+  const moveAt = (clientY: number) => {
     if (!dragged) return
+    let listItems = items()
+    let idx = listItems.indexOf(dragged)
+    while (idx > 0) {
+      const prev = listItems[idx - 1]!
+      const box = (prev.firstElementChild ?? prev).getBoundingClientRect()
+      if (clientY >= box.top + box.height * 0.6) break
+      list.insertBefore(dragged, prev)
+      listItems = items()
+      idx -= 1
+    }
+    while (idx >= 0 && idx < listItems.length - 1) {
+      const next = listItems[idx + 1]!
+      const box = (next.firstElementChild ?? next).getBoundingClientRect()
+      if (clientY <= box.top + box.height * 0.4) break
+      list.insertBefore(next, dragged)
+      listItems = items()
+      idx += 1
+    }
+  }
+
+  const start = (target: EventTarget | null, event: Event) => {
+    if (dragged) return
+    const el = target instanceof Element ? target : null
+    const row = el?.closest(handle) ? el.closest<HTMLElement>(itemSelector) : null
+    if (!row || row.parentElement !== list) return
     event.preventDefault()
-    finishDrag()
+    dragged = row
+    oldIndex = items().indexOf(row)
+    row.classList.add(ghostClass)
+    onStart?.()
+    dragAc = new AbortController()
+    const dragSignal = AbortSignal.any([signal, dragAc.signal])
+    window.addEventListener("pointermove", e => moveAt(e.clientY), { signal: dragSignal })
+    window.addEventListener("pointerup", finishDrag, { signal: dragSignal })
+    window.addEventListener("pointercancel", finishDrag, { signal: dragSignal })
+    window.addEventListener("touchmove", e => {
+      e.preventDefault()
+      const t = e.touches[0] ?? e.changedTouches[0]
+      if (t) moveAt(t.clientY)
+    }, { signal: dragSignal, passive: false })
+    window.addEventListener("touchend", finishDrag, { signal: dragSignal })
+    window.addEventListener("touchcancel", finishDrag, { signal: dragSignal })
+  }
+
+  list.addEventListener("pointerdown", event => {
+    if (event.button <= 0 && event.pointerType !== "touch") start(event.target, event)
   }, { signal })
 
-  list.addEventListener("dragend", finishDrag, { signal })
+  list.addEventListener("touchstart", event => {
+    start(event.target, event)
+  }, { signal, passive: false })
 
-  signal.addEventListener("abort", () => {
-    if (dragged) dragged.classList.remove(ghostClass)
-    dragged = null
-    clearDraggable()
-  }, { once: true })
+  signal.addEventListener("abort", finishDrag, { once: true })
 }

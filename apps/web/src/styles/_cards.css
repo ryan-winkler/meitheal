@@ -102,17 +102,8 @@
 .card:nth-child(5) {
   animation-delay: 0.2s;
 }
-/* Bento card board badge + hover actions
+/* Bento card hover actions
  * Restored from pre-split global.css */
-.bento-board-badge {
-font-size: 10px;
-font-weight: 500;
-padding: 1px 6px;
-border-radius: var(--radius-xs);
-border: 1px solid;
-white-space: nowrap;
-}
-
 .bento-card-actions {
 position: absolute;
 top: 6px;

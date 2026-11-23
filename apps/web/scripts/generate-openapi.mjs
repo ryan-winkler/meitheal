@@ -282,10 +282,10 @@ const schemas = {
       title: { type: "string", description: "Task title — the primary human-readable label" },
       description: { type: "string", nullable: true, maxLength: 10000, description: "Rich text task description. Oversized create or update requests are rejected without truncation." },
       status: { type: "string", description: "Current workflow status. Also supports custom workflow statuses.", example: "pending" },
-      priority: { type: "integer", minimum: 0, maximum: 5, description: "Priority level: 0=none, 1=lowest, 5=critical" },
+      priority: { type: "integer", minimum: 1, maximum: 5, description: "Priority level: 1=urgent, 3=normal, 5=lowest (clamped 1..5)" },
       is_promoted: { type: "boolean", description: "Shared Kanban promotion — pins card to top of lane with Tabler ribbon sash." },
       actions: { type: "array", items: { type: "string", enum: ["edit", "complete", "delete"] }, description: "Detail-only hints for the current caller. Each write verifies current permission separately." },
-      due_date: { type: "string", format: "date-time", nullable: true },
+      due_date: { type: "string", nullable: true },
       assigned_to: { type: "string", nullable: true, description: "User ID prefixed with 'ha_' or 'custom_'" },
       kanban_position: { type: "number", nullable: true, description: "Persisted shared board position; unranked tasks have null." },
       nfc_tag_id: { type: "string", nullable: true },
@@ -302,6 +302,9 @@ const schemas = {
       task_kind: { type: "string", enum: ["standard_action", "shopping_item", "checklist", "routine_instance", "calendar_event", "quick_capture"], description: "Behavioral kind — determines UI rendering and lifecycle rules" },
       labels: { type: "string", nullable: true, description: "JSON-encoded array of label names" },
       checklists: { type: ["string", "null"], description: "A JSON-encoded array of checklist items with text, done, and an optional id. Historical tasks may have null." },
+      start_date: { type: ["string", "null"], description: "Start date or ISO timestamp (primary schedule timestamp for calendar_event)" },
+      end_date: { type: ["string", "null"], description: "End date or ISO timestamp" },
+      custom_fields: { type: "string", description: "JSON-encoded custom fields object; shopping_item tasks store structured ShoppingListItem entries under items." },
       ticket_key: { type: "string", nullable: true, description: "Human-readable key like MTH-42" },
       created_at: { type: "integer", description: "Unix timestamp (ms)" },
       updated_at: { oneOf: [{ type: "integer" }, { type: "string" }], description: "Stored Unix milliseconds or legacy ISO timestamp" },
@@ -310,6 +313,20 @@ const schemas = {
       deferral_revision: { type: "string", nullable: true, pattern: "^[a-f0-9]{32}$", description: "Opaque deferral concurrency token" },
     },
     required: ["id", "title", "status"],
+  },
+  ShoppingListItem: {
+    type: "object",
+    required: ["name"],
+    additionalProperties: false,
+    properties: {
+      name: { type: "string", minLength: 1, description: "Item name" },
+      qty: {
+        oneOf: [{ type: "string" }, { type: "number", exclusiveMinimum: 0 }],
+        description: "Optional quantity label (e.g. '2L', '1 bunch') or positive number",
+      },
+      category: { type: "string", enum: ["produce", "dairy", "meat", "pantry", "frozen", "beverages", "household", "other"], description: "Aisle category" },
+      checked: { type: "boolean", description: "Whether the item has been picked up" },
+    },
   },
   Area: {
     type: "object",
@@ -1018,6 +1035,7 @@ const paths = {
         { name: "deferred", in: "query", schema: { type: "string", enum: ["0", "1"] }, description: "Use 1 for deferred work and 0 for other work. Omission returns both." },
         { name: "area_id", in: "query", schema: { type: "string" } },
         { name: "project_id", in: "query", schema: { type: "string" } },
+        { name: "task_kind", in: "query", schema: { type: "string", enum: ["standard_action", "shopping_item", "checklist", "routine_instance", "calendar_event", "quick_capture"] }, description: "Filter tasks by behavioral kind." },
         { name: "assigned_to", in: "query", schema: { type: "string" } },
         { name: "priority", in: "query", schema: { type: "integer" } },
         { name: "due_date", in: "query", schema: { type: "string", format: "date" }, description: "Match the household calendar day (date-only, floating datetime, or zoned ISO timestamp in the configured household timezone). Invalid dates return 400." },
@@ -1133,8 +1151,29 @@ const paths = {
               properties: {
                 title: { type: "string", description: "Task title (required)" },
                 description: { type: "string", maxLength: 10000 },
+                priority: { type: "number", minimum: 1, maximum: 5, description: "Priority 1-5 (1=urgent, 3=normal, 5=lowest); rounded and clamped to 1..5." },
+                due_date: { type: ["string", "null"], description: "Due date (YYYY-MM-DD or ISO timestamp)" },
+                start_date: { type: ["string", "null"], description: "Start date or ISO timestamp" },
+                end_date: { type: ["string", "null"], description: "End date or ISO timestamp" },
+                task_kind: { type: "string", enum: ["standard_action", "shopping_item", "checklist", "calendar_event", "quick_capture"], description: "Behavioral kind — determines UI rendering and lifecycle rules" },
                 is_promoted: { type: "boolean", description: "Pin the new task to the top of its Kanban lane with a promoted ribbon sash." },
                 assigned_to: { type: "string", maxLength: 255, nullable: true, description: "Must start with 'ha_' or 'custom_'" },
+                labels: {
+                  oneOf: [{ type: "array", items: { type: "string" } }, { type: "string", description: "JSON-encoded array of label names" }],
+                  description: "Label names, as an array or as a JSON-encoded array.",
+                },
+                checklists: {
+                  oneOf: [
+                    { type: "array", items: { type: "object", required: ["text"], properties: { id: { type: "string" }, text: { type: "string" }, done: { type: "boolean" } } } },
+                    { type: "string", description: "JSON-encoded checklist array" },
+                  ],
+                },
+                custom_fields: {
+                  oneOf: [
+                    { type: "object", additionalProperties: true, properties: { items: { type: "array", items: ref("ShoppingListItem"), description: "Structured shopping items (with optional qty, category, checked) for shopping_item tasks" } } },
+                    { type: "string", description: "JSON-encoded custom fields object" },
+                  ],
+                },
                 frameworkPayload: { type: "object" },
                 calendar: {
                   type: "object",
@@ -1261,7 +1300,10 @@ const paths = {
           status: { type: "string", description: "Canonical task status, a supported alias, or a custom status. Backlog decisions require exactly pending or active." },
           priority: { type: "number", description: "The server rounds and clamps this to 1 through 5." },
           is_promoted: { type: "boolean", description: "Show the task above regular cards in its Kanban lane." },
+          task_kind: { type: "string", enum: ["standard_action", "shopping_item", "checklist", "routine_instance", "calendar_event", "quick_capture"], description: "Behavioral kind — routine_instance cannot be assigned to non-routine tasks." },
           due_date: { type: ["string", "null"] },
+          start_date: { type: ["string", "null"] },
+          end_date: { type: ["string", "null"] },
           assigned_to: { type: ["string", "null"] },
           project_id: { type: ["string", "null"] },
           parent_id: { type: ["string", "null"] },
@@ -1273,6 +1315,12 @@ const paths = {
           },
           checklists: { type: "string", description: "Replacement JSON-encoded checklist array" },
           expected_checklists: { type: ["string", "null"], description: "Exact previous checklist value returned by GET" },
+          custom_fields: {
+            oneOf: [
+              { type: "object", additionalProperties: true, properties: { items: { type: "array", items: ref("ShoppingListItem"), description: "Structured shopping items for shopping_item tasks" } } },
+              { type: "string", description: "JSON-encoded custom fields object" },
+            ],
+          },
           updated_at: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER, description: "Observed task version as epoch milliseconds. Send the exact observed value with expected_status backlog." },
           expected_status: { type: "string", const: "backlog", description: "Requires exact updated_at and status pending or active. The task must still be in Backlog." },
         },
@@ -1855,6 +1903,7 @@ const paths = {
         { name: "status", in: "query", schema: { type: "string" }, description: "Filter by status (backlog, pending, active, complete, todo, in_progress, done). Direct /api/search callers must also set include_completed=true to include done or complete tasks." },
         { name: "assigned_to", in: "query", schema: { type: "string" } },
         { name: "priority", in: "query", schema: { type: "integer" } },
+        { name: "task_kind", in: "query", schema: { type: "string", enum: ["standard_action", "shopping_item", "checklist", "routine_instance", "calendar_event", "quick_capture"] }, description: "Filter tasks by behavioral kind." },
         { name: "task_fields", in: "query", schema: { type: "string" }, description: "Comma-separated: id,title,description,labels,custom_fields,comments" },
       ],
       responses: {
@@ -2123,25 +2172,76 @@ const paths = {
 
   // ── Habits ──
   "/api/habits": {
-    get: { operationId: "listHabits", tags: ["Habits"], summary: "List routine templates and streaks", parameters: [{ name: "area_id", in: "query", schema: { type: "string" }, description: "List Routines in an existing Area, or use default for unassigned Routines." }], responses: { 200: { description: "Routines list" } } },
+    get: {
+      operationId: "listHabits",
+      tags: ["Habits"],
+      summary: "List routine templates and streaks",
+      parameters: [
+        { name: "area_id", in: "query", schema: { type: "string" }, description: "List Routines in an existing Area, or use default for unassigned Routines." },
+        { name: "project_id", in: "query", schema: { type: "string" }, description: "Filter Routines by Project ID." },
+      ],
+      responses: {
+        200: jsonContent({
+          type: "object",
+          required: ["habits"],
+          properties: {
+            habits: {
+              type: "array",
+              items: {
+                type: "object",
+                required: ["id", "name", "cadence"],
+                properties: {
+                  id: { type: "string" },
+                  name: { type: "string" },
+                  icon: { type: "string" },
+                  cadence: { type: "string", enum: ["daily", "weekly"] },
+                  position: { type: "integer" },
+                  template_json: { type: "string" },
+                  boardId: { type: ["string", "null"] },
+                  projectActive: { type: "boolean" },
+                  todayCompleted: { type: "boolean" },
+                  todayTaskId: { type: ["string", "null"] },
+                  lastCompletedDate: { type: ["string", "null"] },
+                  currentStreak: { type: "integer" },
+                  longestStreak: { type: "integer" },
+                  totalCompletions: { type: "integer" },
+                  checklists: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      required: ["text", "done"],
+                      properties: {
+                        text: { type: "string" },
+                        done: { type: "boolean" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        }, "Routines list"),
+      },
+    },
     post: {
       operationId: "createHabit", tags: ["Habits"], summary: "Manage a Routine",
-      description: "Create with a name and optional area_id. Send templateId for complete, update, or delete.",
+      description: "Create with a name and optional area_id or project_id. Send templateId for complete, update, or delete.",
       requestBody: { content: { "application/json": { schema: { type: "object", properties: {
         action: { type: "string", enum: ["create", "complete", "update", "delete"], default: "create" },
         templateId: { type: "string" },
         habitId: { type: "string", description: "Legacy template identifier for complete and delete." },
         name: { type: "string", maxLength: 100 },
         area_id: { type: "string", description: "Area for new work. Use default for unassigned work." },
+        project_id: { type: ["string", "null"], description: "Project for new work." },
         cadence: { type: "string", enum: ["daily", "weekly"] },
         frequency: { type: "string", enum: ["daily", "weekly"], description: "Legacy alias for cadence." },
         icon: { type: "string" },
         description: { type: "string" },
-        priority: { type: "number" },
+        priority: { type: "number", minimum: 1, maximum: 5, description: "Default priority 1-5 (clamped by server)." },
         checklists: { type: "array", items: { type: "object", properties: {
           text: { type: "string" }, done: { type: "boolean" },
         }, required: ["text"] } },
-        templateJson: { type: "object", additionalProperties: true, description: "Template fields to update, including area_id." },
+        templateJson: { type: "object", additionalProperties: true, description: "Template fields to update, including area_id and project_id." },
       } } } } },
       responses: { 200: { description: "Routine action succeeded" }, 201: { description: "Created" } },
     },

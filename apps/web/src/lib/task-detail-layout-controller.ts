@@ -51,7 +51,8 @@ function observeOrder(update: () => void, signal: AbortSignal): void {
 function getTicketLabelEl(item: HTMLElement, isSection: boolean): HTMLElement | null {
   return isSection
     ? item.querySelector<HTMLElement>(":scope > .td-section__summary > span")
-    : item.querySelector<HTMLElement>(":scope > label")
+    : item.querySelector<HTMLElement>(":scope > label > [data-layout-field-label]")
+      ?? item.querySelector<HTMLElement>(":scope > label")
 }
 
 // A field label can wrap its control, so read and write only the label's own text.
@@ -80,7 +81,7 @@ export function initTicketSectionOrder(sections: HTMLElement, signal: AbortSigna
       const isSection = group === "sections"
       for (const item of layoutItems(list)) {
         const id = item.dataset.layoutItem ?? ""
-        item.hidden = hidden.has(id)
+        item.hidden = hidden.has(id) || (item.dataset.haAreaField === "edit" && !item.dataset.haAreaEndpoint)
         const labelEl = getTicketLabelEl(item, isSection)
         if (labelEl) {
           if (labelEl.dataset.defaultLabel === undefined) {
@@ -180,9 +181,7 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
 
   const isServerScope = root.dataset.layoutScope === "server"
   let serverCommitted = readServerTaskDetailLayoutFromJson(root.dataset.serverLayout) ?? createDefaultTaskDetailLayoutConfig()
-  let draft = isServerScope
-    ? cloneConfig(serverCommitted)
-    : resolveEffectiveTaskDetailLayout(readPersonalTaskDetailLayout(), readServerTaskDetailLayoutFromJson(root.dataset.serverLayout))
+  let draft = resolveEffectiveTaskDetailLayout(readPersonalTaskDetailLayout(), serverCommitted)
 
   let dragging = false
   let saving = false
@@ -244,25 +243,12 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
   }
 
   function syncFromStorage(): void {
-    if (isServerScope) {
-      updateScopeNotices()
-      return
-    }
-    draft = resolveEffectiveTaskDetailLayout(
-      readPersonalTaskDetailLayout(),
-      readServerTaskDetailLayoutFromJson(root.dataset.serverLayout),
-    )
+    draft = resolveEffectiveTaskDetailLayout(readPersonalTaskDetailLayout(), serverCommitted)
     renderConfig(draft)
   }
 
   function commitDraft(announce?: string): void {
     draft = normalizeTaskDetailLayoutConfig(draft)
-    if (isServerScope) {
-      renderConfig(draft)
-      showError(undefined)
-      if (announce && status) status.textContent = announce
-      return
-    }
     try {
       savePersonalTaskDetailLayout(draft)
       showError(undefined)
@@ -271,6 +257,14 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
       syncFromStorage()
       showError(root.dataset.saveFailed)
     }
+  }
+
+  function formatMoved(id: string, defaultLabel: string | undefined, position: number, total: number): string {
+    const label = draft.labels[id] ?? defaultLabel ?? id
+    return (root.dataset.moved ?? "")
+      .replace("{item}", label)
+      .replace("{position}", String(position))
+      .replace("{total}", String(total))
   }
 
   function startInlineRename(item: HTMLElement): void {
@@ -402,12 +396,7 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
     items.splice(index, 1)
     items.splice(index + (direction === "up" ? -1 : 1), 0, item)
     draft.orders[group] = items.map((row) => row.dataset.layoutItem ?? "")
-    const label = draft.labels[id] ?? item.dataset.defaultLabel ?? id
-    const msg = (root.dataset.moved ?? "")
-      .replace("{item}", label)
-      .replace("{position}", String(items.indexOf(item) + 1))
-      .replace("{total}", String(items.length))
-    commitDraft(msg)
+    commitDraft(formatMoved(id, item.dataset.defaultLabel, items.indexOf(item) + 1, items.length))
     button.scrollIntoView({ block: "nearest" })
   }, { signal })
 
@@ -430,13 +419,8 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
           if (!group) return
           const items = layoutItems(list)
           draft.orders[group] = items.map((row) => row.dataset.layoutItem ?? "")
-          // Announce a drag the same way as an arrow move.
           const id = item.dataset.layoutItem ?? ""
-          const label = draft.labels[id] ?? item.dataset.defaultLabel ?? id
-          commitDraft((root.dataset.moved ?? "")
-            .replace("{item}", label)
-            .replace("{position}", String(newIndex + 1))
-            .replace("{total}", String(items.length)))
+          commitDraft(formatMoved(id, item.dataset.defaultLabel, newIndex + 1, items.length))
         },
       })
     }

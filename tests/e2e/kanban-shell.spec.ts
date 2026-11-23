@@ -404,6 +404,8 @@ test.describe("Tasks Shell (Kanban)", () => {
       await page.keyboard.press("Tab")
       await expect(card.getByRole("button", { name: `Promote to top: ${title}` })).toBeFocused()
       await page.keyboard.press("Tab")
+      await expect(card.locator(".kanban-promote-star")).toBeFocused()
+      await page.keyboard.press("Tab")
       const more = card.getByRole("button", { name: `Task actions for ${title}` })
       await expect(more).toBeFocused()
       await expect(actions).toHaveCSS("opacity", "1")

@@ -177,7 +177,6 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
     // Bucket 2 preserved
     expect(t("settings.cal_sync_bidirectional", "en")).toContain("↔")
     expect(t("settings.cal_sync_bidirectional", "ga")).toContain("↔")
-    // Priority options use plain labels; the colored priority markers carry the meaning.
     expect(enCatalog.task_modal.priority_urgent).toBe("Urgent")
     expect(gaCatalog.task_modal.priority_urgent).toBe("Práinneach")
 

@@ -6,17 +6,6 @@
  * Does NOT own: base component styles — only responsive overrides of them
  * ============================================= */
 
-/* ===== Settings tab-pane CSS fallback =====
- * Prevents all tab panes from showing simultaneously if JS hasn't initialised
- * (race condition on slow mobile connections / HA companion app WebView).
- * JS still manages .active class — this CSS ensures the default hidden state. */
-.tab-pane {
-  display: none;
-}
-.tab-pane.active {
-  display: block;
-}
-
 /* Mobile breakpoint */
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
@@ -207,22 +196,6 @@
   overscroll-behavior: contain;
 }
 
-/* Mobile: search items — bigger touch targets */
-.search-item {
-  min-height: 48px;
-  padding: 12px 16px !important;
-}
-
-/* Mobile: settings tabs scroll hint */
-.settings-tabs {
-  gap: 16px;
-  padding-bottom: 2px;
-  margin-left: -12px;
-  margin-right: -12px;
-  padding-left: 12px;
-  padding-right: 12px;
-}
-
 /* Mobile: stat-card compact */
 .stat-card {
   padding: 10px 12px !important;
@@ -246,11 +219,6 @@
 
 /* Mobile: sidebar toggle hidden — use hamburger menu instead */
 .sidebar-toggle {
-  display: none !important;
-}
-
-/* Mobile: hide top task-view-tabs when bottom tab bar provides the same navigation */
-.task-view-tabs {
   display: none !important;
 }
 
@@ -381,18 +349,14 @@
 
   /* Hide non-content elements */
   .sidebar,
-  .sidebar-overlay,
   .header-bar,
   .filter-bar,
-  .filter-summary-bar,
   .bulk-bar,
   .task-actions,
   .task-action-btn,
-  .task-fav-btn,
   .btn,
   .toast-container,
   .shortcut-modal-overlay,
-  .task-view-tabs,
   nav,
   footer {
     display: none !important;
@@ -534,37 +498,13 @@
     border: 1px solid ButtonText;
   }
 
-  .task-fav-btn.is-fav {
-    color: Highlight;
-  }
-
   .overdue-tag {
     background: Mark;
     color: MarkText;
   }
 
-  .task-progress-fill {
-    background: Highlight;
-  }
-
   /* P3: Expanded high-contrast coverage */
-  .kanban-card {
-    border: 1px solid ButtonText;
-  }
-
-  .kanban-column {
-    border: 1px solid ButtonText;
-  }
-
-  .card-action-btn,
-  .btn,
-  button {
-    border: 1px solid ButtonText;
-  }
-
-  input,
-  select,
-  textarea {
+  :is(.kanban-card, .kanban-column, .card-action-btn, .btn, button, input, select, textarea) {
     border: 1px solid ButtonText;
   }
 
@@ -573,7 +513,6 @@
     outline: 2px solid Highlight;
   }
 
-  .modal-inner,
   .lane-mgmt-inner {
     border: 2px solid ButtonText;
   }

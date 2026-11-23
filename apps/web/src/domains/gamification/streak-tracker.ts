@@ -1,4 +1,5 @@
 import { scopePermits, type BoardScope } from "@domains/tasks"
+import { calendarToday, shiftCalendarDay } from "../../lib/date"
 import { gamificationClient, gamificationRead } from "./scoped-gamification"
 /**
  * Gamification Domain — Streak Tracker
@@ -61,22 +62,25 @@ export interface DailyRecord {
 }
 
 type DailyProgress = { currentStreak: number; points: number }
-function statsDayKey(now: Date, offset = 0): string {
-  if (offset === 0) return now.toISOString().slice(0, 10)
-  const day = new Date(now)
-  day.setUTCDate(day.getUTCDate() + offset)
-  return day.toISOString().slice(0, 10)
+function statsDayKey(now: Date, offset = 0, timezone = "UTC"): string {
+  if (!timezone || timezone === "UTC") {
+    if (offset === 0) return now.toISOString().slice(0, 10)
+    const day = new Date(now)
+    day.setUTCDate(day.getUTCDate() + offset)
+    return day.toISOString().slice(0, 10)
+  }
+  return shiftCalendarDay(calendarToday(timezone, now), offset)
 }
 
 /** Today and the sidebar read the same two indexed days for the current request. */
-export function getDailyProgress(scope: BoardScope, now = new Date()): Promise<DailyProgress> {
-  return readDailyProgress(scope, now)
+export function getDailyProgress(scope: BoardScope, now = new Date(), timezone = "UTC"): Promise<DailyProgress> {
+  return readDailyProgress(scope, now, timezone)
 }
 
-async function readDailyProgress(scope: BoardScope, now: Date): Promise<DailyProgress> {
+async function readDailyProgress(scope: BoardScope, now: Date, timezone = "UTC"): Promise<DailyProgress> {
   await ensureGamificationSchema()
-  const today = statsDayKey(now)
-  const yesterday = statsDayKey(now, -1)
+  const today = statsDayKey(now, 0, timezone)
+  const yesterday = statsDayKey(now, -1, timezone)
   const result = await (await gamificationClient(scope)).execute(gamificationRead(scope, {
     sql: "SELECT date, streak_count, points FROM board_stats WHERE date IN (?, ?)",
     args: [today, yesterday],
@@ -95,11 +99,16 @@ export async function ensureGamificationSchema(): Promise<void> { await ensureSc
  * Record a task completion. Increments today's count and updates streak.
  * @param points - XP points to award (default: 0, Phase 5 adds weighted points)
  */
-export async function recordTaskCompletion(scope: BoardScope, points = 0, now = new Date()): Promise<GamificationStats | null> {
+export async function recordTaskCompletion(
+  scope: BoardScope,
+  points = 0,
+  now = new Date(),
+  timezone = "UTC",
+): Promise<GamificationStats | null> {
   await ensureGamificationSchema()
   const client = await gamificationClient(scope, true)
-  const today = statsDayKey(now)
-  const yesterday = statsDayKey(now, -1)
+  const today = statsDayKey(now, 0, timezone)
+  const yesterday = statsDayKey(now, -1, timezone)
   // Resolve the streak and increment today's totals in the same Board writer.
   await client.execute({
     sql: `INSERT INTO gamification_stats(board_id, date, completed_count, streak_count, points)
@@ -111,17 +120,17 @@ export async function recordTaskCompletion(scope: BoardScope, points = 0, now = 
     args: [scope.boardId, today, scope.boardId, yesterday, points],
   })
 
-  return scopePermits(scope, { resource: "task", action: "read" }) ? getStats(scope, now) : null
+  return scopePermits(scope, { resource: "task", action: "read" }) ? getStats(scope, now, timezone) : null
 }
 
 /**
  * Get current gamification stats via a single aggregate query.
  */
-export async function getStats(scope: BoardScope, now = new Date()): Promise<GamificationStats> {
+export async function getStats(scope: BoardScope, now = new Date(), timezone = "UTC"): Promise<GamificationStats> {
   await ensureGamificationSchema()
   const client = await gamificationClient(scope)
-  const today = statsDayKey(now)
-  const yesterday = statsDayKey(now, -1)
+  const today = statsDayKey(now, 0, timezone)
+  const yesterday = statsDayKey(now, -1, timezone)
 
   const agg = await client.execute(gamificationRead(scope, {
     sql: `SELECT
@@ -156,13 +165,13 @@ export async function getStats(scope: BoardScope, now = new Date()): Promise<Gam
 /**
  * Get weekly data for the last 7 days via a single GROUP BY date query.
  */
-export async function getWeeklyData(scope: BoardScope, now = new Date()): Promise<DailyRecord[]> {
+export async function getWeeklyData(scope: BoardScope, now = new Date(), timezone = "UTC"): Promise<DailyRecord[]> {
   await ensureGamificationSchema()
   const client = await gamificationClient(scope)
 
   const dateKeys: string[] = []
   for (let i = 6; i >= 0; i--) {
-    dateKeys.push(statsDayKey(now, -i))
+    dateKeys.push(statsDayKey(now, -i, timezone))
   }
 
   const startStr = dateKeys[0]!

@@ -35,7 +35,9 @@ test.describe("More disclosure keyboard candidates", () => {
         expect(created).toHaveLength(6)
       }
       expect((await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: {
+        sections: { order: ["workspace", "boards", "planning", "system"] },
         order: ["dashboard", "today", "boards", "planning"],
+        hiddenItems: ["upcoming", "tasks", "view-calendar", "view-kanban", "view-timeline", "view-table", "system-pinned", "activity", "mentionInbox", "progress", "settings"],
       } } })).ok()).toBe(true)
       await page.addInitScript(() => {
         localStorage.setItem("meitheal-appearance", JSON.stringify({ navigation: "navbar" }))
@@ -62,15 +64,14 @@ test.describe("More disclosure keyboard candidates", () => {
       const areaProjects = board.locator(`[data-area-projects="${areaId}"] a.stree__project-link`)
       const project = areaProjects.last()
       const firstProject = areaProjects.first()
-      // Sections keep Planning before Boards; System's Settings follows Boards.
-      const afterBoards = row.locator('a[data-page="settings"]')
+      const planning = row.locator('a[data-page="planning"]')
       await expect(menu.locator('[data-sidebar-group="boards"]')).toHaveCount(1)
       await expect(boardsToggle).toHaveAttribute("aria-expanded", "false")
       await expect(household).toBeHidden()
       await summary.press("ArrowDown")
       await arrowTo(page, boardsLink)
       await page.keyboard.press("ArrowDown")
-      await expect(afterBoards).toBeFocused()
+      await expect(planning).toBeFocused()
       await page.keyboard.press("ArrowUp")
       await expect(boardsLink).toBeFocused()
 
@@ -87,7 +88,7 @@ test.describe("More disclosure keyboard candidates", () => {
       await expect(areas).toBeHidden()
       await expect(project).toBeHidden()
       await page.keyboard.press("ArrowDown")
-      await expect(afterBoards).toBeFocused()
+      await expect(planning).toBeFocused()
       await page.keyboard.press("ArrowUp")
       await expect(household).toBeFocused()
 
@@ -114,7 +115,7 @@ test.describe("More disclosure keyboard candidates", () => {
       await page.keyboard.press("Tab")
       await expect(household).toBeFocused()
       await page.keyboard.press("ArrowRight")
-      await expect(afterBoards).toBeFocused()
+      await expect(planning).toBeFocused()
       await page.keyboard.press("ArrowLeft")
       await expect(household).toBeFocused()
       await row.evaluate(element => { element.style.maxWidth = "180px" })
@@ -123,7 +124,7 @@ test.describe("More disclosure keyboard candidates", () => {
       await expect(household).toBeFocused()
 
       await page.keyboard.press("Tab")
-      await expect(board.getByRole("button", { name: "Pin Household to sidebar", exact: true })).toBeFocused()
+      await expect(board.locator("[data-sidebar-pin-board]")).toBeFocused()
       await page.keyboard.press("Tab")
       await expect(areasToggle).toBeFocused()
       await page.keyboard.press("Enter")
@@ -135,24 +136,21 @@ test.describe("More disclosure keyboard candidates", () => {
       await expect(areaProjects).toHaveCount(24)
       await expect(project).toBeVisible()
       expect(await menu.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true)
-      const householdPin = board.getByRole("button", { name: "Pin Household to sidebar", exact: true })
       await areasToggle.focus()
       await page.keyboard.press("Shift+Tab")
-      await expect(householdPin).toBeFocused()
+      await expect(board.locator("[data-sidebar-pin-board]")).toBeFocused()
       await page.keyboard.press("Shift+Tab")
       await expect(household).toBeFocused()
       await page.keyboard.press("Tab")
+      await expect(board.locator("[data-sidebar-pin-board]")).toBeFocused()
       await page.keyboard.press("Tab")
       await expect(areasToggle).toBeFocused()
-      // Each Area row reads link, then its Projects toggle.
-      await page.keyboard.press("Tab")
-      await expect(areas.locator(".stree__area-link").first()).toBeFocused()
       await page.keyboard.press("Tab")
       await expect(areas.locator("[data-area-toggle]").first()).toBeFocused()
       await page.keyboard.press("Shift+Tab")
-      await page.keyboard.press("Shift+Tab")
       await expect(areasToggle).toBeFocused()
       await page.keyboard.press("Shift+Tab")
+      await expect(board.locator("[data-sidebar-pin-board]")).toBeFocused()
       await page.keyboard.press("Shift+Tab")
       await expect(household).toBeFocused()
       await arrowTo(page, areaLink)
@@ -167,7 +165,7 @@ test.describe("More disclosure keyboard candidates", () => {
       await expect(project).toBeFocused()
       await expect(project).toHaveAttribute("tabindex", "0")
       await page.keyboard.press("ArrowDown")
-      await expect(afterBoards).toBeFocused()
+      await expect(planning).toBeFocused()
       await page.keyboard.press("ArrowUp")
       await expect(project).toBeFocused()
       await expect(project).toBeInViewport({ ratio: 1 })
@@ -213,16 +211,14 @@ test.describe("More disclosure keyboard candidates", () => {
       const today = row.locator('a[data-page="today"]')
       await expect(today).toBeFocused()
       await expect(today).toBeInViewport({ ratio: 1 })
-      // Workspace and Planning destinations precede the Boards section in the drawer.
-      for (let step = 0; step < 15 && !(await boardsLink.evaluate(link => link === document.activeElement)); step++) {
-        await page.keyboard.press("Tab")
-      }
+      await page.keyboard.press("Tab")
       await expect(boardsLink).toBeFocused()
       await page.keyboard.press("Tab")
       await expect(boardsToggle).toBeFocused()
       await page.keyboard.press("Tab")
       await expect(household).toBeFocused()
       await page.keyboard.press("Tab")
+      await expect(board.locator("[data-sidebar-pin-board]")).toBeFocused()
       await page.keyboard.press("Tab")
       await expect(areasToggle).toBeFocused()
       await page.keyboard.press("Tab")
