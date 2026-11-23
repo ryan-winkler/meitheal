@@ -1,4 +1,4 @@
-import { settingsAction, whenSectionVisible } from "@lib/settings-utils"
+import { downloadBlob, settingsAction, whenSectionVisible } from "@lib/settings-utils"
 import { navigate } from "astro:transitions/client"
 /**
  * Settings Rules Controller
@@ -13,7 +13,6 @@ import { navigate } from "astro:transitions/client"
 import { frameworkImportBytesMax } from "@lib/framework-import-limit"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
 import { exportFilename } from "@lib/export-filename"
 import { isFrameworkFieldOptions, validateFrameworkOverrides, type FrameworkConfig, type FrameworkOverrides } from "@meitheal/domain-strategy"
@@ -142,15 +141,7 @@ async function replaceRuleSet(rules: unknown[], replaceIds?: string[]): Promise<
 
 /** Download a JSON file in the browser */
 function downloadJson(data: unknown, label: string): void {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement("a")
-  a.href = url
-  a.download = exportFilename(label, "json")
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
+  downloadBlob(JSON.stringify(data, null, 2), "application/json", exportFilename(label, "json"), true)
 }
 
 /**

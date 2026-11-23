@@ -1,6 +1,9 @@
 ---
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import HomeAssistantAreaField from "./HomeAssistantAreaField.astro"
+import TaskDetailLayoutEditor from "./TaskDetailLayoutEditor.astro"
+import { ensureSchema, getPersistenceClient, SettingsRepository } from "@domains/tasks"
+import { taskDetailServerSettingKey } from "@lib/task-detail-layout"
 import { newOrganizationLabel, organizationLabelsFor } from "@lib/organization-labels"
 import { verifiedBoardRequestPrincipal } from "@lib/board-request-context"
 import { t } from "../../i18n/translations";
@@ -12,6 +15,14 @@ const organization = await organizationLabelsFor(Astro)
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astro))
+let serverLayoutJson: string | null = null
+try {
+  const client = getPersistenceClient()
+  await ensureSchema()
+  const stored = await new SettingsRepository(client).getByKeys([taskDetailServerSettingKey])
+  const raw = stored[taskDetailServerSettingKey]
+  if (typeof raw === "string" && raw.trim()) serverLayoutJson = raw
+} catch { /* fallback to built-in layout defaults */ }
 ---
 
 <div id="new-task-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="new-task-title"
@@ -64,7 +75,6 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
         <textarea class="form-input" id="new-task-desc-input" name="description" rows="2" maxlength="10000"
           placeholder={t("task_modal.description_placeholder", locale)}></textarea>
       </div>
-      <HomeAssistantAreaField publishOnly />
       <div id="nt-contextual-fields" class="nt-context hidden">
         <fieldset id="nt-contextual-checklist" class="nt-group hidden">
           <legend>{t("task_modal.checklist_items", locale)}</legend>
@@ -125,106 +135,182 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
           </div>
         </fieldset>
       </div>
-      <fieldset class="nt-group">
-        <legend>{t("task_modal.details_group", locale)}</legend>
-        <div class="nt-field">
-          <input type="hidden" id="new-task-status" name="status" value="pending" />
-          <div id="nt-status-pills" class="filter-toolbar__type-toggles" role="radiogroup" aria-label="Task status">
-            <button type="button" class="filter-toolbar__type-btn active" data-status="pending" role="radio" aria-checked="true">
-              <span class="nt-status-pill-icon inline-flex items-center" aria-hidden="true"><Icon name="clock" size={14} /></span>
-              <span>{t("task_modal.status_todo", locale)}</span>
+      <div id="nt-sections" class="nt-sections" data-server-layout={serverLayoutJson ?? undefined}>
+        <fieldset class="nt-group" id="nt-properties-group">
+          <div class="nt-group-header">
+            <h3 class="nt-group-title">{t("task_modal.details_group", locale)}</h3>
+            <button id="nt-toggle-layout" type="button" class="td-layout-icon-btn" aria-expanded="false"
+              aria-controls="nt-layout-panel" aria-label={t("task_layout.layout", locale)} title={t("task_layout.layout", locale)}>
+              <Icon name="adjustments-horizontal" size={16} sprite={true} />
             </button>
           </div>
-        </div>
-        <div class="nt-form-grid">
-          <div class="nt-field" id="nt-task-type-field">
-            <label for="new-task-type">Work type</label>
-            <select id="new-task-type" name="task_type" class="form-select">
-              <option value="task" selected>Task</option>
-              <option value="story">Story</option>
-              <option value="epic">Epic</option>
-            </select>
+          <div id="nt-layout-panel" hidden>
+            <h4 class="td-layout-title">{t("task_layout.layout", locale)}</h4>
+            <TaskDetailLayoutEditor locale={locale} scope="personal" serverLayoutJson={serverLayoutJson} />
           </div>
-          <div class="nt-field">
-            <label for="new-task-priority">{t("tasks.priority_label", locale)}</label>
-            <div class="nt-priority-select-wrap">
-              <span id="nt-priority-icon" class="nt-priority-icon priority-medium" aria-hidden="true">
-                <Icon name="arrows-left-right" size={15} sprite={true} />
-              </span>
-              <select id="new-task-priority" name="priority" class="form-select nt-priority-select">
-                <option value="1">{t("task_modal.priority_urgent", locale)}</option>
-                <option value="2">{t("task_modal.priority_high", locale)}</option>
-                <option value="3" selected>{t("task_modal.priority_normal", locale)}</option>
-                <option value="4">{t("task_modal.priority_low", locale)}</option>
-                <option value="5">{t("tasks.priority_label", locale)} 5</option>
+          <div class="nt-form-grid" data-layout-order="properties">
+            <div class="nt-field nt-field--full" data-layout-item="status">
+              <span data-layout-field-label class="nt-hint font-medium">{t("tasks.status_label", locale) || "Status"}</span>
+              <input type="hidden" id="new-task-status" name="status" value="pending" />
+              <div id="nt-status-pills" class="filter-toolbar__type-toggles" role="radiogroup" aria-label="Task status">
+                <button type="button" class="filter-toolbar__type-btn active" data-status="pending" role="radio" aria-checked="true">
+                  <span class="nt-status-pill-icon inline-flex items-center" aria-hidden="true"><Icon name="clock" size={14} /></span>
+                  <span>{t("task_modal.status_todo", locale)}</span>
+                </button>
+              </div>
+            </div>
+            <div class="nt-field" id="nt-task-type-field" data-layout-item="type">
+              <label for="new-task-type">Work type</label>
+              <select id="new-task-type" name="task_type" class="form-select">
+                <option value="task" selected>Task</option>
+                <option value="story">Story</option>
+                <option value="epic">Epic</option>
               </select>
             </div>
-          </div>
-          <div id="nt-ctx-due-row" class="nt-field">
-            <label id="nt-due-label">{t("tasks.due_date", locale)}</label>
-            <input type="hidden" id="nt-contextual-due" name="due_date" />
-            <div id="nt-due-date-picker" class="nt-due-picker" role="group" aria-labelledby="nt-due-label" data-placeholder={t("task_modal.due_date_placeholder", locale)}></div>
-          </div>
-          <div class="nt-field" id="nt-assignee-field">
-            <label for="new-task-assigned-to">{t("task_modal.assignee_label", locale)}</label>
-            <select id="new-task-assigned-to" name="assigned_to" class="form-select">
-              <option value="">{t("task_modal.unassigned", locale)}</option>
-            </select>
-          </div>
-        </div>
-      </fieldset>
-      <details class="nt-options" id="nt-options">
-        <summary>{t("task_modal.more_options", locale)}</summary>
-        <div class="nt-options-content">
-          <div class="nt-form-grid">
-            {available("goals") && <div class="nt-field">
-              <label for="new-task-goal">{t("task_modal.goal_label", locale)}</label>
-              <select id="new-task-goal" name="goal_id" class="form-select"><option value="">{t("task_modal.goal_none", locale)}</option></select>
+            <div class="nt-field" id="nt-priority-field" data-layout-item="priority">
+              <label for="new-task-priority">{t("tasks.priority_label", locale)}</label>
+              <div class="nt-priority-select-wrap">
+                <span id="nt-priority-icon" class="nt-priority-icon priority-medium" aria-hidden="true">
+                  <Icon name="arrows-left-right" size={15} sprite={true} />
+                </span>
+                <select id="new-task-priority" name="priority" class="form-select nt-priority-select">
+                  <option value="1">{t("task_modal.priority_urgent", locale)}</option>
+                  <option value="2">{t("task_modal.priority_high", locale)}</option>
+                  <option value="3" selected>{t("task_modal.priority_normal", locale)}</option>
+                  <option value="4">{t("task_modal.priority_low", locale)}</option>
+                  <option value="5">{t("tasks.priority_label", locale)} 5</option>
+                </select>
+              </div>
+            </div>
+            <div class="nt-field" id="nt-urgency-field" data-layout-item="urgency">
+              <label for="new-task-urgency">Urgency</label>
+              <select id="new-task-urgency" name="urgency" class="form-select">
+                <option value="0" selected>0 — Unset</option>
+                <option value="1">1 — Low</option>
+                <option value="2">2</option>
+                <option value="3">3 — Medium</option>
+                <option value="4">4</option>
+                <option value="5">5 — Critical</option>
+              </select>
+            </div>
+            <div class="nt-field" id="nt-importance-field" data-layout-item="importance">
+              <label for="new-task-importance">Importance</label>
+              <select id="new-task-importance" name="importance" class="form-select">
+                <option value="0" selected>0 — Unset</option>
+                <option value="1">1 — Low</option>
+                <option value="2">2</option>
+                <option value="3">3 — Medium</option>
+                <option value="4">4</option>
+                <option value="5">5 — Critical</option>
+              </select>
+            </div>
+            <div class="nt-field" id="nt-assignee-field" data-layout-item="assignee">
+              <label for="new-task-assigned-to">{t("task_modal.assignee_label", locale)}</label>
+              <select id="new-task-assigned-to" name="assigned_to" class="form-select">
+                <option value="">{t("task_modal.unassigned", locale)}</option>
+              </select>
+            </div>
+            {available("groups") && <div class="nt-field" id="nt-area-field" data-layout-item="area">
+              <label for="new-task-area">{organization("group")}</label>
+              <select id="new-task-area" name="area_id" class="form-select">
+                <option value="">No group</option>
+              </select>
             </div>}
-            <div class="nt-field">
-              <label for="new-task-recurrence">{t("task_modal.repeat_label", locale)}</label>
-              <select id="new-task-recurrence" name="recurrence_rule" class="form-select">
-                <option value="">{t("task_modal.recurrence_none", locale)}</option>
-                <option value="FREQ=DAILY">{t("task_modal.recurrence_daily", locale)}</option>
-                <option value="FREQ=WEEKLY">{t("task_modal.recurrence_weekly", locale)}</option>
-                <option value="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR">{t("task_modal.recurrence_weekday", locale)}</option>
-                <option value="FREQ=MONTHLY">{t("task_modal.recurrence_monthly", locale)}</option>
-                <option value="FREQ=YEARLY">{t("task_modal.recurrence_yearly", locale)}</option>
+            <HomeAssistantAreaField publishOnly layoutItem="home-assistant-area" />
+            {available("projects") && <div class="nt-field" id="nt-project-field" data-layout-item="project">
+              <label for="new-task-project">{organization("project")}</label>
+              <select id="new-task-project" name="project_id" class="form-select">
+                <option value="">No project</option>
               </select>
+            </div>}
+            {available("pillars") && <div class="nt-field" id="nt-pillar-field" data-layout-item="pillar">
+              <label for="new-task-pillar">{organization("pillar")}</label>
+              <select id="new-task-pillar" name="pillar_id" class="form-select">
+                <option value="">No pillar</option>
+              </select>
+            </div>}
+            {available("principles") && <div class="nt-field" id="nt-principle-field" data-layout-item="principle">
+              <label for="new-task-principle">{organization("principle")}</label>
+              <select id="new-task-principle" name="principle_id" class="form-select">
+                <option value="">No principle</option>
+              </select>
+            </div>}
+          </div>
+          <div id="nt-due-grid" class="nt-form-grid" data-layout-order="scheduling">
+            <div id="nt-ctx-due-row" class="nt-field nt-field--full" data-layout-item="due">
+              <label id="nt-due-label" data-layout-field-label>{t("tasks.due_date", locale)}</label>
+              <input type="hidden" id="nt-contextual-due" name="due_date" />
+              <div id="nt-due-date-picker" class="nt-due-picker" role="group" aria-labelledby="nt-due-label" data-placeholder={t("task_modal.due_date_placeholder", locale)}></div>
             </div>
           </div>
-          <div class="nt-field">
-            <label for="new-task-label-picker-input">{t("task_modal.tags_label", locale)}</label>
-            <LabelPicker deferCreate id="new-task-label-picker" name="labels" />
-          </div>
-      <!-- Custom Fields (collapsible) -->
-      <div id="nt-custom-fields" class="nt-options-section">
-        <div class="flex items-center justify-between p-2">
-          <button type="button" id="nt-custom-fields-toggle" aria-controls="nt-custom-fields-container" aria-expanded="false" class="flex items-center gap-1.5 text-xs font-semibold text-text-muted uppercase tracking-wider hover:text-text-primary transition-colors">
-            <Icon name="chevron-down" size={13} sprite={true} />
-            {t("task_modal.custom_fields_label", locale)}
-          </button>
-          <button type="button" id="nt-add-custom-field-btn" aria-controls="nt-add-field-dropdown" aria-expanded="false" class="text-xs font-medium flex items-center gap-1">
-            <Icon name="plus" size={12} sprite={true} />
-            {t("task_modal.custom_field_add", locale)}
-          </button>
-        </div>
-        <div id="nt-custom-fields-container" class="hidden space-y-2 mt-2 p-3 nt-feature-card">
-          <div id="nt-custom-fields-list" class="space-y-2"></div>
-          <div id="nt-add-field-dropdown" class="hidden flex-wrap gap-1.5 pt-2 border-t border-border-dim/30">
-            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="url"><Icon name="link" size={14} sprite={true} /> {t("task_modal.custom_field_url", locale)}</button>
-            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="text"><Icon name="file-text" size={14} sprite={true} /> {t("task_modal.custom_field_text", locale)}</button>
-            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="number"><Icon name="hash" size={14} sprite={true} /> {t("task_modal.custom_field_number", locale)}</button>
-            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="date"><Icon name="calendar" size={14} sprite={true} /> {t("task_modal.custom_field_date", locale)}</button>
-            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="checkbox"><Icon name="checkbox" size={14} sprite={true} /> {t("task_modal.custom_field_checkbox", locale)}</button>
-          </div>
-        </div>
-      </div>
+        </fieldset>
+        <details class="nt-options" id="nt-options">
+          <summary>{t("task_modal.more_options", locale)}</summary>
+          <div class="nt-options-content">
+            <div class="nt-form-grid" data-layout-order="scheduling">
+              {available("goals") && <div class="nt-field">
+                <label for="new-task-goal">{t("task_modal.goal_label", locale)}</label>
+                <select id="new-task-goal" name="goal_id" class="form-select"><option value="">{t("task_modal.goal_none", locale)}</option></select>
+              </div>}
+              <div class="nt-field" data-layout-item="recurrence">
+                <label for="new-task-recurrence">{t("task_modal.repeat_label", locale)}</label>
+                <select id="new-task-recurrence" name="recurrence_rule" class="form-select">
+                  <option value="">{t("task_modal.recurrence_none", locale)}</option>
+                  <option value="FREQ=DAILY">{t("task_modal.recurrence_daily", locale)}</option>
+                  <option value="FREQ=WEEKLY">{t("task_modal.recurrence_weekly", locale)}</option>
+                  <option value="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR">{t("task_modal.recurrence_weekday", locale)}</option>
+                  <option value="FREQ=MONTHLY">{t("task_modal.recurrence_monthly", locale)}</option>
+                  <option value="FREQ=YEARLY">{t("task_modal.recurrence_yearly", locale)}</option>
+                </select>
+              </div>
+              <div class="nt-field" id="nt-progress-field" data-layout-item="progress">
+                <label for="new-task-progress">Progress (%)</label>
+                <input id="new-task-progress" name="progress" type="number" min="0" max="100" step="5" value="0" class="form-input" />
+              </div>
+            </div>
+            <div class="nt-options-content" data-layout-order="metadata">
+              <div class="nt-field" data-layout-item="labels">
+                <label for="new-task-label-picker-input">{t("task_modal.tags_label", locale)}</label>
+                <LabelPicker deferCreate id="new-task-label-picker" name="labels" />
+              </div>
+              <div class="nt-field" id="nt-color-field" data-layout-item="color">
+                <label for="new-task-color">Task Color</label>
+                <div class="flex items-center gap-2">
+                  <input id="new-task-color-enabled" type="checkbox" aria-label="Use custom task color" class="h-4 w-4 accent-accent rounded" />
+                  <input id="new-task-color" type="color" value="#f59e0b" aria-label="Task Color" class="w-11 h-9 rounded cursor-pointer border border-border bg-transparent p-1" />
+                </div>
+              </div>
+              <!-- Custom Fields (board-defined + ad-hoc) -->
+              <div id="nt-custom-fields" class="nt-options-section" data-layout-item="custom-fields">
+                <div class="flex items-center justify-between p-2">
+                  <button type="button" id="nt-custom-fields-toggle" aria-controls="nt-custom-fields-container" aria-expanded="false" class="flex items-center gap-1.5 text-xs font-semibold text-text-muted uppercase tracking-wider hover:text-text-primary transition-colors">
+                    <Icon name="chevron-down" size={13} sprite={true} />
+                    <span data-layout-field-label>{t("task_modal.custom_fields_label", locale)}</span>
+                  </button>
+                  <button type="button" id="nt-add-custom-field-btn" aria-controls="nt-add-field-dropdown" aria-expanded="false" class="text-xs font-medium flex items-center gap-1">
+                    <Icon name="plus" size={12} sprite={true} />
+                    {t("task_modal.custom_field_add", locale)}
+                  </button>
+                </div>
+                <div id="nt-custom-fields-container" class="hidden space-y-2 mt-2 p-3 nt-feature-card">
+                  <div id="nt-board-custom-fields-list" class="space-y-2"></div>
+                  <div id="nt-custom-fields-list" class="space-y-2"></div>
+                  <div id="nt-add-field-dropdown" class="hidden flex-wrap gap-1.5 pt-2 border-t border-border-dim/30">
+                    <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="url"><Icon name="link" size={14} sprite={true} /> {t("task_modal.custom_field_url", locale)}</button>
+                    <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="text"><Icon name="file-text" size={14} sprite={true} /> {t("task_modal.custom_field_text", locale)}</button>
+                    <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="number"><Icon name="hash" size={14} sprite={true} /> {t("task_modal.custom_field_number", locale)}</button>
+                    <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="date"><Icon name="calendar" size={14} sprite={true} /> {t("task_modal.custom_field_date", locale)}</button>
+                    <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="checkbox"><Icon name="checkbox" size={14} sprite={true} /> {t("task_modal.custom_field_checkbox", locale)}</button>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-          <p class="nt-hint">{t("task_modal.images_after_create", locale)}</p>
-          <p class="nt-hint">{t("task_modal.routine_hint", locale)} <a href="/habits">{t("nav.habits", locale)}</a></p>
-        </div>
-      </details>
+            <p class="nt-hint">{t("task_modal.images_after_create", locale)}</p>
+            <p class="nt-hint">{t("task_modal.routine_hint", locale)} <a href="/habits">{t("nav.habits", locale)}</a></p>
+          </div>
+        </details>
+      </div>
       <div id="nt-create-uncertain" class="nt-context" hidden>
         <p id="nt-create-uncertain-alert" class="nt-error" role="alert">{t("task_modal.create_uncertain", locale)}</p>
         <p id="nt-create-receipt-status" role="status"></p>
@@ -309,8 +395,10 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
   import { defaultChildTaskType, formatTicketDisplay, normalizeEditableTaskType, syncTaskTypeSelect } from "@lib/task-editor-fields"
   import { popTaskEditorDraft, pushTaskEditorDraft, type OpenNewTaskOptions, type TaskParentContext } from "@lib/task-editor-draft-stack"
   import { enhanceDescriptionEditor } from "@lib/task-description-editor"
+  import { initTaskDetailLayoutEditor, initTicketSectionOrder } from "@lib/task-detail-layout-controller"
   import { buildTaskPrefillUrl, parseTaskUrlPrefill, stripTaskUrlPrefillParams } from "@lib/task-url-prefill"
   import { copyToClipboard } from "@lib/clipboard"
+  import { loadPillarPrinciplesOptions } from "@lib/task-taxonomy-client"
 
   const log = createClientLogger("tasks", "new-task-modal");
 
@@ -359,6 +447,19 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     const statusInput = document.querySelector<HTMLInputElement>("#new-task-status")
     const goalSelect = document.querySelector<HTMLSelectElement>("#new-task-goal")
     const taskTypeSelect = document.getElementById("new-task-type") as HTMLSelectElement | null
+    const urgencySelect = document.getElementById("new-task-urgency") as HTMLSelectElement | null
+    const importanceSelect = document.getElementById("new-task-importance") as HTMLSelectElement | null
+    const areaSelect = document.getElementById("new-task-area") as HTMLSelectElement | null
+    const projectSelect = document.getElementById("new-task-project") as HTMLSelectElement | null
+    const pillarSelect = document.getElementById("new-task-pillar") as HTMLSelectElement | null
+    const principleSelect = document.getElementById("new-task-principle") as HTMLSelectElement | null
+    const progressInput = document.getElementById("new-task-progress") as HTMLInputElement | null
+    const colorEnabledInput = document.getElementById("new-task-color-enabled") as HTMLInputElement | null
+    const colorInput = document.getElementById("new-task-color") as HTMLInputElement | null
+    const boardCustomList = document.getElementById("nt-board-custom-fields-list") as HTMLElement | null
+    const ntSections = document.getElementById("nt-sections") as HTMLElement | null
+    const ntLayoutToggle = document.getElementById("nt-toggle-layout") as HTMLButtonElement | null
+    const ntLayoutPanel = document.getElementById("nt-layout-panel") as HTMLElement | null
     const parentInput = document.getElementById("new-task-parent-id") as HTMLInputElement | null
     const parentBanner = document.getElementById("nt-parent-banner")
     const parentBannerText = document.getElementById("nt-parent-banner-text")
@@ -453,6 +554,26 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     const kindTabs = document.querySelectorAll("#nt-kind-tabs button");
     const kindInput = document.getElementById("new-task-kind") as HTMLInputElement | null;
 
+    let ntLayoutMounted = false
+    if (ntSections) {
+      const updateNtLayout = initTicketSectionOrder(ntSections, signal)
+      updateNtLayout()
+      document.addEventListener("meitheal:tasks-changed", () => updateNtLayout(), { signal })
+    }
+    ntLayoutToggle?.addEventListener("click", () => {
+      if (!ntLayoutPanel || !ntLayoutToggle) return
+      const open = ntLayoutPanel.hidden
+      if (open && !ntLayoutMounted) {
+        const editor = ntLayoutPanel.querySelector<HTMLElement>("[data-task-layout-editor]")
+        if (editor) {
+          initTaskDetailLayoutEditor(editor, signal)
+          ntLayoutMounted = true
+        }
+      }
+      ntLayoutPanel.hidden = !open
+      ntLayoutToggle.setAttribute("aria-expanded", String(open))
+    }, { signal })
+
     const prioritySelect = overlay.querySelector<HTMLSelectElement>("#new-task-priority")
     const priorityIconEl = overlay.querySelector<HTMLElement>("#nt-priority-icon")
     function syncPriorityIcon() {
@@ -460,7 +581,8 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       const p = Number(prioritySelect.value || 3)
       const iconName: IconName = p <= 1 ? "flame" : p === 2 ? "arrow-up" : p >= 4 ? "arrow-down" : "arrows-left-right"
       const cls = p <= 1 ? "priority-critical" : p === 2 ? "priority-high" : p >= 4 ? "priority-low" : "priority-medium"
-      priorityIconEl.className = `nt-priority-icon ${cls}`
+      priorityIconEl.classList.remove("priority-critical", "priority-high", "priority-medium", "priority-low")
+      priorityIconEl.classList.add(cls)
       priorityIconEl.replaceChildren(createSpriteIconElement(iconName, { size: 15 }))
     }
     prioritySelect?.addEventListener("change", syncPriorityIcon, { signal })
@@ -894,6 +1016,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
         void loadAssigneeDropdown(requestSignal)
         if (!lanesLoaded) void loadStatusPills(requestSignal)
         if (!goalsLoaded) void loadGoals(requestSignal)
+        void loadPropertiesCatalog(requestSignal)
       }
       focusTrap.activate()
       if (!unconfirmedAttempt) void loadDraftEditor(captureSession)
@@ -1113,12 +1236,201 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       }
     }
 
+    let pendingBoardCustomFieldValues: Record<string, string> = {}
+
+    function renderBoardCustomFieldDefs(defs: Array<{ name: string; type: string; options?: string[] }>) {
+      if (!boardCustomList) return
+      const existing = captureBoardCustomFields()
+      const values = { ...pendingBoardCustomFieldValues, ...existing }
+      boardCustomList.replaceChildren()
+      defs.forEach((def, idx) => {
+        const name = String(def?.name ?? "").trim()
+        if (!name) return
+        const row = document.createElement("div")
+        row.className = "nt-field"
+        row.dataset.boardCfName = name
+        row.dataset.boardCfType = def.type || "text"
+        const fieldId = `nt-board-cf-${idx}`
+        const lbl = document.createElement("label")
+        lbl.htmlFor = fieldId
+        lbl.textContent = name
+        const savedVal = values[name] ?? ""
+        if (def.type === "checkbox") {
+          row.className = "flex items-center gap-2 py-1"
+          row.dataset.boardCfName = name
+          row.dataset.boardCfType = "checkbox"
+          const cb = document.createElement("input")
+          cb.id = fieldId
+          cb.type = "checkbox"
+          cb.className = "h-4 w-4 accent-accent rounded"
+          cb.checked = savedVal === "true" || savedVal === "1" || savedVal === "yes"
+          cb.addEventListener("change", () => markEdited(), { signal })
+          row.append(cb, lbl)
+        } else if (def.type === "select" && Array.isArray(def.options)) {
+          const sel = document.createElement("select")
+          sel.id = fieldId
+          sel.className = "form-select"
+          sel.append(new Option("—", ""))
+          for (const opt of def.options) sel.append(new Option(String(opt), String(opt)))
+          sel.value = savedVal
+          sel.addEventListener("change", () => markEdited(), { signal })
+          row.append(lbl, sel)
+        } else {
+          const inp = document.createElement("input")
+          inp.id = fieldId
+          inp.type = def.type === "number" || def.type === "date" || def.type === "url" ? def.type : "text"
+          inp.className = "form-input"
+          if (def.type === "url") inp.placeholder = "https://"
+          inp.value = savedVal
+          inp.addEventListener("input", () => markEdited(), { signal })
+          row.append(lbl, inp)
+        }
+        boardCustomList.append(row)
+      })
+      if (defs.length > 0 && cfContainer) {
+        cfContainer.classList.remove("hidden")
+        cfToggle?.setAttribute("aria-expanded", "true")
+      }
+    }
+
+    function captureBoardCustomFields(): Record<string, string> {
+      const out: Record<string, string> = {}
+      boardCustomList?.querySelectorAll<HTMLElement>("[data-board-cf-name]").forEach(row => {
+        const key = row.dataset.boardCfName
+        const type = row.dataset.boardCfType
+        if (!key) return
+        if (type === "checkbox") {
+          const cb = row.querySelector<HTMLInputElement>("input[type=checkbox]")
+          if (cb?.checked) out[key] = "true"
+          return
+        }
+        const ctrl = row.querySelector<HTMLInputElement | HTMLSelectElement>("input, select")
+        const v = ctrl?.value.trim() ?? ""
+        if (v) out[key] = v
+      })
+      return out
+    }
+
+    function restoreBoardCustomFields(values?: Record<string, string>) {
+      pendingBoardCustomFieldValues = values ? { ...values } : {}
+      boardCustomList?.querySelectorAll<HTMLElement>("[data-board-cf-name]").forEach(row => {
+        const key = row.dataset.boardCfName
+        const type = row.dataset.boardCfType
+        if (!key) return
+        const nextVal = pendingBoardCustomFieldValues[key] ?? ""
+        if (type === "checkbox") {
+          const cb = row.querySelector<HTMLInputElement>("input[type=checkbox]")
+          if (cb) cb.checked = nextVal === "true" || nextVal === "1" || nextVal === "yes"
+          return
+        }
+        const ctrl = row.querySelector<HTMLInputElement | HTMLSelectElement>("input, select")
+        if (ctrl) ctrl.value = nextVal
+      })
+    }
+
+    async function loadPrinciplesForPillar(pillarId: string, requestSignal: AbortSignal, desiredPrincipleId = "") {
+      const headers = captureContext ? taskApiHeaders(captureContext) : undefined
+      await loadPillarPrinciplesOptions(principleSelect, pillarId, {
+        signal: requestSignal,
+        ...(headers ? { headers } : {}),
+        selectedId: desiredPrincipleId,
+      })
+    }
+
+    async function loadPropertiesCatalog(requestSignal: AbortSignal) {
+      const headers = captureContext ? taskApiHeaders(captureContext) : undefined
+      const fetchOpt = { signal: requestSignal, ...(headers ? { headers } : {}) }
+      const areaPromise = areaSelect ? fetch("/api/areas", fetchOpt).catch(() => null) : null
+      const projectPromise = projectSelect ? fetch("/api/projects", fetchOpt).catch(() => null) : null
+      const pillarPromise = pillarSelect ? fetch("/api/pillars", fetchOpt).catch(() => null) : null
+      const cfPromise = boardCustomList ? fetch("/api/custom-fields", { ...fetchOpt, cache: "no-store" }).catch(() => null) : null
+
+      const [areaRes, projectRes, pillarRes, cfRes] = await Promise.all([areaPromise, projectPromise, pillarPromise, cfPromise])
+      if (requestSignal.aborted) return
+
+      if (areaSelect && areaRes?.ok) {
+        const data = await areaRes.json().catch(() => null) as { areas?: Array<{ id: string; name: string }> } | null
+        const areas = Array.isArray(data?.areas) ? data.areas : []
+        const selected = capturePlacement?.areaId ?? areaSelect.value
+        const noneOpt = areaSelect.options[0] ?? new Option("No group", "")
+        areaSelect.replaceChildren(noneOpt, ...areas.map(a => new Option(a.name, a.id)))
+        if (selected) selectSavedOption(areaSelect, selected, "Unavailable group")
+        else areaSelect.value = ""
+      }
+
+      if (projectSelect && projectRes?.ok) {
+        const data = await projectRes.json().catch(() => null) as { projects?: Array<{ id: string; title?: string; name?: string; area_id?: string | null }> } | null
+        const projects = Array.isArray(data?.projects) ? data.projects : []
+        const selected = capturePlacement?.projectId ?? projectSelect.value
+        const noneOpt = projectSelect.options[0] ?? new Option("No project", "")
+        projectSelect.replaceChildren(noneOpt, ...projects.map(p => {
+          const opt = new Option(String(p.title ?? p.name ?? ""), p.id)
+          if (p.area_id) opt.dataset.areaId = p.area_id
+          return opt
+        }))
+        if (selected) selectSavedOption(projectSelect, selected, "Unavailable project")
+        else projectSelect.value = ""
+      }
+
+      if (pillarSelect && pillarRes?.ok) {
+        const data = await pillarRes.json().catch(() => null) as { pillars?: Array<{ id: string; name: string }> } | null
+        const pillars = Array.isArray(data?.pillars) ? data.pillars : []
+        const selectedPillar = pillarSelect.value
+        const selectedPrinciple = principleSelect?.value ?? ""
+        const noneOpt = pillarSelect.options[0] ?? new Option("No pillar", "")
+        pillarSelect.replaceChildren(noneOpt, ...pillars.map(p => new Option(p.name, p.id)))
+        if (selectedPillar) {
+          selectSavedOption(pillarSelect, selectedPillar, "Unavailable pillar")
+          if (pillarSelect.value) void loadPrinciplesForPillar(pillarSelect.value, requestSignal, selectedPrinciple)
+        } else {
+          pillarSelect.value = ""
+        }
+      }
+
+      if (cfRes?.ok) {
+        const cfData = await cfRes.json().catch(() => null) as { fields?: Array<{ name: string; type: string; options?: string[] }> } | null
+        if (Array.isArray(cfData?.fields)) {
+          renderBoardCustomFieldDefs(cfData.fields)
+        }
+      }
+    }
+
+    areaSelect?.addEventListener("change", () => {
+      const nextArea = areaSelect.value || null
+      if (projectSelect?.value) {
+        const selectedProjectArea = projectSelect.selectedOptions[0]?.dataset.areaId ?? null
+        if (selectedProjectArea && nextArea !== selectedProjectArea) projectSelect.value = ""
+      }
+      capturePlacement = { areaId: nextArea, projectId: projectSelect?.value || null }
+      markEdited()
+    }, { signal })
+
+    projectSelect?.addEventListener("change", () => {
+      const nextProject = projectSelect.value || null
+      const projectArea = projectSelect.selectedOptions[0]?.dataset.areaId ?? null
+      if (projectArea && areaSelect) areaSelect.value = projectArea
+      capturePlacement = { areaId: (areaSelect?.value || projectArea || null), projectId: nextProject }
+      markEdited()
+    }, { signal })
+
+    pillarSelect?.addEventListener("change", () => {
+      const nextPillar = pillarSelect.value
+      const reqSig = AbortSignal.any([signal, ...(captureOptionsRequest ? [captureOptionsRequest.signal] : []), AbortSignal.timeout(8_000)])
+      void loadPrinciplesForPillar(nextPillar, reqSig)
+      markEdited()
+    }, { signal })
+
+    colorInput?.addEventListener("input", () => {
+      if (colorEnabledInput) colorEnabledInput.checked = true
+      markEdited()
+    }, { signal })
+
     type CaptureField = TaskDraftSnapshot["fields"][number]
     type CaptureControl = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
 
-    const input = (id: string) => overlay.querySelector<CaptureControl>("#" + id)
+    const type = (id: string) => overlay.querySelector<CaptureControl>("#" + id)
+    const input = type
     const value = (id: string) => input(id)?.value ?? ""
-    const checked = (id: string) => Boolean((input(id) as HTMLInputElement | null)?.checked)
     const labelPicker = overlay.querySelector<HTMLElement>("#new-task-label-picker")
     const labelValue = input("new-task-label-picker-value")
     const customList = overlay.querySelector<HTMLElement>("#nt-custom-fields-list")
@@ -1156,7 +1468,12 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     }
 
     function captureSnapshot(): TaskDraftSnapshot {
+      descEditor?.flushToTextarea()
       const currentType = normalizeEditableTaskType(taskTypeSelect?.value)
+      const boardCf = captureBoardCustomFields()
+      const progressNum = progressInput ? Math.min(100, Math.max(0, Math.round(Number(progressInput.value) || 0))) : 0
+      const urgencyNum = urgencySelect ? Math.min(5, Math.max(0, Math.round(Number(urgencySelect.value) || 0))) : 0
+      const importanceNum = importanceSelect ? Math.min(5, Math.max(0, Math.round(Number(importanceSelect.value) || 0))) : 0
       return {
         version: 1,
         ...(capturePlacement ? { placement: capturePlacement } : {}),
@@ -1172,6 +1489,13 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
         taskKind: (kindInput?.value || "standard_action") as TaskDraftSnapshot["taskKind"],
         status: statusInput?.value || "pending",
         priority: Number(value("new-task-priority")),
+        ...(urgencyNum ? { urgency: urgencyNum } : {}),
+        ...(importanceNum ? { importance: importanceNum } : {}),
+        ...(progressNum ? { progress: progressNum } : {}),
+        ...(colorEnabledInput?.checked && colorInput?.value ? { color: colorInput.value } : {}),
+        ...(pillarSelect?.value ? { pillarId: pillarSelect.value } : {}),
+        ...(principleSelect?.value ? { principleId: principleSelect.value } : {}),
+        ...(Object.keys(boardCf).length > 0 ? { boardCustomFields: boardCf } : {}),
         due: value("nt-contextual-due"),
         labels: JSON.parse(labelValue?.value || "[]"),
         newLabels: JSON.parse(labelValue?.dataset.newLabels || "[]"),
@@ -1232,6 +1556,25 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
           }
           recurrence.value = snapshot.recurrence
         }
+        if (urgencySelect) urgencySelect.value = String(snapshot.urgency ?? 0)
+        if (importanceSelect) importanceSelect.value = String(snapshot.importance ?? 0)
+        if (progressInput) progressInput.value = String(snapshot.progress ?? 0)
+        if (colorEnabledInput && colorInput) {
+          colorEnabledInput.checked = Boolean(snapshot.color)
+          if (snapshot.color) colorInput.value = snapshot.color
+        }
+        if (areaSelect) areaSelect.value = snapshot.placement?.areaId ?? ""
+        if (projectSelect) projectSelect.value = snapshot.placement?.projectId ?? ""
+        if (pillarSelect) {
+          if (snapshot.pillarId) selectSavedOption(pillarSelect, snapshot.pillarId, "Selected pillar")
+          else pillarSelect.value = ""
+        }
+        if (principleSelect) {
+          if (!snapshot.pillarId) principleSelect.replaceChildren(principleSelect.options[0] ?? new Option("No principle", ""))
+          if (snapshot.principleId) selectSavedOption(principleSelect, snapshot.principleId, "Selected principle")
+          else principleSelect.value = ""
+        }
+        restoreBoardCustomFields(snapshot.boardCustomFields)
         selectSavedOption(assignee, snapshot.assignedTo, taskDraftText("assignee_missing"))
         selectSavedOption(goalSelect, snapshot.goal, taskDraftText("goal_missing"))
         preserveAssignee = true
@@ -1264,7 +1607,8 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
         cfToggle?.setAttribute("aria-expanded", String(snapshot.fields.length > 0))
         cfAddBtn?.setAttribute("aria-expanded", "false")
         const options = overlay?.querySelector<HTMLDetailsElement>("#nt-options")
-        if (options) options.open = !!(snapshot.goal || snapshot.recurrence || snapshot.labels.length || snapshot.newLabels.length || snapshot.fields.length)
+        const hasBoardCf = Boolean(snapshot.boardCustomFields && Object.keys(snapshot.boardCustomFields).length)
+        if (options) options.open = !!(snapshot.goal || snapshot.recurrence || snapshot.progress || snapshot.color || snapshot.labels.length || snapshot.newLabels.length || snapshot.fields.length || hasBoardCf)
         cfDropdown?.classList.add("hidden")
         if (cfDropdown) cfDropdown.style.display = ""
         for (const field of snapshot.fields) {
@@ -1286,6 +1630,8 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       pendingContext = null
       repeatAfterReceipt = false
       urlPrefillCustomFields = undefined
+      if (ntLayoutPanel) ntLayoutPanel.hidden = true
+      ntLayoutToggle?.setAttribute("aria-expanded", "false")
       if (uncertain) uncertain.hidden = true
       if (uncertainAlert) uncertainAlert.hidden = false
       if (receiptStatus) receiptStatus.textContent = ""
@@ -1305,6 +1651,8 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
 
     function restoreCaptureContext() {
       capturePlacement = contextPlacement
+      if (areaSelect) areaSelect.value = capturePlacement?.areaId ?? ""
+      if (projectSelect) projectSelect.value = capturePlacement?.projectId ?? ""
       applyParentContext(contextParent)
       if (taskTypeSelect) {
         taskTypeSelect.value = pendingCreateOptions?.taskType
@@ -1409,33 +1757,85 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     } satisfies Parameters<typeof connectTaskDrafts>[1]
 
     const precommitRejections = new Set([400, 401, 403, 404, 413, 415, 422, 429])
+    async function refreshBoardSession(boardId: string, reqSignal: AbortSignal): Promise<string | null> {
+      try {
+        const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}?view=authority`, { // nosemgrep
+          cache: "no-store",
+          signal: reqSignal,
+        })
+        const refreshed = res.headers.get("x-meitheal-board-session")
+        if (res.ok && refreshed) {
+          const meta = document.querySelector<HTMLMetaElement>('meta[name="meitheal-work-session"]')
+          if (meta) meta.content = refreshed
+          return refreshed
+        }
+      } catch { /* ignore refresh failure and surface 409 message */ }
+      return null
+    }
+
+    async function readErrorPayload(res: Response): Promise<{ errorCode?: string; message?: string }> {
+      try {
+        const data = await res.json() as { errorCode?: unknown; detail?: unknown; error?: unknown } | null
+        const rawMsg = typeof data?.detail === "string" ? data.detail : typeof data?.error === "string" ? data.error : undefined
+        return {
+          errorCode: typeof data?.errorCode === "string" ? data.errorCode : undefined,
+          message: rawMsg?.trim() || undefined,
+        }
+      } catch {
+        return {}
+      }
+    }
+
     async function createCapture(payload: Record<string, unknown>, attempt: string | undefined) {
       let response: Response | undefined
+      const reqSignal = AbortSignal.any([signal, ...(captureOptionsRequest ? [captureOptionsRequest.signal] : []), AbortSignal.timeout(30_000)])
+      const sendPost = (ctx: TaskApiContext) => fetch("/api/tasks", {
+        method: "POST",
+        headers: taskApiHeaders(ctx, {
+          "content-type": "application/json",
+          ...(attempt ? { "x-meitheal-capture-attempt": attempt } : {}),
+        }),
+        body: JSON.stringify(payload),
+        redirect: "error",
+        signal: reqSignal,
+      })
       try {
         if (!captureContext) return { kind: "rejected" as const, message: "Choose an available Board before capturing." }
-        response = await fetch("/api/tasks", {
-          method: "POST",
-          headers: taskApiHeaders(captureContext, {
-            "content-type": "application/json",
-            ...(attempt ? { "x-meitheal-capture-attempt": attempt } : {}),
-          }),
-          body: JSON.stringify(payload),
-          redirect: "error",
-          signal: AbortSignal.any([signal, ...(captureOptionsRequest ? [captureOptionsRequest.signal] : []), AbortSignal.timeout(30_000)]),
-        })
+        response = await sendPost(captureContext)
+        if (response.status === 409) {
+          const firstErr = await readErrorPayload(response)
+          if (firstErr.errorCode !== "capture_conflict") {
+            const refreshed = await refreshBoardSession(captureContext.boardId, reqSignal)
+            if (refreshed && refreshed !== captureContext.session && !reqSignal.aborted) {
+              captureContext = { ...captureContext, session: refreshed }
+              response = await sendPost(captureContext)
+            }
+          }
+          if (response.status === 409) {
+            const conflictErr = response.bodyUsed ? firstErr : await readErrorPayload(response)
+            return {
+              kind: "rejected" as const,
+              message: conflictErr.message || (conflictErr.errorCode === "capture_conflict"
+                ? "Capture already submitted. Check its receipt or start a new task."
+                : "This Board session changed. Refresh the page and try again."),
+            }
+          }
+        }
         if (response.status === 201) {
           const created = await response.json()
           if (typeof created?.id === "string" && created.id.trim()) {
             return { kind: "created" as const, task: created as { id: string; ticket_key?: string; task_kind?: string } }
           }
         }
-
       } catch { /* Delivery or receipt could have failed after the write. */ }
-      const kind = response && precommitRejections.has(response.status) ? "rejected" : "uncertain"
+      if (response && precommitRejections.has(response.status)) {
+        const err = await readErrorPayload(response)
+        return { kind: "rejected" as const, ...(err.message ? { message: err.message } : {}) }
+      }
       if (!signal.aborted) log.warn("Create task outcome", {
-        kind, status: response?.status, requestId: response?.headers.get("x-request-id"),
+        kind: "uncertain", status: response?.status, requestId: response?.headers.get("x-request-id"),
       })
-      return { kind }
+      return { kind: "uncertain" as const }
     }
 
     checkSave?.addEventListener("keydown", event => {
@@ -1661,8 +2061,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
           let finalTitle = title || titleInput.value.trim();
 
           // Extract @mentions for assignment
-          const assignedToSelect = document.getElementById("new-task-assigned-to") as HTMLSelectElement | null;
-          let assignedTo = assignedToSelect?.value || "";
+          let assignedTo = assignee?.value || "";
           
           const users = (window as any).__meitheal_users || [];
           finalTitle = finalTitle
@@ -1679,36 +2078,50 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
             
           if (!finalTitle) finalTitle = titleInput.value.trim();
 
-          const explicitDue = (document.getElementById("nt-contextual-due") as HTMLInputElement)?.value;
-          const finalDue = explicitDue || extractedDue;
+          const finalDue = (dueInput?.value ?? "") || extractedDue;
 
-          const kindInputEl = document.getElementById("new-task-kind") as HTMLInputElement | null;
-          const descInputEl = document.getElementById("new-task-desc-input") as HTMLTextAreaElement | null;
-          const prioritySelectEl = document.getElementById("new-task-priority") as HTMLSelectElement | null;
-          const statusSelectEl = document.getElementById("new-task-status") as HTMLInputElement | null;
-          const goalSelectEl = document.getElementById("new-task-goal") as HTMLSelectElement | null;
-          const recurrenceSelectEl = document.getElementById("new-task-recurrence") as HTMLSelectElement | null;
+          descEditor?.flushToTextarea()
+          const taskKind = kindInput?.value || "standard_action"
+          const livePlacement = areaSelect || projectSelect
+            ? {
+                areaId: (areaSelect?.value || capturePlacement?.areaId || null) as string | null,
+                projectId: (projectSelect?.value || capturePlacement?.projectId || null) as string | null,
+              }
+            : capturePlacement
+          const urgencyVal = urgencySelect ? Math.min(5, Math.max(0, Math.round(Number(urgencySelect.value) || 0))) : 0
+          const importanceVal = importanceSelect ? Math.min(5, Math.max(0, Math.round(Number(importanceSelect.value) || 0))) : 0
+          const progressVal = progressInput ? Math.min(100, Math.max(0, Math.round(Number(progressInput.value) || 0))) : 0
+          const colorVal = colorEnabledInput?.checked && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(colorInput?.value || "")
+            ? colorInput!.value
+            : null
+          const pillarIdVal = pillarSelect?.value || null
+          const principleIdVal = principleSelect?.value || null
 
-          const taskKind = kindInputEl?.value || "standard_action"
           const body: Record<string, unknown> = {
             title: finalTitle,
-            ...(capturePlacement ? { placement: capturePlacement } : {}),
-            description: descInputEl?.value.trim() || "",
+            ...(livePlacement ? { placement: livePlacement } : {}),
+            description: descInput?.value.trim() || "",
             task_kind: taskKind,
             task_type: normalizeEditableTaskType(taskTypeSelect?.value),
             ...(parentInput?.value ? { parent_id: parentInput.value } : {}),
-            priority: Number(prioritySelectEl?.value),
-            status: statusSelectEl?.value || "pending",
+            priority: Number(prioritySelect?.value),
+            ...(urgencyVal > 0 ? { urgency: urgencyVal } : {}),
+            ...(importanceVal > 0 ? { importance: importanceVal } : {}),
+            ...(progressVal > 0 ? { progress: progressVal } : {}),
+            ...(colorVal ? { color: colorVal } : {}),
+            ...(pillarIdVal ? { pillar_id: pillarIdVal } : {}),
+            ...(principleIdVal ? { principle_id: principleIdVal } : {}),
+            status: statusInput?.value || "pending",
             labels: JSON.stringify(allLabels),
-            ...(taskKind !== "calendar_event" ? { due_date: finalDue } : {}),
+            ...(finalDue ? { due_date: finalDue } : {}),
             assigned_to: assignedTo || null,
-            goal_id: goalSelectEl?.value || null,
+            goal_id: goalSelect?.value || null,
           };
 
           const location = form?.querySelector<HTMLSelectElement>('[name="home_assistant_area_id"]:enabled')
           if (location?.value) body.home_assistant_area_id = location.value
 
-          const recurrenceVal = recurrenceSelectEl?.value;
+          const recurrenceVal = value("new-task-recurrence");
           if (recurrenceVal) body.recurrence_rule = recurrenceVal;
 
           if (body.task_kind === "checklist") {
@@ -1744,8 +2157,10 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
           const extraFields = captureFields().filter(field =>
             field.type === "checkbox" ? field.label || field.checked : field.value,
           )
+          const boardCustom = captureBoardCustomFields()
           const baseCustom: Record<string, unknown> = {
             ...(urlPrefillCustomFields ?? {}),
+            ...boardCustom,
             ...(body.custom_fields ? JSON.parse(String(body.custom_fields)) : {}),
             ...(extraFields.length > 0 ? { fields: extraFields } : {}),
           }
@@ -1822,6 +2237,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
 
     // ── Copy prefilled link action ──
     copyPrefillBtn?.addEventListener("click", async () => {
+      descEditor?.flushToTextarea()
       let labels: string[] = []
       try {
         const parsed = JSON.parse(labelValue?.value || "[]")
@@ -1933,24 +2349,6 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
 
 <style>
   #nt-status-pills :global(.filter-toolbar__type-btn:not(.active)) { opacity: 1; }
-  .nt-priority-select-wrap {
-    position: relative;
-    display: flex;
-    align-items: center;
-  }
-  .nt-priority-icon {
-    position: absolute;
-    inset-inline-start: 10px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    pointer-events: none;
-    z-index: 1;
-  }
-  .nt-priority-select {
-    padding-inline-start: 32px !important;
-    width: 100%;
-  }
   .nt-due-picker {
     display: flex;
     align-items: center;

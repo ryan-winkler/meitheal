@@ -391,7 +391,7 @@ try {
                       </button>
                       <div id="td-add-cf-dropdown" class="absolute z-10 w-full mt-1 bg-bg-card border border-border rounded-md shadow-lg py-1" style="display:none;">
                         <div class="px-2 py-1">
-                          <input id="td-add-cf-search" class="form-input text-xs py-1.5 w-full bg-bg-input" placeholder="Search fields..." autocomplete="off" />
+                          <input id="td-add-cf-search" aria-label="Search custom fields" class="form-input text-xs py-1.5 w-full bg-bg-input" placeholder="Search fields..." autocomplete="off" />
                         </div>
                         <div id="td-add-cf-options" class="max-h-32 overflow-y-auto mt-1"></div>
                       </div>
@@ -430,7 +430,7 @@ try {
                 <label class="text-xs text-accent hover:text-accent-hover cursor-pointer m-0 font-medium flex items-center gap-1">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                   Add Image
-                  <input type="file" id="td-attachment-input" accept="image/*" class="hidden" />
+                  <input type="file" id="td-attachment-input" accept="image/*" class="sr-only" />
                 </label>
               </div>
               <div id="td-attachments" class="flex flex-wrap gap-3 mt-2"></div>
@@ -446,7 +446,7 @@ try {
                       <span class="text-xs text-text-muted italic">None</span>
                     </div>
                     <div class="relative">
-                      <input id="td-link-parent-search" class="form-input text-sm py-1.5 w-full bg-bg-input hover:border-border transition-colors" placeholder="Search for parent..."/>
+                      <input id="td-link-parent-search" aria-label="Search for parent task" class="form-input text-sm py-1.5 w-full bg-bg-input hover:border-border transition-colors" placeholder="Search for parent..."/>
                       <div id="td-link-parent-results" class="absolute z-10 left-0 right-0 top-full mt-1 bg-bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto" style="display:none;"></div>
                     </div>
                   </div>
@@ -471,7 +471,7 @@ try {
                         <button type="button" id="td-add-subtask-full-btn" class="text-xs text-text-secondary hover:text-text-primary transition-colors">Full form…</button>
                       </div>
                       <div id="td-add-subtask-form" class="hidden mt-2 gap-2">
-                        <input id="td-add-subtask-input" class="form-input text-sm py-1.5 flex-1 bg-bg-input" placeholder="Child item title..." autocomplete="off"/>
+                        <input id="td-add-subtask-input" aria-label="Child item title" class="form-input text-sm py-1.5 flex-1 bg-bg-input" placeholder="Child item title..." autocomplete="off"/>
                         <button type="button" id="td-add-subtask-submit" class="btn btn-primary text-xs px-3 py-1.5 shadow-sm">Add</button>
                         <button type="button" id="td-add-subtask-cancel" aria-label="Cancel child item" class="btn bg-bg-input border border-border hover:bg-bg-hover text-text-primary text-xs px-2 py-1.5"><Icon name="x" size={14} sprite={true} /></button>
                       </div>
@@ -499,7 +499,7 @@ try {
                       <option value="duplicated_by">Duplicated by</option>
                     </select>
                     <div class="relative w-full">
-                      <input id="td-link-search" class="form-input text-sm py-1.5 w-full bg-bg-input hover:border-border transition-colors" placeholder="Search task to link…"/>
+                      <input id="td-link-search" aria-label="Search task to link" class="form-input text-sm py-1.5 w-full bg-bg-input hover:border-border transition-colors" placeholder="Search task to link…"/>
                       <div id="td-link-search-results" class="absolute z-50 left-0 top-full mt-1 right-0 bg-bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto" style="display:none;"></div>
                     </div>
                   </div>

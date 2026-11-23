@@ -3,8 +3,6 @@
 
         import { confirmDialog } from "@lib/confirm-dialog";
         import { findModalTrapTarget } from "@lib/dialog-overlay"
-        import { promptDialog } from "@lib/prompt-dialog";
-        import { attemptStaleChunkReload, isStaleChunkError } from "@lib/chunk-recovery"
         import { createClientLogger, registerGlobalLogger } from "@lib/client-logger";
         import { containTabFocus } from "@lib/focus-trap"
         import { applyAppearancePreferences, bindAppearanceNavigation, readAppearancePreferences } from "@lib/appearance-preferences"
@@ -75,20 +73,7 @@
         }
         window.__healthIntervalId = setInterval(checkHealth, 30000);
 
-        // Global error resilience — catch unhandled errors to prevent blank-page crashes
-        // (These are global/permanent — intentionally NOT lifecycle-managed)
-        window.addEventListener("error", (e) => {
-          // ResizeObserver loop errors are benign browser noise — suppress them
-          if (e.message?.includes("ResizeObserver loop")) return;
-          log.error("Unhandled error", e.error ?? e.message);
-        });
-        window.addEventListener("unhandledrejection", (e) => {
-          if (isStaleChunkError(e.reason)) {
-            e.preventDefault()
-            if (attemptStaleChunkReload(window.sessionStorage, Date.now(), () => window.location.reload())) return
-          }
-          log.error("Unhandled promise rejection", e.reason);
-        });
+        // Global error/rejection handling lives in global-error-handler.ts.
 
         // ============================================================
         // P0-2/P0-3/P0-5: Lifecycle-managed page initialization
@@ -417,132 +402,6 @@
             }, { signal })
           }
 
-          // Area switcher
-          (async function initAreaSwitcher() {
-            const select = document.getElementById(
-              "area-select",
-            ) as HTMLSelectElement | null;
-            const addBtn = document.getElementById("add-area-btn");
-            if (!select) return;
-
-            // Load boards from API
-            try {
-              const res = await fetch(
-                (window.__ingress_path || "") + "/api/areas",
-              );
-              if (res.ok) {
-                const data = await res.json();
-                const boards = data.areas ?? [];
-                select.replaceChildren();
-                // "All Areas" option first
-                const allOpt = document.createElement("option");
-                allOpt.value = "all";
-                allOpt.textContent = "All Areas"
-                select.appendChild(allOpt);
-                boards.forEach(
-                  (b: { id: string; name: string; icon: string }) => {
-                    const opt = document.createElement("option");
-                    opt.value = b.id;
-                    opt.textContent = b.name
-                    select.appendChild(opt);
-                  },
-                );
-              }
-            } catch {
-              /* fallback to default option */
-            }
-
-            // Restore active board from localStorage
-            const saved =
-              localStorage.getItem("meitheal_active_area") ?? "all";
-            if (select.querySelector(`option[value="${saved}"]`)) {
-              select.value = saved;
-            }
-
-            // Expose active board globally for page scripts
-            window.__activeArea = select.value;
-
-            // Apply board filter to visible items
-            function isDoneStatus(s: string) {
-              return s === "complete" || s === "cancelled";
-            }
-
-            // strategic lens payload integration
-            function applyAreaFilter() {
-              const area = select!.value;
-              window.__activeArea = area;
-              // Filter task items (tasks page)
-              document
-                .querySelectorAll(".task-item[data-area]")
-                .forEach((el) => {
-                  const item = el as HTMLElement;
-                  item.style.display =
-                    area === "all" || item.dataset.area === area
-                      ? ""
-                      : "none";
-                });
-              // Filter kanban cards
-              document
-                .querySelectorAll(".kanban-card[data-area]")
-                .forEach((el) => {
-                  const card = el as HTMLElement;
-                  card.style.display =
-                    area === "all" || card.dataset.area === area
-                      ? ""
-                      : "none";
-                });
-              // Filter table rows
-              document
-                .querySelectorAll("#task-table tbody tr[data-area]")
-                .forEach((el) => {
-                  const row = el as HTMLElement;
-                  row.style.display =
-                    area === "all" || row.dataset.area === area
-                      ? ""
-                      : "none";
-                });
-            }
-
-            // Apply on load
-            applyAreaFilter();
-
-            // Switch board → save + filter
-            select.addEventListener(
-              "change",
-              () => {
-                localStorage.setItem("meitheal_active_area", select.value);
-                applyAreaFilter();
-              },
-              { signal },
-            );
-
-            // Add new board
-            addBtn?.addEventListener(
-              "click",
-              async () => {
-                const title = await promptDialog({ title: "Create Area", placeholder: "Area name", required: true });
-                if (!title) return;
-                try {
-                  const res = await fetch(
-                    (window.__ingress_path || "") + "/api/areas",
-                    {
-                      method: "POST",
-                      headers: { "content-type": "application/json" },
-                      body: JSON.stringify({ name: title.trim() }),
-                    },
-                  );
-                  if (res.ok) {
-                    const area = await res.json();
-                    localStorage.setItem("meitheal_active_area", area.id);
-                    window.location.reload();
-                  }
-                } catch {
-                  /* ignore */
-                }
-              },
-              { signal },
-            );
-          })();
         }); // end pageLifecycle.onPageLoad
 
         // Phase 13: Universal event listeners — reload page when tasks or navigation change.

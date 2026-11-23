@@ -533,17 +533,17 @@ function init(signal: AbortSignal) {
   }, { signal })
 
   document.addEventListener("meitheal:task-hierarchy-changed", () => {
-    if (desired.groupBy === "epic" || desired.subGroupBy === "epic") void refresh()
+    if (desired.groupBy === "epic" || desired.subGroupBy === "epic") refreshAfterWrite()
   }, { signal })
 
   document.addEventListener("meitheal:lanes-changed", () => {
-    void refresh()
+    refreshAfterWrite()
   }, { signal })
 
   document.addEventListener("meitheal:tasks-changed", event => {
     const detail = (event as CustomEvent<{ action?: string }>).detail
     if (detail?.action === "deferral") return
-    void refresh()
+    refreshAfterWrite()
   }, { signal })
 
   document.addEventListener("meitheal:columns-change", event => {

@@ -9,9 +9,8 @@
 import { withAsyncButton } from "@lib/async-button"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
-import { saveSettings, showSettingsSaveError, log } from "@lib/settings-utils"
+import { saveSettings, showSettingsSaveError } from "@lib/settings-utils"
 
 function showN8nMode(mode: "auto" | "standalone"): void {
   for (const option of ["auto", "standalone"] as const) {
@@ -257,7 +256,7 @@ export function initN8nSettings(): void {
   }
 
   // ───── n8n Diagnostics ─────
-  async function initN8nDiagnostics(_forceRefresh: boolean = false) {
+  async function initN8nDiagnostics() {
     const healthDetail = document.getElementById("n8n-health-detail")
     const workflowsList = document.getElementById("n8n-workflows-list")
     const urlInput = (document.getElementById("n8n-webhook-url") as HTMLInputElement)?.value
@@ -371,11 +370,11 @@ export function initN8nSettings(): void {
   window.__initN8nDiagnostics = initN8nDiagnostics
 
   const refreshStandalone = document.getElementById("refresh-n8n-standalone")
-  if (refreshStandalone) pageLifecycle.on(refreshStandalone, "click", () => initN8nDiagnostics(true))
+  if (refreshStandalone) pageLifecycle.on(refreshStandalone, "click", () => initN8nDiagnostics())
   const refreshStatus = document.getElementById("refresh-n8n-status")
-  if (refreshStatus) pageLifecycle.on(refreshStatus, "click", () => initN8nDiagnostics(true))
+  if (refreshStatus) pageLifecycle.on(refreshStatus, "click", () => initN8nDiagnostics())
   const refreshWorkflows = document.getElementById("refresh-n8n-workflows")
-  if (refreshWorkflows) pageLifecycle.on(refreshWorkflows, "click", () => initN8nDiagnostics(true))
+  if (refreshWorkflows) pageLifecycle.on(refreshWorkflows, "click", () => initN8nDiagnostics())
 
   // ───── HA Bus Status ─────
   async function initHABusStatus() {

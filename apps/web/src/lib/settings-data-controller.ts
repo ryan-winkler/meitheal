@@ -7,7 +7,6 @@
 import { exportLocalDataAsJson } from "@domains/offline/export-service"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { escapeHtml } from "@lib/safe-html"
 import { settingsStore } from "@lib/settings-store"
 import { exportFilename } from "@lib/export-filename"
 import { showToast } from "@lib/toast"
@@ -22,7 +21,7 @@ import {
   type CustomFieldType,
 } from "@lib/custom-field-defs"
 import { flushRulesSave, withConfigurationMutation, withRulesReplacement } from "@lib/settings-rules-controller"
-import { log } from "@lib/settings-utils"
+import { downloadBlob, log } from "@lib/settings-utils"
 
 type CustomField = CustomFieldDef
 
@@ -127,14 +126,7 @@ export function initDataSettings(): void {
         const response = await fetch("/api/export/settings.json", { signal, cache: "no-store" })
         const payload = await response.json()
         if (!response.ok || !payload || payload._version !== 2 || !Array.isArray(payload.rules) || !Array.isArray(payload.frameworkOverrides)) throw new Error("Settings export failed")
-        const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }))
-        const link = document.createElement("a")
-        link.href = url
-        link.download = exportFilename("Settings", "json")
-        document.body.append(link)
-        link.click()
-        link.remove()
-        URL.revokeObjectURL(url)
+        downloadBlob(JSON.stringify(payload, null, 2), "application/json", exportFilename("Settings", "json"), true)
       })
       showToast("settings.export_success")
     } catch { showToast("settings.export_failed", "error") }

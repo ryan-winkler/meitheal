@@ -30,7 +30,7 @@ import { readWorkspacePreferences, saveWorkspacePreferences } from "@lib/workspa
 import { attachShortcutTooltips } from "@lib/shortcut-tooltip"
 import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, setSingleKeyShortcuts, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { settingsStore } from "@lib/settings-store"
-import { saveSetting, showSettingsSaveError, sanitizeCSS, MAX_THEME_SIZE, log } from "@lib/settings-utils"
+import { downloadBlob, saveSetting, showSettingsSaveError, sanitizeCSS, MAX_THEME_SIZE, log } from "@lib/settings-utils"
 
 const ACCENT_KEY = "meitheal-accent-color"
 
@@ -585,12 +585,7 @@ export function initThemeSettings(): void {
     event.preventDefault()
     const css = localStorage.getItem("meitheal-custom-theme-css")
     if (!css) return
-    const url = URL.createObjectURL(new Blob([css], { type: "text/css" }))
-    const link = document.createElement("a")
-    link.href = url
-    link.download = filename.textContent || "custom-theme.css"
-    link.click()
-    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    downloadBlob(css, "text/css", filename.textContent || "custom-theme.css")
   })
 }
 

@@ -253,7 +253,7 @@ export async function getTasksForView(options: TaskViewOptions = {}, scope: Boar
       selectArgs.push(Math.floor(limit));
     }
 
-    const taskQuery = scopedTaskRead(scope, sourceSql(`SELECT ${columnsSql} FROM scoped_tasks AS tasks${whereSql} ORDER BY created_at DESC, tasks.rowid DESC${limitSql}`, selectArgs));
+    const taskQuery = scopedTaskRead(scope, sourceSql(`SELECT ${columnsSql} FROM scoped_tasks AS tasks${whereSql} ORDER BY created_at DESC, id ASC${limitSql}`, selectArgs));
     const counts = { total: 0, open: 0, active: 0, pending: 0, complete: 0, overdue: 0 };
     const useGlobalCounts = slim || hasPushdownFilter;
     let rows: Record<string, unknown>[];
@@ -284,7 +284,7 @@ export async function getTasksForView(options: TaskViewOptions = {}, scope: Boar
                    COUNT(*) FILTER (WHERE status = 'active' AND deferred_at IS NULL) AS active,
                    COUNT(*) FILTER (WHERE status != 'complete' AND status != 'active' AND deferred_at IS NULL) AS pending
             FROM scoped_tasks AS tasks WHERE 1
-          `, [])),
+          `, []), "select", "minimal"),
         scopedTaskRead(scope, sourceSql(`
             SELECT due_date
             FROM scoped_tasks AS tasks
@@ -293,7 +293,7 @@ export async function getTasksForView(options: TaskViewOptions = {}, scope: Boar
               AND due_date IS NOT NULL
               AND due_date != ''
               AND substr(due_date, 1, 10) < ?
-          `, [upperBound])),
+          `, [upperBound]), "select", "minimal"),
       ], "read");
       rows = tasksRes!.rows as Record<string, unknown>[];
       const cr = (countRes!.rows[0] ?? {}) as Record<string, unknown>;

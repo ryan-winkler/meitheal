@@ -11,6 +11,7 @@ import {
   taskDetailServerSettingKey,
   type TaskDetailLayoutConfig,
 } from "@lib/task-detail-layout"
+import { mountInlineRename } from "@lib/inline-rename"
 import { createTablerSvgElement, type TablerIconName } from "@lib/tabler-svg"
 import { showToast } from "@lib/toast"
 
@@ -236,37 +237,23 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
     const id = item.dataset.layoutItem
     const labelEl = item.querySelector<HTMLElement>(":scope > .td-layout-editor__row > [data-layout-label]")
     if (!id || !labelEl || labelEl.querySelector("input")) return
-
     const defaultLabel = item.dataset.defaultLabel ?? id
-    const input = document.createElement("input")
-    input.type = "text"
-    input.className = "td-layout-editor__rename-input"
-    input.value = draft.labels[id] ?? defaultLabel
-    input.maxLength = 60
-    input.placeholder = defaultLabel
-    input.setAttribute("aria-label", `Rename ${defaultLabel}`)
-
-    let settled = false
-    const finish = (save: boolean) => {
-      if (settled) return
-      settled = true
-      if (save) {
-        const cleaned = input.value.trim().slice(0, 60)
+    mountInlineRename({
+      labelEl,
+      value: draft.labels[id] ?? defaultLabel,
+      placeholder: defaultLabel,
+      maxLength: 60,
+      className: "td-layout-editor__rename-input",
+      signal,
+      onCommit: raw => {
+        const cleaned = raw.trim().slice(0, 60)
         if (!cleaned || cleaned === defaultLabel) delete draft.labels[id]
         else draft.labels[id] = cleaned
-      }
-      labelEl.replaceChildren(document.createTextNode(draft.labels[id] ?? defaultLabel))
-      if (save) commitDraft()
-    }
-
-    input.addEventListener("keydown", (ev) => {
-      if (ev.key === "Enter") { ev.preventDefault(); finish(true) }
-      else if (ev.key === "Escape") { ev.preventDefault(); finish(false) }
+        labelEl.replaceChildren(document.createTextNode(draft.labels[id] ?? defaultLabel))
+        commitDraft()
+      },
+      onCancel: () => labelEl.replaceChildren(document.createTextNode(draft.labels[id] ?? defaultLabel)),
     })
-    input.addEventListener("blur", () => finish(true))
-    labelEl.replaceChildren(input)
-    input.focus()
-    input.select()
   }
 
   root.addEventListener("click", async (event) => {

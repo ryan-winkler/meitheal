@@ -2,6 +2,7 @@ import { browserUuid } from "./browser-uuid"
 import type { FeedbackCursor, FeedbackReceipt, FeedbackReport } from "@domains/support/feedback-queue"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { downloadBlob } from "@lib/settings-utils"
 
 const endpoint = "/api/feedback"
 const labels: Record<string, string> = {
@@ -335,12 +336,7 @@ function initQueue(panel: HTMLElement, queue: HTMLDetailsElement, signal: AbortS
     if (button.hasAttribute("data-download-export")) {
       const reviewed = previews.get(entry)
       if (!reviewed) return
-      const url = URL.createObjectURL(new Blob([reviewed], { type: "application/json" }))
-      const download = document.createElement("a")
-      download.href = url
-      download.download = "meitheal-feedback.json"
-      download.click()
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      downloadBlob(reviewed, "application/json", "meitheal-feedback.json")
       status.textContent = "Reviewed export is ready in your downloads."
     }
   }, { signal })

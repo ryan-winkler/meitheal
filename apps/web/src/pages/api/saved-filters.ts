@@ -1,4 +1,4 @@
-import { withBoardScope } from "@lib/board-http"
+import { boardScopeErrorResponse, withBoardScope } from "@lib/board-http"
 /**
  * Saved Filters API — Phase 31
  *
@@ -22,6 +22,8 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
     const filters = await repo.listFilters(scope)
     return apiJson({ filters })
   } catch (error) {
+    const scopeFailure = boardScopeErrorResponse(error)
+    if (scopeFailure) return scopeFailure
     logApiError("saved-filters", "GET error", error)
     return apiError("Failed to fetch saved filters", 500)
   }
@@ -79,6 +81,8 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "edit" 
 
     return apiJson({ id, name: name.trim(), position }, 201)
   } catch (error) {
+    const scopeFailure = boardScopeErrorResponse(error)
+    if (scopeFailure) return scopeFailure
     logApiError("saved-filters", "POST error", error)
     return apiError("Failed to create saved filter", 500)
   }
@@ -98,6 +102,8 @@ export const DELETE: APIRoute = withBoardScope({ resource: "task", action: "edit
     await repo.deleteFilter(scope, id)
     return apiJson({ deleted: true })
   } catch (error) {
+    const scopeFailure = boardScopeErrorResponse(error)
+    if (scopeFailure) return scopeFailure
     logApiError("saved-filters", "DELETE error", error)
     return apiError("Failed to delete saved filter", 500)
   }

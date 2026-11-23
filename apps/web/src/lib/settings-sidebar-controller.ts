@@ -43,7 +43,9 @@ import {
   type SidebarSectionId,
 } from "@domains/navigation/sidebar-menu"
 import { withAsyncButton } from "@lib/async-button"
+import { browserUuid } from "@lib/browser-uuid"
 import { confirmDialog } from "@lib/confirm-dialog"
+import { mountInlineRename } from "@lib/inline-rename"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { createTablerSvgElement, type TablerIconName } from "@lib/tabler-svg"
 import { showToast } from "@lib/toast"
@@ -55,6 +57,8 @@ import {
   SIDEBAR_ORDER_STORAGE_KEY,
   SIDEBAR_PERSONAL_CLEARED_EVENT,
   SIDEBAR_SERVER_UPDATED_EVENT,
+  bindSidebarHtmlDragReorder,
+  isSafeCustomHref,
 } from "@lib/sidebar-order"
 
 const SETTINGS_DEFAULT_KEYS = [
@@ -72,13 +76,7 @@ const SETTINGS_DEFAULT_KEYS = [
 ]
 
 function customLinkId(): string {
-  const id = crypto.randomUUID?.() ?? Array.from(crypto.getRandomValues(new Uint8Array(12)),
-    byte => byte.toString(16).padStart(2, "0")).join("")
-  return `custom-${id}`
-}
-
-function isSafeCustomHref(href: string): boolean {
-  return /^(\/(?!\/)|https?:\/\/)/i.test(href.trim())
+  return `custom-${browserUuid()}`
 }
 
 function cloneConfig(config: SidebarMenuConfig): SidebarMenuConfig {
@@ -124,15 +122,7 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
     serverCommitted = normalizeSidebarConfig(settings.sidebar_config, SETTINGS_DEFAULT_KEYS)
     draftConfig = cloneConfig(serverCommitted)
 
-    let dragKind: "section" | "item" | null = null
-    let dragId: string | null = null
-    let dropTarget: HTMLElement | null = null
     const openState = new Map<string, boolean>()
-
-    function clearDrop() {
-      dropTarget?.removeAttribute("data-nav-drop")
-      dropTarget = null
-    }
 
     function syncNotices() {
       if (personalNotice) personalNotice.hidden = !hasPersonalSidebarConfig()
@@ -196,32 +186,20 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
     ) {
       const labelEl = rowEl.querySelector<HTMLElement>(":scope > .td-layout-editor__row > [data-nav-label]")
       if (!labelEl || labelEl.querySelector("input")) return
-
-      const input = document.createElement("input")
-      input.type = "text"
-      input.className = "td-layout-editor__rename-input"
-      input.value = currentValue
-      input.placeholder = defaultValue
-      input.maxLength = 64
-      input.setAttribute("aria-label", `Rename ${defaultValue}`)
-
-      let settled = false
-      const finish = (save: boolean) => {
-        if (settled) return
-        settled = true
-        const cleaned = sanitizeLabel(input.value)
-        labelEl.replaceChildren(document.createTextNode(save && cleaned ? cleaned : currentValue))
-        if (save) onCommit(cleaned || defaultValue)
-      }
-
-      input.addEventListener("keydown", ev => {
-        if (ev.key === "Enter") { ev.preventDefault(); finish(true) }
-        else if (ev.key === "Escape") { ev.preventDefault(); finish(false) }
-      }, { signal })
-      input.addEventListener("blur", () => finish(true), { signal })
-      labelEl.replaceChildren(input)
-      input.focus()
-      input.select()
+      mountInlineRename({
+        labelEl,
+        value: currentValue,
+        placeholder: defaultValue,
+        maxLength: 64,
+        className: "td-layout-editor__rename-input",
+        signal,
+        onCommit: raw => {
+          const cleaned = sanitizeLabel(raw)
+          labelEl.replaceChildren(document.createTextNode(cleaned || currentValue))
+          onCommit(cleaned || defaultValue)
+        },
+        onCancel: () => labelEl.replaceChildren(document.createTextNode(currentValue)),
+      })
     }
 
     function renderTree() {
@@ -395,107 +373,26 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
       }
     }, { signal })
 
-    // Native Drag-and-Drop for Sections & Cross-Section Items
-    list.addEventListener("dragstart", event => {
-      if (!event.dataTransfer) return
-      const target = event.target as Element | null
-      const itemHandle = target?.closest<HTMLElement>("[data-nav-item-drag]")
-      if (itemHandle) {
-        const key = itemHandle.closest<HTMLElement>("[data-nav-item-row]")?.dataset.navItemRow
-        if (!key) return
-        dragKind = "item"
-        dragId = key
-        event.dataTransfer.effectAllowed = "move"
-        event.dataTransfer.setData("text/plain", `item:${key}`)
-        return
-      }
-      const secHandle = target?.closest<HTMLElement>("[data-nav-section-drag]")
-      if (secHandle) {
-        const secId = secHandle.closest<HTMLElement>("[data-nav-section-row]")?.dataset.navSectionRow
-        if (!secId) return
-        dragKind = "section"
-        dragId = secId
-        event.dataTransfer.effectAllowed = "move"
-        event.dataTransfer.setData("text/plain", `section:${secId}`)
-      }
-    }, { signal })
-
-    list.addEventListener("dragover", event => {
-      if (!dragKind || !dragId) return
-      const target = event.target as Element | null
-      clearDrop()
-      if (!target) return
-
-      if (dragKind === "section") {
-        const secRow = target.closest<HTMLElement>("[data-nav-section-row]")
-        if (!secRow || secRow.dataset.navSectionRow === dragId) return
-        event.preventDefault()
-        const bounds = secRow.getBoundingClientRect()
-        dropTarget = secRow
-        secRow.setAttribute("data-nav-drop", event.clientY > bounds.top + bounds.height / 2 ? "after" : "before")
-        return
-      }
-
-      if (dragKind === "item") {
-        const itemRow = target.closest<HTMLElement>("[data-nav-item-row]")
-        if (itemRow && itemRow.dataset.navItemRow !== dragId) {
-          event.preventDefault()
-          const bounds = itemRow.getBoundingClientRect()
-          dropTarget = itemRow
-          itemRow.setAttribute("data-nav-drop", event.clientY > bounds.top + bounds.height / 2 ? "after" : "before")
-          return
-        }
-        const secRow = target.closest<HTMLElement>("[data-nav-section-row]")
-        if (secRow) {
-          event.preventDefault()
-          dropTarget = secRow
-          secRow.setAttribute("data-nav-drop", "into")
-        }
-      }
-    }, { signal })
-
-    list.addEventListener("drop", event => {
-      if (!dragKind || !dragId) return
-      const target = event.target as Element | null
-      const kind = dragKind
-      const id = dragId
-      dragKind = null
-      dragId = null
-      clearDrop()
-      if (!target) return
-
-      if (kind === "section") {
-        const secRow = target.closest<HTMLElement>("[data-nav-section-row]")
-        const targetId = secRow?.dataset.navSectionRow
-        if (secRow && targetId && targetId !== id) {
-          event.preventDefault()
-          const bounds = secRow.getBoundingClientRect()
-          draftConfig = reorderSections(draftConfig, id, targetId, event.clientY > bounds.top + bounds.height / 2)
-          renderTree()
-        }
-        return
-      }
-
-      const itemRow = target.closest<HTMLElement>("[data-nav-item-row]")
-      const targetKey = itemRow?.dataset.navItemRow
-      if (itemRow && targetKey && targetKey !== id) {
-        event.preventDefault()
-        const bounds = itemRow.getBoundingClientRect()
-        draftConfig = reorderItem(draftConfig, id, targetKey, event.clientY > bounds.top + bounds.height / 2)
+    bindSidebarHtmlDragReorder(list, signal, {
+      sectionRowAttr: "data-nav-section-row",
+      sectionGripAttr: "data-nav-section-drag",
+      itemRowAttr: "data-nav-item-row",
+      itemGripAttr: "data-nav-item-drag",
+      dropAttr: "data-nav-drop",
+      onSectionDrop: (dragId, targetId, after) => {
+        draftConfig = reorderSections(draftConfig, dragId, targetId, after)
         renderTree()
-        return
-      }
-
-      const secRow = target.closest<HTMLElement>("[data-nav-section-row]")
-      const targetSec = secRow?.dataset.navSectionRow
-      if (targetSec && isSidebarSectionId(targetSec)) {
-        event.preventDefault()
-        draftConfig = moveItemToSection(draftConfig, id, targetSec)
+      },
+      onItemDrop: (dragId, targetKey, after) => {
+        draftConfig = reorderItem(draftConfig, dragId, targetKey, after)
         renderTree()
-      }
-    }, { signal })
-
-    list.addEventListener("dragend", () => { dragKind = null; dragId = null; clearDrop() }, { signal })
+      },
+      onItemIntoSection: (dragId, targetSec) => {
+        if (!isSidebarSectionId(targetSec)) return
+        draftConfig = moveItemToSection(draftConfig, dragId, targetSec)
+        renderTree()
+      },
+    })
 
     // Add Section form
     addSectionBtn?.addEventListener("click", () => setSectionFormOpen(Boolean(addSectionForm?.hidden)), { signal })

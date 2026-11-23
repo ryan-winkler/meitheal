@@ -22,7 +22,7 @@ import {
 } from "@domains/webserver/webserver-config"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { openSettingsHelpModal } from "@lib/settings-help-controller"
-import { whenSectionVisible } from "@lib/settings-utils"
+import { byId as el, whenSectionVisible } from "@lib/settings-utils"
 import { showToast } from "@lib/toast"
 
 interface SupervisorView {
@@ -67,8 +67,6 @@ function formatProvenance(p: WebserverFieldProvenance): { label: string; cls: st
   if (p.source === "dotenv") return { label: p.envVar ? `.env · ${p.envVar}` : ".env", cls: "ws-source ws-source--env" }
   return { label: "Default", cls: "ws-source" }
 }
-
-const el = <T extends HTMLElement>(id: string): T | null => document.getElementById(id) as T | null
 
 function pill(text: string, tone?: "accent" | "ok" | "warn" | "danger"): HTMLSpanElement {
   const s = document.createElement("span")

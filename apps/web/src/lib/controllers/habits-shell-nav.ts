@@ -13,8 +13,9 @@ import { pageLifecycle } from "@lib/page-lifecycle"
 import {
   initUnifiedBarSearchLauncher,
   initUnifiedBarTabOverflow,
+  initUnifiedBarTabsKeyboard,
   initUnifiedBarTitleSwitcher,
-  setUnifiedBarSwitcherActiveState,
+  syncUnifiedBarSectionState,
 } from "@lib/unified-bar-controller"
 
 const HABITS_BAR_ID = "habits-bar"
@@ -37,44 +38,7 @@ function resolveHabitsSectionId(anchorId: string): HabitsSectionId | null {
 }
 
 function updateActiveSectionState(sectionId: HabitsSectionId): void {
-  document
-    .querySelectorAll<HTMLElement>("[data-unified-bar-section]")
-    .forEach((link) => {
-      const active = link.dataset.unifiedBarSection === sectionId
-      link.classList.toggle("is-active", active)
-      link.setAttribute("aria-current", active ? "location" : "false")
-    })
-
-  setUnifiedBarSwitcherActiveState(HABITS_BAR_ID, sectionId)
-}
-
-function initTabsKeyboard(): void {
-  const tabContainer = document.getElementById(`${HABITS_BAR_ID}-tabs`)
-  if (!tabContainer) return
-
-  pageLifecycle.on(tabContainer, "keydown", (event) => {
-    const keyboardEvent = event as KeyboardEvent
-    if (keyboardEvent.key !== "ArrowLeft" && keyboardEvent.key !== "ArrowRight") {
-      return
-    }
-
-    const visibleTabs = Array.from(
-      tabContainer.querySelectorAll<HTMLElement>(
-        "[data-unified-bar-tab]:not([data-overflow-hidden])",
-      ),
-    )
-    const currentIndex = visibleTabs.findIndex((tab) => tab === document.activeElement)
-    if (currentIndex === -1) return
-
-    keyboardEvent.preventDefault()
-    const direction = keyboardEvent.key === "ArrowRight" ? 1 : -1
-    const nextIndex = (currentIndex + direction + visibleTabs.length) % visibleTabs.length
-    const nextTab = visibleTabs[nextIndex]
-    if (!nextTab) return
-
-    nextTab.focus()
-    nextTab.click()
-  })
+  syncUnifiedBarSectionState(HABITS_BAR_ID, sectionId)
 }
 
 /**
@@ -145,7 +109,7 @@ export function initHabitsShellNav(): void {
 
   initSectionLinks()
   initGoToTop()
-  initTabsKeyboard()
+  initUnifiedBarTabsKeyboard(HABITS_BAR_ID)
   initUnifiedBarTitleSwitcher({
     barId: HABITS_BAR_ID,
     onSelect: (sectionId) => {

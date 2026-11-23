@@ -11,7 +11,7 @@ import { notifyInactivityTaskChanged } from "@lib/inactivity-client"
 export interface RelatedLinksDeps {
   getCurrentTaskId: () => string | null
   openTaskDetail: (id: string) => void
-  saveTD: (field: string, value: unknown) => Promise<void>
+  saveTD: (field: string, value: unknown) => Promise<unknown>
   signal?: AbortSignal
 }
 

@@ -116,7 +116,7 @@ export class LaneRepository {
       }
       const { rows: [replacement] } = targetLaneId
         ? await tx.execute(sql`SELECT id, key, includes FROM kanban_lanes WHERE board_id = ${this.scope.boardId} AND id = ${targetLaneId} AND id <> ${id} LIMIT 1`)
-        : await tx.execute(sql`SELECT id, key, includes FROM kanban_lanes WHERE board_id = ${this.scope.boardId} AND id <> ${id} AND EXISTS (SELECT 1 FROM json_each(includes) WHERE value = ${STATUS.PENDING}) ORDER BY position, id LIMIT 1`)
+        : await tx.execute(sql`SELECT id, key, includes FROM kanban_lanes WHERE board_id = ${this.scope.boardId} AND id <> ${id} AND json_valid(includes) AND EXISTS (SELECT 1 FROM json_each(includes) WHERE lower(value) = ${STATUS.PENDING}) ORDER BY position, id LIMIT 1`)
       if (!replacement) {
         throw new LaneDeleteError(
           targetLaneId ? "Choose a valid destination lane on this board" : "Keep a destination lane for existing tasks",
@@ -138,7 +138,7 @@ export class LaneRepository {
         if (Array.isArray(inc) && inc.length) oldStatuses = inc.filter((s): s is string => typeof s === "string")
       } catch { /* fallback to laneKey */ }
       await tx.execute(sql`UPDATE tasks SET status = ${targetStatus}, board_column_id = ${storageBoardId(this.scope) === null ? null : String(replacement.id)}, updated_at = MIN(9007199254740991, MAX(${sourceSql(taskTimestampMs("tasks.updated_at"))} + 1, ${Date.now()}))
-        WHERE ${taskOwnedBy(this.scope)} AND (board_column_id = ${id} OR (board_column_id IS NULL AND status IN (${joinSql(oldStatuses.map(s => sql`${s}`))})))`)
+        WHERE ${taskOwnedBy(this.scope)} AND (board_column_id = ${id} OR (board_column_id IS NULL AND lower(status) IN (${joinSql(oldStatuses.map(s => sql`${s.toLowerCase()}`))})))`)
       await tx.execute(sql`DELETE FROM kanban_lanes WHERE board_id = ${this.scope.boardId} AND id = ${id} AND built_in = 0`)
       await tx.commit()
       return { replacementId: String(replacement.id), replacementKey: String(replacement.key) }

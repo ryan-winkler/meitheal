@@ -2,6 +2,7 @@ import { currentTaskApiContext, taskApiHeaders } from "./task-api"
 import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordVersion } from "./task-api-client"
 import { formatTicketDisplay } from "./task-editor-fields"
 import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-description-editor"
+import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         import { askAIForTask } from "@domains/ai/ai-context-service";
         import { createClientLogger } from "@lib/client-logger";
         import { copyToClipboard } from "@lib/clipboard"
@@ -38,6 +39,7 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
         import { hasPriorityOverlay } from "@lib/layout-shortcuts-controller"
         import { lockTaskStatusWrite, taskApi, type AssigneeDirectory } from "@lib/task-api-client"
         import { initTaskDetailLayoutEditor, initTicketSectionOrder } from "@lib/task-detail-layout-controller"
+        import { browserUuid } from "@lib/browser-uuid"
         import { assigneeFallback } from "@lib/task-assignee-display"
         import { isDoneStatus, normalizeStatus } from "@lib/status-config"
 
@@ -222,6 +224,7 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
         let currentTicketKey: string | null = null
         let pendingDescriptionSave: Promise<boolean> | undefined
         let hasChecklistTextDraft: (() => boolean) | undefined
+        let flushPendingCustomFieldsSave: (() => Promise<void>) | undefined
         let queuedDescriptionTransition: (() => void) | undefined
         let currentCommentTarget: string | null = null
         let commentsReady: Promise<void> = Promise.resolve()
@@ -242,8 +245,7 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
           options?: string[];
         }> = [];
         const RICE_KEYS = ["Reach", "Impact", "Confidence", "Effort"];
-        const drawerSession = crypto.randomUUID?.() ?? Array.from(crypto.getRandomValues(new Uint8Array(16)),
-          byte => byte.toString(16).padStart(2, "0")).join("")
+        const drawerSession = browserUuid()
         let drawerEntry = 0
         tdOverlay.dataset.ticketHistorySession = drawerSession
 
@@ -443,6 +445,7 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
         }
 
         function waitForDescriptionWrite(next: () => void): boolean {
+          if (!descEditContainer?.classList.contains("hidden")) descEditor?.flushToTextarea()
           const dirty = currentTaskId && !descEditContainer?.classList.contains("hidden") &&
             tdDescription.value !== _descOriginalValue
           if (!pendingDescriptionSave && !dirty) return false
@@ -482,6 +485,7 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
           if (!immediate && waitForDetailWrites(() => closeTD(reason, updateLocation))) return
           if (waitForDescriptionWrite(() => closeTD(reason, updateLocation))) return
           if (!immediate && waitForChecklistTextWrite(() => closeTD(reason, updateLocation))) return
+          void flushPendingCustomFieldsSave?.()
           const closing = ++detailGeneration
           const previousCard = _previouslyFocused?.closest<HTMLElement>(".kanban-card")
           const previousDay = _previouslyFocused?.closest<HTMLElement>(".cal-cell")?.dataset.date
@@ -627,6 +631,7 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
           }
           if (waitForDetailWrites(() => { void openTaskDetail(taskId, commentTarget, search, updateLocation) })) return
           if (waitForChecklistTextWrite(() => { void openTaskDetail(taskId, commentTarget, search, updateLocation) })) return
+          void flushPendingCustomFieldsSave?.()
           if (search) searchSession = { handoff: search, lifetime: new AbortController(), dirty: false, pending: 0 }
           detailGeneration++
           const loadedGeneration = detailGeneration
@@ -877,7 +882,7 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
                   ?.addEventListener("click", (e) => {
                     e.preventDefault();
                     openTaskDetail(String(t.parent_id));
-                  });
+                  }, { signal: modalSignal });
                 linkParentDisplay
                   .querySelector(".td-unlink-parent")
                   ?.addEventListener("click", async () => {
@@ -899,11 +904,6 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
                 linkParentDisplay.replaceChildren(none)
               }
             }
-
-            // --- Offline Attachments - Document Preview & Kanban Card Cover (Phase 23) ---
-            (async function renderThumbnails() {
-              // Restore thumbnail logic later if needed
-            })();
 
             // Linked Tickets — children
             const childrenDiv = document.getElementById(
@@ -1095,7 +1095,11 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
               typeIconEl.title = tt.charAt(0).toUpperCase() + tt.slice(1);
             }
 
-            if (tdTitleInput) tdTitleInput.value = String(t.title ?? "")
+            const initialTitle = String(t.title ?? "")
+            if (tdTitleInput) {
+              tdTitleInput.value = initialTitle
+              tdTitleInput.dataset.savedTitle = initialTitle
+            }
             // Update aria-label with actual task title for screen readers
             setInspectorAriaLabel(`Task detail: ${String(t.title ?? "Untitled")}`);
 
@@ -1129,6 +1133,7 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
             }
             renderSavedStatus(taskStatus)
             const description = String(t.description ?? "")
+            if (!descEditContainer?.classList.contains("hidden")) descEditor?.flushToTextarea()
             const keepDescriptionDraft = sameTicket && !descEditContainer?.classList.contains("hidden") &&
               tdDescription.value !== _descOriginalValue
             setDescriptionSaving(false)
@@ -1137,9 +1142,9 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
             _descOriginalValue = description
             if (!keepDescriptionDraft) {
               tdDescription.value = description
+              descEditor?.syncFromTextarea()
               descEditContainer?.classList.add("hidden")
               descView?.classList.remove("hidden")
-              if (!description) enterDescEdit()
             }
 
             (
@@ -1308,35 +1313,11 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
             // Populate principle dropdown
             const principleSelect = document.getElementById(
               "td-principle",
-            ) as HTMLSelectElement;
-            const currentPrincipleId = String(t.principle_id ?? "");
-            if (principleSelect) try {
-              if (currentPillarId && currentPillarId !== "null" && currentPillarId !== "undefined") {
-                const prinRes = await fetch( // nosemgrep
-                  `/api/pillars/${encodeURIComponent(currentPillarId)}/principles`, // nosemgrep
-                  requestOptions,
-                );
-                if (modalSignal.aborted) return
-                if (prinRes.ok) {
-                  const prinData = await prinRes.json()
-                  if (modalSignal.aborted) return
-                  const principles = prinData.principles ?? prinData ?? [];
-                  principleSelect.replaceChildren(new Option("No principle", ""));
-                  (principles as Array<{ id: string; description: string }>).forEach((p) => {
-                    const opt = document.createElement("option");
-                    opt.value = p.id;
-                    opt.textContent = `${p.description.substring(0, 30)}${p.description.length > 30 ? '...' : ''}`;
-                    principleSelect.appendChild(opt);
-                  });
-                  principleSelect.value = currentPrincipleId;
-                }
-              } else {
-                 principleSelect.replaceChildren(new Option("No principle", ""));
-              }
-            } catch {
-              if (modalSignal.aborted) return
-              principleSelect.replaceChildren(new Option(currentPrincipleId, currentPrincipleId));
-            }
+            ) as HTMLSelectElement | null
+            await loadPillarPrinciplesOptions(principleSelect, currentPillarId, {
+              signal: modalSignal,
+              selectedId: String(t.principle_id ?? ""),
+            })
             // Phase 20: Agile hierarchy type
             const tdTaskTypeEl = document.getElementById("td-task-type") as HTMLSelectElement | null;
             if (tdTaskTypeEl) {
@@ -1531,7 +1512,8 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
             taskLoaded = true
             syncInspectorDockMode()
             tdLoaded?.classList.remove("hidden")
-            void renderTaskDescription(description)
+            if (!keepDescriptionDraft && !description) enterDescEdit()
+            else if (!keepDescriptionDraft) void renderTaskDescription(description)
             resizeTitle()
             const finishLoadedTask = () => {
               const liveSignal = _modalAbortController?.signal
@@ -1654,7 +1636,7 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
               if (field === "status") {
                 const task = result.ok ? result.task : {}
                 document.dispatchEvent(new CustomEvent("meitheal:task-status-saved", { detail: { id: taskId, status: task.status, deferred: task.deferred_at != null } }))
-                if (value === "complete" && (!search || generation === detailGeneration)) onTaskCompleted(task)
+                if (isDoneStatus(String(value)) && (!search || generation === detailGeneration)) onTaskCompleted(task)
               }
               return field === "area_id" || !search || generation === detailGeneration
             }
@@ -1680,10 +1662,6 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
           if (sessionBound && generation !== detailGeneration) return false
           if (!sessionBound || generation === detailGeneration) showToast("common.failed_update", "error")
           return false
-        }
-
-        async function saveTD(field: string, value: unknown): Promise<void> {
-          await saveTaskField(field, value)
         }
 
         // F11: Description Edit/Preview UX (simplified)
@@ -1728,7 +1706,7 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
           descEditContainer?.classList.remove("hidden");
           descView?.classList.add("hidden");
           void descEditor?.setMode("markdown");
-          tdDescription?.focus();
+          if (!scroller?.classList.contains("hidden")) tdDescription?.focus();
         }
 
         function setDescriptionSaving(saving: boolean): void {
@@ -1745,6 +1723,7 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
           if (!tdDescription || descSaveBtn?.disabled) return false
           closeTaskReferences()
           if (save) {
+            descEditor?.flushToTextarea()
             const generation = detailGeneration
             const raw = tdDescription.value
             setDescriptionSaving(true)
@@ -1767,6 +1746,7 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
             }
           } else {
             tdDescription.value = _descOriginalValue
+            descEditor?.syncFromTextarea()
           }
           descEditContainer?.classList.add("hidden")
           descView?.classList.remove("hidden")
@@ -1793,9 +1773,20 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
 
         // Auto-save on change
         if (tdTitleInput) {
-          tdTitleInput.addEventListener("blur", (e) =>
-            saveTD("title", (e.target as HTMLTextAreaElement).value),
-          { signal: __signal });
+          tdTitleInput.addEventListener("blur", async (e) => {
+            const inputEl = e.target as HTMLTextAreaElement
+            const next = inputEl.value.trim()
+            const savedTitle = inputEl.dataset.savedTitle ?? ""
+            if (!next) {
+              inputEl.value = savedTitle
+              resizeTitle()
+              return
+            }
+            if (next === savedTitle) return
+            if (await saveTaskField("title", next)) {
+              inputEl.dataset.savedTitle = next
+            }
+          }, { signal: __signal });
           tdTitleInput.addEventListener("input", resizeTitle, { signal: __signal })
         }
 
@@ -1870,25 +1861,25 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
         document
           .getElementById("td-priority")
           ?.addEventListener("change", (e) =>
-            saveTD("priority", Number((e.target as HTMLSelectElement).value)),
+            saveTaskField("priority", Number((e.target as HTMLSelectElement).value)),
           { signal: __signal });
         // Eisenhower urgency auto-save
         document
           .getElementById("td-urgency")
           ?.addEventListener("change", (e) =>
-            saveTD("urgency", Number((e.target as HTMLSelectElement).value)),
+            saveTaskField("urgency", Number((e.target as HTMLSelectElement).value)),
           { signal: __signal });
         // Eisenhower importance auto-save
         document
           .getElementById("td-importance")
           ?.addEventListener("change", (e) =>
-            saveTD("importance", Number((e.target as HTMLSelectElement).value)),
+            saveTaskField("importance", Number((e.target as HTMLSelectElement).value)),
           { signal: __signal });
         // Phase 20: task_type auto-save
         document
           .getElementById("td-task-type")
           ?.addEventListener("change", (e) => {
-            saveTD("task_type", (e.target as HTMLSelectElement).value);
+            saveTaskField("task_type", (e.target as HTMLSelectElement).value);
           }, { signal: __signal });
         document.getElementById("td-area")?.addEventListener("change", async event => {
           const select = event.currentTarget as HTMLSelectElement
@@ -1934,54 +1925,24 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
           const targetTaskId = currentTaskId;
           const generation = detailGeneration;
           pillarPrinciplesController?.abort();
-          saveTD("pillar_id", pillarId);
-          // Auto-clear principle when pillar changes
-          saveTD("principle_id", null);
+          const savePromise = saveTaskField("pillar_id", pillarId);
           const principleSelect = document.getElementById("td-principle") as HTMLSelectElement | null;
           if (principleSelect) {
-            principleSelect.replaceChildren(new Option("No principle", ""));
-            if (pillarId) {
-              const controller = new AbortController();
-              pillarPrinciplesController = controller;
-              try {
-                const prinRes = await fetch(
-                  `/api/pillars/${encodeURIComponent(pillarId)}/principles`,
-                  { signal: controller.signal },
-                );
-                if (
-                  __signal.aborted ||
-                  controller.signal.aborted ||
-                  currentTaskId !== targetTaskId ||
-                  detailGeneration !== generation
-                ) return;
-                if (prinRes.ok) {
-                  const prinData = await prinRes.json();
-                  if (
-                    __signal.aborted ||
-                    controller.signal.aborted ||
-                    currentTaskId !== targetTaskId ||
-                    detailGeneration !== generation
-                  ) return;
-                  const principles = prinData.principles || prinData || [];
-                  principles.forEach((p: any) => {
-                    const opt = document.createElement("option");
-                    opt.value = p.id;
-                    opt.textContent = `${p.description.substring(0, 30)}${p.description.length > 30 ? '...' : ''}`;
-                    principleSelect.appendChild(opt);
-                  });
-                }
-              } catch (err) {
-                if (!(err instanceof DOMException && err.name === "AbortError")) {
-                  log.warn("principles-fetch error", err);
-                }
-              }
-            }
+            const controller = new AbortController();
+            pillarPrinciplesController = controller;
+            await loadPillarPrinciplesOptions(principleSelect, pillarId, {
+              signal: AbortSignal.any([__signal, controller.signal]),
+              truncate: 33,
+              onError: (err) => log.warn("principles-fetch error", err),
+            });
+            if (__signal.aborted || controller.signal.aborted || currentTaskId !== targetTaskId || detailGeneration !== generation) return;
           }
+          await savePromise;
         }, { signal: __signal });
 
         // Principle change auto-save
         document.getElementById("td-principle")?.addEventListener("change", (e) => {
-          saveTD("principle_id", (e.target as HTMLSelectElement).value || null);
+          saveTaskField("principle_id", (e.target as HTMLSelectElement).value || null);
         }, { signal: __signal });
         // Assigned To: auto-save on change + toast feedback (UX2)
         document
@@ -1990,7 +1951,7 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
             const sel = e.target as HTMLSelectElement
             if (sel.disabled || _isPopulating || !currentTaskId) return
             const val = sel.value || null
-            saveTD("assigned_to", val)
+            saveTaskField("assigned_to", val)
             const label = val
               ? (sel.options[sel.selectedIndex]?.textContent ?? val)
               : "Unassigned";
@@ -2029,32 +1990,32 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
         document
           .getElementById("td-progress")
           ?.addEventListener("change", (e) =>
-            saveTD("progress", Number((e.target as HTMLInputElement).value)),
+            saveTaskField("progress", Number((e.target as HTMLInputElement).value)),
           { signal: __signal });
         document
           .getElementById("td-color")
           ?.addEventListener("change", (e) =>
-            saveTD("color", (e.target as HTMLInputElement).value),
+            saveTaskField("color", (e.target as HTMLInputElement).value),
           { signal: __signal });
         document
           .getElementById("td-due-date")
           ?.addEventListener("change", (e) =>
-            saveTD("due_date", (e.target as HTMLInputElement).value || null),
+            saveTaskField("due_date", (e.target as HTMLInputElement).value || null),
           { signal: __signal });
         document
           .getElementById("td-start-date")
           ?.addEventListener("change", (e) =>
-            saveTD("start_date", (e.target as HTMLInputElement).value || null),
+            saveTaskField("start_date", (e.target as HTMLInputElement).value || null),
           { signal: __signal });
         document
           .getElementById("td-end-date")
           ?.addEventListener("change", (e) =>
-            saveTD("end_date", (e.target as HTMLInputElement).value || null),
+            saveTaskField("end_date", (e.target as HTMLInputElement).value || null),
           { signal: __signal });
         document
           .getElementById("td-time-tracked")
           ?.addEventListener("change", (e) =>
-            saveTD(
+            saveTaskField(
               "time_tracked",
               Number((e.target as HTMLInputElement).value) || 0,
             ),
@@ -2062,7 +2023,7 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
 
         // ───── Labels + Subtasks (extracted) ─────
         const labelsApi = initLabelsAndSubtasks({
-          saveTD,
+          saveTD: saveTaskField,
           getCurrentTaskId: () => currentTaskId,
           openTaskDetail,
           signal: __signal,
@@ -2072,12 +2033,13 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
 
         // ───── Custom Fields (extracted) ─────
         const cfApi = initCustomFields({
-          saveTD,
+          saveTD: saveTaskField,
           getSettingsFields: () => _settingsFields,
           signal: __signal,
         })
         const addCFRow = cfApi.addCFRow
         const setPreservedCFEntries = cfApi.setPreservedEntries
+        flushPendingCustomFieldsSave = cfApi.flushPendingCustomFieldsSave
 
 
         // Parent search — debounced type-ahead
@@ -2156,7 +2118,7 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
               /* search failed silently */
             }
           }, 300);
-        });
+        }, { signal: __signal });
 
         parentSearchInput?.addEventListener("keydown", (e) => {
           if (e.key === "Escape" && parentResultsDiv?.style.display === "block") {
@@ -2171,7 +2133,8 @@ import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-desc
         const relatedLinksApi = initRelatedLinks({
           getCurrentTaskId: () => currentTaskId,
           openTaskDetail,
-          saveTD,
+          saveTD: saveTaskField,
+          signal: __signal,
         })
         const loadRelatedLinks = relatedLinksApi.loadRelatedLinks
 

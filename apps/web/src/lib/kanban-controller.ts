@@ -176,7 +176,7 @@ export function initKanbanArea(
       } finally {
         // An accepted move still reserves space until the Board replaces its older totals.
         if (saved) card.draggable = false
-        else pendingMoves.delete(card)
+        else { pendingMoves.delete(card); card.draggable = true }
         card.removeAttribute("aria-busy")
         syncMoveStatus(lane)
       }

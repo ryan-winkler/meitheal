@@ -346,6 +346,7 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     if (event.target instanceof Element && event.target.closest("a[href]")) closeMenu(true)
   }, { signal })
   root.addEventListener(sidebarOrderChanged, () => {
+    sourcesChanged = true
     if (!menu.childElementCount) {
       refreshSources()
       refreshLinks()

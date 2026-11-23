@@ -1,4 +1,4 @@
-import { scopePermits } from "@domains/tasks/board-scope"
+import { scopePermits, type BoardScope } from "@domains/tasks/board-scope"
 import { taskHttpProjection, taskDetailHttpProjection } from "@lib/task-http-projection"
 import { readCurrentHARole } from "@domains/ha/current-admin"
 import { boardScopeErrorResponse, withBoardScope } from "@lib/board-http"
@@ -8,6 +8,13 @@ import type { InValue } from "@libsql/client"
 import { VALID_TASK_TYPES } from "@meitheal/domain-tasks"
 import type { TaskType } from "@meitheal/domain-tasks"
 import {
+  getEntityPillarId,
+  getPillarById,
+  getPrinciplesForPillar,
+  setEntityPillar,
+} from "@domains/pillars"
+import {
+  BoardOperationError,
   parseRRule,
   ensureSchema,
   getPersistenceClient,
@@ -19,6 +26,7 @@ import {
   unavailableBoardResponse,
   UserRepository,
 } from "@domains/tasks"
+import { frameworkPayloadObject } from "../../../lib/rice-lens"
 import { formatTicketKey } from "../../../lib/ticket-key"
 import { dispatchTaskEvent, taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
 import { logApiError } from "../../../lib/api-logger"
@@ -68,6 +76,9 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
   const ticketNum = row.ticket_number != null ? Number(row.ticket_number) : null
   const parentTicketNum = row.parent_ticket_number != null ? Number(row.parent_ticket_number) : null
   const detail = taskDetailHttpProjection(row, scope.boardId, scope.principal.kind === "ha_user" && await readCurrentHARole(scope.principal.id, request.signal) === "admin")
+  const pillarId = await readOptionalTaskPillarId(scope, String(row.id ?? params.id!))
+  const fp = parseFrameworkPayload(row.framework_payload)
+  const principleId = pillarId && typeof fp.principle_id === "string" && fp.principle_id ? fp.principle_id : null
   const visibleParent = detail.parent_id != null
   const parentTicketKey = visibleParent
     ? (typeof row.parent_ticket_ref === "string" && row.parent_ticket_ref
@@ -76,6 +87,8 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
     : null
   const enriched = {
     ...detail,
+    pillar_id: pillarId,
+    principle_id: principleId,
     actions: taskActionHints(scope, row),
     is_promoted: Boolean(row.is_promoted),
     ticket_key: row.ticket_key ?? row.ticket_ref ?? formatTicketKey(ticketNum),
@@ -90,6 +103,25 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
     headers,
   })
 })
+
+function parseFrameworkPayload(raw: unknown): Record<string, unknown> {
+  if (typeof raw !== "string" || !raw.trim()) return {}
+  try {
+    return frameworkPayloadObject(JSON.parse(raw))
+  } catch {
+    return {}
+  }
+}
+
+async function readOptionalTaskPillarId(scope: BoardScope, taskId: string): Promise<string | null> {
+  if (!scopePermits(scope, { resource: "pillar", action: "read" })) return null
+  try {
+    return await getEntityPillarId(scope, "tasks", taskId)
+  } catch (err) {
+    if (err instanceof BoardOperationError && (err.errorCode === "denied" || err.errorCode === "unavailable")) return null
+    throw err
+  }
+}
 
 function normalizeReassignedTarget(value: unknown): string | null | undefined {
   if (value === null) return null
@@ -452,6 +484,67 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
       ? body.blocked_by.trim().slice(0, 500) : null
   }
 
+  const hasPillarUpdate = body.pillar_id !== undefined
+  let nextPillarId: string | null = null
+  if (hasPillarUpdate) {
+    if (body.pillar_id !== null && typeof body.pillar_id !== "string") {
+      return apiError("pillar_id must be a string or null", 400)
+    }
+    nextPillarId = typeof body.pillar_id === "string" && body.pillar_id.trim() ? body.pillar_id.trim() : null
+    if (nextPillarId && nextPillarId.length > 128) {
+      return apiError("pillar_id must be 128 characters or less", 400)
+    }
+  }
+  const hasPrincipleUpdate = body.principle_id !== undefined
+  let nextPrincipleId: string | null = null
+  if (hasPrincipleUpdate) {
+    if (body.principle_id !== null && typeof body.principle_id !== "string") {
+      return apiError("principle_id must be a string or null", 400)
+    }
+    nextPrincipleId = typeof body.principle_id === "string" && body.principle_id.trim() ? body.principle_id.trim() : null
+    if (nextPrincipleId && nextPrincipleId.length > 128) {
+      return apiError("principle_id must be 128 characters or less", 400)
+    }
+  }
+
+  if (hasPillarUpdate || hasPrincipleUpdate) {
+    try {
+      if (hasPillarUpdate && !scopePermits(scope, { resource: "pillar", action: "edit" })) {
+        return apiError("Pillar editing is not permitted", 403)
+      }
+      if (hasPillarUpdate && nextPillarId) {
+        const pillar = await getPillarById(scope, nextPillarId)
+        if (!pillar) return apiError("Invalid pillar_id", 400)
+      }
+      const existingRow = typeof sanitized.framework_payload === "string" ? null : await repo.findById(resolvedId)
+      const fp = typeof sanitized.framework_payload === "string"
+        ? parseFrameworkPayload(sanitized.framework_payload)
+        : parseFrameworkPayload(existingRow?.framework_payload)
+      const currentPillarId = await readOptionalTaskPillarId(scope, resolvedId)
+      const effectivePillarId = hasPillarUpdate ? nextPillarId : currentPillarId
+
+      if (hasPrincipleUpdate) {
+        if (nextPrincipleId) {
+          if (!effectivePillarId) return apiError("Select a pillar before setting a principle", 400)
+          const principles = await getPrinciplesForPillar(scope, effectivePillarId)
+          if (!principles.some(p => p.id === nextPrincipleId)) {
+            return apiError("Invalid principle_id", 400)
+          }
+          fp.principle_id = nextPrincipleId
+        } else {
+          delete fp.principle_id
+        }
+      } else if (hasPillarUpdate && (nextPillarId === null || nextPillarId !== currentPillarId)) {
+        delete fp.principle_id
+      }
+      sanitized.framework_payload = JSON.stringify(fp)
+    } catch (err) {
+      const scopeFailure = boardScopeErrorResponse(err)
+      if (scopeFailure) return scopeFailure
+      throw err
+    }
+  }
+
   if (Object.keys(sanitized).length === 0) {
     return new Response(JSON.stringify({ error: "No fields to update" }), {
       status: 400,
@@ -560,13 +653,30 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
       : apiError("Task not found", 404)
   }
   const updatedRow = update.task
+  if (hasPillarUpdate) {
+    try {
+      const linked = await setEntityPillar(scope, "tasks", resolvedId, nextPillarId)
+      if (!linked && nextPillarId !== null) return apiError("Invalid pillar_id", 400)
+    } catch (err) {
+      const scopeFailure = boardScopeErrorResponse(err)
+      if (scopeFailure) return scopeFailure
+      throw err
+    }
+  }
   const newlyCompleted = completionIntent && !isDoneStatus(update.previousStatus ?? "")
 
   // The common writer commits recent activity and field history with the task mutation.
 
   const updTicketNum = updatedRow.ticket_number != null ? Number(updatedRow.ticket_number) : null
+  const finalPillarId = hasPillarUpdate ? nextPillarId : await readOptionalTaskPillarId(scope, resolvedId)
+  const finalFp = parseFrameworkPayload(updatedRow.framework_payload)
+  const finalPrincipleId = finalPillarId && typeof finalFp.principle_id === "string" && finalFp.principle_id
+    ? finalFp.principle_id
+    : null
   const taskPayload: Record<string, unknown> = {
     ...taskHttpProjection(updatedRow, scope.boardId),
+    pillar_id: finalPillarId,
+    principle_id: finalPrincipleId,
     is_promoted: Boolean(updatedRow.is_promoted),
     ticket_key: updatedRow.ticket_key ?? updatedRow.ticket_ref ?? formatTicketKey(updTicketNum),
   }

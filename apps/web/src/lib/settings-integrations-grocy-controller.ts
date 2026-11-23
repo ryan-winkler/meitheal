@@ -7,9 +7,8 @@
 import { withAsyncButton } from "@lib/async-button"
 import { LEGACY_HASSIO_INGRESS_PATH, normalizeBrowserReachableGrocyUrl } from "@lib/grocy-url-ui"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
-import { saveSetting, log, whenSectionVisible } from "@lib/settings-utils"
+import { whenSectionVisible } from "@lib/settings-utils"
 import { settingsWriteHeaders } from "./settings-store"
 
 function syncOpenGrocyLink(rawUrl: string | undefined): void {

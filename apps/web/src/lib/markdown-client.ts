@@ -19,10 +19,15 @@ function escapeHtml(value: string): string {
 
 function renderInline(raw: string): string {
   const codeSpans: string[] = []
-  let text = escapeHtml(raw).replace(/`([^`]+)`/g, (_m, code: string) => {
+  const linkTokens: string[] = []
+  let text = escapeHtml(raw.replace(/\u0000/g, "")).replace(/`([^`]+)`/g, (_m, code: string) => {
     const idx = codeSpans.push(`<code>${code}</code>`) - 1
     return `\u0000C${idx}\u0000`
   })
+  const stashLink = (anchorHtml: string) => {
+    const idx = linkTokens.push(anchorHtml) - 1
+    return `\u0000L${idx}\u0000`
+  }
 
   // Markdown links: [label](url)
   text = text.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, label: string, url: string) => {
@@ -30,17 +35,23 @@ function renderInline(raw: string): string {
     if (!SAFE_URL_RE.test(decoded)) return label
     const external = /^https?:\/\//i.test(decoded)
     const attrs = external ? ' target="_blank" rel="noopener noreferrer"' : ""
-    return `<a href="${url}"${attrs}>${label}</a>`
+    const formattedLabel = label
+      .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/__([^_\n]+)__/g, "<strong>$1</strong>")
+      .replace(/~~([^~\n]+)~~/g, "<del>$1</del>")
+      .replace(/(^|[^\w*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>")
+      .replace(/(^|[^\w_])_([^_\n]+)_(?!_)/g, "$1<em>$2</em>")
+    return stashLink(`<a href="${url}"${attrs}>${formattedLabel}</a>`)
   })
 
   // Bare http(s) URLs not already inside an anchor tag
   text = text.replace(/(^|[\s(>])(https?:\/\/[^\s<)]+)/g, (_m, prefix: string, url: string) => {
     const cleaned = url.replace(/[.,!?;:]+$/, "")
     const trailing = url.slice(cleaned.length)
-    return `${prefix}<a href="${cleaned}" target="_blank" rel="noopener noreferrer">${cleaned}</a>${trailing}`
+    return `${prefix}${stashLink(`<a href="${cleaned}" target="_blank" rel="noopener noreferrer">${cleaned}</a>`)}${trailing}`
   })
 
-  // Bold, strikethrough, italic
+  // Bold, strikethrough, italic (href attributes are safely stashed)
   text = text
     .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
     .replace(/__([^_\n]+)__/g, "<strong>$1</strong>")
@@ -48,7 +59,9 @@ function renderInline(raw: string): string {
     .replace(/(^|[^\w*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>")
     .replace(/(^|[^\w_])_([^_\n]+)_(?!_)/g, "$1<em>$2</em>")
 
-  return text.replace(/\u0000C(\d+)\u0000/g, (_m, idx: string) => codeSpans[Number(idx)] ?? "")
+  return text
+    .replace(/\u0000L(\d+)\u0000/g, (_m, idx: string) => linkTokens[Number(idx)] ?? "")
+    .replace(/\u0000C(\d+)\u0000/g, (_m, idx: string) => codeSpans[Number(idx)] ?? "")
 }
 
 function splitTableCells(line: string): string[] {

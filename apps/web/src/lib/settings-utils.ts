@@ -58,9 +58,36 @@ export function settingsAction(handler: (event: Event) => unknown): (event: Even
 
 
 
+export const byId = <T extends HTMLElement = HTMLElement>(id: string): T | null =>
+  document.getElementById(id) as T | null
+
+export function domEl<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  className?: string,
+  text?: string,
+): HTMLElementTagNameMap[K] {
+  const node = document.createElement(tag)
+  if (className) node.className = className
+  if (text !== undefined) node.textContent = text
+  return node
+}
+
+/** Trigger a client-side file download from text/JSON content. */
+export function downloadBlob(content: BlobPart, mimeType: string, filename: string, appendToBody = false): void {
+  const url = URL.createObjectURL(new Blob([content], { type: mimeType }))
+  const link = document.createElement("a")
+  link.href = url
+  link.download = filename
+  if (appendToBody) document.body.append(link)
+  link.click()
+  if (appendToBody) link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 /** Defer initial fetches for collapsed Settings sections until revealed. */
 export function whenSectionVisible(target: Element | null, run: () => void): void {
-  const section = target?.closest<HTMLElement>("[data-settings-shell-section]")
+  if (!target) return
+  const section = target.closest<HTMLElement>("[data-settings-shell-section]")
   if (!section || !section.hidden) {
     run()
     return

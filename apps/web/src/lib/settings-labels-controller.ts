@@ -1,4 +1,5 @@
 import { confirmDialog } from "./confirm-dialog"
+import { domEl as element } from "./settings-utils"
 import { showToast } from "./toast"
 
 interface LabelData {
@@ -43,11 +44,6 @@ function readLabel(value: unknown, historicalColor = true): LabelData | null {
   if (!historicalColor && (typeof label.hex_color !== "string" || !/^#?[a-f0-9]{6}$/i.test(label.hex_color))) return null
   return Number.isSafeInteger(label.id) && label.id > 0 && typeof label.title === "string"
     ? { id: label.id, title: label.title, hex_color: color(label.hex_color) } : null
-}
-function element<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string) {
-  const node = document.createElement(tag)
-  if (className) node.className = className
-  return node
 }
 
 /** The Settings bootstrap owns this controller and its entire page lifetime. */

@@ -4,8 +4,9 @@
  * Drives Plugin Health (EGM compliance), External Connectors, Installed Custom
  * Plugins, 2-step "Build one with AI" modal, and Reference/Get Listed dialogs.
  */
+import { copyToClipboard } from "@lib/clipboard"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { whenSectionVisible } from "@lib/settings-utils"
+import { byId, domEl as el, whenSectionVisible } from "@lib/settings-utils"
 import { showToast } from "@lib/toast"
 
 type Tone = "healthy" | "warning" | "critical" | "inactive"
@@ -71,23 +72,12 @@ const SVG_ATTRS = new Set([
 ])
 const JSON_HDR = { "Content-Type": "application/json" }
 
-const byId = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T | null
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, txt?: string) => {
-  const n = document.createElement(tag)
-  if (cls) n.className = cls
-  if (txt !== undefined) n.textContent = txt
-  return n
-}
 const apiReq = (url: string, method: string, body?: unknown) =>
   fetch(url, { method, ...(body !== undefined ? { headers: JSON_HDR, body: JSON.stringify(body) } : {}) })
 
 async function copyText(text: string, okMsg: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text)
-    showToast(okMsg, "success")
-  } catch {
-    showToast("Could not copy to clipboard.", "error")
-  }
+  const ok = await copyToClipboard(text)
+  showToast(ok ? okMsg : "Could not copy to clipboard.", ok ? "success" : "error")
 }
 
 function makeBadge(tone: Tone, label: string): HTMLElement {

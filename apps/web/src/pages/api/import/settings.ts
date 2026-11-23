@@ -4,6 +4,7 @@ import { restoreCustomFramework } from "@domains/strategy/custom-framework-repos
 import { saveOverrides } from "@domains/strategy/framework-repository"
 import { parseRuleInput, RuleInputError } from "@domains/strategy/rule-input"
 import { replaceRules } from "@domains/strategy/rule-repository"
+import { isPrivateWorkSetting } from "@domains/tasks/integration-destinations"
 import {
   ensureSchema,
   getPersistenceClient,
@@ -255,7 +256,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
       if (value === undefined) {
         continue
       }
-      if (key === "ai-custom-url-approved" || isSecretSetting(key)) continue
+      if (key === "ai-custom-url-approved" || isSecretSetting(key) || isPrivateWorkSetting(key)) continue
       if (!ALLOWED_KEYS.has(key)) {
         logApiWarn("import-settings", `Rejected unknown key: ${key}`)
         continue

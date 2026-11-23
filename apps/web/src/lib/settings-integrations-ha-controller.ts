@@ -7,7 +7,7 @@
 import { withAsyncButton } from "@lib/async-button"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
-import { saveSettings, showSettingsSaveError, log } from "@lib/settings-utils"
+import { saveSettings, showSettingsSaveError } from "@lib/settings-utils"
 
 /** Shared helper: read entity value from EntitySelector (handles select OR manual input) */
 export function readEntityValue(id: string): string {

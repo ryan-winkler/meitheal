@@ -7,6 +7,7 @@ import { withAsyncButton } from "@lib/async-button"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { safeIngressHref } from "@lib/ingress-navigation"
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { byId, domEl as el, whenSectionVisible } from "@lib/settings-utils"
 import { createTablerSvgElement } from "@lib/tabler-svg"
 import { showToast } from "@lib/toast"
 
@@ -39,13 +40,6 @@ interface BoardEntry extends BoardGrant {
   state?: string
 }
 
-const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T | null
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string) => {
-  const node = document.createElement(tag)
-  if (className) node.className = className
-  if (text !== undefined) node.textContent = text
-  return node
-}
 const isExpired = (iso: string | null) =>
   iso !== null && (!Number.isFinite(Date.parse(iso)) || Date.parse(iso) <= Date.now())
 const metaContent = (name: string) =>
@@ -580,19 +574,7 @@ export function initAgentTokensSettings(): void {
     return
   }
 
-  const section = byId("automation-ai-settings")?.closest<HTMLElement>("[data-settings-shell-section]")
-    ?? byId("ai-agents-settings")
-    ?? byId("automation-ai-settings")
-  if (!section || !section.hidden) {
+  whenSectionVisible(byId("automation-ai-settings") ?? byId("ai-agents-settings"), () => {
     void loadTokens()
-  } else {
-    const observer = new MutationObserver(() => {
-      if (!section.hidden) {
-        observer.disconnect()
-        void loadTokens()
-      }
-    })
-    observer.observe(section, { attributes: true, attributeFilter: ["hidden"] })
-    signal.addEventListener("abort", () => observer.disconnect(), { once: true })
-  }
+  })
 }

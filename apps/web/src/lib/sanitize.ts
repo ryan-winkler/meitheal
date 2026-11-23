@@ -70,10 +70,14 @@ function stashInlineCodeSpans(text: string, stash: (value: string) => string): s
   return out
 }
 
+function safeFromCodePoint(cp: number): string {
+  return Number.isInteger(cp) && cp >= 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : ""
+}
+
 function decodeHtmlEntitiesQuick(value: string): string {
   return value
-    .replace(/&#(\d+);?/g, (_m, n: string) => String.fromCodePoint(Number(n)))
-    .replace(/&#x([0-9a-f]+);?/gi, (_m, n: string) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&#(\d+);?/g, (_m, n: string) => safeFromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);?/gi, (_m, n: string) => safeFromCodePoint(parseInt(n, 16)))
     .replace(/&colon;/gi, ":")
     .replace(/&tab;/gi, "\t")
     .replace(/&newline;/gi, "\n")

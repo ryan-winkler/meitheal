@@ -4,8 +4,9 @@ import {
   initUnifiedBarNewTaskButton,
   initUnifiedBarSearchLauncher,
   initUnifiedBarTabOverflow,
+  initUnifiedBarTabsKeyboard,
   initUnifiedBarTitleSwitcher,
-  setUnifiedBarSwitcherActiveState,
+  syncUnifiedBarSectionState,
 } from "@lib/unified-bar-controller"
 
 const log = createClientLogger("app", "page-shell")
@@ -79,20 +80,7 @@ export function initPageShellNavigation<SectionId extends string>({
   }
 
   function updateActiveState(sectionId: SectionId): void {
-    document
-      .querySelectorAll<HTMLElement>("[data-unified-bar-section]")
-      .forEach((link) => {
-        const active = link.dataset.unifiedBarSection === sectionId
-        link.classList.toggle("is-active", active)
-        if (link.matches('[role="tab"]')) {
-          link.setAttribute("aria-selected", String(active))
-        } else if (link.matches("a[href]")) {
-          link.setAttribute("aria-current", active ? "location" : "false")
-        }
-        link.setAttribute("tabindex", active ? "0" : "-1")
-      })
-
-    setUnifiedBarSwitcherActiveState(barId, sectionId)
+    syncUnifiedBarSectionState(barId, sectionId, { manageTabindex: true })
   }
 
   function scrollToAnchor(
@@ -186,32 +174,7 @@ export function initPageShellNavigation<SectionId extends string>({
     })
   }
 
-  const tabContainer = document.getElementById(`${barId}-tabs`)
-  if (tabContainer) {
-    pageLifecycle.on(tabContainer, "keydown", (event) => {
-      const keyboardEvent = event as KeyboardEvent
-      if (keyboardEvent.key !== "ArrowLeft" && keyboardEvent.key !== "ArrowRight") {
-        return
-      }
-
-      const visibleTabs = Array.from(
-        tabContainer.querySelectorAll<HTMLElement>(
-          "[data-unified-bar-tab]:not([data-overflow-hidden])",
-        ),
-      )
-      const currentIndex = visibleTabs.findIndex((tab) => tab === document.activeElement)
-      if (currentIndex === -1) return
-
-      keyboardEvent.preventDefault()
-      const direction = keyboardEvent.key === "ArrowRight" ? 1 : -1
-      const nextIndex = (currentIndex + direction + visibleTabs.length) % visibleTabs.length
-      const nextTab = visibleTabs[nextIndex]
-      if (!nextTab) return
-
-      nextTab.focus()
-      nextTab.click()
-    })
-  }
+  initUnifiedBarTabsKeyboard(barId)
 
   initUnifiedBarTitleSwitcher({
     barId,

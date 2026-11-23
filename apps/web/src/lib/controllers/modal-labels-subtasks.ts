@@ -12,7 +12,7 @@ import { defaultChildTaskType, normalizeEditableTaskType } from "@lib/task-edito
 import { showToast } from "@lib/toast"
 
 export interface LabelsSubtasksDeps {
-  saveTD: (field: string, value: unknown) => Promise<void>
+  saveTD: (field: string, value: unknown) => Promise<unknown>
   getCurrentTaskId: () => string | null
   openTaskDetail: (id: string) => void
   signal?: AbortSignal
@@ -117,6 +117,7 @@ export function initLabelsAndSubtasks({ saveTD, getCurrentTaskId, openTaskDetail
         const res = await fetch("/api/tasks", {
           method: "POST",
           headers: ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" },
+          signal,
           body: JSON.stringify({
             title,
             parent_id: currentTaskId,

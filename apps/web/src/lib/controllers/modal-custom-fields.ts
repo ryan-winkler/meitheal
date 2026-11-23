@@ -7,7 +7,7 @@
  *      and debounced save. Depends on saveTD + settingsFields from parent.
  */
 export interface CustomFieldsDeps {
-  saveTD: (field: string, value: unknown) => Promise<void>
+  saveTD: (field: string, value: unknown) => Promise<unknown>
   getSettingsFields: () => Array<{ name: string; type: string; options?: string[] }>
   signal?: AbortSignal
 }
@@ -18,6 +18,7 @@ export interface CustomFieldsDeps {
 export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFieldsDeps): {
   addCFRow: (key: string, value: string, fieldType?: string, options?: string[]) => void
   setPreservedEntries: (entries: Record<string, unknown>) => void
+  flushPendingCustomFieldsSave: () => Promise<void>
 } {
   const opts = signal ? { signal } : undefined
   let preservedEntries: Record<string, unknown> = {}
@@ -26,9 +27,13 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
     preservedEntries = { ...entries }
   }
 
+  function getCustomFieldsContainer(): HTMLElement | null {
+    return document.getElementById("td-custom-fields")
+  }
+
   function getCFFromUI(): Record<string, unknown> {
     const result: Record<string, unknown> = { ...preservedEntries }
-    document.querySelectorAll(".td-cf-row").forEach((row) => {
+    getCustomFieldsContainer()?.querySelectorAll(".td-cf-row").forEach((row) => {
       const key = (
         row.querySelector(".td-cf-key") as HTMLInputElement
       )?.value.trim()
@@ -51,21 +56,35 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
   }
 
   let _saveCFTimer: ReturnType<typeof setTimeout> | null = null
+  let cfDirty = false
   signal?.addEventListener("abort", () => {
     if (_saveCFTimer) {
       clearTimeout(_saveCFTimer)
       _saveCFTimer = null
     }
+    cfDirty = false
   }, { once: true })
 
-  function saveCF() {
-    // Debounce the actual API save
+  async function flushPendingCustomFieldsSave(): Promise<void> {
+    if (_saveCFTimer) {
+      clearTimeout(_saveCFTimer)
+      _saveCFTimer = null
+    }
+    if (!cfDirty || signal?.aborted) return
+    cfDirty = false
+    await saveTD("custom_fields", JSON.stringify(getCFFromUI()))
+  }
+
+  function saveCF(immediate = false) {
+    cfDirty = true
+    if (immediate) {
+      void flushPendingCustomFieldsSave()
+      return
+    }
     if (_saveCFTimer) clearTimeout(_saveCFTimer)
     _saveCFTimer = setTimeout(() => {
       _saveCFTimer = null
-      if (signal?.aborted) return
-      const all = getCFFromUI()
-      saveTD("custom_fields", JSON.stringify(all))
+      void flushPendingCustomFieldsSave()
     }, 400)
   }
 
@@ -75,15 +94,12 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
     fieldType: string = "text",
     options?: string[],
   ) {
-    const cfDiv = document.getElementById(
-      "td-custom-fields",
-    ) as HTMLElement
+    const cfDiv = getCustomFieldsContainer() as HTMLElement
     const row = document.createElement("div")
     row.className = "td-cf-row"
     row.style.cssText = "display:flex;gap:6px;align-items:center;"
 
     // Key label (always a readonly text input for consistency)
-    let valueHtml = ""
     let valueEl: HTMLElement
     if (fieldType === "checkbox") {
       const isChecked =
@@ -159,13 +175,13 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
       }, opts)
     } else {
       const valInput = row.querySelector(".td-cf-val")!
-      valInput.addEventListener("blur", saveCF, opts)
-      valInput.addEventListener("input", saveCF, opts)
+      valInput.addEventListener("blur", () => saveCF(true), opts)
+      valInput.addEventListener("input", () => saveCF(), opts)
     }
 
     row.querySelector(".td-cf-remove")!.addEventListener("click", () => {
       row.remove()
-      saveCF()
+      saveCF(true)
     }, opts)
     cfDiv.appendChild(row)
   }
@@ -215,22 +231,6 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
           fields: settingsOnly,
         })
       }
-    }
-    // Add any custom keys from existing rows not in our predefined lists
-    const allPredefined = new Set(
-      fieldCategories.flatMap((c) => c.fields),
-    )
-    const existingCustom: string[] = []
-    document.querySelectorAll(".td-cf-key").forEach((el) => {
-      const val = (el as HTMLInputElement).value.trim()
-      if (val && !allPredefined.has(val) && !currentKeys.has(val))
-        existingCustom.push(val)
-    })
-    if (existingCustom.length > 0) {
-      result.push({
-        label: "🔧 Custom",
-        fields: [...new Set(existingCustom)].sort(),
-      })
     }
     return result
   }
@@ -386,5 +386,5 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
     }
   }, opts)
 
-  return { addCFRow, setPreservedEntries }
+  return { addCFRow, setPreservedEntries, flushPendingCustomFieldsSave }
 }

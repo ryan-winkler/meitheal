@@ -1230,41 +1230,6 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     cursor: default;
   }
 
-  /* ── G28: Calendar Event Cards — polished ────────────── */
-  :global(.cal-event-card) {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--border);
-    transition: background 0.15s ease;
-  }
-  :global(.cal-event-card:hover) {
-    background: rgba(255, 255, 255, 0.02);
-  }
-  :global(.cal-event-card__time) {
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--accent);
-    min-width: 64px;
-    flex-shrink: 0;
-    font-variant-numeric: tabular-nums;
-  }
-  :global(.cal-event-card__summary) {
-    font-size: 13px;
-    color: var(--text);
-    flex: 1;
-    font-weight: 500;
-  }
-  :global(.cal-event-card__source) {
-    font-size: 10px;
-    color: var(--text-muted);
-    flex-shrink: 0;
-    background: rgba(255, 255, 255, 0.04);
-    padding: 2px 6px;
-    border-radius: 6px;
-  }
-
   /* ── W2: Loading skeleton shimmer ────────────────────── */
   :global(.skeleton-line) {
     height: 14px;
@@ -1554,8 +1519,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
       animation: none !important;
     }
     :global(.habit-card),
-    :global(.habit-card__complete),
-    :global(.cal-event-card) {
+    :global(.habit-card__complete) {
       transition: none !important;
     }
   }
