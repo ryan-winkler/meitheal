@@ -74,7 +74,8 @@ export function bindSidebarBoards(pageSignal: AbortSignal) {
     window.addEventListener("resize", positionBoardPopup, { signal })
     window.addEventListener("scroll", positionBoardPopup, { signal, passive: true })
     window.addEventListener("meitheal:appearance-changed", () => {
-      if (navbar() && !children.hidden) setCollapsed(true)
+      // Keep an open hierarchy while it owns focus, such as an Area rename draft.
+      if (navbar() && !children.hidden && !children.contains(document.activeElement)) setCollapsed(true)
     }, { signal })
     const escapePopup = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.key !== "Escape" || !popup() || children.hidden) return

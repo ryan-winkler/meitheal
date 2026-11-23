@@ -70,6 +70,20 @@ export function initQuickActions(
     close()
     const card = button.closest<HTMLElement>(".kanban-card")
     card?.querySelector<HTMLElement>(".card-more-btn")?.focus({ preventScroll: true })
+    // Preview the color now and restore the saved one if the write is rejected.
+    const previous = card && {
+      marked: card.hasAttribute("data-task-color"),
+      taskColor: card.style.getPropertyValue("--knight-task-color"),
+      accent: card.style.getPropertyValue("--card-accent"),
+    }
+    const restore = () => {
+      if (!card || !previous) return
+      card.toggleAttribute("data-task-color", previous.marked)
+      for (const [property, value] of [["--knight-task-color", previous.taskColor], ["--card-accent", previous.accent]] as const) {
+        if (value) card.style.setProperty(property, value)
+        else card.style.removeProperty(property)
+      }
+    }
     if (card) {
       if (color) {
         card.setAttribute("data-task-color", "")
@@ -92,7 +106,9 @@ export function initQuickActions(
       await refreshBoard({ taskId })
       toast(color ? "Color updated" : "Color cleared", "success")
     } catch {
-      if (!__signal.aborted) toast(color ? "Failed to set color" : "Failed to clear color", "error")
+      if (__signal.aborted) return
+      restore()
+      toast(color ? "Failed to set color" : "Failed to clear color", "error")
     } finally {
       button.disabled = false
     }

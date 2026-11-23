@@ -22,7 +22,7 @@ Save notifications use the selected theme's text and card colors. A colored edge
 
 ## Configure the sidebar
 
-Choose **Reorder sidebar** at the foot of the expanded sidebar or mobile drawer. Drag a handle to move a destination with its group, including **Tasks** with its pinned views and the Household **Groups** with their project tree. You can also select a handle and tap **Move up** or **Move down**, or focus a handle and press **↑** or **↓**. Choose **Done** or press **Escape** to finish. The order is saved in this browser. Saving or resetting **Sidebar Configuration** in Settings returns this browser to the saved configuration.
+Open the keyboard menu at the foot of the sidebar or mobile drawer and choose **Edit menu**. Focus moves to the first move handle. Drag a handle to move a destination within or between sections, including **Boards** with its Household, Areas and Projects. Focus a handle and press **↑** or **↓**, or on a touch screen tap **Move up** or **Move down** beside the destination. Choose **Leave edit mode** or press **Escape** to finish; focus returns to the control that opened the editor. The order is saved in this browser. Task views pinned before this editor appear as sidebar items the first time the page loads. Saving or resetting **Sidebar Configuration** in Settings returns this browser to the saved configuration.
 
 In **Settings → Navigation & Shortcuts → Sidebar Configuration**, the **Areas** visibility and label controls apply to the Household group tree. Positioning **Boards** in the configured order places the Household tree immediately after it. Reordering preserves the labels and custom links you are editing. Each group retains its project collapse control.
 
@@ -127,9 +127,9 @@ Within the same Today visit, a saved status change from Work or task Details upd
 
 An accent chosen in **Look & Feel** stays in this browser. The keyboard focus color follows a readable version of the accent and keeps at least 3:1 contrast with the page, even when the accent matches the page background. Use **Reset** beside the color swatches to return to the palette's default accent. Filled primary buttons choose readable dark or light text for a custom accent, including its hover state. Native date and select controls follow the same effective Light or Dark mode as the app. Form hints stay readable when the input receives focus.
 
-- Open **Look & Feel** to choose the theme, accent, typeface, neutral palette, corner roundness, content width, page headers, and panel style. Choices preview live; select **Save appearance** to apply them in this browser. A save captures the choices shown when you select **Save appearance**. If you reset or edit while the save is pending, those changes stay in preview until you save again.
+- Open **Look & Feel** to choose the theme, accent, typeface, neutral palette, corner roundness, content width, page headers, and panel style. Choices preview live; select **Save appearance** to apply them. The theme is a server-wide setting, so a saved theme change applies to everyone using this installation. The other appearance choices and the accent save in this browser only. A save captures the choices shown when you select **Save appearance**. If you reset or edit while the save is pending, those changes stay in preview until you save again.
 
-- The same **Look & Feel** form also holds the navigation layout, navigation color, navigation edges, and sidebar behavior. Choices preview live until you select **Save appearance** or **Discard**. **Reset to defaults** previews the original choices, including the default accent; save to apply them.
+- The same **Look & Feel** form also holds the navigation layout, navigation color, navigation edges, and sidebar behavior. Choices preview live until you select **Save appearance** or **Discard**. **Reset to defaults** previews the original choices, including the default accent and Home Assistant matching; save to apply them. Reset keeps the selected theme, so saving after a reset keeps the current theme.
 
 Top navigation replaces the desktop sidebar with horizontal destination lists and one **More** disclosure for destinations that do not fit. Crowded Tasks view links use the same disclosure. The current destination stays visible when it fits. The links retain their URLs, so opening them in a new tab and Home Assistant ingress navigation continue to work. Use arrow keys or Home/End to move through the open disclosure; Escape closes it and returns focus to More. Resizing keeps the focused link reachable, including opening More if that link moves into it. The Areas disclosure opens its existing hierarchy; Escape closes it and returns focus to its summary. Phones retain their mobile navigation in either layout. Pinned Task shortcuts return when a desktop Top navigation layout switches to the mobile drawer. Floating navigation adds inset edges; floating panels affect task detail, search and the day drawer. **Fluid** removes the Settings reading-width limit; **Boxed** centers content within a reading width.
 
@@ -139,6 +139,7 @@ If an appearance save reports a browser storage error, the current appearance an
 
 If the theme still resets:
 
+- Select **Save appearance** before you leave or reopen Settings. Unsaved choices are only a preview.
 - Check that `/api/settings` writes are not failing in the browser network panel.
 - Check whether local storage is being cleared by privacy tooling.
 

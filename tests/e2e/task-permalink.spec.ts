@@ -138,7 +138,7 @@ test.describe(() => {
       await expect(close).toBeFocused()
 
       detailResponse.resolve()
-      const first = detail.getByRole("button", { name: "Favorite" })
+      const first = detail.locator("#td-toggle-promote")
       const last = detail.locator("#td-section-activity > summary")
       await expect(first).toBeVisible()
       await first.focus()

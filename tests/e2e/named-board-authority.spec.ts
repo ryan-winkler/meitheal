@@ -243,7 +243,8 @@ test("a child can move and edit a named ticket while completion and deletion rem
   await new HierarchyRepository(db, await currentBoardScope(db, home, parent)).createArea({ id: "home-area", name: "An explicit Area" })
   const created = await tasks.create(child, home, content, { areaId: "home-area" })
   if (!created.ok) throw new Error("Expected an authorized ticket")
-  expect(created.value.ticket).toMatch(/^[A-Z2-7]{8}-1$/)
+  // A new Board suggests its ticket prefix from its name.
+  expect(created.value.ticket).toBe("HOME-1")
   const task = created.value.id
 
   const edited = await tasks.edit(child, home, task, created.value.version, { ...content, title: "Finish revised project" })

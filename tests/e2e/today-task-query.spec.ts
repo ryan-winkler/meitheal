@@ -123,9 +123,9 @@ test("Today reads full queue counts without materializing hidden rows", async ()
     await addTask("complete-next-day", { status: "complete", updated: dayStart + 86_400_000 })
     await expect(getTodayTaskRows(date, false, undefined, undefined, scope)).resolves.toEqual({
       completedTasks: [
-        { id: "complete-ms", title: "complete-ms" },
-        { id: "complete-iso", title: "complete-iso" },
-        { id: "complete-start", title: "complete-start" },
+        { id: "complete-ms", title: "complete-ms", ticket_key: null },
+        { id: "complete-iso", title: "complete-iso", ticket_key: null },
+        { id: "complete-start", title: "complete-start", ticket_key: null },
       ],
       completedTodayCount: 3,
       openUnscheduledCount: 2,

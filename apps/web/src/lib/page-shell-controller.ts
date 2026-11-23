@@ -125,8 +125,8 @@ export function initPageShellNavigation<SectionId extends string>({
   function syncFromHash(): void {
     const hash = window.location.hash.replace("#", "")
     const sectionId = hash ? resolveSectionId(hash) : null
-    trackLinkedSection(sectionId ?? (preserveOverviewOnLoad ? defaultSectionId : null), sectionId !== null)
     updateActiveState(sectionId ?? defaultSectionId)
+    trackLinkedSection(sectionId ?? (preserveOverviewOnLoad ? defaultSectionId : null), sectionId !== null)
   }
 
   const selectors = ["[data-unified-bar-section-link]", ...sectionLinkSelectors]
@@ -273,11 +273,18 @@ export function initPageShellSectionTracking<SectionId extends string>(
     linkedSection = null
     let mostVisibleSectionId: SectionId | null = null
     let greatestVisibleHeight = 0
+    // At the top of the page the first section is current, even when a taller
+    // section below it fills more of the viewport.
+    const atTop = window.scrollY <= 0
 
     for (const section of sections) {
       const { top, bottom } = section.getBoundingClientRect()
-      const visibleHeight = Math.min(window.innerHeight, bottom) - Math.max(0, top)
       const sectionId = resolveSectionId(section.id)
+      if (atTop && sectionId && bottom > top) {
+        mostVisibleSectionId = sectionId
+        break
+      }
+      const visibleHeight = Math.min(window.innerHeight, bottom) - Math.max(0, top)
       if (sectionId && visibleHeight > greatestVisibleHeight) {
         greatestVisibleHeight = visibleHeight
         mostVisibleSectionId = sectionId
@@ -301,7 +308,9 @@ export function initPageShellSectionTracking<SectionId extends string>(
     const element = sectionId ? document.getElementById(sectionId) : null
     linkedSection = element ? { element, wasVisible: false } : null
     syncLinkedSectionVisibility()
-    if (!awaitVisibility && !linkedSection?.wasVisible) linkedSection = null
+    // A restored or retained scroll position can leave the requested section
+    // out of view; follow the section that is actually visible instead.
+    if (!awaitVisibility && !linkedSection?.wasVisible) resumeSectionTracking()
   }
 
   if (sections.length > 0) {

@@ -1593,7 +1593,8 @@ if (groupByProject) {
   }
   .kanban-card-actions {
     display: flex;
-    flex-wrap: nowrap;
+    /* Narrow cards wrap the touch-sized actions instead of clipping them. */
+    flex-wrap: wrap;
     align-items: center;
     gap: 2px;
     border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);

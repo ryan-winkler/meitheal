@@ -1231,6 +1231,9 @@ test("member can opt into Home Assistant colors and keep the saved fallback", as
   await expect(match).toBeChecked()
   await parentColor("--primary-text-color", "#121929")
   await expect(root).toHaveAttribute("data-ha-match", "light")
+  // Look and Feel choices are drafts until saved.
+  await content.locator("#appearance-save-btn").click()
+  await expect(content.locator("#appearance-dirty-bar")).toBeHidden()
   await page.reload()
   await expect(match).toBeChecked()
   await expect(root).toHaveAttribute("data-ha-match", "light")

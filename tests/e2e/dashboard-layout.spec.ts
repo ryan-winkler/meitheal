@@ -142,13 +142,14 @@ test.describe("Dashboard layout", () => {
     await expect(list).toHaveAttribute("data-dashboard-drag-ready", "")
     const grip = rows.first().locator("[data-dashboard-drag]")
     const source = await grip.boundingBox()
-    const target = await rows.nth(1).locator("[data-dashboard-drag]").boundingBox()
+    const target = await rows.nth(1).boundingBox()
     if (!source || !target) throw new Error("Drag handles are unavailable")
     const startX = source.x + source.width / 2
     const startY = source.y + source.height / 2
     await page.mouse.move(startX, startY)
     await page.mouse.down()
-    await page.mouse.move(startX, target.y + target.height, { steps: 20 })
+    // A dragged row moves after the next row once the pointer passes that row's midpoint.
+    await page.mouse.move(startX, target.y + target.height * 0.75, { steps: 20 })
     await page.mouse.up()
     await expect(rows.first()).toHaveAttribute("data-dashboard-editor-widget", momentum)
     const sections = page.locator("#dashboard-shell > [data-dashboard-section]")

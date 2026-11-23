@@ -218,7 +218,7 @@ function bindAppearanceForm(form: HTMLFormElement): void {
         // Custom has nothing to preview until CSS is imported, so keep the saved theme.
         const preview = snap.theme === "custom" && !readAppearanceValue("meitheal-custom-theme-css")
           && committed.theme && isThemeMode(committed.theme) ? committed.theme : snap.theme
-        applyTheme(preview, preview === "auto")
+        applyTheme(preview)
         showCustomThemeSection(snap.theme === "custom")
       }
       const preview = { matchHaTheme: Boolean(snap.matchHaTheme), accent: snap.accent ?? null }
@@ -257,8 +257,9 @@ function bindAppearanceForm(form: HTMLFormElement): void {
 
     syncCommittedTheme = (mode: string) => {
       // Importing or removing custom CSS commits the theme immediately, so an
-      // unsaved Custom choice follows it; other unsaved choices stay drafts.
-      const follow = !isAppearanceDraftDirty(committed, draft) || draft.theme === "custom"
+      // unsaved Custom choice, or an unchanged theme, follows it; another
+      // unsaved theme choice stays a draft.
+      const follow = draft.theme === committed.theme || draft.theme === "custom"
       committed.theme = mode
       if (follow) {
         draft.theme = mode
@@ -400,6 +401,9 @@ function bindAppearanceForm(form: HTMLFormElement): void {
     event.preventDefault()
     if (saving) return
     const submitted = cloneAppearanceSnapshot(draft)
+    // Navigation aborts this signal and restores the committed preview; a save
+    // that finishes afterwards must not re-apply the abandoned draft.
+    const lifecycleSignal = pageLifecycle.signal
     saving = true
     for (const btn of saveBtns) {
       btn.disabled = true
@@ -437,7 +441,7 @@ function bindAppearanceForm(form: HTMLFormElement): void {
       } catch { /* A valid save replaces malformed stored preferences. */ }
       localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify({ ...previous, ...nextStored }))
       committed = submitted
-      if (isAppearanceDraftDirty(committed, draft)) {
+      if (!lifecycleSignal.aborted && isAppearanceDraftDirty(committed, draft)) {
         applySnapshotPreview(draft)
       } else {
         applyAppearancePreferences(nextStored)
@@ -451,7 +455,7 @@ function bindAppearanceForm(form: HTMLFormElement): void {
       updateDirtyUi()
       showToast("common.updated")
     } catch (error) {
-      if (isAppearanceDraftDirty(submitted, draft)) applySnapshotPreview(draft)
+      if (!lifecycleSignal.aborted && isAppearanceDraftDirty(submitted, draft)) applySnapshotPreview(draft)
       status.textContent = status.dataset.error ?? ""
       showSettingsSaveError(error)
     } finally {

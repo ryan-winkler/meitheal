@@ -50,8 +50,8 @@ test("old task pins and visibility move to New task while view pins navigate and
 
   await viewToggle.click()
   await expect(viewOptions.getByRole("link")).toHaveText(["Calendar", "Kanban", "Timeline (Gantt)", "Table"])
-  await viewOptions.getByRole("button", { name: "Pin Table to navigation" }).click()
-  const pinnedTable = page.locator('[data-task-view-pinned-item="table"]')
+  await viewOptions.getByRole("button", { name: "Pin Table to sidebar" }).click()
+  const pinnedTable = page.locator('[data-sidebar-group="view-table"]')
   await page.keyboard.press("Escape")
   await expect(viewToggle).toBeFocused()
   await pinnedTable.getByRole("link", { name: "Table", exact: true }).click()
@@ -73,8 +73,11 @@ test("old task pins and visibility move to New task while view pins navigate and
   await page.reload()
   await expect(createMenu.locator('[data-task-nav-pinned-item="calendar_event"]')).toBeVisible()
   await expect(pinnedTable).toBeVisible()
-  await pinnedTable.getByRole("button", { name: "Unpin Table from navigation" }).click()
-  await expect(pinnedTable).toHaveCount(0)
+  // Pinned views are sidebar items; unpin them from the Task views menu.
+  await viewToggle.click()
+  await viewOptions.getByRole("button", { name: "Unpin Table from sidebar" }).click()
+  await expect(pinnedTable).toBeHidden()
+  await page.keyboard.press("Escape")
   await expect(viewToggle).toBeFocused()
 
   await page.locator("#sidebar-edge-toggle").click()
@@ -92,7 +95,7 @@ test("old task pins and visibility move to New task while view pins navigate and
 
   await page.goto("/tasks?types=shopping_item#kanban")
   await viewToggle.press("Enter")
-  await viewOptions.getByRole("button", { name: "Pin Table to navigation" }).focus()
+  await viewOptions.getByRole("button", { name: "Pin Table to sidebar" }).focus()
   await page.keyboard.press("Tab")
   await expect(viewOptions).toBeHidden()
   await expect(viewToggle).toHaveAttribute("aria-expanded", "false")
@@ -146,14 +149,16 @@ test("pinned types fit narrow desktop top navigation and stay available in the m
 
   const more = page.locator("[data-nav-overflow=sidebar] [data-nav-overflow-more]")
   const taskViewToggle = page.getByRole("button", { name: "Task views", exact: true })
-  await expect(more.locator("#tasks-submenu-toggle")).toBeAttached()
-  await more.locator(":scope > summary").click()
+  // Tasks is the active route, so it may stay in the bar; open More only when Tasks moved there.
+  await expect(taskViewToggle).toBeAttached()
+  if (await more.locator("#tasks-submenu-toggle").count()) await more.locator(":scope > summary").click()
   await taskViewToggle.click()
   await expect(page.locator("#tasks-nav-submenu").getByRole("link", { name: "Timeline (Gantt)", exact: true })).toBeVisible()
   await page.keyboard.press("Tab")
   await expect(page.locator("#tasks-nav-submenu").getByRole("link", { name: "Calendar", exact: true })).toBeFocused()
   await page.screenshot({ path: testInfo.outputPath("narrow-navbar-task-views.png"), animations: "disabled" })
-  const tablePin = page.locator("#tasks-nav-submenu").getByRole("button", { name: "Pin Table to navigation" })
+  // The pin's name states its next action, so address it by view.
+  const tablePin = page.locator('#tasks-nav-submenu [data-task-view-pin="table"]')
   for (const pressed of ["false", "true"]) {
     await tablePin.press("Enter")
     await expect(tablePin).toHaveAttribute("aria-pressed", pressed)
@@ -247,7 +252,7 @@ test("pinned types fit narrow desktop top navigation and stay available in the m
   await page.keyboard.press("Escape")
   await expect(mobileTypeToggle).toHaveAttribute("aria-expanded", "false")
   await expect(mobileSidebar).toHaveClass(/open/)
-  await expect(mobileSidebar.locator('[data-task-view-pinned-item="table"]')).toBeVisible()
+  await expect(mobileSidebar.locator('[data-sidebar-group="view-table"]')).toBeVisible()
   const checklist = sidebarPins.getByRole("button", { name: "New checklist", exact: true })
   await checklist.click()
   await expect(overlay.locator("#new-task-kind")).toHaveValue("checklist")
@@ -330,7 +335,7 @@ test("docked task Details retains Today as the active navigation and syncs a cus
     const sidebar = page.locator("#sidebar")
     await sidebar.getByRole("button", { name: "Task views", exact: true }).click()
     await expect(sidebar.locator('a[data-page="today"]')).toHaveAttribute("aria-current", "page")
-    await expect(sidebar.locator('[data-task-view-pinned-item="kanban"] a')).not.toHaveAttribute("aria-current", "page")
+    await expect(sidebar.locator('[data-sidebar-group="view-kanban"] a')).not.toHaveAttribute("aria-current", "page")
     await page.keyboard.press("Escape")
     const status = page.locator("#td-status")
     await status.selectOption({ label: "Waiting for review" })
@@ -374,10 +379,11 @@ test("selected menu pins remain visible with a black personal accent", async ({ 
   const sidebar = page.locator("#sidebar")
   const creation = sidebar.getByRole("button", { name: "Task types", exact: true })
   const views = sidebar.getByRole("button", { name: "Task views", exact: true })
-  for (const [toggle, name] of [[creation, "Pin new event"], [views, "Pin Table to navigation"]] as const) {
+  // View pins name their next action; type pins keep one name.
+  for (const [toggle, name, pinnedName] of [[creation, "Pin new event", "Pin new event"], [views, "Pin Table to sidebar", "Unpin Table from sidebar"]] as const) {
     await toggle.click()
-    const pin = sidebar.getByRole("button", { name, exact: true })
-    await pin.click()
+    await sidebar.getByRole("button", { name, exact: true }).click()
+    const pin = sidebar.getByRole("button", { name: pinnedName, exact: true })
     await expect(pin).toHaveAttribute("aria-pressed", "true")
     await expect(pin).toHaveCSS("color", "rgb(230, 230, 230)")
     await expect(pin).toHaveCSS("border-top-color", "rgb(230, 230, 230)")
@@ -410,7 +416,7 @@ test("pinned Table and Timeline keep the current workspace filters", async ({ pa
   for (const { from, path, search } of entries) {
     for (const [view, title] of [["timeline", "Timeline (Gantt)"], ["table", "Table"]] as const) {
       await page.goto(from)
-      const link = page.locator(`#sidebar [data-task-view-pinned-item="${view}"]`).getByRole("link", { name: title, exact: true })
+      const link = page.locator(`#sidebar [data-sidebar-group="view-${view}"]`).getByRole("link", { name: title, exact: true })
       await link.click()
       await expect(page).toHaveURL(url => url.pathname === path && url.searchParams.get("view") === view)
       await expect(page.locator(view === "table" ? "#table-shell" : "#tasks-view-timeline")

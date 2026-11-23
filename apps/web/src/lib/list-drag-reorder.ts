@@ -68,8 +68,10 @@ export function attachVerticalListDragReorder(
     if (!dragged) return
     event.preventDefault()
     if (event.dataTransfer) event.dataTransfer.dropEffect = "move"
-    const target = (event.target as Element | null)?.closest<HTMLElement>(itemSelector)
-    if (!target || target === dragged || target.parentElement !== list) return
+    // A nested list's row stands for the row of this list that contains it.
+    let target = (event.target as Element | null)?.closest<HTMLElement>(itemSelector) ?? null
+    while (target && target.parentElement !== list) target = target.parentElement?.closest<HTMLElement>(itemSelector) ?? null
+    if (!target || target === dragged) return
     const box = target.getBoundingClientRect()
     const insertBefore = event.clientY < box.top + box.height / 2
     list.insertBefore(dragged, insertBefore ? target : target.nextElementSibling)

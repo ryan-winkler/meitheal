@@ -27,7 +27,8 @@ test.describe("Native navigation overflow", () => {
       const summary = more.locator(":scope > summary")
       const menu = more.locator("[data-nav-overflow-menu]")
       await expect(row).toHaveAttribute("data-nav-overflow-active", "")
-      await expect(row.locator("[data-nav-overflow-primary]")).toHaveCount(1)
+      // Each sidebar section keeps one primary list; all of them share one More.
+      await expect(row.locator("[data-nav-overflow-primary]")).toHaveCount(await row.locator("[data-sidebar-section]").count())
       await expect(more).toHaveCount(1)
       const boards = row.locator('[data-sidebar-group="boards"]')
       const household = boards.locator('[data-named-board-shortcut="household"]')
@@ -62,6 +63,12 @@ test.describe("Native navigation overflow", () => {
       await expect(more).toHaveAttribute("open", "")
       await expect(menu.locator("a").first()).toBeFocused()
       await page.keyboard.press("End")
+      await expect(menu.locator('a[data-page="settings"]')).toBeFocused()
+      // The custom link stays in the Workspace section, after Upcoming and Tasks.
+      await page.keyboard.press("Home")
+      await expect(menu.locator("a").first()).toBeFocused()
+      await page.keyboard.press("ArrowDown")
+      await page.keyboard.press("ArrowDown")
       await expect(reference).toBeFocused()
       const box = await menu.boundingBox()
       const focusedBox = await reference.boundingBox()
@@ -87,7 +94,8 @@ test.describe("Native navigation overflow", () => {
       await expect(boardsToggle).toHaveAttribute("aria-expanded", "false")
       await boardsToggle.press("Enter")
       await expect(boardsToggle).toHaveAttribute("aria-expanded", "true")
-      await expect(boards.locator("#sidebar-board-children")).toHaveCSS("position", "absolute")
+      // The top-navigation Boards popup is fixed so sticky headers cannot clip it.
+      await expect(boards.locator("#sidebar-board-children")).toHaveCSS("position", "fixed")
       await expect(boards.locator(':scope > .nav-row a[data-page="boards"]')).toBeInViewport({ ratio: 1 })
       await expect(householdLink).toBeVisible()
       const areasToggle = household.locator(".sidebar-board-toggle")
@@ -156,9 +164,11 @@ test.describe("Native navigation overflow", () => {
       const household = boards.locator('[data-named-board-shortcut="household"]')
       const toggle = household.locator(".sidebar-board-toggle")
       const householdAreas = household.locator('[data-board-groups="household"]')
-      const settings = page.locator(".sidebar-footer a")
+      // Settings stays reachable from the Keyboard utility menu even when navigation hides it.
+      const settings = page.locator("#nav-utility-trigger")
       await expect(row).toHaveAttribute("data-nav-overflow-active", "")
-      await expect(row.locator("[data-nav-overflow-primary]")).toHaveCount(1)
+      // Each sidebar section keeps one primary list; all of them share one More.
+      await expect(row.locator("[data-nav-overflow-primary]")).toHaveCount(await row.locator("[data-sidebar-section]").count())
       await expect(more).toHaveCount(1)
       await expect(row.locator('[data-nav-overflow-primary] a[data-page="dashboard"]')).toBeVisible()
       await expect(menu.locator('[data-page="planning"]')).toHaveCount(1)
@@ -175,7 +185,8 @@ test.describe("Native navigation overflow", () => {
       await expect(boardsToggle).toHaveAttribute("aria-expanded", "true")
       await expect(household).toBeVisible()
       await expect(toggle).toHaveAttribute("aria-expanded", "false")
-      await expect(toggle).toHaveAccessibleName(`${longLabel} in Household`)
+      // Navigation labels display at most 64 characters; the saved label keeps its full text.
+      await expect(toggle).toHaveAccessibleName(`${longLabel.slice(0, 64)} in Household`)
       await expect(householdAreas).toBeHidden()
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(770)
       await toggle.focus()

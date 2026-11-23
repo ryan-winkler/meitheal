@@ -1,11 +1,11 @@
-import AxeBuilder from "@axe-core/playwright"
 import { expect, test, type Page } from "@playwright/test"
+import { contrastAudit } from "../helpers/axe-contrast"
 import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { STATUS } from "../../apps/web/src/lib/status-config"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 async function checkContrast(page: Page, selectors: string[], state: string) {
-  const audit = new AxeBuilder({ page }).withRules(["color-contrast"])
+  const audit = contrastAudit(page)
   for (const selector of selectors) audit.include(selector)
   const { violations, passes } = await audit.analyze()
   const failures = violations.flatMap(({ nodes }) => nodes.map(({ target, failureSummary }) => ({ target, failureSummary })))

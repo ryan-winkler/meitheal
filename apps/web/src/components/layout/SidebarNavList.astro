@@ -378,10 +378,11 @@ function isExternal(href: string): boolean {
   }
 
   .task-view-disclosure[aria-expanded="true"] svg { rotate: 180deg; }
+  /* Matches the New task type pins so a dark or black accent keeps the pressed state readable. */
   .task-view-pin[aria-pressed="true"] {
     background: rgb(var(--accent-rgb) / 0.14);
-    color: var(--accent-text, var(--text-primary));
-    border-color: rgb(var(--accent-rgb) / 0.45);
+    color: var(--text-primary);
+    border-color: currentColor;
   }
 
   .task-view-submenu {

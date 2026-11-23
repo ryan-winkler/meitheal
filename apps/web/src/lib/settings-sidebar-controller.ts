@@ -22,6 +22,7 @@ import {
   isSectionHidden,
   isSidebarConfigEqual,
   isSidebarSectionId,
+  isStoredItemHidden,
   moveItemByStep,
   moveItemToSection,
   moveSectionByStep,
@@ -87,6 +88,9 @@ function cloneConfig(config: SidebarMenuConfig): SidebarMenuConfig {
 
 let serverCommitted: SidebarMenuConfig = normalizeSidebarConfig(null, SETTINGS_DEFAULT_KEYS)
 let draftConfig: SidebarMenuConfig = cloneConfig(serverCommitted)
+// Board Areas visibility is a legacy flag outside the Settings navigation keys.
+// Normalization drops it, so carry the stored value through server-wide saves.
+let storedAreasHidden = false
 
 export function initSidebarSettings(): void {
   document.querySelectorAll<HTMLButtonElement>("[data-customize-sidebar-menu]").forEach(button => {
@@ -123,6 +127,7 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
 
     serverCommitted = normalizeSidebarConfig(settings.sidebar_config, SETTINGS_DEFAULT_KEYS)
     draftConfig = cloneConfig(serverCommitted)
+    storedAreasHidden = isStoredItemHidden(settings.sidebar_config, "areas")
 
     let dragKind: "section" | "item" | null = null
     let dragId: string | null = null
@@ -583,6 +588,10 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
     if (saveBtn) {
       saveBtn.addEventListener("click", withAsyncButton(saveBtn, async () => {
         const payload = serializeSidebarConfig(draftConfig)
+        if (storedAreasHidden) {
+          payload.areas = false
+          if (!payload.hiddenItems.includes("areas")) payload.hiddenItems.push("areas")
+        }
         await saveSetting("sidebar_config", payload)
         try { localStorage.removeItem(SIDEBAR_ORDER_STORAGE_KEY) } catch { /* Storage may be blocked. */ }
         serverCommitted = normalizeSidebarConfig(payload, SETTINGS_DEFAULT_KEYS)

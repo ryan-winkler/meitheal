@@ -104,8 +104,8 @@ export function initHabitsShellNav(): void {
   function syncHabitsSectionFromHash(): void {
     const hash = window.location.hash.replace("#", "")
     const sectionId = hash ? resolveHabitsSectionId(hash) : null
-    trackLinkedSection(sectionId ?? "habits-overview", sectionId !== null)
     updateActiveSectionState(sectionId ?? "habits-overview")
+    trackLinkedSection(sectionId ?? "habits-overview", sectionId !== null)
   }
 
   function initSectionLinks(): void {

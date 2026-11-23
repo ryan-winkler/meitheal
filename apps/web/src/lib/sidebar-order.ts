@@ -33,6 +33,7 @@ import {
 } from "@domains/navigation/sidebar-menu"
 import { createTablerSvgElement, type TablerIconName } from "@lib/tabler-svg"
 import { safeIngressHref } from "@lib/ingress-navigation"
+import { readTaskNavPrefs, writeTaskNavPrefs } from "@lib/task-nav-types"
 import { showToast } from "@lib/toast"
 
 export const SIDEBAR_ORDER_STORAGE_KEY = "meitheal-sidebar-order"
@@ -81,6 +82,21 @@ function buildActionBtn(
   btn.title = label
   btn.append(createTablerSvgElement(iconName, 14))
   return btn
+}
+
+/** Touch-sized step controls; CSS shows them only for coarse pointers, which cannot use arrow keys. */
+function addMoveButtons(item: HTMLElement): void {
+  const key = item.dataset.sidebarItemKey
+  const actions = item.querySelector<HTMLElement>(":scope > .nav-row > .sidebar-edit-actions")
+  if (!key || !actions || actions.querySelector("[data-sidebar-item-move]")) return
+  const label = item.querySelector<HTMLElement>("[data-sidebar-item-label]")?.dataset.defaultLabel || key
+  const buttons = (["up", "down"] as const).map(direction => {
+    const button = buildActionBtn("sidebar-edit-btn sidebar-edit-move", direction === "up" ? "arrow-up" : "arrow-down",
+      `Move ${label} ${direction}`, "data-sidebar-item-move", key)
+    button.dataset.sidebarMoveStep = direction === "up" ? "-1" : "1"
+    return button
+  })
+  actions.prepend(...buttons)
 }
 
 function buildEyeToggleBtn(dataAttr: string, dataVal: string, hidden: boolean, label: string): HTMLButtonElement {
@@ -204,6 +220,7 @@ function buildDynamicSidebarItem(item: CustomNavItem, hidden: boolean): HTMLLIEl
 
   row.append(grip, link, actions)
   li.append(row)
+  addMoveButtons(li)
   return li
 }
 
@@ -494,6 +511,24 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     }
   }
 
+  // The control that opened edit mode receives focus again when it closes.
+  let editInvoker: HTMLElement | null = null
+  const isFocusable = (element: HTMLElement | null): element is HTMLElement =>
+    Boolean(element?.isConnected && element.getClientRects().length > 0)
+
+  function focusFirstGrip() {
+    const grip = [...root!.querySelectorAll<HTMLElement>("[data-sidebar-item-drag]")].find(isFocusable)
+    grip?.focus({ preventScroll: true })
+  }
+
+  function leaveEditing() {
+    setEditing(false)
+    const fallback = document.getElementById("nav-utility-trigger")
+    const target = isFocusable(editInvoker) ? editInvoker : fallback
+    editInvoker = null
+    if (isFocusable(target)) target.focus({ preventScroll: true })
+  }
+
   function setEditing(active: boolean, openAddLink = false) {
     editing = active
     sidebar.toggleAttribute("data-sidebar-editing", active)
@@ -513,6 +548,7 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     if (active) {
       syncAddLinkSectionOptions()
       if (openAddLink) setAddLinkOpen(true)
+      else focusFirstGrip()
       announce("Per-user navigation edit mode enabled.")
     } else {
       root!.querySelectorAll<HTMLInputElement>(".sidebar-inline-rename-input").forEach(input => input.blur())
@@ -580,11 +616,31 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     syncPersonalResetButton()
   }
 
+  root.querySelectorAll<HTMLElement>("[data-sidebar-item-key]").forEach(addMoveButtons)
+
+  // Task views pinned before the sidebar editor become visible view items once.
+  const legacyPrefs = readTaskNavPrefs()
+  if (legacyPrefs.pinnedViews.length) {
+    let next = config
+    for (const view of legacyPrefs.pinnedViews) {
+      const key = `view-${view}`
+      if (isItemHidden(next, key)) next = toggleItemVisibility(next, key)
+    }
+    if (next !== config) commitPersonalConfig(next)
+    writeTaskNavPrefs({ ...legacyPrefs, pinnedViews: [] }, false)
+  }
+
   // External triggers: Global utility "Edit menu", Settings "Customize my menu"
   window.addEventListener(SIDEBAR_EDIT_MODE_EVENT, event => {
     const detail = (event as CustomEvent<{ active?: boolean; openAddLink?: boolean }>).detail
     const next = typeof detail?.active === "boolean" ? detail.active : !editing
-    setEditing(next, Boolean(detail?.openAddLink))
+    if (next && !editing) {
+      const invoker = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      // A menu item closes with its menu, so return to the menu's trigger instead.
+      editInvoker = invoker && invoker !== document.body && !invoker.closest("[role=menu]") ? invoker : null
+    }
+    if (!next && editing) leaveEditing()
+    else setEditing(next, Boolean(detail?.openAddLink))
   }, { signal })
 
   // Sync when Settings updates server default or clears personal override
@@ -751,15 +807,27 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     showToast(`Pinned "${cleanLabel}" to navigation`, "success")
   }, { signal })
 
-  leaveBtn?.addEventListener("click", () => {
-    setEditing(false)
-  }, { signal })
+  leaveBtn?.addEventListener("click", leaveEditing, { signal })
 
   // Edit mode actions (rename, hide/show, delete section, remove link)
   root.addEventListener("click", event => {
     if (!editing) return
     const target = event.target instanceof Element ? event.target : null
     if (!target) return
+
+    const moveBtn = target.closest<HTMLButtonElement>("[data-sidebar-item-move]")
+    if (moveBtn) {
+      event.preventDefault()
+      event.stopPropagation()
+      const key = moveBtn.dataset.sidebarItemMove
+      if (!key) return
+      const next = moveItemByStep(config, key, Number(moveBtn.dataset.sidebarMoveStep) < 0 ? -1 : 1)
+      if (next !== config) {
+        commitPersonalConfig(next, `Moved ${config.itemLabels[key] || DEFAULT_SIDEBAR_ITEM_LABELS[key] || key}.`)
+        moveBtn.focus({ preventScroll: true })
+      }
+      return
+    }
 
     const sectionRenameBtn = target.closest<HTMLButtonElement>("[data-sidebar-section-rename]")
     if (sectionRenameBtn) {
@@ -874,7 +942,7 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
 
     if (event.key === "Escape") {
       event.preventDefault()
-      setEditing(false)
+      leaveEditing()
       return
     }
 

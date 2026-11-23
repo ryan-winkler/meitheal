@@ -4,7 +4,10 @@ import { pageLifecycle } from "./page-lifecycle"
 import { ensureTablerStyles } from "./tabler-styles"
 
 const openModals = new WeakMap<HTMLElement, Modal>()
-const FOCUS_SEL = "[data-tabler-initial-focus],.modal-body :is(input:not([type=hidden]),textarea,select,button):not([disabled])"
+// A marked control wins over the first body control; one selector list would
+// return whichever comes first in document order.
+const INITIAL_FOCUS_SEL = "[data-tabler-initial-focus]"
+const BODY_FOCUS_SEL = ".modal-body :is(input:not([type=hidden]),textarea,select,button):not([disabled])"
 
 export async function openTablerModal(dialog: HTMLElement, trigger?: HTMLElement): Promise<void> {
   const signal = pageLifecycle.signal
@@ -25,7 +28,8 @@ export async function openTablerModal(dialog: HTMLElement, trigger?: HTMLElement
   const ac = new AbortController()
   const focusInitial = () => {
     if (!signal.aborted && dialog.classList.contains("show")) {
-      (dialog.querySelector<HTMLElement>(FOCUS_SEL) ?? dialog).focus({ preventScroll: true })
+      (dialog.querySelector<HTMLElement>(INITIAL_FOCUS_SEL) ?? dialog.querySelector<HTMLElement>(BODY_FOCUS_SEL) ?? dialog)
+        .focus({ preventScroll: true })
     }
   }
   const cleanup = () => {

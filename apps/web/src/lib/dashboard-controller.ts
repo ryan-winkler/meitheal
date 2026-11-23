@@ -101,8 +101,8 @@ function initDashboardShell(shell: HTMLElement, reveal: ((id: DashboardSectionId
     const target = sectionId ? document.getElementById(sectionId) : null
     const linked = target && !target.hidden ? sectionId : null
     const active = linked ?? firstVisible()
-    trackLinkedSection(active ?? null, linked !== null)
     updateActiveSectionState(active)
+    trackLinkedSection(active ?? null, linked !== null)
   }
 
   function initDashboardSectionLinks(): void {
