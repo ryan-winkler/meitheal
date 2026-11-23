@@ -65,21 +65,29 @@ export function initQuickActions(
     showToast(msg, type)
   }
 
+  interface CardColorState { marked: boolean; taskColor: string; accent: string }
+  const colorWrites = new WeakMap<HTMLElement, { latest: number; confirmed: CardColorState }>()
+
   async function saveColor(button: HTMLButtonElement, taskId: string, color: string | null) {
     if (__signal.aborted || button.disabled) return
     close()
     const card = button.closest<HTMLElement>(".kanban-card")
     card?.querySelector<HTMLElement>(".card-more-btn")?.focus({ preventScroll: true })
-    // Preview the color now and restore the saved one if the write is rejected.
-    const previous = card && {
-      marked: card.hasAttribute("data-task-color"),
-      taskColor: card.style.getPropertyValue("--knight-task-color"),
-      accent: card.style.getPropertyValue("--card-accent"),
-    }
+    // Preview the color now. A rejected write restores the last confirmed color, and only the
+    // latest write for a card restores, so overlapping writes cannot resurrect a stale preview.
+    const snapshot = (el: HTMLElement): CardColorState => ({
+      marked: el.hasAttribute("data-task-color"),
+      taskColor: el.style.getPropertyValue("--knight-task-color"),
+      accent: el.style.getPropertyValue("--card-accent"),
+    })
+    const writes = card ? colorWrites.get(card) ?? { latest: 0, confirmed: snapshot(card) } : null
+    const write = writes ? ++writes.latest : 0
+    if (card && writes) colorWrites.set(card, writes)
     const restore = () => {
-      if (!card || !previous) return
-      card.toggleAttribute("data-task-color", previous.marked)
-      for (const [property, value] of [["--knight-task-color", previous.taskColor], ["--card-accent", previous.accent]] as const) {
+      if (!card || !writes || write !== writes.latest) return
+      const confirmed = writes.confirmed
+      card.toggleAttribute("data-task-color", confirmed.marked)
+      for (const [property, value] of [["--knight-task-color", confirmed.taskColor], ["--card-accent", confirmed.accent]] as const) {
         if (value) card.style.setProperty(property, value)
         else card.style.removeProperty(property)
       }
@@ -94,6 +102,7 @@ export function initQuickActions(
         card.style.removeProperty("--knight-task-color")
       }
     }
+    const applied = card ? snapshot(card) : null
     button.disabled = true
     let written = false
     try {
@@ -104,6 +113,7 @@ export function initQuickActions(
       })
       if (!response.ok) throw new Error("Color write rejected")
       written = true
+      if (writes && applied) writes.confirmed = applied
       notifyInactivityTaskChanged(taskId)
       await refreshBoard({ taskId })
       toast(color ? "Color updated" : "Color cleared", "success")

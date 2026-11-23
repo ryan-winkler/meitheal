@@ -4,6 +4,8 @@ import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers";
 
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs");
+// Mocked /api/settings responses must not be bypassed by the app service worker.
+test.use({ serviceWorkers: "block" })
 
 for (const theme of ["light", "dark"]) {
   test(`dashboard accessibility in ${theme} theme`, async ({ page }) => {

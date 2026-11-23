@@ -628,8 +628,9 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
       const key = `view-${view}`
       if (isItemHidden(next, key)) next = toggleItemVisibility(next, key)
     }
-    // Keep the legacy pins until their sidebar items are saved.
-    if (next === config || commitPersonalConfig(next)) writeTaskNavPrefs({ ...legacyPrefs, pinnedViews: [] }, false)
+    // Save the pins as a personal override, even when today's server default already shows
+    // them, and keep the legacy pins until that save succeeds.
+    if (commitPersonalConfig(next)) writeTaskNavPrefs({ ...legacyPrefs, pinnedViews: [] }, false)
   }
 
   // External triggers: Global utility "Edit menu", Settings "Customize my menu"

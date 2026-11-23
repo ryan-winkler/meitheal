@@ -67,13 +67,23 @@ export function attachVerticalListDragReorder(
       const box = over.getBoundingClientRect()
       list.insertBefore(dragged, move.clientY < box.top + box.height / 2 ? over : over.nextElementSibling)
     }, { signal: scope })
-    const end = (up: PointerEvent) => {
+    document.addEventListener("pointerup", up => {
       if (up.pointerId !== pointerId) return
       touch.abort()
       finishDrag()
-    }
-    document.addEventListener("pointerup", end, { signal: scope })
-    document.addEventListener("pointercancel", end, { signal: scope })
+    }, { signal: scope })
+    // A cancelled touch puts the row back without committing a reorder.
+    document.addEventListener("pointercancel", cancel => {
+      if (cancel.pointerId !== pointerId || !dragged) return
+      touch.abort()
+      const moved = dragged
+      const startIdx = oldIndex
+      list.insertBefore(moved, items().filter(row => row !== moved)[startIdx] ?? null)
+      dragged = null
+      oldIndex = -1
+      moved.classList.remove(ghostClass)
+      onEnd?.({ item: moved, oldIndex: startIdx, newIndex: startIdx })
+    }, { signal: scope })
   }, { signal })
 
   const clearDraggable = () => {
