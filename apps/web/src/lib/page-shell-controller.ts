@@ -270,6 +270,7 @@ export function initPageShellSectionTracking<SectionId extends string>(
   let linkedSection: {
     element: HTMLElement
     wasVisible: boolean
+    leftTop: boolean
   } | null = null
 
   function resumeSectionTracking(preferTop = false): void {
@@ -299,8 +300,9 @@ export function initPageShellSectionTracking<SectionId extends string>(
 
   function syncLinkedSectionVisibility(fromScroll = false): void {
     if (!linkedSection) return
+    if (window.scrollY > 2) linkedSection.leftTop = true
     const { top, bottom } = linkedSection.element.getBoundingClientRect()
-    if (fromScroll && linkedSection.wasVisible && window.scrollY <= 2 && sections[0] && linkedSection.element !== sections[0]) {
+    if (fromScroll && linkedSection.wasVisible && linkedSection.leftTop && window.scrollY <= 2 && sections[0] && linkedSection.element !== sections[0]) {
       resumeSectionTracking(true)
       return
     }
@@ -313,7 +315,7 @@ export function initPageShellSectionTracking<SectionId extends string>(
 
   function trackLinkedSection(sectionId: SectionId | null, awaitVisibility = true): void {
     const element = sectionId ? document.getElementById(sectionId) : null
-    linkedSection = element ? { element, wasVisible: false } : null
+    linkedSection = element ? { element, wasVisible: false, leftTop: window.scrollY > 2 } : null
     syncLinkedSectionVisibility()
     if (!awaitVisibility && !linkedSection?.wasVisible) {
       resumeSectionTracking()
