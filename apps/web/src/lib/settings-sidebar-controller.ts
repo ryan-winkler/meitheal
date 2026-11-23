@@ -144,7 +144,7 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
 
     function syncNotices() {
       if (personalNotice) personalNotice.hidden = !hasPersonalSidebarConfig()
-      if (dirtyBar) dirtyBar.hidden = isSidebarConfigEqual(serverCommitted, draftConfig)
+      if (dirtyBar) dirtyBar.hidden = isSidebarConfigEqual(serverCommitted, draftConfig) && draftAreasHidden === storedAreasHidden
     }
 
     function syncLinkSectionOptions() {

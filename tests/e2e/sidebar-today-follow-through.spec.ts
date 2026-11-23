@@ -69,6 +69,39 @@ test.describe("Sidebar and Today follow-through", () => {
     await saveConfig({})
   })
 
+  test("Sidebar Reset clears a stored hidden Areas flag, Discard keeps it and Save applies it", async ({ page, request, baseURL }) => {
+    const headers = { origin: new URL(baseURL!).origin }
+    const storedConfig = async () => (await (await request.get("/api/settings")).json()).sidebar_config
+    expect((await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: { areas: false } } })).ok()).toBe(true)
+    await page.goto("/settings#nav-sidebar-menu-section")
+    const dirtyBar = page.locator("#sidebar-dirty-bar")
+    const household = page.locator('#sidebar [data-named-board-shortcut="household"]')
+    await expect(household.locator("[data-board-groups]")).toHaveCount(0)
+    await expect(dirtyBar).toBeHidden()
+    const reset = async () => {
+      await page.locator("#reset-sidebar").click()
+      await page.getByRole("alertdialog").getByRole("button", { name: "Confirm", exact: true }).click()
+    }
+
+    // Reset changes only the Areas flag here, so it alone must make the draft dirty.
+    await reset()
+    await expect(dirtyBar).toBeVisible()
+    await page.locator("#discard-sidebar").click()
+    await expect(dirtyBar).toBeHidden()
+    await page.locator("#save-sidebar").evaluate(button => (button as HTMLButtonElement).click())
+    expect(await storedConfig()).toMatchObject({ areas: false })
+
+    await reset()
+    await expect(dirtyBar).toBeVisible()
+    await page.locator("#save-sidebar").click()
+    await expect(dirtyBar).toBeHidden()
+    const saved = await storedConfig()
+    expect(saved.areas).not.toBe(false)
+    expect(saved.hiddenItems ?? []).not.toContain("areas")
+    await page.goto("/today")
+    await expect(household.locator("[data-board-groups]")).toHaveCount(1)
+  })
+
   test("Boards and its per-Board Areas disclosure collapse independently and work with blocked storage", async ({ page }) => {
     await page.goto("/today", { waitUntil: "domcontentloaded" })
     const group = page.locator("[data-sidebar-board-children]")
