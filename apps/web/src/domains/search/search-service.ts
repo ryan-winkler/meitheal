@@ -8,6 +8,7 @@ import {
   getPersistenceClient,
   SettingsRepository,
   TaskRepository,
+  TemplateRepository,
   type TaskCatalogRow
 } from "@domains/tasks"
 import type { OrganizationTerm } from "@lib/organization-labels"
@@ -20,11 +21,21 @@ import type {
   SearchResultSection
 } from "./search-types"
 
+const TASK_KIND_SEARCH_LABEL: Record<string, string> = {
+  calendar_event: "Event",
+  shopping_item: "Shopping list",
+  routine_instance: "Routine",
+  checklist: "Checklist",
+  quick_capture: "Quick capture",
+}
+
 function buildTaskSearchItem(row: TaskCatalogRow, scope: BoardScope): SearchResultItem {
   const taskId = String(row.id ?? "")
   const ticketKey = row.ticket_ref ?? taskId.slice(0, 8)
   const status = String(row.status ?? "pending")
   const priority = Number(row.priority ?? 3)
+  const taskKind = typeof row.task_kind === "string" && row.task_kind ? row.task_kind : "standard_action"
+  const kindBadge = TASK_KIND_SEARCH_LABEL[taskKind]
   const matchedFields: string[] = []
   if (row.id_hit || row.exact_id) matchedFields.push("ID")
   if (row.title_at) matchedFields.push("Title")
@@ -39,13 +50,14 @@ function buildTaskSearchItem(row: TaskCatalogRow, scope: BoardScope): SearchResu
     taskId,
     href: `/tasks?board_id=${encodeURIComponent(scope.boardId)}&task=${encodeURIComponent(taskId)}`,
     title: String(row.title ?? "Untitled task"),
-    subtitle: `${ticketKey} · ${status} · P${priority}`,
+    subtitle: kindBadge ? `${ticketKey} · ${kindBadge} · ${status} · P${priority}` : `${ticketKey} · ${status} · P${priority}`,
     ...(row.excerpt ? { description: row.excerpt } : {}),
     meta: {
       matched_fields: matchedFields,
       score: row.score,
       status,
       priority,
+      task_kind: taskKind,
       deferred: row.deferred_at != null
     }
   }
@@ -129,6 +141,7 @@ export async function searchMeithealCatalog(
     if (options.status) searchOptions.status = options.status
     if (options.priority != null) searchOptions.priority = options.priority
     if (options.assignedTo) searchOptions.assignedTo = options.assignedTo
+    if (options.taskKind) searchOptions.taskKind = options.taskKind
 
     const rows = await taskRepo.searchCatalog(searchOptions)
     const taskItems = rows.map((row) => buildTaskSearchItem(row, scope))
@@ -236,6 +249,29 @@ export async function searchMeithealCatalog(
       })
     }
 
+    if (isOrganizationFeatureAvailable("routines") && scopePermits(scope, { resource: "routine", action: "read" })) {
+      const routines = await new TemplateRepository(client, scope).findRoutines()
+      const routineLabel = organization?.("routine", false, "Routine") ?? "Routine"
+      const routineItems = filterByQuery(
+        routines.map((routine) => ({
+          id: `routine-${routine.id}`,
+          kind: "routine" as const,
+          title: routine.name,
+          subtitle: `${routine.cadence === "weekly" ? "Weekly" : "Daily"} ${routineLabel}`,
+          href: `/habits?board_id=${encodeURIComponent(scope.boardId)}`,
+          icon: routine.icon || "repeat",
+        })),
+        options.query
+      ).slice(0, Math.min(6, options.limit))
+      if (routineItems.length > 0) {
+        sections.push({
+          id: "routines",
+          label: organization?.("routine", true, "Routines") ?? "Routines",
+          items: routineItems,
+        })
+      }
+    }
+
     const filters = await settingsRepo.listFilters(scope)
     const savedFilterItems = filterByQuery(
       filters.flatMap((row) => {
@@ -314,7 +350,8 @@ export async function searchMeithealCatalog(
       include_completed: options.includeCompleted,
       include_archived: options.includeArchived,
       sort: options.sort,
-      task_fields: options.taskFields
+      task_fields: options.taskFields,
+      ...(options.taskKind ? { task_kind: options.taskKind } : {})
     }
   }
 }

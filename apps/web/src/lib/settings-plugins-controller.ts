@@ -5,6 +5,7 @@
  * Plugins, 2-step "Build one with AI" modal, and Reference/Get Listed dialogs.
  */
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { safeFetch } from "@lib/safe-fetch"
 import { showToast } from "@lib/toast"
 
 type Tone = "healthy" | "warning" | "critical" | "inactive"
@@ -77,8 +78,15 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, txt?: s
   if (txt !== undefined) n.textContent = txt
   return n
 }
-const apiReq = (url: string, method: string, body?: unknown) =>
-  fetch(url, { method, ...(body !== undefined ? { headers: JSON_HDR, body: JSON.stringify(body) } : {}) })
+const PLUGIN_API_PATH_RE = /^\/api\/plugins(?:\/[a-z0-9][a-z0-9-]{1,62}[a-z0-9](?:\/(?:secrets|connector))?(?:\?key=[A-Za-z0-9._%-]+)?)?$/
+const apiReq = (url: string, method: string, body?: unknown) => {
+  if (!PLUGIN_API_PATH_RE.test(url)) return Promise.reject(new Error("Invalid plugin API path"))
+  return safeFetch(url, {
+    timeoutMs: 30_000,
+    method,
+    ...(body !== undefined ? { headers: JSON_HDR, body: JSON.stringify(body) } : {}),
+  })
+}
 
 async function copyText(text: string, okMsg: string): Promise<void> {
   try {
@@ -543,7 +551,7 @@ export function initPluginsSettings(): void {
       const form = new FormData()
       form.append("file", file)
       try {
-        const res = await fetch("/api/plugins", { method: "POST", body: form })
+        const res = await safeFetch("/api/plugins", { timeoutMs: 30_000, method: "POST", body: form })
         const d = (await res.json().catch(() => ({}))) as { plugin?: PluginView; detail?: string }
         if (!res.ok) { setFeedback(d.detail || "Plugin upload failed.", true); showToast(d.detail || "Plugin upload rejected.", "error") }
         else { setFeedback(`Installed ${d.plugin?.manifest.name ?? "plugin"}. Review permissions and toggle to enable.`); showToast(`Installed ${d.plugin?.manifest.name ?? "plugin"}.`, "success"); await loadCatalog(false) }

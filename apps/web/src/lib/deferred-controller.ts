@@ -1,5 +1,8 @@
 import { pageLifecycle } from "./page-lifecycle"
+import { safeFetch } from "./safe-fetch"
 import { buildTaskPermalink, openTaskDetailHandoff } from "./task-detail-handoff"
+
+const SAFE_TASK_ID_RE = /^[A-Za-z0-9._-]+$/
 import {
   allowsDeferral, DEFERRAL_RECONCILED, DEFERRAL_TIMEOUT_MS, notifyTaskCountsChanged, readDeferralGuard, writeDeferral,
   type DeferralReconciliation,
@@ -136,12 +139,14 @@ pageLifecycle.onPageLoad(signal => {
       const result = await writeDeferral(id, false, guard, signal)
       if (result.kind === "saved") {
         if (moveToBacklog) {
-          await fetch(`/api/tasks/${encodeURIComponent(id)}`, {
-            method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ status: "backlog" }),
-            signal,
-          }).catch(() => undefined)
+          if (SAFE_TASK_ID_RE.test(id)) {
+            await safeFetch(`/api/tasks/${encodeURIComponent(id)}`, {
+              method: "PUT",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ status: "backlog" }),
+              signal,
+            }).catch(() => undefined)
+          }
         }
         notifyTaskCountsChanged(card.dataset.project)
       }

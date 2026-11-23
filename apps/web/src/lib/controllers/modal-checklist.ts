@@ -2,8 +2,21 @@ import { escapeHtml } from "@lib/safe-html"
 import { createChecklistItem } from "@lib/checklist-items"
 import { notifyInactivityTaskChanged } from "@lib/inactivity-client"
 import { formatTicketKey, parseTicketKey } from "@lib/ticket-key"
+import { createSpriteIconElement } from "../../generated/icon-registry"
 
 type Item = { id?: string; text: string; done: boolean }
+export type ModalShoppingItem = { name: string; qty: number; category: string }
+
+const SHOPPING_CATEGORIES_UI = [
+  "produce",
+  "dairy",
+  "meat",
+  "pantry",
+  "frozen",
+  "beverages",
+  "household",
+  "other",
+] as const
 
 const pendingChecklistSaves = new Map<string, Promise<boolean>>()
 
@@ -83,9 +96,15 @@ export function showTaskChecklist(
   signal: AbortSignal,
   write: (send: (version: number | null) => Promise<Response>) => Promise<Response>,
   ticketKey?: string,
+  options?: {
+    taskKind?: string | null | undefined
+    shoppingItems?: Array<{ name?: string; qty?: number; category?: string }> | null | undefined
+    onShoppingItemsChange?: (items: ModalShoppingItem[]) => void
+  },
 ) {
   const container = document.getElementById("td-checklists")
   const add = document.querySelector<HTMLButtonElement>("#td-add-checklist-item")
+  const uncheckAll = document.querySelector<HTMLButtonElement>("#td-checklist-uncheck-all")
   const progress = document.getElementById("td-checklist-progress")
   const done = document.getElementById("td-checklist-done")
   const total = document.getElementById("td-checklist-total")
@@ -104,6 +123,27 @@ export function showTaskChecklist(
   const loaded = parseChecklist(savedRaw)
   let saved = loaded ?? []
   let items = saved.slice()
+  const isShopping = options?.taskKind === "shopping_item"
+  const rawShopping = Array.isArray(options?.shoppingItems) ? options.shoppingItems : []
+  const shoppingMeta: Array<{ qty: number; category: string }> = items.map((item, index) => {
+    const matched = rawShopping[index]
+    const qty = matched && typeof matched.qty === "number" && Number.isFinite(matched.qty) && matched.qty >= 1
+      ? Math.min(999, Math.round(matched.qty))
+      : 1
+    const category = matched && typeof matched.category === "string" && SHOPPING_CATEGORIES_UI.includes(matched.category as (typeof SHOPPING_CATEGORIES_UI)[number])
+      ? matched.category
+      : ""
+    return { qty, category }
+  })
+  const emitShoppingChange = () => {
+    if (!isShopping || !options?.onShoppingItemsChange) return
+    const next: ModalShoppingItem[] = items.map((item, index) => ({
+      name: item.text.trim() || "Item",
+      qty: shoppingMeta[index]?.qty ?? 1,
+      category: shoppingMeta[index]?.category ?? "",
+    }))
+    options.onShoppingItemsChange(next)
+  }
   let problem: "retry" | "conflict" | null = null
   let textEditPending = false
   let rendering = false
@@ -122,6 +162,7 @@ export function showTaskChecklist(
     done!.textContent = String(count)
     total!.textContent = String(items.length)
     bar!.style.width = items.length ? (count * 100 / items.length) + "%" : "0%"
+    if (uncheckAll) uncheckAll.hidden = count === 0
   }
 
   function render(focus?: { index: number; selector: string }) {
@@ -129,12 +170,12 @@ export function showTaskChecklist(
     rendering = true
     const rows = items.map((item, index) => {
       const row = document.createElement("div")
-      row.className = "flex items-center gap-2 group"
+      row.className = "flex items-center gap-2 group td-cl-row"
       row.dataset.checklistRow = String(index)
 
       const checkbox = document.createElement("input")
       checkbox.type = "checkbox"
-      checkbox.className = "form-checkbox h-4 w-4 bg-transparent border-border rounded"
+      checkbox.className = "form-checkbox h-5 w-5 bg-transparent border-border rounded"
       checkbox.setAttribute("aria-label", item.text || `Checklist item ${index + 1}`)
       checkbox.checked = Boolean(item.done)
 
@@ -143,20 +184,53 @@ export function showTaskChecklist(
       const text = document.createElement("textarea")
       text.className = "form-input bg-transparent border-transparent focus:bg-(--bg-input) focus:border-(--border-focus) hover:bg-(--bg-hover)"
       text.rows = 1
-      text.setAttribute("aria-label", `Checklist item ${index + 1}`)
-      text.placeholder = "Checklist item..."
+      text.setAttribute("aria-label", isShopping ? `Shopping item ${index + 1}` : `Checklist item ${index + 1}`)
+      text.placeholder = isShopping ? "Item name..." : "Checklist item..."
       text.value = item.text
       editor.dataset.content = item.text
       editor.appendChild(text)
 
+      const rowControls: HTMLElement[] = [checkbox, editor]
+      if (isShopping) {
+        const meta = shoppingMeta[index] ?? (shoppingMeta[index] = { qty: 1, category: "" })
+        const qtyInput = document.createElement("input")
+        qtyInput.type = "number"
+        qtyInput.min = "1"
+        qtyInput.max = "999"
+        qtyInput.value = String(meta.qty)
+        qtyInput.className = "form-input text-xs td-shop-qty"
+        qtyInput.setAttribute("aria-label", `Quantity for ${item.text || `item ${index + 1}`}`)
+        qtyInput.addEventListener("change", () => {
+          const parsedQty = Math.min(999, Math.max(1, Math.round(Number(qtyInput.value) || 1)))
+          qtyInput.value = String(parsedQty)
+          meta.qty = parsedQty
+          emitShoppingChange()
+        }, { signal })
+
+        const catSelect = document.createElement("select")
+        catSelect.className = "form-select text-xs td-shop-cat"
+        catSelect.setAttribute("aria-label", `Category for ${item.text || `item ${index + 1}`}`)
+        catSelect.appendChild(new Option("Category", ""))
+        for (const cat of SHOPPING_CATEGORIES_UI) {
+          catSelect.appendChild(new Option(cat[0]!.toUpperCase() + cat.slice(1), cat))
+        }
+        catSelect.value = meta.category
+        catSelect.addEventListener("change", () => {
+          meta.category = catSelect.value
+          emitShoppingChange()
+        }, { signal })
+
+        rowControls.push(qtyInput, catSelect)
+      }
+
       const delBtn = document.createElement("button")
       delBtn.type = "button"
-      delBtn.className = "text-danger opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-xs p-1"
+      delBtn.className = "text-danger td-cl-del"
       delBtn.setAttribute("aria-label", `Delete checklist item ${index + 1}`)
       delBtn.title = "Delete item"
-      delBtn.textContent = "×"
+      delBtn.replaceChildren(createSpriteIconElement("x", { size: 14 }))
 
-      row.append(checkbox, editor, delBtn)
+      row.append(...rowControls, delBtn)
       text.addEventListener("input", () => { editor.dataset.content = text.value }, { signal })
       checkbox.addEventListener("change", () => {
         const current = items[index]
@@ -173,6 +247,7 @@ export function showTaskChecklist(
         items[index] = { ...current, text: next }
         checkbox.setAttribute("aria-label", next || "Checklist item " + (index + 1))
         textEditPending = true
+        emitShoppingChange()
         save()
       }, { signal })
       text.addEventListener("keydown", event => {
@@ -180,8 +255,12 @@ export function showTaskChecklist(
         event.preventDefault()
         text.blur()
       }, { signal })
-      row.querySelector("button")!.addEventListener("click", () => {
+      delBtn.addEventListener("click", () => {
         items.splice(index, 1)
+        if (isShopping) {
+          shoppingMeta.splice(index, 1)
+          emitShoppingChange()
+        }
         render({ index: Math.min(index, items.length - 1), selector: "button" })
         void save()
       }, { signal })
@@ -295,8 +374,18 @@ export function showTaskChecklist(
 
   add.addEventListener("click", () => {
     items.push(createChecklistItem("New Item"))
+    if (isShopping) {
+      shoppingMeta.push({ qty: 1, category: "" })
+      emitShoppingChange()
+    }
     render({ index: items.length - 1, selector: "textarea" })
     if (document.activeElement instanceof HTMLTextAreaElement) document.activeElement.select()
+    void save()
+  }, { signal })
+  uncheckAll?.addEventListener("click", () => {
+    if (!items.some(item => item.done)) return
+    items = items.map(item => ({ ...item, done: false }))
+    render()
     void save()
   }, { signal })
   recover.addEventListener("click", async () => {

@@ -55,10 +55,36 @@ function splitTableCells(line: string): string[] {
   return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(cell => cell.trim())
 }
 
+function isTableSeparatorCell(cell: string): boolean {
+  let s = cell.trim()
+  if (s.startsWith(":")) s = s.slice(1)
+  if (s.endsWith(":")) s = s.slice(0, -1)
+  if (s.length < 3) return false
+  for (let i = 0; i < s.length; i += 1) {
+    if (s[i] !== "-") return false
+  }
+  return true
+}
+
 function isTableSeparator(line: string): boolean {
-  const trimmed = line.trim()
-  if (!trimmed.includes("|") && !trimmed.includes("-")) return false
-  return /^\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?$/.test(trimmed)
+  let s = line.trim()
+  if (!s.includes("|") || !s.includes("-")) return false
+  if (s.startsWith("|")) s = s.slice(1)
+  if (s.endsWith("|")) s = s.slice(0, -1)
+  const cells = s.split("|")
+  if (cells.length < 2) return false
+  return cells.every(isTableSeparatorCell)
+}
+
+function isHorizontalRule(line: string): boolean {
+  let count = 0
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i]
+    if (ch === " " || ch === "\t" || ch === "\r") continue
+    if (ch === "-" || ch === "*" || ch === "_") count += 1
+    else return false
+  }
+  return count >= 3
 }
 
 export function renderMarkdownToHtml(markdown: string): string {
@@ -100,7 +126,7 @@ export function renderMarkdownToHtml(markdown: string): string {
     }
 
     // Horizontal rule
-    if (/^\s*(?:[-*_]\s*){3,}$/.test(line)) {
+    if (isHorizontalRule(line)) {
       blocks.push("<hr>")
       i += 1
       continue
@@ -177,7 +203,7 @@ export function renderMarkdownToHtml(markdown: string): string {
           /^\s*>\s?/.test(cur) ||
           /^\s*[-*+]\s+/.test(cur) ||
           /^\s*\d+[.)]\s+/.test(cur) ||
-          /^\s*(?:[-*_]\s*){3,}$/.test(cur)
+          isHorizontalRule(cur)
         )
       ) {
         break

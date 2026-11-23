@@ -27,7 +27,7 @@ const proof = available && homeAssistantAreaProof(Astro, available)
     data-ha-area-initial-id={initialId}
     hidden={mode === "edit" && !endpoint}
   >
-    <label class="form-label">{mode === "filter" ? "Filter by Home Assistant Area" : "Home Assistant Area"}
+    <label class="form-label"><span data-layout-field-label>{mode === "filter" ? "Filter by Home Assistant Area" : "Home Assistant Area"}</span>
       <select class="form-select" name="home_assistant_area_id" disabled>
         <option value="">{mode === "filter" ? "All locations" : "None"}</option>
       </select>

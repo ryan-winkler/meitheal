@@ -875,7 +875,7 @@ export const POST: APIRoute = async context => {
 function getCustomToolDescription(name: string): string {
   const descriptions: Record<string, string> = {
     completeTask: "Mark a task as complete by ID or title. Title lookup requires search:read and matches the full title.",
-    searchTasks: "Search tasks by query text, status, priority, or assignee. Returns a clean list of matching tasks.",
+    searchTasks: "Search tasks by query text, status, priority, task_kind, or assignee. Returns a clean list of matching tasks.",
     whoAmI: "Identify this connection: the token name, its scopes, the agent assignee it acts as, and whether it may change any task or only its assigned tasks. Call this first.",
     listMyTasks: "List the tasks assigned to you, the agent assignee linked to this token. Open tasks only unless include_completed is true or a status is given.",
     handBackTask: "Hand a task assigned to you back to a person. Posts your note as a comment, then reassigns the task to whoever held it before you (or to `to`, or leaves it unassigned). Approved Board notification channels apply.",
@@ -900,6 +900,7 @@ function getCustomToolSchema(name: string): McpTool["inputSchema"] {
         status: { type: "string", description: "Filter by status (backlog, pending, active, complete, todo, in_progress, done)" },
         priority: { type: "integer", description: "Filter by priority (1-5)" },
         assigned_to: { type: "string", description: "Filter by assignee" },
+        task_kind: { type: "string", enum: ["standard_action", "shopping_item", "checklist", "routine_instance", "calendar_event", "quick_capture"], description: "Filter by behavioral kind" },
         include_completed: { type: "boolean", description: "Include completed tasks" },
       },
     },

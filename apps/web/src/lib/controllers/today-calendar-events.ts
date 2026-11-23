@@ -9,7 +9,8 @@
  */
 
 import type { ListenerManager } from "../managed-listeners"
-import { escapeHtml } from "../safe-html"
+import { calendarEventDay, shiftCalendarDay } from "../date"
+import { householdToday } from "../quick-add"
 
 export async function setupCalendarEvents(lm: ListenerManager): Promise<void> {
   const section = document.getElementById("section-calendar-events")
@@ -17,31 +18,52 @@ export async function setupCalendarEvents(lm: ListenerManager): Promise<void> {
   const countEl = document.getElementById("calendar-events-count")
   if (!section || !list || !countEl) return
 
-  const todayStr = new Date().toISOString().split("T")[0]!
-  const tomorrow = new Date()
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  const tomorrowStr = tomorrow.toISOString().split("T")[0]!
+  const timeZone = typeof window !== "undefined" ? window.mSettings?.timezone : undefined
+  const todayStr = householdToday()
+  const startParam = `${shiftCalendarDay(todayStr, -1)}T00:00:00Z`
+  const endParam = `${shiftCalendarDay(todayStr, 2)}T00:00:00Z`
 
   try {
-    // Discover calendars
-    const calRes = await fetch("/api/ha/calendars", { signal: lm.signal })
+    // Discover configured calendars for this board
+    const calRes = await fetch("/api/ha/calendars?configured=1", { signal: lm.signal })
     if (!calRes.ok) return // HA not connected
-    const calData = await calRes.json() as { calendars?: Array<{ entity_id: string; name: string }> }
-    const calendars = calData.calendars ?? []
-    if (calendars.length === 0) return
+    const calData = await calRes.json() as {
+      entities?: string[]
+      calendars?: Array<{ entity_id: string; friendly_name?: string; name?: string }>
+    }
+    const sources: Array<{ entity_id: string; name: string }> = Array.isArray(calData.entities)
+      ? calData.entities.map(entity_id => ({
+          entity_id,
+          name: entity_id.replace(/^calendar\./, "").replace(/_/g, " "),
+        }))
+      : (calData.calendars ?? []).map(cal => ({
+          entity_id: cal.entity_id,
+          name: cal.friendly_name || cal.name || cal.entity_id,
+        }))
+    if (sources.length === 0) return
 
-    // Fetch events from all calendars
+    // Fetch events from configured calendars
     interface CalEvent { summary: string; start: string; end: string; description?: string }
     const allEvents: Array<CalEvent & { source: string }> = []
 
-    await Promise.all(calendars.map(async (cal) => {
+    await Promise.all(sources.map(async (cal) => {
       try {
-        const res = await fetch(`/api/ha/events?entity_id=${encodeURIComponent(cal.entity_id)}&start=${todayStr}&end=${tomorrowStr}`, { signal: lm.signal })
+        const res = await fetch(
+          `/api/ha/events?entity_id=${encodeURIComponent(cal.entity_id)}&start=${encodeURIComponent(startParam)}&end=${encodeURIComponent(endParam)}`,
+          { signal: lm.signal },
+        )
         if (!res.ok) return
-        const data = await res.json() as { ok: boolean; events?: CalEvent[] }
-        if (data.ok && data.events) {
+        const data = await res.json() as { events?: CalEvent[] }
+        if (Array.isArray(data.events)) {
           for (const evt of data.events) {
-            allEvents.push({ ...evt, source: cal.name })
+            if (!evt || typeof evt.start !== "string" || typeof evt.summary !== "string") continue
+            const startDay = calendarEventDay(evt.start, timeZone)
+            const endDay = typeof evt.end === "string" ? calendarEventDay(evt.end, timeZone, "exclusive-end") : startDay
+            if (startDay && endDay && startDay <= todayStr && endDay >= todayStr) {
+              allEvents.push({ ...evt, source: cal.name })
+            } else if (startDay === todayStr) {
+              allEvents.push({ ...evt, source: cal.name })
+            }
           }
         }
       } catch { /* individual calendar fail OK */ }

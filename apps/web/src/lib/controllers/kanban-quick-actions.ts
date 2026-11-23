@@ -70,6 +70,9 @@ export function initQuickActions(
     close()
     const card = button.closest<HTMLElement>(".kanban-card")
     card?.querySelector<HTMLElement>(".card-more-btn")?.focus({ preventScroll: true })
+    const hadColor = card?.hasAttribute("data-task-color") ?? false
+    const prevKnight = card?.style.getPropertyValue("--knight-task-color") ?? ""
+    const prevAccent = card?.style.getPropertyValue("--card-accent") ?? ""
     if (card) {
       if (color) {
         card.setAttribute("data-task-color", "")
@@ -78,6 +81,7 @@ export function initQuickActions(
       } else {
         card.removeAttribute("data-task-color")
         card.style.removeProperty("--knight-task-color")
+        card.style.removeProperty("--card-accent")
       }
     }
     button.disabled = true
@@ -92,6 +96,13 @@ export function initQuickActions(
       await refreshBoard({ taskId })
       toast(color ? "Color updated" : "Color cleared", "success")
     } catch {
+      if (card?.isConnected) {
+        card.toggleAttribute("data-task-color", hadColor)
+        if (prevKnight) card.style.setProperty("--knight-task-color", prevKnight)
+        else card.style.removeProperty("--knight-task-color")
+        if (prevAccent) card.style.setProperty("--card-accent", prevAccent)
+        else card.style.removeProperty("--card-accent")
+      }
       if (!__signal.aborted) toast(color ? "Failed to set color" : "Failed to clear color", "error")
     } finally {
       button.disabled = false

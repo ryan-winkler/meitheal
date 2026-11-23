@@ -332,3 +332,83 @@ export function getBotName(owner: Owner): string | null {
   if (!owner.startsWith("bot:")) return null
   return owner.slice(4)
 }
+
+// --- Shopping List & Event Schedule Helpers ---
+
+export const SHOPPING_CATEGORIES = [
+  "produce",
+  "dairy",
+  "meat",
+  "pantry",
+  "frozen",
+  "beverages",
+  "household",
+  "other",
+] as const
+
+export type ShoppingCategory = (typeof SHOPPING_CATEGORIES)[number]
+
+export interface ShoppingListItem {
+  name: string
+  qty?: string
+  category?: ShoppingCategory
+  checked?: boolean
+}
+
+export function isValidShoppingCategory(value: unknown): value is ShoppingCategory {
+  return typeof value === "string" && (SHOPPING_CATEGORIES as readonly string[]).includes(value)
+}
+
+/** Normalize raw shopping item payloads from checklists, custom_fields.items, or API inputs. */
+export function normalizeShoppingItems(raw: unknown): ShoppingListItem[] {
+  let list: unknown = raw
+  if (typeof raw === "string") {
+    try {
+      list = JSON.parse(raw)
+    } catch {
+      return []
+    }
+  }
+  if (!Array.isArray(list)) return []
+  const items: ShoppingListItem[] = []
+  for (const entry of list) {
+    if (typeof entry === "string") {
+      const name = entry.trim()
+      if (name) items.push({ name })
+      continue
+    }
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue
+    const rec = entry as Record<string, unknown>
+    const rawName = typeof rec.name === "string" ? rec.name : typeof rec.text === "string" ? rec.text : ""
+    const name = rawName.trim()
+    if (!name) continue
+    const rawQty = typeof rec.qty === "string" ? rec.qty : typeof rec.quantity === "string" ? rec.quantity : ""
+    const qty = rawQty.trim()
+    const rawCat = typeof rec.category === "string" ? rec.category.trim().toLowerCase()
+      : typeof rec.aisle === "string" ? rec.aisle.trim().toLowerCase() : ""
+    const checked = typeof rec.checked === "boolean" ? rec.checked
+      : typeof rec.done === "boolean" ? rec.done : undefined
+    items.push({
+      name,
+      ...(qty ? { qty } : {}),
+      ...(isValidShoppingCategory(rawCat) ? { category: rawCat } : {}),
+      ...(checked !== undefined ? { checked } : {}),
+    })
+  }
+  return items
+}
+
+/** Effective date/timestamp for sorting, filtering, and calendar projection across tasks and events. */
+export function effectiveTaskScheduledDate(task: {
+  task_kind?: string | null
+  due_date?: string | null
+  start_date?: string | null
+  end_date?: string | null
+}): string | null {
+  const nonEmpty = (val: unknown): string | null =>
+    typeof val === "string" && val.trim().length > 0 ? val.trim() : null
+  if (task.task_kind === "calendar_event") {
+    return nonEmpty(task.start_date) ?? nonEmpty(task.due_date) ?? nonEmpty(task.end_date)
+  }
+  return nonEmpty(task.due_date)
+}

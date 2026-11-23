@@ -11,51 +11,97 @@ import { escapeHtml } from "@lib/safe-html"
 export interface CustomFieldsDeps {
   saveTD: (field: string, value: unknown) => Promise<void>
   getSettingsFields: () => Array<{ name: string; type: string; options?: string[] }>
+  getCurrentTaskId?: () => string | null
   signal?: AbortSignal
 }
 
-/**
- * Initialise custom fields panel with CRUD and categorised dropdown.
- */
-export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFieldsDeps): {
-  addCFRow: (key: string, value: string, fieldType?: string, options?: string[]) => void
-} {
+const STRUCTURED_CF_KEYS = new Set(["items", "quantity", "category", "location", "fields"])
+
+export function initCustomFields({ saveTD, getSettingsFields, getCurrentTaskId, signal }: CustomFieldsDeps) {
   const opts = signal ? { signal } : undefined
-  
+  let activeTaskId: string | null = null
+  let retainedStructuredFields: Record<string, unknown> = {}
+
+  function parseRawCustomFields(raw: unknown): Record<string, unknown> {
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) return { ...(raw as Record<string, unknown>) }
+    if (typeof raw !== "string") return {}
+    try {
+      const parsed = JSON.parse(raw)
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {}
+    } catch {
+      return {}
+    }
+  }
+
   function getCFFromUI(): Record<string, string> {
     const result: Record<string, string> = {}
     document.querySelectorAll(".td-cf-row").forEach((row) => {
-      const key = (
-        row.querySelector(".td-cf-key") as HTMLInputElement
-      )?.value.trim()
-      // Handle checkbox vs other input types
-      const cbInput = row.querySelector(
-        "input[type=checkbox].td-cf-val",
-      ) as HTMLInputElement | null
-      const otherInput = row.querySelector(
-        "select.td-cf-val, input:not([type=checkbox]).td-cf-val",
-      ) as HTMLInputElement | HTMLSelectElement | null
-      let val = ""
-      if (cbInput) {
-        val = cbInput.checked ? "true" : "false"
-      } else if (otherInput) {
-        val = otherInput.value.trim()
-      }
-      if (key) result[key] = val
+      const key = (row.querySelector(".td-cf-key") as HTMLInputElement)?.value.trim()
+      if (!key) return
+      const cbInput = row.querySelector("input[type=checkbox].td-cf-val") as HTMLInputElement | null
+      const otherInput = row.querySelector("select.td-cf-val, input:not([type=checkbox]).td-cf-val") as HTMLInputElement | HTMLSelectElement | null
+      result[key] = cbInput ? (cbInput.checked ? "true" : "false") : (otherInput?.value.trim() ?? "")
     })
     return result
   }
 
+  const buildMergedPayload = () => ({ ...retainedStructuredFields, ...getCFFromUI() })
   let _saveCFTimer: ReturnType<typeof setTimeout> | null = null
 
+  function cancelPendingSave(): void {
+    if (_saveCFTimer) {
+      clearTimeout(_saveCFTimer)
+      _saveCFTimer = null
+    }
+  }
+
+  signal?.addEventListener("abort", cancelPendingSave, { once: true })
+
   function saveCF() {
-    // Debounce the actual API save
-    if (_saveCFTimer) clearTimeout(_saveCFTimer)
+    cancelPendingSave()
+    const scheduledTaskId = getCurrentTaskId?.() ?? activeTaskId
     _saveCFTimer = setTimeout(() => {
-      const all = getCFFromUI()
-      saveTD("custom_fields", JSON.stringify(all))
+      _saveCFTimer = null
+      if (!signal?.aborted && (getCurrentTaskId?.() ?? activeTaskId) === scheduledTaskId) {
+        void saveTD("custom_fields", JSON.stringify(buildMergedPayload()))
+      }
     }, 400)
   }
+
+  function loadTaskCustomFields(
+    taskId: string,
+    rawCustomFields: unknown,
+    renderedKeys: Set<string>,
+    settingsFields: Array<{ name: string; type: string; options?: string[] }>,
+  ): void {
+    cancelPendingSave()
+    activeTaskId = taskId
+    retainedStructuredFields = {}
+    document.getElementById("td-custom-fields")?.replaceChildren()
+    for (const [k, v] of Object.entries(parseRawCustomFields(rawCustomFields))) {
+      if (v === null || v === undefined) continue
+      renderedKeys.add(k)
+      if (typeof v === "object" || STRUCTURED_CF_KEYS.has(k)) {
+        retainedStructuredFields[k] = v
+      } else {
+        const sfDef = settingsFields.find((sf) => sf.name === k)
+        addCFRow(k, String(v), sfDef?.type || "text", sfDef?.options)
+      }
+    }
+  }
+
+  function setStructuredField(key: string, value: unknown, persistNow = true): void {
+    const currentId = getCurrentTaskId?.() ?? activeTaskId
+    if (!currentId || currentId !== activeTaskId) return
+    if (value === undefined) delete retainedStructuredFields[key]
+    else retainedStructuredFields[key] = value
+    if (persistNow) {
+      cancelPendingSave()
+      void saveTD("custom_fields", JSON.stringify(buildMergedPayload()))
+    }
+  }
+
+  const getStructuredField = (key: string): unknown => retainedStructuredFields[key]
 
   function addCFRow(
     key: string,
@@ -161,11 +207,11 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
   // Categorized field groups for the dropdown
   const fieldCategories: { label: string; fields: string[] }[] = [
     {
-      label: "🎯 RICE Framework",
+      label: "RICE Framework",
       fields: ["Reach", "Impact", "Confidence", "Effort"],
     },
     {
-      label: "📋 Agile & Planning",
+      label: "Agile & Planning",
       fields: [
         "Estimate",
         "Sprint",
@@ -178,13 +224,16 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
       ],
     },
     {
-      label: "📊 Sizing & Value",
+      label: "Sizing & Value",
       fields: ["Complexity", "T-Shirt Size", "Business Value"],
     },
   ]
 
   function getAvailableFields(): { label: string; fields: string[] }[] {
-    const currentKeys = new Set(Object.keys(getCFFromUI()))
+    const currentKeys = new Set([
+      ...Object.keys(getCFFromUI()),
+      ...Object.keys(retainedStructuredFields),
+    ])
     const _settingsFields = getSettingsFields()
     // Build categorized list filtered by what's already on the task
     const result = fieldCategories
@@ -203,7 +252,7 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
         .filter((n) => !currentKeys.has(n) && !allPredefinedNames.has(n))
       if (settingsOnly.length > 0) {
         result.unshift({
-          label: "📋 Settings Fields",
+          label: "Settings Fields",
           fields: settingsOnly,
         })
       }
@@ -220,7 +269,7 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
     })
     if (existingCustom.length > 0) {
       result.push({
-        label: "🔧 Custom",
+        label: "Custom",
         fields: [...new Set(existingCustom)].sort(),
       })
     }
@@ -235,12 +284,12 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
     const nodes: HTMLElement[] = []
     let totalCount = 0
     const typeBadge: Record<string, string> = {
-      text: "📝",
-      checkbox: "☑️",
-      select: "📊",
-      date: "📅",
-      number: "🔢",
-      url: "🔗",
+      text: "Aa",
+      checkbox: "Yes/No",
+      select: "List",
+      date: "Date",
+      number: "#",
+      url: "URL",
     }
     for (const cat of categories) {
       const filtered = cat.fields.filter((f) =>
@@ -254,11 +303,11 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
       nodes.push(header)
       for (const f of filtered) {
         const sfDef = _settingsFields.find((sf) => sf.name === f)
-        const badge = typeBadge[sfDef?.type || "text"] || "📝"
+        const badge = typeBadge[sfDef?.type || "text"] || "Aa"
         const opt = document.createElement("div")
         opt.className = "td-cf-option px-3 py-1.5 text-sm cursor-pointer hover:bg-bg-hover"
         opt.dataset.field = f
-        opt.textContent = `${badge} ${f}`
+        opt.textContent = `${f} (${badge})`
         nodes.push(opt)
       }
     }
@@ -362,5 +411,11 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
     }
   }, opts)
 
-  return { addCFRow }
+  return {
+    addCFRow,
+    loadTaskCustomFields,
+    setStructuredField,
+    getStructuredField,
+    cancelPendingSave,
+  }
 }

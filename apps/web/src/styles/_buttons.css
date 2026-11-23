@@ -218,42 +218,6 @@
   }
 }
 
-/* B1: Success/error flash feedback */
-@keyframes btn-success-flash {
-  0% {
-    box-shadow: 0 0 0 0 var(--color-success);
-  }
-
-  50% {
-    box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.3);
-  }
-
-  100% {
-    box-shadow: 0 0 0 0 transparent;
-  }
-}
-
-@keyframes btn-error-flash {
-  0% {
-    box-shadow: 0 0 0 0 var(--danger);
-  }
-
-  50% {
-    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.3);
-  }
-
-  100% {
-    box-shadow: 0 0 0 0 transparent;
-  }
-}
-
-.btn-flash-success {
-  animation: btn-success-flash 0.6s ease;
-}
-
-.btn-flash-error {
-  animation: btn-error-flash 0.6s ease;
-}
 /* Loading spinner for async ops */
 /* ===== Loading Spinner for Async Ops (Wave 7) ===== */
 @keyframes spin {

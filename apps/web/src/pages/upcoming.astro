@@ -7,7 +7,9 @@ import Layout from "../layouts/Layout.astro";
 import UnifiedBar from "../components/layout/UnifiedBar.astro";
 import EmptyState from "../components/ui/EmptyState.astro";
 import Icon from "../components/ui/Icon.astro"
+import TaskTypeIcon from "../components/ui/TaskTypeIcon.astro";
 import LabelBadges from "../components/ui/LabelBadges.astro";
+import { effectiveTaskScheduledDate } from "@meitheal/domain-tasks";
 import {
   ensureSchema,
   getPersistenceClient,
@@ -46,7 +48,13 @@ try {
 
   const tasksByDate = new Map<string, Record<string, unknown>[]>();
   for (const row of allTasks) {
-    const d = calendarDayFromInput(row.due_date == null ? null : String(row.due_date), upcomingTimeZone);
+    const scheduled = effectiveTaskScheduledDate({
+      task_kind: typeof row.task_kind === "string" ? row.task_kind : null,
+      due_date: row.due_date == null ? null : String(row.due_date),
+      start_date: row.start_date == null ? null : String(row.start_date),
+      end_date: row.end_date == null ? null : String(row.end_date),
+    });
+    const d = calendarDayFromInput(scheduled, upcomingTimeZone);
     if (!d) continue;
     if (!tasksByDate.has(d)) tasksByDate.set(d, []);
     tasksByDate.get(d)!.push(row);
@@ -87,14 +95,6 @@ import StatusBadge from "../components/ui/StatusBadge.astro";
 import { STATUS_LABELS, normalizeStatus } from "../lib/status-config";
 import { UPCOMING_SECTIONS } from "../lib/upcoming-registry";
 import { taskDetailPath } from "../lib/task-page-url"
-
-
-
-const typeIcons: Record<string, string> = {
-  epic: "🎯",
-  story: "📖",
-  task: "📌",
-};
 
 const daysLoaded = days.length === 7
 const unavailableMessage = "Upcoming tasks couldn’t load. Refresh the page to try again."
@@ -195,7 +195,7 @@ function dayLabelClass(day: DayGroup): string {
                   aria-expanded="true"
                 >
                   <div class="day-header__left">
-                    <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    <Icon name="chevron-down" size={16} class="chevron-icon" sprite />
                     <span class={dayLabelClass(day)}>
                       {day.label}
                     </span>
@@ -238,9 +238,11 @@ function dayLabelClass(day: DayGroup): string {
                                 data-task-detail-link={id}
                                 aria-describedby={descriptionId}
                               >
-                                <span class="task-type-icon" aria-hidden="true">
-                                  {typeIcons[tt] ?? ""}
-                                </span>
+                                <TaskTypeIcon
+                                  type={tt}
+                                  kind={typeof task.task_kind === "string" ? task.task_kind : null}
+                                  size={14}
+                                />
                                 {title}
                               </a>
                               <span class="sr-only" id={descriptionId}>
@@ -259,7 +261,7 @@ function dayLabelClass(day: DayGroup): string {
                             />
                           )}
                           {task.recurrence_rule && (
-                            <span class="task-meta-icon" title="Recurring">🔁</span>
+                            <span class="task-meta-icon" title="Recurring"><Icon name="repeat" size={14} sprite /></span>
                           )}
                           {(() => {
                             try {
@@ -271,7 +273,7 @@ function dayLabelClass(day: DayGroup): string {
                                     class={`task-checklist-count ${done === cl.length ? "task-checklist-count--complete" : ""}`}
                                     title={`Checklist: ${done}/${cl.length}`}
                                   >
-                                    ✓ {done}/{cl.length}
+                                    <Icon name="check" size={12} sprite /> {done}/{cl.length}
                                   </span>
                                 );
                               }

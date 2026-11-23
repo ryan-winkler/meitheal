@@ -52,7 +52,7 @@ export type BoardPlanningChange =
 export const namedRoutinePeriod = routinePeriod
 
 /** Compatibility output assembled exclusively from the common scoped engines. */
-export async function readNamedBoardPlanning(client: Client, scope: BoardScope) {
+export async function readNamedBoardPlanning(client: Client, scope: BoardScope, timezone = "UTC") {
   requireBoardScope(scope)
   const hierarchy = new HierarchyRepository(client, scope)
   const templates = new TemplateRepository(client, scope)
@@ -62,7 +62,7 @@ export async function readNamedBoardPlanning(client: Client, scope: BoardScope) 
   const projects = can("project") ? await hierarchy.findAllProjects() : []
   const goals = can("goal") ? await hierarchy.findAllGoals() : []
   const shared = can("goal") ? await readSharedGoals(client, scope) : []
-  const routines = can("routine") ? await templates.getRoutinesWithStats() : []
+  const routines = can("routine") ? await templates.getRoutinesWithStats(undefined, undefined, timezone) : []
   const pillars = can("pillar") ? await readBoardPillars(client, scope) : []
   const destinations: Array<{
     id: string

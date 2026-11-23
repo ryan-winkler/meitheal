@@ -119,6 +119,22 @@ const DEFAULT_EMOJI_TO_TABLER: Record<string, IconName> = {
   "🔔": "bell",
   "🏷️": "adjustments-horizontal",
   "🏷": "adjustments-horizontal",
+  "💧": "droplet",
+  "🏃": "walk",
+  "🚶": "walk",
+  "🧘": "heart",
+  "💊": "pill",
+  "📚": "book",
+  "📖": "book",
+  "🧹": "wash",
+  "☕": "coffee",
+  "🌙": "moon",
+  "🍎": "apple",
+  "❄️": "snowflake",
+  "❄": "snowflake",
+  "🛍️": "shopping-bag",
+  "🛍": "shopping-bag",
+  "📍": "map-pin",
 }
 
 export function mapEntityEmojiToTabler(raw?: string | null): IconName | null {

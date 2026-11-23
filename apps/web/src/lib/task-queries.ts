@@ -19,7 +19,7 @@ import {
 } from "@domains/tasks/persistence/store";
 import { taskTimestampMs } from "@domains/tasks/persistence/task-timestamp";
 import type { InValue, Row } from "@libsql/client";
-import { deriveEisenhowerQuadrant } from "@meitheal/domain-tasks";
+import { deriveEisenhowerQuadrant, effectiveTaskScheduledDate } from "@meitheal/domain-tasks";
 import { parseCalendarDay } from "./calendar-day"
 import { calendarDayFromInput, calendarToday, householdDayRanges, isDueOverdue, isValidTimezone, resolveTimezone, shiftCalendarDay } from "./date"
 import { frameworkPayloadObject, readRiceInputs, riceLensScore } from "./rice-lens"
@@ -136,6 +136,8 @@ function isOverdue(dueDate: string | null, isDone: boolean, timezone: string, no
 // =============================================================================
 // Main Query
 // =============================================================================
+
+const SCHEDULED_DATE_SQL = "CASE WHEN task_kind = 'calendar_event' THEN COALESCE(NULLIF(start_date, ''), NULLIF(due_date, ''), NULLIF(end_date, '')) ELSE due_date END";
 
 const TASK_VIEW_COLUMNS = `
   id, title, description, status, priority, due_date, labels,
@@ -280,13 +282,13 @@ export async function getTasksForView(options: TaskViewOptions = {}, scope: Boar
             FROM scoped_tasks AS tasks WHERE 1
           `, [])),
         scopedTaskRead(scope, sourceSql(`
-            SELECT due_date
+            SELECT ${SCHEDULED_DATE_SQL} AS due_date
             FROM scoped_tasks AS tasks
             WHERE 1 AND status != 'complete'
               AND deferred_at IS NULL
-              AND due_date IS NOT NULL
-              AND due_date != ''
-              AND substr(due_date, 1, 10) < ?
+              AND ${SCHEDULED_DATE_SQL} IS NOT NULL
+              AND ${SCHEDULED_DATE_SQL} != ''
+              AND substr(${SCHEDULED_DATE_SQL}, 1, 10) < ?
           `, [upperBound])),
       ], "read");
       rows = tasksRes!.rows as Record<string, unknown>[];
@@ -330,11 +332,15 @@ function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "
   const priority = Number(row.priority ?? 3);
   const isDone = status === "complete";
   const dueDate = row.due_date ? String(row.due_date) : null;
+  const startDate = row.start_date ? String(row.start_date) : null;
+  const endDate = row.end_date ? String(row.end_date) : null;
+  const taskKind = row.task_kind ? String(row.task_kind) : "standard_action";
   const fp = frameworkPayloadObject(safeParseJson(row.framework_payload, {}))
   const riceInputs = readRiceInputs(fp)
   const rice = riceInputs ? riceLensScore(riceInputs) : null
   const deferredAt = row.deferred_at == null ? null : Number(row.deferred_at)
-  const overdue = deferredAt === null && isOverdue(dueDate, isDone, timezone, now)
+  const scheduledDate = effectiveTaskScheduledDate({ task_kind: taskKind, due_date: dueDate, start_date: startDate, end_date: endDate })
+  const overdue = deferredAt === null && isOverdue(scheduledDate, isDone, timezone, now)
 
   const publicTask = projectPublicTaskFields(row)
   const item: TaskViewItem = {
@@ -495,7 +501,7 @@ export async function getTodayTaskRows(
       totals AS (
         SELECT COUNT(*) FILTER (WHERE ${completionFilter.sql}) AS completed_today,
                COUNT(*) FILTER (
-                 WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND (due_date IS NULL OR due_date = '')
+                 WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND (${SCHEDULED_DATE_SQL} IS NULL OR ${SCHEDULED_DATE_SQL} = '')
                ) AS open_unscheduled
         FROM scoped_tasks AS tasks WHERE ${context.sql}
       )
@@ -506,7 +512,7 @@ export async function getTodayTaskRows(
         AND deferred_at IS NULL
         AND (
           ? = 1
-          OR (due_date IS NOT NULL AND due_date <> '')
+          OR (${SCHEDULED_DATE_SQL} IS NOT NULL AND ${SCHEDULED_DATE_SQL} <> '')
           OR is_favorite NOT IN (0, '')
           OR framework_payload NOT IN ('{}', '')
         )
@@ -565,11 +571,11 @@ export async function getTodayTaskCounts(now = new Date(), timezone: string | un
              0 AS dated_count
       FROM scoped_tasks AS tasks WHERE ${context.sql}
       UNION ALL
-      SELECT due_date, 0, 0, COUNT(*)
+      SELECT ${SCHEDULED_DATE_SQL} AS due_date, 0, 0, COUNT(*)
       FROM scoped_tasks AS tasks
       WHERE ${context.sql} AND status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND COALESCE(is_favorite, 0) IN (0, '')
-        AND due_date IS NOT NULL AND due_date <> ''
-      GROUP BY due_date
+        AND ${SCHEDULED_DATE_SQL} IS NOT NULL AND ${SCHEDULED_DATE_SQL} <> ''
+      GROUP BY ${SCHEDULED_DATE_SQL}
     `,
     args: [...completionFilter.args, ...context.args, ...context.args],
   }

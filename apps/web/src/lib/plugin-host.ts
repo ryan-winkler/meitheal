@@ -11,6 +11,7 @@
  * RPC bridge that enforces declared manifest permissions.
  */
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { safeFetch } from "@lib/safe-fetch"
 import { showToast } from "@lib/toast"
 
 export interface ClientPluginBundle {
@@ -131,24 +132,42 @@ ${safeCode}
 </script></head><body></body></html>`
 }
 
+function safeInlineJson(value: unknown): string {
+  return JSON.stringify(value).split("<").join("\\u003c")
+}
+
 function buildSandboxedSrcdoc(rawHtml: string, token: string): string {
   const computed = getComputedStyle(document.documentElement)
-  const vars = THEME_TOKENS.map((name) => {
+  const themeMap: Record<string, string> = {}
+  for (const name of THEME_TOKENS) {
     const val = computed.getPropertyValue(name).trim()
-    return val ? `${name}:${val.replace(/[<>]/g, "")};` : ""
-  }).join("")
-
-  // Strip any plugin-supplied CSP meta tag before prepending the strict host CSP.
-  const cleanedHtml = rawHtml.replace(/<meta[^>]*http-equiv\s*=\s*["']?content-security-policy["']?[^>]*>/gi, "")
-  const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${SANDBOX_CSP}">`
-  const themeStyle = `<style>:root{${vars}}</style>`
-  const bridgeScript = `<script>(function(){const T=${JSON.stringify(token)};let n=1;const p=new Map();window.addEventListener("message",function(e){const d=e.data;if(!d||d.token!==T||d.kind!=="meitheal_ui_res")return;const r=p.get(d.id);if(!r)return;p.delete(d.id);d.ok?r.resolve(d.result):r.reject(new Error(d.error||"Plugin call failed"));});window.MeithealUI=Object.freeze({send:function(payload){return new Promise(function(resolve,reject){const id=n++;p.set(id,{resolve:resolve,reject:reject});window.parent.postMessage({token:T,kind:"meitheal_ui_req",id:id,payload:payload},"*");});}});})();</script>`
-  const injection = `${cspMeta}${themeStyle}${bridgeScript}`
-
-  if (/<head\b[^>]*>/i.test(cleanedHtml)) {
-    return cleanedHtml.replace(/<head\b[^>]*>/i, (match) => `${match}${injection}`)
+    if (val) themeMap[name] = val
   }
-  return `<!doctype html><html><head>${injection}</head><body>${cleanedHtml}</body></html>`
+
+  // Parse into an isolated DOM so plugin-supplied CSP <meta> tags can be removed without regexes.
+  const doc = new DOMParser().parseFromString(rawHtml, "text/html")
+  for (const meta of Array.from(doc.querySelectorAll("meta[http-equiv]"))) {
+    if (meta.getAttribute("http-equiv")?.trim().toLowerCase() === "content-security-policy") {
+      meta.remove()
+    }
+  }
+  const head = doc.head ?? doc.createElement("head")
+  if (!head.parentElement) doc.documentElement.prepend(head)
+
+  const cspMeta = doc.createElement("meta")
+  cspMeta.setAttribute("http-equiv", "Content-Security-Policy")
+  cspMeta.setAttribute("content", SANDBOX_CSP)
+
+  const bridgeScript = doc.createElement("script")
+  bridgeScript.textContent =
+    `(function(){const T=${safeInlineJson(token)};const V=${safeInlineJson(themeMap)};` +
+    `const r=document.documentElement;for(const[k,v]of Object.entries(V))r.style.setProperty(k,v);` +
+    `let n=1;const p=new Map();` +
+    `window.addEventListener("message",function(e){const d=e.data;if(!d||d.token!==T||d.kind!=="meitheal_ui_res")return;const q=p.get(d.id);if(!q)return;p.delete(d.id);d.ok?q.resolve(d.result):q.reject(new Error(d.error||"Plugin call failed"));});` +
+    `window.MeithealUI=Object.freeze({send:function(payload){return new Promise(function(resolve,reject){const id=n++;p.set(id,{resolve:resolve,reject:reject});window.parent.postMessage({token:T,kind:"meitheal_ui_req",id:id,payload:payload},"*");});}});})();`
+
+  head.prepend(cspMeta, bridgeScript)
+  return `<!DOCTYPE html>${doc.documentElement.outerHTML}`
 }
 
 function getBoardHeaders(): Record<string, string> {
@@ -165,7 +184,8 @@ function requirePerm(inst: ActivePluginInstance, perm: string): void {
 }
 
 async function fetchJson(url: string, init?: RequestInit): Promise<unknown> {
-  const res = await fetch(url, init)
+  if (!url.startsWith("/api/") || url.startsWith("//")) throw new Error("Invalid API path")
+  const res = await safeFetch(url, init)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }

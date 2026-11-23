@@ -325,10 +325,12 @@ async function fetchHabitContext(signal?: AbortSignal): Promise<string | null> {
     if (!Array.isArray(habits) || habits.length === 0) return null;
 
     return habits
-      .filter((h: { active?: boolean }) => h.active !== false)
-      .map((h: { name: string; currentStreak?: number; completedToday?: boolean; targetCount?: number }) =>
-        `- ${h.name}: ${h.currentStreak ?? 0} day streak${h.completedToday ? " ✅" : ""} (target: ${h.targetCount ?? 1}x/day)`)
-      .join("\n");
+      .filter((h: { projectActive?: boolean }) => h.projectActive !== false)
+      .map((h: { name: string; currentStreak?: number; todayCompleted?: boolean; cadence?: string }) => {
+        const unit = h.cadence === "weekly" ? "week" : "day"
+        return `- ${h.name}: ${h.currentStreak ?? 0} ${unit} streak${h.todayCompleted ? " (done)" : ""} (cadence: ${h.cadence ?? "daily"})`
+      })
+      .join("\n")
   } catch {
     return null;
   }

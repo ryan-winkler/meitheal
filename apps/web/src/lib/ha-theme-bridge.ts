@@ -1,6 +1,7 @@
 import { applyPersonalAccent } from "./accent-colors"
 import { applyHAThemePalette, HA_THEME_MATCH_KEY, readHAThemePalette } from "./ha-theme-palette"
 import { pageLifecycle } from "./page-lifecycle"
+import { type ThemeMode } from "./theme-mode"
 import { applyTheme, readAppearanceValue } from "./theme-watcher"
 
 type Appearance = "light" | "dark"
@@ -37,7 +38,7 @@ function frameParent(): Window | undefined {
   }
 }
 
-type HAThemePreview = { matchHaTheme?: boolean; accent?: string | null }
+type HAThemePreview = { theme?: ThemeMode; matchHaTheme?: boolean; accent?: string | null }
 let activePreview: HAThemePreview | undefined
 
 /** An unsaved Look and Feel draft stays previewed when parent theme changes refresh the palette. */
@@ -60,7 +61,7 @@ export function refreshHAThemeMatch(preview: HAThemePreview | undefined = active
     : readAppearanceValue("meitheal-accent-color")
   const match = readHAThemePalette(matchEnabled, Boolean(parent))
   applyHAThemePalette(root, match, accent, applyPersonalAccent)
-  if (wasMatched || match.state === "active" || (parent && root.dataset.theme === "auto")) applyTheme()
+  if (wasMatched || match.state === "active" || (parent && root.dataset.theme === "auto")) applyTheme(preview?.theme)
   document.dispatchEvent(new Event("meitheal:ha-theme-match"))
 }
 

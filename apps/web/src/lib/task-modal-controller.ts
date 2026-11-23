@@ -16,7 +16,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         import { confirmDialog } from "@lib/confirm-dialog";
         import { pageLifecycle } from "@lib/page-lifecycle";
         import { onTaskCompleted } from "@lib/gamification-hook";
-        import { renderTypeIconSvg } from "@lib/type-icon-config";
+        import { createTypeIconElement } from "@lib/type-icon-config";
         import { escapeHtml } from "@lib/safe-html";
         import { showToast } from "@lib/toast"
         import { loadComments, loadAttachments } from "@lib/controllers/modal-comments-attachments";
@@ -44,9 +44,10 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         // Use lifecycle signal for all global listeners in this module
         pageLifecycle.onPageLoad(() => {
           const __signal = pageLifecycle.signal;
+          const byId = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T | null
 
           // === Task Detail Panel ===
-          const tdOverlay = document.getElementById(
+          const tdOverlay = byId(
             "task-detail-overlay",
           ) as HTMLDivElement;
         if (!tdOverlay || tdOverlay.dataset.namedBoard || tdOverlay.dataset.detailController === "ready") return
@@ -101,6 +102,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           _previouslyFocused = null
           if (_descSavedTimer !== null) clearTimeout(_descSavedTimer)
           clearTimeout(parentSearchTimer)
+          cancelCustomFieldSaves?.()
           closeTaskReferences()
           deferral.opening(false)
           pins.opening()
@@ -127,23 +129,57 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           tdOverlay.inert = false
         }, { signal: __signal })
         let detailGeneration = 0
+        let cancelCustomFieldSaves: (() => void) | null = null
+        let currentTaskKind = "standard_action"
+        const KIND_BADGE_LABELS: Record<string, string> = {
+          calendar_event: "Event",
+          shopping_item: "Shopping",
+          routine_instance: "Routine",
+          checklist: "Checklist",
+          quick_capture: "Quick Capture",
+        }
+        function formatEventInputValue(raw: string, allDay: boolean): string {
+          if (!raw) return ""
+          if (allDay) return raw.slice(0, 10)
+          if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return `${raw}T09:00`
+          const d = new Date(raw)
+          if (Number.isNaN(d.getTime())) return raw.slice(0, 16)
+          return new Date(d.valueOf() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+        }
+        function parseEventInputForSave(val: string, allDay: boolean): string | null {
+          if (!val) return null
+          if (allDay) return val.slice(0, 10)
+          const d = new Date(val)
+          return Number.isNaN(d.getTime()) ? val : d.toISOString()
+        }
+        function syncEventInputsType(allDay: boolean): void {
+          const startInput = byId("td-start-date") as HTMLInputElement | null
+          const endInput = byId("td-end-date") as HTMLInputElement | null
+          for (const inputEl of [startInput, endInput]) {
+            if (!inputEl) continue
+            const prev = inputEl.value
+            inputEl.type = allDay ? "date" : "datetime-local"
+            if (!allDay) inputEl.step = "any"
+            if (prev) inputEl.value = formatEventInputValue(prev, allDay)
+          }
+        }
         const deferral = initModalDeferral(tdOverlay, __signal)
         const pins = initModalTaskPin(tdOverlay, __signal, () => { if (pinnedSession) pinnedSession.dirty = true })
         const closeTaskReferences = initModalTaskReferences(tdOverlay, __signal)
-        const tdClose = document.getElementById("td-close")
-        const tdPanel = document.getElementById("task-detail-panel")
-        const tdHeading = document.getElementById("td-task-heading")
-        const tdActions = document.getElementById("td-task-actions")
+        const tdClose = byId("td-close")
+        const tdPanel = byId("task-detail-panel")
+        const tdHeading = byId("td-task-heading")
+        const tdActions = byId("td-task-actions")
         const tdTitleInput = tdPanel?.querySelector<HTMLTextAreaElement>("#td-title")
         const statusSelect = document.querySelector<HTMLSelectElement>("#td-status")
         const doneButton = document.querySelector<HTMLButtonElement>("#td-toggle-done")
         const deleteButton = document.querySelector<HTMLButtonElement>("#td-delete")
-        const tdError = document.getElementById("td-load-error")
-        const copyFallback = document.getElementById("td-copy-link-fallback")
+        const tdError = byId("td-load-error")
+        const copyFallback = byId("td-copy-link-fallback")
         const copyValue = document.querySelector<HTMLInputElement>("#td-copy-link-value")
         const commentInput = document.querySelector<HTMLTextAreaElement>("#td-comment-input")
         const commentButton = document.querySelector<HTMLButtonElement>("#td-comment-submit")
-        const commentError = document.getElementById("td-comment-error")
+        const commentError = byId("td-comment-error")
         let currentTaskId: string | null = null;
         let currentTaskVersion: number | null = null
         const currentTaskActions = new Set<string>()
@@ -179,12 +215,12 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         tdOverlay.dataset.ticketHistorySession = drawerSession
 
         const dockMedia = window.matchMedia("(min-width: 1440px)")
-        const scroller = document.getElementById("td-loaded-content")
-        const sections = document.getElementById("td-sections")!
+        const scroller = byId("td-loaded-content")
+        const sections = byId("td-sections")!
         const updateSectionOrder = initTicketSectionOrder(sections, __signal)
         const focusToggle = document.querySelector<HTMLButtonElement>("#td-toggle-focus")
         const layoutToggle = document.querySelector<HTMLButtonElement>("#td-toggle-layout")
-        const layoutPanel = document.getElementById("td-layout-panel")
+        const layoutPanel = byId("td-layout-panel")
         const loadedActions = tdOverlay.querySelector<HTMLElement>("[data-td-loaded-actions]")
         let layoutEditorMounted = false
         let layoutScrollTop = 0
@@ -396,7 +432,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           if (!hasChecklistTextDraft?.()) return false
           const write = pendingChecklistSave(currentTaskId)
           if (!write) {
-            document.getElementById("td-checklist-recover")?.focus()
+            byId("td-checklist-recover")?.focus()
             return true
           }
           const generation = detailGeneration
@@ -424,8 +460,10 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           pins.opening()
           // Abort any in-flight fetches
           if (_modalAbortController) { _modalAbortController.abort(); _modalAbortController = null; }
+          cancelCustomFieldSaves?.()
           currentTaskId = null;
           hasChecklistTextDraft = undefined
+          delete tdOverlay.dataset.openTaskId
           document.dispatchEvent(new CustomEvent("meitheal:ha-location-task"))
           sessionTicketId = null
           currentTicketKey = null
@@ -434,7 +472,6 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           taskLoaded = false
           resumeLoadedTask = undefined
           currentCommentTarget = null
-          delete tdOverlay.dataset.openTaskId
           if (updateLocation) setTaskLocation(null)
 
           const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -447,9 +484,9 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             if (layoutPanel && !layoutPanel.hidden) setLayoutPanel(false)
             syncInspectorDockMode();
             // P3-4: Restore focus to the element that triggered the panel
-            const kanban = document.getElementById("kanban-board")
+            const kanban = byId("kanban-board")
             const origin = _previouslyFocused?.isConnected ? _previouslyFocused
-              : _previouslyFocused?.id ? document.getElementById(_previouslyFocused.id)
+              : _previouslyFocused?.id ? byId(_previouslyFocused.id)
               : previousCard && kanban && _previouslyFocused ? findKanbanDetailFocus(kanban, _previouslyFocused)
               : previousDay ? document.querySelector<HTMLElement>(`.cal-cell[data-date="${CSS.escape(previousDay)}"]`) ??
                 document.querySelector<HTMLElement>("#calendar-shell .cal-today-btn")
@@ -480,7 +517,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           }
 
           tdOverlay.classList.add("closing");
-          const panel = document.getElementById("task-detail-panel");
+          const panel = byId("task-detail-panel");
           if (panel) {
             const onEnd = () => { panel.removeEventListener("animationend", onEnd); finishClose(); };
             panel.addEventListener("animationend", onEnd, { once: true, signal: __signal });
@@ -567,6 +604,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           pins.opening()
           // P3-4: Store focus origin for restore on close
           if (newSession) _previouslyFocused = search ? null : document.activeElement
+          delete tdOverlay.dataset.openTaskId
           document.dispatchEvent(new CustomEvent("meitheal:ha-location-task"))
           currentTaskId = taskId
           hasChecklistTextDraft = undefined
@@ -584,7 +622,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           if (_modalAbortController) _modalAbortController.abort();
           _modalAbortController = new AbortController();
           const modalSignal = _modalAbortController.signal
-          document.getElementById("td-ai-response")?.remove()
+          byId("td-ai-response")?.remove()
           _isPopulating = true;
           syncTaskActionControls()
           statusSelect?.removeAttribute("data-saved-status")
@@ -625,8 +663,8 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           // Set dynamic aria-label for screen readers
           setInspectorAriaLabel(`Task detail: loading...`);
           // Show skeleton, hide loaded content
-          const tdSkeleton = document.getElementById("td-skeleton");
-          const tdLoaded = document.getElementById("td-loaded-content");
+          const tdSkeleton = byId("td-skeleton");
+          const tdLoaded = byId("td-loaded-content");
            if (tdSkeleton) tdSkeleton.style.display = "";
            if (tdLoaded) tdLoaded.classList.add("hidden");
            tdHeading?.classList.add("invisible")
@@ -684,7 +722,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             tdOverlay.dataset.openTaskId = taskId
             currentTaskVersion = taskRecordVersion(t)
             taskSaveConflict = false
-            document.getElementById("td-write-conflict")?.remove()
+            byId("td-write-conflict")?.remove()
             document.dispatchEvent(new CustomEvent("meitheal:ha-location-task", { detail: taskId }))
             sessionTicketId = taskId
             currentTicketKey = typeof t.ticket_key === "string" ? t.ticket_key : null
@@ -761,7 +799,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
 
             if (modalSignal.aborted) return
 
-            const parentEl = document.getElementById(
+            const parentEl = byId(
               "td-parent",
             ) as HTMLAnchorElement | null;
             if (parentEl && t.parent_id) {
@@ -779,7 +817,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             }
 
             // Linked Tickets — parent display
-            const linkParentDisplay = document.getElementById(
+            const linkParentDisplay = byId(
               "td-link-parent-display",
             ) as HTMLElement;
             let unlinkParentButton: HTMLButtonElement | undefined
@@ -837,15 +875,15 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             })();
 
             // Linked Tickets — children
-            const childrenDiv = document.getElementById(
+            const childrenDiv = byId(
               "td-link-children",
             ) as HTMLElement;
             if (childrenDiv) {
               childrenDiv.replaceChildren();
               // Progress bar elements
-              const progressWrap = document.getElementById("td-subtask-progress");
-              const progressLabel = document.getElementById("td-subtask-progress-label");
-              const progressBar = document.getElementById("td-subtask-progress-bar");
+              const progressWrap = byId("td-subtask-progress");
+              const progressLabel = byId("td-subtask-progress-label");
+              const progressBar = byId("td-subtask-progress-bar");
               try {
                 const childRes = await fetch( // nosemgrep
                   `${window.__ingress_path || ""}/api/tasks?parent_id=${taskId}`, // nosemgrep
@@ -903,9 +941,9 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             }
 
             // Activity remains lazy and belongs to this open ticket's lifetime.
-            const activityDiv = document.getElementById("td-activity")
-            const activityStatus = document.getElementById("td-activity-status")
-            const activityRetry = document.getElementById("td-activity-retry")
+            const activityDiv = byId("td-activity")
+            const activityStatus = byId("td-activity-status")
+            const activityRetry = byId("td-activity-retry")
             const activityDetails = activityDiv?.closest("details")
             if (activityDetails && activityDiv && activityStatus && activityRetry) {
               activityDiv.replaceChildren()
@@ -971,7 +1009,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               loadRelatedLinks(taskId);
 
             // ID — hidden, accessible via tooltip
-            const tdAnchor = document.getElementById("td-ticket-anchor");
+            const tdAnchor = byId("td-ticket-anchor");
             if (tdAnchor) {
               tdAnchor.textContent = t.ticket_key
                 ? String(t.ticket_key)
@@ -983,7 +1021,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
                 showToast("common.id_copied", "success");
               };
             }
-            const tdIdEl = document.getElementById(
+            const tdIdEl = byId(
               "td-id",
             ) as HTMLElement | null;
             if (tdIdEl) {
@@ -994,13 +1032,28 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               tdIdEl.classList.remove("hidden");
             }
 
-            // Render type icon (shared config from @lib/type-icon-config)
-            const typeIconEl = document.getElementById("td-type-icon") as HTMLElement | null;
+            // Render type icon & kind badge (shared config from @lib/type-icon-config)
+            const taskKind = String(t.task_kind || "standard_action").toLowerCase();
+            currentTaskKind = taskKind;
+            const typeIconEl = byId("td-type-icon") as HTMLElement | null;
             if (typeIconEl) {
               const tt = String(t.task_type || "task").toLowerCase();
-              const iconDoc = new DOMParser().parseFromString(renderTypeIconSvg(tt, 16), "text/html");
-              typeIconEl.replaceChildren(...Array.from(iconDoc.body.childNodes));
-              typeIconEl.title = tt.charAt(0).toUpperCase() + tt.slice(1);
+              typeIconEl.replaceChildren(createTypeIconElement(tt, 16, taskKind));
+              typeIconEl.title = KIND_BADGE_LABELS[taskKind] ?? (tt.charAt(0).toUpperCase() + tt.slice(1));
+            }
+            const kindBadgeEl = byId("td-task-kind-badge") as HTMLElement | null;
+            if (kindBadgeEl) {
+              const label = KIND_BADGE_LABELS[taskKind] ?? "";
+              kindBadgeEl.textContent = label;
+              kindBadgeEl.classList.toggle("hidden", !label);
+            }
+            const kindSelectEl = byId("td-task-kind") as HTMLSelectElement | null;
+            if (kindSelectEl) {
+              const routineOpt = kindSelectEl.querySelector<HTMLOptionElement>('option[value="routine_instance"]');
+              const isRoutineTask = Number(t.routine_occurrence) === 1 || taskKind === "routine_instance";
+              if (routineOpt) routineOpt.hidden = !isRoutineTask;
+              kindSelectEl.value = taskKind;
+              kindSelectEl.disabled = isRoutineTask;
             }
 
             if (tdTitleInput) tdTitleInput.value = String(t.title ?? "")
@@ -1008,7 +1061,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             setInspectorAriaLabel(`Task detail: ${String(t.title ?? "Untitled")}`);
 
             // Priority dot color
-            const priorityDot = document.getElementById(
+            const priorityDot = byId(
               "td-priority-dot",
             ) as HTMLElement;
             const priorityColors: Record<string, string> = {
@@ -1051,22 +1104,22 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             }
 
             (
-              document.getElementById("td-priority") as HTMLSelectElement
+              byId("td-priority") as HTMLSelectElement
             ).value = String(t.priority ?? 3);
 
             // Eisenhower dimensions
-            const urgencyEl = document.getElementById("td-urgency") as HTMLSelectElement | null;
+            const urgencyEl = byId("td-urgency") as HTMLSelectElement | null;
             if (urgencyEl) urgencyEl.value = String(t.urgency ?? 0);
-            const importanceEl = document.getElementById("td-importance") as HTMLSelectElement | null;
+            const importanceEl = byId("td-importance") as HTMLSelectElement | null;
             if (importanceEl) importanceEl.value = String(t.importance ?? 0);
             const progress = Number(t.progress ?? 0);
-            (document.getElementById("td-progress") as HTMLInputElement).value =
+            (byId("td-progress") as HTMLInputElement).value =
               String(progress);
-            const progValEl = document.getElementById("td-progress-value");
+            const progValEl = byId("td-progress-value");
             if (progValEl) progValEl.textContent = `${progress}%`;
 
             // Progress bar fill
-            const progressBarFill = document.getElementById(
+            const progressBarFill = byId(
               "td-progress-bar-fill",
             ) as HTMLElement;
             if (progressBarFill) {
@@ -1076,8 +1129,8 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             }
 
             // Due date display with relative time
-            const dueRow = document.getElementById("td-due-row") as HTMLElement;
-            const dueDisplay = document.getElementById(
+            const dueRow = byId("td-due-row") as HTMLElement;
+            const dueDisplay = byId(
               "td-due-display",
             ) as HTMLElement;
             const dueVal = String(t.due_date ?? "");
@@ -1123,17 +1176,27 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               const raw = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()
               return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : "#69e3b2"
             })()
-            ;(document.getElementById("td-color") as HTMLInputElement).value =
+            ;(byId("td-color") as HTMLInputElement).value =
               String(t.color ?? fallbackAccentHex);
-            const dueInput = document.getElementById("td-due-date") as HTMLInputElement
+            const dueInput = byId("td-due-date") as HTMLInputElement
             dueInput.value = String(t.due_date ?? "")
             dueInput.disabled = Number(t.routine_occurrence) === 1
-            document.getElementById("td-routine-date-hint")?.toggleAttribute("hidden", !dueInput.disabled)
-            const startInput = document.getElementById("td-start-date") as HTMLInputElement
-            startInput.value = String(t.start_date ?? "")
-            const endInput = document.getElementById("td-end-date") as HTMLInputElement
-            endInput.value = String(t.end_date ?? "")
-            const trackedInput = document.getElementById("td-time-tracked") as HTMLInputElement
+            byId("td-routine-date-hint")?.toggleAttribute("hidden", !dueInput.disabled)
+            const startRaw = String(t.start_date ?? "");
+            const endRaw = String(t.end_date ?? "");
+            const isEventSchedule = taskKind === "calendar_event" || Boolean(startRaw) || Boolean(endRaw);
+            const eventScheduleEl = byId("td-event-schedule");
+            eventScheduleEl?.classList.toggle("hidden", !isEventSchedule);
+            const allDayEl = byId("td-event-all-day") as HTMLInputElement | null;
+            const isAllDay = Boolean((startRaw && !startRaw.includes("T")) || (endRaw && !endRaw.includes("T")));
+            if (allDayEl) allDayEl.checked = isAllDay;
+            syncEventInputsType(isAllDay);
+            const startInput = byId("td-start-date") as HTMLInputElement;
+            startInput.value = formatEventInputValue(startRaw, isAllDay);
+            const endInput = byId("td-end-date") as HTMLInputElement;
+            endInput.value = formatEventInputValue(endRaw, isAllDay);
+            byId("td-event-date-error")?.setAttribute("hidden", "");
+            const trackedInput = byId("td-time-tracked") as HTMLInputElement
             trackedInput.value = String(t.time_tracked ?? 0)
             if (areaField && areas) {
               const savedArea = String(t.area_id ?? "")
@@ -1188,7 +1251,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             }
 
             // Populate pillar dropdown
-            const pillarSelect = document.getElementById(
+            const pillarSelect = byId(
               "td-pillar",
             ) as HTMLSelectElement;
             const currentPillarId = String(t.pillar_id ?? "");
@@ -1214,7 +1277,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             }
 
             // Populate principle dropdown
-            const principleSelect = document.getElementById(
+            const principleSelect = byId(
               "td-principle",
             ) as HTMLSelectElement;
             const currentPrincipleId = String(t.principle_id ?? "");
@@ -1247,14 +1310,14 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             }
             // Phase 20: Agile hierarchy type
             (
-              document.getElementById("td-task-type") as HTMLSelectElement
+              byId("td-task-type") as HTMLSelectElement
             ).value = String(t.task_type ?? "task");
 
             // Phase 1 (REC-04): Set recurrence select to current value
-            const recurrenceSelect = document.getElementById("td-recurrence") as HTMLSelectElement | null;
+            const recurrenceSelect = byId("td-recurrence") as HTMLSelectElement | null;
             if (recurrenceSelect) {
               recurrenceSelect.value = String(t.recurrence_rule ?? "");
-              const descEl = document.getElementById("td-recurrence-desc");
+              const descEl = byId("td-recurrence-desc");
               if (descEl) {
                 descEl.textContent = t.recurrence_rule
                   ? (recurrenceSelect.selectedOptions[0]?.textContent ?? "")
@@ -1263,7 +1326,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             }
 
             const isFav = Number(t.is_favorite ?? 0) === 1;
-            const favBtn = document.getElementById("td-toggle-favorite") as HTMLButtonElement | null;
+            const favBtn = byId("td-toggle-favorite") as HTMLButtonElement | null;
             if (favBtn) {
               favBtn.setAttribute("aria-pressed", String(isFav));
               const favLabel = isFav ? "Remove from favorites" : "Add to favorites";
@@ -1271,7 +1334,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               favBtn.setAttribute("aria-label", favLabel);
             }
             const isPromoted = Boolean(t.is_promoted);
-            const promoteBtn = document.getElementById("td-toggle-promote") as HTMLButtonElement | null;
+            const promoteBtn = byId("td-toggle-promote") as HTMLButtonElement | null;
             if (promoteBtn) {
               promoteBtn.setAttribute("aria-pressed", String(isPromoted));
               const promoteLabel = isPromoted
@@ -1320,7 +1383,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             }
 
             // Labels (interactive chips)
-            const labelsDiv = document.getElementById(
+            const labelsDiv = byId(
               "td-labels",
             ) as HTMLElement;
             labelsDiv.replaceChildren();
@@ -1338,28 +1401,13 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               /* skip */
             }
 
-            // Custom fields (interactive rows)
-            const cfDiv = document.getElementById(
-              "td-custom-fields",
-            ) as HTMLElement;
-            cfDiv.replaceChildren();
+            // Custom fields (interactive primitive rows; structured keys preserved in controller)
             const renderedKeys = new Set<string>();
-            try {
-              const cf = JSON.parse(String(t.custom_fields ?? "{}")) as Record<
-                string,
-                string
-              >;
-              for (const [k, v] of Object.entries(cf)) {
-                if (v !== null && v !== undefined) {
-                  const sfDef = _settingsFields.find(
-                    (sf: { name: string }) => sf.name === k,
-                  );
-                  addCFRow(k, String(v), sfDef?.type || "text", sfDef?.options);
-                  renderedKeys.add(k);
-                }
-              }
-            } catch {
-              /* skip */
+            cfApi.loadTaskCustomFields(taskId, t.custom_fields, renderedKeys, _settingsFields);
+            const eventLocationEl = byId("td-event-location") as HTMLInputElement | null;
+            if (eventLocationEl) {
+              const savedLoc = cfApi.getStructuredField("location");
+              eventLocationEl.value = typeof savedLoc === "string" ? savedLoc : "";
             }
 
             // Pre-populate settings-defined fields that aren't already on this task
@@ -1384,22 +1432,35 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             const updated = t.updated_at
               ? new Date(Number(t.updated_at)).toLocaleDateString()
               : "";
-            const tdUpdated = document.getElementById("td-updated");
+            const tdUpdated = byId("td-updated");
             if (tdUpdated)
               tdUpdated.textContent =
                 "Last updated " +
                 new Date(Number(t.updated_at)).toLocaleString();
-            hasChecklistTextDraft = showTaskChecklist(taskId, t.checklists, modalSignal, send => saveTaskChecklist(taskId, send),
-              typeof t.ticket_key === "string" ? t.ticket_key : undefined)
-            const taskReactions = document.getElementById("td-task-reactions")
+            const storedShopping = cfApi.getStructuredField("items")
+            hasChecklistTextDraft = showTaskChecklist(
+              taskId,
+              t.checklists,
+              modalSignal,
+              send => saveTaskChecklist(taskId, send),
+              typeof t.ticket_key === "string" ? t.ticket_key : undefined,
+              {
+                taskKind,
+                shoppingItems: Array.isArray(storedShopping) ? storedShopping as Array<{ name?: string; qty?: number; category?: string }> : undefined,
+                onShoppingItemsChange: items => {
+                  cfApi.setStructuredField("items", items, true)
+                },
+              },
+            )
+            const taskReactions = byId("td-task-reactions")
             if (taskReactions) {
               taskReactions.replaceChildren()
               mountReactions(taskReactions, `/api/tasks/${encodeURIComponent(taskId)}/reactions`, modalSignal, taskId)
             }
 
             // Load comments for the current task.
-            document.getElementById("td-comments")?.replaceChildren()
-            document.getElementById("td-comment-link-status")?.replaceChildren()
+            byId("td-comments")?.replaceChildren()
+            byId("td-comment-link-status")?.replaceChildren()
             commentError?.setAttribute("hidden", "")
             if (commentButton) commentButton.disabled = false
             if (commentInput && commentInput.dataset.taskId !== taskId) {
@@ -1451,7 +1512,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
 
 
         function showTaskWriteConflict() {
-          if (document.getElementById("td-write-conflict")) return
+          if (byId("td-write-conflict")) return
           const notice = document.createElement("div")
           notice.id = "td-write-conflict"
           notice.className = "alert alert-warning"
@@ -1463,7 +1524,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           refresh.textContent = "Reload saved task"
           refresh.addEventListener("click", () => { if (currentTaskId) void openTaskDetail(currentTaskId) }, { signal: __signal })
           notice.append(refresh)
-          document.getElementById("td-loaded-content")?.prepend(notice)
+          byId("td-loaded-content")?.prepend(notice)
         }
 
         function queueTaskWrite<T>(taskId: string, write: () => T | Promise<T>): Promise<T> {
@@ -1556,15 +1617,15 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         }
 
         // F11: Description Edit/Preview UX (simplified)
-        const descEditContainer = document.getElementById("td-desc-edit-container");
-        const descPreviewContainer = document.getElementById("td-desc-preview-container");
+        const descEditContainer = byId("td-desc-edit-container");
+        const descPreviewContainer = byId("td-desc-preview-container");
         const descView = descPreviewContainer?.closest(".td-description-view")
-        const descPreview = document.getElementById("td-desc-preview");
-        const tdDescription = document.getElementById("td-description") as HTMLTextAreaElement;
-        const descEditBtnHover = document.getElementById("td-desc-edit-btn-hover");
+        const descPreview = byId("td-desc-preview");
+        const tdDescription = byId("td-description") as HTMLTextAreaElement;
+        const descEditBtnHover = byId("td-desc-edit-btn-hover");
         const descSaveBtn = document.querySelector<HTMLButtonElement>("#td-desc-save-btn")
         const descCancelBtn = document.querySelector<HTMLButtonElement>("#td-desc-cancel-btn")
-        const descSavedIndicator = document.getElementById("td-desc-saved");
+        const descSavedIndicator = byId("td-desc-saved");
 
         let _descOriginalValue = "";
         let _descSavedTimer: number | null = null;
@@ -1761,13 +1822,39 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           ?.addEventListener("change", (e) =>
             saveTD("importance", Number((e.target as HTMLSelectElement).value)),
           { signal: __signal });
+        // Task kind + Event schedule auto-save
+        document
+          .getElementById("td-task-kind")
+          ?.addEventListener("change", (e) => {
+            const nextKind = (e.target as HTMLSelectElement).value || "standard_action";
+            currentTaskKind = nextKind;
+            const kindBadgeEl = byId("td-task-kind-badge");
+            if (kindBadgeEl) {
+              const label = KIND_BADGE_LABELS[nextKind] ?? "";
+              kindBadgeEl.textContent = label;
+              kindBadgeEl.classList.toggle("hidden", !label);
+            }
+            const tt = (byId("td-task-type") as HTMLSelectElement | null)?.value || "task";
+            const typeIconEl = byId("td-type-icon");
+            if (typeIconEl) typeIconEl.replaceChildren(createTypeIconElement(tt, 16, nextKind));
+            const startVal = (byId("td-start-date") as HTMLInputElement | null)?.value ?? "";
+            const endVal = (byId("td-end-date") as HTMLInputElement | null)?.value ?? "";
+            byId("td-event-schedule")?.classList.toggle(
+              "hidden",
+              nextKind !== "calendar_event" && !startVal && !endVal,
+            );
+            saveTD("task_kind", nextKind);
+          }, { signal: __signal });
         // Phase 20: task_type auto-save
         document
           .getElementById("td-task-type")
           ?.addEventListener("change", (e) => {
-            saveTD("task_type", (e.target as HTMLSelectElement).value);
+            const tt = (e.target as HTMLSelectElement).value;
+            const typeIconEl = byId("td-type-icon");
+            if (typeIconEl) typeIconEl.replaceChildren(createTypeIconElement(tt, 16, currentTaskKind));
+            saveTD("task_type", tt);
           }, { signal: __signal });
-        document.getElementById("td-area")?.addEventListener("change", async event => {
+        byId("td-area")?.addEventListener("change", async event => {
           const select = event.currentTarget as HTMLSelectElement
           const modalSignal = _modalAbortController?.signal
           const taskId = currentTaskId
@@ -1791,7 +1878,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           if (hadFocus && document.activeElement === document.body) select.focus({ preventScroll: true })
         }, { signal: __signal })
         // Project change auto-save
-        document.getElementById("td-project")?.addEventListener("change", async (event) => {
+        byId("td-project")?.addEventListener("change", async (event) => {
           const select = event.currentTarget as HTMLSelectElement
           const modalSignal = _modalAbortController?.signal
           const projectId = select.value
@@ -1804,12 +1891,12 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         }, { signal: __signal })
 
         // Pillar change auto-save & dynamic Principle update
-        document.getElementById("td-pillar")?.addEventListener("change", async (e) => {
+        byId("td-pillar")?.addEventListener("change", async (e) => {
           const pillarId = (e.target as HTMLSelectElement).value || null;
           saveTD("pillar_id", pillarId);
           // Auto-clear principle when pillar changes
           saveTD("principle_id", null);
-          const principleSelect = document.getElementById("td-principle") as HTMLSelectElement | null;
+          const principleSelect = byId("td-principle") as HTMLSelectElement | null;
           if (principleSelect) {
             principleSelect.replaceChildren(new Option("No principle", ""));
             if (pillarId) {
@@ -1833,7 +1920,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         }, { signal: __signal });
 
         // Principle change auto-save
-        document.getElementById("td-principle")?.addEventListener("change", (e) => {
+        byId("td-principle")?.addEventListener("change", (e) => {
           saveTD("principle_id", (e.target as HTMLSelectElement).value || null);
         }, { signal: __signal });
         // Assigned To: auto-save on change + toast feedback (UX2)
@@ -1851,9 +1938,9 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           }, { signal: __signal });
         // UX2: Keyboard shortcut 'A' to focus assignee dropdown in detail panel
         document.addEventListener("keydown", (e) => {
-          const panel = document.getElementById("task-detail-panel");
+          const panel = byId("task-detail-panel");
           if (!panel || panel.style.display === "none") return;
-          if (!tdOverlay.classList.contains("active") || hasPriorityOverlay() || !document.getElementById("shortcut-modal")?.classList.contains("hidden")) return;
+          if (!tdOverlay.classList.contains("active") || hasPriorityOverlay() || !byId("shortcut-modal")?.classList.contains("hidden")) return;
           if (document.body.classList.contains("has-docked-inspector") && !panel.contains(document.activeElement)) return;
           if (e.key === "a" && !e.ctrlKey && !e.metaKey && !e.altKey && singleKeyShortcutsEnabled()) {
             const active = document.activeElement as HTMLElement;
@@ -1865,7 +1952,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             )
               return;
             e.preventDefault();
-            const assignee = document.getElementById("td-assigned-to")
+            const assignee = byId("td-assigned-to")
             const disclosure = assignee?.closest("details")
             if (disclosure) disclosure.open = true
             assignee?.focus()
@@ -1876,7 +1963,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           .getElementById("td-progress")
           ?.addEventListener("input", (e) => {
             const v = (e.target as HTMLInputElement).value;
-            const progEl = document.getElementById("td-progress-value");
+            const progEl = byId("td-progress-value");
             if (progEl) progEl.textContent = `${v}%`;
           }, { signal: __signal });
         document
@@ -1894,16 +1981,38 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           ?.addEventListener("change", (e) =>
             saveTD("due_date", (e.target as HTMLInputElement).value || null),
           { signal: __signal });
+        function saveEventWindow(): void {
+          const allDay = Boolean((byId("td-event-all-day") as HTMLInputElement | null)?.checked)
+          const startInput = byId("td-start-date") as HTMLInputElement | null
+          const endInput = byId("td-end-date") as HTMLInputElement | null
+          const errEl = byId("td-event-date-error")
+          const startIso = parseEventInputForSave(startInput?.value ?? "", allDay)
+          const endIso = parseEventInputForSave(endInput?.value ?? "", allDay)
+          const invalid = Boolean(startIso && endIso && new Date(endIso) <= new Date(startIso))
+          errEl?.toggleAttribute("hidden", !invalid)
+          if (invalid) return
+          void saveTD("start_date", startIso)
+          void saveTD("end_date", endIso)
+        }
+        document
+          .getElementById("td-event-all-day")
+          ?.addEventListener("change", (e) => {
+            const allDay = (e.target as HTMLInputElement).checked
+            syncEventInputsType(allDay)
+            saveEventWindow()
+          }, { signal: __signal });
         document
           .getElementById("td-start-date")
-          ?.addEventListener("change", (e) =>
-            saveTD("start_date", (e.target as HTMLInputElement).value || null),
-          { signal: __signal });
+          ?.addEventListener("change", saveEventWindow, { signal: __signal });
         document
           .getElementById("td-end-date")
-          ?.addEventListener("change", (e) =>
-            saveTD("end_date", (e.target as HTMLInputElement).value || null),
-          { signal: __signal });
+          ?.addEventListener("change", saveEventWindow, { signal: __signal });
+        document
+          .getElementById("td-event-location")
+          ?.addEventListener("change", (e) => {
+            const loc = (e.target as HTMLInputElement).value.trim()
+            cfApi.setStructuredField("location", loc || undefined, true)
+          }, { signal: __signal });
         document
           .getElementById("td-time-tracked")
           ?.addEventListener("change", (e) =>
@@ -1927,17 +2036,19 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         const cfApi = initCustomFields({
           saveTD,
           getSettingsFields: () => _settingsFields,
+          getCurrentTaskId: () => currentTaskId,
           signal: __signal,
         })
+        cancelCustomFieldSaves = cfApi.cancelPendingSave
         const addCFRow = cfApi.addCFRow
 
 
         // Parent search — debounced type-ahead
         let parentSearchTimer: ReturnType<typeof setTimeout>;
-        const parentSearchInput = document.getElementById(
+        const parentSearchInput = byId(
           "td-link-parent-search",
         ) as HTMLInputElement | null;
-        const parentResultsDiv = document.getElementById(
+        const parentResultsDiv = byId(
           "td-link-parent-results",
         );
 
@@ -2042,7 +2153,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             if (!currentTaskId) return;
             const search = searchSession
             const generation = detailGeneration
-            const btn = document.getElementById("td-toggle-promote") as HTMLButtonElement | null;
+            const btn = byId("td-toggle-promote") as HTMLButtonElement | null;
             if (!btn || btn.disabled) return;
             const wasPromoted = btn.getAttribute("aria-pressed") === "true";
             const nextPromoted = !wasPromoted;
@@ -2076,7 +2187,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             if (!currentTaskId) return;
             const search = searchSession
             const generation = detailGeneration
-            const btn = document.getElementById(
+            const btn = byId(
               "td-toggle-favorite",
             ) as HTMLButtonElement | null;
             if (!btn) return;
@@ -2132,7 +2243,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           askAi.setAttribute("aria-disabled", "true")
           askAi.setAttribute("aria-busy", "true")
           askAi.classList.add("opacity-60")
-          document.getElementById("td-ai-response")?.remove()
+          byId("td-ai-response")?.remove()
 
           function resetButton() {
             if (!askAi) return
@@ -2312,7 +2423,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           }
         }, { signal: __signal })
 
-        document.getElementById("td-copy-link")?.addEventListener("click", async () => {
+        byId("td-copy-link")?.addEventListener("click", async () => {
           if (!currentTaskId) return
           const taskId = currentTaskId
           const link = buildTaskPermalink(currentTicketKey ?? taskId)
@@ -2409,8 +2520,8 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             event.stopPropagation()
             // Clean up search dropdown if opened from search results
             if (taskEl.closest("#search-results")) {
-              const sr = document.getElementById("search-results");
-              const si = document.getElementById(
+              const sr = byId("search-results");
+              const si = byId(
                 "global-search",
               ) as HTMLInputElement;
               if (sr) sr.style.display = "none";

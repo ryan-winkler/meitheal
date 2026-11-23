@@ -9,6 +9,7 @@
 
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { formatCalendarDay } from "@lib/calendar-day"
+import { mapEntityEmojiToTabler } from "@lib/tabler-svg"
 import { createSpriteIconElement, type IconName } from "../../generated/icon-registry"
 
 export interface HabitChecklistItem {
@@ -29,6 +30,7 @@ export interface HabitData {
   currentStreak: number
   longestStreak: number
   totalCompletions: number
+  projectActive: boolean
   description: string
   priority: number
   checklists: HabitChecklistItem[]
@@ -123,10 +125,17 @@ function createHabitCard(habit: HabitData): HTMLElement {
   const completeButton = document.createElement("button")
   completeButton.type = "button"
   completeButton.className = "habit-card__check"
-  completeButton.disabled = document.getElementById("habits-shell")?.dataset.canComplete === "false"
+  completeButton.disabled =
+    document.getElementById("habits-shell")?.dataset.canComplete === "false" ||
+    habit.todayCompleted ||
+    !habit.projectActive
   completeButton.dataset.action = "complete"
   completeButton.dataset.id = habit.id
-  completeButton.setAttribute("aria-label", `Complete ${habit.name} today`)
+  completeButton.setAttribute("aria-pressed", habit.todayCompleted ? "true" : "false")
+  completeButton.setAttribute(
+    "aria-label",
+    habit.todayCompleted ? `${habit.name} completed for this period` : `Complete ${habit.name} today`,
+  )
   if (habit.todayCompleted) {
     completeButton.replaceChildren(createSpriteIconElement("check", { size: 16 }))
   }
@@ -134,7 +143,9 @@ function createHabitCard(habit: HabitData): HTMLElement {
   const icon = document.createElement("span")
   icon.className = "habit-card__icon"
   icon.setAttribute("aria-hidden", "true")
-  icon.textContent = habit.icon
+  const mappedIcon = mapEntityEmojiToTabler(habit.icon)
+  if (mappedIcon) icon.replaceChildren(createSpriteIconElement(mappedIcon, { size: 20 }))
+  else icon.textContent = habit.icon || ""
 
   const info = document.createElement("div")
   info.className = "habit-card__info"
@@ -160,9 +171,21 @@ function createHabitCard(habit: HabitData): HTMLElement {
     streakItem.style.gap = "4px"
     streakItem.replaceChildren(
       createSpriteIconElement("flame", { size: 14 }),
-      document.createTextNode(`${habit.currentStreak} day streak`),
+      document.createTextNode(`${habit.currentStreak} ${habit.cadence === "weekly" ? "week" : "day"} streak`),
     )
     meta.prepend(streakItem)
+  }
+
+  if (!habit.projectActive) {
+    meta.append(createMetaItem("Paused project", "habit-card__inactive"))
+  }
+
+  if (habit.todayTaskId) {
+    const taskLink = document.createElement("a")
+    taskLink.className = "habit-card__meta-item habit-card__task-link"
+    taskLink.href = `/tickets/${encodeURIComponent(habit.todayTaskId)}`
+    taskLink.textContent = "View task"
+    meta.append(taskLink)
   }
 
   if (habit.checklists.length > 0) {
@@ -251,7 +274,7 @@ export function updateStats(habits: HabitData[]): void {
   if (cadenceSummary) {
     cadenceSummary.textContent =
       activeCount === 0
-        ? "Create your first habit to start a routine cadence."
+        ? "Create your first routine to begin a consistent cadence."
         : `${dailyCount} daily · ${weeklyCount} weekly routines`
   }
 

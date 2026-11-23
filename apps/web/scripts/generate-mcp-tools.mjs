@@ -159,7 +159,7 @@ export function buildMcpCatalogFromYaml(specContent) {
       tools.push({
         name: toolName,
         description: toolName === "searchTasks"
-          ? "Search tasks by query text, status, priority, or assignee. Returns a clean list of matching tasks."
+          ? "Search tasks by query text, status, priority, task_kind, or assignee. Returns a clean list of matching tasks."
           : (op.description ?? op.summary ?? `${method.toUpperCase()} ${path}`),
         inputSchema: {
           type: "object",

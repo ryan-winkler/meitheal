@@ -101,8 +101,8 @@ function initDashboardShell(shell: HTMLElement, reveal: ((id: DashboardSectionId
     const target = sectionId ? document.getElementById(sectionId) : null
     const linked = target && !target.hidden ? sectionId : null
     const active = linked ?? firstVisible()
-    trackLinkedSection(active ?? null, linked !== null)
     updateActiveSectionState(active)
+    trackLinkedSection(active ?? null, linked !== null)
   }
 
   function initDashboardSectionLinks(): void {
@@ -110,9 +110,12 @@ function initDashboardShell(shell: HTMLElement, reveal: ((id: DashboardSectionId
       .querySelectorAll<HTMLElement>("[data-unified-bar-section-link]")
       .forEach((link) => {
         pageLifecycle.on(link, "click", (event) => {
-          event.preventDefault()
-          const targetId = link.getAttribute("href")?.replace("#", "")
+          const href = link.getAttribute("href")
+          const targetId = link instanceof HTMLAnchorElement
+            ? (link.pathname === location.pathname ? link.hash.slice(1) : "")
+            : (href?.startsWith("#") ? href.slice(1) : "")
           if (!targetId) return
+          event.preventDefault()
           scrollToDashboardAnchor(targetId)
         })
       })

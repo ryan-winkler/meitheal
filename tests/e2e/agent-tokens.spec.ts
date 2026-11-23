@@ -633,17 +633,26 @@ test("standalone ClientRouter navigation enforces non-admin notice and cleans up
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Set MEITHEAL_TEST_BROWSER=1 to start the standalone fixture")
   const errors: string[] = []
   page.on("pageerror", error => errors.push(error.message))
+  await page.context().route("**/api/agent-tokens*", route => route.fulfill({
+    status: 403,
+    contentType: "application/problem+json",
+    body: JSON.stringify({ status: 403, title: "Admin Required", detail: "Administrator access required." }),
+  }))
 
-  await page.goto("/settings#automation-ai-settings")
-  await expect(page.locator("#agent-tokens-status")).toContainText("Home Assistant administrator access is required")
-  await expect(page.locator("#agent-token-create-btn")).toBeDisabled()
-  await expect(page.locator("#agent-token-form")).toBeHidden()
-  await expect(page.locator("#agent-token-reveal")).toBeHidden()
+  try {
+    await page.goto("/settings#automation-ai-settings")
+    await expect(page.locator("#agent-tokens-status")).toContainText("Administrator access is required to view or issue agent tokens.")
+    await expect(page.locator("#agent-token-create-btn")).toBeDisabled()
+    await expect(page.locator("#agent-token-form")).toBeHidden()
+    await expect(page.locator("#agent-token-reveal")).toBeHidden()
 
-  await page.locator("#bot-allow-proposals").click()
-  await expect(page).toHaveURL(/\/review$/)
-  await page.goBack()
-  await expect(page.locator("#agent-tokens-status")).toContainText("Home Assistant administrator access is required")
-  await expect(page.locator("#agent-token-create-btn")).toBeDisabled()
-  expect(errors).toEqual([])
+    await page.locator("#bot-allow-proposals").click()
+    await expect(page).toHaveURL(/\/review$/)
+    await page.goBack()
+    await expect(page.locator("#agent-tokens-status")).toContainText("Administrator access is required to view or issue agent tokens.")
+    await expect(page.locator("#agent-token-create-btn")).toBeDisabled()
+    expect(errors).toEqual([])
+  } finally {
+    await page.context().unroute("**/api/agent-tokens*")
+  }
 })

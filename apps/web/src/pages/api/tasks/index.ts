@@ -9,7 +9,7 @@ import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-reposi
 import { parseBoardPlacement } from "@lib/board-workspace"
 import type { APIRoute } from "astro"
 import type { ResultSet } from "@libsql/client"
-import { deriveEisenhowerQuadrant, VALID_TASK_TYPES, type TaskType } from "@meitheal/domain-tasks"
+import { deriveEisenhowerQuadrant, isValidTaskKind, VALID_TASK_KINDS, VALID_TASK_TYPES, type TaskType } from "@meitheal/domain-tasks"
 import { normalizeLabelTitle } from "@domains/labels"
 import {
   dispatchTaskCreation,
@@ -56,6 +56,15 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
   const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0)
 
   const taskType = url.searchParams.get("task_type")
+  const rawTaskKind = url.searchParams.get("task_kind")
+  let taskKind: string | null = null
+  if (rawTaskKind !== null && rawTaskKind !== "") {
+    const normalizedKind = rawTaskKind.trim().toLowerCase()
+    if (!isValidTaskKind(normalizedKind)) {
+      return apiError(`task_kind must be one of: ${VALID_TASK_KINDS.join(", ")}`, 400)
+    }
+    taskKind = normalizedKind
+  }
 
   const findOpts: Parameters<typeof repo.findAll>[0] = {
     favorite: url.searchParams.get("favorite") === "1",
@@ -91,6 +100,7 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
   const projectId = url.searchParams.get("project_id")
   if (projectId) findOpts.projectId = projectId
   if (taskType && VALID_TASK_TYPES.includes(taskType as TaskType)) findOpts.taskType = taskType
+  if (taskKind) findOpts.taskKind = taskKind
   const parentId = url.searchParams.get("parent_id")
   if (parentId) findOpts.parentId = parentId
   const search = url.searchParams.get("q")

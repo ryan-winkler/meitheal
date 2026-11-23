@@ -7,6 +7,8 @@ import {
   isValidImportance,
   isValidTaskKind,
   isValidUrgency,
+  normalizeShoppingItems,
+  VALID_TASK_KINDS,
   VALID_TASK_TYPES,
   type TaskType,
 } from "@meitheal/domain-tasks"
@@ -25,6 +27,55 @@ export function taskLabelsJson(value: unknown): string | null {
   }
   if (!Array.isArray(parsed) || !parsed.every(item => typeof item === "string")) return null
   return JSON.stringify(parsed)
+}
+
+export function taskJsonObject(
+  value: unknown,
+  fieldName: string,
+): { ok: true; json: string; obj: Record<string, unknown> } | { ok: false; error: string } {
+  let parsed: unknown = value
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value)
+    } catch {
+      return { ok: false, error: `${fieldName} must be a valid JSON object or object string` }
+    }
+  }
+  if (typeof parsed !== "object" || Array.isArray(parsed) || parsed === null) {
+    return { ok: false, error: `${fieldName} must be a valid JSON object or object string` }
+  }
+  const obj = parsed as Record<string, unknown>
+  return { ok: true, json: JSON.stringify(obj), obj }
+}
+
+export function taskChecklistsJson(
+  value: unknown,
+  requireDoneBoolean = false,
+): { ok: true; json: string } | { ok: false; error: string } {
+  let parsed: unknown = value
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value)
+    } catch {
+      return { ok: false, error: "checklists must be an array or a valid JSON array string" }
+    }
+  }
+  if (!Array.isArray(parsed)) {
+    return { ok: false, error: "checklists must be an array or a valid JSON array string" }
+  }
+  for (const item of parsed) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) {
+      return { ok: false, error: "checklists must contain {text, done} objects" }
+    }
+    const rec = item as Record<string, unknown>
+    if (typeof rec.text !== "string") {
+      return { ok: false, error: "checklists must contain {text, done} objects" }
+    }
+    if (requireDoneBoolean ? typeof rec.done !== "boolean" : (rec.done !== undefined && typeof rec.done !== "boolean")) {
+      return { ok: false, error: "checklists must contain {text, done} objects" }
+    }
+  }
+  return { ok: true, json: JSON.stringify(parsed) }
 }
 import { formatTicketKey } from "../../lib/ticket-key"
 import { dispatchTaskEvent } from "../../lib/webhook-dispatcher"
@@ -65,19 +116,12 @@ export async function prepareTaskCreation(
     labels = parsed
   }
 
-  // Validate framework_payload is valid JSON object
+  // Validate framework_payload is valid JSON object (accepts native object or JSON string)
   let framework_payload = "{}"
   if (body.framework_payload !== undefined) {
-    if (typeof body.framework_payload !== "string") {
-      return { ok: false, error: "framework_payload must be a JSON string" }
-    }
-    try {
-      const parsed = JSON.parse(body.framework_payload)
-      if (typeof parsed !== "object" || Array.isArray(parsed) || parsed === null) throw new Error()
-      framework_payload = body.framework_payload
-    } catch {
-      return { ok: false, error: "framework_payload must be a valid JSON object string" }
-    }
+    const fpRes = taskJsonObject(body.framework_payload, "framework_payload")
+    if (!fpRes.ok) return { ok: false, error: fpRes.error }
+    framework_payload = fpRes.json
   }
 
   // Phase 20: Agile hierarchy type
@@ -103,17 +147,12 @@ export async function prepareTaskCreation(
   const area_id = typeof body.area_id === "string" && body.area_id ? body.area_id : null
 
   let custom_fields = "{}"
+  let customFieldsObj: Record<string, unknown> | null = null
   if (body.custom_fields !== undefined) {
-    if (typeof body.custom_fields !== "string") {
-      return { ok: false, error: "custom_fields must be a JSON string" }
-    }
-    try {
-      const parsed = JSON.parse(body.custom_fields)
-      if (typeof parsed !== "object" || Array.isArray(parsed) || parsed === null) throw new Error()
-      custom_fields = body.custom_fields
-    } catch {
-      return { ok: false, error: "custom_fields must be a valid JSON object string" }
-    }
+    const cfRes = taskJsonObject(body.custom_fields, "custom_fields")
+    if (!cfRes.ok) return { ok: false, error: cfRes.error }
+    custom_fields = cfRes.json
+    customFieldsObj = cfRes.obj
   }
 
   // Phase 18: Extended fields
@@ -137,24 +176,33 @@ export async function prepareTaskCreation(
     assigned_to = await repo.getDefaultAssignee()
   }
 
-  // Phase 31: Checklists
+  // Phase 31: Checklists (accepts native array or JSON array string)
   let checklists = "[]"
   if (body.checklists !== undefined) {
-    if (typeof body.checklists !== "string") {
-      return { ok: false, error: "checklists must be a JSON string" }
-    }
-    try {
-      const parsed = JSON.parse(body.checklists)
-      if (!Array.isArray(parsed)) throw new Error()
-      checklists = body.checklists
-    } catch {
-      return { ok: false, error: "checklists must be a valid JSON array string" }
-    }
+    const clRes = taskChecklistsJson(body.checklists, false)
+    if (!clRes.ok) return { ok: false, error: clRes.error }
+    checklists = clRes.json
   }
 
   // Phase 04.1: Task kind (behavioral classification)
-  const rawTaskKind = typeof body.task_kind === "string" ? body.task_kind.trim().toLowerCase() : "standard_action"
-  const task_kind = isValidTaskKind(rawTaskKind) ? rawTaskKind : "standard_action"
+  let task_kind = "standard_action"
+  if (body.task_kind !== undefined) {
+    if (typeof body.task_kind !== "string") {
+      return { ok: false, error: `task_kind must be one of: ${VALID_TASK_KINDS.join(", ")}` }
+    }
+    const candidateKind = body.task_kind.trim().toLowerCase()
+    if (!isValidTaskKind(candidateKind)) {
+      return { ok: false, error: `Invalid task_kind "${body.task_kind}". Valid values: ${VALID_TASK_KINDS.join(", ")}` }
+    }
+    task_kind = candidateKind
+  }
+
+  if (task_kind === "shopping_item" && customFieldsObj && Array.isArray(customFieldsObj.items)) {
+    custom_fields = JSON.stringify({
+      ...customFieldsObj,
+      items: normalizeShoppingItems(customFieldsObj.items),
+    })
+  }
 
   const project_id = typeof body.project_id === "string" ? body.project_id : null
   const goal_id = typeof body.goal_id === "string" ? body.goal_id : null

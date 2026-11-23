@@ -30,6 +30,7 @@ export function setupHabitsSection(
     const habitId = card.dataset.habitId
     if (!habitId) return
 
+    const priorNodes = Array.from(btn.childNodes, node => node.cloneNode(true))
     // Optimistic UI
     btn.disabled = true
     btn.replaceChildren(createSpriteIconElement("check", { size: 14 }), document.createTextNode(" Done"))
@@ -42,43 +43,15 @@ export function setupHabitsSection(
         body: JSON.stringify({ action: "complete", templateId: habitId }),
       })
       if (!res.ok) throw new Error("Failed")
-      showToast("Habit completed!", "success")
+      showToast("Routine completed!", "success")
 
       // Trigger gamification
       try { onTaskCompleted() } catch { /* optional */ }
     } catch {
       btn.disabled = false
-      btn.textContent = "Complete"
+      btn.replaceChildren(...priorNodes)
       card.classList.remove("habit-card--done")
-      showToast("Failed to complete habit", "error")
+      showToast("Failed to complete routine", "error")
     }
   })
-}
-
-/**
- * G39: Save a task as a daily habit template.
- */
-export async function saveTaskAsHabit(
-  taskId: string,
-  container: HTMLElement,
-  lm: ListenerManager,
-): Promise<void> {
-  const taskEl = container.querySelector<HTMLElement>(`.tli[data-id="${taskId}"]`)
-  const title = taskEl?.querySelector(".tli__title")?.textContent?.trim() ?? "Untitled"
-
-  try {
-    const res = await fetch("/api/habits", { signal: lm.signal,
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "create",
-        name: title,
-        frequency: "daily",
-      }),
-    })
-    if (!res.ok) throw new Error("Failed")
-    showToast(`"${title}" saved as daily habit!`, "success")
-  } catch {
-    showToast("Failed to save habit", "error")
-  }
 }

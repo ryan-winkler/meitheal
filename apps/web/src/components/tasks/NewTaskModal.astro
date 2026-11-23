@@ -980,11 +980,14 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
 
     // Preserve saved ISO offsets and precision while native event controls show local wall time.
     const eventDates = new Map<string, { raw: string; display: string }>()
+    function formatLocalDateTimeInput(date: Date): string {
+      return new Date(date.valueOf() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+    }
     function restoreEventDate(id: string, raw: string) {
       const control = document.getElementById(id) as HTMLInputElement | null
       if (!control) return
       const date = displayedDate(raw)
-      control.value = date ? new Date(date.valueOf() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, -1) : ""
+      control.value = date ? formatLocalDateTimeInput(date) : ""
       eventDates.set(id, { raw, display: control.value })
     }
     function eventDateValue(id: string): string {
@@ -993,6 +996,16 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       if (saved && control?.value === saved.display) return saved.raw
       return control?.value ? new Date(control.value).toISOString() : ""
     }
+    document.getElementById("nt-event-start")?.addEventListener("change", (event) => {
+      const startControl = event.target as HTMLInputElement
+      const endControl = document.getElementById("nt-event-end") as HTMLInputElement | null
+      const startDate = displayedDate(startControl.value)
+      if (!startDate || !endControl) return
+      const currentEnd = displayedDate(endControl.value)
+      if (!currentEnd || currentEnd <= startDate) {
+        endControl.value = formatLocalDateTimeInput(new Date(startDate.getTime() + 60 * 60_000))
+      }
+    }, { signal })
     // Goals Loader
     async function loadGoals(requestSignal: AbortSignal) {
       if (!goalSelect) return
@@ -1546,16 +1559,17 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
           const statusSelectEl = document.getElementById("new-task-status") as HTMLInputElement | null;
           const goalSelectEl = document.getElementById("new-task-goal") as HTMLSelectElement | null;
           const recurrenceSelectEl = document.getElementById("new-task-recurrence") as HTMLSelectElement | null;
+          const selectedKind = kindInputEl?.value || "standard_action";
 
           const body: Record<string, unknown> = {
             title: finalTitle,
             ...(capturePlacement ? { placement: capturePlacement } : {}),
             description: descInputEl?.value.trim() || "",
-            task_kind: kindInputEl?.value || "standard_action",
+            task_kind: selectedKind,
             priority: Number(prioritySelectEl?.value),
             status: statusSelectEl?.value || "pending",
             labels: JSON.stringify(allLabels),
-            due_date: finalDue,
+            due_date: selectedKind === "calendar_event" ? null : finalDue,
             assigned_to: assignedTo || null,
             goal_id: goalSelectEl?.value || null,
           };
@@ -1576,7 +1590,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
             const cat = shoppingCategory?.value ?? ""
             const items = [...shoppingListItems]
             const queued = shoppingItemInput?.value.trim()
-            if (bound && queued) items.push({ name: queued, qty, category: cat as ShoppingItem["category"] })
+            if (queued) items.push({ name: queued, qty, category: cat as ShoppingItem["category"] })
             body.custom_fields = JSON.stringify({
               quantity: qty,
               category: cat || "",
