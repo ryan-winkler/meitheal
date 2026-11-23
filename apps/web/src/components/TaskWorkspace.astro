@@ -29,6 +29,7 @@ import { formatTicketKey } from "../lib/ticket-key";
 import { taskSurface } from "../lib/task-surface"
 import { taskDescriptionPreview } from "../lib/task-description-preview"
 import { formatCardCustomFieldValue } from "../lib/custom-field-defs"
+import { frameworkPayloadObject, readRiceInputs, riceLensScore } from "../lib/rice-lens"
 import { taskDetailPath } from "../lib/task-page-url"
 import {
   ensureSchema,
@@ -595,25 +596,21 @@ if (groupByProject) {
                 const areaId = String(task.area_id ?? "")
                 const cardArea = kanbanAreas?.get(areaId)
                 const promoted = Number(task.is_promoted) === 1
-                const fp =
-                  typeof task.framework_payload === "string"
-                    ? JSON.parse(String(task.framework_payload))
-                    : {};
+                let parsedFp: unknown = {}
+                if (typeof task.framework_payload === "string" && task.framework_payload.trim()) {
+                  try { parsedFp = JSON.parse(task.framework_payload) } catch { parsedFp = {} }
+                } else if (task.framework_payload && typeof task.framework_payload === "object") {
+                  parsedFp = task.framework_payload
+                }
+                const fp = frameworkPayloadObject(parsedFp)
                 // Phase 20: Sub-task indicator (ADHD Optimization)
                 const childCount = Number(task.child_count ?? 0);
                 const projectGroup = groupByProject ? getHouseholdProjectGroup(
                   task.project_id, projectLabels, Boolean(task.project_assigned),
                 ) : undefined
                 const projectLabel = projectGroup ? projectLabels[projectGroup] : undefined
-                const rice =
-                  fp.reach && fp.impact && fp.confidence && fp.effort
-                    ? Math.round(
-                        (Number(fp.reach) *
-                          Number(fp.impact) *
-                          Number(fp.confidence)) /
-                          Number(fp.effort),
-                      )
-                    : null;
+                const riceInputs = readRiceInputs(fp)
+                const rice = riceInputs ? riceLensScore(riceInputs) : null
                 const dueDate = task.due_date
                   ? new Date(String(task.due_date))
                   : null;
@@ -768,7 +765,7 @@ if (groupByProject) {
                           <span>{childCount}</span>
                         </span>
                       )}
-                      {rice ? (
+                      {rice !== null ? (
                         <span class="kanban-rice-badge">RICE: {rice}</span>
                       ) : null}
                       {String(task.calendar_sync_state) === "confirmed" && (

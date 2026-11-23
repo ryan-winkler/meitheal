@@ -1880,6 +1880,40 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
         const prefill = parseTaskUrlPrefill(url.searchParams, { allowCustomFields })
         history.replaceState(history.state, "", stripTaskUrlPrefillParams(url))
         if (!prefill) return
+        let resolvedParent: TaskParentContext | undefined
+        if (prefill.parentId) {
+          try {
+            const ctx = currentTaskApiContext()
+            const parentRes = await fetch(`/api/tasks/${encodeURIComponent(prefill.parentId)}`, {
+              cache: "no-store",
+              signal,
+              ...(ctx ? { headers: taskApiHeaders(ctx) } : {}),
+            })
+            if (parentRes.ok) {
+              const parentData = await parentRes.json().catch(() => null) as {
+                id?: unknown
+                title?: unknown
+                ticket_key?: unknown
+                task_type?: unknown
+                area_id?: unknown
+                project_id?: unknown
+              } | null
+              if (parentData && typeof parentData === "object") {
+                resolvedParent = {
+                  parentId: String(parentData.id ?? prefill.parentId),
+                  parentTitle: typeof parentData.title === "string" && parentData.title.trim()
+                    ? parentData.title.trim()
+                    : prefill.parentId.slice(0, 8),
+                  parentTicketKey: typeof parentData.ticket_key === "string" ? parentData.ticket_key : null,
+                  parentType: normalizeEditableTaskType(parentData.task_type),
+                  areaId: typeof parentData.area_id === "string" ? parentData.area_id : null,
+                  projectId: typeof parentData.project_id === "string" ? parentData.project_id : null,
+                }
+              }
+            }
+          } catch { /* omit unavailable/unauthorized parent rather than fabricating epic */ }
+        }
+        if (signal.aborted) return
         requestAnimationFrame(() => {
           if (signal.aborted) return
           window.openNewTaskModal?.("standard_action", {
@@ -1892,9 +1926,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
             ...(prefill.projectId ? { projectId: prefill.projectId } : {}),
             ...(prefill.labels ? { labels: prefill.labels } : {}),
             ...(prefill.customFields ? { customFields: prefill.customFields } : {}),
-            ...(prefill.parentId
-              ? { parent: { parentId: prefill.parentId, parentTitle: prefill.parentId.slice(0, 8), parentType: "epic" } }
-              : {}),
+            ...(resolvedParent ? { parent: resolvedParent } : {}),
           })
         })
       })()

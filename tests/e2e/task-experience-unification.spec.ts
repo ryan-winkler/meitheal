@@ -326,12 +326,13 @@ test.describe("Task Experience Unification (R01-R20)", () => {
       const hhSettings = await (await request.get("/api/settings")).json()
       expect(Object.keys(hhSettings).some(k => k.startsWith("custom_fields:board:"))).toBe(false)
 
-      // R11: Shopping/object custom fields never render [object Object] on cards
+      // R11/R14: Shopping/object custom fields never render [object Object] and Kanban card badge uses percent-normalized RICE
       const cfTask = await (await request.post("/api/tasks", {
         headers,
         data: {
           title: "Card Safety Task",
           custom_fields: JSON.stringify({ sprint: "S8", items: [{ name: "Apples", qty: 2 }] }),
+          framework_payload: JSON.stringify({ rice: { reach: 100, impact: 2, confidence: 80, effort: 4, confidence_unit: "percent" } }),
         },
       })).json()
       createdTasks.push(cfTask.id)
@@ -339,6 +340,7 @@ test.describe("Task Experience Unification (R01-R20)", () => {
       await page.goto("/tasks")
       await expect(page.locator(`.kanban-card[data-id="${cfTask.id}"]`)).not.toContainText("[object Object]")
       await expect(page.locator(`.kanban-card[data-id="${cfTask.id}"] .kanban-cf-chip[data-cf-name="sprint"]`)).toContainText("S8")
+      await expect(page.locator(`.kanban-card[data-id="${cfTask.id}"] .kanban-rice-badge`)).toHaveText("RICE: 40")
 
       // R12: AI Assist admin disable returns 403 while MCP stays independent and excludes sendHAAssist
       await page.goto("/settings#ai-agents-settings")
