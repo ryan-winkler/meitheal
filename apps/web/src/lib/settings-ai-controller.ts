@@ -13,7 +13,7 @@ import { fetchHaAgents, renderHaAgentOptions } from "@lib/ha-agent-picker"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { initAgentTokensSettings } from "@lib/settings-agent-tokens-controller"
 import { settingsStore } from "@lib/settings-store"
-import { saveSetting, saveSettings, showSettingsSaveError } from "@lib/settings-utils"
+import { saveSetting, saveSettings, showSettingsSaveError, whenSectionVisible } from "@lib/settings-utils"
 import { showToast } from "@lib/toast"
 import { notifyWebMcpPreferenceChanged, refreshWebMcpPreference } from "@lib/webmcp-controller"
 import { getClientLocale, t } from "../i18n/client"
@@ -387,5 +387,7 @@ export function restoreAISettings(s: Record<string, unknown>): void {
     document.documentElement.toggleAttribute("data-ai-assist-disabled", disabled)
   }
 
-  void refreshProtocolDiscovery()
+  whenSectionVisible(document.getElementById("agent-protocols-status"), () => {
+    void refreshProtocolDiscovery()
+  })
 }

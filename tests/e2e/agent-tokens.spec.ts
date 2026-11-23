@@ -634,7 +634,7 @@ test("standalone ClientRouter navigation enforces non-admin notice and cleans up
   const errors: string[] = []
   page.on("pageerror", error => errors.push(error.message))
 
-  await page.route("**/api/agent-tokens*", route => route.fulfill({
+  await page.context().route(/\/api\/agent-tokens(?:\?|$)/, route => route.fulfill({
     status: 403,
     contentType: "application/problem+json",
     body: JSON.stringify({ status: 403, title: "Admin Required", detail: "Administrator access is required." }),

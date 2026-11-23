@@ -22,6 +22,7 @@ import {
 } from "@domains/webserver/webserver-config"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { openSettingsHelpModal } from "@lib/settings-help-controller"
+import { whenSectionVisible } from "@lib/settings-utils"
 import { showToast } from "@lib/toast"
 
 interface SupervisorView {
@@ -489,5 +490,5 @@ export function initWebserverSettings(): void {
   })
 
   refreshPreview()
-  void load()
+  whenSectionVisible(form, () => { void load() })
 }

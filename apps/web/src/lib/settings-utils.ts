@@ -5,6 +5,7 @@
  * reusable save/load and CSS sanitization helpers.
  */
 import { createClientLogger } from "@lib/client-logger"
+import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
 import { settingsStore } from "@lib/settings-store"
 
@@ -56,6 +57,25 @@ export function settingsAction(handler: (event: Event) => unknown): (event: Even
 }
 
 
+
+/** Defer initial fetches for collapsed Settings sections until revealed. */
+export function whenSectionVisible(target: Element | null, run: () => void): void {
+  const section = target?.closest<HTMLElement>("[data-settings-shell-section]")
+  if (!section || !section.hidden) {
+    run()
+    return
+  }
+  let done = false
+  const observer = new MutationObserver(() => {
+    if (!section.hidden && !done) {
+      done = true
+      observer.disconnect()
+      run()
+    }
+  })
+  observer.observe(section, { attributes: true, attributeFilter: ["hidden"] })
+  pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), { once: true })
+}
 
 /** Load all settings from the API */
 export async function loadAllSettings(): Promise<Record<string, unknown>> {

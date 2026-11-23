@@ -5,6 +5,7 @@
  * Plugins, 2-step "Build one with AI" modal, and Reference/Get Listed dialogs.
  */
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { whenSectionVisible } from "@lib/settings-utils"
 import { showToast } from "@lib/toast"
 
 type Tone = "healthy" | "warning" | "critical" | "inactive"
@@ -605,5 +606,5 @@ export function initPluginsSettings(): void {
     if (d) pageLifecycle.on(d, "click", (ev) => { if (ev.target === d) d.close() })
   }
   pageLifecycle.on(window, "meitheal:plugin-runtime-error", () => render())
-  void loadCatalog(false)
+  whenSectionVisible(root, () => { void loadCatalog(false) })
 }

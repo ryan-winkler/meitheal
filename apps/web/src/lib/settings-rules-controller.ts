@@ -1,4 +1,4 @@
-import { settingsAction } from "@lib/settings-utils"
+import { settingsAction, whenSectionVisible } from "@lib/settings-utils"
 import { navigate } from "astro:transitions/client"
 /**
  * Settings Rules Controller
@@ -674,9 +674,11 @@ export function initRulesSettings(): void {
       catch { showToast("settings.rules_save_failed", "error") }
     })()
   })
-  // Load current state
-  loadRulesIntoUI()
-  void loadFrameworkConfigs().catch(() => {})
+  // Load current state once Scoring & Rules becomes visible
+  whenSectionVisible(document.getElementById("rules-lenses-settings"), () => {
+    loadRulesIntoUI()
+    void loadFrameworkConfigs().catch(() => {})
+  })
 
   // Preset buttons
   document.querySelectorAll<HTMLButtonElement>(".rules-preset-btn").forEach((btn) => {

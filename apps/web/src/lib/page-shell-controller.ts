@@ -271,6 +271,7 @@ export function initPageShellSectionTracking<SectionId extends string>(
 
   function resumeSectionTracking(): void {
     linkedSection = null
+    const atTop = window.scrollY <= 8
     let mostVisibleSectionId: SectionId | null = null
     let greatestVisibleHeight = 0
 
@@ -278,7 +279,12 @@ export function initPageShellSectionTracking<SectionId extends string>(
       const { top, bottom } = section.getBoundingClientRect()
       const visibleHeight = Math.min(window.innerHeight, bottom) - Math.max(0, top)
       const sectionId = resolveSectionId(section.id)
-      if (sectionId && visibleHeight > greatestVisibleHeight) {
+      if (!sectionId || visibleHeight <= 0) continue
+      if (atTop && bottom > 0 && top < window.innerHeight) {
+        updateActiveState(sectionId)
+        return
+      }
+      if (visibleHeight > greatestVisibleHeight) {
         greatestVisibleHeight = visibleHeight
         mostVisibleSectionId = sectionId
       }

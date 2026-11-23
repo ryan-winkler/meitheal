@@ -9,7 +9,7 @@ import { LEGACY_HASSIO_INGRESS_PATH, normalizeBrowserReachableGrocyUrl } from "@
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
-import { saveSetting, log } from "@lib/settings-utils"
+import { saveSetting, log, whenSectionVisible } from "@lib/settings-utils"
 import { settingsWriteHeaders } from "./settings-store"
 
 function syncOpenGrocyLink(rawUrl: string | undefined): void {
@@ -246,8 +246,8 @@ export function initGrocySettings(): void {
     })
   }
 
-  // Hydrate on load
-  hydrateGrocyStatus()
+  // Hydrate once Grocy's section is visible
+  whenSectionVisible(document.getElementById("grocy-url"), () => { void hydrateGrocyStatus() })
 }
 
 async function hydrateGrocyStatus() {
