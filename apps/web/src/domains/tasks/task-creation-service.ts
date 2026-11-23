@@ -69,18 +69,19 @@ export function taskChecklistsJson(
     return { ok: false, error: "checklists must be an array or a valid JSON array string" }
   }
   for (const item of parsed) {
+    if (typeof item === "string") continue
     if (typeof item !== "object" || item === null || Array.isArray(item)) {
-      return { ok: false, error: "checklists must contain {text, done} objects" }
+      return { ok: false, error: "checklists must contain strings or {text, done} objects" }
     }
     const rec = item as Record<string, unknown>
     if (typeof rec.text !== "string") {
-      return { ok: false, error: "checklists must contain {text, done} objects" }
+      return { ok: false, error: "checklists must contain strings or {text, done} objects" }
     }
     if (requireDoneBoolean ? typeof rec.done !== "boolean" : (rec.done !== undefined && typeof rec.done !== "boolean")) {
-      return { ok: false, error: "checklists must contain {text, done} objects" }
+      return { ok: false, error: "checklists must contain strings or {text, done} objects" }
     }
   }
-  return { ok: true, json: JSON.stringify(parsed) }
+  return { ok: true, json: typeof value === "string" ? value : JSON.stringify(parsed) }
 }
 
 export async function prepareTaskCreation(

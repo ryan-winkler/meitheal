@@ -148,7 +148,7 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     const editingSidebar = Boolean(root.closest("#sidebar")?.hasAttribute("data-sidebar-editing"))
     const enabled = !editingSidebar && getComputedStyle(root).getPropertyValue("--nav-overflow-enabled").trim() === "1" && root.clientWidth > 0
     root.setAttribute("data-nav-overflow-reflowing", "")
-    restoreItems(focused)
+    restoreItems(portalOwner ? null : focused)
     if (sidebarOrderPending) {
       applySidebarOrder(root)
       sidebarOrderPending = false
@@ -213,7 +213,7 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
           const item = itemById.get(id)
           if (item && item.parentElement !== menu) {
             menu.append(item)
-            if (focused && item.contains(focused) && document.activeElement !== focused) {
+            if (!portalOwner && focused && item.contains(focused) && document.activeElement !== focused) {
               focused.focus({ preventScroll: true })
             }
           }

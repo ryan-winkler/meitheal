@@ -16,8 +16,11 @@ const admittedWriters = new WeakMap<object, { scope: BoardScope, require: (opera
 
 export class BoardOperationError extends Error {
   readonly status: number
-  constructor(readonly errorCode: "unavailable" | "denied" | "continuity_locked" | "stale") {
-    super(errorCode === "continuity_locked" ? "Current work authority is unavailable" : "This work operation is unavailable")
+  constructor(
+    readonly errorCode: "unavailable" | "denied" | "continuity_locked" | "stale",
+    message?: string,
+  ) {
+    super(message ?? (errorCode === "continuity_locked" ? "Current work authority is unavailable" : "This work operation is unavailable"))
     this.name = "BoardOperationError"
     this.status = errorCode === "continuity_locked" ? 503 : errorCode === "stale" ? 409 : errorCode === "denied" ? 403 : 404
   }

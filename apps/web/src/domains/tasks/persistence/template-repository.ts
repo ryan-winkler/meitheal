@@ -162,17 +162,17 @@ export class TemplateRepository {
         sql`SELECT area_id FROM projects AS project WHERE id = ${projectId} AND ${ownedPlanning(this.scope, "project")} AND retired_at IS NULL`
       )
       if (!project || (areaId && project.area_id !== areaId))
-        throw new BoardOperationError("unavailable")
+        throw new BoardOperationError("unavailable", "Template Project is unavailable")
       if (!areaId && typeof project.area_id === "string") areaId = project.area_id
     }
     if (areaId) {
       const { rows } = await db.execute(
         sql`SELECT id FROM areas AS area WHERE id = ${areaId} AND ${ownedPlanning(this.scope, "area")} AND retired_at IS NULL`
       )
-      if (!rows.length) throw new BoardOperationError("unavailable")
+      if (!rows.length) throw new BoardOperationError("unavailable", "Template Area is unavailable")
     }
     if (!(await validateBoardPlacement(this.scope, db, { areaId, projectId })))
-      throw new BoardOperationError("unavailable")
+      throw new BoardOperationError("unavailable", "Template placement is unavailable")
     return { ...template, area_id: areaId, project_id: projectId }
   }
   async create(data: TemplateInput): Promise<boolean> {
@@ -253,7 +253,7 @@ export class TemplateRepository {
       )
       return changed.rowsAffected ? { next: true } : { unchanged: false }
     })
-    if (result.status === "locked") throw new BoardOperationError("continuity_locked")
+    if (result.status === "locked") throw new BoardOperationError("continuity_locked", "Current template authority is unavailable")
   }
   async findRoutines(areaId?: string, projectId?: string): Promise<RoutineTemplateRow[]> {
     const filter = areaId

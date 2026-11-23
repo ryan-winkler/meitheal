@@ -289,12 +289,13 @@ const manageRoutine: Parameters<typeof withBoardScope>[1] = async ({ request, lo
           if ("checklists" in patch) {
             const clRes = taskChecklistsJson(patch.checklists, false)
             if (!clRes.ok) return apiError(clRes.error, 400)
-            const parsedCl = JSON.parse(clRes.json) as Array<{ text: string; done?: boolean }>
+            const parsedCl = JSON.parse(clRes.json) as Array<string | { text: string; done?: boolean }>
             const cleanedCl: Array<{ text: string; done: boolean }> = []
             for (const item of parsedCl) {
-              const text = sanitize(item.text.trim())
+              const rawText = typeof item === "string" ? item : item.text
+              const text = sanitize(rawText.trim())
               if (!text) return apiError("checklist items must have non-empty text", 400)
-              cleanedCl.push({ text, done: Boolean(item.done) })
+              cleanedCl.push({ text, done: typeof item === "string" ? false : Boolean(item.done) })
             }
             patch.checklists = cleanedCl
           }
