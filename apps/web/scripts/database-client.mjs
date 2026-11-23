@@ -52,6 +52,8 @@ function leadingKeyword(sql) {
 const isPlainSelect = sql => leadingKeyword(sql) === "SELECT"
 // Only row reads and changes leave no connection state behind a transaction.
 const rowStatementKeywords = new Set(["SELECT", "INSERT", "UPDATE", "DELETE", "REPLACE", "WITH", "VALUES"])
+// A read-only handle can only query with these; anything else may end its snapshot.
+const readSnapshotKeywords = new Set(["SELECT", "WITH", "VALUES"])
 /** @typedef {"rows" | "completed"} TodayRead */
 /** @typedef {"task-list" | "task-count" | "task-detail" | "task-search" | "task-locator" | "task-command" | "task-cascade"} TaskProjectionRead */
 /** @typedef {TodayRead | TaskProjectionRead | "board-policy"} ScopedRead */
@@ -1054,15 +1056,16 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       if (!active || !db.isTransaction) throw new LibsqlError("The transaction is closed", "TRANSACTION_CLOSED")
     }
 
-    // A read snapshot uses a read-only handle; only a writer can change what it observes.
+    // A read snapshot keeps its view while it only runs queries. Any other
+    // statement may end or restart it, and a writer's own changes alter it.
     let generation = 0
     /** @param {InStatement | [string, InArgs?]} statement */
     const advance = statement => {
-      if (useReadPool) return
       const text = Array.isArray(statement) ? statement[0] : statement
       const sql = typeof text === "string" ? text : text.sql
-      if (!isPlainSelect(sql)) generation += 1
-      if (!rowStatementKeywords.has(leadingKeyword(sql))) reusable = false
+      const keyword = leadingKeyword(sql)
+      if (useReadPool ? !readSnapshotKeywords.has(keyword) : keyword !== "SELECT") generation += 1
+      if (!rowStatementKeywords.has(keyword)) reusable = false
     }
     const result = {
       get closed() { return !active || !db.isTransaction },
@@ -1079,9 +1082,9 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       },
       async executeMultiple(sql) {
         assertActive()
-        if (!useReadPool) generation += 1
+        generation += 1
         reusable = false
-        try { sqliteOperation(() => db.exec(sql)) } finally { if (!useReadPool) generation += 1 }
+        try { sqliteOperation(() => db.exec(sql)) } finally { generation += 1 }
       },
       async commit() {
         assertActive()

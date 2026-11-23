@@ -552,6 +552,13 @@ test("snapshot generations change exactly when a local reader can observe new da
     await other.execute("INSERT INTO notes(id, body) VALUES (3, 'after snapshot')")
     expect((await reader.execute("SELECT COUNT(*) AS count FROM notes")).rows[0]?.count).toBe(2)
     expect(localSnapshotGeneration(reader)).toBe(pinned)
+    // Restarting the snapshot must invalidate anything derived from the old one.
+    await reader.executeMultiple("COMMIT; BEGIN;")
+    expect(localSnapshotGeneration(reader)).not.toBe(pinned)
+    expect((await reader.execute("SELECT COUNT(*) AS count FROM notes")).rows[0]?.count).toBe(3)
+    const restarted = localSnapshotGeneration(reader)
+    await reader.execute("COMMIT")
+    expect(localSnapshotGeneration(reader)).not.toBe(restarted)
     reader.close()
     expect(localSnapshotGeneration(reader)).toBeUndefined()
 
