@@ -10,7 +10,11 @@ description: "Collect and validate the versioned Green release workload and driv
 
 The active App CPU mean remains at most **15% of one core**, and each route's nearest-rank p95 remains at most **350 ms**. Keep one CPU, zero swap, the existing App sampling, 12 idle samples, and at least 50 active samples spaced 5–8 seconds apart. The active sample window must still match the driver wall time within eight seconds.
 
-Inside the `192 MiB` Green Canary cgroup cap, `resolve_max_old_space_mb()` in `meitheal-hub/run.sh` sizes V8 Old Space to `105 MiB` (`55%` of `192 MiB`, clamped to `[96, 160]`), leaving native headroom for Alpine musl, Node.js C++ bindings, the `2 MiB` writable SQLite page cache, the `512 KiB` auto-closing (`30 s` idle TTL) read-only snapshot handle, the `< 1.5 MiB` scoped Home Assistant entity cache, precompiled MCP tool schemas, and streaming Ingress HTML rewriting. On x86_64 CI hosts without a container cgroup cap, `apps/web/scripts/perf-budget-baseline.json` enforces a tightened `229,376 KiB` (`224 MiB`) `rssKbMax` ceiling.
+Inside the `192 MiB` Green Canary cgroup cap, `resolve_max_old_space_mb()` in `meitheal-hub/run.sh` sizes V8 Old Space to `105 MiB` (`55%` of `192 MiB`, clamped to `[96, 160]`), leaving native headroom for Alpine musl, Node.js C++ bindings, the `2 MiB` SQLite page cache of the shared connection, the `512 KiB` auto-closing (`30 s` idle TTL) read-only snapshot handle and pooled writer handle, their compiled statement caches (at most 256 statements per handle, about `2.5 MiB` for the whole App), the `< 1.5 MiB` scoped Home Assistant entity cache, precompiled MCP tool schemas, and streaming Ingress HTML rewriting. On x86_64 CI hosts without a container cgroup cap, `apps/web/scripts/perf-budget-baseline.json` enforces a tightened `229,376 KiB` (`224 MiB`) `rssKbMax` ceiling.
+
+## Local route-cost measurement
+
+Before spending a Green run, compare App CPU per workload cycle against the predecessor on Kintsugi. Use the same Node.js major and SQLite version as the image. The Canary image runs Alpine Node.js 24 with system SQLite 3.53.4; check with `node -e 'console.log(process.version, new (require("node:sqlite").DatabaseSync)(":memory:").prepare("SELECT sqlite_version() AS v").get().v)'`. Other SQLite releases can plan the large scoped projections very differently, so a host default such as Node.js 26 can misstate route costs. Local CPU per cycle tracks the Green ratio, not the absolute Green figure.
 
 ## Fixed workload and helper
 

@@ -21,6 +21,7 @@ export function openDatabase(url: string, options?: { readOnly?: boolean }): Cli
 export function isMemoryDatabase(url: string): boolean
 export function isLocalReadSnapshot(transaction: Transaction): boolean
 export function isLocalFileWriter(transaction: Transaction): boolean
+export function localSnapshotGeneration(reader: Transaction | Pick<Client, "execute">): string | undefined
 export function isLocalFileClient(client: Client): boolean
 export function tagTodayRead<T extends Exclude<InStatement, string>>(statement: T, kind: "rows" | "completed"): T
 export function tagBoardPolicyRead<T extends Exclude<InStatement, string>>(statement: T): T
