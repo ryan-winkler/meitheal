@@ -37,7 +37,15 @@ function frameParent(): Window | undefined {
   }
 }
 
-export function refreshHAThemeMatch(preview?: { matchHaTheme?: boolean; accent?: string | null }): void {
+type HAThemePreview = { matchHaTheme?: boolean; accent?: string | null }
+let activePreview: HAThemePreview | undefined
+
+/** An unsaved Look and Feel draft stays previewed when parent theme changes refresh the palette. */
+export function setHAThemePreview(preview?: HAThemePreview): void {
+  activePreview = preview
+}
+
+export function refreshHAThemeMatch(preview: HAThemePreview | undefined = activePreview): void {
   const root = document.documentElement
   const wasMatched = root.dataset.haMatch === "light" || root.dataset.haMatch === "dark"
   const parent = frameParent()

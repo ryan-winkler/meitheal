@@ -955,7 +955,7 @@ coreTest("ingress Today keeps refreshed completion links in the App", async ({ p
     }).format(new Date()) },
   })
   expect(created.status()).toBe(201)
-  const { id } = await created.json()
+  const { id, ticket_key: ticketKey } = await created.json()
   await context.setExtraHTTPHeaders({})
   await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
   await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
@@ -972,7 +972,8 @@ coreTest("ingress Today keeps refreshed completion links in the App", async ({ p
   const disclosure = page.locator(".today-completed-tasks")
   await disclosure.locator("summary").click()
   const link = disclosure.getByRole("link", { name: title })
-  const expected = origin + prefix + "/tickets/" + id
+  // Ticket links use the readable ticket key.
+  const expected = origin + prefix + "/tickets/" + ticketKey
   await expect(link).toHaveJSProperty("href", expected)
   const [newTab] = await Promise.all([
     context.waitForEvent("page", { timeout: 5000 }),
@@ -1018,7 +1019,10 @@ test("ingress Settings keeps readable palettes and resolves Auto from the panel 
         page.waitForResponse(response => response.url() === origin + prefix + "/api/settings"
           && response.request().method() === "PUT"
           && response.request().postDataJSON()?.key === "theme"),
-        themeSelect.selectOption(theme),
+        (async () => {
+          await themeSelect.selectOption(theme)
+          await content.locator("#appearance-save-btn").click()
+        })(),
       ])
       expect(saved.ok()).toBe(true)
       await expect(root).toHaveAttribute("data-theme", theme)
@@ -1387,7 +1391,8 @@ coreTest("verified members receive durable receipts and queue APIs fail closed",
       api.post(at("/api/export/database.sqlite"), { headers: member }),
       api.post(origin + "/api/export/database.sqlite", { headers: { ...fake, origin } }),
     ])
-    expect(memberReads.map(response => response.status())).toEqual([403, 403, 403, 403, 403, 403])
+    // Forged ingress headers from an untrusted peer fail the transport check before the route (401).
+    expect(memberReads.map(response => response.status())).toEqual([403, 403, 403, 403, 403, 401])
 
     await stopServer()
     await startServer(true)

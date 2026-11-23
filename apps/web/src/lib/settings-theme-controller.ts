@@ -21,7 +21,7 @@ import {
 } from "@lib/appearance-draft"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { applyPersonalAccent } from "@lib/accent-colors"
-import { refreshHAThemeMatch } from "@lib/ha-theme-bridge"
+import { refreshHAThemeMatch, setHAThemePreview } from "@lib/ha-theme-bridge"
 import { HA_THEME_MATCH_KEY } from "@lib/ha-theme-palette"
 import { showToast } from "@lib/toast"
 import { isThemeMode } from "@lib/theme-mode"
@@ -221,7 +221,9 @@ function bindAppearanceForm(form: HTMLFormElement): void {
         applyTheme(preview, preview === "auto")
         showCustomThemeSection(snap.theme === "custom")
       }
-      refreshHAThemeMatch({ matchHaTheme: Boolean(snap.matchHaTheme), accent: snap.accent ?? null })
+      const preview = { matchHaTheme: Boolean(snap.matchHaTheme), accent: snap.accent ?? null }
+      setHAThemePreview(isAppearanceDraftDirty(committed, snap) ? preview : undefined)
+      refreshHAThemeMatch(preview)
       if (!matchesHaPalette()) applyPersonalAccent(root, snap.accent ?? null)
       syncAccentSelection(snap.accent ?? null)
       syncMatchHaStatus()
@@ -440,6 +442,7 @@ function bindAppearanceForm(form: HTMLFormElement): void {
       } else {
         applyAppearancePreferences(nextStored)
         if (isLookAndFeel) {
+          setHAThemePreview()
           refreshHAThemeMatch()
           if (!matchesHaPalette()) applyPersonalAccent(root, submitted.accent ?? null)
         }

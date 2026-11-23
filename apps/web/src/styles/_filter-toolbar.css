@@ -133,8 +133,9 @@ details.filter-dropdown summary::-webkit-details-marker {
 
 .filter-pill--promoted.filter-pill--active {
   background: color-mix(in srgb, #f59f00 14%, var(--bg-secondary));
-  border-color: rgba(245, 159, 0, 0.55);
-  color: #f59f00;
+  /* Light themes define --warning-text so the amber label keeps AA contrast. */
+  border-color: var(--warning-text, rgba(245, 159, 0, 0.55));
+  color: var(--warning-text, #f59f00);
 }
 
 .filter-pill--promoted.filter-pill--active svg {

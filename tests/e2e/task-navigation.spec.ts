@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test"
 import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
+import { expectVisibleFocusRing } from "../helpers/focus-ring"
 
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
 test.use({ serviceWorkers: "block" })
@@ -389,8 +390,7 @@ test("selected menu pins remain visible with a black personal accent", async ({ 
   for (const action of [header.getByRole("button", { name: "New Task", exact: true }),
     header.getByRole("button", { name: "Search Meitheal…", exact: true })]) {
     await action.focus()
-    await expect(action).toHaveCSS("outline-style", "solid")
-    await expect(action).toHaveCSS("outline-color", "rgb(166, 192, 249)")
+    await expectVisibleFocusRing(action)
   }
 })
 
