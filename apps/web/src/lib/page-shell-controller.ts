@@ -338,7 +338,12 @@ export function initPageShellSectionTracking<SectionId extends string>(
           .filter((entry) => entry.isIntersecting)
           .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0]
 
-        if (!active?.target.id) return
+        // Only exits were reported, for example a short section leaving while a tall one
+        // stays below the threshold: recalculate from every section's geometry.
+        if (!active?.target.id) {
+          resumeSectionTracking()
+          return
+        }
 
         const sectionId = resolveSectionId(active.target.id)
         if (sectionId) {

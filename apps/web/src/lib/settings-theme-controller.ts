@@ -25,7 +25,7 @@ import { refreshHAThemeMatch, setHAThemePreview } from "@lib/ha-theme-bridge"
 import { HA_THEME_MATCH_KEY } from "@lib/ha-theme-palette"
 import { showToast } from "@lib/toast"
 import { isThemeMode } from "@lib/theme-mode"
-import { applyTheme, readAppearanceValue, readStoredThemeMode, setTheme } from "@lib/theme-watcher"
+import { applyTheme, readAppearanceValue, readStoredThemeMode, setTheme, storeTheme } from "@lib/theme-watcher"
 import { readWorkspacePreferences, saveWorkspacePreferences } from "@lib/workspace-preferences"
 import { attachShortcutTooltips } from "@lib/shortcut-tooltip"
 import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, setSingleKeyShortcuts, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
@@ -423,7 +423,9 @@ function bindAppearanceForm(form: HTMLFormElement): void {
         if (isThemeMode(submitted.theme)) {
           await saveSetting("theme", submitted.theme)
           await clearSetupTheme()
-          setTheme(submitted.theme)
+          // After navigation, a page previewing its own draft keeps that preview.
+          if (lifecycleSignal.aborted && document.querySelector('form[data-dirty="true"]')) storeTheme(submitted.theme)
+          else setTheme(submitted.theme)
         }
       }
 
