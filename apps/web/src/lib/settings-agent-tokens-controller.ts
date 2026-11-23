@@ -7,8 +7,11 @@ import { withAsyncButton } from "@lib/async-button"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { safeIngressHref } from "@lib/ingress-navigation"
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { safeFetch } from "@lib/safe-fetch"
 import { createTablerSvgElement } from "@lib/tabler-svg"
 import { showToast } from "@lib/toast"
+
+const SAFE_PATH_SEGMENT_RE = /^[A-Za-z0-9._-]+$/
 
 interface BoardGrant {
   id: string
@@ -232,8 +235,12 @@ export function initAgentTokensSettings(): void {
   }
 
   async function updateBoardAccess(boardId: string, tokenId: string, enabled: boolean) {
+    if (!SAFE_PATH_SEGMENT_RE.test(boardId)) {
+      showToast("Could not update Board access", "error")
+      return
+    }
     try {
-      const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}`, {
+      const res = await safeFetch(`/api/boards/${encodeURIComponent(boardId)}`, {
         method: "PATCH",
         headers: boardHeaders(boardId),
         body: JSON.stringify({ action: "agent", tokenId, enabled }),

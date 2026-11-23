@@ -55,6 +55,7 @@ try {
               <div class="flex items-center gap-2 text-text-secondary">
                 <span id="td-type-icon" class="flex items-center justify-center shrink-0" style="width:16px;height:16px"></span>
                 <span id="td-id" class="text-xs font-mono bg-accent/10 text-accent border border-accent/20 px-2 py-0.5 rounded cursor-help"></span>
+                <span id="td-task-kind-badge" class="hidden text-xs font-medium px-2 py-0.5 rounded bg-bg-input text-text-secondary border border-border"></span>
                 <span id="td-created" class="text-[10px] hidden @md/task-inspector:inline"></span>
                 <span class="text-border hidden @md/task-inspector:inline">•</span>
                 <span id="td-updated" class="text-[10px] hidden @md/task-inspector:inline"></span>
@@ -70,21 +71,21 @@ try {
                 <Icon name="heart" size={18} />
               </button>
               <button id="td-copy-link" type="button" class="p-1.5 hover:bg-bg-hover hover:text-text-primary text-text-secondary rounded transition-colors" title={t("task_modal.copy_link", locale)} aria-label={t("task_modal.copy_link", locale)}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 15l6 -6" /><path d="M11 6l.463 -.536a5 5 0 0 1 7.071 7.072l-.534 .464" /><path d="M13 18l-.397 .534a5.068 5.068 0 0 1 -7.127 0a4.972 4.972 0 0 1 0 -7.071l.524 -.463" /></svg>
+                <Icon name="link" size={18} sprite={true} />
               </button>
               <button id="td-duplicate" type="button" class="p-1.5 hover:bg-bg-hover hover:text-text-primary text-text-secondary rounded transition-colors" title="Duplicate" aria-label="Duplicate">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7m0 2.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667z" /><path d="M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1" /></svg>
+                <Icon name="copy" size={18} sprite={true} />
               </button>
               <button id="td-ask-ai" type="button" class="p-1.5 hover:bg-bg-hover hover:text-accent text-text-secondary rounded transition-colors" title="Ask AI" aria-label="Ask AI">
                 <Icon name="message-chatbot" size={20} sprite={true} />
               </button>
               <button id="td-delete" type="button" class="p-1.5 hover:bg-bg-hover hover:text-red-400 text-text-secondary rounded transition-colors" title="Delete Task" aria-label="Delete Task">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7l16 0" /><path d="M10 11l0 6" /><path d="M14 11l0 6" /><path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" /><path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" /></svg>
+                <Icon name="trash" size={18} sprite={true} />
               </button>
               <div class="w-px h-5 bg-border mx-1"></div>
             </div>
             <button id="td-close" type="button" class="p-1.5 hover:bg-bg-hover hover:text-text-primary text-text-secondary rounded transition-colors" aria-label="Close detail" title="Close">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6l-12 12" /><path d="M6 6l12 12" /></svg>
+              <Icon name="x" size={18} sprite={true} />
             </button>
           </div>
           </div>
@@ -309,6 +310,17 @@ try {
                   </div>}
 
                 </div>
+                <div class="grid grid-cols-[100px_minmax(0,1fr)] items-center gap-2 min-w-0 mt-2">
+                  <label for="td-task-kind" class="text-xs text-text-secondary font-medium truncate">Kind</label>
+                  <select id="td-task-kind" class="form-select py-1.5 px-2 bg-bg-card hover:bg-bg-hover border border-border cursor-pointer transition-colors focus:ring-1 focus:ring-accent font-medium text-text-primary w-full min-w-0">
+                    <option value="standard_action">Task</option>
+                    <option value="calendar_event">Event</option>
+                    <option value="shopping_item">Shopping List</option>
+                    <option value="checklist">Checklist</option>
+                    <option value="quick_capture">Quick Capture</option>
+                    <option value="routine_instance" disabled hidden>Routine</option>
+                  </select>
+                </div>
               </TaskDetailSection>
 
             <TaskDetailSection name="scheduling">
@@ -352,9 +364,34 @@ try {
                 </div>
 
                     <p id="td-routine-date-hint" class="text-xs text-text-secondary" hidden>A generated Routine task keeps its original date.</p>
-                    <!-- Hidden structural compat -->
-                    <input id="td-start-date" type="date" class="hidden" />
-                    <input id="td-end-date" type="date" class="hidden" />
+                    <div id="td-event-schedule" class="td-event-schedule hidden">
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="text-xs font-medium text-text-secondary flex items-center gap-1.5">
+                          <Icon name="calendar-event" size={13} sprite={true} />
+                          Event Schedule
+                        </span>
+                        <label class="inline-flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer">
+                          <input type="checkbox" id="td-event-all-day" class="form-checkbox h-4 w-4 rounded border-border" />
+                          <span>All day</span>
+                        </label>
+                      </div>
+                      <div class="td-event-row">
+                        <label for="td-start-date" class="text-xs text-text-secondary">Start</label>
+                        <input id="td-start-date" type="datetime-local" step="any" class="form-input text-xs py-1.5" />
+                      </div>
+                      <div class="td-event-row">
+                        <label for="td-end-date" class="text-xs text-text-secondary">End</label>
+                        <input id="td-end-date" type="datetime-local" step="any" class="form-input text-xs py-1.5" />
+                      </div>
+                      <div class="td-event-row">
+                        <label for="td-event-location" class="text-xs text-text-secondary flex items-center gap-1">
+                          <Icon name="map-pin" size={13} sprite={true} />
+                          <span>Location</span>
+                        </label>
+                        <input id="td-event-location" type="text" placeholder="Add location..." maxlength="240" class="form-input text-xs py-1.5" />
+                      </div>
+                      <p id="td-event-date-error" class="text-xs text-danger" role="alert" hidden>End time must be after start time.</p>
+                    </div>
               </TaskDetailSection>
 
             <TaskDetailSection name="metadata">
@@ -378,7 +415,7 @@ try {
                     <div id="td-custom-fields" class="space-y-2 mb-2"></div>
                     <div class="relative">
                       <button id="td-add-cf" type="button" class="text-xs text-text-secondary px-3 py-1.5 rounded bg-bg-card hover:bg-bg-hover border border-border transition-colors w-full text-left flex items-center gap-2">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                        <Icon name="plus" size={12} sprite={true} />
                         Add Field
                       </button>
                       <div id="td-add-cf-dropdown" class="absolute z-10 w-full mt-1 bg-bg-card border border-border rounded-md shadow-lg py-1" style="display:none;">
@@ -395,10 +432,13 @@ try {
             <TaskDetailSection name="scoring"><StrategicEvaluator embedded /></TaskDetailSection>
 
             <TaskDetailSection name="checklists">
-              <div class="flex items-center justify-between mb-2">
+              <div class="flex items-center justify-between gap-2 mb-2">
                 <button type="button" id="td-add-checklist-item" class="text-xs text-accent hover:text-accent-hover transition-colors font-medium flex items-center gap-1">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    <Icon name="plus" size={12} sprite={true} />
                     <span>Add Item</span>
+                </button>
+                <button type="button" id="td-checklist-uncheck-all" class="btn btn-ghost text-xs px-2 py-1" hidden>
+                  Uncheck all
                 </button>
               </div>
               <div id="td-checklist-progress" class="text-[10px] text-text-muted mb-3 flex items-center justify-between" style="display:none;">
@@ -419,7 +459,7 @@ try {
             <TaskDetailSection name="attachments">
               <div class="flex items-center justify-between mb-2">
                 <label class="text-xs text-accent hover:text-accent-hover cursor-pointer m-0 font-medium flex items-center gap-1">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  <Icon name="plus" size={12} sprite={true} />
                   Add Image
                   <input type="file" id="td-attachment-input" accept="image/*" class="hidden" />
                 </label>
@@ -455,7 +495,7 @@ try {
                     </div>
                     <div id="td-add-subtask">
                       <button type="button" id="td-add-subtask-btn" class="text-xs text-accent hover:text-accent-hover flex items-center gap-1 font-medium transition-colors">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        <Icon name="plus" size={12} sprite={true} />
                         Add subtask
                       </button>
                       <div id="td-add-subtask-form" class="hidden mt-2 gap-2">
@@ -620,3 +660,43 @@ try {
 <script>
   import "@lib/task-modal-controller"
 </script>
+
+<style>
+  .td-event-schedule {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+  }
+  .td-event-row {
+    display: grid;
+    grid-template-columns: 100px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+  }
+  :global(.td-cl-row) {
+    flex-wrap: wrap;
+    min-height: 44px;
+    padding: 4px 0;
+  }
+  :global(.td-shop-qty) { width: 56px; text-align: center; padding: 4px; }
+  :global(.td-shop-cat) { width: 112px; padding: 4px; }
+  :global(.td-cl-del) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 36px;
+    min-height: 36px;
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+  :global(.td-cl-row:hover .td-cl-del),
+  :global(.td-cl-row:focus-within .td-cl-del) {
+    opacity: 1;
+  }
+  @media (hover: none), (pointer: coarse) {
+    :global(.td-cl-del) { opacity: 1; }
+  }
+</style>

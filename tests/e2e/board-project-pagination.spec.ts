@@ -59,9 +59,19 @@ test.beforeAll(async () => {
   await owner.close()
 })
 
-test.beforeEach(async () => {
+test.beforeEach(async ({}, info) => {
   context = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {}, viewport: { width: 1240, height: 900 }, serviceWorkers: "block" })
   await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+  const probe = await context.request.get(app + "/api/boards")
+  if (probe.status() === 429 || Number(probe.headers()["x-ratelimit-remaining"] ?? 100) < 15) {
+    const retryAfter = Number(probe.headers()["retry-after"])
+    const resetEpoch = Number(probe.headers()["x-ratelimit-reset"] ?? 0)
+    const waitSeconds = Math.min(65, Math.max(1, Number.isFinite(retryAfter) && retryAfter > 0
+      ? retryAfter
+      : resetEpoch > 0 ? resetEpoch - Math.floor(Date.now() / 1000) + 1 : 5))
+    info.setTimeout(Math.max(info.timeout, (waitSeconds + 30) * 1000))
+    await setTimeout(waitSeconds * 1000)
+  }
   page = await context.newPage()
   page.setDefaultTimeout(8_000)
   await page.goto(`${app}/boards/${boardId}?area=${areaId}`)

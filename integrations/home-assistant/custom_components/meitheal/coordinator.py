@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from http import HTTPStatus
 from typing import Any
 
@@ -36,6 +36,95 @@ _TASK_STATUS_ALIASES = {
     "active": STATUS_IN_PROGRESS,
     "complete": STATUS_DONE,
 }
+TASK_KINDS = (
+    "standard_action",
+    "shopping_item",
+    "checklist",
+    "routine_instance",
+    "calendar_event",
+    "quick_capture",
+)
+CREATABLE_TASK_KINDS = tuple(kind for kind in TASK_KINDS if kind != "routine_instance")
+CLOSED_STATUSES = frozenset({
+    STATUS_DONE,
+    "complete",
+    "completed",
+    "archived",
+    "cancelled",
+    "canceled",
+})
+SHOPPING_CATEGORIES = (
+    "produce",
+    "dairy",
+    "meat",
+    "pantry",
+    "frozen",
+    "beverages",
+    "household",
+    "other",
+)
+
+
+def _non_empty_str(value: Any) -> str | None:
+    """Return stripped non-empty strings, otherwise None."""
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _parse_local_date(
+    raw: str | None,
+    local_now: datetime,
+    *,
+    exclusive_end: bool = False,
+) -> date | None:
+    """Parse a YYYY-MM-DD or ISO timestamp string into a local calendar date."""
+    value = _non_empty_str(raw)
+    if value is None:
+        return None
+    try:
+        if len(value) == 10:
+            parsed_day = date.fromisoformat(value)
+            return parsed_day - timedelta(days=1) if exclusive_end else parsed_day
+        parsed_dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed_dt.tzinfo is not None and local_now.tzinfo is not None:
+            parsed_dt = parsed_dt.astimezone(local_now.tzinfo)
+        if (
+            exclusive_end
+            and parsed_dt.hour == 0
+            and parsed_dt.minute == 0
+            and parsed_dt.second == 0
+            and parsed_dt.microsecond == 0
+        ):
+            parsed_dt -= timedelta(microseconds=1)
+        return parsed_dt.date()
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+
+def _parse_json_list(raw: Any) -> list[dict[str, Any]]:
+    """Parse JSON-encoded or list checklist payloads into a list of dicts."""
+    value = raw
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (ValueError, TypeError):
+            return []
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, dict)]
+
+
+def _parse_json_dict(raw: Any) -> dict[str, Any]:
+    """Parse JSON-encoded or dict custom_fields payloads safely."""
+    value = raw
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (ValueError, TypeError):
+            return {}
+    return dict(value) if isinstance(value, dict) else {}
 
 
 def _timestamp(value: Any) -> str | None:
@@ -62,6 +151,20 @@ class MeithealTask:
         self.description: str | None = data.get("description")
         self.priority: int = data.get("priority", 3)
         self.due_date: str | None = data.get("due_date") or data.get("dueDate")
+        self.start_date: str | None = (
+            data.get("start_date") if isinstance(data.get("start_date"), str) else None
+        )
+        self.end_date: str | None = (
+            data.get("end_date") if isinstance(data.get("end_date"), str) else None
+        )
+        raw_kind = data.get("task_kind")
+        self.task_kind: str = (
+            raw_kind.strip().lower()
+            if isinstance(raw_kind, str) and raw_kind.strip()
+            else "standard_action"
+        )
+        self.checklists: list[dict[str, Any]] = _parse_json_list(data.get("checklists"))
+        self.custom_fields: dict[str, Any] = _parse_json_dict(data.get("custom_fields"))
         labels = data.get("labels", [])
         if isinstance(labels, str):
             try:
@@ -83,27 +186,91 @@ class MeithealTask:
         self.created_at = _timestamp(data.get("created_at") or data.get("createdAt"))
         self.updated_at = _timestamp(data.get("updated_at") or data.get("updatedAt"))
 
+    @property
+    def effective_scheduled_date(self) -> str | None:
+        """Return primary scheduled date/timestamp across tasks and calendar events."""
+        if self.task_kind == "calendar_event":
+            return (
+                _non_empty_str(self.start_date)
+                or _non_empty_str(self.due_date)
+                or _non_empty_str(self.end_date)
+            )
+        return _non_empty_str(self.due_date)
+
+    def scheduled_local_date(self, local_now: datetime) -> date | None:
+        """Resolve the local calendar date for a task or event relative to local_now."""
+        return _parse_local_date(self.effective_scheduled_date, local_now)
+
+    def end_local_date(self, local_now: datetime) -> date | None:
+        """Resolve the inclusive local end calendar date for an event."""
+        start_day = self.scheduled_local_date(local_now)
+        sync_state = getattr(self, "calendar_sync_state", None)
+        if self.task_kind != "calendar_event" and sync_state not in ("synced", "confirmed"):
+            return start_day
+        end_raw = _non_empty_str(self.end_date)
+        if not end_raw:
+            return start_day
+        exclusive_end = sync_state == "synced" or len(end_raw) > 10
+        end_day = _parse_local_date(end_raw, local_now, exclusive_end=exclusive_end)
+        if end_day is None or (start_day is not None and end_day < start_day):
+            return start_day
+        return end_day
+
+    def covers_local_date(self, local_now: datetime, target_day: date | None = None) -> bool:
+        """Return whether this item falls on or spans target_day."""
+        check_day = target_day if target_day is not None else local_now.date()
+        start_day = self.scheduled_local_date(local_now)
+        if start_day is None:
+            return False
+        end_day = self.end_local_date(local_now)
+        if end_day is not None and end_day > start_day:
+            return start_day <= check_day <= end_day
+        return start_day == check_day
+
     def is_due_on(self, local_now: datetime) -> bool:
         """Check whether this open task is due on Home Assistant's local date."""
-        if self.status == STATUS_DONE or not isinstance(self.due_date, str):
+        if self.status in CLOSED_STATUSES:
             return False
-        try:
-            due = datetime.fromisoformat(self.due_date)
-            if due.tzinfo is not None:
-                due = due.astimezone(local_now.tzinfo)
-        except (ValueError, OverflowError):
-            return False
-        return due.date() == local_now.date()
+        sync_state = getattr(self, "calendar_sync_state", None)
+        if self.task_kind == "calendar_event" or sync_state in ("synced", "confirmed"):
+            return self.covers_local_date(local_now)
+        local_date = self.scheduled_local_date(local_now)
+        return local_date == local_now.date() if local_date is not None else False
 
     @property
     def is_overdue(self) -> bool:
-        """Check if task is overdue."""
-        if not self.due_date or self.status == "done":
+        """Check if task is overdue relative to Home Assistant's local clock."""
+        if self.status in CLOSED_STATUSES:
+            return False
+        local_now = dt_util.now()
+        end_raw = _non_empty_str(self.end_date)
+        if self.task_kind == "calendar_event" and end_raw is not None:
+            scheduled = end_raw
+            if (
+                len(end_raw) == 10
+                and getattr(self, "calendar_sync_state", None) in ("synced", "confirmed")
+            ):
+                end_day = _parse_local_date(end_raw, local_now, exclusive_end=True)
+                return end_day is not None and end_day < local_now.date()
+        else:
+            scheduled = self.effective_scheduled_date
+        if not scheduled:
             return False
         try:
-            due = datetime.fromisoformat(self.due_date.replace("Z", "+00:00"))
-            return due < datetime.now(due.tzinfo)
-        except (ValueError, TypeError):
+            if len(scheduled) == 10:
+                return date.fromisoformat(scheduled) < local_now.date()
+            due = datetime.fromisoformat(scheduled.replace("Z", "+00:00"))
+            if due.tzinfo is not None:
+                if local_now.tzinfo is None:
+                    return due.astimezone().replace(tzinfo=None) < local_now
+                return due < local_now
+            local_cmp = (
+                local_now.replace(tzinfo=None)
+                if local_now.tzinfo is not None
+                else local_now
+            )
+            return due < local_cmp
+        except (ValueError, TypeError, OverflowError):
             return False
 
 
@@ -114,7 +281,7 @@ class MeithealCoordinatorData:
         """Compute active, overdue, and daily task summaries from fetched tasks."""
         self.tasks = tasks
         self.todo_tasks = [task for task in tasks if task.deferred_at is None]
-        self.active_count = sum(1 for t in tasks if t.status != "done")
+        self.active_count = sum(1 for t in tasks if t.status not in CLOSED_STATUSES)
         self.overdue_count = sum(1 for t in tasks if t.is_overdue)
         self.total_count = len(tasks)
         local_now = dt_util.now()
@@ -372,6 +539,11 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         priority: int | None = None, due_date: str | None = None,
         urgency: int | None = None, importance: int | None = None,
         assigned_to: str | None = None,
+        task_kind: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        checklists: list[dict[str, Any]] | str | None = None,
+        custom_fields: dict[str, Any] | str | None = None,
         origin_kind: str | None = None, origin_name: str | None = None,
         origin_target: str | None = None,
     ) -> None:
@@ -387,7 +559,9 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         payload: dict[str, Any] = {"title": title}
         for key, value in {"description": description, "priority": priority,
                            "due_date": due_date, "urgency": urgency, "importance": importance,
-                           "assigned_to": resolved_assignee}.items():
+                           "assigned_to": resolved_assignee, "task_kind": task_kind,
+                           "start_date": start_date, "end_date": end_date,
+                           "checklists": checklists, "custom_fields": custom_fields}.items():
             if value is not None:
                 payload[key] = value
         authority: set[str] = set()
@@ -512,6 +686,7 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         status: str | None = None,
         priority: int | None = None,
         include_completed: bool | None = None,
+        task_kind: str | None = None,
     ) -> dict[str, Any]:
         """Search tasks using Meitheal's universal search contract."""
         params: dict[str, str] = {
@@ -524,6 +699,8 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
             params["status"] = status
         if priority is not None:
             params["priority"] = str(priority)
+        if task_kind:
+            params["task_kind"] = task_kind
         if include_completed is True or (
             include_completed is None
             and status is not None
@@ -552,6 +729,7 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
                     "title": item.get("title", ""),
                     "status": _TASK_STATUS_ALIASES.get(meta.get("status"), meta.get("status") or ""),
                     "priority": meta.get("priority") or 3,
+                    "task_kind": meta.get("task_kind") or "standard_action",
                     "description": item.get("description", ""),
                     "matched_fields": meta.get("matched_fields", []),
                 }
@@ -697,6 +875,72 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
         return await self.api.async_request(
             "GET", f"{task_path(task_id)}/links", read_json=True
         )
+
+    async def async_list_routines(
+        self,
+        area_id: str | None = None,
+        project_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List routine templates and streak stats from the active Board."""
+        params: dict[str, str] = {}
+        if area_id:
+            params["area_id"] = area_id
+        if project_id:
+            params["project_id"] = project_id
+        data = await self.api.async_request(
+            "GET",
+            "/api/habits",
+            params=params or None,
+            read_json=True,
+        )
+        routines = data.get("habits") if isinstance(data, dict) else None
+        if not isinstance(routines, list):
+            raise UpdateFailed("Meitheal returned an invalid routine list")
+        return [dict(item) for item in routines if isinstance(item, dict)]
+
+    async def async_complete_routine(
+        self,
+        template_id: str,
+        *,
+        origin_kind: str | None = None,
+        origin_name: str | None = None,
+        origin_target: str | None = None,
+    ) -> dict[str, Any]:
+        """Complete a routine occurrence for the current period."""
+        authority: set[str] = set()
+        origin_headers = resolve_origin_headers(origin_kind, origin_name, origin_target)
+        request_kwargs: dict[str, Any] = {
+            "payload": {"action": "complete", "templateId": template_id},
+            "read_json": True,
+            "event_authority": authority,
+        }
+        if origin_headers:
+            request_kwargs["extra_headers"] = origin_headers
+        result = await self.api.async_request("POST", "/api/habits", **request_kwargs)
+        if (
+            not isinstance(result, dict)
+            or result.get("error")
+            or not isinstance(result.get("taskId"), str)
+            or not result["taskId"]
+            or not result.get("completed")
+        ):
+            raise UpdateFailed("Meitheal did not acknowledge routine completion")
+        if (
+            bool(result.get("newlyCompleted", not result.get("alreadyExisted")))
+            and "meitheal_task_completed" not in authority
+        ):
+            await self._fire_event(
+                "meitheal_task_completed",
+                {"task_id": result["taskId"], "title": template_id},
+            )
+        await self._fire_logbook("Meitheal", f"completed routine: {template_id}")
+        await self.async_request_refresh()
+        return {
+            "taskId": result["taskId"],
+            "completed": bool(result.get("completed")),
+            "alreadyExisted": bool(result.get("alreadyExisted")),
+            "newlyCompleted": bool(result.get("newlyCompleted")),
+        }
 
     async def async_shutdown(self) -> None:
         """Clean up coordinator state.

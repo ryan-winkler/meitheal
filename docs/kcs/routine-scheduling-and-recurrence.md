@@ -1,6 +1,7 @@
 ---
 type: "Guide"
 title: "Routine check-ins and recurring Tasks"
+description: "How Routines generate Board Tasks, handle cadence windows, and update recurring schedules."
 ---
 
 # Routine check-ins and recurring Tasks
@@ -17,4 +18,4 @@ Selected Area/Project backlog pages filter before totals and paging. An Area inc
 
 Project grouping qualifiers use current visible Area metadata. A Goal's Area can qualify a Project only when its direct Area is absent and the Goal and Area are visible on the same Board. Hidden, retired or foreign associations do not become fallback labels. A masked Area assignment uses the same neutral no-Area label as unfiled work.
 
-Validation: `tests/e2e/ordinary-work-r52-routines.spec.ts` covers both Board storage encodings, current HTTP handlers, deterministic cadence races, permission denial, recurrence persistence/clearing, scoped backlog totals, metadata privacy, normalized versions and custom-lane ordering. Release verification still requires the repository's full CI and applicable runtime tiers.
+For automated workflows, list Household Routines through `GET /api/habits` (with optional `area_id` and `project_id` filters), App MCP (`listHabits`), Core MCP (`listRoutines`), or the Home Assistant LLM tool `meitheal_list_routines`, and check in or manage Routines through `POST /api/habits`, `createHabit`, `completeRoutine`, or `meitheal_complete_routine`. Named Board check-ins are listed and completed through `/api/boards/routines` and `/api/boards/{id}/planning`.

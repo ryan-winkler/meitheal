@@ -23,6 +23,7 @@ import {
   sanitizeLabel,
   savePersonalSidebarConfig,
   serializeSidebarConfig,
+  setItemVisible,
   SIDEBAR_PERSONAL_STORAGE_KEY,
   toggleItemVisibility,
   toggleSectionVisibility,
@@ -250,6 +251,21 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
 
   const personalInitial = readPersonalSidebarConfig(initialKeys)
   let config: SidebarMenuConfig = personalInitial ?? readServerConfig()
+  let hydratedLegacyTaskPins = false
+  if (!personalInitial) {
+    try {
+      const rawTaskNav = localStorage.getItem("meitheal-task-nav-prefs")
+      const parsedTaskNav = rawTaskNav ? JSON.parse(rawTaskNav) as { pinnedViews?: unknown } : null
+      if (Array.isArray(parsedTaskNav?.pinnedViews)) {
+        for (const view of parsedTaskNav.pinnedViews) {
+          if (typeof view === "string" && ["calendar", "kanban", "timeline", "table"].includes(view)) {
+            config = setItemVisible(config, `view-${view}`, true)
+            hydratedLegacyTaskPins = true
+          }
+        }
+      }
+    } catch { /* ignore invalid legacy prefs */ }
+  }
   let editing = false
   let dragKind: "section" | "item" | null = null
   let dragId: string | null = null
@@ -338,7 +354,7 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
       const pinned = !isItemHidden(config, key)
       const label = config.itemLabels[key] || DEFAULT_SIDEBAR_ITEM_LABELS[key] || view
       btn.setAttribute("aria-pressed", String(pinned))
-      btn.setAttribute("aria-label", pinned ? `Unpin ${label} from sidebar` : `Pin ${label} to sidebar`)
+      btn.setAttribute("aria-label", `Pin ${label} to navigation`)
       btn.title = pinned ? `Unpin ${label}` : `Pin ${label}`
     })
   }
@@ -429,18 +445,28 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
 
       const list = sectionEl.querySelector<HTMLElement>("[data-sidebar-section-list]")
       if (!list) continue
+      const overflowMenu = editing ? null : root!.querySelector("[data-nav-overflow-menu]")
       const keys = config.sectionItems[sectionId] ?? []
       let itemIdx = 0
       for (const key of keys) {
         const itemEl = itemEls.get(key)
         if (!itemEl) continue
-        if (list.children[itemIdx] !== itemEl) {
-          list.insertBefore(itemEl, list.children[itemIdx] ?? null)
+        if (overflowMenu?.contains(itemEl)) {
+          // Skip moving items currently housed inside More so child focus stays intact.
+        } else {
+          if (list.children[itemIdx] !== itemEl) {
+            list.insertBefore(itemEl, list.children[itemIdx] ?? null)
+          }
+          itemIdx += 1
         }
-        itemIdx += 1
 
         const itemHidden = isItemHidden(config, key)
         itemEl.toggleAttribute("data-sidebar-item-hidden", itemHidden)
+        const viewId = itemEl.dataset.taskViewItem
+        if (viewId) {
+          if (itemHidden) itemEl.removeAttribute("data-task-view-pinned-item")
+          else itemEl.setAttribute("data-task-view-pinned-item", viewId)
+        }
 
         const labelEl = itemEl.querySelector<HTMLElement>(`[data-sidebar-item-label="${CSS.escape(key)}"]`)
         const customEntry = customMap.get(key)
@@ -462,6 +488,14 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
           const actionLabel = itemHidden ? `Show ${itemLabel}` : `Hide ${itemLabel}`
           itemToggle.setAttribute("aria-label", actionLabel)
           itemToggle.title = actionLabel
+        }
+        if (viewId) {
+          const rowUnpin = itemEl.querySelector<HTMLButtonElement>(`[data-task-view-pin="${CSS.escape(viewId)}"]`)
+          if (rowUnpin) {
+            rowUnpin.setAttribute("aria-pressed", String(!itemHidden))
+            rowUnpin.setAttribute("aria-label", `Unpin ${itemLabel} from navigation`)
+            rowUnpin.title = `Unpin ${itemLabel}`
+          }
         }
       }
 
@@ -573,8 +607,8 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     input.addEventListener("click", event => event.stopPropagation(), { signal })
   }
 
-  // Hydrate personal override on page load if present
-  if (personalInitial) {
+  // Hydrate personal override or legacy pinned task views on page load if present
+  if (personalInitial || hydratedLegacyTaskPins) {
     syncDomFromConfig()
   } else {
     syncPersonalResetButton()
@@ -620,14 +654,30 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
   }, { signal })
 
   // Independently pin / unpin nested Task Views
+  root.addEventListener("click", event => {
+    if (editing) return
+    const target = event.target instanceof Element ? event.target : null
+    const pin = target?.closest<HTMLButtonElement>("[data-task-view-item] [data-task-view-pin]")
+    const view = pin?.dataset.taskViewPin
+    if (!view) return
+    event.preventDefault()
+    event.stopPropagation()
+    const submenu = root.querySelector<HTMLElement>("#tasks-nav-submenu")
+    const toggle = root.querySelector<HTMLButtonElement>("#tasks-submenu-toggle")
+    window.dispatchEvent(new CustomEvent(SIDEBAR_TOGGLE_VIEW_PIN_EVENT, { detail: { view } }))
+    if (submenu?.hidden && toggle) toggle.focus()
+  }, { signal })
+
   window.addEventListener(SIDEBAR_TOGGLE_VIEW_PIN_EVENT, event => {
     const view = (event as CustomEvent<{ view?: string }>).detail?.view
     if (!view) return
     const key = `view-${view}`
+    const wasRowPin = Boolean(document.activeElement?.closest("[data-task-view-item]"))
     const next = toggleItemVisibility(config, key)
     const nowPinned = !isItemHidden(next, key)
     const label = next.itemLabels[key] || DEFAULT_SIDEBAR_ITEM_LABELS[key] || view
     commitPersonalConfig(next, nowPinned ? `Pinned ${label} to navigation.` : `Unpinned ${label} from navigation.`)
+    if (!nowPinned && wasRowPin) root!.querySelector<HTMLButtonElement>("#tasks-submenu-toggle")?.focus()
     showToast(nowPinned ? `Pinned ${label} to navigation` : `Unpinned ${label} from navigation`, "success")
   }, { signal })
 

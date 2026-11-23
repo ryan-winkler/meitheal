@@ -11,6 +11,8 @@ import { newOrganizationLabel, organizationLabelsFor, organizationLocale } from 
  * @phase 15 — Wave 4.5
  */
 import LegacyBoardBridge from "../../components/boards/LegacyBoardBridge.astro"
+import Icon from "../../components/ui/Icon.astro"
+import { mapEntityEmojiToTabler } from "@lib/tabler-svg"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import Layout from "../../layouts/Layout.astro";
 import { logApiError } from "../../lib/api-logger"
@@ -94,29 +96,31 @@ const settingsTab = workspaceAreaId ? "group-settings" : "settings"
 const organization = await organizationLabelsFor(Astro)
 const tasksHref = boardWorkspaceHref((workScope?.boardId ?? ""), { area: areaId }) + "#kanban"
 const tabs = [
-  { id: "overview", label: "Overview", icon: "📊" },
-  ...(available("goals") ? [{ id: "goals", label: organization("goal", true), icon: "🎯" }] : []),
-  ...(available("projects") ? [{ id: "projects", label: organization("project", true), icon: "📋" }] : []),
-  ...(routinesEnabled ? [{ id: "routines", label: organization("routine", true), icon: "🔁" }] : []),
-  { id: settingsTab, label: "Settings", icon: "⚙️" },
+  { id: "overview", label: "Overview", icon: "chart-bar" as const },
+  ...(available("goals") ? [{ id: "goals", label: organization("goal", true), icon: "target" as const }] : []),
+  ...(available("projects") ? [{ id: "projects", label: organization("project", true), icon: "list-check" as const }] : []),
+  ...(routinesEnabled ? [{ id: "routines", label: organization("routine", true), icon: "repeat" as const }] : []),
+  { id: settingsTab, label: "Settings", icon: "settings" as const },
 ];
 ---
 
 {(!workScope || !area || unavailable) ? <p role="status">This Area is unavailable. Reload to try again.</p> : !workspaceAreaId ? <LegacyBoardBridge href={boardWorkspaceHref((workScope?.boardId ?? ""), { area: areaId })} kind="group"
   fragments={{ overview: "overview", tasks: "tasks", goals: "goals", projects: "projects", routines: "routines", settings: "group-settings" }} /> : <Layout title={`Meitheal — ${areaName}`}>
   <span slot="page-title">
-    <span style={`color: ${areaColor}; margin-right: 6px;`} aria-hidden="true">{areaIcon}</span>
+    <span style={`color: ${areaColor}; margin-right: 6px; display: inline-flex; vertical-align: middle;`} aria-hidden="true">
+      {mapEntityEmojiToTabler(areaIcon) ? <Icon name={mapEntityEmojiToTabler(areaIcon)!} size={18} sprite /> : areaIcon}
+    </span>
     {areaName}
   </span>
   <div slot="actions" class="flex gap-2">
-    <a href={workspaceAreaId ? boardWorkspaceHref((workScope?.boardId ?? ""), { groups: true }) : "/planning#spaces"} class="btn btn-ghost" id="back-to-areas">← {organization("group", true, "Areas")}</a>
+    <a href={workspaceAreaId ? boardWorkspaceHref((workScope?.boardId ?? ""), { groups: true }) : "/planning#spaces"} class="btn btn-ghost" id="back-to-areas">{organization("group", true, "Areas")}</a>
   </div>
 
   {/* Sub-menu tab bar */}
   <BoardWorkspaceNav boardId={(workScope?.boardId ?? "")} boardName={scopeBoardAccess(workScope).name} area={{ id: area.id, name: area.name }} active="planning" />
   <nav class="area-tabs" aria-label={`${organization("group")} sections`} data-household-tasks-href={tasksHref}>
     {workspaceAreaId && <a href={tasksHref} class="area-tab" data-astro-reload>
-      <span class="tab-icon" aria-hidden="true">✅</span>
+      <span class="tab-icon" aria-hidden="true"><Icon name="list-check" size={15} sprite /></span>
       <span>{organization("task", true)}</span>
     </a>}
     <div class="area-panel-tabs" role="tablist" aria-label={`${organization("group")} sections`}>
@@ -132,7 +136,7 @@ const tabs = [
         aria-selected={tab.id === "overview" ? "true" : "false"}
         tabindex={tab.id === "overview" ? 0 : -1}
       >
-        <span class="tab-icon" aria-hidden="true">{tab.icon}</span>
+        <span class="tab-icon" aria-hidden="true"><Icon name={tab.icon} size={15} sprite /></span>
         <span>{tab.label}</span>
       </a>
     ))}
@@ -167,7 +171,10 @@ const tabs = [
         <a class="btn btn-ghost btn-sm" href={routinesPath}>View Routines</a>
         <a class="btn btn-primary btn-sm" href={routinesPath + "&new=1"}>{newOrganizationLabel(organization("routine"), organizationLocale(Astro))}</a>
       </div>
-      {routines.length ? <ul>{routines.map(routine => <li>{routine.icon} {routine.name} · {routine.cadence}</li>)}</ul>
+      {routines.length ? <ul>{routines.map(routine => {
+        const routineIcon = mapEntityEmojiToTabler(routine.icon) ?? "repeat"
+        return <li><Icon name={routineIcon} size={14} sprite /> {routine.name} · {routine.cadence}</li>
+      })}</ul>
         : <p class="section-empty">No routines in this Area yet.</p>}
     </section>
   )}

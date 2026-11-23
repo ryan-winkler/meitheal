@@ -1600,29 +1600,7 @@ if (groupByProject) {
     padding-block-start: 6px;
     margin-block-start: 6px;
   }
-  .card-action-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-inline-size: 1.75rem;
-    min-block-size: 1.75rem;
-    padding: 0;
-    background: transparent;
-    border: 0;
-    border-radius: 6px;
-    color: var(--text-muted);
-    cursor: pointer;
-    transition:
-      background-color 140ms ease,
-      color 140ms ease,
-      opacity 140ms ease,
-      transform 120ms ease;
-  }
-  .card-action-btn:hover,
-  .card-action-btn:focus-visible {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-  }
+  /* .card-action-btn base rules live in _kanban.css */
   .card-action-btn:active {
     transform: scale(0.94);
   }
@@ -1649,6 +1627,9 @@ if (groupByProject) {
   }
 
   @media (max-width: 768px), (pointer: coarse) {
+    .kanban-card-actions {
+      flex-wrap: wrap;
+    }
     .card-action-btn,
     .kanban-toolbar-btn {
       min-width: 44px;
@@ -1925,14 +1906,6 @@ if (groupByProject) {
     .kanban-promote-star[aria-pressed="false"]:focus-visible {
       opacity: 1;
     }
-    .kanban-card-actions {
-      opacity: 0;
-      transition: opacity 140ms ease;
-    }
-    .kanban-card:hover .kanban-card-actions,
-    .kanban-card:focus-within .kanban-card-actions {
-      opacity: 1;
-    }
   }
   @media (pointer: coarse) {
     .kanban-promote-star[aria-pressed="false"] {
@@ -2093,22 +2066,6 @@ if (groupByProject) {
     flex-direction: column;
     gap: 6px;
   }
-
-  /* Accessibility: suppress transitions for reduced-motion users */
-  @media (prefers-reduced-motion: reduce) {
-    .kanban-title-text,
-    .kanban-progress-bar,
-    .kanban-card-title,
-    .kanban-card-meta,
-    .kanban-card-desc,
-    .kanban-assignee-badge,
-    .kanban-card-due,
-    .kanban-card-header,
-    .kanban-card-actions,
-    .kanban-inline-add {
-      transition: none !important;
-    }
-  }
 </style>
 
 <style is:global>
@@ -2165,9 +2122,10 @@ if (groupByProject) {
 
   /* ── Accessibility: reduced motion ── */
   @media (prefers-reduced-motion: reduce) {
-    .quick-action-popover { animation: none; transition: none; }
-    .quick-action-popover.popover-exiting { transition: none; }
-    .kanban-card { transition: none; }
+    .quick-action-popover,
+    .quick-action-popover.popover-exiting,
+    .kanban-card,
+    .kanban-card-actions { transition: none !important; animation: none !important; }
     .kanban-card.dragging { animation: none; }
   }
 </style>

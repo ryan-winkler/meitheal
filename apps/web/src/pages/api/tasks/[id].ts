@@ -5,7 +5,7 @@ import { boardScopeErrorResponse, withBoardScope } from "@lib/board-http"
 import { organizationPlacementAvailable } from "@lib/organization-placement-access"
 import type { APIRoute } from "astro"
 import type { InValue } from "@libsql/client"
-import { VALID_TASK_TYPES } from "@meitheal/domain-tasks"
+import { isValidTaskKind, normalizeShoppingItems, parseScheduleDateInput, validateScheduleWindow, VALID_TASK_KINDS, VALID_TASK_TYPES } from "@meitheal/domain-tasks"
 import type { TaskType } from "@meitheal/domain-tasks"
 import {
   parseRRule,
@@ -14,6 +14,8 @@ import {
   hasBoardSelection,
   rejectBoardSelectionInJson,
   taskActionHints,
+  taskChecklistsJson,
+  taskJsonObject,
   taskLabelsJson,
   TaskRepository,
   unavailableBoardResponse,
@@ -186,10 +188,11 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
   const expectedActor = agentActivityActor(locals)?.actor
   const denied = isAssignedWriteOnly(agentToken) ? await checkAssignedTask(resolvedId, agentToken!) : null
   if (denied) return (await replayedAgentReassignment(repo, agentToken, resolvedId, body, expectedActor, scope.boardId)) ?? denied
+  let currentTaskForEdit: Awaited<ReturnType<typeof repo.findTaskForCommand>> = null
   if (body.due_date !== undefined || body.task_kind !== undefined) {
-    const current = await repo.findTaskForCommand(resolvedId, "edit")
-    if (current?.routine_occurrence === 1 &&
-      ((body.due_date !== undefined && body.due_date !== current.due_date) ||
+    currentTaskForEdit = await repo.findTaskForCommand(resolvedId, "edit")
+    if (currentTaskForEdit?.routine_occurrence === 1 &&
+      ((body.due_date !== undefined && body.due_date !== currentTaskForEdit.due_date) ||
         (body.task_kind !== undefined && body.task_kind !== "routine_instance"))) {
       return apiError("A generated Routine task keeps its original date and type. Complete its existing occurrence.", 409)
     }
@@ -274,28 +277,20 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     sanitized.labels = labels
   }
   if (body.framework_payload !== undefined) {
-    if (typeof body.framework_payload !== "string") {
-      return new Response(JSON.stringify({ error: "framework_payload must be a JSON string" }), { status: 400, headers: { "content-type": "application/json" } })
+    const fpRes = taskJsonObject(body.framework_payload, "framework_payload")
+    if (!fpRes.ok) {
+      return new Response(JSON.stringify({ error: fpRes.error }), { status: 400, headers: { "content-type": "application/json" } })
     }
-    try {
-      const parsed = JSON.parse(body.framework_payload)
-      if (typeof parsed !== "object" || Array.isArray(parsed) || parsed === null) throw new Error()
-      sanitized.framework_payload = body.framework_payload
-    } catch {
-      return new Response(JSON.stringify({ error: "framework_payload must be a valid JSON object string" }), { status: 400, headers: { "content-type": "application/json" } })
-    }
+    sanitized.framework_payload = fpRes.json
   }
+  let updatedCustomFieldsObj: Record<string, unknown> | null = null
   if (body.custom_fields !== undefined) {
-    if (typeof body.custom_fields !== "string") {
-      return new Response(JSON.stringify({ error: "custom_fields must be a JSON string" }), { status: 400, headers: { "content-type": "application/json" } })
+    const cfRes = taskJsonObject(body.custom_fields, "custom_fields")
+    if (!cfRes.ok) {
+      return new Response(JSON.stringify({ error: cfRes.error }), { status: 400, headers: { "content-type": "application/json" } })
     }
-    try {
-      const parsed = JSON.parse(body.custom_fields)
-      if (typeof parsed !== "object" || Array.isArray(parsed) || parsed === null) throw new Error()
-      sanitized.custom_fields = body.custom_fields
-    } catch {
-      return new Response(JSON.stringify({ error: "custom_fields must be a valid JSON object string" }), { status: 400, headers: { "content-type": "application/json" } })
-    }
+    sanitized.custom_fields = cfRes.json
+    updatedCustomFieldsObj = cfRes.obj
   }
   if (typeof body.area_id === "string" || body.area_id === null) {
     sanitized.area_id = body.area_id
@@ -307,10 +302,23 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     sanitized.project_id = body.project_id
   }
   if (body.start_date !== undefined) {
-    sanitized.start_date = typeof body.start_date === "string" ? body.start_date : null
+    const parsedStart = parseScheduleDateInput(body.start_date, "start_date")
+    if (!parsedStart.ok) return apiError(parsedStart.error, 400)
+    sanitized.start_date = parsedStart.value
   }
   if (body.end_date !== undefined) {
-    sanitized.end_date = typeof body.end_date === "string" ? body.end_date : null
+    const parsedEnd = parseScheduleDateInput(body.end_date, "end_date")
+    if (!parsedEnd.ok) return apiError(parsedEnd.error, 400)
+    sanitized.end_date = parsedEnd.value
+  }
+  if (sanitized.start_date !== undefined || sanitized.end_date !== undefined) {
+    if (sanitized.start_date === undefined || sanitized.end_date === undefined) {
+      currentTaskForEdit ??= await repo.findTaskForCommand(resolvedId, "edit")
+    }
+    const nextStart = sanitized.start_date !== undefined ? (sanitized.start_date as string | null) : (currentTaskForEdit?.start_date ?? null)
+    const nextEnd = sanitized.end_date !== undefined ? (sanitized.end_date as string | null) : (currentTaskForEdit?.end_date ?? null)
+    const scheduleError = validateScheduleWindow(nextStart, nextEnd)
+    if (scheduleError) return apiError(scheduleError, 400)
   }
   if (typeof body.progress === "number") {
     sanitized.progress = Math.min(100, Math.max(0, Math.round(body.progress)))
@@ -362,6 +370,31 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
       sanitized.task_type = tt
     }
   }
+  if (body.task_kind !== undefined) {
+    if (typeof body.task_kind !== "string") {
+      return apiError(`task_kind must be one of: ${VALID_TASK_KINDS.join(", ")}`, 400)
+    }
+    const tk = body.task_kind.trim().toLowerCase()
+    if (!isValidTaskKind(tk)) {
+      return apiError(`Invalid task_kind "${body.task_kind}". Valid values: ${VALID_TASK_KINDS.join(", ")}`, 400)
+    }
+    currentTaskForEdit ??= await repo.findTaskForCommand(resolvedId, "edit")
+    if (tk === "routine_instance" && currentTaskForEdit?.task_kind !== "routine_instance") {
+      return apiError("Only scheduled Routines can create routine_instance tasks.", 409)
+    }
+    sanitized.task_kind = tk
+  }
+  let effectiveKind = typeof sanitized.task_kind === "string" ? sanitized.task_kind : currentTaskForEdit?.task_kind
+  if (!effectiveKind && updatedCustomFieldsObj && Array.isArray(updatedCustomFieldsObj.items)) {
+    currentTaskForEdit ??= await repo.findTaskForCommand(resolvedId, "edit")
+    effectiveKind = currentTaskForEdit?.task_kind
+  }
+  if ((effectiveKind ?? "standard_action") === "shopping_item" && updatedCustomFieldsObj && Array.isArray(updatedCustomFieldsObj.items)) {
+    sanitized.custom_fields = JSON.stringify({
+      ...updatedCustomFieldsObj,
+      items: normalizeShoppingItems(updatedCustomFieldsObj.items),
+    })
+  }
   if (body.assigned_to !== undefined) {
     const nextAssignee = normalizeReassignedTarget(body.assigned_to)
     if (nextAssignee === undefined) {
@@ -378,21 +411,11 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     return apiError("expected_checklists requires the prior checklist string or null and a replacement checklist", 400)
   }
   if (body.checklists !== undefined) {
-    if (typeof body.checklists !== "string") {
-      return new Response(JSON.stringify({ error: "checklists must be a JSON string array" }), { status: 400, headers: { "content-type": "application/json" } })
+    const clRes = taskChecklistsJson(body.checklists, true)
+    if (!clRes.ok) {
+      return new Response(JSON.stringify({ error: clRes.error }), { status: 400, headers: { "content-type": "application/json" } })
     }
-    try {
-      const parsed = JSON.parse(body.checklists)
-      if (!Array.isArray(parsed)) throw new Error()
-      for (const item of parsed) {
-        if (typeof item !== "object" || item === null) throw new Error()
-        if (typeof item.text !== "string") throw new Error()
-        if (typeof item.done !== "boolean") throw new Error()
-      }
-      sanitized.checklists = body.checklists
-    } catch {
-      return new Response(JSON.stringify({ error: "checklists must be a valid JSON array of {text, done} objects" }), { status: 400, headers: { "content-type": "application/json" } })
-    }
+    sanitized.checklists = clRes.json
   }
 
   if (body.recurrence_rule !== undefined) {
@@ -698,13 +721,17 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     dispatchTaskEvent("task.completed", { ...taskPayload, completed_at: new Date().toISOString() }, requestId || undefined, undefined, undefined, authority, scope).catch(() => {})
     try {
       const { isFeatureEnabled } = await import("../../../lib/feature-flags")
-      if (await isFeatureEnabled("gamification")) {
+      const [gamificationEnabled, confettiEnabled] = await Promise.all([
+        isFeatureEnabled("gamification"),
+        isFeatureEnabled("confetti"),
+      ])
+      if (gamificationEnabled) {
         const { recordTaskCompletion, getXpForPriority, checkAchievements, getLevel } = await import("@domains/gamification")
         const xp = getXpForPriority(Number(updatedRow.priority ?? 3))
         const stats = await recordTaskCompletion(scope, xp)
         if (stats) {
           const achievements = await checkAchievements(scope, stats)
-          taskPayload.gamification = { stats, xp, newAchievements: achievements.newlyUnlocked, level: getLevel(stats.totalPoints), confetti: await isFeatureEnabled("confetti") }
+          taskPayload.gamification = { stats, xp, newAchievements: achievements.newlyUnlocked, level: getLevel(stats.totalPoints), confetti: confettiEnabled }
         }
       }
     } catch {

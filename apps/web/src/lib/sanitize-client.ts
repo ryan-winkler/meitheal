@@ -21,7 +21,7 @@ const ALLOWED_TAGS = new Set([
 
 /** Attributes allowed per-tag. `*` applies to all tags. */
 const ALLOWED_ATTRS: Record<string, Set<string>> = {
-  a: new Set(["href", "name", "target"]),
+  a: new Set(["href", "name", "rel", "target"]),
   "*": new Set(["class", "id"]),
 }
 
@@ -38,8 +38,7 @@ function isAllowedUrl(value: string): boolean {
     const url = new URL(value, window.location.origin)
     return ALLOWED_SCHEMES.has(url.protocol)
   } catch {
-    // Relative URLs that didn't parse are fine (e.g. "#anchor", "/path")
-    return true
+    return false
   }
 }
 
@@ -75,6 +74,9 @@ function sanitizeNode(node: Node): Node | null {
       }
       clone.setAttribute(name, attr.value)
     }
+  }
+  if (tag === "a" && clone.getAttribute("target") === "_blank") {
+    clone.setAttribute("rel", "noopener noreferrer")
   }
 
   // Recursively sanitize children

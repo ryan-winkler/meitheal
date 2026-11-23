@@ -215,7 +215,7 @@ function isExternal(href: string): boolean {
                           class="task-view-pin"
                           data-task-view-pin={view.id}
                           aria-pressed={isPinned ? "true" : "false"}
-                          aria-label={isPinned ? `Unpin ${view.label} from sidebar` : `Pin ${view.label} to sidebar`}
+                          aria-label={`Pin ${view.label} to navigation`}
                           title={isPinned ? `Unpin ${view.label}` : `Pin ${view.label}`}
                         >
                           <Icon name="pin" size={15} />
@@ -230,12 +230,14 @@ function isExternal(href: string): boolean {
 
           return (
             <li
-              class="sidebar-nav-item relative"
+              class={`sidebar-nav-item relative${item.taskView ? " task-view-pinned-row" : ""}`}
               data-sidebar-group={item.key}
               data-sidebar-item-key={item.key}
               data-sidebar-item-hidden={item.hidden ? "true" : undefined}
               data-sidebar-item-removable={item.removable ? "true" : undefined}
               data-sidebar-pin-presence={item.key === "system-pinned" || undefined}
+              data-task-view-pinned-item={item.taskView && !item.hidden ? item.taskView : undefined}
+              data-task-view-item={item.taskView}
               hidden={item.key === "system-pinned"}
             >
               <div class="nav-row flex items-center gap-1 min-w-0">
@@ -324,6 +326,18 @@ function isExternal(href: string): boolean {
                     </button>
                   )}
                 </div>
+                {item.taskView && (
+                  <button
+                    type="button"
+                    class="task-view-pin"
+                    data-task-view-pin={item.taskView}
+                    aria-pressed="true"
+                    aria-label={`Unpin ${item.label} from navigation`}
+                    title={`Unpin ${item.label}`}
+                  >
+                    <Icon name="pin" size={14} />
+                  </button>
+                )}
               </div>
               {item.key === "boards" && <slot name="boards" />}
             </li>
@@ -366,7 +380,8 @@ function isExternal(href: string): boolean {
 
   .task-view-disclosure { border-color: var(--border); }
 
-  :global(#sidebar[data-sidebar-editing]) .task-view-disclosure {
+  :global(#sidebar[data-sidebar-editing]) .task-view-disclosure,
+  :global(#sidebar[data-sidebar-editing]) .task-view-pin {
     display: none;
   }
 
@@ -380,8 +395,8 @@ function isExternal(href: string): boolean {
   .task-view-disclosure[aria-expanded="true"] svg { rotate: 180deg; }
   .task-view-pin[aria-pressed="true"] {
     background: rgb(var(--accent-rgb) / 0.14);
-    color: var(--accent-text, var(--text-primary));
-    border-color: rgb(var(--accent-rgb) / 0.45);
+    color: var(--text-primary);
+    border-color: currentColor;
   }
 
   .task-view-submenu {

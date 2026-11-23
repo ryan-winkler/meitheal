@@ -1,4 +1,5 @@
 ---
+import { SHOPPING_CATEGORIES } from "@meitheal/domain-tasks"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import HomeAssistantAreaField from "./HomeAssistantAreaField.astro"
 import { newOrganizationLabel, organizationLabelsFor } from "@lib/organization-labels"
@@ -83,14 +84,9 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
               <label for="nt-shopping-category">{t("task_modal.category_field", locale)}</label>
               <select id="nt-shopping-category" class="form-select">
                 <option value="">{t("task_modal.category_uncategorized", locale)}</option>
-                <option value="produce">{t("task_modal.category_produce", locale)}</option>
-                <option value="dairy">{t("task_modal.category_dairy", locale)}</option>
-                <option value="meat">{t("task_modal.category_meat", locale)}</option>
-                <option value="pantry">{t("task_modal.category_pantry", locale)}</option>
-                <option value="frozen">{t("task_modal.category_frozen", locale)}</option>
-                <option value="beverages">{t("task_modal.category_beverages", locale)}</option>
-                <option value="household">{t("task_modal.category_household", locale)}</option>
-                <option value="other">{t("task_modal.category_other", locale)}</option>
+                {SHOPPING_CATEGORIES.map((cat) => (
+                  <option value={cat}>{t(`task_modal.category_${cat}` as Parameters<typeof t>[0], locale)}</option>
+                ))}
               </select>
             </div>
           </div>
@@ -113,7 +109,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
             <div class="nt-field">
               <label for="nt-event-end">{t("task_modal.end_field", locale)}</label>
               <input type="datetime-local" id="nt-event-end" name="end_date" step="any" class="form-input" aria-describedby="nt-date-error" />
-              <p id="nt-date-error" class="nt-error" hidden>{t("task_modal.event_end_error", locale)}</p>
+              <p id="nt-date-error" class="nt-error" role="alert" hidden>{t("task_modal.event_end_error", locale)}</p>
             </div>
           </div>
         </fieldset>
@@ -443,7 +439,9 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     }
 
     kindTabs.forEach(tab => tab.addEventListener("click", () => {
-      selectKind((tab as HTMLElement).dataset.kind || "standard_action")
+      const nextKind = (tab as HTMLElement).dataset.kind || "standard_action"
+      selectKind(nextKind)
+      if (nextKind === "calendar_event") restoreDue("")
       markEdited()
       renderCaptureSubmit()
       titleInput?.focus()
@@ -533,7 +531,8 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       label.className = "flex-1 min-w-0 break-words"
       const categoryLabel = Array.from(shoppingCategory?.options ?? []).find(option => option.value === category)?.textContent
       const suffix = category ? ` · ${categoryLabel || category}` : ""
-      label.textContent = qty > 1 ? `${qty}× ${name}${suffix}` : `${name}${suffix}`
+      const qtyStr = String(qty ?? "1").trim()
+      label.textContent = qtyStr && qtyStr !== "1" ? `${qtyStr}× ${name}${suffix}` : `${name}${suffix}`
 
       const remove = document.createElement("button")
       remove.type = "button"
@@ -980,11 +979,16 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
 
     // Preserve saved ISO offsets and precision while native event controls show local wall time.
     const eventDates = new Map<string, { raw: string; display: string }>()
+    function formatLocalDateTimeInput(date: Date, minutesOnly = false): string {
+      return new Date(date.valueOf() - date.getTimezoneOffset() * 60_000)
+        .toISOString()
+        .slice(0, minutesOnly ? 16 : -1)
+    }
     function restoreEventDate(id: string, raw: string) {
       const control = document.getElementById(id) as HTMLInputElement | null
       if (!control) return
       const date = displayedDate(raw)
-      control.value = date ? new Date(date.valueOf() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, -1) : ""
+      control.value = date ? formatLocalDateTimeInput(date) : ""
       eventDates.set(id, { raw, display: control.value })
     }
     function eventDateValue(id: string): string {
@@ -993,6 +997,17 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       if (saved && control?.value === saved.display) return saved.raw
       return control?.value ? new Date(control.value).toISOString() : ""
     }
+    document.getElementById("nt-event-start")?.addEventListener("change", (event) => {
+      const startControl = event.target as HTMLInputElement
+      const endControl = document.getElementById("nt-event-end") as HTMLInputElement | null
+      const startDate = displayedDate(startControl.value)
+      if (!startDate || !endControl) return
+      const currentEnd = displayedDate(endControl.value)
+      if (!currentEnd || currentEnd <= startDate) {
+        endControl.value = formatLocalDateTimeInput(new Date(startDate.getTime() + 60 * 60_000), true)
+        eventDates.delete("nt-event-end")
+      }
+    }, { signal })
     // Goals Loader
     async function loadGoals(requestSignal: AbortSignal) {
       if (!goalSelect) return
@@ -1455,9 +1470,12 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
           showFieldError(taskDraftText("reference_required"))
           return
         }
-        const start = displayedDate(eventDateValue("nt-event-start"))
-        const end = displayedDate(eventDateValue("nt-event-end"))
-        const invalidDates = kindInput?.value === "calendar_event" && !!start && !!end && end <= start
+        const startRaw = eventDateValue("nt-event-start")
+        const endRaw = eventDateValue("nt-event-end")
+        const start = displayedDate(startRaw)
+        const end = displayedDate(endRaw)
+        const bothDateOnly = dateOnly.test(startRaw) && dateOnly.test(endRaw)
+        const invalidDates = kindInput?.value === "calendar_event" && !!start && !!end && (bothDateOnly ? end < start : end <= start)
         const dateError = document.getElementById("nt-date-error")
         if (dateError) dateError.hidden = !invalidDates
         if (invalidDates) {
@@ -1546,16 +1564,17 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
           const statusSelectEl = document.getElementById("new-task-status") as HTMLInputElement | null;
           const goalSelectEl = document.getElementById("new-task-goal") as HTMLSelectElement | null;
           const recurrenceSelectEl = document.getElementById("new-task-recurrence") as HTMLSelectElement | null;
+          const selectedKind = kindInputEl?.value || "standard_action";
 
           const body: Record<string, unknown> = {
             title: finalTitle,
             ...(capturePlacement ? { placement: capturePlacement } : {}),
             description: descInputEl?.value.trim() || "",
-            task_kind: kindInputEl?.value || "standard_action",
+            task_kind: selectedKind,
             priority: Number(prioritySelectEl?.value),
             status: statusSelectEl?.value || "pending",
             labels: JSON.stringify(allLabels),
-            due_date: finalDue,
+            due_date: (selectedKind === "calendar_event" ? explicitDue : finalDue) || null,
             assigned_to: assignedTo || null,
             goal_id: goalSelectEl?.value || null,
           };
@@ -1574,23 +1593,22 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
           if (body.task_kind === "shopping_item") {
             const qty = shoppingQuantity() ?? 1
             const cat = shoppingCategory?.value ?? ""
-            const items = [...shoppingListItems]
+            const items = shoppingListItems.map(it => ({
+              name: it.name,
+              qty: typeof it.qty === "number" ? it.qty : String(it.qty || 1),
+              category: it.category || "",
+            }))
             const queued = shoppingItemInput?.value.trim()
-            if (bound && queued) items.push({ name: queued, qty, category: cat as ShoppingItem["category"] })
-            body.custom_fields = JSON.stringify({
-              quantity: qty,
-              category: cat || "",
-              items: items.length > 0 ? items : []
-            });
-            // Also store as checklists for display in detail view
+            if (queued) items.push({ name: queued, qty, category: cat as ShoppingItem["category"] })
+            body.custom_fields = JSON.stringify({ items })
             if (items.length > 0) {
-              body.checklists = JSON.stringify(items.map((i: { name: string }) => createChecklistItem(i.name)));
+              body.checklists = JSON.stringify(items.map((i: { name: string }) => createChecklistItem(i.name)))
             }
           }
 
           // Event fields
           if (body.task_kind === "calendar_event") {
-            const start = eventDateValue("nt-event-start")
+            const start = eventDateValue("nt-event-start") || extractedDue
             const end = eventDateValue("nt-event-end")
             if (start) body.start_date = start
             if (end) body.end_date = end

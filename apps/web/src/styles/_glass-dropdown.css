@@ -70,38 +70,3 @@
   color: var(--accent-text);
   font-weight: 500;
 }
-
-.glass-dropdown__divider {
-  height: 1px;
-  background-color: var(--border);
-  margin: 4px 0;
-}
-
-.glass-dropdown__label {
-  padding: 4px 12px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
-}
-
-/* Tags dropdown — wider for LabelPicker */
-.nt-tags-content {
-  min-width: 300px;
-  padding: 8px 12px;
-}
-.nt-tags-content .label-picker__input {
-  background: var(--bg-input, var(--bg-secondary));
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md, 8px);
-  padding: 6px 10px;
-  font-size: 13px;
-  color: var(--text-primary);
-  width: 100%;
-  margin-top: 4px;
-}
-.nt-tags-content .label-picker__dropdown {
-  max-height: 200px;
-  overflow-y: auto;
-}

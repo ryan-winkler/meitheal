@@ -74,7 +74,7 @@ export function bindSidebarBoards(pageSignal: AbortSignal) {
     window.addEventListener("resize", positionBoardPopup, { signal })
     window.addEventListener("scroll", positionBoardPopup, { signal, passive: true })
     window.addEventListener("meitheal:appearance-changed", () => {
-      if (navbar() && !children.hidden) setCollapsed(true)
+      if (navbar() && !children.hidden && !children.contains(document.activeElement)) setCollapsed(true)
     }, { signal })
     const escapePopup = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.key !== "Escape" || !popup() || children.hidden) return

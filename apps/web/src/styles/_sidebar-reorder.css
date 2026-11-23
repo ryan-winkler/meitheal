@@ -249,7 +249,11 @@
     padding: 0;
   }
 
-  #sidebar .sidebar-edit-grip,
+  #sidebar .sidebar-edit-grip {
+    inline-size: 44px;
+    block-size: 44px;
+  }
+
   #sidebar .sidebar-edit-btn {
     inline-size: 34px;
     block-size: 34px;
@@ -460,8 +464,8 @@
     gap: 0.25rem;
   }
 
-  :root:not([data-appearance-navigation="navbar"]) body.sidebar-collapsed #sidebar:not([data-sidebar-editing]) .sidebar-section:not([data-sidebar-section-hidden]):not([data-sidebar-section-empty])
-    + .sidebar-section:not([data-sidebar-section-hidden]):not([data-sidebar-section-empty]) {
+  :root:not([data-appearance-navigation="navbar"]) body.sidebar-collapsed #sidebar:not([data-sidebar-editing]) .sidebar-section:not([data-sidebar-section-hidden], [data-sidebar-section-empty])
+    + .sidebar-section:not([data-sidebar-section-hidden], [data-sidebar-section-empty]) {
     border-top: 1px solid var(--border);
     padding-top: 0.375rem;
     margin-top: 0.125rem;
@@ -507,13 +511,18 @@
   }
 
   :root:not([data-appearance-navigation="navbar"]) body.sidebar-collapsed #sidebar:not([data-sidebar-editing]) #tasks-submenu-toggle {
-    inline-size: 40px;
-    min-inline-size: 40px;
-    block-size: 18px;
-    min-block-size: 18px;
     border-color: transparent;
     border-radius: 6px;
     color: var(--text-muted);
+  }
+
+  @media (pointer: fine) {
+    :root:not([data-appearance-navigation="navbar"]) body.sidebar-collapsed #sidebar:not([data-sidebar-editing]) #tasks-submenu-toggle {
+      inline-size: 40px;
+      min-inline-size: 40px;
+      block-size: 18px;
+      min-block-size: 18px;
+    }
   }
 
   :root:not([data-appearance-navigation="navbar"]) body.sidebar-collapsed #sidebar:not([data-sidebar-editing]) #tasks-submenu-toggle:hover,
@@ -536,7 +545,7 @@
   }
 
   :root[data-appearance-navigation="navbar"] #sidebar:not([data-sidebar-editing]) .sidebar-sections,
-  :root[data-appearance-navigation="navbar"] #sidebar:not([data-sidebar-editing]) .sidebar-section:not([data-sidebar-section-hidden]):not([data-sidebar-section-empty]) {
+  :root[data-appearance-navigation="navbar"] #sidebar:not([data-sidebar-editing]) .sidebar-section:not([data-sidebar-section-hidden], [data-sidebar-section-empty]) {
     display: contents;
   }
 }

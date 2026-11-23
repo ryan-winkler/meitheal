@@ -1135,8 +1135,12 @@ test("ingress Auto updates with its parent and restores one observer across ifra
   await setParentBackground("#16202a")
   await expect(root).toHaveAttribute("data-ha-theme", "dark")
   await expect.poll(palette).toBe("#171a18")
+  const savedLight = page.waitForResponse(response => response.url() === origin + prefix + "/api/settings"
+    && response.request().method() === "PUT" && response.request().postDataJSON()?.key === "theme")
   await selectedTheme.selectOption("light")
   await expect(root).toHaveAttribute("data-theme", "light")
+  await content.locator("#appearance-save-btn").click()
+  expect((await savedLight).ok()).toBe(true)
   await setParentBackground("#fafafa")
   await expect(root).toHaveAttribute("data-ha-theme", "light")
   await setParentBackground("#16202a")
@@ -1145,6 +1149,10 @@ test("ingress Auto updates with its parent and restores one observer across ifra
   await selectedTheme.selectOption("auto")
   await expect(root).toHaveAttribute("data-theme", "auto")
   await expect.poll(palette).toBe("#171a18")
+  const savedAuto = page.waitForResponse(response => response.url() === origin + prefix + "/api/settings"
+    && response.request().method() === "PUT" && response.request().postDataJSON()?.key === "theme")
+  await content.locator("#appearance-save-btn").click()
+  expect((await savedAuto).ok()).toBe(true)
 
   await root.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })))
   await expect.poll(observerCounts).toEqual({ active: 0, registrations: 1 })
@@ -1231,6 +1239,8 @@ test("member can opt into Home Assistant colors and keep the saved fallback", as
   await expect(match).toBeChecked()
   await parentColor("--primary-text-color", "#121929")
   await expect(root).toHaveAttribute("data-ha-match", "light")
+  await content.locator("#appearance-save-btn").click()
+  await expect(content.locator("[data-appearance-status]")).toHaveText("Appearance saved on this device.")
   await page.reload()
   await expect(match).toBeChecked()
   await expect(root).toHaveAttribute("data-ha-match", "light")

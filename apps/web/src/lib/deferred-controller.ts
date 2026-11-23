@@ -1,9 +1,12 @@
 import { pageLifecycle } from "./page-lifecycle"
+import { safeFetch } from "./safe-fetch"
 import { buildTaskPermalink, openTaskDetailHandoff } from "./task-detail-handoff"
 import {
   allowsDeferral, DEFERRAL_RECONCILED, DEFERRAL_TIMEOUT_MS, notifyTaskCountsChanged, readDeferralGuard, writeDeferral,
   type DeferralReconciliation,
 } from "./deferral-client"
+
+const SAFE_TASK_ID_RE = /^[A-Za-z0-9_-]{1,128}$/
 
 function queueUrl(): URL {
   const url = new URL(location.href)
@@ -51,7 +54,9 @@ pageLifecycle.onPageLoad(signal => {
     function openWhenReady() {
       if (!visible || !live() || location.href !== url.href || !cardFor(id!)) return
       if (typeof window.openTaskDetail === "function") {
-        if (document.querySelector<HTMLElement>("#task-detail-overlay.active")?.dataset.taskId !== id) {
+        const activeOverlay = document.querySelector<HTMLElement>("#task-detail-overlay.active")
+        const openId = activeOverlay?.dataset.openTaskId ?? activeOverlay?.dataset.taskId
+        if (openId !== id) {
           openTaskDetailHandoff(id!)
         }
       } else if (performance.now() < deadline) requestAnimationFrame(openWhenReady)
@@ -134,14 +139,16 @@ pageLifecycle.onPageLoad(signal => {
     try {
       if (!await allowsDeferral(worker) || !relevant()) return
       const result = await writeDeferral(id, false, guard, signal)
+      let movedToBacklog = !moveToBacklog
       if (result.kind === "saved") {
-        if (moveToBacklog) {
-          await fetch(`/api/tasks/${encodeURIComponent(id)}`, {
+        if (moveToBacklog && SAFE_TASK_ID_RE.test(id)) {
+          const backlogRes = await safeFetch(`/api/tasks/${encodeURIComponent(id)}`, {
             method: "PUT",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ status: "backlog" }),
             signal,
-          }).catch(() => undefined)
+          }).catch(() => null)
+          movedToBacklog = Boolean(backlogRes?.ok)
         }
         notifyTaskCountsChanged(card.dataset.project)
       }
@@ -150,7 +157,9 @@ pageLifecycle.onPageLoad(signal => {
         case "saved":
           await readQueue(
             next?.dataset.deferredCard ?? "",
-            moveToBacklog ? "Moved to Backlog." : message("resumed", "Task resumed."),
+            moveToBacklog
+              ? (movedToBacklog ? "Moved to Backlog." : "Task resumed; could not move to Backlog.")
+              : message("resumed", "Task resumed."),
           )
           break
         case "blocked": {

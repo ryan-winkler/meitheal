@@ -10,6 +10,12 @@ test.describe("Native navigation overflow", () => {
     const headers = { origin: new URL(baseURL!).origin }
     const previous = (await (await request.get("/api/settings")).json()).sidebar_config
     expect((await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: {
+      sectionItems: {
+        workspace: ["dashboard", "today", "upcoming", "tasks", "activity", "mentionInbox"],
+        planning: ["progress", "planning"],
+        boards: ["boards"],
+        system: ["settings", "overflow-reference"],
+      },
       customItems: [{ id: "overflow-reference", label: "Long reference destination ".repeat(12), href: "https://example.com/reference", icon: "link" }],
     } } })).ok()).toBe(true)
     const errors: string[] = []
@@ -27,7 +33,7 @@ test.describe("Native navigation overflow", () => {
       const summary = more.locator(":scope > summary")
       const menu = more.locator("[data-nav-overflow-menu]")
       await expect(row).toHaveAttribute("data-nav-overflow-active", "")
-      await expect(row.locator("[data-nav-overflow-primary]")).toHaveCount(1)
+      await expect(row.locator("[data-nav-overflow-primary]")).toHaveCount(4)
       await expect(more).toHaveCount(1)
       const boards = row.locator('[data-sidebar-group="boards"]')
       const household = boards.locator('[data-named-board-shortcut="household"]')
@@ -87,7 +93,7 @@ test.describe("Native navigation overflow", () => {
       await expect(boardsToggle).toHaveAttribute("aria-expanded", "false")
       await boardsToggle.press("Enter")
       await expect(boardsToggle).toHaveAttribute("aria-expanded", "true")
-      await expect(boards.locator("#sidebar-board-children")).toHaveCSS("position", "absolute")
+      await expect(boards.locator("#sidebar-board-children")).toHaveCSS("position", "fixed")
       await expect(boards.locator(':scope > .nav-row a[data-page="boards"]')).toBeInViewport({ ratio: 1 })
       await expect(householdLink).toBeVisible()
       const areasToggle = household.locator(".sidebar-board-toggle")
@@ -100,7 +106,7 @@ test.describe("Native navigation overflow", () => {
       await expect(boardsToggle).toHaveAttribute("aria-expanded", "false")
       await reference.focus()
 
-      await row.evaluate(el => { el.style.maxWidth = "300px" })
+      await row.evaluate(el => { el.style.maxWidth = "110px" })
       await expect(more).toHaveAttribute("open", "")
       await expect(reference).toBeFocused()
       await reference.press("Escape")
@@ -156,9 +162,9 @@ test.describe("Native navigation overflow", () => {
       const household = boards.locator('[data-named-board-shortcut="household"]')
       const toggle = household.locator(".sidebar-board-toggle")
       const householdAreas = household.locator('[data-board-groups="household"]')
-      const settings = page.locator(".sidebar-footer a")
+      const settings = page.locator("#nav-utility-trigger")
       await expect(row).toHaveAttribute("data-nav-overflow-active", "")
-      await expect(row.locator("[data-nav-overflow-primary]")).toHaveCount(1)
+      await expect(row.locator("[data-nav-overflow-primary]")).toHaveCount(4)
       await expect(more).toHaveCount(1)
       await expect(row.locator('[data-nav-overflow-primary] a[data-page="dashboard"]')).toBeVisible()
       await expect(menu.locator('[data-page="planning"]')).toHaveCount(1)

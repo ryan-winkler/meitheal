@@ -124,20 +124,20 @@ if (directory) { try { await assertBoardDirectoryCurrent(directory) } catch(erro
               return (
                 <article class="board-tile board-directory-card" data-board-card={board.id}>
                   <div class="board-card-head">
-                    <a class="board-card-identity" href={`/boards/${encodeURIComponent(board.id)}`}>
+                    <div class="board-card-identity">
                       <span class:list={["board-icon-badge", { "board-icon-badge--archived": isArchived }]} aria-hidden="true">
                         <Icon name="layout-kanban" size={18} sprite />
                       </span>
-                      <span class="board-card-titles">
-                        <span class="board-name">{board.name}</span>
+                      <div class="board-card-titles">
+                        <a class="board-name board-card-title-link" href={`/boards/${encodeURIComponent(board.id)}`}>{board.name}</a>
                         <span class="board-card-meta">
                           <code class="board-key-code" title={`Ticket prefix: ${board.ticketPrefix}-1`}>{board.ticketPrefix}</code>
                           <span class:list={["board-role-badge", isArchived ? "board-role-badge--muted" : `board-role-badge--${board.role}`]}>
                             {isArchived ? "Archived" : board.role}
                           </span>
                         </span>
-                      </span>
-                    </a>
+                      </div>
+                    </div>
                     <form data-board-form="sidebar" data-board-id={board.id} class="board-preference">
                       <input type="hidden" name="hidden" value={board.hidden ? "false" : "true"} />
                       <button
