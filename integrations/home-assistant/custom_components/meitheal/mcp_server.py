@@ -175,9 +175,9 @@ MCP_TOOLS = [
                 "status": {"type": "string", "enum": _VALID_STATUSES},
                 "priority": {"type": "integer", "minimum": 1, "maximum": 5},
                 "due_date": {"type": "string"},
-                "start_date": {"type": "string"},
-                "end_date": {"type": "string"},
-                "task_kind": {"type": "string", "enum": list(TASK_KINDS)},
+                "start_date": {"type": ["string", "null"]},
+                "end_date": {"type": ["string", "null"]},
+                "task_kind": {"type": "string", "enum": list(CREATABLE_TASK_KINDS)},
                 "description": {"type": "string"},
                 "checklists": {"type": "array", "items": _CHECKLIST_ITEM_SCHEMA},
                 "custom_fields": {
@@ -778,7 +778,7 @@ async def _execute_tool(
             else None
         )
         description = _optional_str(args, "description", "updateTask")
-        task_kind = _parse_optional_task_kind(args, "updateTask")
+        task_kind = _parse_optional_task_kind(args, "updateTask", allow_routine_instance=False)
         checklists = _parse_optional_checklists(args, "updateTask")
         custom_fields = _parse_optional_custom_fields(args, "updateTask")
         status = args.get("status")

@@ -16,6 +16,9 @@ import {
 } from "@meitheal/domain-tasks"
 import { logApiError } from "../../lib/api-logger"
 import { normalizeStatus, STATUS } from "../../lib/status-config"
+import { formatTicketKey } from "../../lib/ticket-key"
+import { dispatchTaskEvent } from "../../lib/webhook-dispatcher"
+import type { TaskCreationData, TaskRepository } from "./persistence/task-repository"
 
 /**
  * Accept labels as an array of strings or as a JSON-encoded string array.
@@ -79,9 +82,6 @@ export function taskChecklistsJson(
   }
   return { ok: true, json: JSON.stringify(parsed) }
 }
-import { formatTicketKey } from "../../lib/ticket-key"
-import { dispatchTaskEvent } from "../../lib/webhook-dispatcher"
-import type { TaskCreationData, TaskRepository } from "./persistence/task-repository"
 
 export async function prepareTaskCreation(
   repo: TaskRepository,

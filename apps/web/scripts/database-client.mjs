@@ -551,7 +551,8 @@ export async function executeWriteWithRetry(client, statementOrBatch, options) {
 /** @param {InStatement} statement */
 function isLikelyWriteStatement(statement) {
   const sql = (typeof statement === "string" ? statement : statement.sql).trimStart()
-  return /^(?:INSERT|UPDATE|DELETE|REPLACE|CREATE|ALTER|DROP|VACUUM|REINDEX|ANALYZE|ATTACH|DETACH)\b/i.test(sql)
+  return /^(?:INSERT|UPDATE|DELETE|REPLACE|CREATE|ALTER|DROP|VACUUM|REINDEX|ANALYZE|ATTACH|DETACH)\b/i.test(sql) ||
+    (/^WITH\b/i.test(sql) && /\b(?:INSERT|UPDATE|DELETE|REPLACE)\b/i.test(sql))
 }
 
 let verifiedSQLite = false
@@ -780,14 +781,20 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     }
   }
 
-  function scheduleWriteCheckpoint() {
-    committedWrites += 1
-    if (closed || committedWrites % 64 !== 0 || writeCheckpointTimer !== undefined) return
+  let pendingWriteCheckpoint = false
+
+  function scheduleWriteCheckpoint(forceRecord = true) {
+    if (forceRecord) {
+      committedWrites += 1
+      if (committedWrites % 64 === 0) pendingWriteCheckpoint = true
+    }
+    if (closed || !pendingWriteCheckpoint || writeCheckpointTimer !== undefined) return
     writeCheckpointTimer = globalThis.setTimeout(() => {
       writeCheckpointTimer = undefined
-      if (closed || writeSlot.isLeased() || transactions.size > 0) return
+      if (closed || !pendingWriteCheckpoint || writeSlot.isLeased() || transactions.size > 0) return
       const idleWriter = writeSlot.peekIdle()
       if (!idleWriter) return
+      pendingWriteCheckpoint = false
       try {
         idleWriter.exec("PRAGMA wal_checkpoint(PASSIVE)")
       } catch {
@@ -911,6 +918,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
 
     const useStatementCache = useReadPool || leasedFromPrimaryWriteSlot
     let active = true
+    let tainted = false
     let restoreReadOnly = false
     /** @type {ReturnType<typeof globalThis.setTimeout> | undefined} */
     let slowLeaseTimer = undefined
@@ -929,14 +937,23 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       transactions.delete(settle)
       try {
         if (db.isTransaction) db.exec("ROLLBACK")
+      } catch {
+        tainted = true
       } finally {
+        const keep = !closed && !tainted && !db.isTransaction
         try {
           if (memory) {
-            if (restoreReadOnly) db.exec("PRAGMA query_only=OFF")
+            if (restoreReadOnly) {
+              try {
+                db.exec("PRAGMA query_only=OFF")
+              } catch {
+                // ignore connection teardown error on read-only reset
+              }
+            }
           } else if (leasedFromPrimaryReadSlot) {
-            readSlot.release(db, !closed)
+            readSlot.release(db, keep)
           } else if (leasedFromPrimaryWriteSlot) {
-            writeSlot.release(db, !closed)
+            writeSlot.release(db, keep)
           } else {
             disposeCachedStatements(db)
             db.close()
@@ -986,7 +1003,12 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
         assertActive()
         schemaEpoch += 1
         disposeCachedStatements(db)
-        sqliteOperation(() => db.exec(sql))
+        try {
+          sqliteOperation(() => db.exec(sql))
+        } catch (error) {
+          tainted = true
+          throw error
+        }
       },
       async commit() {
         assertActive()
@@ -999,7 +1021,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
             settle()
           }
         })
-        if (committed && leasedFromPrimaryWriteSlot) scheduleWriteCheckpoint()
+        if (committed && !memory) scheduleWriteCheckpoint()
       },
       async rollback() {
         if (active) sqliteOperation(settle)
@@ -1038,7 +1060,13 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       waiter.reject(new LibsqlError("The client is closed", "CLIENT_CLOSED"))
     }
     try {
-      for (const settle of transactions) settle()
+      for (const settle of Array.from(transactions)) {
+        try {
+          settle()
+        } catch {
+          // Continue closing remaining transaction handles even if one rollback throws.
+        }
+      }
     } finally {
       try {
         readSlot.close()

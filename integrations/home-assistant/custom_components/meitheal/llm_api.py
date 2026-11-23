@@ -249,13 +249,28 @@ def _assignee(args: dict[str, Any]) -> str:
     return args[_CALLER] if args["assignee"] == "me" else args["assignee"]
 
 
+def _non_empty_text(max_len: int):
+    """Validate a string with non-whitespace content up to max_len characters."""
+
+    def _validate(value: Any) -> str:
+        if not isinstance(value, str):
+            raise probatio.Invalid("value must be a string")
+        if not value.strip() or len(value) > max_len:
+            raise probatio.Invalid(
+                f"value must contain non-whitespace text (1-{max_len} characters)"
+            )
+        return value
+
+    return _validate
+
+
 _TASK_ID = probatio.All(str, probatio.Length(min=1, max=128), probatio.NotIn((".", "..")))
 _ASSIGNEE = probatio.Any("me", probatio.All(str, probatio.Match(ASSIGNEE_ID)))
 _OPEN_STATUSES = ("backlog", "pending", "active")
 _DONE_STATUSES = ("complete", "done", "archived", "cancelled", "canceled")
 _CHECKLIST_ITEM = probatio.Schema(
     {
-        probatio.Required("text"): probatio.All(str, probatio.Length(min=1, max=500)),
+        probatio.Required("text"): _non_empty_text(500),
         probatio.Optional("done"): bool,
         probatio.Optional("id"): str,
     }
@@ -265,8 +280,8 @@ def _validate_qty(value: Any) -> str | int | float:
     if isinstance(value, bool):
         raise probatio.Invalid("qty must be a string or positive number")
     if isinstance(value, str):
-        if len(value) > 100:
-            raise probatio.Invalid("qty must be 100 characters or fewer")
+        if not value.strip() or len(value) > 100:
+            raise probatio.Invalid("qty must be non-empty and 100 characters or fewer")
         return value
     if isinstance(value, (int, float)) and math.isfinite(value) and value > 0:
         return value
@@ -275,7 +290,7 @@ def _validate_qty(value: Any) -> str | int | float:
 
 _SHOPPING_ITEM = probatio.Schema(
     {
-        probatio.Required("name"): probatio.All(str, probatio.Length(min=1, max=300)),
+        probatio.Required("name"): _non_empty_text(300),
         probatio.Optional("qty"): _validate_qty,
         probatio.Optional("category"): probatio.In(SHOPPING_CATEGORIES),
         probatio.Optional("checked"): bool,
@@ -468,12 +483,12 @@ class CreateTaskTool(MeithealWriteTool):
     )
     parameters = probatio.Schema(
         {
-            probatio.Required("title"): probatio.All(str, probatio.Length(min=1, max=500)),
+            probatio.Required("title"): _non_empty_text(500),
             probatio.Optional("description"): probatio.All(str, probatio.Length(max=10000)),
             probatio.Optional("priority"): probatio.All(int, probatio.Range(min=1, max=5)),
-            probatio.Optional("due_date"): probatio.All(str, probatio.Length(min=1, max=40)),
-            probatio.Optional("start_date"): probatio.All(str, probatio.Length(min=1, max=40)),
-            probatio.Optional("end_date"): probatio.All(str, probatio.Length(min=1, max=40)),
+            probatio.Optional("due_date"): _non_empty_text(64),
+            probatio.Optional("start_date"): _non_empty_text(64),
+            probatio.Optional("end_date"): _non_empty_text(64),
             probatio.Optional("task_kind"): probatio.In(CREATABLE_TASK_KINDS),
             probatio.Optional("checklists"): [_CHECKLIST_ITEM],
             probatio.Optional("custom_fields"): _CUSTOM_FIELDS,
@@ -521,18 +536,14 @@ class UpdateTaskTool(MeithealWriteTool):
     parameters = probatio.Schema(
         {
             probatio.Required("task_id"): _TASK_ID,
-            probatio.Optional("title"): probatio.All(str, probatio.Length(min=1, max=500)),
+            probatio.Optional("title"): _non_empty_text(500),
             probatio.Optional("description"): probatio.All(str, probatio.Length(max=10000)),
             probatio.Optional("status"): probatio.In(_OPEN_STATUSES),
             probatio.Optional("priority"): probatio.All(int, probatio.Range(min=1, max=5)),
-            probatio.Optional("due_date"): probatio.All(str, probatio.Length(min=1, max=40)),
-            probatio.Optional("start_date"): probatio.Any(
-                None, probatio.All(str, probatio.Length(min=1, max=40))
-            ),
-            probatio.Optional("end_date"): probatio.Any(
-                None, probatio.All(str, probatio.Length(min=1, max=40))
-            ),
-            probatio.Optional("task_kind"): probatio.In(TASK_KINDS),
+            probatio.Optional("due_date"): _non_empty_text(64),
+            probatio.Optional("start_date"): probatio.Any(None, _non_empty_text(64)),
+            probatio.Optional("end_date"): probatio.Any(None, _non_empty_text(64)),
+            probatio.Optional("task_kind"): probatio.In(CREATABLE_TASK_KINDS),
             probatio.Optional("checklists"): [_CHECKLIST_ITEM],
             probatio.Optional("custom_fields"): _CUSTOM_FIELDS,
             probatio.Optional("assignee"): probatio.Any("unassigned", _ASSIGNEE),
@@ -615,7 +626,7 @@ class AddCommentTool(MeithealWriteTool):
     parameters = probatio.Schema(
         {
             probatio.Required("task_id"): _TASK_ID,
-            probatio.Required("comment"): probatio.All(str, probatio.Length(min=1, max=10000)),
+            probatio.Required("comment"): _non_empty_text(10000),
         }
     )
 

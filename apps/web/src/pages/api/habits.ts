@@ -1,13 +1,16 @@
 import { journaledBoardCommandAck, boardScopeErrorResponse, withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
+import { isValidEffortMinutes, isValidEffortType } from "@meitheal/domain-tasks"
 import { scopePermits } from "@domains/tasks/board-scope"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TemplateRepository } from "@domains/tasks/persistence/template-repository"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
+import { taskChecklistsJson, taskLabelsJson } from "@domains/tasks/task-creation-service"
 import { apiJson, apiError } from "../../lib/api-response"
 import { isValidTimezone } from "../../lib/date"
 import { isFeatureEnabled } from "../../lib/feature-flags"
 import { logApiError } from "../../lib/api-logger"
+import { sanitize } from "../../lib/sanitize"
 import { readStoredHouseholdTimezone } from "../../lib/task-queries"
 import { mapEntityEmojiToTabler } from "../../lib/tabler-svg"
 
@@ -91,11 +94,26 @@ const manageRoutine: Parameters<typeof withBoardScope>[1] = async ({ request, lo
     const repo = new TemplateRepository(client, scope)
     const hierarchy = new HierarchyRepository(client, scope)
     const timezone = await resolveRequestTimezone(locals)
-    const validArea = async (value: unknown) => value == null || value === "" ||
-      (typeof value === "string" && Boolean(await hierarchy.findAreaById(value)))
-
-    const validProject = async (value: unknown) => value == null || value === "" ||
-      (typeof value === "string" && Boolean(await hierarchy.findProjectById(value)))
+    const validatePlacement = async (areaVal: unknown, projectVal: unknown): Promise<{ ok: true; areaId: string | null; projectId: string | null } | { ok: false; message: string }> => {
+      let areaId: string | null = null
+      if (areaVal !== undefined && areaVal !== null && areaVal !== "") {
+        if (typeof areaVal !== "string" || !(await hierarchy.findAreaById(areaVal))) {
+          return { ok: false, message: "Choose an existing Area and Project" }
+        }
+        areaId = areaVal
+      }
+      let projectId: string | null = null
+      if (projectVal !== undefined && projectVal !== null && projectVal !== "") {
+        if (typeof projectVal !== "string") return { ok: false, message: "Choose an existing Area and Project" }
+        const project = await hierarchy.findProjectById(projectVal)
+        if (!project) return { ok: false, message: "Choose an existing Area and Project" }
+        if (areaId && project.area_id !== areaId) {
+          return { ok: false, message: "Choose a Project inside the selected Area" }
+        }
+        projectId = projectVal
+      }
+      return { ok: true, areaId, projectId }
+    }
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const action = String(body.action || "create")
@@ -108,7 +126,8 @@ const manageRoutine: Parameters<typeof withBoardScope>[1] = async ({ request, lo
         const name = String(body.name || "").trim()
         if (!name) return apiError("name is required", 400)
         if (name.length > 100) return apiError("name must be 100 characters or fewer", 400)
-        if (!await validArea(body.area_id) || !await validProject(body.project_id)) return apiError("Choose an existing Area and Project", 400)
+        const placement = await validatePlacement(body.area_id, body.project_id)
+        if (!placement.ok) return apiError(placement.message, 400)
 
         const rawCadence = body.cadence ?? body.frequency
         if (rawCadence !== undefined && (typeof rawCadence !== "string" || !VALID_ROUTINE_CADENCES.has(rawCadence))) {
@@ -134,8 +153,8 @@ const manageRoutine: Parameters<typeof withBoardScope>[1] = async ({ request, lo
           priority: typeof body.priority === "number" ? Math.min(5, Math.max(1, Math.round(body.priority))) : 3,
           labels: ["routine"],
           task_type: "task",
-          area_id: body.area_id || null,
-          project_id: body.project_id || null,
+          area_id: placement.areaId,
+          project_id: placement.projectId,
         }
 
         // Checklists: array of { text, done } items
@@ -153,8 +172,8 @@ const manageRoutine: Parameters<typeof withBoardScope>[1] = async ({ request, lo
           position,
           isRoutine: true,
           cadence,
-          areaId: typeof body.area_id === "string" && body.area_id ? body.area_id : null,
-          projectId: typeof body.project_id === "string" && body.project_id ? body.project_id : null,
+          areaId: placement.areaId,
+          projectId: placement.projectId,
         })
         if (!inserted) return apiError("Choose an existing Area", 400)
 
@@ -206,7 +225,8 @@ const manageRoutine: Parameters<typeof withBoardScope>[1] = async ({ request, lo
         }
         const templateId = String(body.templateId || "")
         if (!templateId) return apiError("templateId is required", 400)
-        if (!(await repo.findById(templateId))?.is_routine) return apiError("Routine not found", 404)
+        const existingRoutine = await repo.findById(templateId)
+        if (!existingRoutine?.is_routine) return apiError("Routine not found", 404)
 
         const updates: Parameters<typeof repo.update>[1] = {}
         if (body.name !== undefined) {
@@ -231,16 +251,85 @@ const manageRoutine: Parameters<typeof withBoardScope>[1] = async ({ request, lo
           updates.cadence = rawCadence
         }
 
-        // Rebuild template JSON if whitelisted checklist or template fields change
-        if (body.templateJson && typeof body.templateJson === "object" && !Array.isArray(body.templateJson)) {
+        // Rebuild template JSON with full validation for whitelisted template fields
+        if (body.templateJson !== undefined) {
+          if (!body.templateJson || typeof body.templateJson !== "object" || Array.isArray(body.templateJson)) {
+            return apiError("templateJson must be an object", 400)
+          }
           const rawPatch = body.templateJson as Record<string, unknown>
           const patch: Record<string, unknown> = {}
           for (const key of Object.keys(rawPatch)) {
             if (ALLOWED_TEMPLATE_PATCH_KEYS.has(key)) patch[key] = rawPatch[key]
           }
-          if (!await validArea(patch.area_id) || !await validProject(patch.project_id)) return apiError("Choose an existing Area and Project", 400)
-          if ("area_id" in patch) updates.areaId = typeof patch.area_id === "string" && patch.area_id ? patch.area_id : null
-          if ("project_id" in patch) updates.projectId = typeof patch.project_id === "string" && patch.project_id ? patch.project_id : null
+          if ("title" in patch) {
+            if (typeof patch.title !== "string") return apiError("templateJson.title must be a string", 400)
+            const cleanTitle = sanitize(patch.title.trim())
+            if (!cleanTitle) return apiError("templateJson.title is required", 400)
+            if (cleanTitle.length > 100) return apiError("templateJson.title must be 100 characters or fewer", 400)
+            patch.title = cleanTitle
+            if (updates.name === undefined) updates.name = cleanTitle
+          }
+          if ("description" in patch) {
+            if (typeof patch.description !== "string" || patch.description.length > 10000) {
+              return apiError("templateJson.description must be a string of 10000 characters or fewer", 400)
+            }
+            patch.description = sanitize(patch.description)
+          }
+          if ("priority" in patch) {
+            if (typeof patch.priority !== "number" || !Number.isFinite(patch.priority)) {
+              return apiError("templateJson.priority must be a number from 1 to 5", 400)
+            }
+            patch.priority = Math.min(5, Math.max(1, Math.round(patch.priority)))
+          }
+          if ("labels" in patch) {
+            const labelsJson = taskLabelsJson(patch.labels)
+            if (labelsJson === null) return apiError("templateJson.labels must be a string array", 400)
+            patch.labels = JSON.parse(labelsJson)
+          }
+          if ("checklists" in patch) {
+            const clRes = taskChecklistsJson(patch.checklists, false)
+            if (!clRes.ok) return apiError(clRes.error, 400)
+            const parsedCl = JSON.parse(clRes.json) as Array<{ text: string; done?: boolean }>
+            const cleanedCl: Array<{ text: string; done: boolean }> = []
+            for (const item of parsedCl) {
+              const text = sanitize(item.text.trim())
+              if (!text) return apiError("checklist items must have non-empty text", 400)
+              cleanedCl.push({ text, done: Boolean(item.done) })
+            }
+            patch.checklists = cleanedCl
+          }
+          if (
+            "effort_minutes" in patch &&
+            patch.effort_minutes !== null &&
+            (typeof patch.effort_minutes !== "number" || !isValidEffortMinutes(patch.effort_minutes))
+          ) {
+            return apiError("templateJson.effort_minutes must be null or a positive integer <= 480", 400)
+          }
+          if ("effort_type" in patch) {
+            if (patch.effort_type !== null) {
+              if (typeof patch.effort_type !== "string" || !isValidEffortType(patch.effort_type.trim().toLowerCase())) {
+                return apiError("templateJson.effort_type must be null, deep, shallow, or admin", 400)
+              }
+              patch.effort_type = patch.effort_type.trim().toLowerCase()
+            }
+          }
+          let existingParsed: Record<string, unknown> = {}
+          try {
+            const parsed = JSON.parse(String(existingRoutine.template_json ?? "{}"))
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) existingParsed = parsed as Record<string, unknown>
+          } catch { /* ignore */ }
+          const areaCandidate = "area_id" in patch ? patch.area_id : existingParsed.area_id
+          const projectCandidate = "project_id" in patch ? patch.project_id : existingParsed.project_id
+          const placement = await validatePlacement(areaCandidate, projectCandidate)
+          if (!placement.ok) return apiError(placement.message, 400)
+          if ("area_id" in patch) {
+            patch.area_id = placement.areaId
+            updates.areaId = placement.areaId
+          }
+          if ("project_id" in patch) {
+            patch.project_id = placement.projectId
+            updates.projectId = placement.projectId
+          }
           if (Object.keys(patch).length > 0) updates.templatePatch = JSON.stringify(patch)
         }
 

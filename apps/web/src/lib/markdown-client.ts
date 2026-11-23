@@ -108,7 +108,9 @@ function isHorizontalRule(line: string): boolean {
   return count >= 3
 }
 
-export function renderMarkdownToHtml(markdown: string): string {
+const MAX_BLOCKQUOTE_DEPTH = 16
+
+export function renderMarkdownToHtml(markdown: string, quoteDepth = 0): string {
   const normalized = markdown.replace(/\r\n?/g, "\n")
   const lines = normalized.split("\n")
   const blocks: string[] = []
@@ -160,7 +162,10 @@ export function renderMarkdownToHtml(markdown: string): string {
         quoteLines.push((lines[i] ?? "").replace(/^\s*>\s?/, ""))
         i += 1
       }
-      blocks.push(`<blockquote>${renderMarkdownToHtml(quoteLines.join("\n"))}</blockquote>`)
+      const inner = quoteDepth < MAX_BLOCKQUOTE_DEPTH
+        ? renderMarkdownToHtml(quoteLines.join("\n"), quoteDepth + 1)
+        : `<p>${quoteLines.map(renderInline).join("<br>")}</p>`
+      blocks.push(`<blockquote>${inner}</blockquote>`)
       continue
     }
 

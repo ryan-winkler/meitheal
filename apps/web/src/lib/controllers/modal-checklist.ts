@@ -150,6 +150,7 @@ export function showTaskChecklist(
     if (!isShopping) return
     const entries = Array.isArray(rawList) ? rawList : []
     const used = new Set<number>()
+    const matchedIndices = targetItems.map(() => -1)
     const prevByName = new Map<string, ShoppingMeta[]>()
     for (const prev of items) {
       const existing = getItemMeta(prev)
@@ -161,21 +162,35 @@ export function showTaskChecklist(
     }
     targetItems.forEach((item, index) => {
       const nameKey = item.text.trim().toLowerCase()
-      let matchedIndex = -1
       const sameIdx = entries[index]
       if (sameIdx && !used.has(index) && String(sameIdx.name ?? "").trim().toLowerCase() === nameKey) {
-        matchedIndex = index
-      } else {
-        matchedIndex = entries.findIndex((entry, idx) =>
-          !used.has(idx) && String(entry.name ?? "").trim().toLowerCase() === nameKey,
-        )
-        if (matchedIndex < 0 && sameIdx && !used.has(index)) matchedIndex = index
+        used.add(index)
+        matchedIndices[index] = index
       }
+    })
+    targetItems.forEach((item, index) => {
+      if (matchedIndices[index]! >= 0) return
+      const nameKey = item.text.trim().toLowerCase()
+      const byName = entries.findIndex((entry, idx) =>
+        !used.has(idx) && String(entry.name ?? "").trim().toLowerCase() === nameKey,
+      )
+      if (byName >= 0) {
+        used.add(byName)
+        matchedIndices[index] = byName
+      }
+    })
+    targetItems.forEach((item, index) => {
+      let matchedIndex = matchedIndices[index]!
+      if (matchedIndex < 0 && entries[index] && !used.has(index)) {
+        used.add(index)
+        matchedIndex = index
+      }
+      const nameKey = item.text.trim().toLowerCase()
       const nextMeta = matchedIndex >= 0
-        ? (used.add(matchedIndex), {
+        ? {
             qty: normalizeQtyValue(entries[matchedIndex]!.qty ?? entries[matchedIndex]!.quantity),
             category: normalizeCategoryValue(entries[matchedIndex]!.category),
-          })
+          }
         : getItemMeta(item) ?? prevByName.get(nameKey)?.shift() ?? { qty: 1, category: "" }
       setItemMeta(item, { ...nextMeta })
     })
@@ -260,7 +275,6 @@ export function showTaskChecklist(
         }
         const qtyInput = document.createElement("input")
         qtyInput.type = "text"
-        qtyInput.inputMode = "numeric"
         qtyInput.maxLength = 32
         qtyInput.value = String(meta.qty)
         qtyInput.className = "form-input text-xs td-shop-qty"
@@ -268,8 +282,8 @@ export function showTaskChecklist(
         qtyInput.addEventListener("change", () => {
           const trimmed = qtyInput.value.trim().slice(0, 32)
           const nextQty: number | string = !trimmed
-            ? (typeof meta.qty === "string" ? "1" : 1)
-            : /^[1-9]\d{0,2}$/.test(trimmed) && typeof meta.qty === "number"
+            ? 1
+            : /^[1-9]\d{0,2}$/.test(trimmed)
               ? Number(trimmed)
               : trimmed
           qtyInput.value = String(nextQty)

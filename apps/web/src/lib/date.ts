@@ -1,4 +1,5 @@
 import { fromZonedTime } from "date-fns-tz"
+import { effectiveTaskScheduledDate } from "@meitheal/domain-tasks"
 import { parseCalendarDay } from "./calendar-day"
 
 export type DateFormat = "relative" | "absolute-iso" | "absolute-eu" | "absolute-us";
@@ -273,6 +274,58 @@ function parseDueTime(raw: string, timezone: string): number {
   if (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)) return Date.parse(raw)
   if (!FLOATING_DATETIME.test(raw) || !calendarDayFromInput(raw, timezone)) return NaN
   return fromZonedTime(raw.replace(" ", "T"), resolveTimezone(timezone)).getTime()
+}
+
+export interface TaskWindowInput {
+  task_kind?: string | null | undefined
+  due_date?: string | null | undefined
+  start_date?: string | null | undefined
+  end_date?: string | null | undefined
+  calendar_sync_state?: string | null | undefined
+}
+
+export function calendarEventSpanDays(
+  task: TaskWindowInput,
+  timezone = DEFAULT_TIMEZONE,
+): { startDay: string; endDay: string } | null {
+  const scheduled = effectiveTaskScheduledDate(task)
+  if (!scheduled) return null
+  const startDay =
+    (task.task_kind === "calendar_event" ? calendarEventDay(scheduled, timezone, "start") : null) ??
+    calendarDayFromInput(scheduled, timezone)
+  if (!startDay) return null
+  if (task.task_kind === "calendar_event" && typeof task.end_date === "string" && task.end_date.trim()) {
+    const endRaw = task.end_date.trim()
+    const boundary = task.calendar_sync_state === "synced" || !DATE_ONLY.test(endRaw) ? "exclusive-end" : "start"
+    const parsedEnd = calendarEventDay(endRaw, timezone, boundary) ?? calendarDayFromInput(endRaw, timezone)
+    const endDay = parsedEnd && parsedEnd > startDay ? parsedEnd : startDay
+    return { startDay, endDay }
+  }
+  return { startDay, endDay: startDay }
+}
+
+export function effectiveOverdueDeadline(
+  task: TaskWindowInput,
+): string | null {
+  if (task.task_kind === "calendar_event" && typeof task.end_date === "string" && task.end_date.trim()) {
+    const endRaw = task.end_date.trim()
+    if (DATE_ONLY.test(endRaw) && task.calendar_sync_state === "synced") {
+      return shiftCalendarDay(endRaw, -1)
+    }
+    return endRaw
+  }
+  return effectiveTaskScheduledDate(task)
+}
+
+export function isTaskOverdue(
+  task: TaskWindowInput,
+  isDone: boolean,
+  timezone = DEFAULT_TIMEZONE,
+  today?: string,
+  now = Date.now(),
+): boolean {
+  if (isDone) return false
+  return isDueOverdue(effectiveOverdueDeadline(task), timezone, today, now)
 }
 
 /**

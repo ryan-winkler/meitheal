@@ -6941,18 +6941,45 @@ paths:
                           enum:
                             - daily
                             - weekly
-                        area_id:
+                        position:
+                          type: integer
+                        template_json:
+                          type: string
+                        boardId:
                           type:
                             - string
                             - "null"
-                        project_id:
+                        projectActive:
+                          type: boolean
+                        todayCompleted:
+                          type: boolean
+                        todayTaskId:
+                          type:
+                            - string
+                            - "null"
+                        lastCompletedDate:
                           type:
                             - string
                             - "null"
                         currentStreak:
                           type: integer
-                        completedThisPeriod:
-                          type: boolean
+                        longestStreak:
+                          type: integer
+                        totalCompletions:
+                          type: integer
+                        checklists:
+                          type: array
+                          items:
+                            type: object
+                            required:
+                              - text
+                              - done
+                            properties:
+                              text:
+                                type: string
+                              done:
+                                type: boolean
+                            additionalProperties: false
                       additionalProperties: false
                 additionalProperties: false
     post:

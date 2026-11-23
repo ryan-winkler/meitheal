@@ -41,7 +41,7 @@ import { CLOSED_TASK_STATUSES, getStatusDef, isClosedStatus, isDoneStatus, norma
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "../../../lib/task-search-score"
 import { readStoredCalendarDay } from "../../../lib/calendar-day"
-import { calendarDayFromInput, calendarEventDay, calendarEventInterval, calendarIntervalOverlaps, calendarOccurrenceStartKey, calendarToday, compareCalendarStarts, householdDayRanges, shiftCalendarDay, isDueOverdue } from "../../../lib/date"
+import { calendarDayFromInput, calendarEventDay, calendarEventInterval, calendarEventSpanDays, calendarIntervalOverlaps, calendarOccurrenceStartKey, calendarToday, compareCalendarStarts, householdDayRanges, isTaskOverdue, shiftCalendarDay } from "../../../lib/date"
 import { todayCompletionFilter } from "../../../lib/task-queries"
 import { parseTicketKey } from "../../../lib/ticket-key"
 import { getNextOccurrence, parseRRule } from "../recurrence"
@@ -53,20 +53,6 @@ import { canAdvanceTaskTimestampMs, nextTaskTimestampMs, taskTimestampMs } from 
 import { inactivityRuleActor, inactivityWriteGuard } from "./task-inactivity-query"
 import { openTaskDependencies } from "./task-dependencies"
 
-/**
- * A date-only due date is overdue once its household calendar day has ended; a due
- * date with a time is overdue once that time passes (see `isDueOverdue`). For times with
- * a UTC offset this matches the Home Assistant overdue sensor and the `task.overdue` event.
- */
-function isTaskOverdueOnDay(
-  dueDate: unknown,
-  status: unknown,
-  resolvedToday: string,
-  timezone: string,
-): boolean {
-  if (String(status ?? "").toLowerCase() === STATUS.COMPLETE) return false
-  return isDueOverdue(dueDate, timezone, resolvedToday)
-}
 const taskHistoryPredicate = "(feed_action IS NULL OR field <> 'activity')"
 const openStatusPredicate = `lower(status) NOT IN (${CLOSED_TASK_STATUSES.map(() => "?").join(", ")})`
 // Agent "added" rows keep Recent Activity provenance as JSON in `summary`. The task
@@ -718,20 +704,26 @@ export class TaskRepository {
     return stats;
   }
 
-  /** Count overdue tasks (past due, not complete) */
   /** Count open tasks past due. Pass today's YYYY-MM-DD in the user's timezone. */
   async getOverdueCount(today?: string, timezone = "Europe/Dublin", placement?: TaskReadPlacement): Promise<number> {
     const resolvedToday = today ?? calendarToday(timezone);
     const upperBound = shiftCalendarDay(resolvedToday, 2);
     const context = taskReadPlacement(placement)
-    const result = await this.forOperation("read").execute(scopedTaskRead(this.scope, sourceSql(`SELECT ${CALENDAR_ITEM_DATE} AS due_date FROM scoped_tasks AS tasks
+    const result = await this.forOperation("read").execute(scopedTaskRead(this.scope, sourceSql(`SELECT task_kind, due_date, start_date, end_date, calendar_sync_state FROM scoped_tasks AS tasks
             WHERE ${context.sql} AND ${CALENDAR_ITEM_DATE} IS NOT NULL AND ${CALENDAR_ITEM_DATE} <> ''
               AND substr(${CALENDAR_ITEM_DATE}, 1, 10) < ?
               AND ${openStatusPredicate}
               AND deferred_at IS NULL`, [...context.args, upperBound, ...CLOSED_TASK_STATUSES]), "select"));
     let count = 0;
     for (const row of result.rows) {
-      if (isDueOverdue((row as Record<string, unknown>).due_date, timezone, resolvedToday)) count++;
+      const r = row as Record<string, unknown>;
+      if (isTaskOverdue({
+        task_kind: r.task_kind ? String(r.task_kind) : null,
+        due_date: r.due_date ? String(r.due_date) : null,
+        start_date: r.start_date ? String(r.start_date) : null,
+        end_date: r.end_date ? String(r.end_date) : null,
+        calendar_sync_state: r.calendar_sync_state ? String(r.calendar_sync_state) : null,
+      }, false, timezone, resolvedToday)) count++;
     }
     return count;
   }
@@ -806,7 +798,7 @@ export class TaskRepository {
     const result = await this.readFromSnapshot(reader,scopedTaskRead(this.scope, sourceSql(`SELECT id, status, priority, task_type, task_kind, public_area_id AS area_id, assigned_to, is_promoted
                   ${matchText ? ", title, labels" : ""}
                   ${search ? ", CASE WHEN instr(lower(COALESCE(description, '')), lower(?)) > 0 THEN 1 ELSE 0 END AS description_matches" : ""}
-                  ${matchOverdue ? `, ${CALENDAR_ITEM_DATE} AS scheduled_date, end_date` : ""}
+                  ${matchOverdue ? `, due_date, start_date, end_date, calendar_sync_state` : ""}
             FROM scoped_tasks AS tasks
             WHERE 1 AND status IN (SELECT value FROM json_each(?))
               AND deferred_at IS NULL
@@ -816,14 +808,15 @@ export class TaskRepository {
             ORDER BY is_promoted DESC, kanban_position ASC NULLS LAST, priority ASC, created_at DESC, id ASC`, [...(search ? [search] : []), JSON.stringify(statuses), ...(filter?.args ?? []), ...(projectId ? [projectId] : []), cutoff, cutoff]), "select"))
     const rows = result.rows as unknown as (KanbanIndexRow & { description_matches?: number })[]
     if (!matchOverdue) return rows
-    return (result.rows as unknown as (KanbanIndexRow & { scheduled_date?: unknown; end_date?: unknown })[]).map(({ scheduled_date, end_date, ...row }) => ({
+    return (result.rows as unknown as (KanbanIndexRow & { due_date?: string | null; start_date?: string | null; end_date?: string | null; calendar_sync_state?: string | null })[]).map(({ due_date, start_date, end_date, calendar_sync_state, ...row }) => ({
       ...row,
-      overdue: isTaskOverdueOnDay(
-        row.task_kind === "calendar_event" ? (end_date || scheduled_date) : scheduled_date,
-        row.status,
-        resolvedToday,
-        timezone,
-      ) ? 1 : 0,
+      overdue: !isClosedStatus(row.status) && isTaskOverdue({
+        task_kind: row.task_kind ? String(row.task_kind) : null,
+        due_date: due_date ? String(due_date) : null,
+        start_date: start_date ? String(start_date) : null,
+        end_date: end_date ? String(end_date) : null,
+        calendar_sync_state: calendar_sync_state ? String(calendar_sync_state) : null,
+      }, false, timezone, resolvedToday) ? 1 : 0,
     }))
   }
 
@@ -910,31 +903,53 @@ export class TaskRepository {
   ): Promise<Record<string, CalendarDayInfo>> {
     const lowerBound = shiftCalendarDay(monthStart, -2);
     const upperBound = shiftCalendarDay(monthEnd, 2);
-    const result = await this.forOperation("read").execute(scopedTaskRead(this.scope, sourceSql(`SELECT ${CALENDAR_ITEM_DATE} AS calendar_date, due_date, color, ${options.matches ? CALENDAR_FILTER_COLUMNS : "status, task_kind"}
+    const result = await this.forOperation("read").execute(scopedTaskRead(this.scope, sourceSql(`SELECT ${CALENDAR_ITEM_DATE} AS calendar_date, due_date, color, calendar_sync_state, ${options.matches ? CALENDAR_FILTER_COLUMNS : "status, task_kind, start_date, end_date"}
             FROM scoped_tasks AS tasks
             WHERE 1 AND ${CALENDAR_LOCAL_ITEM} AND status <> 'archived'
-              AND substr(${CALENDAR_ITEM_DATE}, 1, 10) BETWEEN ? AND ?`, [lowerBound, upperBound]), "select"));
+              AND (
+                substr(${CALENDAR_ITEM_DATE}, 1, 10) BETWEEN ? AND ?
+                OR (
+                  task_kind = 'calendar_event'
+                  AND ${CALENDAR_ITEM_DATE} IS NOT NULL AND ${CALENDAR_ITEM_DATE} <> ''
+                  AND end_date IS NOT NULL AND end_date <> ''
+                  AND substr(${CALENDAR_ITEM_DATE}, 1, 10) <= ?
+                  AND substr(end_date, 1, 10) >= ?
+                )
+              )`, [lowerBound, upperBound, upperBound, lowerBound]), "select"));
 
     const tasksByDay: Record<string, CalendarDayInfo> = {};
     for (const row of result.rows) {
-      const r = row as unknown as CalendarFilterRow & { calendar_date: string; color: string | null };
+      const r = row as unknown as CalendarFilterRow & { calendar_date: string; color: string | null; calendar_sync_state?: string | null };
       if (!options.includeCompleted && isDoneStatus(r.status)) continue
-      const day = calendarDayFromInput(r.calendar_date, timezone);
-      if (!day || day < monthStart || day > monthEnd || (options.matches && !options.matches(r))) continue;
-      const existing = tasksByDay[day] ?? {
-        dueDate: day,
-        count: 0,
-        colors: [],
-        scheduledEvents: 0,
-        haEvents: 0,
-      };
-      existing.count += 1;
-      if (r.task_kind === "calendar_event") existing.scheduledEvents += 1
+      if (options.matches && !options.matches(r)) continue
+      const span = calendarEventSpanDays(r, timezone)
+      const fallbackDay = calendarDayFromInput(r.calendar_date, timezone)
+      const startDay = span?.startDay ?? fallbackDay
+      const endDay = span?.endDay ?? fallbackDay
+      if (!startDay || !endDay) continue
+      const rangeStart = startDay < monthStart ? monthStart : startDay
+      const rangeEnd = endDay > monthEnd ? monthEnd : endDay
+      if (rangeStart > rangeEnd) continue
       const color = typeof r.color === "string" ? r.color.trim() : "";
-      if (color && existing.colors.length < 3) {
-        existing.colors.push(color);
+      let day = rangeStart
+      for (let step = 0; step < 370 && day <= rangeEnd; step += 1) {
+        const existing = tasksByDay[day] ?? {
+          dueDate: day,
+          count: 0,
+          colors: [],
+          scheduledEvents: 0,
+          haEvents: 0,
+        };
+        existing.count += 1;
+        if (r.task_kind === "calendar_event") existing.scheduledEvents += 1
+        if (color && existing.colors.length < 3) {
+          existing.colors.push(color);
+        }
+        tasksByDay[day] = existing;
+        const nextDay = shiftCalendarDay(day, 1)
+        if (nextDay === day) break
+        day = nextDay
       }
-      tasksByDay[day] = existing;
     }
     return tasksByDay;
   }
@@ -1059,11 +1074,7 @@ export class TaskRepository {
               AND deferred_at IS NULL
             ORDER BY ${CALENDAR_ITEM_DATE} ASC`, [upperBound, STATUS.COMPLETE]), "select"));
     const rows = sanitizeRows(this.normalizeTaskRows(result.rows));
-    return rows.filter((row) => isDueOverdue(
-      row.task_kind === "calendar_event" ? (row.end_date || effectiveTaskScheduledDate(row)) : effectiveTaskScheduledDate(row),
-      timezone,
-      todayStr,
-    ));
+    return rows.filter((row) => isTaskOverdue(row, false, timezone, todayStr));
   }
 
   /** Tasks due on a specific date (non-complete) */
@@ -1987,13 +1998,15 @@ export class TaskRepository {
   } = {}) {
     if (typeof fields.assigned_to === "string" && fields.assigned_to.startsWith("ha_") && !options.assignmentProof) options = { ...options, assignmentProof: await resolveHAAssignmentProof(this.scope, fields.assigned_to.slice(3), options.signal) }
     if (typeof fields.status === "string" && isDoneStatus(fields.status) && !options.recurrenceAssignment) {
-      const { rows } = await this.client.execute(
-        sql`SELECT 1 FROM tasks WHERE ${taskOwnedBy(this.scope)} AND id = ${id} AND recurrence_rule IS NOT NULL AND recurrence_rule <> '' LIMIT 1`,
+      const { rows: [probe] } = await this.readCommandStatement(
+        "complete",
+        sql`SELECT recurrence_rule, assigned_to FROM tasks WHERE ${taskOwnedBy(this.scope)} AND id = ${id} LIMIT 1`,
+        [id],
       )
-      if (rows.length > 0) {
-        const source = await this.findTaskForCommand(id, "edit")
-        if (source?.recurrence_rule) options = { ...options, recurrenceAssignment: { assigneeId: source.assigned_to ?? null,
-          ...(source.assigned_to?.startsWith("ha_") ? { proof: await resolveHAAssignmentProof(this.scope, source.assigned_to.slice(3), options.signal) } : {}),
+      if (probe?.recurrence_rule && String(probe.recurrence_rule)) {
+        const assigneeId = probe.assigned_to ? String(probe.assigned_to) : null
+        options = { ...options, recurrenceAssignment: { assigneeId,
+          ...(assigneeId?.startsWith("ha_") ? { proof: await resolveHAAssignmentProof(this.scope, assigneeId.slice(3), options.signal) } : {}),
         } }
       }
     }

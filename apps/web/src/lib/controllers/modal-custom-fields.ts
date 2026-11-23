@@ -273,6 +273,7 @@ export function initCustomFields({ saveTD, getSettingsFields, getCurrentTaskId, 
   const dropdownEl = () => document.getElementById("td-add-cf-dropdown")
   const searchEl = () => document.getElementById("td-add-cf-search") as HTMLInputElement | null
   const addFieldByName = (fieldName: string) => {
+    if (isRetainedCustomFieldKey(fieldName) || Object.hasOwn(retainedStructuredFields, fieldName)) return
     const sfDef = getSettingsFields().find((sf) => sf.name === fieldName)
     addCFRow(fieldName, sfDef?.type === "checkbox" ? "false" : "", sfDef?.type || "text", sfDef?.options)
     const dd = dropdownEl()

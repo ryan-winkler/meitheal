@@ -1,12 +1,12 @@
 import { pageLifecycle } from "./page-lifecycle"
 import { safeFetch } from "./safe-fetch"
 import { buildTaskPermalink, openTaskDetailHandoff } from "./task-detail-handoff"
-
-const SAFE_TASK_ID_RE = /^[A-Za-z0-9._-]+$/
 import {
   allowsDeferral, DEFERRAL_RECONCILED, DEFERRAL_TIMEOUT_MS, notifyTaskCountsChanged, readDeferralGuard, writeDeferral,
   type DeferralReconciliation,
 } from "./deferral-client"
+
+const SAFE_TASK_ID_RE = /^[A-Za-z0-9_-]{1,128}$/
 
 function queueUrl(): URL {
   const url = new URL(location.href)
@@ -54,7 +54,9 @@ pageLifecycle.onPageLoad(signal => {
     function openWhenReady() {
       if (!visible || !live() || location.href !== url.href || !cardFor(id!)) return
       if (typeof window.openTaskDetail === "function") {
-        if (document.querySelector<HTMLElement>("#task-detail-overlay.active")?.dataset.taskId !== id) {
+        const activeOverlay = document.querySelector<HTMLElement>("#task-detail-overlay.active")
+        const openId = activeOverlay?.dataset.openTaskId ?? activeOverlay?.dataset.taskId
+        if (openId !== id) {
           openTaskDetailHandoff(id!)
         }
       } else if (performance.now() < deadline) requestAnimationFrame(openWhenReady)

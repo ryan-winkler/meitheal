@@ -439,7 +439,9 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     }
 
     kindTabs.forEach(tab => tab.addEventListener("click", () => {
-      selectKind((tab as HTMLElement).dataset.kind || "standard_action")
+      const nextKind = (tab as HTMLElement).dataset.kind || "standard_action"
+      selectKind(nextKind)
+      if (nextKind === "calendar_event") restoreDue("")
       markEdited()
       renderCaptureSubmit()
       titleInput?.focus()
@@ -1003,6 +1005,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       const currentEnd = displayedDate(endControl.value)
       if (!currentEnd || currentEnd <= startDate) {
         endControl.value = formatLocalDateTimeInput(new Date(startDate.getTime() + 60 * 60_000), true)
+        eventDates.delete("nt-event-end")
       }
     }, { signal })
     // Goals Loader
@@ -1467,9 +1470,12 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
           showFieldError(taskDraftText("reference_required"))
           return
         }
-        const start = displayedDate(eventDateValue("nt-event-start"))
-        const end = displayedDate(eventDateValue("nt-event-end"))
-        const invalidDates = kindInput?.value === "calendar_event" && !!start && !!end && end <= start
+        const startRaw = eventDateValue("nt-event-start")
+        const endRaw = eventDateValue("nt-event-end")
+        const start = displayedDate(startRaw)
+        const end = displayedDate(endRaw)
+        const bothDateOnly = dateOnly.test(startRaw) && dateOnly.test(endRaw)
+        const invalidDates = kindInput?.value === "calendar_event" && !!start && !!end && (bothDateOnly ? end < start : end <= start)
         const dateError = document.getElementById("nt-date-error")
         if (dateError) dateError.hidden = !invalidDates
         if (invalidDates) {

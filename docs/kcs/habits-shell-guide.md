@@ -51,7 +51,7 @@ When Household is deleted, its library and shared creation controls are paused. 
 
 Board owners create and edit these Routines under **Boards → Areas**. To bind a Routine to a Project, open that Project’s settings and create the Routine there. Its completed ticket retains the Area and Project. Closing or removing the Project prevents new occurrences. Retrying an already completed occurrence keeps its existing ticket, subject to current Board permissions.
 
-Household Routine check-ins and streaks follow your configured household timezone; named Board check-ins use a UTC day or a UTC week starting Monday. A generated ticket keeps that occurrence’s date. If a check-in cannot be confirmed, refresh the list before trying again. Reconnect through Home Assistant when the list disappears after an account or connection change.
+Household and named Board Routine check-ins and streaks follow your request or configured household timezone (with UTC fallback when no timezone is configured), using the current day or Monday-start week. A generated ticket keeps that occurrence’s date. If a check-in cannot be confirmed, refresh the list before trying again. Reconnect through Home Assistant when the list disappears after an account or connection change.
 
 The Routines feature must be available to your account. Administrators choose its audience under **Settings → Tasks & Boards → Organization features**. Personal names for Routine and Board come from **Navigation & Shortcuts → Labels**.
 

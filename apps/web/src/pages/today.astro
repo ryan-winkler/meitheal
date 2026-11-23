@@ -39,7 +39,7 @@ import { getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TemplateRepository } from "@domains/tasks/persistence/template-repository"
 import type { HabitWithStats } from "@domains/tasks/persistence/template-repository"
 import { getTodayTaskRows, todayCompletionPercent, todayDueSection, type TaskViewItem } from "../lib/task-queries"
-import { calendarDayFromInput, calendarToday, formatDayHeading, formatRelativeDue, shiftCalendarDay } from "../lib/date"
+import { calendarDayFromInput, calendarEventSpanDays, calendarToday, formatDayHeading, formatRelativeDue, shiftCalendarDay } from "../lib/date"
 import { db503Response } from "../lib/db-fallback"
 import { isFeatureEnabled } from "../lib/feature-flags"
 import { isOrganizationFeatureAvailable } from "../lib/organization-request-context"
@@ -97,15 +97,11 @@ try {
       pinnedTasks.push(task)
     }
 
-    const scheduled = effectiveTaskScheduledDate(task)
-    if (scheduled) {
-      const startDay = calendarDayFromInput(scheduled, todayTimeZone)
-      const endDay = task.task_kind === "calendar_event" && typeof task.end_date === "string" && task.end_date.trim()
-        ? calendarDayFromInput(task.end_date, todayTimeZone)
-        : null
-      const ongoingEventToday = task.task_kind === "calendar_event" &&
-        startDay !== null && startDay <= todayStr && endDay !== null && endDay >= todayStr
-      const section = ongoingEventToday ? "due" : todayDueSection(scheduled, todayStr, todayTimeZone)
+    const span = calendarEventSpanDays(task, todayTimeZone)
+    if (span) {
+      const { startDay, endDay } = span
+      const ongoingEventToday = task.task_kind === "calendar_event" && startDay <= todayStr && endDay >= todayStr
+      const section = ongoingEventToday ? "due" : todayDueSection(startDay, todayStr, todayTimeZone)
 
       if (section === "carried") {
         // Carried forward (overdue)

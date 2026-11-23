@@ -101,7 +101,6 @@ def _parse_local_date(
         return parsed_dt.date()
     except (ValueError, TypeError, OverflowError):
         return None
-    return value.strip() if isinstance(value, str) and value.strip() else None
 
 
 def _parse_json_list(raw: Any) -> list[dict[str, Any]]:
@@ -247,7 +246,10 @@ class MeithealTask:
         end_raw = _non_empty_str(self.end_date)
         if self.task_kind == "calendar_event" and end_raw is not None:
             scheduled = end_raw
-            if len(end_raw) == 10 and getattr(self, "calendar_sync_state", None) == "synced":
+            if (
+                len(end_raw) == 10
+                and getattr(self, "calendar_sync_state", None) in ("synced", "confirmed")
+            ):
                 end_day = _parse_local_date(end_raw, local_now, exclusive_end=True)
                 return end_day is not None and end_day < local_now.date()
         else:
@@ -923,6 +925,14 @@ class MeithealCoordinator(DataUpdateCoordinator[MeithealCoordinatorData]):
             or not result.get("completed")
         ):
             raise UpdateFailed("Meitheal did not acknowledge routine completion")
+        if (
+            bool(result.get("newlyCompleted", not result.get("alreadyExisted")))
+            and "meitheal_task_completed" not in authority
+        ):
+            await self._fire_event(
+                "meitheal_task_completed",
+                {"task_id": result["taskId"], "title": template_id},
+            )
         await self._fire_logbook("Meitheal", f"completed routine: {template_id}")
         await self.async_request_refresh()
         return {

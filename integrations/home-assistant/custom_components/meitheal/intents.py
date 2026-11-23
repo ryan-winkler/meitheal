@@ -29,6 +29,7 @@ import logging
 from typing import ClassVar
 
 import voluptuous as vol
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import intent
@@ -63,8 +64,10 @@ def _get_coordinator(hass: HomeAssistant) -> MeithealCoordinator | None:
     from .const import DOMAIN
 
     for entry in hass.config_entries.async_entries(DOMAIN):
-        if hasattr(entry, "runtime_data") and isinstance(
-            entry.runtime_data, MeithealCoordinator
+        if (
+            entry.state is ConfigEntryState.LOADED
+            and hasattr(entry, "runtime_data")
+            and isinstance(entry.runtime_data, MeithealCoordinator)
         ):
             return entry.runtime_data
     return None

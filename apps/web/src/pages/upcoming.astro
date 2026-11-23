@@ -15,7 +15,7 @@ import {
   getPersistenceClient,
 } from "@domains/tasks/persistence/store";
 import { TaskRepository } from "@domains/tasks/persistence/task-repository";
-import { calendarDayFromInput, calendarEventDay, calendarToday, shiftCalendarDay } from "../lib/date";
+import { calendarEventSpanDays, calendarToday, shiftCalendarDay } from "../lib/date";
 
 interface DayGroup {
   date: string;
@@ -48,27 +48,16 @@ try {
 
   const tasksByDate = new Map<string, Record<string, unknown>[]>();
   for (const row of allTasks) {
-    const scheduled = effectiveTaskScheduledDate({
+    const span = calendarEventSpanDays({
       task_kind: typeof row.task_kind === "string" ? row.task_kind : null,
       due_date: row.due_date == null ? null : String(row.due_date),
       start_date: row.start_date == null ? null : String(row.start_date),
       end_date: row.end_date == null ? null : String(row.end_date),
-    });
-    let d = calendarDayFromInput(scheduled, upcomingTimeZone);
-    if (row.task_kind === "calendar_event" && typeof row.start_date === "string" && row.start_date.trim()) {
-      const startDay = calendarEventDay(row.start_date.trim(), upcomingTimeZone, "start") ?? d;
-      let endDay = startDay;
-      if (typeof row.end_date === "string" && row.end_date.trim()) {
-        const endRaw = row.end_date.trim();
-        const boundary = row.calendar_sync_state === "synced" || !/^\d{4}-\d{2}-\d{2}$/.test(endRaw) ? "exclusive-end" : "start";
-        const parsedEnd = calendarEventDay(endRaw, upcomingTimeZone, boundary) ?? calendarDayFromInput(endRaw, upcomingTimeZone);
-        if (parsedEnd && startDay && parsedEnd >= startDay) endDay = parsedEnd;
-      }
-      if (startDay && endDay && startDay < todayStr && endDay >= todayStr) {
-        d = todayStr;
-      }
-    }
-    if (!d) continue;
+      calendar_sync_state: row.calendar_sync_state == null ? null : String(row.calendar_sync_state),
+    }, upcomingTimeZone);
+    if (!span) continue;
+    const { startDay, endDay } = span;
+    const d = row.task_kind === "calendar_event" && startDay < todayStr && endDay >= todayStr ? todayStr : startDay;
     if (!tasksByDate.has(d)) tasksByDate.set(d, []);
     tasksByDate.get(d)!.push(row);
   }

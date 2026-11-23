@@ -168,7 +168,13 @@ export async function readNamedBoardPlanning(client: Client, scope: BoardScope, 
       sharedAreaId: goal.area_id
     })),
     routines: routines.map((routine) => {
-      const template = JSON.parse(routine.template_json)
+      let template: Record<string, unknown> = {}
+      try {
+        const parsed = JSON.parse(routine.template_json)
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) template = parsed as Record<string, unknown>
+      } catch {
+        /* ignore malformed template_json */
+      }
       return {
         id: routine.id,
         name: routine.name,
@@ -177,7 +183,7 @@ export async function readNamedBoardPlanning(client: Client, scope: BoardScope, 
         projectId: typeof template.project_id === "string" ? template.project_id : null,
         description: String(template.description ?? ""),
         complete: routine.todayCompleted,
-        period: routinePeriod(routine.cadence)
+        period: routinePeriod(routine.cadence, new Date(), timezone)
       }
     })
   }
