@@ -38,10 +38,10 @@ Opening a section from the toolbar updates the URL hash, so you can reload or sh
 ### Create or edit a Household Routine
 
 1. Choose **New Routine** in the shell or in the Household library section.
-2. Set cadence, priority, description, and optional checklist items.
+2. Choose a `1.75px` Tabler sprite icon (legacy stored emoji values map automatically via `mapEntityEmojiToTabler()`), cadence (`daily` or `weekly`), priority, description, and optional checklist items.
 3. Save the habit to update the underlying routine template.
 
-Editing an existing habit now preserves description and priority instead of flattening them.
+Editing an existing habit now preserves description and priority instead of flattening them. Agents and Home Assistant callers can also list (`GET /api/habits` with optional `area_id` and `project_id` filters, MCP `listHabits` / `listRoutines`, LLM `meitheal_list_routines`) and check in (`POST /api/habits` with `action: "complete"`, MCP `createHabit` / `completeRoutine`, LLM `meitheal_complete_routine`).
 
 When Household is deleted, its library and shared creation controls are paused. Restore it from **Boards → Deleted Boards** to recover its saved Routines. Routines on active named Boards remain available in the check-in area.
 

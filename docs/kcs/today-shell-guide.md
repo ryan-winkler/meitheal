@@ -41,9 +41,9 @@ These anchors stay on the same route, which keeps the page ingress-safe in Home 
 
 ### Capture work without leaving Today
 
-1. Use the shell `New Task` button when you need the full modal. The title receives focus when the dialog opens. Tab and Shift+Tab stay inside the dialog, and Escape returns focus to the control that opened it. After a successful save, Details opens on the same page with the new task.
+1. Use the shell `New Task` button when you need the full modal. Switch between **Task**, **Shopping list** (`shopping_item` across the 8 canonical aisle categories: `produce`, `dairy`, `meat`, `pantry`, `frozen`, `beverages`, `household`, `other`), **Checklist**, and **Event** (`calendar_event` with `start_date`/`end_date` and inline range validation). The title receives focus when the dialog opens. Tab and Shift+Tab stay inside the dialog, and Escape returns focus to the control that opened it. After a successful save, Details opens on the same page with the new task.
 2. Use the inline quick-add field in `Overview` when you want the fastest path.
-3. Add a date or shopping list when needed, such as “call dentist tomorrow” or “shopping: milk, eggs”.
+3. Add a date or shopping list when needed, such as “call dentist tomorrow” or “shopping: milk, eggs”. Native `calendar_event` items scheduled for today (`start_date ?? due_date ?? end_date`) appear alongside Today's due work even when `due_date` is blank.
 4. Stay on the same route so the current Today context is preserved.
 
 `Smart Task Parsing` in Settings controls natural-language dates, priorities, `#labels` and `@assignees` in Today’s and the Dashboard’s inline quick-add. Today’s default due date is the current day in the household timezone from Settings, not in UTC. With it off, these tokens stay in the ordinary task title and the preview shows the existing default due date of Today. Turning it on restores extraction in both the preview and the submitted task.
