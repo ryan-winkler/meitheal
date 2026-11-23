@@ -277,7 +277,7 @@ export interface AreaInfo {
 
 export type CalendarFilterRow = Pick<TaskRow,
   "status" | "title" | "priority" | "task_type" | "task_kind" | "area_id" | "assigned_to" |
-  "is_promoted" | "labels" | "due_date" | "deferred_at" | "framework_payload"> & { project_id?: string | null }
+  "is_promoted" | "labels" | "due_date" | "start_date" | "end_date" | "deferred_at" | "framework_payload"> & { project_id?: string | null }
 
 function taskMatchesDateWindow(row: TaskRow, startDate: string, endDate: string, timezone: string): boolean {
   if (row.task_kind === "calendar_event" && typeof row.start_date === "string" && row.start_date.trim()) {
@@ -603,7 +603,7 @@ export interface SyncChunkCommitResult {
 }
 
 const CALENDAR_FILTER_COLUMNS = `status, title, priority, task_type, task_kind,
-  tasks.public_area_id AS area_id, tasks.public_project_id AS project_id, assigned_to, is_promoted, labels, deferred_at, framework_payload`
+  tasks.public_area_id AS area_id, tasks.public_project_id AS project_id, assigned_to, is_promoted, labels, start_date, end_date, deferred_at, framework_payload`
 
 export class TaskRepository {
   private readonly client: Client
@@ -806,7 +806,7 @@ export class TaskRepository {
     const result = await this.readFromSnapshot(reader,scopedTaskRead(this.scope, sourceSql(`SELECT id, status, priority, task_type, task_kind, public_area_id AS area_id, assigned_to, is_promoted
                   ${matchText ? ", title, labels" : ""}
                   ${search ? ", CASE WHEN instr(lower(COALESCE(description, '')), lower(?)) > 0 THEN 1 ELSE 0 END AS description_matches" : ""}
-                  ${matchOverdue ? ", due_date" : ""}
+                  ${matchOverdue ? `, ${CALENDAR_ITEM_DATE} AS scheduled_date, end_date` : ""}
             FROM scoped_tasks AS tasks
             WHERE 1 AND status IN (SELECT value FROM json_each(?))
               AND deferred_at IS NULL
@@ -816,9 +816,14 @@ export class TaskRepository {
             ORDER BY is_promoted DESC, kanban_position ASC NULLS LAST, priority ASC, created_at DESC, id ASC`, [...(search ? [search] : []), JSON.stringify(statuses), ...(filter?.args ?? []), ...(projectId ? [projectId] : []), cutoff, cutoff]), "select"))
     const rows = result.rows as unknown as (KanbanIndexRow & { description_matches?: number })[]
     if (!matchOverdue) return rows
-    return (result.rows as unknown as (KanbanIndexRow & { due_date?: unknown })[]).map(({ due_date, ...row }) => ({
+    return (result.rows as unknown as (KanbanIndexRow & { scheduled_date?: unknown; end_date?: unknown })[]).map(({ scheduled_date, end_date, ...row }) => ({
       ...row,
-      overdue: isTaskOverdueOnDay(due_date, row.status, resolvedToday, timezone) ? 1 : 0,
+      overdue: isTaskOverdueOnDay(
+        row.task_kind === "calendar_event" ? (end_date || scheduled_date) : scheduled_date,
+        row.status,
+        resolvedToday,
+        timezone,
+      ) ? 1 : 0,
     }))
   }
 
@@ -1050,11 +1055,15 @@ export class TaskRepository {
     const upperBound = shiftCalendarDay(todayStr, 2);
     const result = await this.forOperation("read").execute(scopedTaskRead(this.scope, sourceSql(`SELECT * FROM scoped_tasks AS tasks
             WHERE 1 AND ${CALENDAR_ITEM_DATE} IS NOT NULL AND ${CALENDAR_ITEM_DATE} <> '' AND substr(${CALENDAR_ITEM_DATE}, 1, 10) < ?
-              AND status NOT IN (?)
+              AND status NOT IN (?, 'archived')
               AND deferred_at IS NULL
             ORDER BY ${CALENDAR_ITEM_DATE} ASC`, [upperBound, STATUS.COMPLETE]), "select"));
     const rows = sanitizeRows(this.normalizeTaskRows(result.rows));
-    return rows.filter((row) => isDueOverdue(effectiveTaskScheduledDate(row), timezone, todayStr));
+    return rows.filter((row) => isDueOverdue(
+      row.task_kind === "calendar_event" ? (row.end_date || effectiveTaskScheduledDate(row)) : effectiveTaskScheduledDate(row),
+      timezone,
+      todayStr,
+    ));
   }
 
   /** Tasks due on a specific date (non-complete) */
@@ -1071,7 +1080,7 @@ export class TaskRepository {
                   AND substr(COALESCE(NULLIF(end_date, ''), start_date), 1, 10) >= ?
                 )
               )
-              AND status NOT IN (?) AND deferred_at IS NULL
+              AND status NOT IN (?, 'archived') AND deferred_at IS NULL
             ORDER BY priority DESC, created_at ASC`, [lowerBound, upperBound, upperBound, lowerBound, STATUS.COMPLETE]), "select"));
     const rows = sanitizeRows(this.normalizeTaskRows(result.rows));
     return rows.filter((row) => taskMatchesDateWindow(row, dateStr, dateStr, timezone));
@@ -1099,7 +1108,7 @@ export class TaskRepository {
     const upperBound = shiftCalendarDay(endStr, 2);
 
     const result = await this.forOperation("read").execute(scopedTaskRead(this.scope, sourceSql(`SELECT * FROM scoped_tasks AS tasks
-            WHERE 1 AND status NOT IN (?)
+            WHERE 1 AND status NOT IN (?, 'archived')
               AND deferred_at IS NULL
               AND (
                 (${CALENDAR_ITEM_DATE} IS NOT NULL AND ${CALENDAR_ITEM_DATE} <> '' AND substr(${CALENDAR_ITEM_DATE}, 1, 10) >= ? AND substr(${CALENDAR_ITEM_DATE}, 1, 10) <= ? AND priority <= 2)
@@ -1143,7 +1152,7 @@ export class TaskRepository {
                   AND substr(COALESCE(NULLIF(end_date, ''), start_date), 1, 10) >= ?
                 )
               )
-              AND status NOT IN (?)
+              AND status NOT IN (?, 'archived')
               AND deferred_at IS NULL
             ORDER BY ${CALENDAR_ITEM_DATE} ASC, priority DESC, created_at ASC`, [...context.args, lowerBound, upperBound, upperBound, lowerBound, STATUS.COMPLETE]), "select"));
     const rows = sanitizeRows(this.normalizeTaskRows(result.rows));
@@ -1319,7 +1328,6 @@ export class TaskRepository {
     const limit = Math.min(500, Math.max(1, opts.limit ?? 100));
     const offset = Math.max(0, opts.offset ?? 0);
     const day = opts.calendarDay ?? opts.dueDate
-    const dateColumn = opts.calendarDay ? CALENDAR_ITEM_DATE : "due_date"
 
     const conditions = ["1"];
     const args: InValue[] = [];
@@ -1335,8 +1343,15 @@ export class TaskRepository {
       const lowerBound = shiftCalendarDay(day, -2)
       const upperBound = shiftCalendarDay(day, 2)
       if (opts.calendarDay) conditions.push(CALENDAR_LOCAL_ITEM)
-      conditions.push(`substr(${dateColumn}, 1, 10) BETWEEN ? AND ?`)
-      args.push(lowerBound, upperBound)
+      conditions.push(`(
+        substr(${CALENDAR_ITEM_DATE}, 1, 10) BETWEEN ? AND ?
+        OR (
+          task_kind = 'calendar_event' AND start_date IS NOT NULL AND start_date <> ''
+          AND substr(start_date, 1, 10) <= ?
+          AND substr(COALESCE(NULLIF(end_date, ''), start_date), 1, 10) >= ?
+        )
+      )`)
+      args.push(lowerBound, upperBound, upperBound, lowerBound)
     }
     if (opts.homeAssistantArea) {
       const filter = homeAssistantTaskAreaCondition(opts.homeAssistantArea)
@@ -1367,10 +1382,10 @@ export class TaskRepository {
       const snapshot = await this.forOperation("read").transaction("read")
       try {
         const tz = opts.timezone || "Europe/Dublin"
-        const filterProjection = opts.matchCalendarTask ? `, ${CALENDAR_FILTER_COLUMNS}` : ""
-        const candidates = await snapshot.execute(scopedTaskRead(this.scope, sourceSql(`SELECT id, ${dateColumn} AS calendar_date, due_date${filterProjection} FROM scoped_tasks AS tasks${where} ${ordering}`, args), "select"))
+        const filterProjection = opts.matchCalendarTask ? CALENDAR_FILTER_COLUMNS : "task_kind, start_date, end_date"
+        const candidates = await snapshot.execute(scopedTaskRead(this.scope, sourceSql(`SELECT id, ${CALENDAR_ITEM_DATE} AS calendar_date, due_date, calendar_sync_state, ${filterProjection} FROM scoped_tasks AS tasks${where} ${ordering}`, args), "select"))
         const matches = opts.matchCalendarTask
-        const ids = candidates.rows.filter(row => calendarDayFromInput(String(row.calendar_date), tz) === day &&
+        const ids = candidates.rows.filter(row => taskMatchesDateWindow(row as unknown as TaskRow, day, day, tz) &&
           (!matches || matches(row as unknown as CalendarFilterRow)))
         const page = ids.slice(offset, offset + limit)
         if (page.length === 0) return { tasks: [], total: ids.length }
@@ -1971,11 +1986,16 @@ export class TaskRepository {
     assignmentProof?: AssignmentProof | undefined, recurrenceAssignment?: { assigneeId: string | null, proof?: AssignmentProof | undefined } | undefined,
   } = {}) {
     if (typeof fields.assigned_to === "string" && fields.assigned_to.startsWith("ha_") && !options.assignmentProof) options = { ...options, assignmentProof: await resolveHAAssignmentProof(this.scope, fields.assigned_to.slice(3), options.signal) }
-    if (typeof fields.status === "string" && isDoneStatus(fields.status)) {
-      const source = await this.findTaskForCommand(id, "edit")
-      if (source?.recurrence_rule) options = { ...options, recurrenceAssignment: { assigneeId: source.assigned_to ?? null,
-        ...(source.assigned_to?.startsWith("ha_") ? { proof: await resolveHAAssignmentProof(this.scope, source.assigned_to.slice(3), options.signal) } : {}),
-      } }
+    if (typeof fields.status === "string" && isDoneStatus(fields.status) && !options.recurrenceAssignment) {
+      const { rows } = await this.client.execute(
+        sql`SELECT 1 FROM tasks WHERE ${taskOwnedBy(this.scope)} AND id = ${id} AND recurrence_rule IS NOT NULL AND recurrence_rule <> '' LIMIT 1`,
+      )
+      if (rows.length > 0) {
+        const source = await this.findTaskForCommand(id, "edit")
+        if (source?.recurrence_rule) options = { ...options, recurrenceAssignment: { assigneeId: source.assigned_to ?? null,
+          ...(source.assigned_to?.startsWith("ha_") ? { proof: await resolveHAAssignmentProof(this.scope, source.assigned_to.slice(3), options.signal) } : {}),
+        } }
+      }
     }
     return this.updateTaskCommand(id, fields, options)
   }
@@ -2707,6 +2727,12 @@ export class TaskRepository {
    */
   async cascadeCompleteIds(parentId: string, assignedTo?: string): Promise<string[]> {
     const assigned = scopeAssignedTo(this.scope) ?? assignedTo
+    const openProbe = await this.readCommandStatement(
+      "complete",
+      sql`SELECT 1 FROM tasks WHERE ${taskOwnedBy(this.scope)} AND parent_id = ${parentId} AND status != ${STATUS.COMPLETE} ${assigned === undefined ? sourceSql("") : sql`AND assigned_to = ${assigned}`} LIMIT 1`,
+      [parentId],
+    )
+    if (openProbe.rows.length === 0) return []
     const childLookup = scopedTaskRead(this.scope, sql`SELECT id, recurrence_rule, assigned_to
       FROM scoped_tasks WHERE parent_id = ${parentId} AND status != ${STATUS.COMPLETE}
       ${assigned === undefined ? sourceSql("") : sql`AND assigned_to = ${assigned}`}`)

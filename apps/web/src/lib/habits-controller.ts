@@ -430,7 +430,7 @@ function initHabitsCrud(): void {
 
     const name = nameInput!.value.trim()
     if (!name) {
-      showToast("Habit name is required", "warning")
+      showToast("Routine name is required", "warning")
       return
     }
 

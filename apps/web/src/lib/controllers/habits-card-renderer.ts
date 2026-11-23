@@ -10,6 +10,7 @@
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { formatCalendarDay } from "@lib/calendar-day"
 import { mapEntityEmojiToTabler } from "@lib/tabler-svg"
+import { taskDetailPath } from "@lib/task-page-url"
 import { createSpriteIconElement, type IconName } from "../../generated/icon-registry"
 
 export interface HabitChecklistItem {
@@ -183,7 +184,7 @@ function createHabitCard(habit: HabitData): HTMLElement {
   if (habit.todayTaskId) {
     const taskLink = document.createElement("a")
     taskLink.className = "habit-card__meta-item habit-card__task-link"
-    taskLink.href = `/tickets/${encodeURIComponent(habit.todayTaskId)}`
+    taskLink.href = taskDetailPath(habit.todayTaskId)
     taskLink.textContent = "View task"
     meta.append(taskLink)
   }

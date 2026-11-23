@@ -172,7 +172,6 @@
               "standard_action",
               "shopping_item",
               "checklist",
-              "routine_instance",
               "calendar_event",
               "quick_capture"
             ],
@@ -253,8 +252,16 @@
                           "description": "Item name"
                         },
                         "qty": {
-                          "type": "string",
-                          "description": "Optional quantity label (e.g. '2L', '1 bunch')"
+                          "oneOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number",
+                              "exclusiveMinimum": 0
+                            }
+                          ],
+                          "description": "Optional quantity label (e.g. '2L', '1 bunch') or positive number"
                         },
                         "category": {
                           "type": "string",
@@ -539,8 +546,16 @@
                           "description": "Item name"
                         },
                         "qty": {
-                          "type": "string",
-                          "description": "Optional quantity label (e.g. '2L', '1 bunch')"
+                          "oneOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number",
+                              "exclusiveMinimum": 0
+                            }
+                          ],
+                          "description": "Optional quantity label (e.g. '2L', '1 bunch') or positive number"
                         },
                         "category": {
                           "type": "string",

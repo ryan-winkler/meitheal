@@ -53,5 +53,5 @@ export function setupHabitsSection(
       card.classList.remove("habit-card--done")
       showToast("Failed to complete routine", "error")
     }
-  })
+  }, { signal: lm.signal })
 }

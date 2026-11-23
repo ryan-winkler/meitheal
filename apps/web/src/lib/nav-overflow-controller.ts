@@ -1,5 +1,6 @@
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { applySidebarOrder, sidebarOrderChanged, SIDEBAR_ORDER_STORAGE_KEY } from "@lib/sidebar-order"
+import { SIDEBAR_PERSONAL_STORAGE_KEY } from "@domains/navigation/sidebar-menu"
 import { SIDEBAR_FOCUS_REVEAL_EVENT } from "@lib/mobile-sidebar-controller"
 import { computeNavOverflow, type NavOverflowItem } from "@domains/navigation/nav-overflow"
 
@@ -362,7 +363,7 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     schedule()
   }, { signal })
   if (sidebar) window.addEventListener("storage", event => {
-    if (event.key === SIDEBAR_ORDER_STORAGE_KEY || event.key === null) {
+    if (event.key === SIDEBAR_PERSONAL_STORAGE_KEY || event.key === SIDEBAR_ORDER_STORAGE_KEY || event.key === null) {
       sidebarOrderPending = true
       syncTaskNavDom()
     }

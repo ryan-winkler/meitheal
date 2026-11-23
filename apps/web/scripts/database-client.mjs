@@ -37,8 +37,48 @@ const grantRevisionStatements = new WeakMap()
 /** @typedef {TodayRead | TaskProjectionRead | "board-policy"} ScopedRead */
 /** @type {WeakMap<object, ScopedRead>} */
 const scopedReads = new WeakMap()
-/** @type {WeakMap<DatabaseSync, Partial<Record<ScopedRead, { sql: string, statement: import("node:sqlite").StatementSync }>>>} */
+/** @type {WeakMap<DatabaseSync, Partial<Record<ScopedRead, { epoch: number, sql: string, statement: import("node:sqlite").StatementSync }>>>} */
 const scopedReadStatements = new WeakMap()
+const UNTAGGED_CACHE_MAX = 32
+const UNTAGGED_CACHE_SKIP_RE = /^\s*(?:PRAGMA|BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|CREATE|ALTER|DROP|VACUUM|REINDEX|ATTACH|DETACH)\b/i
+const SCHEMA_CHANGE_RE = /(?:^|;)\s*(?:CREATE|ALTER|DROP|VACUUM|REINDEX|ATTACH|DETACH)\b/i
+let schemaEpoch = 0
+/** @type {WeakMap<DatabaseSync, { epoch: number, entries: Map<string, { statement: import("node:sqlite").StatementSync, hasColumns: boolean }> }>} */
+const untaggedStatements = new WeakMap()
+
+/** @param {DatabaseSync} db */
+function disposeCachedStatements(db) {
+  untaggedStatements.delete(db)
+  scopedReadStatements.delete(db)
+  totalChangesStatements.delete(db)
+  grantRevisionStatements.delete(db)
+}
+
+/** @param {DatabaseSync} db @param {string} sql @returns {{ statement: import("node:sqlite").StatementSync, hasColumns: boolean }} */
+function prepareCachedUntaggedStatement(db, sql) {
+  let cache = untaggedStatements.get(db)
+  if (!cache || cache.epoch !== schemaEpoch) {
+    cache = { epoch: schemaEpoch, entries: new Map() }
+    untaggedStatements.set(db, cache)
+  }
+  const existing = cache.entries.get(sql)
+  if (existing) {
+    cache.entries.delete(sql)
+    cache.entries.set(sql, existing)
+    return existing
+  }
+  const statement = db.prepare(sql)
+  statement.setReadBigInts(true)
+  const hasColumns = statement.columns().length > 0
+  if (hasColumns) statement.setReturnArrays(true)
+  if (cache.entries.size >= UNTAGGED_CACHE_MAX) {
+    const oldestKey = cache.entries.keys().next().value
+    if (oldestKey !== undefined) cache.entries.delete(oldestKey)
+  }
+  const created = { statement, hasColumns }
+  cache.entries.set(sql, created)
+  return created
+}
 
 /** Explicitly tag a source-owned Today query for local read-batch preparation.
  * @template {Exclude<InStatement, string>} T
@@ -256,27 +296,44 @@ function getTotalChanges(db) {
   return stmt.get()?.count
 }
 
-/** @param {DatabaseSync} db @param {InStatement} input @param {InArgs} [args] @param {boolean} [fileReadSnapshot] */
-function execute(db, input, args = [], fileReadSnapshot = false) {
+/** @param {DatabaseSync} db @param {InStatement} input @param {InArgs} [args] @param {boolean} [useStatementCache] */
+function execute(db, input, args = [], useStatementCache = false) {
   const sql = typeof input === "string" ? input : input.sql
   const values = typeof input === "string" ? args : input.args ?? []
   const bindings = Array.isArray(values)
     ? values.map(bind)
     : Object.fromEntries(Object.entries(values).map(([key, value]) => [key.replace(/^[@$:]/, ""), bind(value)]))
+  if (SCHEMA_CHANGE_RE.test(sql)) {
+    schemaEpoch += 1
+    untaggedStatements.delete(db)
+    scopedReadStatements.delete(db)
+  }
   const tag = typeof input === "string" ? undefined : scopedReads.get(input)
-  const kind = fileReadSnapshot || tag === "board-policy" ? tag : undefined
+  const kind = (useStatementCache && tag) || tag === "board-policy" ? tag : undefined
   const slots = kind ? scopedReadStatements.get(db) : undefined
   const cached = kind ? slots?.[kind] : undefined
-  let statement = cached?.sql === sql ? cached.statement : undefined
+  let statement = cached?.sql === sql && cached?.epoch === schemaEpoch ? cached.statement : undefined
+  let hasColumns = false
   if (!statement) {
     if (kind) {
       statement = db.prepare(sql)
       // Each query has one slot per handle. Changes in the scoped SQL replace it.
-      if (slots) slots[kind] = { sql, statement }
-      else scopedReadStatements.set(db, { [kind]: { sql, statement } })
+      if (slots) slots[kind] = { epoch: schemaEpoch, sql, statement }
+      else scopedReadStatements.set(db, { [kind]: { epoch: schemaEpoch, sql, statement } })
+    } else if (
+      useStatementCache &&
+      sql.length <= 4096 &&
+      !sql.includes(";") &&
+      !UNTAGGED_CACHE_SKIP_RE.test(sql)
+    ) {
+      const entry = prepareCachedUntaggedStatement(db, sql)
+      statement = entry.statement
+      hasColumns = entry.hasColumns
     } else {
       statement = db.prepare(sql)
       statement.setReadBigInts(true)
+      hasColumns = statement.columns().length > 0
+      if (hasColumns) statement.setReturnArrays(true)
     }
   }
   if (kind) {
@@ -300,8 +357,7 @@ function execute(db, input, args = [], fileReadSnapshot = false) {
     }))
     return new ResultSetImpl(columns, metadata.map(column => column.type ?? ""), rows, 0, undefined)
   }
-  if (statement.columns().length) {
-    statement.setReturnArrays(true)
+  if (hasColumns) {
     const rawRows = Array.isArray(bindings) ? statement.all(...bindings) : statement.all(bindings)
     // SQLite may reprepare on the first step after another connection changes the schema.
     const metadata = statement.columns()
@@ -644,43 +700,101 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     } finally { admitWaitingReads() }
   }
 
-  /** @type {DatabaseSync | null} */
-  let idleReadHandle = null
-  let readSlotLeased = false
-  /** @type {ReturnType<typeof globalThis.setTimeout> | undefined} */
-  let readIdleTimer = undefined
+  function createIdleHandleSlot(openHandle) {
+    /** @type {DatabaseSync | null} */
+    let handle = null
+    let leased = false
+    /** @type {ReturnType<typeof globalThis.setTimeout> | undefined} */
+    let idleTimer = undefined
 
-  function clearReadIdleTimer() {
-    if (readIdleTimer !== undefined) {
-      globalThis.clearTimeout(readIdleTimer)
-      readIdleTimer = undefined
-    }
-  }
-
-  function closeIdleReadHandle() {
-    clearReadIdleTimer()
-    if (idleReadHandle) {
-      try {
-        idleReadHandle.close()
-      } finally {
-        idleReadHandle = null
+    function clearIdleTimer() {
+      if (idleTimer !== undefined) {
+        globalThis.clearTimeout(idleTimer)
+        idleTimer = undefined
       }
     }
-  }
 
-  function armReadIdleEviction() {
-    clearReadIdleTimer()
-    readIdleTimer = globalThis.setTimeout(() => {
-      readIdleTimer = undefined
-      if (!readSlotLeased && idleReadHandle) {
-        try {
-          idleReadHandle.close()
-        } finally {
-          idleReadHandle = null
+    function evict(target) {
+      disposeCachedStatements(target)
+      target.close()
+    }
+
+    return {
+      isLeased: () => leased,
+      peekIdle: () => handle,
+      acquire() {
+        if (leased) return null
+        clearIdleTimer()
+        leased = true
+        if (handle) {
+          const pooled = handle
+          handle = null
+          return { db: pooled, hit: true }
         }
+        try {
+          return { db: openHandle(), hit: false }
+        } catch (err) {
+          leased = false
+          throw err
+        }
+      },
+      release(db, keep) {
+        leased = false
+        if (!keep) {
+          evict(db)
+          return
+        }
+        handle = db
+        clearIdleTimer()
+        idleTimer = globalThis.setTimeout(() => {
+          idleTimer = undefined
+          if (!leased && handle) {
+            const stale = handle
+            handle = null
+            evict(stale)
+          }
+        }, READ_IDLE_EVICT_MS)
+        idleTimer.unref?.()
+      },
+      close() {
+        clearIdleTimer()
+        if (handle) {
+          const stale = handle
+          handle = null
+          evict(stale)
+        }
+      },
+    }
+  }
+
+  const readSlot = createIdleHandleSlot(() => connect(true, true))
+  const writeSlot = createIdleHandleSlot(() => connect(false, false))
+  let committedWrites = 0
+  /** @type {ReturnType<typeof globalThis.setTimeout> | undefined} */
+  let writeCheckpointTimer = undefined
+
+  function clearWriteCheckpointTimer() {
+    if (writeCheckpointTimer !== undefined) {
+      globalThis.clearTimeout(writeCheckpointTimer)
+      writeCheckpointTimer = undefined
+    }
+  }
+
+  function scheduleWriteCheckpoint() {
+    committedWrites += 1
+    if (closed || committedWrites % 64 !== 0 || writeCheckpointTimer !== undefined) return
+    writeCheckpointTimer = globalThis.setTimeout(() => {
+      writeCheckpointTimer = undefined
+      if (closed || writeSlot.isLeased() || transactions.size > 0) return
+      const idleWriter = writeSlot.peekIdle()
+      if (!idleWriter) return
+      try {
+        idleWriter.exec("PRAGMA wal_checkpoint(PASSIVE)")
+      } catch {
+        // Non-fatal; SQLite autocheckpoint or subsequent traffic handles WAL growth.
       }
-    }, READ_IDLE_EVICT_MS)
-    readIdleTimer.unref?.()
+    }, 0)
+    writeCheckpointTimer.unref?.()
   }
 
   function idle() {
@@ -709,13 +823,17 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
    */
   function batchSync(statements, mode, migration, onAcquired) {
     return onMain(db => {
-      if (migration) db.exec("PRAGMA foreign_keys=OFF")
+      if (migration) {
+        schemaEpoch += 1
+        disposeCachedStatements(db)
+        db.exec("PRAGMA foreign_keys=OFF")
+      }
       const queryOnly = mode === "read" && db.prepare("PRAGMA query_only").get()?.query_only === 0
       if (queryOnly) db.exec("PRAGMA query_only=ON")
       try {
         begin(db, mode)
         if (mode === "write") onAcquired?.()
-        const results = executeBatch(db, statements)
+        const results = executeBatch(db, statements, !migration)
         db.exec("COMMIT")
         onAcquired?.()
         return results
@@ -737,9 +855,9 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
    */
   async function executeStatementWithRetry(statement, args, signal) {
     if (!signal && !isLikelyWriteStatement(statement)) {
-      return onMain(db => execute(db, statement, args))
+      return onMain(db => execute(db, statement, args, true))
     }
-    return retryBusyOperation(() => onMain(db => execute(db, statement, args)), () => false, signal)
+    return retryBusyOperation(() => onMain(db => execute(db, statement, args, true)), () => false, signal)
   }
 
   /**
@@ -762,36 +880,36 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
 
     const diag = getDiagnosticsStore()
     const useReadPool = !memory && mode === "read"
+    const useWritePool = !memory && !readOnly && mode === "write" && !exclusive
     let leasedFromPrimaryReadSlot = false
+    let leasedFromPrimaryWriteSlot = false
     /** @type {DatabaseSync} */
     let db
     if (memory) {
       db = primary
     } else if (useReadPool) {
-      if (!readSlotLeased) {
-        clearReadIdleTimer()
-        readSlotLeased = true
+      const lease = readSlot.acquire()
+      if (lease) {
         leasedFromPrimaryReadSlot = true
-        if (idleReadHandle) {
-          db = idleReadHandle
-          idleReadHandle = null
-          diag.readPoolHitsTotal += 1
-        } else {
-          try {
-            db = connect(true, true)
-          } catch (err) {
-            readSlotLeased = false
-            throw err
-          }
-        }
+        db = lease.db
+        if (lease.hit) diag.readPoolHitsTotal += 1
       } else {
         diag.readPoolOverflowTotal += 1
         db = connect(true, true)
+      }
+    } else if (useWritePool) {
+      const lease = writeSlot.acquire()
+      if (lease) {
+        leasedFromPrimaryWriteSlot = true
+        db = lease.db
+      } else {
+        db = connect(readOnly, true)
       }
     } else {
       db = connect(readOnly, true)
     }
 
+    const useStatementCache = useReadPool || leasedFromPrimaryWriteSlot
     let active = true
     let restoreReadOnly = false
     /** @type {ReturnType<typeof globalThis.setTimeout> | undefined} */
@@ -816,14 +934,11 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
           if (memory) {
             if (restoreReadOnly) db.exec("PRAGMA query_only=OFF")
           } else if (leasedFromPrimaryReadSlot) {
-            readSlotLeased = false
-            if (closed) {
-              db.close()
-            } else {
-              idleReadHandle = db
-              armReadIdleEviction()
-            }
+            readSlot.release(db, !closed)
+          } else if (leasedFromPrimaryWriteSlot) {
+            writeSlot.release(db, !closed)
           } else {
+            disposeCachedStatements(db)
             db.close()
           }
         } finally { admitWaitingReads() }
@@ -861,25 +976,30 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       /** @param {InStatement} statement @param {InArgs} [args] */
       async execute(statement, args) {
         assertActive()
-        return sqliteOperation(() => execute(db, statement, args, useReadPool))
+        return sqliteOperation(() => execute(db, statement, args, useStatementCache))
       },
       async batch(statements) {
         assertActive()
-        return executeBatch(db, statements, useReadPool)
+        return executeBatch(db, statements, useStatementCache)
       },
       async executeMultiple(sql) {
         assertActive()
+        schemaEpoch += 1
+        disposeCachedStatements(db)
         sqliteOperation(() => db.exec(sql))
       },
       async commit() {
         assertActive()
+        let committed = false
         sqliteOperation(() => {
           try {
             db.exec("COMMIT")
+            committed = true
           } finally {
             settle()
           }
         })
+        if (committed && leasedFromPrimaryWriteSlot) scheduleWriteCheckpoint()
       },
       async rollback() {
         if (active) sqliteOperation(settle)
@@ -912,6 +1032,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     if (closed) return
     closed = true
     clientGeneration += 1
+    clearWriteCheckpointTimer()
     for (const waiter of readWaiters.splice(0)) {
       globalThis.clearTimeout(waiter.timer)
       waiter.reject(new LibsqlError("The client is closed", "CLIENT_CLOSED"))
@@ -920,9 +1041,14 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       for (const settle of transactions) settle()
     } finally {
       try {
-        closeIdleReadHandle()
+        readSlot.close()
       } finally {
-        main.close()
+        try {
+          writeSlot.close()
+        } finally {
+          disposeCachedStatements(main)
+          main.close()
+        }
       }
     }
   }
@@ -933,7 +1059,13 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     get closed() { return closed },
     /** @param {InStatement} statement @param {InArgs} [args] */
     async execute(statement, args) { return executeStatementWithRetry(statement, args, undefined) },
-    async executeMultiple(sql) { onMain(db => db.exec(sql)) },
+    async executeMultiple(sql) {
+      schemaEpoch += 1
+      onMain(db => {
+        disposeCachedStatements(db)
+        db.exec(sql)
+      })
+    },
     /** @param {Array<InStatement | [string, InArgs?]>} statements @param {TransactionMode} [mode] */
     async batch(statements, mode = "deferred") {
       if (mode === "write") return batchWriteWithRetry(statements, undefined)
@@ -961,7 +1093,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       while (!state.done) {
         let batchResult
         try {
-          batchResult = executeBatch(db, state.value)
+          batchResult = executeBatch(db, state.value, true)
         } catch (stepError) {
           state = program.throw(stepError)
           continue

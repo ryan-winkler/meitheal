@@ -127,7 +127,7 @@ function validateDataSharing(
     if (!host || !isValidPluginHostname(host) || !purpose) {
       return fail("INVALID_DATA_SHARING", "Each dataSharing destination requires a valid host and purpose.")
     }
-    const normalizedHost = host === "$userServer" ? "$userServer" : host.toLowerCase()
+    const normalizedHost = host.toLowerCase() === "$userserver" ? "$userServer" : host.toLowerCase()
     destinations.push({ host: normalizedHost, purpose })
     declaredHosts.add(normalizedHost)
   }
@@ -346,7 +346,7 @@ export function validatePluginManifest(raw: unknown): PluginResult<PluginManifes
     if (!isValidPluginHostname(trimmed)) {
       return fail("INVALID_HOST", `Invalid hostname "${trimmed}" in allowedHosts.`)
     }
-    const normalized = trimmed === "$userServer" ? "$userServer" : trimmed.toLowerCase()
+    const normalized = trimmed.toLowerCase() === "$userserver" ? "$userServer" : trimmed.toLowerCase()
     if (!seenHosts.has(normalized)) {
       seenHosts.add(normalized)
       allowedHosts.push(normalized)
@@ -470,7 +470,14 @@ function containsUnsafeUriScheme(value: string): boolean {
     if (code > 32 && code !== 127) compacted += value[i]
   }
   const lower = compacted.toLowerCase()
-  return lower.includes("javascript:") || lower.includes("data:") || lower.includes("vbscript:")
+  if (lower.includes("javascript:") || lower.includes("data:") || lower.includes("vbscript:")) {
+    return true
+  }
+  for (const match of lower.matchAll(/url\(([^)]*)/g)) {
+    const ref = match[1].replace(/^['"]|['"]$/g, "")
+    if (!ref.startsWith("#")) return true
+  }
+  return false
 }
 
 function subtreeHasUnsafeUri(node: Parse5Node): boolean {

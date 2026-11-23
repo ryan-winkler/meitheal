@@ -5,7 +5,7 @@ import { boardScopeErrorResponse, withBoardScope } from "@lib/board-http"
 import { organizationPlacementAvailable } from "@lib/organization-placement-access"
 import type { APIRoute } from "astro"
 import type { InValue } from "@libsql/client"
-import { isValidTaskKind, normalizeShoppingItems, VALID_TASK_KINDS, VALID_TASK_TYPES } from "@meitheal/domain-tasks"
+import { isValidTaskKind, normalizeShoppingItems, parseScheduleDateInput, validateScheduleWindow, VALID_TASK_KINDS, VALID_TASK_TYPES } from "@meitheal/domain-tasks"
 import type { TaskType } from "@meitheal/domain-tasks"
 import {
   parseRRule,
@@ -302,10 +302,23 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     sanitized.project_id = body.project_id
   }
   if (body.start_date !== undefined) {
-    sanitized.start_date = typeof body.start_date === "string" ? body.start_date : null
+    const parsedStart = parseScheduleDateInput(body.start_date, "start_date")
+    if (!parsedStart.ok) return apiError(parsedStart.error, 400)
+    sanitized.start_date = parsedStart.value
   }
   if (body.end_date !== undefined) {
-    sanitized.end_date = typeof body.end_date === "string" ? body.end_date : null
+    const parsedEnd = parseScheduleDateInput(body.end_date, "end_date")
+    if (!parsedEnd.ok) return apiError(parsedEnd.error, 400)
+    sanitized.end_date = parsedEnd.value
+  }
+  if (sanitized.start_date !== undefined || sanitized.end_date !== undefined) {
+    if (sanitized.start_date === undefined || sanitized.end_date === undefined) {
+      currentTaskForEdit ??= await repo.findTaskForCommand(resolvedId, "edit")
+    }
+    const nextStart = sanitized.start_date !== undefined ? (sanitized.start_date as string | null) : (currentTaskForEdit?.start_date ?? null)
+    const nextEnd = sanitized.end_date !== undefined ? (sanitized.end_date as string | null) : (currentTaskForEdit?.end_date ?? null)
+    const scheduleError = validateScheduleWindow(nextStart, nextEnd)
+    if (scheduleError) return apiError(scheduleError, 400)
   }
   if (typeof body.progress === "number") {
     sanitized.progress = Math.min(100, Math.max(0, Math.round(body.progress)))
@@ -708,13 +721,17 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     dispatchTaskEvent("task.completed", { ...taskPayload, completed_at: new Date().toISOString() }, requestId || undefined, undefined, undefined, authority, scope).catch(() => {})
     try {
       const { isFeatureEnabled } = await import("../../../lib/feature-flags")
-      if (await isFeatureEnabled("gamification")) {
+      const [gamificationEnabled, confettiEnabled] = await Promise.all([
+        isFeatureEnabled("gamification"),
+        isFeatureEnabled("confetti"),
+      ])
+      if (gamificationEnabled) {
         const { recordTaskCompletion, getXpForPriority, checkAchievements, getLevel } = await import("@domains/gamification")
         const xp = getXpForPriority(Number(updatedRow.priority ?? 3))
         const stats = await recordTaskCompletion(scope, xp)
         if (stats) {
           const achievements = await checkAchievements(scope, stats)
-          taskPayload.gamification = { stats, xp, newAchievements: achievements.newlyUnlocked, level: getLevel(stats.totalPoints), confetti: await isFeatureEnabled("confetti") }
+          taskPayload.gamification = { stats, xp, newAchievements: achievements.newlyUnlocked, level: getLevel(stats.totalPoints), confetti: confettiEnabled }
         }
       }
     } catch {

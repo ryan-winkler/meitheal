@@ -2,7 +2,9 @@ import { expect, test } from "@playwright/test"
 import {
   effectiveTaskScheduledDate,
   normalizeShoppingItems,
+  parseScheduleDateInput,
   SHOPPING_CATEGORIES,
+  validateScheduleWindow,
 } from "../../packages/domain-tasks/src/domain-model"
 import { resolveAgentRouteAccess, resolveAgentRouteScope } from "../../packages/domain-auth/src/agent-route-policy"
 import { agentBoardOperations } from "../../apps/web/src/domains/tasks/agent-board-authority"
@@ -91,4 +93,35 @@ test("taskJsonObject and taskChecklistsJson accept both native JSON structures a
 
   const badCl = taskChecklistsJson([{ text: "No done bool" }], true)
   expect(badCl.ok).toBe(false)
+})
+
+test("normalizeShoppingItems retains positive numeric qty and trimmed string labels", () => {
+  expect(normalizeShoppingItems([
+    { name: "Eggs", qty: 12, category: "dairy" },
+    { name: "Milk", qty: "2L", category: "dairy" },
+    { name: "Zero", qty: 0 },
+    { name: "Negative", qty: -2 },
+    { name: "Blank", qty: "   " },
+  ])).toEqual([
+    { name: "Eggs", qty: 12, category: "dairy" },
+    { name: "Milk", qty: "2L", category: "dairy" },
+    { name: "Zero" },
+    { name: "Negative" },
+    { name: "Blank" },
+  ])
+})
+
+test("parseScheduleDateInput and validateScheduleWindow enforce event start/end bounds", () => {
+  expect(parseScheduleDateInput(null, "start_date")).toEqual({ ok: true, value: null })
+  expect(parseScheduleDateInput("  ", "end_date")).toEqual({ ok: true, value: null })
+  expect(parseScheduleDateInput("2026-11-24", "start_date")).toEqual({ ok: true, value: "2026-11-24" })
+  expect(parseScheduleDateInput("2026-11-24T09:00:00Z", "start_date")).toEqual({ ok: true, value: "2026-11-24T09:00:00Z" })
+  expect(parseScheduleDateInput("2026-02-30", "start_date").ok).toBe(false)
+  expect(parseScheduleDateInput(12345, "end_date").ok).toBe(false)
+
+  expect(validateScheduleWindow("2026-11-24", "2026-11-24")).toBeNull()
+  expect(validateScheduleWindow("2026-11-24", "2026-11-26")).toBeNull()
+  expect(validateScheduleWindow("2026-11-25", "2026-11-24")).toBe("end_date must be on or after start_date")
+  expect(validateScheduleWindow("2026-11-24T14:00:00Z", "2026-11-24T13:00:00Z")).toBe("end_date must not be before start_date")
+  expect(validateScheduleWindow("2026-11-24T14:00:00Z", "2026-11-24T15:00:00Z")).toBeNull()
 })

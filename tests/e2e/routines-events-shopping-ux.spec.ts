@@ -356,3 +356,89 @@ test("App MCP exposes routines, events, and 8-category shopping contracts withou
     await rm(work, { recursive: true, force: true })
   }
 })
+
+function dublinDateOffset(days: number): string {
+  const target = new Date(Date.now() + days * 86_400_000)
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Dublin",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(target)
+  const y = parts.find((p) => p.type === "year")!.value
+  const m = parts.find((p) => p.type === "month")!.value
+  const d = parts.find((p) => p.type === "day")!.value
+  return `${y}-${m}-${d}`
+}
+
+test("routines enforce icon/template whitelist and ongoing multi-day events surface without overdue", async ({
+  page,
+  request,
+}) => {
+  test.skip(shouldSkipBrowserSpecs(), "Browser UI verification requires MEITHEAL_TEST_BROWSER=1")
+  const headers = await currentBoardWriteHeaders(request, "household", {})
+
+  const badIconRes = await request.post("/api/habits", {
+    headers,
+    data: { action: "create", name: "Invalid Icon Routine", icon: "<bad-icon>" },
+  })
+  expect(badIconRes.status()).toBe(400)
+
+  const createHabitRes = await request.post("/api/habits", {
+    headers,
+    data: { action: "create", name: "Audit Whitelist Routine", icon: "🧹", cadence: "daily" },
+  })
+  expect(createHabitRes.ok()).toBe(true)
+
+  const listAfterCreate = await (await request.get("/api/habits", { headers })).json()
+  const createdRoutine = (listAfterCreate.habits ?? []).find(
+    (h: { name?: string }) => h.name === "Audit Whitelist Routine",
+  )
+  expect(createdRoutine?.icon).toBe("wash")
+
+  const updateRes = await request.post("/api/habits", {
+    headers,
+    data: {
+      action: "update",
+      templateId: createdRoutine.id,
+      templateJson: { description: "Updated safe", task_kind: "calendar_event" },
+    },
+  })
+  expect(updateRes.status()).toBe(200)
+
+  const listAfterUpdate = await (await request.get("/api/habits", { headers })).json()
+  const updatedRoutine = (listAfterUpdate.habits ?? []).find(
+    (h: { id?: string }) => h.id === createdRoutine.id,
+  )
+  const parsedTpl = JSON.parse(String(updatedRoutine?.template_json ?? "{}"))
+  expect(parsedTpl.description).toBe("Updated safe")
+  expect(parsedTpl.task_kind).toBeUndefined()
+
+  await request.post("/api/habits", {
+    headers,
+    data: { action: "delete", templateId: createdRoutine.id },
+  })
+
+  const eventRes = await request.post("/api/tasks", {
+    headers,
+    data: {
+      title: "Ongoing Multi-Day Retreat",
+      task_kind: "calendar_event",
+      start_date: dublinDateOffset(-1),
+      end_date: dublinDateOffset(2),
+    },
+  })
+  expect(eventRes.status()).toBe(201)
+  const createdEvent = await eventRes.json()
+
+  try {
+    await page.goto("/today")
+    await expect(page.locator("#today-due-list").getByText("Ongoing Multi-Day Retreat")).toBeVisible()
+    await expect(page.locator("#today-carried-list").getByText("Ongoing Multi-Day Retreat")).toHaveCount(0)
+
+    await page.goto("/upcoming")
+    await expect(page.getByText("Ongoing Multi-Day Retreat").first()).toBeVisible()
+  } finally {
+    await request.delete(`/api/tasks/${createdEvent.id}`, { headers })
+  }
+})

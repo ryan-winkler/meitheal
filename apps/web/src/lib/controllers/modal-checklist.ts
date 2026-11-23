@@ -1,22 +1,32 @@
-import { escapeHtml } from "@lib/safe-html"
+import { SHOPPING_CATEGORIES, type ShoppingCategory } from "@meitheal/domain-tasks"
 import { createChecklistItem } from "@lib/checklist-items"
 import { notifyInactivityTaskChanged } from "@lib/inactivity-client"
 import { formatTicketKey, parseTicketKey } from "@lib/ticket-key"
 import { createSpriteIconElement } from "../../generated/icon-registry"
 
 type Item = { id?: string; text: string; done: boolean }
-export type ModalShoppingItem = { name: string; qty: number; category: string }
+export type ModalShoppingItem = { name: string; qty: number | string; category: string; checked: boolean }
+type ShoppingMeta = { qty: number | string; category: string }
 
-const SHOPPING_CATEGORIES_UI = [
-  "produce",
-  "dairy",
-  "meat",
-  "pantry",
-  "frozen",
-  "beverages",
-  "household",
-  "other",
-] as const
+const formatCategoryLabel = (cat: string) =>
+  cat === "meat" ? "Meat & Fish" : cat[0]!.toUpperCase() + cat.slice(1)
+
+function normalizeQtyValue(raw: unknown): number | string {
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+    return raw
+  }
+  if (typeof raw === "string") {
+    const trimmed = raw.trim()
+    if (trimmed) return trimmed.slice(0, 32)
+  }
+  return 1
+}
+
+function normalizeCategoryValue(raw: unknown): string {
+  if (typeof raw !== "string") return ""
+  const cat = raw.trim().toLowerCase()
+  return (SHOPPING_CATEGORIES as readonly string[]).includes(cat) ? cat : ""
+}
 
 const pendingChecklistSaves = new Map<string, Promise<boolean>>()
 
@@ -90,6 +100,8 @@ function rebaseChecklist(before: Item[], proposed: Item[], latest: Item[]): Item
   return [...current.values()]
 }
 
+type ShoppingInputItem = { name?: unknown; qty?: unknown; quantity?: unknown; category?: unknown; checked?: unknown }
+
 export function showTaskChecklist(
   taskId: string,
   rawChecklist: unknown,
@@ -98,8 +110,9 @@ export function showTaskChecklist(
   ticketKey?: string,
   options?: {
     taskKind?: string | null | undefined
-    shoppingItems?: Array<{ name?: string; qty?: number; category?: string }> | null | undefined
+    shoppingItems?: ShoppingInputItem[] | null | undefined
     onShoppingItemsChange?: (items: ModalShoppingItem[]) => void
+    buildShoppingCustomFields?: (items: ModalShoppingItem[]) => string
   },
 ) {
   const container = document.getElementById("td-checklists")
@@ -124,25 +137,63 @@ export function showTaskChecklist(
   let saved = loaded ?? []
   let items = saved.slice()
   const isShopping = options?.taskKind === "shopping_item"
-  const rawShopping = Array.isArray(options?.shoppingItems) ? options.shoppingItems : []
-  const shoppingMeta: Array<{ qty: number; category: string }> = items.map((item, index) => {
-    const matched = rawShopping[index]
-    const qty = matched && typeof matched.qty === "number" && Number.isFinite(matched.qty) && matched.qty >= 1
-      ? Math.min(999, Math.round(matched.qty))
-      : 1
-    const category = matched && typeof matched.category === "string" && SHOPPING_CATEGORIES_UI.includes(matched.category as (typeof SHOPPING_CATEGORIES_UI)[number])
-      ? matched.category
-      : ""
-    return { qty, category }
+  const metaByItem = new WeakMap<Item, ShoppingMeta>()
+  const metaById = new Map<string, ShoppingMeta>()
+  const setItemMeta = (item: Item, meta: ShoppingMeta) => {
+    metaByItem.set(item, meta)
+    if (item.id) metaById.set(item.id, meta)
+  }
+  const getItemMeta = (item: Item): ShoppingMeta | undefined =>
+    metaByItem.get(item) ?? (item.id ? metaById.get(item.id) : undefined)
+
+  const reconcileShoppingMeta = (targetItems: Item[], rawList?: ShoppingInputItem[] | null) => {
+    if (!isShopping) return
+    const entries = Array.isArray(rawList) ? rawList : []
+    const used = new Set<number>()
+    const prevByName = new Map<string, ShoppingMeta[]>()
+    for (const prev of items) {
+      const existing = getItemMeta(prev)
+      if (!existing) continue
+      const key = prev.text.trim().toLowerCase()
+      const bucket = prevByName.get(key)
+      if (bucket) bucket.push(existing)
+      else prevByName.set(key, [existing])
+    }
+    targetItems.forEach((item, index) => {
+      const nameKey = item.text.trim().toLowerCase()
+      let matchedIndex = -1
+      const sameIdx = entries[index]
+      if (sameIdx && !used.has(index) && String(sameIdx.name ?? "").trim().toLowerCase() === nameKey) {
+        matchedIndex = index
+      } else {
+        matchedIndex = entries.findIndex((entry, idx) =>
+          !used.has(idx) && String(entry.name ?? "").trim().toLowerCase() === nameKey,
+        )
+        if (matchedIndex < 0 && sameIdx && !used.has(index)) matchedIndex = index
+      }
+      const nextMeta = matchedIndex >= 0
+        ? (used.add(matchedIndex), {
+            qty: normalizeQtyValue(entries[matchedIndex]!.qty ?? entries[matchedIndex]!.quantity),
+            category: normalizeCategoryValue(entries[matchedIndex]!.category),
+          })
+        : getItemMeta(item) ?? prevByName.get(nameKey)?.shift() ?? { qty: 1, category: "" }
+      setItemMeta(item, { ...nextMeta })
+    })
+  }
+  reconcileShoppingMeta(items, options?.shoppingItems)
+
+  const buildShoppingItems = (): ModalShoppingItem[] => items.map(item => {
+    const meta = getItemMeta(item) ?? { qty: 1, category: "" }
+    return {
+      name: item.text.trim() || "Item",
+      qty: meta.qty,
+      category: meta.category,
+      checked: Boolean(item.done),
+    }
   })
   const emitShoppingChange = () => {
     if (!isShopping || !options?.onShoppingItemsChange) return
-    const next: ModalShoppingItem[] = items.map((item, index) => ({
-      name: item.text.trim() || "Item",
-      qty: shoppingMeta[index]?.qty ?? 1,
-      category: shoppingMeta[index]?.category ?? "",
-    }))
-    options.onShoppingItemsChange(next)
+    options.onShoppingItemsChange(buildShoppingItems())
   }
   let problem: "retry" | "conflict" | null = null
   let textEditPending = false
@@ -163,6 +214,16 @@ export function showTaskChecklist(
     total!.textContent = String(items.length)
     bar!.style.width = items.length ? (count * 100 / items.length) + "%" : "0%"
     if (uncheckAll) uncheckAll.hidden = count === 0
+  }
+
+  const updateItemAt = (index: number, patch: Partial<Item>) => {
+    const current = items[index]
+    if (!current) return null
+    const nextItem = { ...current, ...patch }
+    const meta = getItemMeta(current)
+    if (meta) setItemMeta(nextItem, meta)
+    items[index] = nextItem
+    return nextItem
   }
 
   function render(focus?: { index: number; selector: string }) {
@@ -192,28 +253,37 @@ export function showTaskChecklist(
 
       const rowControls: HTMLElement[] = [checkbox, editor]
       if (isShopping) {
-        const meta = shoppingMeta[index] ?? (shoppingMeta[index] = { qty: 1, category: "" })
+        let meta = getItemMeta(item)
+        if (!meta) {
+          meta = { qty: 1, category: "" }
+          setItemMeta(item, meta)
+        }
         const qtyInput = document.createElement("input")
-        qtyInput.type = "number"
-        qtyInput.min = "1"
-        qtyInput.max = "999"
+        qtyInput.type = "text"
+        qtyInput.inputMode = "numeric"
+        qtyInput.maxLength = 32
         qtyInput.value = String(meta.qty)
         qtyInput.className = "form-input text-xs td-shop-qty"
         qtyInput.setAttribute("aria-label", `Quantity for ${item.text || `item ${index + 1}`}`)
         qtyInput.addEventListener("change", () => {
-          const parsedQty = Math.min(999, Math.max(1, Math.round(Number(qtyInput.value) || 1)))
-          qtyInput.value = String(parsedQty)
-          meta.qty = parsedQty
+          const trimmed = qtyInput.value.trim().slice(0, 32)
+          const nextQty: number | string = !trimmed
+            ? (typeof meta.qty === "string" ? "1" : 1)
+            : /^[1-9]\d{0,2}$/.test(trimmed) && typeof meta.qty === "number"
+              ? Number(trimmed)
+              : trimmed
+          qtyInput.value = String(nextQty)
+          meta.qty = nextQty
           emitShoppingChange()
         }, { signal })
 
         const catSelect = document.createElement("select")
         catSelect.className = "form-select text-xs td-shop-cat"
         catSelect.setAttribute("aria-label", `Category for ${item.text || `item ${index + 1}`}`)
-        catSelect.appendChild(new Option("Category", ""))
-        for (const cat of SHOPPING_CATEGORIES_UI) {
-          catSelect.appendChild(new Option(cat[0]!.toUpperCase() + cat.slice(1), cat))
-        }
+        catSelect.append(
+          new Option("Uncategorized", ""),
+          ...SHOPPING_CATEGORIES.map(cat => new Option(formatCategoryLabel(cat), cat)),
+        )
         catSelect.value = meta.category
         catSelect.addEventListener("change", () => {
           meta.category = catSelect.value
@@ -233,22 +303,18 @@ export function showTaskChecklist(
       row.append(...rowControls, delBtn)
       text.addEventListener("input", () => { editor.dataset.content = text.value }, { signal })
       checkbox.addEventListener("change", () => {
-        const current = items[index]
-        if (!current) return
-        items[index] = { ...current, done: checkbox.checked }
+        if (!updateItemAt(index, { done: checkbox.checked })) return
         updateProgress()
         void save()
       }, { signal })
       text.addEventListener("blur", () => {
         if (rendering || signal.aborted) return
-        const current = items[index]
         const next = text.value.trim()
-        if (!current || next === current.text) return
-        items[index] = { ...current, text: next }
+        if (!items[index] || next === items[index]!.text) return
+        updateItemAt(index, { text: next })
         checkbox.setAttribute("aria-label", next || "Checklist item " + (index + 1))
         textEditPending = true
-        emitShoppingChange()
-        save()
+        void save()
       }, { signal })
       text.addEventListener("keydown", event => {
         if (event.key !== "Enter" || event.isComposing) return
@@ -257,10 +323,6 @@ export function showTaskChecklist(
       }, { signal })
       delBtn.addEventListener("click", () => {
         items.splice(index, 1)
-        if (isShopping) {
-          shoppingMeta.splice(index, 1)
-          emitShoppingChange()
-        }
         render({ index: Math.min(index, items.length - 1), selector: "button" })
         void save()
       }, { signal })
@@ -304,10 +366,17 @@ export function showTaskChecklist(
     try {
       while (!equal(saved, items)) {
         const pending = JSON.stringify(items)
+        const payload: Record<string, unknown> = {
+          checklists: pending,
+          expected_checklists: savedRaw,
+        }
+        if (isShopping && options?.buildShoppingCustomFields) {
+          payload.custom_fields = options.buildShoppingCustomFields(buildShoppingItems())
+        }
         const response = await write(version => fetch(path, { // nosemgrep
           method: "PUT",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ checklists: pending, expected_checklists: savedRaw, ...(version === null ? {} : { updated_at: version }) }),
+          body: JSON.stringify(version === null ? payload : { ...payload, updated_at: version }),
           signal: AbortSignal.timeout(10_000),
         }))
         if (response.ok) {
@@ -353,6 +422,7 @@ export function showTaskChecklist(
         rebased = true
         savedRaw = latestRaw
         saved = latest
+        reconcileShoppingMeta(merged)
         items = merged
         const selector = typing ? "textarea" : active instanceof HTMLInputElement ? 'input[type="checkbox"]' : "button"
         render(row ? { index: focusedIndex, selector } : undefined)
@@ -373,18 +443,16 @@ export function showTaskChecklist(
   }
 
   add.addEventListener("click", () => {
-    items.push(createChecklistItem("New Item"))
-    if (isShopping) {
-      shoppingMeta.push({ qty: 1, category: "" })
-      emitShoppingChange()
-    }
+    const newItem = createChecklistItem("New Item")
+    if (isShopping) setItemMeta(newItem, { qty: 1, category: "" })
+    items.push(newItem)
     render({ index: items.length - 1, selector: "textarea" })
     if (document.activeElement instanceof HTMLTextAreaElement) document.activeElement.select()
     void save()
   }, { signal })
   uncheckAll?.addEventListener("click", () => {
     if (!items.some(item => item.done)) return
-    items = items.map(item => ({ ...item, done: false }))
+    items.forEach((_, idx) => updateItemAt(idx, { done: false }))
     render()
     void save()
   }, { signal })
@@ -417,7 +485,19 @@ export function showTaskChecklist(
       recoveredDraft.open = true
       savedRaw = latestRaw
       saved = latest
-      items = latest.slice()
+      let remoteShopping: ShoppingInputItem[] | null = null
+      if (isShopping && task.custom_fields) {
+        try {
+          const parsedCf = typeof task.custom_fields === "string" ? JSON.parse(task.custom_fields) : task.custom_fields
+          if (Array.isArray(parsedCf?.items)) remoteShopping = parsedCf.items as ShoppingInputItem[]
+        } catch { /* ignore */ }
+      }
+      const nextItems = latest.slice()
+      reconcileShoppingMeta(nextItems, remoteShopping)
+      items = nextItems
+      if (isShopping && options?.buildShoppingCustomFields) {
+        options.buildShoppingCustomFields(buildShoppingItems())
+      }
       textEditPending = false
       problem = null
       message.textContent = "Latest checklist loaded. Your unsaved draft is below."
@@ -431,5 +511,7 @@ export function showTaskChecklist(
     }
   }, { signal })
   render()
-  return () => !signal.aborted && textEditPending
+  return Object.assign(() => !signal.aborted && textEditPending, {
+    getRaw: () => JSON.stringify(items),
+  })
 }

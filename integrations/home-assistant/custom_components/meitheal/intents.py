@@ -35,7 +35,7 @@ from homeassistant.helpers import intent
 from homeassistant.util import dt as dt_util
 
 from .api import origin_scope, human_request_scope
-from .coordinator import MeithealCoordinator
+from .coordinator import CLOSED_STATUSES, MeithealCoordinator
 from .helpers import assignee_for_user
 
 _LOGGER = logging.getLogger(__name__)
@@ -184,7 +184,7 @@ class MeithealShowTasksHandler(_MeithealAdminIntent):
             return response
 
         data = await coordinator.async_data_for_context()
-        active = [t for t in data.tasks if t.status != "done"]
+        active = [t for t in data.tasks if t.status not in CLOSED_STATUSES]
         if not active:
             response = intent_obj.create_response()
             response.async_set_speech("You're all caught up! No active tasks.")
@@ -260,7 +260,7 @@ class MeithealTodayHandler(_MeithealAdminIntent):
 
         data = await coordinator.async_data_for_context()
         for t in data.tasks:
-            if t.status == "done":
+            if t.status in CLOSED_STATUSES:
                 continue
             if t.is_overdue:
                 overdue.append(t)
@@ -399,7 +399,7 @@ class MeithealBriefingHandler(_MeithealAdminIntent):
             # Urgent items
             urgent = [
                 t for t in data.tasks
-                if t.status != "done" and t.priority <= 2
+                if t.status not in CLOSED_STATUSES and t.priority <= 2
             ]
             if urgent:
                 names = ", ".join(t.title for t in urgent[:2])

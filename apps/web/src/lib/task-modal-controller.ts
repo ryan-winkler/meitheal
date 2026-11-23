@@ -16,6 +16,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         import { confirmDialog } from "@lib/confirm-dialog";
         import { pageLifecycle } from "@lib/page-lifecycle";
         import { onTaskCompleted } from "@lib/gamification-hook";
+        import { createSpriteIconElement } from "../generated/icon-registry";
         import { createTypeIconElement } from "@lib/type-icon-config";
         import { escapeHtml } from "@lib/safe-html";
         import { showToast } from "@lib/toast"
@@ -155,12 +156,19 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         function syncEventInputsType(allDay: boolean): void {
           const startInput = byId("td-start-date") as HTMLInputElement | null
           const endInput = byId("td-end-date") as HTMLInputElement | null
+          const prevStart = startInput?.value ?? ""
+          const prevEnd = endInput?.value ?? ""
+          const sameAllDay = !allDay && /^\d{4}-\d{2}-\d{2}$/.test(prevStart) && prevEnd === prevStart
           for (const inputEl of [startInput, endInput]) {
             if (!inputEl) continue
             const prev = inputEl.value
             inputEl.type = allDay ? "date" : "datetime-local"
             if (!allDay) inputEl.step = "any"
-            if (prev) inputEl.value = formatEventInputValue(prev, allDay)
+            if (sameAllDay) {
+              inputEl.value = inputEl === endInput ? `${prevStart}T10:00` : `${prevStart}T09:00`
+            } else if (prev) {
+              inputEl.value = formatEventInputValue(prev, allDay)
+            }
           }
         }
         const deferral = initModalDeferral(tdOverlay, __signal)
@@ -188,7 +196,8 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         let sessionTicketId: string | null = null
         let currentTicketKey: string | null = null
         let pendingDescriptionSave: Promise<boolean> | undefined
-        let hasChecklistTextDraft: (() => boolean) | undefined
+        let hasChecklistTextDraft: ((() => boolean) & { getRaw?: () => string }) | undefined
+        let checklistAbortController: AbortController | null = null
         let queuedDescriptionTransition: (() => void) | undefined
         let currentCommentTarget: string | null = null
         let commentsReady: Promise<void> = Promise.resolve()
@@ -907,14 +916,19 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
                       if (isDone) doneCount++;
                       const chip = document.createElement("a");
                       chip.href = "#";
-                      chip.className = `text-xs block flex items-center gap-1 ${isDone ? "text-text-muted line-through" : "text-accent hover:underline"}`;
-                      const typeIcon = c.task_type === "epic" ? "🎯" : c.task_type === "story" ? "📖" : "";
-                      const statusIcon = isDone ? "✓" : "⏳";
-                      chip.textContent = `${statusIcon} ${typeIcon}${typeIcon ? " " : ""}↳ ${c.ticket_key ? c.ticket_key + " " : ""}${String(c.title ?? c.id).slice(0, 50)}`;
+                      chip.className = `text-xs block flex items-center gap-1.5 ${isDone ? "text-text-muted line-through" : "text-accent hover:underline"}`;
+                      const label = document.createElement("span");
+                      label.className = "truncate";
+                      label.textContent = `${c.ticket_key ? c.ticket_key + " " : ""}${String(c.title ?? c.id).slice(0, 50)}`;
+                      chip.append(
+                        createSpriteIconElement(isDone ? "check" : "clock", { size: 12 }),
+                        createTypeIconElement(String(c.task_type ?? "task"), 12),
+                        label,
+                      );
                       chip.addEventListener("click", (e) => {
                         e.preventDefault();
                         openTaskDetail(String(c.id));
-                      });
+                      }, { signal: modalSignal });
                       childrenDiv.appendChild(chip);
                     });
                     // Update progress bar (SUB-03)
@@ -1418,6 +1432,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
                   sf.type === "checkbox" ? "false" : "",
                   sf.type || "text",
                   sf.options,
+                  true,
                 );
                 renderedKeys.add(sf.name);
               }
@@ -1437,21 +1452,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               tdUpdated.textContent =
                 "Last updated " +
                 new Date(Number(t.updated_at)).toLocaleString();
-            const storedShopping = cfApi.getStructuredField("items")
-            hasChecklistTextDraft = showTaskChecklist(
-              taskId,
-              t.checklists,
-              modalSignal,
-              send => saveTaskChecklist(taskId, send),
-              typeof t.ticket_key === "string" ? t.ticket_key : undefined,
-              {
-                taskKind,
-                shoppingItems: Array.isArray(storedShopping) ? storedShopping as Array<{ name?: string; qty?: number; category?: string }> : undefined,
-                onShoppingItemsChange: items => {
-                  cfApi.setStructuredField("items", items, true)
-                },
-              },
-            )
+            mountTaskChecklist(taskId, t.checklists, modalSignal, typeof t.ticket_key === "string" ? t.ticket_key : undefined)
             const taskReactions = byId("td-task-reactions")
             if (taskReactions) {
               taskReactions.replaceChildren()
@@ -1556,23 +1557,55 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           })
         }
 
-        function saveTaskField(field: string, value: unknown, updatedAt?: number): Promise<boolean> {
-          if (!currentTaskId || _isPopulating || boardWithheld || !currentTaskActions.has("edit")) return Promise.resolve(false)
-          const generation = detailGeneration
-          return queueTaskWrite(currentTaskId, () => generation === detailGeneration ? saveTaskFieldNow(field, value, updatedAt) : false)
+        function mountTaskChecklist(taskId: string, rawChecklist: unknown, parentSignal: AbortSignal, ticketKey?: string): void {
+          checklistAbortController?.abort()
+          const controller = new AbortController()
+          checklistAbortController = controller
+          parentSignal.addEventListener("abort", () => controller.abort(), { once: true })
+          const storedShopping = cfApi.getStructuredField("items")
+          hasChecklistTextDraft = showTaskChecklist(
+            taskId,
+            rawChecklist,
+            controller.signal,
+            send => saveTaskChecklist(taskId, send),
+            ticketKey,
+            {
+              taskKind: currentTaskKind,
+              shoppingItems: Array.isArray(storedShopping) ? storedShopping : undefined,
+              onShoppingItemsChange: items => {
+                cfApi.setStructuredField("items", items, true)
+              },
+              buildShoppingCustomFields: items => {
+                cfApi.setStructuredField("items", items, false)
+                return cfApi.getMergedJson()
+              },
+            },
+          )
         }
 
-        async function saveTaskFieldNow(field: string, value: unknown, updatedAt?: number): Promise<boolean> {
-          if (!currentTaskId || _isPopulating || boardWithheld || !currentTaskActions.has("edit") || (field === "status" && !statusAllowed(String(value)))) return false
+        function saveTaskField(field: string, value: unknown, updatedAt?: number): Promise<boolean> {
+          return saveTaskFields({ [field]: value }, updatedAt)
+        }
+
+        function saveTaskFields(patch: Record<string, unknown>, updatedAt?: number): Promise<boolean> {
+          if (!currentTaskId || _isPopulating || boardWithheld || !currentTaskActions.has("edit")) return Promise.resolve(false)
+          const generation = detailGeneration
+          return queueTaskWrite(currentTaskId, () => generation === detailGeneration ? saveTaskPatchNow(patch, updatedAt) : false)
+        }
+
+        async function saveTaskPatchNow(patch: Record<string, unknown>, updatedAt?: number): Promise<boolean> {
+          const primaryField = Object.keys(patch)[0] ?? ""
+          if (!currentTaskId || _isPopulating || boardWithheld || !currentTaskActions.has("edit") || (Object.hasOwn(patch, "status") && !statusAllowed(String(patch.status)))) return false
           if (taskSaveConflict) { showTaskWriteConflict(); return false }
           const generation = detailGeneration
           const taskId = currentTaskId
           const search = searchSession
-          const completeDeferralWrite = deferral.nativeWrite(field, value)
-          const scopedWrite = search || ["title", "status", "area_id", "project_id", "framework_payload"].includes(field) ? beginScopedWrite() : undefined
+          const primaryValue = patch[primaryField]
+          const completeDeferralWrite = deferral.nativeWrite(primaryField, primaryValue)
+          const scopedWrite = search || Object.keys(patch).some(field => ["title", "status", "area_id", "project_id", "framework_payload"].includes(field)) ? beginScopedWrite() : undefined
           let saved = false
           try {
-            const result = await saveVersionedTask(taskId, { [field]: value }, updatedAt ?? currentTaskVersion, undefined,
+            const result = await saveVersionedTask(taskId, patch, updatedAt ?? currentTaskVersion, undefined,
               scopedWrite?.signal ?? AbortSignal.timeout(7_000))
             saved = result.ok
             if (result.ok && generation === detailGeneration) currentTaskVersion = result.version
@@ -1581,32 +1614,32 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               showTaskWriteConflict()
             }
             if (saved) {
-              if (field === "area_id") {
+              if (Object.hasOwn(patch, "area_id")) {
                 changedAreaTask = taskId
                 if (!tdOverlay.classList.contains("active") ||
                     (tdOverlay.dataset.openTaskId && generation !== detailGeneration)) {
                   reconcileAreaGrouping()
                 }
-              } else if (field === "parent_id" || field === "task_type" || field === "title") {
+              } else if (Object.hasOwn(patch, "parent_id") || Object.hasOwn(patch, "task_type") || Object.hasOwn(patch, "title")) {
                 epicGroupingDirty = true
                 if (!tdOverlay.classList.contains("active")) reconcileEpicGrouping()
               }
-              notifyInactivityTaskChanged(field === "status" ? undefined : taskId)
-              if (field === "status") {
+              notifyInactivityTaskChanged(Object.hasOwn(patch, "status") ? undefined : taskId)
+              if (Object.hasOwn(patch, "status")) {
                 const task = result.ok ? result.task : {}
                 document.dispatchEvent(new CustomEvent("meitheal:task-status-saved", { detail: { id: taskId, status: task.status, deferred: task.deferred_at != null } }))
-                if (value === "complete" && (!search || generation === detailGeneration)) onTaskCompleted(task)
+                if (patch.status === "complete" && (!search || generation === detailGeneration)) onTaskCompleted(task)
               }
-              return field === "area_id" || !search || generation === detailGeneration
+              return Object.hasOwn(patch, "area_id") || !search || generation === detailGeneration
             }
-            if (!result.ok) log.warn(`Failed to save ${field}:`, result.status)
+            if (!result.ok) log.warn(`Failed to save ${primaryField}:`, result.status)
           } catch (err) {
-            log.warn(`Network error saving ${field}:`, err)
+            log.warn(`Network error saving ${primaryField}:`, err)
           } finally {
             completeDeferralWrite(saved)
             scopedWrite?.finish()
           }
-          const sessionBound = search || field === "description"
+          const sessionBound = search || primaryField === "description"
           if (sessionBound && generation !== detailGeneration) return false
           if (!sessionBound || generation === detailGeneration) showToast("common.failed_update", "error")
           return false
@@ -1826,24 +1859,28 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         document
           .getElementById("td-task-kind")
           ?.addEventListener("change", (e) => {
-            const nextKind = (e.target as HTMLSelectElement).value || "standard_action";
-            currentTaskKind = nextKind;
-            const kindBadgeEl = byId("td-task-kind-badge");
+            const prevKind = currentTaskKind
+            const nextKind = (e.target as HTMLSelectElement).value || "standard_action"
+            currentTaskKind = nextKind
+            const kindBadgeEl = byId("td-task-kind-badge")
             if (kindBadgeEl) {
-              const label = KIND_BADGE_LABELS[nextKind] ?? "";
-              kindBadgeEl.textContent = label;
-              kindBadgeEl.classList.toggle("hidden", !label);
+              const label = KIND_BADGE_LABELS[nextKind] ?? ""
+              kindBadgeEl.textContent = label
+              kindBadgeEl.classList.toggle("hidden", !label)
             }
-            const tt = (byId("td-task-type") as HTMLSelectElement | null)?.value || "task";
-            const typeIconEl = byId("td-type-icon");
-            if (typeIconEl) typeIconEl.replaceChildren(createTypeIconElement(tt, 16, nextKind));
-            const startVal = (byId("td-start-date") as HTMLInputElement | null)?.value ?? "";
-            const endVal = (byId("td-end-date") as HTMLInputElement | null)?.value ?? "";
+            const tt = (byId("td-task-type") as HTMLSelectElement | null)?.value || "task"
+            const typeIconEl = byId("td-type-icon")
+            if (typeIconEl) typeIconEl.replaceChildren(createTypeIconElement(tt, 16, nextKind))
+            const startVal = (byId("td-start-date") as HTMLInputElement | null)?.value ?? ""
+            const endVal = (byId("td-end-date") as HTMLInputElement | null)?.value ?? ""
             byId("td-event-schedule")?.classList.toggle(
               "hidden",
               nextKind !== "calendar_event" && !startVal && !endVal,
-            );
-            saveTD("task_kind", nextKind);
+            )
+            saveTD("task_kind", nextKind)
+            if (currentTaskId && _modalAbortController && (prevKind === "shopping_item" || nextKind === "shopping_item")) {
+              mountTaskChecklist(currentTaskId, hasChecklistTextDraft?.getRaw?.() ?? "[]", _modalAbortController.signal, currentTicketKey ?? undefined)
+            }
           }, { signal: __signal });
         // Phase 20: task_type auto-save
         document
@@ -1988,11 +2025,12 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
           const errEl = byId("td-event-date-error")
           const startIso = parseEventInputForSave(startInput?.value ?? "", allDay)
           const endIso = parseEventInputForSave(endInput?.value ?? "", allDay)
-          const invalid = Boolean(startIso && endIso && new Date(endIso) <= new Date(startIso))
+          const invalid = Boolean(
+            startIso && endIso && (allDay ? endIso < startIso : new Date(endIso) <= new Date(startIso)),
+          )
           errEl?.toggleAttribute("hidden", !invalid)
           if (invalid) return
-          void saveTD("start_date", startIso)
-          void saveTD("end_date", endIso)
+          void saveTaskFields({ start_date: startIso, end_date: endIso })
         }
         document
           .getElementById("td-event-all-day")
@@ -2078,25 +2116,21 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
               } else {
                 parentResultsDiv.replaceChildren(
                   ...tasks.map((t: Record<string, unknown>) => {
-                    const typeIcon =
-                      t.task_type === "epic"
-                        ? "🎯"
-                        : t.task_type === "story"
-                          ? "📖"
-                          : "✅";
-                    const row = document.createElement("div");
-                    row.className = "td-parent-result px-3 py-2 text-sm cursor-pointer hover:bg-bg-hover flex items-center gap-2";
-                    row.dataset.id = String(t.id ?? "");
-                    const iconSpan = document.createElement("span");
-                    iconSpan.textContent = typeIcon;
-                    const titleSpan = document.createElement("span");
-                    titleSpan.className = "truncate";
-                    titleSpan.textContent = String(t.title ?? "").slice(0, 60);
-                    const typeSpan = document.createElement("span");
-                    typeSpan.className = "text-xs text-text-muted ml-auto";
-                    typeSpan.textContent = String(t.task_type ?? "task");
-                    row.append(iconSpan, titleSpan, typeSpan);
-                    return row;
+                    const row = document.createElement("div")
+                    row.className = "td-parent-result px-3 py-2 text-sm cursor-pointer hover:bg-bg-hover flex items-center gap-2"
+                    row.dataset.id = String(t.id ?? "")
+                    const titleSpan = document.createElement("span")
+                    titleSpan.className = "truncate"
+                    titleSpan.textContent = String(t.title ?? "").slice(0, 60)
+                    const typeSpan = document.createElement("span")
+                    typeSpan.className = "text-xs text-text-muted ml-auto"
+                    typeSpan.textContent = String(t.task_type ?? "task")
+                    row.append(
+                      createTypeIconElement(String(t.task_type ?? "task"), 14, typeof t.task_kind === "string" ? t.task_kind : undefined),
+                      titleSpan,
+                      typeSpan,
+                    )
+                    return row
                   }),
                 );
                 // Click handler for each result
@@ -2287,39 +2321,6 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             if (!signal.aborted && currentTaskId === taskId) resetButton()
           }
         }, { signal: __signal })
-
-        // Attach Image
-        document
-          .getElementById("td-attach-image")
-          ?.addEventListener("change", async (e) => {
-            if (!currentTaskId) return;
-            const input = e.target as HTMLInputElement;
-            const file = input.files?.[0];
-            if (!file) return;
-
-            // Convert to Base64
-            const reader = new FileReader();
-            reader.onload = async (evt) => {
-              const base64Data = evt.target?.result as string;
-              try {
-                await saveAttachment({
-                  id: crypto.randomUUID(),
-                  taskId: currentTaskId!,
-                  filename: file.name,
-                  mimeType: file.type,
-                  base64Data,
-                  createdAt: new Date().toISOString(),
-                });
-                loadAttachments(currentTaskId!);
-              } catch (err) {
-                log.error("Attachment failed", err);
-                showToast("Failed to save attachment.", "error")
-              } finally {
-                input.value = ""; // reset
-              }
-            };
-            reader.readAsDataURL(file);
-          });
 
         // Delete
         document

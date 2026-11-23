@@ -110,13 +110,39 @@ test("client security hardening invariants remain free of code scanning anti-pat
   expect(pluginHost).toContain("<!DOCTYPE html>")
   expect(pluginHost).toContain("\\u003c")
 
+  expect(pluginHost).not.toMatch(/\bfetch\s*\(/)
+
   for (const rel of [
     "apps/web/src/lib/settings-plugins-controller.ts",
     "apps/web/src/lib/settings-agent-tokens-controller.ts",
     "apps/web/src/lib/deferred-controller.ts",
+    "apps/web/src/lib/plugin-host.ts",
   ]) {
     const src = readFileSync(resolve(repoRoot, rel), "utf8")
     expect(src).toContain("safeFetch")
     expect(src).not.toMatch(/\bfetch\s*\(\s*url\b|\bfetch\s*\(\s*`/)
   }
+})
+
+test("hardened manifest $userserver, SVG local/external url(), and markdown link/entity integrity", () => {
+  const mixedCaseRes = validatePluginManifest(baseManifest(["$userserver"]))
+  expect(mixedCaseRes.ok).toBe(true)
+  if (mixedCaseRes.ok) {
+    expect(mixedCaseRes.data.allowedHosts).toEqual(["$userServer"])
+    expect(mixedCaseRes.data.dataSharing.destinations[0]?.host).toBe("$userServer")
+  }
+
+  const localUrlSvg = `<svg xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g"/></defs><path fill="url(#g)" d="M0 0h24"/></svg>`
+  expect(sanitizePluginIconSvg(localUrlSvg).ok).toBe(true)
+
+  for (const externalRef of ["url(https://evil.example/x#g)", "url(//evil.example/x#g)"]) {
+    const res = sanitizePluginIconSvg(`<svg xmlns="http://www.w3.org/2000/svg"><path fill="${externalRef}" d="M0 0"/></svg>`)
+    expect(res.ok).toBe(false)
+    if (!res.ok) expect(res.errorCode).toBe("UNSAFE_ICON")
+  }
+
+  const md = renderMarkdownToHtml("See [docs](https://example.com/a_b_c) and https://example.com/path_with_underscores?a=1&b=2.")
+  expect(md).toContain('href="https://example.com/a_b_c"')
+  expect(md).toContain('href="https://example.com/path_with_underscores?a=1&amp;b=2"')
+  expect(md).not.toContain("<em>")
 })

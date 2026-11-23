@@ -9,6 +9,7 @@ import { isValidTimezone } from "../../lib/date"
 import { isFeatureEnabled } from "../../lib/feature-flags"
 import { logApiError } from "../../lib/api-logger"
 import { readStoredHouseholdTimezone } from "../../lib/task-queries"
+import { mapEntityEmojiToTabler } from "../../lib/tabler-svg"
 
 /**
  * Habits API — Routine Template Integration
@@ -26,6 +27,24 @@ import { readStoredHouseholdTimezone } from "../../lib/task-queries"
  */
 
 const VALID_ROUTINE_CADENCES = new Set(["daily", "weekly"])
+const ALLOWED_TEMPLATE_PATCH_KEYS = new Set([
+  "title",
+  "description",
+  "priority",
+  "labels",
+  "checklists",
+  "area_id",
+  "project_id",
+  "effort_minutes",
+  "effort_type",
+])
+
+function resolveRoutineIcon(raw: unknown): string | null {
+  if (typeof raw !== "string") return null
+  const trimmed = raw.trim()
+  if (!trimmed || trimmed.length > 32) return null
+  return mapEntityEmojiToTabler(trimmed)
+}
 
 async function resolveRequestTimezone(locals: App.Locals | undefined): Promise<string> {
   const tz = locals?.timezone?.trim() ?? ""
@@ -96,7 +115,14 @@ const manageRoutine: Parameters<typeof withBoardScope>[1] = async ({ request, lo
           return apiError("cadence must be daily or weekly", 400)
         }
         const cadence = rawCadence === "weekly" ? "weekly" : "daily"
-        const icon = typeof body.icon === "string" && body.icon.trim() ? body.icon.trim().slice(0, 32) : "check"
+        let icon = "check"
+        if (body.icon !== undefined && body.icon !== null && !(typeof body.icon === "string" && !body.icon.trim())) {
+          const resolvedIcon = resolveRoutineIcon(body.icon)
+          if (!resolvedIcon) {
+            return apiError("icon must be a supported Tabler icon name (1-32 characters)", 400)
+          }
+          icon = resolvedIcon
+        }
 
         const id = crypto.randomUUID()
         const position = await repo.getNextPosition()
@@ -191,10 +217,11 @@ const manageRoutine: Parameters<typeof withBoardScope>[1] = async ({ request, lo
           updates.name = trimmed
         }
         if (body.icon !== undefined) {
-          if (typeof body.icon !== "string" || !body.icon.trim() || body.icon.trim().length > 32) {
-            return apiError("icon must be 1-32 characters", 400)
+          const resolvedIcon = resolveRoutineIcon(body.icon)
+          if (!resolvedIcon) {
+            return apiError("icon must be a supported Tabler icon name (1-32 characters)", 400)
           }
-          updates.icon = body.icon.trim()
+          updates.icon = resolvedIcon
         }
         const rawCadence = body.cadence !== undefined ? body.cadence : body.frequency
         if (rawCadence !== undefined) {
@@ -204,13 +231,17 @@ const manageRoutine: Parameters<typeof withBoardScope>[1] = async ({ request, lo
           updates.cadence = rawCadence
         }
 
-        // Rebuild template JSON if checklist or other template fields change
+        // Rebuild template JSON if whitelisted checklist or template fields change
         if (body.templateJson && typeof body.templateJson === "object" && !Array.isArray(body.templateJson)) {
-          const patch = body.templateJson as Record<string, unknown>
+          const rawPatch = body.templateJson as Record<string, unknown>
+          const patch: Record<string, unknown> = {}
+          for (const key of Object.keys(rawPatch)) {
+            if (ALLOWED_TEMPLATE_PATCH_KEYS.has(key)) patch[key] = rawPatch[key]
+          }
           if (!await validArea(patch.area_id) || !await validProject(patch.project_id)) return apiError("Choose an existing Area and Project", 400)
           if ("area_id" in patch) updates.areaId = typeof patch.area_id === "string" && patch.area_id ? patch.area_id : null
           if ("project_id" in patch) updates.projectId = typeof patch.project_id === "string" && patch.project_id ? patch.project_id : null
-          updates.templatePatch = JSON.stringify(patch)
+          if (Object.keys(patch).length > 0) updates.templatePatch = JSON.stringify(patch)
         }
 
         if (!await repo.update(templateId, updates)) return apiError("Routine or Area no longer available", 409)

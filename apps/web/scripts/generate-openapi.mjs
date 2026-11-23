@@ -285,7 +285,7 @@ const schemas = {
       priority: { type: "integer", minimum: 1, maximum: 5, description: "Priority level: 1=urgent, 3=normal, 5=lowest (clamped 1..5)" },
       is_promoted: { type: "boolean", description: "Shared Kanban promotion — pins card to top of lane with Tabler ribbon sash." },
       actions: { type: "array", items: { type: "string", enum: ["edit", "complete", "delete"] }, description: "Detail-only hints for the current caller. Each write verifies current permission separately." },
-      due_date: { type: "string", format: "date-time", nullable: true },
+      due_date: { type: "string", nullable: true },
       assigned_to: { type: "string", nullable: true, description: "User ID prefixed with 'ha_' or 'custom_'" },
       kanban_position: { type: "number", nullable: true, description: "Persisted shared board position; unranked tasks have null." },
       nfc_tag_id: { type: "string", nullable: true },
@@ -320,7 +320,10 @@ const schemas = {
     additionalProperties: false,
     properties: {
       name: { type: "string", minLength: 1, description: "Item name" },
-      qty: { type: "string", description: "Optional quantity label (e.g. '2L', '1 bunch')" },
+      qty: {
+        oneOf: [{ type: "string" }, { type: "number", exclusiveMinimum: 0 }],
+        description: "Optional quantity label (e.g. '2L', '1 bunch') or positive number",
+      },
       category: { type: "string", enum: ["produce", "dairy", "meat", "pantry", "frozen", "beverages", "household", "other"], description: "Aisle category" },
       checked: { type: "boolean", description: "Whether the item has been picked up" },
     },
@@ -1152,7 +1155,7 @@ const paths = {
                 due_date: { type: ["string", "null"], description: "Due date (YYYY-MM-DD or ISO timestamp)" },
                 start_date: { type: ["string", "null"], description: "Start date or ISO timestamp" },
                 end_date: { type: ["string", "null"], description: "End date or ISO timestamp" },
-                task_kind: { type: "string", enum: ["standard_action", "shopping_item", "checklist", "routine_instance", "calendar_event", "quick_capture"], description: "Behavioral kind — determines UI rendering and lifecycle rules" },
+                task_kind: { type: "string", enum: ["standard_action", "shopping_item", "checklist", "calendar_event", "quick_capture"], description: "Behavioral kind — determines UI rendering and lifecycle rules" },
                 is_promoted: { type: "boolean", description: "Pin the new task to the top of its Kanban lane with a promoted ribbon sash." },
                 assigned_to: { type: "string", maxLength: 255, nullable: true, description: "Must start with 'ha_' or 'custom_'" },
                 labels: {

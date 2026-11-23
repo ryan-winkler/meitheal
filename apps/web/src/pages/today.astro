@@ -75,7 +75,7 @@ const todayTimeZone = Astro.locals.timezone || "Europe/Dublin"
 const todayDate = new Date()
 const todayIsoDate = calendarToday(todayTimeZone, todayDate)
 const reopening = Astro.url.searchParams.has("todayRefresh")
-const canCompleteRoutine = scopePermits(workScope, { resource: "routine", action: "edit" }) && scopePermits(workScope, { resource: "task", action: "complete" }) && scopePermits(workScope, { resource: "task", action: "create" })
+const canCompleteRoutine = scopePermits(workScope, { resource: "routine", action: "read" }) && scopePermits(workScope, { resource: "task", action: "complete" }) && scopePermits(workScope, { resource: "task", action: "create" })
 
 function focusDueLabel(task: TaskViewItem): string | undefined {
   const scheduled = effectiveTaskScheduledDate(task)
@@ -99,7 +99,13 @@ try {
 
     const scheduled = effectiveTaskScheduledDate(task)
     if (scheduled) {
-      const section = todayDueSection(scheduled, todayStr, todayTimeZone)
+      const startDay = calendarDayFromInput(scheduled, todayTimeZone)
+      const endDay = task.task_kind === "calendar_event" && typeof task.end_date === "string" && task.end_date.trim()
+        ? calendarDayFromInput(task.end_date, todayTimeZone)
+        : null
+      const ongoingEventToday = task.task_kind === "calendar_event" &&
+        startDay !== null && startDay <= todayStr && endDay !== null && endDay >= todayStr
+      const section = ongoingEventToday ? "due" : todayDueSection(scheduled, todayStr, todayTimeZone)
 
       if (section === "carried") {
         // Carried forward (overdue)
@@ -117,9 +123,10 @@ try {
 
   // Suggested: high-priority tasks due within 3 days + top-RICE unscheduled
   const threeDaysStr = shiftCalendarDay(todayStr, 3)
+  const todayTaskIds = new Set(todayTasks.map(task => task.id))
 
   suggestedTasks = tasks.filter(t => {
-    if (t.is_done) return false
+    if (t.is_done || todayTaskIds.has(t.id)) return false
     const scheduled = effectiveTaskScheduledDate(t)
     const dueDay = scheduled ? calendarDayFromInput(scheduled, todayTimeZone) : null
     // Already in today or carried forward
@@ -347,7 +354,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
                       </span>
                     )}
                     <span class="focus-card__work-status"><StatusBadge status={task.status} /></span>
-                    {task.due_date && (
+                    {effectiveTaskScheduledDate(task) && (
                       <span class="focus-card__due">
                         <Icon name={task.is_overdue ? "alert-triangle" : "calendar-event"} size={12} />
                         {focusDueLabel(task)}
@@ -691,7 +698,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
   </div>
   <div id="batch-action-bar" hidden>
     <span></span>
-    <button type="button" class="btn btn-sm" value="complete">✓ Complete</button>
+    <button type="button" class="btn btn-sm" value="complete"><Icon name="check" size={14} sprite /> Complete</button>
     <button type="button" class="btn btn-sm" value="snooze" title="Snooze selected +1 day"><Icon name="clock" size={14} /> Snooze</button>
     <button type="button" class="btn btn-sm" value="delete"><Icon name="trash" size={14} /> Delete</button>
     <button type="button" class="btn btn-sm" value="deselect">Deselect all</button>
@@ -1252,7 +1259,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
   }
   :global(.habit-card__complete) {
     flex-shrink: 0;
-    min-height: 36px;
+    min-height: 44px;
     transition: transform 0.15s ease;
   }
   :global(.habit-card__complete:hover:not(:disabled)) {

@@ -1,4 +1,5 @@
 import type { CalendarFilterRow } from "@domains/tasks"
+import { effectiveTaskScheduledDate } from "@meitheal/domain-tasks"
 import { calendarToday, isDueOverdue } from "./date"
 import type { FilterGroup } from "./filter-engine"
 import { effectiveCalendarKinds, isTaskVisible, readTableTaskTypeParam, readTaskAreaParam } from "./filter-state"
@@ -50,7 +51,11 @@ export function createCalendarTaskFilter(params: URLSearchParams, timezone: stri
       search: task.title.toLowerCase(),
       status: task.status,
       overdue: filters.status === "overdue" && task.deferred_at === null && !isClosedStatus(status) &&
-        isDueOverdue(task.due_date, timezone, today) ? "true" : undefined,
+        isDueOverdue(
+          task.task_kind === "calendar_event" ? (task.end_date || effectiveTaskScheduledDate(task)) : effectiveTaskScheduledDate(task),
+          timezone,
+          today,
+        ) ? "true" : undefined,
       priority: String(task.priority ?? 3),
       taskType: task.task_type ?? "task",
       taskKind: task.task_kind ?? "standard_action",

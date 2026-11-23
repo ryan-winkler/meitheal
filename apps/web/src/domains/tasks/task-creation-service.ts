@@ -8,6 +8,8 @@ import {
   isValidTaskKind,
   isValidUrgency,
   normalizeShoppingItems,
+  parseScheduleDateInput,
+  validateScheduleWindow,
   VALID_TASK_KINDS,
   VALID_TASK_TYPES,
   type TaskType,
@@ -156,8 +158,14 @@ export async function prepareTaskCreation(
   }
 
   // Phase 18: Extended fields
-  const start_date = typeof body.start_date === "string" ? body.start_date : null
-  const end_date = typeof body.end_date === "string" ? body.end_date : null
+  const parsedStart = parseScheduleDateInput(body.start_date, "start_date")
+  if (!parsedStart.ok) return { ok: false, error: parsedStart.error }
+  const parsedEnd = parseScheduleDateInput(body.end_date, "end_date")
+  if (!parsedEnd.ok) return { ok: false, error: parsedEnd.error }
+  const scheduleError = validateScheduleWindow(parsedStart.value, parsedEnd.value)
+  if (scheduleError) return { ok: false, error: scheduleError }
+  const start_date = parsedStart.value
+  const end_date = parsedEnd.value
   const progress_raw = typeof body.progress === "number" ? body.progress : 0
   const progress = Math.min(100, Math.max(0, Math.round(progress_raw)))
   const color = typeof body.color === "string" && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(body.color) ? body.color : null

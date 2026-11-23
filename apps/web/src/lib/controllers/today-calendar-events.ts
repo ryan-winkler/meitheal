@@ -9,7 +9,7 @@
  */
 
 import type { ListenerManager } from "../managed-listeners"
-import { calendarEventDay, shiftCalendarDay } from "../date"
+import { calendarEventDay, compareCalendarStarts, resolveTimezone, shiftCalendarDay } from "../date"
 import { householdToday } from "../quick-add"
 
 export async function setupCalendarEvents(lm: ListenerManager): Promise<void> {
@@ -18,7 +18,7 @@ export async function setupCalendarEvents(lm: ListenerManager): Promise<void> {
   const countEl = document.getElementById("calendar-events-count")
   if (!section || !list || !countEl) return
 
-  const timeZone = typeof window !== "undefined" ? window.mSettings?.timezone : undefined
+  const timeZone = resolveTimezone(typeof window !== "undefined" ? window.mSettings?.timezone : undefined)
   const todayStr = householdToday()
   const startParam = `${shiftCalendarDay(todayStr, -1)}T00:00:00Z`
   const endParam = `${shiftCalendarDay(todayStr, 2)}T00:00:00Z`
@@ -71,8 +71,8 @@ export async function setupCalendarEvents(lm: ListenerManager): Promise<void> {
 
     if (allEvents.length === 0) return
 
-    // Sort by start time
-    allEvents.sort((a, b) => a.start.localeCompare(b.start))
+    // Sort by start instant in household timezone
+    allEvents.sort((a, b) => compareCalendarStarts(a.start, b.start, timeZone))
 
     // Render
     countEl.textContent = `(${allEvents.length})`
@@ -84,7 +84,7 @@ export async function setupCalendarEvents(lm: ListenerManager): Promise<void> {
         const isAllDay = !evt.start.includes("T")
         const timeStr = isAllDay
           ? "All day"
-          : `${startDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} – ${endDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+          : `${startDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZone })} – ${endDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", timeZone })}`
 
         const card = document.createElement("div")
         card.className = "calendar-event-card card"

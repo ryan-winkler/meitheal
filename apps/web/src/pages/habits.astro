@@ -447,18 +447,21 @@ const habitsBootstrap = serializeForScript({ habits })
             <label id="habit-icon-label" for="habit-icon">Icon</label>
             <input type="hidden" id="habit-icon" value="check" />
             <div class="habit-icon-picker" id="habit-icon-picker" role="group" aria-labelledby="habit-icon-label">
-              {ROUTINE_ICON_OPTIONS.map((iconName) => (
+              {ROUTINE_ICON_OPTIONS.map((iconName) => {
+                const iconLabel = iconName.replace(/-/g, " ").replace(/^\w/, (c) => c.toUpperCase())
+                return (
                 <button
                   type="button"
                   class={`habit-icon-picker__btn${iconName === "check" ? " is-selected" : ""}`}
                   data-habit-icon-option={iconName}
                   aria-pressed={iconName === "check" ? "true" : "false"}
-                  aria-label={iconName}
-                  title={iconName}
+                  aria-label={iconLabel}
+                  title={iconLabel}
                 >
                   <Icon name={iconName} size={18} sprite />
                 </button>
-              ))}
+                )
+              })}
             </div>
           </div>
 
@@ -751,20 +754,11 @@ const habitsBootstrap = serializeForScript({ habits })
   }
 
   @keyframes habit-celebrate {
-    0% {
+    0%, 30%, 100% {
       transform: scale(1);
     }
-    15% {
+    15%, 45% {
       transform: scale(1.015);
-    }
-    30% {
-      transform: scale(1);
-    }
-    45% {
-      transform: scale(1.01);
-    }
-    100% {
-      transform: scale(1);
     }
   }
 
@@ -910,7 +904,7 @@ const habitsBootstrap = serializeForScript({ habits })
     transition: opacity 120ms ease, transform 120ms ease, background 120ms ease;
   }
 
-  @media (hover: none), (pointer: coarse) {
+  @media (hover: none), (pointer: coarse), (max-width: 720px) {
     .habit-card__actions {
       opacity: 1;
       transform: none;
@@ -1105,8 +1099,6 @@ const habitsBootstrap = serializeForScript({ habits })
     }
 
     .habit-card__actions {
-      opacity: 1;
-      transform: none;
       margin-left: auto;
     }
   }

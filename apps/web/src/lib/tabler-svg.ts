@@ -78,28 +78,23 @@ const DEFAULT_EMOJI_TO_TABLER: Record<string, IconName> = {
   "🏠": "home",
   "🏡": "home",
   "🗂": "folder",
-  "🗂️": "folder",
   "📁": "folder",
   "📂": "folder",
-  "☀️": "sun",
   "☀": "sun",
   "📋": "list-check",
   "📥": "inbox",
   "⚡": "bolt",
   "✅": "checkbox",
-  "☑️": "checkbox",
+  "☑": "checkbox",
   "🛒": "shopping-cart",
   "📅": "calendar-event",
-  "🗓️": "calendar",
   "🗓": "calendar",
-  "🏛️": "layout-grid",
   "🏛": "layout-grid",
   "🔁": "repeat",
   "🔄": "repeat",
   "🎯": "target",
   "🏆": "trophy",
   "💡": "sparkles",
-  "⚖️": "target",
   "⚖": "target",
   "📈": "chart-bar",
   "📊": "chart-bar",
@@ -110,14 +105,12 @@ const DEFAULT_EMOJI_TO_TABLER: Record<string, IconName> = {
   "🎨": "palette",
   "🔑": "settings",
   "🔒": "settings",
-  "⚙️": "settings",
   "⚙": "settings",
   "📌": "pin",
   "🏅": "star",
-  "🛡️": "star",
+  "🛡": "star",
   "🔌": "plug",
   "🔔": "bell",
-  "🏷️": "adjustments-horizontal",
   "🏷": "adjustments-horizontal",
   "💧": "droplet",
   "🏃": "walk",
@@ -130,9 +123,7 @@ const DEFAULT_EMOJI_TO_TABLER: Record<string, IconName> = {
   "☕": "coffee",
   "🌙": "moon",
   "🍎": "apple",
-  "❄️": "snowflake",
   "❄": "snowflake",
-  "🛍️": "shopping-bag",
   "🛍": "shopping-bag",
   "📍": "map-pin",
 }
@@ -146,7 +137,7 @@ export function mapEntityEmojiToTabler(raw?: string | null): IconName | null {
   if (trimmed in TABLER_LEGACY_ALIASES) {
     return TABLER_LEGACY_ALIASES[trimmed as keyof typeof TABLER_LEGACY_ALIASES]
   }
-  return DEFAULT_EMOJI_TO_TABLER[trimmed] ?? null
+  return DEFAULT_EMOJI_TO_TABLER[trimmed.replace(/\uFE0F/g, "")] ?? null
 }
 
 export function resolveAchievementTablerIcon(idOrIcon?: string | null): IconName {

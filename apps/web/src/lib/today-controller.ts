@@ -95,7 +95,7 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
 
   initPageShellNavigation({
     barId: "today-bar",
-    shellId: "today-shell",
+    shellId: "page-shell",
     sectionSelector: "[data-today-section]",
     sectionIds: TODAY_SECTIONS.map((section) => section.id),
     defaultSectionId: "today-overview",

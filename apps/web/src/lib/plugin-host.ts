@@ -217,7 +217,7 @@ async function handleRunnerRpc(inst: ActivePluginInstance, method: string, args:
 
   if (method === "tasks.get") {
     requirePerm(inst, "tasks:read")
-    const res = await fetch(`/api/tasks/${encodeURIComponent(String(args[0] ?? ""))}`, { headers: getBoardHeaders() })
+    const res = await safeFetch(`/api/tasks/${encodeURIComponent(String(args[0] ?? ""))}`, { headers: getBoardHeaders(), signal: hostAbort?.signal })
     if (res.status === 404) return null
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
@@ -307,17 +307,18 @@ async function handleRunnerRpc(inst: ActivePluginInstance, method: string, args:
 
   if (method === "storage.remove") {
     requirePerm(inst, "storage:local")
-    const res = await fetch(`/api/plugins/${id}/storage?key=${encodeURIComponent(String(args[0] ?? ""))}`, { method: "DELETE" })
+    const res = await safeFetch(`/api/plugins/${id}/storage?key=${encodeURIComponent(String(args[0] ?? ""))}`, { method: "DELETE", signal: hostAbort?.signal })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return { ok: true }
   }
 
   if (method === "http.request") {
     requirePerm(inst, "http:outbound")
-    const res = await fetch(`/api/plugins/${id}/http`, {
+    const res = await safeFetch(`/api/plugins/${id}/http`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(args[0] ?? {}),
+      signal: hostAbort?.signal,
     })
     const body = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(String((body as Record<string, unknown>).detail ?? `HTTP ${res.status}`))
@@ -462,13 +463,12 @@ export async function bootPluginHost(): Promise<void> {
   bootInFlight = true
   try {
     teardownPluginHost()
-    const res = await fetch("/api/plugins?runtime=1")
+    hostAbort = new AbortController()
+    const signal = hostAbort.signal
+    const res = await safeFetch("/api/plugins?runtime=1", { signal })
     if (!res.ok) return
     const data = (await res.json()) as { safeMode?: boolean; bundles?: ClientPluginBundle[] }
     if (data.safeMode || !Array.isArray(data.bundles) || data.bundles.length === 0) return
-
-    hostAbort = new AbortController()
-    const signal = hostAbort.signal
 
     window.addEventListener(
       "message",

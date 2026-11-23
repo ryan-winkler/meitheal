@@ -137,16 +137,16 @@ pageLifecycle.onPageLoad(signal => {
     try {
       if (!await allowsDeferral(worker) || !relevant()) return
       const result = await writeDeferral(id, false, guard, signal)
+      let movedToBacklog = !moveToBacklog
       if (result.kind === "saved") {
-        if (moveToBacklog) {
-          if (SAFE_TASK_ID_RE.test(id)) {
-            await safeFetch(`/api/tasks/${encodeURIComponent(id)}`, {
-              method: "PUT",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ status: "backlog" }),
-              signal,
-            }).catch(() => undefined)
-          }
+        if (moveToBacklog && SAFE_TASK_ID_RE.test(id)) {
+          const backlogRes = await safeFetch(`/api/tasks/${encodeURIComponent(id)}`, {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ status: "backlog" }),
+            signal,
+          }).catch(() => null)
+          movedToBacklog = Boolean(backlogRes?.ok)
         }
         notifyTaskCountsChanged(card.dataset.project)
       }
@@ -155,7 +155,9 @@ pageLifecycle.onPageLoad(signal => {
         case "saved":
           await readQueue(
             next?.dataset.deferredCard ?? "",
-            moveToBacklog ? "Moved to Backlog." : message("resumed", "Task resumed."),
+            moveToBacklog
+              ? (movedToBacklog ? "Moved to Backlog." : "Task resumed; could not move to Backlog.")
+              : message("resumed", "Task resumed."),
           )
           break
         case "blocked": {

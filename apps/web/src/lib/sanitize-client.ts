@@ -38,8 +38,7 @@ function isAllowedUrl(value: string): boolean {
     const url = new URL(value, window.location.origin)
     return ALLOWED_SCHEMES.has(url.protocol)
   } catch {
-    // Relative URLs that didn't parse are fine (e.g. "#anchor", "/path")
-    return true
+    return false
   }
 }
 

@@ -350,7 +350,7 @@ export type ShoppingCategory = (typeof SHOPPING_CATEGORIES)[number]
 
 export interface ShoppingListItem {
   name: string
-  qty?: string
+  qty?: number | string
   category?: ShoppingCategory
   checked?: boolean
 }
@@ -382,20 +382,71 @@ export function normalizeShoppingItems(raw: unknown): ShoppingListItem[] {
     const rawName = typeof rec.name === "string" ? rec.name : typeof rec.text === "string" ? rec.text : ""
     const name = rawName.trim()
     if (!name) continue
-    const rawQty = typeof rec.qty === "string" ? rec.qty : typeof rec.quantity === "string" ? rec.quantity : ""
-    const qty = rawQty.trim()
+    const rawQtyVal = rec.qty ?? rec.quantity
+    const qty: number | string | undefined = typeof rawQtyVal === "number" && Number.isFinite(rawQtyVal) && rawQtyVal > 0
+      ? rawQtyVal
+      : typeof rawQtyVal === "string" && rawQtyVal.trim()
+        ? rawQtyVal.trim()
+        : undefined
     const rawCat = typeof rec.category === "string" ? rec.category.trim().toLowerCase()
       : typeof rec.aisle === "string" ? rec.aisle.trim().toLowerCase() : ""
     const checked = typeof rec.checked === "boolean" ? rec.checked
       : typeof rec.done === "boolean" ? rec.done : undefined
     items.push({
       name,
-      ...(qty ? { qty } : {}),
+      ...(qty !== undefined ? { qty } : {}),
       ...(isValidShoppingCategory(rawCat) ? { category: rawCat } : {}),
       ...(checked !== undefined ? { checked } : {}),
     })
   }
   return items
+}
+
+const SCHEDULE_DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/
+const SCHEDULE_ISO_DATETIME_RE = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+-]\d{2}:\d{2})?$/i
+
+export function parseScheduleDateInput(
+  value: unknown,
+  field: "start_date" | "end_date",
+): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (value === undefined || value === null) return { ok: true, value: null }
+  if (typeof value !== "string") return { ok: false, error: `${field} must be a date or ISO datetime string` }
+  const trimmed = value.trim()
+  if (!trimmed) return { ok: true, value: null }
+  if (trimmed.length > 64) return { ok: false, error: `${field} must be 64 characters or less` }
+  if (SCHEDULE_DATE_ONLY_RE.test(trimmed)) {
+    const parsed = new Date(`${trimmed}T00:00:00.000Z`)
+    if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== trimmed) {
+      return { ok: false, error: `${field} must be a valid YYYY-MM-DD date` }
+    }
+    return { ok: true, value: trimmed }
+  }
+  if (SCHEDULE_ISO_DATETIME_RE.test(trimmed)) {
+    const normalized = /(?:Z|[+-]\d{2}:\d{2})$/i.test(trimmed) ? trimmed : `${trimmed.replace(" ", "T")}Z`
+    if (Number.isFinite(Date.parse(normalized))) return { ok: true, value: trimmed }
+  }
+  return { ok: false, error: `${field} must be a valid YYYY-MM-DD date or ISO datetime` }
+}
+
+function scheduleBoundaryMs(value: string, boundary: "start" | "end"): number {
+  if (SCHEDULE_DATE_ONLY_RE.test(value)) {
+    return Date.parse(`${value}T${boundary === "end" ? "23:59:59.999" : "00:00:00.000"}Z`)
+  }
+  const normalized = /(?:Z|[+-]\d{2}:\d{2})$/i.test(value) ? value : `${value.replace(" ", "T")}Z`
+  return Date.parse(normalized)
+}
+
+export function validateScheduleWindow(startDate: string | null, endDate: string | null): string | null {
+  if (!startDate || !endDate) return null
+  if (SCHEDULE_DATE_ONLY_RE.test(startDate) && SCHEDULE_DATE_ONLY_RE.test(endDate)) {
+    return endDate < startDate ? "end_date must be on or after start_date" : null
+  }
+  const startMs = scheduleBoundaryMs(startDate, "start")
+  const endMs = scheduleBoundaryMs(endDate, "end")
+  if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs < startMs) {
+    return "end_date must not be before start_date"
+  }
+  return null
 }
 
 /** Effective date/timestamp for sorting, filtering, and calendar projection across tasks and events. */

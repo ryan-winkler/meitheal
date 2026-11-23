@@ -689,3 +689,43 @@ async def test_events_shopping_overdue_clock_and_routines_contracts(coordinator,
     assert completion["taskId"] == "occ-42"
     assert completion["completed"] is True
     coordinator.async_request_refresh.assert_awaited_once()
+
+
+def test_multiday_calendar_event_coverage_overdue_and_closed_statuses(monkeypatch):
+    """Ongoing multi-day events stay due without becoming overdue and closed statuses stay inactive."""
+    now = datetime(2026, 11, 23, 14, 0, tzinfo=ZoneInfo("Europe/Dublin"))
+    monkeypatch.setattr(dt_util, "now", lambda: now)
+
+    ongoing = MeithealTask(
+        task(
+            "ev-ongoing",
+            task_kind="calendar_event",
+            start_date="2026-11-22",
+            end_date="2026-11-25",
+        )
+    )
+    assert ongoing.is_due_on(now) is True
+    assert ongoing.is_overdue is False
+
+    synced_ended = MeithealTask(
+        task(
+            "ev-synced-ended",
+            task_kind="calendar_event",
+            calendar_sync_state="synced",
+            start_date="2026-11-21",
+            end_date="2026-11-23",
+        )
+    )
+    assert synced_ended.is_due_on(now) is False
+    assert synced_ended.is_overdue is True
+
+    summary = MeithealCoordinatorData(
+        [
+            ongoing,
+            MeithealTask(task("t-archived", status="archived", due_date="2026-11-23")),
+            MeithealTask(task("t-cancelled", status="cancelled", due_date="2026-11-20")),
+        ]
+    )
+    assert summary.active_count == 1
+    assert summary.overdue_count == 0
+    assert [t.id for t in summary.due_today_tasks] == ["ev-ongoing"]

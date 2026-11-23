@@ -340,7 +340,8 @@ function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "
   const rice = riceInputs ? riceLensScore(riceInputs) : null
   const deferredAt = row.deferred_at == null ? null : Number(row.deferred_at)
   const scheduledDate = effectiveTaskScheduledDate({ task_kind: taskKind, due_date: dueDate, start_date: startDate, end_date: endDate })
-  const overdue = deferredAt === null && isOverdue(scheduledDate, isDone, timezone, now)
+  const overdueAnchor = taskKind === "calendar_event" && endDate ? endDate : scheduledDate
+  const overdue = deferredAt === null && isOverdue(overdueAnchor, isDone, timezone, now)
 
   const publicTask = projectPublicTaskFields(row)
   const item: TaskViewItem = {

@@ -17,9 +17,27 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;")
 }
 
+function trimBareUrlPunctuation(url: string): { cleaned: string; trailing: string } {
+  let end = url.length
+  while (end > 0) {
+    const ch = url[end - 1]
+    if (ch === "." || ch === "," || ch === "!" || ch === "?" || ch === ":") {
+      end -= 1
+      continue
+    }
+    if (ch === ";" && !/&(?:amp|lt|gt|quot);$/i.test(url.slice(0, end))) {
+      end -= 1
+      continue
+    }
+    break
+  }
+  return { cleaned: url.slice(0, end), trailing: url.slice(end) }
+}
+
 function renderInline(raw: string): string {
   const codeSpans: string[] = []
-  let text = escapeHtml(raw).replace(/`([^`]+)`/g, (_m, code: string) => {
+  const links: string[] = []
+  let text = escapeHtml(raw.replace(/\u0000/g, "")).replace(/`([^`]+)`/g, (_m, code: string) => {
     const idx = codeSpans.push(`<code>${code}</code>`) - 1
     return `\u0000C${idx}\u0000`
   })
@@ -30,14 +48,15 @@ function renderInline(raw: string): string {
     if (!SAFE_URL_RE.test(decoded)) return label
     const external = /^https?:\/\//i.test(decoded)
     const attrs = external ? ' target="_blank" rel="noopener noreferrer"' : ""
-    return `<a href="${url}"${attrs}>${label}</a>`
+    const idx = links.push(`<a href="${url}"${attrs}>${label}</a>`) - 1
+    return `\u0000L${idx}\u0000`
   })
 
   // Bare http(s) URLs not already inside an anchor tag
   text = text.replace(/(^|[\s(>])(https?:\/\/[^\s<)]+)/g, (_m, prefix: string, url: string) => {
-    const cleaned = url.replace(/[.,!?;:]+$/, "")
-    const trailing = url.slice(cleaned.length)
-    return `${prefix}<a href="${cleaned}" target="_blank" rel="noopener noreferrer">${cleaned}</a>${trailing}`
+    const { cleaned, trailing } = trimBareUrlPunctuation(url)
+    const idx = links.push(`<a href="${cleaned}" target="_blank" rel="noopener noreferrer">${cleaned}</a>`) - 1
+    return `${prefix}\u0000L${idx}\u0000${trailing}`
   })
 
   // Bold, strikethrough, italic
@@ -48,7 +67,9 @@ function renderInline(raw: string): string {
     .replace(/(^|[^\w*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>")
     .replace(/(^|[^\w_])_([^_\n]+)_(?!_)/g, "$1<em>$2</em>")
 
-  return text.replace(/\u0000C(\d+)\u0000/g, (_m, idx: string) => codeSpans[Number(idx)] ?? "")
+  return text
+    .replace(/\u0000L(\d+)\u0000/g, (_m, idx: string) => links[Number(idx)] ?? "")
+    .replace(/\u0000C(\d+)\u0000/g, (_m, idx: string) => codeSpans[Number(idx)] ?? "")
 }
 
 function splitTableCells(line: string): string[] {

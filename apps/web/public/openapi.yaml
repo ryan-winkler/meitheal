@@ -676,7 +676,6 @@ components:
           description: Detail-only hints for the current caller. Each write verifies current permission separately.
         due_date:
           type: string
-          format: date-time
           nullable: true
         assigned_to:
           type: string
@@ -799,8 +798,11 @@ components:
           minLength: 1
           description: Item name
         qty:
-          type: string
-          description: Optional quantity label (e.g. '2L', '1 bunch')
+          oneOf:
+            - type: string
+            - type: number
+              exclusiveMinimum: 0
+          description: Optional quantity label (e.g. '2L', '1 bunch') or positive number
         category:
           type: string
           enum:
@@ -2975,7 +2977,6 @@ paths:
                     - standard_action
                     - shopping_item
                     - checklist
-                    - routine_instance
                     - calendar_event
                     - quick_capture
                   description: Behavioral kind — determines UI rendering and lifecycle rules

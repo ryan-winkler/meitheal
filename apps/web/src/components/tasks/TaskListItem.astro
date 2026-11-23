@@ -20,6 +20,7 @@ import LabelBadges from "../ui/LabelBadges.astro"
 import TaskTypeIcon from "../ui/TaskTypeIcon.astro"
 import { taskSurface } from "../../lib/task-surface"
 import { effectiveTaskScheduledDate } from "@meitheal/domain-tasks"
+import { calendarDayFromInput } from "../../lib/date"
 import { formatTicketKey } from "../../lib/ticket-key"
 import { taskDetailPath } from "../../lib/task-page-url"
 import type { TaskViewItem } from "../../lib/task-queries"
@@ -78,6 +79,9 @@ if (task.checklists === null) {
 
 // Custom fields (filter structured objects such as shopping items)
 const scheduledDate = effectiveTaskScheduledDate(task)
+const scheduledDisplayDay = scheduledDate
+  ? (calendarDayFromInput(scheduledDate, Astro.locals.timezone || "Europe/Dublin") ?? scheduledDate.split("T")[0])
+  : null
 const customEntries = Object.entries(task.custom_fields).filter(
   ([, v]) => v !== "" && v !== null && v !== undefined && typeof v !== "object"
 )
@@ -145,9 +149,9 @@ const customEntries = Object.entries(task.custom_fields).filter(
 
     <div class="tli__meta">
       <PriorityLabel priority={task.priority} />
-      {scheduledDate && (
+      {scheduledDisplayDay && (
         <span class="tli__due-date">
-          · {task.task_kind === "calendar_event" && !task.due_date ? "Starts" : "Due"} {scheduledDate.split("T")[0]}
+          · {task.task_kind === "calendar_event" ? "Starts" : "Due"} {scheduledDisplayDay}
           <span class="tli__overdue-tag">overdue</span>
         </span>
       )}
@@ -183,7 +187,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
         style={`color: ${checklistDone === checklistTotal ? "var(--success-text)" : "var(--text-muted)"}`}
         title={`Checklist: ${checklistDone}/${checklistTotal}`}
       >
-        ✓ {checklistDone}/{checklistTotal}
+        <Icon name="check" size={12} sprite /> {checklistDone}/{checklistTotal}
       </span>
     )}
 
@@ -200,7 +204,6 @@ const customEntries = Object.entries(task.custom_fields).filter(
   </div>
 
   {/* Recurrence badge */}
-  {task.checklists && false /* placeholder — checklists already shown above */}
   {(task as any).recurrence_rule && (
     <span class="tli__recurrence" title="Recurring task"><Icon name="repeat" size={14} /></span>
   )}

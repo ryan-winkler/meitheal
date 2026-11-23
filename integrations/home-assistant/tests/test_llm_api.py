@@ -585,3 +585,62 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
     assert not {api.id for api in llm.async_get_apis(hass)} & {
         f"meitheal_tasks-{entry.entry_id}", f"meitheal_tasks_read-{entry.entry_id}"
     }
+
+
+async def test_llm_shopping_qty_routine_kind_and_nullable_event_bounds(
+    hass: HomeAssistant,
+    hass_admin_user: User,
+    native_human_transport,
+) -> None:
+    """Validate LLM qty number|string schema, routine_instance create rejection, and nullable event bounds."""
+    if not NATIVE_ADMIN:
+        pytest.skip("Requires Home Assistant Core with native LLM admin API")
+    business = MagicMock()
+    business.async_request = AsyncMock(
+        side_effect=[
+            {"id": "shop-1", "title": "Market Run", "status": "pending", "task_kind": "shopping_item"},
+            {"id": "ev-1", "title": "Trip", "status": "pending", "task_kind": "calendar_event", "start_date": None, "end_date": None},
+        ]
+    )
+    api = business_api(native_human_transport, business)
+    coordinator = MeithealCoordinator(hass, api)
+    coordinator.async_request_refresh = AsyncMock()  # type: ignore[method-assign]
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        state=ConfigEntryState.LOADED,
+        data={CONF_HOST: "local-meitheal", CONF_PORT: 3000, CONF_SSL: False, CONF_API_TOKEN: "mth_" + "b" * 64, CONF_BOARD_ID: "work"},
+        version=2,
+    )
+    entry.add_to_hass(hass)
+    entry.runtime_data = coordinator
+    unregister = async_register_llm_api(hass, entry)
+    assert unregister is not None
+    try:
+        instance = await llm.async_get_api(hass, f"meitheal_tasks-{entry.entry_id}", llm_context(hass_admin_user.id))
+        create_tool = next(tool for tool in instance.tools if tool.name == CREATE_TASK)
+        update_tool = next(tool for tool in instance.tools if tool.name == "meitheal_update_task")
+
+        res = await async_call(
+            instance,
+            CREATE_TASK,
+            {
+                "title": "Market Run",
+                "task_kind": "shopping_item",
+                "custom_fields": {"items": [{"name": "Eggs", "qty": 12, "category": "dairy"}]},
+            },
+        )
+        assert res.data["id"] == "shop-1"
+
+        with pytest.raises(probatio.Invalid):
+            create_tool.parameters(
+                {"title": "Bad Bool", "custom_fields": {"items": [{"name": "Eggs", "qty": True}]}}
+            )
+        with pytest.raises(probatio.Invalid):
+            create_tool.parameters({"title": "Bad Routine", "task_kind": "routine_instance"})
+
+        validated_update = update_tool.parameters({"task_id": "ev-1", "start_date": None, "end_date": None})
+        assert validated_update["start_date"] is None and validated_update["end_date"] is None
+        updated = await async_call(instance, "meitheal_update_task", {"task_id": "ev-1", "start_date": None, "end_date": None})
+        assert updated.data["id"] == "ev-1"
+    finally:
+        unregister()

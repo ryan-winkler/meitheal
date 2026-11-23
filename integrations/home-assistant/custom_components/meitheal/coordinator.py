@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from http import HTTPStatus
 from typing import Any
 
@@ -44,6 +44,15 @@ TASK_KINDS = (
     "calendar_event",
     "quick_capture",
 )
+CREATABLE_TASK_KINDS = tuple(kind for kind in TASK_KINDS if kind != "routine_instance")
+CLOSED_STATUSES = frozenset({
+    STATUS_DONE,
+    "complete",
+    "completed",
+    "archived",
+    "cancelled",
+    "canceled",
+})
 SHOPPING_CATEGORIES = (
     "produce",
     "dairy",
@@ -58,6 +67,40 @@ SHOPPING_CATEGORIES = (
 
 def _non_empty_str(value: Any) -> str | None:
     """Return stripped non-empty strings, otherwise None."""
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def _parse_local_date(
+    raw: str | None,
+    local_now: datetime,
+    *,
+    exclusive_end: bool = False,
+) -> date | None:
+    """Parse a YYYY-MM-DD or ISO timestamp string into a local calendar date."""
+    value = _non_empty_str(raw)
+    if value is None:
+        return None
+    try:
+        if len(value) == 10:
+            parsed_day = date.fromisoformat(value)
+            return parsed_day - timedelta(days=1) if exclusive_end else parsed_day
+        parsed_dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed_dt.tzinfo is not None and local_now.tzinfo is not None:
+            parsed_dt = parsed_dt.astimezone(local_now.tzinfo)
+        if (
+            exclusive_end
+            and parsed_dt.hour == 0
+            and parsed_dt.minute == 0
+            and parsed_dt.second == 0
+            and parsed_dt.microsecond == 0
+        ):
+            parsed_dt -= timedelta(microseconds=1)
+        return parsed_dt.date()
+    except (ValueError, TypeError, OverflowError):
+        return None
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 
@@ -157,33 +200,60 @@ class MeithealTask:
 
     def scheduled_local_date(self, local_now: datetime) -> date | None:
         """Resolve the local calendar date for a task or event relative to local_now."""
-        scheduled = self.effective_scheduled_date
-        if not isinstance(scheduled, str):
-            return None
-        try:
-            if len(scheduled) == 10:
-                return date.fromisoformat(scheduled)
-            due = datetime.fromisoformat(scheduled.replace("Z", "+00:00"))
-            if due.tzinfo is not None and local_now.tzinfo is not None:
-                due = due.astimezone(local_now.tzinfo)
-            return due.date()
-        except (ValueError, TypeError, OverflowError):
-            return None
+        return _parse_local_date(self.effective_scheduled_date, local_now)
+
+    def end_local_date(self, local_now: datetime) -> date | None:
+        """Resolve the inclusive local end calendar date for an event."""
+        start_day = self.scheduled_local_date(local_now)
+        sync_state = getattr(self, "calendar_sync_state", None)
+        if self.task_kind != "calendar_event" and sync_state not in ("synced", "confirmed"):
+            return start_day
+        end_raw = _non_empty_str(self.end_date)
+        if not end_raw:
+            return start_day
+        exclusive_end = sync_state == "synced" or len(end_raw) > 10
+        end_day = _parse_local_date(end_raw, local_now, exclusive_end=exclusive_end)
+        if end_day is None or (start_day is not None and end_day < start_day):
+            return start_day
+        return end_day
+
+    def covers_local_date(self, local_now: datetime, target_day: date | None = None) -> bool:
+        """Return whether this item falls on or spans target_day."""
+        check_day = target_day if target_day is not None else local_now.date()
+        start_day = self.scheduled_local_date(local_now)
+        if start_day is None:
+            return False
+        end_day = self.end_local_date(local_now)
+        if end_day is not None and end_day > start_day:
+            return start_day <= check_day <= end_day
+        return start_day == check_day
 
     def is_due_on(self, local_now: datetime) -> bool:
         """Check whether this open task is due on Home Assistant's local date."""
-        if self.status == STATUS_DONE:
+        if self.status in CLOSED_STATUSES:
             return False
+        sync_state = getattr(self, "calendar_sync_state", None)
+        if self.task_kind == "calendar_event" or sync_state in ("synced", "confirmed"):
+            return self.covers_local_date(local_now)
         local_date = self.scheduled_local_date(local_now)
         return local_date == local_now.date() if local_date is not None else False
 
     @property
     def is_overdue(self) -> bool:
         """Check if task is overdue relative to Home Assistant's local clock."""
-        scheduled = self.effective_scheduled_date
-        if not scheduled or self.status == STATUS_DONE:
+        if self.status in CLOSED_STATUSES:
             return False
         local_now = dt_util.now()
+        end_raw = _non_empty_str(self.end_date)
+        if self.task_kind == "calendar_event" and end_raw is not None:
+            scheduled = end_raw
+            if len(end_raw) == 10 and getattr(self, "calendar_sync_state", None) == "synced":
+                end_day = _parse_local_date(end_raw, local_now, exclusive_end=True)
+                return end_day is not None and end_day < local_now.date()
+        else:
+            scheduled = self.effective_scheduled_date
+        if not scheduled:
+            return False
         try:
             if len(scheduled) == 10:
                 return date.fromisoformat(scheduled) < local_now.date()
@@ -209,7 +279,7 @@ class MeithealCoordinatorData:
         """Compute active, overdue, and daily task summaries from fetched tasks."""
         self.tasks = tasks
         self.todo_tasks = [task for task in tasks if task.deferred_at is None]
-        self.active_count = sum(1 for t in tasks if t.status != "done")
+        self.active_count = sum(1 for t in tasks if t.status not in CLOSED_STATUSES)
         self.overdue_count = sum(1 for t in tasks if t.is_overdue)
         self.total_count = len(tasks)
         local_now = dt_util.now()

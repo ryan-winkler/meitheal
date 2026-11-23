@@ -8,7 +8,7 @@ description: "Find work, views, and settings."
 
 ## Purpose
 
-Meitheal now uses one universal search hub for finding work, navigating views, jumping into settings, and launching Home Assistant-aware actions.
+Meitheal uses one universal search hub for finding work, navigating views, jumping into settings, and launching Home Assistant-aware actions.
 
 ## How To Open It
 
@@ -55,7 +55,7 @@ Open a result with Enter or a click. Close Details with its Close button or Esca
 
 The Home Assistant integration and MCP `searchTasks` tool use the task-search backend. Core 2026.11 or later also offers **Meitheal Tasks (read only)** as an optional LLM API for an active Home Assistant administrator.
 
-That means search parity now covers:
+Search parity covers:
 
 - Meitheal UI search hub
 - `meitheal.search_tasks` service
