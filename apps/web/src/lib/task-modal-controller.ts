@@ -502,6 +502,9 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
         function syncTaskActionControls() {
           const editable = taskLoaded && !_isPopulating && currentTaskActions.has("edit")
           if (tdTitleInput) tdTitleInput.readOnly = !editable
+          // Promotion saves through the task, so it waits for Details to finish loading.
+          const promote = document.getElementById("td-toggle-promote") as HTMLButtonElement | null
+          if (promote && promote.getAttribute("aria-busy") !== "true") promote.disabled = !editable
           if (statusSelect) {
             statusSelect.disabled = !editable
             for (const option of statusSelect.options) option.disabled = !statusAllowed(option.value)
@@ -2047,6 +2050,7 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
             const wasPromoted = btn.getAttribute("aria-pressed") === "true";
             const nextPromoted = !wasPromoted;
             btn.disabled = true;
+            btn.setAttribute("aria-busy", "true");
             btn.setAttribute("aria-pressed", String(nextPromoted));
             try {
               const saved = await saveTaskField("is_promoted", nextPromoted);
@@ -2065,7 +2069,8 @@ import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordV
                 : (window.mI18n?.get("kanban.card_demoted") ?? "Promotion removed"));
               document.dispatchEvent(new CustomEvent("kanban:detail-changed", { detail: { id: currentTaskId } }));
             } finally {
-              btn.disabled = false;
+              btn.removeAttribute("aria-busy");
+              syncTaskActionControls();
             }
           }, { signal: __signal });
 

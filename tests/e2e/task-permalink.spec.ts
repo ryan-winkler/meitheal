@@ -141,6 +141,8 @@ test.describe(() => {
       const first = detail.locator("#td-toggle-promote")
       const last = detail.locator("#td-section-activity > summary")
       await expect(first).toBeVisible()
+      // Promote stays disabled until Details finishes loading.
+      await expect(first).toBeEnabled()
       await first.focus()
       await page.keyboard.press("Shift+Tab")
       await expect(last).toBeFocused()

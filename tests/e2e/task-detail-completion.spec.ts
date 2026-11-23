@@ -211,6 +211,7 @@ test("Details restores the promotion button after a rejected save", async ({ pag
   // The button acts on the loaded task, so wait for Details to finish loading.
   await expect(page.locator("#td-title")).toHaveValue("Promotion rollback fixture")
   await expect(button).toHaveAttribute("aria-pressed", "false")
+  await expect(button).toBeEnabled()
   await page.route(`**/api/tasks/${id}`, route => route.request().method() === "PUT"
     ? route.fulfill({ status: 403, json: { error: "denied" } }) : route.continue())
   const rejected = page.waitForResponse(response => response.url().endsWith("/api/tasks/" + id) && response.status() === 403)
