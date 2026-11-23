@@ -193,7 +193,7 @@ async function handleRunnerRpc(inst: ActivePluginInstance, method: string, args:
       id: String(t.id ?? ""),
       title: String(t.title ?? ""),
       status: String(t.status ?? "pending"),
-      priority: String(t.priority ?? "medium"),
+      priority: typeof t.priority === "number" && Number.isFinite(t.priority) ? t.priority : 3,
       dueDate: typeof t.due_date === "string" ? t.due_date : typeof t.dueDate === "string" ? t.dueDate : null,
     }))
   }
@@ -228,7 +228,14 @@ async function handleRunnerRpc(inst: ActivePluginInstance, method: string, args:
     if (typeof patch.title === "string") body.title = patch.title.slice(0, 180)
     if (typeof patch.description === "string") body.description = patch.description.slice(0, 2000)
     if (typeof patch.status === "string") body.status = patch.status
-    if (typeof patch.priority === "string") body.priority = patch.priority
+    if (patch.priority !== undefined) {
+      const priorityMap: Record<string, number> = { critical: 1, high: 2, medium: 3, low: 4, minimal: 5 }
+      const rawP = typeof patch.priority === "number" ? patch.priority
+        : typeof patch.priority === "string"
+          ? (priorityMap[patch.priority.trim().toLowerCase()] ?? Number(patch.priority))
+          : NaN
+      if (Number.isInteger(rawP) && rawP >= 1 && rawP <= 5) body.priority = rawP
+    }
     if (patch.dueDate !== undefined) body.due_date = patch.dueDate
     return fetchJson(`/api/tasks/${taskId}`, { method: "PATCH", headers: getBoardHeaders(), body: JSON.stringify(body) })
   }

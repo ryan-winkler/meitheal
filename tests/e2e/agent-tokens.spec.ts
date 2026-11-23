@@ -634,8 +634,13 @@ test("standalone ClientRouter navigation enforces non-admin notice and cleans up
   const errors: string[] = []
   page.on("pageerror", error => errors.push(error.message))
 
+  await page.route("**/api/agent-tokens*", route => route.fulfill({
+    status: 403,
+    contentType: "application/problem+json",
+    body: JSON.stringify({ status: 403, title: "Admin Required", detail: "Administrator access is required." }),
+  }))
   await page.goto("/settings#automation-ai-settings")
-  await expect(page.locator("#agent-tokens-status")).toContainText("Home Assistant administrator access is required")
+  await expect(page.locator("#agent-tokens-status")).toContainText("Administrator access is required")
   await expect(page.locator("#agent-token-create-btn")).toBeDisabled()
   await expect(page.locator("#agent-token-form")).toBeHidden()
   await expect(page.locator("#agent-token-reveal")).toBeHidden()
@@ -643,7 +648,7 @@ test("standalone ClientRouter navigation enforces non-admin notice and cleans up
   await page.locator("#bot-allow-proposals").click()
   await expect(page).toHaveURL(/\/review$/)
   await page.goBack()
-  await expect(page.locator("#agent-tokens-status")).toContainText("Home Assistant administrator access is required")
+  await expect(page.locator("#agent-tokens-status")).toContainText("Administrator access is required")
   await expect(page.locator("#agent-token-create-btn")).toBeDisabled()
   expect(errors).toEqual([])
 })

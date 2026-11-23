@@ -138,7 +138,7 @@ test.describe(() => {
       await expect(close).toBeFocused()
 
       detailResponse.resolve()
-      const first = detail.getByRole("button", { name: "Favorite" })
+      const first = detail.getByRole("button", { name: "Promote to top" })
       const last = detail.locator("#td-section-activity > summary")
       await expect(first).toBeVisible()
       await first.focus()
@@ -483,7 +483,7 @@ test("ticket scoring keeps other lenses and retries a failed save", async ({ pag
   for (const [field, value] of Object.entries({ Reach: "10", Impact: "2", Confidence: "80", Effort: "0.5" })) {
     await page.getByRole("spinbutton", { name: field, exact: true }).fill(value)
   }
-  await expect(page.locator("#se-live-result")).toHaveText("Score: 3200")
+  await expect(page.locator("#se-live-result")).toHaveText("Score: 32")
   let failNext = true
   await page.route(`**/api/tasks/${id}`, async route => {
     if (route.request().method() === "PUT" && failNext) {
@@ -499,7 +499,7 @@ test("ticket scoring keeps other lenses and retries a failed save", async ({ pag
   const stored = await request.get(`/api/tasks/${id}`)
   const payload = JSON.parse((await stored.json()).framework_payload)
   expect(payload.ice).toEqual({ impact: 7, confidence: 8, ease: 9 })
-  expect(payload.rice.score).toBe(3200)
+  expect(payload.rice.score).toBe(32)
   await page.reload()
   await expect(page.getByRole("spinbutton", { name: "Effort", exact: true })).toHaveValue("0.5")
   await chooser.selectOption("ice")

@@ -21,8 +21,18 @@ import { apiJson } from "../../../lib/api-response"
 
 export const POST: APIRoute = withBoardScope({ resource: "task", action: "edit" }, async ({ request }, scope) => {
   try {
-    const body = await request.json() as Record<string, unknown>
+    const body = await request.json().catch(() => null) as Record<string, unknown> | null
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return new Response(JSON.stringify({ error: "Expected a JSON object" }), {
+        status: 400, headers: { "content-type": "application/json" },
+      })
+    }
     if (hasBoardSelection(body)) return unavailableBoardResponse()
+    if (body.scope !== undefined && body.scope !== "kanban" && body.scope !== "table") {
+      return new Response(JSON.stringify({ error: "scope must be 'kanban' or 'table'" }), {
+        status: 400, headers: { "content-type": "application/json" },
+      })
+    }
     if (body && "task_id" in body) {
       const { task_id, anchor_id, lane, before } = body
       if (typeof task_id !== "string" || typeof anchor_id !== "string" || task_id === anchor_id ||

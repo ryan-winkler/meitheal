@@ -1,4 +1,4 @@
-import sanitizeHtml from "sanitize-html";
+import sanitizeHtml from "sanitize-html"
 
 /**
  * Sanitizes input text/HTML from users.
@@ -6,7 +6,7 @@ import sanitizeHtml from "sanitize-html";
  * but preserves safe formatting (b, i, strong, em, a, p, br, ul, ol, li).
  */
 export function sanitize(input: string): string {
-  if (!input) return "";
+  if (!input) return ""
 
   return sanitizeHtml(input, {
     allowedTags: [
@@ -17,52 +17,171 @@ export function sanitize(input: string): string {
     ],
     allowedAttributes: {
       a: ["href", "name", "target", "rel"],
-      img: ["src", "alt", "title", "width", "height"],
       "*": ["class"],
     },
     allowedSchemes: ["http", "https", "ftp", "mailto"],
     allowedSchemesByTag: {},
     allowedSchemesAppliedToAttributes: ["href", "src", "cite"],
     allowProtocolRelative: false,
-  });
+  })
 }
 
 const RAW_BLOCK_RE = /^(```+|~~~+)[^\n]*\n[\s\S]*?\n\1[ \t]*$/gm
-const INLINE_CODE_RE = /(`+)([^`]|[^`][\s\S]*?[^`])\1/g
-const DANGEROUS_CONTAINER_RE = /<(script|style|iframe|object|applet|noscript|svg|math)\b[^>]*>[\s\S]*?<\/\1\s*>/gi
-const DANGEROUS_VOID_TAG_RE = /<\/?(?:script|style|iframe|object|embed|applet|base|meta|link|form|svg|math)\b[^>]*>/gi
-const DANGEROUS_ATTR_RE = /\s(?:on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)|style\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))/gi
+const SAFE_RELATIVE_MD_URL = /^(?:#|\/(?!\/)|\.\.?\/)/
+const SAFE_MD_PROTOCOLS = new Set(["http:", "https:", "mailto:"])
+
+function stashInlineCodeSpans(text: string, stash: (value: string) => string): string {
+  let out = ""
+  let i = 0
+  while (i < text.length) {
+    if (text[i] === "`") {
+      let runEnd = i + 1
+      while (runEnd < text.length && text[runEnd] === "`") runEnd++
+      const fenceLen = runEnd - i
+      const lineEnd = text.indexOf("\n", runEnd)
+      const searchEnd = lineEnd === -1 ? text.length : lineEnd
+      let closeStart = -1
+      let j = runEnd
+      while (j < searchEnd) {
+        if (text[j] === "`") {
+          let k = j + 1
+          while (k < searchEnd && text[k] === "`") k++
+          if (k - j === fenceLen) {
+            closeStart = j
+            break
+          }
+          j = k
+          continue
+        }
+        j++
+      }
+      if (closeStart !== -1 && closeStart > runEnd) {
+        const closeEnd = closeStart + fenceLen
+        out += stash(text.slice(i, closeEnd))
+        i = closeEnd
+        continue
+      }
+      out += text.slice(i, runEnd)
+      i = runEnd
+      continue
+    }
+    out += text[i++]!
+  }
+  return out
+}
+
+function decodeHtmlEntitiesQuick(value: string): string {
+  return value
+    .replace(/&#(\d+);?/g, (_m, n: string) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);?/gi, (_m, n: string) => String.fromCodePoint(parseInt(n, 16)))
+    .replace(/&colon;/gi, ":")
+    .replace(/&tab;/gi, "\t")
+    .replace(/&newline;/gi, "\n")
+}
+
+function isSafeMarkdownHref(rawHref: string): boolean {
+  const cleaned = decodeHtmlEntitiesQuick(rawHref).replace(/[\u0000-\u0020\u007f]+/g, "").trim()
+  if (!cleaned) return false
+  if (SAFE_RELATIVE_MD_URL.test(cleaned)) return true
+  try {
+    const parsed = new URL(cleaned)
+    return SAFE_MD_PROTOCOLS.has(parsed.protocol)
+  } catch {
+    return false
+  }
+}
+
+function sanitizeHtmlRegions(text: string): string {
+  let out = ""
+  let i = 0
+  while (i < text.length) {
+    if (text[i] === "<" && i + 1 < text.length && /[a-zA-Z!?/]/.test(text[i + 1]!)) {
+      let j = i + 1
+      let quote = ""
+      while (j < text.length) {
+        const ch = text[j]!
+        if (quote) {
+          if (ch === quote) quote = ""
+        } else if (ch === "\"" || ch === "'") {
+          quote = ch
+        } else if (ch === ">") {
+          j++
+          break
+        }
+        j++
+      }
+      const openTag = text.slice(i, j)
+      const tagMatch = /^<([a-zA-Z][a-zA-Z0-9-]*)\b/.exec(openTag)
+      if (tagMatch && !openTag.endsWith("/>")) {
+        const tag = tagMatch[1]!.toLowerCase()
+        const lowerRest = text.slice(j).toLowerCase()
+        const closeIdx = lowerRest.indexOf(`</${tag}>`)
+        if (closeIdx !== -1) {
+          const endIdx = j + closeIdx + tag.length + 3
+          out += sanitize(text.slice(i, endIdx))
+          i = endIdx
+          continue
+        }
+      }
+      out += sanitize(openTag)
+      i = j
+      continue
+    }
+    out += text[i++]!
+  }
+  return out
+}
+
+function sanitizeMarkdownLinks(text: string): string {
+  let out = ""
+  let i = 0
+  while (i < text.length) {
+    if (text[i] === "[" && (i === 0 || text[i - 1] !== "\\")) {
+      const closeBracket = text.indexOf("]", i + 1)
+      if (closeBracket !== -1 && text[closeBracket + 1] === "(") {
+        let depth = 1
+        let k = closeBracket + 2
+        while (k < text.length && depth > 0) {
+          if (text[k] === "(" && text[k - 1] !== "\\") depth++
+          else if (text[k] === ")" && text[k - 1] !== "\\") depth--
+          k++
+        }
+        if (depth === 0) {
+          const rawTarget = text.slice(closeBracket + 2, k - 1).trim()
+          const hrefToken = rawTarget.startsWith("<") && rawTarget.includes(">")
+            ? rawTarget.slice(1, rawTarget.indexOf(">"))
+            : rawTarget.split(/\s+/)[0] ?? ""
+          if (!isSafeMarkdownHref(hrefToken)) {
+            out += `${text.slice(i, closeBracket + 2)}#)`
+            i = k
+            continue
+          }
+        }
+      }
+    }
+    out += text[i++]!
+  }
+  return out
+}
 
 /**
  * Sanitize raw Markdown on write without escaping Markdown punctuation
  * (`>`, `&`, `<`, quotes) or altering code fences/inline code spans.
- * Strips executable raw HTML blocks and inline event handlers outside code.
+ * Strips executable raw HTML tags and unsafe link schemes outside code.
  */
 export function sanitizeMarkdownInput(raw: string): string {
   if (!raw) return ""
-  const normalized = raw.replace(/\r\n?/g, "\n")
+  const normalized = raw.replace(/\u0000/g, "").replace(/\r\n?/g, "\n")
   const tokens: string[] = []
   const stash = (value: string) => {
     const idx = tokens.push(value) - 1
     return `\u0000MD${idx}\u0000`
   }
 
-  let text = normalized.replace(RAW_BLOCK_RE, (m) => stash(m))
-  text = text.replace(INLINE_CODE_RE, (m) => stash(m))
-  for (let pass = 0; pass < 3; pass++) {
-    const next = text
-      .replace(DANGEROUS_CONTAINER_RE, "")
-      .replace(DANGEROUS_VOID_TAG_RE, "")
-    if (next === text) break
-    text = next
-  }
-  text = text.replace(/<([a-z][a-z0-9-]*)(\b[^>]*?)>/gi, (_m, tag: string, attrs: string) => {
-    const cleaned = attrs
-      .replace(DANGEROUS_ATTR_RE, "")
-      .replace(/\b(href|src)\s*=\s*(["'])\s*(?:javascript|vbscript|data):[^"']*\2/gi, "")
-    return `<${tag}${cleaned}>`
-  })
-  text = text.replace(/(\[[^\]]*\]\(\s*)(?:javascript|vbscript|data):[^)]*(\))/gi, "$1#$2")
+  let text = normalized.replace(RAW_BLOCK_RE, m => stash(m))
+  text = stashInlineCodeSpans(text, stash)
+  text = sanitizeHtmlRegions(text)
+  text = sanitizeMarkdownLinks(text)
 
   return text.replace(/\u0000MD(\d+)\u0000/g, (_m, idx: string) => tokens[Number(idx)] ?? "")
 }

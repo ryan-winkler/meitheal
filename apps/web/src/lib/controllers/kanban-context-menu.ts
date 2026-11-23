@@ -119,7 +119,7 @@ export function initContextMenu(
     closeMenu()
     trigger = btn
     btn.setAttribute("aria-expanded", "true")
-    menu.setAttribute("aria-label", btn.title)
+    menu.setAttribute("aria-label", btn.title || "Task actions")
     menu.replaceChildren()
 
     const current = card.closest<HTMLElement>(".kanban-column")
@@ -160,8 +160,8 @@ export function initContextMenu(
     })
 
     const deleteAction = addAction(window.mI18n?.get("kanban.delete_task") ?? "Delete task", async () => {
-      const confirmed = await confirmDialog({ message: "Delete this task permanently?", variant: "danger", confirmText: "Delete" })
-      if (!confirmed) return
+      const confirmed = await confirmDialog({ message: "Delete this task permanently?", variant: "danger", confirmText: "Delete", signal })
+      if (!confirmed || signal.aborted) return
       try {
         const ctx = currentTaskApiContext()
         const version = Number(card.dataset.version)
@@ -215,6 +215,7 @@ export function initContextMenu(
         event.preventDefault()
         closeMenu(true)
       } else if (!event.shiftKey && event.target === actions[actions.length - 1]) {
+        event.preventDefault()
         closeMenu(true)
       }
     }

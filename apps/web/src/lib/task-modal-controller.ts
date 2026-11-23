@@ -1,7 +1,7 @@
 import { currentTaskApiContext, taskApiHeaders } from "./task-api"
 import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordVersion } from "./task-api-client"
 import { formatTicketDisplay } from "./task-editor-fields"
-import { enhanceDescriptionEditor } from "./task-description-editor"
+import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-description-editor"
         import { askAIForTask } from "@domains/ai/ai-context-service";
         import { createClientLogger } from "@lib/client-logger";
         import { copyToClipboard } from "@lib/clipboard"
@@ -18,14 +18,12 @@ import { enhanceDescriptionEditor } from "./task-description-editor"
         import { confirmDialog } from "@lib/confirm-dialog";
         import { pageLifecycle } from "@lib/page-lifecycle";
         import { onTaskCompleted } from "@lib/gamification-hook";
-        import { renderTypeIconSvg } from "@lib/type-icon-config";
-        import { escapeHtml } from "@lib/safe-html";
+        import { createTypeIconElement } from "@lib/type-icon-config";
         import { showToast } from "@lib/toast"
         import { loadComments, loadAttachments } from "@lib/controllers/modal-comments-attachments";
         import { initLabelsAndSubtasks } from "@lib/controllers/modal-labels-subtasks";
         import { initCustomFields } from "@lib/controllers/modal-custom-fields";
         import { initRelatedLinks } from "@lib/controllers/modal-related-links";
-        import { initCommandPalette } from "@lib/controllers/modal-command-palette";
         import { pendingChecklistSave, showTaskChecklist } from "@lib/controllers/modal-checklist"
         import { notifyInactivityTaskChanged } from "@lib/inactivity-client"
         import { isActiveParticipantProblem } from "@lib/task-participant-problem"
@@ -918,15 +916,22 @@ import { enhanceDescriptionEditor } from "./task-description-editor"
               const progressLabel = document.getElementById("td-subtask-progress-label");
               const progressBar = document.getElementById("td-subtask-progress-bar");
               try {
-                const childRes = await fetch( // nosemgrep
-                  `/api/tasks?parent_id=${encodeURIComponent(taskId)}`, // nosemgrep
-                  requestOptions,
-                );
-                if (modalSignal.aborted) return
-                if (childRes.ok) {
-                  const childData = await childRes.json()
+                let children: Array<Record<string, unknown>> | null = Array.isArray(t.subtasks)
+                  ? (t.subtasks as Array<Record<string, unknown>>)
+                  : null;
+                if (!children) {
+                  const childRes = await fetch( // nosemgrep
+                    `/api/tasks?parent_id=${encodeURIComponent(taskId)}`, // nosemgrep
+                    requestOptions,
+                  );
                   if (modalSignal.aborted) return
-                  const children = childData.tasks ?? [];
+                  if (childRes.ok) {
+                    const childData = await childRes.json()
+                    if (modalSignal.aborted) return
+                    children = (childData.tasks ?? []) as Array<Record<string, unknown>>;
+                  }
+                }
+                if (children) {
                   if (children.length === 0) {
                     const empty = document.createElement("span")
                     empty.className = "text-xs text-text-muted italic"
@@ -945,8 +950,7 @@ import { enhanceDescriptionEditor } from "./task-description-editor"
                       chip.className = `flex items-center gap-1.5 min-w-0 truncate ${isDone ? "text-text-muted line-through" : "text-accent hover:underline"}`;
                       const iconSpan = document.createElement("span");
                       iconSpan.className = "shrink-0 inline-flex";
-                      const iconDoc = new DOMParser().parseFromString(renderTypeIconSvg(String(c.task_type ?? "task"), 14), "text/html");
-                      iconSpan.replaceChildren(...Array.from(iconDoc.body.childNodes));
+                      iconSpan.appendChild(createTypeIconElement(String(c.task_type ?? "task"), 14));
                       const label = document.createElement("span");
                       label.className = "truncate";
                       label.textContent = formatTicketDisplay(c.ticket_key, String(c.title ?? c.id).slice(0, 60), c.id);
@@ -1071,19 +1075,7 @@ import { enhanceDescriptionEditor } from "./task-description-editor"
             if (typeof loadRelatedLinks === "function")
               loadRelatedLinks(taskId);
 
-            // ID — hidden, accessible via tooltip
-            const tdAnchor = document.getElementById("td-ticket-anchor");
-            if (tdAnchor) {
-              tdAnchor.textContent = t.ticket_key
-                ? String(t.ticket_key)
-                : (String(t.id).split("-")[0] ?? "");
-              tdAnchor.onclick = async () => {
-                navigator.clipboard.writeText(
-                  t.ticket_key ? String(t.ticket_key) : String(t.id),
-                );
-                showToast("common.id_copied", "success");
-              };
-            }
+
             const tdIdEl = document.getElementById(
               "td-id",
             ) as HTMLElement | null;
@@ -1099,8 +1091,7 @@ import { enhanceDescriptionEditor } from "./task-description-editor"
             const typeIconEl = document.getElementById("td-type-icon") as HTMLElement | null;
             if (typeIconEl) {
               const tt = String(t.task_type || "task").toLowerCase();
-              const iconDoc = new DOMParser().parseFromString(renderTypeIconSvg(tt, 16), "text/html");
-              typeIconEl.replaceChildren(...Array.from(iconDoc.body.childNodes));
+              typeIconEl.replaceChildren(createTypeIconElement(tt, 16));
               typeIconEl.title = tt.charAt(0).toUpperCase() + tt.slice(1);
             }
 
@@ -1129,7 +1120,7 @@ import { enhanceDescriptionEditor } from "./task-description-editor"
             const taskStatus = statusSelect?.dataset.savedStatus ?? String(t.status ?? "pending");
             if (
               statusSelect &&
-              !statusSelect.querySelector(`option[value="${taskStatus}"]`)
+              !statusSelect.querySelector(`option[value="${CSS.escape(taskStatus)}"]`)
             ) {
               const opt = document.createElement("option");
               opt.value = taskStatus;
@@ -1211,9 +1202,9 @@ import { enhanceDescriptionEditor } from "./task-description-editor"
               }
               dueDisplay.style.color =
                 diffDays < 0
-                  ? "var(--danger)"
+                  ? "var(--danger-text, var(--danger))"
                   : diffDays <= 3
-                    ? "var(--warning)"
+                    ? "var(--warning-text, var(--warning))"
                     : "var(--text-muted)";
               dueRow.classList.remove("hidden");
             } else if (dueRow) {
@@ -1455,23 +1446,30 @@ import { enhanceDescriptionEditor } from "./task-description-editor"
             ) as HTMLElement;
             cfDiv.replaceChildren();
             const renderedKeys = new Set<string>();
+            const preservedCF: Record<string, unknown> = {};
             try {
               const cf = JSON.parse(String(t.custom_fields ?? "{}")) as Record<
                 string,
-                string
+                unknown
               >;
               for (const [k, v] of Object.entries(cf)) {
-                if (v !== null && v !== undefined) {
-                  const sfDef = _settingsFields.find(
-                    (sf: { name: string }) => sf.name === k,
-                  );
-                  addCFRow(k, String(v), sfDef?.type || "text", sfDef?.options);
-                  renderedKeys.add(k);
+                if (v === null || v === undefined) continue;
+                if (RICE_KEYS.includes(k)) continue;
+                if (typeof v === "object") {
+                  preservedCF[k] = v;
+                  continue;
                 }
+                const sfDef = _settingsFields.find(
+                  (sf: { name: string }) => sf.name.toLowerCase() === k.toLowerCase(),
+                );
+                addCFRow(k, String(v), sfDef?.type || "text", sfDef?.options);
+                renderedKeys.add(k);
+                if (sfDef) renderedKeys.add(sfDef.name);
               }
             } catch {
               /* skip */
             }
+            setPreservedCFEntries(preservedCF);
 
             // Pre-populate settings-defined fields that aren't already on this task
             for (const sf of _settingsFields) {
@@ -1492,14 +1490,15 @@ import { enhanceDescriptionEditor } from "./task-description-editor"
             const created = t.created_at
               ? new Date(Number(t.created_at)).toLocaleDateString()
               : "";
+            const tdCreated = document.getElementById("td-created");
+            if (tdCreated)
+              tdCreated.textContent = created ? `Created ${created}` : "";
             const updated = t.updated_at
-              ? new Date(Number(t.updated_at)).toLocaleDateString()
+              ? new Date(Number(t.updated_at)).toLocaleString()
               : "";
             const tdUpdated = document.getElementById("td-updated");
             if (tdUpdated)
-              tdUpdated.textContent =
-                "Last updated " +
-                new Date(Number(t.updated_at)).toLocaleString();
+              tdUpdated.textContent = updated ? `Last updated ${updated}` : "";
             hasChecklistTextDraft = showTaskChecklist(taskId, t.checklists, modalSignal, send => saveTaskChecklist(taskId, send),
               typeof t.ticket_key === "string" ? t.ticket_key : undefined)
             const taskReactions = document.getElementById("td-task-reactions")
@@ -1645,8 +1644,7 @@ import { enhanceDescriptionEditor } from "./task-description-editor"
                   const typeIconEl = document.getElementById("td-type-icon")
                   if (typeIconEl) {
                     const tt = String(value || "task").toLowerCase()
-                    const iconDoc = new DOMParser().parseFromString(renderTypeIconSvg(tt, 16), "text/html")
-                    typeIconEl.replaceChildren(...Array.from(iconDoc.body.childNodes))
+                    typeIconEl.replaceChildren(createTypeIconElement(tt, 16))
                     typeIconEl.title = tt.charAt(0).toUpperCase() + tt.slice(1)
                   }
                 }
@@ -1711,32 +1709,15 @@ import { enhanceDescriptionEditor } from "./task-description-editor"
           if (!descPreview || __signal.aborted) return
           const generation = detailGeneration
           const sequence = ++descriptionRenderSequence
-          const fallback = document.createElement("p")
-
-          if (!markdown) {
-            const placeholder = document.createElement("em")
-            placeholder.textContent = "No description provided."
-            fallback.append(placeholder)
-            descPreview.replaceChildren(fallback)
-            return
-          }
-
-          fallback.className = "whitespace-pre-wrap"
-          fallback.textContent = markdown
-          descPreview.replaceChildren(fallback)
-
           try {
-            const [{ renderMarkdownToHtml }, { sanitizeClient }] = await Promise.all([
-              import("@lib/markdown-client"),
-              import("@lib/sanitize-client"),
-            ])
-            if (__signal.aborted || generation !== detailGeneration ||
-                sequence !== descriptionRenderSequence || !descPreview.isConnected) return
-
-            const sanitized = sanitizeClient(renderMarkdownToHtml(markdown))
-            const parsedDoc = new DOMParser().parseFromString(sanitized, "text/html")
-            resolveDescriptionTaskReferences(parsedDoc.body)
-            descPreview.replaceChildren(...Array.from(parsedDoc.body.childNodes))
+            await renderMarkdownPreviewInto(descPreview, markdown, {
+              afterRender: resolveDescriptionTaskReferences,
+              shouldApply: () =>
+                !__signal.aborted &&
+                generation === detailGeneration &&
+                sequence === descriptionRenderSequence &&
+                descPreview.isConnected,
+            })
           } catch (error) {
             log.warn("Could not render task description Markdown", error)
           }
@@ -1823,7 +1804,9 @@ import { enhanceDescriptionEditor } from "./task-description-editor"
         document
           .getElementById("td-attachment-input")
           ?.addEventListener("change", async (e) => {
-            if (!currentTaskId) return;
+            const targetTaskId = currentTaskId;
+            const openGen = detailGeneration;
+            if (!targetTaskId) return;
             const input = e.target as HTMLInputElement;
             const file = input.files?.[0];
             if (!file) return;
@@ -1835,13 +1818,15 @@ import { enhanceDescriptionEditor } from "./task-description-editor"
               try {
                 await saveAttachment({
                   id: crypto.randomUUID(),
-                  taskId: currentTaskId!,
+                  taskId: targetTaskId,
                   filename: file.name,
                   mimeType: file.type,
                   base64Data,
                   createdAt: new Date().toISOString(),
                 });
-                loadAttachments(currentTaskId!);
+                if (!__signal.aborted && currentTaskId === targetTaskId && detailGeneration === openGen) {
+                  loadAttachments(targetTaskId);
+                }
               } catch (err) {
                 log.error("Failed to save attachment", err);
                 showToast(
@@ -1942,8 +1927,13 @@ import { enhanceDescriptionEditor } from "./task-description-editor"
         }, { signal: __signal })
 
         // Pillar change auto-save & dynamic Principle update
+        let pillarPrinciplesController: AbortController | null = null;
+        __signal.addEventListener("abort", () => pillarPrinciplesController?.abort(), { once: true });
         document.getElementById("td-pillar")?.addEventListener("change", async (e) => {
           const pillarId = (e.target as HTMLSelectElement).value || null;
+          const targetTaskId = currentTaskId;
+          const generation = detailGeneration;
+          pillarPrinciplesController?.abort();
           saveTD("pillar_id", pillarId);
           // Auto-clear principle when pillar changes
           saveTD("principle_id", null);
@@ -1951,12 +1941,27 @@ import { enhanceDescriptionEditor } from "./task-description-editor"
           if (principleSelect) {
             principleSelect.replaceChildren(new Option("No principle", ""));
             if (pillarId) {
+              const controller = new AbortController();
+              pillarPrinciplesController = controller;
               try {
                 const prinRes = await fetch(
-                  (window.__ingress_path || "") + `/api/pillars/${pillarId}/principles`,
+                  `/api/pillars/${encodeURIComponent(pillarId)}/principles`,
+                  { signal: controller.signal },
                 );
+                if (
+                  __signal.aborted ||
+                  controller.signal.aborted ||
+                  currentTaskId !== targetTaskId ||
+                  detailGeneration !== generation
+                ) return;
                 if (prinRes.ok) {
                   const prinData = await prinRes.json();
+                  if (
+                    __signal.aborted ||
+                    controller.signal.aborted ||
+                    currentTaskId !== targetTaskId ||
+                    detailGeneration !== generation
+                  ) return;
                   const principles = prinData.principles || prinData || [];
                   principles.forEach((p: any) => {
                     const opt = document.createElement("option");
@@ -1965,7 +1970,11 @@ import { enhanceDescriptionEditor } from "./task-description-editor"
                     principleSelect.appendChild(opt);
                   });
                 }
-              } catch (e) { log.warn("principles-fetch error", e) }
+              } catch (err) {
+                if (!(err instanceof DOMException && err.name === "AbortError")) {
+                  log.warn("principles-fetch error", err);
+                }
+              }
             }
           }
         }, { signal: __signal });
@@ -2068,10 +2077,12 @@ import { enhanceDescriptionEditor } from "./task-description-editor"
           signal: __signal,
         })
         const addCFRow = cfApi.addCFRow
+        const setPreservedCFEntries = cfApi.setPreservedEntries
 
 
         // Parent search — debounced type-ahead
-        let parentSearchTimer: ReturnType<typeof setTimeout>;
+        let parentSearchTimer: ReturnType<typeof setTimeout> | undefined;
+        __signal.addEventListener("abort", () => clearTimeout(parentSearchTimer), { once: true });
         const parentSearchInput = document.getElementById(
           "td-link-parent-search",
         ) as HTMLInputElement | null;
@@ -2111,8 +2122,8 @@ import { enhanceDescriptionEditor } from "./task-description-editor"
                     row.className = "td-parent-result px-3 py-2 text-sm cursor-pointer hover:bg-bg-hover flex items-center gap-2";
                     row.dataset.id = String(t.id ?? "");
                     const iconSpan = document.createElement("span");
-                    const iconDoc = new DOMParser().parseFromString(renderTypeIconSvg(String(t.task_type ?? "task"), 14), "text/html");
-                    iconSpan.replaceChildren(...Array.from(iconDoc.body.childNodes));
+                    iconSpan.className = "shrink-0 inline-flex";
+                    iconSpan.appendChild(createTypeIconElement(String(t.task_type ?? "task"), 14));
                     const titleSpan = document.createElement("span");
                     titleSpan.className = "truncate";
                     titleSpan.textContent = formatTicketDisplay(t.ticket_key, String(t.title ?? "").slice(0, 60), t.id);
@@ -2207,33 +2218,41 @@ import { enhanceDescriptionEditor } from "./task-description-editor"
         document
           .getElementById("td-duplicate")
           ?.addEventListener("click", async () => {
-            if (!currentTaskId) return;
-            const search = searchSession
-            const generation = detailGeneration
-            const write = search ? beginScopedWrite() : undefined
-            const stale = () => search && generation !== detailGeneration
+            const taskId = currentTaskId;
+            if (!taskId || boardWithheld || __signal.aborted) return;
+            const ctx = currentTaskApiContext();
+            const search = searchSession;
+            const generation = detailGeneration;
+            const write = search ? beginScopedWrite() : undefined;
+            const stale = () =>
+              __signal.aborted ||
+              boardWithheld ||
+              (search && generation !== detailGeneration) ||
+              !sameTaskApiContext(ctx, currentTaskApiContext());
             try {
               const res = await fetch(
-                `${window.__ingress_path || ""}/api/tasks/${currentTaskId}/duplicate`,
+                `/api/tasks/${encodeURIComponent(taskId)}/duplicate`,
                 {
                   method: "POST",
+                  ...(ctx ? { headers: taskApiHeaders(ctx) } : {}),
                   ...(write ? { signal: write.signal } : {}),
                 },
               );
-              if (stale()) return
+              if (stale()) return;
               if (!res.ok) {
-                showToast("Failed to duplicate", "error")
+                showToast("Failed to duplicate", "error");
                 return;
               }
               const data = await res.json();
-              if (stale()) return
-              showToast(`Duplicated → ${data.title}`, "success")
-              if (!search?.queued) void openTaskDetail(data.id)
+              if (stale()) return;
+              showToast(`Duplicated → ${data.title}`, "success");
+              document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { id: data.id, action: "duplicate" } }));
+              if (!search?.queued) void openTaskDetail(data.id);
             } catch {
-              if (stale()) return
-              showToast("common.network_error", "error")
+              if (stale()) return;
+              showToast("common.network_error", "error");
             } finally {
-              write?.finish()
+              write?.finish();
             }
           }, { signal: __signal });
 
@@ -2290,38 +2309,6 @@ import { enhanceDescriptionEditor } from "./task-description-editor"
           }
         }, { signal: __signal })
 
-        // Attach Image
-        document
-          .getElementById("td-attach-image")
-          ?.addEventListener("change", async (e) => {
-            if (!currentTaskId) return;
-            const input = e.target as HTMLInputElement;
-            const file = input.files?.[0];
-            if (!file) return;
-
-            // Convert to Base64
-            const reader = new FileReader();
-            reader.onload = async (evt) => {
-              const base64Data = evt.target?.result as string;
-              try {
-                await saveAttachment({
-                  id: crypto.randomUUID(),
-                  taskId: currentTaskId!,
-                  filename: file.name,
-                  mimeType: file.type,
-                  base64Data,
-                  createdAt: new Date().toISOString(),
-                });
-                loadAttachments(currentTaskId!);
-              } catch (err) {
-                log.error("Attachment failed", err);
-                showToast("Failed to save attachment.", "error")
-              } finally {
-                input.value = ""; // reset
-              }
-            };
-            reader.readAsDataURL(file);
-          });
 
         // Delete
         document
@@ -2550,8 +2537,5 @@ import { enhanceDescriptionEditor } from "./task-description-editor"
             void openTaskDetail(requestedId)
           }
         }, { signal: __signal })
-
-        // === Command Palette (extracted) ===
-        initCommandPalette({ openTaskDetail, __signal })
         });
 

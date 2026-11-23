@@ -176,7 +176,7 @@
   outline-offset: 2px;
 }
 
-:is(.btn, .btn-primary, .btn-secondary, .btn-outline, .btn-ghost, .btn-danger, .btn-ghost-accent, .task-action-btn, .task-fav-btn):active:not(:disabled) {
+:is(.btn, .btn-primary, .btn-secondary, .btn-outline, .btn-ghost, .btn-danger, .task-action-btn):active:not(:disabled) {
   transform: scale(0.97);
 }
 
@@ -208,7 +208,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :is(.btn, .btn-primary, .btn-secondary, .btn-outline, .btn-ghost, .btn-danger, .btn-ghost-accent, .btn-icon, .task-action-btn, .task-fav-btn):active:not(:disabled) {
+  :is(.btn, .btn-primary, .btn-secondary, .btn-outline, .btn-ghost, .btn-danger, .btn-icon, .task-action-btn):active:not(:disabled) {
     transform: none;
   }
 
@@ -216,43 +216,6 @@
   .btn-primary:active::before {
     transition: none;
   }
-}
-
-/* B1: Success/error flash feedback */
-@keyframes btn-success-flash {
-  0% {
-    box-shadow: 0 0 0 0 var(--color-success);
-  }
-
-  50% {
-    box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.3);
-  }
-
-  100% {
-    box-shadow: 0 0 0 0 transparent;
-  }
-}
-
-@keyframes btn-error-flash {
-  0% {
-    box-shadow: 0 0 0 0 var(--danger);
-  }
-
-  50% {
-    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.3);
-  }
-
-  100% {
-    box-shadow: 0 0 0 0 transparent;
-  }
-}
-
-.btn-flash-success {
-  animation: btn-success-flash 0.6s ease;
-}
-
-.btn-flash-error {
-  animation: btn-error-flash 0.6s ease;
 }
 /* Loading spinner for async ops */
 /* ===== Loading Spinner for Async Ops (Wave 7) ===== */
@@ -285,8 +248,7 @@
 /* MT-01: WCAG 2.5.8 — 44px minimum touch targets on coarse pointer devices */
 @media (pointer: coarse) {
   .btn-icon,
-  .task-action-btn,
-  .task-fav-btn {
+  .task-action-btn {
     min-width: 44px;
     min-height: 44px;
   }

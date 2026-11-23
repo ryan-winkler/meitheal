@@ -247,7 +247,16 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
       return Boolean(el?.closest("[data-sidebar-board-children], [data-nav-overflow-submenu]"))
     }
     const relevant = records.filter(record => !insideSubmenu(record.target))
-    if (!relevant.length) return
+    if (!relevant.length) {
+      if (records.some(record => {
+        const el = record.target instanceof Element ? record.target : record.target.parentElement
+        return Boolean(el?.closest("[data-sidebar-board-children]"))
+      })) {
+        refreshLinks()
+        syncTabStops()
+      }
+      return
+    }
     if (relevant.some(record => record.attributeName === "hidden" || record.attributeName === "inert")) syncTabStops()
     if (relevant.some(record => record.attributeName === "hidden"
       ? (record.target as Element).hasAttribute("data-sidebar-pin-presence")

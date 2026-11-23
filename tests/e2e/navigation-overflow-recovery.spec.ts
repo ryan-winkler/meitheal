@@ -11,6 +11,12 @@ test.describe("Native navigation overflow", () => {
     const previous = (await (await request.get("/api/settings")).json()).sidebar_config
     expect((await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: {
       customItems: [{ id: "overflow-reference", label: "Long reference destination ".repeat(12), href: "https://example.com/reference", icon: "link" }],
+      sectionItems: {
+        workspace: ["dashboard", "today", "upcoming", "tasks"],
+        planning: ["progress", "planning"],
+        boards: ["boards"],
+        system: ["settings", "overflow-reference"],
+      },
     } } })).ok()).toBe(true)
     const errors: string[] = []
     page.on("pageerror", error => errors.push(error.message))
@@ -27,7 +33,7 @@ test.describe("Native navigation overflow", () => {
       const summary = more.locator(":scope > summary")
       const menu = more.locator("[data-nav-overflow-menu]")
       await expect(row).toHaveAttribute("data-nav-overflow-active", "")
-      await expect(row.locator("[data-nav-overflow-primary]")).toHaveCount(1)
+      await expect(row.locator("[data-nav-overflow-primary]")).toHaveCount(4)
       await expect(more).toHaveCount(1)
       const boards = row.locator('[data-sidebar-group="boards"]')
       const household = boards.locator('[data-named-board-shortcut="household"]')
@@ -156,9 +162,9 @@ test.describe("Native navigation overflow", () => {
       const household = boards.locator('[data-named-board-shortcut="household"]')
       const toggle = household.locator(".sidebar-board-toggle")
       const householdAreas = household.locator('[data-board-groups="household"]')
-      const settings = page.locator(".sidebar-footer a")
+      const settings = page.locator("#nav-utility-trigger")
       await expect(row).toHaveAttribute("data-nav-overflow-active", "")
-      await expect(row.locator("[data-nav-overflow-primary]")).toHaveCount(1)
+      await expect(row.locator("[data-nav-overflow-primary]")).toHaveCount(4)
       await expect(more).toHaveCount(1)
       await expect(row.locator('[data-nav-overflow-primary] a[data-page="dashboard"]')).toBeVisible()
       await expect(menu.locator('[data-page="planning"]')).toHaveCount(1)

@@ -7,7 +7,7 @@
  *
  * Bounded context: tasks (presentation)
  */
-import { renderSpriteIconSvg, type IconName } from "../generated/icon-registry"
+import { createSpriteIconElement, renderSpriteIconSvg, type IconName } from "../generated/icon-registry"
 
 export interface TypeIconConfig {
   iconName: IconName
@@ -51,4 +51,13 @@ export function renderTypeIconSvg(
 ): string {
   const config = getTypeIconConfig(taskType)
   return renderSpriteIconSvg(config.iconName, { size, style: `color:${config.color}` })
+}
+
+/** Create a sprited SVG DOM element for a given task type without DOMParser. */
+export function createTypeIconElement(
+  taskType: string | null | undefined,
+  size = 16
+): SVGSVGElement {
+  const config = getTypeIconConfig(taskType)
+  return createSpriteIconElement(config.iconName, { size, style: `color:${config.color}` })
 }

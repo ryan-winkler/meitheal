@@ -271,7 +271,10 @@ export function getTablePage(
       if (siblings) siblings.push(task)
       else children.set(task.parent_id, [task])
     }
-    if (column) roots.sort(compare)
+    if (column) {
+      roots.sort(compare)
+      for (const siblings of children.values()) siblings.sort(compare)
+    }
     const visited = new Set<string>()
     const stack: Array<{ task: TaskViewItem; depth: number; parentId?: string | undefined }> = []
     function append(root: TaskViewItem) {

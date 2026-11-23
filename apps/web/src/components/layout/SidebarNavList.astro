@@ -215,7 +215,7 @@ function isExternal(href: string): boolean {
                           class="task-view-pin"
                           data-task-view-pin={view.id}
                           aria-pressed={isPinned ? "true" : "false"}
-                          aria-label={isPinned ? `Unpin ${view.label} from sidebar` : `Pin ${view.label} to sidebar`}
+                          aria-label={`Pin ${view.label} to navigation`}
                           title={isPinned ? `Unpin ${view.label}` : `Pin ${view.label}`}
                         >
                           <Icon name="pin" size={15} />
@@ -236,6 +236,7 @@ function isExternal(href: string): boolean {
               data-sidebar-item-hidden={item.hidden ? "true" : undefined}
               data-sidebar-item-removable={item.removable ? "true" : undefined}
               data-sidebar-pin-presence={item.key === "system-pinned" || undefined}
+              data-task-view-pinned-item={item.taskView && !item.hidden ? item.taskView : undefined}
               hidden={item.key === "system-pinned"}
             >
               <div class="nav-row flex items-center gap-1 min-w-0">
@@ -285,6 +286,17 @@ function isExternal(href: string): boolean {
                     aria-controls="sidebar-board-children"
                   >
                     <Icon name="chevron-down" size={13} />
+                  </button>
+                )}
+                {item.taskView && (
+                  <button
+                    type="button"
+                    class="task-view-pin task-view-item-unpin"
+                    data-task-view-unpin={item.taskView}
+                    aria-label={`Unpin ${item.label} from navigation`}
+                    title={`Unpin ${item.label}`}
+                  >
+                    <Icon name="pin" size={15} />
                   </button>
                 )}
                 <div class="sidebar-edit-actions">
@@ -366,7 +378,9 @@ function isExternal(href: string): boolean {
 
   .task-view-disclosure { border-color: var(--border); }
 
-  :global(#sidebar[data-sidebar-editing]) .task-view-disclosure {
+  :global(#sidebar[data-sidebar-editing]) .task-view-disclosure,
+  :global(#sidebar[data-sidebar-editing]) .task-view-item-unpin,
+  :global(body.sidebar-collapsed) .task-view-item-unpin {
     display: none;
   }
 
@@ -380,8 +394,11 @@ function isExternal(href: string): boolean {
   .task-view-disclosure[aria-expanded="true"] svg { rotate: 180deg; }
   .task-view-pin[aria-pressed="true"] {
     background: rgb(var(--accent-rgb) / 0.14);
-    color: var(--accent-text, var(--text-primary));
-    border-color: rgb(var(--accent-rgb) / 0.45);
+    color: var(--text-primary);
+    border-color: currentColor;
+  }
+  .task-view-item-unpin {
+    color: var(--text-primary);
   }
 
   .task-view-submenu {
@@ -411,11 +428,8 @@ function isExternal(href: string): boolean {
 
   @media (min-width: 769px) {
     :global(body.sidebar-collapsed) .nav-item--tasks > .nav-row { flex-direction: column; gap: 0; }
-    :global(body.sidebar-collapsed) .task-view-disclosure {
-      inline-size: 40px;
-    }
     @media (pointer: fine) {
-      :global(body.sidebar-collapsed) .task-view-disclosure { min-block-size: 24px; }
+      :global(body.sidebar-collapsed) .task-view-disclosure { inline-size: 40px; min-block-size: 24px; }
     }
 
     :global(body.sidebar-collapsed) .task-view-submenu,
@@ -466,7 +480,7 @@ function isExternal(href: string): boolean {
   import { matchingTaskShortcutCriteria } from "../../lib/task-nav-types"
   import { TASK_VIEW_LOCATION_EVENT, taskBackgroundUrl } from "../../lib/task-page-url"
   import { parseTaskView, requestedTaskView, taskViewUrl } from "../../lib/task-view-route"
-  import { SIDEBAR_TOGGLE_VIEW_PIN_EVENT } from "../../lib/sidebar-order"
+  import { SIDEBAR_TOGGLE_VIEW_PIN_EVENT, sidebarOrderChanged } from "../../lib/sidebar-order"
 
   const runtime = window as typeof window & { __meithealSidebarActive?: AbortController }
   runtime.__meithealSidebarActive?.abort()
@@ -637,7 +651,16 @@ function isExternal(href: string): boolean {
         event.stopPropagation()
         window.dispatchEvent(new CustomEvent(SIDEBAR_TOGGLE_VIEW_PIN_EVENT, { detail: { view: pinnedView } }))
       }
+      const unpin = target?.closest<HTMLElement>("[data-task-view-unpin]")
+      const unpinnedView = parseTaskView(unpin?.dataset.taskViewUnpin ?? null)
+      if (unpinnedView) {
+        event.preventDefault()
+        event.stopPropagation()
+        window.dispatchEvent(new CustomEvent(SIDEBAR_TOGGLE_VIEW_PIN_EVENT, { detail: { view: unpinnedView } }))
+        trigger.focus()
+      }
     }, { signal, capture: true })
+    nav.addEventListener(sidebarOrderChanged, updateActiveNavLink, { signal })
     document.addEventListener("click", event => {
       if (!submenu.hidden && event.target instanceof Node && !group.contains(event.target)) setOpen(false)
     }, { signal })

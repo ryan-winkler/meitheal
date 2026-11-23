@@ -6,8 +6,6 @@
  *      Manages custom field rows, categorised dropdown, field type rendering,
  *      and debounced save. Depends on saveTD + settingsFields from parent.
  */
-import { escapeHtml } from "@lib/safe-html"
-
 export interface CustomFieldsDeps {
   saveTD: (field: string, value: unknown) => Promise<void>
   getSettingsFields: () => Array<{ name: string; type: string; options?: string[] }>
@@ -19,11 +17,17 @@ export interface CustomFieldsDeps {
  */
 export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFieldsDeps): {
   addCFRow: (key: string, value: string, fieldType?: string, options?: string[]) => void
+  setPreservedEntries: (entries: Record<string, unknown>) => void
 } {
   const opts = signal ? { signal } : undefined
-  
-  function getCFFromUI(): Record<string, string> {
-    const result: Record<string, string> = {}
+  let preservedEntries: Record<string, unknown> = {}
+
+  function setPreservedEntries(entries: Record<string, unknown>): void {
+    preservedEntries = { ...entries }
+  }
+
+  function getCFFromUI(): Record<string, unknown> {
+    const result: Record<string, unknown> = { ...preservedEntries }
     document.querySelectorAll(".td-cf-row").forEach((row) => {
       const key = (
         row.querySelector(".td-cf-key") as HTMLInputElement
@@ -47,11 +51,19 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
   }
 
   let _saveCFTimer: ReturnType<typeof setTimeout> | null = null
+  signal?.addEventListener("abort", () => {
+    if (_saveCFTimer) {
+      clearTimeout(_saveCFTimer)
+      _saveCFTimer = null
+    }
+  }, { once: true })
 
   function saveCF() {
     // Debounce the actual API save
     if (_saveCFTimer) clearTimeout(_saveCFTimer)
     _saveCFTimer = setTimeout(() => {
+      _saveCFTimer = null
+      if (signal?.aborted) return
       const all = getCFFromUI()
       saveTD("custom_fields", JSON.stringify(all))
     }, 400)
@@ -225,6 +237,7 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
 
   function renderFieldDropdown(filter = "") {
     const optionsDiv = document.getElementById("td-add-cf-options")!
+    optionsDiv.setAttribute("role", "listbox")
     const lowerFilter = filter.toLowerCase()
     const categories = getAvailableFields()
     const _settingsFields = getSettingsFields()
@@ -249,10 +262,12 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
       header.textContent = cat.label
       nodes.push(header)
       for (const f of filtered) {
-        const sfDef = _settingsFields.find((sf) => sf.name === f)
+        const sfDef = _settingsFields.find((sf) => sf.name.toLowerCase() === f.toLowerCase())
         const badge = typeBadge[sfDef?.type || "text"] || "📝"
-        const opt = document.createElement("div")
-        opt.className = "td-cf-option px-3 py-1.5 text-sm cursor-pointer hover:bg-bg-hover"
+        const opt = document.createElement("button")
+        opt.type = "button"
+        opt.className = "td-cf-option w-full text-left px-3 py-1.5 text-sm cursor-pointer hover:bg-bg-hover border-0 bg-transparent"
+        opt.setAttribute("role", "option")
         opt.dataset.field = f
         opt.textContent = `${badge} ${f}`
         nodes.push(opt)
@@ -266,13 +281,13 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
     } else {
       optionsDiv.replaceChildren(...nodes)
     }
-    // Click handlers
-    optionsDiv.querySelectorAll(".td-cf-option").forEach((opt) => {
+    const optionButtons = Array.from(optionsDiv.querySelectorAll<HTMLButtonElement>(".td-cf-option"))
+    optionButtons.forEach((opt, idx) => {
       opt.addEventListener("click", () => {
-        const fieldName = (opt as HTMLElement).dataset.field || ""
+        const fieldName = opt.dataset.field || ""
         const _settingsFields = getSettingsFields()
         const sfDef = _settingsFields.find(
-          (sf: { name: string }) => sf.name === fieldName,
+          (sf: { name: string }) => sf.name.toLowerCase() === fieldName.toLowerCase(),
         )
         addCFRow(
           fieldName,
@@ -285,6 +300,19 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
         ;(
           document.getElementById("td-add-cf-search") as HTMLInputElement
         ).value = ""
+      }, opts)
+      opt.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowDown") {
+          e.preventDefault()
+          optionButtons[(idx + 1) % optionButtons.length]?.focus()
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault()
+          optionButtons[(idx - 1 + optionButtons.length) % optionButtons.length]?.focus()
+        } else if (e.key === "Escape") {
+          e.preventDefault()
+          document.getElementById("td-add-cf-dropdown")!.style.display = "none"
+          document.getElementById("td-add-cf")?.focus()
+        }
       }, opts)
     })
   }
@@ -318,7 +346,7 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
         if (val) {
           const _settingsFields = getSettingsFields()
           const sfDef = _settingsFields.find(
-            (sf: { name: string }) => sf.name === val,
+            (sf: { name: string }) => sf.name.toLowerCase() === val.toLowerCase(),
           )
           addCFRow(
             val,
@@ -358,5 +386,5 @@ export function initCustomFields({ saveTD, getSettingsFields, signal }: CustomFi
     }
   }, opts)
 
-  return { addCFRow }
+  return { addCFRow, setPreservedEntries }
 }

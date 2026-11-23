@@ -24,7 +24,7 @@ export function isLocalFileWriter(transaction: Transaction): boolean
 export function isLocalFileClient(client: Client): boolean
 export function tagTodayRead<T extends Exclude<InStatement, string>>(statement: T, kind: "rows" | "completed"): T
 export function tagBoardPolicyRead<T extends Exclude<InStatement, string>>(statement: T): T
-export function tagTaskProjectionRead<T extends Exclude<InStatement, string>>(statement: T, kind: "task-list" | "task-count" | "task-detail" | "task-search" | "task-locator" | "task-command" | "task-cascade"): T
+export function tagTaskProjectionRead<T extends Exclude<InStatement, string>>(statement: T, kind: "task-list" | "task-count" | "task-detail" | "task-search" | "task-locator" | "task-command" | "task-cascade" | "task-subtasks"): T
 export interface DatabaseStartupOptions {
   readOnly?: boolean
   markerPath?: string | undefined

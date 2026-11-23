@@ -170,10 +170,15 @@ function initReactionPanel(
     setBusy(true)
     status.textContent = labels.saving ?? ""
     try {
-      const response = await fetch(removeId ? `${url}/${encodeURIComponent(removeId)}` : url, {
-        method: removeId ? "DELETE" : "POST",
+      const safeRemoveId = removeId && /^[\w-]+$/.test(removeId) ? encodeURIComponent(removeId) : null
+      if (removeId && !safeRemoveId) {
+        error.textContent = labels.removeFailed ?? ""
+        return
+      }
+      const response = await fetch(safeRemoveId ? `${url}/${safeRemoveId}` : url, { // nosemgrep
+        method: safeRemoveId ? "DELETE" : "POST",
         signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
-        ...(removeId ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify({ content }) }),
+        ...(safeRemoveId ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify({ content }) }),
       })
       const participantDenied = await isActiveParticipantProblem(response)
       if (!isCurrent()) return

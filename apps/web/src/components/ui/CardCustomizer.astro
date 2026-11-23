@@ -279,19 +279,20 @@ const { class: className, boardId = "household" } = Astro.props
     const area = document.querySelector(".kanban-board")
     if (!area) return
     const selected = loadBoardCustomFieldSelection()
+    const selectedLower = selected ? new Set(selected.map(name => name.toLowerCase())) : null
     area.querySelectorAll<HTMLElement>(".kanban-custom-fields").forEach(container => {
       const chips = Array.from(container.querySelectorAll<HTMLElement>(".kanban-cf-chip[data-cf-name]"))
       if (chips.length === 0) return
       let shown = 0
       for (const chip of chips) {
-        const name = chip.dataset.cfName ?? ""
-        const visible = selected ? selected.includes(name) : chip.dataset.cfDefaultHidden !== "true"
+        const name = (chip.dataset.cfName ?? "").trim()
+        const visible = selectedLower ? selectedLower.has(name.toLowerCase()) : chip.dataset.cfDefaultHidden !== "true"
         chip.hidden = !visible
         if (visible) shown++
       }
       const more = container.querySelector<HTMLElement>(".kanban-cf-more")
-      if (more) more.hidden = Boolean(selected)
-      container.hidden = shown === 0 && Boolean(selected)
+      if (more) more.hidden = Boolean(selectedLower)
+      container.hidden = shown === 0 && Boolean(selectedLower)
     })
   }
 
@@ -305,6 +306,30 @@ const { class: className, boardId = "household" } = Astro.props
       area.classList.toggle(`hide-field-${field.id}`, !isVisible)
     })
     applyCustomFieldVisibility()
+  }
+
+  function appendCustomizerCheckbox(
+    list: HTMLElement,
+    opts: { attr: "fieldId" | "customFieldName"; value: string; labelText: string; checked: boolean; disabled?: boolean; muted?: boolean },
+    onChange: (checkbox: HTMLInputElement) => void,
+    signal: AbortSignal,
+  ) {
+    const li = document.createElement("li")
+    li.className = "card-customizer__item"
+    const label = document.createElement("label")
+    label.className = "card-customizer__label"
+    const checkbox = document.createElement("input")
+    checkbox.type = "checkbox"
+    checkbox.dataset[opts.attr] = opts.value
+    checkbox.checked = opts.checked
+    if (opts.disabled) checkbox.disabled = true
+    const span = document.createElement("span")
+    span.textContent = opts.labelText
+    if (opts.muted) span.classList.add("text-text-muted")
+    checkbox.addEventListener("change", () => onChange(checkbox), { signal })
+    label.append(checkbox, span)
+    li.appendChild(label)
+    list.appendChild(li)
   }
 
   function renderBoardCustomFieldList(defs: CustomFieldDef[], signal: AbortSignal) {
@@ -331,28 +356,16 @@ const { class: className, boardId = "household" } = Astro.props
 
     const savedSelection = loadBoardCustomFieldSelection()
     const defaultSelected = combined.slice(0, MAX_KANBAN_CARD_CUSTOM_FIELDS).map(d => d.name)
+    const activeLower = new Set((savedSelection ?? defaultSelected).map(name => name.toLowerCase()))
+    const builtInLabels: Record<string, string> = { sprint: "Sprint", story_points: "Story points" }
 
     for (const def of combined) {
-      const li = document.createElement("li")
-      li.className = "card-customizer__item"
-
-      const label = document.createElement("label")
-      label.className = "card-customizer__label"
-
-      const checkbox = document.createElement("input")
-      checkbox.type = "checkbox"
-      checkbox.dataset.customFieldName = def.name
-      const activeSet = savedSelection ?? defaultSelected
-      checkbox.checked = activeSet.includes(def.name)
-
-      const span = document.createElement("span")
-      const builtInLabels: Record<string, string> = {
-        sprint: "Sprint",
-        story_points: "Story points",
-      }
-      span.textContent = builtInLabels[def.name] ?? def.name
-
-      checkbox.addEventListener("change", () => {
+      appendCustomizerCheckbox(list, {
+        attr: "customFieldName",
+        value: def.name,
+        labelText: builtInLabels[def.name] ?? def.name,
+        checked: activeLower.has(def.name.toLowerCase()),
+      }, checkbox => {
         const checked = Array.from(list.querySelectorAll<HTMLInputElement>("input[data-custom-field-name]"))
           .filter(el => el.checked)
           .map(el => el.dataset.customFieldName!)
@@ -363,50 +376,31 @@ const { class: className, boardId = "household" } = Astro.props
         }
         saveBoardCustomFieldSelection(checked)
         applyCustomFieldVisibility()
-      }, { signal })
-
-      label.append(checkbox, span)
-      li.appendChild(label)
-      list.appendChild(li)
+      }, signal)
     }
   }
 
   function renderFieldList(signal: AbortSignal) {
     const list = document.getElementById("card-customizer-list")
     if (!list) return
-    list.replaceChildren() // [F4] Modern DOM clearing, no innerHTML
+    list.replaceChildren()
 
     const prefs = loadFieldPrefs()
 
     ALL_FIELDS.forEach(field => {
-      const li = document.createElement("li")
-      li.className = "card-customizer__item"
-
-      const label = document.createElement("label")
-      label.className = "card-customizer__label"
-
-      const checkbox = document.createElement("input")
-      checkbox.type = "checkbox"
-      checkbox.dataset.fieldId = field.id
-      checkbox.checked = field.alwaysVisible || (prefs[field.id] !== undefined ? Boolean(prefs[field.id]) : field.defaultVisible)
-      checkbox.disabled = field.alwaysVisible
-
-      const span = document.createElement("span")
-      span.textContent = field.label
-      if (field.alwaysVisible) {
-        span.classList.add("text-text-muted")
-      }
-
-      checkbox.addEventListener("change", () => {
+      appendCustomizerCheckbox(list, {
+        attr: "fieldId",
+        value: field.id,
+        labelText: field.label,
+        checked: field.alwaysVisible || (prefs[field.id] !== undefined ? Boolean(prefs[field.id]) : field.defaultVisible),
+        disabled: field.alwaysVisible,
+        muted: field.alwaysVisible,
+      }, checkbox => {
         const currentPrefs = loadFieldPrefs()
         currentPrefs[field.id] = checkbox.checked
         saveFieldPrefs(currentPrefs)
         applyFieldVisibility()
-      }, { signal })
-
-      label.append(checkbox, span)
-      li.appendChild(label)
-      list.appendChild(li)
+      }, signal)
     })
   }
 
@@ -455,6 +449,21 @@ const { class: className, boardId = "household" } = Astro.props
     }
     document.getElementById("toggle-fields-btn")?.addEventListener("click", () => {
       void loadBoardCustomFields()
+    }, { signal })
+    document.addEventListener("meitheal:custom-fields-updated", event => {
+      customFieldsPromise = null
+      const detailFields = (event as CustomEvent<{ fields?: unknown }>).detail?.fields
+      if (detailFields !== undefined) {
+        loadedBoardCustomFields = normalizeCustomFieldDefs(detailFields)
+        renderBoardCustomFieldList(loadedBoardCustomFields, signal)
+      } else if (fieldsHost && !fieldsHost.classList.contains("hidden")) {
+        void loadBoardCustomFields()
+      }
+      applyCustomFieldVisibility()
+    }, { signal })
+    document.addEventListener("meitheal:kanban-board-replaced", () => {
+      applyFieldVisibility()
+      applyDensity(loadDensity())
     }, { signal })
 
     // Card density mode

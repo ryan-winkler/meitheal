@@ -7,6 +7,7 @@ export const WORK_DESTINATIONS_KEY = "work-destinations"
 export function isPrivateWorkSetting(key: string): boolean {
   return key === WORK_DESTINATIONS_KEY
     || key === "capture-board-preferences"
+    || key === "custom_fields"
     || key.startsWith("custom_fields:board:")
 }
 

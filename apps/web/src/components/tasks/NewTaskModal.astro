@@ -310,6 +310,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
   import { popTaskEditorDraft, pushTaskEditorDraft, type OpenNewTaskOptions, type TaskParentContext } from "@lib/task-editor-draft-stack"
   import { enhanceDescriptionEditor } from "@lib/task-description-editor"
   import { buildTaskPrefillUrl, parseTaskUrlPrefill, stripTaskUrlPrefillParams } from "@lib/task-url-prefill"
+  import { copyToClipboard } from "@lib/clipboard"
 
   const log = createClientLogger("tasks", "new-task-modal");
 
@@ -740,8 +741,8 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
           const stacked = popTaskEditorDraft()
           if (stacked?.snapshot) {
             overlay.classList.add("active")
-            restoreCapture(stacked.snapshot)
             if (stacked.parentContext) applyParentContext(stacked.parentContext)
+            restoreCapture(stacked.snapshot)
             resumeOriginTaskId = stacked.resumeOriginTaskId
             focusTrap.activate()
             showToast("Previous draft restored")
@@ -1160,7 +1161,12 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
         version: 1,
         ...(capturePlacement ? { placement: capturePlacement } : {}),
         ...(currentType !== "task" ? { taskType: currentType } : {}),
-        ...(activeParentContext?.parentId ? { parentId: activeParentContext.parentId, parentTitle: activeParentContext.parentTitle } : {}),
+        ...(activeParentContext?.parentId ? {
+          parentId: activeParentContext.parentId,
+          parentTitle: activeParentContext.parentTitle,
+          parentType: activeParentContext.parentType,
+          parentTicketKey: activeParentContext.parentTicketKey,
+        } : {}),
         title: titleInput?.value ?? "",
         description: descInput?.value ?? "",
         taskKind: (kindInput?.value || "standard_action") as TaskDraftSnapshot["taskKind"],
@@ -1199,7 +1205,12 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
         if (snapshot.parentId) {
           applyParentContext(activeParentContext?.parentId === snapshot.parentId
             ? activeParentContext
-            : { parentId: snapshot.parentId, parentTitle: snapshot.parentTitle ?? snapshot.parentId.slice(0, 8), parentType: "task" })
+            : {
+                parentId: snapshot.parentId,
+                parentTitle: snapshot.parentTitle ?? snapshot.parentId.slice(0, 8),
+                parentType: snapshot.parentType ?? "task",
+                parentTicketKey: snapshot.parentTicketKey ?? null,
+              })
         } else {
           applyParentContext(undefined)
         }
@@ -1234,12 +1245,6 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
         // Preserve older private draft metadata without advertising unsupported creation controls.
         retainedRoutine = snapshot.isRoutine
         retainedEventDetails = { location: snapshot.event.location, allDay: snapshot.event.allDay, calendar: snapshot.event.calendar }
-        const location = input("nt-event-location")
-        if (location) location.value = snapshot.event.location
-        const calendar = input("nt-event-calendar")
-        if (calendar) calendar.value = snapshot.event.calendar
-        const allDay = input("nt-event-all-day") as HTMLInputElement | null
-        if (allDay) allDay.checked = snapshot.event.allDay
 
         checklistItems.clear()
         itemsContainer?.replaceChildren()
@@ -1310,7 +1315,10 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
         titleInput.value = pendingCreateOptions.title
         resizeTitle()
       }
-      if (pendingCreateOptions?.description && descInput) descInput.value = pendingCreateOptions.description
+      if (pendingCreateOptions?.description && descInput) {
+        descInput.value = pendingCreateOptions.description
+        descEditor?.syncFromTextarea()
+      }
       if (pendingCreateOptions?.priority && prioritySelect) {
         prioritySelect.value = String(pendingCreateOptions.priority)
         syncPriorityIcon()
@@ -1681,17 +1689,18 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
           const goalSelectEl = document.getElementById("new-task-goal") as HTMLSelectElement | null;
           const recurrenceSelectEl = document.getElementById("new-task-recurrence") as HTMLSelectElement | null;
 
+          const taskKind = kindInputEl?.value || "standard_action"
           const body: Record<string, unknown> = {
             title: finalTitle,
             ...(capturePlacement ? { placement: capturePlacement } : {}),
             description: descInputEl?.value.trim() || "",
-            task_kind: kindInputEl?.value || "standard_action",
+            task_kind: taskKind,
             task_type: normalizeEditableTaskType(taskTypeSelect?.value),
             ...(parentInput?.value ? { parent_id: parentInput.value } : {}),
             priority: Number(prioritySelectEl?.value),
             status: statusSelectEl?.value || "pending",
             labels: JSON.stringify(allLabels),
-            due_date: finalDue,
+            ...(taskKind !== "calendar_event" ? { due_date: finalDue } : {}),
             assigned_to: assignedTo || null,
             goal_id: goalSelectEl?.value || null,
           };
@@ -1732,38 +1741,28 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
             if (end) body.end_date = end
           }
 
-          if (urlPrefillCustomFields) {
-            const existing = body.custom_fields ? JSON.parse(String(body.custom_fields)) : {}
-            body.custom_fields = JSON.stringify({ ...urlPrefillCustomFields, ...existing })
+          const extraFields = captureFields().filter(field =>
+            field.type === "checkbox" ? field.label || field.checked : field.value,
+          )
+          const baseCustom: Record<string, unknown> = {
+            ...(urlPrefillCustomFields ?? {}),
+            ...(body.custom_fields ? JSON.parse(String(body.custom_fields)) : {}),
+            ...(extraFields.length > 0 ? { fields: extraFields } : {}),
           }
-
-          // Custom fields
-          const cfItems = document.querySelectorAll("#nt-custom-fields-list .nt-custom-field-entry");
-          if (!bound && cfItems.length > 0) {
-            const cfData: Record<string, unknown>[] = [];
-            cfItems.forEach(item => {
-              const type = (item as HTMLElement).dataset.fieldType || "text";
-              const input = item.querySelector("input, textarea") as HTMLInputElement;
-              if (input?.value) cfData.push({ type, value: input.value });
-            });
-            if (cfData.length > 0) {
-              const existing = body.custom_fields ? JSON.parse(body.custom_fields as string) : {};
-              body.custom_fields = JSON.stringify({ ...existing, fields: cfData });
-            }
+          if (Object.keys(baseCustom).length > 0) {
+            body.custom_fields = JSON.stringify(baseCustom)
           }
 
           duePicker?.closePanel()
           if (addAnother) captureContinues = true
           if (bound) {
-            const fields = captureFields().filter(field => field.type === "checkbox" ? field.label || field.checked : field.value)
-            const custom = body.custom_fields ? JSON.parse(String(body.custom_fields)) : undefined
             drafts?.publish({
               ...body,
               labels: allLabels,
               newLabels,
               catalogLabels: manualLabels.filter(name => !newLabels.includes(name)),
               ...(body.checklists ? { checklists: JSON.parse(String(body.checklists)) } : {}),
-              ...(custom || fields.length ? { custom_fields: { ...custom, ...(fields.length ? { fields } : {}) } } : {}),
+              ...(Object.keys(baseCustom).length > 0 ? { custom_fields: baseCustom } : {}),
             } as TaskDraftPublication, addAnother)
             return
           }
@@ -1838,11 +1837,11 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
         areaId: contextPlacement?.areaId ?? undefined,
         projectId: contextPlacement?.projectId ?? undefined,
         labels,
+        ...(urlPrefillCustomFields ? { customFields: urlPrefillCustomFields } : {}),
       })
-      try {
-        await navigator.clipboard.writeText(url)
+      if (await copyToClipboard(url)) {
         showToast(copyPrefillBtn.dataset.copiedLabel || "Prefilled task link copied")
-      } catch {
+      } else {
         window.prompt("Copy prefilled task link", url)
       }
     }, { signal })
@@ -1910,22 +1909,20 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
                   projectId: typeof parentData.project_id === "string" ? parentData.project_id : null,
                 }
               }
+            } else if (!signal.aborted) {
+              showToast("Parent task could not be loaded — opening standalone task", "warning")
             }
-          } catch { /* omit unavailable/unauthorized parent rather than fabricating epic */ }
+          } catch {
+            if (!signal.aborted) {
+              showToast("Parent task could not be loaded — opening standalone task", "warning")
+            }
+          }
         }
         if (signal.aborted) return
         requestAnimationFrame(() => {
           if (signal.aborted) return
           window.openNewTaskModal?.("standard_action", {
-            ...(prefill.title ? { title: prefill.title } : {}),
-            ...(prefill.description ? { description: prefill.description } : {}),
-            ...(prefill.priority !== undefined ? { priority: prefill.priority } : {}),
-            ...(prefill.dueDate ? { dueDate: prefill.dueDate } : {}),
-            ...(prefill.taskType ? { taskType: prefill.taskType } : {}),
-            ...(prefill.areaId ? { areaId: prefill.areaId } : {}),
-            ...(prefill.projectId ? { projectId: prefill.projectId } : {}),
-            ...(prefill.labels ? { labels: prefill.labels } : {}),
-            ...(prefill.customFields ? { customFields: prefill.customFields } : {}),
+            ...prefill,
             ...(resolvedParent ? { parent: resolvedParent } : {}),
           })
         })

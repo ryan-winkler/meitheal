@@ -9,7 +9,7 @@
 import type { Client } from "@libsql/client"
 import { getPersistenceClient } from "../tasks/persistence/store"
 import type { FrameworkConfig, FrameworkOverrides, FrameworkOverrideRecord } from "@meitheal/domain-strategy"
-import { mergeFrameworkConfig, parseFrameworkConfig, validateFrameworkOverrides } from "@meitheal/domain-strategy"
+import { mergeFrameworkConfig, parseFrameworkConfig, sanitizeLegacyFrameworkOverrides, validateFrameworkOverrides } from "@meitheal/domain-strategy"
 
 /**
  * Safely parse a JSON string, returning fallback on failure.
@@ -78,7 +78,10 @@ export async function persistOverridePatch(
     })
     const row = result.rows[0] as Record<string, unknown> | undefined
     const existing = row ? toOverrideRecord(row) : null
-    const previous = existing && !validateFrameworkOverrides(existing.overrides) ? existing.overrides : {}
+    const sanitizedExisting = existing ? sanitizeLegacyFrameworkOverrides(existing.overrides) : null
+    const previous = sanitizedExisting && !validateFrameworkOverrides(sanitizedExisting, undefined, { preserveLegacyFormula: true })
+      ? sanitizedExisting as FrameworkOverrides
+      : {}
     const overrides: FrameworkOverrides = {
       ...previous,
       ...patch,

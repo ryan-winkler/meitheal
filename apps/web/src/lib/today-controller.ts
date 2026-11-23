@@ -154,7 +154,7 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
   const hash = window.location.hash
   if (hash.startsWith("#task-")) {
     const taskId = hash.slice(6)
-    const el = container.querySelector(`.tli[data-id="${taskId}"]`) as HTMLElement | null
+    const el = container.querySelector(`.tli[data-id="${CSS.escape(taskId)}"]`) as HTMLElement | null
     if (el) {
       setTimeout(() => {
         el.scrollIntoView({ behavior: "smooth", block: "center" })
@@ -379,7 +379,7 @@ function setupEventDelegation(container: HTMLElement, refreshReopened: (id: stri
         await taskApi.updateTask(id, { due_date: dateStr })
         showToast("common.task_updated")
         closeSnoozePopover()
-        const item = document.querySelector(`.tli[data-id="${id}"]`) as HTMLElement | null
+        const item = document.querySelector(`.tli[data-id="${CSS.escape(id)}"]`) as HTMLElement | null
         if (item) {
           item.style.opacity = "0"
           item.style.transition = "opacity 0.3s"
@@ -405,6 +405,7 @@ function setupEventDelegation(container: HTMLElement, refreshReopened: (id: stri
 // ── Snooze Popover ────────────────────────────────────────────────────────
 
 let activeSnoozePopover: HTMLElement | null = null
+let snoozePopoverAbort: AbortController | null = null
 
 function showSnoozePopover(anchor: HTMLElement) {
   closeSnoozePopover()
@@ -412,8 +413,13 @@ function showSnoozePopover(anchor: HTMLElement) {
   const id = anchor.dataset.id
   if (!id) return
 
+  const controller = new AbortController()
+  snoozePopoverAbort = controller
+  const signal = AbortSignal.any([lm.signal, controller.signal])
+
   const popover = document.createElement("div")
   popover.className = "snooze-popover"
+  popover.setAttribute("role", "menu")
   for (const [days, label] of [
     ["1", "+1 Day"],
     ["3", "+3 Days"],
@@ -422,21 +428,22 @@ function showSnoozePopover(anchor: HTMLElement) {
     ["30", "+1 Month"],
   ] as const) {
     const btn = document.createElement("button")
+    btn.type = "button"
     btn.dataset.snooze = days
     btn.dataset.taskId = id
     btn.className = "snooze-option"
+    btn.setAttribute("role", "menuitem")
     btn.textContent = label
     popover.appendChild(btn)
   }
 
-  // Position near the anchor
-  const rect = anchor.getBoundingClientRect()
   popover.style.cssText = `
     position: fixed;
-    top: ${rect.bottom + 4}px;
-    right: ${window.innerWidth - rect.right}px;
+    visibility: hidden;
+    top: 0;
+    left: 0;
     z-index: 1000;
-    background: var(--bg-card, #1e1e2e);
+    background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-md, 8px);
     padding: 4px;
@@ -450,13 +457,46 @@ function showSnoozePopover(anchor: HTMLElement) {
   document.body.appendChild(popover)
   activeSnoozePopover = popover
 
+  const rect = anchor.getBoundingClientRect()
+  const popRect = popover.getBoundingClientRect()
+  const margin = 8
+  const preferredTop = rect.bottom + 4
+  const fitsBelow = preferredTop + popRect.height <= window.innerHeight - margin
+  const top = fitsBelow
+    ? preferredTop
+    : Math.max(margin, rect.top - popRect.height - 4)
+  const left = Math.max(
+    margin,
+    Math.min(rect.right - popRect.width, window.innerWidth - popRect.width - margin),
+  )
+  popover.style.top = `${top}px`
+  popover.style.left = `${left}px`
+  popover.style.visibility = "visible"
+
+  popover.querySelector<HTMLButtonElement>(".snooze-option")?.focus()
+
+  document.addEventListener("keydown", (ev: KeyboardEvent) => {
+    if (ev.key === "Escape") {
+      ev.preventDefault()
+      closeSnoozePopover()
+      anchor.focus()
+    }
+  }, { signal })
+
   // Close on outside click
   lm.onTimeout(() => {
-    lm.on(document, "click", closeSnoozePopover, { once: true })
+    if (signal.aborted) return
+    document.addEventListener("click", (ev: Event) => {
+      const target = ev.target instanceof Node ? ev.target : null
+      if (target && (popover.contains(target) || anchor.contains(target))) return
+      closeSnoozePopover()
+    }, { signal })
   }, 0)
 }
 
 function closeSnoozePopover() {
+  snoozePopoverAbort?.abort()
+  snoozePopoverAbort = null
   if (activeSnoozePopover) {
     activeSnoozePopover.remove()
     activeSnoozePopover = null

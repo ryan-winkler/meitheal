@@ -23,6 +23,7 @@ import { formatTicketKey } from "../../../lib/ticket-key"
 import { dispatchTaskEvent, taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
 import { logApiError } from "../../../lib/api-logger"
 import { apiError } from "../../../lib/api-response"
+import { sanitizeMarkdownInput } from "../../../lib/sanitize"
 import { checkAssignedTask, isAssignedWriteOnly, restrictedAssigneeId } from "../../../lib/agent-token-guard"
 import { db503Response, isDbUnavailable } from "../../../lib/db-fallback"
 import { resolveRecentActivityActor } from "../../../lib/recent-activity-actor"
@@ -54,21 +55,14 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
     ...(url.searchParams.has("deferralRead") ? { "cache-control": "no-store" } : {}),
   }
 
-  const resolved = await repo.resolveTaskId(params.id!)
-  if (!resolved) {
+  const detailResult = await repo.findDetailWithSubtasks(params.id!)
+  if (!detailResult) {
     return new Response(JSON.stringify({ error: "Task not found" }), {
       status: 404,
       headers,
     })
   }
-
-  const row = await repo.findById(resolved.id)
-  if (!row) {
-    return new Response(JSON.stringify({ error: "Task not found" }), {
-      status: 404,
-      headers,
-    })
-  }
+  const { task: row, subtasks } = detailResult
 
   // Derive human-readable ticket keys
   const ticketNum = row.ticket_number != null ? Number(row.ticket_number) : null
@@ -80,7 +74,6 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
         ? row.parent_ticket_ref
         : formatTicketKey(parentTicketNum))
     : null
-  const subtasks = await repo.findSubtasks(resolved.id)
   const enriched = {
     ...detail,
     actions: taskActionHints(scope, row),
@@ -199,9 +192,8 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
   const denied = isAssignedWriteOnly(agentToken) ? await checkAssignedTask(resolvedId, agentToken!) : null
   if (denied) return (await replayedAgentReassignment(repo, agentToken, resolvedId, body, expectedActor, scope.boardId)) ?? denied
   if (body.due_date !== undefined || body.task_kind !== undefined) {
-    const current = await repo.findTaskForCommand(resolvedId, "edit")
-    if (current?.routine_occurrence === 1 &&
-      ((body.due_date !== undefined && body.due_date !== current.due_date) ||
+    if (resolved.routine_occurrence === 1 &&
+      ((body.due_date !== undefined && body.due_date !== resolved.due_date) ||
         (body.task_kind !== undefined && body.task_kind !== "routine_instance"))) {
       return apiError("A generated Routine task keeps its original date and type. Complete its existing occurrence.", 409)
     }
@@ -257,9 +249,8 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     sanitized.title = t
   }
   if (typeof body.description === "string") {
-    const { sanitizeMarkdownInput } = await import("../../../lib/sanitize")
     if (body.description.length > 10000) return apiError("description must be 10000 characters or less", 400)
-    sanitized.description = sanitizeMarkdownInput(body.description)
+    sanitized.description = body.description ? sanitizeMarkdownInput(body.description) : ""
   }
   if (typeof body.status === "string") {
     const st = body.status.trim().toLowerCase().replace(/[^a-z0-9_]/g, "")
@@ -270,11 +261,14 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     }
     sanitized.status = normalizeStatus(st)
   }
-  if (typeof body.priority === "number") {
+  if (body.priority !== undefined) {
+    if (typeof body.priority !== "number" || !Number.isFinite(body.priority)) {
+      return apiError("priority must be a finite number between 1 and 5", 400)
+    }
     sanitized.priority = Math.min(5, Math.max(1, Math.round(body.priority)))
   }
   if (body.due_date !== undefined) {
-    sanitized.due_date = typeof body.due_date === "string" ? body.due_date : null
+    sanitized.due_date = typeof body.due_date === "string" && body.due_date.trim() ? body.due_date.trim() : null
   }
   if (body.labels !== undefined) {
     const labels = taskLabelsJson(body.labels)
@@ -322,7 +316,10 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
   if (body.end_date !== undefined) {
     sanitized.end_date = typeof body.end_date === "string" ? body.end_date : null
   }
-  if (typeof body.progress === "number") {
+  if (body.progress !== undefined) {
+    if (typeof body.progress !== "number" || !Number.isFinite(body.progress)) {
+      return apiError("progress must be a finite number", 400)
+    }
     sanitized.progress = Math.min(100, Math.max(0, Math.round(body.progress)))
   }
   if (body.color !== undefined) {
@@ -341,7 +338,10 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     }
     sanitized.parent_id = typeof body.parent_id === "string" && body.parent_id.trim() ? body.parent_id.trim() : null
   }
-  if (typeof body.time_tracked === "number") {
+  if (body.time_tracked !== undefined) {
+    if (typeof body.time_tracked !== "number" || !Number.isFinite(body.time_tracked)) {
+      return apiError("time_tracked must be a finite number", 400)
+    }
     sanitized.time_tracked = Math.max(0, Math.round(body.time_tracked))
   }
   if (body.task_type !== undefined) {
@@ -411,10 +411,16 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
   }
 
   // Phase 06: Eisenhower urgency/importance (0-5 integer)
-  if (typeof body.urgency === "number") {
+  if (body.urgency !== undefined) {
+    if (typeof body.urgency !== "number" || !Number.isFinite(body.urgency)) {
+      return apiError("urgency must be a finite number", 400)
+    }
     sanitized.urgency = Math.min(5, Math.max(0, Math.round(body.urgency)))
   }
-  if (typeof body.importance === "number") {
+  if (body.importance !== undefined) {
+    if (typeof body.importance !== "number" || !Number.isFinite(body.importance)) {
+      return apiError("importance must be a finite number", 400)
+    }
     sanitized.importance = Math.min(5, Math.max(0, Math.round(body.importance)))
   }
   if (body.eisenhower_override !== undefined) {
@@ -425,8 +431,10 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
   if (body.effort_minutes !== undefined) {
     if (body.effort_minutes === null) {
       sanitized.effort_minutes = null
-    } else if (typeof body.effort_minutes === "number") {
+    } else if (typeof body.effort_minutes === "number" && Number.isFinite(body.effort_minutes)) {
       sanitized.effort_minutes = Math.min(480, Math.max(1, Math.round(body.effort_minutes)))
+    } else {
+      return apiError("effort_minutes must be a finite number or null", 400)
     }
   }
   if (body.effort_type !== undefined) {
@@ -573,8 +581,9 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
   // Notification preference guard
   const notifPrefs = await repo.getNotificationPreferences()
 
-  // F4/F5: Load callHAService once for all notification helpers
-  const haServicesImport = import("@domains/ha")
+  // Lazy-load @domains/ha only when an enabled notification channel dispatches
+  let haServicesPromise: Promise<typeof import("@domains/ha")> | null = null
+  const getHAServices = () => (haServicesPromise ??= import("@domains/ha"))
 
   // Helper: dispatch notification to configured channels
   interface DispatchOpts { isUrgent?: boolean; badgeCount?: number }
@@ -591,7 +600,7 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
   // Helper: dismiss mobile notifications
   async function dismissMobileNotification(notifTag: string) {
     if (!notifPrefs.channels.mobile_push || notifPrefs.mobileTargets.length === 0) return
-    const { callHAService } = await haServicesImport
+    const { callHAService } = await getHAServices()
     for (const target of notifPrefs.mobileTargets) {
       const [domain, ...rest] = target.split(".")
       const service = rest.join(".")
@@ -684,7 +693,7 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     dismissMobileNotification(`meitheal_assigned_${resolvedId}`)
     dismissMobileNotification(`meitheal_due_${resolvedId}`)
     if (notifPrefs.channels.sidebar !== false) {
-      haServicesImport.then(({ callHAService }) => {
+      getHAServices().then(({ callHAService }) => {
         callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_urgent_${resolvedId}` }, undefined, { operationAllowed: () => notificationOperationAllowed(scope, "persistent_notification.dismiss", { resource: "task", action: "edit" }, resolvedId, undefined, updatedRow.task_version) }).catch(() => {})
         callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_assigned_${resolvedId}` }, undefined, { operationAllowed: () => notificationOperationAllowed(scope, "persistent_notification.dismiss", { resource: "task", action: "edit" }, resolvedId, undefined, updatedRow.task_version) }).catch(() => {})
         callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_due_${resolvedId}` }, undefined, { operationAllowed: () => notificationOperationAllowed(scope, "persistent_notification.dismiss", { resource: "task", action: "edit" }, resolvedId, undefined, updatedRow.task_version) }).catch(() => {})
@@ -697,11 +706,10 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     try {
       const { isFeatureEnabled } = await import("../../../lib/feature-flags")
       if (await isFeatureEnabled("gamification")) {
-        const { recordTaskCompletion, getXpForPriority, checkAchievements, getLevel } = await import("@domains/gamification")
+        const { completeTaskGamification, getXpForPriority, getLevel } = await import("@domains/gamification")
         const xp = getXpForPriority(Number(updatedRow.priority ?? 3))
-        const stats = await recordTaskCompletion(scope, xp)
-        if (stats) {
-          const achievements = await checkAchievements(scope, stats)
+        const { stats, achievements } = await completeTaskGamification(scope, xp)
+        if (stats && achievements) {
           taskPayload.gamification = { stats, xp, newAchievements: achievements.newlyUnlocked, level: getLevel(stats.totalPoints), confetti: await isFeatureEnabled("confetti") }
         }
       }

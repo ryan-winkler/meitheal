@@ -42,6 +42,8 @@ export const taskDraftSnapshot = z.strictObject({
   taskType: taskType.optional(),
   parentId: reference.nullable().optional(),
   parentTitle: z.string().max(500).optional(),
+  parentType: taskType.optional(),
+  parentTicketKey: z.string().max(100).nullable().optional(),
   title: z.string().max(500),
   description: z.string().max(16384),
   taskKind,
@@ -79,17 +81,22 @@ export const taskDraftPublication = z.strictObject({
   labels,
   catalogLabels: labels,
   newLabels: labels,
-  due_date: publishDate.nullable(),
+  due_date: publishDate.nullable().optional(),
   assigned_to: reference.nullable(),
   goal_id: reference.nullable(),
   recurrence_rule: z.string().regex(/^[A-Z=;,0-9]{1,200}$/).optional(),
   checklists: checklistItems.optional(),
-  custom_fields: z.strictObject({
+  custom_fields: z.object({
     quantity: itemQuantity.optional(),
     category: category.optional(),
     items: shoppingItems.optional(),
     fields: fields.optional(),
-  }).optional(),
+  }).catchall(z.union([z.string().max(1024), z.number().finite(), z.boolean()]))
+    .refine(record => {
+      const keys = Object.keys(record)
+      return keys.length <= 16 && keys.every(key =>
+        key !== "__proto__" && key !== "constructor" && key !== "prototype" && key.length <= 60)
+    }).optional(),
   start_date: publishDate.optional(),
   end_date: publishDate.optional(),
   location: z.string().max(300).optional(),

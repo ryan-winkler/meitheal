@@ -1087,14 +1087,25 @@ export class TaskRepository {
     return Number.isSafeInteger(number) && number > 0 ? number : null
   }
 
-  async resolveTaskId(idOrKey: string, action: WorkAction = "read"): Promise<{ id: string, updated_at: unknown } | null> {
+  async resolveTaskId(
+    idOrKey: string,
+    action: WorkAction = "read",
+  ): Promise<{ id: string; updated_at: unknown; routine_occurrence: number; due_date: unknown } | null> {
     const number = this.ticketNumberForScope(idOrKey)
     const identity = number === null ? sql`id = ${idOrKey}` : sql`(id = ${idOrKey} OR ticket_number = ${number})`
     const assigned = action === "read" ? undefined : scopeAssignedTo(this.scope)
-    const locate = scopedTaskRead(this.scope, sql`SELECT id, ${sourceSql(taskTimestampMs("updated_at"))} AS updated_at FROM scoped_tasks AS tasks
-      WHERE ${identity} ${assigned === undefined ? sourceSql("") : sql`AND assigned_to = ${assigned}`} LIMIT 1`)
+    const locate = scopedTaskRead(this.scope, sql`SELECT id, ${sourceSql(taskTimestampMs("updated_at"))} AS updated_at, routine_occurrence, due_date
+      FROM scoped_tasks AS tasks
+      WHERE ${identity} ${assigned === undefined ? sourceSql("") : sql`AND assigned_to = ${assigned}`} LIMIT 1`, "select", "minimal")
     const { rows: [row] } = await this.readCommandStatement(action, tagTaskProjectionRead(locate, "task-locator"))
-    return row ? { id: String(row.id), updated_at: row.updated_at } : null
+    return row
+      ? {
+          id: String(row.id),
+          updated_at: row.updated_at,
+          routine_occurrence: Number(row.routine_occurrence ?? 0),
+          due_date: row.due_date ?? null,
+        }
+      : null
   }
 
   /** Internal command preflight; its result never grants a readable transport projection. */
@@ -1105,22 +1116,21 @@ export class TaskRepository {
     return row as unknown as TaskRow ?? null
   }
 
-  /** Retrieve a single task by ID/ticket key, with parent info JOINed */
-  async findById(idOrKey: string): Promise<TaskRow | null> {
+  private buildDetailQuery(idOrKey: string) {
     const number = this.ticketNumberForScope(idOrKey)
     const identity = number === null ? sql`t.id = ${idOrKey}` : sql`(t.id = ${idOrKey} OR t.ticket_number = ${number})`
-    const detail = scopedTaskRead(this.scope, sql`SELECT t.*, t.ticket_ref AS ticket_key,
+    return scopedTaskRead(this.scope, sql`SELECT t.*, t.ticket_ref AS ticket_key,
       ${sourceSql(taskTimestampMs("t.updated_at"))} AS task_version, parent.title AS parent_title,
       parent.task_type AS parent_task_type, parent.ticket_number AS parent_ticket_number,
       parent.ticket_ref AS parent_ticket_ref
       FROM scoped_tasks AS t LEFT JOIN scoped_tasks AS parent ON parent.id = t.public_parent_id
       WHERE ${identity} LIMIT 1`)
-    const result = await this.forOperation("read").execute(tagTaskProjectionRead(detail, "task-detail"))
-    return (result.rows[0] as unknown as TaskRow) ?? null;
   }
 
-  /** Retrieve direct readable child tasks for a parent task on the current Board. */
-  async findSubtasks(parentId: string): Promise<Array<{
+  private async querySubtasks(
+    runner: Pick<Client, "execute">,
+    parentId: string,
+  ): Promise<Array<{
     id: string
     ticket_number: number | null
     ticket_key: string | null
@@ -1131,12 +1141,12 @@ export class TaskRepository {
     assigned_to: string | null
     due_date: string | null
   }>> {
-    const result = await this.forOperation("read", [parentId]).execute(scopedTaskRead(this.scope, sourceSql(`
+    const result = await runner.execute(tagTaskProjectionRead(scopedTaskRead(this.scope, sourceSql(`
       SELECT id, ticket_number, ticket_ref, title, status, priority, task_type, assigned_to, due_date
       FROM scoped_tasks AS tasks
       WHERE tasks.parent_id = ?
       ORDER BY COALESCE(kanban_position, 2147483647) ASC, created_at ASC, id ASC
-    `, [parentId]), "select"))
+    `, [parentId]), "select", "minimal"), "task-subtasks"))
     return result.rows.map(row => {
       const ticketNumber = row.ticket_number != null ? Number(row.ticket_number) : null
       return {
@@ -1151,6 +1161,36 @@ export class TaskRepository {
         due_date: typeof row.due_date === "string" ? row.due_date : null,
       }
     })
+  }
+
+  /** Retrieve a single task by ID/ticket key, with parent info JOINed */
+  async findById(idOrKey: string): Promise<TaskRow | null> {
+    const detail = this.buildDetailQuery(idOrKey)
+    const result = await this.forOperation("read").execute(tagTaskProjectionRead(detail, "task-detail"))
+    return (result.rows[0] as unknown as TaskRow) ?? null;
+  }
+
+  /** Retrieve direct readable child tasks for a parent task on the current Board. */
+  async findSubtasks(parentId: string) {
+    return this.querySubtasks(this.forOperation("read", [parentId]), parentId)
+  }
+
+  /** Retrieve task detail and its direct subtasks inside a single snapshot read transaction. */
+  async findDetailWithSubtasks(idOrKey: string): Promise<{
+    task: TaskRow
+    subtasks: Awaited<ReturnType<TaskRepository["findSubtasks"]>>
+  } | null> {
+    const detail = this.buildDetailQuery(idOrKey)
+    const tx = await this.forOperation("read").transaction("read")
+    try {
+      const result = await tx.execute(tagTaskProjectionRead(detail, "task-detail"))
+      const task = (result.rows[0] as unknown as TaskRow) ?? null
+      if (!task) return null
+      const subtasks = await this.querySubtasks(tx, String(task.id))
+      return { task, subtasks }
+    } finally {
+      tx.close()
+    }
   }
 
   /**
@@ -1338,10 +1378,11 @@ export class TaskRepository {
 
     const selectSql = `SELECT ${projection} FROM scoped_tasks AS tasks${where} ${ordering} LIMIT ${limit} OFFSET ${offset}`
     const countSql = `SELECT COUNT(*) as cnt FROM scoped_tasks AS tasks${where}`;
+    const countProjection = !opts.areaId && !opts.workspaceAreaId ? "minimal" : "full"
 
     const [result, countResult] = await this.forOperation("read").batch([
       tagTaskProjectionRead(scopedTaskRead(this.scope, sourceSql(selectSql, args)), "task-list"),
-      tagTaskProjectionRead(scopedTaskRead(this.scope, sourceSql(countSql, args)), "task-count"),
+      tagTaskProjectionRead(scopedTaskRead(this.scope, sourceSql(countSql, args), "select", countProjection), "task-count"),
     ], "read")
 
     const total = Number(countResult?.rows[0]?.cnt ?? 0)
@@ -1393,7 +1434,7 @@ export class TaskRepository {
       const result = await this.forOperation(operation).execute(scopedTaskRead(this.scope, sourceSql(`SELECT ${projection}, 0 AS score
               FROM scoped_tasks AS tasks ${where}
               ORDER BY ${updatedAt} DESC, tasks.priority ASC, tasks.id ASC
-              LIMIT ?`, [...args, limit]), "select"))
+              LIMIT ?`, [...args, limit]), "select", "minimal"))
       return result.rows as unknown as TaskCatalogRow[]
     }
 
@@ -1454,7 +1495,7 @@ export class TaskRepository {
             SELECT ${projection}, page.score, page.id_hit, page.exact_id, page.title_at,
               page.description_hit, page.labels_hit, page.custom_fields_hit, page.comments_hit, ${excerpt} AS excerpt
             FROM page JOIN scoped_tasks AS tasks ON tasks.id = page.id CROSS JOIN needle
-            ORDER BY ${orderBy}page.updated_at_ms DESC, page.priority ASC, page.id ASC`, [query, ticket, ...args, limit]), "with")
+            ORDER BY ${orderBy}page.updated_at_ms DESC, page.priority ASC, page.id ASC`, [query, ticket, ...args, limit]), "with", "minimal")
     const result = await this.forOperation(operation).execute(tagTaskProjectionRead(search, "task-search"))
 
     return result.rows as unknown as TaskCatalogRow[]
@@ -1463,11 +1504,8 @@ export class TaskRepository {
   /** Look up the default assignee from app_settings (nullable) */
   async getDefaultAssignee(): Promise<string | null> {
     try {
-      const intent = { resource: "task", action: "create" } as const
-      if (!(await validateBoardScope(this.scope, this.client, intent)).ok) return null
-      const result = await this.client.execute(sql`SELECT value FROM app_settings
+      const result = await this.forOperation("create").execute(sql`SELECT value FROM app_settings
         WHERE key = ${`default_assignee:${this.scope.boardId}`} LIMIT 1`)
-      if (!(await validateBoardScope(this.scope, this.client, intent)).ok) return null
       if (result.rows.length > 0) {
         return String((result.rows[0] as Record<string, unknown>).value);
       }
@@ -1477,7 +1515,7 @@ export class TaskRepository {
 
   /** Look up a parent task's type for nesting validation */
   async getParentTaskType(parentId: string): Promise<string | null> {
-    const result = await this.forOperation("create", [parentId]).execute(scopedTaskRead(this.scope, sourceSql("SELECT task_type FROM scoped_tasks AS tasks WHERE id = ? AND 1 LIMIT 1", [parentId]), "select"));
+    const result = await this.forOperation("create", [parentId]).execute(scopedTaskRead(this.scope, sourceSql("SELECT task_type FROM scoped_tasks AS tasks WHERE id = ? AND 1 LIMIT 1", [parentId]), "select", "minimal"));
     if (result.rows.length === 0) return null;
     return String((result.rows[0] as Record<string, unknown>).task_type ?? "task");
   }
@@ -2720,7 +2758,7 @@ export class TaskRepository {
     const assigned = scopeAssignedTo(this.scope) ?? assignedTo
     const childLookup = scopedTaskRead(this.scope, sql`SELECT id, recurrence_rule, assigned_to
       FROM scoped_tasks WHERE parent_id = ${parentId} AND status != ${STATUS.COMPLETE}
-      ${assigned === undefined ? sourceSql("") : sql`AND assigned_to = ${assigned}`}`)
+      ${assigned === undefined ? sourceSql("") : sql`AND assigned_to = ${assigned}`}`, "select", "minimal")
     const rows = await this.readCommandStatement("complete", tagTaskProjectionRead(childLookup, "task-cascade"), [parentId])
     if (rows.rows.length === 0) return []
     const inherit = new Map<string, { assigneeId: string | null, proof?: AssignmentProof | undefined }>()
@@ -2731,7 +2769,7 @@ export class TaskRepository {
     const tx = await acquireWriteTransaction(this.forOperation("complete", [parentId]))
     try {
       const current = await tx.execute(scopedTaskRead(this.scope, sql`SELECT id FROM scoped_tasks WHERE parent_id = ${parentId} AND status != ${STATUS.COMPLETE}
-        ${assigned === undefined ? sourceSql("") : sql`AND assigned_to = ${assigned}`}`))
+        ${assigned === undefined ? sourceSql("") : sql`AND assigned_to = ${assigned}`}`, "select", "minimal"))
       const changed: string[] = []
       for (const row of current.rows) {
         const id = String(row.id)
@@ -2752,19 +2790,24 @@ export class TaskRepository {
     return (await this.cascadeCompleteIds(parentId, assignedTo)).length
   }
 
-  /** Reorder submitted tasks across their existing slots in the shared order. */
-  async reorderTasks(ids: string[]): Promise<boolean> {
+  private async reorderPositionColumn(
+    ids: string[],
+    opts: { column: "kanban_position" | "table_position"; orderBySql: string; activeOnly?: boolean },
+  ): Promise<boolean> {
     if (ids.length === 0) return false
+    const deferredGuard = opts.activeOnly ? "AND tasks.deferred_at IS NULL" : ""
+    const col = sourceSql(opts.column)
+    const assigned = scopeAssignedTo(this.scope)
     const result = await this.forOperation("move", ids).execute(scopedTaskRead(this.scope, sourceSql(`requested AS MATERIALIZED (
               SELECT value AS id, key AS ordinal FROM json_each(?)
             ), allowed AS MATERIALIZED (
               SELECT COUNT(*) AS total FROM requested
-              JOIN scoped_tasks AS tasks ON tasks.id = requested.id AND 1 AND tasks.deferred_at IS NULL
+              JOIN scoped_tasks AS tasks ON tasks.id = requested.id AND 1 ${deferredGuard}
               HAVING total = (SELECT COUNT(*) FROM requested)
                  AND total = COUNT(DISTINCT requested.id)
             ), ordered AS MATERIALIZED (
               SELECT id, ROW_NUMBER() OVER (
-                ORDER BY kanban_position ASC NULLS LAST, priority ASC, created_at DESC, id ASC
+                ORDER BY ${opts.orderBySql}
               ) - 1 AS position
               FROM scoped_tasks AS tasks WHERE 1 AND EXISTS (SELECT 1 FROM allowed)
             ), slots AS MATERIALIZED (
@@ -2777,47 +2820,31 @@ export class TaskRepository {
               LEFT JOIN requested ON requested.id = ordered.id
               LEFT JOIN slots ON slots.ordinal = requested.ordinal
             )
-            UPDATE tasks SET kanban_position = ranks.position,
+            UPDATE tasks SET ${col.sql} = ranks.position,
               deferral_revision = CASE WHEN ranks.submitted AND ${taskTimestampMs("tasks.updated_at")} = 9007199254740991
                 THEN lower(hex(randomblob(16))) ELSE deferral_revision END,
               updated_at = CASE WHEN ranks.submitted THEN ${nextTaskTimestampMs("tasks.updated_at")} ELSE updated_at END
             FROM ranks WHERE tasks.id = ranks.id AND tasks.id IN (SELECT id FROM scoped_tasks)
-              ${scopeAssignedTo(this.scope) === undefined ? "" : "AND tasks.assigned_to = ?"}
-              AND (ranks.submitted OR tasks.kanban_position IS NOT ranks.position)`, [JSON.stringify(ids), Date.now(), ...(scopeAssignedTo(this.scope) === undefined ? [] : [scopeAssignedTo(this.scope)!])]), "with"))
+              ${assigned === undefined ? "" : "AND tasks.assigned_to = ?"}
+              AND (ranks.submitted OR tasks.${col.sql} IS NOT ranks.position)`, [JSON.stringify(ids), Date.now(), ...(assigned === undefined ? [] : [assigned])]), "with", "minimal"))
     return result.rowsAffected > 0
+  }
+
+  /** Reorder submitted tasks across their existing slots in the shared order. */
+  async reorderTasks(ids: string[]): Promise<boolean> {
+    return this.reorderPositionColumn(ids, {
+      column: "kanban_position",
+      orderBySql: "kanban_position ASC NULLS LAST, priority ASC, created_at DESC, id ASC",
+      activeOnly: true,
+    })
   }
 
   /** Persist manual row ordering in Table view using tasks.table_position within this board. */
   async reorderTableTasks(ids: string[]): Promise<boolean> {
-    if (ids.length === 0) return false
-    const result = await this.forOperation("move", ids).execute(scopedTaskRead(this.scope, sourceSql(`requested AS MATERIALIZED (
-              SELECT value AS id, key AS ordinal FROM json_each(?)
-            ), allowed AS MATERIALIZED (
-              SELECT COUNT(*) AS total FROM requested
-              JOIN scoped_tasks AS tasks ON tasks.id = requested.id AND 1
-              HAVING total = (SELECT COUNT(*) FROM requested)
-                 AND total = COUNT(DISTINCT requested.id)
-            ), ordered AS MATERIALIZED (
-              SELECT id, ROW_NUMBER() OVER (
-                ORDER BY table_position ASC NULLS LAST, created_at DESC, id ASC
-              ) - 1 AS position
-              FROM scoped_tasks AS tasks WHERE 1 AND EXISTS (SELECT 1 FROM allowed)
-            ), slots AS MATERIALIZED (
-              SELECT position, ROW_NUMBER() OVER (ORDER BY position) - 1 AS ordinal
-              FROM ordered WHERE id IN (SELECT id FROM requested)
-            ), ranks AS MATERIALIZED (
-              SELECT ordered.id, COALESCE(slots.position, ordered.position) AS position,
-                     requested.id IS NOT NULL AS submitted
-              FROM ordered
-              LEFT JOIN requested ON requested.id = ordered.id
-              LEFT JOIN slots ON slots.ordinal = requested.ordinal
-            )
-            UPDATE tasks SET table_position = ranks.position,
-              updated_at = CASE WHEN ranks.submitted THEN ${nextTaskTimestampMs("tasks.updated_at")} ELSE updated_at END
-            FROM ranks WHERE tasks.id = ranks.id AND tasks.id IN (SELECT id FROM scoped_tasks)
-              ${scopeAssignedTo(this.scope) === undefined ? "" : "AND tasks.assigned_to = ?"}
-              AND (ranks.submitted OR tasks.table_position IS NOT ranks.position)`, [JSON.stringify(ids), Date.now(), ...(scopeAssignedTo(this.scope) === undefined ? [] : [scopeAssignedTo(this.scope)!])]), "with"))
-    return result.rowsAffected > 0
+    return this.reorderPositionColumn(ids, {
+      column: "table_position",
+      orderBySql: "table_position ASC NULLS LAST, created_at DESC, id ASC",
+    })
   }
 
   /** Place a card in the shared order while preserving every other card's relative order. */

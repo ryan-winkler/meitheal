@@ -117,6 +117,8 @@ const EXCLUDED_OPS = new Set([
   "getHouseholdTaskHomeAssistantArea", "setHouseholdTaskHomeAssistantArea",
   "getNamedBoardTaskHomeAssistantArea", "setNamedBoardTaskHomeAssistantArea",
   "getPersonalOrganizationLabels", "savePersonalOrganizationLabels", "verifyPersonalOrganizationLabels", "getHomeAssistantAreaChoices",
+  "listCustomFields", "updateCustomFields",
+  "listLanes", "createLane", "reorderLanes", "updateLane", "deleteLane",
 ])
 
 /** Operations where method names should be used as-is (no camelCase conversion) */

@@ -14,6 +14,7 @@ import {
 } from "../../apps/web/scripts/board-grant-journal.mjs"
 import { ORDINARY_BOARD_MIGRATION } from "../../apps/web/drizzle/migrations/0016_ordinary_boards.mjs"
 import { CUSTOM_BOARD_KEYS_MIGRATION } from "../../apps/web/drizzle/migrations/0017_custom_board_keys.mjs"
+import { TASK_EXPERIENCE_MIGRATION } from "../../apps/web/drizzle/migrations/0018_task_experience.mjs"
 import { enrollCurrentOwnedLegacyFixture } from "../helpers/current-legacy-fixture"
 import { BOARD_LIFECYCLE_MIGRATION } from "../../apps/web/drizzle/migrations/0015_board_lifecycle.mjs"
 import { execFile, fork } from "../helpers/isolated-process"
@@ -517,8 +518,8 @@ for (const lock of ["reader", "writer"]) {
     const ledger = await client.execute(
       "SELECT name, applied_at FROM __meitheal_migrations ORDER BY name"
     )
-    expect(ledger.rows).toHaveLength(predecessorMigrationNames.length + 9)
-    expect(ledger.rows.slice(-9).map((row) => row.name)).toEqual([
+    expect(ledger.rows).toHaveLength(predecessorMigrationNames.length + 10)
+    expect(ledger.rows.slice(-10).map((row) => row.name)).toEqual([
       TASK_BOARD_MIGRATION,
       PERSONAL_PILLAR_MIGRATION,
       BOARD_ACCESS_MIGRATION,
@@ -527,9 +528,10 @@ for (const lock of ["reader", "writer"]) {
       ORGANIZATION_FEATURE_MIGRATION,
       BOARD_LIFECYCLE_MIGRATION,
       ORDINARY_BOARD_MIGRATION,
-      CUSTOM_BOARD_KEYS_MIGRATION
+      CUSTOM_BOARD_KEYS_MIGRATION,
+      TASK_EXPERIENCE_MIGRATION
     ])
-    expect(ledger.rows.slice(0, -9).every((row) => row.applied_at === 1)).toBe(true)
+    expect(ledger.rows.slice(0, -10).every((row) => row.applied_at === 1)).toBe(true)
     expect((await client.execute("SELECT title FROM tasks")).rows).toEqual([
       { title: "Retained startup task" }
     ])

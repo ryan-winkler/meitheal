@@ -91,10 +91,17 @@ test.describe("Task Experience Unification (R01-R20)", () => {
       const convertBtn = page.locator('[title="Convert to child task"]').first()
       await expect(convertBtn).toBeVisible()
       const convertReq = page.waitForResponse(r => r.request().method() === "POST" && new URL(r.url()).pathname === "/api/tasks")
+      const checklistSaveReq = page.waitForResponse(r => r.request().method() === "PUT" && new URL(r.url()).pathname === `/api/tasks/${epicBody.id}`)
+      const detailRefreshReq = page.waitForResponse(r => r.request().method() === "GET" && new URL(r.url()).pathname === `/api/tasks/${epicBody.id}`)
       await convertBtn.click()
       expect((await convertReq).status()).toBe(201)
+      expect((await checklistSaveReq).status()).toBe(200)
+      expect((await detailRefreshReq).status()).toBe(200)
 
-      await page.goto("/tasks")
+      await expect(page.locator("#td-link-children")).toContainText("Checklist Step To Convert")
+      await expect(page.locator("#td-checklists")).not.toContainText("Checklist Step To Convert")
+
+      await page.reload()
       await openTaskCard(page, epicBody.id)
       await expect(page.locator("#td-link-children")).toContainText("Checklist Step To Convert")
       await expect(page.locator("#td-checklists")).not.toContainText("Checklist Step To Convert")

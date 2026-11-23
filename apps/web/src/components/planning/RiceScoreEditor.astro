@@ -76,7 +76,7 @@ const score = assessment.status === "scored" ? assessment.score : null
 
 <script>
   import { pageLifecycle } from "@lib/page-lifecycle"
-  import { frameworkPayloadObject, parseRiceInputs, riceLensScore } from "@lib/rice-lens"
+  import { formatRiceFormulaBreakdown, frameworkPayloadObject, parseRiceInputs, riceLensScore } from "@lib/rice-lens"
 
   pageLifecycle.onPageLoad(signal => {
     const form = document.querySelector<HTMLFormElement>("[data-rice-editor]")
@@ -99,7 +99,7 @@ const score = assessment.status === "scored" ? assessment.score : null
       output.value = String(currentScore ?? "—")
       if (breakdown) {
         breakdown.textContent = estimate && currentScore !== null
-          ? `((${estimate.reach} × ${estimate.impact} × ${estimate.confidence}%) ÷ ${estimate.effort})`
+          ? `(${formatRiceFormulaBreakdown(estimate)})`
           : ""
       }
     }

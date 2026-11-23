@@ -44,6 +44,11 @@ function isAllowedUrl(value: string): boolean {
   }
 }
 
+/** Tags whose entire subtree must be discarded rather than unwrapped into visible text. */
+const DROP_SUBTREE_TAGS = new Set([
+  "script", "style", "iframe", "noscript", "template", "object", "embed", "svg", "math",
+])
+
 function sanitizeNode(node: Node): Node | null {
   if (node.nodeType === Node.TEXT_NODE) return node.cloneNode(true)
 
@@ -52,8 +57,10 @@ function sanitizeNode(node: Node): Node | null {
   const el = node as Element
   const tag = el.tagName.toLowerCase()
 
+  if (DROP_SUBTREE_TAGS.has(tag)) return null
+
   if (!ALLOWED_TAGS.has(tag)) {
-    // Strip the tag but keep safe children
+    // Strip unknown layout wrappers while keeping safe inner text/formatting
     const frag = document.createDocumentFragment()
     for (const child of Array.from(el.childNodes)) {
       const clean = sanitizeNode(child)

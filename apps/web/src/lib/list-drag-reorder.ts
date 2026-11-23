@@ -9,6 +9,8 @@ export interface VerticalListDragOptions {
   item: string
   ghostClass: string
   signal: AbortSignal
+  canSwap?: (dragged: HTMLElement, target: HTMLElement) => boolean
+  moveItem?: (dragged: HTMLElement, target: HTMLElement, direction: "before" | "after") => void
   onStart?: () => void
   onEnd?: (detail: { item: HTMLElement; oldIndex: number; newIndex: number }) => void
 }
@@ -17,7 +19,7 @@ export function attachVerticalListDragReorder(
   list: HTMLElement,
   options: VerticalListDragOptions,
 ): void {
-  const { handle, item: itemSelector, ghostClass, signal, onStart, onEnd } = options
+  const { handle, item: itemSelector, ghostClass, signal, canSwap, moveItem, onStart, onEnd } = options
   let dragged: HTMLElement | null = null
   let oldIndex = -1
   let activeMode: "pointer" | "touch" | null = null
@@ -48,14 +50,17 @@ export function attachVerticalListDragReorder(
     for (let targetIdx = 0; targetIdx < siblings.length; targetIdx++) {
       if (targetIdx === draggedIdx) continue
       const target = siblings[targetIdx]!
+      if (canSwap && !canSwap(dragged, target)) continue
       const box = target.getBoundingClientRect()
       const threshold = Math.min(box.height, draggedHeight) / 2
       if (draggedIdx < targetIdx && clientY > box.top + threshold) {
-        list.insertBefore(dragged, target.nextElementSibling)
+        if (moveItem) moveItem(dragged, target, "after")
+        else list.insertBefore(dragged, target.nextElementSibling)
         break
       }
       if (draggedIdx > targetIdx && clientY < box.bottom - threshold) {
-        list.insertBefore(dragged, target)
+        if (moveItem) moveItem(dragged, target, "before")
+        else list.insertBefore(dragged, target)
         break
       }
     }

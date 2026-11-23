@@ -33,7 +33,7 @@ const totalChangesStatements = new WeakMap()
 /** @type {WeakMap<DatabaseSync, import("node:sqlite").StatementSync>} */
 const grantRevisionStatements = new WeakMap()
 /** @typedef {"rows" | "completed"} TodayRead */
-/** @typedef {"task-list" | "task-count" | "task-detail" | "task-search" | "task-locator" | "task-command" | "task-cascade"} TaskProjectionRead */
+/** @typedef {"task-list" | "task-count" | "task-detail" | "task-search" | "task-locator" | "task-command" | "task-cascade" | "task-subtasks"} TaskProjectionRead */
 /** @typedef {TodayRead | TaskProjectionRead | "board-policy"} ScopedRead */
 /** @type {WeakMap<object, ScopedRead>} */
 const scopedReads = new WeakMap()
@@ -644,44 +644,82 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     } finally { admitWaitingReads() }
   }
 
-  /** @type {DatabaseSync | null} */
-  let idleReadHandle = null
-  let readSlotLeased = false
-  /** @type {ReturnType<typeof globalThis.setTimeout> | undefined} */
-  let readIdleTimer = undefined
+  function createIdleHandleSlot() {
+    /** @type {DatabaseSync | null} */
+    let idleHandle = null
+    let leased = false
+    /** @type {ReturnType<typeof globalThis.setTimeout> | undefined} */
+    let idleTimer = undefined
 
-  function clearReadIdleTimer() {
-    if (readIdleTimer !== undefined) {
-      globalThis.clearTimeout(readIdleTimer)
-      readIdleTimer = undefined
-    }
-  }
-
-  function closeIdleReadHandle() {
-    clearReadIdleTimer()
-    if (idleReadHandle) {
-      try {
-        idleReadHandle.close()
-      } finally {
-        idleReadHandle = null
+    function clearTimer() {
+      if (idleTimer !== undefined) {
+        globalThis.clearTimeout(idleTimer)
+        idleTimer = undefined
       }
     }
-  }
 
-  function armReadIdleEviction() {
-    clearReadIdleTimer()
-    readIdleTimer = globalThis.setTimeout(() => {
-      readIdleTimer = undefined
-      if (!readSlotLeased && idleReadHandle) {
-        try {
-          idleReadHandle.close()
-        } finally {
-          idleReadHandle = null
+    function armEviction() {
+      clearTimer()
+      idleTimer = globalThis.setTimeout(() => {
+        idleTimer = undefined
+        if (!leased && idleHandle) {
+          try {
+            idleHandle.close()
+          } finally {
+            idleHandle = null
+          }
         }
-      }
-    }, READ_IDLE_EVICT_MS)
-    readIdleTimer.unref?.()
+      }, READ_IDLE_EVICT_MS)
+      idleTimer.unref?.()
+    }
+
+    return {
+      /** @param {() => DatabaseSync} openFresh @param {() => void} [onHit] @param {() => void} [onOverflow] */
+      lease(openFresh, onHit, onOverflow) {
+        if (!leased) {
+          clearTimer()
+          leased = true
+          if (idleHandle) {
+            const handle = idleHandle
+            idleHandle = null
+            onHit?.()
+            return { db: handle, primary: true }
+          }
+          try {
+            return { db: openFresh(), primary: true }
+          } catch (err) {
+            leased = false
+            throw err
+          }
+        }
+        onOverflow?.()
+        return { db: openFresh(), primary: false }
+      },
+      /** @param {DatabaseSync} handle @param {boolean} keep */
+      release(handle, keep) {
+        leased = false
+        if (!keep) {
+          handle.close()
+        } else {
+          idleHandle = handle
+          armEviction()
+        }
+      },
+      closeIdle() {
+        clearTimer()
+        if (idleHandle) {
+          try {
+            idleHandle.close()
+          } finally {
+            idleHandle = null
+          }
+        }
+      },
+    }
   }
+
+  const readPool = createIdleHandleSlot()
+  const writePool = createIdleHandleSlot()
 
   function idle() {
     if (closed) throw new LibsqlError("The client is closed", "CLIENT_CLOSED")
@@ -762,32 +800,34 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
 
     const diag = getDiagnosticsStore()
     const useReadPool = !memory && mode === "read"
+    const useWritePool = !memory && !readOnly && mode === "write" && !exclusive
     let leasedFromPrimaryReadSlot = false
+    let leasedFromPrimaryWriteSlot = false
     /** @type {DatabaseSync} */
     let db
     if (memory) {
       db = primary
     } else if (useReadPool) {
-      if (!readSlotLeased) {
-        clearReadIdleTimer()
-        readSlotLeased = true
-        leasedFromPrimaryReadSlot = true
-        if (idleReadHandle) {
-          db = idleReadHandle
-          idleReadHandle = null
-          diag.readPoolHitsTotal += 1
-        } else {
-          try {
-            db = connect(true, true)
-          } catch (err) {
-            readSlotLeased = false
-            throw err
-          }
+      const slot = readPool.lease(
+        () => connect(true, true),
+        () => { diag.readPoolHitsTotal += 1 },
+        () => { diag.readPoolOverflowTotal += 1 },
+      )
+      db = slot.db
+      leasedFromPrimaryReadSlot = slot.primary
+    } else if (useWritePool) {
+      const slot = writePool.lease(() => {
+        const conn = connect(false, true)
+        try {
+          conn.exec("PRAGMA cache_size = -1000;")
+          return conn
+        } catch (err) {
+          conn.close()
+          throw err
         }
-      } else {
-        diag.readPoolOverflowTotal += 1
-        db = connect(true, true)
-      }
+      })
+      db = slot.db
+      leasedFromPrimaryWriteSlot = slot.primary
     } else {
       db = connect(readOnly, true)
     }
@@ -809,20 +849,18 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       active = false
       clearSlowLeaseTimer()
       transactions.delete(settle)
+      let rollbackClean = false
       try {
         if (db.isTransaction) db.exec("ROLLBACK")
+        rollbackClean = true
       } finally {
         try {
           if (memory) {
             if (restoreReadOnly) db.exec("PRAGMA query_only=OFF")
           } else if (leasedFromPrimaryReadSlot) {
-            readSlotLeased = false
-            if (closed) {
-              db.close()
-            } else {
-              idleReadHandle = db
-              armReadIdleEviction()
-            }
+            readPool.release(db, !closed && rollbackClean)
+          } else if (leasedFromPrimaryWriteSlot) {
+            writePool.release(db, !closed && rollbackClean)
           } else {
             db.close()
           }
@@ -920,7 +958,11 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       for (const settle of transactions) settle()
     } finally {
       try {
-        closeIdleReadHandle()
+        try {
+          readPool.closeIdle()
+        } finally {
+          writePool.closeIdle()
+        }
       } finally {
         main.close()
       }

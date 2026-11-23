@@ -4,7 +4,8 @@ import { confirmDialog, type ConfirmOptions } from "./confirm-dialog"
 import { safeIngressHref, syncIngressDestination } from "./ingress-navigation"
 import { stripIngressPrefix } from "./ingress-state-persistence"
 import { safeFetch } from "./safe-fetch"
-import { normalizeCustomFieldDefs, type CustomFieldDef } from "./custom-field-defs"
+import { updateBoardCustomFieldDefs, type CustomFieldDef } from "./custom-field-defs"
+import { showToast } from "./toast"
 import { normalizeBoardKey, suggestBoardKey, validateBoardKey } from "@domains/tasks/board-key"
 
 class BoardRequestError extends Error {
@@ -472,37 +473,33 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
         case "custom-field-remove": {
           const activeBoardId = root!.dataset.boardId
           const cfHeaders = {
-            "Content-Type": "application/json",
             "X-Meitheal-Board-Session": root!.dataset.boardSession!,
             ...(activeBoardId ? { "X-Meitheal-Board-Id": activeBoardId } : {}),
           }
-          const loaded = await safeFetch("/api/custom-fields", {
-            cache: "no-store", headers: cfHeaders, mode: "same-origin", redirect: "error", timeoutMs: 10_000, signal,
-          })
-          if (!loaded.ok) throw new BoardRequestError("Could not load Board custom fields.", loaded.status)
-          const parsed = await loaded.json().catch(() => null) as { fields?: unknown } | null
-          const currentFields = normalizeCustomFieldDefs(parsed?.fields)
-          let nextFields: CustomFieldDef[]
-          if (boardForm === "custom-field-remove") {
-            const targetName = value("name")
-            nextFields = currentFields.filter(f => f.name !== targetName)
-          } else {
-            const name = value("name").trim()
-            if (!name) throw new Error("Enter a field name.")
-            const type = value("type").trim() || "text"
-            const rawOpts = value("options").split(",").map(s => s.trim()).filter(Boolean)
-            nextFields = normalizeCustomFieldDefs([
-              ...currentFields,
-              { name, type, ...(type === "select" && rawOpts.length ? { options: rawOpts } : {}) },
-            ])
-          }
-          const saved = await safeFetch("/api/custom-fields", {
-            method: "PUT", headers: cfHeaders, body: JSON.stringify({ fields: nextFields }),
-            mode: "same-origin", redirect: "error", timeoutMs: 10_000, signal,
-          })
-          if (!saved.ok) {
-            const err = await saved.json().catch(() => null) as { error?: string } | null
-            throw new BoardRequestError(err?.error ?? "Could not save Board custom fields.", saved.status)
+          try {
+            await updateBoardCustomFieldDefs((currentFields): CustomFieldDef[] => {
+              if (boardForm === "custom-field-remove") {
+                const targetName = value("name")
+                return currentFields.filter(f => f.name !== targetName)
+              }
+              const name = value("name").trim()
+              if (!name) throw new Error("Enter a field name.")
+              const type = value("type").trim() || "text"
+              const rawOpts = value("options").split(",").map(s => s.trim()).filter(Boolean)
+              return [
+                ...currentFields,
+                { name, type, ...(type === "select" && rawOpts.length ? { options: rawOpts } : {}) },
+              ]
+            }, { headers: cfHeaders, signal })
+          } catch (err) {
+            const status = (err as { status?: number })?.status
+            if (typeof status === "number") {
+              throw new BoardRequestError(
+                err instanceof Error ? err.message : "Could not save Board custom fields.",
+                status,
+              )
+            }
+            throw err
           }
           break
         }
@@ -538,13 +535,19 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
       }
       if (!signal.aborted) leavePage()
     } catch (error) {
-      if (!signal.aborted && feedback) {
+      if (!signal.aborted) {
         const message = error instanceof Error ? error.message : "Could not save. Your input is still here."
         const unknownCreation = boardForm === "create" && (!(error instanceof BoardRequestError) || error.status >= 500)
-        feedback.textContent = unknownCreation
+        const displayMessage = unknownCreation
           ? "Could not confirm whether the Board was created. Refresh Boards to check before trying again."
           : message
-        if (unknownCreation) button.hidden = true
+        if (feedback) {
+          feedback.textContent = displayMessage
+          if (unknownCreation) button.hidden = true
+        }
+        if (boardForm === "custom-field-remove" || !feedback) {
+          showToast(displayMessage, "error")
+        }
       }
     } finally {
       form.removeAttribute("aria-busy")

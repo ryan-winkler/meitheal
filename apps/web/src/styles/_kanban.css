@@ -11,37 +11,6 @@
   min-width: 0;
 }
 
-.kanban-scroll-wrap::before,
-.kanban-scroll-wrap::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  bottom: 16px;
-  width: 36px;
-  pointer-events: none;
-  z-index: 8;
-  opacity: 0;
-  transition: opacity 180ms ease;
-}
-
-.kanban-scroll-wrap::before {
-  inset-inline-start: 0;
-  background: linear-gradient(90deg, var(--bg-primary) 0%, transparent 100%);
-}
-
-.kanban-scroll-wrap::after {
-  inset-inline-end: 0;
-  background: linear-gradient(270deg, var(--bg-primary) 0%, transparent 100%);
-}
-
-.kanban-scroll-wrap[data-scroll-left="true"]::before {
-  opacity: 1;
-}
-
-.kanban-scroll-wrap[data-scroll-right="true"]::after {
-  opacity: 1;
-}
-
 .kanban-scroll-btn {
   position: absolute;
   top: 50%;
@@ -135,11 +104,12 @@
   }
 }
 
-/* Column top-border accent — matches status dot color */
-.kanban-column-header[data-column-key="backlog"] { border-top: 3px solid #9ca3af; }
-.kanban-column-header[data-column-key="pending"] { border-top: 3px solid #3b82f6; }
-.kanban-column-header[data-column-key="active"] { border-top: 3px solid #f59e0b; }
-.kanban-column-header[data-column-key="complete"] { border-top: 3px solid #22c55e; }
+/* Column top-border accent — matches status dot or custom lane color */
+.kanban-column-header { border-top: 3px solid var(--lane-accent, var(--border)); }
+.kanban-column-header[data-column-key="backlog"] { --lane-accent: #9ca3af; }
+.kanban-column-header[data-column-key="pending"] { --lane-accent: #3b82f6; }
+.kanban-column-header[data-column-key="active"] { --lane-accent: #f59e0b; }
+.kanban-column-header[data-column-key="complete"] { --lane-accent: #22c55e; }
 
 .reorder-indicator {
   height: 2px;
@@ -262,24 +232,6 @@
     0 4px 8px -2px rgba(0, 0, 0, 0.2);
   transform: translateY(-2px);
 }
-
-/* Subtle Tabler-inspired left accent grip line on hover (no braille glyph) */
-.kanban-card::before {
-  content: "";
-  position: absolute;
-  left: 3px;
-  top: 50%;
-  width: 2px;
-  height: 22px;
-  border-radius: 999px;
-  background: var(--text-muted);
-  transform: translateY(-50%);
-  opacity: 0;
-  transition: opacity 0.15s ease;
-  pointer-events: none;
-}
-.kanban-card:hover::before { opacity: 0.35; }
-.kanban-card.dragging::before { opacity: 0; }
 
 /* Board & card async skeleton/loader states (Nielsen Visibility of System Status) */
 .kanban-board {
@@ -572,15 +524,6 @@
   @apply text-danger;
 }
 
-/* --- Command palette items --- */
-.cp-item {
-  @apply px-4 py-2.5 cursor-pointer text-sm text-text-primary transition-colors;
-}
-
-.cp-item:hover {
-  @apply bg-bg-hover;
-}
-
 #kanban-board .swimlane-header {
   display: flex;
   align-items: center;
@@ -636,8 +579,7 @@
   .swimlane-cards,
   .swimlane-toggle,
   .swimlane-add-btn,
-  .kanban-context-menu,
-  .kanban-card::before {
+  .kanban-context-menu {
     transition: none !important;
     animation: none !important;
   }

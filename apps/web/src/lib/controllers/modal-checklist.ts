@@ -220,7 +220,8 @@ export function showTaskChecklist(
           }
           items.splice(index, 1)
           render()
-          void save()
+          await save()
+          if (signal.aborted) return
           document.dispatchEvent(new CustomEvent("meitheal:refresh-task-detail", { detail: { taskId } }))
           document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "checklist-promoted" } }))
           showToast("Converted step to child task", "success")

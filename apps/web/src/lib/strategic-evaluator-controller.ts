@@ -1,7 +1,14 @@
 import { evaluateFrameworkFormulaDecimal, isFrameworkFieldOptions, validateFrameworkScoring, type FrameworkConfig } from "@meitheal/domain-strategy"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { escapeHtml } from "@lib/safe-html"
-import { frameworkPayloadObject as asFrameworkPayload, parseRiceInputs, RICE_FIELDS, readRiceAssessment, riceLensScore } from "@lib/rice-lens"
+import {
+  detectLegacyConfidenceFraction,
+  formatRiceFormulaBreakdown,
+  frameworkPayloadObject as asFrameworkPayload,
+  parseRiceInputs,
+  RICE_FIELDS,
+  readRiceAssessment,
+  riceLensScore,
+} from "@lib/rice-lens"
 
 export interface StrategicLensSession {
   signal: AbortSignal
@@ -186,12 +193,9 @@ pageLifecycle.onPageLoad(signal => {
     legacyBanner.replaceChildren()
     legacyBanner.hidden = true
     if ((selected.id !== "rice" && selected.id !== "drice") || resolvedLegacyScale.has(selected.id)) return
-    const assessment = selected.id === "rice" ? readRiceAssessment({ rice: values }) : null
-    const rawConf = selected.id === "rice"
-      ? (assessment?.status === "legacy_ambiguous" ? assessment.legacyConfidence : null)
-      : (values.confidence_unit !== "percent" && typeof values.confidence === "number" && values.confidence > 0 && values.confidence <= 1 ? values.confidence : null)
-    if (rawConf === null) return
-    const suggested = Math.round(rawConf * 100)
+    const legacy = detectLegacyConfidenceFraction(values)
+    if (!legacy) return
+    const { legacyConfidence: rawConf, suggestedPercent: suggested } = legacy
     const msg = document.createElement("div")
     msg.textContent = `Legacy Confidence value (${rawConf}) detected. Confirm whether this means ${suggested}% or ${rawConf}%:`
     const actions = document.createElement("div")
@@ -235,7 +239,8 @@ pageLifecycle.onPageLoad(signal => {
       : "Save your framework evaluation"
     if (formulaPreview) {
       if (selected.id === "rice" && score !== null) {
-        formulaPreview.textContent = `Formula: (${vals.reach} × ${vals.impact} × ${vals.confidence}%) ÷ ${vals.effort} = ${score}`
+        const parsed = parseRiceInputs(vals)
+        formulaPreview.textContent = parsed ? `Formula: ${formatRiceFormulaBreakdown(parsed, score)}` : ""
       } else if (selected.id === "drice" && score !== null) {
         formulaPreview.textContent = `Formula: (${vals.reach} × ${vals.impact} × ${vals.confidence}%) ÷ (${vals.effort} × ${vals.dependencies}) = ${score}`
       } else if (selected.data.formula) {

@@ -102,11 +102,12 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, signal }: R
         labelSpan.style.maxWidth = "116px"
         labelSpan.textContent = label
 
-        const titleSpan = document.createElement("span")
-        titleSpan.className = "text-accent cursor-pointer hover:underline td-link-goto truncate"
-        titleSpan.dataset.id = linkedTaskId
-        titleSpan.title = "Open task"
-        titleSpan.textContent = (ticketKey ? ticketKey + " " : "") + String(title || "").slice(0, 40)
+        const titleBtn = document.createElement("button")
+        titleBtn.type = "button"
+        titleBtn.className = "text-accent cursor-pointer hover:underline td-link-goto truncate border-0 bg-transparent p-0 text-left text-xs"
+        titleBtn.dataset.id = linkedTaskId
+        titleBtn.title = "Open task"
+        titleBtn.textContent = (ticketKey ? ticketKey + " " : "") + String(title || "").slice(0, 40)
 
         const removeBtn = document.createElement("button")
         removeBtn.type = "button"
@@ -116,7 +117,7 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, signal }: R
         removeBtn.textContent = "×"
         removeBtn.setAttribute("aria-label", `Remove ${label} link to ${String(title || "").slice(0, 30)}`)
 
-        el.append(labelSpan, titleSpan, removeBtn)
+        el.append(labelSpan, titleBtn, removeBtn)
         return el
       }
 
@@ -169,21 +170,31 @@ export function initRelatedLinks({ getCurrentTaskId, openTaskDetail, signal }: R
   }
 
   // Related link search — debounced
-  let linkSearchTimer: ReturnType<typeof setTimeout>
+  let linkSearchTimer: ReturnType<typeof setTimeout> | undefined
+  let linkSearchAbort: AbortController | null = null
   const linkSearchInput = document.getElementById("td-link-search") as HTMLInputElement | null
   const linkSearchResults = document.getElementById("td-link-search-results")
+  signal?.addEventListener("abort", () => {
+    clearTimeout(linkSearchTimer)
+    linkSearchAbort?.abort()
+  }, { once: true })
 
   linkSearchInput?.addEventListener("input", () => {
     clearTimeout(linkSearchTimer)
+    linkSearchAbort?.abort()
+    linkSearchAbort = null
     const q = linkSearchInput.value.trim()
     if (q.length < 2) {
       if (linkSearchResults) linkSearchResults.style.display = "none"
       return
     }
     linkSearchTimer = setTimeout(async () => {
+      const controller = new AbortController()
+      linkSearchAbort = controller
+      const searchSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal
       try {
-        const res = await fetch(`/api/tasks?q=${encodeURIComponent(q)}&limit=10`, { signal }) // nosemgrep
-        if (!res.ok || !linkSearchResults) return
+        const res = await fetch(`/api/tasks?q=${encodeURIComponent(q)}&limit=10`, { signal: searchSignal }) // nosemgrep
+        if (searchSignal.aborted || !res.ok || !linkSearchResults) return
         const data = await res.json()
         if (linkSearchInput.value.trim() !== q) return
         const currentId = getCurrentTaskId()

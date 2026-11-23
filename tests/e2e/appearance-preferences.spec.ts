@@ -27,7 +27,6 @@ test.describe("Appearance preferences", () => {
       localStorage.setItem("meitheal_sidebar_collapsed", "true")
       localStorage.setItem("meitheal_project_nav_group_collapsed", "false")
     })
-    await page.goto("/settings#look-and-feel-settings")
     await page.reload()
     // One Look and Feel form holds the theme and every appearance category.
     const visualForm = page.locator("#appearance-preferences-form")
@@ -96,7 +95,6 @@ test.describe("Appearance preferences", () => {
       localStorage.setItem("meitheal_sidebar_collapsed", "false")
       localStorage.setItem("meitheal-appearance", JSON.stringify({ sidebar: "folded" }))
     })
-    await page.goto("/settings#look-and-feel-settings")
     await page.reload()
     const sidebar = page.locator("#sidebar")
     const body = page.locator("body")
@@ -131,7 +129,6 @@ test.describe("Appearance preferences", () => {
 
   test("neutral palette follows Light and Auto while fluid width and sticky headers remain effective", async ({ page }) => {
     await page.setViewportSize({ width: 2000, height: 1000 })
-    await page.goto("/settings#look-and-feel-settings")
     const visualForm = page.locator("#appearance-preferences-form")
     await visualForm.locator('[name="base"]').selectOption("stone")
     await visualForm.locator('[name="width"]').selectOption("fluid")
@@ -197,7 +194,6 @@ test.describe("Appearance preferences", () => {
     await page.evaluate(() => localStorage.setItem("meitheal-appearance", JSON.stringify({
       font: "invalid", radius: "9", navigation: "navbar", futurePreference: "retained",
     })))
-    await page.goto("/settings#look-and-feel-settings")
     await page.reload()
     const root = page.locator("html")
     const form = page.locator("#appearance-preferences-form")
@@ -240,7 +236,7 @@ test.describe("Appearance preferences", () => {
   })
 
   test("expanded Boards and Areas survive More, wide navbar and phone drawer handoffs", async ({ page, request, baseURL }) => {
-    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin }, "", true)
     const areaResponse = await request.post("/api/areas", { headers, data: { name: "Resize Area" } })
     expect(areaResponse.status()).toBe(201)
     const { id: areaId } = await areaResponse.json()

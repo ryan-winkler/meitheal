@@ -125,8 +125,8 @@ export function initPageShellNavigation<SectionId extends string>({
   function syncFromHash(): void {
     const hash = window.location.hash.replace("#", "")
     const sectionId = hash ? resolveSectionId(hash) : null
-    trackLinkedSection(sectionId ?? (preserveOverviewOnLoad ? defaultSectionId : null), sectionId !== null)
     updateActiveState(sectionId ?? defaultSectionId)
+    trackLinkedSection(sectionId ?? (preserveOverviewOnLoad ? defaultSectionId : null), sectionId !== null)
   }
 
   const selectors = ["[data-unified-bar-section-link]", ...sectionLinkSelectors]
@@ -262,7 +262,7 @@ export function initPageShellSectionTracking<SectionId extends string>(
   resolveSectionId: (anchorId: string) => SectionId | null,
   updateActiveState: (sectionId: SectionId) => void,
   rootMargin = "-25% 0px -45% 0px",
-  threshold = [0.2, 0.45, 0.7],
+  threshold = [0, 0.2, 0.45, 0.7],
 ): (sectionId: SectionId | null, awaitVisibility?: boolean) => void {
   let linkedSection: {
     element: HTMLElement
@@ -288,26 +288,31 @@ export function initPageShellSectionTracking<SectionId extends string>(
   }
 
   function syncLinkedSectionVisibility(): void {
-    if (!linkedSection) return
-    const { top, bottom } = linkedSection.element.getBoundingClientRect()
-    if (bottom > 0 && top < window.innerHeight) {
-      linkedSection.wasVisible = true
-    } else if (linkedSection.wasVisible) {
-      resumeSectionTracking()
+    if (linkedSection) {
+      const { top, bottom } = linkedSection.element.getBoundingClientRect()
+      if (bottom > 0 && top < window.innerHeight) {
+        linkedSection.wasVisible = true
+      } else if (linkedSection.wasVisible) {
+        resumeSectionTracking()
+      }
     }
+    if (!linkedSection && window.scrollY <= 8) resumeSectionTracking()
   }
 
   function trackLinkedSection(sectionId: SectionId | null, awaitVisibility = true): void {
     const element = sectionId ? document.getElementById(sectionId) : null
     linkedSection = element ? { element, wasVisible: false } : null
     syncLinkedSectionVisibility()
-    if (!awaitVisibility && !linkedSection?.wasVisible) linkedSection = null
+    if (!awaitVisibility && !linkedSection?.wasVisible) {
+      linkedSection = null
+      if (window.scrollY > 8) resumeSectionTracking()
+    }
   }
 
   if (sections.length > 0) {
     pageLifecycle.on(window, "scroll", syncLinkedSectionVisibility, { passive: true })
     pageLifecycle.on(document, "scrollend", () => {
-      if (linkedSection && !linkedSection.wasVisible) resumeSectionTracking()
+      if ((linkedSection && !linkedSection.wasVisible) || (!linkedSection && window.scrollY <= 8)) resumeSectionTracking()
     })
     const observer = new IntersectionObserver(
       (entries) => {

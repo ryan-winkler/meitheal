@@ -15,7 +15,70 @@ export interface DescriptionEditorHandle {
 interface EditorOptions {
   signal: AbortSignal
   afterPreviewRender?: (container: HTMLElement) => void
-  defaultMode?: DescriptionEditorMode
+}
+
+export interface MarkdownPreviewRenderOptions {
+  afterRender?: (container: HTMLElement) => void
+  shouldApply?: () => boolean
+}
+
+export async function renderMarkdownPreviewInto(
+  target: HTMLElement,
+  md: string,
+  options: MarkdownPreviewRenderOptions = {},
+): Promise<boolean> {
+  const { afterRender, shouldApply } = options
+  if (!md.trim()) {
+    if (shouldApply && !shouldApply()) return false
+    const p = document.createElement("p")
+    const empty = document.createElement("em")
+    empty.className = "text-text-muted"
+    empty.textContent = "No description provided."
+    p.append(empty)
+    target.replaceChildren(p)
+    return true
+  }
+  const [{ renderMarkdownToHtml }, { sanitizeClient }] = await Promise.all([
+    import("@lib/markdown-client"),
+    import("@lib/sanitize-client"),
+  ])
+  if (shouldApply && !shouldApply()) return false
+  const cleanHtml = sanitizeClient(renderMarkdownToHtml(md))
+  const parsed = new DOMParser().parseFromString(cleanHtml, "text/html")
+  afterRender?.(parsed.body)
+  target.replaceChildren(...Array.from(parsed.body.childNodes))
+  return true
+}
+
+function serializeInlineCode(raw: string): string {
+  let maxRun = 0
+  let cur = 0
+  for (let i = 0; i < raw.length; i++) {
+    if (raw[i] === "`") {
+      cur++
+      if (cur > maxRun) maxRun = cur
+    } else {
+      cur = 0
+    }
+  }
+  const fence = "`".repeat(maxRun + 1)
+  const needsPad = raw.startsWith("`") || raw.endsWith("`") || (raw.length > 0 && raw.trim().length === 0)
+  return needsPad ? `${fence} ${raw} ${fence}` : `${fence}${raw}${fence}`
+}
+
+function serializeTable(table: HTMLTableElement): string {
+  const rows = Array.from(table.querySelectorAll("tr")).map(tr =>
+    Array.from(tr.querySelectorAll("th, td")).map(cell =>
+      serializeChildren(cell).replace(/\s*\n+\s*/g, " ").replace(/\|/g, "\\|").trim(),
+    ),
+  )
+  if (rows.length === 0 || rows[0]!.length === 0) return ""
+  const colCount = Math.max(...rows.map(r => r.length))
+  const pad = (r: string[]) => Array.from({ length: colCount }, (_, i) => r[i] ?? "")
+  const header = `| ${pad(rows[0]!).join(" | ")} |`
+  const sep = `| ${Array.from({ length: colCount }, () => "---").join(" | ")} |`
+  const body = rows.slice(1).map(r => `| ${pad(r).join(" | ")} |`)
+  return `\n${[header, sep, ...body].join("\n")}\n\n`
 }
 
 function hasLossyStructure(md: string): boolean {
@@ -53,19 +116,19 @@ function serializeNode(node: Node): string {
     case "strike": return inner ? `~~${inner}~~` : ""
     case "code": {
       if (el.parentElement?.tagName.toLowerCase() === "pre") return el.textContent ?? ""
-      return `\`${(el.textContent ?? "").replace(/`/g, "\\`")}\``
+      return serializeInlineCode(el.textContent ?? "")
     }
     case "pre": return `\n\`\`\`\n${(el.textContent ?? "").replace(/\n$/, "")}\n\`\`\`\n\n`
+    case "table": return serializeTable(el as HTMLTableElement)
     case "a": {
       const href = el.getAttribute("href") ?? ""
       return href ? `[${inner || href}](${href})` : inner
     }
-    case "h1": return `# ${inner.trim()}\n\n`
-    case "h2": return `## ${inner.trim()}\n\n`
-    case "h3": return `### ${inner.trim()}\n\n`
-    case "h4": return `#### ${inner.trim()}\n\n`
-    case "h5": return `##### ${inner.trim()}\n\n`
-    case "h6": return `###### ${inner.trim()}\n\n`
+    case "img": {
+      const alt = el.getAttribute("alt")?.trim() ?? ""
+      const src = el.getAttribute("src")?.trim() ?? ""
+      return src ? `![${alt}](${src})` : alt
+    }
     case "blockquote": {
       const lines = inner.trim().split("\n").map(line => `> ${line}`)
       return lines.join("\n") + "\n\n"
@@ -89,7 +152,7 @@ function serializeNode(node: Node): string {
     case "li": return `${inner.trim()}\n`
     case "p":
     case "div": return inner ? `${inner.replace(/\n+$/, "")}\n\n` : ""
-    default: return inner
+    default: return /^h[1-6]$/.test(tag) ? `${"#".repeat(Number(tag[1]))} ${inner.trim()}\n\n` : inner
   }
 }
 
@@ -155,18 +218,45 @@ export function enhanceDescriptionEditor(
   modesWrap.setAttribute("role", "tablist")
   modesWrap.setAttribute("aria-label", "Description editor mode")
 
+  const baseId = field.id || `md-editor-${Math.random().toString(36).slice(2, 8)}`
+  const modes: readonly DescriptionEditorMode[] = ["markdown", "visual", "preview"]
+  const panelIds: Record<DescriptionEditorMode, string> = {
+    markdown: `${baseId}-panel-markdown`,
+    visual: `${baseId}-panel-visual`,
+    preview: `${baseId}-panel-preview`,
+  }
+
+  const visual = document.createElement("div")
+  visual.id = panelIds.visual
+  visual.className = "form-input md-visual-surface"
+  visual.setAttribute("role", "tabpanel")
+  visual.contentEditable = "true"
+  visual.hidden = true
+  visual.setAttribute("aria-label", textarea.getAttribute("aria-label") || "Visual description editor")
+
+  const preview = document.createElement("div")
+  preview.id = panelIds.preview
+  preview.className = "prose prose-sm dark:prose-invert max-w-none wrap-break-word p-3 rounded-lg border border-border bg-bg-input/30 min-h-[120px]"
+  preview.setAttribute("role", "tabpanel")
+  preview.hidden = true
+
   const modeButtons = new Map<DescriptionEditorMode, HTMLButtonElement>()
   for (const [m, text] of [["markdown", "Markdown"], ["visual", "Visual"], ["preview", "Preview"]] as const) {
     const btn = document.createElement("button")
     btn.type = "button"
+    btn.id = `${baseId}-tab-${m}`
     btn.role = "tab"
     btn.className = "btn btn-sm md-mode-btn"
     btn.dataset.mdMode = m
     btn.textContent = text
+    btn.setAttribute("aria-controls", m === "markdown" ? field.id || panelIds.markdown : panelIds[m])
     btn.setAttribute("aria-selected", String(m === "markdown"))
+    btn.tabIndex = m === "markdown" ? 0 : -1
     modeButtons.set(m, btn)
     modesWrap.appendChild(btn)
   }
+  visual.setAttribute("aria-labelledby", modeButtons.get("visual")!.id)
+  preview.setAttribute("aria-labelledby", modeButtons.get("preview")!.id)
 
   const toolbar = document.createElement("div")
   toolbar.className = "btn-list md-editor-toolbar"
@@ -192,16 +282,6 @@ export function enhanceDescriptionEditor(
   notice.setAttribute("role", "status")
   notice.hidden = true
 
-  const visual = document.createElement("div")
-  visual.className = "form-input md-visual-surface"
-  visual.contentEditable = "true"
-  visual.hidden = true
-  visual.setAttribute("aria-label", textarea.getAttribute("aria-label") || "Visual description editor")
-
-  const preview = document.createElement("div")
-  preview.className = "prose prose-sm dark:prose-invert max-w-none wrap-break-word p-3 rounded-lg border border-border bg-bg-input/30 min-h-[120px]"
-  preview.hidden = true
-
   const parent = textarea.parentElement!
   parent.insertBefore(host, textarea)
   host.append(header, notice)
@@ -210,8 +290,10 @@ export function enhanceDescriptionEditor(
   let currentMode: DescriptionEditorMode = "markdown"
   let syncingVisual = false
   let lossyLocked = false
+  let renderSeq = 0
 
-  async function renderInto(target: HTMLElement, md: string, interactivePreview: boolean): Promise<void> {
+  async function renderInto(target: HTMLElement, md: string, interactivePreview: boolean, seq: number): Promise<void> {
+    if (signal.aborted || seq !== renderSeq) return
     if (!md.trim()) {
       const empty = document.createElement("em")
       empty.className = "text-text-muted"
@@ -219,22 +301,20 @@ export function enhanceDescriptionEditor(
       target.replaceChildren(empty)
       return
     }
-    const [{ renderMarkdownToHtml }, { sanitizeClient }] = await Promise.all([
-      import("@lib/markdown-client"),
-      import("@lib/sanitize-client"),
-    ])
-    if (signal.aborted) return
-    const cleanHtml = sanitizeClient(renderMarkdownToHtml(md))
-    const parsed = new DOMParser().parseFromString(cleanHtml, "text/html")
-    if (interactivePreview) afterPreviewRender?.(parsed.body)
-    target.replaceChildren(...Array.from(parsed.body.childNodes))
+    await renderMarkdownPreviewInto(target, md, {
+      afterRender: interactivePreview ? afterPreviewRender : undefined,
+      shouldApply: () => !signal.aborted && seq === renderSeq,
+    })
   }
 
   async function setMode(nextMode: DescriptionEditorMode, focus = true): Promise<void> {
+    const seq = ++renderSeq
     currentMode = nextMode
     for (const [m, btn] of modeButtons) {
-      btn.setAttribute("aria-selected", String(m === nextMode))
-      btn.classList.toggle("active", m === nextMode)
+      const selected = m === nextMode
+      btn.setAttribute("aria-selected", String(selected))
+      btn.tabIndex = selected ? 0 : -1
+      btn.classList.toggle("active", selected)
     }
     toolbar.hidden = nextMode === "preview"
     field.hidden = nextMode !== "markdown"
@@ -249,10 +329,10 @@ export function enhanceDescriptionEditor(
         notice.textContent = "This description uses tables, fenced code, or HTML that edits safely in Markdown mode."
         notice.hidden = false
       }
-      await renderInto(visual, field.value, false)
-      if (!lossyLocked && focus && !signal.aborted) visual.focus()
+      await renderInto(visual, field.value, false, seq)
+      if (!lossyLocked && focus && !signal.aborted && seq === renderSeq) visual.focus()
     } else if (nextMode === "preview") {
-      await renderInto(preview, field.value, true)
+      await renderInto(preview, field.value, true, seq)
     } else if (focus) {
       field.focus()
     }
@@ -261,6 +341,21 @@ export function enhanceDescriptionEditor(
   for (const [m, btn] of modeButtons) {
     btn.addEventListener("click", () => void setMode(m), { signal })
   }
+  modesWrap.addEventListener("keydown", e => {
+    const active = document.activeElement as HTMLButtonElement | null
+    const currentIdx = modes.findIndex(m => modeButtons.get(m) === active)
+    if (currentIdx === -1) return
+    let nextIdx = -1
+    if (e.key === "ArrowRight") nextIdx = (currentIdx + 1) % modes.length
+    else if (e.key === "ArrowLeft") nextIdx = (currentIdx - 1 + modes.length) % modes.length
+    else if (e.key === "Home") nextIdx = 0
+    else if (e.key === "End") nextIdx = modes.length - 1
+    if (nextIdx === -1) return
+    e.preventDefault()
+    const targetMode = modes[nextIdx]!
+    modeButtons.get(targetMode)?.focus()
+    void setMode(targetMode, false)
+  }, { signal })
 
   visual.addEventListener("input", () => {
     if (syncingVisual || lossyLocked) return
@@ -272,15 +367,27 @@ export function enhanceDescriptionEditor(
 
   // Paste firewall: sanitize pasted HTML to safe Markdown without inline styles/scripts
   const handlePaste = async (e: ClipboardEvent, targetIsVisual: boolean) => {
-    const html = e.clipboardData?.getData("text/html")
-    if (!html || !/<(b|strong|i|em|u|ul|ol|li|h[1-6]|pre|code|blockquote|a|table)\b/i.test(html)) return
+    const html = e.clipboardData?.getData("text/html") ?? ""
+    if (!html || !/<(b|strong|i|em|u|ul|ol|li|h[1-6]|pre|code|blockquote|a|table|p|div|span|br|img)\b/i.test(html)) return
+    const plainFallback = e.clipboardData?.getData("text/plain") ?? ""
     e.preventDefault()
     const [{ sanitizeClient }] = await Promise.all([import("@lib/sanitize-client")])
     if (signal.aborted) return
     const clean = sanitizeClient(html)
     const doc = new DOMParser().parseFromString(clean, "text/html")
-    const md = domToMarkdown(doc.body) || e.clipboardData?.getData("text/plain") || ""
+    const md = domToMarkdown(doc.body) || plainFallback
+    const insertAtSelection = () => {
+      const start = textarea.selectionStart ?? textarea.value.length
+      const end = textarea.selectionEnd ?? textarea.value.length
+      textarea.setRangeText(md, start, end, "end")
+      textarea.dispatchEvent(new Event("input", { bubbles: true }))
+    }
     if (targetIsVisual && !lossyLocked) {
+      if (doc.body.querySelector("table, pre") || hasLossyStructure(md)) {
+        insertAtSelection()
+        await setMode("markdown", true)
+        return
+      }
       const sel = window.getSelection()
       if (sel && sel.rangeCount > 0) {
         const range = sel.getRangeAt(0)
@@ -292,10 +399,7 @@ export function enhanceDescriptionEditor(
         visual.dispatchEvent(new Event("input", { bubbles: true }))
       }
     } else {
-      const start = textarea.selectionStart ?? textarea.value.length
-      const end = textarea.selectionEnd ?? textarea.value.length
-      textarea.setRangeText(md, start, end, "end")
-      textarea.dispatchEvent(new Event("input", { bubbles: true }))
+      insertAtSelection()
     }
   }
 
@@ -311,8 +415,9 @@ export function enhanceDescriptionEditor(
 
   return {
     syncFromTextarea: () => {
-      if (currentMode === "visual") void renderInto(visual, textarea.value, false)
-      else if (currentMode === "preview") void renderInto(preview, textarea.value, true)
+      const seq = ++renderSeq
+      if (currentMode === "visual") void renderInto(visual, textarea.value, false, seq)
+      else if (currentMode === "preview") void renderInto(preview, textarea.value, true, seq)
     },
     setMode,
   }

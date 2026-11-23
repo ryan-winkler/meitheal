@@ -19,6 +19,7 @@ import FrameworkBadge from "../ui/FrameworkBadge.astro"
 import LabelBadges from "../ui/LabelBadges.astro"
 import TaskTypeIcon from "../ui/TaskTypeIcon.astro"
 import { taskSurface } from "../../lib/task-surface"
+import { formatCardCustomFieldValue } from "../../lib/custom-field-defs"
 import { formatTicketKey } from "../../lib/ticket-key"
 import { taskDetailPath } from "../../lib/task-page-url"
 import type { TaskViewItem } from "../../lib/task-queries"
@@ -76,9 +77,9 @@ if (task.checklists === null) {
 }
 
 // Custom fields
-const customEntries = Object.entries(task.custom_fields).filter(
-  ([, v]) => v !== "" && v !== null && v !== undefined
-)
+const customEntries = Object.entries(task.custom_fields)
+  .map(([k, v]) => [k, formatCardCustomFieldValue(v)] as const)
+  .filter((entry): entry is readonly [string, string] => entry[1] !== null)
 ---
 
 <div
@@ -220,6 +221,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
   {/* Focus Today button (for Suggested section) */}
   {showFocusToday && (
     <button
+      type="button"
       class="tli__focus-btn"
       data-id={task.id}
       title="Set due date to today"
@@ -233,6 +235,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
   {/* Snooze button (for Today sections) */}
   {showSnooze && (
     <button
+      type="button"
       class="tli__snooze-btn"
       data-id={task.id}
       title="Snooze / Reschedule"

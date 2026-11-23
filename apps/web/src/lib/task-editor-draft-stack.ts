@@ -72,7 +72,3 @@ export function popTaskEditorDraft(): TaskEditorStackEntry | undefined {
   writeStack(stack)
   return last
 }
-
-export function clearTaskEditorDraftStack(): void {
-  writeStack([])
-}

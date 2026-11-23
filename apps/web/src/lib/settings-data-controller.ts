@@ -12,44 +12,35 @@ import { settingsStore } from "@lib/settings-store"
 import { exportFilename } from "@lib/export-filename"
 import { showToast } from "@lib/toast"
 import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
-import { normalizeCustomFieldDefs, type CustomFieldDef } from "@lib/custom-field-defs"
+import {
+  CUSTOM_FIELD_TYPE_LABELS,
+  VALID_CUSTOM_FIELD_TYPES,
+  fetchBoardCustomFieldDefs,
+  normalizeCustomFieldDefs,
+  updateBoardCustomFieldDefs,
+  type CustomFieldDef,
+  type CustomFieldType,
+} from "@lib/custom-field-defs"
 import { flushRulesSave, withConfigurationMutation, withRulesReplacement } from "@lib/settings-rules-controller"
 import { log } from "@lib/settings-utils"
 
 type CustomField = CustomFieldDef
-let pendingCustomFields = Promise.resolve()
 
 async function fetchBoardCustomFields(signal: AbortSignal): Promise<CustomField[]> {
   const ctx = currentTaskApiContext()
-  const response = await fetch("/api/custom-fields", {
-    cache: "no-store",
+  return fetchBoardCustomFieldDefs({
     signal,
     ...(ctx ? { headers: taskApiHeaders(ctx) } : {}),
   })
-  if (!response.ok) throw new Error(`Custom fields could not load: ${response.status}`)
-  const data = await response.json() as { fields?: unknown }
-  return normalizeCustomFieldDefs(data.fields)
 }
 
 function updateCustomFields(update: (fields: CustomField[]) => CustomField[]): Promise<void> {
   const signal = pageLifecycle.signal
-  const save = pendingCustomFields.then(async () => {
-    const ctx = currentTaskApiContext()
-    const current = await fetchBoardCustomFields(signal)
-    signal.throwIfAborted()
-    const fields = update(current)
-    const headers = new Headers(ctx ? taskApiHeaders(ctx) : undefined)
-    headers.set("content-type", "application/json")
-    const response = await fetch("/api/custom-fields", {
-      method: "PUT",
-      signal,
-      headers,
-      body: JSON.stringify({ fields }),
-    })
-    if (!response.ok) throw new Error(`Custom fields could not save: ${response.status}`)
-  })
-  pendingCustomFields = save.catch(() => {})
-  return save
+  const ctx = currentTaskApiContext()
+  return updateBoardCustomFieldDefs(update, {
+    signal,
+    ...(ctx ? { headers: taskApiHeaders(ctx) } : {}),
+  }).then(() => undefined)
 }
 
 function renderCustomFieldRows(fields: CustomField[]): void {
@@ -235,8 +226,8 @@ export function initDataSettings(): void {
     const typeSelect = document.createElement("select")
     typeSelect.className = "form-select cf-type-select"
     typeSelect.setAttribute("aria-label", "Field type")
-    for (const [val, label] of [["text", "Text"], ["number", "Number"], ["url", "URL"], ["select", "Select"], ["date", "Date"], ["checkbox", "Checkbox"]]) {
-      typeSelect.add(new Option(label, val))
+    for (const val of VALID_CUSTOM_FIELD_TYPES) {
+      typeSelect.add(new Option(CUSTOM_FIELD_TYPE_LABELS[val as CustomFieldType] ?? val, val))
     }
 
     const optionsInput = document.createElement("input")

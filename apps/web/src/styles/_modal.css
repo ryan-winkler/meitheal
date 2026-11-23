@@ -158,19 +158,6 @@ dialog[open] .modal-content,
   }
 }
 
-/* B2: Command palette scale animation */
-@keyframes cp-enter {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
 /* B2: Task detail slide-in from right */
 @keyframes td-slide-in {
   from {
@@ -826,48 +813,6 @@ body.has-docked-inspector #task-detail-panel {
   transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
-/* --- NewTask Kind Pills (Tab Switcher) --- */
-.nt-kind-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.4rem 0.85rem;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  border-radius: 9999px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
-  white-space: nowrap;
-  line-height: 1.2;
-}
-
-.nt-kind-pill svg {
-  opacity: 0.6;
-  transition: opacity 0.18s ease;
-}
-
-.nt-kind-pill:hover {
-  background: color-mix(in srgb, var(--text-muted) 8%, transparent);
-  color: var(--text-primary);
-}
-.nt-kind-pill:hover svg {
-  opacity: 0.85;
-}
-
-.nt-kind-pill.active {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
-  color: var(--accent-text);
-  font-weight: 600;
-}
-.nt-kind-pill.active svg {
-  opacity: 1;
-  stroke: var(--accent-text);
-}
-
 /* Unified Description Editor */
 .md-editor-chrome {
   display: grid;
@@ -973,18 +918,6 @@ body.has-docked-inspector #task-detail-panel {
   border-color: var(--color-border);
 }
 
-/* Subtle bottom-border on title/description for visual anchor */
-#new-task-title-input,
-#new-task-title-input:focus,
-#new-task-desc-input,
-#new-task-desc-input:focus {
-  outline: none !important;
-  box-shadow: none !important;
-  border: none !important;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent) !important;
-  border-radius: 0 !important;
-}
-
 /* Feature cards (routine toggle, ai assist, custom fields) */
 .nt-feature-card {
   border: 1px solid var(--border);
@@ -1053,6 +986,8 @@ body.has-docked-inspector #task-detail-panel {
   background: var(--bg-input);
   font-size: 0.8125rem;
   white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
 #new-task-overlay .nt-kind-pill svg { flex-shrink: 0; }
 #new-task-overlay .nt-kind-pill[aria-pressed="true"] {

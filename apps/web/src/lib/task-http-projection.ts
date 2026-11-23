@@ -4,6 +4,7 @@ import { formatTicketKey } from "./ticket-key"
 /** Explicit allowlist: adding a private database column can never add it to HTTP. */
 export function taskHttpProjection(row: Record<string, unknown>, boardId: string): Record<string, unknown> {
   const task = projectPublicTaskFields(row)
+  if (Object.hasOwn(task, "is_promoted")) task.is_promoted = Boolean(task.is_promoted)
   // Successful create/update writers return their actual integer timestamp.
   // Read queries supply the normalized version explicitly for retained ISO rows.
   if (!Object.hasOwn(task, "task_version")) {

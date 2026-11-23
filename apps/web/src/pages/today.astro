@@ -50,6 +50,14 @@ const pagePlacement = await readBoardPagePlacement(workScope, Astro.url)
 if (!pagePlacement.ok) return boardScopeResponse(pagePlacement.errorCode)
 const placement = pagePlacement.placement
 const contextHref = (path: string) => boardContextHref({ boardId: workScope.boardId, area: pagePlacement.area?.id, project: pagePlacement.project?.id }, path)
+let todayBoardName = workScope.boardId === "household" ? "Household Board" : "Board"
+try {
+  const { rows: [boardRow] } = await getPersistenceClient().execute({
+    sql: "SELECT name FROM task_boards WHERE id = ?",
+    args: [workScope.boardId],
+  })
+  if (boardRow?.name) todayBoardName = String(boardRow.name)
+} catch { /* fallback to default label */ }
 
 
 let carriedForwardTasks: TaskViewItem[] = []
@@ -217,7 +225,7 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
       class="unified-bar__new-task-btn today-shell__clear-btn"
       id="clear-completed-btn"
       data-today-archive={todayIsoDate}
-      title="Archive Complete Household Board tasks last updated today"
+      title={`Archive Complete ${todayBoardName} tasks last updated today`}
       aria-label="Archive completed"
     >
       <span class="unified-bar__new-task-label">Archive completed</span>
@@ -1066,12 +1074,13 @@ const completionPercent = todayCompletionPercent(completedTodayCount, remainingC
     text-align: left;
     background: none;
     border: none;
-    color: var(--text);
+    color: var(--text-primary);
     cursor: pointer;
     border-radius: var(--radius-sm, 4px);
     transition: background 0.15s;
   }
-  :global(.snooze-option:hover) {
+  :global(.snooze-option:hover),
+  :global(.snooze-option:focus-visible) {
     background: var(--bg-hover);
   }
 

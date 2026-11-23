@@ -73,28 +73,62 @@ export function initQuickActions(
     close()
     const card = button.closest<HTMLElement>(".kanban-card")
     card?.querySelector<HTMLElement>(".card-more-btn")?.focus({ preventScroll: true })
-    if (card) {
-      if (color) {
+    const prevHasTaskColor = card?.hasAttribute("data-task-color") ?? false
+    const prevKnightColor = card?.style.getPropertyValue("--knight-task-color") ?? ""
+    const prevCardAccent = card?.style.getPropertyValue("--card-accent") ?? ""
+    const prevButtonColor = button.getAttribute("data-color")
+    const applyCardColor = (nextColor: string | null) => {
+      if (!card) return
+      if (nextColor) {
         card.setAttribute("data-task-color", "")
-        card.style.setProperty("--knight-task-color", color)
-        card.style.setProperty("--card-accent", color)
+        card.style.setProperty("--knight-task-color", nextColor)
+        card.style.setProperty("--card-accent", nextColor)
       } else {
         card.removeAttribute("data-task-color")
         card.style.removeProperty("--knight-task-color")
+        card.style.removeProperty("--card-accent")
       }
     }
+    const restoreCardColor = () => {
+      if (card) {
+        if (prevHasTaskColor) card.setAttribute("data-task-color", "")
+        else card.removeAttribute("data-task-color")
+        if (prevKnightColor) card.style.setProperty("--knight-task-color", prevKnightColor)
+        else card.style.removeProperty("--knight-task-color")
+        if (prevCardAccent) card.style.setProperty("--card-accent", prevCardAccent)
+        else card.style.removeProperty("--card-accent")
+      }
+      if (prevButtonColor === null) button.removeAttribute("data-color")
+      else button.setAttribute("data-color", prevButtonColor)
+    }
+    applyCardColor(color)
     button.disabled = true
     try {
+      const ctx = currentTaskApiContext()
       const response = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
         method: "PUT",
-        headers: { "content-type": "application/json" },
+        headers: ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" },
         body: JSON.stringify({ color }),
       })
+      if (response.status === 409) {
+        restoreCardColor()
+        if (!__signal.aborted) {
+          toast("Task was updated elsewhere. Refreshing board.", "warning")
+          await refreshBoard({ taskId })
+        }
+        return
+      }
       if (!response.ok) throw new Error("Color write rejected")
+      const saved = await response.json().catch(() => null) as { task_version?: unknown; updated_at?: unknown } | null
+      const nextVersion = Number(saved?.task_version ?? saved?.updated_at)
+      if (card && Number.isSafeInteger(nextVersion) && nextVersion >= 0) {
+        card.dataset.version = String(nextVersion)
+      }
       notifyInactivityTaskChanged(taskId)
       await refreshBoard({ taskId })
       toast(color ? "Color updated" : "Color cleared", "success")
     } catch {
+      restoreCardColor()
       if (!__signal.aborted) toast(color ? "Failed to set color" : "Failed to clear color", "error")
     } finally {
       button.disabled = false
@@ -427,15 +461,17 @@ export function initQuickActions(
 
         COLOR_SWATCHES.forEach(({ color, label }) => {
           const swatch = document.createElement("button")
+          swatch.type = "button"
           swatch.className = "color-swatch"
+          const isCurrentColor = Boolean(currentColor && currentColor.toLowerCase() === color.toLowerCase())
           // P1-2: Active color indicator
-          if (currentColor && currentColor.toLowerCase() === color.toLowerCase()) {
+          if (isCurrentColor) {
             swatch.classList.add("swatch-active")
           }
           swatch.style.background = color
           swatch.title = label
           swatch.setAttribute("role", "radio")
-          swatch.setAttribute("aria-checked", currentColor === color ? "true" : "false")
+          swatch.setAttribute("aria-checked", isCurrentColor ? "true" : "false")
           swatch.setAttribute("aria-label", `Set color: ${label}`)
           swatch.addEventListener("click", () => {
             void saveColor(btn, taskId, color)

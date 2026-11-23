@@ -22,6 +22,15 @@ export const VALID_CUSTOM_FIELD_TYPES = new Set<string>([
   "text", "number", "url", "select", "date", "checkbox",
 ])
 
+export const CUSTOM_FIELD_TYPE_LABELS: Record<CustomFieldType, string> = {
+  text: "Text",
+  number: "Number",
+  url: "URL",
+  select: "Select",
+  date: "Date",
+  checkbox: "Checkbox",
+}
+
 export const MAX_KANBAN_CARD_CUSTOM_FIELDS = 4
 export const KANBAN_CARD_FIELDS_PREFIX = "meitheal:kanban-card-fields:v1:"
 
@@ -106,4 +115,65 @@ export function parseVisibleCardCustomFields(raw: unknown): string[] | null {
     if (out.length >= MAX_KANBAN_CARD_CUSTOM_FIELDS) break
   }
   return out
+}
+
+export interface CustomFieldApiOptions {
+  headers?: HeadersInit
+  signal?: AbortSignal
+}
+
+let pendingCustomFieldMutation: Promise<void> = Promise.resolve()
+
+function customFieldRequestSignal(signal?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(10_000)
+  return signal ? AbortSignal.any([signal, timeout]) : timeout
+}
+
+export async function fetchBoardCustomFieldDefs(
+  options: CustomFieldApiOptions = {},
+): Promise<CustomFieldDef[]> {
+  const response = await fetch("/api/custom-fields", {
+    cache: "no-store",
+    signal: customFieldRequestSignal(options.signal),
+    ...(options.headers ? { headers: options.headers } : {}),
+  })
+  if (!response.ok) {
+    const err = new Error(`Custom fields could not load: ${response.status}`) as Error & { status?: number }
+    err.status = response.status
+    throw err
+  }
+  const data = await response.json().catch(() => null) as { fields?: unknown } | null
+  return normalizeCustomFieldDefs(data?.fields)
+}
+
+export function updateBoardCustomFieldDefs(
+  updater: (current: CustomFieldDef[]) => CustomFieldDef[],
+  options: CustomFieldApiOptions = {},
+): Promise<CustomFieldDef[]> {
+  const run = async (): Promise<CustomFieldDef[]> => {
+    const current = await fetchBoardCustomFieldDefs(options)
+    options.signal?.throwIfAborted()
+    const fields = normalizeCustomFieldDefs(updater(current))
+    const headers = new Headers(options.headers)
+    headers.set("content-type", "application/json")
+    const response = await fetch("/api/custom-fields", {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ fields }),
+      signal: customFieldRequestSignal(options.signal),
+    })
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null
+      const err = new Error(payload?.error ?? `Custom fields could not save: ${response.status}`) as Error & { status?: number }
+      err.status = response.status
+      throw err
+    }
+    if (typeof document !== "undefined") {
+      document.dispatchEvent(new CustomEvent("meitheal:custom-fields-updated", { detail: { fields } }))
+    }
+    return fields
+  }
+  const mutation = pendingCustomFieldMutation.then(run, run)
+  pendingCustomFieldMutation = mutation.then(() => undefined, () => undefined)
+  return mutation
 }

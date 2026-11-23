@@ -216,6 +216,8 @@ export async function loadComments(
   }
 }
 
+let attachmentsLoadSeq = 0
+
 /**
  * Load and render image attachment thumbnails for a task.
  */
@@ -224,10 +226,13 @@ export async function loadAttachments(taskId: string): Promise<void> {
     "td-attachments",
   ) as HTMLElement
   if (!container) return
+  const seq = ++attachmentsLoadSeq
+  container.dataset.activeTaskId = taskId
   container.replaceChildren()
 
   try {
     const attachments = await getAttachmentsByTaskId(taskId)
+    if (seq !== attachmentsLoadSeq || container.dataset.activeTaskId !== taskId || !container.isConnected) return
     if (attachments.length === 0) {
       const emptyLabel = document.createElement("span")
       emptyLabel.className = "text-[10px] text-text-muted italic"
@@ -246,9 +251,12 @@ export async function loadAttachments(taskId: string): Promise<void> {
 
       const thumb = document.createElement("div")
       thumb.className =
-        "relative group cursor-pointer border border-border rounded-md overflow-hidden hover:border-accent transition-colors"
+        "relative group cursor-pointer border border-border rounded-md overflow-hidden hover:border-accent transition-colors focus-visible:outline-2 focus-visible:outline-accent"
       thumb.style.width = "64px"
       thumb.style.height = "64px"
+      thumb.tabIndex = 0
+      thumb.setAttribute("role", "button")
+      thumb.setAttribute("aria-label", `Preview ${att.filename || "attachment"}`)
 
       const img = document.createElement("img")
       img.src = safeSrc
@@ -281,7 +289,7 @@ export async function loadAttachments(taskId: string): Promise<void> {
       delOverlay.appendChild(delBtn)
 
       // Safe in-page lightbox dialog (no raw HTML blob or window.open)
-      thumb.onclick = () => {
+      const openLightbox = () => {
         const dialog = document.createElement("dialog")
         dialog.className = "m-attachment-lightbox"
         dialog.style.cssText = "padding:0;border:none;background:transparent;max-width:92vw;max-height:92vh;overflow:visible;"
@@ -302,6 +310,14 @@ export async function loadAttachments(taskId: string): Promise<void> {
         document.body.appendChild(dialog)
         dialog.showModal()
       }
+      thumb.onclick = openLightbox
+      thumb.addEventListener("keydown", (ev) => {
+        if (ev.target !== thumb) return
+        if (ev.key === "Enter" || ev.key === " ") {
+          ev.preventDefault()
+          openLightbox()
+        }
+      })
 
       thumb.appendChild(img)
       thumb.appendChild(delOverlay)

@@ -12,6 +12,7 @@ import {
   type TaskType,
 } from "@meitheal/domain-tasks"
 import { logApiError } from "../../lib/api-logger"
+import { sanitizeMarkdownInput } from "../../lib/sanitize"
 import { normalizeStatus, STATUS } from "../../lib/status-config"
 import { stripHtml } from "../../lib/strip-html"
 
@@ -38,7 +39,6 @@ export async function prepareTaskCreation(
   { id = crypto.randomUUID(), useDefaultAssignee = true }: { id?: string, useDefaultAssignee?: boolean } = {},
 ): Promise<{ ok: true; task: TaskCreationData } | { ok: false; error: string }> {
   // OA-604: Input sanitization (strip HTML tags from plain-text titles without escaping &)
-  const { sanitizeMarkdownInput } = await import("../../lib/sanitize")
   const rawTitle = typeof body.title === "string" ? body.title.trim() : ""
   const title = stripHtml(rawTitle).trim()
   if (!title) return { ok: false, error: "title is required" }
@@ -53,7 +53,7 @@ export async function prepareTaskCreation(
     return { ok: false, error: "description must be 10000 characters or less" }
   }
   const rawDesc = typeof body.description === "string" ? body.description : ""
-  const description = sanitizeMarkdownInput(rawDesc)
+  const description = rawDesc ? sanitizeMarkdownInput(rawDesc) : ""
 
   // Validate status — any non-empty alphanumeric/underscore string up to 50 chars
   const rawStatus = typeof body.status === "string" ? body.status.trim().toLowerCase().replace(/[^a-z0-9_]/g, "") : ""

@@ -1,12 +1,8 @@
-import { roundFrameworkScore } from "@meitheal/domain-strategy"
+import { calculateRiceScore, roundFrameworkScore, type RiceInput as BaseRiceInput } from "@meitheal/domain-strategy"
 
 export const RICE_FIELDS = ["reach", "impact", "confidence", "effort"] as const
 
-export interface RiceInput {
-  reach: number
-  impact: number
-  confidence: number
-  effort: number
+export interface RiceInput extends BaseRiceInput {
   confidence_unit?: "percent"
 }
 
@@ -47,6 +43,19 @@ export function parseRiceInputs(values: Record<string, unknown>): RiceInput | nu
   return result
 }
 
+/** Detect legacy (0, 1] confidence fractions lacking `confidence_unit: "percent"`. */
+export function detectLegacyConfidenceFraction(
+  values: Record<string, unknown>,
+): { legacyConfidence: number; suggestedPercent: number } | null {
+  if (values.confidence_unit === "percent") return null
+  const confidence = finiteDecimal(values.confidence)
+  if (confidence === null || confidence <= 0 || confidence > 1) return null
+  return {
+    legacyConfidence: confidence,
+    suggestedPercent: roundFrameworkScore(confidence * 100),
+  }
+}
+
 /**
  * Assess persisted RICE data without mutating it. Distinguishes unambiguous
  * percent-normalized scores from legacy (0, 1] confidence fractions lacking `confidence_unit: "percent"`.
@@ -56,12 +65,13 @@ export function readRiceAssessment(payload: Record<string, unknown>): RiceAssess
   const inputs = parseRiceInputs(source)
   if (!inputs) return { status: "unscored" }
 
-  if (source.confidence_unit !== "percent" && inputs.confidence > 0 && inputs.confidence <= 1) {
+  const legacy = detectLegacyConfidenceFraction(source)
+  if (legacy) {
     return {
       status: "legacy_ambiguous",
       inputs,
-      legacyConfidence: inputs.confidence,
-      suggestedPercent: roundFrameworkScore(inputs.confidence * 100),
+      legacyConfidence: legacy.legacyConfidence,
+      suggestedPercent: legacy.suggestedPercent,
     }
   }
   const score = riceLensScore(inputs)
@@ -75,7 +85,7 @@ export function readRiceInputs(payload: Record<string, unknown>): RiceInput | nu
 }
 
 /** Compute percent-normalized RICE score: (reach * impact * (confidence / 100)) / effort, rounded to <= 2 decimals. */
-export function riceLensScore(inputs: Pick<RiceInput, "reach" | "impact" | "confidence" | "effort">): number | null {
+export function riceLensScore(inputs: Pick<BaseRiceInput, "reach" | "impact" | "confidence" | "effort">): number | null {
   if (
     !Number.isFinite(inputs.reach) ||
     !Number.isFinite(inputs.impact) ||
@@ -89,5 +99,14 @@ export function riceLensScore(inputs: Pick<RiceInput, "reach" | "impact" | "conf
   ) {
     return null
   }
-  return roundFrameworkScore((inputs.reach * inputs.impact * (inputs.confidence / 100)) / inputs.effort)
+  return roundFrameworkScore(calculateRiceScore(inputs))
+}
+
+/** Format the canonical human-readable RICE formula breakdown string. */
+export function formatRiceFormulaBreakdown(
+  inputs: Pick<BaseRiceInput, "reach" | "impact" | "confidence" | "effort">,
+  score?: number | null,
+): string {
+  const expr = `(${inputs.reach} × ${inputs.impact} × ${inputs.confidence}%) ÷ ${inputs.effort}`
+  return score !== undefined && score !== null ? `${expr} = ${score}` : expr
 }

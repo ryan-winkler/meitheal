@@ -29,6 +29,7 @@ export function initGlobalErrorHandler(): void {
     attemptStaleChunkReload(window.sessionStorage, Date.now(), () => window.location.reload())
 
   window.addEventListener("vite:preloadError", (event) => {
+    if ((w.__meithealHandledPreloads ?? 0) > 0) return
     event.preventDefault()
     if (!recoverStaleChunk()) {
       log.warn("Module preload failed after reload cooldown")

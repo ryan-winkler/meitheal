@@ -61,7 +61,7 @@ export interface DailyRecord {
 }
 
 type DailyProgress = { currentStreak: number; points: number }
-function statsDayKey(now: Date, offset = 0): string {
+export function statsDayKey(now: Date, offset = 0): string {
   if (offset === 0) return now.toISOString().slice(0, 10)
   const day = new Date(now)
   day.setUTCDate(day.getUTCDate() + offset)
@@ -114,16 +114,15 @@ export async function recordTaskCompletion(scope: BoardScope, points = 0, now = 
   return scopePermits(scope, { resource: "task", action: "read" }) ? getStats(scope, now) : null
 }
 
-/**
- * Get current gamification stats via a single aggregate query.
- */
-export async function getStats(scope: BoardScope, now = new Date()): Promise<GamificationStats> {
-  await ensureGamificationSchema()
-  const client = await gamificationClient(scope)
+export async function readStatsFromRunner(
+  runner: Pick<import("@libsql/client").Client, "execute">,
+  scope: BoardScope,
+  now = new Date(),
+): Promise<GamificationStats> {
   const today = statsDayKey(now)
   const yesterday = statsDayKey(now, -1)
 
-  const agg = await client.execute(gamificationRead(scope, {
+  const agg = await runner.execute(gamificationRead(scope, {
     sql: `SELECT
             COALESCE(MAX(CASE WHEN date = ? THEN completed_count END), 0) AS today_completed,
             MAX(CASE WHEN date = ? THEN streak_count END) AS today_streak,
@@ -151,6 +150,15 @@ export async function getStats(scope: BoardScope, now = new Date()): Promise<Gam
     totalCompleted: Number(row.total_completed ?? 0),
     totalPoints: Number(row.total_points ?? 0),
   }
+}
+
+/**
+ * Get current gamification stats via a single aggregate query.
+ */
+export async function getStats(scope: BoardScope, now = new Date()): Promise<GamificationStats> {
+  await ensureGamificationSchema()
+  const client = await gamificationClient(scope)
+  return readStatsFromRunner(client, scope, now)
 }
 
 /**

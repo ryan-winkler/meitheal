@@ -94,6 +94,25 @@ export interface FrameworkOverrideRecord {
   updatedAt: string
 }
 
+/** Strip retired field bounds (`fields.*.min`) from legacy override payloads before validation. */
+export function sanitizeLegacyFrameworkOverrides(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value
+  const record = value as Record<string, unknown>
+  if (!record.fields || typeof record.fields !== "object" || Array.isArray(record.fields)) return value
+  let changed = false
+  const cleanedFields: Record<string, unknown> = {}
+  for (const [key, entry] of Object.entries(record.fields as Record<string, unknown>)) {
+    if (entry && typeof entry === "object" && !Array.isArray(entry) && Object.hasOwn(entry, "min")) {
+      const { min: _dropped, ...rest } = entry as Record<string, unknown>
+      cleanedFields[key] = rest
+      changed = true
+    } else {
+      cleanedFields[key] = entry
+    }
+  }
+  return changed ? { ...record, fields: cleanedFields } : value
+}
+
 /** Validate the JSON override contract before persistence or merging. */
 export function validateFrameworkOverrides(
   value: unknown,

@@ -35,7 +35,14 @@ test.describe("More disclosure keyboard candidates", () => {
         expect(created).toHaveLength(6)
       }
       expect((await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: {
-        order: ["dashboard", "today", "boards", "planning"],
+        sections: { order: ["workspace", "boards", "planning", "system"] },
+        sectionItems: {
+          workspace: ["dashboard", "today", "upcoming", "tasks"],
+          boards: ["boards"],
+          planning: ["planning", "progress"],
+          system: ["settings"],
+        },
+        hiddenItems: ["upcoming", "tasks", "view-calendar", "view-kanban", "view-timeline", "view-table", "progress", "settings"],
       } } })).ok()).toBe(true)
       await page.addInitScript(() => {
         localStorage.setItem("meitheal-appearance", JSON.stringify({ navigation: "navbar" }))
@@ -121,6 +128,9 @@ test.describe("More disclosure keyboard candidates", () => {
       await expect(menu.locator('[data-sidebar-group="boards"]')).toHaveCount(1)
       await expect(household).toBeFocused()
 
+      const pinBoard = board.locator("[data-sidebar-pin-board]")
+      await page.keyboard.press("Tab")
+      await expect(pinBoard).toBeFocused()
       await page.keyboard.press("Tab")
       await expect(areasToggle).toBeFocused()
       await page.keyboard.press("Enter")
@@ -134,13 +144,19 @@ test.describe("More disclosure keyboard candidates", () => {
       expect(await menu.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true)
       await areasToggle.focus()
       await page.keyboard.press("Shift+Tab")
+      await expect(pinBoard).toBeFocused()
+      await page.keyboard.press("Shift+Tab")
       await expect(household).toBeFocused()
+      await page.keyboard.press("Tab")
+      await expect(pinBoard).toBeFocused()
       await page.keyboard.press("Tab")
       await expect(areasToggle).toBeFocused()
       await page.keyboard.press("Tab")
       await expect(areas.locator("[data-area-toggle]").first()).toBeFocused()
       await page.keyboard.press("Shift+Tab")
       await expect(areasToggle).toBeFocused()
+      await page.keyboard.press("Shift+Tab")
+      await expect(pinBoard).toBeFocused()
       await page.keyboard.press("Shift+Tab")
       await expect(household).toBeFocused()
       await arrowTo(page, areaLink)
@@ -207,6 +223,8 @@ test.describe("More disclosure keyboard candidates", () => {
       await expect(boardsToggle).toBeFocused()
       await page.keyboard.press("Tab")
       await expect(household).toBeFocused()
+      await page.keyboard.press("Tab")
+      await expect(pinBoard).toBeFocused()
       await page.keyboard.press("Tab")
       await expect(areasToggle).toBeFocused()
       await page.keyboard.press("Tab")

@@ -3,8 +3,7 @@
  * Reuses domain hierarchy rules alongside client status and type-icon registries.
  */
 import { ALLOWED_CHILD_TYPES } from "@meitheal/domain-tasks"
-import { STATUS_CONFIG, normalizeStatus } from "./status-config"
-import { TYPE_ICON_CONFIG, getTypeIconConfig, renderTypeIconSvg } from "./type-icon-config"
+import { getTypeIconConfig } from "./type-icon-config"
 
 export type EditableTaskType = "epic" | "story" | "task"
 
@@ -14,7 +13,7 @@ export const TASK_TYPE_OPTIONS: readonly { value: EditableTaskType; label: strin
   { value: "epic", label: "Epic" },
 ] as const
 
-export { ALLOWED_CHILD_TYPES, STATUS_CONFIG, TYPE_ICON_CONFIG, getTypeIconConfig, normalizeStatus, renderTypeIconSvg }
+export { getTypeIconConfig }
 
 export function normalizeEditableTaskType(value: unknown): EditableTaskType {
   const key = String(value ?? "").trim().toLowerCase()

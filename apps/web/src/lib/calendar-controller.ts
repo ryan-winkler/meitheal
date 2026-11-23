@@ -523,7 +523,11 @@ export function initCalendarPage(signal: AbortSignal): void {
         else next.searchParams.set(key, value)
       }
       next.hash = destination.hash || next.hash
-      void refresh(next)
+      if (refreshRequest || navLink.dataset.calendarNav === "previous" || navLink.dataset.calendarNav === "next") {
+        location.assign(next.href)
+      } else {
+        void refresh(next)
+      }
       return
     }
     const dayAdd = target.closest<HTMLButtonElement>("[data-day-view-add]")
@@ -589,13 +593,6 @@ export function initCalendarPage(signal: AbortSignal): void {
         event.preventDefault()
         event.stopImmediatePropagation()
         shortcutLink.click()
-      }
-    } else if (key === "t") {
-      const todayLink = month.querySelector<HTMLAnchorElement>('[data-calendar-nav="today"]')
-      if (todayLink) {
-        event.preventDefault()
-        event.stopImmediatePropagation()
-        todayLink.click()
       }
     }
   }, { capture: true, signal })

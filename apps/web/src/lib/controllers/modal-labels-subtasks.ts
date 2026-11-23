@@ -173,6 +173,7 @@ export function initLabelsAndSubtasks({ saveTD, getCurrentTaskId, openTaskDetail
       if (e.key === "Escape" && !addSubForm.classList.contains("hidden")) {
         e.preventDefault()
         addSubForm.classList.add("hidden")
+        addSubForm.classList.remove("flex")
         addSubBtn.classList.remove("hidden")
         addSubBtn.focus()
       }

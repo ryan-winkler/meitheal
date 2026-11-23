@@ -6,6 +6,7 @@
  */
 
 import { createClientLogger } from "@lib/client-logger"
+import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { promptDialog } from "@lib/prompt-dialog"
 import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
@@ -67,28 +68,38 @@ export function initLaneManagementPanel(): void {
     showToast(message, variant)
   }
 
+  async function mutateLane(
+    url: string,
+    method: "POST" | "PUT" | "DELETE",
+    body: unknown,
+    failMessage: string,
+    eventAction: string,
+    opts: { refreshList?: boolean; onSuccess?: () => void } = {},
+  ): Promise<boolean> {
+    try {
+      const res = await fetch(url, { method, headers: laneHeaders(true), body: JSON.stringify(body) })
+      if (!res.ok) {
+        const err = await res.json().catch(() => null) as { error?: string } | null
+        notify(err?.error ?? failMessage, "error")
+        return false
+      }
+      opts.onSuccess?.()
+      if (opts.refreshList) await renderLaneList()
+      emitLanesChanged(eventAction)
+      return true
+    } catch {
+      notify(failMessage, "error")
+      return false
+    }
+  }
+
   async function persistLaneOrder(): Promise<void> {
     const orderedIds = Array.from(laneList!.querySelectorAll<HTMLElement>(".lane-item[data-id]"))
       .map(el => el.dataset.id)
       .filter((id): id is string => Boolean(id))
     if (!orderedIds.length) return
-    try {
-      const res = await fetch("/api/lanes", {
-        method: "PUT",
-        headers: laneHeaders(true),
-        body: JSON.stringify({ ordered_ids: orderedIds }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => null) as { error?: string } | null
-        notify(err?.error ?? "Failed to reorder lanes", "error")
-        await renderLaneList()
-        return
-      }
-      emitLanesChanged("kanban-lane-reorder")
-    } catch {
-      notify("Failed to reorder lanes", "error")
-      await renderLaneList()
-    }
+    const ok = await mutateLane("/api/lanes", "PUT", { ordered_ids: orderedIds }, "Failed to reorder lanes", "kanban-lane-reorder")
+    if (!ok) await renderLaneList()
   }
 
   const renderLaneList = async (): Promise<void> => {
@@ -237,41 +248,13 @@ export function initLaneManagementPanel(): void {
     const target = event.target as HTMLElement
     const colorInput = target.closest<HTMLInputElement>(".lane-color-input")
     if (colorInput?.dataset.id) {
-      try {
-        const res = await fetch(`/api/lanes/${encodeURIComponent(colorInput.dataset.id)}`, {
-          method: "PUT",
-          headers: laneHeaders(true),
-          body: JSON.stringify({ color: colorInput.value }),
-        })
-        if (!res.ok) {
-          const err = await res.json().catch(() => null) as { error?: string } | null
-          notify(err?.error ?? "Failed to update lane color", "error")
-          return
-        }
-        emitLanesChanged("kanban-lane-color")
-      } catch {
-        notify("Failed to update lane color", "error")
-      }
+      await mutateLane(`/api/lanes/${encodeURIComponent(colorInput.dataset.id)}`, "PUT", { color: colorInput.value }, "Failed to update lane color", "kanban-lane-color")
       return
     }
 
     const input = target.closest<HTMLInputElement>(".lane-wip-input")
     if (!input?.dataset.id) return
-    try {
-      const res = await fetch(`/api/lanes/${encodeURIComponent(input.dataset.id)}`, {
-        method: "PUT",
-        headers: laneHeaders(true),
-        body: JSON.stringify({ wip_limit: Math.max(0, Number.parseInt(input.value, 10) || 0) }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => null) as { error?: string } | null
-        notify(err?.error ?? "Failed to update lane WIP limit", "error")
-        return
-      }
-      emitLanesChanged("kanban-wip-update")
-    } catch {
-      notify("Failed to update lane WIP limit", "error")
-    }
+    await mutateLane(`/api/lanes/${encodeURIComponent(input.dataset.id)}`, "PUT", { wip_limit: Math.max(0, Number.parseInt(input.value, 10) || 0) }, "Failed to update lane WIP limit", "kanban-wip-update")
   })
 
   pageLifecycle.on(laneList, "click", async (event) => {
@@ -289,22 +272,7 @@ export function initLaneManagementPanel(): void {
       })
       if (!next) return
       const statuses = next.split(",").map(s => s.trim().toLowerCase()).filter(Boolean)
-      try {
-        const res = await fetch(`/api/lanes/${encodeURIComponent(includesBtn.dataset.id)}`, {
-          method: "PUT",
-          headers: laneHeaders(true),
-          body: JSON.stringify({ includes: statuses }),
-        })
-        if (!res.ok) {
-          const err = await res.json().catch(() => null) as { error?: string } | null
-          notify(err?.error ?? "Invalid status keys", "error")
-          return
-        }
-        await renderLaneList()
-        emitLanesChanged("kanban-lane-includes")
-      } catch {
-        notify("Failed to update mapped statuses", "error")
-      }
+      await mutateLane(`/api/lanes/${encodeURIComponent(includesBtn.dataset.id)}`, "PUT", { includes: statuses }, "Failed to update mapped statuses", "kanban-lane-includes", { refreshList: true })
       return
     }
 
@@ -314,55 +282,26 @@ export function initLaneManagementPanel(): void {
       const currentLabel = editButton.dataset.label ?? ""
       const newName = await promptDialog({ title: "Rename Lane", placeholder: "Lane name", defaultValue: currentLabel, required: true })
       if (!newName) return
-      try {
-        const res = await fetch(`/api/lanes/${encodeURIComponent(laneId)}`, {
-          method: "PUT",
-          headers: laneHeaders(true),
-          body: JSON.stringify({ label: newName.trim() }),
-        })
-        if (!res.ok) {
-          const err = await res.json().catch(() => null) as { error?: string } | null
-          notify(err?.error ?? "Failed to rename lane", "error")
-          return
-        }
-        await renderLaneList()
-        emitLanesChanged("kanban-lane-rename")
-      } catch {
-        notify("Failed to rename lane", "error")
-      }
+      await mutateLane(`/api/lanes/${encodeURIComponent(laneId)}`, "PUT", { label: newName.trim() }, "Failed to rename lane", "kanban-lane-rename", { refreshList: true })
       return
     }
 
     const removeButton = target.closest<HTMLElement>(".lane-remove")
-    if (!removeButton?.dataset.id || !window.confirmDialog) return
+    if (!removeButton?.dataset.id) return
     const laneId = removeButton.dataset.id
     const others = loadedLanes.filter(l => l.id !== laneId)
     const fallbackTarget = others.find(l => l.key === "pending") ?? others[0]
-    const ok = await window.confirmDialog({
+    const ok = await confirmDialog({
       message: fallbackTarget
         ? `Tasks in "${removeButton.dataset.label || "this lane"}" will move to "${fallbackTarget.label}".`
         : "Tasks in this lane will move to Pending.",
       variant: "warning",
       confirmText: "Delete Lane",
       title: "Delete Lane",
+      signal: pageLifecycle.signal,
     })
     if (!ok) return
-    try {
-      const res = await fetch(`/api/lanes/${encodeURIComponent(laneId)}`, {
-        method: "DELETE",
-        headers: laneHeaders(true),
-        body: JSON.stringify(fallbackTarget ? { target_lane_id: fallbackTarget.id } : {}),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => null) as { error?: string } | null
-        notify(err?.error ?? "Failed to remove lane", "error")
-        return
-      }
-      await renderLaneList()
-      emitLanesChanged("kanban-lane-delete")
-    } catch {
-      notify("Failed to remove lane", "error")
-    }
+    await mutateLane(`/api/lanes/${encodeURIComponent(laneId)}`, "DELETE", fallbackTarget ? { target_lane_id: fallbackTarget.id } : {}, "Failed to remove lane", "kanban-lane-delete", { refreshList: true })
   })
 
   pageLifecycle.on(addLaneBtn, "click", async () => {
@@ -372,22 +311,9 @@ export function initLaneManagementPanel(): void {
       notify("Lane name must be 1-50 characters", "error")
       return
     }
-    try {
-      const res = await fetch("/api/lanes", {
-        method: "POST",
-        headers: laneHeaders(true),
-        body: JSON.stringify({ label: name }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => null) as { error?: string } | null
-        notify(err?.error ?? "Failed to create lane", "error")
-        return
-      }
-      newLaneInput.value = ""
-      await renderLaneList()
-      emitLanesChanged("kanban-lane-create")
-    } catch {
-      notify("Failed to create lane", "error")
-    }
+    await mutateLane("/api/lanes", "POST", { label: name }, "Failed to create lane", "kanban-lane-create", {
+      refreshList: true,
+      onSuccess: () => { newLaneInput.value = "" },
+    })
   })
 }

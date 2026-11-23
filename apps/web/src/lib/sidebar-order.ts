@@ -23,7 +23,9 @@ import {
   sanitizeLabel,
   savePersonalSidebarConfig,
   serializeSidebarConfig,
+  setItemVisible,
   SIDEBAR_PERSONAL_STORAGE_KEY,
+  TASK_VIEW_ITEM_KEYS,
   toggleItemVisibility,
   toggleSectionVisibility,
   unpinCustomItem,
@@ -33,6 +35,8 @@ import {
 } from "@domains/navigation/sidebar-menu"
 import { createTablerSvgElement, type TablerIconName } from "@lib/tabler-svg"
 import { safeIngressHref } from "@lib/ingress-navigation"
+import { readTaskNavPrefs, writeTaskNavPrefs } from "@lib/task-nav-types"
+import { parseTaskView, type TaskView } from "@lib/task-view-route"
 import { showToast } from "@lib/toast"
 
 export const SIDEBAR_ORDER_STORAGE_KEY = "meitheal-sidebar-order"
@@ -338,7 +342,7 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
       const pinned = !isItemHidden(config, key)
       const label = config.itemLabels[key] || DEFAULT_SIDEBAR_ITEM_LABELS[key] || view
       btn.setAttribute("aria-pressed", String(pinned))
-      btn.setAttribute("aria-label", pinned ? `Unpin ${label} from sidebar` : `Pin ${label} to sidebar`)
+      btn.setAttribute("aria-label", `Pin ${label} to navigation`)
       btn.title = pinned ? `Unpin ${label}` : `Pin ${label}`
     })
   }
@@ -363,6 +367,10 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
   function syncDomFromConfig() {
     const sectionsContainer = root!.querySelector<HTMLElement>("[data-sidebar-sections]")
     if (!sectionsContainer) return
+    const overflowMenu = root!.querySelector<HTMLElement>("[data-nav-overflow-menu]")
+    const previouslyFocused = document.activeElement instanceof HTMLElement && root!.contains(document.activeElement)
+      ? document.activeElement
+      : null
 
     const activeSectionSet = new Set(config.sectionOrder)
     const sectionEls = new Map<SidebarSectionId, HTMLElement>()
@@ -434,13 +442,20 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
       for (const key of keys) {
         const itemEl = itemEls.get(key)
         if (!itemEl) continue
-        if (list.children[itemIdx] !== itemEl) {
-          list.insertBefore(itemEl, list.children[itemIdx] ?? null)
+        if (!overflowMenu?.contains(itemEl)) {
+          if (list.children[itemIdx] !== itemEl) {
+            list.insertBefore(itemEl, list.children[itemIdx] ?? null)
+          }
+          itemIdx += 1
         }
-        itemIdx += 1
 
         const itemHidden = isItemHidden(config, key)
         itemEl.toggleAttribute("data-sidebar-item-hidden", itemHidden)
+        const viewId = key.startsWith("view-") ? parseTaskView(key.slice(5)) : null
+        if (viewId) {
+          if (itemHidden) itemEl.removeAttribute("data-task-view-pinned-item")
+          else itemEl.setAttribute("data-task-view-pinned-item", viewId)
+        }
 
         const labelEl = itemEl.querySelector<HTMLElement>(`[data-sidebar-item-label="${CSS.escape(key)}"]`)
         const customEntry = customMap.get(key)
@@ -454,6 +469,11 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
           link.title = itemLabel
           link.dataset.tooltip = itemLabel
           link.setAttribute("aria-label", `${itemLabel}${link.classList.contains("nav-link--external") ? " (opens in new tab)" : ""}`)
+        }
+        const unpinBtn = viewId ? itemEl.querySelector<HTMLButtonElement>("[data-task-view-unpin]") : null
+        if (unpinBtn) {
+          unpinBtn.setAttribute("aria-label", `Unpin ${itemLabel} from navigation`)
+          unpinBtn.title = `Unpin ${itemLabel}`
         }
 
         const itemToggle = itemEl.querySelector<HTMLButtonElement>(`[data-sidebar-item-toggle="${CSS.escape(key)}"]`)
@@ -478,6 +498,9 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     syncAddLinkSectionOptions()
     syncPersonalResetButton()
 
+    if (previouslyFocused && previouslyFocused.isConnected && document.activeElement !== previouslyFocused) {
+      previouslyFocused.focus({ preventScroll: true })
+    }
     sidebar.dataset.sidebarConfig = JSON.stringify(serializeSidebarConfig(config))
     root!.dispatchEvent(new Event(sidebarOrderChanged))
   }
@@ -494,7 +517,30 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     }
   }
 
-  function setEditing(active: boolean, openAddLink = false) {
+  function closeTouchStepper() {
+    root?.querySelectorAll(".sidebar-touch-step").forEach(el => el.remove())
+  }
+
+  function openTouchStepper(itemEl: HTMLElement, key: string) {
+    const alreadyOpen = Boolean(itemEl.querySelector(":scope > .sidebar-touch-step"))
+    closeTouchStepper()
+    if (alreadyOpen) return
+    const bar = document.createElement("div")
+    bar.className = "sidebar-touch-step"
+    bar.dataset.sidebarTouchStep = key
+    for (const [step, label] of [[-1, "Move up"], [1, "Move down"]] as const) {
+      const btn = document.createElement("button")
+      btn.type = "button"
+      btn.className = "sidebar-touch-step__btn"
+      btn.dataset.sidebarStep = String(step)
+      btn.dataset.sidebarStepKey = key
+      btn.textContent = label
+      bar.append(btn)
+    }
+    itemEl.append(bar)
+  }
+
+  function setEditing(active: boolean, openAddLink = false, focusFirstHandle = false) {
     editing = active
     sidebar.toggleAttribute("data-sidebar-editing", active)
     sidebar.toggleAttribute("data-sidebar-reordering", active)
@@ -506,6 +552,7 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     if (!active) {
       setAddSectionOpen(false)
       setAddLinkOpen(false)
+      closeTouchStepper()
     }
     stopDrag()
     syncPersonalResetButton()
@@ -513,6 +560,9 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     if (active) {
       syncAddLinkSectionOptions()
       if (openAddLink) setAddLinkOpen(true)
+      else if (focusFirstHandle) {
+        root!.querySelector<HTMLElement>("[data-sidebar-item-key]:not([data-sidebar-item-hidden]):not([hidden]) [data-sidebar-item-drag]")?.focus({ preventScroll: true })
+      }
       announce("Per-user navigation edit mode enabled.")
     } else {
       root!.querySelectorAll<HTMLInputElement>(".sidebar-inline-rename-input").forEach(input => input.blur())
@@ -573,18 +623,48 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     input.addEventListener("click", event => event.stopPropagation(), { signal })
   }
 
-  // Hydrate personal override on page load if present
+  function hydrateLegacyPinnedViews(base: SidebarMenuConfig): { next: SidebarMenuConfig; changed: boolean } {
+    const prefs = readTaskNavPrefs()
+    if (!prefs.pinnedViews.length) return { next: base, changed: false }
+    let next = base
+    let changed = false
+    for (const view of prefs.pinnedViews) {
+      const key = `view-${view}`
+      if (isItemHidden(next, key)) {
+        next = setItemVisible(next, key, true)
+        changed = true
+      }
+    }
+    return { next, changed }
+  }
+
+  function syncLegacyPinnedViews(cfg: SidebarMenuConfig): void {
+    const pinnedViews: TaskView[] = TASK_VIEW_ITEM_KEYS
+      .filter(k => !isItemHidden(cfg, k))
+      .map(k => k.slice(5) as TaskView)
+    const current = readTaskNavPrefs()
+    if (
+      current.pinnedViews.length === pinnedViews.length
+      && pinnedViews.every((v, i) => current.pinnedViews[i] === v)
+    ) return
+    writeTaskNavPrefs({ ...current, pinnedViews })
+  }
+
+  // Hydrate personal override or legacy meitheal-task-nav-prefs.pinnedViews on page load
   if (personalInitial) {
     syncDomFromConfig()
   } else {
-    syncPersonalResetButton()
+    const hydrated = hydrateLegacyPinnedViews(config)
+    config = hydrated.next
+    if (hydrated.changed) syncDomFromConfig()
+    else syncPersonalResetButton()
   }
 
   // External triggers: Global utility "Edit menu", Settings "Customize my menu"
   window.addEventListener(SIDEBAR_EDIT_MODE_EVENT, event => {
     const detail = (event as CustomEvent<{ active?: boolean; openAddLink?: boolean }>).detail
     const next = typeof detail?.active === "boolean" ? detail.active : !editing
-    setEditing(next, Boolean(detail?.openAddLink))
+    setEditing(next, Boolean(detail?.openAddLink), next)
   }, { signal })
 
   // Sync when Settings updates server default or clears personal override
@@ -628,6 +708,7 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     const nowPinned = !isItemHidden(next, key)
     const label = next.itemLabels[key] || DEFAULT_SIDEBAR_ITEM_LABELS[key] || view
     commitPersonalConfig(next, nowPinned ? `Pinned ${label} to navigation.` : `Unpinned ${label} from navigation.`)
+    syncLegacyPinnedViews(next)
     showToast(nowPinned ? `Pinned ${label} to navigation` : `Unpinned ${label} from navigation`, "success")
   }, { signal })
 
@@ -761,6 +842,28 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     const target = event.target instanceof Element ? event.target : null
     if (!target) return
 
+    const itemGrip = target.closest<HTMLButtonElement>("[data-sidebar-item-drag]")
+    if (itemGrip?.dataset.sidebarItemDrag) {
+      event.preventDefault()
+      event.stopPropagation()
+      const itemEl = itemGrip.closest<HTMLElement>("[data-sidebar-item-key]")
+      if (itemEl) openTouchStepper(itemEl, itemGrip.dataset.sidebarItemDrag)
+      return
+    }
+
+    const stepBtn = target.closest<HTMLButtonElement>("[data-sidebar-step]")
+    if (stepBtn?.dataset.sidebarStepKey) {
+      event.preventDefault()
+      event.stopPropagation()
+      const key = stepBtn.dataset.sidebarStepKey
+      const step = stepBtn.dataset.sidebarStep === "-1" ? -1 : 1
+      const next = moveItemByStep(config, key, step)
+      if (next !== config) {
+        commitPersonalConfig(next, `Moved ${config.itemLabels[key] || DEFAULT_SIDEBAR_ITEM_LABELS[key] || key}.`)
+      }
+      return
+    }
+
     const sectionRenameBtn = target.closest<HTMLButtonElement>("[data-sidebar-section-rename]")
     if (sectionRenameBtn) {
       event.preventDefault()
@@ -875,6 +978,7 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     if (event.key === "Escape") {
       event.preventDefault()
       setEditing(false)
+      document.getElementById("nav-utility-trigger")?.focus({ preventScroll: true })
       return
     }
 

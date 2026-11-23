@@ -1,5 +1,5 @@
 import { requireBoardScope, type BoardScope } from "../board-scope"
-import { boardOperationClient, canReadBoardAggregate, BoardOperationError } from "./board-operation-client"
+import { boardOperationClient, canReadBoardAggregate, BoardOperationError, requireBoardWriterIntent } from "./board-operation-client"
 import { storageBoardId, taskOwnedBy } from "./board-storage"
 import { sql, sourceSql, joinSql } from "./sql-fragment"
 /**
@@ -11,7 +11,15 @@ import { sql, sourceSql, joinSql } from "./sql-fragment"
  */
 import type { Client } from "@libsql/client"
 import type { InValue } from "@libsql/client"
-import { STATUS } from "../../../lib/status-config"
+import { isDoneStatus, STATUS } from "../../../lib/status-config"
+import { taskTimestampMs } from "./task-timestamp"
+
+export class LaneDeleteError extends Error {
+  constructor(message: string, readonly status: 400 | 404 | 409) {
+    super(message)
+    this.name = "LaneDeleteError"
+  }
+}
 
 export interface LaneRow {
   [key: string]: unknown
@@ -93,7 +101,7 @@ export class LaneRepository {
     db = boardOperationClient(db, this.scope, { resource: "task", action: "complete" })
     return boardOperationClient(db, this.scope, { resource: "task", action: "reopen" })
   }
-  async delete(id: string, laneKey: string, targetLaneId?: string): Promise<void> {
+  async delete(id: string, laneKey: string, targetLaneId?: string): Promise<{ replacementId: string; replacementKey: string } | null> {
     let db = this.db(true)
     db = boardOperationClient(db, this.scope, { resource: "task", action: "edit" })
     db = boardOperationClient(db, this.scope, { resource: "task", action: "reopen" })
@@ -101,25 +109,39 @@ export class LaneRepository {
     try {
       if (!await canReadBoardAggregate(tx, this.scope)) throw new BoardOperationError("unavailable")
       const { rows: [lane] } = await tx.execute(sql`SELECT id, includes FROM kanban_lanes WHERE board_id = ${this.scope.boardId} AND id = ${id} AND key = ${laneKey} AND built_in = 0`)
-      if (!lane) return
+      if (!lane) return null
+      const { rows: [intakeRef] } = await tx.execute(sql`SELECT 1 FROM board_intakes WHERE board_id = ${this.scope.boardId} AND lane_id = ${id} LIMIT 1`)
+      if (intakeRef) {
+        throw new LaneDeleteError("Remove or retarget board intakes using this lane before deleting it", 409)
+      }
       const { rows: [replacement] } = targetLaneId
         ? await tx.execute(sql`SELECT id, key, includes FROM kanban_lanes WHERE board_id = ${this.scope.boardId} AND id = ${targetLaneId} AND id <> ${id} LIMIT 1`)
         : await tx.execute(sql`SELECT id, key, includes FROM kanban_lanes WHERE board_id = ${this.scope.boardId} AND id <> ${id} AND EXISTS (SELECT 1 FROM json_each(includes) WHERE value = ${STATUS.PENDING}) ORDER BY position, id LIMIT 1`)
-      if (!replacement) throw new Error("Keep a destination lane for existing tasks")
+      if (!replacement) {
+        throw new LaneDeleteError(
+          targetLaneId ? "Choose a valid destination lane on this board" : "Keep a destination lane for existing tasks",
+          targetLaneId ? 400 : 409,
+        )
+      }
       let targetStatus: string = STATUS.PENDING
       try {
         const inc = JSON.parse(String(replacement.includes ?? "[]"))
         if (Array.isArray(inc) && typeof inc[0] === "string" && inc[0]) targetStatus = inc[0]
       } catch { /* fallback to pending */ }
+      if (isDoneStatus(targetStatus)) {
+        // Reassigning tasks into a done lane completes work and must verify task:complete authority inside tx.
+        await requireBoardWriterIntent(tx, this.scope, { resource: "task", action: "complete" })
+      }
       let oldStatuses = [laneKey]
       try {
         const inc = JSON.parse(String(lane.includes ?? "[]"))
         if (Array.isArray(inc) && inc.length) oldStatuses = inc.filter((s): s is string => typeof s === "string")
       } catch { /* fallback to laneKey */ }
-      await tx.execute(sql`UPDATE tasks SET status = ${targetStatus}, board_column_id = ${storageBoardId(this.scope) === null ? null : String(replacement.id)}, updated_at = ${Date.now()}
+      await tx.execute(sql`UPDATE tasks SET status = ${targetStatus}, board_column_id = ${storageBoardId(this.scope) === null ? null : String(replacement.id)}, updated_at = MIN(9007199254740991, MAX(${sourceSql(taskTimestampMs("tasks.updated_at"))} + 1, ${Date.now()}))
         WHERE ${taskOwnedBy(this.scope)} AND (board_column_id = ${id} OR (board_column_id IS NULL AND status IN (${joinSql(oldStatuses.map(s => sql`${s}`))})))`)
       await tx.execute(sql`DELETE FROM kanban_lanes WHERE board_id = ${this.scope.boardId} AND id = ${id} AND built_in = 0`)
       await tx.commit()
+      return { replacementId: String(replacement.id), replacementKey: String(replacement.key) }
     } finally { tx.close() }
   }
 }

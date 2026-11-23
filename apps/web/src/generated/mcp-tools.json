@@ -45,11 +45,32 @@
           "due_date": {
             "type": "string",
             "format": "date",
-            "description": "Match the household calendar day (date-only, floating datetime, or zoned ISO timestamp in the configured household timezone). Invalid dates return 400."
+            "description": "Match the household calendar day (YYYY-MM-DD in the configured household timezone). Invalid dates return 400."
+          },
+          "task_type": {
+            "type": "string",
+            "enum": [
+              "epic",
+              "story",
+              "task"
+            ],
+            "description": "Filter by work item type"
           },
           "parent_id": {
             "type": "string",
             "description": "Get subtasks of a parent"
+          },
+          "q": {
+            "type": "string",
+            "description": "Substring search across title and description"
+          },
+          "label": {
+            "type": "string",
+            "description": "Filter by attached label name"
+          },
+          "home_assistant_area_id": {
+            "type": "string",
+            "description": "Filter by permitted Home Assistant Area ID"
           },
           "sort": {
             "type": "string",
@@ -60,7 +81,8 @@
               "status",
               "priority",
               "due_date",
-              "kanban_position"
+              "kanban_position",
+              "table_position"
             ],
             "description": "Equal values use task ID ascending; null values sort last."
           },
@@ -70,8 +92,7 @@
               "asc",
               "desc"
             ],
-            "default": "desc",
-            "description": "order parameter"
+            "description": "Sort direction. Defaults to asc for priority, due_date, title, status, kanban_position, and table_position; desc for created_at and updated_at."
           },
           "limit": {
             "type": "integer",
@@ -126,6 +147,123 @@
           "description": {
             "type": "string",
             "maxLength": 10000
+          },
+          "status": {
+            "type": "string",
+            "description": "Initial status (e.g. backlog, pending, active, complete)"
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "description": "Priority 1-5 (1=Urgent, 5=Minimal)"
+          },
+          "due_date": {
+            "type": "string",
+            "nullable": true,
+            "description": "Due date (YYYY-MM-DD or ISO datetime)"
+          },
+          "start_date": {
+            "type": "string",
+            "nullable": true
+          },
+          "end_date": {
+            "type": "string",
+            "nullable": true
+          },
+          "progress": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "color": {
+            "type": "string",
+            "nullable": true
+          },
+          "task_type": {
+            "type": "string",
+            "enum": [
+              "epic",
+              "story",
+              "task"
+            ]
+          },
+          "task_kind": {
+            "type": "string",
+            "enum": [
+              "standard_action",
+              "shopping_item",
+              "checklist",
+              "routine_instance",
+              "calendar_event",
+              "quick_capture"
+            ]
+          },
+          "parent_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "area_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "project_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "labels": {
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "custom_fields": {
+            "type": "string",
+            "description": "JSON-encoded object of custom field values"
+          },
+          "checklists": {
+            "type": "string",
+            "description": "JSON-encoded array of checklist items"
+          },
+          "recurrence_rule": {
+            "type": "string",
+            "nullable": true
+          },
+          "urgency": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "importance": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "effort_minutes": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 480
+          },
+          "effort_type": {
+            "type": "string",
+            "enum": [
+              "deep",
+              "shallow",
+              "admin"
+            ],
+            "nullable": true
+          },
+          "blocked_by": {
+            "type": "string",
+            "nullable": true
           },
           "is_promoted": {
             "type": "boolean",
@@ -313,7 +451,140 @@
             ]
           },
           "area_id": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "goal_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "task_type": {
+            "type": "string",
+            "enum": [
+              "epic",
+              "story",
+              "task"
+            ]
+          },
+          "task_kind": {
+            "type": "string",
+            "enum": [
+              "standard_action",
+              "shopping_item",
+              "checklist",
+              "routine_instance",
+              "calendar_event",
+              "quick_capture"
+            ]
+          },
+          "framework_payload": {
+            "type": "string",
+            "description": "JSON-encoded object string"
+          },
+          "custom_fields": {
+            "type": "string",
+            "description": "JSON-encoded object string"
+          },
+          "start_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "progress": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "time_tracked": {
+            "type": "number",
+            "minimum": 0
+          },
+          "nfc_tag_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recurrence_rule": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recurrence_anchor": {
+            "type": "string",
+            "enum": [
+              "due_date",
+              "completion_date"
+            ]
+          },
+          "time_block_start": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "time_block_end": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "urgency": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "importance": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "eisenhower_override": {
+            "type": "boolean"
+          },
+          "effort_minutes": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 480
+          },
+          "effort_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "deep",
+              "shallow",
+              "admin",
+              null
+            ]
+          },
+          "blocked_by": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "labels": {
             "oneOf": [
@@ -458,6 +729,14 @@
             "items": {
               "type": "string"
             }
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "kanban",
+              "table"
+            ],
+            "description": "Rank column to update for ordered_ids (defaults to kanban)"
           },
           "task_id": {
             "type": "string"
@@ -1820,117 +2099,6 @@
       }
     },
     {
-      "name": "listCustomFields",
-      "description": "List custom field definitions for the current board",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "updateCustomFields",
-      "description": "Replace custom field definitions for the current board",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "fields": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": [
-                "name",
-                "type"
-              ],
-              "properties": {
-                "name": {
-                  "type": "string"
-                },
-                "type": {
-                  "type": "string"
-                },
-                "options": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
-                }
-              },
-              "additionalProperties": false
-            }
-          }
-        },
-        "required": [
-          "fields"
-        ]
-      }
-    },
-    {
-      "name": "listLanes",
-      "description": "List kanban board lanes",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "createLane",
-      "description": "Create a kanban lane",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "reorderLanes",
-      "description": "Reorder kanban board lanes",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "orderedIds": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "orderedIds"
-        ]
-      }
-    },
-    {
-      "name": "updateLane",
-      "description": "Update a kanban lane",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "id parameter"
-          }
-        },
-        "required": [
-          "id"
-        ]
-      }
-    },
-    {
-      "name": "deleteLane",
-      "description": "Delete a kanban lane",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "id parameter"
-          }
-        },
-        "required": [
-          "id"
-        ]
-      }
-    },
-    {
       "name": "listSavedFilters",
       "description": "List saved filter presets",
       "inputSchema": {
@@ -2832,7 +3000,11 @@
         "assigned_to",
         "priority",
         "due_date",
+        "task_type",
         "parent_id",
+        "q",
+        "label",
+        "home_assistant_area_id",
         "sort",
         "order",
         "limit",
@@ -3407,59 +3579,6 @@
       "path": "/api/settings",
       "hasBody": true,
       "pathParams": [],
-      "queryParams": []
-    },
-    "listCustomFields": {
-      "method": "GET",
-      "path": "/api/custom-fields",
-      "hasBody": false,
-      "pathParams": [],
-      "queryParams": []
-    },
-    "updateCustomFields": {
-      "method": "PUT",
-      "path": "/api/custom-fields",
-      "hasBody": true,
-      "pathParams": [],
-      "queryParams": []
-    },
-    "listLanes": {
-      "method": "GET",
-      "path": "/api/lanes",
-      "hasBody": false,
-      "pathParams": [],
-      "queryParams": []
-    },
-    "createLane": {
-      "method": "POST",
-      "path": "/api/lanes",
-      "hasBody": true,
-      "pathParams": [],
-      "queryParams": []
-    },
-    "reorderLanes": {
-      "method": "PUT",
-      "path": "/api/lanes",
-      "hasBody": true,
-      "pathParams": [],
-      "queryParams": []
-    },
-    "updateLane": {
-      "method": "PUT",
-      "path": "/api/lanes/{id}",
-      "hasBody": true,
-      "pathParams": [
-        "id"
-      ],
-      "queryParams": []
-    },
-    "deleteLane": {
-      "method": "DELETE",
-      "path": "/api/lanes/{id}",
-      "hasBody": false,
-      "pathParams": [
-        "id"
-      ],
       "queryParams": []
     },
     "listSavedFilters": {

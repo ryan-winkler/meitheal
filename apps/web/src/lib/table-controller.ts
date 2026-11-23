@@ -345,7 +345,59 @@ function init(signal: AbortSignal) {
     }
   }
 
-  let preDragAnchor: Element | null = null
+  const getRowTier = (row: HTMLElement) => ({
+    parentId: row.dataset.parentId ?? "",
+    depth: Number(row.dataset.depth ?? 0),
+  })
+
+  const getRowSubtreeBlock = (rows: HTMLElement[], startIdx: number): HTMLElement[] => {
+    const startRow = rows[startIdx]
+    if (!startRow) return []
+    const baseDepth = Number(startRow.dataset.depth ?? 0)
+    let endIdx = startIdx + 1
+    while (endIdx < rows.length && Number(rows[endIdx]!.dataset.depth ?? 0) > baseDepth) {
+      endIdx++
+    }
+    return rows.slice(startIdx, endIdx)
+  }
+
+  const canSwapTableRows = (dragged: HTMLElement, target: HTMLElement): boolean => {
+    if (table.dataset.canEdit === "false") return false
+    const a = getRowTier(dragged)
+    const b = getRowTier(target)
+    if (a.parentId !== b.parentId || a.depth !== b.depth) return false
+    const rows = Array.from(tbody.querySelectorAll<HTMLElement>(":scope > .table-row"))
+    const idxA = rows.indexOf(dragged)
+    const idxB = rows.indexOf(target)
+    if (idxA < 0 || idxB < 0 || idxA === idxB) return false
+    const lo = Math.min(idxA, idxB)
+    const hi = Math.max(idxA, idxB)
+    for (let i = lo + 1; i < hi; i++) {
+      if (Number(rows[i]!.dataset.depth ?? 0) < a.depth) return false
+    }
+    return true
+  }
+
+  const moveRowBlock = (dragged: HTMLElement, target: HTMLElement, direction: "before" | "after"): void => {
+    const rows = Array.from(tbody.querySelectorAll<HTMLElement>(":scope > .table-row"))
+    const draggedIdx = rows.indexOf(dragged)
+    const targetIdx = rows.indexOf(target)
+    if (draggedIdx < 0 || targetIdx < 0) return
+    const block = getRowSubtreeBlock(rows, draggedIdx)
+    if (block.includes(target)) return
+    const anchor = direction === "before"
+      ? target
+      : (getRowSubtreeBlock(rows, targetIdx).at(-1)?.nextElementSibling ?? null)
+    for (const node of block) tbody.insertBefore(node, anchor)
+  }
+
+  const restoreBlockBefore = (block: HTMLElement[], anchor: Element | null): void => {
+    for (const node of block) {
+      if (node.parentElement === tbody) tbody.insertBefore(node, anchor)
+    }
+  }
+
+  let preDragState: { block: HTMLElement[]; anchor: Element | null } | null = null
   void import("@lib/list-drag-reorder")
     .then(({ attachVerticalListDragReorder }) => {
       if (signal.aborted) return
@@ -354,13 +406,22 @@ function init(signal: AbortSignal) {
         item: ".table-row",
         ghostClass: "dragging",
         signal,
-        onStart: () => { preDragAnchor = tbody.querySelector(".table-row.dragging")?.nextElementSibling ?? null },
+        canSwap: canSwapTableRows,
+        moveItem: moveRowBlock,
+        onStart: () => {
+          const dragging = tbody.querySelector<HTMLElement>(".table-row.dragging")
+          if (!dragging) return
+          const rows = Array.from(tbody.querySelectorAll<HTMLElement>(":scope > .table-row"))
+          const idx = rows.indexOf(dragging)
+          const block = idx >= 0 ? getRowSubtreeBlock(rows, idx) : [dragging]
+          preDragState = { block, anchor: block.at(-1)?.nextElementSibling ?? null }
+        },
         onEnd: ({ item, oldIndex, newIndex }) => {
-          const nextAfter = preDragAnchor
-          preDragAnchor = null
-          if (oldIndex === newIndex) return
+          const snapshot = preDragState
+          preDragState = null
+          if (oldIndex === newIndex || !snapshot) return
           void persistTableOrder(item, () => {
-            if (item.parentElement === tbody) tbody.insertBefore(item, nextAfter)
+            restoreBlockBefore(snapshot.block, snapshot.anchor)
           })
         },
       })
@@ -369,19 +430,42 @@ function init(signal: AbortSignal) {
 
   tbody.addEventListener("keydown", (event) => {
     if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return
+    if (table.dataset.canEdit === "false") return
     const handle = (event.target as Element | null)?.closest<HTMLElement>(".table-row-drag-handle")
     const row = handle?.closest<HTMLElement>(".table-row")
     if (!handle || !row || row.parentElement !== tbody) return
     event.preventDefault()
     const rows = Array.from(tbody.querySelectorAll<HTMLElement>(":scope > .table-row"))
     const idx = rows.indexOf(row)
-    const target = event.key === "ArrowUp" ? rows[idx - 1] : rows[idx + 1]
+    const { parentId, depth } = getRowTier(row)
+    const block = getRowSubtreeBlock(rows, idx)
+    let target: HTMLElement | undefined
+    if (event.key === "ArrowUp") {
+      for (let i = idx - 1; i >= 0; i--) {
+        const candidate = rows[i]!
+        const cTier = getRowTier(candidate)
+        if (cTier.depth < depth) break
+        if (cTier.depth === depth && cTier.parentId === parentId) {
+          target = candidate
+          break
+        }
+      }
+    } else {
+      for (let i = idx + block.length; i < rows.length; i++) {
+        const candidate = rows[i]!
+        const cTier = getRowTier(candidate)
+        if (cTier.depth < depth) break
+        if (cTier.depth === depth && cTier.parentId === parentId) {
+          target = candidate
+          break
+        }
+      }
+    }
     if (!target) return
-    const prevNext = row.nextElementSibling
-    if (event.key === "ArrowUp") tbody.insertBefore(row, target)
-    else tbody.insertBefore(target, row)
+    const prevAnchor = block.at(-1)?.nextElementSibling ?? null
+    moveRowBlock(row, target, event.key === "ArrowUp" ? "before" : "after")
     handle.focus()
-    void persistTableOrder(row, () => { tbody.insertBefore(row, prevNext) })
+    void persistTableOrder(row, () => { restoreBlockBefore(block, prevAnchor) })
   }, { signal })
 
   setupTableOverflow()
@@ -450,6 +534,16 @@ function init(signal: AbortSignal) {
 
   document.addEventListener("meitheal:task-hierarchy-changed", () => {
     if (desired.groupBy === "epic" || desired.subGroupBy === "epic") void refresh()
+  }, { signal })
+
+  document.addEventListener("meitheal:lanes-changed", () => {
+    void refresh()
+  }, { signal })
+
+  document.addEventListener("meitheal:tasks-changed", event => {
+    const detail = (event as CustomEvent<{ action?: string }>).detail
+    if (detail?.action === "deferral") return
+    void refresh()
   }, { signal })
 
   document.addEventListener("meitheal:columns-change", event => {

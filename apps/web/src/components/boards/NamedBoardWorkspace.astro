@@ -18,6 +18,7 @@ import { boardAuthorityKey, boardViewKey, readBoardView } from "@lib/board-view"
 import { boardSessionProof, currentBoardContext } from "@lib/named-board-request"
 import { ensureAgentTokenSchema, isAgentTokenActive, isAgentTokenExpired, listAgentTokens } from "@domains/auth"
 import { readBoardCustomFieldDefs } from "@domains/tasks/custom-fields"
+import { CUSTOM_FIELD_TYPE_LABELS, VALID_CUSTOM_FIELD_TYPES, type CustomFieldType } from "@lib/custom-field-defs"
 import { getPersistenceClient } from "@domains/tasks/persistence/store"
 import { canManageSystemSettings } from "@lib/settings-security"
 import { isFeatureEnabled } from "@lib/feature-flags"
@@ -410,12 +411,9 @@ const boardCustomFields = policy ? await readBoardCustomFieldDefs(getPersistence
                   <label>Field name <input name="name" maxlength="60" required autocomplete="off" placeholder="e.g. environment" /></label>
                   <label>Type
                     <select name="type">
-                      <option value="text">Text</option>
-                      <option value="number">Number</option>
-                      <option value="url">URL</option>
-                      <option value="select">Select</option>
-                      <option value="date">Date</option>
-                      <option value="checkbox">Checkbox</option>
+                      {[...VALID_CUSTOM_FIELD_TYPES].map((type) => (
+                        <option value={type}>{CUSTOM_FIELD_TYPE_LABELS[type as CustomFieldType] ?? type}</option>
+                      ))}
                     </select>
                   </label>
                   <label>Select options (comma-separated)

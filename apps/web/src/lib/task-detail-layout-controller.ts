@@ -1,7 +1,5 @@
 import {
-  createDefaultTaskDetailLayoutConfig,
   hasPersonalTaskDetailLayout,
-  isTaskDetailLayoutEqual,
   normalizeTaskDetailLayoutConfig,
   readPersonalTaskDetailLayout,
   readServerTaskDetailLayoutFromJson,
@@ -51,7 +49,7 @@ function observeOrder(update: () => void, signal: AbortSignal): void {
 function getTicketLabelEl(item: HTMLElement, isSection: boolean): HTMLElement | null {
   return isSection
     ? item.querySelector<HTMLElement>(":scope > .td-section__summary > span")
-    : item.querySelector<HTMLElement>(":scope > label")
+    : item.querySelector<HTMLElement>("[data-layout-field-label], :scope > label:not(:has(input,select,textarea))")
 }
 
 export function initTicketSectionOrder(sections: HTMLElement, signal: AbortSignal): () => void {
@@ -66,7 +64,7 @@ export function initTicketSectionOrder(sections: HTMLElement, signal: AbortSigna
       const isSection = group === "sections"
       for (const item of layoutItems(list)) {
         const id = item.dataset.layoutItem ?? ""
-        item.hidden = hidden.has(id)
+        item.hidden = hidden.has(id) || (item.dataset.haAreaField === "edit" && !item.dataset.haAreaEndpoint)
         const labelEl = getTicketLabelEl(item, isSection)
         if (labelEl) {
           if (labelEl.dataset.defaultLabel === undefined) {
@@ -98,10 +96,6 @@ type LayoutSection = {
   label: string
   icon?: string
   fields?: [id: string, label: string][]
-}
-
-function cloneConfig(config: TaskDetailLayoutConfig): TaskDetailLayoutConfig {
-  return normalizeTaskDetailLayoutConfig(JSON.parse(JSON.stringify(config)))
 }
 
 function populateLayoutEditor(root: HTMLElement): void {
@@ -158,17 +152,13 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
   const lists = Array.from(root.querySelectorAll<HTMLElement>("[data-layout-order]"))
   const status = root.querySelector<HTMLElement>("[data-layout-status]")
   const error = root.querySelector<HTMLElement>("[data-layout-error]")
-  const dirtyBar = root.querySelector<HTMLElement>("[data-layout-dirty-bar]")
-  const dirtyText = root.querySelector<HTMLElement>("[data-layout-dirty-text]")
   const saveBtn = root.querySelector<HTMLButtonElement>("[data-layout-save]")
-  const personalNotice = root.querySelector<HTMLElement>("[data-layout-personal-notice]")
   const scopeBadge = root.querySelector<HTMLElement>("[data-layout-scope-badge]")
 
-  const isServerScope = root.dataset.layoutScope === "server"
-  let serverCommitted = readServerTaskDetailLayoutFromJson(root.dataset.serverLayout) ?? createDefaultTaskDetailLayoutConfig()
-  let draft = isServerScope
-    ? cloneConfig(serverCommitted)
-    : resolveEffectiveTaskDetailLayout(readPersonalTaskDetailLayout(), readServerTaskDetailLayoutFromJson(root.dataset.serverLayout))
+  let draft = resolveEffectiveTaskDetailLayout(
+    readPersonalTaskDetailLayout(),
+    readServerTaskDetailLayoutFromJson(root.dataset.serverLayout),
+  )
 
   let dragging = false
   let saving = false
@@ -180,15 +170,8 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
     if (message && status) status.textContent = message
   }
 
-  function updateScopeNotices(): void {
-    if (isServerScope) {
-      if (personalNotice) personalNotice.hidden = !hasPersonalTaskDetailLayout()
-      const dirty = !isTaskDetailLayoutEqual(serverCommitted, draft)
-      if (dirtyBar) dirtyBar.hidden = !dirty
-      if (dirtyText && dirty) {
-        dirtyText.textContent = "Unsaved server-wide layout changes — click Save server default to apply for all users."
-      }
-    } else if (scopeBadge) {
+  function updateScopeBadge(): void {
+    if (scopeBadge) {
       scopeBadge.textContent = hasPersonalTaskDetailLayout() ? "Personal browser override" : "Using server default"
     }
   }
@@ -226,14 +209,10 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
         if (countEl) countEl.textContent = `${visibleCount}/${items.length} visible`
       }
     }
-    updateScopeNotices()
+    updateScopeBadge()
   }
 
   function syncFromStorage(): void {
-    if (isServerScope) {
-      updateScopeNotices()
-      return
-    }
     draft = resolveEffectiveTaskDetailLayout(
       readPersonalTaskDetailLayout(),
       readServerTaskDetailLayoutFromJson(root.dataset.serverLayout),
@@ -243,12 +222,6 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
 
   function commitDraft(announce?: string): void {
     draft = normalizeTaskDetailLayoutConfig(draft)
-    if (isServerScope) {
-      renderConfig(draft)
-      showError(undefined)
-      if (announce && status) status.textContent = announce
-      return
-    }
     try {
       savePersonalTaskDetailLayout(draft)
       showError(undefined)
@@ -301,20 +274,6 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
     const button = event.target.closest<HTMLButtonElement>("button")
     if (!button) return
 
-    if (button.hasAttribute("data-layout-clear-personal")) {
-      resetTaskDetailLayout()
-      updateScopeNotices()
-      showToast("Browser override cleared — now using server default.")
-      return
-    }
-
-    if (button.hasAttribute("data-layout-discard") && isServerScope) {
-      draft = cloneConfig(serverCommitted)
-      renderConfig(draft)
-      showError(undefined)
-      return
-    }
-
     if (button.hasAttribute("data-layout-save")) {
       if (saving) return
       saving = true
@@ -327,8 +286,6 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
           body: JSON.stringify({ key: taskDetailServerSettingKey, value: serialized }),
         })
         if (!res.ok) throw new Error("Save failed")
-        serverCommitted = readServerTaskDetailLayoutFromJson(serialized) ?? createDefaultTaskDetailLayoutConfig()
-        if (isServerScope) draft = cloneConfig(serverCommitted)
         root.dataset.serverLayout = serialized
         renderConfig(draft)
         showError(undefined)
@@ -343,19 +300,12 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
     }
 
     if (button.hasAttribute("data-layout-reset")) {
-      if (isServerScope) {
-        draft = createDefaultTaskDetailLayoutConfig()
-        renderConfig(draft)
+      try {
+        resetTaskDetailLayout()
         showError(undefined)
-        if (status) status.textContent = "Default layout staged — save to commit server-wide."
-      } else {
-        try {
-          resetTaskDetailLayout()
-          showError(undefined)
-          if (status) status.textContent = root.dataset.reset ?? ""
-        } catch {
-          showError(root.dataset.saveFailed)
-        }
+        if (status) status.textContent = root.dataset.reset ?? ""
+      } catch {
+        showError(root.dataset.saveFailed)
       }
       return
     }

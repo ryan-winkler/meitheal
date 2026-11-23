@@ -213,6 +213,7 @@ export function initKanbanPage(signal: AbortSignal): void {
       initKanbanReactionCounts(board, boardLifetime.signal)
       initKanbanInactivity(board, boardLifetime.signal)
       bindBoardScrollTrack(board, boardLifetime.signal)
+      document.dispatchEvent(new CustomEvent("meitheal:kanban-board-replaced"))
 
       const total = shell?.querySelector("[data-kanban-visible-count]")
       const label = shell?.querySelector("[data-kanban-visible-label]")
@@ -382,6 +383,14 @@ export function initKanbanPage(signal: AbortSignal): void {
   }, { signal })
   document.addEventListener("kanban:detail-changed", () => {
     queueBackgroundRead({ afterSave: "board-group" })
+  }, { signal })
+  document.addEventListener("meitheal:lanes-changed", () => {
+    queueBackgroundRead()
+  }, { signal })
+  document.addEventListener("meitheal:tasks-changed", event => {
+    const detail = (event as CustomEvent<{ id?: string; action?: string }>).detail
+    if (detail?.action === "deferral") return
+    queueBackgroundRead({ taskId: detail?.id }, detail?.action !== "kanban-child-created")
   }, { signal })
   document.addEventListener("meitheal:home-assistant-area-saved", () => {
     if (new URLSearchParams(location.search).has("home_assistant_area_id")) void refresh()

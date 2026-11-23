@@ -77,6 +77,8 @@ export async function readTaskExperienceMigrationState(db) {
   const laneColumns = await readTableColumns(db, "kanban_lanes")
   const hasArchivedFavorites = await schemaObjectExists(db, "table", "archived_task_favorites")
   const hasTablePositionIndex = await schemaObjectExists(db, "index", "tasks_board_table_position_idx")
+  const hasBoardParentIndex = await schemaObjectExists(db, "index", "tasks_board_parent_id_idx")
+  const hasBoardCreatedIndex = await schemaObjectExists(db, "index", "tasks_board_created_id_idx")
   const hasFavoriteIndex = await schemaObjectExists(db, "index", "tasks_is_favorite_idx")
 
   const current = Number(version?.value) >= TASK_EXPERIENCE_SCHEMA_VERSION
@@ -89,6 +91,8 @@ export async function readTaskExperienceMigrationState(db) {
       laneColumns.has("color") &&
       hasArchivedFavorites &&
       hasTablePositionIndex &&
+      (!taskColumns.has("parent_id") || hasBoardParentIndex) &&
+      hasBoardCreatedIndex &&
       !hasFavoriteIndex
     if (!valid) throw new Error("The Meitheal task experience schema markers disagree")
     return true
@@ -99,7 +103,9 @@ export async function readTaskExperienceMigrationState(db) {
     taskColumns.has("table_position") ||
     laneColumns.has("color") ||
     hasArchivedFavorites ||
-    hasTablePositionIndex
+    hasTablePositionIndex ||
+    hasBoardParentIndex ||
+    hasBoardCreatedIndex
   if (partial) throw new Error("The Meitheal task experience schema markers disagree")
   return false
 }
@@ -156,6 +162,10 @@ export async function applyTaskExperienceMigration(tx) {
     }
 
     await tx.execute("CREATE INDEX IF NOT EXISTS tasks_board_table_position_idx ON tasks(task_board_id, table_position)")
+    if (taskColumns.has("parent_id")) {
+      await tx.execute("CREATE INDEX IF NOT EXISTS tasks_board_parent_id_idx ON tasks(task_board_id, parent_id)")
+    }
+    await tx.execute("CREATE INDEX IF NOT EXISTS tasks_board_created_id_idx ON tasks(task_board_id, created_at DESC, id ASC)")
 
     const laneColumns = await readTableColumns(tx, "kanban_lanes")
     if (!laneColumns.has("color")) {
@@ -216,10 +226,11 @@ export async function applyTaskExperienceMigration(tx) {
           }
         }
         if (next.fields && typeof next.fields === "object" && !Array.isArray(next.fields)) {
-          const effort = next.fields.effort
-          if (effort && typeof effort === "object" && !Array.isArray(effort) && effort.min === 1) {
-            effort.min = 0.01
-            changed = true
+          for (const field of Object.values(next.fields)) {
+            if (field && typeof field === "object" && !Array.isArray(field) && Object.hasOwn(field, "min")) {
+              delete field.min
+              changed = true
+            }
           }
         }
         if (changed) {

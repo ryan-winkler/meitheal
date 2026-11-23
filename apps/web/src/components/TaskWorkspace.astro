@@ -426,57 +426,6 @@ if (groupByProject) {
         </div>
       </div>
 
-  <!-- P5-2: SVG icon defs — shared across all cards to avoid duplication -->
-  <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
-    <defs>
-      <symbol
-        id="icon-child"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <path d="M16 3h5v5"></path><path d="M8 3H3v5"></path><path
-          d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"></path><path d="m15 9 6-6"
-        ></path>
-      </symbol>
-      <symbol
-        id="icon-assign"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle
-          cx="9"
-          cy="7"
-          r="4"></circle><line x1="19" x2="19" y1="8" y2="14"></line><line
-          x1="22"
-          x2="16"
-          y1="11"
-          y2="11"></line>
-      </symbol>
-      <symbol
-        id="icon-palette"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <path
-          d="M12 20a7.966 7.966 0 0 1-5.002-1.756l.002.001v-.683c0-1.794 1.492-3.25 3.333-3.25h3.334c1.84 0 3.333 1.456 3.333 3.25v.683A7.966 7.966 0 0 1 12 20Z"
-        ></path><path d="M2 12C2 6.477 6.477 2 12 2s10 4.477 10 10"
-        ></path><circle cx="12" cy="10" r="3"></circle>
-      </symbol>
-    </defs>
-  </svg>
-
   <p class="kanban-project-notice" role="status" data-project-catalog-unavailable hidden={!projectCatalogUnavailable}>
     {t("kanban.project_catalog_failed", locale)}
   </p>
@@ -714,6 +663,7 @@ if (groupByProject) {
                           data-promote-toggle
                           data-id={String(task.id)}
                           aria-pressed={promoted ? "true" : "false"}
+                          disabled={!canEdit}
                           title={promoted ? t("kanban.demote_card", locale) : t("kanban.promote_card", locale)}
                           aria-label={`${promoted ? t("kanban.demote_card", locale) : t("kanban.promote_card", locale)}: ${String(task.title)}`}
                         >
@@ -898,6 +848,7 @@ if (groupByProject) {
                     })()}
                     <div class="kanban-card-actions">
                       <button
+                        type="button"
                         class="card-action-btn card-edit-btn"
                         data-id={String(task.id)}
                         title={!canEdit ? "View task" : t("kanban.edit_task", locale)}
@@ -905,8 +856,10 @@ if (groupByProject) {
                       >
                         <Icon name="pencil" size={14} sprite />
                       </button>
-                      {<><button
+                      <button
+                        type="button"
                         class="card-action-btn card-ai-btn"
+                        data-id={String(task.id)}
                         data-title={String(task.title)}
                         data-desc={
                           task.description ? String(task.description) : ""
@@ -918,45 +871,57 @@ if (groupByProject) {
                       >
                         <Icon name="sparkles" size={14} sprite />
                       </button>
-                      <button
-                        class="card-action-btn card-dup-btn"
-                        data-id={String(task.id)}
-                        title={t("kanban.duplicate", locale)}
-                        aria-label={`Duplicate task: ${String(task.title ?? "").slice(0, 50)}`}
-                      >
-                        <Icon name="clipboard-list" size={14} sprite />
-                      </button>
-                      <button
-                        class="card-action-btn card-child-btn"
-                        data-id={String(task.id)}
-                        data-title={String(task.title ?? "")}
-                        data-status={String(task.status ?? "pending")}
-                        data-priority={String(p)}
-                        title="Add child task"
-                        aria-label={`Add subtask to: ${String(task.title ?? "").slice(0, 50)}`}
-                      >
-                        <Icon name="plus" size={14} sprite />
-                      </button>
-                      <button
-                        class="card-action-btn card-assign-btn"
-                        data-id={String(task.id)}
-                        data-assigned={String(task.assigned_to ?? "")}
-                        title="Assign user"
-                        aria-label={`Assign user to: ${String(task.title ?? "").slice(0, 50)}`}
-                        aria-haspopup="true"
-                      >
-                        <Icon name="user" size={14} sprite />
-                      </button>
-                      <button
-                        class="card-action-btn card-color-btn"
-                        data-id={String(task.id)}
-                        data-color={String(task.color ?? "")}
-                        title="Set card color"
-                        aria-label={`Set color for: ${String(task.title ?? "").slice(0, 50)}`}
-                        aria-haspopup="true"
-                      >
-                        <Icon name="palette" size={14} sprite />
-                      </button></>}
+                      {canCreate && (
+                        <>
+                          <button
+                            type="button"
+                            class="card-action-btn card-dup-btn"
+                            data-id={String(task.id)}
+                            title={t("kanban.duplicate", locale)}
+                            aria-label={`Duplicate task: ${String(task.title ?? "").slice(0, 50)}`}
+                          >
+                            <Icon name="clipboard-list" size={14} sprite />
+                          </button>
+                          <button
+                            type="button"
+                            class="card-action-btn card-child-btn"
+                            data-id={String(task.id)}
+                            data-title={String(task.title ?? "")}
+                            data-status={String(task.status ?? "pending")}
+                            data-priority={String(p)}
+                            title="Add child task"
+                            aria-label={`Add subtask to: ${String(task.title ?? "").slice(0, 50)}`}
+                          >
+                            <Icon name="plus" size={14} sprite />
+                          </button>
+                        </>
+                      )}
+                      {canEdit && (
+                        <>
+                          <button
+                            type="button"
+                            class="card-action-btn card-assign-btn"
+                            data-id={String(task.id)}
+                            data-assigned={String(task.assigned_to ?? "")}
+                            title="Assign user"
+                            aria-label={`Assign user to: ${String(task.title ?? "").slice(0, 50)}`}
+                            aria-haspopup="true"
+                          >
+                            <Icon name="user" size={14} sprite />
+                          </button>
+                          <button
+                            type="button"
+                            class="card-action-btn card-color-btn"
+                            data-id={String(task.id)}
+                            data-color={String(task.color ?? "")}
+                            title="Set card color"
+                            aria-label={`Set color for: ${String(task.title ?? "").slice(0, 50)}`}
+                            aria-haspopup="true"
+                          >
+                            <Icon name="palette" size={14} sprite />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 );
@@ -1023,6 +988,10 @@ if (groupByProject) {
     tableReadFailed={tableReadFailed}
     workflowColumns={workflowColumnsUnavailable ? [] : columns}
     workflowColumnsUnavailable={workflowColumnsUnavailable}
+    canEdit={canEdit}
+    canCreate={canCreate}
+    canComplete={canComplete}
+    canDelete={canDelete}
   />}
   {renderedView === "calendar" && <TasksCalendarView {scope} />}
   {renderedView === "timeline" && <TasksTimelineView {scope} />}
@@ -1430,36 +1399,12 @@ if (groupByProject) {
     flex-wrap: wrap;
     align-items: center;
   }
-  .priority-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
   /* Priority color classes — single source of truth: priority-config.ts */
-  .priority-dot.priority-critical,
-  .priority-label.priority-critical {
-    --prio-color: var(--prio-critical);
-  }
-  .priority-dot.priority-high,
-  .priority-label.priority-high {
-    --prio-color: var(--prio-high);
-  }
-  .priority-dot.priority-medium,
-  .priority-label.priority-medium {
-    --prio-color: var(--prio-medium);
-  }
-  .priority-dot.priority-low,
-  .priority-label.priority-low {
-    --prio-color: var(--prio-low);
-  }
-  .priority-dot.priority-minimal,
-  .priority-label.priority-minimal {
-    --prio-color: var(--prio-none);
-  }
-  .priority-dot[class*="priority-"] {
-    background: var(--prio-color);
-  }
+  .priority-label.priority-critical { --prio-color: var(--prio-critical); }
+  .priority-label.priority-high { --prio-color: var(--prio-high); }
+  .priority-label.priority-medium { --prio-color: var(--prio-medium); }
+  .priority-label.priority-low { --prio-color: var(--prio-low); }
+  .priority-label.priority-minimal { --prio-color: var(--prio-none); }
   .priority-label {
     font-size: 11px;
     color: var(--text-primary);
@@ -1618,29 +1563,6 @@ if (groupByProject) {
     opacity: 1;
     pointer-events: auto;
   }
-  .card-action-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-inline-size: 1.75rem;
-    min-block-size: 1.75rem;
-    padding: 0;
-    background: transparent;
-    border: 0;
-    border-radius: 6px;
-    color: var(--text-muted);
-    cursor: pointer;
-    transition:
-      background-color 140ms ease,
-      color 140ms ease,
-      opacity 140ms ease,
-      transform 120ms ease;
-  }
-  .card-action-btn:hover,
-  .card-action-btn:focus-visible {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-  }
   .card-action-btn:active {
     transform: scale(0.94);
   }
@@ -1722,15 +1644,6 @@ if (groupByProject) {
       transform: translateY(0);
     }
   }
-  @keyframes pulse {
-    0%,
-    100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.4;
-    }
-  }
   :global(.popover-title) {
     font-size: 11px;
     font-weight: 700;
@@ -1756,8 +1669,8 @@ if (groupByProject) {
     background: var(--bg-hover);
   }
   :global(.popover-item.active) {
-    background: rgba(99, 102, 241, 0.15);
-    color: #818cf8;
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    color: var(--accent-text, var(--accent));
     font-weight: 600;
   }
 
@@ -1833,15 +1746,6 @@ if (groupByProject) {
     gap: 2px;
     flex-shrink: 0;
   }
-  .kanban-fav {
-    display: inline-flex;
-    align-items: center;
-    color: var(--warning);
-    flex-shrink: 0;
-  }
-  .kanban-fav :global(svg) {
-    fill: currentColor;
-  }
   .kanban-promote-star {
     display: inline-flex;
     align-items: center;
@@ -1867,7 +1771,7 @@ if (groupByProject) {
   .kanban-promote-star[aria-pressed="false"]:hover,
   .kanban-promote-star[aria-pressed="false"]:focus-visible {
     background: var(--bg-hover);
-    color: var(--tblr-yellow, #f59f00);
+    color: var(--warning-text, #92400e);
   }
   .kanban-promote-star:active {
     transform: scale(0.94);
@@ -1910,7 +1814,7 @@ if (groupByProject) {
   }
   .kanban-promote-star[aria-pressed="true"] :global(svg) {
     fill: none;
-    stroke: #ffffff;
+    stroke: #1c1400;
     stroke-width: 2;
   }
   .kanban-promote-star[aria-pressed="true"]:hover .kanban-promote-sash,

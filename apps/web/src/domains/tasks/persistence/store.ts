@@ -769,6 +769,9 @@ async function initializeRuntimeTables(client: Transaction): Promise<void> {
   await client.execute("CREATE UNIQUE INDEX IF NOT EXISTS tasks_routine_spawn_unique_idx ON tasks(routine_template_id, spawned_for_date)")
 
   const { rows: [runtimeSchema] } = await client.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")
+  if (Number(runtimeSchema?.value) >= 28 && await hasColumn(client, "tasks", "task_board_id") && await hasColumn(client, "tasks", "parent_id")) {
+    await client.execute("CREATE INDEX IF NOT EXISTS tasks_board_parent_id_idx ON tasks(task_board_id, parent_id)")
+  }
   if (Number(runtimeSchema?.value) >= 26) await validateTaskActivityTriggers(client)
   else validateExistingTaskWriteTriggers(await client.execute(taskWriteTriggerMetadata))
   const household = await hasColumn(client, "tasks", "task_board_id") ? "task_board_id IS NULL AND " : ""
