@@ -174,6 +174,9 @@ test("pointer drag rolls back if browser storage refuses the write", async ({ pa
   const list = editor.locator('ol[data-layout-order="sections"]')
   const source = list.locator(':scope > [data-layout-item="description"] [data-layout-handle]')
   const destination = list.locator(':scope > [data-layout-item="properties"]')
+  // Collapse the field list so the whole Properties row, and its midpoint, stays on screen.
+  const fields = destination.locator("details.td-layout-editor__fields")
+  if (await fields.evaluate(element => (element as HTMLDetailsElement).open)) await fields.locator(":scope > summary").click()
   // A row moves past a section once the pointer crosses that section's midpoint.
   async function drag(target: Locator, edge: "top" | "bottom") {
     const from = (await source.boundingBox())!

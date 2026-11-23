@@ -46,6 +46,8 @@ export function registerTaskSurfaceLayout(theme: "light" | "dark" | "knight-ride
       await expect(card.locator(".kanban-assignee-badge")).toHaveAttribute("title", `Assigned to ${assignee}`)
       await expect(card.locator(".kanban-card-desc")).toHaveText("Check the replacement controller & wiring. Keep spare valves ready.")
       await expect(card.locator(".kanban-card-due")).toHaveCSS("white-space", "nowrap")
+      // Quick actions appear on hover or keyboard focus with a fine pointer.
+      await card.hover()
       await expect(card.locator(".kanban-card-actions")).toHaveCSS("opacity", "1")
       await expect.poll(() => page.locator("#kanban-shell").evaluate(el => getComputedStyle(el).rowGap)).toBe("12px")
       const bounds = await page.locator("#tasks-filter-row").evaluate(el => {

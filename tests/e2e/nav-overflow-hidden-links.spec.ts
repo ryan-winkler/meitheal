@@ -144,8 +144,12 @@ test.describe("More disclosure keyboard candidates", () => {
       await page.keyboard.press("Tab")
       await page.keyboard.press("Tab")
       await expect(areasToggle).toBeFocused()
+      // Each Area row reads link, then its Projects toggle.
+      await page.keyboard.press("Tab")
+      await expect(areas.locator(".stree__area-link").first()).toBeFocused()
       await page.keyboard.press("Tab")
       await expect(areas.locator("[data-area-toggle]").first()).toBeFocused()
+      await page.keyboard.press("Shift+Tab")
       await page.keyboard.press("Shift+Tab")
       await expect(areasToggle).toBeFocused()
       await page.keyboard.press("Shift+Tab")

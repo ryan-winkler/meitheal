@@ -368,7 +368,8 @@ const { id, variant, enabled = true } = Astro.props
       }, { signal })
       root.addEventListener("focusout", event => {
         const next = event.relatedTarget
-        if (!options.hidden && next instanceof Node && !root.contains(next)) close()
+        // Leaving the menu closes it, including a Tab onto a pinned shortcut beside it.
+        if (!options.hidden && next instanceof Node && !options.contains(next) && !trigger.contains(next)) close()
       }, { signal })
       root.addEventListener("keydown", event => {
         if (event.key !== "Escape" || options.hidden) return

@@ -214,16 +214,19 @@ function bindAppearanceForm(form: HTMLFormElement): void {
     applyAppearancePreferences(resolveFullAppearance(snap.appearance))
     syncNavigationState(snap)
     if (isLookAndFeel) {
+      let themePreview: Parameters<typeof applyTheme>[0]
       if (snap.theme && isThemeMode(snap.theme)) {
         // Custom has nothing to preview until CSS is imported, so keep the saved theme.
-        const preview = snap.theme === "custom" && !readAppearanceValue("meitheal-custom-theme-css")
+        themePreview = snap.theme === "custom" && !readAppearanceValue("meitheal-custom-theme-css")
           && committed.theme && isThemeMode(committed.theme) ? committed.theme : snap.theme
-        applyTheme(preview)
+        applyTheme(themePreview)
         showCustomThemeSection(snap.theme === "custom")
       }
       const preview = { matchHaTheme: Boolean(snap.matchHaTheme), accent: snap.accent ?? null }
       setHAThemePreview(isAppearanceDraftDirty(committed, snap) ? preview : undefined)
       refreshHAThemeMatch(preview)
+      // The bridge re-applies the saved theme when matching changes; keep the draft preview.
+      if (themePreview) applyTheme(themePreview)
       if (!matchesHaPalette()) applyPersonalAccent(root, snap.accent ?? null)
       syncAccentSelection(snap.accent ?? null)
       syncMatchHaStatus()

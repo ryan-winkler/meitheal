@@ -49,7 +49,7 @@ async function openSidebarEditor(page: Page, touch = false) {
 // Destination order, ignoring the optional Task view items that edit mode reveals.
 function destinationOrder(sidebar: Locator) {
   return sidebar.locator("[data-sidebar-group]").evaluateAll(items =>
-    items.map(item => item.getAttribute("data-sidebar-group")).filter(group => !group?.startsWith("view-")))
+    items.map(item => item.getAttribute("data-sidebar-group")).filter(group => !group?.startsWith("view-") && group !== "system-pinned"))
 }
 
 test("drag and keyboard reorder keep the Boards subtree intact", async ({ page }, testInfo) => {
