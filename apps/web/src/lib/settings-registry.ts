@@ -289,7 +289,7 @@ export const SETTINGS_FIELDS: SettingsFieldDescriptor[] = [
   {
     id: "field-appearance-customize",
     label: "Typography & Density",
-    anchorId: "appearance-settings",
+    anchorId: "appearance-typography",
     sectionId: "look-and-feel-settings",
     keywords: ["font", "typeface", "typography", "corners", "roundness", "radius", "palette", "width", "density", "outfit", "inter", "geist"],
   },

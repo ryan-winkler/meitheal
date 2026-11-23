@@ -50,6 +50,7 @@ test.describe("New Task Modal", () => {
       const saved = page.waitForResponse(response => new URL(response.url()).pathname === "/api/settings"
         && response.request().method() === "PUT" && response.request().postDataJSON()?.key === "theme")
       await page.locator("#theme-select").selectOption(theme)
+      await page.locator("#appearance-save-btn").click()
       expect((await saved).ok()).toBe(true)
       await page.goto("/today")
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
@@ -143,12 +144,13 @@ test.describe("New Task Modal", () => {
 
     const payloads: string[] = []
     let createdId: string | undefined
+    let createdKey: string | undefined
     await page.route("**/api/tasks", async route => {
       if (route.request().method() !== "POST") return route.continue()
       payloads.push(route.request().postDataJSON().checklists)
       if (payloads.length === 1) return route.fulfill({ status: 422, body: "Fixture save failure" })
       const response = await route.fetch()
-      if (response.status() === 201) createdId = (await response.json()).id
+      if (response.status() === 201) ({ id: createdId, ticket_key: createdKey } = await response.json())
       return route.fulfill({ response })
     })
 
@@ -171,7 +173,7 @@ test.describe("New Task Modal", () => {
     expect(createdId).toEqual(expect.any(String))
     const detailName = "Task detail: Checklist creation fixture"
     await expect(page.getByRole("dialog", { name: detailName })).toBeVisible()
-    expect(new URL(page.url()).pathname).toBe("/tickets/" + encodeURIComponent(createdId!))
+    expect(new URL(page.url()).pathname).toBe("/tickets/" + createdKey)
     const id = encodeURIComponent(createdId!)
     const taskPath = "/api/tasks/" + id
     const getChecklist = async () => {

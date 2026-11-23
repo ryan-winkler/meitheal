@@ -179,7 +179,9 @@ for (const legacy of [false, true]) {
     expect(rejected.status).toBe(409)
     expect(
       await saveWorkIntegrationSettings(db, fixture.scope.principal, [
-        { key: "caldav_url", value: JSON.stringify(origin) }
+        { key: "caldav_url", value: JSON.stringify(origin) },
+        // Ticket details change shared calendar content, so they go through profile review.
+        { key: "calendar_write_ticket_details", value: JSON.stringify(false) }
       ])
     ).toBe(true)
     fixture = await integrationFixture({

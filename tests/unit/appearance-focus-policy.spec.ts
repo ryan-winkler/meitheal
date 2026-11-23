@@ -24,6 +24,12 @@ class FixtureElement extends EventTarget {
 
   constructor(readonly id = "") { super() }
 
+  querySelectorAll(): FixtureElement[] {
+    return []
+  }
+  hasAttribute(name: string): boolean {
+    return this.attributes.has(name)
+  }
   setAttribute(name: string, value: string) {
     this.attributes.set(name, value)
     if (name.startsWith("data-")) {
@@ -102,6 +108,7 @@ function createNavigation() {
     activeElement: null as unknown,
     getElementById: (id: string) => elements.get(id) ?? null,
     querySelector: (selector: string) => selector === "#sidebar-areas-group" ? group : null,
+    querySelectorAll: () => [],
   })
   const values = new Map<string, string>()
   const storage = {

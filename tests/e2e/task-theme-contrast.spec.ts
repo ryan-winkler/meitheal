@@ -2,6 +2,7 @@ import { expect, test, type Frame, type Page } from "@playwright/test"
 import { mkdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { shouldSkipBrowserSpecs } from "./_helpers"
+import { saveAppearance } from "../helpers/appearance-settings"
 
 const evidenceDir = process.env.MEITHEAL_CONTRAST_EVIDENCE_DIR
 const states = [
@@ -200,6 +201,7 @@ test.describe("Shopping theme contrast", () => {
         await page.goto("/settings#look-and-feel-settings")
         await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
         await page.locator("#accent-color-custom").fill(color)
+        await saveAppearance(page)
         await expect.poll(() => page.evaluate(() => localStorage.getItem("meitheal-accent-color"))).toBe(color)
         await page.goto("/today")
         await openShopping()
@@ -218,6 +220,7 @@ test.describe("Shopping theme contrast", () => {
       await page.goto("/settings#look-and-feel-settings")
       await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
       await page.locator("#accent-reset").click()
+      await saveAppearance(page)
       await expect.poll(() => page.evaluate(() => localStorage.getItem("meitheal-accent-color"))).toBeNull()
       expect(await page.evaluate(() => ["--personal-accent", "--personal-accent-foreground", "--personal-accent-hover-foreground"].map(key => document.documentElement.style.getPropertyValue(key)))).toEqual(["", "", ""])
       await page.goto("/today")

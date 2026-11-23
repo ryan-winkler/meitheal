@@ -35,7 +35,7 @@ test("work queue links and Pillar actions retain contrast through hover", async 
   await page.setViewportSize({ width: 1440, height: 960 })
   await page.emulateMedia({ reducedMotion: "reduce" })
   const targets = [
-    ["/deferred", "[data-deferred-root] > header > a"],
+    ["/deferred", "[data-deferred-root] .work-queue-tabs > a"],
     ["/inactivity", "a[data-inactivity-back]"],
     ["/triage", "[data-triage-root] > header > a"],
     ["/progress#pillars", "#pillar-add-btn, #pillar-add-btn-empty"],

@@ -2,6 +2,7 @@ import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { expect } from "@playwright/test"
 import { test } from "../helpers/stored-assignee-fixture"
 import { shouldSkipBrowserSpecs } from "./_helpers"
+import { expectVisibleFocusRing } from "../helpers/focus-ring"
 
 test.describe("Tasks Shell (Kanban)", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
@@ -135,7 +136,7 @@ test.describe("Tasks Shell (Kanban)", () => {
       const dialog = page.getByRole("dialog", { name: "Assign User" })
       const retry = dialog.getByRole("button", { name: "Retry" })
       await expect(retry).toBeFocused()
-      await expect(retry).toHaveCSS("outline-color", "rgb(166, 192, 249)")
+      await expectVisibleFocusRing(retry)
       directoryMode = "stale"
       await retry.press("Enter")
       await expect(dialog).toContainText("Home Assistant assignee not verified")
@@ -172,7 +173,7 @@ test.describe("Tasks Shell (Kanban)", () => {
       await card.locator(".card-color-btn").press("Enter")
       const blue = page.getByRole("radio", { name: "Set color: Blue" })
       await blue.focus()
-      await expect(blue).toHaveCSS("outline-color", "rgb(166, 192, 249)")
+      await expectVisibleFocusRing(blue)
     } finally {
       await request.delete(`/api/tasks/${id}`, { headers })
     }

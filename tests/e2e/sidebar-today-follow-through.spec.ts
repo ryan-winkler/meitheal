@@ -27,42 +27,46 @@ test.describe("Sidebar and Today follow-through", () => {
       headers, data: { key: "sidebar_config", value: { boards: false, areas: true } },
     })).ok()).toBe(true)
     await page.goto("/tasks")
-    await expect(page.locator('#sidebar [data-page="boards"]')).toHaveCount(0)
-    await expect(page.locator("[data-sidebar-board-children]")).toHaveCount(0)
+    // Hidden items stay in the document for inline editing but are not shown.
+    await expect(page.locator('#sidebar [data-page="boards"]')).toBeHidden()
+    await expect(page.locator("[data-sidebar-board-children]")).toBeHidden()
   })
 
-  test("Household Areas remain under Boards with legacy visibility and label settings", async ({ page }) => {
-    await page.goto("/settings#navigation-settings")
-    await expect(page.getByRole("checkbox", { name: "Show Areas in sidebar" })).toBeVisible()
-    await page.getByRole("textbox", { name: "Custom label for Areas" }).fill("Household areas")
-    await page.getByRole("button", { name: "Move Areas up", exact: true }).press("Enter")
-    await page.getByRole("button", { name: "Move Areas up", exact: true }).press("Enter")
-    await expect(page.getByRole("textbox", { name: "Custom label for Areas" })).toHaveValue("Household areas")
-    await page.getByRole("button", { name: "+ Add Custom Link", exact: true }).click()
-    await expect(page.locator(".sidebar-custom-link")).toHaveCount(1)
-    await page.getByRole("textbox", { name: "Custom link label", exact: true }).fill("Notes")
-    await page.getByRole("textbox", { name: "Custom link URL", exact: true }).fill("/planning#spaces")
-    await page.getByRole("button", { name: "Save Sidebar Config", exact: true }).click()
-    await expect(page.getByRole("textbox", { name: "Custom label for Areas" })).toHaveValue("Household areas")
+  test("Household Areas remain under Boards with legacy visibility and label settings", async ({ page, request, baseURL }) => {
+    const headers = { origin: new URL(baseURL!).origin }
+    const saveConfig = async (value: Record<string, unknown>) =>
+      expect((await request.put("/api/settings", { headers, data: { key: "sidebar_config", value } })).ok()).toBe(true)
+    // Areas are no longer an editor row, but saved Areas labels and visibility still apply under Boards.
+    await saveConfig({ labels: { areas: "Household areas" } })
+    await page.goto("/today")
     const boardGroup = page.locator('#sidebar [data-sidebar-group="boards"]')
     const household = boardGroup.locator('[data-named-board-shortcut="household"]')
     await expect(household.getByRole("button", { name: "Household areas in Household" })).toBeAttached()
     await expect(page.locator('#sidebar [data-sidebar-group="areas"]')).toHaveCount(0)
+    await saveConfig({ areas: false })
+    await page.reload()
+    await expect(household.locator("[data-board-groups]")).toHaveCount(0)
+    await saveConfig({})
+    await page.reload()
+    await expect(household.locator("[data-board-groups]")).toHaveCount(1)
+
+    // Deep links open the Sidebar Configuration disclosure, whose editor adds custom links.
+    await page.goto("/settings#nav-sidebar-menu-section")
+    const editor = page.locator("#sidebar-item-list")
+    await expect(editor.getByRole("button", { name: "Hide · Boards", exact: true }).first()).toBeVisible()
+    await page.locator("#settings-add-link-toggle").click()
+    await page.getByRole("textbox", { name: "Custom link label", exact: true }).fill("Notes")
+    await page.getByRole("textbox", { name: "Custom link URL", exact: true }).fill("/planning#spaces")
+    await page.locator("#settings-add-link-form").getByRole("button", { name: "Add custom link", exact: true }).click()
+    await expect(editor.getByRole("button", { name: "Hide · Notes", exact: true })).toBeVisible()
+    await page.locator("#save-sidebar").click()
+    await expect(page.locator("#sidebar-dirty-bar")).toBeHidden()
     await expect(page.locator("#sidebar").getByRole("link", { name: "Notes", exact: true })).toBeVisible()
     await expect(page.locator('#sidebar [data-page="system-pinned"]')).toHaveAttribute("href", "/pinned")
     await expect(page.locator('#sidebar [data-page="system-pinned"]')).toHaveCount(1)
-
     await page.setViewportSize({ width: 320, height: 812 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321)
-    await page.getByRole("checkbox", { name: "Show Areas in sidebar" }).uncheck()
-    await page.getByRole("button", { name: "Save Sidebar Config", exact: true }).click()
-    await expect(household.locator("[data-board-groups]")).toHaveCount(0)
-    await page.reload()
-    await expect(page.getByRole("checkbox", { name: "Show Areas in sidebar" })).not.toBeChecked()
-
-    await page.getByRole("checkbox", { name: "Show Areas in sidebar" }).check()
-    await page.getByRole("button", { name: "Save Sidebar Config", exact: true }).click()
-    await expect(household.locator("[data-board-groups]")).toHaveCount(1)
+    await saveConfig({})
   })
 
   test("Boards and its per-Board Areas disclosure collapse independently and work with blocked storage", async ({ page }) => {
@@ -125,10 +129,9 @@ test.describe("Sidebar and Today follow-through", () => {
     await expect(page.getByRole("heading", { name: "Today", level: 1 })).toBeVisible()
     await expect(page.locator("#today-overview .page-hero")).toHaveCount(0)
     await expect(page.locator("#daily-stats .stat-item").first().locator(".stat-value")).not.toHaveText("0")
-    await expect(page.locator(".sidebar-footer > #connection-status")).toHaveCount(1)
-    await expect(page.locator(".sidebar-footer a #connection-status")).toHaveCount(0)
-    await expect(page.locator(".sidebar-footer a")).toHaveAttribute("aria-describedby", "connection-status")
-    await expect(page.locator(".sidebar-footer a")).toHaveAccessibleDescription("Meitheal ready")
+    // The readiness dot was removed from navigation; no link may describe itself by a missing element.
+    await expect(page.locator("#connection-status")).toHaveCount(0)
+    await expect(page.locator('#sidebar [aria-describedby="connection-status"]')).toHaveCount(0)
     expect(await page.locator(".sidebar-footer").evaluate(footer => footer.getBoundingClientRect().height)).toBeLessThan(70)
 
     const mobileMenu = page.locator("#menu-toggle")

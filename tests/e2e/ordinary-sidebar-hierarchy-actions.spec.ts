@@ -234,7 +234,7 @@ async function openProject(page: Page, board: string, area: string, project: str
   const parent = page.locator("[data-sidebar-boards-toggle]")
   if (await parent.getAttribute("aria-expanded") !== "true") await parent.click()
   const row = page.locator(`[data-named-board-shortcut="${board}"]`)
-  await row.locator(":scope > .sidebar-board-row > button").click()
+  await row.locator(":scope > .sidebar-board-row > .sidebar-board-toggle").click()
   await row.locator(`[data-area-toggle="${area}"]`).click()
   const menu = row.locator(`[data-project-menu="${project}"]`)
   await expect(menu).toBeVisible()

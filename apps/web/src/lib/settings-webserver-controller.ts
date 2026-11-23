@@ -294,7 +294,7 @@ export function initWebserverSettings(): void {
     if (syncHa) syncHa.checked = c.syncHaOptions
 
     if (provenance) {
-      for (const node of form.querySelectorAll<HTMLElement>("[data-ws-source]")) {
+      for (const node of form?.querySelectorAll<HTMLElement>("[data-ws-source]") ?? []) {
         const keyName = node.dataset.wsSource as ProvenanceField | undefined
         if (!keyName || !provenance[keyName]) continue
         const fmt = formatProvenance(provenance[keyName])

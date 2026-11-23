@@ -149,7 +149,6 @@ test("canManageSystemSettings allows Cloud Run preview hosts and HA admins while
           tokenName: "bot",
           scopes: ["tasks:read"],
           assigneeId: null,
-          boardIds: [],
         },
       }),
       false,

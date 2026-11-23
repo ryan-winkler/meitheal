@@ -154,7 +154,7 @@
 }
 .boards-workspace .board-workspace-navigation { padding: 0; background: transparent; }
 .board-breadcrumb { display: flex; align-items: center; flex-wrap: wrap; gap: 0.35rem; color: var(--text-muted); font-size: 0.78rem; line-height: 1.3; }
-.board-breadcrumb a { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--text-secondary); text-decoration: none; }
+.board-breadcrumb a { display: inline-flex; align-items: center; gap: 0.3rem; min-block-size: 24px; color: var(--text-secondary); text-decoration: none; }
 .board-breadcrumb a:hover { color: var(--text-primary); }
 .board-breadcrumb__current { font-weight: 600; color: var(--text-primary); }
 .board-breadcrumb__sep { opacity: 0.5; user-select: none; }

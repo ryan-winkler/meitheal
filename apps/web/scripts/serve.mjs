@@ -185,8 +185,10 @@ try {
 }
 if (shuttingDown) process.exit(0)
 
+// PORT=0 asks the OS for a free port (tests and local tools); configured port lists stay 1–65535.
+const ephemeralPort = !process.env.MEITHEAL_PORTS && process.env.PORT?.trim() === "0"
 const parsedPorts = parsePortSpec(process.env.MEITHEAL_PORTS ?? process.env.PORT ?? DEFAULT_WEBSERVER_PORT)
-const ports = parsedPorts.ok ? parsedPorts.ports : [DEFAULT_WEBSERVER_PORT]
+const ports = ephemeralPort ? [0] : parsedPorts.ok ? parsedPorts.ports : [DEFAULT_WEBSERVER_PORT]
 const host = process.env.MEITHEAL_HOST?.trim() || process.env.HOST?.trim() || "0.0.0.0"
 
 function createRequestListener(boundServer) {
@@ -328,6 +330,7 @@ for (const listenPort of ports) {
   servers.push(srv)
   srv.listen(listenPort, host, () => {
     hasListened = true
-    console.log(`Meitheal server listening on http://${host}:${listenPort}`)
+    const bound = srv.address()
+    console.log(`Meitheal server listening on http://${host}:${typeof bound === "object" && bound ? bound.port : listenPort}`)
   })
 }

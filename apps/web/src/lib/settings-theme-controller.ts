@@ -21,7 +21,7 @@ import {
 } from "@lib/appearance-draft"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { applyPersonalAccent } from "@lib/accent-colors"
-import { refreshHAThemeMatch } from "@lib/ha-theme-bridge"
+import { refreshHAThemeMatch, setHAThemePreview } from "@lib/ha-theme-bridge"
 import { HA_THEME_MATCH_KEY } from "@lib/ha-theme-palette"
 import { showToast } from "@lib/toast"
 import { isThemeMode } from "@lib/theme-mode"
@@ -215,10 +215,15 @@ function bindAppearanceForm(form: HTMLFormElement): void {
     syncNavigationState(snap)
     if (isLookAndFeel) {
       if (snap.theme && isThemeMode(snap.theme)) {
-        applyTheme(snap.theme, snap.theme === "auto")
+        // Custom has nothing to preview until CSS is imported, so keep the saved theme.
+        const preview = snap.theme === "custom" && !readAppearanceValue("meitheal-custom-theme-css")
+          && committed.theme && isThemeMode(committed.theme) ? committed.theme : snap.theme
+        applyTheme(preview, preview === "auto")
         showCustomThemeSection(snap.theme === "custom")
       }
-      refreshHAThemeMatch({ matchHaTheme: Boolean(snap.matchHaTheme), accent: snap.accent ?? null })
+      const preview = { matchHaTheme: Boolean(snap.matchHaTheme), accent: snap.accent ?? null }
+      setHAThemePreview(isAppearanceDraftDirty(committed, snap) ? preview : undefined)
+      refreshHAThemeMatch(preview)
       if (!matchesHaPalette()) applyPersonalAccent(root, snap.accent ?? null)
       syncAccentSelection(snap.accent ?? null)
       syncMatchHaStatus()
@@ -251,13 +256,17 @@ function bindAppearanceForm(form: HTMLFormElement): void {
     pageLifecycle.on(window, "meitheal:theme-changed", () => syncAccentSelection(draft.accent ?? null))
 
     syncCommittedTheme = (mode: string) => {
-      if (!isAppearanceDraftDirty(committed, draft)) {
-        committed.theme = mode
+      // Importing or removing custom CSS commits the theme immediately, so an
+      // unsaved Custom choice follows it; other unsaved choices stay drafts.
+      const follow = !isAppearanceDraftDirty(committed, draft) || draft.theme === "custom"
+      committed.theme = mode
+      if (follow) {
         draft.theme = mode
         if (themeSelect) themeSelect.value = mode
         syncVisualGroup("theme", mode)
         showCustomThemeSection(mode === "custom")
       }
+      updateDirtyUi()
     }
   }
 
@@ -288,6 +297,7 @@ function bindAppearanceForm(form: HTMLFormElement): void {
   })
 
   pageLifecycle.on(form, "keydown", (event) => {
+    if (!(event instanceof KeyboardEvent)) return
     const btn = (event.target instanceof Element ? event.target : null)?.closest<HTMLButtonElement>("[data-visual-field][data-visual-option]")
     if (!btn) return
     const fieldName = btn.dataset.visualField
@@ -385,52 +395,63 @@ function bindAppearanceForm(form: HTMLFormElement): void {
     if (isAppearanceDraftDirty(committed, draft)) applySnapshotPreview(committed)
   }, { once: true })
 
-  // Save commits atomically
+  // Keep subsequent edits separate from the submitted values.
   pageLifecycle.on(form, "submit", async (event) => {
     event.preventDefault()
     if (saving) return
+    const submitted = cloneAppearanceSnapshot(draft)
     saving = true
     for (const btn of saveBtns) {
       btn.disabled = true
       btn.classList.add("btn-loading")
     }
     try {
+      const nextStored = resolveFullAppearance(submitted.appearance)
       // 1. Persist Theme (server-backed setting) if changed
-      if (isLookAndFeel && draft.theme && draft.theme !== committed.theme) {
-        if (draft.theme === "custom" && !readAppearanceValue("meitheal-custom-theme-css")) {
+      if (isLookAndFeel && submitted.theme && submitted.theme !== committed.theme) {
+        if (submitted.theme === "custom" && !readAppearanceValue("meitheal-custom-theme-css")) {
           showToast("Import a CSS file first to use a custom theme.", "error")
           return
         }
-        if (isThemeMode(draft.theme)) {
-          await saveSetting("theme", draft.theme)
+        if (isThemeMode(submitted.theme)) {
+          await saveSetting("theme", submitted.theme)
           await clearSetupTheme()
-          setTheme(draft.theme)
+          setTheme(submitted.theme)
         }
       }
 
       // 2. Persist Match HA Theme & Accent to localStorage
       if (isLookAndFeel) {
-        if (draft.matchHaTheme) localStorage.setItem(HA_THEME_MATCH_KEY, "1")
+        if (submitted.matchHaTheme) localStorage.setItem(HA_THEME_MATCH_KEY, "1")
         else localStorage.removeItem(HA_THEME_MATCH_KEY)
 
-        if (draft.accent) localStorage.setItem(ACCENT_KEY, draft.accent)
+        if (submitted.accent) localStorage.setItem(ACCENT_KEY, submitted.accent)
         else localStorage.removeItem(ACCENT_KEY)
       }
 
-      // 3. Persist appearance preferences to localStorage
-      const nextStored = resolveFullAppearance(draft.appearance)
-      localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(nextStored))
-      applyAppearancePreferences(nextStored)
-      if (isLookAndFeel) {
-        refreshHAThemeMatch()
-        if (!matchesHaPalette()) applyPersonalAccent(root, draft.accent ?? null)
+      // 3. Persist appearance preferences to localStorage, keeping keys from newer versions
+      let previous: Record<string, unknown> = {}
+      try {
+        const stored: unknown = JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY) ?? "{}")
+        if (stored && typeof stored === "object" && !Array.isArray(stored)) previous = stored as Record<string, unknown>
+      } catch { /* A valid save replaces malformed stored preferences. */ }
+      localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify({ ...previous, ...nextStored }))
+      committed = submitted
+      if (isAppearanceDraftDirty(committed, draft)) {
+        applySnapshotPreview(draft)
+      } else {
+        applyAppearancePreferences(nextStored)
+        if (isLookAndFeel) {
+          setHAThemePreview()
+          refreshHAThemeMatch()
+          if (!matchesHaPalette()) applyPersonalAccent(root, submitted.accent ?? null)
+        }
+        status.textContent = status.dataset.saved ?? "Saved."
       }
-
-      committed = cloneAppearanceSnapshot(draft)
       updateDirtyUi()
-      status.textContent = status.dataset.saved ?? "Saved."
       showToast("common.updated")
     } catch (error) {
+      if (isAppearanceDraftDirty(submitted, draft)) applySnapshotPreview(draft)
       status.textContent = status.dataset.error ?? ""
       showSettingsSaveError(error)
     } finally {

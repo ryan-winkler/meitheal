@@ -164,7 +164,8 @@ test("task promotion is shared, typed, and independent of the stored manual orde
     const narrowFilter = otherPage.getByRole("button", { name: "Promoted cards only" })
     await expect(narrowFilter).toHaveAttribute("aria-pressed", "true")
     await expect(narrowFilter).toHaveCSS("min-block-size", "44px")
-    await expect(narrowFilter).toHaveCSS("border-top-color", "rgb(172, 197, 252)")
+    // The active Promoted filter uses the amber promotion color.
+    await expect(narrowFilter).toHaveCSS("border-top-color", "rgba(245, 159, 0, 0.55)")
     const otherLane = otherPage.locator('.kanban-column[data-status="pending"]')
     await expect(otherLane.locator(".kanban-card")).toHaveCount(1)
     await otherLane.getByRole("button", { name: "Task actions for Paging card 25" }).click()

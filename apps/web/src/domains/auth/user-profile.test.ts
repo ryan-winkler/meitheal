@@ -1,5 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
+import { INDIGO_SWATCH } from "../../lib/design-tokens"
 import {
   DEFAULT_USER_PROFILE,
   THEME_AVATAR_COLOR,
@@ -13,7 +14,7 @@ test("default user profile uses dynamic theme avatar color", () => {
   assert.equal(DEFAULT_USER_PROFILE.avatarColor, THEME_AVATAR_COLOR)
   assert.equal(isThemeAvatarColor(DEFAULT_USER_PROFILE.avatarColor), true)
   assert.equal(isThemeAvatarColor(null), true)
-  assert.equal(isThemeAvatarColor("#6366f1"), false)
+  assert.equal(isThemeAvatarColor(INDIGO_SWATCH), false)
 })
 
 test("normalizeUserProfile accepts theme mode and custom hex colors", () => {

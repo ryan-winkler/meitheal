@@ -550,6 +550,7 @@ function baseTileSvg(shades: readonly string[]): string {
 
     <!-- Peer Card 3: Typography & Surface Style (Top-Level Hierarchy) -->
     <SettingsPanelCard
+      id="appearance-typography"
       title={t("settings.appearance_title", locale)}
       subtitle="Self-hosted local typefaces, neutral theme base, corner roundness, content width, and panel surfaces."
     >
@@ -708,7 +709,7 @@ function baseTileSvg(shades: readonly string[]): string {
       </span>
       <div class="settings-dirty-bar__actions">
         <button type="button" class="btn btn-ghost btn-sm" data-appearance-discard>
-          <Icon name="rotate" size={14} sprite={true} />
+          <Icon name="refresh" size={14} sprite={true} />
           <span>{t("settings.appearance_discard", locale)}</span>
         </button>
         <button type="submit" class="btn btn-primary btn-sm" data-appearance-save>
@@ -720,7 +721,7 @@ function baseTileSvg(shades: readonly string[]): string {
 
     <!-- Unified Save / Reset Footer -->
     <div class="look-feel-footer">
-      <button type="button" class="btn btn-secondary" data-appearance-reset>
+      <button type="reset" class="btn btn-secondary" data-appearance-reset>
         {t("settings.appearance_reset", locale)}
       </button>
       <button type="submit" id="appearance-save-btn" class="btn btn-primary" data-appearance-save>

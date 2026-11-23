@@ -48,7 +48,8 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "create
         const prepared = await prepareTaskCreation(repo, {
           ...taskHttpProjection(row, scope.boardId),
           title: newTitle, status: "pending", assigned_to: null,
-          is_favorite: 0, progress: 0,
+          // Like favorites and progress, promotion belongs to the source card, not its copy.
+          is_favorite: 0, is_promoted: false, progress: 0,
           // A copied occurrence is ordinary work, not a second completion of its source Routine.
           task_kind: row.task_kind === "routine_instance" ? "standard_action" : row.task_kind,
           source_template_id: null,

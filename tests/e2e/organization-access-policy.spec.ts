@@ -19,6 +19,7 @@ import {
   HierarchyRepository,
   PlanningAccessLockedError
 } from "../../apps/web/src/domains/tasks/persistence/hierarchy-repository"
+import { DATABASE_SCHEMA_VERSION } from "../../apps/web/scripts/database-client.mjs"
 
 test("access policy snapshots fail closed when restored separately from the grant journal", async () => {
   const work = await mkdtemp(join(tmpdir(), "organization-policy-"))
@@ -73,10 +74,10 @@ test("access policy snapshots fail closed when restored separately from the gran
     expect(await repository.policies("feature", "")).toEqual({ status: "locked" })
     await rm(marker)
     expect(await repository.policies("feature", "")).toEqual({ status: "locked" })
-    // Losing both epoch and marker cannot turn this existing schema26 data into first enrollment.
+    // Losing both epoch and marker cannot turn this existing current-schema data into first enrollment.
     expect(
       (await db.execute("SELECT value FROM app_settings WHERE key='schema_version'")).rows[0]?.value
-    ).toBe("26")
+    ).toBe(String(DATABASE_SCHEMA_VERSION))
     expect(
       await repository.change(feature, null, { audience: "nobody", users: [] }, fixturePrincipal())
     ).toEqual({ status: "locked" })

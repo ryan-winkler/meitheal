@@ -282,7 +282,8 @@ test("B2/B4/D1: slim SQL projections, deep description search, /planning active 
         } else {
           delete req.socket.remoteAddress
         }
-        return listener(req, res)
+        // serve.mjs attaches its handler with on("request"), after this one.
+        if (typeof listener === "function") return listener(req, res)
       })
       srv.once("listening", () => {
         const addr = srv.address()

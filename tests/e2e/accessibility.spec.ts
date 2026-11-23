@@ -72,11 +72,12 @@ test("Settings navigation and fields have valid semantics at mobile width", asyn
   await page.goto("/settings#navigation-settings")
 
   await expect(page.locator("#settings-directory")).toBeHidden()
+  await page.locator("#nav-sidebar-menu-section > summary").click()
+  await expect(page.getByRole("button", { name: "Hide · Dashboard", exact: true })).toBeVisible()
   await page.getByRole("button", { name: "Sections", exact: true }).click()
   const navSection = page.locator('[data-settings-nav="navigation-settings"]')
   await expect(navSection).toBeVisible()
   await expect(navSection).toHaveAttribute("aria-current", "location")
-  await expect(page.getByRole("checkbox", { name: "Show Dashboard in sidebar" })).toBeVisible()
   await page.getByRole("link", { name: "Tasks & Boards", exact: true }).click()
   await expect(page.getByRole("combobox", { name: "Sprint field type" })).toBeVisible()
 

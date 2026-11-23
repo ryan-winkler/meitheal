@@ -225,7 +225,7 @@ export function initAgentTokensSettings(): void {
       showToast(hard ? "Token deleted" : "Token revoked", "success")
       await loadTokens()
       const next = hard ? createBtn : listEl!.querySelector<HTMLButtonElement>(`[data-delete="${CSS.escape(id)}"]`)
-      ;(next ?? createBtn).focus()
+      ;(next ?? createBtn)?.focus()
     } catch {
       if (!signal.aborted) showToast(hard ? "Failed to delete token" : "Failed to revoke token", "error")
     }

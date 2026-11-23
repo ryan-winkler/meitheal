@@ -112,7 +112,7 @@ export async function readSupervisorWebserverSnapshot(): Promise<SupervisorWebse
 
   try {
     const coreConfigRes = await haRestFetch("/api/config")
-    if (coreConfigRes.ok) {
+    if (coreConfigRes?.ok) {
       const coreConfig = (await coreConfigRes.json()) as Record<string, unknown>
       if (typeof coreConfig.internal_url === "string" && coreConfig.internal_url.trim()) {
         detectedHaInternalUrl = coreConfig.internal_url.trim().replace(/\/+$/, "")

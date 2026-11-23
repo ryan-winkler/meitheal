@@ -414,6 +414,15 @@ export function isItemHidden(config: SidebarMenuConfig, key: string): boolean {
   return config.hiddenItems.includes(key)
 }
 
+/**
+ * Reads a stored hidden flag for a key that is no longer a navigation item,
+ * such as legacy `areas`, which now controls Board Areas visibility.
+ */
+export function isStoredItemHidden(raw: unknown, key: string): boolean {
+  const source = parseRawConfigObject(raw)
+  return source[key] === false || (Array.isArray(source.hiddenItems) && source.hiddenItems.includes(key))
+}
+
 export function addSection(
   config: SidebarMenuConfig,
   label: string,

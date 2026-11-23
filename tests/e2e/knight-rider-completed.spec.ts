@@ -55,10 +55,14 @@ test("Knight Rider keeps the completed Today state and saved theme truthful", as
   const rejectedTheme = page.waitForResponse(response =>
     new URL(response.url()).pathname === "/api/settings" && response.request().method() === "PUT")
   await select.selectOption("light")
+  await page.locator("#appearance-save-btn").click()
   expect((await rejectedTheme).status()).toBe(503)
+  // A rejected save keeps the previewed draft for a retry and never commits it.
+  await expect(page.locator("#appearance-dirty-bar")).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem("meitheal-theme"))).toBe("knight-rider")
+  await page.locator("[data-appearance-discard]").click()
   await expect(select).toHaveValue("knight-rider")
   await expect(page.locator("html")).toHaveAttribute("data-theme", "knight-rider")
-  expect(await page.evaluate(() => localStorage.getItem("meitheal-theme"))).toBe("knight-rider")
   const persisted = await request.get("/api/settings?key=theme")
   expect((await persisted.json()).value).toBe("knight-rider")
   await page.unroute("**/api/settings")

@@ -2024,6 +2024,8 @@ if (groupByProject) {
   }
 
   :global([data-theme="knight-rider"]) .kanban-cf-chip {
+    /* Opaque so task-colored cards cannot lower the accent text contrast. */
+    background: var(--bg-card);
     color: var(--accent-text);
   }
 

@@ -8,7 +8,7 @@ test.use({ extraHTTPHeaders: {} })
 
 const require = createRequire(import.meta.url)
 const ts = require("../../apps/web/node_modules/typescript/lib/typescript.js")
-const sourceRoot = resolve(import.meta.dirname, "../../apps/web/src/lib")
+const sourceRoot = resolve(import.meta.dirname, "../../apps/web/src")
 const origin = "http://127.0.0.1:8920"
 const markup = `<p data-board-expired hidden></p>
 <div data-board-directory data-board-id="example" data-board-key="view" data-board-authority="authority" data-board-session="current-session" data-board-verify="/api/boards/example">
@@ -21,10 +21,11 @@ test.beforeEach(async ({ page }) => {
   await page.route(origin + "/**", async route => {
     const path = new URL(route.request().url()).pathname
     if (path === "/") return route.fulfill({ contentType: "text/html", body: markup })
-    if (!/^\/lib\/[\w-]+$/.test(path)) return route.fulfill({ status: 404 })
-    const source = await readFile(resolve(sourceRoot, path.slice(5) + ".ts"), "utf8")
+    if (!/^\/(?:lib|generated|domains\/[\w-]+)\/[\w-]+$/.test(path)) return route.fulfill({ status: 404 })
+    const source = await readFile(resolve(sourceRoot, path.slice(1) + ".ts"), "utf8")
     const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText
-    return route.fulfill({ contentType: "text/javascript", body: compiled })
+    // Serve workspace aliases the way the App bundle resolves them.
+    return route.fulfill({ contentType: "text/javascript", body: compiled.replaceAll('"@domains/', '"/domains/') })
   })
   await page.goto(origin)
   await page.evaluate(async () => {

@@ -8,6 +8,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { expect, test, type TestInfo } from "@playwright/test"
+import { DATABASE_SCHEMA_VERSION } from "../../apps/web/scripts/database-client.mjs"
 
 // Exercise the shipped wrapper itself: no migrate command, preload, replacement
 // handler, or test-only initialization capability precedes this child process.
@@ -91,7 +92,7 @@ test("standalone fresh startup keeps both Board capture receipts across restart"
     expect(JSON.parse(await readFile(join(work, "grants.json"), "utf8"))).toEqual({ epoch: initial.epoch })
     const health = await fetch(app.origin + "/api/health", { signal: AbortSignal.timeout(5_000) })
     expect(health.status).toBe(200)
-    expect((await health.json()).schema_version).toBe(26)
+    expect((await health.json()).schema_version).toBe(DATABASE_SCHEMA_VERSION)
     const directory = await fetch(app.origin + "/api/boards", { signal: AbortSignal.timeout(5_000) })
     expect(directory.status).toBe(200)
     const proof = directory.headers.get("x-meitheal-board-session")
@@ -161,7 +162,7 @@ test("standalone wrapper keeps receipt routing private before task handlers", as
     const before = state(work)
     const db = new DatabaseSync(join(work, "standalone.db"), { readOnly: true })
     const schemaVersion = db.prepare("SELECT value FROM app_settings WHERE key = 'schema_version'").get()?.value
-    expect(schemaVersion).toBe("26")
+    expect(schemaVersion).toBe(String(DATABASE_SCHEMA_VERSION))
     db.close()
     const captureHeaders = {
       "x-meitheal-capture-attempt": randomUUID(),

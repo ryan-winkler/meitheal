@@ -1,5 +1,6 @@
 import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { expect, test, type Locator } from "@playwright/test"
+import { saveAppearance } from "../helpers/appearance-settings"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal browser fixture")
 
@@ -56,6 +57,7 @@ test("Knight Rider persists and fills active work and task colors on Today and B
     await expect(themeSelect).toBeEnabled()
     await expect(themeSelect.locator('option[value="dark"]')).toHaveText("Emerald Isle")
     await themeSelect.selectOption("knight-rider")
+    await saveAppearance(page, { theme: true })
     await expect(root).toHaveAttribute("data-theme", "knight-rider")
     await expect(root).toHaveCSS("color-scheme", "dark")
     await expect(themeColor).toHaveAttribute("content", "#131314")
@@ -180,7 +182,7 @@ test("Knight Rider persists and fills active work and task colors on Today and B
     for (const [path, surface] of [["/today#today-work", ".tli"], ["/tasks#kanban", ".kanban-card"]] as const) {
       await page.goto(path)
       await expect(root).toHaveAttribute("data-appearance-base", "mist")
-      const checklist = page.locator(`${surface}[data-id="${paleId}"]`).getByText("✓ 1/1", { exact: true })
+      const checklist = page.locator(`${surface}[data-id="${paleId}"] [title="Checklist: 1/1"]`)
       await expect(checklist).toBeVisible()
       expect(await badgeContrast(checklist, surface)).toBeGreaterThanOrEqual(4.5)
       if (surface === ".kanban-card") {
@@ -225,6 +227,7 @@ test("Knight Rider persists and fills active work and task colors on Today and B
 
     await page.goto("/settings#look-and-feel-settings")
     await themeSelect.selectOption("dark")
+    await saveAppearance(page, { theme: true })
     await expect(root).toHaveAttribute("data-theme", "dark")
     await page.goto("/tasks#kanban")
     await expect(card(activeId)).toHaveCSS("background-color", "rgb(29, 33, 31)")

@@ -1,5 +1,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
+import { INDIGO_SWATCH } from "./design-tokens"
 import { applyPersonalAccent } from "./accent-colors"
 
 function createMockRoot() {
@@ -27,7 +28,7 @@ function ratio(a: number, b: number): number {
 }
 
 test("applyPersonalAccent computes WCAG AA dark and light text tokens for every preset", () => {
-  const presets = ["#69E3B2", "#6366f1", "#14b8a6", "#3b82f6", "#6495ed", "#8b5cf6", "#ec4899", "#f59e0b", "#ef4444"]
+  const presets = ["#69E3B2", INDIGO_SWATCH, "#14b8a6", "#3b82f6", "#6495ed", "#8b5cf6", "#ec4899", "#f59e0b", "#ef4444"]
   for (const hex of presets) {
     const root = createMockRoot()
     applyPersonalAccent(root, hex)

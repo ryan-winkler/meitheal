@@ -95,6 +95,8 @@ test("evaluatePluginHealth reports amber Needs Configuration when connector conf
         summary: "Calls approved server.",
       },
       connector: {
+        supportsWriteBack: false,
+        defaultPollMinutes: 15,
         configFields: [
           { key: "serverUrl", label: "Gitea Server URL", type: "url", required: true, bindUserServer: true },
           { key: "apiToken", label: "Personal Access Token", type: "secret", required: true, secretKey: "gitea_token" },

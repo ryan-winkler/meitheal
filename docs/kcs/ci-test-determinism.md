@@ -41,10 +41,6 @@ Treat a failed assertion as a product or test-contract finding. Inspect the fail
 
 Through November 23, 2026, the security audit can accept GHSA-fc5q-39xc-vjpf for build tooling when `pnpm -r why --prod picomatch --json` returns an empty array. It records the exception in the disposable CI checkout, then runs `pnpm audit` for all remaining advisories. Failed dependency queries, invalid JSON and registry errors fail the job. A production Picomatch dependency or November 24 restores the complete audit. The finding remains open until an upstream fix is adopted. See [the decision](../decisions/0023-temporary-build-only-picomatch-audit.md).
 
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:1143f82af125b69f37f941558f7a5a2438270f6a4ff4c1a2ccefe86e52283eee -->
-
 Set `MEITHEAL_TEST_PORT` to an unused unprivileged port when running the disposable browser fixture alongside another local test run. The default is 4611.
 
 ## CI recovery contracts
@@ -53,5 +49,3 @@ Search keeps one existing status region while loading, failing and recovering; R
 
 Framework backup imports retain legacy scoring payloads for round trips; new framework edits still validate bounds, options and supported formulas. AI handoff tests mock the atomic `handoff=1` policy snapshot, including Assist authority and the saved URL. Regional setting writes, imports and resets invalidate the process-local SSR cache for the next page request; changes from other processes retain the existing 60-second refresh bound.
 
-
-<!-- /coderabbit-ai-generated:v1 -->
