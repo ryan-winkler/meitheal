@@ -112,6 +112,45 @@ test.describe("Sidebar and Today follow-through", () => {
     await expect(household.locator("[data-board-groups]")).toHaveCount(1)
   })
 
+  test("A Reset confirmed during a pending sidebar save stays in the draft", async ({ page, request, baseURL }) => {
+    const headers = { origin: new URL(baseURL!).origin }
+    expect((await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: {
+      areas: false, customItems: [{ id: "custom-reset-fixture", label: "Reset fixture", href: "/planning", icon: "link" }],
+    } } })).ok()).toBe(true)
+    await page.goto("/settings#nav-sidebar-menu-section")
+    const editor = page.locator("#sidebar-item-list")
+    const dirtyBar = page.locator("#sidebar-dirty-bar")
+    await expect(editor.getByRole("button", { name: "Hide · Reset fixture", exact: true })).toBeVisible()
+    await editor.getByRole("button", { name: "Hide · Boards", exact: true }).first().click()
+    await expect(dirtyBar).toBeVisible()
+
+    let release!: () => void
+    const held = new Promise<void>(resolve => { release = resolve })
+    await page.route("**/api/settings", async route => {
+      if (route.request().method() === "PUT") await held
+      await route.continue()
+    })
+    const saved = page.waitForResponse(res => new URL(res.url()).pathname === "/api/settings" && res.request().method() === "PUT")
+    await page.locator("#save-sidebar").click()
+    await page.locator("#reset-sidebar").click()
+    await page.getByRole("alertdialog").getByRole("button", { name: "Confirm", exact: true }).click()
+    release()
+    expect((await saved).ok()).toBe(true)
+    await expect(page.locator("#save-sidebar")).not.toHaveAttribute("aria-busy", "true")
+
+    // The edit saved, and the newer Reset is still an unsaved draft.
+    await expect(dirtyBar).toBeVisible()
+    await expect(editor.getByRole("button", { name: "Hide · Reset fixture", exact: true })).toHaveCount(0)
+    await page.unroute("**/api/settings")
+    const final = page.waitForResponse(res => new URL(res.url()).pathname === "/api/settings" && res.request().method() === "PUT")
+    await page.locator("#save-sidebar").click()
+    expect((await final).ok()).toBe(true)
+    await expect(dirtyBar).toBeHidden()
+    const stored = (await (await request.get("/api/settings")).json()).sidebar_config
+    expect(stored.customItems ?? []).toEqual([])
+    expect(stored.areas).not.toBe(false)
+  })
+
   test("Boards and its per-Board Areas disclosure collapse independently and work with blocked storage", async ({ page }) => {
     await page.goto("/today", { waitUntil: "domcontentloaded" })
     const group = page.locator("[data-sidebar-board-children]")

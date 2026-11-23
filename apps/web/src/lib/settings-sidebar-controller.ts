@@ -594,6 +594,7 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
         const payload = serializeSidebarConfig(draftConfig)
         // A Reset during the save stays in the draft; commit the flag this save sent.
         const submittedAreasHidden = draftAreasHidden
+        const submittedDraft = cloneConfig(draftConfig)
         if (submittedAreasHidden) {
           payload.areas = false
           if (!payload.hiddenItems.includes("areas")) payload.hiddenItems.push("areas")
@@ -602,7 +603,8 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
         storedAreasHidden = submittedAreasHidden
         try { localStorage.removeItem(SIDEBAR_ORDER_STORAGE_KEY) } catch { /* Storage may be blocked. */ }
         serverCommitted = normalizeSidebarConfig(payload, SETTINGS_DEFAULT_KEYS)
-        draftConfig = cloneConfig(serverCommitted)
+        // Keep a newer draft, such as a Reset confirmed while this save was pending.
+        if (isSidebarConfigEqual(draftConfig, submittedDraft)) draftConfig = cloneConfig(serverCommitted)
         settingsStore.invalidate()
         window.dispatchEvent(new CustomEvent(SIDEBAR_SERVER_UPDATED_EVENT, { detail: payload }))
         renderTree()
