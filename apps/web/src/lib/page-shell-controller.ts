@@ -314,7 +314,11 @@ export function initPageShellSectionTracking<SectionId extends string>(
   }
 
   if (sections.length > 0) {
-    pageLifecycle.on(window, "scroll", syncLinkedSectionVisibility, { passive: true })
+    pageLifecycle.on(window, "scroll", () => {
+      syncLinkedSectionVisibility()
+      // The observer may not fire on reaching the top, so apply the top rule here too.
+      if (!linkedSection && window.scrollY <= 0) resumeSectionTracking()
+    }, { passive: true })
     pageLifecycle.on(document, "scrollend", () => {
       if (linkedSection && !linkedSection.wasVisible) resumeSectionTracking()
     })

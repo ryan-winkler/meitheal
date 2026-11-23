@@ -46,7 +46,8 @@ export function attachVerticalListDragReorder(
     const target = event.target instanceof Element ? event.target : null
     if (!target?.closest(handle)) return
     const row = target.closest<HTMLElement>(itemSelector)
-    if (!row || row.parentElement !== list) return
+    // One gesture at a time: a second finger cannot take over an active drag.
+    if (!row || row.parentElement !== list || dragged) return
     if (event.pointerType !== "touch") {
       row.draggable = true
       return

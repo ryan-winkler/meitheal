@@ -592,12 +592,14 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
     if (saveBtn) {
       saveBtn.addEventListener("click", withAsyncButton(saveBtn, async () => {
         const payload = serializeSidebarConfig(draftConfig)
-        if (draftAreasHidden) {
+        // A Reset during the save stays in the draft; commit the flag this save sent.
+        const submittedAreasHidden = draftAreasHidden
+        if (submittedAreasHidden) {
           payload.areas = false
           if (!payload.hiddenItems.includes("areas")) payload.hiddenItems.push("areas")
         }
         await saveSetting("sidebar_config", payload)
-        storedAreasHidden = draftAreasHidden
+        storedAreasHidden = submittedAreasHidden
         try { localStorage.removeItem(SIDEBAR_ORDER_STORAGE_KEY) } catch { /* Storage may be blocked. */ }
         serverCommitted = normalizeSidebarConfig(payload, SETTINGS_DEFAULT_KEYS)
         draftConfig = cloneConfig(serverCommitted)

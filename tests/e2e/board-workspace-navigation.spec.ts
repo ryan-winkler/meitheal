@@ -228,6 +228,8 @@ test("Household is a peer Board and every scoped workspace destination retains t
     url.searchParams.get("project") === project.id && (url.searchParams.get("view") === view || url.hash === "#" + view))
   await page.keyboard.press("c")
   await inProjectView("calendar")
+  // Calendar is a full page load; its view shortcuts bind once the page has loaded.
+  await page.waitForLoadState("load")
   // On Calendar, T jumps to today; the Tasks-page view key 2 opens Table.
   await page.keyboard.press("2")
   await inProjectView("table")
