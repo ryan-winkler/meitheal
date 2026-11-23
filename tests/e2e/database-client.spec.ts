@@ -14,6 +14,7 @@ import {
   DATABASE_SCHEMA_VERSION,
   executeWriteWithRetry,
   getDatabaseDiagnostics,
+  localSnapshotGeneration,
   openDatabase,
   resetDatabaseDiagnosticsForTests,
   runWriteTransaction,
@@ -477,6 +478,148 @@ test("rejects with AbortError when signal is pre-aborted or aborts during SQLITE
   } finally {
     locker.close()
     primary.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("reuses one writer between transactions and never pools a writer that changed connection state", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-sqlite-writer-"))
+  const client = openDatabase(pathToFileURL(join(directory, "writer.db")).href)
+  try {
+    await client.executeMultiple("CREATE TABLE notes(id INTEGER PRIMARY KEY, body TEXT NOT NULL);")
+    const first = await client.transaction("write")
+    await first.execute("INSERT INTO notes(id, body) VALUES (7, 'kept')")
+    await first.commit()
+
+    // last_insert_rowid() belongs to a connection, so it shows the pooled writer.
+    const second = await client.transaction("write")
+    expect((await second.execute("SELECT last_insert_rowid() AS id")).rows[0]?.id).toBe(7)
+    await second.execute("INSERT INTO notes(id, body) VALUES (8, 'discarded')")
+    await second.rollback()
+
+    const third = await client.transaction("write")
+    expect((await third.execute("SELECT COUNT(*) AS count FROM notes")).rows[0]?.count).toBe(1)
+    await third.execute("CREATE TEMP TABLE scratch(value)")
+    await third.commit()
+
+    const fourth = await client.transaction("write")
+    await expect(fourth.execute("SELECT value FROM scratch")).rejects.toThrow(/no such table/)
+    await fourth.executeMultiple("CREATE TEMP TABLE other(value);")
+    fourth.close()
+
+    const fifth = await client.transaction("write")
+    await expect(fifth.execute("SELECT value FROM other")).rejects.toThrow(/no such table/)
+    fifth.close()
+  } finally {
+    client.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("snapshot generations change exactly when a local reader can observe new data", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-sqlite-generation-"))
+  const url = pathToFileURL(join(directory, "generation.db")).href
+  const client = openDatabase(url)
+  const other = openDatabase(url)
+  try {
+    // The App enables WAL at startup, which lets a pinned reader coexist with a writer.
+    await client.execute("PRAGMA journal_mode=WAL")
+    await client.executeMultiple("CREATE TABLE notes(id INTEGER PRIMARY KEY, body TEXT NOT NULL);")
+    const live = localSnapshotGeneration(client)
+    expect(live).toMatch(/^live:/)
+    expect(localSnapshotGeneration(client)).toBe(live)
+    await client.execute("SELECT COUNT(*) FROM notes")
+    expect(localSnapshotGeneration(client)).toBe(live)
+
+    await other.execute("INSERT INTO notes(id, body) VALUES (1, 'other connection')")
+    const afterOther = localSnapshotGeneration(client)
+    expect(afterOther).not.toBe(live)
+    await client.execute("INSERT INTO notes(id, body) VALUES (2, 'own write')")
+    const afterOwn = localSnapshotGeneration(client)
+    expect(afterOwn).not.toBe(afterOther)
+    await client.execute("CREATE INDEX notes_body ON notes(body)")
+    expect(localSnapshotGeneration(client)).not.toBe(afterOwn)
+
+    const reader = await client.transaction("read")
+    await reader.execute("SELECT COUNT(*) FROM notes")
+    const pinned = localSnapshotGeneration(reader)
+    await other.execute("INSERT INTO notes(id, body) VALUES (3, 'after snapshot')")
+    expect((await reader.execute("SELECT COUNT(*) AS count FROM notes")).rows[0]?.count).toBe(2)
+    expect(localSnapshotGeneration(reader)).toBe(pinned)
+    reader.close()
+    expect(localSnapshotGeneration(reader)).toBeUndefined()
+
+    const writer = await client.transaction("write")
+    const before = localSnapshotGeneration(writer)
+    await writer.execute("SELECT COUNT(*) FROM notes")
+    expect(localSnapshotGeneration(writer)).toBe(before)
+    await writer.execute("UPDATE notes SET body = 'changed' WHERE id = 1")
+    expect(localSnapshotGeneration(writer)).not.toBe(before)
+    await writer.commit()
+
+    // Decorated clients and in-memory databases never reuse derived results.
+    expect(localSnapshotGeneration({ execute: client.execute.bind(client) })).toBeUndefined()
+    const memory = openDatabase("file::memory:?cache=private")
+    try { expect(localSnapshotGeneration(memory)).toBeUndefined() } finally { memory.close() }
+  } finally {
+    other.close()
+    client.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("rows with unique columns keep libSQL access, serialization and read-only positions", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-sqlite-rows-"))
+  const client = openDatabase(pathToFileURL(join(directory, "rows.db")).href)
+  try {
+    await client.executeMultiple("CREATE TABLE notes(id INTEGER PRIMARY KEY, body TEXT NOT NULL, data BLOB); INSERT INTO notes VALUES (1, 'alpha', X'00FF'), (2, 'beta', NULL);")
+    const plain = await client.execute("SELECT id, body, data FROM notes ORDER BY id")
+    const reader = await client.transaction("read")
+    const tagged = await reader.execute(tagTaskProjectionRead({ sql: "SELECT id, body, data FROM notes ORDER BY id", args: [] }, "task-list"))
+    reader.close()
+    for (const result of [plain, tagged]) {
+      const [first, second] = result.rows
+      expect(first?.length).toBe(3)
+      expect(first?.[0]).toBe(1)
+      expect(first?.[1]).toBe("alpha")
+      expect(first?.data).toEqual(Uint8Array.of(0, 255).buffer)
+      expect(first?.[2]).toEqual(Uint8Array.of(0, 255).buffer)
+      expect(second?.[2]).toBeNull()
+      expect(Object.keys(first!)).toEqual(["id", "body", "data"])
+      expect({ ...first }).toEqual({ id: 1, body: "alpha", data: Uint8Array.of(0, 255).buffer })
+      expect(Array.from(first as unknown as ArrayLike<unknown>)).toEqual([1, "alpha", Uint8Array.of(0, 255).buffer])
+      expect(result.toJSON().rows).toEqual([[1, "alpha", "AP8="], [2, "beta", null]])
+      expect(() => { (first as unknown as Record<number, unknown>)[0] = 9 }).toThrow(TypeError)
+    }
+  } finally {
+    client.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("a reused SELECT returns columns another connection added and writes run once", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-sqlite-schema-"))
+  const url = pathToFileURL(join(directory, "schema.db")).href
+  const client = openDatabase(url)
+  const other = openDatabase(url)
+  try {
+    await client.execute("PRAGMA journal_mode=WAL")
+    await client.executeMultiple("CREATE TABLE drafts(id TEXT PRIMARY KEY); INSERT INTO drafts VALUES ('draft');")
+    expect((await client.execute("SELECT rowid, * FROM drafts")).rows).toEqual([{ rowid: 1, id: "draft" }])
+    await other.executeMultiple("ALTER TABLE drafts ADD COLUMN board_id TEXT NOT NULL DEFAULT 'household';")
+    const after = await client.execute("SELECT rowid, * FROM drafts")
+    expect(after.columns).toEqual(["rowid", "id", "board_id"])
+    expect(after.rows).toEqual([{ rowid: 1, id: "draft", board_id: "household" }])
+    expect(after.toJSON().rows).toEqual([[1, "draft", "household"]])
+
+    // Writes are never cached, so a repeated command still runs exactly once.
+    const insert = "INSERT INTO drafts(id) VALUES (?) RETURNING id, board_id"
+    expect((await client.execute(insert, ["second"])).rows).toEqual([{ id: "second", board_id: "household" }])
+    expect((await client.execute(insert, ["third"])).rows).toEqual([{ id: "third", board_id: "household" }])
+    expect((await client.execute("SELECT COUNT(*) AS count FROM drafts")).rows[0]?.count).toBe(3)
+  } finally {
+    other.close()
+    client.close()
     await rm(directory, { recursive: true, force: true })
   }
 })
