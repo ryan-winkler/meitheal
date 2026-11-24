@@ -126,6 +126,13 @@ function isPureTaskOrStatsWrite(sql) {
   const single = stripped.endsWith(";") ? stripped.slice(0, -1) : stripped
   return !single.includes(";") && PURE_TASK_OR_STATS_WRITE_RE.test(sql)
 }
+const MAIN_LOCAL_STATE_RE = /\b(?:TEMP|TEMPORARY|ATTACH|DETACH)\b|\bsqlite_temp_(?:schema|master)\b/i
+/** Return true when SQL can create or alter connection-local schema state on main.
+ * @param {string} sql @returns {boolean}
+ */
+function mayCreateMainLocalState(sql) {
+  return MAIN_LOCAL_STATE_RE.test(stripSqlCommentsAndLiterals(sql))
+}
 /** Return true only for single-statement side-effect-free SELECT or WITH ... SELECT queries.
  * @param {string} sql @returns {boolean}
  */
@@ -1049,6 +1056,19 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
   let writeIdleTimer = undefined
   const sharedCacheOwner = {}
   let nonTaskWriteEpoch = 0
+  let mainHasLocalState = false
+  /** @param {Array<InStatement | [string, InArgs?]>} statements */
+  function markMainLocalStateFromBatch(statements) {
+    if (mainHasLocalState) return
+    for (const statement of statements) {
+      const text = Array.isArray(statement) ? statement[0] : statement
+      const sql = typeof text === "string" ? text : text.sql
+      if (!isSideEffectFreeQuery(sql) && mayCreateMainLocalState(sql)) {
+        mainHasLocalState = true
+        return
+      }
+    }
+  }
 
   function sharedPolicyToken() {
     if (memory || closed || writeSlotLeased) return undefined
@@ -1193,6 +1213,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       mode === "write" &&
       !migration &&
       !memory &&
+      !mainHasLocalState &&
       statements.length > 0 &&
       statements.every(statement => {
         const text = Array.isArray(statement) ? statement[0] : statement
@@ -1215,6 +1236,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     }
     return onMain(db => {
       if (mode === "write" || migration) nonTaskWriteEpoch += 1
+      markMainLocalStateFromBatch(statements)
       if (migration) db.exec("PRAGMA foreign_keys=OFF")
       const queryOnly = mode === "read" && db.prepare("PRAGMA query_only").get()?.query_only === 0
       if (queryOnly) db.exec("PRAGMA query_only=ON")
@@ -1249,7 +1271,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     if (!signal && isSideEffectFreeQuery(sql)) {
       return onMain(db => execute(db, statement, args))
     }
-    if (!memory && isPureTaskOrStatsWrite(sql)) {
+    if (!memory && !mainHasLocalState && isPureTaskOrStatsWrite(sql)) {
       return retryBusyOperation(
         () => onWriteSlot((db, inspectSql) => { inspectSql(sql); return execute(db, statement, args) }),
         () => false,
@@ -1258,7 +1280,10 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     }
     return retryBusyOperation(
       () => onMain(db => {
-        if (!isSideEffectFreeQuery(sql)) nonTaskWriteEpoch += 1
+        if (!isSideEffectFreeQuery(sql)) {
+          nonTaskWriteEpoch += 1
+          if (!mainHasLocalState && mayCreateMainLocalState(sql)) mainHasLocalState = true
+        }
         return execute(db, statement, args)
       }),
       () => false,
@@ -1632,7 +1657,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     get closed() { return closed },
     /** @param {InStatement} statement @param {InArgs} [args] */
     async execute(statement, args) { return executeStatementWithRetry(statement, args, undefined) },
-    async executeMultiple(sql) { onMain(db => { bumpHandleEpoch(db); nonTaskWriteEpoch += 1; try { db.exec(sql) } finally { bumpHandleEpoch(db); nonTaskWriteEpoch += 1 } }) },
+    async executeMultiple(sql) { onMain(db => { mainHasLocalState = true; bumpHandleEpoch(db); nonTaskWriteEpoch += 1; try { db.exec(sql) } finally { bumpHandleEpoch(db); nonTaskWriteEpoch += 1 } }) },
     /** @param {Array<InStatement | [string, InArgs?]>} statements @param {TransactionMode} [mode] */
     async batch(statements, mode = "deferred") {
       if (mode === "write") return batchWriteWithRetry(statements, undefined)
@@ -1648,6 +1673,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     close,
     reconnect() {
       close()
+      mainHasLocalState = false
       nonTaskWriteEpoch += 1
       cachedMainGrantToken = undefined
       cachedMainGrantRev = undefined
@@ -1666,6 +1692,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       const program = steps()
       let state = program.next()
       while (!state.done) {
+        markMainLocalStateFromBatch(state.value)
         let batchResult
         try {
           batchResult = executeBatch(db, state.value)

@@ -673,6 +673,15 @@ test("SELECT classification ignores special identifiers, refreshes renamed wildc
       return read.rows.map(row => row.v)
     })
     expect(txValues).toEqual(["batch-ok", "tx-ok"])
+
+    const [readBatch] = await client.batch(["SELECT v FROM scratch ORDER BY rowid"], "write")
+    expect(readBatch?.rows.map(row => row.v)).toEqual(["batch-ok", "tx-ok"])
+
+    client.reconnect()
+    await client.execute("PRAGMA journal_mode=WAL")
+    await client.executeMultiple("CREATE TEMP TABLE multi_scratch(v TEXT); INSERT INTO multi_scratch VALUES ('multi-ok');")
+    const [multiBatch] = await client.batch(["SELECT v FROM multi_scratch"], "write")
+    expect(multiBatch?.rows.map(row => row.v)).toEqual(["multi-ok"])
   } finally {
     other.close()
     client.close()
