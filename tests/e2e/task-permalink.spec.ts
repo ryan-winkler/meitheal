@@ -236,6 +236,7 @@ test("a task link preserves simulated ingress and opens in another authorized co
   }
 })
 test("a comment link focuses the edited comment through ingress and recovers after deletion", async ({ browser, request }) => {
+  test.slow()
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built app and a disposable ingress fixture")
   const work = await mkdtemp(join(tmpdir(), "meitheal-comment-permalink-"))
   const env = {

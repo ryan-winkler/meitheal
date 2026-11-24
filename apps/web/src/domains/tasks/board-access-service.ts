@@ -66,11 +66,10 @@ async function snapshotRead<T>(
   db: Pick<Client, "execute">,
   principal: VerifiedPrincipal,
   key: string,
-  read: () => Promise<T>,
-  initialState = localReaderCacheToken(db)
+  read: () => Promise<T>
 ): Promise<T> {
   if (!principalProof(principal)) return read()
-  const state = initialState
+  const state = localReaderCacheToken(db)
   if (!state) return read()
   let values = snapshotReads.get(state.owner)
   if (!values) snapshotReads.set(state.owner, (values = new Map()))
@@ -181,15 +180,14 @@ function audienceAllows(row: Record<string, unknown>, principal: VerifiedPrincip
 async function allowedFeatures(
   principal: VerifiedPrincipal,
   db: Pick<Client, "execute">,
-  features: readonly string[],
-  initialState = localReaderCacheToken(db)
+  features: readonly string[]
 ): Promise<Set<string>> {
   if (!features.length) return new Set()
   const allowed = await snapshotRead(db, principal, `features:${features.join(",")}`, async () => {
     const { rows } = await db.execute(joinSql(features.map(feature => sql`SELECT ${feature} AS feature,
       ${featureAudienceAllowed(principal, feature)} AS allowed`), " UNION ALL "))
     return rows.filter(row => row.allowed === 1).map(row => String(row.feature))
-  }, initialState)
+  })
   return new Set(allowed)
 }
 
@@ -362,7 +360,7 @@ export class BoardAccessService {
           SELECT 1 FROM board_access_epoch WHERE singleton = 1 AND revision = ${revision}
         )`))
       return policy
-    }, tokenState)
+    })
     if (!row) return { ok: false, errorCode: "unavailable" }
     let role = typeof row.role === "string" ? row.role : null
     if (!role && principal.kind === "ha_user" && row.visibility === "shared") {
@@ -486,7 +484,7 @@ export class BoardAccessService {
     const uniqueFeatures = !existingScope || requestedFeatures.length <= 1
       ? requestedFeatures
       : [...new Set(requestedFeatures)]
-    const rights = await allowedFeatures(principal, db, uniqueFeatures, tokenState)
+    const rights = await allowedFeatures(principal, db, uniqueFeatures)
     const allowed = (intent: WorkOperation) => {
       if (intent.action === "search" && intent.resource !== "task") return false
       if (
@@ -543,6 +541,9 @@ export class BoardAccessService {
     }
     if (!operations.every(allowed) || row.audience_allowed !== 1 || !principalProof(principal))
       return { ok: false, errorCode: "denied" }
+    if (tokenState && localReaderCacheToken(db)?.token !== tokenState.token) {
+      return { ok: false, errorCode: "stale" }
+    }
     if (existingScope) {
       const taskWrite = operations.some(
         (item) =>
@@ -609,6 +610,9 @@ export class BoardAccessService {
       if (!limit.ok) return limit
       const constrained = limitBoardScope(scope, limit.scope)
       if (!operations.every(operation => scopePermits(constrained, operation))) return { ok: false, errorCode: "denied" }
+      if (tokenState && localReaderCacheToken(db)?.token !== tokenState.token) {
+        return { ok: false, errorCode: "stale" }
+      }
       return { ok: true, scope: constrained }
     }
     return { ok: true, scope }

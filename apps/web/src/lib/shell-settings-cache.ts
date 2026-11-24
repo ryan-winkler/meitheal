@@ -82,8 +82,16 @@ export async function readCachedTaskDetailLayout(
     sql: "SELECT value FROM settings WHERE key = ?",
     args: [taskDetailServerSettingKey],
   })
-  const raw = row?.value
-  const value = typeof raw === "string" && raw.trim() ? raw : null
+  let decoded: unknown = null
+  if (row?.value !== undefined && row?.value !== null) {
+    const raw = String(row.value)
+    try {
+      decoded = JSON.parse(raw)
+    } catch {
+      decoded = raw
+    }
+  }
+  const value = typeof decoded === "string" && decoded.trim() ? decoded : null
   if (state && localReaderCacheToken(db)?.token === state.token) {
     taskDetailLayoutCache.set(state.owner, { token: state.token, value })
   }

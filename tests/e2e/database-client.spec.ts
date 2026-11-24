@@ -682,6 +682,22 @@ test("SELECT classification ignores special identifiers, refreshes renamed wildc
     await client.executeMultiple("CREATE TEMP TABLE multi_scratch(v TEXT); INSERT INTO multi_scratch VALUES ('multi-ok');")
     const [multiBatch] = await client.batch(["SELECT v FROM multi_scratch"], "write")
     expect(multiBatch?.rows.map(row => row.v)).toEqual(["multi-ok"])
+
+    // Standalone task writes keep SQLite connection-local last_insert_rowid(), changes(), and PRAGMAs on main.
+    client.reconnect()
+    await client.execute("PRAGMA journal_mode=WAL")
+    await client.execute("CREATE TABLE tasks(id TEXT PRIMARY KEY, title TEXT)")
+    await client.execute("INSERT INTO tasks(id, title) VALUES ('t-1', 'Alpha')")
+    const connState = await client.execute("SELECT last_insert_rowid() AS row_id, changes() AS changed")
+    expect(connState.rows).toEqual([{ row_id: 1, changed: 1 }])
+    await client.execute("PRAGMA case_sensitive_like = ON")
+    expect((await client.execute("SELECT id FROM tasks WHERE title LIKE 'alpha'")).rows).toEqual([])
+    const [batchLikeLower, batchLikeExact] = await client.batch([
+      "SELECT id FROM tasks WHERE title LIKE 'alpha'",
+      "SELECT id FROM tasks WHERE title LIKE 'Alpha'",
+    ], "write")
+    expect(batchLikeLower?.rows).toEqual([])
+    expect(batchLikeExact?.rows).toEqual([{ id: "t-1" }])
   } finally {
     other.close()
     client.close()

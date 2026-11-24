@@ -4,9 +4,13 @@ import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { expect, test } from "@playwright/test"
 import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
-import { openDatabase } from "../../apps/web/scripts/database-client.mjs"
+import { openDatabase, registerReaderCacheSource } from "../../apps/web/scripts/database-client.mjs"
+import { ensureAgentTokenSchema } from "../../apps/web/src/domains/auth/agent-token-store"
 import { BoardAccessService } from "../../apps/web/src/domains/tasks/board-access-service"
 import { registerVerifiedPrincipal, validateBoardScope } from "../../apps/web/src/domains/tasks/board-scope"
+import { SettingsRepository } from "../../apps/web/src/domains/tasks/persistence/settings-repository"
+import { readCachedTaskDetailLayout } from "../../apps/web/src/lib/shell-settings-cache"
+import { taskDetailServerSettingKey } from "../../apps/web/src/lib/task-detail-layout"
 
 const routines = { resource: "routine", action: "read" } as const
 
@@ -85,6 +89,102 @@ test("reused Board policy reads follow writes from other connections, own writes
       expect(await validateBoardScope(scope, db, routines)).toMatchObject({ ok: true })
       expect(await validateBoardScope(scope, pinnedRead, routines)).toMatchObject({ ok: false })
     } finally { pinnedRead.close() }
+  } finally {
+    other?.close()
+    resetPersistenceForTests()
+    if (original === undefined) delete process.env.MEITHEAL_DB_URL
+    else process.env.MEITHEAL_DB_URL = original
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("readCachedTaskDetailLayout decodes JSON-encoded settings and invalidates on updates", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-layout-cache-"))
+  const path = join(directory, "layout.db")
+  const original = process.env.MEITHEAL_DB_URL
+  process.env.MEITHEAL_DB_URL = `file:${path}`
+  resetPersistenceForTests()
+  try {
+    await ensureSchema()
+    const db = getPersistenceClient()
+    const repo = new SettingsRepository(db)
+    await repo.ensureSettingsTable()
+    const layoutJson = JSON.stringify({ orders: { sections: ["description", "properties"] }, hidden: {}, labels: {} })
+    await repo.upsert(taskDetailServerSettingKey, JSON.stringify(layoutJson))
+    expect(await readCachedTaskDetailLayout(db)).toBe(layoutJson)
+    expect(await readCachedTaskDetailLayout(db)).toBe(layoutJson)
+
+    await repo.upsert(taskDetailServerSettingKey, JSON.stringify(null))
+    expect(await readCachedTaskDetailLayout(db)).toBeNull()
+  } finally {
+    resetPersistenceForTests()
+    if (original === undefined) delete process.env.MEITHEAL_DB_URL
+    else process.env.MEITHEAL_DB_URL = original
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("BoardAccessService rejects concurrent mid-resolution policy changes rather than returning cached rights", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-concurrent-policy-"))
+  const path = join(directory, "concurrent.db")
+  const original = process.env.MEITHEAL_DB_URL
+  process.env.MEITHEAL_DB_URL = `file:${path}`
+  resetPersistenceForTests()
+  let other: ReturnType<typeof openDatabase> | undefined
+  try {
+    await ensureSchema()
+    await ensureAgentTokenSchema()
+    other = openDatabase(pathToFileURL(path).href)
+    const db = getPersistenceClient()
+    const agent = registerVerifiedPrincipal(
+      { kind: "agent", id: "concurrent-agent", tokenId: "concurrent-agent" },
+      { administrator: false, expiresAt: Date.now() + 60_000 },
+    )
+    const allowedOps = [{ resource: "task", action: "read" }, { resource: "routine", action: "read" }]
+    await db.batch([
+      {
+        sql: "INSERT INTO agent_tokens(id,name,token_hash,token_prefix,scopes,assignee_id,created_at) VALUES (?,?,?,?,?,?,?)",
+        args: ["concurrent-agent", "Concurrent", "hash", "mth_concurre", JSON.stringify(["tasks:read"]), null, new Date().toISOString()],
+      },
+      {
+        sql: "INSERT INTO board_access_grants(board_id,principal_type,principal_id,role,authority_limits) VALUES ('household','agent',?,'service',?)",
+        args: ["concurrent-agent", JSON.stringify({ operations: allowedOps })],
+      },
+      "INSERT INTO organization_access_policies(scope,scope_id,board_id,audience,selected_users,revision) VALUES ('feature','routines','','everyone','[]',1)",
+    ], "write")
+
+    const warm = await new BoardAccessService(db).resolve(agent, "household", routines)
+    expect(warm.ok).toBe(true)
+
+    let injected = false
+    const intercepted = new Proxy(db, {
+      get(target, property) {
+        if (property === "execute") {
+          return async (stmt: string | { sql: string; args?: unknown[] }, args?: unknown) => {
+            const sqlText = typeof stmt === "string" ? stmt : stmt.sql
+            const out = await target.execute(stmt as never, args as never)
+            if (!injected && /FROM agent_tokens\b/.test(sqlText)) {
+              injected = true
+              await other!.execute({
+                sql: "UPDATE organization_access_policies SET audience = 'selected', selected_users = ? WHERE scope = 'feature' AND scope_id = 'routines'",
+                args: [JSON.stringify(["nobody"])],
+              })
+            }
+            return out
+          }
+        }
+        const value = Reflect.get(target, property)
+        return typeof value === "function" ? value.bind(target) : value
+      },
+    })
+    registerReaderCacheSource(intercepted, db)
+
+    const raced = await new BoardAccessService(intercepted).resolve(agent, "household", routines)
+    expect(injected).toBe(true)
+    expect(raced.ok).toBe(false)
+
+    const retried = await new BoardAccessService(db).resolve(agent, "household", routines)
+    expect(retried).toEqual({ ok: false, errorCode: "denied" })
   } finally {
     other?.close()
     resetPersistenceForTests()

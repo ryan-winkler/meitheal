@@ -127,11 +127,14 @@ function isPureTaskOrStatsWrite(sql) {
   return !single.includes(";") && PURE_TASK_OR_STATS_WRITE_RE.test(sql)
 }
 const MAIN_LOCAL_STATE_RE = /\b(?:TEMP|TEMPORARY|ATTACH|DETACH)\b|\bsqlite_temp_(?:schema|master)\b/i
-/** Return true when SQL can create or alter connection-local schema state on main.
+const READ_OR_GLOBAL_PRAGMA_RE = /^\s*PRAGMA\s+(?:[A-Za-z0-9_]+\.)?(?:journal_mode|wal_checkpoint|table_x?info|index_x?(?:list|info)|foreign_key_(?:list|check)|integrity_check|quick_check|database_list|compile_options|function_list|module_list|pragma_list|collation_list|stats|freelist_count|page_count|page_size)\b/i
+/** Return true when SQL can create or alter connection-local state on main.
  * @param {string} sql @returns {boolean}
  */
 function mayCreateMainLocalState(sql) {
-  return MAIN_LOCAL_STATE_RE.test(stripSqlCommentsAndLiterals(sql))
+  const stripped = stripSqlCommentsAndLiterals(sql)
+  if (MAIN_LOCAL_STATE_RE.test(stripped)) return true
+  return leadingKeyword(stripped) === "PRAGMA" && /[=(]/.test(stripped) && !READ_OR_GLOBAL_PRAGMA_RE.test(stripped)
 }
 /** Return true only for single-statement side-effect-free SELECT or WITH ... SELECT queries.
  * @param {string} sql @returns {boolean}
@@ -596,15 +599,12 @@ function execute(db, input, args = [], fileReadSnapshot = false) {
     let meta = statementMetadata.get(statement) ?? computeStatementMetadata(statement, sv)
     const staleWidth = /** @type {unknown[][]} */ (/** @type {unknown} */ (rawRows)).some(values => values.length !== meta.columns.length)
     if (staleWidth || meta.schemaVersion !== sv) {
-      meta = computeStatementMetadata(statement, sv)
-      if (staleWidth || rawRows.length === 0) {
-        statement = db.prepare(sql)
-        statement.setReturnArrays(true)
-        if (slots) slots[kind] = { sql, statement }
-        else scopedReadStatements.set(db, { [kind]: { sql, statement } })
-        rawRows = Array.isArray(bindings) ? statement.all(...bindings) : statement.all(bindings)
-        meta = computeStatementMetadata(statement, readSchemaVersion(db))
-      }
+      statement = db.prepare(sql)
+      statement.setReturnArrays(true)
+      if (slots) slots[kind] = { sql, statement }
+      else scopedReadStatements.set(db, { [kind]: { sql, statement } })
+      rawRows = Array.isArray(bindings) ? statement.all(...bindings) : statement.all(bindings)
+      meta = computeStatementMetadata(statement, readSchemaVersion(db))
     }
     const { columns, types, prototype } = meta
     const colCount = columns.length
@@ -647,7 +647,7 @@ function execute(db, input, args = [], fileReadSnapshot = false) {
     const currentSv = meta.schemaVersion !== undefined ? readSchemaVersion(db) : undefined
     const staleWidth = /** @type {unknown[][]} */ (/** @type {unknown} */ (rawRows)).some(values => values.length !== meta.columns.length)
     const staleSchema = staleWidth || currentSv !== meta.schemaVersion
-    if ((staleWidth || (staleSchema && rawRows.length === 0)) && isPlainSelect(sql)) {
+    if (staleSchema && isPlainSelect(sql)) {
       forgetPreparedStatement(db, sql)
       statement = preparedStatement(db, sql)
       statement.setReturnArrays(true)
@@ -1270,13 +1270,6 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     const sql = typeof statement === "string" ? statement : statement.sql
     if (!signal && isSideEffectFreeQuery(sql)) {
       return onMain(db => execute(db, statement, args))
-    }
-    if (!memory && !mainHasLocalState && isPureTaskOrStatsWrite(sql)) {
-      return retryBusyOperation(
-        () => onWriteSlot((db, inspectSql) => { inspectSql(sql); return execute(db, statement, args) }),
-        () => false,
-        signal,
-      )
     }
     return retryBusyOperation(
       () => onMain(db => {
