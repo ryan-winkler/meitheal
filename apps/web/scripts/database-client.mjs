@@ -1,13 +1,13 @@
 import { createRequire } from "node:module"
 import { constants, lstatSync, statSync } from "node:fs"
-import { open } from "node:fs/promises"
+import { open, rm } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { setTimeout as sleepMs } from "node:timers/promises"
 import { LibsqlBatchError, LibsqlError } from "@libsql/core/api"
 import { expandConfig, isInMemoryConfig } from "@libsql/core/config"
 import { ResultSetImpl } from "@libsql/core/util"
-import { boardGrantRevisionQuery, getBoardGrantPath, registerBoardGrantContext } from "./board-grant-context.mjs"
+import { boardGrantRevisionQuery, consumePreparedGrantMarker, getBoardGrantPath, registerBoardGrantContext } from "./board-grant-context.mjs"
 import { TASK_EXPERIENCE_SCHEMA_VERSION } from "../drizzle/migrations/0018_task_experience.mjs"
 import {
   readTaskBoardMigrationState, taskBoardMigrationStateSteps,
@@ -2020,14 +2020,13 @@ async function isPre0016MeithealDatabase(tx, migrationState) {
   const tables = new Set(rows.map(row => String(row.name)))
   if (!tables.has("tasks") || (!tables.has("__meitheal_migrations") && !tables.has("app_settings"))) return false
   if (!tables.has("app_settings")) return true
-  try {
-    const { rows: [version] } = await tx.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")
-    if (version === undefined || version === null) return true
-    const parsed = Number(version.value)
-    return Number.isInteger(parsed) && parsed > 0 && parsed < ORDINARY_BOARD_SCHEMA_VERSION
-  } catch {
-    return false
-  }
+  const { rows: settingsColumns } = await tx.execute("SELECT lower(name) AS name FROM pragma_table_xinfo('app_settings', 'main')")
+  const columnNames = new Set(settingsColumns.map(row => String(row.name)))
+  if (!columnNames.has("key") || !columnNames.has("value")) return false
+  const { rows: [version] } = await tx.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")
+  if (version === undefined || version === null) return true
+  const parsed = Number(version.value)
+  return Number.isInteger(parsed) && parsed > 0 && parsed < ORDINARY_BOARD_SCHEMA_VERSION
 }
 
 /** @param {Client} client */
@@ -2139,14 +2138,50 @@ export function openDatabaseForStartup(url, { readOnly = false, markerPath, trus
     }
     const pre0016LocalUpgrade = Boolean(!readOnly && existingStats?.isFile() && existingStats.size > 0 && pre0016)
     if (readOnly || recovered) {
+      if (recovered) {
+        const recoveredStats = lstatSync(local.path, { throwIfNoEntry: false })
+        if (!existingStats?.isFile() || !recoveredStats?.isFile() || recoveredStats.dev !== existingStats.dev || recoveredStats.ino !== existingStats.ino) {
+          inspection.close()
+          throw new Error("Database identity changed during startup inspection")
+        }
+      }
       registerBoardGrantContext(inspection, { markerPath, pre0016LocalUpgrade })
       return inspection
     }
     inspection.close()
     const client = openLocal(local.path, false, false, true)
-    registerBoardGrantContext(client, { markerPath, pre0016LocalUpgrade })
-    return client
+    try {
+      const openedStats = lstatSync(local.path, { throwIfNoEntry: false })
+      if (!existingStats?.isFile() || !openedStats?.isFile() || openedStats.dev !== existingStats.dev || openedStats.ino !== existingStats.ino) {
+        throw new Error("Database identity changed during startup inspection")
+      }
+      const reopenedPre0016 = openedStats.size > 0 && await inspectStartupSchema(client)
+      registerBoardGrantContext(client, { markerPath, pre0016LocalUpgrade: reopenedPre0016 })
+      return client
+    } catch (error) {
+      client.close()
+      throw error
+    }
   })
+}
+
+/** @param {Client} client @param {Transaction} tx */
+async function cleanupRolledBackGrantMarker(client, tx) {
+  const prepared = consumePreparedGrantMarker(tx)
+  if (!prepared) return
+  try {
+    const { rows: [table] } = await client.execute(
+      "SELECT 1 FROM main.sqlite_schema WHERE type = 'table' AND name = 'board_access_epoch' LIMIT 1"
+    )
+    if (table) {
+      const { rows: [row] } = await client.execute(boardGrantRevisionQuery)
+      if (row?.revision === prepared.revision) return
+    }
+  } catch {
+    // Retain the prepared journal if rollback cannot be positively verified.
+    return
+  }
+  await rm(prepared.pendingPath, { force: true }).catch(() => {})
 }
 
 /** @param {Client} client */
@@ -2172,11 +2207,14 @@ export async function withStartupWriteTransaction(client, apply) {
       throw error
     }
   })
+  let committed = false
   try {
     const value = await apply(tx)
     await tx.commit()
+    committed = true
     return value
   } finally {
     tx.close()
+    if (!committed) await cleanupRolledBackGrantMarker(client, tx)
   }
 }

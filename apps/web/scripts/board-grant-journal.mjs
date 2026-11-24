@@ -3,7 +3,7 @@ import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from "
 import { mkdir, open, readdir, rename, rm } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { acquireWriteTransaction, readLocalGrantRevision, retryStartupLock } from "./database-client.mjs"
-import { boardGrantPath, boardGrantRevisionQuery, consumeDatabaseCreation, consumePre0016LocalUpgrade, getBoardGrantPath, unwrapBoardGrantClient } from "./board-grant-context.mjs"
+import { boardGrantPath, boardGrantRevisionQuery, consumeDatabaseCreation, consumePre0016LocalUpgrade, getBoardGrantPath, registerPreparedGrantMarker, unwrapBoardGrantClient } from "./board-grant-context.mjs"
 import { consumeOperatorAdmission, registerStartupBoardAdmission } from "./startup-board-admission.mjs"
 
 export { boardGrantPath, getBoardGrantPath }
@@ -152,15 +152,29 @@ async function hasMarkerOrPendingEntries(markerPath) {
 }
 
 /** Prove conversion authority on the same startup writer, then prepare its next excluded journal. */
-export async function admitStartupBoardTransition(client, tx, operatorAdmission) {
+export async function admitStartupBoardTransition(client, tx, operatorAdmission, onRefused) {
   const path = getBoardGrantPath(client)
   const revision = await databaseRevision(tx)
   const created = consumeDatabaseCreation(client)
   const pre0016LocalUpgrade = consumePre0016LocalUpgrade(client)
   const operator = consumeOperatorAdmission(operatorAdmission)
-  const canAutoEnrollPre0016 = async () => pre0016LocalUpgrade && !(await hasMarkerOrPendingEntries(path))
+  const checkPre0016Clear = async () => {
+    if (!pre0016LocalUpgrade) return "ineligible"
+    try {
+      return (await hasMarkerOrPendingEntries(path)) ? "conflict" : "clear"
+    } catch (error) {
+      if (error instanceof Error && error.message === "Board continuity refuses symlink paths") return "conflict"
+      throw error
+    }
+  }
   if (!revision) {
-    if (!created && !operator && !(await canAutoEnrollPre0016())) return null
+    if (!created && !operator) {
+      const eligibility = await checkPre0016Clear()
+      if (eligibility !== "clear") {
+        onRefused?.(eligibility === "conflict" ? "conflict" : "no_authority")
+        return null
+      }
+    }
     const next = await prepareInitialBoardGrant(tx, path)
     return { admission: registerStartupBoardAdmission(tx), revision: next }
   }
@@ -168,10 +182,22 @@ export async function admitStartupBoardTransition(client, tx, operatorAdmission)
   // A committed journal may be recovered, or a pre-0016 local database restored
   // before backups included the marker may re-enroll when no conflicting file exists.
   const currentMatched = await publishCommittedMarker(path, revision) && await boardGrantStillCurrent(tx, revision, path)
-  if (!currentMatched && !(await canAutoEnrollPre0016())) return null
+  if (!currentMatched) {
+    const eligibility = await checkPre0016Clear()
+    if (eligibility !== "clear") {
+      onRefused?.(eligibility === "conflict" ? "conflict" : "no_authority")
+      return null
+    }
+  }
   const next = randomUUID()
   await prepareGrantMarker(path, next)
-  await tx.execute({ sql: "UPDATE board_access_epoch SET revision = ? WHERE singleton = 1 AND revision = ?", args: [next, revision] })
+  try {
+    await tx.execute({ sql: "UPDATE board_access_epoch SET revision = ? WHERE singleton = 1 AND revision = ?", args: [next, revision] })
+    registerPreparedGrantMarker(tx, pendingFile(path, next), next)
+  } catch (error) {
+    await rm(pendingFile(path, next), { force: true }).catch(() => {})
+    throw error
+  }
   return { admission: registerStartupBoardAdmission(tx), revision: next }
 }
 
@@ -186,6 +212,7 @@ export async function prepareInitialBoardGrant(tx, markerPath) {
   await prepareGrantMarker(markerPath, revision)
   try {
     await tx.execute({ sql: "INSERT INTO board_access_epoch(singleton, revision) VALUES (1, ?)", args: [revision] })
+    registerPreparedGrantMarker(tx, pendingFile(markerPath, revision), revision)
     return revision
   } catch (error) {
     await rm(pendingFile(markerPath, revision), { force: true }).catch(() => {})

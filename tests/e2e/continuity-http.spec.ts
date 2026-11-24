@@ -225,106 +225,109 @@ for (const loss of ["removed", "invalid", "different-current-epoch"] as const) {
   })
 }
 
-test("actual cold pre-first-grant replay denies HTTP with independently newer marker", async ({ playwright }, testInfo) => {
-  const work = await mkdtemp(join(tmpdir(), "continuity-http-cold-"))
-  const database = databasePath(work)
-  const marker = markerPath(work)
-  const custody = await mkdtemp(join(tmpdir(), "continuity-http-external-custody-"))
-  const cold = join(custody, "pre-first-grant.db")
-  const previous = process.env.MEITHEAL_DB_URL
-  let app: Server | undefined
-  try {
-    // Real existing legacy file: schema creation has no exclusive-file startup
-    // capability. This is never made by deleting a current epoch row.
-    process.env.MEITHEAL_DB_URL = "file:" + database
-    resetPersistenceForTests()
-    await writeFile(database, "", { mode: 0o600 })
-    await ensureSchema({ markerPath: marker })
-    const db = getPersistenceClient()
-    expect((await db.execute("SELECT revision FROM board_access_epoch")).rows).toEqual([])
-    await db.execute(`INSERT INTO tasks(id,title,status,ticket_number,idempotency_key,request_id,created_at,updated_at)
-      VALUES ('cold-household-secret','Cold pregrant Household secret','pending',1,'cold-idempotency','cold-request',1,1)`)
-    await db.execute("INSERT INTO goals(id,title,status,created_at,updated_at) VALUES ('cold-goal-secret','Cold pregrant Goal secret','active',1,1)")
-    await db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-    resetPersistenceForTests()
-    await copyFile(database, cold)
-    const originalColdHash = hash(await readFile(cold))
-    await testInfo.attach("original-cold-pre-first-grant.db", { path: cold, contentType: "application/vnd.sqlite3" })
-    const identity = { installationId: "synthetic-independent-http-current", appSlug: "meitheal_canary",
-      image: "ghcr.io/example/meitheal@sha256:" + "a".repeat(64), source: "b".repeat(40) }
-    const manifest = { kind: "meitheal-current-legacy-checkpoint-v1", checkpointId: "independently-current-http", ...identity,
-      archiveSha256: originalColdHash, databaseFamily: { database: originalColdHash, wal: null, shm: null, journal: null } }
-    const manifestBytes = JSON.stringify(manifest)
-    const manifestPath = join(custody, "manifest.json")
-    await writeFile(manifestPath, manifestBytes, { mode: 0o600 })
-    await writeFile(join(custody, "current.json"), JSON.stringify({ kind: "meitheal-current-continuity-attestation-v1", checkpointId: manifest.checkpointId,
-      manifestSha256: hash(manifestBytes), ...identity, state: "current", coreOwnerVerified: true, appStopped: true,
-      noNewerGrantOrLifecycleChange: true, verificationId: "independent-synthetic-owner-custody-http" }), { mode: 0o600 })
-    execFileSync(process.execPath, ["scripts/enroll-legacy-continuity.mjs", "--database", database, "--marker", marker,
-      "--custody-directory", custody, "--manifest", manifestPath, "--archive", cold, "--installation", identity.installationId,
-      "--app-slug", identity.appSlug, "--image", identity.image, "--source", identity.source], { cwd: web, stdio: "pipe" })
-    app = await server(work, playwright)
-    const knownTask = await app.api.get(app.base + "/api/tasks/cold-household-secret")
-    expect(knownTask.status()).toBe(200)
-    expect((await knownTask.json()).title).toBe("Cold pregrant Household secret")
-    const capture = await currentCapture(app, "Descendant" + randomUUID())
-    const features = await app.api.get(app.base + "/api/organization-features")
-    expect(features.status()).toBe(200)
-    const settings = await features.json()
-    expect((await app.api.put(app.base + "/api/organization-features", {
-      headers: { "x-meitheal-area-admin": features.headers()["x-meitheal-area-admin"]! },
-      data: { feature: "goals", audience: "nobody", users: [], revision: settings.features.goals.revision },
-    })).status()).toBe(204)
-    expect((await app.api.get(app.base + "/api/goals")).status()).toBe(404)
-    const household = await app.api.get(app.base + "/api/boards")
-    expect(household.status()).toBe(200)
-    const exampleBoard = (await household.json()).boards.find((board: { id: string }) => board.id === "household")
-    expect(exampleBoard).toBeDefined()
-    const revision = exampleBoard.revision
-    const retired = await app.api.patch(app.base + "/api/boards/household", {
-      headers: { "x-meitheal-board-session": household.headers()["x-meitheal-board-session"]! }, data: { action: "retire", revision },
-    })
-    expect(retired.status()).toBe(200)
-    const retiredRead = await app.api.get(app.base + "/api/tasks/cold-household-secret")
-    expect(retiredRead.status()).toBe(403)
-    const unavailable = await retiredRead.text()
-    expect(unavailable).not.toContain("Cold pregrant Household secret")
-    expect(unavailable).not.toContain("cold-household-secret")
-    const current = await readFile(marker)
-    await app.close(); app = undefined
-    const restricted = governedRecords(work)
-    expect((restricted.organization_access_policies as Array<{ audience: string }>).some(row => row.audience === "nobody")).toBe(true)
-    expect((restricted.task_boards as Array<{ id: string; state: string }>).find(row => row.id === "household")?.state).toBe("retired")
-    await evidenceJson(testInfo, "independent-descendant-restrictions.json", { originalColdHash, markerSha256: hash(current), governedRecords: restricted })
-    // Offline restore replaces the entire SQLite family with the exact cold
-    // bytes while retaining the current marker on disk: must stay 503 locked.
-    for (const suffix of ["", "-wal", "-shm", "-journal"]) await rm(database + suffix, { force: true })
-    await copyFile(cold, database)
-    expect(hash(await readFile(database))).toBe(originalColdHash)
-    await rm(marker, { force: true })
-    await writeFile(marker, current, { mode: 0o600 })
-    const restored = governedRecords(work)
-    app = await server(work, playwright)
-    // The descendant bearer is not counted: its token does not exist in the
-    // predecessor DB. Authenticated signed-agent denial is proven above.
-    await locked(app, work, undefined, ["cold-household-secret", "Cold pregrant Household secret", "cold-goal-secret", "Cold pregrant Goal secret", "MTH-1", ...capture.secrets])
-    expect(governedRecords(work)).toEqual(restored)
-    await evidenceJson(testInfo, "cold-replay-proof.json", { originalColdHash,
-      retainedIndependentlyNewerMarker: true, newerMarkerSha256: hash(current), restoredGovernedRecords: restored,
-      result: "real HTTP governed GET/HEAD/POST 503; diagnostics available; unchanged governed records" })
-    const replay = new DatabaseSync(database, { readOnly: true })
-    try { expect(replay.prepare("SELECT revision FROM board_access_epoch").all()).toEqual([]) } finally { replay.close() }
-    expect(hash(await readFile(cold))).toBe(originalColdHash)
-    expect(await readFile(join(custody, "consumed/independently-current-http.json"), "utf8")).toContain("consumed-before-enrollment")
-  } finally {
-    resetPersistenceForTests()
-    if (previous === undefined) delete process.env.MEITHEAL_DB_URL
-    else process.env.MEITHEAL_DB_URL = previous
-    await app?.close()
-    await rm(work, { recursive: true, force: true })
-    await rm(custody, { recursive: true, force: true })
-  }
-})
+for (const retainCurrentMarker of [false, true]) {
+  test(`actual cold pre-first-grant replay denies HTTP with ${retainCurrentMarker ? "independently newer" : "excluded absent"} marker`, async ({ playwright }, testInfo) => {
+    const work = await mkdtemp(join(tmpdir(), "continuity-http-cold-"))
+    const database = databasePath(work)
+    const marker = markerPath(work)
+    const custody = await mkdtemp(join(tmpdir(), "continuity-http-external-custody-"))
+    const cold = join(custody, "pre-first-grant.db")
+    const previous = process.env.MEITHEAL_DB_URL
+    let app: Server | undefined
+    try {
+      // Real existing legacy file: schema creation has no exclusive-file startup
+      // capability. This is never made by deleting a current epoch row.
+      process.env.MEITHEAL_DB_URL = "file:" + database
+      resetPersistenceForTests()
+      await writeFile(database, "", { mode: 0o600 })
+      await ensureSchema({ markerPath: marker })
+      const db = getPersistenceClient()
+      expect((await db.execute("SELECT revision FROM board_access_epoch")).rows).toEqual([])
+      await db.execute(`INSERT INTO tasks(id,title,status,ticket_number,idempotency_key,request_id,created_at,updated_at)
+        VALUES ('cold-household-secret','Cold pregrant Household secret','pending',1,'cold-idempotency','cold-request',1,1)`)
+      await db.execute("INSERT INTO goals(id,title,status,created_at,updated_at) VALUES ('cold-goal-secret','Cold pregrant Goal secret','active',1,1)")
+      await db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+      resetPersistenceForTests()
+      await copyFile(database, cold)
+      const originalColdHash = hash(await readFile(cold))
+      await testInfo.attach("original-cold-pre-first-grant.db", { path: cold, contentType: "application/vnd.sqlite3" })
+      const identity = { installationId: "synthetic-independent-http-current", appSlug: "meitheal_canary",
+        image: "ghcr.io/example/meitheal@sha256:" + "a".repeat(64), source: "b".repeat(40) }
+      const manifest = { kind: "meitheal-current-legacy-checkpoint-v1", checkpointId: "independently-current-http", ...identity,
+        archiveSha256: originalColdHash, databaseFamily: { database: originalColdHash, wal: null, shm: null, journal: null } }
+      const manifestBytes = JSON.stringify(manifest)
+      const manifestPath = join(custody, "manifest.json")
+      await writeFile(manifestPath, manifestBytes, { mode: 0o600 })
+      await writeFile(join(custody, "current.json"), JSON.stringify({ kind: "meitheal-current-continuity-attestation-v1", checkpointId: manifest.checkpointId,
+        manifestSha256: hash(manifestBytes), ...identity, state: "current", coreOwnerVerified: true, appStopped: true,
+        noNewerGrantOrLifecycleChange: true, verificationId: "independent-synthetic-owner-custody-http" }), { mode: 0o600 })
+      execFileSync(process.execPath, ["scripts/enroll-legacy-continuity.mjs", "--database", database, "--marker", marker,
+        "--custody-directory", custody, "--manifest", manifestPath, "--archive", cold, "--installation", identity.installationId,
+        "--app-slug", identity.appSlug, "--image", identity.image, "--source", identity.source], { cwd: web, stdio: "pipe" })
+      app = await server(work, playwright)
+      const knownTask = await app.api.get(app.base + "/api/tasks/cold-household-secret")
+      expect(knownTask.status()).toBe(200)
+      expect((await knownTask.json()).title).toBe("Cold pregrant Household secret")
+      const capture = await currentCapture(app, "Descendant" + randomUUID())
+      const features = await app.api.get(app.base + "/api/organization-features")
+      expect(features.status()).toBe(200)
+      const settings = await features.json()
+      expect((await app.api.put(app.base + "/api/organization-features", {
+        headers: { "x-meitheal-area-admin": features.headers()["x-meitheal-area-admin"]! },
+        data: { feature: "goals", audience: "nobody", users: [], revision: settings.features.goals.revision },
+      })).status()).toBe(204)
+      expect((await app.api.get(app.base + "/api/goals")).status()).toBe(404)
+      const household = await app.api.get(app.base + "/api/boards")
+      expect(household.status()).toBe(200)
+      const exampleBoard = (await household.json()).boards.find((board: { id: string }) => board.id === "household")
+      expect(exampleBoard).toBeDefined()
+      const revision = exampleBoard.revision
+      const retired = await app.api.patch(app.base + "/api/boards/household", {
+        headers: { "x-meitheal-board-session": household.headers()["x-meitheal-board-session"]! }, data: { action: "retire", revision },
+      })
+      expect(retired.status()).toBe(200)
+      const retiredRead = await app.api.get(app.base + "/api/tasks/cold-household-secret")
+      expect(retiredRead.status()).toBe(403)
+      const unavailable = await retiredRead.text()
+      expect(unavailable).not.toContain("Cold pregrant Household secret")
+      expect(unavailable).not.toContain("cold-household-secret")
+      const current = await readFile(marker)
+      await app.close(); app = undefined
+      const restricted = governedRecords(work)
+      expect((restricted.organization_access_policies as Array<{ audience: string }>).some(row => row.audience === "nobody")).toBe(true)
+      expect((restricted.task_boards as Array<{ id: string; state: string }>).find(row => row.id === "household")?.state).toBe("retired")
+      await evidenceJson(testInfo, "independent-descendant-restrictions.json", { originalColdHash, markerSha256: hash(current), governedRecords: restricted })
+      // Offline restore replaces the entire SQLite family with the exact cold
+      // bytes, both with absent marker (blocked by continuity_auto_enroll_blocked)
+      // and with the separately retained newer marker.
+      for (const suffix of ["", "-wal", "-shm", "-journal"]) await rm(database + suffix, { force: true })
+      await copyFile(cold, database)
+      expect(hash(await readFile(database))).toBe(originalColdHash)
+      await rm(marker, { force: true })
+      if (retainCurrentMarker) await writeFile(marker, current, { mode: 0o600 })
+      const restored = governedRecords(work)
+      app = await server(work, playwright)
+      // The descendant bearer is not counted: its token does not exist in the
+      // predecessor DB. Authenticated signed-agent denial is proven above.
+      await locked(app, work, undefined, ["cold-household-secret", "Cold pregrant Household secret", "cold-goal-secret", "Cold pregrant Goal secret", "MTH-1", ...capture.secrets])
+      expect(governedRecords(work)).toEqual(restored)
+      await evidenceJson(testInfo, "cold-replay-proof.json", { originalColdHash,
+        retainedIndependentlyNewerMarker: retainCurrentMarker, newerMarkerSha256: hash(current), restoredGovernedRecords: restored,
+        result: "real HTTP governed GET/HEAD/POST 503; diagnostics available; unchanged governed records" })
+      const replay = new DatabaseSync(database, { readOnly: true })
+      try { expect(replay.prepare("SELECT revision FROM board_access_epoch").all()).toEqual([]) } finally { replay.close() }
+      expect(hash(await readFile(cold))).toBe(originalColdHash)
+      expect(await readFile(join(custody, "consumed/independently-current-http.json"), "utf8")).toContain("consumed-before-enrollment")
+    } finally {
+      resetPersistenceForTests()
+      if (previous === undefined) delete process.env.MEITHEAL_DB_URL
+      else process.env.MEITHEAL_DB_URL = previous
+      await app?.close()
+      await rm(work, { recursive: true, force: true })
+      await rm(custody, { recursive: true, force: true })
+    }
+  })
+}
 
 test("pre-0016 cold upgrade without conflicting marker auto-enrolls HTTP while post-0016 absent marker locks", async ({ playwright }) => {
   const work = await mkdtemp(join(tmpdir(), "continuity-http-upgrade-"))

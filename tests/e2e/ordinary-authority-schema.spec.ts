@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
@@ -8,6 +8,7 @@ import {
   withStartupWriteTransaction
 } from "../../apps/web/scripts/database-client.mjs"
 import {
+  admitStartupBoardTransition,
   finalizeStartupBoardGrant,
   initializeBoardGrantContinuity,
   readBoardGrantRevision
@@ -256,7 +257,77 @@ test("epochless reopened schema25 with a conflicting marker remains controlled p
       (row) => row.name === "storage_encoding"
     )
   ).toBe(false)
+  expect(
+    (await db.execute("SELECT value FROM app_settings WHERE key = 'continuity_auto_enroll_blocked'")).rows
+  ).toEqual([])
   await expect(validateStartupTaskSchema(db)).rejects.toThrow("Pending migrations")
+})
+
+test("eligible pre-0016 schema25 locks on symlink or unresolved pending journal without blocking future recovery", async () => {
+  await withStartupWriteTransaction(db, (tx) => applyStartupTaskSchema(tx))
+  db.close()
+
+  const symlinkTarget = join(directory, "symlink-target.json")
+  await writeFile(symlinkTarget, JSON.stringify({ epoch: randomUUID() }), { mode: 0o600 })
+  await symlink(symlinkTarget, marker)
+  db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
+  expect(await initialize()).toMatchObject({
+    state: "continuity_locked",
+    pending: ["0016_ordinary_boards.mjs"],
+    revision: null
+  })
+  expect(
+    (await db.execute("SELECT value FROM app_settings WHERE key = 'continuity_auto_enroll_blocked'")).rows
+  ).toEqual([])
+  db.close()
+  await rm(marker, { force: true })
+
+  const pendingDir = join(directory, "meitheal-board-grants-pending")
+  await mkdir(pendingDir, { mode: 0o700 })
+  await writeFile(join(pendingDir, `${randomUUID()}.json`), JSON.stringify({ epoch: randomUUID() }), { mode: 0o600 })
+  db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
+  expect(await initialize()).toMatchObject({
+    state: "continuity_locked",
+    pending: ["0016_ordinary_boards.mjs"],
+    revision: null
+  })
+  expect(
+    (await db.execute("SELECT value FROM app_settings WHERE key = 'continuity_auto_enroll_blocked'")).rows
+  ).toEqual([])
+  db.close()
+  await rm(pendingDir, { recursive: true, force: true })
+
+  db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
+  const recovered = await initialize()
+  expect(recovered.state).toBe("ready")
+  expect(await readBoardGrantRevision(marker)).toBe(recovered.revision)
+  expect(
+    (await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")).rows[0]?.value
+  ).toBe("28")
+})
+
+test("rolled-back transition removes its uncommitted pending journal so the next startup enrolls", async () => {
+  await withStartupWriteTransaction(db, (tx) => applyStartupTaskSchema(tx))
+  db.close()
+  db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
+  await expect(
+    withStartupWriteTransaction(db, async (tx) => {
+      const transition = await admitStartupBoardTransition(db, tx)
+      expect(transition?.revision).toBeTruthy()
+      throw new Error("synthetic migration failure before commit")
+    })
+  ).rejects.toThrow("synthetic migration failure")
+  const pendingDir = join(directory, "meitheal-board-grants-pending")
+  expect(await readdir(pendingDir)).toEqual([])
+  db.close()
+
+  db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
+  const result = await initialize()
+  expect(result.state).toBe("ready")
+  expect(await readBoardGrantRevision(marker)).toBe(result.revision)
+  expect(
+    (await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")).rows[0]?.value
+  ).toBe("28")
 })
 
 test("an independently current schema25 upgrade converts policy and journals the next epoch atomically", async () => {

@@ -1,5 +1,6 @@
 /** Process-local startup capabilities: never serialized into the database or environment. */
 const contexts = new WeakMap()
+const preparedGrantMarkers = new WeakMap()
 export const boardGrantPath = "/data/meitheal-board-grants.json"
 export const boardGrantRevisionQuery = "SELECT revision FROM board_access_epoch WHERE singleton = 1"
 
@@ -39,4 +40,15 @@ export function consumePre0016LocalUpgrade(client) {
   if (!context?.pre0016LocalUpgrade) return false
   context.pre0016LocalUpgrade = false
   return true
+}
+
+export function registerPreparedGrantMarker(tx, pendingPath, revision) {
+  if (tx && typeof tx === "object") preparedGrantMarkers.set(tx, { pendingPath, revision })
+}
+
+export function consumePreparedGrantMarker(tx) {
+  const entry = preparedGrantMarkers.get(tx)
+  if (!entry) return null
+  preparedGrantMarkers.delete(tx)
+  return entry
 }
