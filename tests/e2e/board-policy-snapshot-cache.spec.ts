@@ -72,6 +72,19 @@ test("reused Board policy reads follow writes from other connections, own writes
     })
     const readTwo = await db.transaction("read")
     try { expect(await validateBoardScope(scope, readTwo, routines)).toMatchObject({ ok: false }) } finally { readTwo.close() }
+
+    // A read snapshot pinned before an external policy grant never adopts the later live token.
+    const pinnedRead = await db.transaction("read")
+    try {
+      await pinnedRead.execute("SELECT COUNT(*) FROM tasks")
+      await other.execute({
+        sql: "UPDATE organization_access_policies SET selected_users = ? WHERE scope = 'feature' AND scope_id = 'routines'",
+        args: [JSON.stringify(["member"])],
+      })
+      expect(await validateBoardScope(scope, pinnedRead, routines)).toMatchObject({ ok: false })
+      expect(await validateBoardScope(scope, db, routines)).toMatchObject({ ok: true })
+      expect(await validateBoardScope(scope, pinnedRead, routines)).toMatchObject({ ok: false })
+    } finally { pinnedRead.close() }
   } finally {
     other?.close()
     resetPersistenceForTests()

@@ -1,7 +1,7 @@
 import type { Client, InArgs, InStatement, Transaction } from "@libsql/client"
-import { acquireWriteTransaction, isLocalFileClient, isLocalFileWriter, isLocalReadSnapshot, isSideEffectFreeQuery, localReaderCacheToken, localSnapshotGeneration, registerReaderCacheSource } from "../../../../scripts/database-client.mjs"
+import { acquireWriteTransaction, isLocalFileClient, isLocalFileWriter, isLocalReadSnapshot, isSideEffectFreeQuery, localSnapshotGeneration, registerReaderCacheSource } from "../../../../scripts/database-client.mjs"
 import { databaseRevision, getBoardGrantPath, readBoardGrantRevision } from "../../../../scripts/board-grant-journal.mjs"
-import { principalProof, registerFencedScopeReader, scopeLimits, validateBoardOperations } from "../board-scope"
+import { principalProof, registerFencedScopeReader, validateBoardOperations } from "../board-scope"
 import { boardGrantStillCurrent, currentBoardGrantRevision } from "./board-grant-fence"
 
 export class ContinuityLockedError extends Error {
@@ -36,6 +36,14 @@ export function isFencedLocalWriter(transaction: Transaction): boolean {
 export function isFencedLocalFileClient(guarded: Client): boolean {
   const raw = guardSources.get(guarded)
   return raw !== undefined && isLocalFileClient(raw)
+}
+
+/** Return true when the client passes through a continuity guard wrapper. */
+export function isGuardedContinuityClient(client: object): boolean {
+  return guardSources.has(client) || (
+    Symbol.for("meitheal.boardGrantClient") in client &&
+    (client as Record<symbol, unknown>)[Symbol.for("meitheal.boardGrantClient")] !== client
+  )
 }
 
 export function executeFencedSingleRead<T>(
@@ -240,18 +248,9 @@ export function guardClientContinuity(client: Client): Client {
     } finally { raw.close() }
   })
   registerFencedScopeReader(guarded, async (scope, operations) => {
-    const tokenBefore = localReaderCacheToken(client)?.token
     // BoardAccessService binds the initial authority read to the scoped epoch.
     const result = await validateBoardOperations(scope, client, operations)
     if (!result.ok) return result
-    if (
-      (scope.principal.kind === "ha_user" || scope.principal.kind === "local_operator") &&
-      scopeLimits(scope).length === 0 &&
-      tokenBefore !== undefined &&
-      localReaderCacheToken(client)?.token === tokenBefore
-    ) {
-      return principalProof(scope.principal) ? result : { ok: false, errorCode: "stale" }
-    }
     if (!await boardGrantStillCurrent(client, scope.authorityRevision, marker) || !principalProof(scope.principal)) {
       return { ok: false, errorCode: "stale" }
     }

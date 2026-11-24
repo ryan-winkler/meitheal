@@ -13,7 +13,13 @@
  * @domain plugins
  * @bounded-context plugins
  */
-import { ensureSchema, getPersistenceClient } from "@domains/tasks"
+import {
+  ContinuityLockedError,
+  currentBoardGrantRevision,
+  ensureSchema,
+  getPersistenceClient,
+  isGuardedContinuityClient,
+} from "@domains/tasks"
 import { localReaderCacheToken } from "../../../scripts/database-client.mjs"
 import type {
   PluginFiles,
@@ -229,7 +235,12 @@ export class PluginRepository {
     const state = localReaderCacheToken(db as never)
     if (state) {
       const cached = activePluginsCache.get(state.owner)
-      if (cached && cached.token === state.token) return cached.active
+      if (cached && cached.token === state.token) {
+        if (isGuardedContinuityClient(db as object) && !(await currentBoardGrantRevision(db as never))) {
+          throw new ContinuityLockedError()
+        }
+        return cached.active
+      }
     }
     const safeMode = await this.getSafeMode()
     const active = safeMode

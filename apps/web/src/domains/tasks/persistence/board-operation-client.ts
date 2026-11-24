@@ -282,7 +282,6 @@ export async function canReadBoardAggregate(client: Pick<Client, "execute">, sco
   let rows = state ? aggregatePlacementCache.get(state.owner)?.token === state.token
     ? aggregatePlacementCache.get(state.owner)!.byBoard.get(scope.boardId)
     : undefined : undefined
-  const fromCache = rows !== undefined
   if (!rows) {
     const queried = await client.execute(sql`SELECT scope, scope_id FROM organization_access_policies
       WHERE board_id = ${scope.boardId} AND scope IN ('group', 'project')`)
@@ -296,7 +295,6 @@ export async function canReadBoardAggregate(client: Pick<Client, "execute">, sco
       boardCache.byBoard.set(scope.boardId, rows)
     }
   }
-  if (fromCache && rows.length === 0) return Boolean(principalProof(scope.principal))
   for (const row of rows) {
     if (!await validateBoardPlacement(scope, client, row.scope === "group" ? { areaId: String(row.scope_id) } : { projectId: String(row.scope_id) })) return false
   }

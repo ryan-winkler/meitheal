@@ -156,7 +156,10 @@ export async function recordTaskCompletion(
     await client.execute(insertStatement)
     return null
   }
-  if (!await canReadBoardAggregate(base, scope)) throw new BoardOperationError("unavailable")
+  if (!await canReadBoardAggregate(base, scope)) {
+    await client.execute(insertStatement)
+    throw new BoardOperationError("unavailable")
+  }
   const [, agg] = await client.batch([insertStatement, statsQuery(scope, today, yesterday)], "write")
   if (!await canReadBoardAggregate(base, scope)) throw new BoardOperationError("unavailable")
   return parseStatsRows((agg?.rows ?? []) as ReadonlyArray<Record<string, unknown>>)

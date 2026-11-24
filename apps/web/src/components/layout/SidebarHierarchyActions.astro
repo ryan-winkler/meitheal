@@ -1,89 +1,15 @@
 ---
 import "../../styles/sidebar-hierarchy-actions.css"
-import { t } from "../../i18n/translations"
-import { EMOJI_CATEGORIES } from "../../lib/emoji-picker-data"
-import { COLOR_SWATCHES } from "../../lib/design-tokens"
-import { escapeHtml } from "../../lib/escape-html"
+import { resolveCanonicalIconName } from "../../generated/icon-registry"
 import type { Locale } from "../../lib/locale"
-import { resolveCanonicalIconName, type IconName } from "../../generated/icon-registry"
+import {
+  buildHierarchyActionsHtml,
+  USED_HIERARCHY_ACTION_ICONS,
+} from "../../lib/sidebar-hierarchy-actions-html"
+
 const locale: Locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
-const usedIconNames: IconName[] = [
-  "settings",
-  "pencil",
-  "palette",
-  "trash",
-  "checkbox",
-  "shopping-cart",
-  "list-check",
-  "calendar-event",
-  "bolt",
-  "clipboard-list",
-]
-const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
-  { kind: "standard_action", icon: "checkbox", labelKey: "sidebar.task_kind_standard_action" },
-  { kind: "shopping_item", icon: "shopping-cart", labelKey: "sidebar.task_kind_shopping_item" },
-  { kind: "checklist", icon: "list-check", labelKey: "sidebar.task_kind_checklist" },
-  { kind: "calendar_event", icon: "calendar-event", labelKey: "sidebar.task_kind_calendar_event" },
-  { kind: "quick_capture", icon: "bolt", labelKey: "sidebar.task_kind_quick_capture" },
-]
-const spriteSvg = (name: IconName, size: number) =>
-  `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" aria-hidden="true" role="img"><use href="#mt-icon-${escapeHtml(resolveCanonicalIconName(name))}"></use></svg>`
-
-const templateHtmlCache: Partial<Record<Locale, string>> = {}
-function buildHierarchyActionsHtml(loc: Locale): string {
-  const cached = templateHtmlCache[loc]
-  if (cached !== undefined) return cached
-  const taskKindItems = taskKinds
-    .map(
-      (tk) =>
-        `<button type="button" data-task-kind="${escapeHtml(tk.kind)}" class="stree__dropdown-item"><span class="stree__dropdown-icon inline-flex items-center justify-center">${spriteSvg(tk.icon, 14)}</span><span>${escapeHtml(t(tk.labelKey, loc))}</span></button>`,
-    )
-    .join("")
-  const emojiTabs = EMOJI_CATEGORIES.map(
-    (cat, i) =>
-      `<button type="button" class="stree__emoji-tab ${i === 0 ? "active" : ""}" data-emoji-tab="${i}" title="${escapeHtml(cat.label)}">${escapeHtml(cat.emoji[0] ?? "")}</button>`,
-  ).join("")
-  const emojiPanels = EMOJI_CATEGORIES.map(
-    (cat, catIdx) =>
-      `<div class="stree__emoji-panel ${catIdx === 0 ? "" : "hidden"}" data-emoji-panel="${catIdx}">${cat.emoji
-        .map(
-          (e) =>
-            `<button type="button" class="stree__emoji-btn" data-emoji-value="${escapeHtml(e)}" title="${escapeHtml(e)}">${escapeHtml(e)}</button>`,
-        )
-        .join("")}</div>`,
-  ).join("")
-  const swatches = COLOR_SWATCHES.map(
-    (c) =>
-      `<button type="button" class="stree__swatch" data-swatch-color="${escapeHtml(c)}" style="background: ${escapeHtml(c)}" title="${escapeHtml(c)}"></button>`,
-  ).join("")
-  const html =
-    `<template id="tmpl-area-menu"><div class="stree__dropdown" id="area-menu-dropdown">` +
-    `<a data-action="manage" class="stree__dropdown-item"><span class="stree__dropdown-icon inline-flex items-center justify-center">${spriteSvg("settings", 14)}</span><span>${escapeHtml(t("sidebar.manage_space", loc))}</span></a>` +
-    `<button type="button" data-action="rename" class="stree__dropdown-item"><span class="stree__dropdown-icon inline-flex items-center justify-center">${spriteSvg("pencil", 14)}</span><span>${escapeHtml(t("sidebar.rename", loc))}</span></button>` +
-    `<button type="button" data-action="color-icon" class="stree__dropdown-item"><span class="stree__dropdown-icon inline-flex items-center justify-center">${spriteSvg("palette", 14)}</span><span>${escapeHtml(t("sidebar.color_icon", loc))}</span></button>` +
-    `<hr class="stree__dropdown-divider" />` +
-    `<button type="button" data-action="delete" class="stree__dropdown-item stree__dropdown-item--danger"><span class="stree__dropdown-icon inline-flex items-center justify-center">${spriteSvg("trash", 14)}</span><span>${escapeHtml(t("sidebar.delete_area", loc))}</span></button>` +
-    `</div></template>` +
-    `<template id="tmpl-project-menu"><div class="stree__dropdown" id="project-menu-dropdown">` +
-    `<a data-action="manage" class="stree__dropdown-item"><span class="stree__dropdown-icon inline-flex items-center justify-center">${spriteSvg("settings", 14)}</span><span>${escapeHtml(t("sidebar.manage_project", loc))}</span></a>` +
-    `<button type="button" data-action="rename" class="stree__dropdown-item"><span class="stree__dropdown-icon inline-flex items-center justify-center">${spriteSvg("pencil", 14)}</span><span>${escapeHtml(t("sidebar.rename", loc))}</span></button>` +
-    `<button type="button" data-action="color-icon" class="stree__dropdown-item"><span class="stree__dropdown-icon inline-flex items-center justify-center">${spriteSvg("palette", 14)}</span><span>${escapeHtml(t("sidebar.color_icon", loc))}</span></button>` +
-    `<hr class="stree__dropdown-divider" />` +
-    `<button type="button" data-action="delete" class="stree__dropdown-item stree__dropdown-item--danger"><span class="stree__dropdown-icon inline-flex items-center justify-center">${spriteSvg("trash", 14)}</span><span>${escapeHtml(t("sidebar.delete_project", loc))}</span></button>` +
-    `</div></template>` +
-    `<template id="tmpl-task-kind"><div class="stree__dropdown" id="task-kind-dropdown">${taskKindItems}</div></template>` +
-    `<template id="tmpl-color-icon"><div class="stree__popover" id="color-icon-popover">` +
-    `<div class="stree__popover-section"><label class="stree__popover-label">${escapeHtml(t("sidebar.icon_label", loc))}</label>` +
-    `<div class="stree__emoji-preview"><span id="entity-icon-preview" class="stree__emoji-selected inline-flex items-center justify-center">${spriteSvg("clipboard-list", 18)}</span><input type="hidden" id="entity-icon-input" value="📋" /></div>` +
-    `<div class="stree__emoji-tabs">${emojiTabs}</div><div class="stree__emoji-grid" id="emoji-grid">${emojiPanels}</div></div>` +
-    `<div class="stree__popover-section"><label class="stree__popover-label">${escapeHtml(t("sidebar.color_label", loc))}</label><div class="stree__swatches" id="color-swatches">${swatches}</div></div>` +
-    `<button type="button" id="color-icon-save" class="stree__popover-save">${escapeHtml(t("sidebar.save", loc))}</button></div></template>`
-  templateHtmlCache[loc] = html
-  return html
-}
-
 const usedIcons = (Astro.locals.usedIcons ??= new Set())
-for (const name of usedIconNames) usedIcons.add(resolveCanonicalIconName(name))
+for (const name of USED_HIERARCHY_ACTION_ICONS) usedIcons.add(resolveCanonicalIconName(name))
 const html = buildHierarchyActionsHtml(locale)
 ---
 <Fragment set:html={html} />

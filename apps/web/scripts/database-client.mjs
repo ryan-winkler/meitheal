@@ -35,6 +35,8 @@ const grantRevisionStatements = new WeakMap()
 /** @type {WeakMap<DatabaseSync, import("node:sqlite").StatementSync>} */
 const dataVersionStatements = new WeakMap()
 /** @type {WeakMap<DatabaseSync, import("node:sqlite").StatementSync>} */
+const schemaVersionStatements = new WeakMap()
+/** @type {WeakMap<DatabaseSync, import("node:sqlite").StatementSync>} */
 const externalVersionStatements = new WeakMap()
 /** @type {WeakMap<DatabaseSync, Map<string, import("node:sqlite").StatementSync>>} */
 const preparedStatements = new WeakMap()
@@ -60,7 +62,7 @@ function stripSqlCommentsAndLiterals(sql) {
   while (i < sql.length) {
     const ch = sql.charCodeAt(i)
     const next = i + 1 < sql.length ? sql.charCodeAt(i + 1) : 0
-    if (ch === 39 || ch === 34) {
+    if (ch === 39 || ch === 34 || ch === 96) {
       i += 1
       while (i < sql.length) {
         if (sql.charCodeAt(i) === ch) {
@@ -74,6 +76,11 @@ function stripSqlCommentsAndLiterals(sql) {
         i += 1
       }
       out += " "
+    } else if (ch === 91) {
+      i += 1
+      while (i < sql.length && sql.charCodeAt(i) !== 93) i += 1
+      if (i < sql.length) i += 1
+      out += " "
     } else if (ch === 45 && next === 45) {
       const nl = sql.indexOf("\n", i + 2)
       i = nl === -1 ? sql.length : nl + 1
@@ -86,7 +93,7 @@ function stripSqlCommentsAndLiterals(sql) {
       const start = i
       while (i < sql.length) {
         const c = sql.charCodeAt(i)
-        if (c === 39 || c === 34 || c === 45 || c === 47) break
+        if (c === 39 || c === 34 || c === 96 || c === 91 || c === 45 || c === 47) break
         i += 1
       }
       if (i === start) {
@@ -446,18 +453,19 @@ function preparedStatement(db, sql) {
 /** @type {Map<string, object | null>} */
 const rowPrototypes = new Map()
 const MAX_ROW_PROTOTYPES = 512
-/** @type {WeakMap<import("node:sqlite").StatementSync, { columns: string[], types: string[], prototype: object | null }>} */
+/** @type {WeakMap<import("node:sqlite").StatementSync, { columns: string[], types: string[], prototype: object | null, schemaVersion: unknown }>} */
 const statementMetadata = new WeakMap()
 
 /** Compute and cache column metadata and the shared row prototype for a prepared statement.
  * @param {import("node:sqlite").StatementSync} statement
+ * @param {unknown} [schemaVersion]
  */
-function computeStatementMetadata(statement) {
+function computeStatementMetadata(statement, schemaVersion) {
   const raw = statement.columns()
   const columns = raw.map(column => column.name)
   const types = raw.map(column => column.type ?? "")
   const prototype = columns.length ? rowPrototype(columns) : null
-  const meta = { columns, types, prototype }
+  const meta = { columns, types, prototype, schemaVersion }
   statementMetadata.set(statement, meta)
   return meta
 }
@@ -523,6 +531,19 @@ function readExternalVersion(db) {
 }
 
 /** @param {DatabaseSync} db */
+function readSchemaVersion(db) {
+  let statement = schemaVersionStatements.get(db)
+  if (!statement) {
+    statement = db.prepare("PRAGMA schema_version")
+    statement.setReturnArrays(true)
+    statement.setReadBigInts(true)
+    schemaVersionStatements.set(db, statement)
+  }
+  const row = /** @type {unknown[] | undefined} */ (statement.get())
+  return row ? row[0] : undefined
+}
+
+/** @param {DatabaseSync} db */
 function getTotalChanges(db) {
   let stmt = totalChangesStatements.get(db)
   if (!stmt) {
@@ -564,17 +585,18 @@ function execute(db, input, args = [], fileReadSnapshot = false) {
     // Array mode avoids allocating object shapes that Object.setPrototypeOf
     // turns into dictionary mode. Use Object.create on the cached prototype.
     let rawRows = Array.isArray(bindings) ? statement.all(...bindings) : statement.all(bindings)
-    let meta = statementMetadata.get(statement) ?? computeStatementMetadata(statement)
-    const expectedWidth = meta.columns.length
-    if (/** @type {unknown[][]} */ (/** @type {unknown} */ (rawRows)).some(values => values.length !== expectedWidth)) {
-      meta = computeStatementMetadata(statement)
-      if (/** @type {unknown[][]} */ (/** @type {unknown} */ (rawRows)).some(values => values.length !== meta.columns.length)) {
+    const sv = readSchemaVersion(db)
+    let meta = statementMetadata.get(statement) ?? computeStatementMetadata(statement, sv)
+    const staleWidth = /** @type {unknown[][]} */ (/** @type {unknown} */ (rawRows)).some(values => values.length !== meta.columns.length)
+    if (staleWidth || meta.schemaVersion !== sv) {
+      meta = computeStatementMetadata(statement, sv)
+      if (staleWidth || rawRows.length === 0) {
         statement = db.prepare(sql)
         statement.setReturnArrays(true)
         if (slots) slots[kind] = { sql, statement }
         else scopedReadStatements.set(db, { [kind]: { sql, statement } })
         rawRows = Array.isArray(bindings) ? statement.all(...bindings) : statement.all(bindings)
-        meta = computeStatementMetadata(statement)
+        meta = computeStatementMetadata(statement, readSchemaVersion(db))
       }
     }
     const { columns, types, prototype } = meta
@@ -608,21 +630,24 @@ function execute(db, input, args = [], fileReadSnapshot = false) {
   }
   let meta = statementMetadata.get(statement)
   if (!meta) {
-    meta = computeStatementMetadata(statement)
+    const initialSv = (!db.isTransaction || fileReadSnapshot || /\bFROM\b/i.test(sql)) ? readSchemaVersion(db) : undefined
+    meta = computeStatementMetadata(statement, initialSv)
     if (meta.columns.length) statement.setReturnArrays(true)
   }
   if (meta.columns.length) {
     let rawRows = Array.isArray(bindings) ? statement.all(...bindings) : statement.all(bindings)
-    // Node.js 22 sizes rows before schema-change repreparation; recompile when widths diverge.
+    // Node.js 22 sizes rows before schema-change repreparation; recompile when widths or schema versions diverge.
+    const currentSv = meta.schemaVersion !== undefined ? readSchemaVersion(db) : undefined
     const staleWidth = /** @type {unknown[][]} */ (/** @type {unknown} */ (rawRows)).some(values => values.length !== meta.columns.length)
-    if (staleWidth && isPlainSelect(sql)) {
+    const staleSchema = staleWidth || currentSv !== meta.schemaVersion
+    if ((staleWidth || (staleSchema && rawRows.length === 0)) && isPlainSelect(sql)) {
       forgetPreparedStatement(db, sql)
       statement = preparedStatement(db, sql)
       statement.setReturnArrays(true)
       rawRows = Array.isArray(bindings) ? statement.all(...bindings) : statement.all(bindings)
-      meta = computeStatementMetadata(statement)
-    } else if (staleWidth) {
-      meta = computeStatementMetadata(statement)
+      meta = computeStatementMetadata(statement, currentSv !== undefined ? readSchemaVersion(db) : undefined)
+    } else if (staleSchema) {
+      meta = computeStatementMetadata(statement, currentSv)
     }
     const { columns, types, prototype } = meta
     const colCount = columns.length
@@ -1030,16 +1055,12 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     const mainEpoch = handleMutationEpochs.get(main) ?? 0
     if (idleWriteHandle) {
       const writerExt = sqliteOperation(() => readExternalVersion(idleWriteHandle))
-      return {
-        owner: sharedCacheOwner,
-        token: `shared:${clientGeneration}:${nonTaskWriteEpoch}:${mainEpoch}:${writerExt}`,
-      }
+      const key = ["shared", clientGeneration, nonTaskWriteEpoch, mainEpoch, writerExt].join(":")
+      return { owner: sharedCacheOwner, token: key }
     }
     const mainExt = sqliteOperation(() => readExternalVersion(main))
-    return {
-      owner: sharedCacheOwner,
-      token: `shared0:${clientGeneration}:${nonTaskWriteEpoch}:${mainEpoch}:${mainExt}`,
-    }
+    const key = ["shared0", clientGeneration, nonTaskWriteEpoch, mainEpoch, mainExt].join(":")
+    return { owner: sharedCacheOwner, token: key }
   }
 
   function closeIdleWriteHandle() {
@@ -1168,7 +1189,17 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
    * @param {() => void} [onAcquired]
    */
   function batchSync(statements, mode, migration, onAcquired) {
-    if (mode === "write" && !migration && !memory) {
+    const canUseWriteSlot =
+      mode === "write" &&
+      !migration &&
+      !memory &&
+      statements.length > 0 &&
+      statements.every(statement => {
+        const text = Array.isArray(statement) ? statement[0] : statement
+        const sql = typeof text === "string" ? text : text.sql
+        return isSideEffectFreeQuery(sql) || isPureTaskOrStatsWrite(sql)
+      })
+    if (canUseWriteSlot) {
       return onWriteSlot((db, inspectSql) => {
         for (const statement of statements) {
           const text = Array.isArray(statement) ? statement[0] : statement
@@ -1413,11 +1444,53 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       }
       if (!rowStatementKeywords.has(keyword)) reusable = false
     }
+    /** Pin a fresh read transaction snapshot inside a quiescent reference-version sandwich. */
+    function ensureReadSnapshotPinned() {
+      if (!useReadPool || snapshotPinned) return
+      const epoch = handleMutationEpochs.get(db) ?? 0
+      const refDb = !writeSlotLeased && !closed ? (idleWriteHandle ?? main) : null
+      if (refDb && !refDb.isTransaction && generation === 0) {
+        const isShared0 = idleWriteHandle === null
+        const nt1 = nonTaskWriteEpoch
+        const me1 = handleMutationEpochs.get(main) ?? 0
+        const v1 = sqliteOperation(() => readExternalVersion(refDb))
+        sqliteOperation(() => readExternalVersion(db))
+        snapshotPinned = true
+        if (
+          !writeSlotLeased &&
+          !closed &&
+          !refDb.isTransaction &&
+          (idleWriteHandle ?? main) === refDb &&
+          (idleWriteHandle === null) === isShared0 &&
+          nt1 === nonTaskWriteEpoch &&
+          me1 === (handleMutationEpochs.get(main) ?? 0) &&
+          epoch === (handleMutationEpochs.get(db) ?? 0)
+        ) {
+          const v2 = sqliteOperation(() => readExternalVersion(refDb))
+          if (v1 === v2) {
+            const prefix = isShared0 ? "shared0" : "shared"
+            const key = [prefix, clientGeneration, nt1, me1, v1].join(":")
+            cachedTxGen = generation
+            cachedTxEpoch = epoch
+            cachedTxOwner = sharedCacheOwner
+            cachedTxToken = key
+            return
+          }
+        }
+        return
+      }
+      sqliteOperation(() => readExternalVersion(db))
+      snapshotPinned = true
+    }
     const result = {
       get closed() { return !active || !db.isTransaction },
       /** @param {InStatement} statement @param {InArgs} [args] */
       async execute(statement, args) {
         assertActive()
+        const sql = typeof statement === "string" ? statement : statement.sql
+        if (useReadPool && !snapshotPinned && readSnapshotKeywords.has(leadingKeyword(sql))) {
+          ensureReadSnapshotPinned()
+        }
         advance(statement)
         try {
           const out = sqliteOperation(() => execute(db, statement, args, useReadPool))
@@ -1427,6 +1500,12 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       },
       async batch(statements) {
         assertActive()
+        if (useReadPool && !snapshotPinned && statements.every(statement => {
+          const text = Array.isArray(statement) ? statement[0] : statement
+          return readSnapshotKeywords.has(leadingKeyword(typeof text === "string" ? text : text.sql))
+        })) {
+          ensureReadSnapshotPinned()
+        }
         for (const statement of statements) advance(statement)
         try {
           const out = executeBatch(db, statements, useReadPool)
@@ -1471,6 +1550,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       execute: result.execute,
       read: () => {
         assertActive()
+        if (useReadPool && !snapshotPinned) ensureReadSnapshotPinned()
         const epoch = handleMutationEpochs.get(db) ?? 0
         if (snapshotPinned && cachedGrantRev !== undefined && cachedGrantGen === generation && cachedGrantEpoch === epoch) {
           return cachedGrantRev
@@ -1494,44 +1574,30 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       mode,
       generation: () => generation,
       cacheToken: () => {
+        if (mode === "read" && !snapshotPinned) ensureReadSnapshotPinned()
         const epoch = handleMutationEpochs.get(db) ?? 0
         if (snapshotPinned && cachedTxToken !== undefined && cachedTxOwner !== undefined && cachedTxGen === generation && cachedTxEpoch === epoch) {
           return { owner: cachedTxOwner, token: cachedTxToken }
-        }
-        if (mode === "read" && !writeSlotLeased && !closed) {
-          const txExt = sqliteOperation(() => readExternalVersion(db))
-          snapshotPinned = true
-          const mainExt = sqliteOperation(() => readExternalVersion(main))
-          if (txExt === mainExt) {
-            const shared = sharedPolicyToken()
-            if (shared) {
-              cachedTxGen = generation
-              cachedTxEpoch = epoch
-              cachedTxOwner = shared.owner
-              cachedTxToken = shared.token
-              return shared
-            }
-          }
         }
         if (mode === "write" && leasedFromWriteSlot && !touchedNonTask && !closed) {
           const writerExt = sqliteOperation(() => readExternalVersion(db))
           snapshotPinned = true
           const mainEpoch = handleMutationEpochs.get(main) ?? 0
-          const tok = `shared:${clientGeneration}:${nonTaskWriteEpoch}:${mainEpoch}:${writerExt}`
+          const key = ["shared", clientGeneration, nonTaskWriteEpoch, mainEpoch, writerExt].join(":")
           cachedTxGen = generation
           cachedTxEpoch = epoch
           cachedTxOwner = sharedCacheOwner
-          cachedTxToken = tok
-          return { owner: sharedCacheOwner, token: tok }
+          cachedTxToken = key
+          return { owner: sharedCacheOwner, token: key }
         }
         const dv = sqliteOperation(() => readDataVersion(db))
         snapshotPinned = true
-        const tok = `v:${clientGeneration}:${epoch}:${dv}`
+        const key = ["v", clientGeneration, epoch, dv].join(":")
         cachedTxGen = generation
         cachedTxEpoch = epoch
         cachedTxOwner = db
-        cachedTxToken = tok
-        return { owner: db, token: tok }
+        cachedTxToken = key
+        return { owner: db, token: key }
       },
     })
     return result
@@ -1594,15 +1660,12 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
   /** @type {unknown} */
   let cachedMainGrantRev = undefined
   localWriters.set(client, {
-    run: steps => onWriteSlot((db, inspectSql) => {
+    run: steps => onMain(db => {
+      nonTaskWriteEpoch += 1
       begin(db, "write")
       const program = steps()
       let state = program.next()
       while (!state.done) {
-        for (const statement of state.value) {
-          const text = Array.isArray(statement) ? statement[0] : statement
-          inspectSql(typeof text === "string" ? text : text.sql)
-        }
         let batchResult
         try {
           batchResult = executeBatch(db, state.value)
@@ -1613,6 +1676,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
         state = program.next(batchResult)
       }
       db.exec("COMMIT")
+      nonTaskWriteEpoch += 1
       return state.value
     }),
     start: () => transaction("write", true),
@@ -1625,10 +1689,12 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     transaction: client.transaction,
     // A reconnect starts a new connection whose counters can repeat earlier values.
     generation: () => clientGeneration + ":" + onMain(readDataVersion),
-    cacheToken: () => onMain(db => sharedPolicyToken() ?? ({
-      owner: db,
-      token: `v:${clientGeneration}:${handleMutationEpochs.get(db) ?? 0}:${readDataVersion(db)}`,
-    })),
+    cacheToken: () => onMain(db => {
+      const shared = sharedPolicyToken()
+      if (shared) return shared
+      const key = ["v", clientGeneration, handleMutationEpochs.get(db) ?? 0, readDataVersion(db)].join(":")
+      return { owner: db, token: key }
+    }),
   })
   localGrantRevisionReaders.set(client, {
     execute: client.execute,

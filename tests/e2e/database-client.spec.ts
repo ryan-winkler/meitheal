@@ -14,6 +14,7 @@ import {
   DATABASE_SCHEMA_VERSION,
   executeWriteWithRetry,
   getDatabaseDiagnostics,
+  isSideEffectFreeQuery,
   localSnapshotGeneration,
   openDatabase,
   resetDatabaseDiagnosticsForTests,
@@ -635,6 +636,43 @@ test("a reused SELECT returns columns another connection added and writes run on
     expect((await client.execute(insert, ["second"])).rows).toEqual([{ id: "second", board_id: "household" }])
     expect((await client.execute(insert, ["third"])).rows).toEqual([{ id: "third", board_id: "household" }])
     expect((await client.execute("SELECT COUNT(*) AS count FROM drafts")).rows[0]?.count).toBe(3)
+  } finally {
+    other.close()
+    client.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("SELECT classification ignores special identifiers, refreshes renamed wildcard columns, and keeps TEMP tables on main", async () => {
+  expect(isSideEffectFreeQuery("SELECT [a;b], `c;d`, [DELETE] FROM drafts")).toBe(true)
+  expect(isSideEffectFreeQuery("WITH d AS (DELETE FROM drafts RETURNING *) SELECT * FROM d")).toBe(false)
+
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-sqlite-temp-rename-"))
+  const url = pathToFileURL(join(directory, "schema.db")).href
+  const client = openDatabase(url)
+  const other = openDatabase(url)
+  try {
+    await client.execute("PRAGMA journal_mode=WAL")
+    await client.executeMultiple("CREATE TABLE drafts(id TEXT PRIMARY KEY, board_id TEXT NOT NULL DEFAULT 'household'); INSERT INTO drafts(id) VALUES ('draft');")
+    const before = await client.execute("SELECT rowid, * FROM drafts")
+    expect(before.columns).toEqual(["rowid", "id", "board_id"])
+
+    await other.execute("ALTER TABLE drafts RENAME COLUMN board_id TO workspace_id")
+    const afterRename = await client.execute("SELECT rowid, * FROM drafts")
+    expect(afterRename.columns).toEqual(["rowid", "id", "workspace_id"])
+    expect(afterRename.rows).toEqual([{ rowid: 1, id: "draft", workspace_id: "household" }])
+
+    await client.execute("CREATE TEMP TABLE scratch(v TEXT)")
+    await client.batch(["INSERT INTO scratch VALUES ('batch-ok')"], "write")
+    const txValues = await runWriteTransaction(client, function* () {
+      const [inserted, read] = yield [
+        { sql: "INSERT INTO scratch VALUES (?)", args: ["tx-ok"] },
+        "SELECT v FROM scratch ORDER BY rowid",
+      ]
+      expect(inserted.rowsAffected).toBe(1)
+      return read.rows.map(row => row.v)
+    })
+    expect(txValues).toEqual(["batch-ok", "tx-ok"])
   } finally {
     other.close()
     client.close()
