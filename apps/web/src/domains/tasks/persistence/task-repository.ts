@@ -1246,20 +1246,29 @@ export class TaskRepository {
     return row as unknown as TaskRow ?? null
   }
 
-  private buildDetailQuery(idOrKey: string, includeSubtaskProbe = false) {
+  private buildDetailQuery(idOrKey: string) {
     const number = this.ticketNumberForScope(idOrKey)
     const identity = number === null ? sql`t.id = ${idOrKey}` : sql`(t.id = ${idOrKey} OR t.ticket_number = ${number})`
-    const subtaskProbe = includeSubtaskProbe
-      ? sql`, EXISTS (SELECT 1 FROM tasks AS child WHERE ${taskOwnedBy(this.scope, "child")} AND child.parent_id = t.id) AS has_subtasks`
-      : sourceSql("")
     return scopedTaskRead(this.scope, sql`SELECT t.*, t.ticket_ref AS ticket_key,
       ${sourceSql(taskTimestampMs("t.updated_at"))} AS task_version,
       CASE WHEN t.public_parent_id IS NOT NULL THEN (SELECT parent.title FROM scoped_task_records AS parent WHERE parent.id = t.public_parent_id) END AS parent_title,
       CASE WHEN t.public_parent_id IS NOT NULL THEN (SELECT parent.task_type FROM scoped_task_records AS parent WHERE parent.id = t.public_parent_id) END AS parent_task_type,
       CASE WHEN t.public_parent_id IS NOT NULL THEN (SELECT parent.ticket_number FROM scoped_task_records AS parent WHERE parent.id = t.public_parent_id) END AS parent_ticket_number,
-      CASE WHEN t.public_parent_id IS NOT NULL THEN (SELECT parent.ticket_ref FROM scoped_task_records AS parent WHERE parent.id = t.public_parent_id) END AS parent_ticket_ref${subtaskProbe}
+      CASE WHEN t.public_parent_id IS NOT NULL THEN (SELECT parent.ticket_ref FROM scoped_task_records AS parent WHERE parent.id = t.public_parent_id) END AS parent_ticket_ref,
+      EXISTS (SELECT 1 FROM tasks AS child_probe WHERE child_probe.task_board_id IS t.task_board_id AND child_probe.parent_id = t.id) AS _has_children,
+      EXISTS (SELECT 1 FROM tasks AS pillar_probe WHERE pillar_probe.id = t.id AND pillar_probe.pillar_id IS NOT NULL) AS _has_pillar
       FROM scoped_tasks AS t
       WHERE ${identity} LIMIT 1`)
+  }
+
+  private stripDetailProbes(raw: Record<string, unknown> | undefined) {
+    if (!raw) return null
+    const hasChildren = Number(raw._has_children ?? 0) !== 0
+    const hasPillar = Number(raw._has_pillar ?? 0) !== 0
+    const task = { ...raw }
+    delete task._has_children
+    delete task._has_pillar
+    return { task: task as unknown as TaskRow, hasChildren, hasPillar }
   }
 
   private async querySubtasks(
@@ -1278,10 +1287,10 @@ export class TaskRepository {
   }>> {
     const result = await runner.execute(tagTaskProjectionRead(scopedTaskRead(this.scope, sourceSql(`
       SELECT id, ticket_number, ticket_ref, title, status, priority, task_type, assigned_to, due_date
-      FROM scoped_tasks AS tasks
+      FROM scoped_task_records AS tasks
       WHERE tasks.parent_id = ?
       ORDER BY COALESCE(kanban_position, 2147483647) ASC, created_at ASC, id ASC
-    `, [parentId]), "select", "minimal"), "task-subtasks"))
+    `, [parentId]), "select", "records"), "task-subtasks"))
     return result.rows.map(row => {
       const ticketNumber = row.ticket_number != null ? Number(row.ticket_number) : null
       return {
@@ -1302,7 +1311,7 @@ export class TaskRepository {
   async findById(idOrKey: string): Promise<TaskRow | null> {
     const detail = this.buildDetailQuery(idOrKey)
     const result = await this.forOperation("read").execute(tagTaskProjectionRead(detail, "task-detail"))
-    return (result.rows[0] as unknown as TaskRow) ?? null;
+    return this.stripDetailProbes(result.rows[0] as Record<string, unknown> | undefined)?.task ?? null
   }
 
   /** Retrieve direct readable child tasks for a parent task on the current Board. */
@@ -1310,22 +1319,24 @@ export class TaskRepository {
     return this.querySubtasks(this.forOperation("read", [parentId]), parentId)
   }
 
-  /** Retrieve task detail and its direct subtasks inside a single snapshot read transaction. */
+  /** Retrieve task detail and its direct subtasks inside a single snapshot read transaction when child rows exist. */
   async findDetailWithSubtasks(idOrKey: string): Promise<{
     task: TaskRow
     subtasks: Awaited<ReturnType<TaskRepository["findSubtasks"]>>
+    hasPillar: boolean
   } | null> {
-    const detail = this.buildDetailQuery(idOrKey, true)
+    const detail = this.buildDetailQuery(idOrKey)
+    const fast = await this.forOperation("read").execute(tagTaskProjectionRead(detail, "task-detail"))
+    const initial = this.stripDetailProbes(fast.rows[0] as Record<string, unknown> | undefined)
+    if (!initial) return null
+    if (!initial.hasChildren) return { task: initial.task, subtasks: [], hasPillar: initial.hasPillar }
     const tx = await this.forOperation("read").transaction("read")
     try {
       const result = await tx.execute(tagTaskProjectionRead(detail, "task-detail"))
-      const task = (result.rows[0] as unknown as TaskRow) ?? null
-      if (!task) return null
-      const record = task as Record<string, unknown>
-      const hasSubtasks = Boolean(Number(record.has_subtasks))
-      delete record.has_subtasks
-      const subtasks = hasSubtasks ? await this.querySubtasks(tx, String(task.id)) : []
-      return { task, subtasks }
+      const current = this.stripDetailProbes(result.rows[0] as Record<string, unknown> | undefined)
+      if (!current) return null
+      const subtasks = await this.querySubtasks(tx, String(current.task.id))
+      return { task: current.task, subtasks, hasPillar: current.hasPillar }
     } finally {
       tx.close()
     }

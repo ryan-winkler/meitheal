@@ -9,6 +9,7 @@ const sidebarProfileCache = new WeakMap<
 >()
 const taskDetailLayoutCache = new WeakMap<object, { token: string; value: string | null }>()
 const aiAssistDisabledCache = new WeakMap<object, { generation: string; value: boolean }>()
+const boardNameCache = new WeakMap<object, { token: string; byBoard: Map<string, string> }>()
 
 /** Read work_installation_id while the local database snapshot is unchanged. */
 export async function readCachedWorkInstallationId(
@@ -123,6 +124,36 @@ export async function readCachedAiAssistDisabled(
   const currentGeneration = state ? localReaderCacheToken(db)?.token : undefined
   if (state && currentGeneration === state.token) {
     aiAssistDisabledCache.set(state.owner, { generation: currentGeneration, value })
+  }
+  return value
+}
+
+/** Read a Board display name while the local database snapshot is unchanged. */
+export async function readCachedBoardName(
+  db: Pick<Client, "execute">,
+  boardId: string,
+  fallback: string,
+): Promise<string> {
+  const state = localReaderCacheToken(db)
+  const cached = state ? boardNameCache.get(state.owner) : undefined
+  if (cached && cached.token === state!.token) {
+    const existing = cached.byBoard.get(boardId)
+    if (existing !== undefined) return existing
+  }
+  const {
+    rows: [boardRow],
+  } = await db.execute({
+    sql: "SELECT name FROM task_boards WHERE id = ?",
+    args: [boardId],
+  })
+  const value = boardRow?.name ? String(boardRow.name) : fallback
+  if (state && localReaderCacheToken(db)?.token === state.token) {
+    let next = boardNameCache.get(state.owner)
+    if (!next || next.token !== state.token) {
+      next = { token: state.token, byBoard: new Map() }
+      boardNameCache.set(state.owner, next)
+    }
+    next.byBoard.set(boardId, value)
   }
   return value
 }
