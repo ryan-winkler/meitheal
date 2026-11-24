@@ -20,6 +20,7 @@ import {
 import { taskTimestampMs } from "@domains/tasks/persistence/task-timestamp";
 import type { InValue, Row } from "@libsql/client";
 import { deriveEisenhowerQuadrant } from "@meitheal/domain-tasks";
+import { boardCustomFieldsSettingKey, normalizeCustomFieldDefs } from "./custom-field-defs"
 import { parseCalendarDay } from "./calendar-day"
 import { calendarDayFromInput, calendarEventSpanDays, calendarToday, householdDayRanges, isTaskOverdue, isValidTimezone, resolveTimezone, shiftCalendarDay } from "./date"
 import { frameworkPayloadObject, readRiceInputs, riceLensScore } from "./rice-lens"
@@ -45,8 +46,9 @@ export interface TaskViewItem {
   start_date: string | null;
   end_date: string | null;
   progress: number;
+  table_position?: number | null;
   color: string | null;
-  is_favorite: boolean;
+  is_promoted: boolean;
   task_type: string;
   task_kind: string | null;
   parent_id: string | null;
@@ -127,7 +129,7 @@ const SCHEDULED_DATE_SQL = "CASE WHEN task_kind = 'calendar_event' THEN COALESCE
 const TASK_VIEW_COLUMNS = `
   id, title, description, status, priority, due_date, labels,
   framework_payload, calendar_sync_state, area_id, project_id, public_area_id, public_project_id, public_goal_id, custom_fields,
-  start_date, end_date, progress, color, is_favorite, task_type, task_kind,
+  start_date, end_date, progress, table_position, color, is_promoted, task_type, task_kind,
   parent_id, public_parent_id, ticket_number, ticket_ref AS ticket_key, assigned_to, checklists, created_at, updated_at, ${taskTimestampMs("updated_at")} AS task_version, deferred_at,
   urgency, importance, eisenhower_override,
   effort_minutes, effort_type, blocked_by
@@ -181,7 +183,7 @@ export async function getTasksForView(options: TaskViewOptions = {}, scope: Boar
         CASE WHEN description IS NOT NULL AND length(trim(description)) > 0 THEN 1 ELSE 0 END AS has_description,
         status, priority, due_date, labels,
         framework_payload, calendar_sync_state, area_id, project_id, public_area_id, public_project_id, public_goal_id, custom_fields,
-        start_date, end_date, progress, color, is_favorite, task_type, task_kind,
+        start_date, end_date, progress, table_position, color, is_promoted, task_type, task_kind,
         parent_id, public_parent_id, ticket_number, ticket_ref AS ticket_key, assigned_to,
         NULL AS checklists,
         CASE WHEN json_valid(checklists) THEN json_array_length(checklists) ELSE 0 END AS checklist_total,
@@ -197,7 +199,7 @@ export async function getTasksForView(options: TaskViewOptions = {}, scope: Boar
         CASE WHEN description IS NOT NULL THEN substr(description, 1, ?) ELSE NULL END AS description,
         status, priority, due_date, labels,
         framework_payload, calendar_sync_state, area_id, project_id, public_area_id, public_project_id, public_goal_id, custom_fields,
-        start_date, end_date, progress, color, is_favorite, task_type, task_kind,
+        start_date, end_date, progress, table_position, color, is_promoted, task_type, task_kind,
         parent_id, public_parent_id, ticket_number, ticket_ref AS ticket_key, assigned_to, checklists, created_at, updated_at, ${taskTimestampMs("updated_at")} AS task_version, deferred_at,
         urgency, importance, eisenhower_override,
         effort_minutes, effort_type, blocked_by
@@ -238,7 +240,7 @@ export async function getTasksForView(options: TaskViewOptions = {}, scope: Boar
       selectArgs.push(Math.floor(limit));
     }
 
-    const taskQuery = scopedTaskRead(scope, sourceSql(`SELECT ${columnsSql} FROM scoped_tasks AS tasks${whereSql} ORDER BY created_at DESC${limitSql}`, selectArgs));
+    const taskQuery = scopedTaskRead(scope, sourceSql(`SELECT ${columnsSql} FROM scoped_tasks AS tasks${whereSql} ORDER BY created_at DESC, tasks.rowid DESC${limitSql}`, selectArgs));
     const counts = { total: 0, open: 0, active: 0, pending: 0, complete: 0, overdue: 0 };
     const useGlobalCounts = slim || hasPushdownFilter;
     let rows: Record<string, unknown>[];
@@ -246,8 +248,12 @@ export async function getTasksForView(options: TaskViewOptions = {}, scope: Boar
     // Complete the optional read before admitting the task results.
     let customFieldDefs: Array<{ name: string; type: string }> = [];
     try {
-      const { rows: [fields] } = await client.execute("SELECT value FROM settings WHERE key = 'custom_fields'");
-      if (fields) customFieldDefs = JSON.parse(String(fields.value));
+      const cfKey = boardCustomFieldsSettingKey(scope.boardId);
+      const { rows: [fields] } = await client.execute({
+        sql: "SELECT value FROM settings WHERE key = ?",
+        args: [cfKey],
+      });
+      if (fields) customFieldDefs = normalizeCustomFieldDefs(fields.value);
     } catch {
       /* custom fields not configured */
     }
@@ -265,7 +271,7 @@ export async function getTasksForView(options: TaskViewOptions = {}, scope: Boar
                    COUNT(*) FILTER (WHERE status = 'active' AND deferred_at IS NULL) AS active,
                    COUNT(*) FILTER (WHERE status != 'complete' AND status != 'active' AND deferred_at IS NULL) AS pending
             FROM scoped_tasks AS tasks WHERE 1
-          `, [])),
+          `, []), "select", "minimal"),
         scopedTaskRead(scope, sourceSql(`
             SELECT task_kind, due_date, start_date, end_date, calendar_sync_state
             FROM scoped_tasks AS tasks
@@ -274,7 +280,7 @@ export async function getTasksForView(options: TaskViewOptions = {}, scope: Boar
               AND ${SCHEDULED_DATE_SQL} IS NOT NULL
               AND ${SCHEDULED_DATE_SQL} != ''
               AND substr(${SCHEDULED_DATE_SQL}, 1, 10) < ?
-          `, [upperBound])),
+          `, [upperBound]), "select", "minimal"),
       ], "read");
       rows = tasksRes!.rows as Record<string, unknown>[];
       const cr = (countRes!.rows[0] ?? {}) as Record<string, unknown>;
@@ -350,8 +356,9 @@ function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "
     start_date: row.start_date ? String(row.start_date) : null,
     end_date: row.end_date ? String(row.end_date) : null,
     progress: Number(row.progress ?? 0),
+    table_position: row.table_position == null ? null : Number(row.table_position),
     color: row.color ? String(row.color) : null,
-    is_favorite: Boolean(row.is_favorite),
+    is_promoted: Boolean(row.is_promoted),
     task_type: String(row.task_type ?? "task"),
     task_kind: row.task_kind ? String(row.task_kind) : null,
     parent_id: typeof publicTask.parent_id === "string" ? publicTask.parent_id : null,
@@ -386,10 +393,10 @@ function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "
 
 function completedTodayQuery(scope: BoardScope, filter: ReturnType<typeof todayCompletionFilter>, placement?: TaskReadPlacement) {
   const context = taskReadPlacement(placement)
-  const query = scopedTaskRead(scope, sourceSql(`SELECT id, title, ticket_ref AS ticket_key FROM scoped_tasks AS tasks WHERE ${filter.sql} AND ${context.sql}
+  const query = scopedTaskRead(scope, sourceSql(`SELECT id, title, ticket_ref AS ticket_key FROM scoped_task_records AS tasks WHERE ${filter.sql} AND ${context.sql}
           ORDER BY CASE WHEN typeof(updated_at) = 'text' AND updated_at NOT LIKE '%T%' AND updated_at NOT LIKE '%:%'
             THEN ? ELSE ${taskTimestampMs("updated_at")} END DESC, rowid DESC
-          LIMIT 20`, [...filter.args, ...context.args, filter.firstInstant]))
+          LIMIT 20`, [...filter.args, ...context.args, filter.firstInstant]), "select", placement?.areaId ? "full" : "records")
   return tagTodayRead(query, "completed")
 }
 
@@ -494,20 +501,28 @@ export async function getTodayTaskRows(
                COUNT(*) FILTER (
                  WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND (${SCHEDULED_DATE_SQL} IS NULL OR ${SCHEDULED_DATE_SQL} = '')
                ) AS open_unscheduled
-        FROM scoped_tasks AS tasks WHERE ${context.sql}
+        FROM scoped_task_records AS tasks WHERE ${context.sql}
+      ),
+      open_candidates AS MATERIALIZED (
+        SELECT tasks.id
+        FROM scoped_task_records AS tasks
+        WHERE ${context.sql}
+          AND status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL
+          AND (
+            ? = 1
+            OR (${SCHEDULED_DATE_SQL} IS NOT NULL AND ${SCHEDULED_DATE_SQL} <> '')
+            OR is_promoted NOT IN (0, '')
+            OR framework_payload NOT IN ('{}', '')
+          )
       )
       SELECT ${TASK_VIEW_COLUMNS}, completed_today, open_unscheduled
       FROM totals
-      LEFT JOIN scoped_tasks AS tasks
-        ON ${context.sql} AND status IS NOT 'complete' AND status IS NOT 'archived'
-        AND deferred_at IS NULL
-        AND (
-          ? = 1
-          OR (${SCHEDULED_DATE_SQL} IS NOT NULL AND ${SCHEDULED_DATE_SQL} <> '')
-          OR is_favorite NOT IN (0, '')
-          OR framework_payload NOT IN ('{}', '')
-        )
-      ORDER BY created_at DESC, tasks.rowid DESC
+      LEFT JOIN (
+        SELECT scoped_tasks.*
+        FROM open_candidates
+        JOIN scoped_tasks ON scoped_tasks.id = open_candidates.id
+      ) AS tasks ON 1 = 1
+      ORDER BY tasks.created_at DESC, tasks.rowid DESC
     `,
     args: [...completionFilter.args, ...context.args, ...context.args, includeUnscheduled ? 1 : 0],
   }
@@ -559,13 +574,13 @@ export async function getTodayTaskCounts(now = new Date(), timezone: string | un
     sql: `
       SELECT NULL AS due_date, NULL AS task_kind, NULL AS start_date, NULL AS end_date, NULL AS calendar_sync_state,
              COUNT(*) FILTER (WHERE ${completionFilter.sql}) AS completed_today,
-             COUNT(*) FILTER (WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND is_favorite NOT IN (0, '')) AS pinned_count,
+             COUNT(*) FILTER (WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND is_promoted NOT IN (0, '')) AS pinned_count,
              0 AS dated_count
       FROM scoped_tasks AS tasks WHERE ${context.sql}
       UNION ALL
       SELECT due_date, task_kind, start_date, end_date, calendar_sync_state, 0, 0, COUNT(*)
       FROM scoped_tasks AS tasks
-      WHERE ${context.sql} AND status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND COALESCE(is_favorite, 0) IN (0, '')
+      WHERE ${context.sql} AND status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND COALESCE(is_promoted, 0) IN (0, '')
         AND ${SCHEDULED_DATE_SQL} IS NOT NULL AND ${SCHEDULED_DATE_SQL} <> ''
       GROUP BY due_date, task_kind, start_date, end_date, calendar_sync_state
     `,

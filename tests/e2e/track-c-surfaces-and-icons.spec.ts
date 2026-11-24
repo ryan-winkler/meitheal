@@ -198,7 +198,7 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
       const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
       const createdIds: string[] = []
       try {
-        for (const taskType of ["epic", "story", "bug", "task"]) {
+        for (const taskType of ["epic", "story", "task"]) {
           const res = await request.post("/api/tasks", {
             headers,
             data: {

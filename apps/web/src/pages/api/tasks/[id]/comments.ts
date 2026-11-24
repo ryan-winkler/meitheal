@@ -29,7 +29,9 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
       })) })
     }
     return commentJson({ comments })
-  } catch {
+  } catch (err) {
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
     return commentFailure("get", "Failed to load comments")
   }
 })

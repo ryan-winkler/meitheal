@@ -15,7 +15,7 @@ interface MeithealWindowExtensions {
   openTaskDetail?: (taskId: string, commentTarget?: string | null, search?: import("../lib/task-detail-handoff").SearchDetailHandoff) => void;
   openPinnedTaskDetail?: (taskId: string, reconcile: () => void) => void;
   /** Opens the new task creation modal */
-  openNewTaskModal?: (kind?: import("@meitheal/domain-tasks").TaskKind) => void;
+  openNewTaskModal?: (kind?: import("@meitheal/domain-tasks").TaskKind, options?: import("../lib/task-editor-draft-stack").OpenNewTaskOptions) => void;
 
   // === Settings UI ===
   /** Expands an integration settings card by its DOM ID */

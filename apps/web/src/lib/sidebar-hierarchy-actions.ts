@@ -9,6 +9,7 @@
 import { currentTaskApiContext, taskApiHeaders, type TaskApiContext } from "./task-api"
 import { sameTaskApiContext } from "./task-api-client"
 import { boardWorkspaceHref } from "./board-workspace"
+import { byId, domEl, qs, setAttr } from "@lib/dom-helpers"
 
 interface SidebarHierarchyActions {
   insertAreaNode(container: HTMLElement, id: string, name: string, icon: string, color: string): void
@@ -39,7 +40,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
 
 
     const pending = new Map<AbortController, HTMLElement>()
-    const ownerFor = (kind: "area" | "project", id: string) => nav.querySelector<HTMLElement>(kind === "area"
+    const ownerFor = (kind: "area" | "project", id: string) => qs<HTMLElement>(nav, kind === "area"
       ? `[data-area-group="${CSS.escape(id)}"]` : `.stree__project [data-project-id="${CSS.escape(id)}"]`)
     const entityBoard = (kind: "area" | "project", id: string) => ownerFor(kind, id)?.closest<HTMLElement>("[data-work-board]")?.dataset.workBoard ?? ""
     const allowed = (kind: "area" | "project", id: string, action: string) => {
@@ -104,7 +105,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
       if (areaActions.signal.aborted) return
       // Remove any existing inline input in the same container
       container.querySelectorAll(".stree__inline-input").forEach((el) => el.remove())
-      const input = document.createElement("input")
+      const input = domEl("input")
       input.type = "text"
       input.className = "stree__inline-input"
       input.placeholder = placeholder
@@ -130,8 +131,8 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
           clearTimeout(blurTimer)
           submitted = true
           input.remove()
-          const trigger = returnTrigger ?? container.querySelector<HTMLElement>("button, a[href], summary")
-            ?? container.closest("[data-area-group]")?.querySelector<HTMLElement>("[data-area-toggle]")
+          const trigger = returnTrigger ?? qs<HTMLElement>(container, "button, a[href], summary")
+            ?? qs<HTMLElement>(container.closest("[data-area-group]"), "[data-area-toggle]")
           if (trigger && trigger.offsetParent !== null && !trigger.closest("[hidden], [inert]")) trigger.focus()
         }
       }, { signal: areaActions.signal })
@@ -152,10 +153,10 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
     ): void {
       if (areaActions.signal.aborted) return
       container.querySelectorAll(".stree__confirm-delete").forEach((el) => el.remove())
-      const trigger = container.querySelector<HTMLElement>("[data-area-menu], [data-project-menu]")
+      const trigger = qs<HTMLElement>(container, "[data-area-menu], [data-project-menu]")
       const confirmation = new AbortController()
       const signal = AbortSignal.any([areaActions.signal, confirmation.signal])
-      const btn = document.createElement("button")
+      const btn = domEl("button")
       btn.type = "button"
       btn.className = "stree__confirm-delete"
       btn.textContent = label
@@ -190,47 +191,38 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
       color: string,
       areaId: string,
     ): void {
-      const div = document.createElement("div")
-      div.className = "stree__project"
+      const div = domEl("div", "stree__project")
       if (container.matches("[data-board-projects]")) div.dataset.groupChoice = projectId
       div.dataset.workBoard = container.closest<HTMLElement>("[data-work-board]")?.dataset.workBoard ?? ""
       div.dataset.workActions = container.closest<HTMLElement>("[data-work-actions]")?.dataset.workActions ?? ""
       const safeColor = sanitizeCssColor(color)
 
-      const connector = document.createElement("div")
-      connector.className = "stree__connector"
-      const lineV = document.createElement("span")
-      lineV.className = "stree__line-v"
-      const lineH = document.createElement("span")
-      lineH.className = "stree__line-h"
+      const connector = domEl("div", "stree__connector")
+      const lineV = domEl("span", "stree__line-v")
+      const lineH = domEl("span", "stree__line-h")
       connector.append(lineV, lineH)
 
-      const link = document.createElement("a")
+      const link = domEl("a")
       link.href = safeIngressHref(boardWorkspaceHref(div.dataset.workBoard!, { project: projectId, fromArea: areaId || undefined }))
       link.className = "stree__project-link"
       link.dataset.projectId = projectId
       link.dataset.projectName = title
       link.title = title
 
-      const iconSpan = document.createElement("span")
-      iconSpan.className = "stree__project-icon inline-flex items-center justify-center"
+      const iconSpan = domEl("span", "stree__project-icon inline-flex items-center justify-center")
       iconSpan.style.color = safeColor
       renderIconOrCustomEmoji(iconSpan, icon, "checklist", 14)
 
-      const nameSpan = document.createElement("span")
-      nameSpan.className = "stree__project-name"
-      nameSpan.textContent = title
+      const nameSpan = domEl("span", "stree__project-name", title)
       link.append(iconSpan, nameSpan)
 
-      const countSpan = document.createElement("span")
-      countSpan.className = "stree__count"
+      const countSpan = domEl("span", "stree__count")
       countSpan.dataset.projectTaskCount = projectId
       countSpan.textContent = "0"
 
-      const actions = document.createElement("div")
-      actions.className = "stree__actions"
+      const actions = domEl("div", "stree__actions")
 
-      const menuBtn = document.createElement("button")
+      const menuBtn = domEl("button")
       menuBtn.type = "button"
       menuBtn.className = "stree__action-btn"
       menuBtn.dataset.projectMenu = projectId
@@ -238,27 +230,27 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
       menuBtn.dataset.projectColor = safeColor
       menuBtn.dataset.projectIconValue = icon
       menuBtn.title = "Project options"
-      menuBtn.setAttribute("aria-label", `Project options - ${title}`)
+      setAttr(menuBtn, "aria-label", `Project options - ${title}`)
       menuBtn.appendChild(createTablerSvgElement("dots", 13))
 
-      const addBtn = document.createElement("button")
+      const addBtn = domEl("button")
       addBtn.type = "button"
       addBtn.className = "stree__action-btn stree__action-btn--add"
       addBtn.dataset.taskAddProject = projectId
       addBtn.dataset.taskAddName = title
       addBtn.title = "Add task"
-      addBtn.setAttribute("aria-label", `Add task to ${title}`)
+      setAttr(addBtn, "aria-label", `Add task to ${title}`)
       addBtn.appendChild(createTablerSvgElement("plus", 13))
 
       actions.append(menuBtn)
       if (div.dataset.workActions.split(" ").includes("task/create")) actions.append(addBtn)
       div.append(connector, link, countSpan, actions)
       // Mark previous last project as no longer last
-      const existingLast = container.querySelector(".stree__project--last")
+      const existingLast = qs(container, ".stree__project--last")
       if (existingLast) existingLast.classList.remove("stree__project--last")
       div.classList.add("stree__project--last")
       // Insert before inline inputs or at end
-      const inlineInput = container.querySelector(".stree__inline-input")
+      const inlineInput = qs(container, ".stree__inline-input")
       if (inlineInput) container.insertBefore(div, inlineInput)
       else container.appendChild(div)
       // Animate in
@@ -275,50 +267,44 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
       icon: string,
       color: string,
     ): void {
-      const list = navEl.querySelector("#project-nav-list") ?? navEl
+      const list = qs(navEl, "#project-nav-list") ?? navEl
       if (!list) return
-      const div = document.createElement("div")
-      div.className = "stree__area"
+      const div = domEl("div", "stree__area")
       div.dataset.areaGroup = areaId
       div.dataset.workBoard = navEl.closest<HTMLElement>("[data-work-board]")?.dataset.workBoard ?? ""
       div.dataset.workActions = navEl.closest<HTMLElement>("[data-work-actions]")?.dataset.workActions ?? ""
       const safeColor = sanitizeCssColor(color)
 
-      const row = document.createElement("div")
+      const row = domEl("div")
       row.className = "stree__area-row"
 
-      const toggleBtn = document.createElement("button")
+      const toggleBtn = domEl("button")
       toggleBtn.type = "button"
       toggleBtn.className = "stree__area-toggle"
       toggleBtn.dataset.areaToggle = areaId
       toggleBtn.dataset.areaNameLabel = name
-      toggleBtn.setAttribute("aria-expanded", "true")
-      toggleBtn.setAttribute("aria-controls", `stree-area-projects-${areaId}`)
-      toggleBtn.setAttribute("aria-label", name)
+      setAttr(toggleBtn, "aria-expanded", "true")
+      setAttr(toggleBtn, "aria-controls", `stree-area-projects-${areaId}`)
+      setAttr(toggleBtn, "aria-label", name)
       toggleBtn.title = `Collapse ${name}`
 
-      const chevronSpan = document.createElement("span")
-      chevronSpan.className = "stree__toggle"
-      chevronSpan.setAttribute("aria-hidden", "true")
+      const chevronSpan = domEl("span", "stree__toggle")
+      setAttr(chevronSpan, "aria-hidden", "true")
       const chevronSvg = createTablerSvgElement("chevron-down", 11)
       chevronSvg.classList.add("-rotate-90")
       chevronSpan.appendChild(chevronSvg)
 
-      const areaIcon = document.createElement("span")
-      areaIcon.className = "stree__area-icon inline-flex items-center justify-center"
+      const areaIcon = domEl("span", "stree__area-icon inline-flex items-center justify-center")
       areaIcon.style.color = safeColor
-      areaIcon.setAttribute("aria-hidden", "true")
+      setAttr(areaIcon, "aria-hidden", "true")
       renderIconOrCustomEmoji(areaIcon, icon, "folders", 15)
 
-      const areaName = document.createElement("span")
-      areaName.className = "stree__area-name"
-      areaName.textContent = name
+      const areaName = domEl("span", "stree__area-name", name)
       toggleBtn.append(chevronSpan, areaIcon, areaName)
 
-      const actions = document.createElement("div")
-      actions.className = "stree__actions"
+      const actions = domEl("div", "stree__actions")
 
-      const menuBtn = document.createElement("button")
+      const menuBtn = domEl("button")
       menuBtn.type = "button"
       menuBtn.className = "stree__action-btn"
       menuBtn.dataset.areaMenu = areaId
@@ -326,33 +312,30 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
       menuBtn.dataset.areaColor = safeColor
       menuBtn.dataset.areaIcon = icon
       menuBtn.title = "Area options"
-      menuBtn.setAttribute("aria-label", `Area options - ${name}`)
+      setAttr(menuBtn, "aria-label", `Area options - ${name}`)
       menuBtn.appendChild(createTablerSvgElement("dots", 13))
 
-      const addBtn = document.createElement("button")
+      const addBtn = domEl("button")
       addBtn.type = "button"
       addBtn.className = "stree__action-btn stree__action-btn--add"
       addBtn.dataset.areaAdd = areaId
       addBtn.title = `New project in ${name}`
-      addBtn.setAttribute("aria-label", `New project in ${name}`)
+      setAttr(addBtn, "aria-label", `New project in ${name}`)
       addBtn.appendChild(createTablerSvgElement("plus", 13))
 
       actions.append(menuBtn)
       if (div.dataset.workActions.split(" ").includes("project/create")) actions.append(addBtn)
       row.append(toggleBtn, actions)
 
-      const children = document.createElement("div")
-      children.className = "stree__children"
+      const children = domEl("div", "stree__children")
       children.id = `stree-area-projects-${areaId}`
       children.dataset.areaProjects = areaId
-      const emptyHint = document.createElement("span")
-      emptyHint.className = "stree__empty-hint"
-      emptyHint.textContent = i18n("sidebar.no_projects", "No projects")
+      const emptyHint = domEl("span", "stree__empty-hint", i18n("sidebar.no_projects", "No projects"))
       if (navEl.dataset.projectsEnabled === "true") children.appendChild(emptyHint)
 
       div.append(row, children)
       // Insert before the "New Area" button
-      const newAreaBtn = list.querySelector("#new-area-btn")
+      const newAreaBtn = qs(list, "#new-area-btn")
       if (newAreaBtn) list.insertBefore(div, newAreaBtn)
       else list.appendChild(div)
       // Animate in
@@ -363,7 +346,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
 
     // ── Materialize templates to body ──
     function materialize(tmplId: string): HTMLElement | null {
-      const tmpl = document.getElementById(tmplId) as HTMLTemplateElement | null
+      const tmpl = byId<HTMLTemplateElement>(tmplId)
       if (!tmpl) return null
       const clone = tmpl.content.firstElementChild?.cloneNode(true) as HTMLElement
       if (!clone) return null
@@ -392,12 +375,12 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
       if (!popups.some(popup => popup && ctrl.isShowing(popup))) return false
       const taskKindOpen = taskKindDropdown && ctrl.isShowing(taskKindDropdown)
       const trigger = taskKindOpen
-        ? nav.querySelector<HTMLElement>(`[data-task-add-project="${CSS.escape(activeProjectIdForTask ?? "")}"]`)
-        : nav.querySelector<HTMLElement>(`[data-${activeEntityType === "area" ? "area" : "project"}-menu="${CSS.escape(activeEntityId ?? "")}"]`)
+        ? qs<HTMLElement>(nav, `[data-task-add-project="${CSS.escape(activeProjectIdForTask ?? "")}"]`)
+        : qs<HTMLElement>(nav, `[data-${activeEntityType === "area" ? "area" : "project"}-menu="${CSS.escape(activeEntityId ?? "")}"]`)
       ctrl.hideAll()
       const drawer = nav.closest<HTMLElement>("#sidebar")
       const mobileOpener = innerWidth <= 768 && drawer && !drawer.classList.contains("open")
-        ? document.getElementById("menu-toggle") : null
+        ? byId("menu-toggle") : null
       const focusTarget = mobileOpener ?? trigger
       focusTarget?.focus()
       return true
@@ -416,12 +399,12 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
 
     function setAreaCollapsed(toggle: HTMLButtonElement, isCollapsed: boolean) {
       const areaId = toggle.dataset.areaToggle!
-      const areaName = toggle.dataset.areaNameLabel || toggle.querySelector(".stree__area-name")?.textContent?.trim() || "area"
-      const children = document.getElementById(toggle.getAttribute("aria-controls") ?? "")
+      const areaName = toggle.dataset.areaNameLabel || qs(toggle, ".stree__area-name")?.textContent?.trim() || "area"
+      const children = byId(toggle.getAttribute("aria-controls") ?? "")
       if (!children) return
       children.dataset.collapsed = String(isCollapsed)
       children.inert = isCollapsed
-      toggle.setAttribute("aria-expanded", String(!isCollapsed))
+      setAttr(toggle, "aria-expanded", String(!isCollapsed))
       const label = isCollapsed ? `Expand ${areaName}` : `Collapse ${areaName}`
       toggle.title = label
       if (isCollapsed) collapsed.add(areaId)
@@ -443,7 +426,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
     function renderPinned() {
       if (areaActions.signal.aborted) return
       for (const container of nav.querySelectorAll<HTMLElement>("[data-board-pinned]")) {
-      const list = container.querySelector<HTMLElement>("[data-board-pinned-list]")
+      const list = qs<HTMLElement>(container, "[data-board-pinned-list]")
       if (!list) continue
       const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
       const focusedRow = active?.closest<HTMLElement>("[data-pinned-project]")
@@ -455,25 +438,25 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
         : oldIds.slice(index + 1).find(id => isPinned(id))
           ?? oldIds.slice(0, index).reverse().find(id => isPinned(id))
       const unpinFocused = active?.matches(".stree__unpin-btn")
-      const original = focusedId ? nav.querySelector<HTMLElement>(`.stree__project [data-project-id="${CSS.escape(focusedId)}"]`) : null
+      const original = focusedId ? qs<HTMLElement>(nav, `.stree__project [data-project-id="${CSS.escape(focusedId)}"]`) : null
       container.hidden = true
       list.replaceChildren()
       pinnedIds.forEach((key) => {
         const boardId = container.closest<HTMLElement>("[data-work-board]")?.dataset.workBoard
         if (!boardId || !key.startsWith(boardId + ":")) return
         const id = key.slice(boardId.length + 1)
-        const src = nav.querySelector<HTMLAnchorElement>(`.stree__project [data-project-id="${CSS.escape(id)}"]`)
+        const src = qs<HTMLAnchorElement>(nav, `.stree__project [data-project-id="${CSS.escape(id)}"]`)
         if (!src) return
-        const row = document.createElement("div")
+        const row = domEl("div")
         row.className = "stree__pinned-row"
         row.dataset.pinnedProject = id
         const clone = src.cloneNode(true) as HTMLAnchorElement
         clone.classList.add("pinned-item")
-        const unpinBtn = document.createElement("button")
+        const unpinBtn = domEl("button")
         unpinBtn.type = "button"
         unpinBtn.className = "stree__action-btn stree__unpin-btn inline-flex items-center justify-center"
         unpinBtn.title = "Unpin"
-        unpinBtn.setAttribute("aria-label", "Unpin project")
+        setAttr(unpinBtn, "aria-label", "Unpin project")
         unpinBtn.appendChild(createTablerSvgElement("pinned-off", 12))
         unpinBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); pinnedIds.delete(pinKey(id)); savePinned(); renderPinned() }, { signal: areaActions.signal })
         row.append(clone, unpinBtn)
@@ -481,13 +464,13 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
         container.hidden = false
       })
       if (!restoreFocus) continue
-      const preferredRow = preferredId ? list.querySelector<HTMLElement>(`[data-pinned-project="${CSS.escape(preferredId)}"]`) : null
+      const preferredRow = preferredId ? qs<HTMLElement>(list, `[data-pinned-project="${CSS.escape(preferredId)}"]`) : null
       const candidates = [
-        preferredRow?.querySelector<HTMLElement>(unpinFocused ? ".stree__unpin-btn" : "a[href]"),
+        qs<HTMLElement>(preferredRow, unpinFocused ? ".stree__unpin-btn" : "a[href]"),
         original,
-        original?.closest("[data-area-group]")?.querySelector<HTMLElement>("[data-area-toggle]"),
-        nav.querySelector<HTMLElement>("#project-nav-group-toggle"),
-        nav.closest("[data-sidebar-group]")?.querySelector<HTMLElement>("[data-sidebar-boards-toggle]"),
+        qs<HTMLElement>(original?.closest("[data-area-group]"), "[data-area-toggle]"),
+        qs<HTMLElement>(nav, "#project-nav-group-toggle"),
+        qs<HTMLElement>(nav.closest("[data-sidebar-group]"), "[data-sidebar-boards-toggle]"),
       ]
       candidates.find(element => {
         if (!element?.isConnected || !element.getClientRects().length || getComputedStyle(element).visibility !== "visible"
@@ -516,7 +499,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
       const areaRow = (e.target as HTMLElement).closest<HTMLElement>(".stree__area-row")
       if (areaRow) {
         e.preventDefault()
-        const menuBtn = areaRow.querySelector<HTMLButtonElement>("[data-area-menu]")
+        const menuBtn = qs<HTMLButtonElement>(areaRow, "[data-area-menu]")
         if (menuBtn) menuBtn.click()
       }
     }, { signal: areaActions.signal })
@@ -549,11 +532,11 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
     function addProjectToArea(btn: HTMLButtonElement) {
       const areaId = btn.dataset.areaAdd
       if (!areaId) return
-      const children = nav.querySelector(`[data-area-projects="${areaId}"]`) as HTMLElement | null
+      const children = qs(nav, `[data-area-projects="${areaId}"]`) as HTMLElement | null
       if (!children) return
       // Ensure area is expanded
       if (children.dataset.collapsed === "true") {
-        const toggle = nav.querySelector<HTMLButtonElement>(`[data-area-toggle="${areaId}"]`)
+        const toggle = qs<HTMLButtonElement>(nav, `[data-area-toggle="${areaId}"]`)
         if (toggle?.hasAttribute("data-peer-area-toggle")) toggle.click()
         else if (toggle) setAreaCollapsed(toggle, false)
         saveCollapsed()
@@ -573,7 +556,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
               const projId = data.id || data.project?.id || ""
               insertProjectNode(children, projId, title, "\ud83d\udccb", "#146C4E", areaId)
               // Remove empty hint if present
-              children.querySelector(".stree__empty-hint")?.remove()
+              qs(children, ".stree__empty-hint")?.remove()
               showToast(i18n("sidebar.project_created", "Project created"), "success")
             }
             else showToast(i18n("sidebar.error_create_failed", "Failed to create"), "error")
@@ -601,9 +584,9 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
       activeEntityOwner = ownerFor("area", btn.dataset.areaMenu ?? "")
       activeEntityId = btn.dataset.areaMenu!
       activeEntityName = btn.dataset.areaName || ""
-      const manageLink = areaMenuDropdown.querySelector<HTMLAnchorElement>("[data-action='manage']")
+      const manageLink = qs<HTMLAnchorElement>(areaMenuDropdown, "[data-action='manage']")
       if (manageLink) manageLink.href = safeIngressHref(boardWorkspaceHref(entityBoard("area", activeEntityId), { area: activeEntityId, groups: true }, "group-settings"))
-      const deletion = areaMenuDropdown.querySelector<HTMLButtonElement>("[data-action='delete']")
+      const deletion = qs<HTMLButtonElement>(areaMenuDropdown, "[data-action='delete']")
       if (deletion) deletion.style.display = ""
       for (const item of areaMenuDropdown.querySelectorAll<HTMLElement>("[data-action]")) {
         const action = item.dataset.action
@@ -623,8 +606,8 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
       if (action === "manage") return // navigates via <a> href
       if (action === "rename") {
         ctrl.hideAll()
-        const toggle = nav.querySelector<HTMLButtonElement>(`[data-area-toggle="${entityId}"]`)
-        const nameEl = toggle?.closest(".stree__area-row")?.querySelector<HTMLElement>(".stree__area-name")
+        const toggle = qs<HTMLButtonElement>(nav, `[data-area-toggle="${entityId}"]`)
+        const nameEl = qs<HTMLElement>(toggle?.closest(".stree__area-row"), ".stree__area-name")
         if (!toggle || !nameEl) return
         const container = nameEl.closest<HTMLElement>(".stree__area-row")!
         showInlineInput(
@@ -638,33 +621,33 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
                 nameEl.textContent = newName
                 toggle.dataset.areaNameLabel = newName
                 const projectLabel = nav.dataset.boardProjectLabel ?? "Projects"
-                toggle.setAttribute("aria-label", toggle.hasAttribute("data-peer-area-toggle") ? `${projectLabel} in ${newName}` : newName)
+                setAttr(toggle, "aria-label", toggle.hasAttribute("data-peer-area-toggle") ? `${projectLabel} in ${newName}` : newName)
                 setAreaCollapsed(toggle, toggle.getAttribute("aria-expanded") === "false")
-                const menu = container.querySelector<HTMLButtonElement>("[data-area-menu]")
+                const menu = qs<HTMLButtonElement>(container, "[data-area-menu]")
                 if (menu) {
                   menu.dataset.areaName = newName
-                  menu.setAttribute("aria-label", `${menu.title} - ${newName}`)
+                  setAttr(menu, "aria-label", `${menu.title} - ${newName}`)
                 }
-                const add = container.querySelector<HTMLButtonElement>("[data-area-add]")
+                const add = qs<HTMLButtonElement>(container, "[data-area-add]")
                 if (add) {
                   add.title = `New project in ${newName}`
-                  add.setAttribute("aria-label", add.title)
+                  setAttr(add, "aria-label", add.title)
                 }
               } else showToast(i18n("sidebar.error_update_failed", "Failed to update"), "error")
             } catch { showToast(i18n("sidebar.error_update_failed", "Failed to update"), "error") }
           },
-          container.querySelector<HTMLElement>("[data-area-menu]"),
+          qs<HTMLElement>(container, "[data-area-menu]"),
         )
       }
       if (action === "color-icon") {
         ctrl.hide()
         if (!colorIconPopover) return
-        const triggerBtn = nav.querySelector<HTMLButtonElement>(`[data-area-menu="${entityId}"]`)
+        const triggerBtn = qs<HTMLButtonElement>(nav, `[data-area-menu="${entityId}"]`)
         const currentIcon = triggerBtn?.dataset.areaIcon || "\ud83d\udccb"
         const currentColor = triggerBtn?.dataset.areaColor || "#146C4E"
         // Sync icon preview + hidden input
-        const iconInput = colorIconPopover.querySelector<HTMLInputElement>("#entity-icon-input")
-        const iconPreview = colorIconPopover.querySelector<HTMLSpanElement>("#entity-icon-preview")
+        const iconInput = qs<HTMLInputElement>(colorIconPopover, "#entity-icon-input")
+        const iconPreview = qs<HTMLSpanElement>(colorIconPopover, "#entity-icon-preview")
         if (iconInput) iconInput.value = currentIcon
         if (iconPreview) renderIconOrCustomEmoji(iconPreview, currentIcon, "folders", 18)
         // Sync swatch selection
@@ -674,12 +657,12 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
         colorIconPopover.querySelectorAll<HTMLElement>("[data-emoji-panel]").forEach((p, i) => p.classList.toggle("hidden", i !== 0))
         if (triggerBtn) {
           ctrl.show(colorIconPopover, triggerBtn)
-          colorIconPopover.querySelector<HTMLElement>(".stree__emoji-tab")?.focus()
+          qs<HTMLElement>(colorIconPopover, ".stree__emoji-tab")?.focus()
         }
       }
       if (action === "delete") {
         ctrl.hideAll()
-        const areaRow = nav.querySelector(`[data-area-toggle="${entityId}"]`)?.closest<HTMLElement>(".stree__area-row")
+        const areaRow = qs(nav, `[data-area-toggle="${entityId}"]`)?.closest<HTMLElement>(".stree__area-row")
         if (!areaRow) return
         showInlineConfirm(
           areaRow,
@@ -688,7 +671,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
             try {
               const res = await entityCommand("area", entityId, { method: "DELETE", headers: { "content-type": "application/json" } })
               if (res.ok) {
-                const areaGroup = nav.querySelector(`[data-area-group="${entityId}"]`) as HTMLElement | null
+                const areaGroup = qs(nav, `[data-area-group="${entityId}"]`) as HTMLElement | null
                 if (areaGroup) {
                   areaGroup.style.opacity = "0"
                   areaGroup.style.transition = "opacity 200ms ease"
@@ -722,7 +705,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
       activeEntityOwner = ownerFor("project", btn.dataset.projectMenu ?? "")
       activeEntityId = btn.dataset.projectMenu!
       activeEntityName = btn.dataset.projectTitle || ""
-      const editLink = projectMenuDropdown.querySelector<HTMLAnchorElement>("[data-action='manage']")
+      const editLink = qs<HTMLAnchorElement>(projectMenuDropdown, "[data-action='manage']")
       if (editLink) editLink.href = safeIngressHref(boardWorkspaceHref(entityBoard("project", activeEntityId), { project: activeEntityId, groups: true }, "project-settings"))
       for (const item of projectMenuDropdown.querySelectorAll<HTMLElement>("[data-action]")) {
         const action = item.dataset.action
@@ -741,7 +724,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
       if (action === "manage") return
       if (action === "rename") {
         ctrl.hideAll()
-        const linkEl = nav.querySelector<HTMLElement>(`.stree__project [data-project-id="${entityId}"] .stree__project-name`)
+        const linkEl = qs<HTMLElement>(nav, `.stree__project [data-project-id="${entityId}"] .stree__project-name`)
         if (!linkEl) return
         const container = linkEl.closest<HTMLElement>(".stree__project")!
         showInlineInput(
@@ -758,15 +741,15 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
                   link.dataset.projectName = newTitle
                   link.title = newTitle
                 }
-                const menu = container.querySelector<HTMLButtonElement>("[data-project-menu]")
+                const menu = qs<HTMLButtonElement>(container, "[data-project-menu]")
                 if (menu) {
                   menu.dataset.projectTitle = newTitle
-                  menu.setAttribute("aria-label", `${menu.title} - ${newTitle}`)
+                  setAttr(menu, "aria-label", `${menu.title} - ${newTitle}`)
                 }
-                const add = container.querySelector<HTMLButtonElement>("[data-task-add-project]")
+                const add = qs<HTMLButtonElement>(container, "[data-task-add-project]")
                 if (add) {
                   add.dataset.taskAddName = newTitle
-                  add.setAttribute("aria-label", `Add task to ${newTitle}`)
+                  setAttr(add, "aria-label", `Add task to ${newTitle}`)
                 }
                 if (activeEntityType === "project" && activeEntityId === entityId) activeEntityName = newTitle
                 renderPinned()
@@ -774,18 +757,18 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
               else showToast(i18n("sidebar.error_update_failed", "Failed to update"), "error")
             } catch { showToast(i18n("sidebar.error_update_failed", "Failed to update"), "error") }
           },
-          container.querySelector<HTMLElement>("[data-project-menu]"),
+          qs<HTMLElement>(container, "[data-project-menu]"),
         )
       }
       if (action === "color-icon") {
         ctrl.hide()
         if (!colorIconPopover) return
-        const triggerBtn = nav.querySelector<HTMLButtonElement>(`[data-project-menu="${entityId}"]`)
+        const triggerBtn = qs<HTMLButtonElement>(nav, `[data-project-menu="${entityId}"]`)
         const currentIcon = triggerBtn?.dataset.projectIconValue || "\ud83d\udccb"
         const currentColor = triggerBtn?.dataset.projectColor || "#146C4E"
         // Sync icon preview + hidden input
-        const iconInput = colorIconPopover.querySelector<HTMLInputElement>("#entity-icon-input")
-        const iconPreview = colorIconPopover.querySelector<HTMLSpanElement>("#entity-icon-preview")
+        const iconInput = qs<HTMLInputElement>(colorIconPopover, "#entity-icon-input")
+        const iconPreview = qs<HTMLSpanElement>(colorIconPopover, "#entity-icon-preview")
         if (iconInput) iconInput.value = currentIcon
         if (iconPreview) renderIconOrCustomEmoji(iconPreview, currentIcon, "folders", 18)
         // Sync swatch selection
@@ -795,12 +778,12 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
         colorIconPopover.querySelectorAll<HTMLElement>("[data-emoji-panel]").forEach((p, i) => p.classList.toggle("hidden", i !== 0))
         if (triggerBtn) {
           ctrl.show(colorIconPopover, triggerBtn)
-          colorIconPopover.querySelector<HTMLElement>(".stree__emoji-tab")?.focus()
+          qs<HTMLElement>(colorIconPopover, ".stree__emoji-tab")?.focus()
         }
       }
       if (action === "delete") {
         ctrl.hideAll()
-        const projRow = nav.querySelector(`.stree__project [data-project-id="${entityId}"]`)?.closest(".stree__project") as HTMLElement | null
+        const projRow = qs(nav, `.stree__project [data-project-id="${entityId}"]`)?.closest(".stree__project") as HTMLElement | null
         if (!projRow) return
         showInlineConfirm(
           projRow,
@@ -809,7 +792,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
             try {
               const res = await entityCommand("project", entityId, { method: "DELETE", headers: { "content-type": "application/json" } })
               if (res.ok) {
-                const projRow = nav.querySelector(`.stree__project [data-project-id="${entityId}"]`)?.closest(".stree__project") as HTMLElement | null
+                const projRow = qs(nav, `.stree__project [data-project-id="${entityId}"]`)?.closest(".stree__project") as HTMLElement | null
                 if (projRow) {
                   projRow.style.opacity = "0"
                   projRow.style.transition = "opacity 200ms ease"
@@ -844,14 +827,14 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
         colorIconPopover!.querySelectorAll<HTMLButtonElement>("[data-emoji-tab]").forEach((t) => t.classList.remove("active"))
         colorIconPopover!.querySelectorAll<HTMLElement>("[data-emoji-panel]").forEach((p) => p.classList.add("hidden"))
         tab.classList.add("active")
-        const panel = colorIconPopover!.querySelector(`[data-emoji-panel="${tab.dataset.emojiTab}"]`)
+        const panel = qs(colorIconPopover!, `[data-emoji-panel="${tab.dataset.emojiTab}"]`)
         panel?.classList.remove("hidden")
       }, { signal: areaActions.signal })
     })
     colorIconPopover?.querySelectorAll<HTMLButtonElement>("[data-emoji-value]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        const preview = colorIconPopover!.querySelector<HTMLSpanElement>("#entity-icon-preview")
-        const input = colorIconPopover!.querySelector<HTMLInputElement>("#entity-icon-input")
+        const preview = qs<HTMLSpanElement>(colorIconPopover!, "#entity-icon-preview")
+        const input = qs<HTMLInputElement>(colorIconPopover!, "#entity-icon-input")
         if (preview) renderIconOrCustomEmoji(preview, btn.dataset.emojiValue, "checklist", 18)
         if (input) input.value = btn.dataset.emojiValue!
         colorIconPopover!.querySelectorAll<HTMLButtonElement>("[data-emoji-value]").forEach((b) => b.classList.remove("selected"))
@@ -859,11 +842,11 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
       }, { signal: areaActions.signal })
     })
 
-    colorIconPopover?.querySelector<HTMLButtonElement>("#color-icon-save")?.addEventListener("click", async () => {
+    qs<HTMLButtonElement>(colorIconPopover, "#color-icon-save")?.addEventListener("click", async () => {
       if (!activeEntityId) return
       const entityId = activeEntityId
-      const iconInput = colorIconPopover!.querySelector<HTMLInputElement>("#entity-icon-input")
-      const selectedSwatch = colorIconPopover!.querySelector<HTMLButtonElement>("[data-swatch-color].selected")
+      const iconInput = qs<HTMLInputElement>(colorIconPopover!, "#entity-icon-input")
+      const selectedSwatch = qs<HTMLButtonElement>(colorIconPopover!, "[data-swatch-color].selected")
       const icon = iconInput?.value?.trim() || "\ud83d\udccb"
       const color = selectedSwatch?.dataset.swatchColor || "#146C4E"
       const entityType = activeEntityType
@@ -876,13 +859,13 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
         if (res.ok) {
           // Update icon and color in sidebar DOM directly
           if (entityType === "area") {
-            const iconEl = nav.querySelector(`[data-area-toggle="${entityId}"] .stree__area-icon`) as HTMLElement | null
+            const iconEl = qs(nav, `[data-area-toggle="${entityId}"] .stree__area-icon`) as HTMLElement | null
             const menuBtn = document.querySelector(`[data-area-menu="${entityId}"]`) as HTMLElement | null
             if (iconEl) { renderIconOrCustomEmoji(iconEl, icon, "folders", 15); iconEl.style.color = color }
             if (menuBtn) { menuBtn.dataset.areaIcon = icon; menuBtn.dataset.areaColor = color }
           } else {
-            const iconEl = nav.querySelector<HTMLElement>(`.stree__project [data-project-id="${entityId}"] .stree__project-icon`)
-            const menuBtn = nav.querySelector(`[data-project-menu="${entityId}"]`) as HTMLElement | null
+            const iconEl = qs<HTMLElement>(nav, `.stree__project [data-project-id="${entityId}"] .stree__project-icon`)
+            const menuBtn = qs(nav, `[data-project-menu="${entityId}"]`) as HTMLElement | null
             if (iconEl) { renderIconOrCustomEmoji(iconEl, icon, "checklist", 14); iconEl.style.color = color }
             if (menuBtn) { menuBtn.dataset.projectIconValue = icon; menuBtn.dataset.projectColor = color }
             renderPinned()
@@ -903,7 +886,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
       activeProjectIdForTask = projectId
       activeEntityOwner = ownerFor("project", projectId)
       ctrl.show(taskKindDropdown, btn)
-      taskKindDropdown.querySelector<HTMLButtonElement>("[data-task-kind]")?.focus()
+      qs<HTMLButtonElement>(taskKindDropdown, "[data-task-kind]")?.focus()
     }
 
     taskKindDropdown?.addEventListener("click", async (e) => {
@@ -913,7 +896,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
       const projId = activeProjectIdForTask
       ctrl.hideAll()
       // Use inline input instead of prompt()
-      const projEl = nav.querySelector(`.stree__project [data-project-id="${projId}"]`)
+      const projEl = qs(nav, `.stree__project [data-project-id="${projId}"]`)
       const projRow = projEl?.closest(".stree__project") as HTMLElement | null
       if (!projRow) return
       // Resolve area_id from DOM hierarchy
@@ -943,7 +926,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
             }
           } catch { showToast(i18n("sidebar.error_create_failed", "Failed to create"), "error") }
         },
-        projRow.querySelector<HTMLElement>("[data-task-add-project]"),
+        qs<HTMLElement>(projRow, "[data-task-add-project]"),
       )
     }, { signal: areaActions.signal })
 
@@ -979,7 +962,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
     // ── 10. Project task counts (batched, non-blocking) ──
     async function updateProjectTaskCount(projectId: string, signal: AbortSignal = areaActions.signal) {
       if (signal.aborted || areaActions.signal.aborted) return
-      const badge = nav.querySelector<HTMLSpanElement>(`[data-project-task-count="${CSS.escape(projectId)}"]`)
+      const badge = qs<HTMLSpanElement>(nav, `[data-project-task-count="${CSS.escape(projectId)}"]`)
       if (!badge) return
       try {
         const res = await entityCommand("project", projectId, { signal }, true)
@@ -995,17 +978,24 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
       } catch { /* non-critical: task count fetch failed silently */ }
     }
 
-    // Fetch counts with staggered delay to avoid thundering herd
-    const countBadges = Array.from(nav.querySelectorAll<HTMLElement>("[data-project-task-count]"))
-    countBadges.forEach((badge, i) => {
-      const projectId = badge.dataset.projectTaskCount
-      if (!projectId) return
-      const timer = setTimeout(() => {
-        countTimers.delete(timer)
-        void updateProjectTaskCount(projectId)
-      }, i * 50)
-      countTimers.add(timer)
-    })
+    // Fetch counts with staggered delay and deduplicate queued/loaded badges across refresh cycles
+    const queuedCounts = new Set<string>()
+    function queueBadgeCounts() {
+      let i = 0
+      for (const badge of nav.querySelectorAll<HTMLElement>("[data-project-task-count]:not([data-loaded])")) {
+        const id = badge.dataset.projectTaskCount
+        if (!id || queuedCounts.has(id)) continue
+        queuedCounts.add(id)
+        const timer = setTimeout(() => {
+          countTimers.delete(timer)
+          void updateProjectTaskCount(id).finally(() => {
+            if (!badge.isConnected || !badge.dataset.loaded) queuedCounts.delete(id)
+          })
+        }, i++ * 50)
+        countTimers.add(timer)
+      }
+    }
+    queueBadgeCounts()
     window.addEventListener(TASK_COUNTS_CHANGED, event => {
       const ids = (event as CustomEvent<{ projectIds?: string[] }>).detail?.projectIds ?? []
       for (const id of ids) void updateProjectTaskCount(id)
@@ -1021,13 +1011,11 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
           if (!response.ok) throw new Error("Unconfirmed")
           if (owner.isConnected) created()
         } catch { showToast("Could not confirm the Area. Refresh before trying again.", "error") }
-      }, owner.querySelector<HTMLElement>("[data-board-new-area]"))
+      }, qs<HTMLElement>(owner, "[data-board-new-area]"))
     }
     const api: SidebarHierarchyActions = { insertAreaNode, insertProjectNode, newArea, refresh: () => {
       renderPinned()
-      for (const badge of nav.querySelectorAll<HTMLElement>("[data-project-task-count]:not([data-loaded])")) {
-        if (badge.dataset.projectTaskCount) void updateProjectTaskCount(badge.dataset.projectTaskCount)
-      }
+      queueBadgeCounts()
     }, dispose: () => areaActions.abort() }
     host.__meithealHierarchyActions = { nav, signal: pageSignal, controller: areaActions, api }
     return api

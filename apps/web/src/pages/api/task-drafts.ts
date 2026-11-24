@@ -1,4 +1,6 @@
 import { withBoardScope } from "@lib/board-http"
+import { setEntityPillar } from "@domains/pillars"
+import { isOrganizationFeatureAvailable as availableFeature } from "@lib/organization-request-context"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
 import { organizationPlacementAvailable } from "@lib/organization-placement-access"
 import type { APIRoute } from "astro"
@@ -145,8 +147,20 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     const area = await resolveHomeAssistantAreaSelection(context, task.home_assistant_area_id)
     if (!area.ok) return problem(area.status, area.detail)
     const repo = new TaskRepository(client, scope)
+    let frameworkPayload = task.framework_payload
+    if (task.principle_id && availableFeature("principles")) {
+      let existingPayload: Record<string, unknown> = {}
+      if (frameworkPayload) {
+        try {
+          const parsed = JSON.parse(frameworkPayload) as unknown
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) existingPayload = parsed as Record<string, unknown>
+        } catch { /* ignore invalid payload */ }
+      }
+      frameworkPayload = JSON.stringify({ ...existingPayload, principle_id: task.principle_id })
+    }
     const prepared = await prepareTaskCreation(repo, {
       ...task,
+      ...(frameworkPayload !== undefined ? { framework_payload: frameworkPayload } : {}),
       ...(task.placement ? { area_id: placementArea, project_id: task.placement.projectId } : {}),
       labels: JSON.stringify(task.labels),
       ...(task.checklists ? { checklists: JSON.stringify(task.checklists) } : {}),
@@ -161,6 +175,9 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     const data = prepared.ok && assigneeValid ? prepared.task : null
     const result = await drafts.publish(ownerId, action, data, now, area.selection)
     if (result.receipt) {
+      if (data && result.eventId && task.pillar_id && availableFeature("pillars")) {
+        await setEntityPillar(scope, "tasks", result.receipt.taskId, task.pillar_id).catch(() => {})
+      }
       if (data && result.eventId && result.ticketNumber !== null) {
         dispatchTaskCreation(taskCreationPayload(data, result.ticketNumber, now), result.eventId, result.eventId, undefined, scope)
       }

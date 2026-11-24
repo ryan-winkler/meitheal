@@ -116,8 +116,7 @@ test("Timeline All Areas links survive filtering, reload and Back when Areas is 
 })
 
 test("Administrators choose who can use each organization feature", async () => {
-  // Starts its own Home Assistant core fixture; about 20 s of the default 30 s on hosted runners.
-  test.slow()
+  test.setTimeout(90_000)
   const work = await mkdtemp(join(tmpdir(), "organization-features-"))
   const child = startCoreFixture(work, false, undefined, undefined, work)
   child.stdout?.resume()

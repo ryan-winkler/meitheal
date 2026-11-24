@@ -77,6 +77,7 @@ export function inactivityWriteGuard(scope: BoardScope, now: number) {
     sql`scoped_policy AS (SELECT * FROM task_inactivity_policy WHERE board_id=${scope.boardId})
     SELECT tasks.id FROM scoped_tasks AS tasks WHERE ${sourceSql(inactivityTaskSql)} AND (${sourceSql(days)}) BETWEEN 1 AND 365
       AND ${sourceSql(inactivityClockSql)} + (${sourceSql(days)}) * ${inactivityDayMs} <= ${now}`,
-    "with"
+    "with",
+    "minimal"
   )})`
 }

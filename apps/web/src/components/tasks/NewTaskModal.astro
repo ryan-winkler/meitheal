@@ -2,6 +2,9 @@
 import { SHOPPING_CATEGORIES } from "@meitheal/domain-tasks"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import HomeAssistantAreaField from "./HomeAssistantAreaField.astro"
+import TaskDetailLayoutEditor from "./TaskDetailLayoutEditor.astro"
+import { ensureSchema, getPersistenceClient } from "@domains/tasks"
+import { readCachedTaskDetailLayout } from "@lib/shell-settings-cache"
 import { newOrganizationLabel, organizationLabelsFor } from "@lib/organization-labels"
 import { verifiedBoardRequestPrincipal } from "@lib/board-request-context"
 import { t } from "../../i18n/translations";
@@ -13,6 +16,12 @@ const organization = await organizationLabelsFor(Astro)
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astro))
+let serverLayoutJson: string | null = null
+try {
+  const client = getPersistenceClient()
+  await ensureSchema()
+  serverLayoutJson = await readCachedTaskDetailLayout(client)
+} catch { /* fallback to built-in layout defaults */ }
 ---
 
 <div id="new-task-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="new-task-title"
@@ -35,13 +44,20 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       data-save-failed={t("task_modal.form_save_failed", locale)}
     >
       <input type="hidden" name="task_kind" id="new-task-kind" value="standard_action" />
+      <input type="hidden" name="parent_id" id="new-task-parent-id" value="" />
+      <div id="nt-parent-banner" class="nt-context" hidden>
+        <div class="flex items-center justify-between gap-2 text-xs">
+          <span id="nt-parent-banner-text" class="font-medium text-text-primary"></span>
+          <button type="button" id="nt-parent-detach" class="btn btn-ghost btn-sm text-xs">Detach parent</button>
+        </div>
+      </div>
       <fieldset class="nt-group">
         <legend>{t("task_modal.type_label", locale)}</legend>
         <div class="nt-kind-grid" id="nt-kind-tabs">
-          <button type="button" class="nt-kind-pill active inline-flex items-center justify-center gap-1.5" data-kind="standard_action" aria-pressed="true"><Icon name="checkbox" size={15} /><span>{organization("task", false, t("task_modal.kind_task", locale))}</span></button>
-          <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="shopping_item" aria-pressed="false"><Icon name="shopping-cart" size={15} /><span>{t("task_modal.kind_shopping_list", locale)}</span></button>
-          <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="checklist" aria-pressed="false"><Icon name="list-check" size={15} /><span>{t("task_modal.kind_checklist", locale)}</span></button>
-          <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="calendar_event" aria-pressed="false"><Icon name="calendar-event" size={15} /><span>{t("task_modal.kind_event", locale)}</span></button>
+          <button type="button" class="nt-kind-pill active inline-flex items-center justify-center gap-1.5" data-kind="standard_action" aria-pressed="true"><Icon name="checkbox" size={15} sprite={true} /><span>{organization("task", false, t("task_modal.kind_task", locale))}</span></button>
+          <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="shopping_item" aria-pressed="false"><Icon name="shopping-cart" size={15} sprite={true} /><span>{t("task_modal.kind_shopping_list", locale)}</span></button>
+          <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="checklist" aria-pressed="false"><Icon name="list-check" size={15} sprite={true} /><span>{t("task_modal.kind_checklist", locale)}</span></button>
+          <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="calendar_event" aria-pressed="false"><Icon name="calendar-event" size={15} sprite={true} /><span>{t("task_modal.kind_event", locale)}</span></button>
         </div>
       </fieldset>
       <div class="nt-field">
@@ -58,7 +74,6 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
         <textarea class="form-input" id="new-task-desc-input" name="description" rows="2" maxlength="10000"
           placeholder={t("task_modal.description_placeholder", locale)}></textarea>
       </div>
-      <HomeAssistantAreaField publishOnly />
       <div id="nt-contextual-fields" class="nt-context hidden">
         <fieldset id="nt-contextual-checklist" class="nt-group hidden">
           <legend>{t("task_modal.checklist_items", locale)}</legend>
@@ -114,98 +129,182 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
           </div>
         </fieldset>
       </div>
-      <fieldset class="nt-group">
-        <legend>{t("task_modal.details_group", locale)}</legend>
-        <div class="nt-field">
-          <input type="hidden" id="new-task-status" name="status" value="pending" />
-          <div id="nt-status-pills" class="filter-toolbar__type-toggles" role="radiogroup" aria-label="Task status">
-            <button type="button" class="filter-toolbar__type-btn active" data-status="pending" role="radio" aria-checked="true">
-              <span class="nt-status-pill-icon inline-flex items-center" aria-hidden="true"><Icon name="clock" size={14} /></span>
-              <span>{t("task_modal.status_todo", locale)}</span>
+      <div id="nt-layout-panel" hidden>
+        <h4 class="td-layout-title">{t("task_layout.layout", locale)}</h4>
+        <TaskDetailLayoutEditor locale={locale} scope="personal" serverLayoutJson={serverLayoutJson} />
+      </div>
+      <div id="nt-sections" class="nt-sections" data-server-layout={serverLayoutJson ?? undefined}>
+        <fieldset class="nt-group" id="nt-properties-group">
+          <div class="nt-group-header">
+            <h3 class="nt-group-title">{t("task_modal.details_group", locale)}</h3>
+            <button id="nt-toggle-layout" type="button" class="td-layout-icon-btn" aria-expanded="false"
+              aria-controls="nt-layout-panel" aria-label={t("task_layout.layout", locale)} title={t("task_layout.layout", locale)}>
+              <Icon name="adjustments-horizontal" size={16} sprite={true} />
             </button>
           </div>
-        </div>
-        <div class="nt-form-grid">
-          <div class="nt-field">
-            <label for="new-task-priority">{t("tasks.priority_label", locale)}</label>
-            <div class="nt-priority-select-wrap">
-              <span id="nt-priority-icon" class="nt-priority-icon priority-medium" aria-hidden="true">
-                <Icon name="arrows-left-right" size={15} sprite={true} />
-              </span>
-              <select id="new-task-priority" name="priority" class="form-select nt-priority-select">
-                <option value="1">{t("task_modal.priority_urgent", locale)}</option>
-                <option value="2">{t("task_modal.priority_high", locale)}</option>
-                <option value="3" selected>{t("task_modal.priority_normal", locale)}</option>
-                <option value="4">{t("task_modal.priority_low", locale)}</option>
-                <option value="5">{t("tasks.priority_label", locale)} 5</option>
+          <div class="nt-form-grid" data-layout-order="properties">
+            <div class="nt-field nt-field--full" data-layout-item="status">
+              <span data-layout-field-label class="nt-hint font-medium">{t("tasks.status_label", locale) || "Status"}</span>
+              <input type="hidden" id="new-task-status" name="status" value="pending" />
+              <div id="nt-status-pills" class="filter-toolbar__type-toggles" role="radiogroup" aria-label="Task status">
+                <button type="button" class="filter-toolbar__type-btn active" data-status="pending" role="radio" aria-checked="true">
+                  <span class="nt-status-pill-icon inline-flex items-center" aria-hidden="true"><Icon name="clock" size={14} sprite={true} /></span>
+                  <span>{t("task_modal.status_todo", locale)}</span>
+                </button>
+              </div>
+            </div>
+            <div class="nt-field" id="nt-task-type-field" data-layout-item="type">
+              <label for="new-task-type">Work type</label>
+              <select id="new-task-type" name="task_type" class="form-select">
+                <option value="task" selected>Task</option>
+                <option value="story">Story</option>
+                <option value="epic">Epic</option>
               </select>
             </div>
-          </div>
-          <div id="nt-ctx-due-row" class="nt-field">
-            <label id="nt-due-label">{t("tasks.due_date", locale)}</label>
-            <input type="hidden" id="nt-contextual-due" name="due_date" />
-            <div id="nt-due-date-picker" class="nt-due-picker" role="group" aria-labelledby="nt-due-label" data-placeholder={t("task_modal.due_date_placeholder", locale)}></div>
-          </div>
-          <div class="nt-field" id="nt-assignee-field">
-            <label for="new-task-assigned-to">{t("task_modal.assignee_label", locale)}</label>
-            <select id="new-task-assigned-to" name="assigned_to" class="form-select">
-              <option value="">{t("task_modal.unassigned", locale)}</option>
-            </select>
-          </div>
-        </div>
-      </fieldset>
-      <details class="nt-options" id="nt-options">
-        <summary>{t("task_modal.more_options", locale)}</summary>
-        <div class="nt-options-content">
-          <div class="nt-form-grid">
-            {available("goals") && <div class="nt-field">
-              <label for="new-task-goal">{t("task_modal.goal_label", locale)}</label>
-              <select id="new-task-goal" name="goal_id" class="form-select"><option value="">{t("task_modal.goal_none", locale)}</option></select>
+            <div class="nt-field" id="nt-priority-field" data-layout-item="priority">
+              <label for="new-task-priority">{t("tasks.priority_label", locale)}</label>
+              <div class="nt-priority-select-wrap">
+                <span id="nt-priority-icon" class="nt-priority-icon priority-medium" aria-hidden="true">
+                  <Icon name="arrows-left-right" size={15} sprite={true} />
+                </span>
+                <select id="new-task-priority" name="priority" class="form-select nt-priority-select">
+                  <option value="1">{t("task_modal.priority_urgent", locale)}</option>
+                  <option value="2">{t("task_modal.priority_high", locale)}</option>
+                  <option value="3" selected>{t("task_modal.priority_normal", locale)}</option>
+                  <option value="4">{t("task_modal.priority_low", locale)}</option>
+                  <option value="5">{t("tasks.priority_label", locale)} 5</option>
+                </select>
+              </div>
+            </div>
+            <div class="nt-field" id="nt-urgency-field" data-layout-item="urgency">
+              <label for="new-task-urgency">Urgency</label>
+              <select id="new-task-urgency" name="urgency" class="form-select">
+                <option value="0" selected>0 — Unset</option>
+                <option value="1">1 — Low</option>
+                <option value="2">2</option>
+                <option value="3">3 — Medium</option>
+                <option value="4">4</option>
+                <option value="5">5 — Critical</option>
+              </select>
+            </div>
+            <div class="nt-field" id="nt-importance-field" data-layout-item="importance">
+              <label for="new-task-importance">Importance</label>
+              <select id="new-task-importance" name="importance" class="form-select">
+                <option value="0" selected>0 — Unset</option>
+                <option value="1">1 — Low</option>
+                <option value="2">2</option>
+                <option value="3">3 — Medium</option>
+                <option value="4">4</option>
+                <option value="5">5 — Critical</option>
+              </select>
+            </div>
+            <div class="nt-field" id="nt-assignee-field" data-layout-item="assignee">
+              <label for="new-task-assigned-to">{t("task_modal.assignee_label", locale)}</label>
+              <select id="new-task-assigned-to" name="assigned_to" class="form-select">
+                <option value="">{t("task_modal.unassigned", locale)}</option>
+              </select>
+            </div>
+            {available("groups") && <div class="nt-field" id="nt-area-field" data-layout-item="area">
+              <label for="new-task-area">{organization("group")}</label>
+              <select id="new-task-area" name="area_id" class="form-select">
+                <option value="">No group</option>
+              </select>
             </div>}
-            <div class="nt-field">
-              <label for="new-task-recurrence">{t("task_modal.repeat_label", locale)}</label>
-              <select id="new-task-recurrence" name="recurrence_rule" class="form-select">
-                <option value="">{t("task_modal.recurrence_none", locale)}</option>
-                <option value="FREQ=DAILY">{t("task_modal.recurrence_daily", locale)}</option>
-                <option value="FREQ=WEEKLY">{t("task_modal.recurrence_weekly", locale)}</option>
-                <option value="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR">{t("task_modal.recurrence_weekday", locale)}</option>
-                <option value="FREQ=MONTHLY">{t("task_modal.recurrence_monthly", locale)}</option>
-                <option value="FREQ=YEARLY">{t("task_modal.recurrence_yearly", locale)}</option>
+            <HomeAssistantAreaField publishOnly layoutItem="home-assistant-area" />
+            {available("projects") && <div class="nt-field" id="nt-project-field" data-layout-item="project">
+              <label for="new-task-project">{organization("project")}</label>
+              <select id="new-task-project" name="project_id" class="form-select">
+                <option value="">No project</option>
               </select>
+            </div>}
+            {available("pillars") && <div class="nt-field" id="nt-pillar-field" data-layout-item="pillar">
+              <label for="new-task-pillar">{organization("pillar")}</label>
+              <select id="new-task-pillar" name="pillar_id" class="form-select">
+                <option value="">No pillar</option>
+              </select>
+            </div>}
+            {available("principles") && <div class="nt-field" id="nt-principle-field" data-layout-item="principle">
+              <label for="new-task-principle">{organization("principle")}</label>
+              <select id="new-task-principle" name="principle_id" class="form-select">
+                <option value="">No principle</option>
+              </select>
+            </div>}
+          </div>
+          <div id="nt-due-grid" class="nt-form-grid" data-layout-order="scheduling">
+            <div id="nt-ctx-due-row" class="nt-field nt-field--full" data-layout-item="due">
+              <label id="nt-due-label" data-layout-field-label>{t("tasks.due_date", locale)}</label>
+              <input type="hidden" id="nt-contextual-due" name="due_date" />
+              <div id="nt-due-date-picker" class="nt-due-picker" role="group" aria-labelledby="nt-due-label" data-placeholder={t("task_modal.due_date_placeholder", locale)}></div>
             </div>
           </div>
-          <div class="nt-field">
-            <label for="new-task-label-picker-input">{t("task_modal.tags_label", locale)}</label>
-            <LabelPicker deferCreate id="new-task-label-picker" name="labels" />
-          </div>
-      <!-- Custom Fields (collapsible) -->
-      <div id="nt-custom-fields" class="nt-options-section">
-        <div class="flex items-center justify-between p-2">
-          <button type="button" id="nt-custom-fields-toggle" aria-controls="nt-custom-fields-container" aria-expanded="false" class="flex items-center gap-1.5 text-xs font-semibold text-text-muted uppercase tracking-wider hover:text-text-primary transition-colors">
-            <Icon name="chevron-down" size={13} sprite={true} />
-            {t("task_modal.custom_fields_label", locale)}
-          </button>
-          <button type="button" id="nt-add-custom-field-btn" aria-controls="nt-add-field-dropdown" aria-expanded="false" class="text-xs font-medium flex items-center gap-1">
-            <Icon name="plus" size={12} sprite={true} />
-            {t("task_modal.custom_field_add", locale)}
-          </button>
-        </div>
-        <div id="nt-custom-fields-container" class="hidden space-y-2 mt-2 p-3 nt-feature-card">
-          <div id="nt-custom-fields-list" class="space-y-2"></div>
-          <div id="nt-add-field-dropdown" class="hidden flex-wrap gap-1.5 pt-2 border-t border-border-dim/30">
-            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="url"><Icon name="link" size={14} sprite={true} /> {t("task_modal.custom_field_url", locale)}</button>
-            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="text"><Icon name="file-text" size={14} sprite={true} /> {t("task_modal.custom_field_text", locale)}</button>
-            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="number"><Icon name="hash" size={14} sprite={true} /> {t("task_modal.custom_field_number", locale)}</button>
-            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="date"><Icon name="calendar" size={14} sprite={true} /> {t("task_modal.custom_field_date", locale)}</button>
-            <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="checkbox"><Icon name="checkbox" size={14} sprite={true} /> {t("task_modal.custom_field_checkbox", locale)}</button>
-          </div>
-        </div>
-      </div>
+        </fieldset>
+        <details class="nt-options" id="nt-options">
+          <summary>{t("task_modal.more_options", locale)}</summary>
+          <div class="nt-options-content">
+            <div class="nt-form-grid" data-layout-order="scheduling">
+              {available("goals") && <div class="nt-field">
+                <label for="new-task-goal">{t("task_modal.goal_label", locale)}</label>
+                <select id="new-task-goal" name="goal_id" class="form-select"><option value="">{t("task_modal.goal_none", locale)}</option></select>
+              </div>}
+              <div class="nt-field" data-layout-item="recurrence">
+                <label for="new-task-recurrence">{t("task_modal.repeat_label", locale)}</label>
+                <select id="new-task-recurrence" name="recurrence_rule" class="form-select">
+                  <option value="">{t("task_modal.recurrence_none", locale)}</option>
+                  <option value="FREQ=DAILY">{t("task_modal.recurrence_daily", locale)}</option>
+                  <option value="FREQ=WEEKLY">{t("task_modal.recurrence_weekly", locale)}</option>
+                  <option value="FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR">{t("task_modal.recurrence_weekday", locale)}</option>
+                  <option value="FREQ=MONTHLY">{t("task_modal.recurrence_monthly", locale)}</option>
+                  <option value="FREQ=YEARLY">{t("task_modal.recurrence_yearly", locale)}</option>
+                </select>
+              </div>
+              <div class="nt-field" id="nt-progress-field" data-layout-item="progress">
+                <label for="new-task-progress">Progress (%)</label>
+                <input id="new-task-progress" name="progress" type="number" min="0" max="100" step="5" value="0" class="form-input" />
+              </div>
+            </div>
+            <div class="nt-options-content" data-layout-order="metadata">
+              <div class="nt-field" data-layout-item="labels">
+                <label for="new-task-label-picker-input">{t("task_modal.tags_label", locale)}</label>
+                <LabelPicker deferCreate id="new-task-label-picker" name="labels" />
+              </div>
+              <div class="nt-field" id="nt-color-field" data-layout-item="color">
+                <label for="new-task-color">Task Color</label>
+                <div class="flex items-center gap-2">
+                  <input id="new-task-color-enabled" type="checkbox" aria-label="Use custom task color" class="h-4 w-4 accent-accent rounded" />
+                  <input id="new-task-color" type="color" value="#f59e0b" aria-label="Task Color" class="w-11 h-9 rounded cursor-pointer border border-border bg-transparent p-1" />
+                </div>
+              </div>
+              <!-- Custom Fields (board-defined + ad-hoc) -->
+              <div id="nt-custom-fields" class="nt-options-section" data-layout-item="custom-fields">
+                <div class="flex items-center justify-between p-2">
+                  <button type="button" id="nt-custom-fields-toggle" aria-controls="nt-custom-fields-container" aria-expanded="false" class="flex items-center gap-1.5 text-xs font-semibold text-text-muted uppercase tracking-wider hover:text-text-primary transition-colors">
+                    <Icon name="chevron-down" size={13} sprite={true} />
+                    <span data-layout-field-label>{t("task_modal.custom_fields_label", locale)}</span>
+                  </button>
+                  <button type="button" id="nt-add-custom-field-btn" aria-controls="nt-add-field-dropdown" aria-expanded="false" class="text-xs font-medium flex items-center gap-1">
+                    <Icon name="plus" size={12} sprite={true} />
+                    {t("task_modal.custom_field_add", locale)}
+                  </button>
+                </div>
+                <div id="nt-custom-fields-container" class="hidden space-y-2 mt-2 p-3 nt-feature-card">
+                  <div id="nt-board-custom-fields-list" class="space-y-2"></div>
+                  <div id="nt-custom-fields-list" class="space-y-2"></div>
+                  <div id="nt-add-field-dropdown" class="hidden flex-wrap gap-1.5 pt-2 border-t border-border-dim/30">
+                    <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="url"><Icon name="link" size={14} sprite={true} /> {t("task_modal.custom_field_url", locale)}</button>
+                    <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="text"><Icon name="file-text" size={14} sprite={true} /> {t("task_modal.custom_field_text", locale)}</button>
+                    <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="number"><Icon name="hash" size={14} sprite={true} /> {t("task_modal.custom_field_number", locale)}</button>
+                    <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="date"><Icon name="calendar" size={14} sprite={true} /> {t("task_modal.custom_field_date", locale)}</button>
+                    <button type="button" class="nt-add-field-type text-xs px-2.5 py-1 bg-bg-input/50 border border-border-dim rounded-lg hover:bg-border-dim/30 transition-colors flex items-center gap-1" data-field-type="checkbox"><Icon name="checkbox" size={14} sprite={true} /> {t("task_modal.custom_field_checkbox", locale)}</button>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-          <p class="nt-hint">{t("task_modal.images_after_create", locale)}</p>
-          <p class="nt-hint">{t("task_modal.routine_hint", locale)} <a href="/habits">{t("nav.habits", locale)}</a></p>
-        </div>
-      </details>
+            <p class="nt-hint">{t("task_modal.images_after_create", locale)}</p>
+            <p class="nt-hint">{t("task_modal.routine_hint", locale)} <a href="/habits">{t("nav.habits", locale)}</a></p>
+          </div>
+        </details>
+      </div>
       <div id="nt-create-uncertain" class="nt-context" hidden>
         <p id="nt-create-uncertain-alert" class="nt-error" role="alert">{t("task_modal.create_uncertain", locale)}</p>
         <p id="nt-create-receipt-status" role="status"></p>
@@ -247,6 +346,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       <button type="button" class="btn btn-ghost text-text-muted hover:text-text-primary text-sm font-semibold px-1 rounded-lg" id="cancel-new-task">{t("task_modal.btn_cancel", locale)}</button>
 
       <div class="nt-footer-actions">
+        <button type="button" id="nt-copy-prefill-link" class="btn btn-ghost text-sm">{t("task_modal.copy_prefill_link", locale)}</button>
         <button type="button" id="nt-draft-toggle" class="btn btn-ghost text-sm"
           aria-controls="nt-draft-panel" aria-expanded="false" hidden>{t("task_draft.draft", locale)}</button>
         <button
@@ -286,6 +386,14 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
   import { buildIngressPagePath } from "@lib/page-shell-links"
   import { browserUuid } from "@lib/browser-uuid"
   import type { TaskDraftSnapshot, TaskDraftPublication } from "@lib/task-draft-state"
+  import { defaultChildTaskType, formatTicketDisplay, normalizeEditableTaskType, syncTaskTypeSelect } from "@lib/task-editor-fields"
+  import { popTaskEditorDraft, pushTaskEditorDraft, type OpenNewTaskOptions, type TaskParentContext } from "@lib/task-editor-draft-stack"
+  import { enhanceDescriptionEditor } from "@lib/task-description-editor"
+  import { initTaskDetailLayoutEditor, initTicketSectionOrder } from "@lib/task-detail-layout-controller"
+  import { buildTaskPrefillUrl, parseTaskUrlPrefill, stripTaskUrlPrefillParams } from "@lib/task-url-prefill"
+  import { copyToClipboard } from "@lib/clipboard"
+  import { loadPillarPrinciplesOptions } from "@lib/task-taxonomy-client"
+  import { byId, domEl, qs, setAttr } from "@lib/dom-helpers";
 
   const log = createClientLogger("tasks", "new-task-modal");
 
@@ -298,7 +406,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
   };
 
   pageLifecycle.onPageLoad((signal) => {
-    const overlay = document.getElementById("new-task-overlay");
+    const overlay = byId("new-task-overlay");
     if (!overlay || overlay.dataset.newTaskController === "ready") return
     overlay.dataset.newTaskController = "ready"
     const focusTrap = createFocusTrap(overlay)
@@ -307,38 +415,69 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       delete overlay.dataset.newTaskController
     }, { once: true })
 
-    const closeBtn = overlay.querySelector<HTMLButtonElement>("#close-new-task-modal")
-    const cancelBtn = overlay.querySelector<HTMLButtonElement>("#cancel-new-task")
-    const form = document.getElementById("new-task-form") as HTMLFormElement | null;
+    const closeBtn = qs<HTMLButtonElement>(overlay, "#close-new-task-modal")
+    const cancelBtn = qs<HTMLButtonElement>(overlay, "#cancel-new-task")
+    const copyPrefillBtn = qs<HTMLButtonElement>(overlay, "#nt-copy-prefill-link")
+    const form = byId<HTMLFormElement>("new-task-form");
+    let urlPrefillCustomFields: Record<string, string | number | boolean> | undefined
 
     // ── Cached DOM refs (avoid per-click lookups) ──
-    const contextualDiv = document.getElementById("nt-contextual-fields");
-    const checklistDiv = document.getElementById("nt-contextual-checklist");
-    const shoppingDiv = document.getElementById("nt-contextual-shopping");
-    const eventDiv = document.getElementById("nt-contextual-event");
-    const dueRow = document.getElementById("nt-ctx-due-row");
-    const titleInput = document.getElementById("new-task-title-input") as HTMLTextAreaElement | null;
-    const descInput = document.getElementById("new-task-desc-input") as HTMLTextAreaElement | null;
-    const submitBtn = document.getElementById("submit-new-task-btn") as HTMLButtonElement | null;
-    const anotherBtn = overlay.querySelector<HTMLButtonElement>("#submit-new-task-another")
-    const captureFeedback = overlay.querySelector<HTMLElement>("#nt-capture-feedback")
-    const uncertain = overlay.querySelector<HTMLElement>("#nt-create-uncertain")
-    const uncertainAlert = overlay.querySelector<HTMLElement>("#nt-create-uncertain-alert")
-    const receiptStatus = overlay.querySelector<HTMLElement>("#nt-create-receipt-status")
-    const checkSave = overlay.querySelector<HTMLButtonElement>("#nt-check-save")
-    const checkTasks = overlay.querySelector<HTMLAnchorElement>("#nt-check-tasks")
-    const pillsContainer = document.getElementById("nt-status-pills")
+    const contextualDiv = byId("nt-contextual-fields");
+    const checklistDiv = byId("nt-contextual-checklist");
+    const shoppingDiv = byId("nt-contextual-shopping");
+    const eventDiv = byId("nt-contextual-event");
+    const dueRow = byId("nt-ctx-due-row");
+    const titleInput = byId<HTMLTextAreaElement>("new-task-title-input");
+    const descInput = byId<HTMLTextAreaElement>("new-task-desc-input");
+    const descEditor = enhanceDescriptionEditor(descInput, { signal });
+    const submitBtn = byId<HTMLButtonElement>("submit-new-task-btn");
+    const anotherBtn = qs<HTMLButtonElement>(overlay, "#submit-new-task-another")
+    const captureFeedback = qs<HTMLElement>(overlay, "#nt-capture-feedback")
+    const uncertain = qs<HTMLElement>(overlay, "#nt-create-uncertain")
+    const uncertainAlert = qs<HTMLElement>(overlay, "#nt-create-uncertain-alert")
+    const receiptStatus = qs<HTMLElement>(overlay, "#nt-create-receipt-status")
+    const checkSave = qs<HTMLButtonElement>(overlay, "#nt-check-save")
+    const checkTasks = qs<HTMLAnchorElement>(overlay, "#nt-check-tasks")
+    const pillsContainer = byId("nt-status-pills")
     const statusInput = document.querySelector<HTMLInputElement>("#new-task-status")
     const goalSelect = document.querySelector<HTMLSelectElement>("#new-task-goal")
+    const taskTypeSelect = byId<HTMLSelectElement>("new-task-type")
+    const urgencySelect = byId<HTMLSelectElement>("new-task-urgency")
+    const importanceSelect = byId<HTMLSelectElement>("new-task-importance")
+    const areaSelect = byId<HTMLSelectElement>("new-task-area")
+    const projectSelect = byId<HTMLSelectElement>("new-task-project")
+    const pillarSelect = byId<HTMLSelectElement>("new-task-pillar")
+    const principleSelect = byId<HTMLSelectElement>("new-task-principle")
+    const progressInput = byId<HTMLInputElement>("new-task-progress")
+    const colorEnabledInput = byId<HTMLInputElement>("new-task-color-enabled")
+    const colorInput = byId<HTMLInputElement>("new-task-color")
+    const boardCustomList = byId<HTMLElement>("nt-board-custom-fields-list")
+    const ntSections = byId<HTMLElement>("nt-sections")
+    const ntLayoutToggle = byId<HTMLButtonElement>("nt-toggle-layout")
+    const ntLayoutPanel = byId<HTMLElement>("nt-layout-panel")
+    const parentInput = byId<HTMLInputElement>("new-task-parent-id")
+    const parentBanner = byId("nt-parent-banner")
+    const parentBannerText = byId("nt-parent-banner-text")
+    const parentDetachBtn = byId("nt-parent-detach")
+    const modalHeading = byId("new-task-title")
+    const defaultModalHeading = modalHeading?.textContent ?? ""
     let captureOptionsRequest: AbortController | undefined
     let lanesLoaded = false
     let goalsLoaded = false
+    let usersLoadedBoard: string | null = null
+    let propertiesLoadedBoard: string | null = null
+    let customFieldsLoadedBoard: string | null = null
+    const ntOptions = qs<HTMLDetailsElement>(overlay, "#nt-options")
     let submitting = false
     let captureSession = 0
     let preserveAssignee = false
     let isHydrating = false
     let capturePlacement: TaskDraftSnapshot["placement"]
     let contextPlacement: TaskDraftSnapshot["placement"]
+    let activeParentContext: TaskParentContext | undefined
+    let contextParent: TaskParentContext | undefined
+    let pendingCreateOptions: OpenNewTaskOptions | undefined
+    let resumeOriginTaskId: string | undefined
     let captureNeedsRefresh = false
     let captureContinues = false
     let unconfirmedAttempt: string | undefined
@@ -358,6 +497,25 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     let retainedRoutine = false
     let retainedEventDetails = { location: "", allDay: false, calendar: "" }
 
+    function applyParentContext(parent?: TaskParentContext) {
+      activeParentContext = parent
+      if (parentInput) parentInput.value = parent?.parentId ?? ""
+      if (parentBanner) parentBanner.hidden = !parent
+      if (parentBannerText) {
+        parentBannerText.textContent = parent
+          ? `Child of ${formatTicketDisplay(parent.parentTicketKey, parent.parentTitle, parent.parentId)} (${parent.parentType})`
+          : ""
+      }
+      if (modalHeading) modalHeading.textContent = parent ? "New child item" : defaultModalHeading
+      syncTaskTypeSelect(taskTypeSelect, parent?.parentType)
+    }
+
+    parentDetachBtn?.addEventListener("click", () => {
+      applyParentContext(undefined)
+      contextParent = undefined
+      markEdited()
+    }, { signal })
+
     function resizeTitle() {
       if (!titleInput) return
       titleInput.style.height = "auto"
@@ -373,36 +531,57 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     function selectStatus(status: string) {
       if (!statusInput) return
       statusInput.value = status
-      pillsContainer?.querySelector("[data-unavailable]")?.remove()
+      qs(pillsContainer, "[data-unavailable]")?.remove()
       if (pillsContainer && ![...pillsContainer.querySelectorAll<HTMLElement>("[data-status]")].some(pill => pill.dataset.status === status)) {
-        const missing = document.createElement("button")
+        const missing = domEl("button")
         missing.type = "button"
         missing.disabled = true
         missing.dataset.status = status
         missing.dataset.unavailable = ""
-        missing.setAttribute("role", "radio")
+        setAttr(missing, "role", "radio")
         missing.textContent = taskDraftText("lane_missing")
         pillsContainer.append(missing)
       }
       pillsContainer?.querySelectorAll<HTMLElement>("[data-status]").forEach(pill => {
         const selected = pill.dataset.status === status
         pill.classList.toggle("active", selected)
-        pill.setAttribute("aria-checked", String(selected))
+        setAttr(pill, "aria-checked", String(selected))
       })
     }
 
     // Task Kind Tab Switching
     const kindTabs = document.querySelectorAll("#nt-kind-tabs button");
-    const kindInput = document.getElementById("new-task-kind") as HTMLInputElement | null;
+    const kindInput = byId<HTMLInputElement>("new-task-kind");
 
-    const prioritySelect = overlay.querySelector<HTMLSelectElement>("#new-task-priority")
-    const priorityIconEl = overlay.querySelector<HTMLElement>("#nt-priority-icon")
+    let ntLayoutMounted = false
+    if (ntSections) {
+      const updateNtLayout = initTicketSectionOrder(ntSections, signal)
+      updateNtLayout()
+      document.addEventListener("meitheal:tasks-changed", () => updateNtLayout(), { signal })
+    }
+    ntLayoutToggle?.addEventListener("click", () => {
+      if (!ntLayoutPanel || !ntLayoutToggle) return
+      const open = ntLayoutPanel.hidden
+      if (open && !ntLayoutMounted) {
+        const editor = qs<HTMLElement>(ntLayoutPanel, "[data-task-layout-editor]")
+        if (editor) {
+          initTaskDetailLayoutEditor(editor, signal)
+          ntLayoutMounted = true
+        }
+      }
+      ntLayoutPanel.hidden = !open
+      setAttr(ntLayoutToggle, "aria-expanded", String(open))
+    }, { signal })
+
+    const prioritySelect = qs<HTMLSelectElement>(overlay, "#new-task-priority")
+    const priorityIconEl = qs<HTMLElement>(overlay, "#nt-priority-icon")
     function syncPriorityIcon() {
       if (!prioritySelect || !priorityIconEl) return
       const p = Number(prioritySelect.value || 3)
       const iconName: IconName = p <= 1 ? "flame" : p === 2 ? "arrow-up" : p >= 4 ? "arrow-down" : "arrows-left-right"
       const cls = p <= 1 ? "priority-critical" : p === 2 ? "priority-high" : p >= 4 ? "priority-low" : "priority-medium"
-      priorityIconEl.className = `nt-priority-icon ${cls}`
+      priorityIconEl.classList.remove("priority-critical", "priority-high", "priority-medium", "priority-low")
+      priorityIconEl.classList.add(cls)
       priorityIconEl.replaceChildren(createSpriteIconElement(iconName, { size: 15 }))
     }
     prioritySelect?.addEventListener("change", syncPriorityIcon, { signal })
@@ -421,7 +600,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       kindTabs.forEach(tab => {
         const selected = (tab as HTMLElement).dataset.kind === kind
         tab.classList.toggle("active", selected)
-        tab.setAttribute("aria-pressed", String(selected))
+        setAttr(tab, "aria-pressed", String(selected))
       })
       const shopping = kind === "shopping_item"
       const checklist = kind === "checklist"
@@ -448,7 +627,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     }, { signal }))
 
     const builderInput = document.querySelector<HTMLTextAreaElement>("#nt-checklist-builder-input")
-    const itemsContainer = document.getElementById("nt-checklist-items-container")
+    const itemsContainer = byId("nt-checklist-items-container")
     type CaptureChecklistItem = TaskDraftSnapshot["checklist"]["items"][number]
     const checklistItems = new Map<HTMLElement, CaptureChecklistItem>()
     let draft: { value: string; items: ReturnType<typeof createChecklistItem>[] } | undefined
@@ -462,21 +641,19 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     }
 
     function updateChecklistCount() {
-      const count = document.getElementById("nt-checklist-count")
+      const count = byId("nt-checklist-count")
       if (count) count.textContent = (count.dataset.countLabel || "{count} items").replace("{count}", String(checklistItems.size))
     }
 
     function appendChecklistItem(item: CaptureChecklistItem) {
-      const row = document.createElement("li")
+      const row = domEl("li")
       row.className = "ticket-item-row"
-      const label = document.createElement("span")
-      label.className = "flex-1 min-w-0 break-words"
-      label.textContent = item.text
-      const remove = document.createElement("button")
+      const label = domEl("span", "flex-1 min-w-0 break-words", item.text)
+      const remove = domEl("button")
       remove.type = "button"
       remove.className = "btn btn-ghost inline-flex items-center justify-center"
       remove.replaceChildren(createSpriteIconElement("x", { size: 14 }))
-      remove.setAttribute("aria-label", `Remove ${item.text}`)
+      setAttr(remove, "aria-label", `Remove ${item.text}`)
       remove.addEventListener("click", () => {
         checklistItems.delete(row)
         row.remove()
@@ -501,17 +678,17 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       builderInput.focus()
     }
 
-    document.getElementById("nt-add-sub-item-btn")?.addEventListener("click", stageChecklistItems, { signal })
+    byId("nt-add-sub-item-btn")?.addEventListener("click", stageChecklistItems, { signal })
     builderInput?.addEventListener("keydown", event => {
       if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return
       event.preventDefault()
       stageChecklistItems()
     }, { signal })
 
-    const qtyEl = document.getElementById("nt-shopping-qty") as HTMLInputElement;
+    const qtyEl = byId("nt-shopping-qty") as HTMLInputElement;
 
     const shoppingItemInput = document.querySelector<HTMLInputElement>("#nt-shopping-item-input")
-    const shoppingItemsList = document.getElementById("nt-shopping-items-list")
+    const shoppingItemsList = byId("nt-shopping-items-list")
     const shoppingCategory = document.querySelector<HTMLSelectElement>("#nt-shopping-category")
     type ShoppingItem = TaskDraftSnapshot["shopping"]["items"][number]
     const shoppingListItems: ShoppingItem[] = []
@@ -525,20 +702,18 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     function appendShoppingItem(item: ShoppingItem) {
       const { name, qty, category } = item
       shoppingListItems.push(item)
-      const pill = document.createElement("li")
-      pill.className = "ticket-item-row"
-      const label = document.createElement("span")
-      label.className = "flex-1 min-w-0 break-words"
+      const pill = domEl("li", "ticket-item-row")
+      const label = domEl("span", "flex-1 min-w-0 break-words")
       const categoryLabel = Array.from(shoppingCategory?.options ?? []).find(option => option.value === category)?.textContent
       const suffix = category ? ` · ${categoryLabel || category}` : ""
       const qtyStr = String(qty ?? "1").trim()
       label.textContent = qtyStr && qtyStr !== "1" ? `${qtyStr}× ${name}${suffix}` : `${name}${suffix}`
 
-      const remove = document.createElement("button")
+      const remove = domEl("button")
       remove.type = "button"
       remove.className = "btn btn-ghost text-text-muted inline-flex items-center justify-center"
       remove.replaceChildren(createSpriteIconElement("x", { size: 14 }))
-      remove.setAttribute("aria-label", `Remove ${name}${suffix}`)
+      setAttr(remove, "aria-label", `Remove ${name}${suffix}`)
       remove.addEventListener("click", () => {
         shoppingListItems.splice(shoppingListItems.indexOf(item), 1)
         pill.remove()
@@ -560,7 +735,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       shoppingItemInput.focus()
     }
 
-    document.getElementById("nt-add-shopping-item")?.addEventListener("click", addShoppingItem, { signal })
+    byId("nt-add-shopping-item")?.addEventListener("click", addShoppingItem, { signal })
     shoppingItemInput?.addEventListener("keydown", event => {
       if (event.key !== "Enter" || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return
       event.preventDefault()
@@ -568,16 +743,16 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     }, { signal })
 
     // Custom Fields toggle
-    const cfToggle = document.getElementById("nt-custom-fields-toggle");
-    const cfContainer = document.getElementById("nt-custom-fields-container");
+    const cfToggle = byId("nt-custom-fields-toggle");
+    const cfContainer = byId("nt-custom-fields-container");
     cfToggle?.addEventListener("click", () => {
       cfContainer?.classList.toggle("hidden");
-      cfToggle?.setAttribute("aria-expanded", String(!cfContainer?.classList.contains("hidden")))
+      setAttr(cfToggle, "aria-expanded", String(!cfContainer?.classList.contains("hidden")))
     }, { signal });
 
     // Add custom field btn → show dropdown
-    const cfAddBtn = document.getElementById("nt-add-custom-field-btn");
-    const cfDropdown = document.getElementById("nt-add-field-dropdown");
+    const cfAddBtn = byId("nt-add-custom-field-btn");
+    const cfDropdown = byId("nt-add-field-dropdown");
     cfAddBtn?.addEventListener("click", event => {
       event.stopPropagation()
       if (!cfDropdown) return
@@ -585,47 +760,46 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       cfContainer?.classList.remove("hidden")
       cfDropdown.classList.toggle("hidden", !wasClosed)
       cfDropdown.style.display = wasClosed ? "flex" : ""
-      cfToggle?.setAttribute("aria-expanded", "true")
-      cfAddBtn?.setAttribute("aria-expanded", String(wasClosed))
+      setAttr(cfToggle, "aria-expanded", "true")
+      setAttr(cfAddBtn, "aria-expanded", String(wasClosed))
     }, { signal })
 
     // Add field type buttons
     function createCustomFieldEntry(type: string): HTMLDivElement {
-      const entry = document.createElement("div")
+      const entry = domEl("div")
       entry.className = "nt-custom-field-entry flex items-center gap-2"
       entry.dataset.fieldType = type
 
-      const fieldLabel = form?.querySelector<HTMLElement>(`[data-field-type="${type}"].nt-add-field-type`)?.textContent?.trim() || type
+      const fieldLabel = qs<HTMLElement>(form, `[data-field-type="${type}"].nt-add-field-type`)?.textContent?.trim() || type
       const iconMap: Record<string, IconName> = { url: "link", number: "hash", date: "calendar", attachment: "paperclip", text: "file-text" }
 
       if (type === "checkbox") {
-        const cb = document.createElement("input")
+        const cb = domEl("input")
         cb.type = "checkbox"
-        cb.setAttribute("aria-label", fieldLabel)
+        setAttr(cb, "aria-label", fieldLabel)
         cb.className = "rounded border-border bg-bg-input/50 focus:ring-accent"
         entry.appendChild(cb)
       } else {
-        const icon = document.createElement("span")
-        icon.className = "text-xs text-text-muted inline-flex items-center"
+        const icon = domEl("span", "text-xs text-text-muted inline-flex items-center")
         icon.replaceChildren(createSpriteIconElement(iconMap[type] ?? "file-text", { size: 14 }))
         entry.appendChild(icon)
       }
 
-      const input = document.createElement("input")
+      const input = domEl("input")
       const inputTypeMap: Record<string, string> = { url: "url", number: "number", date: "date", attachment: "file", checkbox: "text" }
       const placeholderMap: Record<string, string> = { url: "https://", number: "0", text: "Enter text...", checkbox: "Label" }
       input.type = inputTypeMap[type] || "text"
-      input.setAttribute("aria-label", fieldLabel)
+      setAttr(input, "aria-label", fieldLabel)
       input.className = "form-input flex-1 bg-bg-input/50 border-border-dim rounded-lg text-sm px-3 py-1"
       if (placeholderMap[type]) input.placeholder = placeholderMap[type]
       entry.appendChild(input)
 
-      const removeBtn = document.createElement("button")
+      const removeBtn = domEl("button")
       removeBtn.type = "button"
       removeBtn.className = "text-text-muted hover:text-red-400 text-xs inline-flex items-center justify-center"
       removeBtn.replaceChildren(createSpriteIconElement("x", { size: 14 }))
       removeBtn.addEventListener("click", () => { entry.remove(); markEdited() }, { signal })
-      removeBtn.setAttribute("aria-label", `Remove ${type} field`)
+      setAttr(removeBtn, "aria-label", `Remove ${type} field`)
       entry.appendChild(removeBtn)
 
       return entry
@@ -634,15 +808,15 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     document.querySelectorAll(".nt-add-field-type").forEach(btn => {
       btn.addEventListener("click", () => {
         const type = (btn as HTMLElement).dataset.fieldType || "text";
-        const cfList = document.getElementById("nt-custom-fields-list");
+        const cfList = byId("nt-custom-fields-list");
         if (!cfList) return;
         cfList.appendChild(createCustomFieldEntry(type));
         markEdited()
         cfDropdown?.classList.add("hidden")
         if (cfDropdown) cfDropdown.style.display = ""
         cfContainer?.classList.remove("hidden")
-        cfToggle?.setAttribute("aria-expanded", "true")
-        cfAddBtn?.setAttribute("aria-expanded", "false")
+        setAttr(cfToggle, "aria-expanded", "true")
+        setAttr(cfAddBtn, "aria-expanded", "false")
       }, { signal });
     });
     let calendarCaptureTask: string | undefined
@@ -682,10 +856,27 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
           captureNeedsRefresh = false
           document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "created" } }))
         }
+        if (!calendarCaptureTask && !unconfirmedAttempt) {
+          const stacked = popTaskEditorDraft()
+          if (stacked?.snapshot) {
+            overlay.classList.add("active")
+            if (stacked.parentContext) applyParentContext(stacked.parentContext)
+            restoreCapture(stacked.snapshot)
+            resumeOriginTaskId = stacked.resumeOriginTaskId
+            focusTrap.activate()
+            showToast("Previous draft restored")
+          } else if (resumeOriginTaskId) {
+            const originId = resumeOriginTaskId
+            resumeOriginTaskId = undefined
+            window.openTaskDetail?.(originId)
+          }
+        } else {
+          resumeOriginTaskId = undefined
+        }
       }
       if (reducedMotion) { finishClose(); return; }
       overlay.classList.add("closing");
-      const content = overlay.querySelector(".modal-content");
+      const content = qs(overlay, ".modal-content");
       if (content) {
         const onEnd = () => { content.removeEventListener("animationend", onEnd); finishClose(); };
         content.addEventListener("animationend", onEnd, { once: true, signal });
@@ -771,21 +962,41 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     }, { signal })
 
     // Expose global open method
-    window.openNewTaskModal = (kind) => {
-      if (signal.aborted || boardWithheld || overlay.classList.contains("active")) return
+    window.openNewTaskModal = (kind, options) => {
+      if (signal.aborted || boardWithheld) return
+      if (overlay.classList.contains("active")) {
+        if (!options) return
+        pushTaskEditorDraft({
+          snapshot: captureSnapshot(),
+          ...(activeParentContext ? { parentContext: activeParentContext } : {}),
+          ...(resumeOriginTaskId ? { resumeOriginTaskId } : {}),
+        })
+      }
       // If the detail panel is open, close it to avoid dual modal
-      document.getElementById("task-detail-panel")?.classList.remove("open");
-      document.getElementById("task-detail-overlay")?.classList.remove("active");
+      const detailOverlayEl = byId("task-detail-overlay")
+      const hadDetailOpen = Boolean(detailOverlayEl?.classList.contains("active"))
+      byId("task-detail-panel")?.classList.remove("open");
+      detailOverlayEl?.classList.remove("active");
       document.body.classList.remove("has-docked-inspector");
+
+      resumeOriginTaskId = options?.resumeOriginTaskId ?? (hadDetailOpen ? detailOverlayEl?.dataset.openTaskId : undefined)
+      pendingCreateOptions = options
+      contextParent = options?.parent
 
       if (!unconfirmedAttempt) {
         clearCapture()
         captureContext = currentTaskApiContext()
       } else captureContext = pendingContext
       if (!captureContext) return
-      const captureBoardLabel = document.getElementById("nt-capture-board")
+      const captureBoardLabel = byId("nt-capture-board")
       if (captureBoardLabel) captureBoardLabel.textContent = `Board: ${captureContext.boardName ?? "Selected Board"}`
-      contextPlacement = unconfirmedAttempt ? capturePlacement : taskCapturePlacement()
+      contextPlacement = unconfirmedAttempt
+        ? capturePlacement
+        : options?.areaId !== undefined || options?.projectId !== undefined
+          ? { areaId: options.areaId ?? null, projectId: options.projectId ?? null }
+          : options?.parent && (options.parent.areaId !== undefined || options.parent.projectId !== undefined)
+            ? { areaId: options.parent.areaId ?? null, projectId: options.parent.projectId ?? null }
+            : taskCapturePlacement()
       contextDue = window.__prefillTaskDate ?? ""
       contextKind = kind && [...kindTabs].some(tab => (tab as HTMLElement).dataset.kind === kind) ? kind : ""
       if (captureFeedback) captureFeedback.textContent = ""
@@ -798,10 +1009,16 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
 
       captureOptionsRequest = new AbortController()
       const requestSignal = AbortSignal.any([signal, captureOptionsRequest.signal, AbortSignal.timeout(10_000)])
+      const boardId = captureContext.boardId
       if (!unconfirmedAttempt) {
-        void loadAssigneeDropdown(requestSignal)
+        if (usersLoadedBoard !== boardId) void loadAssigneeDropdown(requestSignal, boardId)
+        else if (!preserveAssignee && assignee && !assignee.value && defaultAssignee) assignee.value = defaultAssignee
         if (!lanesLoaded) void loadStatusPills(requestSignal)
         if (!goalsLoaded) void loadGoals(requestSignal)
+        void loadPropertiesCatalog(requestSignal, boardId)
+        if ((ntOptions?.open || urlPrefillCustomFields) && customFieldsLoadedBoard !== boardId) {
+          void loadBoardCustomFields(requestSignal, boardId)
+        }
       }
       focusTrap.activate()
       if (!unconfirmedAttempt) void loadDraftEditor(captureSession)
@@ -809,9 +1026,9 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     };
 
     // Fetch users and populate the Assign To dropdown
-    async function loadAssigneeDropdown(requestSignal: AbortSignal) {
+    async function loadAssigneeDropdown(requestSignal: AbortSignal, boardId = captureContext?.boardId ?? null) {
       const select = document.querySelector<HTMLSelectElement>("#new-task-assigned-to")
-      const hint = document.getElementById("new-task-assignee-hint")
+      const hint = byId("new-task-assignee-hint")
       if (!select) return
 
       try {
@@ -831,6 +1048,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
         defaultAssignee = fallback
         if (preserveAssignee || submitting) selectSavedOption(select, selected, taskDraftText("assignee_missing"))
         else select.value = fallback
+        usersLoadedBoard = boardId
 
         // Used only by the existing @mention parser.
         ;(window as any).__meitheal_users = users
@@ -840,13 +1058,16 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     }
 
     // Swimlanes Loader → Status Pills
+    document.addEventListener("meitheal:lanes-changed", () => { lanesLoaded = false }, { signal })
+
     async function loadStatusPills(requestSignal: AbortSignal) {
       if (!pillsContainer || !statusInput) return
 
       try {
+        const headers = captureContext ? taskApiHeaders(captureContext) : undefined
         const [lanesRes, modeRes] = await Promise.all([
-          fetch("/api/lanes", { signal: requestSignal }),
-          fetch("/api/settings?key=backlog_mode", { signal: requestSignal }),
+          fetch("/api/lanes", { signal: requestSignal, ...(headers ? { headers } : {}) }),
+          fetch("/api/settings?key=backlog_mode", { signal: requestSignal, ...(headers ? { headers } : {}) }),
         ])
         if (!lanesRes.ok) return
         const { lanes } = await lanesRes.json()
@@ -861,14 +1082,14 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
         let nextFocus: HTMLButtonElement | undefined
         for (const lane of lanes) {
           if (hideBacklog && lane.key === "backlog") continue
-          const pill = document.createElement("button")
+          const pill = domEl("button")
           pill.type = "button"
           pill.className = "filter-toolbar__type-btn"
           pill.dataset.status = lane.key
-          pill.setAttribute("role", "radio")
-          const icon = document.createElement("span")
+          setAttr(pill, "role", "radio")
+          const icon = domEl("span")
           icon.className = "nt-status-pill-icon inline-flex items-center"
-          icon.setAttribute("aria-hidden", "true")
+          setAttr(icon, "aria-hidden", "true")
           const laneFallbackIcon: Record<string, TablerIconName> = {
             backlog: "inbox",
             pending: "clock",
@@ -876,7 +1097,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
             complete: "check",
           }
           renderIconOrCustomEmoji(icon, lane.icon, laneFallbackIcon[lane.key] ?? "clock", 14)
-          const label = document.createElement("span")
+          const label = domEl("span")
           label.textContent = lane.label
           pill.append(icon, label)
           options.appendChild(pill)
@@ -894,7 +1115,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
 
     const dueInput = document.querySelector<HTMLInputElement>("#nt-contextual-due")
     const dueMount = document.querySelector<HTMLElement>("#nt-due-date-picker")
-    const dueLabel = document.getElementById("nt-due-label")?.textContent ?? "Due date"
+    const dueLabel = byId("nt-due-label")?.textContent ?? "Due date"
     let duePicker: InlineDatePicker | undefined
     const dateOnly = /^\d{4}-\d{2}-\d{2}$/
 
@@ -904,17 +1125,17 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     }
 
     function syncDueControls(focus = false) {
-      const trigger = dueMount?.querySelector<HTMLElement>(".idp-trigger")
+      const trigger = qs<HTMLElement>(dueMount, ".idp-trigger")
       if (!trigger) return
-      const clear = trigger.querySelector<HTMLButtonElement>(".idp-clear-btn")
+      const clear = qs<HTMLButtonElement>(trigger, ".idp-clear-btn")
       if (clear) dueMount?.append(clear)
       dueMount?.querySelectorAll<HTMLButtonElement>("button").forEach(button => { button.type = "button" })
       if (!(trigger instanceof HTMLButtonElement)) {
         trigger.tabIndex = 0
-        trigger.setAttribute("role", "button")
+        setAttr(trigger, "role", "button")
       }
-      trigger.setAttribute("aria-label", dueInput?.value ? `${dueLabel}: ${dueInput.value}` : dueLabel)
-      trigger.setAttribute("aria-haspopup", "dialog")
+      setAttr(trigger, "aria-label", dueInput?.value ? `${dueLabel}: ${dueInput.value}` : dueLabel)
+      setAttr(trigger, "aria-haspopup", "dialog")
       if (focus) trigger.focus({ preventScroll: true })
     }
 
@@ -950,8 +1171,8 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
           const panel = [...document.querySelectorAll<HTMLElement>(".idp-panel")].find(item => !prior.has(item))
           if (!panel || signal.aborted) return
           panel.classList.add("nt-due-date-panel")
-          panel.setAttribute("role", "dialog")
-          panel.setAttribute("aria-label", dueLabel)
+          setAttr(panel, "role", "dialog")
+          setAttr(panel, "aria-label", dueLabel)
           overlay.append(panel)
           const bounds = panel.getBoundingClientRect()
           panel.style.left = `${Math.max(8, Math.min(bounds.left, innerWidth - bounds.width - 8))}px`
@@ -964,7 +1185,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
             duePicker?.setValue(displayedDate(dueInput.value))
             syncDueControls(true)
           }, { signal })
-          panel.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true })
+          qs<HTMLButtonElement>(panel, "button")?.focus({ preventScroll: true })
         })
       }, { capture: true, signal })
       dueMount.addEventListener("keydown", event => {
@@ -985,21 +1206,21 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
         .slice(0, minutesOnly ? 16 : -1)
     }
     function restoreEventDate(id: string, raw: string) {
-      const control = document.getElementById(id) as HTMLInputElement | null
+      const control = byId<HTMLInputElement>(id)
       if (!control) return
       const date = displayedDate(raw)
       control.value = date ? formatLocalDateTimeInput(date) : ""
       eventDates.set(id, { raw, display: control.value })
     }
     function eventDateValue(id: string): string {
-      const control = document.getElementById(id) as HTMLInputElement | null
+      const control = byId<HTMLInputElement>(id)
       const saved = eventDates.get(id)
       if (saved && control?.value === saved.display) return saved.raw
       return control?.value ? new Date(control.value).toISOString() : ""
     }
-    document.getElementById("nt-event-start")?.addEventListener("change", (event) => {
+    byId("nt-event-start")?.addEventListener("change", (event) => {
       const startControl = event.target as HTMLInputElement
-      const endControl = document.getElementById("nt-event-end") as HTMLInputElement | null
+      const endControl = byId<HTMLInputElement>("nt-event-end")
       const startDate = displayedDate(startControl.value)
       if (!startDate || !endControl) return
       const currentEnd = displayedDate(endControl.value)
@@ -1022,7 +1243,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
         const noGoal = goalSelect.options[0]
         if (!noGoal) return
         goalSelect.replaceChildren(noGoal, ...goals.map(goal => {
-          const option = document.createElement("option")
+          const option = domEl("option")
           option.value = goal.id
           option.textContent = String(goal.title || goal.name || "")
           return option
@@ -1034,17 +1255,224 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       }
     }
 
+    let pendingBoardCustomFieldValues: Record<string, string> = {}
+
+    function renderBoardCustomFieldDefs(defs: Array<{ name: string; type: string; options?: string[] }>) {
+      if (!boardCustomList) return
+      const existing = captureBoardCustomFields()
+      const values = { ...pendingBoardCustomFieldValues, ...existing }
+      boardCustomList.replaceChildren()
+      defs.forEach((def, idx) => {
+        const name = String(def?.name ?? "").trim()
+        if (!name) return
+        const row = domEl("div", "nt-field")
+        row.dataset.boardCfName = name
+        row.dataset.boardCfType = def.type || "text"
+        const fieldId = `nt-board-cf-${idx}`
+        const lbl = domEl("label")
+        lbl.htmlFor = fieldId
+        lbl.textContent = name
+        const savedVal = values[name] ?? ""
+        if (def.type === "checkbox") {
+          row.className = "flex items-center gap-2 py-1"
+          row.dataset.boardCfName = name
+          row.dataset.boardCfType = "checkbox"
+          const cb = domEl("input")
+          cb.id = fieldId
+          cb.type = "checkbox"
+          cb.className = "h-4 w-4 accent-accent rounded"
+          cb.checked = savedVal === "true" || savedVal === "1" || savedVal === "yes"
+          cb.addEventListener("change", () => markEdited(), { signal })
+          row.append(cb, lbl)
+        } else if (def.type === "select" && Array.isArray(def.options)) {
+          const sel = domEl("select")
+          sel.id = fieldId
+          sel.className = "form-select"
+          sel.append(new Option("—", ""))
+          for (const opt of def.options) sel.append(new Option(String(opt), String(opt)))
+          sel.value = savedVal
+          sel.addEventListener("change", () => markEdited(), { signal })
+          row.append(lbl, sel)
+        } else {
+          const inp = domEl("input")
+          inp.id = fieldId
+          inp.type = def.type === "number" || def.type === "date" || def.type === "url" ? def.type : "text"
+          inp.className = "form-input"
+          if (def.type === "url") inp.placeholder = "https://"
+          inp.value = savedVal
+          inp.addEventListener("input", () => markEdited(), { signal })
+          row.append(lbl, inp)
+        }
+        boardCustomList.append(row)
+      })
+      if (defs.length > 0 && cfContainer) {
+        cfContainer.classList.remove("hidden")
+        setAttr(cfToggle, "aria-expanded", "true")
+      }
+    }
+
+    function captureBoardCustomFields(): Record<string, string> {
+      const out: Record<string, string> = {}
+      boardCustomList?.querySelectorAll<HTMLElement>("[data-board-cf-name]").forEach(row => {
+        const key = row.dataset.boardCfName
+        const type = row.dataset.boardCfType
+        if (!key) return
+        if (type === "checkbox") {
+          const cb = qs<HTMLInputElement>(row, "input[type=checkbox]")
+          if (cb?.checked) out[key] = "true"
+          return
+        }
+        const ctrl = qs<HTMLInputElement | HTMLSelectElement>(row, "input, select")
+        const v = ctrl?.value.trim() ?? ""
+        if (v) out[key] = v
+      })
+      return out
+    }
+
+    function restoreBoardCustomFields(values?: Record<string, string>) {
+      pendingBoardCustomFieldValues = values ? { ...values } : {}
+      boardCustomList?.querySelectorAll<HTMLElement>("[data-board-cf-name]").forEach(row => {
+        const key = row.dataset.boardCfName
+        const type = row.dataset.boardCfType
+        if (!key) return
+        const nextVal = pendingBoardCustomFieldValues[key] ?? ""
+        if (type === "checkbox") {
+          const cb = qs<HTMLInputElement>(row, "input[type=checkbox]")
+          if (cb) cb.checked = nextVal === "true" || nextVal === "1" || nextVal === "yes"
+          return
+        }
+        const ctrl = qs<HTMLInputElement | HTMLSelectElement>(row, "input, select")
+        if (ctrl) ctrl.value = nextVal
+      })
+    }
+
+    async function loadPrinciplesForPillar(pillarId: string, requestSignal: AbortSignal, desiredPrincipleId = "") {
+      const headers = captureContext ? taskApiHeaders(captureContext) : undefined
+      await loadPillarPrinciplesOptions(principleSelect, pillarId, {
+        signal: requestSignal,
+        ...(headers ? { headers } : {}),
+        selectedId: desiredPrincipleId,
+      })
+    }
+
+    document.addEventListener("meitheal:custom-fields-updated", () => { customFieldsLoadedBoard = null }, { signal })
+    ntOptions?.addEventListener("toggle", () => {
+      if (ntOptions.open && captureContext && customFieldsLoadedBoard !== captureContext.boardId) {
+        const reqSig = AbortSignal.any([signal, ...(captureOptionsRequest ? [captureOptionsRequest.signal] : []), AbortSignal.timeout(10_000)])
+        void loadBoardCustomFields(reqSig, captureContext.boardId)
+      }
+    }, { signal })
+
+    async function loadBoardCustomFields(requestSignal: AbortSignal, boardId = captureContext?.boardId ?? null) {
+      if (!boardCustomList || customFieldsLoadedBoard === boardId) return
+      const headers = captureContext ? taskApiHeaders(captureContext) : undefined
+      const cfRes = await fetch("/api/custom-fields", { signal: requestSignal, cache: "no-store", ...(headers ? { headers } : {}) }).catch(() => null)
+      if (requestSignal.aborted || !cfRes?.ok) return
+      const cfData = await cfRes.json().catch(() => null) as { fields?: Array<{ name: string; type: string; options?: string[] }> } | null
+      if (Array.isArray(cfData?.fields)) {
+        renderBoardCustomFieldDefs(cfData.fields)
+        customFieldsLoadedBoard = boardId
+      }
+    }
+
+    function fillCatalogSelect<T extends { id: string }>(
+      select: HTMLSelectElement | null,
+      res: Response | null,
+      list: T[] | undefined,
+      noneLabel: string,
+      selected: string,
+      unavailableLabel: string,
+      toOption: (item: T) => HTMLOptionElement,
+    ): boolean {
+      if (!select) return true
+      if (!res?.ok) return false
+      const items = Array.isArray(list) ? list : []
+      const noneOpt = select.options[0] ?? new Option(noneLabel, "")
+      select.replaceChildren(noneOpt, ...items.map(toOption))
+      if (selected) selectSavedOption(select, selected, unavailableLabel)
+      else select.value = ""
+      return true
+    }
+
+    async function loadPropertiesCatalog(requestSignal: AbortSignal, boardId = captureContext?.boardId ?? null) {
+      if (propertiesLoadedBoard === boardId) {
+        if (areaSelect) selectSavedOption(areaSelect, capturePlacement?.areaId ?? areaSelect.value, "Unavailable group")
+        if (projectSelect) selectSavedOption(projectSelect, capturePlacement?.projectId ?? projectSelect.value, "Unavailable project")
+        return
+      }
+      const headers = captureContext ? taskApiHeaders(captureContext) : undefined
+      const fetchOpt = { signal: requestSignal, ...(headers ? { headers } : {}) }
+      const [areaRes, projectRes, pillarRes] = await Promise.all([
+        areaSelect ? fetch("/api/areas", fetchOpt).catch(() => null) : null,
+        projectSelect ? fetch("/api/projects", fetchOpt).catch(() => null) : null,
+        pillarSelect ? fetch("/api/pillars", fetchOpt).catch(() => null) : null,
+      ])
+      if (requestSignal.aborted) return
+
+      const [areaData, projectData, pillarData] = await Promise.all([
+        areaRes?.ok ? areaRes.json().catch(() => null) as Promise<{ areas?: Array<{ id: string; name: string }> } | null> : null,
+        projectRes?.ok ? projectRes.json().catch(() => null) as Promise<{ projects?: Array<{ id: string; title?: string; name?: string; area_id?: string | null }> } | null> : null,
+        pillarRes?.ok ? pillarRes.json().catch(() => null) as Promise<{ pillars?: Array<{ id: string; name: string }> } | null> : null,
+      ])
+      if (requestSignal.aborted) return
+
+      const selectedPrinciple = principleSelect?.value ?? ""
+      const areaOk = fillCatalogSelect(areaSelect, areaRes, areaData?.areas, "No group",
+        capturePlacement?.areaId ?? areaSelect?.value ?? "", "Unavailable group", a => new Option(a.name, a.id))
+      const projectOk = fillCatalogSelect(projectSelect, projectRes, projectData?.projects, "No project",
+        capturePlacement?.projectId ?? projectSelect?.value ?? "", "Unavailable project", p => {
+          const opt = new Option(String(p.title ?? p.name ?? ""), p.id)
+          if (p.area_id) opt.dataset.areaId = p.area_id
+          return opt
+        })
+      const pillarOk = fillCatalogSelect(pillarSelect, pillarRes, pillarData?.pillars, "No pillar",
+        pillarSelect?.value ?? "", "Unavailable pillar", p => new Option(p.name, p.id))
+      if (pillarOk && pillarSelect?.value) void loadPrinciplesForPillar(pillarSelect.value, requestSignal, selectedPrinciple)
+
+      if (areaOk && projectOk && pillarOk) propertiesLoadedBoard = boardId
+    }
+
+    areaSelect?.addEventListener("change", () => {
+      const nextArea = areaSelect.value || null
+      if (projectSelect?.value) {
+        const selectedProjectArea = projectSelect.selectedOptions[0]?.dataset.areaId ?? null
+        if (selectedProjectArea && nextArea !== selectedProjectArea) projectSelect.value = ""
+      }
+      capturePlacement = { areaId: nextArea, projectId: projectSelect?.value || null }
+      markEdited()
+    }, { signal })
+
+    projectSelect?.addEventListener("change", () => {
+      const nextProject = projectSelect.value || null
+      const projectArea = projectSelect.selectedOptions[0]?.dataset.areaId ?? null
+      if (projectArea && areaSelect) areaSelect.value = projectArea
+      capturePlacement = { areaId: (areaSelect?.value || projectArea || null), projectId: nextProject }
+      markEdited()
+    }, { signal })
+
+    pillarSelect?.addEventListener("change", () => {
+      const nextPillar = pillarSelect.value
+      const reqSig = AbortSignal.any([signal, ...(captureOptionsRequest ? [captureOptionsRequest.signal] : []), AbortSignal.timeout(8_000)])
+      void loadPrinciplesForPillar(nextPillar, reqSig)
+      markEdited()
+    }, { signal })
+
+    colorInput?.addEventListener("input", () => {
+      if (colorEnabledInput) colorEnabledInput.checked = true
+      markEdited()
+    }, { signal })
+
     type CaptureField = TaskDraftSnapshot["fields"][number]
     type CaptureControl = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
 
-    const input = (id: string) => overlay.querySelector<CaptureControl>("#" + id)
+    const type = (id: string) => qs<CaptureControl>(overlay, "#" + id)
+    const input = type
     const value = (id: string) => input(id)?.value ?? ""
-    const checked = (id: string) => Boolean((input(id) as HTMLInputElement | null)?.checked)
-    const labelPicker = overlay.querySelector<HTMLElement>("#new-task-label-picker")
+    const labelPicker = qs<HTMLElement>(overlay, "#new-task-label-picker")
     const labelValue = input("new-task-label-picker-value")
-    const customList = overlay.querySelector<HTMLElement>("#nt-custom-fields-list")
-    const assignee = overlay.querySelector<HTMLSelectElement>("#new-task-assigned-to")
-    const fieldError = overlay.querySelector<HTMLElement>("#nt-capture-validation")
+    const customList = qs<HTMLElement>(overlay, "#nt-custom-fields-list")
+    const assignee = qs<HTMLSelectElement>(overlay, "#new-task-assigned-to")
+    const fieldError = qs<HTMLElement>(overlay, "#nt-capture-validation")
 
     function showFieldError(message = "") {
       if (!fieldError) return
@@ -1054,7 +1482,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
 
     function selectSavedOption(select: HTMLSelectElement | null, desired: string, unavailableLabel: string) {
       if (!select) return
-      select.querySelector("[data-unavailable]")?.remove()
+      qs(select, "[data-unavailable]")?.remove()
       if (desired && !Array.from(select.options).some(option => option.value === desired)) {
         const unavailable = new Option(unavailableLabel, desired)
         unavailable.dataset.unavailable = ""
@@ -1068,23 +1496,43 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       const fields: CaptureField[] = []
       customList?.querySelectorAll<HTMLElement>(".nt-custom-field-entry").forEach(entry => {
         const type = entry.dataset.fieldType
-        const field = entry.querySelector<HTMLInputElement>("input:not([type=checkbox])")
+        const field = qs<HTMLInputElement>(entry, "input:not([type=checkbox])")
         if (!field) return
-        if (type === "checkbox") fields.push({ type, label: field.value, checked: Boolean(entry.querySelector<HTMLInputElement>("input[type=checkbox]")?.checked) })
+        if (type === "checkbox") fields.push({ type, label: field.value, checked: Boolean(qs<HTMLInputElement>(entry, "input[type=checkbox]")?.checked) })
         else if (type === "url" || type === "text" || type === "number" || type === "date") fields.push({ type, value: field.value })
       })
       return fields
     }
 
     function captureSnapshot(): TaskDraftSnapshot {
+      descEditor?.flushToTextarea()
+      const currentType = normalizeEditableTaskType(taskTypeSelect?.value)
+      const boardCf = captureBoardCustomFields()
+      const progressNum = progressInput ? Math.min(100, Math.max(0, Math.round(Number(progressInput.value) || 0))) : 0
+      const urgencyNum = urgencySelect ? Math.min(5, Math.max(0, Math.round(Number(urgencySelect.value) || 0))) : 0
+      const importanceNum = importanceSelect ? Math.min(5, Math.max(0, Math.round(Number(importanceSelect.value) || 0))) : 0
       return {
         version: 1,
         ...(capturePlacement ? { placement: capturePlacement } : {}),
+        ...(currentType !== "task" ? { taskType: currentType } : {}),
+        ...(activeParentContext?.parentId ? {
+          parentId: activeParentContext.parentId,
+          parentTitle: activeParentContext.parentTitle,
+          parentType: activeParentContext.parentType,
+          parentTicketKey: activeParentContext.parentTicketKey,
+        } : {}),
         title: titleInput?.value ?? "",
         description: descInput?.value ?? "",
         taskKind: (kindInput?.value || "standard_action") as TaskDraftSnapshot["taskKind"],
         status: statusInput?.value || "pending",
         priority: Number(value("new-task-priority")),
+        ...(urgencyNum ? { urgency: urgencyNum } : {}),
+        ...(importanceNum ? { importance: importanceNum } : {}),
+        ...(progressNum ? { progress: progressNum } : {}),
+        ...(colorEnabledInput?.checked && colorInput?.value ? { color: colorInput.value } : {}),
+        ...(pillarSelect?.value ? { pillarId: pillarSelect.value } : {}),
+        ...(principleSelect?.value ? { principleId: principleSelect.value } : {}),
+        ...(Object.keys(boardCf).length > 0 ? { boardCustomFields: boardCf } : {}),
         due: value("nt-contextual-due"),
         labels: JSON.parse(labelValue?.value || "[]"),
         newLabels: JSON.parse(labelValue?.dataset.newLabels || "[]"),
@@ -1113,15 +1561,30 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
         }
         if (descInput) {
           descInput.value = snapshot.description
+          descEditor?.syncFromTextarea()
         }
+        if (snapshot.parentId) {
+          applyParentContext(activeParentContext?.parentId === snapshot.parentId
+            ? activeParentContext
+            : {
+                parentId: snapshot.parentId,
+                parentTitle: snapshot.parentTitle ?? snapshot.parentId.slice(0, 8),
+                parentType: snapshot.parentType ?? "task",
+                parentTicketKey: snapshot.parentTicketKey ?? null,
+              })
+        } else {
+          applyParentContext(undefined)
+        }
+        if (taskTypeSelect) taskTypeSelect.value = snapshot.taskType ?? "task"
+        syncTaskTypeSelect(taskTypeSelect, activeParentContext?.parentType)
 
         const priority = input("new-task-priority")
-        const recurrence = overlay?.querySelector<HTMLSelectElement>("#new-task-recurrence")
+        const recurrence = qs<HTMLSelectElement>(overlay, "#new-task-recurrence")
         if (priority) {
           priority.value = String(snapshot.priority)
           syncPriorityIcon()
         }
-        recurrence?.querySelector("[data-saved-recurrence]")?.remove()
+        qs(recurrence, "[data-saved-recurrence]")?.remove()
         if (recurrence) {
           if (snapshot.recurrence && ![...recurrence.options].some(option => option.value === snapshot.recurrence)) {
             const saved = new Option(snapshot.recurrence, snapshot.recurrence)
@@ -1130,6 +1593,25 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
           }
           recurrence.value = snapshot.recurrence
         }
+        if (urgencySelect) urgencySelect.value = String(snapshot.urgency ?? 0)
+        if (importanceSelect) importanceSelect.value = String(snapshot.importance ?? 0)
+        if (progressInput) progressInput.value = String(snapshot.progress ?? 0)
+        if (colorEnabledInput && colorInput) {
+          colorEnabledInput.checked = Boolean(snapshot.color)
+          if (snapshot.color) colorInput.value = snapshot.color
+        }
+        if (areaSelect) areaSelect.value = snapshot.placement?.areaId ?? ""
+        if (projectSelect) projectSelect.value = snapshot.placement?.projectId ?? ""
+        if (pillarSelect) {
+          if (snapshot.pillarId) selectSavedOption(pillarSelect, snapshot.pillarId, "Selected pillar")
+          else pillarSelect.value = ""
+        }
+        if (principleSelect) {
+          if (!snapshot.pillarId) principleSelect.replaceChildren(principleSelect.options[0] ?? new Option("No principle", ""))
+          if (snapshot.principleId) selectSavedOption(principleSelect, snapshot.principleId, "Selected principle")
+          else principleSelect.value = ""
+        }
+        restoreBoardCustomFields(snapshot.boardCustomFields)
         selectSavedOption(assignee, snapshot.assignedTo, taskDraftText("assignee_missing"))
         selectSavedOption(goalSelect, snapshot.goal, taskDraftText("goal_missing"))
         preserveAssignee = true
@@ -1143,12 +1625,6 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
         // Preserve older private draft metadata without advertising unsupported creation controls.
         retainedRoutine = snapshot.isRoutine
         retainedEventDetails = { location: snapshot.event.location, allDay: snapshot.event.allDay, calendar: snapshot.event.calendar }
-        const location = input("nt-event-location")
-        if (location) location.value = snapshot.event.location
-        const calendar = input("nt-event-calendar")
-        if (calendar) calendar.value = snapshot.event.calendar
-        const allDay = input("nt-event-all-day") as HTMLInputElement | null
-        if (allDay) allDay.checked = snapshot.event.allDay
 
         checklistItems.clear()
         itemsContainer?.replaceChildren()
@@ -1165,17 +1641,17 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
 
         customList?.replaceChildren()
         cfContainer?.classList.toggle("hidden", snapshot.fields.length === 0)
-        cfToggle?.setAttribute("aria-expanded", String(snapshot.fields.length > 0))
-        cfAddBtn?.setAttribute("aria-expanded", "false")
-        const options = overlay?.querySelector<HTMLDetailsElement>("#nt-options")
-        if (options) options.open = !!(snapshot.goal || snapshot.recurrence || snapshot.labels.length || snapshot.newLabels.length || snapshot.fields.length)
+        setAttr(cfToggle, "aria-expanded", String(snapshot.fields.length > 0))
+        setAttr(cfAddBtn, "aria-expanded", "false")
+        const hasBoardCf = Boolean(snapshot.boardCustomFields && Object.keys(snapshot.boardCustomFields).length)
+        if (ntOptions) ntOptions.open = !!(snapshot.goal || snapshot.recurrence || snapshot.progress || snapshot.color || snapshot.labels.length || snapshot.newLabels.length || snapshot.fields.length || hasBoardCf)
         cfDropdown?.classList.add("hidden")
         if (cfDropdown) cfDropdown.style.display = ""
         for (const field of snapshot.fields) {
           const entry = createCustomFieldEntry(field.type)
-          const control = entry.querySelector<HTMLInputElement>("input:not([type=checkbox])")
+          const control = qs<HTMLInputElement>(entry, "input:not([type=checkbox])")
           if (control) control.value = field.type === "checkbox" ? field.label : field.value
-          const checkbox = entry.querySelector<HTMLInputElement>("input[type=checkbox]")
+          const checkbox = qs<HTMLInputElement>(entry, "input[type=checkbox]")
           if (checkbox && field.type === "checkbox") checkbox.checked = field.checked
           customList?.append(entry)
         }
@@ -1189,6 +1665,9 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       unconfirmedAttempt = recoveredTaskId = undefined
       pendingContext = null
       repeatAfterReceipt = false
+      urlPrefillCustomFields = undefined
+      if (ntLayoutPanel) ntLayoutPanel.hidden = true
+      setAttr(ntLayoutToggle, "aria-expanded", "false")
       if (uncertain) uncertain.hidden = true
       if (uncertainAlert) uncertainAlert.hidden = false
       if (receiptStatus) receiptStatus.textContent = ""
@@ -1203,10 +1682,42 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
         checklist: { items: [], input: "" }, shopping: { items: [], input: "", quantity: "1", category: "" },
         event: { start: "", end: "", location: "", allDay: false, calendar: "" }, fields: [],
       })
+      void descEditor?.setMode("markdown", false)
     }
 
     function restoreCaptureContext() {
       capturePlacement = contextPlacement
+      if (areaSelect) areaSelect.value = capturePlacement?.areaId ?? ""
+      if (projectSelect) projectSelect.value = capturePlacement?.projectId ?? ""
+      applyParentContext(contextParent)
+      if (taskTypeSelect) {
+        taskTypeSelect.value = pendingCreateOptions?.taskType
+          ?? (contextParent ? defaultChildTaskType(contextParent.parentType) : "task")
+        syncTaskTypeSelect(taskTypeSelect, contextParent?.parentType)
+      }
+      if (pendingCreateOptions?.title && titleInput) {
+        titleInput.value = pendingCreateOptions.title
+        resizeTitle()
+      }
+      if (pendingCreateOptions?.description && descInput) {
+        descInput.value = pendingCreateOptions.description
+        descEditor?.syncFromTextarea()
+      }
+      if (pendingCreateOptions?.priority && prioritySelect) {
+        prioritySelect.value = String(pendingCreateOptions.priority)
+        syncPriorityIcon()
+      }
+      if (pendingCreateOptions?.status) selectStatus(pendingCreateOptions.status)
+      if (pendingCreateOptions?.dueDate && !contextDue) contextDue = pendingCreateOptions.dueDate
+      if (pendingCreateOptions?.labels?.length) {
+        labelPicker?.dispatchEvent(new CustomEvent("meitheal:set-draft-labels", {
+          detail: { labels: pendingCreateOptions.labels, newLabels: [] },
+        }))
+      }
+      if (pendingCreateOptions?.customFields) {
+        urlPrefillCustomFields = { ...pendingCreateOptions.customFields }
+      }
+      pendingCreateOptions = undefined
       if (contextKind) selectKind(contextKind)
       if (contextKind === "calendar_event") restoreEventDate("nt-event-start", contextDue)
       else restoreDue(contextDue)
@@ -1228,7 +1739,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
         submitBtn.disabled = disabled || !canRetryCreate()
         submitBtn.formNoValidate = bound
         submitBtn.classList.toggle("btn-loading", submitting)
-        submitBtn.setAttribute("aria-busy", String(submitting))
+        setAttr(submitBtn, "aria-busy", String(submitting))
         submitBtn.textContent = bound ? taskDraftText("publish") : submitting ? submitBtn.dataset.labelCreating || "Creating…" : createButtonLabel()
       }
       if (anotherBtn) {
@@ -1266,7 +1777,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       focusTitle: () => titleInput?.focus(),
       stateChanged(bound, disabled, withdrawn, holdFields) {
         if (form) form.inert = withdrawn || holdFields || submitting
-        const kindBar = overlay.querySelector<HTMLElement>("#nt-kind-tabs")
+        const kindBar = qs<HTMLElement>(overlay, "#nt-kind-tabs")
         if (kindBar) kindBar.inert = withdrawn || holdFields
         showSubmit(bound, disabled)
       },
@@ -1282,33 +1793,85 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
     } satisfies Parameters<typeof connectTaskDrafts>[1]
 
     const precommitRejections = new Set([400, 401, 403, 404, 413, 415, 422, 429])
+    async function refreshBoardSession(boardId: string, reqSignal: AbortSignal): Promise<string | null> {
+      try {
+        const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}?view=authority`, { // nosemgrep
+          cache: "no-store",
+          signal: reqSignal,
+        })
+        const refreshed = res.headers.get("x-meitheal-board-session")
+        if (res.ok && refreshed) {
+          const meta = document.querySelector<HTMLMetaElement>('meta[name="meitheal-work-session"]')
+          if (meta) meta.content = refreshed
+          return refreshed
+        }
+      } catch { /* ignore refresh failure and surface 409 message */ }
+      return null
+    }
+
+    async function readErrorPayload(res: Response): Promise<{ errorCode?: string; message?: string }> {
+      try {
+        const data = await res.json() as { errorCode?: unknown; detail?: unknown; error?: unknown } | null
+        const rawMsg = typeof data?.detail === "string" ? data.detail : typeof data?.error === "string" ? data.error : undefined
+        return {
+          errorCode: typeof data?.errorCode === "string" ? data.errorCode : undefined,
+          message: rawMsg?.trim() || undefined,
+        }
+      } catch {
+        return {}
+      }
+    }
+
     async function createCapture(payload: Record<string, unknown>, attempt: string | undefined) {
       let response: Response | undefined
+      const reqSignal = AbortSignal.any([signal, ...(captureOptionsRequest ? [captureOptionsRequest.signal] : []), AbortSignal.timeout(30_000)])
+      const sendPost = (ctx: TaskApiContext) => fetch("/api/tasks", {
+        method: "POST",
+        headers: taskApiHeaders(ctx, {
+          "content-type": "application/json",
+          ...(attempt ? { "x-meitheal-capture-attempt": attempt } : {}),
+        }),
+        body: JSON.stringify(payload),
+        redirect: "error",
+        signal: reqSignal,
+      })
       try {
         if (!captureContext) return { kind: "rejected" as const, message: "Choose an available Board before capturing." }
-        response = await fetch("/api/tasks", {
-          method: "POST",
-          headers: taskApiHeaders(captureContext, {
-            "content-type": "application/json",
-            ...(attempt ? { "x-meitheal-capture-attempt": attempt } : {}),
-          }),
-          body: JSON.stringify(payload),
-          redirect: "error",
-          signal: AbortSignal.any([signal, ...(captureOptionsRequest ? [captureOptionsRequest.signal] : []), AbortSignal.timeout(30_000)]),
-        })
+        response = await sendPost(captureContext)
+        if (response.status === 409) {
+          const firstErr = await readErrorPayload(response)
+          if (firstErr.errorCode !== "capture_conflict") {
+            const refreshed = await refreshBoardSession(captureContext.boardId, reqSignal)
+            if (refreshed && refreshed !== captureContext.session && !reqSignal.aborted) {
+              captureContext = { ...captureContext, session: refreshed }
+              response = await sendPost(captureContext)
+            }
+          }
+          if (response.status === 409) {
+            const conflictErr = response.bodyUsed ? firstErr : await readErrorPayload(response)
+            return {
+              kind: "rejected" as const,
+              message: conflictErr.message || (conflictErr.errorCode === "capture_conflict"
+                ? "Capture already submitted. Check its receipt or start a new task."
+                : "This Board session changed. Refresh the page and try again."),
+            }
+          }
+        }
         if (response.status === 201) {
           const created = await response.json()
           if (typeof created?.id === "string" && created.id.trim()) {
             return { kind: "created" as const, task: created as { id: string; ticket_key?: string; task_kind?: string } }
           }
         }
-
       } catch { /* Delivery or receipt could have failed after the write. */ }
-      const kind = response && precommitRejections.has(response.status) ? "rejected" : "uncertain"
+      if (response && precommitRejections.has(response.status)) {
+        const err = await readErrorPayload(response)
+        return { kind: "rejected" as const, ...(err.message ? { message: err.message } : {}) }
+      }
       if (!signal.aborted) log.warn("Create task outcome", {
-        kind, status: response?.status, requestId: response?.headers.get("x-request-id"),
+        kind: "uncertain", status: response?.status, requestId: response?.headers.get("x-request-id"),
       })
-      return { kind }
+      return { kind: "uncertain" as const }
     }
 
     checkSave?.addEventListener("keydown", event => {
@@ -1322,7 +1885,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       }
       if (!unconfirmedAttempt || !pendingContext || checkSave.getAttribute("aria-disabled") === "true") return
       const session = captureSession
-      checkSave.setAttribute("aria-disabled", "true")
+      setAttr(checkSave, "aria-disabled", "true")
       if (receiptStatus) receiptStatus.textContent = checkSave.dataset.checking ?? ""
       try {
         const response = await fetch("/api/tasks?captureReceipt=1", {
@@ -1416,7 +1979,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       if (!isHydrating) {
         repeatAfterReceipt = false
         showFieldError()
-        const dateError = document.getElementById("nt-date-error")
+        const dateError = byId("nt-date-error")
         if (dateError) dateError.hidden = true
         if (drafts) drafts.edited()
         else editedWhileLoading = true
@@ -1464,7 +2027,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
           showFieldError(taskDraftText("file_publish"))
           return
         }
-        if (bound && (pillsContainer?.querySelector("[data-unavailable].active") ||
+        if (bound && (qs(pillsContainer, "[data-unavailable].active") ||
             assignee?.selectedOptions[0]?.hasAttribute("data-unavailable") ||
             goalSelect?.selectedOptions[0]?.hasAttribute("data-unavailable"))) {
           showFieldError(taskDraftText("reference_required"))
@@ -1476,10 +2039,10 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
         const end = displayedDate(endRaw)
         const bothDateOnly = dateOnly.test(startRaw) && dateOnly.test(endRaw)
         const invalidDates = kindInput?.value === "calendar_event" && !!start && !!end && (bothDateOnly ? end < start : end <= start)
-        const dateError = document.getElementById("nt-date-error")
+        const dateError = byId("nt-date-error")
         if (dateError) dateError.hidden = !invalidDates
         if (invalidDates) {
-          document.getElementById("nt-event-end")?.focus()
+          byId("nt-event-end")?.focus()
           return
         }
         if (kindInput?.value === "shopping_item" && shoppingQuantity() === null) {
@@ -1537,8 +2100,7 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
           let finalTitle = title || titleInput.value.trim();
 
           // Extract @mentions for assignment
-          const assignedToSelect = document.getElementById("new-task-assigned-to") as HTMLSelectElement | null;
-          let assignedTo = assignedToSelect?.value || "";
+          let assignedTo = assignee?.value || "";
           
           const users = (window as any).__meitheal_users || [];
           finalTitle = finalTitle
@@ -1555,34 +2117,53 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
             
           if (!finalTitle) finalTitle = titleInput.value.trim();
 
-          const explicitDue = (document.getElementById("nt-contextual-due") as HTMLInputElement)?.value;
+          const explicitDue = dueInput?.value ?? "";
           const finalDue = explicitDue || extractedDue;
 
-          const kindInputEl = document.getElementById("new-task-kind") as HTMLInputElement | null;
-          const descInputEl = document.getElementById("new-task-desc-input") as HTMLTextAreaElement | null;
-          const prioritySelectEl = document.getElementById("new-task-priority") as HTMLSelectElement | null;
-          const statusSelectEl = document.getElementById("new-task-status") as HTMLInputElement | null;
-          const goalSelectEl = document.getElementById("new-task-goal") as HTMLSelectElement | null;
-          const recurrenceSelectEl = document.getElementById("new-task-recurrence") as HTMLSelectElement | null;
-          const selectedKind = kindInputEl?.value || "standard_action";
+          descEditor?.flushToTextarea()
+          const taskKind = kindInput?.value || "standard_action"
+          const livePlacement = areaSelect || projectSelect
+            ? {
+                areaId: (areaSelect?.value || capturePlacement?.areaId || null) as string | null,
+                projectId: (projectSelect?.value || capturePlacement?.projectId || null) as string | null,
+              }
+            : capturePlacement
+          const urgencyVal = urgencySelect ? Math.min(5, Math.max(0, Math.round(Number(urgencySelect.value) || 0))) : 0
+          const importanceVal = importanceSelect ? Math.min(5, Math.max(0, Math.round(Number(importanceSelect.value) || 0))) : 0
+          const progressVal = progressInput ? Math.min(100, Math.max(0, Math.round(Number(progressInput.value) || 0))) : 0
+          const colorVal = colorEnabledInput?.checked && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(colorInput?.value || "")
+            ? colorInput!.value
+            : null
+          const pillarIdVal = pillarSelect?.value || null
+          const principleIdVal = principleSelect?.value || null
+
+          const resolvedDue = taskKind === "calendar_event" ? explicitDue : finalDue
 
           const body: Record<string, unknown> = {
             title: finalTitle,
-            ...(capturePlacement ? { placement: capturePlacement } : {}),
-            description: descInputEl?.value.trim() || "",
-            task_kind: selectedKind,
-            priority: Number(prioritySelectEl?.value),
-            status: statusSelectEl?.value || "pending",
+            ...(livePlacement ? { placement: livePlacement } : {}),
+            description: descInput?.value.trim() || "",
+            task_kind: taskKind,
+            task_type: normalizeEditableTaskType(taskTypeSelect?.value),
+            ...(parentInput?.value ? { parent_id: parentInput.value } : {}),
+            priority: Number(prioritySelect?.value),
+            ...(urgencyVal > 0 ? { urgency: urgencyVal } : {}),
+            ...(importanceVal > 0 ? { importance: importanceVal } : {}),
+            ...(progressVal > 0 ? { progress: progressVal } : {}),
+            ...(colorVal ? { color: colorVal } : {}),
+            ...(pillarIdVal ? { pillar_id: pillarIdVal } : {}),
+            ...(principleIdVal ? { principle_id: principleIdVal } : {}),
+            status: statusInput?.value || "pending",
             labels: JSON.stringify(allLabels),
-            due_date: (selectedKind === "calendar_event" ? explicitDue : finalDue) || null,
+            ...(resolvedDue ? { due_date: resolvedDue } : {}),
             assigned_to: assignedTo || null,
-            goal_id: goalSelectEl?.value || null,
+            goal_id: goalSelect?.value || null,
           };
 
-          const location = form?.querySelector<HTMLSelectElement>('[name="home_assistant_area_id"]:enabled')
+          const location = qs<HTMLSelectElement>(form, '[name="home_assistant_area_id"]:enabled')
           if (location?.value) body.home_assistant_area_id = location.value
 
-          const recurrenceVal = recurrenceSelectEl?.value;
+          const recurrenceVal = value("new-task-recurrence");
           if (recurrenceVal) body.recurrence_rule = recurrenceVal;
 
           if (body.task_kind === "checklist") {
@@ -1614,33 +2195,30 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
             if (end) body.end_date = end
           }
 
-          // Custom fields
-          const cfItems = document.querySelectorAll("#nt-custom-fields-list .nt-custom-field-entry");
-          if (!bound && cfItems.length > 0) {
-            const cfData: Record<string, unknown>[] = [];
-            cfItems.forEach(item => {
-              const type = (item as HTMLElement).dataset.fieldType || "text";
-              const input = item.querySelector("input, textarea") as HTMLInputElement;
-              if (input?.value) cfData.push({ type, value: input.value });
-            });
-            if (cfData.length > 0) {
-              const existing = body.custom_fields ? JSON.parse(body.custom_fields as string) : {};
-              body.custom_fields = JSON.stringify({ ...existing, fields: cfData });
-            }
+          const extraFields = captureFields().filter(field =>
+            field.type === "checkbox" ? field.label || field.checked : field.value,
+          )
+          const boardCustom = captureBoardCustomFields()
+          const baseCustom: Record<string, unknown> = {
+            ...(urlPrefillCustomFields ?? {}),
+            ...boardCustom,
+            ...(body.custom_fields ? JSON.parse(String(body.custom_fields)) : {}),
+            ...(extraFields.length > 0 ? { fields: extraFields } : {}),
+          }
+          if (Object.keys(baseCustom).length > 0) {
+            body.custom_fields = JSON.stringify(baseCustom)
           }
 
           duePicker?.closePanel()
           if (addAnother) captureContinues = true
           if (bound) {
-            const fields = captureFields().filter(field => field.type === "checkbox" ? field.label || field.checked : field.value)
-            const custom = body.custom_fields ? JSON.parse(String(body.custom_fields)) : undefined
             drafts?.publish({
               ...body,
               labels: allLabels,
               newLabels,
               catalogLabels: manualLabels.filter(name => !newLabels.includes(name)),
               ...(body.checklists ? { checklists: JSON.parse(String(body.checklists)) } : {}),
-              ...(custom || fields.length ? { custom_fields: { ...custom, ...(fields.length ? { fields } : {}) } } : {}),
+              ...(Object.keys(baseCustom).length > 0 ? { custom_fields: baseCustom } : {}),
             } as TaskDraftPublication, addAnother)
             return
           }
@@ -1698,6 +2276,33 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
       }, { signal });
     }
 
+    // ── Copy prefilled link action ──
+    copyPrefillBtn?.addEventListener("click", async () => {
+      descEditor?.flushToTextarea()
+      let labels: string[] = []
+      try {
+        const parsed = JSON.parse(labelValue?.value || "[]")
+        if (Array.isArray(parsed)) labels = parsed.map(String).filter(Boolean)
+      } catch { /* ignore */ }
+      const url = buildTaskPrefillUrl(location.href, {
+        title: titleInput?.value ?? "",
+        description: descInput?.value ?? "",
+        priority: Number(value("new-task-priority")) || 3,
+        dueDate: value("nt-contextual-due") || undefined,
+        taskType: normalizeEditableTaskType(taskTypeSelect?.value),
+        parentId: activeParentContext?.parentId || undefined,
+        areaId: contextPlacement?.areaId ?? undefined,
+        projectId: contextPlacement?.projectId ?? undefined,
+        labels,
+        ...(urlPrefillCustomFields ? { customFields: urlPrefillCustomFields } : {}),
+      })
+      if (await copyToClipboard(url)) {
+        showToast(copyPrefillBtn.dataset.copiedLabel || "Prefilled task link copied")
+      } else {
+        window.prompt("Copy prefilled task link", url)
+      }
+    }, { signal })
+
     // ── Memory cleanup on signal abort (page navigation) ──
     signal.addEventListener('abort', () => {
       delete (window as any).__meitheal_users;
@@ -1706,36 +2311,85 @@ const captureReceiptAvailable = Boolean(await verifiedBoardRequestPrincipal(Astr
   });
   pageLifecycle.onPageLoad(signal => {
     const url = new URL(location.href)
-    if (url.searchParams.get("capture") !== "1") return
-    requestAnimationFrame(() => {
-      if (signal.aborted) return
-      url.searchParams.delete("capture")
-      history.replaceState(history.state, "", url.pathname + url.search + url.hash)
-      window.openNewTaskModal?.()
-    })
+    if (url.searchParams.get("capture") === "1") {
+      requestAnimationFrame(() => {
+        if (signal.aborted) return
+        url.searchParams.delete("capture")
+        history.replaceState(history.state, "", url.pathname + url.search + url.hash)
+        window.openNewTaskModal?.()
+      })
+      return
+    }
+    if (url.searchParams.get("create") === "1") {
+      void (async () => {
+        let allowCustomFields = false
+        if (url.searchParams.has("custom_fields")) {
+          try {
+            const res = await fetch("/api/settings?key=allow_url_custom_field_prefill", { cache: "no-store", signal })
+            if (res.ok) {
+              const data = await res.json().catch(() => null) as { value?: unknown } | null
+              allowCustomFields = data?.value === true || data?.value === "true"
+            }
+          } catch { /* default fail-closed */ }
+        }
+        if (signal.aborted) return
+        const prefill = parseTaskUrlPrefill(url.searchParams, { allowCustomFields })
+        history.replaceState(history.state, "", stripTaskUrlPrefillParams(url))
+        if (!prefill) return
+        let resolvedParent: TaskParentContext | undefined
+        if (prefill.parentId) {
+          try {
+            const ctx = currentTaskApiContext()
+            const parentRes = await fetch(`/api/tasks/${encodeURIComponent(prefill.parentId)}`, {
+              cache: "no-store",
+              signal,
+              ...(ctx ? { headers: taskApiHeaders(ctx) } : {}),
+            })
+            if (parentRes.ok) {
+              const parentData = await parentRes.json().catch(() => null) as {
+                id?: unknown
+                title?: unknown
+                ticket_key?: unknown
+                task_type?: unknown
+                area_id?: unknown
+                project_id?: unknown
+              } | null
+              if (parentData && typeof parentData === "object") {
+                resolvedParent = {
+                  parentId: String(parentData.id ?? prefill.parentId),
+                  parentTitle: typeof parentData.title === "string" && parentData.title.trim()
+                    ? parentData.title.trim()
+                    : prefill.parentId.slice(0, 8),
+                  parentTicketKey: typeof parentData.ticket_key === "string" ? parentData.ticket_key : null,
+                  parentType: normalizeEditableTaskType(parentData.task_type),
+                  areaId: typeof parentData.area_id === "string" ? parentData.area_id : null,
+                  projectId: typeof parentData.project_id === "string" ? parentData.project_id : null,
+                }
+              }
+            } else if (!signal.aborted) {
+              showToast("Parent task could not be loaded — opening standalone task", "warning")
+            }
+          } catch {
+            if (!signal.aborted) {
+              showToast("Parent task could not be loaded — opening standalone task", "warning")
+            }
+          }
+        }
+        if (signal.aborted) return
+        requestAnimationFrame(() => {
+          if (signal.aborted) return
+          window.openNewTaskModal?.("standard_action", {
+            ...prefill,
+            ...(resolvedParent ? { parent: resolvedParent } : {}),
+          })
+        })
+      })()
+    }
   })
 </script>
 
 <style>
   #nt-status-pills :global(.filter-toolbar__type-btn:not(.active)) { opacity: 1; }
-  .nt-priority-select-wrap {
-    position: relative;
-    display: flex;
-    align-items: center;
-  }
-  .nt-priority-icon {
-    position: absolute;
-    inset-inline-start: 10px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    pointer-events: none;
-    z-index: 1;
-  }
-  .nt-priority-select {
-    padding-inline-start: 32px !important;
-    width: 100%;
-  }
   .nt-due-picker {
     display: flex;
     align-items: center;

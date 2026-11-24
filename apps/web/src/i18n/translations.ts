@@ -32,6 +32,11 @@ const translations: Record<Locale, TranslationKeys> = {
     ga: ga as unknown as TranslationKeys,
 };
 
+const staticTranslationCache: Record<Locale, Map<string, string>> = {
+    en: new Map(),
+    ga: new Map(),
+};
+
 // Merge fallback strings on the server, never by bundling both catalogs in browser JS.
 function mergeCatalogs(base: Record<string, unknown>, target: Record<string, unknown>): Record<string, unknown> {
     const merged = { ...base }
@@ -124,6 +129,10 @@ export function t(
     params?: Record<string, string>,
 ): string {
     const loc = locale ?? DEFAULT_LOCALE;
+    if (!params) {
+        const cached = staticTranslationCache[loc].get(key);
+        if (cached !== undefined) return cached;
+    }
     const lookup = (language: Locale): string => {
         const catalog = translations[language]
         const value = getNestedValue(catalog, key)
@@ -140,11 +149,14 @@ export function t(
         value = lookup("en");
     }
 
+    if (!params) {
+        staticTranslationCache[loc].set(key, value);
+        return value;
+    }
+
     // Interpolate {param} placeholders
-    if (params) {
-        for (const [k, v] of Object.entries(params)) {
-            value = value.replaceAll(`{${k}}`, v);
-        }
+    for (const [k, v] of Object.entries(params)) {
+        value = value.replaceAll(`{${k}}`, v);
     }
 
     return value;

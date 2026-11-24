@@ -437,7 +437,7 @@ components:
         id:
           type: integer
           minimum: 1
-        content: &a59
+        content: &a1
           type: string
           minLength: 1
           maxLength: 16
@@ -463,7 +463,7 @@ components:
           maxItems: 50
         next_cursor:
           anyOf:
-            - &a57
+            - &a58
               type: string
               pattern: ^[1-9][0-9]*$
             - type: "null"
@@ -471,6 +471,29 @@ components:
         can_react:
           type: boolean
           description: Whether the caller may add reactions.
+        groups:
+          type: array
+          description: Grouped reaction counts and whether the current caller reacted.
+          items:
+            type: object
+            required:
+              - content
+              - count
+              - reacted
+              - my_reaction_id
+            properties:
+              content: *a1
+              count:
+                type: integer
+                minimum: 1
+              reacted:
+                type: boolean
+              my_reaction_id:
+                type:
+                  - integer
+                  - "null"
+                minimum: 1
+            additionalProperties: false
       additionalProperties: false
     TaskReactionCounts:
       type: object
@@ -524,24 +547,24 @@ components:
           type: string
           format: uuid
           description: Client-generated UUIDv4. Reuse it for identical retries.
-        category: &a1
+        category: &a2
           type: string
           enum:
             - problem
             - accessibility
             - suggestion
             - other
-        message: &a2
+        message: &a3
           type: string
           minLength: 1
           maxLength: 4096
           description: Plain text, at most 4 KiB in UTF-8.
-        appVersion: &a3
+        appVersion: &a4
           type: string
           maxLength: 50
           pattern: ^(?:\d{1,5}\.\d{1,5}\.\d{1,5}(?:[-+][0-9a-zA-Z][0-9a-zA-Z.-]{0,31})?|[0-9a-f]{12})(?![\s\S])
           description: Optional bounded release version or exactly 12 lowercase hexadecimal characters for Canary.
-        routeFamily: &a4
+        routeFamily: &a5
           type: string
           enum:
             - home
@@ -557,10 +580,10 @@ components:
     FeedbackReceipt:
       type: object
       properties:
-        id: &a5
+        id: &a6
           type: string
           format: uuid
-        receivedAt: &a6
+        receivedAt: &a7
           type: integer
           description: Epoch milliseconds.
       required:
@@ -570,15 +593,15 @@ components:
     FeedbackExport:
       type: object
       properties:
-        category: *a1
-        message: *a2
+        category: *a2
+        message: *a3
         appVersion:
           anyOf:
-            - *a3
+            - *a4
             - type: "null"
         routeFamily:
           anyOf:
-            - *a4
+            - *a5
             - type: "null"
       required:
         - category
@@ -589,19 +612,19 @@ components:
     FeedbackReport:
       type: object
       properties:
-        id: *a5
-        receivedAt: *a6
-        category: *a1
-        message: *a2
+        id: *a6
+        receivedAt: *a7
+        category: *a2
+        message: *a3
         appVersion:
-          anyOf:
-            - *a3
-            - type: "null"
-        routeFamily:
           anyOf:
             - *a4
             - type: "null"
-        state: &a29
+        routeFamily:
+          anyOf:
+            - *a5
+            - type: "null"
+        state: &a30
           type: string
           enum:
             - open
@@ -661,7 +684,7 @@ components:
           type: integer
           minimum: 1
           maximum: 5
-          description: "Priority level: 1=urgent, 3=normal, 5=lowest (clamped 1..5)"
+          description: "Priority level: 1=Urgent, 2=High, 3=Medium, 4=Low, 5=Minimal"
         is_promoted:
           type: boolean
           description: Shared Kanban promotion — pins card to top of lane with Tabler ribbon sash.
@@ -677,6 +700,24 @@ components:
         due_date:
           type: string
           nullable: true
+          description: Due date as YYYY-MM-DD calendar day or ISO timestamp
+        start_date:
+          type:
+            - string
+            - "null"
+          description: Start date or ISO timestamp (primary schedule timestamp for calendar_event)
+        end_date:
+          type:
+            - string
+            - "null"
+          description: End date or ISO timestamp
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        color:
+          type: string
+          nullable: true
         assigned_to:
           type: string
           nullable: true
@@ -685,6 +726,10 @@ components:
           type: number
           nullable: true
           description: Persisted shared board position; unranked tasks have null.
+        table_position:
+          type: number
+          nullable: true
+          description: Persisted table view sort order position; unranked tasks have null.
         nfc_tag_id:
           type: string
           nullable: true
@@ -712,6 +757,18 @@ components:
         blocked_by:
           type: string
           nullable: true
+        time_tracked:
+          type: integer
+          minimum: 0
+        calendar_sync_state:
+          type: string
+          nullable: true
+        recurrence_rule:
+          type: string
+          nullable: true
+        board_id:
+          type: string
+          nullable: true
         area_id:
           type: string
           nullable: true
@@ -725,6 +782,26 @@ components:
           type: string
           nullable: true
           description: Parent task ID for subtask hierarchy
+        parent_ticket_key:
+          type: string
+          nullable: true
+        parent_title:
+          type: string
+          nullable: true
+        parent_task_type:
+          type: string
+          enum:
+            - epic
+            - story
+            - task
+          nullable: true
+        task_type:
+          type: string
+          enum:
+            - epic
+            - story
+            - task
+          description: Hierarchy work item type (epic, story, task)
         task_kind:
           type: string
           enum:
@@ -739,24 +816,64 @@ components:
           type: string
           nullable: true
           description: JSON-encoded array of label names
+        framework_payload:
+          type: string
+          nullable: true
+          description: JSON-encoded strategic framework payload (RICE / dRICE)
+        custom_fields:
+          type:
+            - string
+            - "null"
+          description: JSON-encoded custom fields object; shopping_item tasks store structured ShoppingListItem entries under items.
         checklists:
           type:
             - string
             - "null"
           description: A JSON-encoded array of checklist items with text, done, and an optional id. Historical tasks may have null.
-        start_date:
-          type:
-            - string
-            - "null"
-          description: Start date or ISO timestamp (primary schedule timestamp for calendar_event)
-        end_date:
-          type:
-            - string
-            - "null"
-          description: End date or ISO timestamp
-        custom_fields:
-          type: string
-          description: JSON-encoded custom fields object; shopping_item tasks store structured ShoppingListItem entries under items.
+        subtasks:
+          type: array
+          description: Direct readable child tasks (returned by single-task detail)
+          items:
+            type: object
+            required:
+              - id
+              - title
+              - status
+              - priority
+              - task_type
+            properties:
+              id:
+                type: string
+              ticket_number:
+                type: integer
+                nullable: true
+              ticket_key:
+                type: string
+                nullable: true
+              title:
+                type: string
+              status:
+                type: string
+              priority:
+                type: integer
+                minimum: 1
+                maximum: 5
+              task_type:
+                type: string
+                enum:
+                  - epic
+                  - story
+                  - task
+              assigned_to:
+                type: string
+                nullable: true
+              due_date:
+                type: string
+                nullable: true
+            additionalProperties: false
+        ticket_number:
+          type: integer
+          nullable: true
         ticket_key:
           type: string
           nullable: true
@@ -1556,10 +1673,10 @@ paths:
       responses:
         "200":
           description: Current configuration revision and this Board's bindings
-        "403": &a7
+        "403": &a8
           description: Board, ticket, or destination unavailable
-      security: &a8
-        - &a11
+      security: &a9
+        - &a12
           haIngressSession: []
     put:
       operationId: saveWorkDestination
@@ -1567,21 +1684,21 @@ paths:
       tags:
         - Boards
       parameters:
-        - &a9
+        - &a10
           name: X-Meitheal-Board-Session
           in: header
           required: true
-          schema: &a25
+          schema: &a26
             type: string
       responses:
         "200":
           description: Committed binding receipt. Refresh work access after the journal revision changes.
         "400":
           description: Invalid source or destination
-        "403": *a7
+        "403": *a8
         "409":
           description: Approval changed or a required Board is unavailable
-      security: *a8
+      security: *a9
       requestBody:
         required: true
         content:
@@ -1607,7 +1724,7 @@ paths:
             Board session header.
         "403":
           description: A current Home Assistant session is required
-      security: *a8
+      security: *a9
     head:
       operationId: verifyBoardDirectory
       summary: Verify the current Board directory projection
@@ -1617,14 +1734,14 @@ paths:
       responses:
         "200":
           description: The current projection hash and session are in the response headers
-      security: *a8
+      security: *a9
     post:
       operationId: createPrivateBoard
       summary: Create a Board owned by the current Home Assistant user
       tags:
         - Boards
       parameters:
-        - *a9
+        - *a10
       responses:
         "201":
           description: The owned Board ID
@@ -1634,7 +1751,7 @@ paths:
           description: Invalid Board name or preset
         "503":
           description: Board access is locked
-      security: *a8
+      security: *a9
       requestBody:
         required: true
         content:
@@ -1642,7 +1759,7 @@ paths:
             schema:
               type: object
               properties:
-                name: &a10
+                name: &a11
                   type: string
                 preset:
                   type: string
@@ -1662,7 +1779,7 @@ paths:
       responses:
         "200":
           description: Up to 100 current actor-scoped Routines and whether there are more
-      security: *a8
+      security: *a9
   /api/boards/due-today:
     get:
       operationId: listPrivateBoardDueWork
@@ -1673,7 +1790,7 @@ paths:
       responses:
         "200":
           description: Up to 30 eligible tasks and whether there are more
-      security: *a8
+      security: *a9
   /api/boards/{id}:
     get:
       operationId: getPrivateBoard
@@ -1681,7 +1798,7 @@ paths:
       tags:
         - Boards
       parameters:
-        - &a12
+        - &a13
           name: id
           in: path
           required: true
@@ -1689,9 +1806,9 @@ paths:
             type: string
         - name: offset
           in: query
-          schema: &a13
+          schema: &a14
             type: integer
-        - &a14
+        - &a15
           name: kanban
           in: query
           description: With view=tasks, filter before paging 25 cards per lane and include lane totals and page metadata.
@@ -1699,43 +1816,43 @@ paths:
             type: string
             enum:
               - "1"
-        - &a15
+        - &a16
           name: search
           in: query
-          schema: *a10
-        - &a16
+          schema: *a11
+        - &a17
           name: status
           in: query
-          schema: *a10
-        - &a17
+          schema: *a11
+        - &a18
           name: user
           in: query
-          schema: *a10
-        - &a18
+          schema: *a11
+        - &a19
           name: types
           in: query
-          schema: *a10
-        - &a19
+          schema: *a11
+        - &a20
           name: advancedFilter
           in: query
-          schema: *a10
-        - &a20
+          schema: *a11
+        - &a21
           name: home_assistant_area_id
           in: query
-          schema: *a10
-        - &a21
+          schema: *a11
+        - &a22
           name: kp.pending
           in: query
           schema:
             type: integer
             minimum: 1
-        - &a22
+        - &a23
           name: kp.active
           in: query
           schema:
             type: integer
             minimum: 1
-        - &a23
+        - &a24
           name: kp.complete
           in: query
           schema:
@@ -1751,20 +1868,20 @@ paths:
               - tasks
         - name: after
           in: query
-          schema: *a10
+          schema: *a11
         - name: selected
           in: query
-          schema: *a10
+          schema: *a11
         - name: area
           in: query
           description: Board-owned Area ID. With view=groups, returns its paginated Projects.
-          schema: *a10
+          schema: *a11
         - name: project
           in: query
-          schema: *a10
+          schema: *a11
         - name: ticket
           in: query
-          schema: *a10
+          schema: *a11
         - name: planning
           in: query
           schema:
@@ -1775,9 +1892,9 @@ paths:
         "200":
           description: Authorized Board work or paged hierarchy. Hierarchy pages include current resource/action hints, clamped by
             effective actor and feature permissions; these hints never grant command authority.
-        "404": *a7
+        "404": *a8
       security:
-        - *a11
+        - *a12
         - bearerAuth: []
       description: An agent token needs tasks:read and an explicit service grant on this Board.
     head:
@@ -1786,11 +1903,10 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a12
+        - *a13
         - name: offset
           in: query
-          schema: *a13
-        - *a14
+          schema: *a14
         - *a15
         - *a16
         - *a17
@@ -1800,6 +1916,7 @@ paths:
         - *a21
         - *a22
         - *a23
+        - *a24
         - name: view
           in: query
           description: Use groups to verify the current Areas or selected Area Project page.
@@ -1810,20 +1927,20 @@ paths:
               - tasks
         - name: after
           in: query
-          schema: *a10
+          schema: *a11
         - name: selected
           in: query
-          schema: *a10
+          schema: *a11
         - name: area
           in: query
           description: Board-owned Area ID, including the parent for a Project catalog page.
-          schema: *a10
+          schema: *a11
         - name: project
           in: query
-          schema: *a10
+          schema: *a11
         - name: ticket
           in: query
-          schema: *a10
+          schema: *a11
         - name: planning
           in: query
           schema:
@@ -1833,9 +1950,9 @@ paths:
       responses:
         "200":
           description: The current projection hash and session are returned to a Home Assistant browser
-        "404": *a7
+        "404": *a8
       security:
-        - *a11
+        - *a12
         - bearerAuth: []
       description: An agent token needs tasks:read and an explicit service grant on this Board.
     patch:
@@ -1844,15 +1961,15 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a12
-        - *a9
+        - *a13
+        - *a10
       responses:
         "200":
           description: Saved
-        "404": *a7
+        "404": *a8
         "409":
           description: A Board must retain an active owner
-      security: *a8
+      security: *a9
       requestBody:
         required: true
         content:
@@ -1869,19 +1986,19 @@ paths:
                     - agent
                     - retire
                     - restore
-                hidden: &a24
+                hidden: &a25
                   type: boolean
-                tokenId: *a10
-                enabled: *a24
-                denyCompletion: *a24
-                denyDeletion: *a24
-                denyAgentDeletion: *a24
+                tokenId: *a11
+                enabled: *a25
+                denyCompletion: *a25
+                denyDeletion: *a25
+                denyAgentDeletion: *a25
                 revision:
                   type: integer
                   minimum: 1
                   description: Required by browser-only retire and restore actions. Household deletion pauses shared capture and syncing
                     until restored.
-                memberId: *a10
+                memberId: *a11
                 role:
                   type:
                     - string
@@ -1899,21 +2016,21 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a12
-        - &a26
+        - *a13
+        - &a27
           name: X-Meitheal-Board-Session
           in: header
           required: false
-          schema: *a25
+          schema: *a26
           description: Required for requests authenticated through Home Assistant ingress.
       responses:
         "201":
           description: Created ticket identifier, reference and edit version
         "403":
           description: Ticket creation or completion is denied
-        "404": *a7
+        "404": *a8
       security:
-        - *a11
+        - *a12
         - bearerAuth: []
       description: An agent token needs tasks:write and an explicit service grant on this Board.
       requestBody:
@@ -1923,12 +2040,12 @@ paths:
             schema:
               type: object
               properties:
-                title: *a10
-                description: *a10
-                laneId: *a10
-                areaId: *a10
-                projectId: *a10
-                goalId: *a10
+                title: *a11
+                description: *a11
+                laneId: *a11
+                areaId: *a11
+                projectId: *a11
+                goalId: *a11
                 due_date:
                   type:
                     - string
@@ -1954,24 +2071,24 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a12
-        - &a27
+        - *a13
+        - &a28
           name: ticket
           in: path
           required: true
           schema:
             type: string
-        - *a26
+        - *a27
       responses:
         "200":
           description: New ticket version
         "403":
           description: A required effect is denied
-        "404": *a7
+        "404": *a8
         "409":
           description: Ticket version is stale
       security:
-        - *a11
+        - *a12
         - bearerAuth: []
       description: An agent token needs tasks:write and an explicit service grant on this Board.
       requestBody:
@@ -1981,10 +2098,10 @@ paths:
             schema:
               type: object
               properties:
-                version: *a13
-                title: *a10
-                description: *a10
-                laneId: *a10
+                version: *a14
+                title: *a11
+                description: *a11
+                laneId: *a11
                 due_date:
                   type:
                     - string
@@ -2009,19 +2126,19 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a12
+        - *a13
+        - *a28
         - *a27
-        - *a26
       responses:
         "200":
           description: Deleted
         "403":
           description: Deletion is denied
-        "404": *a7
+        "404": *a8
         "409":
           description: Ticket version or relationship changed
       security:
-        - *a11
+        - *a12
         - bearerAuth: []
       description: An agent token needs tasks:delete and an explicit service grant on this Board.
       requestBody:
@@ -2031,7 +2148,7 @@ paths:
             schema:
               type: object
               properties:
-                version: *a13
+                version: *a14
               additionalProperties: false
   /api/boards/{id}/intakes:
     post:
@@ -2040,13 +2157,13 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a12
-        - *a9
+        - *a13
+        - *a10
       responses:
         "201":
           description: Destination created
-        "404": *a7
-      security: *a8
+        "404": *a8
+      security: *a9
       requestBody:
         required: true
         content:
@@ -2054,12 +2171,12 @@ paths:
             schema:
               type: object
               properties:
-                label: *a10
-                laneId: *a10
+                label: *a11
+                laneId: *a11
                 senderIds:
                   type: array
-                  items: *a10
-                recipientId: *a10
+                  items: *a11
+                recipientId: *a11
               additionalProperties: false
     patch:
       operationId: changePrivateBoardIntake
@@ -2067,13 +2184,13 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a12
-        - *a9
+        - *a13
+        - *a10
       responses:
         "200":
           description: Saved
-        "404": *a7
-      security: *a8
+        "404": *a8
+      security: *a9
       requestBody:
         required: true
         content:
@@ -2081,8 +2198,8 @@ paths:
             schema:
               type: object
               properties:
-                id: *a10
-                enabled: *a24
+                id: *a11
+                enabled: *a25
               additionalProperties: false
   /api/boards/{id}/planning:
     post:
@@ -2091,17 +2208,17 @@ paths:
       tags:
         - Boards
       parameters:
-        - *a12
-        - *a9
+        - *a13
+        - *a10
       responses:
         "200":
           description: Saved
         "400":
           description: Invalid planning change
-        "404": *a7
+        "404": *a8
         "409":
           description: A Routine period changed or an Area still has active planning records
-      security: *a8
+      security: *a9
       requestBody:
         required: true
         content:
@@ -2125,12 +2242,12 @@ paths:
                     - pillar-link
                     - routine
                     - routine-complete
-                title: *a10
-                description: *a10
-                icon: *a10
-                color: *a10
-                id: *a10
-                areaId: *a10
+                title: *a11
+                description: *a11
+                icon: *a11
+                color: *a11
+                id: *a11
+                areaId: *a11
                 projectId:
                   type:
                     - string
@@ -2145,7 +2262,7 @@ paths:
                     - active
                     - completed
                     - archived
-                enabled: *a24
+                enabled: *a25
                 cadence:
                   type: string
                   enum:
@@ -2167,8 +2284,8 @@ paths:
                     - goal
                     - routine
                     - task
-                pillarId: *a10
-                nonNegotiable: *a24
+                pillarId: *a11
+                nonNegotiable: *a25
               additionalProperties: false
   /api/board-intake:
     get:
@@ -2182,25 +2299,25 @@ paths:
           description: Send aliases, assignment options, and recent submissions owned by the sender
         "403":
           description: A current Home Assistant session is required
-      security: *a8
+      security: *a9
     post:
       operationId: submitPrivateBoardIntake
       summary: Prepare, send, or retry a task without Board read access
       tags:
         - Boards
       parameters:
-        - *a9
+        - *a10
       responses:
         "200":
           description: An opaque acknowledgment bound to the sender
         "201":
           description: A sender-bound submission expires after 24 hours
-        "404": *a7
+        "404": *a8
         "409":
           description: The token was used with different content
         "429":
           description: Sender limit reached
-      security: *a8
+      security: *a9
       requestBody:
         required: true
         content:
@@ -2214,23 +2331,23 @@ paths:
                     - prepare
                     - send
                     - retry
-                id: *a10
-                token: *a10
-                resumeId: *a10
-                title: *a10
-                description: *a10
-                assignToRecipient: *a24
+                id: *a11
+                token: *a11
+                resumeId: *a11
+                title: *a11
+                description: *a11
+                assignToRecipient: *a25
               additionalProperties: false
   /api/feedback:
     post:
       operationId: submitLocalFeedback
-      tags: &a28
+      tags: &a29
         - Local feedback
       summary: Save local feedback and return a durable receipt
       description: Available to verified Home Assistant ingress users. An identical retry returns the same receipt.
-      security: *a8
+      security: *a9
       parameters:
-        - &a34
+        - &a35
           in: header
           name: X-Meitheal-Feedback
           required: true
@@ -2251,19 +2368,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FeedbackReceipt"
-        "400": &a30
+        "400": &a31
           description: Validation error (RFC 9457 — read invalidParams to self-correct)
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "403": &a31
+        "403": &a32
           description: A verified Home Assistant ingress user with the required role is needed.
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "408": &a35
+        "408": &a36
           description: The feedback body did not arrive within five seconds.
           content:
             application/problem+json:
@@ -2275,31 +2392,31 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "413": &a36
+        "413": &a37
           description: The request body exceeds 8 KiB.
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "415": &a37
+        "415": &a38
           description: The request body must be application/json.
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "499": &a38
+        "499": &a39
           description: The feedback request was cancelled.
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "500": &a32
+        "500": &a33
           description: Internal server error (RFC 9457)
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "503": &a33
+        "503": &a34
           description: Current Home Assistant authority could not be verified, the local feedback database is busy, or the queue
             is full.
           content:
@@ -2308,20 +2425,20 @@ paths:
                 $ref: "#/components/schemas/ProblemDetail"
     get:
       operationId: listLocalFeedback
-      tags: *a28
+      tags: *a29
       summary: List local feedback for a verified Home Assistant administrator
       description: Returns up to 50 reports. Pass both parts of nextCursor for the next page.
-      security: *a8
+      security: *a9
       parameters:
         - in: query
           name: state
-          schema: *a29
+          schema: *a30
         - in: query
           name: before
-          schema: *a6
+          schema: *a7
         - in: query
           name: beforeId
-          schema: *a5
+          schema: *a6
       responses:
         "200":
           description: Local reports and cursor
@@ -2342,25 +2459,25 @@ paths:
                   - reports
                   - nextCursor
                 additionalProperties: false
-        "400": *a30
-        "403": *a31
-        "500": *a32
-        "503": *a33
+        "400": *a31
+        "403": *a32
+        "500": *a33
+        "503": *a34
   /api/feedback/{id}:
     patch:
       operationId: reviewLocalFeedback
-      tags: *a28
+      tags: *a29
       summary: Claim or close a report as a verified Home Assistant administrator
-      security: *a8
+      security: *a9
       parameters:
-        - &a39
+        - &a40
           in: path
           name: id
           required: true
           schema:
             type: string
             format: uuid
-        - *a34
+        - *a35
       requestBody:
         required: true
         content:
@@ -2388,39 +2505,39 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FeedbackReport"
-        "400": *a30
-        "403": *a31
+        "400": *a31
+        "403": *a32
         "404":
           description: Report no longer exists.
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "408": *a35
+        "408": *a36
         "409":
           description: The report changed or the state transition is unavailable.
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "413": *a36
-        "415": *a37
-        "499": *a38
-        "500": *a32
-        "503": *a33
+        "413": *a37
+        "415": *a38
+        "499": *a39
+        "500": *a33
+        "503": *a34
     delete:
       operationId: deleteLocalFeedback
-      tags: *a28
+      tags: *a29
       summary: Permanently delete a closed report as a verified Home Assistant administrator
-      security: *a8
+      security: *a9
       parameters:
-        - *a39
-        - *a34
+        - *a40
+        - *a35
       responses:
         "204":
           description: Report removed
-        "400": *a30
-        "403": *a31
+        "400": *a31
+        "403": *a32
         "404":
           description: Report no longer exists.
           content:
@@ -2433,17 +2550,17 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "500": *a32
-        "503": *a33
+        "500": *a33
+        "503": *a34
   /api/feedback/{id}/export:
     post:
       operationId: prepareLocalFeedbackExport
-      tags: *a28
+      tags: *a29
       summary: Preview a reviewed report as a verified Home Assistant administrator
-      security: *a8
+      security: *a9
       parameters:
-        - *a39
-        - *a34
+        - *a40
+        - *a35
       requestBody:
         required: true
         content:
@@ -2451,7 +2568,7 @@ paths:
             schema:
               type: object
               properties:
-                reviewedMessage: *a2
+                reviewedMessage: *a3
               required:
                 - reviewedMessage
               additionalProperties: false
@@ -2462,20 +2579,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FeedbackExport"
-        "400": *a30
-        "403": *a31
+        "400": *a31
+        "403": *a32
         "404":
           description: Report no longer exists.
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "408": *a35
-        "413": *a36
-        "415": *a37
-        "499": *a38
-        "500": *a32
-        "503": *a33
+        "408": *a36
+        "413": *a37
+        "415": *a38
+        "499": *a39
+        "500": *a33
+        "503": *a34
   /api/health:
     get:
       operationId: getHealth
@@ -2518,7 +2635,7 @@ paths:
       description: Returns V8 heap spaces, Linux cgroup limits, Home Assistant scoped entity cache statistics, SSE
         backpressure drops, Ingress stream aborts, and SQLite contention counters. Restricted to verified Home Assistant
         administrators or standalone local operator sessions.
-      security: *a8
+      security: *a9
       responses:
         "200":
           description: Current runtime vitals snapshot
@@ -2599,13 +2716,36 @@ paths:
           schema:
             type: string
             format: date
-          description: Match the household calendar day (date-only, floating datetime, or zoned ISO timestamp in the configured
-            household timezone). Invalid dates return 400.
+          description: Match the household calendar day (YYYY-MM-DD in the configured household timezone). Invalid dates return 400.
+        - name: task_type
+          in: query
+          schema:
+            type: string
+            enum:
+              - epic
+              - story
+              - task
+          description: Filter by work item type
         - name: parent_id
           in: query
           schema:
             type: string
           description: Get subtasks of a parent
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Substring search across title and description
+        - name: label
+          in: query
+          schema:
+            type: string
+          description: Filter by attached label name
+        - name: home_assistant_area_id
+          in: query
+          schema:
+            type: string
+          description: Filter by permitted Home Assistant Area ID
         - name: sort
           in: query
           schema:
@@ -2618,6 +2758,7 @@ paths:
               - priority
               - due_date
               - kanban_position
+              - table_position
           description: Equal values use task ID ascending; null values sort last.
         - name: order
           in: query
@@ -2626,7 +2767,8 @@ paths:
             enum:
               - asc
               - desc
-            default: desc
+          description: Sort direction. Defaults to asc for priority, due_date, title, status, kanban_position, and table_position;
+            desc for created_at and updated_at.
         - name: limit
           in: query
           schema:
@@ -2675,7 +2817,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "500": *a32
+        "500": *a33
   /api/tasks/today-counts:
     get:
       operationId: getTodayTaskCounts
@@ -2769,7 +2911,7 @@ paths:
         Calendar filters before pagination. The first page also returns saved linked Home Assistant and CalDAV
         occurrences when Events is selected. If one first-page read fails, its fields are null and the other result is
         returned. Live Home Assistant events are read separately.
-      security: *a8
+      security: *a9
       requestBody:
         required: true
         content:
@@ -2951,6 +3093,9 @@ paths:
                 description:
                   type: string
                   maxLength: 10000
+                status:
+                  type: string
+                  description: Initial status (e.g. backlog, pending, active, complete)
                 priority:
                   type: number
                   minimum: 1
@@ -2971,6 +3116,19 @@ paths:
                     - string
                     - "null"
                   description: End date or ISO timestamp
+                progress:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                color:
+                  type: string
+                  nullable: true
+                task_type:
+                  type: string
+                  enum:
+                    - epic
+                    - story
+                    - task
                 task_kind:
                   type: string
                   enum:
@@ -2980,6 +3138,41 @@ paths:
                     - calendar_event
                     - quick_capture
                   description: Behavioral kind — determines UI rendering and lifecycle rules
+                parent_id:
+                  type: string
+                  nullable: true
+                area_id:
+                  type: string
+                  nullable: true
+                project_id:
+                  type: string
+                  nullable: true
+                recurrence_rule:
+                  type: string
+                  nullable: true
+                urgency:
+                  type: integer
+                  minimum: 0
+                  maximum: 5
+                importance:
+                  type: integer
+                  minimum: 0
+                  maximum: 5
+                effort_minutes:
+                  type: integer
+                  nullable: true
+                  minimum: 1
+                  maximum: 480
+                effort_type:
+                  type: string
+                  enum:
+                    - deep
+                    - shallow
+                    - admin
+                  nullable: true
+                blocked_by:
+                  type: string
+                  nullable: true
                 is_promoted:
                   type: boolean
                   description: Pin the new task to the top of its Kanban lane with a promoted ribbon sash.
@@ -3101,14 +3294,14 @@ paths:
                           - "null"
                     additionalProperties: false
                 additionalProperties: false
-        "400": *a30
+        "400": *a31
         "404":
           description: Requested Board unavailable
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "500": *a32
+        "500": *a33
   /api/nfc/complete:
     post:
       operationId: completeTaskByNfcTag
@@ -3163,14 +3356,14 @@ paths:
                           - task
                       - required:
                           - already_complete
-        "400": *a30
+        "400": *a31
         "403":
           description: Current completion permission is required
         "404":
           description: No eligible matching task
         "409":
           description: Tag is assigned ambiguously or current work changed
-        "500": *a32
+        "500": *a33
   /api/tasks/{id}/handoff:
     post:
       operationId: manageTaskHandoff
@@ -3357,7 +3550,6 @@ paths:
                     - routine_instance
                     - calendar_event
                     - quick_capture
-                  description: Behavioral kind — routine_instance cannot be assigned to non-routine tasks.
                 due_date:
                   type:
                     - string
@@ -3383,7 +3575,95 @@ paths:
                     - string
                     - "null"
                 area_id:
+                  type:
+                    - string
+                    - "null"
+                goal_id:
+                  type:
+                    - string
+                    - "null"
+                task_type:
                   type: string
+                  enum:
+                    - epic
+                    - story
+                    - task
+                framework_payload:
+                  type: string
+                  description: JSON-encoded object string
+                custom_fields:
+                  oneOf:
+                    - type: object
+                      additionalProperties: true
+                      properties:
+                        items:
+                          type: array
+                          items:
+                            $ref: "#/components/schemas/ShoppingListItem"
+                          description: Structured shopping items for shopping_item tasks
+                    - type: string
+                      description: JSON-encoded custom fields object
+                progress:
+                  type: number
+                  minimum: 0
+                  maximum: 100
+                color:
+                  type:
+                    - string
+                    - "null"
+                time_tracked:
+                  type: number
+                  minimum: 0
+                nfc_tag_id:
+                  type:
+                    - string
+                    - "null"
+                recurrence_rule:
+                  type:
+                    - string
+                    - "null"
+                recurrence_anchor:
+                  type: string
+                  enum:
+                    - due_date
+                    - completion_date
+                time_block_start:
+                  type:
+                    - string
+                    - "null"
+                time_block_end:
+                  type:
+                    - string
+                    - "null"
+                urgency:
+                  type: number
+                  minimum: 0
+                  maximum: 5
+                importance:
+                  type: number
+                  minimum: 0
+                  maximum: 5
+                eisenhower_override:
+                  type: boolean
+                effort_minutes:
+                  type:
+                    - number
+                    - "null"
+                  minimum: 1
+                  maximum: 480
+                effort_type:
+                  type:
+                    - string
+                    - "null"
+                  enum:
+                    - deep
+                    - shallow
+                    - admin
+                    - null
+                blocked_by:
+                  type:
+                    - string
+                    - "null"
                 labels:
                   oneOf:
                     - type: array
@@ -3403,18 +3683,6 @@ paths:
                     - string
                     - "null"
                   description: Exact previous checklist value returned by GET
-                custom_fields:
-                  oneOf:
-                    - type: object
-                      additionalProperties: true
-                      properties:
-                        items:
-                          type: array
-                          items:
-                            $ref: "#/components/schemas/ShoppingListItem"
-                          description: Structured shopping items for shopping_item tasks
-                    - type: string
-                      description: JSON-encoded custom fields object
                 updated_at:
                   type: integer
                   minimum: 0
@@ -3447,7 +3715,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Task"
-        "400": *a30
+        "400": *a31
         "404":
           description: Not found
           content:
@@ -3557,7 +3825,7 @@ paths:
           schema:
             type: string
       responses:
-        "200":
+        "204":
           description: Deleted
         "404":
           description: Not found
@@ -3649,8 +3917,8 @@ paths:
                     type: string
                     format: date
                 additionalProperties: false
-        "400": *a30
-        "500": *a32
+        "400": *a31
+        "500": *a33
     delete:
       operationId: deleteCompletedTasks
       tags:
@@ -3706,8 +3974,8 @@ paths:
                     type: string
                     format: date
                 additionalProperties: false
-        "400": *a30
-        "500": *a32
+        "400": *a31
+        "500": *a33
   /api/tasks/reorder:
     post:
       operationId: reorderTasks
@@ -3728,6 +3996,12 @@ paths:
                   minItems: 1
                   items:
                     type: string
+                scope:
+                  type: string
+                  enum:
+                    - kanban
+                    - table
+                  description: Rank column to update for ordered_ids (defaults to kanban)
                 task_id:
                   type: string
                 anchor_id:
@@ -3748,6 +4022,7 @@ paths:
       responses:
         "200":
           description: Reordered
+        "400": *a31
         "409":
           description: A requested card is missing, deferred, duplicated, or outside the required lane or promotion group
           content:
@@ -3799,7 +4074,7 @@ paths:
                   - draft
                   - latestReceipt
                 properties:
-                  context: &a40
+                  context: &a41
                     type: string
                     pattern: ^[A-Za-z0-9_-]{43}$
                     description: Opaque, short-lived browser account binding.
@@ -3847,7 +4122,7 @@ paths:
         - in: header
           name: X-Meitheal-Draft-Context
           required: true
-          schema: *a40
+          schema: *a41
       responses:
         "204":
           description: Account context still matches
@@ -3868,7 +4143,7 @@ paths:
         - in: header
           name: X-Meitheal-Draft-Context
           required: true
-          schema: *a40
+          schema: *a41
       requestBody:
         required: true
         content:
@@ -3975,7 +4250,7 @@ paths:
                   properties:
                     action:
                       const: preview
-                    areaId: &a41
+                    areaId: &a42
                       type:
                         - string
                         - "null"
@@ -3991,7 +4266,7 @@ paths:
                         - ready
                         - upcoming
                         - stalled
-                    days: &a42
+                    days: &a43
                       type: integer
                       minimum: -1
                       maximum: 365
@@ -4026,16 +4301,16 @@ paths:
                   properties:
                     action:
                       const: save
-                    areaId: *a41
-                    days: *a42
-                    expectedRevision: &a43
+                    areaId: *a42
+                    days: *a43
+                    expectedRevision: &a44
                       type:
                         - string
                         - "null"
                       pattern: ^[a-f0-9]{32}$
-                    expectedDefaultRevision: *a43
-                    areaGeneration: *a43
-                    expectedAreaCatalogRevision: &a44
+                    expectedDefaultRevision: *a44
+                    areaGeneration: *a44
+                    expectedAreaCatalogRevision: &a45
                       type:
                         - string
                         - "null"
@@ -4052,7 +4327,7 @@ paths:
                       type: array
                       minItems: 1
                       maxItems: 100
-                      items: &a45
+                      items: &a46
                         type: string
                         minLength: 1
                         maxLength: 128
@@ -4081,8 +4356,8 @@ paths:
                     properties:
                       areaExists:
                         const: true
-                      areaGeneration: *a43
-                      areaCatalogRevision: *a44
+                      areaGeneration: *a44
+                      areaCatalogRevision: *a45
                       areas:
                         type: array
                         items:
@@ -4092,19 +4367,19 @@ paths:
                             - name
                           additionalProperties: false
                           properties:
-                            id: *a45
+                            id: *a46
                             name:
                               type: string
-                      policy: &a46
+                      policy: &a47
                         type: object
                         required:
                           - days
                           - revision
                         additionalProperties: false
                         properties:
-                          days: *a42
-                          revision: *a43
-                      defaultPolicy: *a46
+                          days: *a43
+                          revision: *a44
+                      defaultPolicy: *a47
                       hasEffectivePolicy:
                         type: boolean
                       page:
@@ -4129,17 +4404,17 @@ paths:
                             - stall_since
                           additionalProperties: false
                           properties:
-                            id: *a45
+                            id: *a46
                             title:
                               type: string
-                            area_id: *a45
+                            area_id: *a46
                             status:
                               type: string
                             ticket_number:
                               type:
                                 - integer
                                 - "null"
-                            last_activity: &a47
+                            last_activity: &a48
                               type: integer
                               format: int64
                               description: Epoch milliseconds
@@ -4155,7 +4430,7 @@ paths:
                                 - "null"
                               format: int64
                               description: Epoch milliseconds
-                      now: *a47
+                      now: *a48
                       canSave:
                         type: boolean
                   - type: object
@@ -4163,7 +4438,7 @@ paths:
                       - policy
                     additionalProperties: false
                     properties:
-                      policy: *a46
+                      policy: *a47
                   - type: object
                     required:
                       - now
@@ -4171,13 +4446,13 @@ paths:
                       - stalled
                     additionalProperties: false
                     properties:
-                      now: *a47
+                      now: *a48
                       cues:
                         type: object
-                        additionalProperties: *a47
+                        additionalProperties: *a48
                       stalled:
                         type: object
-                        additionalProperties: *a47
+                        additionalProperties: *a48
         "400":
           description: Invalid action or scope
           content:
@@ -4346,7 +4621,7 @@ paths:
                   properties:
                     action:
                       const: detail
-                    task: &a49
+                    task: &a50
                       type: string
                       minLength: 1
                       maxLength: 128
@@ -4365,7 +4640,7 @@ paths:
                       - total
                       - items
                     properties:
-                      context: *a40
+                      context: *a41
                       page:
                         type: integer
                       total:
@@ -4406,7 +4681,7 @@ paths:
                       - context
                       - hasPins
                     properties:
-                      context: *a40
+                      context: *a41
                       hasPins:
                         type: boolean
                     additionalProperties: false
@@ -4417,12 +4692,12 @@ paths:
                       - pinned
                       - pinned_at
                     properties:
-                      context: *a40
-                      id: &a50
+                      context: *a41
+                      id: &a51
                         type: string
-                      pinned: &a51
+                      pinned: &a52
                         type: boolean
-                      pinned_at: &a52
+                      pinned_at: &a53
                         type:
                           - integer
                           - "null"
@@ -4475,11 +4750,11 @@ paths:
         - Tasks
       summary: Recheck the current Home Assistant account context
       parameters:
-        - &a48
+        - &a49
           name: X-Meitheal-Pin-Context
           in: header
           required: true
-          schema: *a40
+          schema: *a41
       responses:
         "204":
           description: Account context still matches
@@ -4499,7 +4774,7 @@ paths:
       description: Requires a verified Home Assistant browser session and the context from a successful private read. Send at
         most 1 KiB of JSON.
       parameters:
-        - *a48
+        - *a49
       requestBody:
         required: true
         content:
@@ -4511,7 +4786,7 @@ paths:
                 - pinned
               additionalProperties: false
               properties:
-                task: *a49
+                task: *a50
                 pinned:
                   type: boolean
       responses:
@@ -4526,9 +4801,9 @@ paths:
                   - pinned
                   - pinned_at
                 properties:
-                  id: *a50
-                  pinned: *a51
-                  pinned_at: *a52
+                  id: *a51
+                  pinned: *a52
+                  pinned_at: *a53
                 additionalProperties: false
         "400":
           description: Invalid pin request
@@ -4764,7 +5039,7 @@ paths:
           in: header
           schema:
             type: string
-      requestBody: &a55
+      requestBody: &a56
         required: true
         content:
           application/json:
@@ -4785,7 +5060,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaskComment"
-        "400": *a30
+        "400": *a31
         "403":
           description: An active, nonsystem Home Assistant account or an automation token with task-write permission is required.
           content:
@@ -4835,14 +5110,14 @@ paths:
         - Tasks
       summary: Get one comment on a task
       description: If Home Assistant cannot verify current membership, mention selectors are hidden.
-      parameters: &a56
-        - &a53
+      parameters: &a57
+        - &a54
           name: id
           in: path
           required: true
           schema:
             type: string
-        - &a54
+        - &a55
           name: commentId
           in: path
           required: true
@@ -4871,13 +5146,13 @@ paths:
         it. A display name does not grant ownership. Home Assistant edits containing mentions require the
         rendered-account context.
       parameters:
-        - *a53
         - *a54
+        - *a55
         - name: X-Meitheal-Mention-Context
           in: header
           schema:
             type: string
-      requestBody: *a55
+      requestBody: *a56
       responses:
         "200":
           description: The updated comment
@@ -4885,7 +5160,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaskComment"
-        "400": *a30
+        "400": *a31
         "403":
           description: An active, nonsystem Home Assistant account or an automation token with task-write permission is required.
           content:
@@ -4928,7 +5203,7 @@ paths:
         - Tasks
       summary: Delete your comment
       description: Permanently remove a comment created by the same currently active Home Assistant user or automation credential.
-      parameters: *a56
+      parameters: *a57
       responses:
         "204":
           description: Comment deleted
@@ -4958,14 +5233,14 @@ paths:
       summary: List reactions on a task card
       description: Returns up to 50 reactions, newest first. Home Assistant ingress requires current membership. Automation
         tokens need tasks:read.
-      security: &a58
-        - *a11
+      security: &a59
+        - *a12
         - bearerAuth: []
       parameters:
-        - *a53
+        - *a54
         - name: cursor
           in: query
-          schema: *a57
+          schema: *a58
       responses:
         "200":
           description: Reactions and continuation cursor
@@ -4973,7 +5248,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaskReactionPage"
-        "400": *a30
+        "400": *a31
         "401": &a60
           description: An ingress session or a valid automation token is required.
           content:
@@ -4992,7 +5267,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "500": *a32
+        "500": *a33
     post:
       operationId: addTaskReaction
       tags:
@@ -5001,9 +5276,9 @@ paths:
       description: The same reaction by the same caller on the same target returns the existing reaction. The JSON body is
         limited to 1 KiB. Home Assistant ingress requires a fresh membership check before writing. Automation tokens
         need tasks:write.
-      security: *a58
+      security: *a59
       parameters:
-        - *a53
+        - *a54
       requestBody:
         required: true
         content:
@@ -5013,7 +5288,7 @@ paths:
               required:
                 - content
               properties:
-                content: *a59
+                content: *a1
               additionalProperties: false
       responses:
         "201":
@@ -5022,7 +5297,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaskReaction"
-        "400": *a30
+        "400": *a31
         "401": *a60
         "403": *a61
         "404": *a62
@@ -5044,7 +5319,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "500": *a32
+        "500": *a33
   /api/tasks/{id}/reactions/{reactionId}:
     delete:
       operationId: deleteTaskReaction
@@ -5053,9 +5328,9 @@ paths:
       summary: Remove your reaction from a task card
       description: Only the creator can remove a reaction. Home Assistant ingress requires a fresh membership check.
         Automation tokens need tasks:write.
-      security: *a58
+      security: *a59
       parameters:
-        - *a53
+        - *a54
         - name: reactionId
           in: path
           required: true
@@ -5073,7 +5348,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "500": *a32
+        "500": *a33
   /api/tasks/{id}/comments/{commentId}/reactions:
     get:
       operationId: getTaskCommentReactions
@@ -5082,13 +5357,13 @@ paths:
       summary: List reactions on a task comment
       description: Returns up to 50 reactions, newest first. Home Assistant ingress requires current membership. Automation
         tokens need tasks:read.
-      security: *a58
+      security: *a59
       parameters:
-        - *a53
         - *a54
+        - *a55
         - name: cursor
           in: query
-          schema: *a57
+          schema: *a58
       responses:
         "200":
           description: Reactions and continuation cursor
@@ -5096,11 +5371,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaskReactionPage"
-        "400": *a30
+        "400": *a31
         "401": *a60
         "403": *a61
         "404": *a62
-        "500": *a32
+        "500": *a33
     post:
       operationId: addTaskCommentReaction
       tags:
@@ -5109,8 +5384,8 @@ paths:
       description: The same reaction by the same caller on the same target returns the existing reaction. The JSON body is
         limited to 1 KiB. Home Assistant ingress requires a fresh membership check before writing. Automation tokens
         need tasks:write.
-      security: *a58
-      parameters: *a56
+      security: *a59
+      parameters: *a57
       requestBody:
         required: true
         content:
@@ -5120,7 +5395,7 @@ paths:
               required:
                 - content
               properties:
-                content: *a59
+                content: *a1
               additionalProperties: false
       responses:
         "201":
@@ -5129,7 +5404,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaskReaction"
-        "400": *a30
+        "400": *a31
         "401": *a60
         "403": *a61
         "404": *a62
@@ -5151,7 +5426,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "500": *a32
+        "500": *a33
   /api/tasks/{id}/comments/{commentId}/reactions/{reactionId}:
     delete:
       operationId: deleteTaskCommentReaction
@@ -5160,10 +5435,10 @@ paths:
       summary: Remove your reaction from a task comment
       description: Only the creator can remove a reaction. Home Assistant ingress requires a fresh membership check.
         Automation tokens need tasks:write.
-      security: *a58
+      security: *a59
       parameters:
-        - *a53
         - *a54
+        - *a55
         - name: reactionId
           in: path
           required: true
@@ -5181,7 +5456,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "500": *a32
+        "500": *a33
   /api/tasks/reaction-counts:
     get:
       operationId: getTaskReactionCounts
@@ -5190,7 +5465,7 @@ paths:
       summary: Count card reactions for a batch of tasks
       description: Returns positive counts keyed by task ID. Comment reactions are excluded. Home Assistant ingress requires
         current membership. Automation tokens need tasks:read.
-      security: *a58
+      security: *a59
       parameters:
         - name: ids
           in: query
@@ -5206,10 +5481,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/TaskReactionCounts"
-        "400": *a30
+        "400": *a31
         "401": *a60
         "403": *a61
-        "500": *a32
+        "500": *a33
   /api/tasks/{id}/links:
     get:
       operationId: getTaskLinks
@@ -5266,7 +5541,7 @@ paths:
           description: Link already exists
         "201":
           description: Linked
-        "400": *a30
+        "400": *a31
         "403":
           description: Forbidden
         "404":
@@ -5292,7 +5567,7 @@ paths:
       responses:
         "200":
           description: Unlinked
-        "400": *a30
+        "400": *a31
         "403":
           description: Forbidden
         "404":
@@ -5484,7 +5759,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SearchResult"
-        "400": *a30
+        "400": *a31
         "401":
           description: Ingress or API credential required
           content:
@@ -5503,7 +5778,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ProblemDetail"
-        "500": *a32
+        "500": *a33
   /api/areas:
     get:
       operationId: listAreas
@@ -7463,6 +7738,64 @@ paths:
           description: Saved AI provider, URL or sharing choice changed
         "503":
           description: Home Assistant could not verify current access
+  /api/custom-fields:
+    get:
+      operationId: listCustomFields
+      tags:
+        - Tasks
+      summary: List custom field definitions for the current board
+      responses:
+        "200":
+          description: Board custom field definitions
+    put:
+      operationId: updateCustomFields
+      tags:
+        - Tasks
+      summary: Replace custom field definitions for the current board
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - fields
+              properties:
+                fields:
+                  type: array
+                  maxItems: 40
+                  items:
+                    type: object
+                    required:
+                      - name
+                      - type
+                    properties:
+                      name:
+                        type: string
+                        minLength: 1
+                        maxLength: 60
+                      type:
+                        type: string
+                        enum:
+                          - text
+                          - number
+                          - url
+                          - select
+                          - date
+                          - checkbox
+                      options:
+                        type: array
+                        maxItems: 30
+                        items:
+                          type: string
+                          minLength: 1
+                          maxLength: 60
+                    additionalProperties: false
+              additionalProperties: false
+      responses:
+        "200":
+          description: Updated board custom field definitions
+        "400": *a31
   /api/lanes:
     get:
       operationId: listLanes
@@ -7477,9 +7810,72 @@ paths:
       tags:
         - Views
       summary: Create a kanban lane
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - label
+              properties:
+                label:
+                  type: string
+                  minLength: 1
+                  maxLength: 50
+                key:
+                  type: string
+                icon:
+                  type: string
+                color:
+                  type:
+                    - string
+                    - "null"
+                  pattern: ^#[0-9a-fA-F]{6}$
+                wip_limit:
+                  type: integer
+                  minimum: 0
+                position:
+                  type: integer
+                  minimum: 0
+                includes:
+                  type: array
+                  items:
+                    type: string
+                    pattern: ^[a-z0-9_]{1,50}$
+              additionalProperties: false
       responses:
         "201":
           description: Created
+        "400": *a31
+        "409":
+          description: Lane key already exists
+    put:
+      operationId: reorderLanes
+      tags:
+        - Views
+      summary: Reorder kanban board lanes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ordered_ids
+              properties:
+                ordered_ids:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+              additionalProperties: false
+      responses:
+        "200":
+          description: Reordered
+        "400": *a31
+        "409":
+          description: Lanes changed concurrently
   /api/lanes/{id}:
     put:
       operationId: updateLane
@@ -7492,9 +7888,45 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label:
+                  type: string
+                  minLength: 1
+                  maxLength: 50
+                icon:
+                  type: string
+                color:
+                  type:
+                    - string
+                    - "null"
+                wip_limit:
+                  type: integer
+                  minimum: 0
+                position:
+                  type: integer
+                  minimum: 0
+                includes:
+                  oneOf:
+                    - type: array
+                      items:
+                        type: string
+                        pattern: ^[a-z0-9_]{1,50}$
+                    - type: string
+              additionalProperties: false
       responses:
         "200":
           description: Updated
+        "400": *a31
+        "403":
+          description: Cannot change protected fields on built-in lanes
+        "404":
+          description: Lane not found
     delete:
       operationId: deleteLane
       tags:
@@ -7506,9 +7938,26 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                target_lane_id:
+                  type: string
+              additionalProperties: false
       responses:
         "200":
           description: Deleted
+        "400": *a31
+        "403":
+          description: Cannot delete built-in lane
+        "404":
+          description: Lane or target lane not found
+        "409":
+          description: Lane is referenced by an active board intake
   /api/saved-filters:
     get:
       operationId: listSavedFilters
@@ -7956,7 +8405,7 @@ paths:
         protected organization data require Home Assistant backups instead. The download remains bound to its admitted
         access revision: loss before publication returns unavailable, and loss after headers aborts the remaining
         stream. Use the database host's backup tools for remote databases."
-      security: *a8
+      security: *a9
       requestBody:
         required: true
         content:
@@ -8852,7 +9301,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CreateAgentTokenResponse"
-        "400": *a30
+        "400": *a31
         "403":
           description: Admin access required or cross-origin request denied
           content:
@@ -8963,7 +9412,7 @@ paths:
                   id:
                     type: string
                 additionalProperties: false
-        "400": *a30
+        "400": *a31
         "403":
           description: Admin access required or cross-origin request denied
           content:
@@ -9035,7 +9484,7 @@ paths:
                       - revoked
                       - deleted
                 additionalProperties: false
-        "400": *a30
+        "400": *a31
         "403":
           description: Admin access required or cross-origin request denied
           content:

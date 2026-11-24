@@ -69,7 +69,7 @@ function isExternal(href: string): boolean {
           aria-label={t("sidebar.reorder_section", locale, { label: section.label })}
           title={t("sidebar.reorder_section", locale, { label: section.label })}
         >
-          <Icon name="grip-vertical" size={14} />
+          <Icon name="grip-vertical" size={14} sprite={true} />
         </button>
         <span
           class="sidebar-section__title"
@@ -86,7 +86,7 @@ function isExternal(href: string): boolean {
             aria-label={t("sidebar.rename_section", locale, { label: section.label })}
             title={t("sidebar.rename_section", locale, { label: section.label })}
           >
-            <Icon name="pencil" size={14} />
+            <Icon name="pencil" size={14} sprite={true} />
           </button>
           <button
             type="button"
@@ -100,8 +100,8 @@ function isExternal(href: string): boolean {
               ? t("sidebar.show_section", locale, { label: section.label })
               : t("sidebar.hide_section", locale, { label: section.label })}
           >
-            <span class="sidebar-eye-visible"><Icon name="eye" size={14} /></span>
-            <span class="sidebar-eye-hidden"><Icon name="eye-off" size={14} /></span>
+            <span class="sidebar-eye-visible"><Icon name="eye" size={14} sprite={true} /></span>
+            <span class="sidebar-eye-hidden"><Icon name="eye-off" size={14} sprite={true} /></span>
           </button>
           {section.removable && (
             <button
@@ -111,7 +111,7 @@ function isExternal(href: string): boolean {
               aria-label={`Delete ${section.label} section`}
               title={`Delete ${section.label} section`}
             >
-              <Icon name="trash" size={14} />
+              <Icon name="trash" size={14} sprite={true} />
             </button>
           )}
         </div>
@@ -143,7 +143,7 @@ function isExternal(href: string): boolean {
                     aria-label={t("sidebar.reorder_item", locale, { label: item.label })}
                     title={t("sidebar.reorder_item", locale, { label: item.label })}
                   >
-                    <Icon name="grip-vertical" size={14} />
+                    <Icon name="grip-vertical" size={14} sprite={true} />
                   </button>
                   <a
                     href={item.href}
@@ -157,7 +157,7 @@ function isExternal(href: string): boolean {
                     aria-label={item.label}
                   >
                     <span class="nav-icon">
-                      <Icon name={item.icon as any} />
+                      <Icon name={item.icon as any} sprite={true} />
                     </span>
                     <span class="nav-label" data-sidebar-item-label={item.key} data-default-label={item.defaultLabel}>
                       {item.label}
@@ -172,7 +172,7 @@ function isExternal(href: string): boolean {
                     aria-label="Task views"
                     title="Task views"
                   >
-                    <Icon name="chevron-down" size={13} />
+                    <Icon name="chevron-down" size={13} sprite={true} />
                   </button>
                   <div class="sidebar-edit-actions">
                     <button
@@ -182,7 +182,7 @@ function isExternal(href: string): boolean {
                       aria-label={t("sidebar.rename_item", locale, { label: item.label })}
                       title={t("sidebar.rename_item", locale, { label: item.label })}
                     >
-                      <Icon name="pencil" size={14} />
+                      <Icon name="pencil" size={14} sprite={true} />
                     </button>
                     <button
                       type="button"
@@ -196,8 +196,8 @@ function isExternal(href: string): boolean {
                         ? t("sidebar.show_item", locale, { label: item.label })
                         : t("sidebar.hide_item", locale, { label: item.label })}
                     >
-                      <span class="sidebar-eye-visible"><Icon name="eye" size={14} /></span>
-                      <span class="sidebar-eye-hidden"><Icon name="eye-off" size={14} /></span>
+                      <span class="sidebar-eye-visible"><Icon name="eye" size={14} sprite={true} /></span>
+                      <span class="sidebar-eye-hidden"><Icon name="eye-off" size={14} sprite={true} /></span>
                     </button>
                   </div>
                 </div>
@@ -207,7 +207,7 @@ function isExternal(href: string): boolean {
                     return (
                       <li class="task-view-subitem">
                         <a href={view.href} class="nav-link task-view-sublink" data-task-view-link={view.id} data-astro-prefetch="false">
-                          <Icon name={view.icon} size={16} />
+                          <Icon name={view.icon} size={16} sprite={true} />
                           <span>{view.label}</span>
                         </a>
                         <button
@@ -218,7 +218,7 @@ function isExternal(href: string): boolean {
                           aria-label={`Pin ${view.label} to navigation`}
                           title={isPinned ? `Unpin ${view.label}` : `Pin ${view.label}`}
                         >
-                          <Icon name="pin" size={15} />
+                          <Icon name="pin" size={15} sprite={true} />
                         </button>
                       </li>
                     )
@@ -230,14 +230,13 @@ function isExternal(href: string): boolean {
 
           return (
             <li
-              class={`sidebar-nav-item relative${item.taskView ? " task-view-pinned-row" : ""}`}
+              class="sidebar-nav-item relative"
               data-sidebar-group={item.key}
               data-sidebar-item-key={item.key}
               data-sidebar-item-hidden={item.hidden ? "true" : undefined}
               data-sidebar-item-removable={item.removable ? "true" : undefined}
               data-sidebar-pin-presence={item.key === "system-pinned" || undefined}
               data-task-view-pinned-item={item.taskView && !item.hidden ? item.taskView : undefined}
-              data-task-view-item={item.taskView}
               hidden={item.key === "system-pinned"}
             >
               <div class="nav-row flex items-center gap-1 min-w-0">
@@ -250,7 +249,7 @@ function isExternal(href: string): boolean {
                   aria-label={t("sidebar.reorder_item", locale, { label: item.label })}
                   title={t("sidebar.reorder_item", locale, { label: item.label })}
                 >
-                  <Icon name="grip-vertical" size={14} />
+                  <Icon name="grip-vertical" size={14} sprite={true} />
                 </button>
                 <a
                   href={item.href}
@@ -268,7 +267,7 @@ function isExternal(href: string): boolean {
                     : {})}
                 >
                   <span class="nav-icon">
-                    <Icon name={item.icon as any} />
+                    <Icon name={item.icon as any} sprite={true} />
                   </span>
                   <span class="nav-label" data-sidebar-item-label={item.key} data-default-label={item.defaultLabel}>
                     {item.label}
@@ -286,7 +285,18 @@ function isExternal(href: string): boolean {
                     aria-expanded="true"
                     aria-controls="sidebar-board-children"
                   >
-                    <Icon name="chevron-down" size={13} />
+                    <Icon name="chevron-down" size={13} sprite={true} />
+                  </button>
+                )}
+                {item.taskView && (
+                  <button
+                    type="button"
+                    class="task-view-pin task-view-item-unpin"
+                    data-task-view-unpin={item.taskView}
+                    aria-label={`Unpin ${item.label} from navigation`}
+                    title={`Unpin ${item.label}`}
+                  >
+                    <Icon name="pin" size={15} sprite={true} />
                   </button>
                 )}
                 <div class="sidebar-edit-actions">
@@ -297,7 +307,7 @@ function isExternal(href: string): boolean {
                     aria-label={t("sidebar.rename_item", locale, { label: item.label })}
                     title={t("sidebar.rename_item", locale, { label: item.label })}
                   >
-                    <Icon name="pencil" size={14} />
+                    <Icon name="pencil" size={14} sprite={true} />
                   </button>
                   <button
                     type="button"
@@ -311,8 +321,8 @@ function isExternal(href: string): boolean {
                       ? t("sidebar.show_item", locale, { label: item.label })
                       : t("sidebar.hide_item", locale, { label: item.label })}
                   >
-                    <span class="sidebar-eye-visible"><Icon name="eye" size={14} /></span>
-                    <span class="sidebar-eye-hidden"><Icon name="eye-off" size={14} /></span>
+                    <span class="sidebar-eye-visible"><Icon name="eye" size={14} sprite={true} /></span>
+                    <span class="sidebar-eye-hidden"><Icon name="eye-off" size={14} sprite={true} /></span>
                   </button>
                   {item.removable && (
                     <button
@@ -322,22 +332,10 @@ function isExternal(href: string): boolean {
                       aria-label={`Remove ${item.label}`}
                       title={`Remove ${item.label}`}
                     >
-                      <Icon name="x" size={14} />
+                      <Icon name="x" size={14} sprite={true} />
                     </button>
                   )}
                 </div>
-                {item.taskView && (
-                  <button
-                    type="button"
-                    class="task-view-pin"
-                    data-task-view-pin={item.taskView}
-                    aria-pressed="true"
-                    aria-label={`Unpin ${item.label} from navigation`}
-                    title={`Unpin ${item.label}`}
-                  >
-                    <Icon name="pin" size={14} />
-                  </button>
-                )}
               </div>
               {item.key === "boards" && <slot name="boards" />}
             </li>
@@ -381,7 +379,8 @@ function isExternal(href: string): boolean {
   .task-view-disclosure { border-color: var(--border); }
 
   :global(#sidebar[data-sidebar-editing]) .task-view-disclosure,
-  :global(#sidebar[data-sidebar-editing]) .task-view-pin {
+  :global(#sidebar[data-sidebar-editing]) .task-view-item-unpin,
+  :global(body.sidebar-collapsed) .task-view-item-unpin {
     display: none;
   }
 
@@ -398,6 +397,9 @@ function isExternal(href: string): boolean {
     background: rgb(var(--accent-rgb) / 0.14);
     color: var(--text-primary);
     border-color: currentColor;
+  }
+  .task-view-item-unpin {
+    color: var(--text-primary);
   }
 
   .task-view-submenu {
@@ -427,11 +429,8 @@ function isExternal(href: string): boolean {
 
   @media (min-width: 769px) {
     :global(body.sidebar-collapsed) .nav-item--tasks > .nav-row { flex-direction: column; gap: 0; }
-    :global(body.sidebar-collapsed) .task-view-disclosure {
-      inline-size: 40px;
-    }
     @media (pointer: fine) {
-      :global(body.sidebar-collapsed) .task-view-disclosure { min-block-size: 24px; }
+      :global(body.sidebar-collapsed) .task-view-disclosure { inline-size: 40px; min-block-size: 24px; }
     }
 
     :global(body.sidebar-collapsed) .task-view-submenu,
@@ -482,7 +481,7 @@ function isExternal(href: string): boolean {
   import { matchingTaskShortcutCriteria } from "../../lib/task-nav-types"
   import { TASK_VIEW_LOCATION_EVENT, taskBackgroundUrl } from "../../lib/task-page-url"
   import { parseTaskView, requestedTaskView, taskViewUrl } from "../../lib/task-view-route"
-  import { SIDEBAR_TOGGLE_VIEW_PIN_EVENT } from "../../lib/sidebar-order"
+  import { SIDEBAR_TOGGLE_VIEW_PIN_EVENT, sidebarOrderChanged } from "../../lib/sidebar-order"
 
   const runtime = window as typeof window & { __meithealSidebarActive?: AbortController }
   runtime.__meithealSidebarActive?.abort()
@@ -653,7 +652,16 @@ function isExternal(href: string): boolean {
         event.stopPropagation()
         window.dispatchEvent(new CustomEvent(SIDEBAR_TOGGLE_VIEW_PIN_EVENT, { detail: { view: pinnedView } }))
       }
+      const unpin = target?.closest<HTMLElement>("[data-task-view-unpin]")
+      const unpinnedView = parseTaskView(unpin?.dataset.taskViewUnpin ?? null)
+      if (unpinnedView) {
+        event.preventDefault()
+        event.stopPropagation()
+        window.dispatchEvent(new CustomEvent(SIDEBAR_TOGGLE_VIEW_PIN_EVENT, { detail: { view: unpinnedView } }))
+        trigger.focus()
+      }
     }, { signal, capture: true })
+    nav.addEventListener(sidebarOrderChanged, updateActiveNavLink, { signal })
     document.addEventListener("click", event => {
       if (!submenu.hidden && event.target instanceof Node && !group.contains(event.target)) setOpen(false)
     }, { signal })

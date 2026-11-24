@@ -40,7 +40,7 @@ for (const encoding of ["legacy", "scoped"] as const) {
       if (!prepared.ok) throw new Error(prepared.error)
       const result = await repo.createWorkCommand(prepared.task)
       if (!result.ok) throw new Error(result.errorCode)
-      expect((await repo.updateTask(result.task.id, { is_favorite: 1 })).ok).toBe(true)
+      expect((await repo.updateTask(result.task.id, { is_promoted: 1 })).ok).toBe(true)
       return result.task.id
     }
     const directA = await add("Direct Area", { area_id: areaA }), projectOnly = await add("Project only Area", { project_id: projectA })
@@ -58,7 +58,7 @@ for (const encoding of ["legacy", "scoped"] as const) {
     ] as const) {
       const ids = (rows: Array<{ id: string }>) => rows.map(row => row.id).sort()
       expect(ids(await repo.getOpenTasks(50, placement))).toEqual([...openIds].sort())
-      expect(ids(await repo.getFavoriteTasks(50, placement))).toEqual([...openIds].sort())
+      expect(ids(await repo.getPromotedTasks(50, placement))).toEqual([...openIds].sort())
       expect((await repo.getRecentTasks(50, placement))).toHaveLength(total)
       expect(await repo.getStatusCounts(placement)).toMatchObject({ total, open: openIds.length, completed: completeIds.length })
       expect(await repo.getOverdueCount(today, "UTC", placement)).toBe(openIds.length)

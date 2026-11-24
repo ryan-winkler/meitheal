@@ -9,6 +9,7 @@ import { promptDialog } from "@lib/prompt-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { settingsStore } from "@lib/settings-store"
 import { showToast } from "@lib/toast"
+import { byId, domEl } from "@lib/dom-helpers"
 
 function clearPreviewResult(previewResult: HTMLElement): void {
   previewResult.replaceChildren()
@@ -27,7 +28,7 @@ function appendPreviewLine(
     subtle?: boolean
   } = {},
 ): void {
-  const line = document.createElement("span")
+  const line = domEl("span")
   if (color) line.style.color = color
   if (subtle) {
     line.style.fontSize = "12px"
@@ -36,7 +37,7 @@ function appendPreviewLine(
     line.style.display = "inline-block"
   }
   if (strong) {
-    const strongEl = document.createElement("strong")
+    const strongEl = domEl("strong")
     strongEl.textContent = text
     line.appendChild(strongEl)
   } else {
@@ -68,24 +69,24 @@ function renderRetentionPreview(
     return
   }
 
-  const lead = document.createElement("span")
+  const lead = domEl("span")
   lead.style.color = "var(--warning)"
   lead.append("⚠ ")
 
-  const countStrong = document.createElement("strong")
+  const countStrong = domEl("strong")
   countStrong.textContent = String(count)
   lead.appendChild(countStrong)
   lead.append(
     ` completed/archived task${count === 1 ? "" : "s"} last updated before `,
   )
 
-  const cutoffStrong = document.createElement("strong")
+  const cutoffStrong = domEl("strong")
   cutoffStrong.textContent = cutoffDate ?? ""
   lead.appendChild(cutoffStrong)
   lead.append(" will be permanently deleted.")
 
   previewResult.appendChild(lead)
-  previewResult.appendChild(document.createElement("br"))
+  previewResult.appendChild(domEl("br"))
   appendPreviewLine(
     previewResult,
     "This includes their comments, activity logs, and task links.",
@@ -109,7 +110,7 @@ export function initDangerZoneSettings(): void {
   initRetentionSettings()
 
   // Purge all tasks
-  const purgeBtn = document.getElementById("purge-tasks")
+  const purgeBtn = byId("purge-tasks")
   if (purgeBtn) {
     pageLifecycle.on(purgeBtn, "click", async () => {
     const ok = await confirmDialog({
@@ -150,7 +151,7 @@ export function initDangerZoneSettings(): void {
   }
 
   // Reset settings
-  const resetBtn = document.getElementById("reset-settings")
+  const resetBtn = byId("reset-settings")
   if (resetBtn) {
     pageLifecycle.on(resetBtn, "click", async () => {
     const ok = await confirmDialog({
@@ -188,10 +189,10 @@ export function initDangerZoneSettings(): void {
  * No automation, no scheduled purge — user-initiated only.
  */
 function initRetentionSettings(): void {
-  const monthsSelect = document.getElementById("retention-months-select") as HTMLSelectElement | null
-  const previewBtn = document.getElementById("retention-preview-btn") as HTMLButtonElement | null
-  const deleteBtn = document.getElementById("retention-delete-btn") as HTMLButtonElement | null
-  const previewResult = document.getElementById("retention-preview-result")
+  const monthsSelect = byId<HTMLSelectElement>("retention-months-select")
+  const previewBtn = byId<HTMLButtonElement>("retention-preview-btn")
+  const deleteBtn = byId<HTMLButtonElement>("retention-delete-btn")
+  const previewResult = byId("retention-preview-result")
 
   if (!monthsSelect || !previewBtn || !deleteBtn || !previewResult) return
 

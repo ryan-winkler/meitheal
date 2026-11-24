@@ -41,4 +41,6 @@ Meitheal applies six complementary disciplines together:
 - All visual tokens (theme, accent, avatar contrast, self-hosted fonts) render locally with zero external font calls and pass WCAG AA contrast.
 
 - `pnpm --filter @meitheal/web perf:budget` stays within `apps/web/scripts/perf-budget-baseline.json`.
-
+- Resizable right inspector drawer (`#td-resize-handle`, `role="separator"`, `360–840px` persisted in `localStorage["meitheal:task-sidebar-width:v1"]`) and Focus Mode reading column (`min(100%, 72.5rem)`) keep drafts intact across viewport sizes without overriding explicit theme `--border-focus` rings.
+- Kanban card `.kanban-card-actions` wrap cleanly inside `320px` and desktop cards, keep `opacity: 1` and `pointer-events: auto` without hover traps, and place `.card-more-btn` before `.kanban-promote-star` to preserve predictable keyboard `Tab` flow.
+- [CardCustomizer.astro](apps/web/src/components/ui/CardCustomizer.astro) fetches Board custom fields lazily when `#toggle-fields-btn` opens rather than on every initial page load, avoiding unnecessary API traffic.

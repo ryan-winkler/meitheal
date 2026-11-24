@@ -4,9 +4,12 @@
  * Drives Plugin Health (EGM compliance), External Connectors, Installed Custom
  * Plugins, 2-step "Build one with AI" modal, and Reference/Get Listed dialogs.
  */
+import { copyToClipboard } from "@lib/clipboard"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { safeFetch } from "@lib/safe-fetch"
+import { byId, domEl as el, whenSectionVisible } from "@lib/settings-utils"
 import { showToast } from "@lib/toast"
+import { setAttr } from "@lib/dom-helpers"
 
 type Tone = "healthy" | "warning" | "critical" | "inactive"
 
@@ -71,13 +74,6 @@ const SVG_ATTRS = new Set([
 ])
 const JSON_HDR = { "Content-Type": "application/json" }
 
-const byId = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T | null
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string, txt?: string) => {
-  const n = document.createElement(tag)
-  if (cls) n.className = cls
-  if (txt !== undefined) n.textContent = txt
-  return n
-}
 const PLUGIN_API_PATH_RE = /^\/api\/plugins(?:\/[a-z0-9][a-z0-9-]{1,62}[a-z0-9](?:\/(?:secrets|connector))?(?:\?key=[A-Za-z0-9._%-]+)?)?$/
 const apiReq = (url: string, method: string, body?: unknown) => {
   if (!PLUGIN_API_PATH_RE.test(url)) return Promise.reject(new Error("Invalid plugin API path"))
@@ -89,19 +85,15 @@ const apiReq = (url: string, method: string, body?: unknown) => {
 }
 
 async function copyText(text: string, okMsg: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text)
-    showToast(okMsg, "success")
-  } catch {
-    showToast("Could not copy to clipboard.", "error")
-  }
+  const ok = await copyToClipboard(text)
+  showToast(ok ? okMsg : "Could not copy to clipboard.", ok ? "success" : "error")
 }
 
 function makeBadge(tone: Tone, label: string): HTMLElement {
   const b = el("span", "plg-badge")
   b.dataset.tone = tone
   const d = el("span", "plg-dot")
-  d.setAttribute("aria-hidden", "true")
+  setAttr(d, "aria-hidden", "true")
   b.append(d, el("span", "", label))
   return b
 }
@@ -137,7 +129,7 @@ function parseAiBundle(raw: string): { ok: true; bundle: Record<string, unknown>
 
 function renderSvg(svgText: string | null): HTMLElement {
   const wrap = el("span", "plg-card__icon")
-  wrap.setAttribute("aria-hidden", "true")
+  setAttr(wrap, "aria-hidden", "true")
   if (svgText?.trim().startsWith("<svg")) {
     const svg = new DOMParser().parseFromString(svgText, "image/svg+xml").documentElement
     if (svg.tagName.toLowerCase() === "svg" && !svg.querySelector("parsererror")) {
@@ -220,7 +212,7 @@ export function initPluginsSettings(): void {
       const lbl = el("span", "plg-metric__lbl")
       const dot = el("span", "plg-dot")
       dot.style.color = color
-      dot.setAttribute("aria-hidden", "true")
+      setAttr(dot, "aria-hidden", "true")
       lbl.append(dot, document.createTextNode(label))
       box.append(lbl, el("strong", "plg-metric__val", String(val)))
       healthSummaryEl.append(box)
@@ -290,9 +282,9 @@ export function initPluginsSettings(): void {
     tog.type = "checkbox"
     tog.checked = p.enabled
     tog.disabled = p.needsReconsent
-    tog.setAttribute("aria-label", `Enable ${p.manifest.name}`)
+    setAttr(tog, "aria-label", `Enable ${p.manifest.name}`)
     const sl = el("span", "toggle-slider")
-    sl.setAttribute("aria-hidden", "true")
+    setAttr(sl, "aria-hidden", "true")
     sw.append(tog, sl)
     tog.addEventListener("change", async () => {
       tog.disabled = true
@@ -613,5 +605,5 @@ export function initPluginsSettings(): void {
     if (d) pageLifecycle.on(d, "click", (ev) => { if (ev.target === d) d.close() })
   }
   pageLifecycle.on(window, "meitheal:plugin-runtime-error", () => render())
-  void loadCatalog(false)
+  whenSectionVisible(root, () => { void loadCatalog(false) })
 }

@@ -19,6 +19,7 @@ import {
 } from "@domains/tasks/persistence/store"
 import { getDailyProgress } from "@domains/gamification"
 import { boardNavigationLinks, readBoardNavigationContext } from "@lib/board-workspace"
+import { readCachedSidebarAndProfile } from "@lib/shell-settings-cache"
 import { getFeatureFlags } from "../../lib/feature-flags"
 import { TASK_VIEW_ICONS, TASK_VIEW_LABELS, taskViewUrl, type TaskView } from "../../lib/task-view-route"
 import {
@@ -158,14 +159,7 @@ try {
   await ensureSchema()
   const c = getPersistenceClient()
   showNamedBoardShortcuts = hierarchyEnabled && Boolean(await currentBoardContext(Astro))
-  const res = await c.execute(
-    "SELECT key, value FROM settings WHERE key IN ('sidebar_config', 'user_profile')",
-  )
-  for (const row of res.rows) {
-    const key = String(row.key ?? "")
-    if (key === "sidebar_config") rawSidebarConfig = row.value
-    if (key === "user_profile") rawUserProfile = row.value
-  }
+  ;({ rawSidebarConfig, rawUserProfile } = await readCachedSidebarAndProfile(c))
 } catch (e) {
   const { logApiError } = await import("@lib/api-logger")
   logApiError("sidebar", "load_sidebar_config", e)
@@ -300,7 +294,7 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
   >
     <span class="sidebar-edge-toggle__circle" aria-hidden="true">
       <span class="sidebar-edge-toggle__icon">
-        <Icon name="chevron-down" size={14} />
+        <Icon name="chevron-down" size={14} sprite={true} />
       </span>
     </span>
   </button>
@@ -343,7 +337,7 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
       aria-label={t("topbar.close_menu", locale)}
       title={t("topbar.close_menu", locale)}
     >
-      <Icon name="x" size={20} />
+      <Icon name="x" size={20} sprite={true} />
     </button>
   </div>
 
@@ -359,7 +353,7 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
           aria-label={quickCreate}
         >
           <span class="sidebar-rail-cta__icon" aria-hidden="true">
-            <Icon name="plus" size={18} />
+            <Icon name="plus" size={18} sprite={true} />
           </span>
           <span class="sidebar-rail-cta__label">{quickCreate}</span>
         </button>
@@ -383,7 +377,7 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
   <div class="sidebar-edit-footer" data-sidebar-leave-edit hidden>
     <div class="sidebar-edit-scope" role="note">
       <span class="sidebar-edit-scope__badge">
-        <Icon name="user" size={12} />
+        <Icon name="user" size={12} sprite={true} />
         <span>Per-user menu</span>
       </span>
       <button
@@ -396,6 +390,25 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
       </button>
     </div>
 
+    <div class="sidebar-edit-moves" data-sidebar-edit-moves hidden>
+      <button
+        type="button"
+        data-sidebar-step="-1"
+        aria-label={t("sidebar.reorder_up", locale)}
+        title={t("sidebar.reorder_up", locale)}
+      >
+        <Icon name="chevron-down" size={16} class="rotate-180" />
+      </button>
+      <button
+        type="button"
+        data-sidebar-step="1"
+        aria-label={t("sidebar.reorder_down", locale)}
+        title={t("sidebar.reorder_down", locale)}
+      >
+        <Icon name="chevron-down" size={16} />
+      </button>
+    </div>
+
     <div class="sidebar-edit-quick-actions">
       <button
         type="button"
@@ -405,7 +418,7 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
         aria-expanded="false"
         aria-controls="sidebar-add-section-form"
       >
-        <Icon name="folder" size={14} />
+        <Icon name="folder" size={14} sprite={true} />
         <span>Add section</span>
       </button>
 
@@ -417,7 +430,7 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
         aria-expanded="false"
         aria-controls="sidebar-add-link-form"
       >
-        <Icon name="link" size={14} />
+        <Icon name="link" size={14} sprite={true} />
         <span>Add custom link</span>
       </button>
     </div>
@@ -475,7 +488,7 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
               aria-label={`Icon: ${iconName.replace(/-/g, " ")}`}
               title={iconName.replace(/-/g, " ")}
             >
-              <Icon name={iconName} size={15} />
+              <Icon name={iconName} size={15} sprite={true} />
             </button>
           ))}
         </div>
@@ -488,7 +501,7 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
     </form>
 
     <button type="button" id="sidebar-leave-edit" class="sidebar-leave-edit__btn" data-sidebar-leave-edit-btn>
-      <Icon name="check" size={16} />
+      <Icon name="check" size={16} sprite={true} />
       <span>{t("sidebar.leave_edit_mode", locale)}</span>
     </button>
   </div>
@@ -564,20 +577,6 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
   }
 
   .sidebar-main { display: contents; }
-
-  .sidebar .sidebar-compact-areas {
-    display: none;
-  }
-
-  @media (min-width: 769px) {
-    :global(body.sidebar-collapsed) .sidebar .sidebar-compact-areas {
-      display: flex;
-    }
-
-    :global(body.sidebar-collapsed) #sidebar-hierarchy-panel :global(#project-nav) {
-      display: none;
-    }
-  }
 
   .sidebar-scroll {
     flex: 1;
@@ -731,7 +730,6 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
 <style is:inline>
   .sidebar-board-children { list-style: none; margin: 0; padding-inline-start: 0.75rem; }
   .sidebar-board-children[hidden] { display: none !important; }
-  .sidebar-household { margin-inline-start: 0; }
   body.sidebar-collapsed .sidebar-board-children { display: none; }
   .sidebar-board-children [data-named-board-shortcut] a { display: block; padding: 0.3rem 0.5rem; overflow-wrap: anywhere; }
   .sidebar-board-children .sidebar-board-row { display: flex; align-items: center; gap: 2px; }
@@ -742,7 +740,6 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
   .sidebar-board-children .sidebar-board-toggle[aria-expanded="true"] { transform: rotate(90deg); }
   .sidebar-board-children [data-board-groups], .sidebar-board-children [data-board-projects] { list-style: none; padding-left: 1rem; }
   .sidebar-board-children [data-board-group-notice] { padding-inline-start: 1rem; margin: 0; }
-  .sidebar-household[hidden] { display: none; }
 
   [data-appearance-nav-tone]:not([data-appearance-nav-tone="match"]) #sidebar .sidebar-board-children.stree {
     background: rgba(15, 23, 42, 0.24);

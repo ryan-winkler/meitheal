@@ -146,28 +146,26 @@ export async function admitBoardResponse(
 ) {
   const retain = governedHtml || requestAdmissions.has(request)
   if (!retain) return response
-  let buffered: ArrayBuffer | undefined
+  let chunks: Uint8Array[] | undefined
   if (response.body) {
     const reader = response.body.getReader()
-    const chunks: Uint8Array[] = []
-    let rejectAbort!: (reason: unknown) => void
-    const aborted = new Promise<never>((_, reject) => {
-      rejectAbort = reject
-    })
+    const collected: Uint8Array[] = []
     const abort = () => {
-      rejectAbort(request.signal.reason ?? new DOMException("Request aborted", "AbortError"))
-      void reader.cancel().catch(() => {})
+      void reader.cancel(request.signal.reason ?? new DOMException("Request aborted", "AbortError")).catch(() => {})
     }
     request.signal.addEventListener("abort", abort, { once: true })
     try {
-      if (request.signal.aborted) abort()
+      if (request.signal.aborted) {
+        abort()
+        request.signal.throwIfAborted()
+      }
       for (;;) {
-        const chunk = await Promise.race([reader.read(), aborted])
+        const chunk = await reader.read()
         request.signal.throwIfAborted()
         if (chunk.done) break
-        chunks.push(chunk.value)
+        collected.push(chunk.value)
       }
-      buffered = new Uint8Array(Buffer.concat(chunks)).buffer
+      chunks = collected
     } finally {
       request.signal.removeEventListener("abort", abort)
       reader.releaseLock()
@@ -203,13 +201,15 @@ export async function admitBoardResponse(
       throw error
     }
   }
-  return buffered
-    ? new Response(buffered, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers
-      })
-    : response
+  if (chunks !== undefined) {
+    const body = chunks.length === 0 ? new Uint8Array(0) : chunks.length === 1 ? chunks[0]! : Buffer.concat(chunks)
+    return new Response(body as BodyInit, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    })
+  }
+  return response
 }
 
 export async function readBoardView(

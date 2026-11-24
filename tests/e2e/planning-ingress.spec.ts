@@ -64,7 +64,7 @@ test("Planning reads the live queue and saves a score inside managed ingress", a
     const receipt = await write
     expect(new URL(receipt.url()).pathname).toBe(prefix + "/api/tasks/" + id)
     expect(receipt.status()).toBe(200)
-    await expect(page.locator(`[data-rice-task="${id}"] [data-rice-score]`)).toHaveText("75")
+    await expect(page.locator(`[data-rice-task="${id}"] [data-rice-score]`)).toHaveText("0.75")
     await expect(scoreLink).toBeFocused()
     await expect(page).toHaveURL(origin + prefix + "/planning#rice")
   } finally {

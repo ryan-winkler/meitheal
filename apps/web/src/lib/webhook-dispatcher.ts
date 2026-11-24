@@ -20,6 +20,7 @@ import {
 import { type DomainEvent, type WebhookSubscriberConfig, emitWebhook } from "@meitheal/integration-core";
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
 import { fireHAEvent, type MeithealTaskEventData, type MeithealEventType } from "@domains/ha/ha-events";
+import { localReaderCacheToken } from "../../scripts/database-client.mjs"
 
 const logger = createLogger({
   service: "meitheal-web",
@@ -77,15 +78,24 @@ async function getN8nAutoEvents(): Promise<string[]> {
   } catch { return [] }
 }
 
-/** Read transport configuration fresh; a TTL cannot establish receiver authority. */
+const webhookSettingsCache = new WeakMap<object, { token: string; settings: Record<string, unknown> }>()
+
+/** Read transport configuration fresh; reuse parsed settings only while the SQLite snapshot is unchanged. */
 async function getCurrentWebhookSettings(): Promise<Record<string, unknown>> {
-  const result = await getPersistenceClient().execute(
+  const db = getPersistenceClient()
+  const state = localReaderCacheToken(db)
+  const cached = state ? webhookSettingsCache.get(state.owner) : undefined
+  if (state && cached?.token === state.token) return cached.settings
+  const result = await db.execute(
     "SELECT key,value FROM settings WHERE key IN ('webhook_endpoint','webhook_secret','n8n_webhook_url','n8n_events','n8n_api_key','n8n_signing_secret') ORDER BY key"
   )
   const settings: Record<string, unknown> = {}
   for (const row of result.rows) {
     try { settings[String(row.key)] = JSON.parse(String(row.value)) }
     catch { settings[String(row.key)] = String(row.value) }
+  }
+  if (state && localReaderCacheToken(db)?.token === state.token) {
+    webhookSettingsCache.set(state.owner, { token: state.token, settings })
   }
   return settings
 }
@@ -150,6 +160,15 @@ export async function dispatchTaskEvent(eventType: string, input: Record<string,
   requestId: string | undefined, traceId: string | undefined, eventId: string | undefined,
   responseAuthority: Record<string, string> | undefined, scope: BoardScope) {
   try {
+    const haEventType = HA_EVENT_MAP[eventType];
+    const hasHaBus = Boolean(haEventType && process.env.SUPERVISOR_TOKEN);
+    const earlyWebhookSettings = !hasHaBus && eventType !== "task.deleted" && !eventId
+      ? await getCurrentWebhookSettings()
+      : null;
+    if (earlyWebhookSettings && !earlyWebhookSettings.webhook_endpoint && !earlyWebhookSettings.n8n_webhook_url) {
+      return;
+    }
+
     const assignment = eventType === "task.updated" && typeof eventId === "string" && typeof input.id === "string"
       ? await readTaskAssignmentReceipt(getPersistenceClient(), scope, eventId, input.id) : null
     const originatingOperation: WorkOperation = assignment ? { resource: "task", action: "assign" } : eventOperation(eventType)
@@ -175,7 +194,6 @@ export async function dispatchTaskEvent(eventType: string, input: Record<string,
     // ── 1. HA Event Bus (Addon mode — Node-RED/n8n auto) ──
     // Fire meitheal_task_* events on the HA event bus so Node-RED/n8n
     // can trigger on them via the HA WebSocket integration.
-    const haEventType = HA_EVENT_MAP[eventType];
     if (haEventType && process.env.SUPERVISOR_TOKEN) {
       const authority = assignment ? { [HA_EVENT_AUTHORITY_HEADER]: haEventType } : responseAuthority ?? await taskEventAuthorityHeaders([eventType], scope);
       if (authority[HA_EVENT_AUTHORITY_HEADER]?.split(",").includes(haEventType)) {
@@ -211,7 +229,7 @@ export async function dispatchTaskEvent(eventType: string, input: Record<string,
 
     // ── 2. HTTP Webhooks (Standalone mode) ──
     // P2.1: Cache webhook settings with TTL to avoid DB reads on every event
-    const webhookSettings = await getCurrentWebhookSettings();
+    const webhookSettings = earlyWebhookSettings ?? await getCurrentWebhookSettings();
     const profileFingerprint = JSON.stringify(webhookSettings)
 
     const subscribers: WebhookSubscriberConfig[] = [];

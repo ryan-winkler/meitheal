@@ -9,8 +9,8 @@ import TaskDetailSection from "./TaskDetailSection.astro"
 import TaskDetailLayoutEditor from "./TaskDetailLayoutEditor.astro"
 import StrategicEvaluator from "./StrategicEvaluator.astro";
 import Icon from "../ui/Icon.astro";
-import { ensureSchema, getPersistenceClient, SettingsRepository } from "@domains/tasks"
-import { taskDetailServerSettingKey } from "@lib/task-detail-layout"
+import { ensureSchema, getPersistenceClient } from "@domains/tasks"
+import { readCachedTaskDetailLayout } from "@lib/shell-settings-cache"
 import { t } from "../../i18n/translations"
 
 interface Props { suppressUrlOpen?: boolean; namedBoard?: boolean }
@@ -23,9 +23,7 @@ let serverLayoutJson: string | null = null
 try {
   const client = getPersistenceClient()
   await ensureSchema()
-  const stored = await new SettingsRepository(client).getByKeys([taskDetailServerSettingKey])
-  const raw = stored[taskDetailServerSettingKey]
-  if (typeof raw === "string" && raw.trim()) serverLayoutJson = raw
+  serverLayoutJson = await readCachedTaskDetailLayout(client)
 } catch { /* fallback to built-in layout defaults */ }
 ---
     <!-- Task Detail Centered Panel -->
@@ -33,7 +31,7 @@ try {
       id="task-detail-overlay"
       data-named-board={namedBoard ? "true" : undefined}
       data-suppress-url-open={suppressUrlOpen ? "true" : undefined}
-      class="modal-overlay z-200"
+      class="modal-overlay"
       role="presentation"
       aria-label="Task detail"
     >
@@ -44,6 +42,17 @@ try {
         aria-label="Task detail"
         class="modal-content w-full max-w-[1000px] h-[90vh] max-h-[900px] bg-bg-card border border-border shadow-2xl rounded-2xl flex flex-col overflow-hidden relative m-4 md:m-8"
       >
+        <div
+          id="td-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-controls="task-detail-panel"
+          aria-label="Resize task sidebar"
+          aria-valuemin="360"
+          aria-valuemax="840"
+          aria-valuenow="420"
+          tabindex="0"
+        ></div>
         {namedBoard ? <slot /> : <>
         <!-- Sticky Header Bar -->
         <div class="td-toolbar flex-none bg-bg-card z-20">
@@ -65,10 +74,7 @@ try {
           <div class="flex gap-1.5 items-center flex-none">
             <div id="td-task-actions" hidden class="flex gap-1.5 items-center">
               <button id="td-toggle-promote" type="button" aria-pressed="false" class="p-1.5 hover:bg-bg-hover hover:text-warning text-text-secondary rounded transition-colors aria-pressed:text-warning aria-pressed:bg-warning/15" title={t("kanban.promote_card", locale)} aria-label={t("kanban.promote_card", locale)}>
-                <Icon name="star" size={18} />
-              </button>
-              <button id="td-toggle-favorite" type="button" aria-pressed="false" class="p-1.5 hover:bg-bg-hover hover:text-text-primary text-text-secondary rounded transition-colors aria-pressed:text-danger aria-pressed:bg-danger/10" title="Favorite" aria-label="Favorite">
-                <Icon name="heart" size={18} />
+                <Icon name="star" size={18} sprite={true} />
               </button>
               <button id="td-copy-link" type="button" class="p-1.5 hover:bg-bg-hover hover:text-text-primary text-text-secondary rounded transition-colors" title={t("task_modal.copy_link", locale)} aria-label={t("task_modal.copy_link", locale)}>
                 <Icon name="link" size={18} sprite={true} />
@@ -93,13 +99,13 @@ try {
             <div class="td-toolbar__view">
               <button id="td-toggle-focus" type="button" class="btn btn-secondary"
                 data-enter-label={t("task_layout.focus", locale)} data-exit-label={t("task_layout.exit_focus", locale)}>
-                <Icon name="arrows-maximize" size={16} class="td-focus-enter-icon" />
-                <Icon name="arrows-minimize" size={16} class="td-focus-exit-icon" />
+                <Icon name="arrows-maximize" size={16} class="td-focus-enter-icon" sprite={true} />
+                <Icon name="arrows-minimize" size={16} class="td-focus-exit-icon" sprite={true} />
                 <span>{t("task_layout.focus", locale)}</span>
               </button>
               <button id="td-toggle-layout" type="button" class="td-layout-icon-btn" aria-expanded="false"
                 aria-controls="td-layout-panel" aria-label={t("task_layout.layout", locale)} title={t("task_layout.layout", locale)}>
-                <Icon name="adjustments-horizontal" size={19} />
+                <Icon name="adjustments-horizontal" size={19} sprite={true} />
               </button>
             </div>
             <button id="td-toggle-done" type="button" class="btn btn-primary td-done-btn">Mark as Done</button>
@@ -137,7 +143,7 @@ try {
             <div class="td-task-actions flex flex-wrap items-center gap-2">
               <button id="td-pin-action" type="button" aria-pressed="false"
                 class="inline-flex items-center gap-2 min-h-11 rounded border border-border bg-bg-card px-3 text-sm font-medium text-text-primary hover:bg-bg-hover aria-pressed:border-accent aria-pressed:bg-accent/10 aria-pressed:text-accent" hidden>
-                <Icon name="pin" size={16} />
+                <Icon name="pin" size={16} sprite={true} />
                 <span>{t("pins.pin", locale)}</span>
               </button>
               <button id="td-pin-refresh" type="button" class="min-h-11 rounded border border-border bg-bg-card px-3 text-sm font-medium text-text-primary hover:bg-bg-hover" hidden>
@@ -174,7 +180,7 @@ try {
               <div class="td-description-view">
                 <div class="td-description-view__actions">
                   <button id="td-desc-edit-btn-hover" class="btn btn-secondary" type="button">
-                    <Icon name="pencil" size={15} />
+                    <Icon name="pencil" size={15} sprite={true} />
                     {t("task_layout.edit_description", locale)}
                   </button>
                   <span id="td-desc-saved" class="text-accent text-xs" style="display:none;" role="status">Saved</span>
@@ -420,7 +426,7 @@ try {
                       </button>
                       <div id="td-add-cf-dropdown" class="absolute z-10 w-full mt-1 bg-bg-card border border-border rounded-md shadow-lg py-1" style="display:none;">
                         <div class="px-2 py-1">
-                          <input id="td-add-cf-search" class="form-input text-xs py-1.5 w-full bg-bg-input" placeholder="Search fields..." autocomplete="off" />
+                          <input id="td-add-cf-search" aria-label="Search custom fields" class="form-input text-xs py-1.5 w-full bg-bg-input" placeholder="Search fields..." autocomplete="off" />
                         </div>
                         <div id="td-add-cf-options" class="max-h-32 overflow-y-auto mt-1"></div>
                       </div>
@@ -433,6 +439,7 @@ try {
 
             <TaskDetailSection name="checklists">
               <div class="flex items-center justify-between gap-2 mb-2">
+                <span class="text-[11px] text-text-muted">Lightweight steps inside this task</span>
                 <button type="button" id="td-add-checklist-item" class="text-xs text-accent hover:text-accent-hover transition-colors font-medium flex items-center gap-1">
                     <Icon name="plus" size={12} sprite={true} />
                     <span>Add Item</span>
@@ -461,7 +468,7 @@ try {
                 <label class="text-xs text-accent hover:text-accent-hover cursor-pointer m-0 font-medium flex items-center gap-1">
                   <Icon name="plus" size={12} sprite={true} />
                   Add Image
-                  <input type="file" id="td-attachment-input" accept="image/*" class="hidden" />
+                  <input type="file" id="td-attachment-input" accept="image/*" class="sr-only" />
                 </label>
               </div>
               <div id="td-attachments" class="flex flex-wrap gap-3 mt-2"></div>
@@ -472,18 +479,18 @@ try {
                 <div class="grid grid-cols-1 @3xl/task-inspector:grid-cols-2 gap-6">
                   <!-- Parent -->
                   <div>
-                    <span class="text-xs text-text-muted font-bold uppercase tracking-wider mb-2 block">Parent Epic/Story</span>
+                    <span class="text-xs text-text-muted font-bold uppercase tracking-wider mb-2 block">Parent Item</span>
                     <div id="td-link-parent-display" class="flex items-center gap-1 mb-2">
                       <span class="text-xs text-text-muted italic">None</span>
                     </div>
                     <div class="relative">
-                      <input id="td-link-parent-search" class="form-input text-sm py-1.5 w-full bg-bg-input hover:border-border transition-colors" placeholder="Search for parent..."/>
+                      <input id="td-link-parent-search" aria-label="Search for parent task" class="form-input text-sm py-1.5 w-full bg-bg-input hover:border-border transition-colors" placeholder="Search for parent..."/>
                       <div id="td-link-parent-results" class="absolute z-10 left-0 right-0 top-full mt-1 bg-bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto" style="display:none;"></div>
                     </div>
                   </div>
                   <!-- Children -->
                   <div>
-                    <span class="text-xs text-text-muted font-bold uppercase tracking-wider mb-2 block">Child Subtasks</span>
+                    <span class="text-xs text-text-muted font-bold uppercase tracking-wider mb-2 block">Child Items <span class="font-normal normal-case text-[11px]">(tracked on board)</span></span>
                     <div id="td-link-children" class="space-y-1.5 mb-2"></div>
                     <div id="td-subtask-progress" class="hidden mb-3">
                       <div class="flex items-center justify-between text-xs text-text-secondary mb-1">
@@ -494,14 +501,17 @@ try {
                       </div>
                     </div>
                     <div id="td-add-subtask">
-                      <button type="button" id="td-add-subtask-btn" class="text-xs text-accent hover:text-accent-hover flex items-center gap-1 font-medium transition-colors">
-                        <Icon name="plus" size={12} sprite={true} />
-                        Add subtask
-                      </button>
+                      <div class="flex items-center gap-3 flex-wrap">
+                        <button type="button" id="td-add-subtask-btn" class="text-xs text-accent hover:text-accent-hover flex items-center gap-1 font-medium transition-colors">
+                          <Icon name="plus" size={12} sprite={true} />
+                          Add child item
+                        </button>
+                        <button type="button" id="td-add-subtask-full-btn" class="text-xs text-text-secondary hover:text-text-primary transition-colors">Full form…</button>
+                      </div>
                       <div id="td-add-subtask-form" class="hidden mt-2 gap-2">
-                        <input id="td-add-subtask-input" class="form-input text-sm py-1.5 flex-1 bg-bg-input" placeholder="Subtask title..." autocomplete="off"/>
+                        <input id="td-add-subtask-input" aria-label="Child item title" class="form-input text-sm py-1.5 flex-1 bg-bg-input" placeholder="Child item title..." autocomplete="off"/>
                         <button type="button" id="td-add-subtask-submit" class="btn btn-primary text-xs px-3 py-1.5 shadow-sm">Add</button>
-                        <button type="button" id="td-add-subtask-cancel" aria-label="Cancel subtask" class="btn bg-bg-input border border-border hover:bg-bg-hover text-text-primary text-xs px-2 py-1.5"><Icon name="x" size={14} sprite={true} /></button>
+                        <button type="button" id="td-add-subtask-cancel" aria-label="Cancel child item" class="btn bg-bg-input border border-border hover:bg-bg-hover text-text-primary text-xs px-2 py-1.5"><Icon name="x" size={14} sprite={true} /></button>
                       </div>
                     </div>
                   </div>
@@ -527,7 +537,7 @@ try {
                       <option value="duplicated_by">Duplicated by</option>
                     </select>
                     <div class="relative w-full">
-                      <input id="td-link-search" class="form-input text-sm py-1.5 w-full bg-bg-input hover:border-border transition-colors" placeholder="Search task to link…"/>
+                      <input id="td-link-search" aria-label="Search task to link" class="form-input text-sm py-1.5 w-full bg-bg-input hover:border-border transition-colors" placeholder="Search task to link…"/>
                       <div id="td-link-search-results" class="absolute z-50 left-0 top-full mt-1 right-0 bg-bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto" style="display:none;"></div>
                     </div>
                   </div>
@@ -561,6 +571,7 @@ try {
                 <p data-reaction-status role="status" class="text-sm text-text-secondary [&:not(:empty)]:my-2"></p>
                 <p data-reaction-error role="alert" class="text-sm text-text-primary [&:not(:empty)]:my-2"></p>
                 <button type="button" data-reaction-retry class="btn btn-ghost min-h-11" hidden>{t("reactions.retry", locale)}</button>
+                <div data-reaction-groups class="flex flex-wrap gap-1.5 my-2" hidden></div>
                 <ul data-reaction-list class="space-y-1" role="list"></ul>
                 <div class="flex flex-wrap gap-2">
                   <button type="button" data-reaction-newest class="btn btn-ghost min-h-11" hidden>{t("reactions.newest", locale)}</button>

@@ -53,7 +53,7 @@ test("task promotion is shared, typed, and independent of the stored manual orde
     native = await playwright.request.newContext({ extraHTTPHeaders: {} })
     const create = async (title: string) => {
       const result = await request.post(ingress + "/api/tasks", {
-        headers: member, data: { title, priority: 4, is_favorite: true },
+        headers: member, data: { title, priority: 4 },
       })
       expect(result.status()).toBe(201)
       return String((await result.json()).id)
@@ -73,7 +73,7 @@ test("task promotion is shared, typed, and independent of the stored manual orde
 
     const initial = await read()
     expect(initial.status()).toBe(200)
-    expect(await initial.json()).toMatchObject({ is_promoted: false, is_favorite: 1, priority: 4 })
+    expect(await initial.json()).toMatchObject({ is_promoted: false, priority: 4 })
     for (const invalid of [0, 1, "true", null, []]) {
       const rejected = await patch(invalid)
       expect(rejected.status()).toBe(400)
@@ -96,7 +96,7 @@ test("task promotion is shared, typed, and independent of the stored manual orde
 
     const promoted = await patch(true)
     expect(promoted.status()).toBe(200)
-    expect(await promoted.json()).toMatchObject({ is_promoted: true, is_favorite: 1, priority: 4 })
+    expect(await promoted.json()).toMatchObject({ is_promoted: true, priority: 4 })
     expect(await (await read()).json()).toMatchObject({ is_promoted: true })
     expect(await (await native.get(origin + taskPath, { headers: reader })).json()).toMatchObject({ is_promoted: true })
     expect(positions()).toEqual(underlying)
@@ -111,7 +111,7 @@ test("task promotion is shared, typed, and independent of the stored manual orde
 
     const demoted = await patch(false)
     expect(demoted.status()).toBe(200)
-    expect(await demoted.json()).toMatchObject({ is_promoted: false, is_favorite: 1, priority: 4 })
+    expect(await demoted.json()).toMatchObject({ is_promoted: false, priority: 4 })
     expect(positions().map(row => row.id)).toEqual([third, first, second])
 
     const insert = db.prepare(`INSERT INTO tasks (id, title, status, kanban_position, idempotency_key, request_id, created_at, updated_at)

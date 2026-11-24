@@ -41,6 +41,10 @@ function renderInline(raw: string): string {
     const idx = codeSpans.push(`<code>${code}</code>`) - 1
     return `\u0000C${idx}\u0000`
   })
+  const stashLink = (anchorHtml: string) => {
+    const idx = links.push(anchorHtml) - 1
+    return `\u0000L${idx}\u0000`
+  }
 
   // Markdown links: [label](url)
   text = text.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, label: string, url: string) => {
@@ -48,18 +52,22 @@ function renderInline(raw: string): string {
     if (!SAFE_URL_RE.test(decoded)) return label
     const external = /^https?:\/\//i.test(decoded)
     const attrs = external ? ' target="_blank" rel="noopener noreferrer"' : ""
-    const idx = links.push(`<a href="${url}"${attrs}>${label}</a>`) - 1
-    return `\u0000L${idx}\u0000`
+    const formattedLabel = label
+      .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/__([^_\n]+)__/g, "<strong>$1</strong>")
+      .replace(/~~([^~\n]+)~~/g, "<del>$1</del>")
+      .replace(/(^|[^\w*])\*([^*\n]+)\*(?!\*)/g, "$1<em>$2</em>")
+      .replace(/(^|[^\w_])_([^_\n]+)_(?!_)/g, "$1<em>$2</em>")
+    return stashLink(`<a href="${url}"${attrs}>${formattedLabel}</a>`)
   })
 
   // Bare http(s) URLs not already inside an anchor tag
   text = text.replace(/(^|[\s(>])(https?:\/\/[^\s<)]+)/g, (_m, prefix: string, url: string) => {
     const { cleaned, trailing } = trimBareUrlPunctuation(url)
-    const idx = links.push(`<a href="${cleaned}" target="_blank" rel="noopener noreferrer">${cleaned}</a>`) - 1
-    return `${prefix}\u0000L${idx}\u0000${trailing}`
+    return `${prefix}${stashLink(`<a href="${cleaned}" target="_blank" rel="noopener noreferrer">${cleaned}</a>`)}${trailing}`
   })
 
-  // Bold, strikethrough, italic
+  // Bold, strikethrough, italic (href attributes are safely stashed)
   text = text
     .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
     .replace(/__([^_\n]+)__/g, "<strong>$1</strong>")

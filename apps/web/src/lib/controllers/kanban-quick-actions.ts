@@ -8,9 +8,12 @@
 import { createSpriteIconElement } from "../../generated/icon-registry"
 import { createClientLogger } from "@lib/client-logger"
 import { notifyInactivityTaskChanged } from "@lib/inactivity-client"
+import { promptDialog } from "@lib/prompt-dialog"
 import { sanitizeCssColor } from "@lib/safe-html"
+import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
 import { taskApi } from "@lib/task-api-client"
 import { assigneeFallback } from "@lib/task-assignee-display"
+import { defaultChildTaskType, normalizeEditableTaskType } from "@lib/task-editor-fields"
 import { showToast } from "@lib/toast"
 import type { KanbanRefreshFocus } from "./kanban-page-controller"
 
@@ -65,68 +68,68 @@ export function initQuickActions(
     showToast(msg, type)
   }
 
-  interface CardColorState { marked: boolean; taskColor: string; accent: string }
-  const colorWrites = new WeakMap<HTMLElement, { latest: number; confirmed: CardColorState }>()
-
   async function saveColor(button: HTMLButtonElement, taskId: string, color: string | null) {
     if (__signal.aborted || button.disabled) return
     close()
     const card = button.closest<HTMLElement>(".kanban-card")
     card?.querySelector<HTMLElement>(".card-more-btn")?.focus({ preventScroll: true })
-    // Preview the color now. A rejected write restores the last confirmed color, and only the
-    // latest write for a card restores, so overlapping writes cannot resurrect a stale preview.
-    const snapshot = (el: HTMLElement): CardColorState => ({
-      marked: el.hasAttribute("data-task-color"),
-      taskColor: el.style.getPropertyValue("--knight-task-color"),
-      accent: el.style.getPropertyValue("--card-accent"),
-    })
-    const writes = card ? colorWrites.get(card) ?? { latest: 0, confirmed: snapshot(card) } : null
-    const write = writes ? ++writes.latest : 0
-    if (card && writes) colorWrites.set(card, writes)
-    const restore = () => {
-      if (!card || !writes || write !== writes.latest) return
-      const confirmed = writes.confirmed
-      card.toggleAttribute("data-task-color", confirmed.marked)
-      for (const [property, value] of [["--knight-task-color", confirmed.taskColor], ["--card-accent", confirmed.accent]] as const) {
-        if (value) card.style.setProperty(property, value)
-        else card.style.removeProperty(property)
-      }
-    }
-    if (card) {
-      if (color) {
+    const prevHasTaskColor = card?.hasAttribute("data-task-color") ?? false
+    const prevKnightColor = card?.style.getPropertyValue("--knight-task-color") ?? ""
+    const prevCardAccent = card?.style.getPropertyValue("--card-accent") ?? ""
+    const prevButtonColor = button.getAttribute("data-color")
+    const applyCardColor = (nextColor: string | null) => {
+      if (!card) return
+      if (nextColor) {
         card.setAttribute("data-task-color", "")
-        card.style.setProperty("--knight-task-color", color)
-        card.style.setProperty("--card-accent", color)
+        card.style.setProperty("--knight-task-color", nextColor)
+        card.style.setProperty("--card-accent", nextColor)
       } else {
         card.removeAttribute("data-task-color")
         card.style.removeProperty("--knight-task-color")
         card.style.removeProperty("--card-accent")
       }
     }
-    const applied = card ? snapshot(card) : null
+    const restoreCardColor = () => {
+      if (card) {
+        if (prevHasTaskColor) card.setAttribute("data-task-color", "")
+        else card.removeAttribute("data-task-color")
+        if (prevKnightColor) card.style.setProperty("--knight-task-color", prevKnightColor)
+        else card.style.removeProperty("--knight-task-color")
+        if (prevCardAccent) card.style.setProperty("--card-accent", prevCardAccent)
+        else card.style.removeProperty("--card-accent")
+      }
+      if (prevButtonColor === null) button.removeAttribute("data-color")
+      else button.setAttribute("data-color", prevButtonColor)
+    }
+    applyCardColor(color)
     button.disabled = true
-    let written = false
     try {
+      const ctx = currentTaskApiContext()
       const response = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
         method: "PUT",
-        headers: { "content-type": "application/json" },
+        headers: ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" },
         body: JSON.stringify({ color }),
       })
+      if (response.status === 409) {
+        restoreCardColor()
+        if (!__signal.aborted) {
+          toast("Task was updated elsewhere. Refreshing board.", "warning")
+          await refreshBoard({ taskId })
+        }
+        return
+      }
       if (!response.ok) throw new Error("Color write rejected")
-      written = true
-      if (writes && applied) writes.confirmed = applied
+      const saved = await response.json().catch(() => null) as { task_version?: unknown; updated_at?: unknown } | null
+      const nextVersion = Number(saved?.task_version ?? saved?.updated_at)
+      if (card && Number.isSafeInteger(nextVersion) && nextVersion >= 0) {
+        card.dataset.version = String(nextVersion)
+      }
       notifyInactivityTaskChanged(taskId)
       await refreshBoard({ taskId })
       toast(color ? "Color updated" : "Color cleared", "success")
     } catch {
-      if (__signal.aborted) return
-      // Keep a saved color even when the Board refresh afterwards fails.
-      if (written) {
-        toast(color ? "Color updated. Refresh the Board to see every change." : "Color cleared. Refresh the Board to see every change.", "warning")
-        return
-      }
-      restore()
-      toast(color ? "Failed to set color" : "Failed to clear color", "error")
+      restoreCardColor()
+      if (!__signal.aborted) toast(color ? "Failed to set color" : "Failed to clear color", "error")
     } finally {
       button.disabled = false
     }
@@ -226,35 +229,54 @@ export function initQuickActions(
       if (!parentId) return
 
       const card = btn.closest(".kanban-card") as HTMLElement | null
-      const areaId = card?.dataset.area || ""
+      const areaId = card?.dataset.area || null
+      const projectId = card?.dataset.areaId || null
+      const parentType = normalizeEditableTaskType(card?.dataset.taskType)
+      const parentTicketKey = card?.querySelector(".kanban-ticket-key")?.textContent?.trim() || null
+
+      if (window.openNewTaskModal) {
+        window.openNewTaskModal("standard_action", {
+          parent: { parentId, parentTitle, parentTicketKey, parentType, areaId, projectId },
+          priority: Number(parentPriority) || 3,
+        })
+        return
+      }
+
+      const title = await promptDialog({
+        title: "New child item",
+        message: `Create child item under ${parentTitle}:`,
+        placeholder: "Child item title...",
+        signal: __signal,
+      })
+      if (!title?.trim()) return
 
       btn.disabled = true
       btn.classList.add("btn-loading")
       try {
+        const ctx = currentTaskApiContext()
         const res = await fetch("/api/tasks", {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" },
           body: JSON.stringify({
-            title: `${parentTitle.slice(0, 80)} — Subtask`,
+            title: title.trim(),
             parent_id: parentId,
             status: "pending",
-            priority: Number(parentPriority),
-            area_id: areaId || undefined,
-            task_type: "task",
+            priority: Number(parentPriority) || 3,
+            ...(areaId ? { area_id: areaId } : {}),
+            ...(projectId ? { project_id: projectId } : {}),
+            task_type: defaultChildTaskType(parentType),
           }),
         })
         if (res.ok) {
-          _qa.toast("Child task created", "success")
-          // P1-6: Refresh to show new card
-          const scrollLeft = document.querySelector(".kanban-scroll-area")?.scrollLeft || 0
-          sessionStorage.setItem("meitheal-kanban-scroll", String(scrollLeft))
+          _qa.toast("Child item created", "success")
           document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-child-created" } }))
         } else {
-          _qa.toast("Failed to create child task", "error")
+          const err = await res.json().catch(() => null) as { error?: string; detail?: string } | null
+          _qa.toast(err?.error ?? err?.detail ?? "Failed to create child item", "error")
         }
       } catch (err) {
         log.warn("Add child failed", err)
-        _qa.toast("Failed to create child task", "error")
+        _qa.toast("Failed to create child item", "error")
       } finally {
         btn.disabled = false
         btn.classList.remove("btn-loading")
@@ -439,15 +461,17 @@ export function initQuickActions(
 
         COLOR_SWATCHES.forEach(({ color, label }) => {
           const swatch = document.createElement("button")
+          swatch.type = "button"
           swatch.className = "color-swatch"
+          const isCurrentColor = Boolean(currentColor && currentColor.toLowerCase() === color.toLowerCase())
           // P1-2: Active color indicator
-          if (currentColor && currentColor.toLowerCase() === color.toLowerCase()) {
+          if (isCurrentColor) {
             swatch.classList.add("swatch-active")
           }
           swatch.style.background = color
           swatch.title = label
           swatch.setAttribute("role", "radio")
-          swatch.setAttribute("aria-checked", currentColor === color ? "true" : "false")
+          swatch.setAttribute("aria-checked", isCurrentColor ? "true" : "false")
           swatch.setAttribute("aria-label", `Set color: ${label}`)
           swatch.addEventListener("click", () => {
             void saveColor(btn, taskId, color)

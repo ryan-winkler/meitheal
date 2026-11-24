@@ -1,17 +1,19 @@
 ---
 import { readBoardPagePlacement } from "@lib/board-page-placement"
 import { createHash } from "node:crypto"
-import { getPersistenceClient, scopeBoardAccess, scopePermits, taskActionHints } from "@domains/tasks"
+import { getPersistenceClient, SettingsRepository, scopeBoardAccess, scopePermits, taskActionHints } from "@domains/tasks"
 import { getPluginService } from "@domains/plugins"
 import type { BoardScope } from "@domains/tasks"
-import { resolveBoardRequestScope } from "@lib/board-request-context"
+import { resolveBoardRequestScope, verifiedBoardRequestPrincipal } from "@lib/board-request-context"
 import { boardScopeAuthorityKey, retainBoardResponseScope } from "@lib/board-view"
-import { boardSessionProof } from "@lib/named-board-request"
+import { boardSessionProof, currentBoardContext } from "@lib/named-board-request"
 import { taskViewUrl } from "../lib/task-view-route"
 import { boardNavigationLinks, readBoardNavigationContext } from "../lib/board-workspace"
-import { organizationNeedsVerification } from "../lib/organization-request-context"
+import { readCachedSidebarAndProfile, readCachedTaskDetailLayout, readCachedWorkInstallationId } from "../lib/shell-settings-cache"
+import { isOrganizationFeatureAvailable, organizationNeedsVerification } from "../lib/organization-request-context"
 import { readRequestOrganizationLabels, renderedLabelsProof } from "@lib/organization-labels"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
+import { homeAssistantAreaAccess } from "../lib/home-assistant-area-access"
 import "../styles/global.css";
 import Confetti from "../components/gamification/Confetti.astro";
 import PomodoroTimer from "../components/pomodoro/PomodoroTimer.astro";
@@ -25,6 +27,7 @@ import KeyboardShortcutList from "../components/layout/KeyboardShortcutList.astr
 import TopNavigation from "../components/layout/TopNavigation.astro";
 import Icon from "../components/ui/Icon.astro";
 import IconSpriteDefs from "../components/ui/IconSpriteDefs.astro";
+import CachedHtmlSlot from "../components/ui/CachedHtmlSlot.astro";
 
 import NewTaskModal from "../components/tasks/NewTaskModal.astro";
 import QuickAddDialog from "../components/tasks/QuickAddDialog.astro"
@@ -49,6 +52,8 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
 // Feature flags — read from settings DB (SSR)
 const featureFlags = await getFeatureFlags();
+const aiAssistFlags = await new SettingsRepository(getPersistenceClient()).getByKeys(["ai_assist_disabled"]).catch(() => ({} as Record<string, unknown>));
+const aiAssistDisabled = aiAssistFlags.ai_assist_disabled === true || aiAssistFlags.ai_assist_disabled === "true";
 const hasActivePlugins = await getPluginService().hasActivePlugins().catch(() => false);
 const organizationState = await readRequestOrganizationLabels(Astro)
 const organizationUser = verifiedIngressUser(Astro.locals)
@@ -124,9 +129,9 @@ if (!privatePageShell) {
     layoutAuthority = boardScopeAuthorityKey(result.scope)
     layoutTaskCreate = scopePermits(result.scope, { resource: "task", action: "create" })
     layoutTaskActions = taskActionHints(result.scope)
-    const { rows: [installation] } = await getPersistenceClient().execute({ sql: "SELECT value FROM app_settings WHERE key = 'work_installation_id'", args: [] })
-    const actorKey = typeof installation?.value === "string" && installation.value
-      ? createHash("sha256").update(JSON.stringify(["offline-v1", installation.value, result.scope.principal.kind, result.scope.principal.id])).digest("hex") : undefined
+    const installationId = await readCachedWorkInstallationId(getPersistenceClient())
+    const actorKey = installationId
+      ? createHash("sha256").update(JSON.stringify(["offline-v1", installationId, result.scope.principal.kind, result.scope.principal.id])).digest("hex") : undefined
     boardContext = { boardId: result.scope.boardId, session: boardSessionProof(result.scope.principal.id),
       boardName: scopeBoardAccess(result.scope).name, ...(actorKey ? { actorKey } : {}),
     }
@@ -143,6 +148,78 @@ const mobileCalendarHref = mobileCalendar.pathname + mobileCalendar.search + mob
 
 const protectWorkMain = Astro.props.scopeGuard !== false && Boolean(boardContext && layoutAuthority) && /^\/(?:$|boards\/|tasks|today|upcoming|planning|progress|habits|areas|projects|task\/|deferred|inactivity|triage|eisenhower|review|activity|pinned|mention-inbox|gamification)/.test(Astro.url.pathname)
 
+const availabilityMask = (
+  ["organizer", "groups", "projects", "planning", "goals", "pillars", "principles", "routines", "achievements", "home_assistant_area"] as const
+).map(feature => (isOrganizationFeatureAvailable(feature) ? "1" : "0")).join("")
+const orgLabelsKey = organizationState ? `${organizationState.revision}:${JSON.stringify(organizationState.forms)}` : ""
+const persistenceClient = !privatePageShell ? getPersistenceClient() : null
+const [hasBoardPrincipal, haAreaRev, taskDetailLayoutRaw, sidebarProfile, namedShortcuts] = await Promise.all([
+  persistenceClient ? verifiedBoardRequestPrincipal(Astro).then(Boolean).catch(() => false) : Promise.resolve(false),
+  persistenceClient && organizationUser ? homeAssistantAreaAccess(Astro).then(v => v ?? "").catch(() => "") : Promise.resolve(""),
+  persistenceClient && !suppressHouseholdTaskModals ? readCachedTaskDetailLayout(persistenceClient).catch(() => null) : Promise.resolve(null),
+  persistenceClient && workNavigation && (workNavigation.dailyStreak !== undefined || featureFlags.gamification === false)
+    ? readCachedSidebarAndProfile(persistenceClient).catch(() => null)
+    : Promise.resolve(null),
+  persistenceClient && workNavigation && (workNavigation.dailyStreak !== undefined || featureFlags.gamification === false) && featureFlags.hierarchy !== false && featureFlags.organizer !== false
+    ? currentBoardContext(Astro).then(Boolean).catch(() => false)
+    : Promise.resolve(false),
+])
+const bottomChromeCacheKey = JSON.stringify([
+  "bottom-v2",
+  Astro.routePattern,
+  privatePageShell,
+  suppressHouseholdTaskModals,
+  suppressTaskUrlOpen,
+  hideSearchHub,
+  locale,
+  boardContext?.boardId ?? "",
+  hasBoardPrincipal,
+  organizationUser?.id ?? "",
+  orgLabelsKey,
+  featureFlagsJson,
+  availabilityMask,
+  haAreaRev,
+  taskDetailLayoutRaw ?? "",
+])
+const urlNavCtx = readBoardNavigationContext(Astro.url)
+const localsRecord = Astro.locals as unknown as Record<string, unknown>
+const sidebarCacheKey =
+  !privatePageShell &&
+  workNavigation &&
+  (workNavigation.dailyStreak !== undefined || featureFlags.gamification === false) &&
+  sidebarProfile
+    ? JSON.stringify([
+        "sidebar-v1",
+        Astro.url.pathname,
+        urlNavCtx ?? null,
+        workNavigation.scope.boardId,
+        Boolean(layoutTaskCreate),
+        workNavigation.dailyStreak ?? 0,
+        locale,
+        featureFlagsJson,
+        organizationUser?.id ?? "",
+        orgLabelsKey,
+        availabilityMask,
+        namedShortcuts,
+        sidebarProfile.cacheKey,
+        Astro.locals.hassUserId ?? "",
+        localsRecord.hassDisplayName ?? "",
+        localsRecord.hassUserName ?? "",
+        Boolean(Astro.locals.hassIsAdmin),
+      ])
+    : null
+
+const headCacheKey = JSON.stringify([
+  "head-v1",
+  title,
+  description,
+  behindIngress,
+  locale,
+  timezone,
+  weekStart,
+  dateFormat,
+])
+
 // Security headers are set by middleware.ts — no duplicates here.
 // IMPORTANT: Do NOT set Strict-Transport-Security or upgrade-insecure-requests
 // in HA ingress environments — the addon serves HTTP internally.
@@ -150,9 +227,10 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
 ---
 
 <!doctype html>
-<html lang={locale} dir="ltr" data-workspace-scope={workspaceScope} data-custom-theme-admin={canManageSystemSettings(Astro.request, Astro.locals) ? "" : undefined} data-plugins-active={hasActivePlugins ? "1" : undefined}>
+<html lang={locale} dir="ltr" data-workspace-scope={workspaceScope} data-custom-theme-admin={canManageSystemSettings(Astro.request, Astro.locals) ? "" : undefined} data-plugins-active={hasActivePlugins ? "1" : undefined} data-ai-assist-disabled={aiAssistDisabled ? "" : undefined}>
   <head>
     {boardContext && <><meta name="meitheal-work-board" content={boardContext.boardId} /><meta name="meitheal-work-session" content={boardContext.session} /><meta name="meitheal-work-actor" content={boardContext.actorKey} /><meta name="meitheal-work-board-name" content={boardContext.boardName} />{layoutTaskCreate !== undefined && <meta name="meitheal-task-create" content={String(layoutTaskCreate)} />}{layoutTaskActions && <meta name="meitheal-task-actions" content={JSON.stringify(layoutTaskActions)} />}</>}
+    <CachedHtmlSlot cacheKey={headCacheKey}>
     <!-- Scroll-lock guard: prevent external tools from locking body scroll (P0) -->
     <script is:inline>
       (function () {
@@ -408,6 +486,13 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
           }
           var accent = stored("meitheal-accent-color");
           window.__meithealApplyAccent(root, accent);
+          var sidebarW = Number.parseInt(stored("meitheal:task-sidebar-width:v1") || "", 10);
+          if (Number.isFinite(sidebarW) && sidebarW >= 360) {
+            var maxW = Math.max(360, Math.min(840, innerWidth - 360));
+            root.style.setProperty("--task-inspector-width", Math.min(maxW, sidebarW) + "px");
+          }
+          if (stored("meitheal:hide-ask-ai:v1") === "1") root.setAttribute("data-hide-ask-ai", "");
+          else root.removeAttribute("data-hide-ask-ai");
           var match = window.__meithealReadHATheme(stored(HA_THEME_MATCH_KEY) === "1", Boolean(window.__ingress_path));
           window.__meithealApplyHATheme(root, match, accent, window.__meithealApplyAccent);
           if (match.state === "active") {
@@ -496,7 +581,6 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
-    {!privatePageShell && <meta property="og:url" content={Astro.url.href} />}
     <link
       rel="manifest"
       href="/manifest.webmanifest"
@@ -527,20 +611,6 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         }, { signal: lifetime.signal })
       }
     </script>}
-    {!behindIngress && <ClientRouter fallback="swap" />}
-    {!privatePageShell && <JsonLd schema={jsonLd ?? {
-      "@type": "SoftwareApplication",
-      name: "Meitheal",
-      description,
-      applicationCategory: "ProductivityApplication",
-      operatingSystem: "Home Assistant",
-      url: Astro.url.href,
-      potentialAction: {
-        "@type": "SearchAction",
-        target: `${Astro.url.origin}/api/search?q={query}`,
-        "query-input": "required name=query",
-      },
-    }} />}
     <!-- Send only the current locale and keep client translation available during parsing. -->
     <script type="application/json" id="meitheal-client-translations" set:html={clientTranslationJson[locale]} />
     <script type="application/json" id="meitheal-alternate-translations" set:html={alternateClientTranslationJson[locale]} />
@@ -568,6 +638,22 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         },
       };
     </script>
+    </CachedHtmlSlot>
+    {!privatePageShell && <meta property="og:url" content={Astro.url.href} />}
+    {!behindIngress && <ClientRouter fallback="swap" />}
+    {!privatePageShell && <JsonLd schema={jsonLd ?? {
+      "@type": "SoftwareApplication",
+      name: "Meitheal",
+      description,
+      applicationCategory: "ProductivityApplication",
+      operatingSystem: "Home Assistant",
+      url: Astro.url.href,
+      potentialAction: {
+        "@type": "SearchAction",
+        target: `${Astro.url.origin}/api/search?q={query}`,
+        "query-input": "required name=query",
+      },
+    }} />}
     <slot name="head" />
   </head>
   <body>
@@ -656,7 +742,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     >
     <PwaInstallBanner locale={locale} />
     {!privatePageShell && <div class="layout-navigation" transition:persist="sidebar">
-      <Sidebar locale={locale} workNavigation={workNavigation} />
+      <CachedHtmlSlot cacheKey={sidebarCacheKey}><Sidebar locale={locale} workNavigation={workNavigation} /></CachedHtmlSlot>
     </div>}
 
     <div class="main-content" style={privatePageShell ? "margin-inline-start: 0" : undefined}>
@@ -819,15 +905,14 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       }
     </script>
 
-    {!privatePageShell && <>
+    <CachedHtmlSlot cacheKey={bottomChromeCacheKey}>{!privatePageShell && <>
       {!suppressHouseholdTaskModals && <>
         <NewTaskModal />
         <QuickAddDialog locale={locale} />
         <TaskDetailModal suppressUrlOpen={suppressTaskUrlOpen} />
       </>}
       <AskAssistModal />
-    </>}
-    {!hideSearchHub && <SearchHub locale={locale} boardId={boardContext?.boardId} />}
+    </>}{!hideSearchHub && <SearchHub locale={locale} boardId={boardContext?.boardId} />}</CachedHtmlSlot>
     <!-- Sync status announcer for screen readers (Persona #25) -->
     <div
       id="sync-announcer"
@@ -847,7 +932,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       window.__featureFlags = JSON.parse(featureFlagsJson);
     </script>
     <!-- Keyboard Shortcuts Modal (must be outside task-detail-overlay for visibility) -->
-    <div id="shortcut-modal" class="shortcut-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="shortcut-modal-title">
+    <CachedHtmlSlot cacheKey={`shortcut-v1:${locale}`}><div id="shortcut-modal" class="shortcut-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="shortcut-modal-title">
       <div class="shortcut-modal-content">
         <div class="shortcut-modal-header">
           <h3 id="shortcut-modal-title"><Icon name="keyboard" size={18} sprite={true} />{t("settings.shortcut_modal_title", locale)}</h3>
@@ -859,7 +944,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
           <a href="/settings#navigation-settings" class="btn btn-secondary btn-sm">Customize shortcuts</a>
         </div>
       </div>
-    </div>
+    </div></CachedHtmlSlot>
 
     <!-- Graceful fallback when JavaScript is disabled -->
     <noscript>

@@ -14,8 +14,9 @@ import {
   initUnifiedBarNewTaskButton,
   initUnifiedBarSearchLauncher,
   initUnifiedBarTabOverflow,
+  initUnifiedBarTabsKeyboard,
   initUnifiedBarTitleSwitcher,
-  setUnifiedBarSwitcherActiveState,
+  syncUnifiedBarSectionState,
 } from "@lib/unified-bar-controller"
 
 const DASHBOARD_BAR_ID = "dashboard-bar"
@@ -25,44 +26,7 @@ function resolveDashboardSectionId(anchorId: string): DashboardSectionId | null 
 }
 
 function updateActiveSectionState(sectionId?: DashboardSectionId): void {
-  document
-    .querySelectorAll<HTMLElement>("[data-unified-bar-section]")
-    .forEach((link) => {
-      const active = !link.hidden && link.dataset.unifiedBarSection === sectionId
-      link.classList.toggle("is-active", active)
-      link.setAttribute("aria-current", active ? "location" : "false")
-    })
-
-  setUnifiedBarSwitcherActiveState(DASHBOARD_BAR_ID, sectionId)
-}
-
-function initDashboardTabsKeyboard(): void {
-  const tabContainer = document.getElementById(`${DASHBOARD_BAR_ID}-tabs`)
-  if (!tabContainer) return
-
-  pageLifecycle.on(tabContainer, "keydown", (event) => {
-    const keyboardEvent = event as KeyboardEvent
-    if (keyboardEvent.key !== "ArrowLeft" && keyboardEvent.key !== "ArrowRight") {
-      return
-    }
-
-    const visibleTabs = Array.from(
-      tabContainer.querySelectorAll<HTMLElement>(
-        "[data-unified-bar-tab]:not([hidden], [data-overflow-hidden])",
-      ),
-    )
-    const currentIndex = visibleTabs.findIndex((tab) => tab === document.activeElement)
-    if (currentIndex === -1) return
-
-    keyboardEvent.preventDefault()
-    const direction = keyboardEvent.key === "ArrowRight" ? 1 : -1
-    const nextIndex = (currentIndex + direction + visibleTabs.length) % visibleTabs.length
-    const nextTab = visibleTabs[nextIndex]
-    if (!nextTab) return
-
-    nextTab.focus()
-    nextTab.click()
-  })
+  syncUnifiedBarSectionState(DASHBOARD_BAR_ID, sectionId, { checkHidden: true })
 }
 
 function initDashboardShell(shell: HTMLElement, reveal: ((id: DashboardSectionId) => void) | undefined): (revealAnchor?: boolean) => void {
@@ -145,7 +109,7 @@ function initDashboardShell(shell: HTMLElement, reveal: ((id: DashboardSectionId
 
   initDashboardSectionLinks()
   initDashboardGoToTop()
-  initDashboardTabsKeyboard()
+  initUnifiedBarTabsKeyboard(DASHBOARD_BAR_ID)
   const closeSwitcher = initUnifiedBarTitleSwitcher({
     barId: DASHBOARD_BAR_ID,
     onSelect: (sectionId) => {
@@ -325,9 +289,9 @@ function initOpenTaskFilter(): (() => void) | undefined {
   }
 
   taskApi
-    .listUsers()
-    .then((users: Array<{ id: string; display_name?: string; name?: string }>) => {
-      users.forEach((user) => {
+    .listUserDirectory()
+    .then((dir) => {
+      ;(dir?.users ?? []).forEach((user) => {
         const option = document.createElement("option")
         option.value = user.id
         option.textContent = user.display_name || user.name || user.id

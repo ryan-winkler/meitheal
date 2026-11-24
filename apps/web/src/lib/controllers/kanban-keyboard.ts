@@ -11,6 +11,7 @@ import { taskCapturePlacement } from "@lib/task-capture-placement"
 import { getSelectedAreaId } from "@lib/area-selector-controller"
 import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { createClientLogger } from "@lib/client-logger"
+import { browserUuid } from "@lib/browser-uuid"
 import { showToast } from "@lib/toast"
 
 const log = createClientLogger("kanban:keyboard")
@@ -95,9 +96,7 @@ export function initKeyboardAndSearch(signal: AbortSignal): void {
       input.focus()
 
       let saving = false
-      const retryKey = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte =>
-        byte.toString(16).padStart(2, "0")
-      ).join("")
+      const retryKey = browserUuid()
       function showError(key: string, fallback: string, invalid = false) {
         error.textContent = window.mI18n?.get(`kanban.${key}`) ?? fallback
         if (invalid) input.setAttribute("aria-invalid", "true")

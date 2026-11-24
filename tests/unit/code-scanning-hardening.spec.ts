@@ -117,6 +117,7 @@ test("client security hardening invariants remain free of code scanning anti-pat
     "apps/web/src/lib/settings-agent-tokens-controller.ts",
     "apps/web/src/lib/deferred-controller.ts",
     "apps/web/src/lib/plugin-host.ts",
+    "apps/web/src/lib/controllers/kanban-lanes.ts",
   ]) {
     const src = readFileSync(resolve(repoRoot, rel), "utf8")
     expect(src).toContain("safeFetch")

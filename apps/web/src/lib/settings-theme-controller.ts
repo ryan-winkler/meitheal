@@ -31,20 +31,21 @@ import { attachShortcutTooltips } from "@lib/shortcut-tooltip"
 import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, setSingleKeyShortcuts, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { settingsStore } from "@lib/settings-store"
 import { saveSetting, showSettingsSaveError, sanitizeCSS, MAX_THEME_SIZE, log } from "@lib/settings-utils"
+import { byId, domEl, qs, setAttr } from "@lib/dom-helpers"
 
 const ACCENT_KEY = "meitheal-accent-color"
 
 let syncCommittedTheme: ((mode: string) => void) | null = null
 
 function showCustomThemeSection(show: boolean): void {
-  const section = document.getElementById("custom-theme-section")
+  const section = byId("custom-theme-section")
   if (section) section.style.display = show ? "block" : "none"
 }
 
 function updateCustomThemeDisplay(filename: string | null): void {
-  const emptyEl = document.getElementById("custom-theme-empty")
-  const loadedEl = document.getElementById("custom-theme-loaded")
-  const nameEl = document.getElementById("custom-theme-filename")
+  const emptyEl = byId("custom-theme-empty")
+  const loadedEl = byId("custom-theme-loaded")
+  const nameEl = byId("custom-theme-filename")
   if (!emptyEl || !loadedEl || !nameEl) return
   if (filename) {
     emptyEl.style.display = "none"
@@ -99,10 +100,10 @@ function clearSetupTheme(): Promise<void> {
 }
 
 function bindAppearanceForm(form: HTMLFormElement): void {
-  const status = form.querySelector<HTMLElement>("[data-appearance-status]")
-  const dirtyBar = form.querySelector<HTMLElement>("[data-appearance-dirty-bar]")
-  const dirtyText = form.querySelector<HTMLElement>("[data-appearance-dirty-text]")
-  const discardBtn = form.querySelector<HTMLButtonElement>("[data-appearance-discard]")
+  const status = qs<HTMLElement>(form, "[data-appearance-status]")
+  const dirtyBar = qs<HTMLElement>(form, "[data-appearance-dirty-bar]")
+  const dirtyText = qs<HTMLElement>(form, "[data-appearance-dirty-text]")
+  const discardBtn = qs<HTMLButtonElement>(form, "[data-appearance-discard]")
   const saveBtns = Array.from(form.querySelectorAll<HTMLButtonElement>("[data-appearance-save]"))
   if (!status) return
 
@@ -116,14 +117,14 @@ function bindAppearanceForm(form: HTMLFormElement): void {
   })
   if (fields.length === 0) return
 
-  const themeSelect = isLookAndFeel ? form.querySelector<HTMLSelectElement>("#theme-select") : null
-  const matchHaCheckbox = isLookAndFeel ? form.querySelector<HTMLInputElement>("#match-ha-theme") : null
-  const matchHaStatus = isLookAndFeel ? form.querySelector<HTMLElement>("#match-ha-theme-status") : null
+  const themeSelect = isLookAndFeel ? qs<HTMLSelectElement>(form, "#theme-select") : null
+  const matchHaCheckbox = isLookAndFeel ? qs<HTMLInputElement>(form, "#match-ha-theme") : null
+  const matchHaStatus = isLookAndFeel ? qs<HTMLElement>(form, "#match-ha-theme-status") : null
   const swatches = isLookAndFeel ? Array.from(form.querySelectorAll<HTMLButtonElement>(".accent-swatch")) : []
-  const picker = isLookAndFeel ? form.querySelector<HTMLInputElement>("#accent-color-custom") : null
-  const accentReset = isLookAndFeel ? form.querySelector<HTMLButtonElement>("#accent-reset") : null
-  const sidebarFieldGroup = form.querySelector<HTMLElement>('[data-appearance-field-group="sidebar"]')
-  const sidebarNavbarNote = form.querySelector<HTMLElement>("#appearance-sidebar-navbar-note")
+  const picker = isLookAndFeel ? qs<HTMLInputElement>(form, "#accent-color-custom") : null
+  const accentReset = isLookAndFeel ? qs<HTMLButtonElement>(form, "#accent-reset") : null
+  const sidebarFieldGroup = qs<HTMLElement>(form, '[data-appearance-field-group="sidebar"]')
+  const sidebarNavbarNote = qs<HTMLElement>(form, "#appearance-sidebar-navbar-note")
 
   const readCommitted = (): AppearanceDraftSnapshot => {
     const storedMap = readStoredAppearanceMap()
@@ -169,7 +170,7 @@ function bindAppearanceForm(form: HTMLFormElement): void {
     for (const swatch of swatches) {
       const selected = swatch.dataset.color?.toLowerCase() === activeColor
       swatch.classList.toggle("active", selected)
-      swatch.setAttribute("aria-pressed", String(selected))
+      setAttr(swatch, "aria-pressed", String(selected))
     }
     if (picker && /^#[0-9a-f]{6}$/i.test(activeColor)) picker.value = activeColor
   }
@@ -182,7 +183,7 @@ function bindAppearanceForm(form: HTMLFormElement): void {
     const hasMatch = groupButtons.some((btn) => btn.dataset.visualOption === activeValue)
     groupButtons.forEach((btn, index) => {
       const selected = hasMatch ? btn.dataset.visualOption === activeValue : index === 0
-      btn.setAttribute("aria-checked", String(selected))
+      setAttr(btn, "aria-checked", String(selected))
       btn.tabIndex = selected ? 0 : -1
     })
   }
@@ -192,7 +193,7 @@ function bindAppearanceForm(form: HTMLFormElement): void {
     const isNavbar = navMode === "navbar"
     sidebarFieldGroup?.classList.toggle("is-inactive", isNavbar)
     if (sidebarNavbarNote) sidebarNavbarNote.hidden = !isNavbar
-    const navSummary = document.getElementById("nav-layout-active-summary")
+    const navSummary = byId("nav-layout-active-summary")
     if (navSummary) {
       const layoutLabel = isNavbar ? "Top navigation" : "Sidebar"
       const toneMap: Record<string, string> = { match: "Match theme", dark: "Dark nav", accent: "Colored nav" }
@@ -533,13 +534,13 @@ export function initThemeSettings(): void {
   initAppearanceSettings()
 
   function bindPreference(id: string, key: string, apply: (value: string) => void | Promise<void>): void {
-    const select = document.getElementById(id) as HTMLSelectElement | null
+    const select = byId<HTMLSelectElement>(id)
     if (!select) return
 
     pageLifecycle.on(select, "change", async () => {
       const value = select.value
       select.disabled = true
-      select.setAttribute("aria-busy", "true")
+      setAttr(select, "aria-busy", "true")
       try {
         await saveSetting(key, value)
         await apply(value)
@@ -565,10 +566,10 @@ export function initThemeSettings(): void {
   bindPreference("week-start-select", "week_start", (value) => localStorage.setItem("meitheal-week-start", value))
   bindPreference("date-format-select", "date_format", (value) => localStorage.setItem("meitheal-date-format", value))
 
-  const themeSelect = document.getElementById("theme-select") as HTMLSelectElement | null
+  const themeSelect = byId<HTMLSelectElement>("theme-select")
   const input = document.querySelector<HTMLInputElement>("#custom-theme-input")
   const remove = document.querySelector<HTMLButtonElement>("#custom-theme-delete")
-  const filename = document.getElementById("custom-theme-filename")
+  const filename = byId("custom-theme-filename")
   if (!input || !remove || !filename || !themeSelect) return
 
   const saveFile = async (css: string, name: string) => {
@@ -623,7 +624,7 @@ export function initThemeSettings(): void {
     const css = localStorage.getItem("meitheal-custom-theme-css")
     if (!css) return
     const url = URL.createObjectURL(new Blob([css], { type: "text/css" }))
-    const link = document.createElement("a")
+    const link = domEl("a")
     link.href = url
     link.download = filename.textContent || "custom-theme.css"
     link.click()
@@ -634,7 +635,7 @@ export function initThemeSettings(): void {
 function restoreTheme(settings: Record<string, unknown>): boolean {
   try {
     const savedTheme = settings.theme ?? readStoredThemeMode()
-    const css = document.getElementById("custom-theme-input") && typeof settings.custom_theme_css === "string"
+    const css = byId("custom-theme-input") && typeof settings.custom_theme_css === "string"
       ? sanitizeCSS(settings.custom_theme_css) : ""
     const hasCSS = Boolean(css.trim())
     if (hasCSS) localStorage.setItem("meitheal-custom-theme-css", css)
@@ -657,7 +658,7 @@ export function restoreThemeSettings(settings: Record<string, unknown>): void {
   restoreTheme(settings)
 
   try {
-    const localeSelect = document.getElementById("locale-select") as HTMLSelectElement | null
+    const localeSelect = byId<HTMLSelectElement>("locale-select")
     if (localeSelect) {
       localeSelect.value = settings.locale
         ? String(settings.locale)
@@ -668,13 +669,13 @@ export function restoreThemeSettings(settings: Record<string, unknown>): void {
   }
 
   try {
-    const tzEl = document.getElementById("timezone-select") as HTMLSelectElement | null
+    const tzEl = byId<HTMLSelectElement>("timezone-select")
     if (tzEl) tzEl.value = (settings.timezone as string) || localStorage.getItem("meitheal-timezone") || "Europe/Dublin"
 
-    const wsEl = document.getElementById("week-start-select") as HTMLSelectElement | null
+    const wsEl = byId<HTMLSelectElement>("week-start-select")
     if (wsEl) wsEl.value = (settings.week_start as string) || localStorage.getItem("meitheal-week-start") || "monday"
 
-    const dfEl = document.getElementById("date-format-select") as HTMLSelectElement | null
+    const dfEl = byId<HTMLSelectElement>("date-format-select")
     if (dfEl) dfEl.value = (settings.date_format as string) || localStorage.getItem("meitheal-date-format") || "relative"
   } catch (e) {
     log.error("UI settings error", e)

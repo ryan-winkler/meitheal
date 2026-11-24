@@ -64,8 +64,8 @@ export function* taskBoardMigrationStateSteps() {
         throw new Error("The Meitheal database has an invalid schema version marker")
       }
       version = Number(value)
-      if (version > 27) {
-        throw new Error(`Meitheal database schema ${version} requires a newer App (this App supports ${27})`)
+      if (version > 28) {
+        throw new Error(`Meitheal database schema ${version} requires a newer App (this App supports ${28})`)
       }
       if (version >= TASK_BOARD_SCHEMA_VERSION && value !== String(version)) {
         throw new Error("The Meitheal database has an invalid Board schema version marker")

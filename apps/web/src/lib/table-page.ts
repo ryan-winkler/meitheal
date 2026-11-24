@@ -61,6 +61,7 @@ function sortValue(task: TaskViewItem, column: string): string | number | null {
       return Number.isFinite(date) ? date : null
     }
     case "rice": return task.rice ?? 0
+    case "manual": return task.table_position ?? null
     default: return 0
   }
 }
@@ -271,7 +272,10 @@ export function getTablePage(
       if (siblings) siblings.push(task)
       else children.set(task.parent_id, [task])
     }
-    if (column) roots.sort(compare)
+    if (column) {
+      roots.sort(compare)
+      for (const siblings of children.values()) siblings.sort(compare)
+    }
     const visited = new Set<string>()
     const stack: Array<{ task: TaskViewItem; depth: number; parentId?: string | undefined }> = []
     function append(root: TaskViewItem) {

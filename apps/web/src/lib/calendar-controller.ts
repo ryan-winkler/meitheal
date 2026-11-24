@@ -523,8 +523,11 @@ export function initCalendarPage(signal: AbortSignal): void {
         else next.searchParams.set(key, value)
       }
       next.hash = destination.hash || next.hash
-      if (desired.search !== applied.search) location.assign(next.href)
-      else void refresh(next)
+      if (refreshRequest || navLink.dataset.calendarNav === "previous" || navLink.dataset.calendarNav === "next") {
+        location.assign(next.href)
+      } else {
+        void refresh(next)
+      }
       return
     }
     const dayAdd = target.closest<HTMLButtonElement>("[data-day-view-add]")
@@ -578,6 +581,19 @@ export function initCalendarPage(signal: AbortSignal): void {
     if ((event.key === "Enter" || event.key === " ") && target.matches(dayButton)) {
       event.preventDefault()
       openCell(target)
+      return
+    }
+    // Single-key calendar range shortcuts (D / W / M / Y / T) when not editing text
+    if (event.ctrlKey || event.metaKey || event.altKey) return
+    if (target.matches("input, textarea, select, [contenteditable='true']") || target.closest("[role='dialog']")) return
+    const key = event.key.toLowerCase()
+    if (key === "d" || key === "w" || key === "m" || key === "y") {
+      const shortcutLink = month.querySelector<HTMLAnchorElement>(`[data-calendar-shortcut="${key}"]`)
+      if (shortcutLink) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+        shortcutLink.click()
+      }
     }
   }, { capture: true, signal })
 

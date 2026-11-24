@@ -1,8 +1,12 @@
 import { SHOPPING_CATEGORIES, type ShoppingCategory } from "@meitheal/domain-tasks"
 import { createChecklistItem } from "@lib/checklist-items"
 import { notifyInactivityTaskChanged } from "@lib/inactivity-client"
+import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
+import { defaultChildTaskType } from "@lib/task-editor-fields"
 import { formatTicketKey, parseTicketKey } from "@lib/ticket-key"
+import { showToast } from "@lib/toast"
 import { createSpriteIconElement } from "../../generated/icon-registry"
+import { byId, domEl, qs, setAttr } from "@lib/dom-helpers"
 
 type Item = { id?: string; text: string; done: boolean }
 export type ModalShoppingItem = { name: string; qty: number | string; category: string; checked: boolean }
@@ -115,14 +119,14 @@ export function showTaskChecklist(
     buildShoppingCustomFields?: (items: ModalShoppingItem[]) => string
   },
 ) {
-  const container = document.getElementById("td-checklists")
+  const container = byId("td-checklists")
   const add = document.querySelector<HTMLButtonElement>("#td-add-checklist-item")
   const uncheckAll = document.querySelector<HTMLButtonElement>("#td-checklist-uncheck-all")
-  const progress = document.getElementById("td-checklist-progress")
-  const done = document.getElementById("td-checklist-done")
-  const total = document.getElementById("td-checklist-total")
-  const bar = document.getElementById("td-checklist-progress-bar")
-  const message = document.getElementById("td-checklist-message")
+  const progress = byId("td-checklist-progress")
+  const done = byId("td-checklist-done")
+  const total = byId("td-checklist-total")
+  const bar = byId("td-checklist-progress-bar")
+  const message = byId("td-checklist-message")
   const recover = document.querySelector<HTMLButtonElement>("#td-checklist-recover")
   const recoveredDraft = document.querySelector<HTMLDetailsElement>("#td-checklist-draft")
   const draftRows = recoveredDraft?.querySelector("ol")
@@ -212,6 +216,7 @@ export function showTaskChecklist(
   }
   let problem: "retry" | "conflict" | null = null
   let textEditPending = false
+  let saveQueued = false
   let rendering = false
 
   add.disabled = loaded === null
@@ -245,22 +250,21 @@ export function showTaskChecklist(
     if (signal.aborted) return
     rendering = true
     const rows = items.map((item, index) => {
-      const row = document.createElement("div")
+      const row = domEl("div")
       row.className = "flex items-center gap-2 group td-cl-row"
       row.dataset.checklistRow = String(index)
 
-      const checkbox = document.createElement("input")
+      const checkbox = domEl("input")
       checkbox.type = "checkbox"
       checkbox.className = "form-checkbox h-5 w-5 bg-transparent border-border rounded"
-      checkbox.setAttribute("aria-label", item.text || `Checklist item ${index + 1}`)
+      setAttr(checkbox, "aria-label", item.text || `Checklist item ${index + 1}`)
       checkbox.checked = Boolean(item.done)
 
-      const editor = document.createElement("div")
+      const editor = domEl("div")
       editor.className = "checklist-editor"
-      const text = document.createElement("textarea")
-      text.className = "form-input bg-transparent border-transparent focus:bg-(--bg-input) focus:border-(--border-focus) hover:bg-(--bg-hover)"
+      const text = domEl("textarea", "form-input bg-transparent border-transparent focus:bg-(--bg-input) focus:border-(--border-focus) hover:bg-(--bg-hover)")
       text.rows = 1
-      text.setAttribute("aria-label", isShopping ? `Shopping item ${index + 1}` : `Checklist item ${index + 1}`)
+      setAttr(text, "aria-label", isShopping ? `Shopping item ${index + 1}` : `Checklist item ${index + 1}`)
       text.placeholder = isShopping ? "Item name..." : "Checklist item..."
       text.value = item.text
       editor.dataset.content = item.text
@@ -273,12 +277,12 @@ export function showTaskChecklist(
           meta = { qty: 1, category: "" }
           setItemMeta(item, meta)
         }
-        const qtyInput = document.createElement("input")
+        const qtyInput = domEl("input")
         qtyInput.type = "text"
         qtyInput.maxLength = 32
         qtyInput.value = String(meta.qty)
         qtyInput.className = "form-input text-xs td-shop-qty"
-        qtyInput.setAttribute("aria-label", `Quantity for ${item.text || `item ${index + 1}`}`)
+        setAttr(qtyInput, "aria-label", `Quantity for ${item.text || `item ${index + 1}`}`)
         qtyInput.addEventListener("change", () => {
           const trimmed = qtyInput.value.trim().slice(0, 32)
           const nextQty: number | string = !trimmed
@@ -291,9 +295,8 @@ export function showTaskChecklist(
           emitShoppingChange()
         }, { signal })
 
-        const catSelect = document.createElement("select")
-        catSelect.className = "form-select text-xs td-shop-cat"
-        catSelect.setAttribute("aria-label", `Category for ${item.text || `item ${index + 1}`}`)
+        const catSelect = domEl("select", "form-select text-xs td-shop-cat")
+        setAttr(catSelect, "aria-label", `Category for ${item.text || `item ${index + 1}`}`)
         catSelect.append(
           new Option("Uncategorized", ""),
           ...SHOPPING_CATEGORIES.map(cat => new Option(formatCategoryLabel(cat), cat)),
@@ -305,12 +308,63 @@ export function showTaskChecklist(
         }, { signal })
 
         rowControls.push(qtyInput, catSelect)
+      } else {
+        const promoteBtn = domEl("button")
+        promoteBtn.type = "button"
+        promoteBtn.className = "text-accent opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-xs px-1"
+        setAttr(promoteBtn, "aria-label", `Convert checklist item ${index + 1} to child task`)
+        promoteBtn.title = "Convert to child task"
+        promoteBtn.textContent = "↳"
+        promoteBtn.addEventListener("click", async () => {
+          const current = items[index]
+          if (!current || promoteBtn.disabled || signal.aborted) return
+          const childTitle = current.text.trim()
+          if (!childTitle) return
+          promoteBtn.disabled = true
+          try {
+            const ctx = currentTaskApiContext()
+            const parentArea = (byId<HTMLSelectElement>("td-area"))?.value || null
+            const parentProject = (byId<HTMLSelectElement>("td-project"))?.value || null
+            const parentType = (byId<HTMLSelectElement>("td-task-type"))?.value
+            const res = await fetch("/api/tasks", { // nosemgrep
+              method: "POST",
+              headers: ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" },
+              body: JSON.stringify({
+                title: childTitle,
+                parent_id: taskId,
+                task_type: defaultChildTaskType(parentType),
+                status: current.done ? "complete" : "pending",
+                ...(parentArea ? { area_id: parentArea } : {}),
+                ...(parentProject ? { project_id: parentProject } : {}),
+              }),
+              signal,
+            })
+            if (!res.ok) {
+              const err = await res.json().catch(() => null) as { error?: string; detail?: string } | null
+              showToast(err?.error ?? err?.detail ?? "Could not convert step to child task", "error")
+              return
+            }
+            items.splice(index, 1)
+            render()
+            await save()
+            if (signal.aborted) return
+            document.dispatchEvent(new CustomEvent("meitheal:refresh-task-detail", { detail: { taskId } }))
+            document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "checklist-promoted" } }))
+            showToast("Converted step to child task", "success")
+          } catch {
+            if (!signal.aborted) showToast("Network error converting step", "error")
+          } finally {
+            if (!signal.aborted) promoteBtn.disabled = false
+          }
+        }, { signal })
+        rowControls.push(promoteBtn)
       }
 
-      const delBtn = document.createElement("button")
+      const delBtn = domEl("button")
       delBtn.type = "button"
       delBtn.className = "text-danger td-cl-del"
-      delBtn.setAttribute("aria-label", `Delete checklist item ${index + 1}`)
+      delBtn.dataset.checklistDelete = "1"
+      setAttr(delBtn, "aria-label", `Delete checklist item ${index + 1}`)
       delBtn.title = "Delete item"
       delBtn.replaceChildren(createSpriteIconElement("x", { size: 14 }))
 
@@ -326,7 +380,7 @@ export function showTaskChecklist(
         const next = text.value.trim()
         if (!items[index] || next === items[index]!.text) return
         updateItemAt(index, { text: next })
-        checkbox.setAttribute("aria-label", next || "Checklist item " + (index + 1))
+        setAttr(checkbox, "aria-label", next || "Checklist item " + (index + 1))
         textEditPending = true
         void save()
       }, { signal })
@@ -337,7 +391,7 @@ export function showTaskChecklist(
       }, { signal })
       delBtn.addEventListener("click", () => {
         items.splice(index, 1)
-        render({ index: Math.min(index, items.length - 1), selector: "button" })
+        render({ index: Math.min(index, items.length - 1), selector: "[data-checklist-delete]" })
         void save()
       }, { signal })
       return row
@@ -345,7 +399,7 @@ export function showTaskChecklist(
     container!.replaceChildren(...rows)
     rendering = false
     updateProgress()
-    if (focus) (rows[focus.index]?.querySelector<HTMLElement>(focus.selector) ?? add!)?.focus()
+    if (focus) (qs<HTMLElement>(rows[focus.index], focus.selector) ?? add!)?.focus()
   }
 
   function report(kind: "retry" | "conflict") {
@@ -358,21 +412,35 @@ export function showTaskChecklist(
     recover!.hidden = false
   }
 
-  function save() {
-    if (problem || pendingChecklistSaves.has(taskId)) return
+  function save(): Promise<boolean> | undefined {
+    if (problem) return
+    const active = pendingChecklistSaves.get(taskId)
+    if (active) {
+      saveQueued = true
+      return active
+    }
     if (equal(saved, items)) {
       textEditPending = false
       return
     }
-    const pending = persist().then(saved => {
-      if (saved) textEditPending = false
-      return saved
-    }).finally(() => {
-      pendingChecklistSaves.delete(taskId)
-      if (ticketKey && pendingChecklistSaves.get(ticketKey) === pending) pendingChecklistSaves.delete(ticketKey)
-    })
+    let pending!: Promise<boolean>
+    pending = (async () => {
+      try {
+        let ok = true
+        do {
+          saveQueued = false
+          ok = await persist()
+        } while (ok && saveQueued && !equal(saved, items) && !problem)
+        if (ok) textEditPending = false
+        return ok
+      } finally {
+        if (pendingChecklistSaves.get(taskId) === pending) pendingChecklistSaves.delete(taskId)
+        if (ticketKey && pendingChecklistSaves.get(ticketKey) === pending) pendingChecklistSaves.delete(ticketKey)
+      }
+    })()
     pendingChecklistSaves.set(taskId, pending)
     if (ticketKey) pendingChecklistSaves.set(ticketKey, pending)
+    return pending
   }
 
   async function persist(): Promise<boolean> {
@@ -380,6 +448,7 @@ export function showTaskChecklist(
     try {
       while (!equal(saved, items)) {
         const pending = JSON.stringify(items)
+        const ctx = currentTaskApiContext()
         const payload: Record<string, unknown> = {
           checklists: pending,
           expected_checklists: savedRaw,
@@ -389,7 +458,7 @@ export function showTaskChecklist(
         }
         const response = await write(version => fetch(path, { // nosemgrep
           method: "PUT",
-          headers: { "content-type": "application/json" },
+          headers: ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" },
           body: JSON.stringify(version === null ? payload : { ...payload, updated_at: version }),
           signal: AbortSignal.timeout(10_000),
         }))
@@ -491,7 +560,7 @@ export function showTaskChecklist(
       const editing = document.activeElement
       if (editing instanceof HTMLTextAreaElement && container.contains(editing)) editing.blur()
       draftRows.replaceChildren(...(items.length ? items : [{ text: "No items", done: false }]).map(item => {
-        const entry = document.createElement("li")
+        const entry = domEl("li")
         entry.textContent = item.done ? item.text + " (checked)" : item.text
         return entry
       }))

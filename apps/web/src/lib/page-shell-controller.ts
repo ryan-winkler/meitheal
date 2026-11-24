@@ -4,8 +4,9 @@ import {
   initUnifiedBarNewTaskButton,
   initUnifiedBarSearchLauncher,
   initUnifiedBarTabOverflow,
+  initUnifiedBarTabsKeyboard,
   initUnifiedBarTitleSwitcher,
-  setUnifiedBarSwitcherActiveState,
+  syncUnifiedBarSectionState,
 } from "@lib/unified-bar-controller"
 
 const log = createClientLogger("app", "page-shell")
@@ -79,20 +80,7 @@ export function initPageShellNavigation<SectionId extends string>({
   }
 
   function updateActiveState(sectionId: SectionId): void {
-    document
-      .querySelectorAll<HTMLElement>("[data-unified-bar-section]")
-      .forEach((link) => {
-        const active = link.dataset.unifiedBarSection === sectionId
-        link.classList.toggle("is-active", active)
-        if (link.matches('[role="tab"]')) {
-          link.setAttribute("aria-selected", String(active))
-        } else if (link.matches("a[href]")) {
-          link.setAttribute("aria-current", active ? "location" : "false")
-        }
-        link.setAttribute("tabindex", active ? "0" : "-1")
-      })
-
-    setUnifiedBarSwitcherActiveState(barId, sectionId)
+    syncUnifiedBarSectionState(barId, sectionId, { manageTabindex: true })
   }
 
   function scrollToAnchor(
@@ -189,32 +177,7 @@ export function initPageShellNavigation<SectionId extends string>({
     })
   }
 
-  const tabContainer = document.getElementById(`${barId}-tabs`)
-  if (tabContainer) {
-    pageLifecycle.on(tabContainer, "keydown", (event) => {
-      const keyboardEvent = event as KeyboardEvent
-      if (keyboardEvent.key !== "ArrowLeft" && keyboardEvent.key !== "ArrowRight") {
-        return
-      }
-
-      const visibleTabs = Array.from(
-        tabContainer.querySelectorAll<HTMLElement>(
-          "[data-unified-bar-tab]:not([data-overflow-hidden])",
-        ),
-      )
-      const currentIndex = visibleTabs.findIndex((tab) => tab === document.activeElement)
-      if (currentIndex === -1) return
-
-      keyboardEvent.preventDefault()
-      const direction = keyboardEvent.key === "ArrowRight" ? 1 : -1
-      const nextIndex = (currentIndex + direction + visibleTabs.length) % visibleTabs.length
-      const nextTab = visibleTabs[nextIndex]
-      if (!nextTab) return
-
-      nextTab.focus()
-      nextTab.click()
-    })
-  }
+  initUnifiedBarTabsKeyboard(barId)
 
   initUnifiedBarTitleSwitcher({
     barId,
@@ -244,11 +207,18 @@ export function initPageShellNavigation<SectionId extends string>({
   })
 
   const hash = window.location.hash.replace("#", "")
-  if (hash && document.getElementById(hash)) {
+  if (hash && document.getElementById(hash) && bar?.dataset.initialHashSynced !== hash) {
+    if (bar) {
+      bar.dataset.initialHashSynced = hash
+      pageLifecycle.signal.addEventListener("abort", () => { delete bar.dataset.initialHashSynced }, { once: true })
+    }
     const signal = pageLifecycle.signal
     const initialUrl = window.location.href
+    const initialScrollY = window.scrollY
     requestAnimationFrame(() => {
+      const active = document.activeElement
       if (signal.aborted || (bar && !bar.isConnected) || window.location.href !== initialUrl) return
+      if (window.scrollY !== initialScrollY || (active && active !== document.body && active !== document.documentElement)) return
       scrollToAnchor(hash, "auto", false)
     })
   }
@@ -265,7 +235,7 @@ export function initPageShellSectionTracking<SectionId extends string>(
   resolveSectionId: (anchorId: string) => SectionId | null,
   updateActiveState: (sectionId: SectionId) => void,
   rootMargin = "-25% 0px -45% 0px",
-  threshold = [0.2, 0.45, 0.7],
+  threshold = [0, 0.2, 0.45, 0.7],
 ): (sectionId: SectionId | null, awaitVisibility?: boolean) => void {
   let linkedSection: {
     element: HTMLElement
@@ -282,21 +252,20 @@ export function initPageShellSectionTracking<SectionId extends string>(
         return
       }
     }
+    const atTop = window.scrollY <= 8
     let mostVisibleSectionId: SectionId | null = null
     let greatestVisibleHeight = 0
-    // At the top of the page the first section is current, even when a taller
-    // section below it fills more of the viewport.
-    const atTop = window.scrollY <= 0
 
     for (const section of sections) {
       const { top, bottom } = section.getBoundingClientRect()
-      const sectionId = resolveSectionId(section.id)
-      if (atTop && sectionId && bottom > top) {
-        mostVisibleSectionId = sectionId
-        break
-      }
       const visibleHeight = Math.min(window.innerHeight, bottom) - Math.max(0, top)
-      if (sectionId && visibleHeight > greatestVisibleHeight) {
+      const sectionId = resolveSectionId(section.id)
+      if (!sectionId || visibleHeight <= 0) continue
+      if (atTop && bottom > 0 && top < window.innerHeight) {
+        updateActiveState(sectionId)
+        return
+      }
+      if (visibleHeight > greatestVisibleHeight) {
         greatestVisibleHeight = visibleHeight
         mostVisibleSectionId = sectionId
       }
@@ -318,6 +287,7 @@ export function initPageShellSectionTracking<SectionId extends string>(
     } else if (linkedSection.wasVisible) {
       resumeSectionTracking()
     }
+    if (!linkedSection && window.scrollY <= 8) resumeSectionTracking()
   }
 
   function trackLinkedSection(sectionId: SectionId | null, awaitVisibility = true): void {
@@ -325,41 +295,25 @@ export function initPageShellSectionTracking<SectionId extends string>(
     linkedSection = element ? { element, wasVisible: false, leftTop: window.scrollY > 2 } : null
     syncLinkedSectionVisibility()
     if (!awaitVisibility && !linkedSection?.wasVisible) {
-      resumeSectionTracking()
+      linkedSection = null
+      if (window.scrollY > 8) resumeSectionTracking()
     }
   }
 
   if (sections.length > 0) {
-    let wasAtTop = window.scrollY <= 0
-    pageLifecycle.on(window, "scroll", () => {
-      syncLinkedSectionVisibility(true)
-      // The observer may not fire on reaching or leaving the top, so recalculate then too.
-      const atTop = window.scrollY <= 0
-      if (!linkedSection && (atTop || wasAtTop)) resumeSectionTracking()
-      wasAtTop = atTop
-    }, { passive: true })
+    pageLifecycle.on(window, "scroll", () => syncLinkedSectionVisibility(true), { passive: true })
     pageLifecycle.on(document, "scrollend", () => {
-      if (linkedSection && !linkedSection.wasVisible) resumeSectionTracking()
+      if ((linkedSection && !linkedSection.wasVisible) || (!linkedSection && window.scrollY <= 8)) resumeSectionTracking()
     })
     const observer = new IntersectionObserver(
       (entries) => {
         // Keep the linked section current during the jump and until it leaves view.
         if (linkedSection) return
-        // At the top of the page the first section stays current.
-        if (window.scrollY <= 0) {
-          resumeSectionTracking()
-          return
-        }
         const active = entries
           .filter((entry) => entry.isIntersecting)
           .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0]
 
-        // Only exits were reported, for example a short section leaving while a tall one
-        // stays below the threshold: recalculate from every section's geometry.
-        if (!active?.target.id) {
-          resumeSectionTracking()
-          return
-        }
+        if (!active?.target.id) return
 
         const sectionId = resolveSectionId(active.target.id)
         if (sectionId) {

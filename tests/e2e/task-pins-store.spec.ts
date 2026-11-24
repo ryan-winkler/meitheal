@@ -44,8 +44,8 @@ function migrate(...args: string[]) {
 
 async function seed(db: Database, id: string, status = "pending") {
   await db.execute({
-    sql: `INSERT INTO tasks (id, title, request_id, idempotency_key, status, is_favorite, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, 1, 1, 1)`,
+    sql: `INSERT INTO tasks (id, title, request_id, idempotency_key, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, 1, 1)`,
     args: [id, id, id, id, status],
   })
 }
@@ -55,7 +55,11 @@ const legacyTest = test.extend({ legacyPredecessor: true })
 legacyTest("verified current legacy enrollment and runtime/CLI reconcile the schema and preserve task data", async ({ db }) => {
   await prepareTaskBoardPredecessor(db)
   await db.execute("ALTER TABLE tasks ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0")
-  await seed(db, "retained")
+  await db.execute({
+    sql: `INSERT INTO tasks (id, title, request_id, idempotency_key, status, is_favorite, created_at, updated_at)
+          VALUES ('retained', 'retained', 'retained', 'retained', 'pending', 1, 1, 1)`,
+    args: [],
+  })
 
   // Recreate the state just before the pin migration on an existing database.
   await db.batch([
@@ -72,7 +76,10 @@ legacyTest("verified current legacy enrollment and runtime/CLI reconcile the sch
     expect(getSchemaVersion()).toBe(DATABASE_SCHEMA_VERSION)
     expect(migrate()).toContain("No migrations to apply")
     expect(migrate("--check")).toContain("Migration check passed")
-    expect((await new TaskRepository(getPersistenceClient(), await currentBoardScope(getPersistenceClient())).findById("retained"))?.is_favorite).toBe(1)
+    const retained = await new TaskRepository(getPersistenceClient(), await currentBoardScope(getPersistenceClient())).findById("retained")
+    expect(retained?.id).toBe("retained")
+    expect(retained?.is_promoted).toBe(0)
+    expect((await getPersistenceClient().execute("SELECT task_id FROM archived_task_favorites WHERE task_id = 'retained'")).rows).toHaveLength(1)
   } finally { await rm(proof.custodyDirectory, { recursive: true, force: true }) }
 })
 

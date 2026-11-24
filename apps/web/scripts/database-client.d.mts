@@ -22,10 +22,13 @@ export function isMemoryDatabase(url: string): boolean
 export function isLocalReadSnapshot(transaction: Transaction): boolean
 export function isLocalFileWriter(transaction: Transaction): boolean
 export function localSnapshotGeneration(reader: Transaction | Pick<Client, "execute">): string | undefined
+export function localReaderCacheToken(reader: Transaction | Pick<Client, "execute">): { owner: object; token: string } | undefined
+export function registerReaderCacheSource(wrapper: object, target: object): void
 export function isLocalFileClient(client: Client): boolean
+export function isSideEffectFreeQuery(sql: string): boolean
 export function tagTodayRead<T extends Exclude<InStatement, string>>(statement: T, kind: "rows" | "completed"): T
 export function tagBoardPolicyRead<T extends Exclude<InStatement, string>>(statement: T): T
-export function tagTaskProjectionRead<T extends Exclude<InStatement, string>>(statement: T, kind: "task-list" | "task-count" | "task-detail" | "task-search" | "task-locator" | "task-command" | "task-cascade"): T
+export function tagTaskProjectionRead<T extends Exclude<InStatement, string>>(statement: T, kind: "task-list" | "task-count" | "task-detail" | "task-search" | "task-locator" | "task-command" | "task-cascade" | "task-subtasks"): T
 export interface DatabaseStartupOptions {
   readOnly?: boolean
   markerPath?: string | undefined
