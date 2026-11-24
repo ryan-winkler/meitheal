@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
@@ -9,7 +9,8 @@ import {
 } from "../../apps/web/scripts/database-client.mjs"
 import {
   finalizeStartupBoardGrant,
-  initializeBoardGrantContinuity
+  initializeBoardGrantContinuity,
+  readBoardGrantRevision
 } from "../../apps/web/scripts/board-grant-journal.mjs"
 import {
   applyStartupBoardSchema,
@@ -199,9 +200,47 @@ test("legacy propose-only tokens retain proposals without generic editing or pri
   ).toEqual({ ok: false, errorCode: "unavailable" })
 })
 
-test("epochless reopened schema25 remains controlled pending26 without policy conversion", async () => {
+test("epochless reopened schema25 without a conflicting marker auto-enrolls and finishes upgrade", async () => {
   await withStartupWriteTransaction(db, (tx) => applyStartupTaskSchema(tx))
   db.close()
+  db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
+  const result = await initialize()
+  expect(result.state).toBe("ready")
+  expect(result.revision).toBeTruthy()
+  expect(result.applied).toEqual(["0016_ordinary_boards.mjs", CUSTOM_BOARD_KEYS_MIGRATION, TASK_EXPERIENCE_MIGRATION])
+  expect(await readBoardGrantRevision(marker)).toBe(result.revision)
+  expect(
+    (await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")).rows[0]?.value
+  ).toBe("28")
+  await validateStartupTaskSchema(db)
+})
+
+test("pre-0016 reopened schema25 with an epoch row and absent marker recovers continuity", async () => {
+  const priorEpoch = "93c9b2e7-cd3b-4b29-b517-d1bdf8c52886"
+  await withStartupWriteTransaction(db, async (tx) => {
+    await applyStartupTaskSchema(tx)
+    await tx.execute({
+      sql: "INSERT INTO board_access_epoch(singleton, revision) VALUES (1, ?)",
+      args: [priorEpoch]
+    })
+  })
+  db.close()
+  db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
+  const result = await initialize()
+  expect(result.state).toBe("ready")
+  expect(result.revision).toBeTruthy()
+  expect(result.revision).not.toBe(priorEpoch)
+  expect(await readBoardGrantRevision(marker)).toBe(result.revision)
+  expect(
+    (await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")).rows[0]?.value
+  ).toBe("28")
+  await validateStartupTaskSchema(db)
+})
+
+test("epochless reopened schema25 with a conflicting marker remains controlled pending26 without policy conversion", async () => {
+  await withStartupWriteTransaction(db, (tx) => applyStartupTaskSchema(tx))
+  db.close()
+  await writeFile(marker, JSON.stringify({ epoch: randomUUID() }), { mode: 0o600 })
   db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
   const result = await initialize()
   expect(result).toMatchObject({

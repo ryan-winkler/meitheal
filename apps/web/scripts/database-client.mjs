@@ -2000,14 +2000,46 @@ export async function retryStartupLock(operation) {
   }
 }
 
+/** Detect existing pre-0016 local Meitheal databases eligible for automatic continuity enrollment. */
+/** @param {Transaction} tx @param {string} migrationState */
+async function isPre0016MeithealDatabase(tx, migrationState) {
+  const { ORDINARY_BOARD_SCHEMA_VERSION, readOrdinaryBoardMigrationState } = await import("../drizzle/migrations/0016_ordinary_boards.mjs")
+  if (migrationState === "household-v19") {
+    if (await readOrdinaryBoardMigrationState(tx)) return false
+    const { rows: [blocked] } = await tx.execute("SELECT value FROM app_settings WHERE key = 'continuity_auto_enroll_blocked'")
+    if (blocked !== undefined) return false
+    const { rows: [version] } = await tx.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")
+    const parsed = Number(version?.value)
+    return Number.isInteger(parsed) && parsed >= 19 && parsed < ORDINARY_BOARD_SCHEMA_VERSION
+  }
+  if (migrationState !== "predecessor") return false
+  const { rows } = await tx.execute(
+    `SELECT lower(name) AS name FROM main.sqlite_schema
+     WHERE type = 'table' AND lower(name) IN ('tasks', '__meitheal_migrations', 'app_settings')`
+  )
+  const tables = new Set(rows.map(row => String(row.name)))
+  if (!tables.has("tasks") || (!tables.has("__meitheal_migrations") && !tables.has("app_settings"))) return false
+  if (!tables.has("app_settings")) return true
+  try {
+    const { rows: [version] } = await tx.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")
+    if (version === undefined || version === null) return true
+    const parsed = Number(version.value)
+    return Number.isInteger(parsed) && parsed > 0 && parsed < ORDINARY_BOARD_SCHEMA_VERSION
+  } catch {
+    return false
+  }
+}
+
 /** @param {Client} client */
 async function inspectStartupSchema(client) {
   const tx = await client.transaction("read")
   try {
-    if (await readTaskBoardMigrationState(tx) === "household-v19") {
+    const migrationState = await readTaskBoardMigrationState(tx)
+    if (migrationState === "household-v19") {
       const { validateStartupTaskSchema } = await import("./task-schema-startup.mjs")
       await validateStartupTaskSchema(tx, { allowPending: true })
     }
+    return await isPre0016MeithealDatabase(tx, migrationState)
   } finally {
     tx.close()
   }
@@ -2085,31 +2117,34 @@ export function openDatabaseForStartup(url, { readOnly = false, markerPath, trus
       return client
     }
 
+    const existingStats = !readOnly ? lstatSync(local.path, { throwIfNoEntry: false }) : undefined
     let inspection
     let recovered = false
+    let pre0016 = false
     try {
       inspection = openLocal(local.path, false, true, true)
-      await inspectStartupSchema(inspection)
+      pre0016 = await inspectStartupSchema(inspection)
     } catch (error) {
       inspection?.close()
       if (readOnly || !needsJournalRecovery(error)) throw error
       // SQLite may have to restore a hot journal before any read can succeed.
       inspection = openLocal(local.path, false, false, true)
       try {
-        await inspectStartupSchema(inspection)
+        pre0016 = await inspectStartupSchema(inspection)
         recovered = true
       } catch (recoveryError) {
         inspection.close()
         throw recoveryError
       }
     }
+    const pre0016LocalUpgrade = Boolean(!readOnly && existingStats?.isFile() && existingStats.size > 0 && pre0016)
     if (readOnly || recovered) {
-      registerBoardGrantContext(inspection, { markerPath })
+      registerBoardGrantContext(inspection, { markerPath, pre0016LocalUpgrade })
       return inspection
     }
     inspection.close()
     const client = openLocal(local.path, false, false, true)
-    registerBoardGrantContext(client, { markerPath })
+    registerBoardGrantContext(client, { markerPath, pre0016LocalUpgrade })
     return client
   })
 }

@@ -30,7 +30,6 @@ backup: cold
 backup_exclude:
   - "*.log"
   - "*.tmp"
-  - "meitheal-board-grants.json"
   - "meitheal-board-grants-pending"
 stage: stable
 options:

@@ -3,7 +3,7 @@ import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from "
 import { mkdir, open, readdir, rename, rm } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { acquireWriteTransaction, readLocalGrantRevision, retryStartupLock } from "./database-client.mjs"
-import { boardGrantPath, boardGrantRevisionQuery, consumeDatabaseCreation, getBoardGrantPath, unwrapBoardGrantClient } from "./board-grant-context.mjs"
+import { boardGrantPath, boardGrantRevisionQuery, consumeDatabaseCreation, consumePre0016LocalUpgrade, getBoardGrantPath, unwrapBoardGrantClient } from "./board-grant-context.mjs"
 import { consumeOperatorAdmission, registerStartupBoardAdmission } from "./startup-board-admission.mjs"
 
 export { boardGrantPath, getBoardGrantPath }
@@ -135,24 +135,43 @@ export async function initializeBoardGrantContinuity(client, tx) {
   return prepareInitialBoardGrant(tx, getBoardGrantPath(client))
 }
 
+async function inspectPendingDirectory(markerPath) {
+  const directory = pendingDirectory(markerPath)
+  rejectSymlinkPath(directory)
+  const stats = lstatSync(directory, { throwIfNoEntry: false })
+  if (!stats) return "missing"
+  if (!stats.isDirectory()) return "non_directory"
+  return (await readdir(directory)).length ? "non_empty" : "empty"
+}
+
+async function hasMarkerOrPendingEntries(markerPath) {
+  rejectSymlinkPath(markerPath)
+  if (lstatSync(markerPath, { throwIfNoEntry: false })) return true
+  const pendingState = await inspectPendingDirectory(markerPath)
+  return pendingState === "non_empty" || pendingState === "non_directory"
+}
+
 /** Prove conversion authority on the same startup writer, then prepare its next excluded journal. */
 export async function admitStartupBoardTransition(client, tx, operatorAdmission) {
   const path = getBoardGrantPath(client)
   const revision = await databaseRevision(tx)
   const created = consumeDatabaseCreation(client)
+  const pre0016LocalUpgrade = consumePre0016LocalUpgrade(client)
   const operator = consumeOperatorAdmission(operatorAdmission)
+  const canAutoEnrollPre0016 = async () => pre0016LocalUpgrade && !(await hasMarkerOrPendingEntries(path))
   if (!revision) {
-    if (!created && !operator) return null
+    if (!created && !operator && !(await canAutoEnrollPre0016())) return null
     const next = await prepareInitialBoardGrant(tx, path)
     return { admission: registerStartupBoardAdmission(tx), revision: next }
   }
   if (operator) throw new Error("Legacy enrollment cannot replace an existing authority revision")
-  // A committed journal may be recovered, but arbitrary database bytes never
-  // manufacture the independently retained current marker.
-  if (!await publishCommittedMarker(path, revision) || !await boardGrantStillCurrent(tx, revision, path)) return null
+  // A committed journal may be recovered, or a pre-0016 local database restored
+  // before backups included the marker may re-enroll when no conflicting file exists.
+  const currentMatched = await publishCommittedMarker(path, revision) && await boardGrantStillCurrent(tx, revision, path)
+  if (!currentMatched && !(await canAutoEnrollPre0016())) return null
   const next = randomUUID()
   await prepareGrantMarker(path, next)
-  await tx.execute({ sql: "UPDATE board_access_epoch SET revision = ? WHERE singleton = 1 AND revision = ?", args: [next,revision] })
+  await tx.execute({ sql: "UPDATE board_access_epoch SET revision = ? WHERE singleton = 1 AND revision = ?", args: [next, revision] })
   return { admission: registerStartupBoardAdmission(tx), revision: next }
 }
 
@@ -161,9 +180,8 @@ export async function prepareInitialBoardGrant(tx, markerPath) {
   if (await databaseRevision(tx)) throw new Error("Board continuity is already enrolled")
   rejectSymlinkPath(markerPath)
   if (lstatSync(markerPath, { throwIfNoEntry: false })) throw new Error("Board marker destination already exists")
-  const directory = pendingDirectory(markerPath)
-  rejectSymlinkPath(directory)
-  if (lstatSync(directory, { throwIfNoEntry: false }) && (await readdir(directory)).length) throw new Error("Unresolved Board journal prevents initial enrollment")
+  const pendingState = await inspectPendingDirectory(markerPath)
+  if (pendingState !== "missing" && pendingState !== "empty") throw new Error("Unresolved Board journal prevents initial enrollment")
   const revision = randomUUID()
   await prepareGrantMarker(markerPath, revision)
   try {

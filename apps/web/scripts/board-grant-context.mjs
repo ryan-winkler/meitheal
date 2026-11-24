@@ -3,9 +3,9 @@ const contexts = new WeakMap()
 export const boardGrantPath = "/data/meitheal-board-grants.json"
 export const boardGrantRevisionQuery = "SELECT revision FROM board_access_epoch WHERE singleton = 1"
 
-export function registerBoardGrantContext(client, { markerPath = boardGrantPath, created = false } = {}) {
+export function registerBoardGrantContext(client, { markerPath = boardGrantPath, created = false, pre0016LocalUpgrade = false } = {}) {
   if (!client[Symbol.for("meitheal.boardGrantClient")]) Object.defineProperty(client, Symbol.for("meitheal.boardGrantClient"), { value: client })
-  contexts.set(client, { markerPath, created })
+  contexts.set(client, { markerPath, created, pre0016LocalUpgrade })
 }
 
 export function getBoardGrantPath(client) {
@@ -26,8 +26,17 @@ export function unwrapBoardGrantClient(client) {
 }
 
 export function consumeDatabaseCreation(client) {
+  client = unwrapBoardGrantClient(client)
   const context = contexts.get(client)
   if (!context?.created) return false
   context.created = false
+  return true
+}
+
+export function consumePre0016LocalUpgrade(client) {
+  client = unwrapBoardGrantClient(client)
+  const context = contexts.get(client)
+  if (!context?.pre0016LocalUpgrade) return false
+  context.pre0016LocalUpgrade = false
   return true
 }
