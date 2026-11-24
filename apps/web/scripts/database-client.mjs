@@ -1811,44 +1811,53 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     /** @param {InStatement} statement @param {InArgs} [args] */
     async execute(statement, args) { return executeStatementWithRetry(statement, args, undefined) },
     async executeMultiple(sql) {
-      const touchesWalAutocheckpoint = !memory && !readOnly && hasWalAutocheckpointAssignment(sql)
-      const hasWrite = !memory && !readOnly && hasLikelyWriteSql(sql)
-      const hasRollbackToken = !memory && !readOnly && /\bROLLBACK\b/i.test(stripSqlCommentsAndLiterals(sql))
+      if (memory || readOnly) {
+        onMain(db => {
+          mainHasLocalState = true
+          bumpHandleEpoch(db)
+          nonTaskWriteEpoch += 1
+          try {
+            db.exec(sql)
+          } finally {
+            bumpHandleEpoch(db)
+            nonTaskWriteEpoch += 1
+          }
+        })
+        return
+      }
+      const touchesWalAutocheckpoint = hasWalAutocheckpointAssignment(sql)
       onMain(db => {
         mainHasLocalState = true
         bumpHandleEpoch(db)
         nonTaskWriteEpoch += 1
-        const beforeChanges = !memory && !readOnly ? getTotalChanges(db) : undefined
-        const beforeSchema = !memory && !readOnly ? readSchemaVersion(db) : undefined
-        const observer = !hasRollbackToken
-          ? null
-          : (!writeSlotLeased && idleWriteHandle)
-            || (!readSlotLeased && idleReadHandle)
-            || (!readSlotLeased ? (idleReadHandle = connect(true, true), armReadIdleEviction(), idleReadHandle) : null)
-        const beforeExternal = observer ? readExternalVersion(observer) : undefined
-        let recorded = false
+        /** @type {DatabaseSync | null} */
+        let ownedObserver = null
+        const observer = (!writeSlotLeased && idleWriteHandle)
+          || (!readSlotLeased && idleReadHandle)
+          || (!readSlotLeased
+            ? (idleReadHandle = connect(true, true), armReadIdleEviction(), idleReadHandle)
+            : (ownedObserver = connectRaw(true)))
+        /** @type {string | undefined} */
+        let beforeExternal = undefined
         try {
+          beforeExternal = readExternalVersion(observer)
           db.exec(sql)
-          if (
-            hasWrite &&
-            !db.isTransaction &&
-            (beforeExternal === undefined || !observer || readExternalVersion(observer) !== beforeExternal)
-          ) {
-            recordCommittedWrite()
-            recorded = true
-          }
-        } catch (error) {
-          if (!recorded && !memory && !readOnly && !db.isTransaction) {
-            const committed = beforeExternal !== undefined && observer
-              ? readExternalVersion(observer) !== beforeExternal
-              : (getTotalChanges(db) !== beforeChanges || readSchemaVersion(db) !== beforeSchema)
-            if (committed) recordCommittedWrite()
-          }
-          throw error
         } finally {
-          if (touchesWalAutocheckpoint) reconcileWalAutocheckpoint(db)
-          bumpHandleEpoch(db)
-          nonTaskWriteEpoch += 1
+          try {
+            if (db.isTransaction) {
+              db.exec("ROLLBACK")
+            }
+            if (beforeExternal !== undefined && readExternalVersion(observer) !== beforeExternal) {
+              recordCommittedWrite()
+            }
+            if (touchesWalAutocheckpoint) {
+              reconcileWalAutocheckpoint(db)
+            }
+          } finally {
+            ownedObserver?.close()
+            bumpHandleEpoch(db)
+            nonTaskWriteEpoch += 1
+          }
         }
       })
     },
