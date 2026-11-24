@@ -1,0 +1,32 @@
+---
+import { getCachedHtmlSlot, setCachedHtmlSlot, type CachedHtmlByteChunk } from "../../lib/cached-html-slot-store"
+
+interface Props {
+  cacheKey?: string | null | undefined
+  asBytes?: boolean | undefined
+}
+
+const { cacheKey, asBytes = false } = Astro.props
+let htmlOutput: string | undefined
+let byteChunkOutput: CachedHtmlByteChunk | undefined
+
+if (cacheKey) {
+  let entry = getCachedHtmlSlot(cacheKey)
+  if (!entry) {
+    const rendered = String((await Astro.slots.render("default")) ?? "")
+    entry = setCachedHtmlSlot(cacheKey, rendered)
+  }
+  if (entry.icons.length > 0) {
+    const target = (Astro.locals.usedIcons ??= new Set())
+    for (const icon of entry.icons) target.add(icon)
+  }
+  if (asBytes) {
+    byteChunkOutput = entry.byteChunk
+  } else {
+    htmlOutput = entry.html
+  }
+} else {
+  htmlOutput = String((await Astro.slots.render("default")) ?? "")
+}
+---
+{byteChunkOutput ? byteChunkOutput : <Fragment set:html={htmlOutput} />}

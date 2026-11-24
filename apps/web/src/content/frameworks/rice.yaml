@@ -1,7 +1,7 @@
 name: RICE
 version: 1.1.0
 archetype: formula
-formula: "(reach * impact * confidence) / effort"
+formula: "(reach * impact * (confidence / 100)) / effort"
 badge_thresholds:
   - min: 80
     label: "Do Now (High Value)"
@@ -41,7 +41,8 @@ fields:
     label: Effort
     type: number
     ui_type: slider
-    min: 1
+    min: 0.01
+    step: 0.25
     max: 1000
     weight: 1
     help_text: "How many person-months will this take? (e.g. 0.5 = 2 weeks)"

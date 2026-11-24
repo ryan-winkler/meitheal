@@ -1,0 +1,47 @@
+---
+import SettingsPanelCard from "./SettingsPanelCard.astro"
+import { verifiedIngressUser } from "@lib/verified-ingress-user"
+import { organizationLabelsFor } from "@lib/organization-labels"
+
+const eligible = verifiedIngressUser(Astro.locals)?.isAdmin === true
+const organization = await organizationLabelsFor(Astro)
+---
+
+{eligible && (
+  <SettingsPanelCard
+    title="Organization features"
+    subtitle="Choose which parts of Meitheal are available to each person."
+  >
+    <form id="ha-area-feature-form" class="settings-stack">
+      <fieldset class="settings-stack" disabled>
+        <label class="form-label">Feature
+          <select name="feature" class="form-select">
+            <option value="organizer">Boards organizer</option>
+            <option value="groups">{organization("group", true)}</option>
+            <option value="projects">Projects</option>
+            <option value="planning">Planning</option>
+            <option value="goals">Goals</option>
+            <option value="routines">Routines</option>
+            <option value="pillars">Pillars</option>
+            <option value="principles">Principles</option>
+            <option value="achievements">Achievements</option>
+            <option value="home_assistant_area" selected>Home Assistant Area</option>
+          </select>
+        </label>
+        <label class="form-label">Available to
+          <select name="audience" class="form-select">
+            <option value="everyone">Everyone</option>
+            <option value="selected">Selected people</option>
+            <option value="nobody" selected>Nobody</option>
+          </select>
+        </label>
+        <fieldset data-ha-area-roster hidden class="settings-stack--xs">
+          <legend class="form-label">Home Assistant accounts</legend>
+          <div data-ha-area-users></div>
+        </fieldset>
+        <button type="submit" class="btn btn-primary">Save availability</button>
+      </fieldset>
+      <p class="settings-hint" role="status" data-ha-area-policy-status>Checking current availability…</p>
+    </form>
+  </SettingsPanelCard>
+)}

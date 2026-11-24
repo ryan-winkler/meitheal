@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
+import { DEFERRAL_RECONCILED } from "../../apps/web/src/lib/deferral-client"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.describe("Tasks view loading and Kanban pages", () => {
@@ -44,7 +46,7 @@ test.describe("Tasks view loading and Kanban pages", () => {
 
   test("paginates lanes, filters beyond the first page and reorders relative to off-page cards", async ({ page, request, baseURL }) => {
     test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
-    const headers = { origin: new URL(baseURL!).origin, "content-type": "application/json" }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin, "content-type": "application/json" })
     const prefix = `Paged repair ${randomUUID().slice(0, 8)}`
     const createdArea = await request.post("/api/areas", { headers, data: { name: prefix } })
     expect(createdArea.status()).toBe(201)
@@ -78,9 +80,46 @@ test.describe("Tasks view loading and Kanban pages", () => {
       await expect(lane.locator(".kanban-count")).toHaveText("28")
       await expect(range).toHaveText("1–25 of 28")
       await expect(oldest).toHaveCount(0)
-      await expect.poll(() => cards.evaluateAll(elements => elements.every(card =>
-        card.querySelector(".kanban-card-actions")!.getBoundingClientRect().bottom <= card.getBoundingClientRect().bottom,
-      ))).toBe(true)
+
+      const lastCard = cards.last().locator(".card-open-btn")
+      const expectPassiveRefreshToKeepCardInPlace = async () => {
+        await expect(lastCard).toBeInViewport()
+        const beforeRefresh = (await lastCard.boundingBox())!.y
+        const previousBoard = await page.locator("#kanban-board").elementHandle()
+        const passiveResponse = page.waitForResponse(response => new URL(response.url()).searchParams.has("boardRefresh"))
+        await page.evaluate(event => window.dispatchEvent(new CustomEvent(event, { detail: { dataOnly: true } })),
+          DEFERRAL_RECONCILED)
+        expect((await passiveResponse).status()).toBe(200)
+        await page.waitForFunction(board => !board!.isConnected, previousBoard)
+        await expect(lastCard).toBeInViewport()
+        await expect.poll(async () => Math.abs((await lastCard.boundingBox())!.y - beforeRefresh)).toBeLessThan(24)
+      }
+      await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+      const desktopViewport = page.viewportSize()!
+      await page.setViewportSize({ width: 412, height: 915 })
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }))
+      await expect.poll(async () => {
+        const rect = await lastCard.boundingBox()
+        if (rect && rect.y >= 0 && rect.y + rect.height < 915) return true
+        await page.evaluate(() => window.scrollBy({ top: 420, behavior: "instant" }))
+        return false
+      }, { intervals: [32], timeout: 5_000 }).toBe(true)
+      await expectPassiveRefreshToKeepCardInPlace()
+
+      await page.setViewportSize(desktopViewport)
+      await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }))
+      const list = lane.locator(".kanban-cards")
+      await list.evaluate(container => { container.scrollTop = container.scrollHeight })
+      expect(await list.evaluate(container => container.scrollTop)).toBeGreaterThan(0)
+      expect(await page.evaluate(() => window.scrollY)).toBe(0)
+      await expectPassiveRefreshToKeepCardInPlace()
+
+      for (const card of await cards.all()) {
+        await card.scrollIntoViewIfNeeded()
+        await expect.poll(() => card.evaluate(element =>
+          element.querySelector(".kanban-card-actions")!.getBoundingClientRect().bottom <= element.getBoundingClientRect().bottom,
+        )).toBe(true)
+      }
 
       await page.goto("/")
       const overdueLink = page.locator("#stat-overdue")
@@ -94,25 +133,30 @@ test.describe("Tasks view loading and Kanban pages", () => {
 
       await page.goto(`/tasks?area=${area}#kanban`)
       await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+      const pageRefresh = page.waitForResponse(response => new URL(response.url()).searchParams.has("boardRefresh"))
       await lane.getByRole("link", { name: "Next" }).press("Enter")
+      expect(await (await pageRefresh).text()).not.toContain('id="task-detail-overlay"')
       await expect(range).toHaveText("26–28 of 28")
       await expect(range).toBeFocused()
       await expect(cards).toHaveCount(3)
       await expect(oldest).toBeVisible()
+      await expect(lane.locator(`.kanban-card[data-id="${ids[0]}"] .kanban-card-due use`))
+        .toHaveAttribute("href", "#mt-icon-alert-triangle")
+      await expect(page.locator("#mt-icon-sprite-defs #mt-icon-alert-triangle path").first()).toBeAttached()
       await expect(page).toHaveURL(/kp\.pending=2/)
       await page.reload()
       await expect(range).toHaveText("26–28 of 28")
 
       await lane.getByRole("link", { name: "Previous" }).click()
       await expect(range).toHaveText("1–25 of 28")
-      const searchRequest = (url: URL) => url.pathname === "/tasks" && url.searchParams.has("search")
-      await page.route(searchRequest, route => route.fulfill({ status: 503, body: "fixture rejected" }))
+      const searchRequest = (url: URL) => url.searchParams.has("boardRefresh") && url.searchParams.get("search") === "older radiator inspection"
+      await page.context().route(searchRequest, route => route.fulfill({ status: 503, body: "fixture rejected" }))
       const search = page.getByRole("textbox", { name: "Filter by text" })
       await search.fill("older radiator inspection")
       const retry = page.getByRole("button", { name: "Retry board" })
       await expect(retry).toBeVisible()
       await expect(cards).toHaveCount(25)
-      await page.unroute(searchRequest)
+      await page.context().unroute(searchRequest)
       await retry.click()
       await expect(cards).toHaveCount(1)
       await expect(oldest).toBeVisible()
@@ -132,14 +176,14 @@ test.describe("Tasks view loading and Kanban pages", () => {
       await expect(cards.last()).toHaveAttribute("data-id", ids[1]!)
       await expect(lane.locator(".kanban-count")).toHaveText("28")
     } finally {
-      for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })
-      await request.delete(`/api/areas/${area}`, { headers })
+      for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
+      await request.delete(`/api/areas/${area}`, { headers, data: {} })
     }
   })
 
   test("reordering a card leaves overlapping lanes in another area ordered", async ({ page, request, baseURL }) => {
     test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
-    const headers = { origin: new URL(baseURL!).origin, "content-type": "application/json" }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin, "content-type": "application/json" })
     const suffix = randomUUID().slice(0, 8)
     const areas: string[] = []
     const lanes: string[] = []
@@ -217,9 +261,9 @@ test.describe("Tasks view loading and Kanban pages", () => {
       await expect(hiddenCards.nth(0)).toHaveAttribute("data-id", hiddenComplete)
       await expect(hiddenCards.nth(1)).toHaveAttribute("data-id", hiddenActive)
     } finally {
-      for (const id of tasks) await request.delete(`/api/tasks/${id}`, { headers })
-      for (const id of lanes) await request.delete(`/api/lanes/${id}`, { headers })
-      for (const id of areas) await request.delete(`/api/areas/${id}`, { headers })
+      for (const id of tasks) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
+      for (const id of lanes) await request.delete(`/api/lanes/${id}`, { headers, data: {} })
+      for (const id of areas) await request.delete(`/api/areas/${id}`, { headers, data: {} })
     }
   })
 })

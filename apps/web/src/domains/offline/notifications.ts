@@ -1,3 +1,4 @@
+import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
 /**
  * Notifications Service — Web Notifications API integration
  *
@@ -8,7 +9,7 @@
  */
 
 import { buildIngressPagePath } from "@lib/page-shell-links"
-import { buildTaskPath } from "@lib/task-detail-handoff"
+import { taskDetailPath } from "@lib/task-page-url"
 import { isPwaSupported } from "./sw-register"
 
 function getNotificationPermission(): NotificationPermission | "unsupported" {
@@ -27,12 +28,14 @@ interface TaskNotification {
   tag?: string
   url?: string
   requireInteraction?: boolean
+  taskId?: string
 }
 
 /** Submit a notification to this installation's active worker. */
 export async function showTaskNotification(notification: TaskNotification): Promise<boolean> {
   if (!isPwaSupported() || getNotificationPermission() !== "granted") return false
 
+  const context = currentTaskApiContext()
   try {
     const scope = new URL(buildIngressPagePath("/"), location.origin)
     const expectedScript = new URL("sw.js", scope).href
@@ -60,10 +63,23 @@ export async function showTaskNotification(notification: TaskNotification): Prom
 
     const url = new URL((notification.url ?? "").replace(/^\/+/, ""), scope)
     if (url.origin !== scope.origin || url.username || url.password || !url.pathname.startsWith(scope.pathname)) return false
+    let body = notification.body
+    if (notification.taskId) {
+      if (!context) return false
+      const response = await fetch(`/api/tasks/${encodeURIComponent(notification.taskId)}`, {
+        headers: taskApiHeaders(context), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(5_000),
+      })
+      if (!response.ok) return false
+      const task = await response.json()
+      const current = currentTaskApiContext()
+      if (typeof task?.title !== "string" || current?.boardId !== context.boardId || current.session !== context.session) return false
+      body = task.title
+      url.searchParams.set("board_id", context.boardId)
+    }
     const icon = new URL("icon-192.png", scope).href
     await registration.showNotification(notification.title, {
-      body: notification.body,
-      tag: notification.tag ?? "meitheal-general",
+      body,
+      tag: context?.actorKey ? `${context.actorKey}:${context.boardId}:${notification.tag ?? "meitheal-general"}` : notification.tag ?? "meitheal-general",
       icon,
       badge: icon,
       data: { url: url.href },
@@ -79,6 +95,7 @@ export async function showTaskNotification(notification: TaskNotification): Prom
 
 interface TaskForCheck {
   id: string
+  ticket_key?: string | null
   title: string
   dueDate: string
   status: string
@@ -92,7 +109,9 @@ export async function checkOverdueTasks(tasks: TaskForCheck[]): Promise<void> {
   if (getNotificationPermission() !== "granted") return
 
   const now = new Date()
-  const notifiedKey = "meitheal_notified_overdue"
+  const context = currentTaskApiContext()
+  if (!context?.actorKey) return
+  const notifiedKey = `meitheal_notified_overdue:${context.actorKey}:${context.boardId}`
   const notified = new Set(JSON.parse(sessionStorage.getItem(notifiedKey) ?? "[]"))
 
   for (const task of tasks) {
@@ -105,7 +124,8 @@ export async function checkOverdueTasks(tasks: TaskForCheck[]): Promise<void> {
         title: "⏰ Overdue Task",
         body: task.title,
         tag: `overdue-${task.id}`,
-        url: buildTaskPath(task.id),
+        url: taskDetailPath(task),
+        taskId: task.id,
       })
       if (delivered) notified.add(task.id)
     }
@@ -123,7 +143,9 @@ export async function checkUpcomingReminders(tasks: TaskForCheck[]): Promise<voi
 
   const now = new Date()
   const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000)
-  const notifiedKey = "meitheal_notified_upcoming"
+  const context = currentTaskApiContext()
+  if (!context?.actorKey) return
+  const notifiedKey = `meitheal_notified_upcoming:${context.actorKey}:${context.boardId}`
   const notified = new Set(JSON.parse(sessionStorage.getItem(notifiedKey) ?? "[]"))
 
   for (const task of tasks) {
@@ -137,7 +159,8 @@ export async function checkUpcomingReminders(tasks: TaskForCheck[]): Promise<voi
         title: "📋 Task Due Soon",
         body: `${task.title} — due in ${minutesUntilDue} minutes`,
         tag: `upcoming-${task.id}`,
-        url: buildTaskPath(task.id),
+        url: taskDetailPath(task),
+        taskId: task.id,
       })
       if (delivered) notified.add(task.id)
     }

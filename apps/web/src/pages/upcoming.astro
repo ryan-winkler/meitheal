@@ -1,14 +1,21 @@
 ---
+import { boardContextHref } from "@lib/board-workspace"
+import { readBoardPagePlacement } from "@lib/board-page-placement"
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+
 import Layout from "../layouts/Layout.astro";
 import UnifiedBar from "../components/layout/UnifiedBar.astro";
 import EmptyState from "../components/ui/EmptyState.astro";
+import Icon from "../components/ui/Icon.astro"
+import TaskTypeIcon from "../components/ui/TaskTypeIcon.astro";
 import LabelBadges from "../components/ui/LabelBadges.astro";
+import { effectiveTaskScheduledDate } from "@meitheal/domain-tasks";
 import {
   ensureSchema,
   getPersistenceClient,
 } from "@domains/tasks/persistence/store";
 import { TaskRepository } from "@domains/tasks/persistence/task-repository";
-import { calendarDayFromInput, calendarToday, shiftCalendarDay } from "../lib/date";
+import { calendarEventSpanDays, calendarToday, shiftCalendarDay } from "../lib/date";
 
 interface DayGroup {
   date: string;
@@ -18,23 +25,39 @@ interface DayGroup {
   tasks: Record<string, unknown>[];
 }
 
+const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
+if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
+const workScope = workScopeResult.scope
+const pagePlacement = await readBoardPagePlacement(workScope, Astro.url)
+if (!pagePlacement.ok) return boardScopeResponse(pagePlacement.errorCode)
+const placement = pagePlacement.placement
+const contextHref = (path: string) => boardContextHref({ boardId: workScope.boardId, area: pagePlacement.area?.id, project: pagePlacement.project?.id }, path)
+
 const days: DayGroup[] = [];
 const upcomingTimeZone = Astro.locals.timezone || "Europe/Dublin";
 
 try {
   await ensureSchema();
-  const repo = new TaskRepository(getPersistenceClient());
+  const repo = new TaskRepository(getPersistenceClient(), workScope);
   const todayStr = calendarToday(upcomingTimeZone);
 
   // Persona 9: Single query for all 7 days instead of 7 sequential queries
   const endStr = shiftCalendarDay(todayStr, 6);
 
-  const allTasks = await repo.getTasksInRange(todayStr, endStr, upcomingTimeZone);
+  const allTasks = await repo.getTasksInRange(todayStr, endStr, upcomingTimeZone, placement);
 
   const tasksByDate = new Map<string, Record<string, unknown>[]>();
   for (const row of allTasks) {
-    const d = calendarDayFromInput(row.due_date == null ? null : String(row.due_date), upcomingTimeZone);
-    if (!d) continue;
+    const span = calendarEventSpanDays({
+      task_kind: typeof row.task_kind === "string" ? row.task_kind : null,
+      due_date: row.due_date == null ? null : String(row.due_date),
+      start_date: row.start_date == null ? null : String(row.start_date),
+      end_date: row.end_date == null ? null : String(row.end_date),
+      calendar_sync_state: row.calendar_sync_state == null ? null : String(row.calendar_sync_state),
+    }, upcomingTimeZone);
+    if (!span) continue;
+    const { startDay, endDay } = span;
+    const d = row.task_kind === "calendar_event" && startDay < todayStr && endDay >= todayStr ? todayStr : startDay;
     if (!tasksByDate.has(d)) tasksByDate.set(d, []);
     tasksByDate.get(d)!.push(row);
   }
@@ -73,40 +96,27 @@ import {
 import StatusBadge from "../components/ui/StatusBadge.astro";
 import { STATUS_LABELS, normalizeStatus } from "../lib/status-config";
 import { UPCOMING_SECTIONS } from "../lib/upcoming-registry";
-import { buildTaskPath } from "../lib/task-detail-handoff"
+import { taskDetailPath } from "../lib/task-page-url"
 
-const typeIcons: Record<string, string> = {
-  epic: "🎯",
-  story: "📖",
-  task: "📌",
-};
-
+const daysLoaded = days.length === 7
+const unavailableMessage = "Upcoming tasks couldn’t load. Refresh the page to try again."
 const totalTasks = days.reduce((sum, d) => sum + d.tasks.length, 0);
 const nextDays = days.slice(0, 2)
 const weekDays = days.slice(2)
 const daySections = [
   {
     id: "upcoming-next",
-    eyebrow: "Next 48h",
-    title: "Prioritize the immediate commitment window",
-    description: "Today and tomorrow stay grouped here for fast completion and fast task-detail handoff.",
+    title: "Today and tomorrow",
     days: nextDays,
   },
   {
     id: "upcoming-week",
-    eyebrow: "Week Ahead",
-    title: "Keep the rest of the week visible but lightweight",
-    description: "The remaining grouped days stay collapsible so future work feels scannable, not overwhelming.",
+    title: "Following five days",
     days: weekDays,
   },
 ]
 const nextWindowCount = nextDays.reduce((sum, day) => sum + day.tasks.length, 0)
 const weekAheadCount = weekDays.reduce((sum, day) => sum + day.tasks.length, 0)
-const upcomingSignal =
-  totalTasks === 0
-    ? "No tasks scheduled in the next 7 days"
-    : `${nextWindowCount} tasks due in the next 48 hours`
-
 function renderDayClass(day: DayGroup): string {
   const classes = ["card"]
   if (day.tasks.length === 0) classes.push("day-empty")
@@ -126,7 +136,7 @@ function dayLabelClass(day: DayGroup): string {
 <Layout title="Meitheal — Upcoming">
   <UnifiedBar
     title="Upcoming"
-    titleIcon="📅"
+    titleIcon="calendar"
     tabs={UPCOMING_SECTIONS.map((section) => ({
       id: section.id,
       label: section.label,
@@ -144,59 +154,29 @@ function dayLabelClass(day: DayGroup): string {
       class="page-shell__section page-shell__section--overview"
       data-upcoming-section
     >
-      <div class="page-hero">
-        <div class="page-hero__eyebrow">Home Assistant Native Planning Horizon</div>
-        <div class="page-hero__title-row">
-          <div class="page-hero__copy">
-            <h1 class="page-hero__title">See the next week without losing today</h1>
-            <p class="page-hero__description">
-              Upcoming keeps the next 48 hours separate from the rest of the week so
-              you can scan, complete, and hand work back to Today or Calendar without
-              rebuilding context.
-            </p>
-          </div>
-
-          <div class="page-hero__chips" aria-label="Upcoming quick jumps">
-            <a href="#upcoming-next" class="page-hero__chip" data-upcoming-section-link>
-              Next 48h
-            </a>
-            <a href="#upcoming-week" class="page-hero__chip" data-upcoming-section-link>
-              Week Ahead
-            </a>
-            <a href="#upcoming-flow" class="page-hero__chip" data-upcoming-section-link>
-              Flow
-            </a>
-          </div>
-        </div>
-
-        <div class="page-hero__status">
-          <span class="page-hero__status-label">Current signal</span>
-          <strong id="upcoming-signal-summary">{upcomingSignal}</strong>
-        </div>
-      </div>
-
-      <div class="page-summary-grid">
+      <h1 class="m-0 text-2xl font-semibold tracking-tight">Upcoming</h1>
+      {daysLoaded ? <div class="page-summary-grid">
         <div class="stat-card">
           <span class="stat-value">{totalTasks}</span>
           <span class="stat-label">Next 7 Days</span>
         </div>
         <div class="stat-card">
           <span class="stat-value">{nextWindowCount}</span>
-          <span class="stat-label">Next 48h</span>
+          <span class="stat-label">Today and tomorrow</span>
         </div>
         <div class="stat-card">
           <span class="stat-value">{weekAheadCount}</span>
-          <span class="stat-label">Week Ahead</span>
+          <span class="stat-label">Following five days</span>
         </div>
-      </div>
+      </div> : <p role="status" class="m-0 text-text-secondary">{unavailableMessage}</p>}
 
       {
-        totalTasks === 0 && (
+        daysLoaded && totalTasks === 0 && (
           <EmptyState
             title="No upcoming tasks"
             description="Your schedule is clear for the next 7 days."
             actionText="Plan something"
-            actionHref="/table"
+            actionHref={contextHref("/tasks?view=table#table")}
           />
         )
       }
@@ -204,15 +184,9 @@ function dayLabelClass(day: DayGroup): string {
 
     {daySections.map((section) => (
       <section id={section.id} class="page-shell__section" data-upcoming-section>
-        <div class="page-shell__intro">
-          <div>
-            <div class="page-shell__eyebrow">{section.eyebrow}</div>
-            <h2 class="page-shell__title">{section.title}</h2>
-            <p class="page-shell__description">{section.description}</p>
-          </div>
-        </div>
+        <h2 class="m-0 text-lg font-semibold">{section.title}</h2>
 
-        <div class="upcoming-grid">
+        {daysLoaded ? <div class="upcoming-grid">
           {
             section.days.map((day) => (
               <div class={renderDayClass(day)}>
@@ -223,7 +197,7 @@ function dayLabelClass(day: DayGroup): string {
                   aria-expanded="true"
                 >
                   <div class="day-header__left">
-                    <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                    <Icon name="chevron-down" size={16} class="chevron-icon" sprite />
                     <span class={dayLabelClass(day)}>
                       {day.label}
                     </span>
@@ -262,13 +236,15 @@ function dayLabelClass(day: DayGroup): string {
                             <div class="task-title">
                               <a
                                 class="task-detail-link"
-                                href={buildTaskPath(id)}
+                                href={taskDetailPath({ ...task, id })}
                                 data-task-detail-link={id}
                                 aria-describedby={descriptionId}
                               >
-                                <span class="task-type-icon" aria-hidden="true">
-                                  {typeIcons[tt] ?? ""}
-                                </span>
+                                <TaskTypeIcon
+                                  type={tt}
+                                  kind={typeof task.task_kind === "string" ? task.task_kind : null}
+                                  size={14}
+                                />
                                 {title}
                               </a>
                               <span class="sr-only" id={descriptionId}>
@@ -287,7 +263,7 @@ function dayLabelClass(day: DayGroup): string {
                             />
                           )}
                           {task.recurrence_rule && (
-                            <span class="task-meta-icon" title="Recurring">🔁</span>
+                            <span class="task-meta-icon" title="Recurring"><Icon name="repeat" size={14} sprite /></span>
                           )}
                           {(() => {
                             try {
@@ -299,7 +275,7 @@ function dayLabelClass(day: DayGroup): string {
                                     class={`task-checklist-count ${done === cl.length ? "task-checklist-count--complete" : ""}`}
                                     title={`Checklist: ${done}/${cl.length}`}
                                   >
-                                    ✓ {done}/{cl.length}
+                                    <Icon name="check" size={12} sprite /> {done}/{cl.length}
                                   </span>
                                 );
                               }
@@ -327,29 +303,18 @@ function dayLabelClass(day: DayGroup): string {
               </div>
             ))
           }
-        </div>
+        </div> : <p role="status" class="m-0 text-text-secondary">{unavailableMessage}</p>}
       </section>
     ))}
 
     <section id="upcoming-flow" class="page-shell__section" data-upcoming-section>
-      <div class="page-shell__intro">
-        <div>
-          <div class="page-shell__eyebrow">Flow</div>
-          <h2 class="page-shell__title">Move back to execution or into planning without reorienting</h2>
-          <p class="page-shell__description">
-            Upcoming is the bridge between the daily cockpit and the calendar horizon.
-          </p>
-        </div>
-      </div>
-
+      <h2 class="m-0 text-lg font-semibold">Related views</h2>
       <div class="page-flow-grid">
-        <a class="card page-flow-card" href="/today">
-          <strong>☀️ Back to Today</strong>
-          <p>Return to the focused execution surface when a scheduled task becomes immediate.</p>
+        <a class="card page-flow-card" href={contextHref("/today")}>
+          <strong class="inline-flex items-center gap-2"><Icon name="sun" size={16} sprite /> Today</strong>
         </a>
-        <a class="card page-flow-card" href="/calendar">
-          <strong>🗓️ Open Calendar</strong>
-          <p>Move into month planning and connected event context when the week needs reshaping.</p>
+        <a class="card page-flow-card" href={contextHref("/tasks?view=calendar#calendar")}>
+          <strong class="inline-flex items-center gap-2"><Icon name="calendar" size={16} sprite /> Calendar</strong>
         </a>
       </div>
     </section>
@@ -360,6 +325,10 @@ function dayLabelClass(day: DayGroup): string {
   #upcoming-shell,
   [data-upcoming-section] {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  #upcoming-shell {
+    padding: 24px clamp(16px, 2vw, 24px) 52px;
   }
 
   /* ── Day card ── */
@@ -567,7 +536,6 @@ function dayLabelClass(day: DayGroup): string {
     .chevron-icon { transition: none; }
   }
 
-  /* Responsive overrides for shell/hero classes are in _page-shell.css */
 </style>
 
 <script>

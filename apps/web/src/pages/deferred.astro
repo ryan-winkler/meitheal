@@ -1,18 +1,37 @@
 ---
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+import { boardWorkspaceHref } from "@lib/board-workspace"
+
 import Layout from "../layouts/Layout.astro"
+import Icon from "../components/ui/Icon.astro"
+import TaskLifecycleNav from "../components/tasks/TaskLifecycleNav.astro"
+import { AreaRepository, type AreaRow } from "@domains/tasks/persistence/area-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { formatTicketKey } from "@lib/ticket-key"
 import { getStatusDef } from "@lib/status-config"
 import { t } from "../i18n/translations"
+import "../styles/work-queue.css"
+const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
+if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
+const workScope = workScopeResult.scope
+
 
 Astro.response.headers.set("cache-control", "no-store")
 const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
 const rawPage = Astro.url.searchParams.get("page") ?? ""
+const area = (Astro.url.searchParams.get("area") ?? "").slice(0, 128)
+let areas: AreaRow[] = []
 let queue: Awaited<ReturnType<TaskRepository["findDeferredPage"]>> | undefined
 try {
   await ensureSchema()
-  queue = await new TaskRepository(getPersistenceClient()).findDeferredPage(/^[1-9]\d*$/.test(rawPage) ? Number(rawPage) : 1)
+  const client = getPersistenceClient()
+  const [result, availableAreas] = await Promise.all([
+    new TaskRepository(client, workScope).findDeferredPage(/^[1-9]\d*$/.test(rawPage) ? Number(rawPage) : 1, area),
+    new AreaRepository(client, workScope).findAll(),
+  ])
+  queue = result
+  areas = availableAreas
 } catch {
   // Keep the retry affordance available if the database is temporarily offline.
 }
@@ -21,6 +40,10 @@ const tasks = queue?.tasks ?? []
 const first = (page - 1) * 25 + 1
 const last = first + tasks.length - 1
 const total = queue?.total ?? 0
+const namedBoardId = workScope.boardId !== "household" ? workScope.boardId : undefined
+const boardHref = namedBoardId
+  ? boardWorkspaceHref(namedBoardId, { area }, "kanban")
+  : `/tasks?${new URLSearchParams({ area })}#kanban`
 const dateOptions = { dateStyle: "medium", timeStyle: "short" } as const
 let dateFormat: Intl.DateTimeFormat
 try {
@@ -31,6 +54,8 @@ try {
 
 function pageHref(target: number, open?: string) {
   const params = new URLSearchParams()
+  if (namedBoardId) params.set("board_id", namedBoardId)
+  if (area) params.set("area", area)
   if (target > 1) params.set("page", String(target))
   if (open) params.set("open", open)
   return params.size ? `/deferred?${params}` : "/deferred"
@@ -38,52 +63,91 @@ function pageHref(target: number, open?: string) {
 ---
 
 <Layout title={t("deferral.title", locale)} suppressTaskUrlOpen>
-  <section class="deferred" data-deferred-root aria-labelledby="deferred-heading">
-    <header>
-      <a href="/tasks" data-astro-prefetch="false">{t("deferral.back", locale)}</a>
-      <h1 id="deferred-heading" tabindex="-1">{t("deferral.title", locale)}</h1>
+  <section class="work-queue" data-deferred-root aria-labelledby="deferred-heading">
+    <TaskLifecycleNav active="deferred" {boardHref} boardId={workScope.boardId} {area} {locale} deferredCount={total} />
+    <header class="work-queue-header">
+      <h1 id="deferred-heading" tabindex="-1"><Icon name="clock" size={24} />{t("deferral.title", locale)}</h1>
       <p>{t("deferral.description", locale)}</p>
     </header>
-    <p role="status" aria-atomic="true" data-deferred-status>{t("deferral.loading", locale)}</p>
-    <a href={pageHref(page)} class="btn btn-outline" data-deferred-reload data-astro-prefetch="false" hidden>
-      {t("deferral.reload", locale)}
-    </a>
-    <a class="btn btn-outline" data-deferred-permalink data-astro-prefetch="false" hidden>{t("deferral.open_task", locale)}</a>
+    <div class="work-queue-controls">
+      <p role="status" aria-atomic="true" data-deferred-status>{t("deferral.loading", locale)}</p>
+      <a href={pageHref(page)} class="btn btn-outline" data-deferred-reload data-astro-prefetch="false" hidden>
+        <Icon name="refresh" size={18} /> {t("deferral.reload", locale)}
+      </a>
+      <a class="btn btn-outline" data-deferred-permalink data-astro-prefetch="false" hidden>{t("deferral.open_task", locale)}</a>
+    </div>
     <div data-deferred-content></div>
     <template data-deferred-fragment data-page={page} data-available={queue ? "true" : "false"}>
       {queue && (
         <>
-          <p class="deferred-meta" data-deferred-count>{t("deferral.total", locale, { count: String(total) })}</p>
+          <div class="work-queue-panel work-queue-scope">
+            <form method="get" action="/deferred" class="work-queue-controls">
+              {namedBoardId && <input type="hidden" name="board_id" value={namedBoardId} />}
+              <label>
+                <span class="form-label">{t("inactivity.area", locale)}</span>
+                <select class="form-select" name="area">
+                  <option value="" selected={!area}>{t("deferral.all_areas", locale)}</option>
+                  {areas.map(({id, name}) => <option value={id} selected={area === id}>{name}</option>)}
+                  {area && !areas.some(item => item.id === area) && (
+                    <option value={area} selected>{t("deferral.area_unavailable", locale)}</option>
+                  )}
+                </select>
+              </label>
+              <button type="submit" class="btn btn-outline"><Icon name="adjustments-horizontal" size={18} />{t("deferral.apply_area", locale)}</button>
+            </form>
+            <p class="work-queue-subtle" data-deferred-count>{t("deferral.total", locale, { count: String(total) })}</p>
+          </div>
           {tasks.length ? (
-            <ul class="deferred-list">
+            <ul class="work-queue-list">
               {tasks.map(task => {
                 const timestamp = new Date(task.deferred_at ?? 0)
                 const definition = getStatusDef(task.status)
                 return (
-                  <li class="deferred-card" data-deferred-card={task.id} data-version={task.updated_at}
+                  <li class="work-queue-row" data-deferred-card={task.id} data-version={task.updated_at}
                     data-revision={task.deferral_revision ?? ""} data-project={task.project_id ?? ""}>
                     <div>
-                      <p class="deferred-meta">{formatTicketKey(task.ticket_number)}</p>
+                      <p class="work-queue-subtle">{formatTicketKey(task.ticket_number)}</p>
                       <h2>{task.title}</h2>
-                      <p class="deferred-meta">
+                      <p class="work-queue-subtle">
                         {definition ? t(definition.i18nKey, locale) : task.status}
                         {" · "}<time datetime={timestamp.toISOString()}>{dateFormat.format(timestamp)}</time>
                         {task.automatic && <>{" · "}{t("inactivity.moved", locale)}</>}
                       </p>
                     </div>
-                    <div class="deferred-actions">
-                      <a href={pageHref(page, task.id)} class="btn btn-outline" data-deferred-details data-astro-prefetch="false">
+                    <div class="work-queue-controls">
+                      <a href={pageHref(page, task.id)} class="btn btn-outline btn-sm" data-deferred-details data-astro-prefetch="false">
+                        <Icon name="file-text" size={16} sprite />
                         {t("triage.details", locale)}
                       </a>
-                      <button type="button" class="btn btn-primary" data-deferred-resume>{t("deferral.resume", locale)}</button>
+                      <button type="button" class="btn btn-secondary btn-sm" data-deferred-backlog>
+                        <Icon name="inbox" size={16} sprite /> Move to Backlog
+                      </button>
+                      <button type="button" class="btn btn-primary btn-sm" data-deferred-resume>
+                        <Icon name="refresh" size={16} sprite /> {t("deferral.resume", locale)}
+                      </button>
                     </div>
                   </li>
                 )
               })}
             </ul>
-          ) : <p>{t("deferral.empty", locale)}</p>}
+          ) : (
+            <div class="work-queue-empty">
+              <div class="work-queue-empty__inner">
+                <Icon name="clock" size={28} sprite />
+                <p>{t(area ? "deferral.area_empty" : "deferral.empty", locale)}</p>
+                <div class="work-queue-controls">
+                  <a href={boardHref} class="btn btn-primary btn-sm" data-astro-prefetch="false">
+                    <Icon name="layout-kanban" size={16} sprite /> {t("deferral.back", locale)}
+                  </a>
+                  <a href={`/inactivity${namedBoardId || area ? `?${new URLSearchParams({ ...(namedBoardId ? { board_id: namedBoardId } : {}), ...(area ? { area } : {}) })}` : ""}`} class="btn btn-outline btn-sm" data-astro-prefetch="false">
+                    <Icon name="alert-triangle" size={16} sprite /> {t("inactivity.title", locale)}
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
           {total > 25 && (
-            <nav class="deferred-actions" aria-label={t("deferral.pagination", locale)}>
+            <nav class="work-queue-controls" aria-label={t("deferral.pagination", locale)}>
               <span>{t("triage.range", locale, { first: String(first), last: String(last), total: String(total) })}</span>
               {page > 1 && <a href={pageHref(page - 1)} class="btn btn-outline" data-astro-prefetch="false">{t("triage.previous", locale)}</a>}
               {last < total && <a href={pageHref(page + 1)} class="btn btn-outline" data-astro-prefetch="false">{t("triage.next", locale)}</a>}
@@ -98,38 +162,3 @@ function pageHref(target: number, open?: string) {
 <script>
   import "@lib/deferred-controller"
 </script>
-
-<style>
-  .deferred {
-    max-width: 66rem;
-    margin-inline: auto;
-    padding: clamp(1rem, 3vw, 2.5rem);
-  }
-  header { margin-bottom: 1.5rem; }
-  header h1 { margin-block: .5rem; }
-  .deferred-meta { color: var(--text-secondary); }
-  .deferred-list {
-    display: grid;
-    gap: .75rem;
-    list-style: none;
-    padding: 0;
-  }
-  .deferred-card {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 1rem;
-    padding: 1rem;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: .75rem;
-    overflow-wrap: anywhere;
-  }
-  .deferred-card h2 { margin: .25rem 0; font-size: 1rem; }
-  .deferred-card p { margin: .25rem 0; }
-  .deferred-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
-  .deferred-actions > :is(a, button) { min-height: 2.75rem; }
-  @media (max-width: 680px) {
-    .deferred-card { grid-template-columns: minmax(0, 1fr); }
-  }
-</style>

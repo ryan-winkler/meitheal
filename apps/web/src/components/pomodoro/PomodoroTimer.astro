@@ -11,30 +11,25 @@
  * 3. Session counter (focus sessions completed)
  * 4. Collapsible to a minimal floating pill
  *
- * @kcs This component is rendered in Layout.astro so it's always available.
+ * @kcs Rendered conditionally in Layout.astro when the `pomodoro` feature flag is enabled.
  * All interactions are client-side via fetch to /api/pomodoro.
  * Timer display updates every second via setInterval polling of local countdown.
  */
 
 import Icon from "../ui/Icon.astro"
-
-interface Props {
-  /** When false, renders nothing (feature flag off) */
-  enabled?: boolean
-}
-
-const { enabled = true } = Astro.props
 ---
 
-<div id="pomodoro-wrapper" style="display: contents" {...(!enabled ? { hidden: true } : {})}>
+<div id="pomodoro-root" style="display: contents" transition:persist="pomodoro-timer">
 <button
   type="button"
   id="pomodoro-pill"
   class="pomodoro-pill pomodoro-hidden"
-  aria-label="Expand Pomodoro timer"
+  aria-expanded="false"
+  aria-controls="pomodoro-panel"
   title="Pomodoro Timer"
 >
-  <span id="pomodoro-pill-icon" class="inline-flex items-center"><Icon name="today" size={16} sprite={true} /></span>
+  <span class="sr-only">Pomodoro timer </span>
+  <span id="pomodoro-pill-icon" class="inline-flex items-center" aria-hidden="true"><Icon name="today" size={16} sprite={true} /></span>
   <span id="pomodoro-pill-time" class="pomodoro-pill__time">25:00</span>
 </button>
 
@@ -59,8 +54,8 @@ const { enabled = true } = Astro.props
 
   <!-- Controls -->
   <div class="pomodoro-controls">
-    <button type="button" id="pomodoro-start" class="pomodoro-btn pomodoro-btn--primary">▶ Start Focus</button>
-    <button type="button" id="pomodoro-skip" class="pomodoro-btn pomodoro-btn--secondary pomodoro-hidden">⏭ Skip</button>
+    <button type="button" id="pomodoro-start" class="pomodoro-btn pomodoro-btn--primary"><span aria-hidden="true">▶</span> <span>Start Focus</span></button>
+    <button type="button" id="pomodoro-skip" class="pomodoro-btn pomodoro-btn--secondary pomodoro-hidden"><span aria-hidden="true">⏭</span> <span>Skip</span></button>
     <button type="button" id="pomodoro-cancel" class="pomodoro-btn pomodoro-btn--danger pomodoro-hidden"><Icon name="x" size={14} sprite={true} /> Cancel</button>
   </div>
 
@@ -83,15 +78,15 @@ const { enabled = true } = Astro.props
     position: fixed;
     bottom: 24px;
     right: 24px;
-    z-index: 1000;
+    z-index: 45;
     display: flex;
     align-items: center;
     gap: 6px;
     padding: 8px 14px;
-    background: var(--bg-card, #1a1a2e);
-    border: 1px solid var(--border, #334155);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
     border-radius: 24px;
-    color: var(--text-primary, #e0e0e0);
+    color: var(--text-primary);
     font-size: 0.8125rem;
     font-weight: 600;
     cursor: pointer;
@@ -124,10 +119,10 @@ const { enabled = true } = Astro.props
     position: fixed;
     bottom: 24px;
     right: 24px;
-    z-index: 1001;
+    z-index: 46;
     width: 240px;
-    background: var(--bg-card, #1a1a2e);
-    border: 1px solid var(--border, #334155);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
     border-radius: 16px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
     padding: 16px;
@@ -147,13 +142,13 @@ const { enabled = true } = Astro.props
   .pomodoro-panel__title {
     font-size: 0.875rem;
     font-weight: 600;
-    color: var(--text-primary, #e0e0e0);
+    color: var(--text-primary);
   }
 
   .pomodoro-panel__close {
     background: none;
     border: none;
-    color: var(--text-muted, #888);
+    color: var(--text-muted);
     cursor: pointer;
     font-size: 1rem;
     padding: 2px 6px;
@@ -162,7 +157,7 @@ const { enabled = true } = Astro.props
   }
 
   .pomodoro-panel__close:hover {
-    background: var(--bg-hover, #1e293b);
+    background: var(--bg-hover);
   }
 
   /* Timer ring */
@@ -180,7 +175,7 @@ const { enabled = true } = Astro.props
 
   .pomodoro-ring__bg {
     fill: none;
-    stroke: var(--border, #334155);
+    stroke: var(--border);
     stroke-width: 5;
   }
 
@@ -204,14 +199,14 @@ const { enabled = true } = Astro.props
   .pomodoro-time {
     font-size: 2rem;
     font-weight: 700;
-    color: var(--text-primary, #e0e0e0);
+    color: var(--text-primary);
     font-variant-numeric: tabular-nums;
     display: block;
   }
 
   .pomodoro-phase {
     font-size: 0.6875rem;
-    color: var(--text-muted, #888);
+    color: var(--text-muted);
     text-transform: uppercase;
     letter-spacing: 0.08em;
     margin-top: 4px;
@@ -231,7 +226,7 @@ const { enabled = true } = Astro.props
     justify-content: center;
     gap: 4px;
     padding: 6px 10px;
-    border: 1px solid var(--border, #334155);
+    border: 1px solid var(--border);
     border-radius: 8px;
     font-size: 0.75rem;
     font-weight: 600;
@@ -251,29 +246,29 @@ const { enabled = true } = Astro.props
   }
 
   .pomodoro-btn--secondary {
-    background: var(--bg-hover, #1e293b);
-    color: var(--text-primary, #e0e0e0);
+    background: var(--bg-hover);
+    color: var(--text-primary);
   }
 
   .pomodoro-btn--secondary:hover {
-    background: var(--bg-input, #2a2a4a);
+    background: var(--bg-input);
   }
 
   .pomodoro-btn--danger {
     background: transparent;
-    color: var(--text-muted, #888);
+    color: var(--text-muted);
     border-color: transparent;
   }
 
   .pomodoro-btn--danger:hover {
-    color: #ef4444;
-    border-color: #ef4444;
+    color: var(--danger-text);
+    border-color: var(--danger);
   }
 
   /* Sessions */
   .pomodoro-sessions {
     font-size: 0.6875rem;
-    color: var(--text-muted, #888);
+    color: var(--text-muted);
     text-align: center;
   }
 
@@ -289,219 +284,348 @@ const { enabled = true } = Astro.props
     right: 16px;
   }
 
+  @media (max-width: 768px) {
+    .pomodoro-pill,
+    .pomodoro-panel,
+    :global(body.ha-ingress) .pomodoro-pill,
+    :global(body.ha-ingress) .pomodoro-panel {
+      bottom: var(--floating-action-bottom);
+      right: calc(12px + env(safe-area-inset-right, 0px));
+    }
+  }
+
   /* Reduced motion */
   @media (prefers-reduced-motion: reduce) {
     .pomodoro-pill--active {
       animation: none;
     }
   }
+
+  @media (max-width: 768px), (pointer: coarse) {
+    .pomodoro-panel__close {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 44px;
+      min-height: 44px;
+    }
+  }
 </style>
 
 <script>
-  import { renderSpriteIconSvg } from "../../generated/icon-registry"
+  import { canRestoreFocusTarget } from "@lib/dialog-overlay"
+  import { createSpriteIconElement } from "../../generated/icon-registry"
 
-  // Pomodoro Timer Client Controller
   const CIRCUMFERENCE = 2 * Math.PI * 52
 
-  // Elements
-  const pill = document.getElementById("pomodoro-pill") as HTMLButtonElement | null
-  const pillTime = document.getElementById("pomodoro-pill-time")
-  const pillIcon = document.getElementById("pomodoro-pill-icon")
-  const panel = document.getElementById("pomodoro-panel")
-  const collapseBtn = document.getElementById("pomodoro-collapse")
-  const timeDisplay = document.getElementById("pomodoro-time")
-  const phaseDisplay = document.getElementById("pomodoro-phase")
-  const ringFill = document.getElementById("pomodoro-ring-fill")
-  const startBtn = document.getElementById("pomodoro-start") as HTMLButtonElement | null
-  const skipBtn = document.getElementById("pomodoro-skip") as HTMLButtonElement | null
-  const cancelBtn = document.getElementById("pomodoro-cancel") as HTMLButtonElement | null
-  const focusCountEl = document.getElementById("pomodoro-focus-count")
-  const todayMinutesEl = document.getElementById("pomodoro-today-minutes")
+  interface PomodoroEls {
+    pill: HTMLButtonElement | null
+    pillTime: HTMLElement | null
+    pillIcon: HTMLElement | null
+    panel: HTMLElement | null
+    collapseBtn: HTMLButtonElement | null
+    timeDisplay: HTMLElement | null
+    phaseDisplay: HTMLElement | null
+    ringFill: HTMLElement | null
+    startBtn: HTMLButtonElement | null
+    skipBtn: HTMLButtonElement | null
+    cancelBtn: HTMLButtonElement | null
+    focusCountEl: HTMLElement | null
+    todayMinutesEl: HTMLElement | null
+  }
 
+  let boundRoot: HTMLElement | null = null
+  let rootAc: AbortController | null = null
+  let els: PomodoroEls | null = null
   let expanded = false
   let localRemaining = 0
   let localTotal = 0
   let localPhase = "idle"
+  let lastPillIcon = ""
+  let openerFocus: HTMLElement | null = null
   let tickInterval: ReturnType<typeof setInterval> | null = null
+  let retryTimer: ReturnType<typeof setTimeout> | null = null
+  let mountGen = 0
+  let requestSeq = 0
+  let activeActions = 0
+  let lastBoardKey = ""
 
   function formatTime(seconds: number): string {
-    const m = Math.floor(seconds / 60)
-    const s = seconds % 60
-    return `${m}:${s.toString().padStart(2, "0")}`
+    return `${Math.floor(seconds / 60)}:${(seconds % 60).toString().padStart(2, "0")}`
+  }
+
+  function notifyLayoutChanged(): void {
+    document.dispatchEvent(new Event("meitheal:layout-changed"))
   }
 
   function updateDisplay() {
+    if (!els) return
     const timeStr = formatTime(localRemaining)
-    if (timeDisplay) timeDisplay.textContent = timeStr
-    if (pillTime) pillTime.textContent = timeStr
-
+    if (els.timeDisplay) els.timeDisplay.textContent = timeStr
+    if (els.pillTime) els.pillTime.textContent = timeStr
     const phaseLabels: Record<string, string> = {
       focus: "Focus",
       short_break: "Short Break",
       long_break: "Long Break",
       idle: "Ready",
     }
-    if (phaseDisplay) phaseDisplay.textContent = phaseLabels[localPhase] || "Ready"
-
-    // Ring progress
-    if (ringFill && localTotal > 0) {
-      const progress = 1 - localRemaining / localTotal
-      const offset = CIRCUMFERENCE * (1 - progress)
-      ringFill.style.strokeDasharray = String(CIRCUMFERENCE)
-      ringFill.style.strokeDashoffset = String(offset)
-
-      // Change color for breaks
-      if (localPhase === "short_break" || localPhase === "long_break") {
-        ringFill.style.stroke = "#10b981"
-      } else {
-        ringFill.style.stroke = ""
+    if (els.phaseDisplay) els.phaseDisplay.textContent = phaseLabels[localPhase] || "Ready"
+    if (els.ringFill && localTotal > 0) {
+      els.ringFill.style.strokeDasharray = String(CIRCUMFERENCE)
+      els.ringFill.style.strokeDashoffset = String(CIRCUMFERENCE * (localRemaining / localTotal))
+      els.ringFill.style.stroke =
+        localPhase === "short_break" || localPhase === "long_break" ? "#10b981" : ""
+    }
+    if (els.pill) {
+      els.pill.classList.toggle("pomodoro-pill--active", localPhase === "focus")
+      els.pill.classList.toggle("pomodoro-pill--break", localPhase.includes("break"))
+      if (els.pillIcon) {
+        const iconName = localPhase.includes("break") ? "mug" : "today"
+        if (iconName !== lastPillIcon) {
+          lastPillIcon = iconName
+          els.pillIcon.replaceChildren(createSpriteIconElement(iconName, { size: 16 }))
+        }
       }
     }
-
-    // Pill state
-    if (pill) {
-      pill.classList.toggle("pomodoro-pill--active", localPhase === "focus")
-      pill.classList.toggle("pomodoro-pill--break", localPhase.includes("break"))
-      if (pillIcon) {
-        pillIcon.innerHTML = renderSpriteIconSvg(localPhase.includes("break") ? "mug" : "today", { size: 16 })
+    if (els.startBtn && els.skipBtn && els.cancelBtn) {
+      const idle = localPhase === "idle"
+      const active = document.activeElement
+      const nextFocus = !idle && active === els.startBtn
+        ? els.skipBtn
+        : idle && (active === els.skipBtn || active === els.cancelBtn)
+          ? els.startBtn
+          : null
+      const setLabel = (btn: HTMLElement, text: string) => {
+        if (btn.lastElementChild) btn.lastElementChild.textContent = text
       }
-    }
-
-    // Button visibility
-    if (startBtn && skipBtn && cancelBtn) {
-      if (localPhase === "idle") {
-        startBtn.classList.remove("pomodoro-hidden")
-        startBtn.textContent = "▶ Start Focus"
-        skipBtn.classList.add("pomodoro-hidden")
-        cancelBtn.classList.add("pomodoro-hidden")
-      } else if (localPhase === "focus") {
-        startBtn.classList.add("pomodoro-hidden")
-        skipBtn.classList.remove("pomodoro-hidden")
-        skipBtn.textContent = "⏭ Break"
-        cancelBtn.classList.remove("pomodoro-hidden")
-      } else {
-        startBtn.classList.add("pomodoro-hidden")
-        skipBtn.classList.remove("pomodoro-hidden")
-        skipBtn.textContent = "⏭ Focus"
-        cancelBtn.classList.remove("pomodoro-hidden")
+      els.startBtn.classList.toggle("pomodoro-hidden", !idle)
+      setLabel(els.startBtn, "Start Focus")
+      els.skipBtn.classList.toggle("pomodoro-hidden", idle)
+      setLabel(els.skipBtn, localPhase === "focus" ? "Skip to break" : "Skip break")
+      els.cancelBtn.classList.toggle("pomodoro-hidden", idle)
+      if (nextFocus) {
+        (nextFocus.classList.contains("pomodoro-hidden") ? els.collapseBtn : nextFocus)?.focus({ preventScroll: true })
       }
     }
   }
 
-  function startLocalTick() {
-    stopLocalTick()
-    tickInterval = setInterval(() => {
-      if (localRemaining > 0) {
-        localRemaining--
-        updateDisplay()
-      } else {
-        // Phase ended — fetch fresh state from server
-        stopLocalTick()
-        fetchState()
-      }
-    }, 1000)
+  function clearExpiryRetry() {
+    if (retryTimer) {
+      clearTimeout(retryTimer)
+      retryTimer = null
+    }
   }
 
   function stopLocalTick() {
+    clearExpiryRetry()
     if (tickInterval) {
       clearInterval(tickInterval)
       tickInterval = null
     }
   }
 
-  async function fetchState() {
-    try {
-      const res = await fetch("/api/pomodoro")
-      if (!res.ok) return
-      const data = await res.json()
-      const state = data.state
+  function currentBoardKey(): string {
+    return (
+      document.querySelector<HTMLElement>("#main-content [data-board-id], [data-task-workspace][data-board-id]")?.dataset.boardId ??
+      new URLSearchParams(location.search).get("board_id") ??
+      location.pathname.match(/^\/boards\/([^/]+)/)?.[1] ??
+      ""
+    )
+  }
 
+  function startLocalTick() {
+    stopLocalTick()
+    tickInterval = setInterval(() => {
+      if (!boundRoot?.isConnected) {
+        stopLocalTick()
+        return
+      }
+      if (localRemaining > 0) {
+        localRemaining--
+        updateDisplay()
+      } else {
+        stopLocalTick()
+        void runRequest("/api/pomodoro", undefined, true, true)
+      }
+    }, 1000)
+  }
+
+  async function runRequest(url: string, init?: RequestInit, includeToday = true, retryOnFail = false) {
+    const activeRoot = boundRoot
+    if (!activeRoot?.isConnected) return
+    const isAction = init?.method === "POST"
+    if (!isAction && activeActions > 0) return
+
+    const gen = mountGen
+    const seq = ++requestSeq
+    const isMounted = () => gen === mountGen && boundRoot === activeRoot && activeRoot.isConnected
+    if (isAction) activeActions++
+    let shouldRetry = false
+    try {
+      const res = await fetch(url, init)
+      if (!isMounted() || !els) return
+      if (!res.ok) {
+        shouldRetry = retryOnFail && (res.status >= 500 || res.status === 429)
+        return
+      }
+      const data = await res.json()
+      if (!isMounted() || seq !== requestSeq || (!isAction && activeActions > 0) || !els) return
+      clearExpiryRetry()
+      const state = data.state
       localRemaining = state.remaining || 0
       localTotal = state.total || 0
       localPhase = state.phase || "idle"
-
-      if (focusCountEl) focusCountEl.textContent = String(state.focusCount || 0)
-      if (todayMinutesEl) todayMinutesEl.textContent = String(data.today?.totalFocusMinutes || 0)
-
-      updateDisplay()
-
-      // Start ticking if active
-      if (localPhase !== "idle") {
-        startLocalTick()
-        // Show pill if panel is collapsed
-        if (pill && !expanded) pill.classList.remove("pomodoro-hidden")
-      } else {
-        stopLocalTick()
-        // Hide pill when idle and collapsed
-        if (pill && !expanded) pill.classList.add("pomodoro-hidden")
+      if (includeToday) {
+        if (els.focusCountEl) els.focusCountEl.textContent = String(state.focusCount || 0)
+        if (els.todayMinutesEl) els.todayMinutesEl.textContent = String(data.today?.totalFocusMinutes || 0)
       }
+      updateDisplay()
+      if (localPhase !== "idle") startLocalTick()
+      else stopLocalTick()
+      if (els.pill && !expanded) els.pill.classList.toggle("pomodoro-hidden", localPhase === "idle")
+      notifyLayoutChanged()
     } catch {
-      // Non-critical
+      shouldRetry = retryOnFail
+    } finally {
+      if (isAction && gen === mountGen && activeActions > 0) activeActions--
+      if (shouldRetry && isMounted() && localRemaining === 0 && localPhase !== "idle") {
+        clearExpiryRetry()
+        retryTimer = setTimeout(() => {
+          retryTimer = null
+          if (isMounted() && localRemaining === 0 && localPhase !== "idle") {
+            void runRequest("/api/pomodoro", undefined, true, true)
+          }
+        }, 5000)
+      }
     }
   }
 
-  async function doAction(action: string, taskId?: string) {
-    try {
-      const body: Record<string, string> = { action }
-      if (taskId) body.taskId = taskId
-      const res = await fetch("/api/pomodoro", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      })
-      if (!res.ok) return
-      const data = await res.json()
-      const state = data.state
-
-      localRemaining = state.remaining || 0
-      localTotal = state.total || 0
-      localPhase = state.phase || "idle"
-
-      updateDisplay()
-
-      if (localPhase !== "idle") {
-        startLocalTick()
-        if (pill && !expanded) pill.classList.remove("pomodoro-hidden")
-      } else {
-        stopLocalTick()
-        if (pill && !expanded) pill.classList.add("pomodoro-hidden")
-      }
-    } catch {
-      // Non-critical
-    }
-  }
+  const doAction = (action: string, taskId?: string) =>
+    runRequest("/api/pomodoro", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(taskId ? { action, taskId } : { action }),
+    }, false)
 
   function togglePanel(show: boolean) {
-    expanded = show
-    if (panel) panel.classList.toggle("pomodoro-hidden", !show)
-    if (pill) pill?.classList.toggle("pomodoro-hidden", show || localPhase === "idle")
-  }
-
-  // Event listeners
-  pill?.addEventListener("click", () => togglePanel(true))
-  collapseBtn?.addEventListener("click", () => togglePanel(false))
-  startBtn?.addEventListener("click", () => doAction("start"))
-  skipBtn?.addEventListener("click", () => {
-    if (localPhase === "focus") doAction("skip_to_break")
-    else doAction("skip_break")
-  })
-  cancelBtn?.addEventListener("click", () => doAction("cancel"))
-
-  // Keyboard shortcut: Alt+P toggles panel
-  document.addEventListener("keydown", (e) => {
-    if (e.altKey && e.key === "p") {
-      e.preventDefault()
-      if (expanded) togglePanel(false)
-      else togglePanel(true)
+    const wasInsidePanel = Boolean(els?.panel?.contains(document.activeElement))
+    if (show && !expanded && !wasInsidePanel) {
+      openerFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
     }
-  })
-
-  // Expose global function for other pages to start pomodoro with a task
-  ;window.startPomodoro = (taskId?: string) => {
-    togglePanel(true)
-    doAction("start", taskId)
+    expanded = show
+    els?.panel?.classList.toggle("pomodoro-hidden", !show)
+    els?.pill?.classList.toggle("pomodoro-hidden", show || localPhase === "idle")
+    els?.pill?.setAttribute("aria-expanded", String(show))
+    if (show) {
+      els?.panel?.querySelector<HTMLElement>("button:not(.pomodoro-hidden)")?.focus({ preventScroll: true })
+    } else {
+      if (wasInsidePanel) {
+        if (canRestoreFocusTarget(openerFocus)) {
+          openerFocus.focus({ preventScroll: true })
+        } else if (els?.pill && !els.pill.classList.contains("pomodoro-hidden")) {
+          els.pill.focus({ preventScroll: true })
+        }
+      }
+      openerFocus = null
+    }
+    notifyLayoutChanged()
   }
 
-  // Initial state fetch
-  fetchState()
+  function teardownPomodoroMount() {
+    mountGen++
+    stopLocalTick()
+    rootAc?.abort()
+    rootAc = null
+    boundRoot = null
+    els = null
+    expanded = false
+    localRemaining = 0
+    localTotal = 0
+    localPhase = "idle"
+    activeActions = 0
+    lastBoardKey = ""
+    openerFocus = null
+    lastPillIcon = ""
+    delete window.startPomodoro
+  }
+
+  function syncPomodoroMount() {
+    const root = document.getElementById("pomodoro-root")
+    if (!root) {
+      teardownPomodoroMount()
+      notifyLayoutChanged()
+      return
+    }
+    const boardKey = currentBoardKey()
+    if (root === boundRoot) {
+      if (boardKey === lastBoardKey) return
+      lastBoardKey = boardKey
+      stopLocalTick()
+      localRemaining = 0
+      localTotal = 0
+      localPhase = "idle"
+      updateDisplay()
+      els?.pill?.classList.toggle("pomodoro-hidden", !expanded)
+      notifyLayoutChanged()
+      void runRequest("/api/pomodoro")
+      return
+    }
+
+    teardownPomodoroMount()
+    boundRoot = root
+    lastBoardKey = boardKey
+    rootAc = new AbortController()
+    const { signal } = rootAc
+    const q = <T extends HTMLElement = HTMLElement>(id: string) => root.querySelector<T>(`#${id}`)
+
+    els = {
+      pill: q<HTMLButtonElement>("pomodoro-pill"),
+      pillTime: q("pomodoro-pill-time"),
+      pillIcon: q("pomodoro-pill-icon"),
+      panel: q("pomodoro-panel"),
+      collapseBtn: q<HTMLButtonElement>("pomodoro-collapse"),
+      timeDisplay: q("pomodoro-time"),
+      phaseDisplay: q("pomodoro-phase"),
+      ringFill: q("pomodoro-ring-fill"),
+      startBtn: q<HTMLButtonElement>("pomodoro-start"),
+      skipBtn: q<HTMLButtonElement>("pomodoro-skip"),
+      cancelBtn: q<HTMLButtonElement>("pomodoro-cancel"),
+      focusCountEl: q("pomodoro-focus-count"),
+      todayMinutesEl: q("pomodoro-today-minutes"),
+    }
+
+    els.pill?.addEventListener("click", () => togglePanel(true), { signal })
+    els.collapseBtn?.addEventListener("click", () => togglePanel(false), { signal })
+    els.panel?.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault()
+        e.stopPropagation()
+        togglePanel(false)
+      }
+    }, { signal })
+    els.startBtn?.addEventListener("click", () => void doAction("start"), { signal })
+    els.skipBtn?.addEventListener("click", () => void doAction(localPhase === "focus" ? "skip_to_break" : "skip_break"), { signal })
+    els.cancelBtn?.addEventListener("click", () => void doAction("cancel"), { signal })
+
+    document.addEventListener("keydown", (e) => {
+      if (e.altKey && e.key === "p") {
+        e.preventDefault()
+        togglePanel(!expanded)
+      }
+    }, { signal })
+
+    window.startPomodoro = (taskId?: string) => {
+      togglePanel(true)
+      void doAction("start", taskId)
+    }
+
+    void runRequest("/api/pomodoro")
+  }
+
+  window.__pomodoroGlobalAc?.abort()
+  const globalAc = new AbortController()
+  window.__pomodoroGlobalAc = globalAc
+  globalAc.signal.addEventListener("abort", teardownPomodoroMount, { once: true })
+  document.addEventListener("astro:page-load", syncPomodoroMount, { signal: globalAc.signal })
+  syncPomodoroMount()
 </script>

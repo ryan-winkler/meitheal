@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { formatCalendarDay } from "../../apps/web/src/lib/calendar-day"
 
 test("calendar dates retain the stored day and reject invalid dates", () => {
@@ -15,7 +16,7 @@ test.describe("Irish calendar dates in the App", () => {
   test.use({ locale: "en-US", timezoneId: "America/Los_Angeles", serviceWorkers: "block" })
 
   test("Triage and Habits honor selected Gaeilge through SSR and client updates", async ({ baseURL, context, page, request }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     let backlogId: string | undefined
     let habitId: string | undefined
     let completedId: string | undefined
@@ -49,7 +50,11 @@ test.describe("Irish calendar dates in the App", () => {
       await card.getByRole("button", { name: "Complete Irish habit fixture today" }).click()
       const completion = await completed
       expect(completion.status()).toBe(200)
-      completedId = (await completion.json()).taskId
+      const occurrences = await request.get("/api/tasks?q=Irish+habit+fixture&status=done")
+      expect(occurrences.status()).toBe(200)
+      const completedTasks = (await occurrences.json()).tasks
+      expect(completedTasks).toEqual([expect.objectContaining({ title: "Irish habit fixture", task_kind: "routine_instance" })])
+      completedId = completedTasks[0].id
 
       const habitList = await request.get("/api/habits")
       expect(habitList.status()).toBe(200)
@@ -62,12 +67,12 @@ test.describe("Irish calendar dates in the App", () => {
       expect(await reloaded?.text()).toContain(completionText)
       await expect(card).toContainText(completionText)
     } finally {
+      for (const id of [backlogId, completedId]) {
+        if (id) expect((await request.delete(`/api/tasks/${id}`, { headers, data: {} })).status()).toBe(204)
+      }
       if (habitId) {
         const removed = await request.post("/api/habits", { headers, data: { action: "delete", templateId: habitId } })
         expect(removed.status()).toBe(200)
-      }
-      for (const id of [backlogId, completedId]) {
-        if (id) expect((await request.delete(`/api/tasks/${id}`, { headers, data: {} })).status()).toBe(204)
       }
     }
   })

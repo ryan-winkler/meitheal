@@ -1,4 +1,5 @@
 ---
+import { readBoardNavigationContext } from "../../lib/board-workspace"
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import { keyboardShortcutGroups, type KeyboardShortcutScope } from "../../lib/keyboard-shortcuts"
@@ -21,7 +22,7 @@ const groups = keyboardShortcutGroups(scopes)
         <h4>{t(group.headingKey, locale)}</h4>
         {group.shortcuts.map(shortcut => (
           <>
-            <span class="shortcut-keys">
+            <span class="shortcut-keys" data-shortcut-action={shortcut.id}>
               {shortcut.keys.map((key, index) => <>{index > 0 && " + "}<kbd>{key}</kbd></>)}
             </span>
             <span class="shortcut-label" data-shortcut-scope={group.scope}>
@@ -41,7 +42,7 @@ const groups = keyboardShortcutGroups(scopes)
         <div class="shortcut-grid">
           {group.shortcuts.map(shortcut => (
             <div class="shortcut-row">
-              <span class="shortcut-keys">
+              <span class="shortcut-keys" data-shortcut-action={shortcut.id}>
                 {shortcut.keys.map((key, index) => <>{index > 0 && " + "}<kbd>{key}</kbd></>)}
               </span>
               <span class="shortcut-label" data-shortcut-scope={group.scope}>

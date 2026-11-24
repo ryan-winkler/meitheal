@@ -9,10 +9,15 @@
  * @see AreaSelector.astro
  */
 
-import { readTableFilterParams } from "./filter-state"
+import { safeIngressHref } from "./ingress-navigation"
+import { taskBackgroundUrl } from "./task-page-url"
+import { readTableFilterParams, readTaskAreaParam } from "./filter-state"
 import { renderIconOrCustomEmoji } from "./tabler-svg"
 
 const STORAGE_KEY = "meitheal-selected-area"
+export const CALENDAR_AREA_REQUEST_EVENT = "meitheal:calendar-area-request"
+export const CALENDAR_AREA_APPLIED_EVENT = "meitheal:calendar-area-applied"
+export const TABLE_AREA_CATALOG_EVENT = "meitheal:table-area-catalog"
 
 interface AreaChangedDetail {
   areaId: string
@@ -21,13 +26,18 @@ interface AreaChangedDetail {
 }
 
 export function getRememberedAreaId(): string {
+  const params = taskBackgroundUrl().searchParams
+  if (params.get("project") && readTaskAreaParam(params) === null) {
+    return document.querySelector<HTMLElement>("[data-area-selector]")?.dataset.initialAreaId ?? ""
+  }
   const { areaId } = loadSavedArea()
   const options = document.querySelectorAll<HTMLElement>("#area-selector-dropdown [data-area-id]")
-  return [...options].some(option => option.dataset.areaId === areaId) ? areaId : ""
+  const ready = document.querySelector<HTMLElement>("#area-selector-dropdown")?.dataset.areaCatalogReady !== "false"
+  return !ready || [...options].some(option => option.dataset.areaId === areaId) ? areaId : ""
 }
 
 export function getSelectedAreaId(): string {
-  return document.querySelector<HTMLElement>('#area-selector-dropdown [aria-selected="true"]')?.dataset.areaId ?? ""
+  return document.querySelector<HTMLElement>("#area-selector-trigger")?.dataset.selectedAreaId ?? ""
 }
 
 /**
@@ -44,6 +54,8 @@ export function initAreaSelector(signal: AbortSignal): void {
   const iconEl = container.querySelector<HTMLElement>("[data-area-icon]")
 
   if (!trigger || !dropdown || !labelEl || !iconEl) return
+  const allGroups = container.dataset.allGroupsLabel || "All Areas"
+  const unavailableGroup = container.dataset.unavailableGroupLabel || "Area unavailable"
   container.dataset.areaSelectorReady = "true"
   signal.addEventListener("abort", () => {
     delete container.dataset.areaSelectorReady
@@ -52,25 +64,115 @@ export function initAreaSelector(signal: AbortSignal): void {
   // Restore saved area on init
   const params = new URLSearchParams(location.search)
   const table = Boolean(document.getElementById("table-shell"))
-  const requested = table ? readTableFilterParams(params).area : params.get("area") ?? undefined
+  const calendar = Boolean(document.getElementById("calendar-shell"))
+  const requested = (table || calendar ? readTableFilterParams(params).area : params.get("area") ?? undefined)
+    ?? container.dataset.initialAreaId
+    ?? (params.get("project") ? "" : undefined)
   if (requested !== undefined) {
     const option = Array.from(dropdown.querySelectorAll<HTMLElement>("[data-area-id]"))
       .find(item => item.dataset.areaId === requested)
     if (option) {
-      selectArea(requested, option.dataset.areaName ?? "All Areas", option.dataset.areaIcon ?? "🗂", false)
-    } else if (table) {
-      selectArea(requested, "Unavailable Area", "🗂", false)
+      selectArea(requested, option.dataset.areaName ?? allGroups, option.dataset.areaIcon ?? "🗂")
+    } else if (table || calendar || document.getElementById("kanban-shell")) {
+      selectArea(requested, unavailableGroup, "🗂")
     }
-  } else {
+  } else if (!calendar) {
     const saved = loadSavedArea()
-    if (saved.areaId && Array.from(dropdown.querySelectorAll<HTMLElement>("[data-area-id]"))
-      .some(option => option.dataset.areaId === saved.areaId)) {
-      selectArea(saved.areaId, saved.areaName, saved.areaIcon, false)
+    if (saved.areaId) {
+      const option = [...dropdown.querySelectorAll<HTMLElement>("[data-area-id]")].find(option => option.dataset.areaId === saved.areaId)
+      if (option) selectArea(saved.areaId, option.dataset.areaName ?? allGroups, option.dataset.areaIcon ?? "🗂")
+      else if (dropdown.dataset.areaCatalogReady === "false") selectArea(saved.areaId, unavailableGroup, "🗂")
     }
   }
   if (table) {
-    document.addEventListener("meitheal:table-area-reset", () => selectArea("", "All Areas", "🗂", false), { signal })
+    document.addEventListener("meitheal:table-area-reset", () => selectArea("", allGroups, "🗂"), { signal })
+    document.addEventListener(TABLE_AREA_CATALOG_EVENT, event => {
+      const catalog = (event as CustomEvent<HTMLElement>).detail
+      const selected = trigger.dataset.selectedAreaId ?? ""
+      const focused = document.activeElement instanceof HTMLElement && dropdown.contains(document.activeElement)
+        ? document.activeElement.closest<HTMLElement>("[data-area-id]")?.dataset.areaId : undefined
+      dropdown.replaceChildren(...catalog.children)
+      dropdown.dataset.areaCatalogReady = "true"
+      const options = [...dropdown.querySelectorAll<HTMLElement>("[data-area-id]")]
+      const option = options.find(item => item.dataset.areaId === selected)
+      selectArea(selected, option?.dataset.areaName ?? (selected ? unavailableGroup : allGroups), option?.dataset.areaIcon ?? "🗂")
+      if (focused !== undefined) (options.find(item => item.dataset.areaId === focused) ?? trigger).focus()
+    }, { signal })
+  } else if (calendar) {
+    document.addEventListener(CALENDAR_AREA_APPLIED_EVENT, event => {
+      const areaId = (event as CustomEvent<string>).detail
+      const option = [...dropdown.querySelectorAll<HTMLElement>("[data-area-id]")]
+        .find(item => item.dataset.areaId === areaId)
+      if (option) {
+        selectArea(areaId, option.dataset.areaName ?? allGroups, option.dataset.areaIcon ?? "🗂", "calendar")
+      }
+    }, { signal })
   }
+
+  let catalogRequest: AbortController | undefined
+  let nextCursor: string | null = null
+  async function loadCatalog(after?: string) {
+    const restoreFocus = container!.contains(document.activeElement)
+    catalogRequest?.abort()
+    const request = new AbortController()
+    catalogRequest = request
+    const status = container!.querySelector<HTMLElement>("[data-area-catalog-feedback]")
+    const retry = container!.querySelector<HTMLButtonElement>("[data-area-catalog-retry]")
+    const more = container!.querySelector<HTMLButtonElement>("[data-area-catalog-more]")
+    if (status) { status.hidden = false; status.textContent = container!.dataset.areaLoadingLabel || "Loading Areas…" }
+    if (retry) retry.hidden = true
+    if (more) more.disabled = true
+    try {
+      const endpoint = container!.dataset.areaEndpoint
+      if (!endpoint) throw new Error("Choose a current Board to load Areas.")
+      const url = new URL(endpoint, location.origin)
+      if (after) url.searchParams.set("after", after)
+      else if (trigger!.dataset.selectedAreaId) url.searchParams.set("selected", trigger!.dataset.selectedAreaId)
+      const response = await fetch(url.pathname + url.search, {
+        cache: "no-store", signal: AbortSignal.any([signal, request.signal, AbortSignal.timeout(5_000)]),
+      })
+      if (!response.ok) throw new Error("Could not load Areas.")
+      const data = await response.json() as { items?: Array<{ id: string; name: string; icon?: string }>; selected?: { id: string; name: string; icon?: string } | null; next_cursor?: string | null }
+      if (!Array.isArray(data.items)) throw new Error("Could not verify Areas.")
+      if (request.signal.aborted || signal.aborted || !container!.isConnected) return
+      if (!after) dropdown!.querySelectorAll<HTMLElement>('[data-area-id]:not([data-area-id=""])').forEach(option => option.remove())
+      const choices = data.selected ? [data.selected, ...data.items] : data.items
+      for (const area of choices) {
+        if (typeof area.id !== "string" || typeof area.name !== "string" || [...dropdown!.querySelectorAll<HTMLElement>("[data-area-id]")].some(option => option.dataset.areaId === area.id)) continue
+        const option = document.createElement("button")
+        option.type = "button"
+        option.className = "area-selector__option"
+        option.setAttribute("role", "option")
+        option.dataset.areaId = area.id
+        option.dataset.areaName = area.name
+        option.dataset.areaIcon = area.icon || "🗂"
+        option.textContent = area.name
+        dropdown!.append(option)
+      }
+      dropdown!.dataset.areaCatalogReady = "true"
+      nextCursor = typeof data.next_cursor === "string" ? data.next_cursor : null
+      const selected = trigger!.dataset.selectedAreaId ?? ""
+      const option = [...dropdown!.querySelectorAll<HTMLElement>("[data-area-id]")].find(option => option.dataset.areaId === selected)
+      selectArea(selected, option?.dataset.areaName ?? (selected ? unavailableGroup : allGroups), option?.dataset.areaIcon ?? "🗂")
+      if (status) status.hidden = true
+      document.dispatchEvent(new CustomEvent("meitheal:area-catalog-ready", { detail: { areaId: selected } }))
+      if (more) { more.hidden = !nextCursor; more.disabled = false }
+      if (restoreFocus) (dropdown!.querySelector<HTMLElement>('[aria-selected="true"]') ?? trigger!).focus()
+    } catch {
+      if (request.signal.aborted || signal.aborted || !container!.isConnected) return
+      if (!after) dropdown!.dataset.areaCatalogReady = "false"
+      if (status) { status.hidden = false; status.textContent = container!.dataset.areaFailedLabel || "Areas unavailable. Your selection is kept." }
+      if (retry) retry.hidden = false
+      if (more) more.disabled = false
+    }
+  }
+  container.addEventListener("click", event => {
+    if (!(event.target instanceof Element)) return
+    if (event.target.closest("[data-area-catalog-retry]")) void loadCatalog()
+    if (event.target.closest("[data-area-catalog-more]") && nextCursor) void loadCatalog(nextCursor)
+  }, { signal })
+  signal.addEventListener("abort", () => catalogRequest?.abort(), { once: true })
+  if (dropdown.dataset.areaCatalogReady === "false") void loadCatalog()
 
   // Toggle dropdown on trigger click
   trigger.addEventListener("click", (e) => {
@@ -89,10 +191,10 @@ export function initAreaSelector(signal: AbortSignal): void {
     if (!option) return
 
     const areaId = option.dataset.areaId ?? ""
-    const areaName = option.dataset.areaName ?? "All Areas"
+    const areaName = option.dataset.areaName ?? allGroups
     const areaIcon = option.dataset.areaIcon ?? "🗂"
 
-    selectArea(areaId, areaName, areaIcon, true)
+    selectArea(areaId, areaName, areaIcon, "user")
     closeDropdown()
     trigger.focus()
   }, { signal })
@@ -126,8 +228,22 @@ export function initAreaSelector(signal: AbortSignal): void {
     dropdown!.classList.remove("is-open")
   }
 
-  function selectArea(areaId: string, areaName: string, areaIcon: string, dispatch: boolean): void {
+  function selectArea(areaId: string, areaName: string, areaIcon: string, source: "restore" | "user" | "calendar" = "restore"): void {
+    const detail: AreaChangedDetail = { areaId, areaName, areaIcon }
+    const background = source === "user" ? taskBackgroundUrl() : undefined
+    if (background?.searchParams.has("project")) {
+      for (const key of ["project", "from", "ticket", "open", "comment"]) background.searchParams.delete(key)
+      background.searchParams.set("area", areaId)
+      location.href = safeIngressHref(background.pathname + background.search + background.hash)
+      return
+    }
+    if (source === "user" && calendar) {
+      document.dispatchEvent(new CustomEvent(CALENDAR_AREA_REQUEST_EVENT, { detail }))
+      return
+    }
+
     // Update trigger display
+    trigger!.dataset.selectedAreaId = areaId
     labelEl!.textContent = areaName
     renderIconOrCustomEmoji(iconEl!, areaIcon, "folders", 15)
 
@@ -140,16 +256,14 @@ export function initAreaSelector(signal: AbortSignal): void {
     })
 
     // Save to localStorage
-    if (dispatch || !table) saveArea(areaId, areaName, areaIcon)
+    if (source !== "restore" || !table && [...options].some(option => option.dataset.areaId === areaId)) {
+      saveArea(areaId, areaName, areaIcon)
+    }
 
     // Sync all FilterToolbar area selects across views
     if (!table) syncFilterToolbarAreas(areaId)
 
-    // Dispatch global event
-    if (dispatch) {
-      const detail: AreaChangedDetail = { areaId, areaName, areaIcon }
-      document.dispatchEvent(new CustomEvent("meitheal:area-changed", { detail }))
-    }
+    if (source !== "restore") document.dispatchEvent(new CustomEvent("meitheal:area-changed", { detail }))
   }
 
   function syncFilterToolbarAreas(areaId: string): void {
@@ -168,7 +282,7 @@ export function initAreaSelector(signal: AbortSignal): void {
 
 function loadSavedArea(): { areaId: string; areaName: string; areaIcon: string } {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY)
+    const saved = localStorage.getItem(document.querySelector<HTMLElement>("[data-area-selector]")?.dataset.areaStorageKey || STORAGE_KEY)
     if (saved) {
       const parsed = JSON.parse(saved)
       return {
@@ -185,7 +299,7 @@ function loadSavedArea(): { areaId: string; areaName: string; areaIcon: string }
 
 function saveArea(areaId: string, areaName: string, areaIcon: string): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ areaId, areaName, areaIcon }))
+    localStorage.setItem(document.querySelector<HTMLElement>("[data-area-selector]")?.dataset.areaStorageKey || STORAGE_KEY, JSON.stringify({ areaId, areaName, areaIcon }))
   } catch {
     // localStorage unavailable
   }

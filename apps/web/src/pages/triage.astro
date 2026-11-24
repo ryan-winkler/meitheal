@@ -1,10 +1,19 @@
 ---
+import { readBoardPagePlacement } from "@lib/board-page-placement"
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+
 import Layout from "../layouts/Layout.astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import TriageIntake from "../components/planning/TriageIntake.astro"
 import { getTriageMode, type TriageMode } from "@lib/triage-mode"
 import { t } from "../i18n/translations"
+const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
+if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
+const workScope = workScopeResult.scope
+const pagePlacement = await readBoardPagePlacement(workScope, Astro.url)
+if (!pagePlacement.ok) return boardScopeResponse(pagePlacement.errorCode)
+
 
 Astro.response.headers.set("cache-control", "no-store")
 const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
@@ -14,9 +23,9 @@ let mode: TriageMode = "unavailable"
 let queue: Awaited<ReturnType<TaskRepository["findBacklogPage"]>> | undefined
 try {
   await ensureSchema()
-  const repo = new TaskRepository(getPersistenceClient())
+  const repo = new TaskRepository(getPersistenceClient(), workScope)
   mode = await getTriageMode(repo)
-  if (mode === "visible") queue = await repo.findBacklogPage(requestedPage)
+  if (mode === "visible") queue = await repo.findBacklogPage(requestedPage, pagePlacement.placement)
 } catch {
   mode = "unavailable"
 }

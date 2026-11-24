@@ -6,6 +6,8 @@ description: "Understand the task table and its controls."
 
 # Table Shell Guide
 
+Table refreshes its rows, totals, pagination and Area catalog in place. Its refresh sends `tableRefresh` and `X-Meitheal-Task-Fragment: 1` on the regular scoped page. The response skips the shared page shell, and direct navigation still receives the full page. Use the refresh retry control if a request fails.
+
 ## Open the Table view
 
 Open **Tasks** and choose **Table**. Older `/table` bookmarks redirect to `/tasks?view=table#table` and retain their query parameters. The Tasks header contains Search Meitheal, Ask Home Assistant, and New Task.
@@ -21,6 +23,8 @@ Scroll sideways within the table to reach more columns. With a keyboard, focus t
 3. If no rows match, change the filters or use **Clear all active filters** above the table. Clear returns keyboard focus to the text filter.
 4. Use **Previous** and **Next** above the table to move through 50 matching rows at a time. Keyboard paging returns focus to the page controls, which report the current range. Group counts cover all matches. Select-all and bulk actions apply to visible rows on the current page.
 5. Focus a group or subgroup toggle and press Enter or Space to expand or collapse its rows. The Title cell is associated with its column, group, and subgroup headings.
+
+Group or sub-group by **Area** to see the names, icons, and colors of the Board's Groups. Tasks without a visible Area appear under **No area**. The existing **Default** Area keeps its own group and count. When a refresh cannot load the Group catalog, Table keeps the current rows, Group selector and bulk choices. Use **Retry** to refresh them together. Accepted refreshes update renamed and removed Groups. The selector shows **Group unavailable** when the selected Group was removed. If an administrator excludes the Groups feature for your account, the selector is hidden and other Table filters still work.
 
 ### Save a working view
 
@@ -50,7 +54,13 @@ Table reads filters and presentation with `readTableFilterParams`. An explicit `
 
 Select **Workflow columns** to include tasks in any selected column. Other filters still apply, including status, text, Area, and **Unassigned**. Use the repeated `lane` query parameter to share this selection. Presets retain the same column IDs when opened from Table or Search. A removed column is shown as unavailable. If none of the selected columns exist, there are no matches. Clear the selection to search across all columns. Table uses the saved workflow catalog, including Backlog when it is hidden from Kanban. A successfully loaded empty catalog uses the four default columns. If a selected column cannot be checked because the catalog fails to load, use **Retry**. A filter that does not select a column can still show its results while the catalog is unavailable.
 
+Choose **Group by → Workflow column** to see Household tasks in the order of their configured columns. Choose **Then group by → Workflow column** to show those columns within another group. Each task appears once. Among eligible columns, a column whose key matches the task status takes precedence over one that also includes the status. Otherwise the first eligible column in workflow order wins. A selected **Workflow columns** filter limits which columns are eligible. Tasks without a match appear in **No workflow column**. Hidden Backlog remains available when its definition is in the Household catalog.
+
+Share the Table URL or save a preset to keep the grouping. If the catalog fails during an in-place refresh, **Retry** applies the requested grouping when the catalog returns. Previous results stay visible while you retry. Opening or reloading a workflow-grouped URL during an outage shows **Retry** until columns are available.
+
 Open **Created date** and enter either or both dates, then choose **Apply dates**. The range includes both selected days in the app's configured timezone. It combines with the other Table filters and starts at page one. Use **Clear dates** to remove the range while keeping the other filters. Escape discards a draft. A failed refresh leaves the previous rows and address in place, and **Retry** applies the requested dates again.
+
+Table remembers primary or secondary Epic grouping on this browser when you return to Table without explicit filters. That presentation stays separate from the shared task filters used by other views. An explicit Table link or saved preset takes priority; choosing another grouping or clearing the filters replaces the remembered Epic presentation.
 
 Table shares these dates as `createdFrom` and `createdThrough` in YYYY-MM-DD format. Presets and their Search links use the same date range. Other task views ignore these parameters and carry them back to Table when using the view tabs. An invalid bookmarked range is ignored and the other URL filters still apply.
 
@@ -59,6 +69,14 @@ The server applies normalized filters, grouping, and sorting to the complete eli
 ### Table rows could not update
 
 Choose **Retry** to fetch the current filter selection again. The previous results and address remain visible while the refresh fails. A Table refresh uses a unique `tableRefresh` marker, a no-store response, and the active worker's network-only path. The marker stays out of shared links.
+
+## Group tasks by Epic
+
+Choose **Group by → Epic** to see each task with its nearest Household Epic, including when that Epic is outside your filters or the current page. An Epic belongs to its own group. A nested Epic starts a separate group. Tasks with missing or cyclic ancestry appear in **No Epic**.
+
+Choose **Then by Epic** to split another group by Epic. The group count covers all matching tasks, and page selection affects the displayed rows. Save a preset or share the Table URL to restore the grouping. Epic headings include their ticket reference to distinguish matching titles.
+
+After changing a title, type or parent in Details, close Details to refresh the groups. If the refresh fails, the previous results stay visible and **Retry** loads the current hierarchy again.
 
 ## Troubleshooting
 

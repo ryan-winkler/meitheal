@@ -151,11 +151,6 @@
   padding: 0;
 }
 
-.search-hub-empty button {
-  margin-inline-start: 0.5rem;
-  min-height: 44px;
-}
-
 .search-hub-section {
   padding: 0.5rem;
 }
@@ -236,12 +231,6 @@
   font-size: 0.68rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-}
-
-.search-hub-empty {
-  padding: 2rem 1rem;
-  text-align: center;
-  color: var(--text-muted);
 }
 
 @media (max-width: 768px) {

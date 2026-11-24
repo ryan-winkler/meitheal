@@ -34,7 +34,7 @@ test.describe("Tabler Settings recovery", () => {
 
   test("outline directory keeps canonical section links, theme choices and mobile keyboard navigation", async ({ page }) => {
     await openSettings(page)
-    expect((await page.locator("#theme-select option").allTextContents()).sort()).toEqual(["Auto (System)", "Light", "Dark", "Custom"].sort())
+    expect((await page.locator("#theme-select option").allTextContents()).sort()).toEqual(["Auto (System)", "Light", "Emerald Isle", "Knight Rider", "Custom"].sort())
     const directory = page.getByRole("navigation", { name: "Sections", exact: true })
     for (const section of SETTINGS_SECTIONS) {
       const link = directory.getByRole("link", { name: section.label, exact: true })
@@ -110,8 +110,8 @@ test.describe("Tabler Settings recovery", () => {
     await summary.press("Space")
     await expect(disclosure).not.toHaveAttribute("open", "")
     const card = page.locator(".settings-panel-card:visible").first()
-    expect(await card.evaluate(element => getComputedStyle(element).paddingInlineStart)).toBe("16px")
-    await page.addStyleTag({ content: ":root { --settings-inset: 20px; }" })
-    await expect.poll(() => card.evaluate(element => getComputedStyle(element).paddingInlineStart)).toBe("20px")
+    expect(await card.evaluate(element => getComputedStyle(element).paddingInlineStart)).toBe("20px")
+    await page.addStyleTag({ content: ":root { --settings-inset: 24px; }" })
+    await expect.poll(() => card.evaluate(element => getComputedStyle(element).paddingInlineStart)).toBe("24px")
   })
 })

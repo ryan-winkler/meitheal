@@ -3,28 +3,32 @@
     "step": {
       "user": {
         "title": "Connect to Meitheal",
-        "description": "Enter the address of your Meitheal server and a scoped Meitheal API token.",
+        "description": "Enter the server address, a scoped Meitheal API token and its approved Board ID.",
         "data": {
           "host": "Hostname",
           "port": "Port",
           "ssl": "Use HTTPS",
-          "api_token": "Meitheal API token"
+          "api_token": "Meitheal API token",
+          "board_id": "Board ID"
         },
         "data_description": {
           "host": "The server hostname or IP address. Enter only the hostname or address.",
           "port": "The port where Meitheal is reachable. A Supervisor App uses port 3000.",
           "ssl": "Turn this on for a manual connection. The internal network of an installed Supervisor App uses HTTP.",
-          "api_token": "Create a dedicated Meitheal agent token in the Meitheal settings with task and search permissions."
+          "api_token": "Create a dedicated Meitheal agent token in the Meitheal settings with task and search permissions.",
+          "board_id": "Choose the exact Board approved for this credential. Private Board work is not exposed as shared Home Assistant entities."
         }
       },
       "hassio_confirm": {
         "title": "Connect to the Meitheal App",
-        "description": "Home Assistant found the Meitheal App at {host}:{port}. Enter a scoped Meitheal API token.",
+        "description": "Home Assistant found the Meitheal App at {host}:{port}. Enter a scoped credential and explicitly choose its Board.",
         "data": {
-          "api_token": "Meitheal API token"
+          "api_token": "Meitheal API token",
+          "board_id": "Board ID"
         },
         "data_description": {
-          "api_token": "Create a dedicated Meitheal agent token in the Meitheal settings with task and search permissions."
+          "api_token": "Create a dedicated Meitheal agent token in the Meitheal settings with task and search permissions.",
+          "board_id": "Choose the exact Board approved for this credential. Private Board work is not exposed as shared Home Assistant entities."
         }
       },
       "reconfigure": {
@@ -34,23 +38,27 @@
           "host": "Hostname",
           "port": "Port",
           "ssl": "Use HTTPS",
-          "api_token": "Meitheal API token"
+          "api_token": "Meitheal API token",
+          "board_id": "Board ID"
         },
         "data_description": {
           "host": "The server hostname or IP address. Enter only the hostname or address.",
           "port": "The port where Meitheal is reachable. A Supervisor App uses port 3000.",
           "ssl": "Turn this on for a manual connection. The internal network of an installed Supervisor App uses HTTP.",
-          "api_token": "Create a dedicated Meitheal agent token in the Meitheal settings with task and search permissions."
+          "api_token": "Create a dedicated Meitheal agent token in the Meitheal settings with task and search permissions.",
+          "board_id": "Choose the exact Board approved for this credential. Private Board work is not exposed as shared Home Assistant entities."
         }
       },
       "reauth_confirm": {
         "title": "Reconnect Meitheal",
-        "description": "Meitheal denied access to tasks. Create a Meitheal API token with task permissions and enter it below. Use Reconfigure if you also need to change the address.",
+        "description": "Meitheal denied access to the selected Board. Enter a current credential and its approved Board. Use Reconfigure to change the address.",
         "data": {
-          "api_token": "Meitheal API token"
+          "api_token": "Meitheal API token",
+          "board_id": "Board ID"
         },
         "data_description": {
-          "api_token": "Create a dedicated Meitheal agent token in the Meitheal settings with task and search permissions."
+          "api_token": "Create a dedicated Meitheal agent token in the Meitheal settings with task and search permissions.",
+          "board_id": "Choose the exact Board approved for this credential. Private Board work is not exposed as shared Home Assistant entities."
         }
       }
     },
@@ -63,10 +71,12 @@
     },
     "error": {
       "cannot_connect": "Cannot read tasks from Meitheal. Check the App, address and TLS certificate.",
-      "invalid_auth": "Enter a valid Meitheal API token with permission to read tasks.",
+      "invalid_auth": "Enter a valid Meitheal API token with permission to read the selected Board.",
       "invalid_host": "Enter a hostname or IP address and a port from 1 to 65535.",
       "insecure_connection": "Use HTTPS or verify this address is the installed Meitheal App on port 3000 in Supervisor.",
-      "token_required_for_origin": "Enter a token issued by the Meitheal instance at this address."
+      "token_required_for_origin": "Enter a token issued by the Meitheal instance at this address.",
+      "board_required": "Choose an explicit Board for this credential.",
+      "invalid_board": "This credential cannot access that Board. Choose an approved Board or update its access in Meitheal."
     }
   },
   "entity": {

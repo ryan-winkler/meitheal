@@ -1,3 +1,4 @@
+import { initKanbanNavigation } from "./kanban-navigation"
 /**
  * kanban-keyboard.ts — Keyboard shortcuts, search, quick-add, WIP limits, board navigation
  *
@@ -6,9 +7,12 @@
  *      Combines keyboard shortcuts (N/C), WIP limit indicators,
  *      inline quick-add, search filter, and arrow-key board navigation.
  */
+import { taskCapturePlacement } from "@lib/task-capture-placement"
 import { getSelectedAreaId } from "@lib/area-selector-controller"
 import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { createClientLogger } from "@lib/client-logger"
+import { browserUuid } from "@lib/browser-uuid"
+import { showToast } from "@lib/toast"
 
 const log = createClientLogger("kanban:keyboard")
 
@@ -37,7 +41,7 @@ export function initKeyboardAndSearch(signal: AbortSignal): void {
 
     // C = toggle collapse all swimlane groups
     if (e.key === "c" || e.key === "C") {
-      const toggles = board.querySelectorAll<HTMLElement>(".swimlane-group:not([hidden]) .swimlane-toggle")
+      const toggles = board.querySelectorAll<HTMLButtonElement>(".swimlane-group:not([hidden]) .swimlane-header")
       // Without swimlanes, leave the key to the global shortcut instead of swallowing it.
       if (toggles.length === 0) return
       e.preventDefault()
@@ -54,12 +58,18 @@ export function initKeyboardAndSearch(signal: AbortSignal): void {
 
   board.querySelectorAll<HTMLButtonElement>(".kanban-add-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
+      if (getSelectedAreaId() && !document.querySelector('#area-selector-dropdown [aria-selected="true"]')) {
+        document.getElementById("area-selector-trigger")?.focus()
+        showToast("kanban.quick_add_area_unavailable", "warning")
+        return
+      }
       const existing = btn.previousElementSibling
       if (existing?.classList.contains("kanban-inline-add")) {
         existing.querySelector("input")?.focus()
         return
       }
 
+      const placement = taskCapturePlacement()
       const form = document.createElement("form")
       form.className = "kanban-inline-add"
       form.noValidate = true
@@ -86,9 +96,7 @@ export function initKeyboardAndSearch(signal: AbortSignal): void {
       input.focus()
 
       let saving = false
-      const retryKey = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte =>
-        byte.toString(16).padStart(2, "0")
-      ).join("")
+      const retryKey = browserUuid()
       function showError(key: string, fallback: string, invalid = false) {
         error.textContent = window.mI18n?.get(`kanban.${key}`) ?? fallback
         if (invalid) input.setAttribute("aria-invalid", "true")
@@ -114,14 +122,13 @@ export function initKeyboardAndSearch(signal: AbortSignal): void {
         input.readOnly = true
         addBtn.textContent = window.mI18n?.get("kanban.quick_add_saving") ?? "Adding…"
         error.textContent = ""
-        const areaId = getSelectedAreaId()
 
         let uncertain = false
         try {
           const res = await fetch("/api/tasks", {
             method: "POST",
             headers: { "content-type": "application/json", "idempotency-key": retryKey },
-            body: JSON.stringify({ title, status: btn.dataset.status, task_type: btn.dataset.taskType, area_id: areaId || undefined }),
+            body: JSON.stringify({ title, status: btn.dataset.status, task_type: btn.dataset.taskType, ...(placement ? { placement } : {}) }),
           })
           if (res.ok) {
             form.remove()
@@ -165,61 +172,5 @@ export function initKeyboardAndSearch(signal: AbortSignal): void {
     }, { signal })
   })
 
-  // T-1914: Keyboard navigation for kanban board
-  ;(() => {
-    // Swimlane collapse event delegation
-    board.addEventListener("click", (e) => {
-      const target = e.target as HTMLElement
-      const header = target.closest(".swimlane-header")
-      if (header && !target.closest("button")) {
-        const group = header.closest(".swimlane-group")
-        if (!group) return
-        const cardsEl = group.querySelector(".swimlane-cards")
-        const toggle = header.querySelector(".swimlane-toggle")
-        if (!cardsEl) return
-        const isCollapsed = cardsEl.classList.toggle("collapsed")
-        if (toggle) {
-          toggle.classList.toggle("collapsed", isCollapsed)
-          toggle.textContent = isCollapsed ? "▶" : "▼"
-        }
-        group.classList.toggle("swimlane-collapsed", isCollapsed)
-        const type = (group as HTMLElement).dataset.swimlaneType || (group as HTMLElement).dataset.swimlaneValue || "dynamic"
-        localStorage.setItem(`meitheal-swimlane-${type}`, isCollapsed ? "collapsed" : "expanded")
-      }
-    }, { signal })
-
-    const visibleEntries = (column: Element) =>
-      Array.from(column.querySelectorAll<HTMLButtonElement>(".card-open-btn"))
-        .filter(btn => btn.getClientRects().length > 0 && !btn.closest(".swimlane-cards.collapsed"))
-
-    board.addEventListener("keydown", (e) => {
-      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
-      const entry = (e.target as HTMLElement).closest<HTMLButtonElement>(".card-open-btn")
-      const column = entry?.closest(".kanban-column")
-      if (!entry || !column) return
-
-      let next: HTMLButtonElement | undefined
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        const entries = visibleEntries(column)
-        const step = e.key === "ArrowDown" ? 1 : -1
-        next = entries[entries.indexOf(entry) + step]
-      } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-        const columns = Array.from(board.querySelectorAll(".kanban-column"))
-        const rtl = getComputedStyle(board).direction === "rtl"
-        const step = (e.key === "ArrowRight" ? 1 : -1) * (rtl ? -1 : 1)
-        for (let index = columns.indexOf(column) + step; index >= 0 && index < columns.length; index += step) {
-          const adjacent = columns[index]
-          if (!adjacent) break
-          next = visibleEntries(adjacent)[0]
-          if (next) break
-        }
-      } else {
-        return
-      }
-
-      e.preventDefault()
-      next?.focus({ preventScroll: true })
-      next?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" })
-    }, { signal })
-  })()
+  initKanbanNavigation(board, signal)
 }

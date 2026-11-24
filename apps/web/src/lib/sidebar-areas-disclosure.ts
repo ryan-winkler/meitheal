@@ -17,7 +17,10 @@ export function initSidebarAreasDisclosure(signal: AbortSignal): void {
   const navbar = () => innerWidth > 768 && document.documentElement.dataset.appearanceNavigation === "navbar"
   const syncTitle = () => {
     const summary = node.querySelector<HTMLElement>("#project-nav-group-toggle")
-    if (summary) summary.title = node.open ? "Collapse Areas" : "Expand Areas"
+    if (summary) {
+      const label = summary.getAttribute("aria-label") || "Areas"
+      summary.title = node.open ? summary.dataset.collapseTitle ?? `Collapse ${label}` : summary.dataset.expandTitle ?? `Expand ${label}`
+    }
   }
   try { node.open = !navbar() && localStorage.getItem(key) !== "true" } catch { node.open = !navbar() }
   syncTitle()

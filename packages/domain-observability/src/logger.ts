@@ -74,6 +74,7 @@ export type TimelineEventType =
   | "proposal_submitted"
   | "proposal_accepted"
   | "proposal_rejected"
+  | "calendar_sync"
   | "sync"
   | "webhook"
   | "locked"
@@ -231,14 +232,14 @@ export function createLogger(config: LoggerConfig) {
 }
 
 /** Valid actor types — use for API input validation */
-export const VALID_ACTOR_TYPES: readonly ActorType[] = ["human", "bot", "system", "webhook", "calendar_sync", "llm", "agent"] as const
+export const VALID_ACTOR_TYPES: readonly ActorType[] = ["human", "bot", "system", "webhook", "calendar_sync", "llm", "n8n", "nodered", "agent"] as const
 export const VALID_ACTOR_TYPE_SET: ReadonlySet<string> = new Set(VALID_ACTOR_TYPES)
 
 /** Valid event types — use for API input validation */
 export const VALID_EVENT_TYPES: readonly TimelineEventType[] = [
   "field_change", "status_change", "created", "deleted", "comment",
   "delegated", "proposal_submitted", "proposal_accepted", "proposal_rejected",
-  "sync", "webhook", "locked", "unlocked",
+  "sync", "calendar_sync", "webhook", "locked", "unlocked",
 ] as const
 export const VALID_EVENT_TYPE_SET: ReadonlySet<string> = new Set(VALID_EVENT_TYPES)
 

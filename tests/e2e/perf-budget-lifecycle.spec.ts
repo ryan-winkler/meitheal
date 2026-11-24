@@ -28,7 +28,13 @@ for (const failure of [false, true]) {
       await mkdir(join(directory, "dist/client/_astro"), { recursive: true })
       await copyFile(script, join(directory, "scripts/perf-budget-check.mjs"))
       await writeFile(join(directory, "dist/client/_astro/fixture.js"), "ok")
+      await writeFile(join(directory, "dist/client/_astro/dashboard-layout-editor.fake.js"), "extra")
       await writeFile(join(directory, "dist/client/sw.js"), "")
+      await writeFile(join(directory, "scripts/serve.mjs"), `
+import { startServer } from "../dist/server/entry.mjs"
+const { done } = startServer()
+await done
+`)
       await writeFile(join(directory, "dist/server/entry.mjs"), `
 import { createServer } from "node:http"
 import { once } from "node:events"
@@ -41,9 +47,19 @@ const server = createServer((request, response) => {
     response.end(JSON.stringify({ version: process.env.MEITHEAL_VERSION, db_integrity: "ok" }))
     return
   }
+  if (request.method === "GET" && request.url === "/api/boards") {
+    response.writeHead(200, { "content-type": "application/json", "x-meitheal-board-session": "fixture-session" })
+    response.end("{}")
+    return
+  }
   if (request.method !== "POST" || request.url !== "/api/tasks") {
     request.resume()
     response.writeHead(404).end()
+    return
+  }
+  if (request.headers["x-meitheal-board-session"] !== "fixture-session" || request.headers["x-meitheal-board-id"] !== "household") {
+    request.resume()
+    response.writeHead(403).end()
     return
   }
   let body = ""
@@ -68,16 +84,16 @@ export function startServer() {
           timeout: 25_000,
           env: {
             ...process.env,
-            MEITHEAL_PERF_BUDGET_CLIENT_BYTES_MAX: failure ? "1" : "100",
+            MEITHEAL_PERF_BUDGET_CLIENT_BYTES_MAX: failure ? "6" : "100",
             MEITHEAL_PERF_BUDGET_RSS_KB_MAX: "1048576",
             MEITHEAL_PERF_BUDGET_P95_MS_MAX: "10000",
           },
         }, (error, stdout, stderr) => resolve({ code: error ? error.code : 0, stdout, stderr }))
       })
       expect(result.code, result.stderr).toBe(failure ? 1 : 0)
-      if (failure) expect(result.stderr).toContain("Generated client assets too large: 2 bytes > 1")
+      if (failure) expect(result.stderr).toContain("Client assets too large: 7 bytes > 6")
       pid = Number(await readFile(pidFile, "utf8"))
-      expect(JSON.parse(result.stdout).observed.clientBytes).toBe(2)
+      expect(JSON.parse(result.stdout).observed).toMatchObject({ clientBytes: 7, commonClientBytes: 2, workspaceUiBytes: 5 })
       expect(await readFile(countFile, "utf8")).toBe("105")
       expect(JSON.parse(result.stdout).observed).toMatchObject({ warmups: 5, requests: 100 })
       expect(isAlive(pid), "The harness must reap its owned server before exiting").toBe(false)

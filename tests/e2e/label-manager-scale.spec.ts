@@ -41,7 +41,7 @@ async function fixture(count: number, run: (f: { page: Page, origin: string, pre
     await waitForLabelsPageReady(page)
     const db = new DatabaseSync(join(work, "pins.db"), { timeout: 5000 })
     try {
-      const insert = db.prepare("INSERT INTO vikunja_labels (id,title,hex_color) VALUES (?,?,?)")
+      const insert = db.prepare("INSERT INTO vikunja_labels (id,title,hex_color,board_id) VALUES (?,?,?,'household')")
       db.exec("BEGIN")
       for (let id = 1; id <= count; id++) insert.run(id, name(id), id === 1 ? "#FFFFFF" : id % 2 ? "#ffffff" : "#000000")
       db.exec("COMMIT")

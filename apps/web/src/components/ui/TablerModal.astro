@@ -1,0 +1,139 @@
+---
+interface Props {
+  id: string
+  title: string
+  descriptionId?: string
+  size?: "sm" | "lg"
+  statusTone?: "primary" | "info" | "success" | "warning" | "danger"
+  showClose?: boolean
+}
+
+const { id, title, descriptionId, size, statusTone, showClose = true } = Astro.props
+---
+<div class="tabler-surface">
+  <div class="modal" style="display: none" id={id} tabindex="-1" aria-hidden="true" aria-labelledby={`${id}-title`}
+    aria-describedby={descriptionId} data-meitheal-tabler-modal>
+    <div class:list={["modal-dialog", "modal-dialog-centered", "modal-dialog-scrollable", size && `modal-${size}`]}>
+      <div class="modal-content">
+        {statusTone && <div class={`modal-status bg-${statusTone}`} aria-hidden="true"></div>}
+        <div class="modal-header">
+          <h2 class="modal-title" id={`${id}-title`}>{title}</h2>
+          {showClose && (
+            <button
+              type="button"
+              class="btn-close"
+              data-tabler-modal-close
+              aria-label="Close"
+            ></button>
+          )}
+        </div>
+        <div class="modal-body"><slot /></div>
+        <div class="modal-footer"><slot name="footer" /></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style is:inline>
+  .tabler-surface [data-meitheal-tabler-modal] {
+    z-index: var(--modal-zindex, 10001);
+  }
+
+  .tabler-surface [data-meitheal-tabler-modal] :is(button, a, input, select):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .tabler-surface [data-meitheal-tabler-modal] .modal-content {
+    position: relative;
+    margin: 0;
+    max-width: none;
+    opacity: 1;
+    transform: none;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 12px);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.32);
+    overflow: hidden;
+  }
+
+  .tabler-surface [data-meitheal-tabler-modal] .modal-status {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline: 0;
+    z-index: 2;
+    height: 3px;
+    background: var(--accent);
+  }
+
+  .tabler-surface [data-meitheal-tabler-modal] .modal-status.bg-primary { background: var(--accent); }
+  .tabler-surface [data-meitheal-tabler-modal] .modal-status.bg-info { background: var(--info, var(--accent)); }
+  .tabler-surface [data-meitheal-tabler-modal] .modal-status.bg-success { background: var(--success, #2fb344); }
+  .tabler-surface [data-meitheal-tabler-modal] .modal-status.bg-warning { background: var(--warning, #f59f00); }
+  .tabler-surface [data-meitheal-tabler-modal] .modal-status.bg-danger { background: var(--danger, #d63939); }
+
+  .tabler-surface [data-meitheal-tabler-modal] .modal-header {
+    position: static;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-inline-end: var(--modal-padding);
+    background: var(--bg-card);
+  }
+
+  .tabler-surface [data-meitheal-tabler-modal] .modal-title {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 650;
+    line-height: 1.35;
+    color: var(--text-primary);
+  }
+
+  .tabler-surface [data-meitheal-tabler-modal] .modal-header .btn-close {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: 32px;
+    block-size: 32px;
+    padding: 0;
+    margin: -4px -6px -4px auto;
+    border: 0;
+    border-radius: var(--radius-sm, 8px);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background-color 140ms ease, color 140ms ease;
+  }
+
+  .tabler-surface [data-meitheal-tabler-modal] .modal-header .btn-close::before,
+  .tabler-surface [data-meitheal-tabler-modal] .modal-header .btn-close::after {
+    content: "";
+    position: absolute;
+    inline-size: 14px;
+    block-size: 1.75px;
+    border-radius: 1px;
+    background: currentColor;
+  }
+
+  .tabler-surface [data-meitheal-tabler-modal] .modal-header .btn-close::before { transform: rotate(45deg); }
+  .tabler-surface [data-meitheal-tabler-modal] .modal-header .btn-close::after { transform: rotate(-45deg); }
+
+  .tabler-surface [data-meitheal-tabler-modal] .modal-header .btn-close:hover {
+    background: var(--bg-hover, rgba(128, 128, 128, 0.14));
+    color: var(--text-primary);
+  }
+
+  .tabler-surface [data-meitheal-tabler-modal] .modal-body {
+    overscroll-behavior: contain;
+    color: var(--text-primary);
+    background: var(--bg-card);
+  }
+
+  .tabler-surface [data-meitheal-tabler-modal] .modal-footer {
+    background: var(--bg-secondary);
+  }
+</style>

@@ -1,0 +1,462 @@
+---
+import Icon from "../ui/Icon.astro"
+import SettingsCallout from "./SettingsCallout.astro"
+import SettingsSectionIntro from "./SettingsSectionIntro.astro"
+import type { Locale } from "../../lib/locale"
+import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
+import { safeJsonForScript, WEBSERVER_HELP_DOCS } from "@domains/navigation/settings-help-topics"
+
+interface Props {
+  locale: Locale
+}
+const { locale: _locale } = Astro.props
+const webserverSection = SETTINGS_SECTIONS.find((section) => section.id === "webserver-settings")!
+---
+
+<section
+  id="webserver-settings"
+  class="settings-shell__section"
+  data-settings-shell-section
+  hidden
+>
+  <SettingsSectionIntro section={webserverSection} />
+
+  <!-- Top Controls Bar -->
+  <div class="card ws-card ws-header-card">
+    <div class="ws-row-between">
+      <div class="ws-inline">
+        <span id="ws-ha-status-badge" class="ws-pill" aria-live="polite">Checking Home Assistant…</span>
+        <span id="ws-dirty-badge" class="ws-pill ws-pill--warn" hidden>Unsaved changes</span>
+      </div>
+
+      <div class="ws-inline">
+        <label class="ws-switch-label" for="ws-advanced-toggle">
+          <span class="toggle-switch">
+            <input id="ws-advanced-toggle" type="checkbox" aria-controls="ws-advanced-panel" />
+            <span class="toggle-slider" aria-hidden="true"></span>
+          </span>
+          <span>Show advanced settings</span>
+        </label>
+        <button
+          id="ws-refresh-btn"
+          type="button"
+          class="btn btn-secondary btn-sm ws-btn-icon"
+          aria-label="Reload webserver and Home Assistant status"
+        >
+          <Icon name="refresh" size={16} sprite={true} />
+          <span>Refresh</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Webserver Form Card -->
+  <form id="ws-settings-form" class="card ws-card" novalidate>
+    <div class="ws-section-head">
+      <span class="ws-mini-icon" aria-hidden="true">
+        <Icon name="adjustments-horizontal" size={16} sprite={true} />
+      </span>
+      <h3>Generic settings</h3>
+    </div>
+
+    <div class="ws-stack">
+      <!-- Server Name -->
+      <div class="ws-field">
+        <div class="ws-label-row">
+          <label class="form-label ws-label" for="ws-server-name">Server name</label>
+          <span class="ws-source" data-ws-source="serverName" hidden></span>
+        </div>
+        <div class="ws-input-row">
+          <input
+            id="ws-server-name"
+            name="serverName"
+            type="text"
+            class="form-input"
+            maxlength="100"
+            placeholder="Meitheal"
+            autocomplete="off"
+          />
+          <button type="button" class="ws-help-btn" data-ws-help="serverName" aria-label="Help for Server name">
+            <Icon name="help" size={18} sprite={true} />
+          </button>
+        </div>
+      </div>
+
+      <!-- Internal URL -->
+      <div class="ws-field">
+        <div class="ws-label-row">
+          <label class="form-label ws-label" for="ws-internal-url">Internal URL</label>
+          <span class="ws-source" data-ws-source="internalUrl" hidden></span>
+        </div>
+        <div class="ws-input-row">
+          <input
+            id="ws-internal-url"
+            name="internalUrl"
+            type="url"
+            class="form-input"
+            placeholder="http://meitheal.local:3000"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button type="button" class="ws-help-btn" data-ws-help="internalUrl" aria-label="Help for Internal URL">
+            <Icon name="help" size={18} sprite={true} />
+          </button>
+        </div>
+        <p id="ws-internal-url-error" class="ws-error" role="alert" hidden></p>
+      </div>
+
+      <!-- External URL -->
+      <div class="ws-field">
+        <div class="ws-label-row">
+          <label class="form-label ws-label" for="ws-external-url">External URL</label>
+          <span class="ws-source" data-ws-source="externalUrl" hidden></span>
+        </div>
+        <div class="ws-input-row">
+          <input
+            id="ws-external-url"
+            name="externalUrl"
+            type="url"
+            class="form-input"
+            placeholder="https://tasks.example.com"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button type="button" class="ws-help-btn" data-ws-help="externalUrl" aria-label="Help for External URL">
+            <Icon name="help" size={18} sprite={true} />
+          </button>
+        </div>
+        <p id="ws-external-url-error" class="ws-error" role="alert" hidden></p>
+      </div>
+
+      <!-- Home Assistant URL / Domain -->
+      <div class="ws-field">
+        <div class="ws-row-between">
+          <div class="ws-label-row">
+            <label class="form-label ws-label" for="ws-ha-url">Home Assistant URL</label>
+            <span class="ws-source" data-ws-source="homeAssistantUrl" hidden></span>
+          </div>
+          <button id="ws-use-detected-ha-btn" type="button" class="btn btn-secondary btn-sm" hidden>
+            Use detected HA URL
+          </button>
+        </div>
+        <div class="ws-input-row">
+          <input
+            id="ws-ha-url"
+            name="homeAssistantUrl"
+            type="url"
+            class="form-input"
+            placeholder="https://ha.example.com or http://homeassistant.local:8123"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button type="button" class="ws-help-btn" data-ws-help="homeAssistantUrl" aria-label="Help for Home Assistant URL">
+            <Icon name="help" size={18} sprite={true} />
+          </button>
+        </div>
+        <p id="ws-ha-url-error" class="ws-error" role="alert" hidden></p>
+      </div>
+
+      <!-- Configurable Port(s) -->
+      <div class="ws-field">
+        <div class="ws-label-row">
+          <label class="form-label ws-label" for="ws-ports">TCP Port(s)</label>
+          <span class="ws-source" data-ws-source="portsSpec" hidden></span>
+        </div>
+        <div class="ws-input-row">
+          <input
+            id="ws-ports"
+            name="portsSpec"
+            type="text"
+            class="form-input"
+            value="3000"
+            placeholder="3000 or 3000, 8095 or 3000-3005"
+            autocomplete="off"
+            spellcheck="false"
+            aria-describedby="ws-ports-hint"
+          />
+          <button type="button" class="ws-help-btn" data-ws-help="portsSpec" aria-label="Help for TCP Ports">
+            <Icon name="help" size={18} sprite={true} />
+          </button>
+        </div>
+        <p id="ws-ports-hint" class="ws-sub">
+          Single port (<code>3000</code>), list (<code>3000, 8095</code>), or range (<code>3000-3005</code>, max 32).
+        </p>
+        <div id="ws-ports-preview" class="ws-inline" aria-live="polite"></div>
+        <p id="ws-ports-error" class="ws-error" role="alert" hidden></p>
+        <p id="ws-restart-banner" class="ws-restart-note" role="status" aria-live="polite" hidden></p>
+      </div>
+
+      <!-- Model Context Protocol (clean Home Assistant /config/ai card pattern) -->
+      <div class="ws-subcard">
+        <div class="ws-row-between">
+          <span class="ws-subcard-title">
+            <Icon name="plug" size={17} sprite={true} />
+            <span>Model Context Protocol (MCP)</span>
+          </span>
+          <button type="button" class="ws-help-btn" data-ws-help="mcp" aria-label="Help for MCP Server URL">
+            <Icon name="help" size={18} sprite={true} />
+          </button>
+        </div>
+        <p class="ws-sub">
+          Add this URL to your AI assistant or Home Assistant. Manage MCP access under <a class="ws-link" href="#ai-agents-settings" data-settings-section-link>AI &amp; Agent Access → Agent Protocols</a>.
+        </p>
+
+        <div class="ws-mcp-item">
+          <div class="ws-mcp-item__text">
+            <span class="ws-mcp-item__label">Main URL</span>
+            <code id="ws-mcp-url-text" class="ws-mcp-item__url">/api/mcp</code>
+          </div>
+          <div class="ws-inline">
+            <a
+              href="#ai-agents-settings"
+              data-settings-section-link
+              class="btn btn-secondary btn-sm ws-btn-icon"
+              title="Open Agent Protocols in AI Settings"
+            >
+              <Icon name="settings" size={15} sprite={true} />
+              <span>Agent Protocols</span>
+            </a>
+            <button
+              id="ws-copy-mcp-btn"
+              type="button"
+              class="btn btn-secondary btn-sm ws-btn-icon"
+              aria-label="Copy MCP Server URL"
+            >
+              <Icon name="copy" size={15} sprite={true} />
+              <span>Copy</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="ws-ha-ai-row" class="ws-mcp-item" hidden>
+          <div class="ws-mcp-item__text">
+            <span class="ws-mcp-item__label">Home Assistant AI &amp; MCP</span>
+            <code id="ws-ha-ai-url-text" class="ws-mcp-item__url"></code>
+          </div>
+          <a
+            id="ws-ha-ai-link"
+            href="#"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="btn btn-primary btn-sm ws-btn-icon"
+          >
+            <Icon name="home" size={15} sprite={true} />
+            <span>Open in Home Assistant</span>
+            <Icon name="external-link" size={14} sprite={true} />
+          </a>
+        </div>
+        <p id="ws-ha-ai-note" class="ws-sub"></p>
+      </div>
+
+      <!-- Home Assistant Supervisor & Services Integration -->
+      <div class="ws-subcard">
+        <div class="ws-row-between">
+          <span class="ws-subcard-title">
+            <Icon name="home" size={16} sprite={true} />
+            <span>Home Assistant Supervisor &amp; Services</span>
+          </span>
+          <div class="ws-inline">
+            <span id="ws-supervisor-mode-badge" class="ws-pill">Standalone</span>
+            <button type="button" class="ws-help-btn" data-ws-help="supervisor" aria-label="Help for Supervisor and Services">
+              <Icon name="help" size={18} sprite={true} />
+            </button>
+          </div>
+        </div>
+        <p id="ws-supervisor-summary" class="ws-sub">
+          Ports, domains, and the MCP URL are shared with Home Assistant Services and synced to Supervisor add-on options inside Home Assistant OS.
+        </p>
+        <div id="ws-supervisor-services" class="ws-inline" aria-live="polite"></div>
+        <label class="ws-check-row" for="ws-sync-ha-options">
+          <input id="ws-sync-ha-options" type="checkbox" checked />
+          <span>Sync webserver options to Home Assistant Supervisor on save</span>
+        </label>
+      </div>
+
+      <!-- Security Warning Banner (Music Assistant amber callout) -->
+      <div id="ws-security-callout">
+        <SettingsCallout title="Unencrypted HTTP by default" icon="alert-triangle" tone="warning">
+          <p id="ws-security-message">
+            This webserver is unencrypted by default. Never expose it directly to the internet — access Meitheal through Home Assistant Ingress, a reverse proxy with HTTPS, or a VPN, or enable SSL/TLS under Advanced settings.
+          </p>
+        </SettingsCallout>
+      </div>
+
+      <!-- Advanced Settings (Progressive disclosure via Show advanced settings toggle) -->
+      <div id="ws-advanced-panel" class="ws-subcard" hidden>
+        <div class="ws-row-between">
+          <h4 class="ws-subcard-title">Advanced settings</h4>
+          <span class="ws-pill">Advanced</span>
+        </div>
+
+        <div class="ws-input-row">
+          <label class="ws-check-row" for="ws-tls-enabled">
+            <input id="ws-tls-enabled" name="tlsEnabled" type="checkbox" />
+            <span>Enable SSL/TLS</span>
+          </label>
+          <button type="button" class="ws-help-btn" data-ws-help="tlsEnabled" aria-label="Help for Enable SSL/TLS">
+            <Icon name="help" size={18} sprite={true} />
+          </button>
+        </div>
+
+        <div class="ws-field">
+          <label class="form-label ws-label" for="ws-ssl-cert">SSL Certificate</label>
+          <div class="ws-input-row">
+            <input
+              id="ws-ssl-cert"
+              name="sslCertificate"
+              type="text"
+              class="form-input ws-mono"
+              placeholder="/ssl/fullchain.pem"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <button type="button" class="ws-help-btn" data-ws-help="sslCertificate" aria-label="Help for SSL Certificate">
+              <Icon name="help" size={18} sprite={true} />
+            </button>
+          </div>
+        </div>
+
+        <div class="ws-field">
+          <div class="ws-row-between">
+            <label class="form-label ws-label" for="ws-ssl-key">SSL Private Key</label>
+            <span id="ws-ssl-key-badge" class="ws-pill ws-pill--ok" hidden>Stored securely</span>
+          </div>
+          <div class="ws-input-row">
+            <div class="ws-secret-wrap">
+              <input
+                id="ws-ssl-key"
+                name="sslPrivateKey"
+                type="password"
+                class="form-input ws-mono"
+                placeholder="/ssl/privkey.pem"
+                autocomplete="new-password"
+                spellcheck="false"
+              />
+              <button
+                id="ws-ssl-key-toggle"
+                type="button"
+                class="btn btn-secondary ws-btn-icon"
+                aria-label="Show SSL private key"
+                aria-pressed="false"
+              >
+                <span data-eye-off><Icon name="eye-off" size={16} sprite={true} /></span>
+                <span data-eye-on hidden><Icon name="eye" size={16} sprite={true} /></span>
+              </button>
+            </div>
+            <button type="button" class="ws-help-btn" data-ws-help="sslPrivateKey" aria-label="Help for SSL Private Key">
+              <Icon name="help" size={18} sprite={true} />
+            </button>
+          </div>
+        </div>
+
+        <div class="ws-field">
+          <div class="ws-row-between">
+            <div class="ws-label-row">
+              <label class="form-label ws-label" for="ws-bind-address">Bind to IP/interface</label>
+              <span class="ws-source" data-ws-source="bindAddress" hidden></span>
+            </div>
+            <span class="ws-pill">Advanced</span>
+          </div>
+          <div class="ws-input-row">
+            <select id="ws-bind-address" name="bindAddress" class="form-select">
+              <option value="0.0.0.0">0.0.0.0 [default — all IPv4 interfaces]</option>
+              <option value="127.0.0.1">127.0.0.1 [loopback only]</option>
+              <option value="::">:: [all IPv6 &amp; dual-stack interfaces]</option>
+            </select>
+            <button type="button" class="ws-help-btn" data-ws-help="bindAddress" aria-label="Help for Bind to IP/interface">
+              <Icon name="help" size={18} sprite={true} />
+            </button>
+          </div>
+        </div>
+
+        <div class="ws-field">
+          <span class="form-label ws-label">Unified environment &amp; VM defaults</span>
+          <div id="ws-env-summary" class="ws-inline"></div>
+        </div>
+      </div>
+
+      <!-- Full-width Verify Button + Live Checklist -->
+      <div class="ws-stack-sm">
+        <div class="ws-input-row">
+          <button id="ws-verify-btn" type="button" class="btn btn-secondary ws-verify-btn">
+            <Icon name="check" size={17} sprite={true} />
+            <span>Verify configuration</span>
+          </button>
+          <button type="button" class="ws-help-btn" data-ws-help="verify" aria-label="Help for Verify configuration">
+            <Icon name="help" size={18} sprite={true} />
+          </button>
+        </div>
+        <ul id="ws-verify-results" class="ws-verify-list" aria-live="polite" hidden></ul>
+      </div>
+
+      <!-- Save Footer Bar -->
+      <div class="ws-save-bar">
+        <p id="ws-save-status" class="ws-sub" role="status" aria-live="polite">
+          Changes apply to Meitheal settings, unified Home Assistant URL, and Supervisor options when saved.
+        </p>
+        <button id="ws-save-btn" type="submit" class="btn btn-primary ws-btn-icon">
+          <Icon name="check" size={16} sprite={true} />
+          <span>Save</span>
+        </button>
+      </div>
+    </div>
+  </form>
+
+  <script type="application/json" id="ws-help-topics" set:html={safeJsonForScript(WEBSERVER_HELP_DOCS)}></script>
+</section>
+
+<style is:inline>
+  .ws-card{padding:18px 20px;border-radius:12px}
+  .ws-header-card,.ws-stack{display:grid;gap:16px}
+  .ws-stack-sm,.ws-field{display:grid;gap:6px}
+  .ws-row-between,.ws-save-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+  .ws-section-head,.ws-inline,.ws-subcard-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .ws-section-head{margin-bottom:14px}
+  .ws-section-head h3,.ws-subcard-title{margin:0;font-size:.98rem;font-weight:650;color:var(--text-primary)}
+  .ws-mini-icon{display:inline-flex;align-items:center;justify-content:center;flex:none;background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent-text)}
+  .ws-mini-icon{width:28px;height:28px;border-radius:8px}
+  .ws-title{margin:0;font-size:1.25rem;font-weight:650;width:fit-content;border-radius:6px}
+  .ws-sub{margin:0;color:var(--text-secondary);font-size:.85rem;line-height:1.45}
+  .ws-label{margin:0}
+  .ws-label-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .ws-source{font-size:.7rem;font-weight:600;padding:2px 7px;border-radius:999px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-secondary)}
+  .ws-source--db{color:var(--accent-text);border-color:color-mix(in srgb,var(--accent) 40%,transparent);background:color-mix(in srgb,var(--accent) 12%,transparent)}
+  .ws-source--env{color:var(--success,#2fb344);border-color:color-mix(in srgb,var(--success,#2fb344) 38%,transparent);background:color-mix(in srgb,var(--success,#2fb344) 12%,transparent)}
+  .ws-restart-note{margin:2px 0 0;padding:8px 10px;border-radius:8px;font-size:.8125rem;font-weight:550;color:var(--warning,#f59f00);border:1px solid color-mix(in srgb,var(--warning,#f59f00) 40%,transparent);background:color-mix(in srgb,var(--warning,#f59f00) 10%,transparent)}
+  .ws-restart-note[hidden]{display:none}
+  .ws-save-bar{padding-top:12px;border-top:1px solid var(--border)}
+  .ws-switch-label,.ws-check-row{display:inline-flex;align-items:center;gap:8px;font-size:.875rem;font-weight:600;cursor:pointer;min-height:36px}
+  .ws-check-row{font-weight:550}
+  .ws-check-row input{width:18px;height:18px;accent-color:var(--accent);flex:none}
+  .ws-input-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px}
+  .ws-secret-wrap{display:flex;gap:8px;min-width:0}
+  .ws-secret-wrap .form-input{flex:1 1 auto;min-width:0}
+  .ws-help-btn{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;border:1px solid transparent;background:transparent;color:var(--text-secondary);cursor:pointer;flex:none}
+  .ws-help-btn:hover,.ws-help-btn:focus-visible{color:var(--accent-text);background:color-mix(in srgb,var(--accent) 14%,transparent);border-color:color-mix(in srgb,var(--accent) 35%,transparent)}
+  .ws-subcard{display:grid;gap:10px;padding:14px 16px;border:1px solid var(--border);border-radius:10px;background:color-mix(in srgb,var(--bg-secondary) 65%,transparent)}
+  .ws-subcard[hidden]{display:none}
+  .ws-mcp-item{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card)}
+  .ws-mcp-item[hidden]{display:none}
+  .ws-mcp-item__text{display:grid;gap:2px;min-width:0;flex:1 1 220px}
+  .ws-mcp-item__label{font-size:.82rem;font-weight:600;color:var(--text-primary)}
+  .ws-mcp-item__url{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.84rem;color:var(--text-secondary);word-break:break-all;background:transparent;padding:0}
+  .ws-link{color:var(--accent-text);text-decoration:underline;font-weight:550}
+  .ws-error{margin:0;color:var(--danger);font-size:.8125rem;font-weight:550}
+  .ws-mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.85rem}
+  .ws-pill{display:inline-flex;align-items:center;padding:3px 9px;border-radius:999px;font-size:.75rem;font-weight:600;line-height:1.3;white-space:nowrap;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-secondary)}
+  .ws-pill--accent{background:color-mix(in srgb,var(--accent) 16%,transparent);border-color:color-mix(in srgb,var(--accent) 38%,transparent);color:var(--accent-text)}
+  .ws-pill--ok{background:color-mix(in srgb,var(--success,#2fb344) 16%,transparent);border-color:color-mix(in srgb,var(--success,#2fb344) 38%,transparent);color:var(--success,#2fb344)}
+  .ws-pill--warn{background:color-mix(in srgb,var(--warning,#f59f00) 16%,transparent);border-color:color-mix(in srgb,var(--warning,#f59f00) 38%,transparent);color:var(--warning,#f59f00)}
+  .ws-pill--danger{background:color-mix(in srgb,var(--danger,#d63939) 16%,transparent);border-color:color-mix(in srgb,var(--danger,#d63939) 38%,transparent);color:var(--danger,#d63939)}
+  .ws-verify-btn{width:100%;min-height:44px;justify-content:center;font-weight:650;border-color:color-mix(in srgb,var(--accent) 55%,var(--border));background:color-mix(in srgb,var(--accent) 16%,var(--bg-card));color:var(--text-primary)}
+  .ws-verify-btn:hover{background:color-mix(in srgb,var(--accent) 24%,var(--bg-card))}
+  .ws-verify-list{margin:0;padding:0;list-style:none;display:grid;gap:6px}
+  .ws-verify-list li{display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:.84rem;background:var(--bg-card)}
+  .ws-btn-icon{display:inline-flex;align-items:center;gap:6px;min-height:38px}
+  .ws-agent-mcp-bar{margin-top:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);display:grid;gap:8px}
+  .ws-agent-mcp-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+  .ws-agent-mcp-url{display:grid;gap:2px;min-width:0}
+  .ws-agent-mcp-label{font-size:.75rem;font-weight:600;color:var(--text-secondary)}
+  .ws-agent-mcp-links{display:flex;gap:14px;flex-wrap:wrap;font-size:.82rem}
+  @media (max-width:640px){.ws-card{padding:14px}.ws-mcp-item{flex-direction:column;align-items:stretch}}
+</style>

@@ -7,11 +7,18 @@ const privatePath = "/fixture-no-store"
 const unscheduledPath = "/today?unscheduledPage=1"
 
 async function fixture(prefix: string) {
-  const worker = await readFile(new URL("../../apps/web/public/sw.js", import.meta.url), "utf8")
+  const source = process.env.MEITHEAL_TEST_BROWSER === "1" ? "dist/client" : "public"
+  const worker = await readFile(new URL(`../../apps/web/${source}/sw.js`, import.meta.url), "utf8")
+  const offlineShell = await readFile(new URL(`../../apps/web/${source}/offline.html`, import.meta.url), "utf8")
   let boardRequests = 0
+  let receiptRequests = 0
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost")
     const path = url.pathname.slice(prefix.length)
+    if (path === "/offline.html") {
+      response.writeHead(200, { "content-type": "text/html", "cache-control": "max-age=600" })
+      return response.end(offlineShell)
+    }
     if (path === "/sw.js") {
       response.writeHead(200, { "content-type": "application/javascript" })
       return response.end(worker)
@@ -25,7 +32,14 @@ async function fixture(prefix: string) {
       return response.end(`<h1>Origin Board response ${++boardRequests}</h1>`)
     }
 
+    if (path === "/api/tasks" && url.searchParams.has("captureReceipt")) {
+      // A synthetic cacheable origin tests whether the worker bypasses HTTP cache.
+      response.writeHead(200, { "content-type": "application/json", "cache-control": "max-age=600" })
+      return response.end(JSON.stringify({ receipt: "fixture", originRead: ++receiptRequests }))
+    }
+
     const isPrivate = path === "/settings" || path === "/review" || path.startsWith(privatePath) ||
+      path === "/projects/private-fixture" ||
       (path === "/today" && url.searchParams.has("unscheduledPage"))
     response.writeHead(200, {
       "content-type": "text/html",
@@ -91,14 +105,16 @@ test("no-store responses stay out of navigation and fetch caches", async ({ brow
     await expect(page.getByRole("heading")).toHaveText("Ordinary offline page")
     expect(await page.evaluate(url => fetch(url).then(response => response.status), fetchUrl)).toBe(503)
     const navigation = await page.goto(navUrl)
-    expect(await navigation?.text()).toContain("Ordinary offline page")
+    expect(await navigation?.text()).toContain("You're offline")
   } finally {
     await context.close()
     await server.close()
   }
 })
 
-for (const [route, label] of [[unscheduledPath, "Unscheduled Today"], ["/review", "Proposal Review"]]) {
+for (const [route, label] of [
+  [unscheduledPath, "Unscheduled Today"], ["/review", "Proposal Review"], ["/projects/private-fixture", "Legacy Project"],
+]) {
   for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
     test(`${label} cannot replay stale pages in ${prefix ? "ingress" : "standalone"}`, async ({ browser }) => {
       const server = await fixture(prefix)
@@ -121,14 +137,15 @@ for (const [route, label] of [[unscheduledPath, "Unscheduled Today"], ["/review"
         expect(await cached(page, url)).toBe(false)
         expect(await page.evaluate(() => caches.keys())).toContain("fixture-other-software")
         const navigation = await page.goto(url)
-        expect(navigation?.fromServiceWorker()).toBe(false)
+        expect(navigation?.fromServiceWorker()).toBe(true)
         await expect(page.getByRole("heading")).toHaveText("Live only")
         expect(await page.evaluate(url => fetch(url).then(response => response.text()), url)).toContain("Live only")
         expect(await cached(page, url)).toBe(false)
 
         await context.setOffline(true)
-        expect(await page.evaluate(url => fetch(url).then(() => "unexpected response", () => "offline"), url)).toBe("offline")
-        await expect(page.reload()).rejects.toThrow(/ERR_INTERNET_DISCONNECTED/)
+        expect(await page.evaluate(url => fetch(url).then(response => response.status), url)).toBe(503)
+        expect((await page.reload())?.status()).toBe(503)
+        await expect(page.getByRole("heading")).toHaveText("You're offline")
       } finally {
         await context.close()
         await server.close()
@@ -138,14 +155,18 @@ for (const [route, label] of [[unscheduledPath, "Unscheduled Today"], ["/review"
 }
 
 for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
-  test(`unavailable Board URLs cannot replay Household data in ${prefix ? "ingress" : "standalone"}`, async ({ browser }) => {
+  test(`private Board reads and capture receipts are network-only in ${prefix ? "ingress" : "standalone"}`, async ({ browser }) => {
     const server = await fixture(prefix)
     const context = await browser.newContext({ serviceWorkers: "allow", extraHTTPHeaders: {} })
     try {
       const page = await context.newPage()
       const scoped = [
+        "/planning?board=fixture",
         "/api/tasks?board_id=fixture",
         "/api/tasks?board_name=fixture",
+        "/api/tasks?captureReceipt=1",
+        "/api/tasks?captureReceipt=invalid",
+        "//api/%2574asks?%63aptureReceipt=1",
         "/api/tasks/card?board_id=",
         "/api/tasks/card/links?board_id=fixture",
         "/api/lanes?board_id=fixture",
@@ -163,11 +184,10 @@ for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
       scoped.push(retired)
       const householdApi = server.base + "/api/tasks?limit=2"
       const householdPage = server.base + "/tasks?view=kanban"
-      const retained = [
-        householdApi, householdPage,
-        server.base + "/planning?board=fixture",
+      scoped.push(householdApi, householdPage,
         server.base + "/api/tasks-archive?board_id=fixture",
-      ]
+        server.base + "/api/tasks-archive?captureReceipt=1")
+      const retained = [server.base + "/unrelated-public-fixture?board_id=fixture"]
       const cacheNames = ["api", "nav", "precache", "static"].map(bucket => `meitheal-${bucket}-v0.0.1`)
       const candidateUrls = [...scoped, ...retained]
       const seed = (urls: string[], body: string) => page.evaluate(async ({ urls, body, cacheNames }) => {
@@ -184,12 +204,16 @@ for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
 
       const scopedApi = server.base + "/api/tasks?board_id=fixture"
       const scopedPage = server.base + "/tasks?board=fixture"
+      const receiptApi = server.base + "/api/tasks?captureReceipt=1"
+      const readReceipt = () => page.evaluate(url => fetch(url).then(response => response.json()), receiptApi)
       await page.goto(server.base + "/fixture")
       expect(await page.evaluate(url => fetch(url).then(response => response.text()), scopedApi))
         .toContain("Origin Board response 1")
       expect(await page.evaluate(url => fetch(url).then(response => response.text()), scopedApi))
         .toContain("Origin Board response 1")
-      await seed(scoped, "<h1>Stale Household data for a Board URL</h1>")
+      expect(await readReceipt()).toEqual({ receipt: "fixture", originRead: 1 })
+      expect(await readReceipt()).toEqual({ receipt: "fixture", originRead: 1 })
+      await seed(scoped, "<h1>Stale private fixture data</h1>")
       await seed(retained, "<h1>Keep Household and unrelated entries</h1>")
       expect(await storedCandidates()).toEqual(cacheNames.map(() => candidateUrls))
       await register(page, server.base + "/sw.js")
@@ -198,12 +222,13 @@ for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
       expect((await page.goto(scopedPage))?.fromServiceWorker()).toBe(true)
       expect(await page.evaluate(url => fetch(url).then(response => response.text()), scopedApi))
         .toContain("Origin Board response 2")
+      expect(await readReceipt()).toEqual({ receipt: "fixture", originRead: 2 })
       for (const url of scoped) {
         expect(await page.evaluate(url => fetch(url).then(response => response.status), url)).toBe(200)
       }
       expect(await storedCandidates()).toEqual(cacheNames.map(() => retained))
 
-      await seed(scoped, "<h1>Late Household data for a Board URL</h1>")
+      await seed(scoped, "<h1>Late private fixture data</h1>")
       await context.setOffline(true)
       for (const url of scoped) {
         const offline = await page.evaluate(async url => {
@@ -211,15 +236,14 @@ for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
           return { status: response.status, cacheControl: response.headers.get("cache-control"), body: await response.text() }
         }, url)
         expect(offline).toMatchObject({ status: 503, cacheControl: "private, no-store" })
-        expect(offline.body).not.toContain("Household")
+        expect(offline.body).not.toContain("private fixture data")
       }
-      expect(await page.evaluate(url => fetch(url).then(response => response.text()), householdApi))
-        .toContain("Keep Household and unrelated entries")
-      expect((await page.goto(householdPage))?.fromServiceWorker()).toBe(true)
-      await expect(page.getByRole("heading")).toHaveText("Keep Household and unrelated entries")
+      expect(await page.evaluate(url => fetch(url).then(response => response.status), householdApi)).toBe(503)
+      expect((await page.goto(householdPage))?.status()).toBe(503)
+      await expect(page.getByRole("heading")).toHaveText("You're offline")
       const offlinePage = await page.goto(scopedPage)
       expect(offlinePage?.status()).toBe(503)
-      expect(await offlinePage?.text()).toBe("Offline")
+      expect(await offlinePage?.text()).toContain("You're offline")
     } finally {
       await context.close()
       await server.close()
@@ -270,7 +294,7 @@ for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
       }, { aliases, cacheNames })
       await context.setOffline(true)
       for (const url of aliases) {
-        expect(await page.evaluate(url => fetch(url).then(() => "unexpected response", () => "offline"), url)).toBe("offline")
+        expect(await page.evaluate(url => fetch(url).then(response => response.status), url)).toBe(503)
       }
     } finally {
       await context.close()
@@ -303,7 +327,7 @@ for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
       }, urls)
       await context.setOffline(true)
       for (const url of urls) {
-        expect(await page.evaluate(url => fetch(url).then(() => "unexpected response", () => "offline"), url)).toBe("offline")
+        expect(await page.evaluate(url => fetch(url).then(response => response.status), url)).toBe(503)
       }
     } finally {
       await context.close()
@@ -333,7 +357,7 @@ for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
         "/api/tasks/card%2Fcomments",
       ].map(path => server.base + path)
       const retired = new URL("/api/hassio_ingress/retired/api/tasks/card/comments", server.base).href
-      const unrelated = server.base + "/api/tasks/card/links"
+      const unrelated = server.base + "/public-fixture?kind=links"
       const bucket = "meitheal-api-v0.0.1"
       const seed = (urls: string[]) => page.evaluate(async ({ urls, bucket }) => {
         const cache = await caches.open(bucket)
@@ -353,7 +377,7 @@ for (const prefix of ["", "/api/hassio_ingress/synthetic-worker"]) {
       await seed(activeUrls)
       await context.setOffline(true)
       for (const url of activeUrls) {
-        expect(await page.evaluate(url => fetch(url).then(() => "unexpected response", () => "offline"), url)).toBe("offline")
+        expect(await page.evaluate(url => fetch(url).then(response => response.status), url)).toBe(503)
       }
       expect(await keys()).toEqual(expect.arrayContaining(activeUrls))
     } finally {

@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "focus-pulse",
+  "name": "Focus Pulse",
+  "version": "1.0.0",
+  "type": "extension",
+  "description": "Compact workload pulse and daily household intention stored in isolated plugin storage.",
+  "author": "Meitheal Reference",
+  "license": "AGPL-3.0-only",
+  "minMeithealVersion": "0.0.1",
+  "entry": "plugin.js",
+  "iFrame": "index.html",
+  "icon": "icon.svg",
+  "sidePanel": true,
+  "permissions": [
+    "tasks:read",
+    "ui:header-button",
+    "ui:side-panel",
+    "ui:toast",
+    "storage:local"
+  ],
+  "hooks": [],
+  "allowedHosts": [],
+  "dataSharing": {
+    "outbound": false,
+    "destinations": [],
+    "dataTypes": ["tasks", "plugin-storage"],
+    "summary": "Runs locally inside your browser sandbox. Stores your daily intention in isolated plugin storage only."
+  }
+}

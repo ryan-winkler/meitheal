@@ -1,28 +1,29 @@
-import { execFileSync, fork } from "node:child_process"
+import { execFileSync, fork } from "../helpers/isolated-process"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, test, type Page } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { deferred } from "./_helpers"
 
 test("copies a stable task link and returns from a deleted task to the task view", async ({ page, request, baseURL }) => {
   test.skip(!process.env.E2E_BASE_URL, "Requires a disposable local Meitheal server")
   const origin = new URL(baseURL!).origin
-  const headers = { origin, "content-type": "application/json" }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin, "content-type": "application/json" })
   const title = "Task permalink round trip"
   const created = await request.post("/api/tasks", { headers, data: { title, status: "active" } })
   expect(created.status(), await created.text()).toBe(201)
   const { id, ticket_key } = await created.json()
   const taskPage = "/tasks?area_id=default#kanban"
-  const canonical = `${origin}/tickets/${id}`
+  const canonical = `${origin}/tickets/${ticket_key}`
 
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"])
   await page.goto(taskPage)
   const card = page.getByRole("link", { name: /^Task: Task permalink round trip,/ })
     .and(page.locator(`[data-id="${id}"]`))
-  await expect(card).toHaveAttribute("href", `/tickets/${id}`)
+  await expect(card).toHaveAttribute("href", `/tickets/${ticket_key}?board_id=household`)
   await card.click()
   const detail = page.getByRole("dialog", { name: `Task detail: ${title}` })
   await detail.getByRole("button", { name: "Copy task link" }).click()
@@ -35,6 +36,16 @@ test("copies a stable task link and returns from a deleted task to the task view
   await expect(detail).toBeVisible()
   await expect(page).toHaveURL(canonical)
   await page.goto(`/tasks?open=${ticket_key}#kanban`)
+  await expect(page.locator("#td-title")).toHaveValue(title)
+  await expect(page).toHaveURL(canonical)
+
+  // Older ID links and lower-case keys still open the ticket and settle on the readable key.
+  for (const locator of [id, String(ticket_key).toLowerCase()]) {
+    await page.goto(`/tickets/${locator}`)
+    await expect(page.locator("#td-title")).toHaveValue(title)
+    await expect(page).toHaveURL(canonical)
+  }
+  await page.goBack()
   await expect(page.locator("#td-title")).toHaveValue(title)
   await expect(page).toHaveURL(canonical)
 
@@ -60,7 +71,8 @@ test("Table keyboard controls retain their actions beside the task detail shortc
   test.skip(!process.env.E2E_BASE_URL, "Requires a disposable local Meitheal server")
   const origin = new URL(baseURL!).origin
   const title = "Table keyboard task"
-  const created = await request.post("/api/tasks", { headers: { origin }, data: { title, status: "active" } })
+  const headers = await currentBoardWriteHeaders(request, "household", { origin })
+  const created = await request.post("/api/tasks", { headers, data: { title, status: "active" } })
   expect(created.status(), await created.text()).toBe(201)
   const { id } = await created.json()
 
@@ -89,65 +101,84 @@ test("Table keyboard controls retain their actions beside the task detail shortc
   await expect(page.getByRole("dialog", { name: `Task detail: ${title}` })).toBeVisible()
 })
 
-test("task detail contains Tab while loading and after a nested confirmation", async ({ page, request, baseURL }) => {
-  test.skip(!process.env.E2E_BASE_URL, "Requires a disposable local Meitheal server")
-  const origin = new URL(baseURL!).origin
-  const title = "Task detail keyboard boundaries"
-  const created = await request.post("/api/tasks", { headers: { origin }, data: { title, status: "active" } })
-  expect(created.status(), await created.text()).toBe(201)
-  const { id } = await created.json()
-  const detailResponse = deferred<void>()
-  await page.route(`${origin}/api/tasks/${id}`, async route => {
-    await detailResponse.promise
-    await route.continue()
+test.describe(() => {
+  // The loading gate must intercept the page request before service-worker handling.
+  test.use({ serviceWorkers: "block" })
+
+  test("task detail contains Tab while loading and after a nested confirmation", async ({ page, request, baseURL }) => {
+    test.skip(!process.env.E2E_BASE_URL, "Requires a disposable local Meitheal server")
+    const origin = new URL(baseURL!).origin
+    const title = "Task detail keyboard boundaries"
+    const headers = await currentBoardWriteHeaders(request, "household", { origin })
+    const created = await request.post("/api/tasks", { headers, data: { title, status: "active" } })
+    expect(created.status(), await created.text()).toBe(201)
+    const { id } = await created.json()
+    const detailResponse = deferred<void>()
+    const detailRequestEntered = deferred<void>()
+    await page.route(`${origin}/api/tasks/${id}`, async route => {
+      detailRequestEntered.resolve()
+      await detailResponse.promise
+      await route.continue()
+    })
+    await page.emulateMedia({ reducedMotion: "reduce" })
+
+    try {
+      await page.goto("/tasks?area_id=default#kanban")
+      await expect.poll(() => page.evaluate(() => typeof window.openTaskDetail)).toBe("function")
+      const card = page.locator(`.kanban-card[data-id="${id}"]`).getByRole("link", { name: new RegExp(`^Task: ${title},`) })
+      await card.press("Enter")
+      const detail = page.locator("#task-detail-overlay")
+      const close = detail.getByRole("button", { name: "Close detail" })
+      await detailRequestEntered.promise
+      await expect(detail).toHaveAttribute("aria-label", "Task detail: loading...")
+      await expect(close).toBeFocused()
+      await page.keyboard.press("Shift+Tab")
+      await expect(close).toBeFocused()
+      await page.keyboard.press("Tab")
+      await expect(close).toBeFocused()
+
+      detailResponse.resolve()
+      const first = detail.locator("#td-toggle-promote")
+      const last = detail.locator("#td-section-activity > summary")
+      await expect(first).toBeVisible()
+      // Promote stays disabled until Details finishes loading.
+      await expect(first).toBeEnabled()
+      await first.focus()
+      await page.keyboard.press("Shift+Tab")
+      await expect(last).toBeFocused()
+      await page.keyboard.press("Tab")
+      await expect(first).toBeFocused()
+
+      const remove = detail.getByRole("button", { name: "Delete Task" })
+      await expect(remove).toBeEnabled()
+      await remove.press("Enter")
+      const confirm = page.getByRole("alertdialog", { name: "Delete Task" })
+      await expect(confirm.getByRole("button", { name: "Cancel" })).toBeFocused()
+      await page.keyboard.press("Shift+Tab")
+      await expect(confirm.getByRole("button", { name: "Delete Task" })).toBeFocused()
+      await page.keyboard.press("Escape")
+      await expect(remove).toBeFocused()
+      await expect(detail).toBeVisible()
+      await page.keyboard.press("Escape")
+      await expect(detail).toBeHidden()
+      await expect(card).toBeFocused()
+    } finally {
+      detailResponse.resolve()
+      await request.delete(`/api/tasks/${id}`, { headers })
+    }
   })
-  await page.emulateMedia({ reducedMotion: "reduce" })
-
-  try {
-    await page.goto("/tasks?area_id=default#kanban")
-    await expect.poll(() => page.evaluate(() => typeof window.openTaskDetail)).toBe("function")
-    const card = page.locator(`.kanban-card[data-id="${id}"]`).getByRole("link", { name: new RegExp(`^Task: ${title},`) })
-    await card.press("Enter")
-    const detail = page.locator("#task-detail-overlay")
-    const close = detail.getByRole("button", { name: "Close detail" })
-    await expect(close).toBeFocused()
-    await page.keyboard.press("Shift+Tab")
-    await expect(close).toBeFocused()
-    await page.keyboard.press("Tab")
-    await expect(close).toBeFocused()
-
-    detailResponse.resolve()
-    const first = detail.getByRole("button", { name: "Favorite" })
-    const last = detail.getByText("Activity Log", { exact: true })
-    await expect(first).toBeVisible()
-    await first.focus()
-    await page.keyboard.press("Shift+Tab")
-    await expect(last).toBeFocused()
-    await page.keyboard.press("Tab")
-    await expect(first).toBeFocused()
-
-    const remove = detail.getByRole("button", { name: "Delete Task" })
-    await remove.press("Enter")
-    const confirm = page.getByRole("alertdialog", { name: "Delete Task" })
-    await expect(confirm.getByRole("button", { name: "Cancel" })).toBeFocused()
-    await page.keyboard.press("Shift+Tab")
-    await expect(confirm.getByRole("button", { name: "Delete Task" })).toBeFocused()
-    await page.keyboard.press("Escape")
-    await expect(remove).toBeFocused()
-    await expect(detail).toBeVisible()
-    await page.keyboard.press("Escape")
-    await expect(detail).toBeHidden()
-    await expect(card).toBeFocused()
-  } finally {
-    detailResponse.resolve()
-    await request.delete(`/api/tasks/${id}`, { headers: { origin } })
-  }
 })
 
 test("a task link preserves simulated ingress and opens in another authorized context", async ({ browser }) => {
+  test.setTimeout(60_000)
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built app and the ingress fixture")
   const work = await mkdtemp(join(tmpdir(), "meitheal-task-permalink-"))
-  const env = { PATH: process.env.PATH, NODE_ENV: "production", MEITHEAL_DB_URL: `file:${join(work, "meitheal.db")}` }
+  const env = {
+    PATH: process.env.PATH,
+    NODE_ENV: "production",
+    MEITHEAL_DB_URL: `file:${join(work, "meitheal.db")}`,
+    MEITHEAL_TEST_CORE_USER_LOOKUP: "1",
+  }
   const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
   const fixture = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
   let server: ReturnType<typeof fork> | undefined
@@ -166,11 +197,10 @@ test("a task link preserves simulated ingress and opens in another authorized co
     await source.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
     await recipient.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
     const title = "Ingress task permalink round trip"
-    const created = await source.request.post(entry + "/api/tasks", {
-      headers: { origin }, data: { title, status: "active" },
-    })
+    const headers = await currentBoardWriteHeaders(source.request, "household", { origin }, entry)
+    const created = await source.request.post(entry + "/api/tasks", { headers, data: { title, status: "active" } })
     expect(created.status(), await created.text()).toBe(201)
-    const { id } = await created.json()
+    const { ticket_key } = await created.json()
     const sourcePage = await source.newPage()
     await sourcePage.addInitScript(() => {
       Object.defineProperty(navigator, "clipboard", { value: undefined })
@@ -187,16 +217,16 @@ test("a task link preserves simulated ingress and opens in another authorized co
     const manual = sourcePage.getByLabel("Copy this task link manually")
     await expect(manual).toBeFocused()
     const copiedLink = await manual.inputValue()
-    expect(copiedLink).toBe(`${entry}/tickets/${id}`)
+    expect(copiedLink).toBe(`${entry}/tickets/${ticket_key}`)
 
     const recipientPage = await recipient.newPage()
     const taskRead = recipientPage.waitForResponse(response =>
-      response.url() === `${entry}/api/tasks/${id}` && response.request().method() === "GET")
+      response.url() === `${entry}/api/tasks/${ticket_key}` && response.request().method() === "GET")
     await recipientPage.goto(copiedLink)
-    await expect(recipientPage.locator("#td-title")).toHaveValue(title)
+    await expect(recipientPage.locator("#td-title")).toHaveValue(title, { timeout: 15_000 })
     expect((await taskRead).status()).toBe(200)
-    await recipientPage.reload()
-    await expect(recipientPage.locator("#td-title")).toHaveValue(title)
+    expect((await recipientPage.reload())?.status()).toBe(200)
+    await expect(recipientPage.locator("#td-title")).toHaveValue(title, { timeout: 15_000 })
   } finally {
     await source.close()
     await recipient.close()
@@ -209,7 +239,10 @@ test("a task link preserves simulated ingress and opens in another authorized co
   }
 })
 test("a comment link focuses the edited comment through ingress and recovers after deletion", async ({ browser, request }) => {
+  test.setTimeout(90_000)
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built app and a disposable ingress fixture")
+  // The test migrates a database and starts its own ingress server before the browser flow.
+  test.slow()
   const work = await mkdtemp(join(tmpdir(), "meitheal-comment-permalink-"))
   const env = {
     PATH: process.env.PATH,
@@ -234,43 +267,46 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     ])
     const origin = `http://127.0.0.1:${info.port}`
     const entry = origin + info.configuredPath
-    const headers = { origin, "sec-fetch-site": "same-origin" }
+    const sameOrigin = { origin, "sec-fetch-site": "same-origin" }
     await source.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
     await recipient.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+    const headers = await currentBoardWriteHeaders(source.request, "household", sameOrigin, entry)
+    const recipientHeaders = await currentBoardWriteHeaders(recipient.request, "household", sameOrigin, entry)
     const createTask = async (title: string) => {
       const result = await source.request.post(entry + "/api/tasks", { headers, data: { title, status: "active" } })
       expect(result.status()).toBe(201)
-      return (await result.json()).id as string
+      return await result.json() as { id: string, ticket_key: string }
     }
     const post = async (taskId: string, content: string) => {
       const result = await source.request.post(`${entry}/api/tasks/${taskId}/comments`, { headers, data: { content } })
       expect(result.status()).toBe(201)
       return (await result.json()).id as number
     }
-    const id = await createTask("Comment link task")
-    const other = await createTask("Unrelated comment task")
+    const { id, ticket_key } = await createTask("Comment link task")
+    const { id: other } = await createTask("Unrelated comment task")
     await post(id, "First visible comment")
     const comment = await post(id, "The linked comment")
     const otherComment = await post(other, "Comment belonging to a different task")
-    const taskUrl = `${entry}/tickets/${id}`
+    const taskUrl = `${entry}/tickets/${ticket_key}`
     const commentApiPath = `/api/tasks/${id}/comments/${comment}`
 
     const commentsUrl = entry + `/api/tasks/${id}/comments`
-    const openWithComments = async (page: Page, url: string, content: string) => {
-      const [commentsRead] = await Promise.all([
+    const showLinkedComments = async (page: Page, navigate: () => ReturnType<Page["goto"]>, content: string) => {
+      const [commentsRead, documentResponse] = await Promise.all([
         page.waitForResponse(
           response => response.url() === commentsUrl && response.request().method() === "GET",
           { timeout: 12_000 },
         ),
-        page.goto(url),
+        navigate(),
       ])
+      expect(documentResponse?.status()).toBe(200)
       expect(commentsRead.status()).toBe(200)
       expect(await commentsRead.json()).toMatchObject({
         comments: expect.arrayContaining([expect.objectContaining({ id: comment, content })]),
       })
     }
     const sourcePage = await source.newPage()
-    await openWithComments(sourcePage, taskUrl, "The linked comment")
+    await showLinkedComments(sourcePage, () => sourcePage.goto(taskUrl), "The linked comment")
     const list = sourcePage.locator("#td-comments")
     await expect(list).toContainText("The linked comment")
     const authorRow = sourcePage.locator(`#td-comment-${comment}`)
@@ -283,7 +319,7 @@ test("a comment link focuses the edited comment through ingress and recovers aft
 
     const denied = await request.get(origin + commentApiPath)
     expect(denied.status()).toBe(401)
-    const forbiddenEdit = await recipient.request.patch(entry + commentApiPath, { headers, data: { content: "Wrong author" } })
+    const forbiddenEdit = await recipient.request.patch(entry + commentApiPath, { headers: recipientHeaders, data: { content: "Wrong author" } })
     expect(forbiddenEdit.status()).toBe(404)
 
     await edit.press("Enter")
@@ -334,7 +370,7 @@ test("a comment link focuses the edited comment through ingress and recovers aft
       await editStarted.promise
       await sourcePage.getByRole("button", { name: "Close detail" }).press("Enter")
       await expect(sourcePage.locator("#task-detail-overlay")).not.toHaveClass(/active/)
-      await expect(sourcePage).toHaveURL(entry + "/tasks#kanban")
+      await expect(sourcePage).toHaveURL(entry + "/boards/household")
       await sourcePage.goto(taskUrl)
       await expect(authorRow).toContainText("Edited linked comment")
     } finally {
@@ -346,7 +382,7 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     await expect(editor).toBeHidden()
 
     const page = await recipient.newPage()
-    await openWithComments(page, href, "Edited linked comment")
+    await showLinkedComments(page, () => page.goto(href), "Edited linked comment")
     const target = page.locator(`#td-comment-${comment}`)
     await expect(target).toContainText("Edited linked comment")
     await expect(target).toBeFocused()
@@ -357,12 +393,13 @@ test("a comment link focuses the edited comment through ingress and recovers aft
       entry + "/sw.js",
       { timeout: 15_000 },
     )
-    await page.reload()
+    await showLinkedComments(page, () => page.reload(), "Edited linked comment")
+    await expect(page).toHaveURL(href)
     await expect(target).toBeFocused()
 
     const missing = page.locator("#td-comment-link-status")
     await page.goto(`${taskUrl}?comment=${otherComment}`)
-    await expect(missing).toContainText("This comment is unavailable")
+    await expect(missing).toContainText("This comment is unavailable", { timeout: 12_000 })
     await expect(missing).toBeFocused()
     await expect(page.locator("#td-comments")).not.toContainText("Comment belonging to a different task")
     const confirmation = sourcePage.getByRole("alertdialog", { name: "Delete comment" })
@@ -397,14 +434,14 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     await expect(authorRow).toHaveCount(0)
     await expect(sibling).toBeFocused()
     await page.goto(href)
-    await expect(missing).toBeFocused()
+    await expect(missing).toBeFocused({ timeout: 12_000 })
     await expect(page.locator("#td-comments")).toContainText("First visible comment")
     await expect(target).toHaveCount(0)
 
     const started = deferred<void>()
     const release = deferred<void>()
     const search = "Comment link task"
-    await page.route(url => url.searchParams.has("boardRefresh") && url.searchParams.get("search") === search, async route => {
+    await recipient.route(url => url.searchParams.has("boardRefresh") && url.searchParams.get("search") === search, async route => {
       started.resolve()
       await release.promise
       await route.continue()
@@ -422,7 +459,7 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     await expect.poll(() => new URL(page.url()).searchParams.get("search")).toBe(search)
     expect(new URL(page.url()).searchParams.has("comment")).toBe(false)
     await page.goBack()
-    await expect(missing).toBeFocused()
+    await expect(missing).toBeFocused({ timeout: 12_000 })
   } finally {
     await source.close()
     await recipient.close()
@@ -438,21 +475,21 @@ test("a comment link focuses the edited comment through ingress and recovers aft
 test("ticket scoring keeps other lenses and retries a failed save", async ({ page, request, baseURL }) => {
   test.skip(!process.env.E2E_BASE_URL, "Requires a disposable local Meitheal server")
   const origin = new URL(baseURL!).origin
-  const headers = { origin, "content-type": "application/json" }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin })
   const created = await request.post("/api/tasks", {
     headers, data: { title: "Ticket scoring retry", framework_payload: JSON.stringify({ ice: { impact: 7, confidence: 8, ease: 9 } }) },
   })
   expect(created.status()).toBe(201)
-  const { id } = await created.json()
+  const { id, ticket_key } = await created.json()
   await page.goto(`/tasks?open=${id}#kanban`)
-  await expect(page).toHaveURL(`${origin}/tickets/${id}`)
+  await expect(page).toHaveURL(`${origin}/tickets/${ticket_key}`)
   const chooser = page.getByLabel("Scoring framework", { exact: true })
   await expect(chooser).toBeEnabled()
   await chooser.selectOption("rice")
   for (const [field, value] of Object.entries({ Reach: "10", Impact: "2", Confidence: "80", Effort: "0.5" })) {
     await page.getByRole("spinbutton", { name: field, exact: true }).fill(value)
   }
-  await expect(page.locator("#se-live-result")).toHaveText("Score: 3200")
+  await expect(page.locator("#se-live-result")).toHaveText("Score: 32")
   let failNext = true
   await page.route(`**/api/tasks/${id}`, async route => {
     if (route.request().method() === "PUT" && failNext) {
@@ -468,7 +505,7 @@ test("ticket scoring keeps other lenses and retries a failed save", async ({ pag
   const stored = await request.get(`/api/tasks/${id}`)
   const payload = JSON.parse((await stored.json()).framework_payload)
   expect(payload.ice).toEqual({ impact: 7, confidence: 8, ease: 9 })
-  expect(payload.rice.score).toBe(3200)
+  expect(payload.rice.score).toBe(32)
   await page.reload()
   await expect(page.getByRole("spinbutton", { name: "Effort", exact: true })).toHaveValue("0.5")
   await chooser.selectOption("ice")

@@ -1,10 +1,15 @@
+import { admitBoardResponse } from "./lib/board-view"
+import { continuityRequestAllowed } from "./lib/continuity-request-policy"
+import { currentBoardGrantRevision } from "./domains/tasks/persistence/board-grant-fence"
+import { getOrganizationAvailability } from "./lib/organization-availability"
+import { withOrganizationAvailability } from "./lib/organization-request-context"
+import { organizationRouteAvailable } from "./lib/organization-route-access"
 import type { MiddlewareHandler } from "astro"
 import { resolveAgentRouteAccess } from "@meitheal/domain-auth"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import { buildSecurityHeaders, isCsrfAllowed, resolveIngressContext } from "@domains/auth"
 import { initHAIntegrations } from "@domains/ha"
 import {
-  ensureDatabaseSchemaSupported,
   ensureSchema,
   getPersistenceClient,
   getSettingsRevision,
@@ -178,6 +183,8 @@ const draftPath = "/api/task-drafts"
 const inactivityApiPath = "/api/task-inactivity"
 const inactivityPagePath = "/inactivity"
 const labelCleanupPath = "/api/labels/cleanup"
+const pillarPagePath = /^\/pillars(?:\/|$)/
+const pillarApiPath = /^\/api\/pillars(?:\/|$)/
 const commentPaths = new Set(["/api/tasks/[id]/comments", "/api/tasks/[id]/comments/[commentId]"])
 const reactionPaths = new Set([
   "/api/tasks/reaction-counts",
@@ -219,8 +226,15 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
   const hasTaskHistoryPath = taskHistoryPath.test(requestPath)
   const taskHistoryRoute = hasTaskHistoryPath || taskHistoryPath.test(routePattern) || taskHistoryPath.test(url.pathname)
   const participantRoute = commentPaths.has(routePattern) || reactionPaths.has(routePattern)
-  const privateTaskRoute = pinRoute || draftRoute || inactivityApi || inactivityPage || mentionRoute || labelCleanup
-  if (!privateTaskRoute && !onlineReadRoute && !taskHistoryRoute && !participantRoute) {
+  const privatePillars = routePattern === "/progress" || pillarPagePath.test(routePattern) || pillarApiPath.test(routePattern)
+  const boardPlanningRoute = /^\/(?:api\/)?boards(?:\/|$)/.test(routePattern) || routePattern === "/api/board-intake" || routePattern === "/goals" || routePattern === "/areas/[id]" || routePattern === "/api/goals" || routePattern === "/api/goals/[id]"
+  const privateOrganizationRoute = routePattern === "/api/organization-labels" ||
+    routePattern === "/api/organization-features" || routePattern === "/api/ha/areas" ||
+    routePattern.endsWith("/home-assistant-area") ||
+    /^\/(?:planning|today|upcoming|habits|areas|projects)(?:\/|$)/.test(routePattern)
+  const scopedWorkApi = /^\/api\/(?:tasks|lanes|areas|projects|goals|templates|habits|labels|pillars|task-drafts|task-pins|task-inactivity|reminders|saved-filters|mention-inbox|pomodoro|review|gamification)(?:\/|$)/.test(url.pathname)
+  const privateTaskRoute = scopedWorkApi || privateOrganizationRoute || pinRoute || draftRoute || inactivityApi || inactivityPage || mentionRoute || labelCleanup
+  if (!privateTaskRoute && !onlineReadRoute && !taskHistoryRoute && !participantRoute && !privatePillars && !boardPlanningRoute) {
     return handleRequest(context, next, requestUrl)
   }
   if (draftRoute && (requestPath !== draftPath || requestUrl.search)) {
@@ -245,7 +259,7 @@ export const onRequest: MiddlewareHandler = async (context, next) => {
   }
   let response: Response
   try {
-    response = await handleRequest(context, next, requestUrl, privateTaskRoute)
+    response = await handleRequest(context, next, requestUrl, privateTaskRoute || privatePillars || boardPlanningRoute)
   } catch (error) {
     if (!labelCleanup) throw error
     return Response.json({ ok: false, errorCode: "unavailable", detail: "Could not verify label cleanup. Try again." }, {
@@ -283,7 +297,7 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
   const commentRoute = commentPaths.has(routePattern)
   const participantRoute = commentRoute || reactionPaths.has(routePattern)
   const privateLog = privatePersonalRoute || participantRoute
-  const logPath = participantRoute ? routePattern : url.pathname
+  const logPath = participantRoute || pillarApiPath.test(routePattern) ? routePattern : url.pathname
   const requestId = (privateLog ? null : request.headers.get("x-request-id")) ?? crypto.randomUUID();
   locals.requestId = requestId
   const supervisorMode = Boolean(process.env.SUPERVISOR_TOKEN);
@@ -484,8 +498,7 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
 
   let databaseAvailable = true
   try {
-    const schemaCheck = ensureDatabaseSchemaSupported()
-    if (schemaCheck) await schemaCheck
+    await ensureSchema()
   } catch {
     if (!isHealthCheck) {
       return apiProblem({
@@ -497,10 +510,20 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     databaseAvailable = false
   }
 
+  // Unknown continuity cannot expose restored work data through route aliases,
+  // search, exports, agents or cached deliveries. Only bounded diagnostics survive.
+  const continuityLocked = !databaseAvailable || !await currentBoardGrantRevision(getPersistenceClient())
+  if (databaseAvailable && continuityLocked &&
+      !continuityRequestAllowed(url.pathname, routePattern)) {
+    return apiProblem({ status: 503,
+      detail: "Installation continuity is locked. Use the current operator checkpoint recovery procedure.",
+      extraHeaders: { "cache-control": "private, no-store" } })
+  }
+
   // Lazy-init only after accepting the caller. Do not block on the HA connection.
-  if (databaseAvailable) {
+  if (databaseAvailable && !continuityLocked) {
     initHAIntegrations().catch(() => {})
-    if (method === "GET" && (!isHealthCheck || !supervisorMode || trustedLocalCaller)) startInactivityScheduler()
+    if (method === "GET" && (!isHealthCheck || !supervisorMode || trustedLocalCaller)) startInactivityScheduler().catch(() => {})
   }
 
   // Load regional settings for SSR (cached for 60s to avoid DB per-request)
@@ -515,7 +538,6 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
   } else if (databaseAvailable) {
     try {
       const settingsRevision = getSettingsRevision()
-      await ensureSchema();
       const db = getPersistenceClient();
       const res = await db.execute("SELECT key, value FROM settings WHERE key IN ('timezone', 'week_start', 'date_format')");
       for (const row of res.rows) {
@@ -562,7 +584,17 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     // API callers parse JSON, so an error that would render the HTML error page answers with a problem document instead.
     const apiRoute = url.pathname.startsWith("/api/")
     try {
-      response = retryKey ? await replayTaskRequest(retryKey, next, locals.writeAbortSignal) : await next()
+      if (isHealthCheck || url.pathname.startsWith("/_astro/")) {
+        response = await next()
+      } else {
+        const availability = await getOrganizationAvailability({ locals, request })
+        response = organizationRouteAvailable(url.pathname, availability, url.searchParams) &&
+          (url.pathname === routePattern || organizationRouteAvailable(routePattern, availability, url.searchParams))
+          ? await withOrganizationAvailability(availability, () =>
+            retryKey ? replayTaskRequest(retryKey, next, locals.writeAbortSignal) : next())
+          : apiProblem({ status: 404, detail: "This feature is unavailable.", extraHeaders: { "cache-control": "private, no-store" } })
+        if (availability.needsVerification) response.headers.set("cache-control", "private, no-store")
+      }
     } catch (error) {
       if (!apiRoute) throw error
       logger.log("error", {
@@ -583,6 +615,15 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     }
   }
 
+  // A request admitted while current must not return governed data after authority
+  // changes or disappears during an asynchronous handler.
+  if (databaseAvailable && !continuityRequestAllowed(url.pathname, routePattern) &&
+      !await currentBoardGrantRevision(getPersistenceClient())) {
+    response = apiProblem({ status: 503,
+      detail: "Installation continuity is locked. Use the current operator checkpoint recovery procedure.",
+      extraHeaders: { "cache-control": "private, no-store" } })
+  }
+
   // Rewrite HTML paths when behind HA ingress
   if (ingressPath) {
     if (behindIngress && transport && (response.headers.get("content-type") ?? "").includes("text/html")) {
@@ -596,6 +637,10 @@ async function handleRequest({ request, locals, routePattern }: Parameters<Middl
     // without relying solely on window.__ingress_path injection.
     response.headers.set("x-ingress-path", ingressPath);
   }
+
+  response = await admitBoardResponse(request, response,
+    !continuityRequestAllowed(url.pathname, routePattern) &&
+    (response.headers.get("content-type") ?? "").includes("text/html"))
 
   // Service-Worker-Allowed: let SW claim scope broader than its script path.
   // Required for ingress: SW at /api/hassio_ingress/{token}/sw.js needs to

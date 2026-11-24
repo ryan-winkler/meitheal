@@ -2,16 +2,29 @@
 //   attachStrategicLens
 
         import { confirmDialog } from "@lib/confirm-dialog";
+        import { findModalTrapTarget } from "@lib/dialog-overlay"
         import { promptDialog } from "@lib/prompt-dialog";
         import { createClientLogger, registerGlobalLogger } from "@lib/client-logger";
         import { containTabFocus } from "@lib/focus-trap"
         import { applyAppearancePreferences, bindAppearanceNavigation, readAppearancePreferences } from "@lib/appearance-preferences"
-        import { initIngressNavigation, safeIngressHref, syncIngressDestination } from "@lib/ingress-navigation"
+        import { safeIngressHref, syncIngressDestination } from "@lib/ingress-navigation"
+        import { bindWorkspaceEntry } from "@lib/workspace-entry"
+        import { openWorkspaceQuickAdd } from "@lib/open-workspace-capture"
         import { hasPriorityOverlay, initShortcutModal } from "@lib/layout-shortcuts-controller"
+        import { currentTaskApiContext } from "@lib/task-api"
+        import { boardNavigationLinks, readBoardNavigationContext } from "@lib/board-workspace"
+        import { taskViewUrl, type TaskView } from "@lib/task-view-route"
         import { pageLifecycle } from "@lib/page-lifecycle";
         import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
         import { attachShortcutTooltips, injectShortcutStyles } from "@lib/shortcut-tooltip";
-        import { normalizeTaskTypeFilterValue } from "@lib/task-nav-types"
+        import {
+          formatShortcutKeys,
+          KEYBOARD_SHORTCUTS_CHANGED_EVENT,
+          KEYBOARD_SHORTCUTS_STORAGE_KEY,
+          matchesShortcutEvent,
+          readResolvedShortcuts,
+          type ShortcutActionId,
+        } from "@domains/navigation/keyboard-shortcuts"
 
         const log = createClientLogger("app", "layout");
 
@@ -26,6 +39,7 @@
 
         // Expose for is:inline scripts (kanban)
         window.confirmDialog = confirmDialog;
+        window.promptDialog = promptDialog;
         // Connection status check — singleton interval (P0-4: prevent accumulation)
         async function checkHealth() {
           const indicator = document.getElementById("connection-status");
@@ -61,16 +75,7 @@
         }
         window.__healthIntervalId = setInterval(checkHealth, 30000);
 
-        // Global error resilience — catch unhandled errors to prevent blank-page crashes
-        // (These are global/permanent — intentionally NOT lifecycle-managed)
-        window.addEventListener("error", (e) => {
-          // ResizeObserver loop errors are benign browser noise — suppress them
-          if (e.message?.includes("ResizeObserver loop")) return;
-          log.error("Unhandled error", e.error ?? e.message);
-        });
-        window.addEventListener("unhandledrejection", (e) => {
-          log.error("Unhandled promise rejection", e.reason);
-        });
+        // Global error/rejection handling lives in global-error-handler.ts.
 
         // ============================================================
         // P0-2/P0-3/P0-5: Lifecycle-managed page initialization
@@ -80,6 +85,7 @@
         // ============================================================
         let keyboardSignal: AbortSignal | undefined
         pageLifecycle.onPageLoad((signal) => {
+          bindWorkspaceEntry(signal)
           // The fallback and initial Astro event can arrive with the same signal.
           const bindKeyboard = keyboardSignal !== signal
           keyboardSignal = signal
@@ -92,107 +98,110 @@
           // Also remove editor-injected scroll lock class (e.g. from PWA banner)
           document.body.classList.remove("antigravity-scroll-lock");
 
-          // Phase 25 T10: Keyboard shortcut tooltip badges on hover
-          // Dynamically annotate known shortcut-bound elements
-          const shortcutMap: Record<string, string> = {
-            dashboard: "D", kanban: "K", table: "T",
-            today: "Y", upcoming: "U", calendar: "C",
-          }
-          for (const [page, key] of Object.entries(shortcutMap)) {
-            const links = Array.from(
-              document.querySelectorAll<HTMLElement>(`[data-page="${page}"]`),
-            )
-            const link = links.find((candidate) => !candidate.closest("#mobile-tab-bar"))
-            if (link && !link.dataset.shortcut) link.dataset.shortcut = key
-          }
-          // Search trigger
-          const searchBtn = document.querySelector<HTMLElement>("[data-search-trigger]")
-          if (searchBtn && !searchBtn.dataset.shortcut) searchBtn.dataset.shortcut = "/"
-
-          injectShortcutStyles();
-          attachShortcutTooltips(document.body);
-          if (bindKeyboard) window.addEventListener("storage", (event) => {
-            if (event.key === SINGLE_KEY_SHORTCUTS_STORAGE_KEY || event.key === null) {
-              attachShortcutTooltips(document.body)
+          // Phase 25 T10: Keyboard shortcut tooltip badges & Help modal keycap sync
+          const syncShortcutHints = () => {
+            const resolved = readResolvedShortcuts()
+            const pageActionMap: Record<string, ShortcutActionId> = {
+              dashboard: "goDashboard", kanban: "goKanban", table: "goTable",
+              today: "goToday", upcoming: "goUpcoming", calendar: "goCalendar",
             }
-          }, { signal })
+            for (const [page, action] of Object.entries(pageActionMap)) {
+              const links = Array.from(document.querySelectorAll<HTMLElement>(`[data-page="${page}"]`))
+              const link = links.find((candidate) => !candidate.closest("#mobile-tab-bar"))
+              if (!link) continue
+              const combo = resolved[action]
+              if (combo) link.dataset.shortcut = combo
+              else delete link.dataset.shortcut
+            }
+            const searchBtn = document.querySelector<HTMLElement>("[data-search-trigger]")
+            if (searchBtn) {
+              if (resolved.search) searchBtn.dataset.shortcut = resolved.search
+              else delete searchBtn.dataset.shortcut
+            }
+            document.querySelectorAll<HTMLElement>("#shortcut-modal [data-shortcut-action]").forEach((el) => {
+              const action = el.dataset.shortcutAction as ShortcutActionId | undefined
+              if (!action || !(action in resolved)) return
+              const keys = formatShortcutKeys(resolved[action])
+              el.replaceChildren()
+              if (keys.length === 0) {
+                const none = document.createElement("span")
+                none.className = "shortcut-note"
+                none.textContent = "Unbound"
+                el.append(none)
+                return
+              }
+              keys.forEach((key, idx) => {
+                if (idx > 0) el.append(document.createTextNode(" + "))
+                const kbd = document.createElement("kbd")
+                kbd.textContent = key
+                el.append(kbd)
+              })
+            })
+            attachShortcutTooltips(document.body)
+          }
+
+          injectShortcutStyles()
+          syncShortcutHints()
+          if (bindKeyboard) {
+            window.addEventListener("storage", (event) => {
+              if (event.key === SINGLE_KEY_SHORTCUTS_STORAGE_KEY || event.key === KEYBOARD_SHORTCUTS_STORAGE_KEY || event.key === null) {
+                syncShortcutHints()
+              }
+            }, { signal })
+            window.addEventListener(KEYBOARD_SHORTCUTS_CHANGED_EVENT, syncShortcutHints, { signal })
+          }
+
+          const navigationContext = () => {
+            const url = new URL(location.href)
+            const ingress = window.__ingress_path || ""
+            if (ingress && url.pathname.startsWith(ingress + "/")) url.pathname = url.pathname.slice(ingress.length)
+            const context = currentTaskApiContext()
+            const selected = readBoardNavigationContext(url)
+            return context ? { ...selected, boardId: context.boardId } : undefined
+          }
+          const taskDestination = (view?: TaskView) => {
+            const context = navigationContext()
+            if (!context) return "/boards"
+            const tasks = new URL(boardNavigationLinks(context).tasks, location.href)
+            if (view) {
+              const selected = taskViewUrl(tasks, view, true)
+              return selected.pathname + selected.search + selected.hash
+            }
+            return tasks.pathname + tasks.search + tasks.hash
+          }
+          const navigateTo = (href: string) => {
+            syncIngressDestination(href)
+            window.location.assign(safeIngressHref(href))
+          }
+          const openTasks = (view?: TaskView) => navigateTo(taskDestination(view))
+          const openBoardLink = (key: "dashboard" | "today" | "upcoming") => () => {
+            const context = navigationContext()
+            navigateTo(context ? boardNavigationLinks(context)[key] : "/boards")
+          }
 
           const SHORTCUT_NAV = {
-            dashboard: () => {
-              syncIngressDestination("/")
-              window.location.assign(safeIngressHref("/"))
-            },
-            tasks: () => {
-              syncIngressDestination("/tasks")
-              window.location.assign(safeIngressHref("/tasks"))
-            },
-            kanban: () => {
-              syncIngressDestination("/tasks#kanban")
-              window.location.assign(safeIngressHref("/tasks#kanban"))
-            },
-            table: () => {
-              syncIngressDestination("/table")
-              window.location.assign(safeIngressHref("/table"))
-            },
-            today: () => {
-              syncIngressDestination("/today")
-              window.location.assign(safeIngressHref("/today"))
-            },
-            upcoming: () => {
-              syncIngressDestination("/upcoming")
-              window.location.assign(safeIngressHref("/upcoming"))
-            },
-            calendar: () => {
-              syncIngressDestination("/calendar")
-              window.location.assign(safeIngressHref("/calendar"))
-            },
+            dashboard: openBoardLink("dashboard"),
+            kanban: () => openTasks("kanban"),
+            table: () => openTasks("table"),
+            today: openBoardLink("today"),
+            upcoming: openBoardLink("upcoming"),
+            calendar: () => openTasks("calendar"),
           } as const
 
           // The New Task modal ships in Layout, so open it directly. Clicking a page
           // button by id pattern used to match the modal's own Cancel button instead.
-          function openNewTaskAction() {
+          function openTaskFormOrTasks() {
             const modalFn = (window as { openNewTaskModal?: () => void }).openNewTaskModal
             if (typeof modalFn === "function") {
               modalFn()
               return
             }
-            SHORTCUT_NAV.tasks()
+            openTasks()
           }
-
-          // Active nav link — strip ingress prefix so path comparison works behind HA ingress
-          const rawPath = window.location.pathname;
-          const ip = window.__ingress_path || "";
-          const currentPath =
-            ip && (rawPath === ip || rawPath === ip + "/")
-              ? "/"
-              : ip && rawPath.startsWith(ip + "/")
-                ? rawPath.slice(ip.length) || "/"
-                : rawPath
-          const currentTypes = normalizeTaskTypeFilterValue(
-            new URLSearchParams(window.location.search).get("types"),
-          )
-          document.querySelectorAll(".nav-link").forEach((link) => {
-            const href = link.getAttribute("href") || "";
-            if (!href || href.startsWith("http")) return
-            const linkUrl = new URL(href, window.location.origin)
-            const rawLinkPath = linkUrl.pathname
-            const linkPath =
-              ip && (rawLinkPath === ip || rawLinkPath === ip + "/")
-                ? "/"
-                : ip && rawLinkPath.startsWith(ip + "/")
-                  ? rawLinkPath.slice(ip.length) || "/"
-                  : rawLinkPath
-            const linkTypes = normalizeTaskTypeFilterValue(linkUrl.searchParams.get("types"))
-            const typesMatch = linkTypes ? linkTypes === currentTypes : currentTypes === ""
-            if (
-              (linkPath === currentPath && typesMatch) ||
-              (linkPath !== "/" && currentPath.startsWith(linkPath + "/") && !linkTypes) ||
-              (currentPath === "/" &&
-                link.getAttribute("data-page") === "dashboard")
-            ) {
-              link.classList.add("active");
-            }
-          });
+          function openNewTaskAction() {
+            const trigger = document.activeElement
+            if (!openWorkspaceQuickAdd(trigger instanceof HTMLElement ? trigger : undefined, openTaskFormOrTasks)) openTaskFormOrTasks()
+          }
 
           // Collapsed-rail quick action + floating tooltips
           const railNewTaskBtn = document.getElementById("sidebar-rail-new-task")
@@ -256,34 +265,29 @@
                 (e.target as HTMLElement)?.contentEditable === "true";
 
               if (e.key === "Escape") {
+                if (hasPriorityOverlay()) return
                 // Search owns Escape inside its panel.
                 const taskOverlay = document.getElementById(
                   "task-detail-overlay",
                 );
                 const taskPanel = document.getElementById("task-detail-panel");
                 const isDocked = document.body.classList.contains("has-docked-inspector");
-                const sidebar = document.getElementById("sidebar");
-
                 if (
                   taskOverlay &&
                   taskOverlay.classList.contains("active") &&
                   (!isDocked || taskPanel?.contains(document.activeElement))
                 ) {
-                  document.getElementById("td-close")?.click()
-                  return;
-                }
-                if (sidebar?.classList.contains("open")) {
-                  sidebar.classList.remove("open");
+                  const layout = document.getElementById("td-toggle-layout")
+                  if (layout?.getAttribute("aria-expanded") === "true") layout.click()
+                  else if (taskOverlay.hasAttribute("data-focus-mode")) document.getElementById("td-toggle-focus")?.click()
+                  else document.getElementById("td-close")?.click()
+                  e.preventDefault()
                   return;
                 }
               }
 
               if (e.key === "Tab") {
-                const task = document.body.classList.contains("has-docked-inspector")
-                  ? null
-                  : document.querySelector<HTMLElement>("#task-detail-overlay.active")
-                const search = document.querySelector<HTMLElement>("#search-hub-overlay:not(.hidden)")
-                const activeOverlay = task ?? search
+                const activeOverlay = findModalTrapTarget()
                 if (activeOverlay) containTabFocus(activeOverlay, e)
                 return
               }
@@ -292,75 +296,57 @@
 
               if (hasPriorityOverlay()) return;
 
+              if (document.documentElement.hasAttribute("data-shortcut-recording")) return
+
               // Suppress most shortcuts when modal task detail overlay is open (not when docked)
-              // Allow ? and Escape through so users can access help and close
+              // Allow help and Escape through so users can access help and close
+              const shortcuts = readResolvedShortcuts()
+              const singleEnabled = singleKeyShortcutsEnabled()
+              const isHelpHit = !e.repeat && matchesShortcutEvent(e, shortcuts.showHelp, singleEnabled)
               const taskDetailOpen = document
                 .getElementById("task-detail-overlay")
                 ?.classList.contains("active") ?? false;
               const isDockedInspector = document.body.classList.contains("has-docked-inspector");
               const modalTaskDetailOpen = taskDetailOpen && !isDockedInspector;
-              if (
-                modalTaskDetailOpen &&
-                e.key !== "?" &&
-                e.key !== "Escape"
-              )
-                return;
+              if (modalTaskDetailOpen && !isHelpHit && e.key !== "Escape") return
 
-              if (e.ctrlKey || e.metaKey || !singleKeyShortcutsEnabled()) return
+              if (isHelpHit) {
+                if (openShortcutModal?.()) e.preventDefault()
+                return
+              }
 
-              if (e.key === "n") {
-                e.preventDefault();
-                // If on tasks page, click the create button; otherwise navigate
-                const createBtn = document.getElementById("create-task-btn");
-                if (createBtn) {
-                  createBtn.click();
-                } else {
-                  SHORTCUT_NAV.tasks()
-                }
-              }
-              if (e.key === "t" && !(isDockedInspector && document.getElementById("task-detail-panel")?.contains(document.activeElement))) {
-                SHORTCUT_NAV.table()
-              }
-              if (e.key === "d") {
-                SHORTCUT_NAV.dashboard()
-              }
-              if (e.key === "y") {
-                SHORTCUT_NAV.today()
-              }
-              if (e.key === "u") {
-                SHORTCUT_NAV.upcoming()
-              }
-              if (e.key === "c") {
-                SHORTCUT_NAV.calendar()
-              }
-              if (e.key === "?" && !e.repeat && !e.altKey && openShortcutModal?.()) {
+              if (matchesShortcutEvent(e, shortcuts.newTask, singleEnabled)) {
                 e.preventDefault()
+                openNewTaskAction()
+                return
+              }
+              if (matchesShortcutEvent(e, shortcuts.goTable, singleEnabled) && !(isDockedInspector && document.getElementById("task-detail-panel")?.contains(document.activeElement))) {
+                e.preventDefault()
+                SHORTCUT_NAV.table()
+                return
+              }
+              for (const [action, go] of [
+                [shortcuts.goDashboard, SHORTCUT_NAV.dashboard],
+                [shortcuts.goToday, SHORTCUT_NAV.today],
+                [shortcuts.goUpcoming, SHORTCUT_NAV.upcoming],
+                [shortcuts.goCalendar, SHORTCUT_NAV.calendar],
+              ] as const) {
+                if (matchesShortcutEvent(e, action, singleEnabled)) {
+                  e.preventDefault()
+                  go()
+                  return
+                }
               }
 
               // Phase 20 (ADHD Optimization): T/S/E shortcuts for detail panel task_type
               // Only active when task detail is modal OR focus resides inside the docked panel
-              if (modalTaskDetailOpen || (taskDetailOpen && document.getElementById("task-detail-panel")?.contains(document.activeElement))) {
-                const tdTag = (e.target as HTMLElement)?.tagName;
-                const tdIsEditing =
-                  ["INPUT", "TEXTAREA", "SELECT"].includes(tdTag) ||
-                  (e.target as HTMLElement)?.contentEditable === "true";
-
-                if (!tdIsEditing) {
-                  const typeSelect = document.getElementById(
-                    "td-task-type",
-                  ) as HTMLSelectElement | null;
-                  if (typeSelect) {
-                    let newType = null;
-                    if (e.key.toLowerCase() === "t") newType = "task";
-                    if (e.key.toLowerCase() === "s") newType = "story";
-                    if (e.key.toLowerCase() === "e") newType = "epic";
-
-                    if (newType && typeSelect.value !== newType) {
-                      e.preventDefault();
-                      typeSelect.value = newType;
-                      typeSelect.dispatchEvent(new Event("change"));
-                    }
-                  }
+              if (!e.ctrlKey && !e.metaKey && !e.altKey && singleEnabled && (modalTaskDetailOpen || (taskDetailOpen && document.getElementById("task-detail-panel")?.contains(document.activeElement)))) {
+                const typeSelect = document.getElementById("td-task-type") as HTMLSelectElement | null
+                const newType = ({ t: "task", s: "story", e: "epic" } as Record<string, string | undefined>)[e.key.toLowerCase()]
+                if (typeSelect && newType && typeSelect.value !== newType) {
+                  e.preventDefault()
+                  typeSelect.value = newType
+                  typeSelect.dispatchEvent(new Event("change"))
                 }
               }
             },
@@ -370,142 +356,18 @@
           // Today and Timeline can consume K in document listeners, including after rerenders.
           if (bindKeyboard) {
             window.addEventListener("keydown", event => {
-              if (event.key !== "k" || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || !singleKeyShortcutsEnabled()) return
+              if (event.defaultPrevented || document.documentElement.hasAttribute("data-shortcut-recording")) return
               const target = event.target
               if (target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable)) return
               const modalTdOpen = (document.getElementById("task-detail-overlay")?.classList.contains("active") ?? false) &&
                 !document.body.classList.contains("has-docked-inspector")
               if (hasPriorityOverlay() || modalTdOpen) return
+              if (!matchesShortcutEvent(event, readResolvedShortcuts().goKanban, singleKeyShortcutsEnabled())) return
+              event.preventDefault()
               SHORTCUT_NAV.kanban()
             }, { signal })
           }
 
-          // Area switcher
-          (async function initAreaSwitcher() {
-            const select = document.getElementById(
-              "area-select",
-            ) as HTMLSelectElement | null;
-            const addBtn = document.getElementById("add-area-btn");
-            if (!select) return;
-
-            // Load boards from API
-            try {
-              const res = await fetch(
-                (window.__ingress_path || "") + "/api/areas",
-              );
-              if (res.ok) {
-                const data = await res.json();
-                const boards = data.areas ?? [];
-                select.replaceChildren();
-                // "All Areas" option first
-                const allOpt = document.createElement("option");
-                allOpt.value = "all";
-                allOpt.textContent = "All Areas"
-                select.appendChild(allOpt);
-                boards.forEach(
-                  (b: { id: string; name: string; icon: string }) => {
-                    const opt = document.createElement("option");
-                    opt.value = b.id;
-                    opt.textContent = b.name
-                    select.appendChild(opt);
-                  },
-                );
-              }
-            } catch {
-              /* fallback to default option */
-            }
-
-            // Restore active board from localStorage
-            const saved =
-              localStorage.getItem("meitheal_active_area") ?? "all";
-            if (select.querySelector(`option[value="${saved}"]`)) {
-              select.value = saved;
-            }
-
-            // Expose active board globally for page scripts
-            window.__activeArea = select.value;
-
-            // Apply board filter to visible items
-            function isDoneStatus(s: string) {
-              return s === "complete" || s === "cancelled";
-            }
-
-            // strategic lens payload integration
-            function applyAreaFilter() {
-              const area = select!.value;
-              window.__activeArea = area;
-              // Filter task items (tasks page)
-              document
-                .querySelectorAll(".task-item[data-area]")
-                .forEach((el) => {
-                  const item = el as HTMLElement;
-                  item.style.display =
-                    area === "all" || item.dataset.area === area
-                      ? ""
-                      : "none";
-                });
-              // Filter kanban cards
-              document
-                .querySelectorAll(".kanban-card[data-area]")
-                .forEach((el) => {
-                  const card = el as HTMLElement;
-                  card.style.display =
-                    area === "all" || card.dataset.area === area
-                      ? ""
-                      : "none";
-                });
-              // Filter table rows
-              document
-                .querySelectorAll("#task-table tbody tr[data-area]")
-                .forEach((el) => {
-                  const row = el as HTMLElement;
-                  row.style.display =
-                    area === "all" || row.dataset.area === area
-                      ? ""
-                      : "none";
-                });
-            }
-
-            // Apply on load
-            applyAreaFilter();
-
-            // Switch board → save + filter
-            select.addEventListener(
-              "change",
-              () => {
-                localStorage.setItem("meitheal_active_area", select.value);
-                applyAreaFilter();
-              },
-              { signal },
-            );
-
-            // Add new board
-            addBtn?.addEventListener(
-              "click",
-              async () => {
-                const title = await promptDialog({ title: "Create Area", placeholder: "Area name", required: true });
-                if (!title) return;
-                try {
-                  const res = await fetch(
-                    (window.__ingress_path || "") + "/api/areas",
-                    {
-                      method: "POST",
-                      headers: { "content-type": "application/json" },
-                      body: JSON.stringify({ name: title.trim() }),
-                    },
-                  );
-                  if (res.ok) {
-                    const area = await res.json();
-                    localStorage.setItem("meitheal_active_area", area.id);
-                    window.location.reload();
-                  }
-                } catch {
-                  /* ignore */
-                }
-              },
-              { signal },
-            );
-          })();
         }); // end pageLifecycle.onPageLoad
 
         // Phase 13: Universal event listeners — reload page when tasks or navigation change.
@@ -514,6 +376,8 @@
         pageLifecycle.onPageLoad((signal) => {
           const reloadOnEvent = () => window.location.reload()
           document.addEventListener("meitheal:tasks-changed", event => {
+            // Calendar already refreshes its month and open day on this event.
+            if (document.querySelector("#calendar-shell[data-calendar-ready='true']")) return
             if (!(event as CustomEvent<{ dataOnly?: boolean }>).detail?.dataOnly) reloadOnEvent()
           }, { signal })
           document.addEventListener("meitheal:navigation-changed", reloadOnEvent, { signal })

@@ -1,6 +1,8 @@
+import { boardScopeErrorResponse } from "@lib/board-http"
+import { journaledBoardCommandAck, withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
+import { HierarchyRepository, PlanningAccessLockedError } from "@domains/tasks/persistence/hierarchy-repository"
 import { stripHtml } from "../../../lib/strip-html"
 import { apiError, apiJson } from "../../../lib/api-response"
 import { logApiError } from "../../../lib/api-logger"
@@ -12,23 +14,25 @@ import { logApiError } from "../../../lib/api-logger"
  * @see docs/decisions/ADR-007-hierarchy-model.md
  */
 
-export const GET: APIRoute = async ({ params }) => {
+export const GET: APIRoute = withBoardScope({ resource: "area", action: "read" }, async ({ params }, scope) => {
   try {
     await ensureSchema()
-    const repo = new HierarchyRepository(getPersistenceClient())
+    const repo = new HierarchyRepository(getPersistenceClient(), scope)
     const area = await repo.findAreaById(params.id!)
     if (!area) return apiError("Area not found", 404)
     return apiJson(area)
   } catch (error) {
+    const scopeFailure = boardScopeErrorResponse(error)
+    if (scopeFailure) return scopeFailure
     logApiError("areas", "GET detail error", error)
     return apiError("Failed to get area")
   }
-}
+})
 
-export const PUT: APIRoute = async ({ params, request }) => {
+export const PUT: APIRoute = withBoardScope({ resource: "area", action: "edit" }, async ({ params, request }, scope) => {
   try {
     await ensureSchema()
-    const repo = new HierarchyRepository(getPersistenceClient())
+    const repo = new HierarchyRepository(getPersistenceClient(), scope)
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
 
     const updates: Parameters<typeof repo.updateArea>[1] = {}
@@ -49,20 +53,25 @@ export const PUT: APIRoute = async ({ params, request }) => {
     const area = await repo.findAreaById(params.id!)
     return apiJson(area)
   } catch (error) {
+    const scopeFailure = boardScopeErrorResponse(error)
+    if (scopeFailure) return scopeFailure
     logApiError("areas", "PUT error", error)
     return apiError("Failed to update area")
   }
-}
+})
 
-export const DELETE: APIRoute = async ({ params }) => {
+export const DELETE: APIRoute = withBoardScope({ resource: "area", action: "delete" }, async ({ params }, scope) => {
   try {
     await ensureSchema()
-    const repo = new HierarchyRepository(getPersistenceClient())
+    const repo = new HierarchyRepository(getPersistenceClient(), scope)
     const deleted = await repo.deleteArea(params.id!)
     if (!deleted) return apiError("Area not found", 404)
-    return apiJson({ ok: true })
+    return journaledBoardCommandAck(scope, { resource: "area", action: "delete" })
   } catch (error) {
+    const scopeFailure = boardScopeErrorResponse(error)
+    if (scopeFailure) return scopeFailure
+    if (error instanceof PlanningAccessLockedError) return apiError(error.message, 503)
     logApiError("areas", "DELETE error", error)
     return apiError("Failed to delete area")
   }
-}
+})

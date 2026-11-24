@@ -1,3 +1,4 @@
+import { currentTaskApiContext } from "@lib/task-api"
 /**
  * Connectivity Detector
  *
@@ -32,6 +33,7 @@ const DEBOUNCE_MS = 2_000
 let currentState: ConnectivityState = typeof navigator !== "undefined" && navigator.onLine ? "online" : "offline"
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let healthCheckTimer: ReturnType<typeof setInterval> | null = null
+let monitorController: AbortController | null = null
 
 function emit(state: ConnectivityState, previousState: ConnectivityState): void {
   if (typeof window !== "undefined") {
@@ -59,7 +61,7 @@ async function checkHealth(): Promise<boolean> {
   try {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 5_000)
-    const response = await fetch(apiUrl("/api/health"), {
+    const response = await fetch("/api/health", {
       method: "HEAD",
       signal: controller.signal,
       cache: "no-store",
@@ -96,7 +98,9 @@ function connectSSE(): void {
   if (currentState !== "online") return;
 
   try {
-    const sseUrl = apiUrl("/api/sse");
+    const context = currentTaskApiContext()
+    if (!context) return
+    const sseUrl = apiUrl(`/api/sse?board_id=${encodeURIComponent(context.boardId)}`);
     sseConnection = new EventSource(sseUrl, { withCredentials: true });
 
     sseConnection.onopen = () => {
@@ -120,6 +124,8 @@ function connectSSE(): void {
     // Forward SSE events as custom document events for UI components to listen to
     sseConnection.addEventListener("ha:entity_changed", (e: MessageEvent) => {
       try {
+        const current = currentTaskApiContext()
+        if (!current || current.boardId !== context.boardId || current.actorKey !== context.actorKey) { disconnectSSE(); return }
         const data = JSON.parse(e.data);
         window.dispatchEvent(new CustomEvent("ha-entity-update", { detail: data }));
       } catch { /* malformed SSE data — non-critical */ }
@@ -149,6 +155,13 @@ export function getConnectivityState(): ConnectivityState {
 
 export function startConnectivityMonitor(): void {
   if (typeof window === "undefined") return
+  stopConnectivityMonitor()
+  monitorController = new AbortController()
+  const signal = monitorController.signal
+  document.addEventListener("astro:page-load", () => connectSSE(), { signal })
+  document.addEventListener("meitheal:board-hidden", () => disconnectSSE(), { signal })
+  document.addEventListener("meitheal:board-verified", () => connectSSE(), { signal })
+  window.addEventListener("pagehide", () => disconnectSSE(), { signal })
 
   // Listen to browser online/offline events
   window.addEventListener("online", () => {
@@ -157,12 +170,12 @@ export function startConnectivityMonitor(): void {
       transitionTo(ok ? "online" : "offline");
       if (ok) connectSSE();
     }).catch(() => transitionTo("offline"))
-  })
+  }, { signal })
 
   window.addEventListener("offline", () => {
     transitionTo("offline");
     disconnectSSE();
-  })
+  }, { signal })
 
   // Periodic health check (skip when tab is backgrounded to save bandwidth)
   healthCheckTimer = setInterval(async () => {
@@ -186,6 +199,8 @@ export function startConnectivityMonitor(): void {
 }
 
 export function stopConnectivityMonitor(): void {
+  monitorController?.abort()
+  monitorController = null
   if (healthCheckTimer) {
     clearInterval(healthCheckTimer)
     healthCheckTimer = null

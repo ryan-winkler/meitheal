@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process"
+import { execFile, spawn } from "../helpers/isolated-process"
 import { once } from "node:events"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import http from "node:http"
@@ -102,7 +102,7 @@ test("A1/A2: scopes 3,000-entity HA state to calendar/todo/watched IDs, decodes 
     },
   })
 
-  const store = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const store = await import("../helpers/persistence-fixture")
   const haConn = await import("../../apps/web/src/domains/ha/ha-connection")
   const haEntities = await import("../../apps/web/src/domains/ha/ha-entities")
   const haServices = await import("../../apps/web/src/domains/ha/ha-services")
@@ -388,7 +388,8 @@ test("A4/A5/A8: live serve.mjs leaves Ingress HTML uncompressed, keeps attribute
             return res
           }
         }
-        return listener(req, res)
+        // serve.mjs attaches its handler with on("request"), after this one.
+        if (typeof listener === "function") return listener(req, res)
       })
       srv.once("listening", () => {
         const addr = srv.address()
@@ -406,6 +407,7 @@ test("A4/A5/A8: live serve.mjs leaves Ingress HTML uncompressed, keeps attribute
     SUPERVISOR_TOKEN: "test-sup-token",
     INGRESS_PATH: "/api/hassio_ingress/live_tok",
     MEITHEAL_DB_URL: `file:${join(work, "live.db")}`,
+    MEITHEAL_BOARD_GRANT_PATH: join(work, "board-grants.json"),
   }
   await execFileAsync(process.execPath, ["scripts/migrate.mjs"], { cwd: webDir, env })
 
@@ -447,23 +449,28 @@ test("A4/A5/A8: live serve.mjs leaves Ingress HTML uncompressed, keeps attribute
     const healthRes = await fetch(`http://127.0.0.1:${port}/api/health`)
     expect(healthRes.status, childStderr).toBe(200)
 
-    const adminIngressHeaders = {
+    const origin = `http://127.0.0.1:${port}`
+    const adminIngressHeaders: Record<string, string> = {
       "x-test-peer": "supervisor",
       "x-ingress-path": "/api/hassio_ingress/live_tok",
       "x-remote-user-id": "admin-1",
       "x-remote-user-groups": "system-admin",
       "accept-encoding": "gzip, deflate, br",
+      "x-meitheal-board-id": "household",
+    }
+    const directory = await fetch(origin + "/api/boards", { headers: adminIngressHeaders })
+    expect(directory.status).toBe(200)
+    const boardSession = directory.headers.get("x-meitheal-board-session")
+    if (!boardSession) throw new Error("Current ingress Board session required")
+    const writeHeaders = {
+      ...adminIngressHeaders, origin, "content-type": "application/json", "x-meitheal-board-session": boardSession,
     }
 
     // Seed 40 tasks with rich descriptions so /tasks HTML streams multiple chunks
     for (let i = 0; i < 40; i++) {
       const cr = await fetch(`http://127.0.0.1:${port}/api/tasks`, {
         method: "POST",
-        headers: {
-          ...adminIngressHeaders,
-          "content-type": "application/json",
-          origin: `http://127.0.0.1:${port}`,
-        },
+        headers: writeHeaders,
         body: JSON.stringify({
           title: `Streaming task ${i}`,
           description: `Detailed markdown note ${"word ".repeat(80)}`,
@@ -473,7 +480,7 @@ test("A4/A5/A8: live serve.mjs leaves Ingress HTML uncompressed, keeps attribute
     }
 
     // 1. Uncompressed Ingress HTML & attribute size < 32 KiB
-    for (const route of ["/tasks", "/planning", "/eisenhower"]) {
+    for (const route of ["/boards/household", "/planning", "/eisenhower"]) {
       const res = await fetch(`http://127.0.0.1:${port}${route}`, { headers: adminIngressHeaders })
       expect(res.status, childStderr).toBe(200)
       expect(res.headers.get("content-encoding")).toBeNull()
@@ -510,7 +517,7 @@ test("A4/A5/A8: live serve.mjs leaves Ingress HTML uncompressed, keeps attribute
       const req = http.request({
         host: "127.0.0.1",
         port,
-        path: "/tasks",
+        path: "/boards/household",
         method: "GET",
         headers: { ...adminIngressHeaders, "x-test-slow-stream": "1" },
       }, res => {
@@ -550,11 +557,7 @@ test("A4/A5/A8: live serve.mjs leaves Ingress HTML uncompressed, keeps attribute
 
     const tokenCreate = await fetch(`http://127.0.0.1:${port}/api/agent-tokens`, {
       method: "POST",
-      headers: {
-        ...adminIngressHeaders,
-        "content-type": "application/json",
-        origin: `http://127.0.0.1:${port}`,
-      },
+      headers: writeHeaders,
       body: JSON.stringify({ name: "Diag probe", scopes: ["tasks:read", "mcp:execute"] }),
     })
     expect(tokenCreate.status).toBe(201)
@@ -612,6 +615,56 @@ test("A7: resolve_max_old_space_mb computes dynamic V8 heap ceilings across cgro
         const lines = stdout.trim().split("\n")
         expect(lines[0]).toBe(c.expected)
         expect(lines[1]).toBe(`--enable-source-maps --max-old-space-size=${c.expected}`)
+      }
+
+      const cpuMax = join(work, "cpu.max")
+      const cpuCases: Array<{ cpu: string; initialOpts: string; expectedOpts: string }> = [
+        {
+          cpu: "100000 100000\n",
+          initialOpts: "--enable-source-maps",
+          expectedOpts: "--enable-source-maps --max-old-space-size=105 --v8-pool-size=1",
+        },
+        {
+          cpu: "200000 100000\n",
+          initialOpts: "--enable-source-maps",
+          expectedOpts: "--enable-source-maps --max-old-space-size=105",
+        },
+        {
+          cpu: "max 100000\n",
+          initialOpts: "--enable-source-maps",
+          expectedOpts: "--enable-source-maps --max-old-space-size=105",
+        },
+        {
+          cpu: "100000 100000\n",
+          initialOpts: "--enable-source-maps --v8-pool-size=2",
+          expectedOpts: "--enable-source-maps --v8-pool-size=2 --max-old-space-size=105",
+        },
+        {
+          cpu: "100000 100000\n",
+          initialOpts: "--enable-source-maps --v8_pool_size=2",
+          expectedOpts: "--enable-source-maps --v8_pool_size=2 --max-old-space-size=105",
+        },
+      ]
+      await writeFile(cgV2, "201326592\n")
+      await writeFile(cgV1, "9223372036854771712\n")
+      for (const c of cpuCases) {
+        await writeFile(cpuMax, c.cpu)
+        const { stdout } = await execFileAsync("sh", [
+          "-c",
+          `. "$1"; apply_resolved_node_options; printf '%s\n' "$NODE_OPTIONS"`,
+          "sh",
+          scriptPath,
+        ], {
+          env: {
+            PATH: process.env.PATH ?? "",
+            MEITHEAL_SOURCE_LIB_ONLY: "1",
+            MEITHEAL_CGROUP_V2_MAX_FILE: cgV2,
+            MEITHEAL_CGROUP_V1_LIMIT_FILE: cgV1,
+            MEITHEAL_CGROUP_V2_CPU_MAX_FILE: cpuMax,
+            NODE_OPTIONS: c.initialOpts,
+          },
+        })
+        expect(stdout.trim()).toBe(c.expectedOpts)
       }
     }
   } finally {
@@ -672,7 +725,7 @@ test("A8: logger bypasses category filter on warn/error, health.ts caches only H
 
   // 2. health.ts Supervisor cache: do NOT cache 502/504, DO cache 200 for 60s
   const healthWork = await mkdtemp(join(tmpdir(), "meitheal-health-cache-"))
-  const store = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const store = await import("../helpers/persistence-fixture")
   const prevSupToken = process.env.SUPERVISOR_TOKEN
   const prevDbUrl = process.env.MEITHEAL_DB_URL
   const origFetch = globalThis.fetch
@@ -693,6 +746,7 @@ test("A8: logger bypasses category filter on warn/error, health.ts caches only H
   }) as typeof fetch
 
   try {
+    await store.ensureSchema()
     const res502 = await (await healthGET({} as Parameters<typeof healthGET>[0])).json()
     expect(res502.supervisor_reachable).toBe(false)
     expect(supervisorCalls).toBe(1)

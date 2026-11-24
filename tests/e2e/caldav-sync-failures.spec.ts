@@ -1,31 +1,69 @@
+import { integrationFixture, integrationRoute } from "../helpers/ordinary-integration-fixture"
+import { saveWorkIntegrationSettings } from "../../apps/web/src/domains/tasks/work-binding-manager"
 import { createServer } from "node:http"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test as base } from "@playwright/test"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
-import { getCalendarSyncStatus, startCalDAVSync, stopCalDAVSync, syncCalDAVEvents } from "../../apps/web/src/domains/calendar/calendar-bridge"
+import {
+  ensureSchema,
+  getPersistenceClient,
+  resetPersistenceForTests
+} from "../helpers/persistence-fixture"
+import {
+  getCalendarSyncStatus,
+  startCalDAVSync,
+  stopCalDAVSync,
+  syncCalDAVEvents
+} from "../../apps/web/src/domains/calendar/calendar-bridge"
 import { validateCalDAVUrl } from "../../apps/web/src/domains/calendar/caldav-client"
 import { POST as saveCredentials } from "../../apps/web/src/pages/api/integrations/calendar/caldav-credentials"
 import { POST as manualSync } from "../../apps/web/src/pages/api/integrations/calendar/sync"
 import { GET as exportSettings } from "../../apps/web/src/pages/api/export/settings.json"
 import { POST as importSettings } from "../../apps/web/src/pages/api/import/settings"
 
+let fixture: Awaited<ReturnType<typeof integrationFixture>>
 const origin = "http://caldav-fixture.example"
-const xml = (body: string) => `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">${body}</d:multistatus>`
-const calendar = (name: string) => `<d:response><d:href>/${name}/</d:href><d:propstat><d:prop><d:displayname>${name}</d:displayname><d:resourcetype><c:calendar/></d:resourcetype></d:prop></d:propstat></d:response>`
-const event = (uid: string) => `<d:response><d:href>/${uid}.ics</d:href><d:propstat><d:prop><c:calendar-data>BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:${uid}\r\nSUMMARY:${uid}\r\nDTSTART:20261110T100000Z\r\nDTEND:20261110T110000Z\r\nEND:VEVENT\r\nEND:VCALENDAR</c:calendar-data></d:prop></d:propstat></d:response>`
+const xml = (body: string) =>
+  `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">${body}</d:multistatus>`
+const calendar = (name: string) =>
+  `<d:response><d:href>/${name}/</d:href><d:propstat><d:prop><d:displayname>${name}</d:displayname><d:resourcetype><c:calendar/></d:resourcetype></d:prop></d:propstat></d:response>`
+const event = (uid: string, day: string) =>
+  `<d:response><d:href>/${uid}.ics</d:href><d:propstat><d:prop><c:calendar-data>BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:${uid}\r\nSUMMARY:${uid}\r\nDTSTART:${day}T100000Z\r\nDTEND:${day}T110000Z\r\nEND:VEVENT\r\nEND:VCALENDAR</c:calendar-data></d:prop></d:propstat></d:response>`
 type Database = ReturnType<typeof getPersistenceClient>
-type WebDAV = { calendars: string[]; events: Record<string, string[]>; failures: Set<string>; propfindStatus: number; propfinds: number; reports: number }
+type WebDAV = {
+  calendars: string[]
+  events: Record<string, string[]>
+  failures: Set<string>
+  propfindStatus: number
+  propfinds: number
+  reports: number
+}
 const test = base.extend<{ environment: { db: Database; dav: WebDAV } }>({
   environment: async ({}, use) => {
     const directory = await mkdtemp(join(tmpdir(), "meitheal-caldav-failure-"))
-    const previous = Object.fromEntries(["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_TOKEN"].map(key => [key, process.env[key]]))
+    const previous = Object.fromEntries(
+      ["MEITHEAL_DB_URL", "SUPERVISOR_TOKEN", "HA_TOKEN"].map((key) => [key, process.env[key]])
+    )
     const originalFetch = globalThis.fetch
-    const dav: WebDAV = { calendars: ["good", "bad"], events: {}, failures: new Set(), propfindStatus: 207, propfinds: 0, reports: 0 }
+    // Keep these events inside the production sync window on every test run.
+    const day = new Date().toISOString().slice(0, 10).replaceAll("-", "")
+    const dav: WebDAV = {
+      calendars: ["good", "bad"],
+      events: {},
+      failures: new Set(),
+      propfindStatus: 207,
+      propfinds: 0,
+      reports: 0
+    }
     const server = createServer(async (request, response) => {
-      for await (const _ of request) { /* consume the real XML request */ }
-      if (request.headers.authorization !== "Basic " + Buffer.from("fixture-user:fixture-password").toString("base64")) {
+      for await (const _ of request) {
+        /* consume the real XML request */
+      }
+      if (
+        request.headers.authorization !==
+        "Basic " + Buffer.from("fixture-user:fixture-password").toString("base64")
+      ) {
         response.writeHead(401).end()
         return
       }
@@ -36,12 +74,15 @@ const test = base.extend<{ environment: { db: Database; dav: WebDAV } }>({
       } else if (request.method === "REPORT") {
         dav.reports++
         const name = request.url!.split("/")[1]!
-        response.writeHead(dav.failures.has(name) ? 503 : 207).end(xml((dav.events[name] ?? []).map(event).join("")))
+        response
+          .writeHead(dav.failures.has(name) ? 503 : 207)
+          .end(xml((dav.events[name] ?? []).map((uid) => event(uid, day)).join("")))
       } else response.writeHead(405).end()
     })
-    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve))
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
     const address = server.address()
-    if (!address || typeof address === "string") throw new Error("Fixture server has no TCP address")
+    if (!address || typeof address === "string")
+      throw new Error("Fixture server has no TCP address")
     // Transport-only adapter: run the real client/parser against loopback HTTP without relaxing its SSRF policy.
     globalThis.fetch = ((input: string | URL | Request, init?: RequestInit) => {
       const target = new URL(input instanceof Request ? input.url : input)
@@ -54,20 +95,28 @@ const test = base.extend<{ environment: { db: Database; dav: WebDAV } }>({
     process.env.HA_TOKEN = "caldav-fixture-encryption-key"
     process.env.MEITHEAL_DB_URL = `file:${join(directory, "tasks.db")}`
     resetPersistenceForTests()
-    const db = getPersistenceClient()
+    let db: Database | undefined
     try {
       await ensureSchema()
-      const saved = await saveCredentials({ locals: { hassIsAdmin: true }, request: new Request("http://localhost/api/integrations/calendar/caldav-credentials", {
-        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "save", url: origin, username: "fixture-user", password: "fixture-password" }),
-      }) } as unknown as Parameters<typeof saveCredentials>[0])
+      db = getPersistenceClient()
+      const saved = await integrationRoute(
+        saveCredentials,
+        "/api/integrations/calendar/caldav-credentials",
+        { action: "save", url: origin, username: "fixture-user", password: "fixture-password" }
+      )
       expect(saved.status).toBe(200)
+      fixture = await integrationFixture({
+        integration: "caldav",
+        sourceId: "configured-caldav",
+        purpose: "calendar.sync"
+      })
       await use({ db, dav })
     } finally {
       stopCalDAVSync()
       globalThis.fetch = originalFetch
       server.closeAllConnections()
-      await new Promise<void>(resolve => server.close(() => resolve()))
-      db.close()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+      db?.close()
       resetPersistenceForTests()
       for (const [key, value] of Object.entries(previous)) {
         if (value === undefined) delete process.env[key]
@@ -75,24 +124,40 @@ const test = base.extend<{ environment: { db: Database; dav: WebDAV } }>({
       }
       await rm(directory, { recursive: true, force: true })
     }
-  },
+  }
 })
 
 async function ready() {
-  startCalDAVSync(origin, 0)
-  await expect.poll(() => getCalendarSyncStatus().lastSyncAt).not.toBeNull()
-  await expect.poll(async () => (await syncCalDAVEvents()).skipped ?? null).toBeNull()
+  await startCalDAVSync(origin, 0, {
+    bindingId: fixture.binding.id,
+    generation: fixture.binding.generation
+  })
+  await expect
+    .poll(async () => (await getCalendarSyncStatus(fixture.scope)).lastSyncAt)
+    .not.toBeNull()
+  await expect
+    .poll(async () => (await syncCalDAVEvents(fixture.binding.id)).skipped ?? null)
+    .toBeNull()
 }
 
 async function retry() {
-  return manualSync({ request: new Request("http://localhost/api/integrations/calendar/sync", {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "sync" }),
-  }) } as Parameters<typeof manualSync>[0])
+  return integrationRoute(manualSync, "/api/integrations/calendar/sync?board_id=household", {
+    action: "sync",
+    binding_id: fixture.binding.id,
+    generation: fixture.binding.generation
+  })
 }
 
 for (const legacy of [false, true]) {
-  test(`CalDAV credentials survive an actual ${legacy ? "historical" : "current"} Settings restore and WebDAV request`, async ({ environment: { db, dav } }) => {
-    const exported = await exportSettings({ locals: { hassIsAdmin: true } } as Parameters<typeof exportSettings>[0])
+  test(`CalDAV credentials survive an actual ${legacy ? "historical" : "current"} Settings restore and WebDAV request`, async ({
+    environment: { db, dav }
+  }) => {
+    const exported = await integrationRoute(
+      exportSettings,
+      "/api/export/settings.json",
+      undefined,
+      "GET"
+    )
     expect(exported.status).toBe(200)
     const bundle = await exported.json()
     // This direct domain fixture has no Astro virtual catalog. Empty framework
@@ -106,10 +171,26 @@ for (const legacy of [false, true]) {
       // Historical native credentials were stored raw, unlike ordinary preferences.
       bundle.settings = { caldav_url: origin }
     }
-    await db.execute({ sql: "UPDATE settings SET value = ? WHERE key = 'caldav_url'", args: ["http://different.example"] })
-    const restored = await importSettings({ locals: { hassIsAdmin: true }, request: new Request("http://localhost/api/import/settings", {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(bundle),
-    }) } as unknown as Parameters<typeof importSettings>[0])
+    await db.execute({
+      sql: "UPDATE settings SET value = ? WHERE key = 'caldav_url'",
+      args: ["http://different.example"]
+    })
+    const rejected = await integrationRoute(importSettings, "/api/import/settings", bundle)
+    expect(rejected.status).toBe(409)
+    expect(
+      await saveWorkIntegrationSettings(db, fixture.scope.principal, [
+        { key: "caldav_url", value: JSON.stringify(origin) },
+        // Ticket details change shared calendar content, so they go through profile review.
+        { key: "calendar_write_ticket_details", value: JSON.stringify(false) }
+      ])
+    ).toBe(true)
+    fixture = await integrationFixture({
+      integration: "caldav",
+      sourceId: "configured-caldav",
+      purpose: "calendar.sync"
+    })
+    bundle.settings.calendar_write_ticket_details = false
+    const restored = await integrationRoute(importSettings, "/api/import/settings", bundle)
     expect(restored.status).toBe(200)
     dav.events.good = ["restored-credentials"]
     await ready()
@@ -117,11 +198,15 @@ for (const legacy of [false, true]) {
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ ok: true, total: 1 })
     expect(dav.reports).toBeGreaterThan(0)
-    expect((await db.execute("SELECT title FROM tasks")).rows).toEqual([expect.objectContaining({ title: "restored-credentials" })])
+    expect((await db.execute("SELECT title FROM tasks")).rows).toEqual([
+      expect.objectContaining({ title: "restored-credentials" })
+    ])
   })
 }
 
-test("actual CalDAV REPORT failure retains saved imports and returns a partial manual outcome", async ({ environment: { db, dav } }) => {
+test("actual CalDAV REPORT failure retains saved imports and returns a partial manual outcome", async ({
+  environment: { db, dav }
+}) => {
   expect(validateCalDAVUrl("http://127.0.0.1/calendar").valid).toBe(false)
   await ready()
   dav.events.good = ["saved"]
@@ -129,22 +214,35 @@ test("actual CalDAV REPORT failure retains saved imports and returns a partial m
   const response = await retry()
   expect(response.status).toBe(502)
   const result = await response.json()
-  expect(result).toMatchObject({ ok: false, partial: true, created: 1, updated: 0, total: 1, entities: ["caldav"] })
-  expect(result.failures).toEqual([{ entity_id: "caldav", error: "1 CalDAV calendar(s) failed to fetch or import" }])
-  expect(getCalendarSyncStatus().lastSyncError).toContain("failed")
-  expect((await db.execute("SELECT title FROM tasks")).rows).toEqual([expect.objectContaining({ title: "saved" })])
+  expect(result).toMatchObject({
+    ok: false,
+    partial: true,
+    created: 1,
+    updated: 0,
+    total: 1,
+    entities: [fixture.binding.id]
+  })
+  expect(result.failures).toEqual([
+    { entity_id: fixture.binding.id, error: "1 CalDAV calendar(s) failed to fetch or import" }
+  ])
+  expect((await getCalendarSyncStatus(fixture.scope)).lastSyncError).toMatch(/incomplete|failed/)
+  expect((await db.execute("SELECT title FROM tasks")).rows).toEqual([
+    expect.objectContaining({ title: "saved" })
+  ])
   expect(JSON.stringify(result)).not.toContain(origin)
-  expect(JSON.stringify(getCalendarSyncStatus())).not.toContain(origin)
+  expect(JSON.stringify(await getCalendarSyncStatus(fixture.scope))).not.toContain(origin)
   dav.failures.clear()
   dav.events.bad = ["repaired"]
   const repaired = await retry()
   expect(repaired.status).toBe(200)
   expect(await repaired.json()).toMatchObject({ ok: true, created: 1, updated: 1, total: 2 })
-  expect(getCalendarSyncStatus().lastSyncError).toBeNull()
+  expect((await getCalendarSyncStatus(fixture.scope)).lastSyncError).toBeNull()
   expect(dav.reports).toBeGreaterThanOrEqual(6)
 })
 
-test("real SQLite import rejection keeps committed counts and clears error only after repaired retry", async ({ environment: { db, dav } }) => {
+test("real SQLite import rejection keeps committed counts and clears error only after repaired retry", async ({
+  environment: { db, dav }
+}) => {
   await ready()
   await db.execute(`CREATE TRIGGER block_caldav BEFORE INSERT ON calendar_confirmations WHEN NEW.provider_event_id = 'blocked'
     BEGIN SELECT RAISE(ABORT, 'fixture sensitive database detail'); END`)
@@ -154,45 +252,60 @@ test("real SQLite import rejection keeps committed counts and clears error only 
   const result = await response.json()
   expect(result).toMatchObject({ ok: false, partial: true, created: 1, updated: 0, total: 2 })
   expect(JSON.stringify(result)).not.toContain("fixture sensitive")
-  expect(getCalendarSyncStatus().lastSyncError).toContain("failed")
+  expect((await getCalendarSyncStatus(fixture.scope)).lastSyncError).toMatch(/incomplete|failed/)
   expect((await db.execute("SELECT COUNT(*) AS count FROM tasks")).rows[0]?.count).toBe(1)
   await db.execute("DROP TRIGGER block_caldav")
   const repaired = await retry()
   expect(repaired.status).toBe(200)
   expect(await repaired.json()).toMatchObject({ ok: true, created: 1, updated: 1, total: 2 })
   expect((await db.execute("SELECT COUNT(*) AS count FROM tasks")).rows[0]?.count).toBe(2)
-  expect(getCalendarSyncStatus().lastSyncError).toBeNull()
+  expect((await getCalendarSyncStatus(fixture.scope)).lastSyncError).toBeNull()
 })
 
-test("five failed per-calendar fetch attempts pause background requests; manual retry recovers after server repair", async ({ environment: { dav } }) => {
+test("five failed per-calendar fetch attempts pause background requests; manual retry recovers after server repair", async ({
+  environment: { dav }
+}) => {
   dav.failures.add("good")
   dav.failures.add("bad")
-  startCalDAVSync(origin, 40)
+  await startCalDAVSync(origin, 40, {
+    bindingId: fixture.binding.id,
+    generation: fixture.binding.generation
+  })
   await expect.poll(() => dav.propfinds).toBe(5)
-  await new Promise(resolve => setTimeout(resolve, 180))
+  await new Promise((resolve) => setTimeout(resolve, 180))
   expect(dav.propfinds).toBe(5)
   expect(dav.reports).toBe(10)
-  expect(getCalendarSyncStatus().lastSyncError).toContain("failed")
+  expect((await getCalendarSyncStatus(fixture.scope)).lastSyncError).toMatch(/incomplete|failed/)
   dav.failures.clear()
   dav.events.good = ["recovered"]
-  await new Promise(resolve => setTimeout(resolve, 100))
+  await new Promise((resolve) => setTimeout(resolve, 100))
   expect(dav.propfinds).toBe(5)
   const response = await retry()
   expect(response.status).toBe(200)
   expect(await response.json()).toMatchObject({ ok: true, created: 1, total: 1 })
-  expect(getCalendarSyncStatus().lastSyncError).toBeNull()
+  expect((await getCalendarSyncStatus(fixture.scope)).lastSyncError).toBeNull()
 })
 
-test("unconfigured, missing credentials and empty discovery are distinct from successful empty imports", async ({ environment: { db, dav } }) => {
-  expect(await syncCalDAVEvents()).toMatchObject({ skipped: "CalDAV sync is not configured" })
+test("unconfigured, missing credentials and empty discovery are distinct from successful empty imports", async ({
+  environment: { db, dav }
+}) => {
+  expect(await syncCalDAVEvents(fixture.binding.id)).toMatchObject({
+    skipped: "CalDAV binding is unavailable"
+  })
   await ready()
   dav.propfindStatus = 503
-  expect(await syncCalDAVEvents()).toMatchObject({ failed: "CalDAV sync failed; check credentials, server access and database health" })
+  expect(await syncCalDAVEvents(fixture.binding.id)).toMatchObject({
+    failed: "CalDAV sync failed; check credentials, server access and database health"
+  })
   dav.propfindStatus = 207
   dav.calendars = []
-  expect(await syncCalDAVEvents()).toMatchObject({ failed: "No CalDAV calendars found on server" })
-  expect(getCalendarSyncStatus().lastSyncError).toContain("No CalDAV calendars")
+  expect(await syncCalDAVEvents(fixture.binding.id)).toMatchObject({
+    failed: "No CalDAV calendars found on server"
+  })
+  expect((await getCalendarSyncStatus(fixture.scope)).lastSyncError).toContain("incomplete")
   await db.execute("DELETE FROM settings WHERE key = 'caldav_password_enc'")
-  expect(await syncCalDAVEvents()).toMatchObject({ failed: "CalDAV credentials not configured" })
-  expect(getCalendarSyncStatus().lastSyncError).toBe("CalDAV credentials not configured")
+  expect(await syncCalDAVEvents(fixture.binding.id)).toMatchObject({
+    failed: "CalDAV credentials not configured"
+  })
+  expect((await getCalendarSyncStatus(fixture.scope)).lastSyncError).toContain("incomplete")
 })

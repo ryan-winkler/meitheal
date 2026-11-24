@@ -4,7 +4,9 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { expect, test, type Page } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
+import { deferred } from "./_helpers"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Run with MEITHEAL_TEST_BROWSER=1 and a built web app")
 
@@ -19,7 +21,7 @@ async function withSearchIngress(run: (page: Page, root: string, prefix: string,
     const origin = `https://127.0.0.1:${fixture.port}`
     const prefix: string = fixture.configuredPath
     browser = await launchPinBrowser(work)
-    const context = await browser.newContext({ reducedMotion: "reduce", serviceWorkers: "block", extraHTTPHeaders: {} })
+    const context = await browser.newContext({ reducedMotion: "reduce", serviceWorkers: "block", ignoreHTTPSErrors: true, extraHTTPHeaders: {} })
     await context.setExtraHTTPHeaders({})
     await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
     const page = await context.newPage()
@@ -37,21 +39,19 @@ async function withSearchIngress(run: (page: Page, root: string, prefix: string,
 }
 
 async function seedIngressTask(page: Page, prefix: string, title: string) {
-  return page.evaluate(async ({ prefix, title }) => {
-    const response = await fetch(prefix + "/api/tasks", {
-      method: "POST", headers: { "content-type": "application/json" },
-      mode: "same-origin", cache: "no-store", redirect: "error", referrerPolicy: "same-origin",
-      body: JSON.stringify({ title }),
-    })
-    if (response.status !== 201) throw new Error("Could not seed Search Details fixture")
-    return await response.json() as { id: string; ticket_key: string; task_version: number }
-  }, { prefix, title })
+  const origin = new URL(page.url()).origin
+  const app = origin + prefix
+  const headers = await currentBoardWriteHeaders(page.request, "household", { origin }, app)
+  const created = await page.request.post(app + "/api/tasks", { headers, data: { title } })
+  expect(created.status(), await created.text()).toBe(201)
+  return await created.json() as { id: string; ticket_key: string; task_version: number }
 }
 
 for (const reducedMotion of ["no-preference", "reduce"] as const) {
   test(`Search Details restores the query and original trigger with ${reducedMotion} motion`, async ({ request, baseURL, browser }) => {
     const title = "Search return lavender fixture " + reducedMotion
-    const created = await request.post("/api/tasks", { data: { title } })
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+    const created = await request.post("/api/tasks", { headers, data: { title } })
     expect(created.status()).toBe(201)
     const { ticket_key: ticket } = await created.json()
     const context = await browser.newContext({ baseURL: baseURL!, serviceWorkers: "block", reducedMotion })
@@ -93,7 +93,8 @@ for (const reducedMotion of ["no-preference", "reduce"] as const) {
 
 test("Search-owned confirmation is cancelled on history to the same task", async ({ request, baseURL, browser }) => {
   const title = "Search same task history fixture"
-  const created = await request.post("/api/tasks", { data: { title } })
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+  const created = await request.post("/api/tasks", { headers, data: { title } })
   expect(created.status()).toBe(201)
   const { id } = await created.json()
   const context = await browser.newContext({ baseURL: baseURL!, serviceWorkers: "block", reducedMotion: "reduce" })
@@ -135,7 +136,7 @@ test("Search-owned confirmation is cancelled on history to the same task", async
   }
 })
 
-test("Search-owned Details handles DELETE rejection and a delayed receipt across ingress history", async () => {
+test("Search-owned Details handles DELETE rejection and cancels a pending receipt on ingress history", async () => {
   await withSearchIngress(async (page, root, prefix) => {
     const title = "Search delete ingress fixture"
     const { id, ticket_key: ticket } = await seedIngressTask(page, prefix, title)
@@ -145,11 +146,11 @@ test("Search-owned Details handles DELETE rejection and a delayed receipt across
       if (path.endsWith("/api/search")) searchPaths.push(path)
     })
     let deleteCount = 0
-    let startDelayed!: () => void
-    let releaseDelayed!: () => void
-    const started = new Promise<void>(resolve => { startDelayed = resolve })
-    const held = new Promise<void>(resolve => { releaseDelayed = resolve })
-    await page.route(url => url.pathname === prefix + "/api/tasks/" + id, async route => {
+    const deletePath = prefix + "/api/tasks/" + id
+    const started = deferred<void>()
+    const held = deferred<void>()
+    const finished = deferred<void>()
+    await page.route(url => url.pathname === deletePath, async route => {
       if (route.request().method() !== "DELETE") {
         await route.fallback()
         return
@@ -158,9 +159,13 @@ test("Search-owned Details handles DELETE rejection and a delayed receipt across
         await route.fulfill({ status: 403, json: { detail: "Fixture rejection" } })
         return
       }
-      startDelayed()
-      await held
-      await route.fulfill({ status: 204 })
+      started.resolve()
+      await held.promise
+      try {
+        await route.fulfill({ status: 204 })
+      } finally {
+        finished.resolve()
+      }
     })
 
     await page.goto(root + "/settings#theme-select")
@@ -184,18 +189,31 @@ test("Search-owned Details handles DELETE rejection and a delayed receipt across
       await page.getByRole("alertdialog").getByRole("button", { name: "Delete Task" }).click()
     }
     await confirmDelete()
-    await expect(page.getByRole("alert").filter({ hasText: "Couldn’t delete the task." })).toBeVisible()
+    const recovery = page.getByRole("alert").filter({ hasText: "Reload the saved task before making further changes." })
+    await expect(recovery).toBeVisible()
     await expect(page.locator("#td-title")).toHaveValue(title)
     await expect(page).toHaveURL(current)
+    await recovery.getByRole("button", { name: "Reload saved task" }).click()
+    await expect(recovery).toBeHidden()
 
-    await confirmDelete()
-    await started
-    await page.goBack()
-    await expect(page).toHaveURL(older)
-    await expect(page.locator("#td-title")).toHaveValue(title)
-    const receipt = page.waitForResponse(response => response.request().method() === "DELETE" && response.status() === 204)
-    releaseDelayed()
-    await receipt
+    try {
+      await confirmDelete()
+      await started.promise
+      const [cancelled] = await Promise.all([
+        page.waitForEvent("requestfailed", {
+          predicate: outgoing => outgoing.method() === "DELETE" && new URL(outgoing.url()).pathname === deletePath,
+          timeout: 5_000,
+        }),
+        page.goBack(),
+      ])
+      expect(cancelled.failure()?.errorText).toBe("net::ERR_ABORTED")
+      await expect(page).toHaveURL(older)
+      await expect(page.locator("#td-title")).toHaveValue(title)
+    } finally {
+      held.resolve()
+    }
+    await finished.promise
+    expect(deleteCount).toBe(2)
     await expect(page.getByRole("button", { name: "Close detail" })).toBeFocused()
     await expect(page.locator("#search-hub-overlay")).toBeHidden()
     expect(searchPaths.length).toBeGreaterThan(0)
@@ -207,17 +225,13 @@ test("Deferred data reconciles after Search Details closes without stealing inpu
   await withSearchIngress(async (page, root, prefix) => {
     const title = "Search deferred reconciliation fixture"
     const { id, ticket_key: ticket } = await seedIngressTask(page, prefix, title)
-    const status = await page.evaluate(async ({ prefix, id }) => {
-      const url = prefix + "/api/tasks/" + id
-      const task = await (await fetch(url)).json()
-      const deferred = await fetch(url + "/deferral", {
-        method: "PATCH", headers: { "content-type": "application/json" },
-        mode: "same-origin", cache: "no-store", redirect: "error", referrerPolicy: "same-origin",
-        body: JSON.stringify({ deferred: true, updated_at: task.task_version, deferral_revision: task.deferral_revision }),
-      })
-      return deferred.status
-    }, { prefix, id })
-    expect(status).toBe(200)
+    const headers = await currentBoardWriteHeaders(page.request, "household", { origin: new URL(root).origin }, root)
+    const taskUrl = root + "/api/tasks/" + id
+    const task = await (await page.request.get(taskUrl)).json()
+    const response = await page.request.patch(taskUrl + "/deferral", { headers, data: {
+      deferred: true, updated_at: task.task_version, deferral_revision: task.deferral_revision,
+    } })
+    expect(response.status(), await response.text()).toBe(200)
     await page.goto(root + "/deferred")
     const original = page.url()
     const card = page.locator(`[data-deferred-card="${id}"]`)
@@ -260,6 +274,7 @@ test("All selects an exact task ahead of a static match and keeps the active opt
     expect(health).toBe(200)
     const db = new DatabaseSync(join(work, "pins.db"))
     try {
+      db.exec("PRAGMA busy_timeout = 3000")
       const insert = db.prepare("INSERT INTO tasks (id,title,idempotency_key,request_id,created_at,updated_at) VALUES (?,?,?,?,?,?)")
       insert.run("calendar", title, "calendar", "calendar", 1, 1)
       db.prepare("INSERT INTO comments (task_id, content) VALUES (?,?)").run("calendar", "Bellflower comment fixture")
@@ -323,7 +338,8 @@ test("All selects an exact task ahead of a static match and keeps the active opt
 })
 
 test("Enter cannot select a stale result while the next query loads", async ({ request, baseURL, browser }) => {
-  const created = await request.post("/api/tasks", { data: { title: "Fresh lantern query fixture" } })
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+  const created = await request.post("/api/tasks", { headers, data: { title: "Fresh lantern query fixture" } })
   expect(created.status()).toBe(201)
   const context = await browser.newContext({ baseURL: baseURL!, serviceWorkers: "block" })
   try {
@@ -409,7 +425,7 @@ test("Search waits for a compatible worker, purges old results and remains fresh
     const variants = [canonical + "?q=Search", prefix + "/%2561pi/search/", prefix + "/api//search", "/api/search"]
     await workerMode(true)
     browser = await launchPinBrowser(work)
-    const context = await browser.newContext({ extraHTTPHeaders: {} })
+    const context = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {} })
     await context.setExtraHTTPHeaders({})
     await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
     const page = await context.newPage()
@@ -422,13 +438,8 @@ test("Search waits for a compatible worker, purges old results and remains fresh
       await navigator.serviceWorker.register(scope + "/sw.js", { scope: scope + "/" })
     }, prefix)
     await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller))
+    await seedIngressTask(page, prefix, "Search current ingress fixture")
     const version = await page.evaluate(async ({ prefix, variants }) => {
-      const create = await fetch(prefix + "/api/tasks", {
-        method: "POST", headers: { "content-type": "application/json" },
-        mode: "same-origin", cache: "no-store", redirect: "error", referrerPolicy: "same-origin",
-        body: JSON.stringify({ title: "Search current ingress fixture" }),
-      })
-      if (!create.ok) throw new Error("Could not seed Search fixture")
       const { version } = await (await fetch(prefix + "/version.json")).json()
       const stored = () => new Response("Synthetic stale search data", { headers: { date: new Date().toUTCString() } })
       // The legacy worker can fill the API bucket with ingress assets. Keep the unrelated

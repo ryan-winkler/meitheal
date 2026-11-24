@@ -7,40 +7,6 @@
  * No external dependencies — fully Astro-native and HA-native.
  */
 
-/* ── Toast Notifications ────────────────────────────────────────────────── */
-
-.gantt-toast {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%) translateY(20px);
-  padding: 10px 20px;
-  border-radius: var(--radius-md, 8px);
-  font-size: 13px;
-  font-weight: 500;
-  z-index: 10000;
-  opacity: 0;
-  transition: opacity 0.3s, transform 0.3s;
-  pointer-events: none;
-}
-
-.gantt-toast--success {
-  background: var(--accent);
-  color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
-  box-shadow: 0 4px 16px rgb(var(--accent-rgb) / 0.3);
-}
-
-.gantt-toast--error {
-  background: var(--accent-danger, #ef4444);
-  color: #fff;
-  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.3);
-}
-
-.gantt-toast--visible {
-  opacity: 1;
-  transform: translateX(-50%) translateY(0);
-}
-
 /* ── B7: ClickUp-style Controls Bar (above sidebar/chart) ────────────── */
 
 .timeline-controls-bar {
@@ -72,47 +38,21 @@
   background: var(--bg-secondary, rgba(255,255,255,0.06));
   color: var(--text-primary);
 }
+.timeline-ctrl-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
 
-/* ── Column Toggle Dropdown ───────────────────────────────── */
-
-.timeline-col-toggle {
-  position: relative;
-}
-.timeline-col-toggle-panel {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md, 8px);
-  box-shadow: var(--shadow-lg, 0 8px 24px rgba(0,0,0,0.3));
-  padding: 8px 0;
-  min-width: 160px;
-  z-index: 50;
-}
-.timeline-col-toggle-title {
-  padding: 4px 12px 6px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-.timeline-col-toggle-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  font-size: 13px;
-  color: var(--text-primary);
-  cursor: pointer;
-  transition: background 0.1s;
-}
-.timeline-col-toggle-item:hover {
-  background: var(--bg-secondary, rgba(255,255,255,0.06));
-}
-.timeline-col-toggle-item input[type="checkbox"] {
-  accent-color: var(--accent);
+@media (max-width: 640px) {
+  .timeline-controls-bar {
+    flex-wrap: wrap;
+    position: relative;
+  }
+  .timeline-ctrl-btn {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+  }
 }
 
 /* ── Zoom Dropdown (ClickUp-style with "Time period" title) ─ */
@@ -184,68 +124,10 @@
   display: none;
 }
 
-/* Legacy .timeline-toolbar — kept for backward compat */
-.timeline-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-}
-
-.timeline-zoom-select {
-  appearance: none;
-  background: var(--bg-secondary, rgba(255, 255, 255, 0.06));
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm, 6px);
-  padding: 4px 24px 4px 8px;
-  font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
-  outline: none;
-  background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239ca3af' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 6px center;
-  transition: border-color 0.15s;
-}
-
-.timeline-zoom-select:hover {
-  border-color: var(--accent);
-}
-
-.timeline-zoom-select:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.15);
-}
-
 /* ── T7: Priority Legend ─────────────────────────────────────────────── */
 
 .timeline-legend {
   position: relative;
-}
-
-.timeline-legend-trigger {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  background: var(--bg-secondary, rgba(255, 255, 255, 0.06));
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm, 6px);
-  padding: 4px 8px;
-  font-size: 12px;
-  color: var(--text-muted);
-  cursor: pointer;
-  list-style: none;
-  transition: border-color 0.15s;
-}
-
-.timeline-legend-trigger::-webkit-details-marker {
-  display: none;
-}
-
-.timeline-legend-trigger:hover {
-  border-color: var(--accent);
-  color: var(--text-primary);
 }
 
 .timeline-legend-panel {
@@ -260,6 +142,15 @@
   box-shadow: var(--shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.3));
   z-index: 100;
   font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .timeline-legend { position: static; }
+  .timeline-legend-panel {
+    inset-inline: 0 auto;
+    inline-size: min(240px, 100%);
+    min-width: 0;
+  }
 }
 
 .legend-section {
@@ -296,11 +187,11 @@
 }
 
 .legend-diamond {
-  font-size: 10px;
-  color: var(--accent);
   width: 8px;
-  text-align: center;
+  height: 8px;
+  border: 1.5px solid var(--danger-text);
   flex-shrink: 0;
+  transform: rotate(45deg);
 }
 
 /* ── Skeleton ───────────────────────────────────────────────────────────── */
@@ -342,15 +233,8 @@
   100% { opacity: 0.4; }
 }
 
-/* O3: Respect prefers-reduced-motion for toast and skeleton animations */
+/* O3: Respect prefers-reduced-motion for skeleton animations */
 @media (prefers-reduced-motion: reduce) {
-  .gantt-toast {
-    transition: none;
-    transform: translateX(-50%);
-  }
-  .gantt-toast--visible {
-    transform: translateX(-50%);
-  }
   .skel-label,
   .skel-bar {
     animation: none;
@@ -442,13 +326,13 @@
 }
 
 .gantt-sidebar-row:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: -2px;
   background: var(--bg-secondary, rgba(255, 255, 255, 0.04)) !important;
 }
 
 .gantt-sidebar-row--focused {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: -2px;
   background: var(--bg-secondary, rgba(255, 255, 255, 0.06)) !important;
 }
@@ -466,7 +350,7 @@
 }
 
 .gantt-bar:focus {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: 2px;
   border-radius: var(--radius-sm, 4px);
 }
@@ -478,7 +362,7 @@
 }
 
 .gantt-milestone:focus {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: 2px;
 }
 
@@ -488,7 +372,7 @@
 }
 
 .gantt-today-fab:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: 2px;
 }
 
@@ -522,7 +406,7 @@
 }
 
 .timeline-export-btn:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--border-focus);
   outline-offset: 2px;
 }
 
@@ -618,4 +502,25 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+
+.gantt-sidebar-group-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.gantt-sidebar-group-label > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gantt-sidebar-group-qualifier {
+  color: var(--text-secondary);
+  text-transform: none;
 }

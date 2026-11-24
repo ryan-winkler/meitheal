@@ -36,6 +36,15 @@
   box-shadow: 0 0 0 3px var(--accent-light, rgb(var(--accent-rgb) / 0.12));
 }
 
+[data-theme="knight-rider"] :is(.form-input, .form-select):focus {
+  border-color: var(--border-focus);
+  box-shadow: var(--focus-ring);
+}
+
+[data-theme="knight-rider"] :is(.form-input, .form-select):not(:focus, [aria-invalid="true"]) {
+  border-color: var(--control-border);
+}
+
 .form-input::placeholder {
   @apply text-text-muted;
   /* Keep guidance readable while typing; entered text replaces it naturally. */
@@ -64,26 +73,6 @@
 .form-label {
   @apply block text-sm font-medium text-text-secondary mb-1.5;
 }
-/* --- Settings Tabs ---
- * Restored from inline styles (commit 2e3602f).
- * Removed during Phase 58 QA without CSS migration. */
-.settings-tabs {
-display: flex;
-gap: 24px;
-border-bottom: 1px solid var(--border);
-margin-bottom: 24px;
-overflow-x: auto;
--webkit-overflow-scrolling: touch;
-scrollbar-width: none;
-/* Scroll fade indicator — right edge gradient hints more content */
-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
--webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
-}
-
-.settings-tabs::-webkit-scrollbar {
-display: none;
-}
-
 .settings-tab {
 padding: 8px 0 12px;
 border-bottom: 2px solid transparent;

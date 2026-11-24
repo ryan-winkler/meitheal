@@ -14,10 +14,12 @@
 - [Review recent activity](recent-activity.md) - Find committed task changes by area and person.
 - [Task Lifecycle Glossary](task-lifecycle-glossary.md) - Find task status definitions and transition rules.
 - [Hierarchy Glossary — Meitheal Ubiquitous Language](hierarchy-glossary.md) - Find definitions for areas, goals, projects, and other planning terms.
+- [Named Boards](named-boards.md) - Set up private Boards, send-only access and scoped planning.
 - [Settings Shell Troubleshooting](settings-troubleshooting.md) - Find settings and diagnose navigation problems.
+- [First-time setup](first-time-setup.md) - Choose workspace views, capture and theme and recover failed setup saves.
 - [Save and restore rules and framework settings](settings-persistence.md) - Finish pending edits and recover from rejected saves or imports.
 - [New ticket form](new-ticket-form.md) - Create tickets and preserve checklist and private draft values.
-- [Settings outline icons](settings-outline-icons.md) - Maintain the build-extracted 64-icon Tabler catalog, SVG sprites, 5-Bucket Emoji Policy, and MIT attribution.
+- [Settings outline icons](settings-outline-icons.md) - Maintain the build-extracted Tabler icon catalog, SVG sprites, 5-Bucket Emoji Policy, and MIT attribution.
 - [Troubleshooting](troubleshooting.md) - Diagnose common connection, search, and sync problems.
 - [Local feedback queue](feedback-and-support.md) - Understand feedback storage, review, and export.
 
@@ -27,12 +29,14 @@
 - [WebMCP and A2A Setup](webmcp-a2a-setup.md) - Understand the current MCP and A2A interfaces and WebMCP status.
 - [Webhook Setup Guide](webhook-setup-guide.md) - Connect an external automation receiver.
 - [n8n / Node-RED Integration Examples](n8n-integration-example.md) - Connect Meitheal events to n8n or Node-RED.
+- [Plugin Development Guide](plugin-development.md) - Build, package, secure, and test sandboxed Meitheal plugins and external connectors.
 
 - [Mention someone in a comment](comment-mentions.md) - Send an in-app inbox item to another household member.
 
 # Development and operations
 
 - [Client-Side Patterns & HMR Gotchas](client-side-patterns.md) - Implement client controls that work with the application lifecycle.
+- [Toast notifications](toast-notifications.md) - Unified notification container, Top-Layer overlay contracts, mobile gestures, and lifecycle guards.
 - [Browser translations](browser-translations.md) - Maintain browser locale behavior and avoid duplicate translation catalogs.
 - [Import a framework from YAML](framework-yaml-import.md) - Import a framework and diagnose validation or size errors.
 - [Memory-Safe Event Listener Patterns](memory-safety-patterns.md) - Manage browser event listeners and clean up their resources.
@@ -57,3 +61,7 @@
 - [Complete tasks with NFC](nfc-task-completion.md) - Use unique tag assignments and acknowledged task completion.
 - [Task completion results](task-completion-results.md) - Understand committed completion rewards and optional failures.
 - [Overdue task events](overdue-task-events.md) - Observe deadline transitions separately from notification delivery.
+- [Routine check-ins and recurring Tasks](routine-scheduling-and-recurrence.md) - Use and troubleshoot routine check-ins and recurring Tasks.
+- [NFC completion with limited credentials](nfc-completion-authority.md) - Use and troubleshoot nFC completion with limited credentials.
+- [Task references, cancellation and compatibility capture](task-command-privacy-and-retries.md) - Use and troubleshoot task references, cancellation and compatibility capture.
+- [Task activity attribution](task-activity-attribution.md) - Use and troubleshoot task activity attribution.

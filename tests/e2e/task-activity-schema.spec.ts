@@ -1,18 +1,33 @@
-import { execFile } from "node:child_process"
+import { BOARD_LIFECYCLE_MIGRATION } from "../../apps/web/drizzle/migrations/0015_board_lifecycle.mjs"
+import { ORDINARY_BOARD_MIGRATION } from "../../apps/web/drizzle/migrations/0016_ordinary_boards.mjs"
+import { CUSTOM_BOARD_KEYS_MIGRATION } from "../../apps/web/drizzle/migrations/0017_custom_board_keys.mjs"
+import { TASK_EXPERIENCE_MIGRATION } from "../../apps/web/drizzle/migrations/0018_task_experience.mjs"
+import { execFile } from "../helpers/isolated-process"
 import { createHash } from "node:crypto"
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises"
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { expect, test as base } from "@playwright/test"
-import { DATABASE_SCHEMA_VERSION } from "../../apps/web/scripts/database-client.mjs"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { PERSONAL_PILLAR_MIGRATION } from "../../apps/web/drizzle/migrations/0010_personal_pillars.mjs"
+import { BOARD_ACCESS_MIGRATION } from "../../apps/web/drizzle/migrations/0011_board_access.mjs"
+import { ORGANIZATION_LABEL_MIGRATION } from "../../apps/web/drizzle/migrations/0012_organization_labels.mjs"
+import { ORGANIZATION_ACCESS_MIGRATION } from "../../apps/web/drizzle/migrations/0013_organization_access.mjs"
+import { ORGANIZATION_FEATURE_MIGRATION } from "../../apps/web/drizzle/migrations/0014_organization_features.mjs"
+import { TASK_BOARD_MIGRATION } from "../../apps/web/drizzle/migrations/task-board-upgrade.mjs"
+import { DATABASE_SCHEMA_VERSION, openDatabase } from "../../apps/web/scripts/database-client.mjs"
+import { readBoardGrantRevision } from "../../apps/web/scripts/board-grant-journal.mjs"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
+import { prepareTaskBoardPredecessor } from "../scripts/task-board-predecessor"
+
+const upgradeMigrations = new Set<string>([TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION, ORGANIZATION_FEATURE_MIGRATION, BOARD_LIFECYCLE_MIGRATION, ORDINARY_BOARD_MIGRATION, CUSTOM_BOARD_KEYS_MIGRATION, TASK_EXPERIENCE_MIGRATION])
 
 const execFileAsync = promisify(execFile)
 const webRoot = fileURLToPath(new URL("../../apps/web", import.meta.url))
 const generation = /^[0-9a-f]{32}$/
+const ordinaryTriggerDigest = "a18ebb599ff0af84460c5a1084e10028f4c9822236bad8a45d529a563ec7a5f2"
 const triggerNames = [
   "areas_inactivity_generation",
   "comments_inactivity_delete",
@@ -43,19 +58,33 @@ function migrate(databasePath: string, ...args: string[]) {
   })
 }
 
+async function qualifyOwnedPredecessor(databasePath: string) {
+  await migrate(databasePath, "--check")
+  expect(await readBoardGrantRevision(databasePath + ".board-grants.json")).toMatch(/^[a-f0-9-]{36}$/)
+}
+
 async function bootstrapRuntime(databasePath: string) {
   const previous = process.env.MEITHEAL_DB_URL
   process.env.MEITHEAL_DB_URL = `file:${databasePath}`
   resetPersistenceForTests()
   let client: ReturnType<typeof getPersistenceClient> | undefined
   try {
-    client = getPersistenceClient()
     await ensureSchema()
+    client = getPersistenceClient()
   } finally {
     client?.close()
     resetPersistenceForTests()
     if (previous === undefined) delete process.env.MEITHEAL_DB_URL
     else process.env.MEITHEAL_DB_URL = previous
+  }
+}
+
+async function seedPredecessor(databasePath: string) {
+  const client = openDatabase(`file:${databasePath}`)
+  try {
+    await prepareTaskBoardPredecessor(client)
+  } finally {
+    client.close()
   }
 }
 
@@ -73,6 +102,12 @@ function readTriggers(database: DatabaseSync) {
     AND (name GLOB '*_inactivity_*' OR name GLOB '*_stall_*') ORDER BY name`).all()
 }
 
+function expectOrdinaryActivityTriggers(database: DatabaseSync) {
+  const triggers = readTriggers(database)
+  expect(triggers.map(trigger => trigger.name)).toEqual(triggerNames)
+  expect(createHash("sha256").update(JSON.stringify(triggers)).digest("hex")).toBe(ordinaryTriggerDigest)
+}
+
 function readMarker(database: DatabaseSync) {
   return database.prepare("SELECT value FROM app_settings WHERE key = 'schema_version'").get()?.value
 }
@@ -82,8 +117,8 @@ function readLedger(database: DatabaseSync) {
 }
 
 function enablePolicy(database: DatabaseSync) {
-  database.exec(`INSERT INTO task_inactivity_policy (scope, days, revision)
-    VALUES ('default', 30, '0123456789abcdef0123456789abcdef')`)
+  database.exec(`INSERT INTO task_inactivity_policy (board_id, scope, days, revision)
+    VALUES ('household', 'default', 30, '0123456789abcdef0123456789abcdef')`)
 }
 
 function insertTask(database: DatabaseSync, id: string, status: string) {
@@ -96,12 +131,8 @@ test("the standalone CLI installs working activity triggers before web startup",
   await migrate(databasePath)
   await migrate(databasePath, "--check")
   withDatabase(databasePath, database => {
-    expect(readMarker(database)).toBeUndefined()
-    const triggers = readTriggers(database)
-    expect(triggers.map(trigger => trigger.name)).toEqual(triggerNames)
-    // Existing version-18 databases store these definitions verbatim.
-    expect(createHash("sha256").update(JSON.stringify(triggers)).digest("hex"))
-      .toBe("630b0f9d0f1f3f7c43fe9f6df81f300698ae3faf9faced671f6dac5a4c83d2ec")
+    expect(readMarker(database)).toBe(String(DATABASE_SCHEMA_VERSION))
+    expectOrdinaryActivityTriggers(database)
     database.exec("INSERT INTO areas (id, name, created_at, updated_at) VALUES ('new', 'New Area', 1, 1)")
     const areas = database.prepare("SELECT inactivity_generation FROM areas ORDER BY id").all()
     expect(areas).toEqual([{ inactivity_generation: expect.stringMatching(generation) }, {
@@ -149,7 +180,7 @@ test("the standalone CLI installs working activity triggers before web startup",
 })
 
 test("both startup paths refuse a column that assigns new tasks by default", async ({ databasePath }) => {
-  await migrate(databasePath)
+  await seedPredecessor(databasePath)
   withDatabase(databasePath, database => database.exec(`
     DROP TRIGGER tasks_stall_initial_assignment;
     DROP TRIGGER tasks_stall_transition;
@@ -173,7 +204,7 @@ test("both startup paths refuse a column that assigns new tasks by default", asy
 })
 
 test("startup preserves non-null imported Area generations accepted by the predecessor", async ({ databasePath }) => {
-  await migrate(databasePath)
+  await seedPredecessor(databasePath)
   const readGenerations = (database: DatabaseSync) => database.prepare(`
     SELECT id, typeof(inactivity_generation) AS storage, hex(inactivity_generation) AS bytes FROM areas ORDER BY id
   `).all()
@@ -187,15 +218,15 @@ test("startup preserves non-null imported Area generations accepted by the prede
     expect(rows.map(row => [row.storage, String(row.bytes).length])).toEqual([["blob", 64], ["text", 64]])
     return rows
   })
-  await migrate(databasePath, "--check")
   await migrate(databasePath)
+  await qualifyOwnedPredecessor(databasePath)
   await bootstrapRuntime(databasePath)
   expect(withDatabase(databasePath, readGenerations)).toEqual(before)
 })
 
 for (const name of ["areas_inactivity_generation", "AREAS_INACTIVITY_GENERATION"]) {
   test(`both startup paths reject ${name} drift before restoring the default Area`, async ({ databasePath }) => {
-    await migrate(databasePath)
+    await seedPredecessor(databasePath)
     withDatabase(databasePath, database => {
       insertTask(database, "retained-task", "pending")
       database.exec(`
@@ -221,7 +252,7 @@ for (const [family, name] of [
   ["deferral", "tasks_deferral_status_revision"],
 ] as const) {
   test(`both startup paths reject ${family} trigger drift before normalizing a legacy status`, async ({ databasePath }) => {
-    await migrate(databasePath)
+    await seedPredecessor(databasePath)
     withDatabase(databasePath, database => {
       insertTask(database, "retained-task", "todo")
       database.exec(`
@@ -242,7 +273,7 @@ for (const [family, name] of [
 }
 
 test("both startup paths reject case drift in a deferral trigger status literal", async ({ databasePath }) => {
-  await migrate(databasePath)
+  await seedPredecessor(databasePath)
   withDatabase(databasePath, database => {
     insertTask(database, "retained-task", "done")
     database.exec("UPDATE tasks SET deferred_at = 1 WHERE id = 'retained-task'")
@@ -266,7 +297,7 @@ test("both startup paths reject case drift in a deferral trigger status literal"
 })
 
 test("both startup paths reject task trigger drift before backfilling ticket numbers", async ({ databasePath }) => {
-  await migrate(databasePath)
+  await seedPredecessor(databasePath)
   withDatabase(databasePath, database => {
     insertTask(database, "retained-task", "pending")
     database.exec(`
@@ -293,7 +324,7 @@ for (const first of ["CLI", "runtime"] as const) {
     const start = { CLI: migrate, runtime: bootstrapRuntime }
     await start[first](databasePath)
     const before = withDatabase(databasePath, database => {
-      expect(readMarker(database)).toBe(first === "CLI" ? undefined : String(DATABASE_SCHEMA_VERSION))
+      expect(readMarker(database)).toBe(String(DATABASE_SCHEMA_VERSION))
       enablePolicy(database)
       for (const status of ["todo", "in_progress", "done"]) insertTask(database, status, status)
       database.exec("UPDATE tasks SET last_activity_spike_at = 17")
@@ -302,7 +333,7 @@ for (const first of ["CLI", "runtime"] as const) {
       return {
         triggers,
         areas: database.prepare("SELECT id, inactivity_generation FROM areas ORDER BY id").all(),
-        ledger: first === "CLI" ? readLedger(database) : undefined,
+        ledger: readLedger(database),
       }
     })
 
@@ -312,7 +343,7 @@ for (const first of ["CLI", "runtime"] as const) {
       return readLedger(database)
     })
     expect(ledger.map(entry => entry.name)).toEqual(expect.arrayContaining(["0007_task_inactivity.mjs", "0008_task_stall.mjs"]))
-    if (before.ledger) expect(ledger).toEqual(before.ledger)
+    expect(ledger).toEqual(before.ledger)
     if (first === "runtime") await bootstrapRuntime(databasePath)
     await migrate(databasePath, "--check")
     withDatabase(databasePath, database => {
@@ -329,10 +360,10 @@ for (const first of ["CLI", "runtime"] as const) {
   })
 }
 
-test("CLI check detects a missing activity trigger without writing and apply repairs it", async ({ databasePath }) => {
-  await migrate(databasePath)
-  const { triggers, ledger } = withDatabase(databasePath, database => {
-    const before = { triggers: readTriggers(database), ledger: readLedger(database) }
+test("CLI check detects a missing predecessor activity trigger and apply restores it", async ({ databasePath }) => {
+  await seedPredecessor(databasePath)
+  const { ledger } = withDatabase(databasePath, database => {
+    const before = { ledger: readLedger(database) }
     database.exec("DROP TRIGGER tasks_stall_transition")
     return before
   })
@@ -344,33 +375,33 @@ test("CLI check detects a missing activity trigger without writing and apply rep
   expect((await readdir(directory)).sort()).toEqual(beforeFiles)
 
   await migrate(databasePath)
-  await migrate(databasePath, "--check")
+  await qualifyOwnedPredecessor(databasePath)
   withDatabase(databasePath, database => {
-    expect(readTriggers(database)).toEqual(triggers)
-    expect(readLedger(database)).toEqual(ledger)
-    expect(readMarker(database)).toBeUndefined()
+    expectOrdinaryActivityTriggers(database)
+    expect(readLedger(database).filter(entry => !upgradeMigrations.has(String(entry.name)))).toEqual(ledger)
+    expect(readMarker(database)).toBe(String(DATABASE_SCHEMA_VERSION))
   })
 })
 
-test("a malformed stall column rolls back earlier activity repairs through both entry points", async ({ databasePath }) => {
-  await bootstrapRuntime(databasePath)
-  await migrate(databasePath)
-  const { ledger, triggers, before } = withDatabase(databasePath, database => {
+test("a malformed stall column preserves predecessor activity state through both entry points", async ({ databasePath }) => {
+  await seedPredecessor(databasePath)
+  const { ledger, before } = withDatabase(databasePath, database => {
+    database.exec(`INSERT INTO app_settings VALUES ('schema_version', '18', 1);
+      DELETE FROM __meitheal_migrations WHERE name = '0008_task_stall.mjs'`)
     const ledger = readLedger(database)
-    const triggers = readTriggers(database)
     database.exec(`DROP TRIGGER comments_inactivity_delete;
       DROP TRIGGER comments_stall_burst;
       ALTER TABLE comments DROP COLUMN inactivity_spike_human;
       ALTER TABLE comments ADD COLUMN inactivity_spike_human INTEGER NOT NULL DEFAULT 0;
       UPDATE areas SET inactivity_generation = NULL WHERE id = 'default';`)
-    return { ledger, triggers, before: readTriggers(database) }
+    return { ledger, before: readTriggers(database) }
   })
   for (const start of [migrate, bootstrapRuntime]) {
     await expect(start(databasePath)).rejects.toThrow(/Unexpected stall column: comments.inactivity_spike_human/)
     withDatabase(databasePath, database => {
       expect(readTriggers(database)).toEqual(before)
       expect(readLedger(database)).toEqual(ledger)
-      expect(readMarker(database)).toBe(String(DATABASE_SCHEMA_VERSION))
+      expect(readMarker(database)).toBe("18")
       expect(database.prepare("SELECT inactivity_generation FROM areas WHERE id = 'default'").get()).toEqual({
         inactivity_generation: null,
       })
@@ -381,12 +412,45 @@ test("a malformed stall column rolls back earlier activity repairs through both 
 
   withDatabase(databasePath, database => database.exec("ALTER TABLE comments DROP COLUMN inactivity_spike_human"))
   await migrate(databasePath)
-  await migrate(databasePath, "--check")
+  await qualifyOwnedPredecessor(databasePath)
   withDatabase(databasePath, database => {
-    expect(readTriggers(database)).toEqual(triggers)
-    expect(readLedger(database)).toEqual(ledger)
+    expectOrdinaryActivityTriggers(database)
+    expect(readLedger(database).filter(entry => !upgradeMigrations.has(String(entry.name)) && entry.name !== "0008_task_stall.mjs"))
+      .toEqual(ledger)
     expect(database.prepare("SELECT inactivity_generation FROM areas WHERE id = 'default'").get()).toEqual({
       inactivity_generation: expect.stringMatching(generation),
     })
+  })
+})
+
+test("pre-0016 installations with initial four-alias stall transition upgrade cleanly to ordinary triggers", async ({ databasePath }) => {
+  await seedPredecessor(databasePath)
+  const markerPath = databasePath + ".board-grants.json"
+  await writeFile(markerPath, JSON.stringify({ epoch: "00000000-0000-4000-8000-000000000001" }), { mode: 0o600 })
+  await migrate(databasePath)
+  const legacyPredecessorTransitionSql = `CREATE TRIGGER tasks_stall_transition
+      AFTER UPDATE OF assigned_to, status ON tasks
+      WHEN ((NULLIF(trim(NEW.assigned_to, char(9,10,11,12,13,32)), '') IS NOT NULL AND NULLIF(trim(NEW.assigned_to, char(9,10,11,12,13,32)), '') IS NOT NULLIF(trim(OLD.assigned_to, char(9,10,11,12,13,32)), ''))
+        OR (lower(OLD.status) IN ('complete', 'done') AND lower(NEW.status) IN ('pending', 'todo', 'active', 'in_progress')))
+        AND (COALESCE(NULLIF(((SELECT CASE WHEN length(revision) = 32 AND length(CAST(revision AS BLOB)) = 32 AND revision NOT GLOB '*[^0-9a-f]*' THEN days ELSE 0 END FROM task_inactivity_policy WHERE area_id = NEW.area_id)), -1), ((SELECT CASE WHEN length(revision) = 32 AND length(CAST(revision AS BLOB)) = 32 AND revision NOT GLOB '*[^0-9a-f]*' THEN days ELSE 0 END FROM task_inactivity_policy WHERE scope = 'default')), 0)) BETWEEN 1 AND 365
+    AND EXISTS (SELECT 1 FROM areas WHERE id = NEW.area_id)
+      BEGIN
+        UPDATE tasks SET last_activity_spike_at = MAX(CASE WHEN typeof(last_activity_spike_at) = 'integer' AND last_activity_spike_at BETWEEN 1 AND 9007199254740991 THEN last_activity_spike_at ELSE 0 END, (unixepoch('now') * 1000 + CAST(substr(strftime('%f','now'), 4, 3) AS INTEGER))) WHERE id = NEW.id;
+      END`
+
+  withDatabase(databasePath, database => {
+    expect(readMarker(database)).toBe("25")
+    database.exec("DROP TRIGGER tasks_stall_transition")
+    database.exec(legacyPredecessorTransitionSql)
+  })
+
+  await rm(markerPath, { force: true })
+  await bootstrapRuntime(databasePath)
+  await qualifyOwnedPredecessor(databasePath)
+  await bootstrapRuntime(databasePath)
+
+  withDatabase(databasePath, database => {
+    expect(readMarker(database)).toBe(String(DATABASE_SCHEMA_VERSION))
+    expectOrdinaryActivityTriggers(database)
   })
 })

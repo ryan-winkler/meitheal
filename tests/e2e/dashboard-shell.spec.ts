@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.describe("Dashboard Shell", () => {
@@ -35,14 +36,16 @@ test.describe("Dashboard Shell", () => {
     await expect(page.locator("#new-task-title-input")).toBeFocused()
   })
 
-  test("achievement badges link to /progress#achievements with hover titles and timed ISO due dates match today", async ({ page, request }) => {
+  test("achievement badges keep Household scope and timed ISO due dates match today", async ({ page, request }) => {
     // Creates a task and relies on the fixture's Europe/Dublin household timezone, so it only
     // runs against the disposable fixture.
     test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
 
     // Noon UTC is the same Dublin calendar day in both winter (UTC+0) and summer (UTC+1).
     const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin" }).format(new Date())
+    const headers = await currentBoardWriteHeaders(request, "household", {})
     const createRes = await request.post("/api/tasks", {
+      headers,
       data: { title: "Timed ISO due today task", due_date: `${today}T12:00:00Z` },
     })
     expect(createRes.status()).toBe(201)
@@ -55,26 +58,27 @@ test.describe("Dashboard Shell", () => {
       await expect(taskRow).toBeVisible()
       await expect(page.locator(".dashboard-shell").getByText("Due today").first()).toBeVisible()
 
+      const achievementsPath = "/progress?board_id=household#achievements"
       const streakLink = page.locator(".gam-stat--link")
-      await expect(streakLink).toHaveAttribute("href", /\/progress#achievements$/)
+      await expect(streakLink).toHaveAttribute("href", achievementsPath)
       await expect(streakLink).toHaveAttribute("title", /.+/)
 
       const badges = page.locator(".gam-achievement-badge")
       expect(await badges.count()).toBeGreaterThan(0)
       const firstBadge = badges.first()
-      await expect(firstBadge).toHaveAttribute("href", /\/progress#achievements$/)
+      await expect(firstBadge).toHaveAttribute("href", achievementsPath)
       await expect(firstBadge).toHaveAttribute("title", /—/)
       await expect(firstBadge).toContainText(/\S/)
 
       await firstBadge.click()
-      await expect(page).toHaveURL(/\/progress#achievements$/)
+      await expect(page).toHaveURL(achievementsPath)
       const achievementsSection = page.locator("#progress-section-achievements")
       await expect(achievementsSection).toBeVisible()
       const card = page.locator(".achievements-tab__achievement-card").first()
       await expect(card).toHaveAttribute("title", /—/)
       await expect(card).toContainText(/\S/)
     } finally {
-      await request.delete("/api/tasks/" + encodeURIComponent(id))
+      await request.delete("/api/tasks/" + encodeURIComponent(id), { headers })
     }
   })
 })

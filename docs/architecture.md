@@ -76,3 +76,5 @@ For new Stable releases (after `0.0.1`), GitHub Actions builds the App image for
 - [Security assurance case](security-assurance-case.md)
 - [Design system](../DESIGN.md)
 - [Agent and MCP guide](../WEBMCP.md)
+- [Plugin development guide](kcs/plugin-development.md)
+- [ADR 0028: Sandboxed plugin bounded context](decisions/0028-plugin-bounded-context-and-sandbox.md)

@@ -1,3 +1,4 @@
+import { currentTaskApiContext, taskApiHeaders, type TaskApiContext } from "./task-api"
 import { activatePrivateWorkerUpdate, canUsePrivateWorker, privateIngressScope } from "./network-only-worker"
 import type { SavedTaskDraft, TaskDraftRead, TaskDraftReceipt, TaskDraftWrite } from "./task-draft-state"
 
@@ -20,6 +21,7 @@ export class DraftAccessError extends Error {
 }
 
 export type DraftLease = {
+  board: TaskApiContext
   context: string
   verifiedAt: number
   scope: URL
@@ -34,33 +36,34 @@ function currentWorker() {
   return navigator.serviceWorker?.controller ?? null
 }
 
-function requireSameTransport(scope: URL, worker: ServiceWorker | null) {
+function requireSameTransport(scope: URL, worker: ServiceWorker | null, board: TaskApiContext) {
+  if (board.session !== currentTaskApiContext()?.session) throw new DraftAccessError("account")
   if (!navigator.onLine || scope.href !== privateIngressScope()?.href || worker !== currentWorker()) {
     throw new DraftAccessError("network")
   }
 }
 
 async function request(
-  { scope, worker, context }: DraftLease,
+  { scope, worker, context, board }: DraftLease,
   method: "HEAD" | "POST" | "PUT", signal: AbortSignal,
   data?: TaskDraftRead | TaskDraftWrite,
 ): Promise<Response> {
   const deadline = AbortSignal.any([signal, AbortSignal.timeout(5_000)])
-  requireSameTransport(scope, worker)
+  requireSameTransport(scope, worker, board)
   if (worker && !await canUsePrivateWorker(scope, worker, "TASK_DRAFTS_NETWORK_ONLY")) throw new DraftAccessError("update")
   deadline.throwIfAborted()
-  requireSameTransport(scope, worker)
+  requireSameTransport(scope, worker, board)
   const url = new URL("api/task-drafts", scope)
   const response = await fetch(url.href, { // nosemgrep
     method, mode: "same-origin", cache: "no-store", redirect: "error", referrerPolicy: "same-origin", signal: deadline,
-    headers: {
+    headers: taskApiHeaders(board, {
       ...(data ? { "content-type": "application/json" } : {}),
       ...(context && method !== "POST" ? { "X-Meitheal-Draft-Context": context } : {}),
-    },
+    }),
     ...(data ? { body: JSON.stringify(data) } : {}),
   })
   deadline.throwIfAborted()
-  requireSameTransport(scope, worker)
+  requireSameTransport(scope, worker, board)
   if (response.url !== url.href) throw new DraftAccessError("network")
   if (response.status === 401 || response.status === 403) throw new DraftAccessError("account")
   if (!response.headers.get("cache-control")?.includes("no-store")) throw new DraftAccessError("network")
@@ -84,7 +87,9 @@ export async function verifyDraftLease(lease: DraftLease, signal: AbortSignal): 
 export async function readDraft(action: TaskDraftRead, signal: AbortSignal, prior?: DraftLease) {
   const scope = privateIngressScope()
   if (!scope) throw new DraftAccessError("account")
-  const unverified = prior ?? { scope, worker: currentWorker(), context: "", verifiedAt: 0 }
+  const board = prior?.board ?? currentTaskApiContext()
+  if (!board) throw new DraftAccessError("account")
+  const unverified = prior ?? { scope, board, worker: currentWorker(), context: "", verifiedAt: 0 }
   const response = await request(unverified, "POST", signal, action)
   const data: DraftReply & { context?: string } = await response.json()
   signal.throwIfAborted()

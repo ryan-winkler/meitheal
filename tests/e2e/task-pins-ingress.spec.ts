@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, pinRequest, startCoreFixture } from "../scripts/task-pins-fixture"
 
 const noStore = "private, no-store"
@@ -55,7 +56,7 @@ test("browser-generated HTTPS requests isolate owners and reject revoked Core id
     const prefix: string = info.configuredPath
     const path = prefix + "/api/task-pins"
     browser = await launchPinBrowser(work)
-    const context = await browser.newContext({ extraHTTPHeaders: {} })
+    const context = await browser.newContext({ extraHTTPHeaders: {}, ignoreHTTPSErrors: true })
     await context.setExtraHTTPHeaders({})
     const page = await context.newPage()
     page.on("requestfailed", request => browserErrors.push(`${request.method()} ${new URL(request.url()).pathname} ${request.failure()?.errorText}`))
@@ -64,44 +65,49 @@ test("browser-generated HTTPS requests isolate owners and reject revoked Core id
     await setOwner("member")
     const loaded = await page.goto(origin + prefix + "/fixture", { timeout: 8_000 })
     expect(loaded?.ok()).toBe(true)
+    const app = origin + prefix
+    const currentWriteHeaders = async () => {
+      const { origin: _origin, ...headers } = await currentBoardWriteHeaders(context.request, "household", { origin }, app)
+      return headers
+    }
+    let boardHeaders = await currentWriteHeaders()
+    const requestPin = (method: "POST" | "PUT" | "HEAD", body?: object, pinContext?: string) =>
+      pinRequest(page, path, method, body, pinContext, boardHeaders)
     stage = "creating task"
-    const created = await page.evaluate(async url => {
-      const response = await fetch(url, {
-        method: "POST", headers: { "content-type": "application/json" },
-        signal: AbortSignal.timeout(7_000),
-        body: JSON.stringify({ title: "Private pin synthetic sentinel" }),
-      })
-      return { status: response.status, task: await response.json() }
-    }, prefix + "/api/tasks")
-    expect(created.status).toBe(201)
-    const task = created.task.id as string
+    const created = await context.request.post(app + "/api/tasks", {
+      headers: { ...boardHeaders, origin }, data: { title: "Private pin synthetic sentinel" },
+    })
+    expect(created.status()).toBe(201)
+    const { id: task, ticket_key: ticketKey } = await created.json() as { id: string, ticket_key: string }
     stage = "checking owner A"
-    const first = await pinRequest(page, path, "POST", { action: "detail", task: created.task.ticket_key })
+    const first = await requestPin("POST", { action: "detail", task: ticketKey })
     expect(first).toMatchObject({ status: 200, cache: noStore, body: { id: task, pinned: false } })
     const contextA = first.body.context as string
     expect(contextA).toMatch(/^[A-Za-z0-9_-]{43}$/)
-    expect(await pinRequest(page, path, "HEAD", undefined, contextA)).toEqual({ status: 204, cache: noStore, body: null })
-    expect(await pinRequest(page, path, "PUT", { task, pinned: true }, contextA)).toMatchObject({ status: 200, body: { pinned: true } })
-    expect(await pinRequest(page, path, "POST", { action: "list" })).toMatchObject({ body: { total: 1, items: [{ id: task }] } })
+    expect(await requestPin("HEAD", undefined, contextA)).toEqual({ status: 204, cache: noStore, body: null })
+    expect(await requestPin("PUT", { task, pinned: true }, contextA)).toMatchObject({ status: 200, body: { pinned: true } })
+    expect(await requestPin("POST", { action: "list" })).toMatchObject({ body: { total: 1, items: [{ id: task }] } })
 
     stage = "checking browser metadata and validation"
-    const noMetadata = await page.evaluate(async url => {
-      const response = await fetch(url, {
-        method: "POST", mode: "cors", headers: { "content-type": "application/json" },
+    const noMetadata = await page.evaluate(async ({ path, boardHeaders }) => {
+      const response = await fetch(path, {
+        method: "POST", mode: "cors", headers: { ...boardHeaders, "content-type": "application/json" },
         signal: AbortSignal.timeout(7_000),
         body: JSON.stringify({ action: "list" }),
       })
       return response.status
-    }, path)
+    }, { path, boardHeaders })
     expect(noMetadata).toBe(403)
     for (const malformed of ["MTH-1suffix", "MTH-1.1", "MTH-9007199254740992"]) {
-      expect(await pinRequest(page, path, "PUT", { task: malformed, pinned: true }, contextA)).toMatchObject({ status: 400 })
+      expect(await requestPin("PUT", { task: malformed, pinned: true }, contextA)).toMatchObject({ status: 400 })
     }
     await setOwner("member-two")
     stage = "checking owner B"
-    expect(await pinRequest(page, path, "HEAD", undefined, contextA)).toMatchObject({ status: 409 })
-    expect(await pinRequest(page, path, "PUT", { task, pinned: false }, contextA)).toMatchObject({ status: 409 })
-    expect(await pinRequest(page, path, "POST", { action: "list" })).toMatchObject({ body: { total: 0, items: [] } })
+    expect(await requestPin("PUT", { task, pinned: false }, contextA)).toMatchObject({ status: 403 })
+    boardHeaders = await currentWriteHeaders()
+    expect(await requestPin("HEAD", undefined, contextA)).toMatchObject({ status: 409 })
+    expect(await requestPin("PUT", { task, pinned: false }, contextA)).toMatchObject({ status: 409 })
+    expect(await requestPin("POST", { action: "list" })).toMatchObject({ status: 200, body: { total: 0, items: [] } })
 
     stage = "checking worker cache cleanup"
     const variants = [path, prefix + "/api/%2574ask-pins/?old=1", prefix + "//pinned", "/api/task-pins"]
@@ -131,13 +137,14 @@ test("browser-generated HTTPS requests isolate owners and reject revoked Core id
       .toEqual([false, false, false, false])
 
     await setOwner("member")
+    boardHeaders = await currentWriteHeaders()
     stage = "revoking Core user"
     const changed = once(child, "message", { signal: AbortSignal.timeout(3_000) })
     child.send({ type: "fixture-core", user: "member", active: false })
     await changed
-    await expect.poll(async () => (await pinRequest(page, path, "HEAD", undefined, contextA)).status, { timeout: 10_000 }).toBe(403)
-    expect(await pinRequest(page, path, "PUT", { task, pinned: false }, contextA)).toMatchObject({ status: 403 })
-    expect(await pinRequest(page, path, "POST", { action: "list" })).toMatchObject({ status: 403 })
+    await expect.poll(async () => (await requestPin("HEAD", undefined, contextA)).status, { timeout: 10_000 }).toBe(403)
+    expect(await requestPin("PUT", { task, pinned: false }, contextA)).toMatchObject({ status: 403 })
+    expect(await requestPin("POST", { action: "list" })).toMatchObject({ status: 403 })
     const pinLogs = logs.split("\n").filter(line => line.includes("/api/task-pins"))
     expect(pinLogs.length).toBeGreaterThan(0)
     for (const line of pinLogs) {

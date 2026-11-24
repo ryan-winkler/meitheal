@@ -58,8 +58,17 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         font-weight: 500;
         transition: opacity 0.2s;
       }
-      a:hover {
+      a:hover,
+      button:hover {
         opacity: 0.8;
+      }
+      button {
+        font: inherit;
+        cursor: pointer;
+        padding: 0.625rem 1.25rem;
+        border-radius: 6px;
+        font-weight: 500;
+        transition: opacity 0.15s;
       }
       .btn-primary {
         background: var(--accent, #69e3b2);
@@ -78,9 +87,14 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     <p>{t("errors.server_error_desc", locale)}</p>
     <div class="actions">
       <a href="/" class="btn-primary">{t("errors.go_home", locale)}</a>
-      <a href="javascript:location.reload()" class="btn-ghost"
-        >{t("errors.reload_page", locale)}</a
+      <button type="button" id="reload-page-btn" class="btn-ghost"
+        >{t("errors.reload_page", locale)}</button
       >
     </div>
+    <script is:inline>
+      document.getElementById("reload-page-btn")?.addEventListener("click", () => {
+        window.location.reload()
+      })
+    </script>
   </body>
 </html>

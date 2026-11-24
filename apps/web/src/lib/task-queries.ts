@@ -1,3 +1,9 @@
+import { projectPublicTaskFields } from "@domains/tasks"
+import { tagTodayRead } from "../../scripts/database-client.mjs"
+import type { BoardScope } from "../domains/tasks/board-scope"
+import { boardOperationClient } from "../domains/tasks/persistence/board-operation-client"
+import { scopedTaskRead, taskReadPlacement, type TaskReadPlacement } from "../domains/tasks/persistence/board-work-query"
+import { sourceSql } from "../domains/tasks/persistence/sql-fragment"
 /**
  * Shared Task Data Loading — Server-side utilities for task view pages
  *
@@ -7,15 +13,16 @@
  * Bounded Context: Tasks (persistence query)
  */
 
-import { fromZonedTime } from "date-fns-tz"
 import {
   ensureSchema,
   getPersistenceClient,
 } from "@domains/tasks/persistence/store";
 import { taskTimestampMs } from "@domains/tasks/persistence/task-timestamp";
-import type { InValue } from "@libsql/client";
+import type { InValue, Row } from "@libsql/client";
 import { deriveEisenhowerQuadrant } from "@meitheal/domain-tasks";
-import { calendarDayFromInput, calendarToday, isDueOverdue, isValidTimezone, resolveTimezone, shiftCalendarDay } from "./date"
+import { boardCustomFieldsSettingKey, normalizeCustomFieldDefs } from "./custom-field-defs"
+import { parseCalendarDay } from "./calendar-day"
+import { calendarDayFromInput, calendarEventSpanDays, calendarToday, householdDayRanges, isTaskOverdue, isValidTimezone, resolveTimezone, shiftCalendarDay } from "./date"
 import { frameworkPayloadObject, readRiceInputs, riceLensScore } from "./rice-lens"
 
 // =============================================================================
@@ -33,24 +40,27 @@ export interface TaskViewItem {
   labels: string[];
   rice: number | null;
   calendar_sync_state: string | null;
-  area_id: string;
+  area_id: string | null;
   project_id: string | null
   custom_fields: Record<string, unknown>;
   start_date: string | null;
   end_date: string | null;
   progress: number;
+  table_position?: number | null;
   color: string | null;
-  is_favorite: boolean;
+  is_promoted: boolean;
   task_type: string;
   task_kind: string | null;
   parent_id: string | null;
   ticket_number: number | null;
+  ticket_key: string | null;
   assigned_to: string | null;
   checklists: string | null;
   checklist_total?: number | undefined;
   checklist_done?: number | undefined;
   created_at: string;
   updated_at: string;
+  task_version?: number;
   deferred_at: number | null
   is_overdue: boolean;
   is_done: boolean;
@@ -111,31 +121,31 @@ function safeParseLabels(value: unknown): string[] {
 }
 
 // =============================================================================
-// Overdue Detection
-// =============================================================================
-
-/** Date-only due dates are overdue after their household day; timed ones once their time passes. */
-function isDueDayOverdue(dueDate: string | null, today: string, timezone = "Europe/Dublin"): boolean {
-  if (!dueDate) return false;
-  return isDueOverdue(dueDate, timezone, today);
-}
-
-function isOverdue(dueDate: string | null, isDone: boolean, timezone = "Europe/Dublin"): boolean {
-  if (isDone) return false;
-  return isDueDayOverdue(dueDate, calendarToday(timezone), timezone);
-}
-
-// =============================================================================
 // Main Query
 // =============================================================================
 
+const SCHEDULED_DATE_SQL = "CASE WHEN task_kind = 'calendar_event' THEN COALESCE(NULLIF(start_date, ''), NULLIF(due_date, ''), NULLIF(end_date, '')) ELSE due_date END";
+
 const TASK_VIEW_COLUMNS = `
   id, title, description, status, priority, due_date, labels,
-  framework_payload, calendar_sync_state, area_id, project_id, custom_fields,
-  start_date, end_date, progress, color, is_favorite, task_type, task_kind,
-  parent_id, ticket_number, assigned_to, checklists, created_at, updated_at, deferred_at,
+  framework_payload, calendar_sync_state, area_id, project_id, public_area_id, public_project_id, public_goal_id, custom_fields,
+  start_date, end_date, progress, table_position, color, is_promoted, task_type, task_kind,
+  parent_id, public_parent_id, ticket_number, ticket_ref AS ticket_key, assigned_to, checklists, created_at, updated_at, ${taskTimestampMs("updated_at")} AS task_version, deferred_at,
   urgency, importance, eisenhower_override,
   effort_minutes, effort_type, blocked_by
+`;
+
+const TODAY_OPEN_ROW_COLUMNS = `
+  scoped_tasks.rowid AS rowid, scoped_tasks.id, scoped_tasks.title, scoped_tasks.description, scoped_tasks.status,
+  scoped_tasks.priority, scoped_tasks.due_date, scoped_tasks.labels, scoped_tasks.framework_payload,
+  scoped_tasks.calendar_sync_state, scoped_tasks.area_id, scoped_tasks.project_id, scoped_tasks.public_area_id,
+  scoped_tasks.public_project_id, scoped_tasks.public_goal_id, scoped_tasks.custom_fields, scoped_tasks.start_date,
+  scoped_tasks.end_date, scoped_tasks.progress, scoped_tasks.table_position, scoped_tasks.color, scoped_tasks.is_promoted,
+  scoped_tasks.task_type, scoped_tasks.task_kind, scoped_tasks.parent_id, scoped_tasks.public_parent_id,
+  scoped_tasks.ticket_number, scoped_tasks.ticket_ref, scoped_tasks.assigned_to, scoped_tasks.checklists,
+  scoped_tasks.created_at, scoped_tasks.updated_at, scoped_tasks.deferred_at, scoped_tasks.urgency,
+  scoped_tasks.importance, scoped_tasks.eisenhower_override, scoped_tasks.effort_minutes, scoped_tasks.effort_type,
+  scoped_tasks.blocked_by
 `;
 
 /**
@@ -143,7 +153,7 @@ const TASK_VIEW_COLUMNS = `
  * Supports optional SQL pushdown predicates and `slim: true` checklist scalar projection
  * while preserving global unfiltered header badge counts.
  */
-export async function getTasksForView(options: TaskViewOptions = {}): Promise<TaskViewResult> {
+export async function getTasksForView(options: TaskViewOptions = {}, scope: BoardScope): Promise<TaskViewResult> {
   const {
     requireAvailable = false,
     statuses,
@@ -165,7 +175,7 @@ export async function getTasksForView(options: TaskViewOptions = {}): Promise<Ta
 
   try {
     await ensureSchema();
-    const client = getPersistenceClient();
+    const client = boardOperationClient(getPersistenceClient(), scope, { resource: "task", action: "read" });
 
     const selectArgs: InValue[] = [];
     const previewChars =
@@ -185,13 +195,13 @@ export async function getTasksForView(options: TaskViewOptions = {}): Promise<Ta
         id, title, ${descriptionExpr},
         CASE WHEN description IS NOT NULL AND length(trim(description)) > 0 THEN 1 ELSE 0 END AS has_description,
         status, priority, due_date, labels,
-        framework_payload, calendar_sync_state, area_id, project_id, custom_fields,
-        start_date, end_date, progress, color, is_favorite, task_type, task_kind,
-        parent_id, ticket_number, assigned_to,
+        framework_payload, calendar_sync_state, area_id, project_id, public_area_id, public_project_id, public_goal_id, custom_fields,
+        start_date, end_date, progress, table_position, color, is_promoted, task_type, task_kind,
+        parent_id, public_parent_id, ticket_number, ticket_ref AS ticket_key, assigned_to,
         NULL AS checklists,
         CASE WHEN json_valid(checklists) THEN json_array_length(checklists) ELSE 0 END AS checklist_total,
         (SELECT COUNT(*) FROM json_each(CASE WHEN json_valid(tasks.checklists) THEN tasks.checklists ELSE '[]' END) WHERE json_extract(value, '$.done') = 1) AS checklist_done,
-        created_at, updated_at, deferred_at,
+        created_at, updated_at, ${taskTimestampMs("updated_at")} AS task_version, deferred_at,
         urgency, importance, eisenhower_override,
         effort_minutes, effort_type, blocked_by
       `;
@@ -201,15 +211,15 @@ export async function getTasksForView(options: TaskViewOptions = {}): Promise<Ta
         id, title,
         CASE WHEN description IS NOT NULL THEN substr(description, 1, ?) ELSE NULL END AS description,
         status, priority, due_date, labels,
-        framework_payload, calendar_sync_state, area_id, project_id, custom_fields,
-        start_date, end_date, progress, color, is_favorite, task_type, task_kind,
-        parent_id, ticket_number, assigned_to, checklists, created_at, updated_at, deferred_at,
+        framework_payload, calendar_sync_state, area_id, project_id, public_area_id, public_project_id, public_goal_id, custom_fields,
+        start_date, end_date, progress, table_position, color, is_promoted, task_type, task_kind,
+        parent_id, public_parent_id, ticket_number, ticket_ref AS ticket_key, assigned_to, checklists, created_at, updated_at, ${taskTimestampMs("updated_at")} AS task_version, deferred_at,
         urgency, importance, eisenhower_override,
         effort_minutes, effort_type, blocked_by
       `;
     }
 
-    const whereClauses: string[] = [];
+    const whereClauses = ["1"];
     if (Array.isArray(statuses) && statuses.length > 0) {
       whereClauses.push(`status IN (${statuses.map(() => "?").join(", ")})`);
       selectArgs.push(...statuses);
@@ -226,7 +236,7 @@ export async function getTasksForView(options: TaskViewOptions = {}): Promise<Ta
       selectArgs.push(excludeCompletedBeforeMs);
     }
     if (typeof areaId === "string" && areaId.length > 0) {
-      whereClauses.push("area_id = ?");
+      whereClauses.push("public_area_id = ?");
       selectArgs.push(areaId);
     }
     if (typeof projectId === "string" && projectId.length > 0) {
@@ -235,89 +245,90 @@ export async function getTasksForView(options: TaskViewOptions = {}): Promise<Ta
     }
 
     const hasPushdownFilter =
-      whereClauses.length > 0 || (typeof limit === "number" && Number.isFinite(limit) && limit > 0);
-    const whereSql = whereClauses.length > 0 ? ` WHERE ${whereClauses.join(" AND ")}` : "";
+      whereClauses.length > 1 || (typeof limit === "number" && Number.isFinite(limit) && limit > 0);
+    const whereSql = ` WHERE ${whereClauses.join(" AND ")}`;
     let limitSql = "";
     if (typeof limit === "number" && Number.isFinite(limit) && limit > 0) {
       limitSql = " LIMIT ?";
       selectArgs.push(Math.floor(limit));
     }
 
-    const result = await client.execute({
-      sql: `SELECT ${columnsSql} FROM tasks${whereSql} ORDER BY created_at DESC${limitSql}`,
-      args: selectArgs,
-    });
-    const rows = result.rows as Record<string, unknown>[];
+    const taskQuery = scopedTaskRead(scope, sourceSql(`SELECT ${columnsSql} FROM scoped_tasks AS tasks${whereSql} ORDER BY created_at DESC, tasks.rowid DESC${limitSql}`, selectArgs));
+    const counts = { total: 0, open: 0, active: 0, pending: 0, complete: 0, overdue: 0 };
+    const useGlobalCounts = slim || hasPushdownFilter;
+    let rows: Record<string, unknown>[];
 
-    // Load custom field definitions
+    // Complete the optional read before admitting the task results.
     let customFieldDefs: Array<{ name: string; type: string }> = [];
     try {
-      const cfRes = await client.execute(
-        "SELECT value FROM settings WHERE key = 'custom_fields'",
-      );
-      if (cfRes.rows.length > 0 && cfRes.rows[0]) {
-        customFieldDefs = JSON.parse(String(cfRes.rows[0].value));
-      }
+      const cfKey = boardCustomFieldsSettingKey(scope.boardId);
+      const { rows: [fields] } = await client.execute({
+        sql: "SELECT value FROM settings WHERE key = ?",
+        args: [cfKey],
+      });
+      if (fields) customFieldDefs = normalizeCustomFieldDefs(fields.value);
     } catch {
       /* custom fields not configured */
     }
 
-    const counts = { total: 0, open: 0, active: 0, pending: 0, complete: 0, overdue: 0 };
-
-    if (slim || hasPushdownFilter) {
+    if (useGlobalCounts) {
       const resolvedToday = calendarToday(timezone);
       const upperBound = shiftCalendarDay(resolvedToday, 2);
-      const [countRes, overdueRes] = await Promise.all([
-        client.execute({
-          sql: `
+      // The returned rows and unfiltered counts share a scoped read snapshot.
+      const [tasksRes, countRes, overdueRes] = await client.batch([
+        taskQuery,
+        scopedTaskRead(scope, sourceSql(`
             SELECT COUNT(*) AS total,
                    COUNT(*) FILTER (WHERE status = 'complete') AS complete,
                    COUNT(*) FILTER (WHERE status != 'complete' AND deferred_at IS NULL) AS open,
                    COUNT(*) FILTER (WHERE status = 'active' AND deferred_at IS NULL) AS active,
                    COUNT(*) FILTER (WHERE status != 'complete' AND status != 'active' AND deferred_at IS NULL) AS pending
-            FROM tasks
-          `,
-          args: [],
-        }),
-        client.execute({
-          sql: `
-            SELECT due_date
-            FROM tasks
-            WHERE status != 'complete'
+            FROM scoped_tasks AS tasks WHERE 1
+          `, []), "select", "minimal"),
+        scopedTaskRead(scope, sourceSql(`
+            SELECT task_kind, due_date, start_date, end_date, calendar_sync_state
+            FROM scoped_tasks AS tasks
+            WHERE 1 AND status != 'complete' AND status != 'archived'
               AND deferred_at IS NULL
-              AND due_date IS NOT NULL
-              AND due_date != ''
-              AND substr(due_date, 1, 10) < ?
-          `,
-          args: [upperBound],
-        }),
-      ]);
-      const cr = (countRes.rows[0] ?? {}) as Record<string, unknown>;
+              AND ${SCHEDULED_DATE_SQL} IS NOT NULL
+              AND ${SCHEDULED_DATE_SQL} != ''
+              AND substr(${SCHEDULED_DATE_SQL}, 1, 10) < ?
+          `, [upperBound]), "select", "minimal"),
+      ], "read");
+      rows = tasksRes!.rows as Record<string, unknown>[];
+      const cr = (countRes!.rows[0] ?? {}) as Record<string, unknown>;
       counts.total = Number(cr.total ?? 0);
       counts.complete = Number(cr.complete ?? 0);
       counts.open = Number(cr.open ?? 0);
       counts.active = Number(cr.active ?? 0);
       counts.pending = Number(cr.pending ?? 0);
-      counts.overdue = overdueRes.rows.filter((row) =>
-        isDueDayOverdue(String(row.due_date ?? ""), resolvedToday, timezone),
+      counts.overdue = overdueRes!.rows.filter((row) =>
+        isTaskOverdue({
+          task_kind: row.task_kind ? String(row.task_kind) : null,
+          due_date: row.due_date ? String(row.due_date) : null,
+          start_date: row.start_date ? String(row.start_date) : null,
+          end_date: row.end_date ? String(row.end_date) : null,
+          calendar_sync_state: row.calendar_sync_state ? String(row.calendar_sync_state) : null,
+        }, false, timezone, resolvedToday),
       ).length;
 
-      const tasks = rows.map((row) => toTaskViewItem(row, slim, timezone));
-      return { tasks, counts, customFieldDefs };
+    } else {
+      rows = (await client.execute(taskQuery)).rows as Record<string, unknown>[];
     }
 
-    const tasks = rows.map((row) => {
-      const task = toTaskViewItem(row, false, timezone);
-      counts.total++;
-      if (task.is_done) counts.complete++;
-      else if (task.deferred_at === null) {
-        counts.open++;
-        if (task.status === "active") counts.active++;
-        else counts.pending++;
+    const tasks = rows.map((row) => toTaskViewItem(row, slim, timezone));
+    if (!useGlobalCounts) {
+      for (const task of tasks) {
+        counts.total++;
+        if (task.is_done) counts.complete++;
+        else if (task.deferred_at === null) {
+          counts.open++;
+          if (task.status === "active") counts.active++;
+          else counts.pending++;
+        }
+        if (task.is_overdue) counts.overdue++;
       }
-      if (task.is_overdue) counts.overdue++;
-      return task;
-    });
+    }
 
     return { tasks, counts, customFieldDefs };
   } catch (error) {
@@ -326,17 +337,22 @@ export async function getTasksForView(options: TaskViewOptions = {}): Promise<Ta
   }
 }
 
-function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "Europe/Dublin"): TaskViewItem {
+function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "Europe/Dublin", now = new Date()): TaskViewItem {
   const status = String(row.status ?? "pending");
   const priority = Number(row.priority ?? 3);
   const isDone = status === "complete";
   const dueDate = row.due_date ? String(row.due_date) : null;
+  const startDate = row.start_date ? String(row.start_date) : null;
+  const endDate = row.end_date ? String(row.end_date) : null;
+  const taskKind = row.task_kind ? String(row.task_kind) : "standard_action";
   const fp = frameworkPayloadObject(safeParseJson(row.framework_payload, {}))
   const riceInputs = readRiceInputs(fp)
   const rice = riceInputs ? riceLensScore(riceInputs) : null
   const deferredAt = row.deferred_at == null ? null : Number(row.deferred_at)
-  const overdue = deferredAt === null && isOverdue(dueDate, isDone, timezone);
+  const calendarSyncState = row.calendar_sync_state ? String(row.calendar_sync_state) : null
+  const overdue = deferredAt === null && isTaskOverdue({ task_kind: taskKind, due_date: dueDate, start_date: startDate, end_date: endDate, calendar_sync_state: calendarSyncState }, isDone, timezone, undefined, now.getTime())
 
+  const publicTask = projectPublicTaskFields(row)
   const item: TaskViewItem = {
     id: String(row.id),
     title: String(row.title),
@@ -347,22 +363,25 @@ function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "
     labels: safeParseLabels(row.labels),
     rice,
     calendar_sync_state: row.calendar_sync_state ? String(row.calendar_sync_state) : null,
-    area_id: String(row.area_id ?? "default"),
-    project_id: row.project_id == null ? null : String(row.project_id),
+    area_id: typeof publicTask.area_id === "string" ? publicTask.area_id : null,
+    project_id: publicTask.project_id == null ? null : String(publicTask.project_id),
     custom_fields: safeParseJson<Record<string, unknown>>(row.custom_fields, {}),
     start_date: row.start_date ? String(row.start_date) : null,
     end_date: row.end_date ? String(row.end_date) : null,
     progress: Number(row.progress ?? 0),
+    table_position: row.table_position == null ? null : Number(row.table_position),
     color: row.color ? String(row.color) : null,
-    is_favorite: Boolean(row.is_favorite),
+    is_promoted: Boolean(row.is_promoted),
     task_type: String(row.task_type ?? "task"),
     task_kind: row.task_kind ? String(row.task_kind) : null,
-    parent_id: row.parent_id ? String(row.parent_id) : null,
+    parent_id: typeof publicTask.parent_id === "string" ? publicTask.parent_id : null,
+    ticket_key: typeof row.ticket_key === "string" ? row.ticket_key : null,
     ticket_number: row.ticket_number ? Number(row.ticket_number) : null,
     assigned_to: row.assigned_to ? String(row.assigned_to) : null,
     checklists: slim ? null : (row.checklists ? String(row.checklists) : null),
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
+    task_version: Number(row.task_version),
     deferred_at: deferredAt,
     is_overdue: overdue,
     is_done: isDone,
@@ -385,26 +404,66 @@ function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "
   return item;
 }
 
-const TODAY_COMPLETION_COUNT = `
-  COUNT(*) FILTER (
-    WHERE status = 'complete'
+function completedTodayQuery(scope: BoardScope, filter: ReturnType<typeof todayCompletionFilter>, placement?: TaskReadPlacement) {
+  const context = taskReadPlacement(placement)
+  const query = scopedTaskRead(scope, sourceSql(`SELECT id, title, ticket_ref AS ticket_key FROM scoped_task_records AS tasks WHERE ${filter.sql} AND ${context.sql}
+          ORDER BY CASE WHEN typeof(updated_at) = 'text' AND updated_at NOT LIKE '%T%' AND updated_at NOT LIKE '%:%'
+            THEN ? ELSE ${taskTimestampMs("updated_at")} END DESC, rowid DESC
+          LIMIT 20`, [...filter.args, ...context.args, filter.firstInstant]), "select", placement?.areaId ? "full" : "records")
+  return tagTodayRead(query, "completed")
+}
+
+function completedTodaySummaries(rows: Row[]) {
+  return rows.map(row => ({ id: String(row.id), title: String(row.title), ticket_key: row.ticket_key == null ? null : String(row.ticket_key) }))
+}
+
+export function todayScopeProblem(params: URLSearchParams, timezone: string, day: string) {
+  const expectedDay = params.get("expected_day")
+  const expectedTimezone = params.get("expected_timezone")
+  if (expectedDay !== null && !parseCalendarDay(expectedDay)) {
+    return { status: 400, error: "expected_day must be a calendar date" }
+  }
+  if (expectedTimezone !== null && !isValidTimezone(expectedTimezone)) {
+    return { status: 400, error: "expected_timezone must be a valid timezone" }
+  }
+  if (expectedDay !== null && expectedDay !== day || expectedTimezone !== null && expectedTimezone !== timezone) {
+    return { status: 409, error: "Today has changed. Refresh the view." }
+  }
+  return null
+}
+
+type TodayCompletionFilter = {
+  readonly sql: string
+  readonly args: readonly (number | string)[]
+  readonly firstInstant: number | null
+}
+
+let lastCompletionFilter: { day: string; timezone: string; filter: TodayCompletionFilter } | undefined
+
+export function todayCompletionFilter(today: string, timezone = "Europe/Dublin"): TodayCompletionFilter {
+  const resolvedTimezone = resolveTimezone(timezone)
+  if (lastCompletionFilter?.day === today && lastCompletionFilter.timezone === resolvedTimezone) {
+    return lastCompletionFilter.filter
+  }
+  const ranges = householdDayRanges(today, resolvedTimezone)
+  const matchesDay = (column: string) =>
+    ranges.map(() => `(${column} >= ? AND ${column} < ?)`).join(" OR ") || "0"
+  const bounds = ranges.flat()
+  const filter: TodayCompletionFilter = {
+    sql: `1 AND status = 'complete'
       AND (
-        (typeof(updated_at) IN ('integer', 'real') AND updated_at >= ? AND updated_at < ?)
+        (typeof(updated_at) IN ('integer', 'real') AND (${matchesDay("updated_at")}))
         OR (typeof(updated_at) = 'text' AND (
           ((updated_at LIKE '%T%' OR updated_at LIKE '%:%') AND strftime('%s', updated_at) IS NOT NULL
-            AND CAST(strftime('%s', updated_at) AS INTEGER) * 1000 >= ?
-            AND CAST(strftime('%s', updated_at) AS INTEGER) * 1000 < ?)
-          OR (updated_at NOT LIKE '%T%' AND updated_at NOT LIKE '%:%' AND substr(updated_at, 1, 10) = ?)
+            AND (${matchesDay("CAST(strftime('%s', updated_at) AS INTEGER) * 1000")}))
+          OR updated_at = ?
         ))
-      )
-  )
-`
-
-function todayCompletionArgs(today: string, timezone = "Europe/Dublin"): [number, number, number, number, string] {
-  const safeTz = resolveTimezone(timezone)
-  const startMs = fromZonedTime(`${today}T00:00:00`, safeTz).getTime()
-  const endMs = fromZonedTime(`${shiftCalendarDay(today, 1)}T00:00:00`, safeTz).getTime()
-  return [startMs, endMs, startMs, endMs, today]
+      )`,
+    args: [...bounds, ...bounds, today],
+    firstInstant: ranges[0]?.[0] ?? null,
+  }
+  lastCompletionFilter = { day: today, timezone: resolvedTimezone, filter }
+  return filter
 }
 
 export function todayDueSection(
@@ -428,6 +487,7 @@ export interface TodayTaskCounts {
   carriedForward: number
   remaining: number
   completionPercent: number
+  completedTasks?: Array<{ id: string; title: string; ticket_key: string | null }>
 }
 
 /** Count the complete queue and read its renderable rows from one SQLite snapshot.
@@ -438,42 +498,87 @@ export async function getTodayTaskRows(
   today: string,
   includeUnscheduled: boolean,
   timezone = "Europe/Dublin",
+  now = new Date(),
+  scope: BoardScope,
+  placement?: TaskReadPlacement,
 ) {
-  try {
-    await ensureSchema()
-    const resolvedTimezone = resolveTimezone(timezone)
-    const { rows } = await getPersistenceClient().execute({
-      sql: `
-        WITH totals AS (
-          SELECT ${TODAY_COMPLETION_COUNT} AS completed_today,
-                 COUNT(*) FILTER (
-                   WHERE status IS NOT 'complete' AND deferred_at IS NULL AND (due_date IS NULL OR due_date = '')
-                 ) AS open_unscheduled
-          FROM tasks
-        )
-        SELECT ${TASK_VIEW_COLUMNS}, completed_today, open_unscheduled
-        FROM totals
-        LEFT JOIN tasks
-          ON status IS NOT 'complete'
-          AND deferred_at IS NULL
-          AND (
-            ? = 1
-            OR (due_date IS NOT NULL AND due_date <> '')
-            OR is_favorite NOT IN (0, '')
-            OR framework_payload NOT IN ('{}', '')
-          )
-        ORDER BY created_at DESC, tasks.rowid DESC
-      `,
-      args: [...todayCompletionArgs(today, resolvedTimezone), includeUnscheduled ? 1 : 0],
-    })
-
-    return {
-      completedTodayCount: Number(rows[0]?.completed_today ?? 0),
-      openUnscheduledCount: Number(rows[0]?.open_unscheduled ?? 0),
-      tasks: rows.filter(row => row.id !== null).map(row => toTaskViewItem(row as Record<string, unknown>, false, resolvedTimezone)),
+  await ensureSchema()
+  const resolvedTimezone = resolveTimezone(timezone)
+  const client = boardOperationClient(getPersistenceClient(), scope, { resource: "task", action: "read" })
+  const context = taskReadPlacement(placement)
+  const completionFilter = todayCompletionFilter(today, resolvedTimezone)
+  const tasksQuery = {
+    sql: `
+      classified AS MATERIALIZED (
+        SELECT tasks.id,
+               tasks.rowid AS task_rowid,
+               CASE WHEN status = 'complete' THEN -2
+                    WHEN status = 'archived' OR deferred_at IS NOT NULL THEN -1
+                    WHEN ${SCHEDULED_DATE_SQL} IS NOT NULL AND ${SCHEDULED_DATE_SQL} <> '' THEN 2
+                    WHEN ? = 1 OR is_promoted NOT IN (0, '') OR framework_payload NOT IN ('{}', '') THEN 1
+                    ELSE 0 END AS open_state,
+               CASE WHEN status = 'complete' AND (${completionFilter.sql}) THEN 1 ELSE 0 END AS is_completed_today
+        FROM scoped_task_records AS tasks
+        WHERE ${context.sql}
+      ),
+      totals AS MATERIALIZED (
+        SELECT COUNT(*) FILTER (WHERE is_completed_today = 1) AS completed_today,
+               COUNT(*) FILTER (WHERE open_state IN (0, 1)) AS open_unscheduled,
+               (
+                 SELECT COALESCE(
+                   json_group_array(json_object('id', id, 'title', title, 'ticket_key', ticket_key)),
+                   '[]'
+                 )
+                 FROM (
+                   SELECT c.id, tasks.title, tasks.ticket_ref AS ticket_key
+                   FROM classified AS c
+                   CROSS JOIN scoped_task_records AS tasks ON tasks.id = c.id
+                   WHERE c.is_completed_today = 1
+                   ORDER BY CASE WHEN typeof(tasks.updated_at) = 'text' AND tasks.updated_at NOT LIKE '%T%' AND tasks.updated_at NOT LIKE '%:%'
+                     THEN ? ELSE ${taskTimestampMs("tasks.updated_at")} END DESC, c.task_rowid DESC
+                   LIMIT 20
+                 )
+               ) AS completed_today_json
+        FROM classified
+      ),
+      open_candidates AS (
+        SELECT id
+        FROM classified
+        WHERE open_state >= 1
+      ),
+      open_rows AS MATERIALIZED (
+        SELECT ${TODAY_OPEN_ROW_COLUMNS}
+        FROM open_candidates
+        CROSS JOIN scoped_tasks ON scoped_tasks.id = open_candidates.id
+        ORDER BY scoped_tasks.created_at DESC, scoped_tasks.rowid DESC
+      )
+      SELECT ${TASK_VIEW_COLUMNS}, completed_today, open_unscheduled,
+             CASE WHEN tasks.id IS (SELECT id FROM open_rows LIMIT 1) THEN completed_today_json ELSE NULL END AS completed_today_json
+      FROM totals
+      LEFT JOIN open_rows AS tasks ON 1 = 1
+      ORDER BY tasks.created_at DESC, tasks.rowid DESC
+    `,
+    args: [includeUnscheduled ? 1 : 0, ...completionFilter.args, ...context.args, completionFilter.firstInstant],
+  }
+  const overview = tagTodayRead(scopedTaskRead(scope, sourceSql(tasksQuery.sql, tasksQuery.args), "with"), "rows")
+  const taskResult = await client.execute(overview)
+  const rows = taskResult?.rows ?? []
+  const completedTodayCount = Number(rows[0]?.completed_today ?? 0)
+  let completedRows: Record<string, unknown>[] = []
+  if (completedTodayCount > 0 && typeof rows[0]?.completed_today_json === "string") {
+    try {
+      const parsed: unknown = JSON.parse(rows[0].completed_today_json)
+      if (Array.isArray(parsed)) completedRows = parsed as Record<string, unknown>[]
+    } catch {
+      /* ignore malformed aggregate */
     }
-  } catch {
-    return { completedTodayCount: 0, openUnscheduledCount: 0, tasks: [] }
+  }
+
+  return {
+    completedTasks: completedRows.length ? completedTodaySummaries(completedRows as Row[]) : [],
+    completedTodayCount,
+    openUnscheduledCount: Number(rows[0]?.open_unscheduled ?? 0),
+    tasks: rows.filter(row => row.id !== null).map(row => toTaskViewItem(row as Record<string, unknown>, false, resolvedTimezone, now)),
   }
 }
 
@@ -498,49 +603,70 @@ export async function readStoredHouseholdTimezone(): Promise<string> {
   return "Europe/Dublin"
 }
 
-/** Refresh the visible counters without reading or serializing individual tasks. */
-export async function getTodayTaskCounts(now = new Date(), timezone?: string): Promise<TodayTaskCounts> {
+/** Refresh visible counters, with the bounded completed list when requested. */
+export async function getTodayTaskCounts(now = new Date(), timezone: string | undefined, includeCompleted = false, scope: BoardScope, placement?: TaskReadPlacement): Promise<TodayTaskCounts> {
   await ensureSchema()
   const trimmedTz = typeof timezone === "string" ? timezone.trim() : ""
   const resolvedTimezone = trimmedTz && isValidTimezone(trimmedTz)
     ? trimmedTz
     : await readStoredHouseholdTimezone()
   const today = calendarToday(resolvedTimezone, now)
-  const { rows } = await getPersistenceClient().execute({
+  const client = boardOperationClient(getPersistenceClient(), scope, { resource: "task", action: "read" })
+  const completionFilter = todayCompletionFilter(today, resolvedTimezone)
+  const context = taskReadPlacement(placement)
+  const countsQuery = {
     sql: `
-      SELECT NULL AS due_date, ${TODAY_COMPLETION_COUNT} AS completed_today,
-             COUNT(*) FILTER (WHERE status IS NOT 'complete' AND deferred_at IS NULL AND is_favorite NOT IN (0, '')) AS pinned_count,
+      SELECT NULL AS due_date, NULL AS task_kind, NULL AS start_date, NULL AS end_date, NULL AS calendar_sync_state,
+             COUNT(*) FILTER (WHERE ${completionFilter.sql}) AS completed_today,
+             COUNT(*) FILTER (WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND is_promoted NOT IN (0, '')) AS pinned_count,
              0 AS dated_count
-      FROM tasks
+      FROM scoped_tasks AS tasks WHERE ${context.sql}
       UNION ALL
-      SELECT due_date, 0, 0, COUNT(*)
-      FROM tasks
-      WHERE status IS NOT 'complete' AND deferred_at IS NULL AND COALESCE(is_favorite, 0) IN (0, '')
-        AND due_date IS NOT NULL AND due_date <> ''
-      GROUP BY due_date
+      SELECT due_date, task_kind, start_date, end_date, calendar_sync_state, 0, 0, COUNT(*)
+      FROM scoped_tasks AS tasks
+      WHERE ${context.sql} AND status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND COALESCE(is_promoted, 0) IN (0, '')
+        AND ${SCHEDULED_DATE_SQL} IS NOT NULL AND ${SCHEDULED_DATE_SQL} <> ''
+      GROUP BY due_date, task_kind, start_date, end_date, calendar_sync_state
     `,
-    args: todayCompletionArgs(today, resolvedTimezone),
-  })
+    args: [...completionFilter.args, ...context.args, ...context.args],
+  }
+  const [countResult, completed] = includeCompleted
+    ? await client.batch([scopedTaskRead(scope, sourceSql(countsQuery.sql, countsQuery.args)), completedTodayQuery(scope, completionFilter, placement)], "read")
+    : [await client.execute(scopedTaskRead(scope, sourceSql(countsQuery.sql, countsQuery.args)))]
+  const rows = countResult?.rows ?? []
 
   let dueToday = 0
   let carriedForward = 0
   let completedToday = 0
   let pinned = 0
   for (const row of rows) {
-    if (row.due_date === null) {
+    if (row.due_date === null && row.start_date === null && row.end_date === null) {
       completedToday = Number(row.completed_today)
       pinned = Number(row.pinned_count)
       continue
     }
 
-    const section = todayDueSection(String(row.due_date), today, resolvedTimezone)
-    if (section === "due") dueToday += Number(row.dated_count)
-    if (section === "carried") carriedForward += Number(row.dated_count)
+    const rowSpan = calendarEventSpanDays({
+      task_kind: row.task_kind ? String(row.task_kind) : null,
+      due_date: row.due_date ? String(row.due_date) : null,
+      start_date: row.start_date ? String(row.start_date) : null,
+      end_date: row.end_date ? String(row.end_date) : null,
+      calendar_sync_state: row.calendar_sync_state ? String(row.calendar_sync_state) : null,
+    }, resolvedTimezone)
+    if (!rowSpan) continue
+    if (rowSpan.startDay === today || (rowSpan.startDay < today && rowSpan.endDay >= today)) {
+      dueToday += Number(row.dated_count)
+    } else if (rowSpan.endDay < today) {
+      carriedForward += Number(row.dated_count)
+    }
   }
 
   const remaining = dueToday + carriedForward + pinned
   return {
     dueToday, completedToday, carriedForward, remaining,
     completionPercent: todayCompletionPercent(completedToday, remaining),
+    ...(includeCompleted ? {
+      completedTasks: completedTodaySummaries(completed?.rows ?? []),
+    } : {}),
   }
 }

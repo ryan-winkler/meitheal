@@ -25,12 +25,12 @@ except ModuleNotFoundError as error:
     from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
 from custom_components.meitheal import intents
-from custom_components.meitheal.const import CONF_API_TOKEN, DOMAIN
+from custom_components.meitheal.const import CONF_API_TOKEN, CONF_BOARD_ID, DOMAIN
 
 
 @pytest.mark.parametrize("platform", ["intent", "conversation"])
 async def test_custom_intents_require_current_active_admin(
-    hass: HomeAssistant, hass_owner_user, platform: str
+    hass: HomeAssistant, hass_owner_user, native_human_transport, platform: str
 ) -> None:
     """Check the actual Core dispatcher with authenticated and userless contexts."""
     admin = await hass.auth.async_create_user("Admin", group_ids=[GROUP_ID_ADMIN])
@@ -61,10 +61,12 @@ async def test_custom_intents_require_current_active_admin(
 
         task = SimpleNamespace(id="task-1", title="Check the garden", status="todo")
         coordinator.return_value = SimpleNamespace(
+            api=native_human_transport.api,
+            async_data_for_context=AsyncMock(return_value=SimpleNamespace(tasks=[task])),
             async_create_task=AsyncMock(),
             async_complete_task=AsyncMock(),
             async_delete_task=AsyncMock(),
-            resolve_task_title=lambda title: task.id,
+            resolve_task_title=lambda title, tasks=None: task.id,
             data=SimpleNamespace(tasks=[task]),
         )
         context = Context(user_id=admin.id)
@@ -92,20 +94,23 @@ async def test_custom_intents_require_current_active_admin(
 
 @pytest.mark.parametrize("expose", [False, True])
 async def test_reload_keeps_home_assistant_exposure_choice_and_todo_service(
-    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, hass_owner_user, expose: bool
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, hass_owner_user, native_human_transport, expose: bool
 ) -> None:
     """Reload preserves the chosen exposure and the ordinary authenticated Todo API."""
     assert await async_setup_component(hass, "homeassistant", {})
-    origin = "https://tasks.example.test"
+    origin = native_human_transport.origin
     tasks_url = f"{origin}/api/tasks"
     token = "mth_" + "a" * 64
-    aioclient_mock.get(tasks_url, json={"tasks": [{"id": "task-1", "title": "Check the garden"}]})
+    aioclient_mock.get(tasks_url, json={"tasks": [{"id": "task-1", "title": "Check the garden", "board_id": "work"}]})
     aioclient_mock.get(f"{origin}/api/gamification", status=403)
-    aioclient_mock.delete(f"{tasks_url}/task-1", status=204)
+    aioclient_mock.delete(native_human_transport.proxy + "/api/tasks/task-1", status=204)
+    aioclient_mock.get(native_human_transport.proxy + "/api/tasks", json={"tasks": []})
+    aioclient_mock.get(native_human_transport.proxy + "/api/gamification", status=403)
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="Meitheal",
-        data={CONF_HOST: "tasks.example.test", CONF_PORT: 443, CONF_SSL: True, CONF_API_TOKEN: token},
+        data={CONF_HOST: "local-meitheal", CONF_PORT: 3000, CONF_SSL: False, CONF_API_TOKEN: token, CONF_BOARD_ID: "work"},
+        version=2,
     )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -126,14 +131,14 @@ async def test_reload_keeps_home_assistant_exposure_choice_and_todo_service(
         context=Context(user_id=hass_owner_user.id),
     )
     assert any(
-        method == "DELETE" and str(url) == f"{tasks_url}/task-1"
+        method == "DELETE" and str(url) == native_human_transport.proxy + "/api/tasks/task-1"
         and headers["Authorization"] == f"Bearer {token}"
         for method, url, _, headers in aioclient_mock.mock_calls
     )
 
 
 async def test_intent_add_and_done_return_failure_speech_on_error(
-    hass: HomeAssistant, hass_owner_user
+    hass: HomeAssistant, hass_owner_user, native_human_transport
 ) -> None:
     """Add and Done intents turn coordinator failures into spoken error responses."""
     admin = await hass.auth.async_create_user("AdminErr", group_ids=[GROUP_ID_ADMIN])
@@ -141,6 +146,7 @@ async def test_intent_add_and_done_return_failure_speech_on_error(
     context = Context(user_id=admin.id)
     slots = {"item": {"value": "Clean chimney"}}
     mock_coord = SimpleNamespace(
+        api=native_human_transport.api,
         async_create_task=AsyncMock(side_effect=HomeAssistantError("add failed")),
         async_complete_task=AsyncMock(side_effect=ValueError("done failed")),
     )

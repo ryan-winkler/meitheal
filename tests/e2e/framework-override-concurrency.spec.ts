@@ -3,7 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
 import { getOverrides, persistOverridePatch } from "../../apps/web/src/domains/strategy/framework-repository"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 
 type Client = ReturnType<typeof getPersistenceClient>
 

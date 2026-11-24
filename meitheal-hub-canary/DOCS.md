@@ -27,8 +27,10 @@ If a new image is not available yet, read [install status (#1)](https://github.c
 
 ## 2. Keep your data safe during updates
 
-- **Updates in the same channel keep your data.** When you update Meitheal Canary, it keeps `/data/meitheal.db` and your settings.
-- **Each channel and repository URL has its own data folder.** Make a Home Assistant backup that includes **Meitheal Canary** before you uninstall Canary. Also make a backup before you change the repository URL, or change between Canary and Stable. You can also export your data as JSON or SQLite from **Settings**.
+- **An update keeps your database and settings.** When the Board access record matches the database, Canary updates normally.
+- **If your installation predates Board access records, prepare it before updating.** A Home Assistant operator must stop Canary and verify a current cold checkpoint held separately before enrolling the existing database. Work stays locked when the operator cannot establish which access rules are current. [Legacy Canary upgrade steps](https://github.com/ryan-winkler/meitheal/blob/dev/docs/kcs/home-assistant-backup-and-restore.md#first-installation-and-a-verified-legacy-upgrade)
+- **Keep the Board access record separately.** For recovery, have your Home Assistant operator pair each current cold App backup with its independently retained Board access record. Refresh that checkpoint after each committed access change, Board deletion or Board restore. [Capture and restore a current checkpoint](https://github.com/ryan-winkler/meitheal/blob/dev/docs/kcs/home-assistant-backup-and-restore.md#recover-governed-access-from-a-current-operator-checkpoint)
+- **Each channel and repository URL has its own data folder.** Back up Canary before uninstalling it. Plan any move between channels or Store repositories with your Home Assistant operator. [Moving between Store repositories](https://github.com/ryan-winkler/meitheal/blob/dev/docs/kcs/home-assistant-backup-and-restore.md#move-data-between-store-repositories)
 - **The Meitheal integration uses a token.** If you use the Meitheal integration in **Settings → Devices & Services**, stop automatic updates before you update. After the update, make sure that your token in **Settings → Automation & AI** is correct. Then make sure that `todo.meitheal_tasks` and the task actions work.
 
 ## 3. Set up Meitheal Canary
@@ -51,7 +53,7 @@ Canary has its own tokens. If you connect the Meitheal integration to Canary, ma
 | `log_categories` | `auth, tasks, integrations, observability, ha, calendar, todo, api, security, search` | Sets which parts of the app write `debug` and `info` messages. The app always writes `warn` and `error` messages. |
 | `log_redaction` | `true` | Removes tokens, secrets and passwords from the log. |
 | `audit_enabled` | `true` | Records task and token changes in a local audit log. |
-| `loki_url` | `""` | Optional. Sends the log to a Grafana Loki server at this URL. |
+| `loki_url` | `""` | Optional. Sends logs to an HTTP or HTTPS push URL for Grafana Loki without embedded credentials. Keep this field empty to turn off remote log forwarding. |
 | `license_key` | `""` | Optional. An offline Ed25519 license key. Meitheal has all its functions without a key. |
 
 ## 5. Troubleshooting
@@ -59,6 +61,7 @@ Canary has its own tokens. If you connect the Meitheal integration to Canary, ma
 - **The app restarts by itself.** The watchdog sends `GET /api/health` to internal port `3000`. If Canary does not reply, the watchdog restarts it. Look in the **Log** tab for the cause. For more detail, set `log_level` to `debug`.
 - **A new build does not show.** Open the **⋮** menu in the app store and select **Check for updates**.
 - **The web UI shows an old build after an update.** Accept the update message in Meitheal, or press `Ctrl+Shift+R` to reload the page.
+- **Meitheal says installation continuity is locked.** Stop Canary and have your Home Assistant operator verify the latest recovery checkpoint from this installation. [Recover access from a current checkpoint](https://github.com/ryan-winkler/meitheal/blob/dev/docs/kcs/home-assistant-backup-and-restore.md#recover-governed-access-from-a-current-operator-checkpoint)
 
 The [troubleshooting guide](https://github.com/ryan-winkler/meitheal/blob/dev/docs/kcs/troubleshooting.md) has more solutions.
 

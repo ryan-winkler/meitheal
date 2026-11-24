@@ -5,23 +5,6 @@
  * Owns: data-table, inline-select, editable-cell, table-filter, row-check, sticky column
  * Does NOT own: kanban board (_kanban.css), task items (_tasks.css), empty states (_feedback.css)
  * ============================================= */
-/* --- Secondary toolbar row (presets, column customizer) --- */
-.table-toolbar-row {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 4px 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-primary);
-}
-
-.toolbar-separator {
-  color: var(--border);
-  font-size: 14px;
-  user-select: none;
-}
-
 /* --- Table view --- */
 #table-shell {
   grid-template-columns: minmax(0, 1fr);
@@ -118,16 +101,6 @@
 /* --- Table extras --- */
 .table-filter-bar {
   @apply flex gap-3 items-center flex-wrap px-4 py-3;
-}
-
-.table-filter-bar .filter-toolbar--table {
-  min-width: 0;
-  flex-wrap: wrap !important;
-}
-
-.filter-toolbar--table .filter-toolbar__type-toggles {
-  min-width: 0;
-  flex-wrap: wrap;
 }
 
 .row-check {
@@ -265,15 +238,6 @@
 .group-toggle:hover {
   background: var(--bg-input);
   color: var(--text-primary);
-}
-
-.group-toggle-arrow {
-  display: inline-block;
-  transition: transform 0.2s ease;
-}
-
-.group-header-row.collapsed .group-toggle-arrow {
-  transform: rotate(-90deg);
 }
 
 .group-dot {
@@ -418,11 +382,6 @@ tr.sub-group-header-row th {
   color: var(--accent-text);
 }
 
-/* Collapsed group rows are hidden — !important needed to override table-row display */
-tr.group-collapsed-row {
-  display: none !important;
-}
-
 /* Collapsed group header arrow rotation */
 .group-header-row .group-toggle-arrow {
   display: inline-block;
@@ -438,59 +397,9 @@ tr.group-collapsed-row {
   cursor: pointer;
 }
 
-/* Empty groups auto-hide */
-.group-empty {
-  display: none;
-}
-
 /* Color-coded group header borders (based on group-dot color) */
 .group-header-row th {
   border-left: 3px solid transparent;
-}
-
-/* =============================================================================
- * Type Toggle Styles
- * ============================================================================= */
-
-.type-toggles {
-  display: flex;
-  gap: 4px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md, 6px);
-  padding: 2px;
-  background: var(--bg-secondary);
-}
-
-.type-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border: none;
-  border-radius: var(--radius-sm, 4px);
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, opacity 0.15s;
-  white-space: nowrap;
-}
-
-.type-toggle.active {
-  background: var(--bg-card);
-  color: var(--text-primary);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-}
-
-.type-toggle:not(.active) {
-  opacity: 0.5;
-}
-
-.type-toggle:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-  opacity: 1;
 }
 
 /* =============================================================================
@@ -522,31 +431,6 @@ tr.group-collapsed-row {
 .bulk-close-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
-}
-
-/* =============================================================================
- * Responsive Filter Bar
- * ============================================================================= */
-
-@container (max-width: 600px) {
-  .type-toggles {
-    display: none;
-  }
-}
-
-/* Fallback for small screens without container query support */
-@media (max-width: 640px) {
-  .filter-bar {
-    gap: 6px;
-  }
-  .filter-select {
-    max-width: 120px;
-    font-size: 12px;
-  }
-  .type-toggles {
-    order: 10;
-    width: 100%;
-  }
 }
 
 /* =============================================================================

@@ -9,9 +9,13 @@
  * @phase 16.1 — Route consolidation
  */
 
+import { requestedTaskView } from "../lib/task-view-route"
+
 const { ingressPath } = Astro.locals
-const qs = new URL(Astro.request.url).searchParams.toString()
-const q = qs ? `?${qs}` : ''
+const params = new URL(Astro.request.url).searchParams
+if (requestedTaskView(params)) params.set("view", "kanban")
+const qs = params.toString()
+const q = qs ? `?${qs}` : ""
 return Astro.redirect(`${ingressPath || ""}/tasks${q}#kanban`, 301)
 ---
 

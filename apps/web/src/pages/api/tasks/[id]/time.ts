@@ -1,3 +1,5 @@
+import { boardScopeErrorResponse } from "@lib/board-http"
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import {
   startTimeEntryForTask,
@@ -21,37 +23,40 @@ import { apiJson, apiError } from "../../../../lib/api-response"
  * @bounded-context pomodoro
  */
 
-export const GET: APIRoute = async ({ params }) => {
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async ({ params }, scope) => {
   try {
     if (!params.id) return apiError("Task ID required", 400)
     await ensureSchema()
     // Read with the same task ID that POST writes to, so a ticket key such as MTH-12 works both ways.
-    const taskId = (await new TaskRepository(getPersistenceClient()).resolveTaskId(params.id))?.id ?? params.id
+    const taskId = (await new TaskRepository(getPersistenceClient(), scope).resolveTaskId(params.id))?.id
+    if (!taskId) return apiJson({ entries: [], totalSeconds: 0 })
 
     const [entries, total] = await Promise.all([
-      getTimeEntries(taskId),
-      getTotalTimeForTask(taskId),
+      getTimeEntries(scope, taskId),
+      getTotalTimeForTask(scope, taskId),
     ])
 
     return apiJson({ entries, totalSeconds: total })
   } catch (err) {
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
     return apiError("Failed to get time entries")
   }
-}
+})
 
-export const POST: APIRoute = async ({ params, request, locals }) => {
+export const POST: APIRoute = withBoardScope({ resource: "task", action: "edit" }, async ({ params, request, locals }, scope) => {
   try {
     const taskId = params.id
     if (!taskId) return apiError("Task ID required", 400)
 
     await ensureSchema()
-    const repo = new TaskRepository(getPersistenceClient())
-    const resolved = await repo.resolveTaskId(taskId)
+    const repo = new TaskRepository(getPersistenceClient(), scope)
+    const resolved = await repo.resolveTaskId(taskId, "edit")
     if (!resolved) return apiError("Task not found", 404)
     const resolvedTaskId = resolved.id
     const denied = await requireAssignedTaskWriteAccess(
       locals.agentToken,
-      (id) => repo.findById(id),
+      (id) => repo.findTaskForCommand(id, "edit"),
       [resolvedTaskId],
       "Agent can only track time on tasks assigned to it",
     )
@@ -62,11 +67,11 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
     const action = String(body.action || "start")
 
     if (action === "start") {
-      const res = await startTimeEntryForTask(resolvedTaskId, restrictedAssigneeId(locals.agentToken))
+      const res = await startTimeEntryForTask(scope, resolvedTaskId, restrictedAssigneeId(locals.agentToken))
       if (!res.ok) return apiError(res.errorCode === "assignee_mismatch" ? "Agent can only track time on tasks assigned to it" : "Task not found", res.errorCode === "assignee_mismatch" ? 403 : 404)
       return apiJson({ entry: res.entry })
     } else if (action === "stop") {
-      const res = await stopTimeEntryForTask(resolvedTaskId, restrictedAssigneeId(locals.agentToken))
+      const res = await stopTimeEntryForTask(scope, resolvedTaskId, restrictedAssigneeId(locals.agentToken))
       if (!res.ok) return apiError(res.errorCode === "assignee_mismatch" ? "Agent can only track time on tasks assigned to it" : "Task not found", res.errorCode === "assignee_mismatch" ? 403 : 404)
       if (!res.entry) return apiJson({ entry: null, message: "No running timer for this task" })
       return apiJson({ entry: res.entry })
@@ -74,6 +79,8 @@ export const POST: APIRoute = async ({ params, request, locals }) => {
       return apiError("Invalid action. Use: start, stop", 400)
     }
   } catch (err) {
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
     return apiError("Failed to manage time entry")
   }
-}
+})

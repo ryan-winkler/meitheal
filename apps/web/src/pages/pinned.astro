@@ -1,5 +1,6 @@
 ---
 import Layout from "../layouts/Layout.astro"
+import Icon from "../components/ui/Icon.astro"
 import { t } from "../i18n/translations"
 
 Astro.response.headers.set("cache-control", "private, no-store")
@@ -27,7 +28,10 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
           <h2><a data-pin-task data-astro-prefetch="false"></a></h2>
           <p class="pinned-meta" data-pin-status></p>
         </div>
-        <button type="button" class="btn btn-outline" data-pin-remove>{t("pins.unpin", locale)}</button>
+        <button type="button" class="btn btn-outline pin-remove" data-pin-remove>
+          <Icon name="pin" size={16} />
+          {t("pins.unpin", locale)}
+        </button>
       </li>
     </template>
   </section>
@@ -57,6 +61,7 @@ const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en
   .pinned-meta { margin: 0; font-size: .875rem; }
   .pinned-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
   button { min-height: 2.75rem; }
+  .pin-remove { display: inline-flex; align-items: center; gap: .5rem; }
   [hidden] { display: none; }
   @media (max-width: 420px) {
     .pinned-row { grid-template-columns: minmax(0, 1fr); justify-items: start; }

@@ -1,9 +1,15 @@
 import { expect, test, type APIRequestContext } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
+
+let boardHeaders: Record<string, string>
+test.beforeEach(async ({ request, baseURL }) => {
+  boardHeaders = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+})
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Needs the isolated built app fixture")
 
 async function createTask(request: APIRequestContext, title: string, status = "backlog") {
-  const response = await request.post("/api/tasks", { data: { title, status } })
+  const response = await request.post("/api/tasks", { headers: boardHeaders, data: { title, status } })
   expect(response.ok()).toBe(true)
   const task = await response.json() as { id: string; ticket_key: string; title: string }
   const detail = await request.get(`/api/tasks/${task.id}`)
@@ -15,20 +21,22 @@ test("defer through a ticket key, refresh on conflict, and keep a searchable tas
   const task = await createTask(request, "deferral-http-visible")
   const route = `/api/tasks/${task.ticket_key}/deferral`
   const original = { deferred: true, updated_at: task.updated_at, deferral_revision: null }
-  const headers = { "x-request-id": "deferral-http-test", "idempotency-key": "defer-original" }
-  expect((await request.patch(route, { data: { ...original, extra: "ignored?" } })).status()).toBe(400)
+  const headers = { ...boardHeaders, "x-request-id": "deferral-http-test", "idempotency-key": "defer-original" }
+  expect((await request.patch(route, { headers: boardHeaders, data: { ...original, extra: "ignored?" } })).status()).toBe(400)
   const competing = await Promise.all([
     request.patch(route, { data: original, headers }),
     request.patch(route, { data: original, headers }),
   ])
   const winner = competing.find(response => response.ok())
   expect(competing.map(response => response.status()).sort()).toEqual([200, 409])
+  const correlation = winner!.headers()["x-request-id"]
+  expect(correlation).toMatch(/^[a-f0-9-]{36}$/)
   const deferred = await winner!.json()
   expect(deferred).toMatchObject({ id: task.id, status: "backlog", updated_at: task.updated_at, deferred_at: expect.any(Number) })
   expect(deferred.deferral_revision).toMatch(/^[a-f0-9]{32}$/)
 
   const direct = await request.get(`/api/tasks/${task.id}?deferralRead=proof`)
-  expect(direct.headers()["cache-control"]).toBe("no-store")
+  expect(direct.headers()["cache-control"]).toBe("private, no-store")
   expect(await direct.json()).toMatchObject({ task_version: task.updated_at, deferred_at: deferred.deferred_at })
   const list = await request.get(`/api/tasks?deferred=1&q=${task.title}&limit=1`)
   expect(await list.json()).toMatchObject({ total: 1, tasks: [{ id: task.id }] })
@@ -38,13 +46,13 @@ test("defer through a ticket key, refresh on conflict, and keep a searchable tas
   expect(await legacy.json()).toMatchObject({ total: 1, tasks: [{ id: task.id }] })
   expect((await request.get("/api/tasks?deferred=yes")).status()).toBe(400)
 
-  const staleTriage = await request.put(`/api/tasks/${task.id}`, {
+  const staleTriage = await request.put(`/api/tasks/${task.id}`, { headers: boardHeaders,
     data: { status: "pending", updated_at: task.updated_at, expected_status: "backlog" },
   })
   expect(staleTriage.status()).toBe(409)
   expect(await staleTriage.json()).toMatchObject({ errorCode: "TASK_VERSION_CONFLICT" })
 
-  const resumed = await request.patch(route, {
+  const resumed = await request.patch(route, { headers: boardHeaders,
     data: { deferred: false, updated_at: task.updated_at, deferral_revision: deferred.deferral_revision },
   })
   expect(resumed.ok()).toBe(true)
@@ -56,7 +64,7 @@ test("defer through a ticket key, refresh on conflict, and keep a searchable tas
   expect(await timeline.json()).toMatchObject({
     total: 2,
     events: expect.arrayContaining([
-      expect.objectContaining({ field: "deferred_at", actor: "user", correlation_id: "deferral-http-test" }),
+      expect.objectContaining({ field: "deferred_at", actor: "user", correlation_id: correlation }),
     ]),
   })
 })
@@ -67,11 +75,11 @@ test("bulk and anchored reorder refuse deferred participants", async ({ request 
   const later = await createTask(request, "deferral-reorder-later")
   // Establish stable slots before deferral so even the deferred card's raw
   // position can be compared across the ordinary-only reorder.
-  expect((await request.post("/api/tasks/reorder", {
+  expect((await request.post("/api/tasks/reorder", { headers: boardHeaders,
     data: { ordered_ids: [earlier.id, hidden.id, later.id] },
   })).status()).toBe(200)
   const hiddenBefore = await (await request.get(`/api/tasks/${hidden.id}`)).json()
-  expect((await request.patch(`/api/tasks/${hidden.id}/deferral`, {
+  expect((await request.patch(`/api/tasks/${hidden.id}/deferral`, { headers: boardHeaders,
     data: { deferred: true, updated_at: hiddenBefore.task_version, deferral_revision: null },
   })).ok()).toBe(true)
   const deferredSnapshot = await (await request.get(`/api/tasks/${hidden.id}`)).json()
@@ -80,7 +88,7 @@ test("bulk and anchored reorder refuse deferred participants", async ({ request 
     { ordered_ids: [earlier.id, earlier.id] },
     { task_id: earlier.id, anchor_id: hidden.id, lane: "backlog", before: true },
   ]) {
-    const rejected = await request.post("/api/tasks/reorder", { data })
+    const rejected = await request.post("/api/tasks/reorder", { headers: boardHeaders, data })
     expect(rejected.status()).toBe(409)
     expect(await rejected.json()).toMatchObject({ errorCode: "TASK_ORDER_CONFLICT" })
   }
@@ -90,7 +98,7 @@ test("bulk and anchored reorder refuse deferred participants", async ({ request 
     .map((row: { id: string }) => row.id)
   expect([...allowed].sort()).toEqual([earlier.id, later.id].sort())
   const orderedIds = [later.id, ...allowed.filter((id: string) => id !== later.id)]
-  const reordered = await request.post("/api/tasks/reorder", { data: { ordered_ids: orderedIds } })
+  const reordered = await request.post("/api/tasks/reorder", { headers: boardHeaders, data: { ordered_ids: orderedIds } })
   expect(reordered.status(), await reordered.text()).toBe(200)
   const hiddenAfter = await (await request.get(`/api/tasks/${hidden.id}`)).json()
   expect(hiddenAfter).toEqual(deferredSnapshot)
@@ -99,7 +107,7 @@ test("bulk and anchored reorder refuse deferred participants", async ({ request 
   expect(laterAfter.kanban_position).toBeLessThan(hiddenAfter.kanban_position)
   expect(hiddenAfter.kanban_position).toBeLessThan(earlierAfter.kanban_position)
   for (const id of [earlier.id, hidden.id, later.id]) {
-    const deleted = await request.delete(`/api/tasks/${id}`, { data: {} })
+    const deleted = await request.delete(`/api/tasks/${id}`, { headers: boardHeaders, data: {} })
     expect(deleted.status(), await deleted.text()).toBe(204)
   }
 })

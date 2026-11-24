@@ -1,3 +1,7 @@
+import type { BoardScope } from "../board-scope"
+import { taskOwnedBy, ownedPlanning } from "./board-storage"
+import { sql as statement, type SqlFragment } from "./sql-fragment"
+import type { InStatement, InValue } from "@libsql/client"
 import type { Transaction } from "@libsql/client"
 import { canAdvanceTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
 
@@ -86,10 +90,16 @@ const sources = [
     validClock: integerClock, clock: "updated_at", validRevision: "1", revision: "0", legacy: true },
 ] as const
 
+function sourceOwner(scope: BoardScope, table: "tasks" | "task_drafts" | "task_templates"): SqlFragment {
+  return table === "tasks" ? taskOwnedBy(scope) : table === "task_templates" ? ownedPlanning(scope, table) :
+    statement`board_id = ${scope.boardId} AND owner_id = ${scope.principal.id}`
+}
+
 /** Owns task/draft/template changes inside the vocabulary owner's writer transaction. */
-export async function rewriteLabelReferences(tx: Transaction, action: Rewrite): Promise<Result> {
+export async function rewriteLabelReferences(tx: Transaction, scope: BoardScope, action: Rewrite): Promise<Result> {
   const utf8 = new TextEncoder()
   for (const source of sources) {
+    const ownership = sourceOwner(scope, source.table)
     let cursor: string | null = null
     while (true) {
       const { rows } = await tx.execute({
@@ -102,8 +112,9 @@ export async function rewriteLabelReferences(tx: Transaction, action: Rewrite): 
             CASE WHEN ${source.validClock} THEN ${source.clock} END AS clock,
             CASE WHEN ${source.validRevision} THEN 1 ELSE 0 END AS revision_valid,
             CASE WHEN ${source.validRevision} THEN ${source.revision} END AS revision
-            FROM ${source.table} WHERE (? IS NULL OR rowid > CAST(? AS INTEGER)) ORDER BY rowid LIMIT ${batchSize})`,
-        args: [cursor, cursor],
+            FROM ${source.table} WHERE (? IS NULL OR rowid > CAST(? AS INTEGER))
+              AND (${ownership.sql}) ORDER BY rowid LIMIT ${batchSize})`,
+        args: [cursor, cursor, ...ownership.args],
       })
       for (const row of rows) {
         const selected = entries(row.selection, source.legacy, source.table === "tasks")
@@ -122,17 +133,17 @@ export async function rewriteLabelReferences(tx: Transaction, action: Rewrite): 
         const args: (string | number)[] = [selectionJson]
         let sql: string
         if (source.table === "tasks") {
-          sql = "UPDATE tasks SET labels=?, updated_at=? WHERE rowid=CAST(? AS INTEGER) RETURNING CAST(rowid AS TEXT) AS cursor"
-          args.push(clock + 1, String(row.cursor))
+          sql = `UPDATE tasks SET labels=?, updated_at=? WHERE (${ownership.sql}) AND rowid=CAST(? AS INTEGER) RETURNING CAST(rowid AS TEXT) AS cursor`
+          args.push(clock + 1, ...ownership.args as (string | number)[], String(row.cursor))
         } else if (source.table === "task_drafts") {
           sql = `UPDATE task_drafts SET snapshot_json=json_set(snapshot_json,'$.labels',json(?),'$.newLabels',json(?)),
             revision=revision+1, updated_at=MAX(updated_at+1,?), save_attempt_id='', save_digest=''
-            WHERE rowid=CAST(? AS INTEGER) RETURNING CAST(rowid AS TEXT) AS cursor`
-          args.push(extraJson, action.now, String(row.cursor))
+            WHERE (${ownership.sql}) AND rowid=CAST(? AS INTEGER) RETURNING CAST(rowid AS TEXT) AS cursor`
+          args.push(extraJson, action.now, ...ownership.args as (string | number)[], String(row.cursor))
         } else {
           sql = `UPDATE task_templates SET template_json=json_set(template_json,'$.labels',json(?)),
-            updated_at=MAX(updated_at+1,?) WHERE rowid=CAST(? AS INTEGER) RETURNING CAST(rowid AS TEXT) AS cursor`
-          args.push(action.now, String(row.cursor))
+            updated_at=MAX(updated_at+1,?) WHERE (${ownership.sql}) AND rowid=CAST(? AS INTEGER) RETURNING CAST(rowid AS TEXT) AS cursor`
+          args.push(action.now, ...ownership.args as (string | number)[], String(row.cursor))
         }
         const changed = await tx.execute({ sql, args })
         if (changed.rows.length !== 1) throw new Error("Label reference write did not return its row")
@@ -142,4 +153,51 @@ export async function rewriteLabelReferences(tx: Transaction, action: Rewrite): 
     }
   }
   return { ok: true }
+}
+
+/** Add an explicitly created label only if the task write in this batch won. */
+export function taskLabelInsert(scope: BoardScope, title: string, taskId: string, requestId: string): InStatement {
+  return statement`INSERT INTO vikunja_labels (board_id, title, hex_color)
+    SELECT ${scope.boardId}, ${title}, '6b7280' WHERE EXISTS (
+      SELECT 1 FROM tasks WHERE id = ${taskId} AND request_id = ${requestId} AND ${taskOwnedBy(scope)})
+      AND NOT EXISTS (SELECT 1 FROM vikunja_labels WHERE board_id = ${scope.boardId} AND lower(title) = lower(${title}))`
+}
+
+
+/** Label context supplies definitions; Tasks owns scanning its scoped references. */
+export async function findUsedLabelDefinitions(tx: Transaction, scope: BoardScope, definitions: readonly { id: number, title: string }[], names: { key: (name: string) => string, valid: (name: string) => boolean }): Promise<Set<number> | null> {
+  const usedNames = new Set<string>()
+  const { rows: linked } = await tx.execute(statement`SELECT DISTINCT label_id FROM vikunja_task_labels
+    WHERE label_id IN (SELECT value FROM json_each(${JSON.stringify(definitions.map(label => label.id))}))`)
+  const used = new Set(linked.map(row => Number(row.label_id)))
+  for (const source of sources) {
+    const ownership = sourceOwner(scope, source.table)
+    let cursor: string | null = null
+    while (true) {
+      const { rows } = await tx.execute({
+        sql: `SELECT cursor, CASE WHEN length(CAST(selection AS BLOB)) <= ${selectionBytes} THEN selection END AS selection,
+          CASE WHEN length(CAST(extra AS BLOB)) <= ${selectionBytes} THEN extra END AS extra
+          FROM (SELECT CAST(rowid AS TEXT) AS cursor, ${source.selection} AS selection, ${source.extra} AS extra
+            FROM ${source.table} WHERE (? IS NULL OR rowid > CAST(? AS INTEGER)) AND (${ownership.sql}) ORDER BY rowid LIMIT ${batchSize})`,
+        args: [cursor, cursor, ...ownership.args],
+      })
+      for (const row of rows) {
+        const selected = entries(row.selection, source.legacy, source.table === "tasks")
+        const extra = entries(row.extra, false)
+        if (!selected || !extra || [...selected, ...extra].some(entry => !names.valid(name(entry)))) return null
+        for (const entry of [...selected, ...extra]) usedNames.add(names.key(name(entry)))
+      }
+      if (rows.length < batchSize) break
+      cursor = String(rows.at(-1)!.cursor)
+    }
+  }
+  for (const label of definitions) if (usedNames.has(names.key(label.title))) used.add(label.id)
+  return used
+}
+
+/** Remove only this Board's junctions; reject foreign/corrupt references without disclosing them. */
+export async function removeBoardLabelJunctions(tx: Transaction, scope: BoardScope, id: number): Promise<boolean> {
+  await tx.execute(statement`DELETE FROM vikunja_task_labels WHERE label_id = ${id}
+    AND EXISTS (SELECT 1 FROM tasks WHERE tasks.id = vikunja_task_labels.task_id AND ${taskOwnedBy(scope)})`)
+  return !(await tx.execute(statement`SELECT 1 FROM vikunja_task_labels WHERE label_id = ${id} LIMIT 1`)).rows.length
 }

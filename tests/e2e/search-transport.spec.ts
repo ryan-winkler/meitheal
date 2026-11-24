@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { startCoreFixture } from "../scripts/task-pins-fixture"
 
 const searchPath = "/api/search"
@@ -47,7 +48,7 @@ test("trusted ingress still enforces a presented agent token on Search", async (
     const [fixture] = await once(child, "message", { signal: AbortSignal.timeout(10_000) })
     const origin = `http://127.0.0.1:${fixture.port}`
     const ingress = origin + fixture.configuredPath
-    const admin = { cookie: "feedback-fixture=admin", origin }
+    const admin = await currentBoardWriteHeaders(request, "household", { cookie: "feedback-fixture=admin", origin }, ingress)
     const member = { cookie: "feedback-fixture=member", origin }
     const noIngress = await request.get(origin + searchPath)
     expect(noIngress.status()).toBe(401)

@@ -24,16 +24,25 @@ import {
   updateAgentToken,
 } from "@domains/auth"
 import { verifyCurrentHAAdministrator } from "@domains/ha"
-import { ensureSchema, getPersistenceClient, UserRepository } from "@domains/tasks"
+import {
+  ensureSchema,
+  getPersistenceClient,
+  IdentityRepository,
+  listBoardGrantsForAgentTokens,
+} from "@domains/tasks"
 import { apiJson, apiProblem } from "@lib/api-response"
+import { readBoardDirectory } from "@lib/board-view"
 import { readWithinLimit } from "@lib/bounded-body"
+import { currentBoardContext } from "@lib/named-board-request"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
+import { resolveBoardRequestScope } from "@lib/board-request-context"
+import { canManageSystemSettings } from "@lib/settings-security"
 
 const MAX_BODY_BYTES = 16 * 1024
 
 /** Only an authenticated Home Assistant administrator can manage credentials. */
-function isAdmin(locals: App.Locals): boolean {
-  return locals.hassIsAdmin === true && !locals.agentToken
+function isAdmin(locals: App.Locals, request: Request): boolean {
+  return canManageSystemSettings(request, locals) && !locals.agentToken
 }
 
 function noStore(response: Response): Response {
@@ -86,7 +95,7 @@ function authorizeAdminContext(
   action: string,
   isMutation: boolean,
 ): Response | null {
-  if (!isAdmin(locals)) {
+  if (!isAdmin(locals,request)) {
     cancelBody(request)
     return noStore(apiProblem({
       status: 403,
@@ -102,8 +111,8 @@ function authorizeAdminContext(
     const secFetchSite = request.headers.get("sec-fetch-site")
     const untrustedFetchSite = secFetchSite !== null && secFetchSite !== "same-origin" && secFetchSite !== "none"
     const untrustedOrigin = (origin !== null || referer !== null) && !isCsrfAllowed({
-      behindIngress: false,
-      isDev: false,
+      behindIngress: locals.behindIngress === true,
+      isDev: import.meta.env?.DEV === true,
       host: request.headers.get("host") ?? new URL(request.url).host,
       origin,
       referer: origin ? null : referer,
@@ -262,7 +271,7 @@ async function readAssignee(value: unknown, scopes: AgentScope[] | undefined): P
     return validationError("Invalid assignee", [{ name: "assigneeId", reason: "must be an agent assignee ID or null" }])
   }
   await ensureSchema()
-  const assignee = await new UserRepository(getPersistenceClient()).getCustomUser(value)
+  const assignee = await new IdentityRepository(getPersistenceClient()).getCustomUser(value)
   if (assignee?.kind !== "agent") {
     return validationError("Invalid assignee", [
       { name: "assigneeId", reason: "must be the ID of an agent assignee" },
@@ -328,10 +337,18 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const assignee = await readAssignee(parsedAssignee.value, scopes)
   if (assignee instanceof Response) return assignee
 
+  if ("boardId" in body || "board_id" in body) return validationError("Select the Board through the current workspace or X-Meitheal-Board-Id header", [{name:"board_id",reason:"Board context must use the explicit request selector"}])
+  const selected = await resolveBoardRequestScope({request,locals},{operation:{resource:"board",action:"manage"},write:true})
+  if (!selected.ok) return noStore(apiProblem({
+    status:selected.errorCode === "continuity_locked"?503:selected.errorCode === "stale"?409:selected.errorCode === "denied"?403:404,
+    detail:"A current Board manager must approve this credential's destination and permissions.",
+  }))
+
   const { token, tokenHash, tokenPrefix } = generateAgentToken()
   const id = crypto.randomUUID()
 
-  const record = await createAgentToken({
+  let record
+  try { record = await createAgentToken({
     id,
     name,
     tokenHash,
@@ -339,7 +356,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
     scopes,
     assigneeId: assignee.assigneeId,
     expiresAt,
-  })
+  },selected.scope) } catch(error) {
+    const status=error&&typeof error === "object"&&"status" in error&&[403,404,409,503].includes(Number(error.status))?Number(error.status):503
+    return noStore(apiProblem({status,detail:"The credential could not be confirmed with current Board authority. Refresh before retrying."}))
+  }
 
   // Return plaintext token ONCE — Meitheal never stores or retrieves it again.
   return noStore(apiJson({
@@ -351,7 +371,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
     assigneeId: record.assigneeId,
     createdAt: record.createdAt,
     expiresAt: record.expiresAt,
-  }, 201))
+    boardId: selected.scope.boardId,
+    ...(record.accessPending?{accessPending:true}:{}),
+  }, record.accessPending?202:201))
 }
 
 // ── GET: List Tokens ─────────────────────────────────────────────────────────
@@ -367,7 +389,26 @@ export const GET: APIRoute = async ({ request, locals }) => {
 
   const includeRevoked = new URL(request.url).searchParams.get("include_revoked") === "1"
   const tokens = await listAgentTokens(includeRevoked)
-  return noStore(apiJson(tokens.map(toPublicToken)))
+
+  let grants = new Map<string, Array<{ id: string; name: string; ticketPrefix: string }>>()
+  if (tokens.length > 0) {
+    try {
+      const boardCtx = await currentBoardContext({ request, locals }, false)
+      if (boardCtx) {
+        const directory = await readBoardDirectory(boardCtx.actor, request)
+        const allowedBoardIds = new Set(directory.boards.map((b) => b.id))
+        grants = await listBoardGrantsForAgentTokens(
+          getPersistenceClient(),
+          tokens.map((t) => t.id),
+          allowedBoardIds
+        )
+      }
+    } catch {
+      /* Board projection is optional; token list still loads safely. */
+    }
+  }
+
+  return noStore(apiJson(tokens.map((t) => ({ ...toPublicToken(t), boards: grants.get(t.id) ?? [] }))))
 }
 
 // ── PATCH: Update Token ──────────────────────────────────────────────────────

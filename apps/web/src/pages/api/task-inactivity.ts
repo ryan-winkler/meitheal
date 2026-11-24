@@ -1,3 +1,6 @@
+import { boardScopeErrorResponse } from "@lib/board-http"
+import { scopePermits } from "@domains/tasks/board-scope"
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { z } from "zod"
 import { verifyCurrentHAAdministrator } from "@domains/ha/current-admin"
@@ -33,15 +36,18 @@ function problem(status: number, detail: string) {
 }
 
 function sameOrigin(request: Request, ingress: string | undefined): boolean {
-  if (request.headers.get("sec-fetch-site") !== "same-origin" ||
-      request.headers.get("sec-fetch-mode") !== "same-origin") return false
+  const site = request.headers.get("sec-fetch-site")
+  const mode = request.headers.get("sec-fetch-mode")
+  // The inactivity client always sends same-origin mode; reject other modes.
+  if (site !== "same-origin" || mode !== "same-origin") return false
   const origin = request.headers.get("origin")
   const referer = request.headers.get("referer")
   if (!origin || !referer) return false
   try {
     const source = new URL(referer)
-    return (source.protocol === "http:" || source.protocol === "https:") && source.origin === origin &&
-      (ingress ? source.pathname.startsWith(ingress + "/") : source.origin === new URL(request.url).origin)
+    if ((source.protocol !== "http:" && source.protocol !== "https:") || source.origin !== origin) return false
+    if (ingress) return source.pathname.startsWith(ingress + "/")
+    return source.origin === new URL(request.url).origin
   } catch {
     return false
   }
@@ -49,7 +55,7 @@ function sameOrigin(request: Request, ingress: string | undefined): boolean {
 
 export const ALL: APIRoute = () => new Response(null, { status: 405, headers: { ...headers, allow: "POST" } })
 
-export const POST: APIRoute = async ({ locals, request }) => {
+const handleInactivity: Parameters<typeof withBoardScope>[1] = async ({ locals, request }, scope) => {
   const ha = Boolean(process.env.SUPERVISOR_TOKEN)
   const user = verifiedIngressUser(locals)
   if (locals.agentToken || (ha && (!user || !locals.ingressPath)) || !sameOrigin(request, locals.ingressPath)) {
@@ -77,14 +83,9 @@ export const POST: APIRoute = async ({ locals, request }) => {
     return problem(400, "The shared default cannot inherit another policy.")
   }
 
-  const admin = canManageSystemSettings(request, locals)
+  const admin = scopePermits(scope, { resource: "board", action: "manage" })
   if (action.action === "save") {
-    if (!admin || (ha && !user?.isAdmin)) return problem(403, "Only an administrator can change inactivity policies.")
-    if (user) {
-      const current = await verifyCurrentHAAdministrator(user.id, request.signal)
-      if (current === "unavailable") return problem(503, "Home Assistant could not verify current administrator access.")
-      if (current !== "allowed") return problem(403, "Only an active Home Assistant administrator can change inactivity policies.")
-    }
+    if (!admin) return problem(403, "Manage this Board to change its inactivity policies.")
     const allAreas = action.areaId === null
     if (allAreas !== (action.areaGeneration === null) || allAreas === (action.expectedAreaCatalogRevision === null)) {
       return problem(400, "Preview the policy scope before saving.")
@@ -97,7 +98,7 @@ export const POST: APIRoute = async ({ locals, request }) => {
   try {
     await ensureSchema()
     if (request.signal.aborted) return problem(499, "The inactivity request was cancelled.")
-    const repo = new TaskInactivityRepository(getPersistenceClient())
+    const repo = new TaskInactivityRepository(getPersistenceClient(), scope)
     const now = Date.now()
     if (action.action === "board") {
       const { cues, stalled } = await repo.boardCues([...new Set(action.ids)], now)
@@ -115,7 +116,20 @@ export const POST: APIRoute = async ({ locals, request }) => {
     })
     if (!preview.areaExists) return problem(404, "This Area no longer exists.")
     return Response.json({ ...preview, now, canSave: admin }, { headers })
-  } catch {
+  } catch (err) {
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
     return problem(503, "Could not load inactivity data. Try again.")
   }
+ }
+
+export const POST: APIRoute = async context => {
+  let input: Record<string, unknown> | null = null
+  try {
+    const bytes = await readWithinLimit(context.request.clone().body, 16 * 1024, AbortSignal.any([context.request.signal, AbortSignal.timeout(5000)]))
+    if (!bytes) return problem(413, "The inactivity request is too large.")
+    input = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes))
+  } catch { return problem(400, "Send a valid inactivity action.") }
+  const operation = input?.action === "save" ? { resource: "board", action: "manage" } as const : { resource: "task", action: "read" } as const
+  return withBoardScope(operation, handleInactivity, { write: true })(context)
 }

@@ -22,11 +22,43 @@ Save notifications use the selected theme's text and card colors. A colored edge
 
 ## Configure the sidebar
 
-In **Settings → Navigation & Shortcuts → Sidebar Configuration**, Areas has the same visibility and label controls as the page links. Use **Move up** and **Move down**, or drag the handle on a wide screen, to position the Areas tree. Reordering preserves the labels and custom links you are editing. Each area retains its project collapse control.
+Open the keyboard menu at the foot of the sidebar or mobile drawer and choose **Edit menu**. Focus moves to the first move handle. Drag a handle to move a destination within or between sections, including **Boards** with its Household, Areas and Projects. Focus a handle and press **↑** or **↓**. On a touch screen the handles grow to 44px. Choose **Leave edit mode** or press **Escape** to finish; focus returns to the control that opened the editor. The order is saved in this browser. Task views pinned before this editor appear as sidebar items the first time the page loads. Saving or resetting **Sidebar Configuration** in Settings returns this browser to the saved configuration.
 
-Choose **Save Sidebar Config** to save and reload the current Settings section with the updated sidebar. **Reset to Default** restores the default items and ordering after confirmation. Use **Tasks Menu & Pinned Views** in the same section to choose task types for the Tasks menu and pin them beside Tasks.
+In **Settings → Navigation & Shortcuts → Sidebar Configuration**, the **Areas** visibility and label controls apply to the Household group tree. Positioning **Boards** in the configured order places the Household tree immediately after it. Reordering preserves the labels and custom links you are editing. Each group retains its project collapse control.
+
+Choose **Save Sidebar Config** to save and reload the current Settings section with the updated sidebar. **Reset to Default** restores the default items and ordering after confirmation. Use **New task types** in the same section to choose which creation shortcuts appear under **New task**. Pin a type there or in the New task menu to open its form in one click. Use the chevron beside **Tasks** to open or pin Calendar, Kanban, Timeline (Gantt), and Table. Pins are stored on this browser. On short phone screens, scroll the drawer to reach task views below the pinned types. The Close button stays in the header. Tabbing out closes either menu and preserves the applied filters. A pinned view carries the current filters when opened from Tasks. Opening it from another page drops the previous Tasks filters. The destination can still restore the browser’s remembered Area.
+
+A Shopping sidebar link with a task filter opens Kanban by default. A link that names Calendar, Table, or Timeline opens that view with the Shopping filter. The plain **Tasks** link remembers the last view. Docked task Details keeps the active navigation on the screen underneath it.
+
+In the compact sidebar, open either menu from the chevron below its icon. With top navigation enabled, the Tasks toolbar shows creation shortcuts beside **New Task**. Other pages show the same shortcuts in the top navigation. Scroll the shortcut group horizontally if there is little space. On mobile, both menus are in the navigation drawer.
 
 The small status dot beside **Settings** reports app and storage health. Hover or use a screen reader to read its status. Home Assistant connectivity is shown separately in **Settings → Connected Services → Home Assistant**.
+
+## Give Boards and other features personal names
+
+Open **Settings → Navigation & Shortcuts → Labels** through Home Assistant. For example, enter **Workspace** and **Workspaces** for Board, then choose **Save labels**. The sidebar, Boards page and new Board action use your chosen forms. Search finds the page by either name. Existing links and the names of individual Boards, Groups, Projects and Tasks keep working.
+
+Each Home Assistant account can save different names for English and Gaeilge. A blank input uses the default for that form. Choose **Use default** for one term or **Use all defaults** for the visible terms, then save. A disabled feature's label is available again when the feature returns.
+
+If a save fails, keep the page open and try again. If another window saved first, review the current values displayed alongside your edits before saving again. Reopen Meitheal when changing Home Assistant accounts. Use Home Assistant backups for databases containing personal labels. The Settings configuration export contains installation settings.
+
+## Choose who can use organization features
+
+A verified Home Assistant administrator can open **Settings → Tasks & Boards → Organization features** and choose an audience for **Boards organizer**, **Groups**, **Projects**, **Planning**, **Goals**, **Routines**, **Pillars**, **Principles**, **Achievements**, or **Home Assistant Area**. Select the feature, choose **Everyone**, **Selected people**, or **Nobody**, then choose **Save availability**. An empty Selected people list saves as Nobody. Reopen the work page to see the change. Principles also require Pillars to be available.
+
+After an audience is explicitly saved for Routines or Achievements, its corresponding legacy **Habit Tracker** or **Gamification** switch reports an HTTP 409 conflict. A Settings import containing that legacy switch also reports a conflict. Use **Organization features** to change the audience.
+
+Before an audience is set, saving either legacy switch takes effect on the next request.
+
+The Boards organizer contains Groups and Projects. The previous `/planning#spaces` bookmark opens Boards when Planning is available to you. Personal display labels are configured under **Navigation & Shortcuts → Labels**. Existing tasks remain reachable through their Boards with the permissions you have there.
+
+Feature audiences also apply to direct API and page links. Governed feature reads require a connection. Activating the service worker update removes older feature responses from its caches.
+
+## Use the Home Assistant Area task field
+
+To offer the location field, select **Home Assistant Area** in **Organization features**, choose its audience and save availability.
+
+Use the location picker while capturing a task or under **Metadata** in its details. A Board or Group organizes the work. **Home Assistant Area** records its physical location. Choose **None** and save to clear a location. When the registry is unavailable, other task inputs are still usable. A deleted area appears as **Saved location unavailable** and can be replaced or cleared.
 
 ## Check Home Assistant
 
@@ -41,6 +73,10 @@ Open **Settings → Connected Services → Home Assistant** and choose **Test Co
 Manage integration credentials, outbound integration tests, Node-RED deployment, custom CSS and factory reset through a verified Home Assistant administrator session. For standalone development, open the app on the machine running it using the loopback address. A Meitheal HTTP 403 can indicate either a regular user session or an installed Supervisor without the required trusted identity headers. Settings stays open so you can read the error and keep any work in progress. An expired Supervisor ingress session may reload to recover its connection.
 
 Settings downloads exclude credential values. Settings imports also skip credential fields in older files. After an import, re-enter integration secrets separately in Settings. A masked value in Settings means the existing value is kept if the mask is submitted unchanged.
+
+Save CalDAV or Grocy credentials and run Calendar, To-do, and Grocy sync from Settings with the current Board session. If sync needs an approved destination, open the Board’s integration settings to approve the source and choose where its work belongs.
+
+An imported theme keeps its saved mode when Meitheal recognizes it. An empty or unrecognized theme in the backup restores Emerald Isle while the rest of the settings import proceeds.
 
 ## Recover from an error
 
@@ -77,23 +113,33 @@ If the URL does not change to `#ai-agents-settings`, capture the browser console
 2. Change the theme once and wait for the UI to update.
 3. Re-open Settings.
 
-Select **Light** or **Dark** to keep that Meitheal palette. **Auto** follows the appearance of a same-origin Home Assistant panel as it changes. A direct ingress page and a panel whose appearance cannot be read follow the device preference.
+Select **Light**, **Emerald Isle**, or **Knight Rider** to keep that Meitheal palette. **Auto** follows the appearance of a same-origin Home Assistant panel as it changes. A direct ingress page and a panel whose appearance cannot be read follow the device preference. A browser with an unrecognized cached theme uses **Auto** until a supported theme is selected.
 
-In an administrator session, choose **Custom** to import a CSS file up to 50 KB. The imported palette becomes active after the file, filename and theme mode save together. Select the displayed filename to download the saved CSS. Light, Dark and Auto update the installation's saved mode and keep the file available for later use. Choose **Remove custom theme** to clear the file and switch to Dark. A regular Home Assistant member gets the built-in modes. After an account change, a live navigation applies the current session's theme permissions.
+Turn on **Match Home Assistant theme** to use the colors Home Assistant has set when you open Meitheal from its Home Assistant sidebar entry. The checkbox is off by default and saves in the current browser. The **Theme** selector still sets the fallback. You can turn matching off any time to return to that theme, including your saved accent and custom theme.
 
-An accent chosen in **Look & Feel** stays in this browser. The keyboard focus color comes from the current palette and stays visible even if the accent matches the page background. Use **Reset** beside the color swatches to return to the palette's default accent. Filled primary buttons choose readable dark or light text for a custom accent, including its hover state. Native date and select controls follow the same effective Light or Dark mode as the app. Form hints stay readable when the input receives focus.
+Meitheal follows Home Assistant's background, text, primary action and accent colors. It uses a readable color for text and focus when a theme color has too little contrast. The status under the checkbox explains when Meitheal is using the selected theme instead. This can happen in the direct web app, in the installed PWA, with unreadable theme colors, or with the browser's forced-colors or higher-contrast preference. The Home Assistant Webpage dashboard card does not establish an App ingress session. Open Meitheal through the Home Assistant sidebar to start an authenticated session and use matching.
 
-- Open **Look & Feel → Customize appearance** to choose the typeface, neutral palette, corner roundness, content width, page headers, and panel style. Select **Save appearance** to apply the choices in this browser.
-- Open **Navigation & Shortcuts → Navigation Layout & Hover Behavior** to choose the navigation layout, navigation color, navigation edges, and sidebar behavior. Select **Save navigation layout** to apply them. **Reset to defaults** in either form stages its original choices. Save the form to apply the reset.
+In an administrator session, choose **Custom** to import a CSS file up to 50 KB. The imported palette becomes active after the file, filename and theme mode save together. Select the displayed filename to download the saved CSS. Light, Emerald Isle, Knight Rider and Auto update the installation's saved mode and keep the file available for later use. Choose **Remove custom theme** to clear the file and switch to Emerald Isle. A regular Home Assistant member gets the built-in modes. After an account change, a live navigation applies the current session's theme permissions.
+
+In **Look & Feel**, **Emerald Isle** is the name of the existing green dark theme. **Knight Rider** uses charcoal surfaces and blue controls. Active tasks use a rose fill by default in Today, Dashboard and Board task views. A saved status change in Details updates the active treatment on the calling view. In Knight Rider, a saved task color tints the whole task surface and keeps the rose edge on active work. Set it with **Set card color** on the Board or the swatch beside Labels in **Details → Metadata**. Knight Rider starts with the compact sidebar when this browser has no saved choice. **Completed today** previews up to 20 Complete Household Board tasks last updated on the household day. **Archive completed** includes all eligible Household Board tasks, even beyond the 20 shown. Archived tasks stay in storage and are removed from the Dashboard’s task lists and counts. Tickets on named Boards stay there. Choose **Refresh Today** if the date changed since you opened the page.
+
+Within the same Today visit, a saved status change from Work or task Details updates the row and its Focus Stack card. Today retains keyboard focus if you Tab to another visible control while the save runs. Reopening restores the card if it was already in that stack. Completing an overdue task removes it from the **Overdue** filter. Reopening restores the overdue label when the deadline has passed.
+
+An accent chosen in **Look & Feel** stays in this browser. The keyboard focus color follows a readable version of the accent and keeps at least 3:1 contrast with the page, even when the accent matches the page background. Use **Reset** beside the color swatches to return to the palette's default accent. Filled primary buttons choose readable dark or light text for a custom accent, including its hover state. Native date and select controls follow the same effective Light or Dark mode as the app. Form hints stay readable when the input receives focus.
+
+- Open **Look & Feel** to choose the theme, accent, typeface, neutral palette, corner roundness, content width, page headers, and panel style. Choices preview live; select **Save appearance** to apply them. The theme is a server-wide setting, so a saved theme change applies to everyone using this installation. The other appearance choices and the accent save in this browser only. A save captures the choices shown when you select **Save appearance**. If you reset or edit while the save is pending, those changes stay in preview until you save again.
+
+- The same **Look & Feel** form also holds the navigation layout, navigation color, navigation edges, and sidebar behavior. Choices preview live until you select **Save appearance** or **Discard**. **Reset to defaults** previews the original choices, including the default accent and Home Assistant matching; save to apply them. Reset keeps the selected theme, so saving after a reset keeps the current theme.
 
 Top navigation replaces the desktop sidebar with horizontal destination lists and one **More** disclosure for destinations that do not fit. Crowded Tasks view links use the same disclosure. The current destination stays visible when it fits. The links retain their URLs, so opening them in a new tab and Home Assistant ingress navigation continue to work. Use arrow keys or Home/End to move through the open disclosure; Escape closes it and returns focus to More. Resizing keeps the focused link reachable, including opening More if that link moves into it. The Areas disclosure opens its existing hierarchy; Escape closes it and returns focus to its summary. Phones retain their mobile navigation in either layout. Pinned Task shortcuts return when a desktop Top navigation layout switches to the mobile drawer. Floating navigation adds inset edges; floating panels affect task detail, search and the day drawer. **Fluid** removes the Settings reading-width limit; **Boxed** centers content within a reading width.
 
-Sidebar behavior applies to desktop sidebar navigation. **Remember last state** uses the existing collapse toggle preference. **Start expanded** and **Start folded** set the state each time a page opens; the toggle remains available. **Expand on hover or focus** temporarily opens the rail for pointer or keyboard navigation without moving the page content. These choices do not change per-Area or whole-Areas-group disclosures.
+Sidebar behavior applies to desktop sidebar navigation. **Remember last state** uses the existing collapse toggle preference. **Start expanded** and **Start folded** set the state each time a page opens; the toggle remains available. **Expand on hover or focus** temporarily opens the rail for pointer or keyboard navigation without moving the page content. Closing it with the edge arrow or **Ctrl+B** keeps it folded while you remain inside the compact rail. Leave and return to open it again. These choices do not change per-Area or whole-Areas-group disclosures.
 
 If an appearance save reports a browser storage error, the current appearance and your edited choices stay intact. Retry after allowing site storage. Invalid or old stored choice values use defaults; valid saved and unrelated fields are retained when saving. Appearance preferences are local under `meitheal-appearance`; the remembered sidebar state stays under `meitheal_sidebar_collapsed`. They do not add or rename `/api/settings` fields.
 
 If the theme still resets:
 
+- Select **Save appearance** before you leave or reopen Settings. Unsaved choices are only a preview.
 - Check that `/api/settings` writes are not failing in the browser network panel.
 - Check whether local storage is being cleared by privacy tooling.
 
@@ -172,7 +218,8 @@ while preserving the last selection. This failure is separate from the app's
 own connection to its server. The compact app status beside Settings remains reachable through its accessible description. Operator logs distinguish static `invalid_agent_payload` and `websocket_request_failed` reasons without recording the HA payload.
 
 Ask Home Assistant keeps its chat and HA conversation ID when closed and
-reopened on the same page. Changing the selected agent starts a new conversation.
+reopened on the same page. The first reply can continue while the page finishes
+loading. Changing the selected agent starts a new conversation.
 The Settings default is persistent; the most recent Ask selection is stored for
 the browser session. Saving a new Settings default clears that session override.
 
@@ -204,6 +251,8 @@ Today formats its visible and machine-readable dates in the workspace timezone, 
 ## Home Assistant connection changes
 
 The App uses the Supervisor connection when available. Standalone installations use a complete saved URL/token pair, then an environment pair. Saving changed credentials replaces the authenticated WebSocket and entity subscription; incomplete saved pairs do not mix credentials with environment settings. Connection status never includes tokens. If setup began before Home Assistant was configured, retry after saving the pair.
+
+Integration changes require a current Settings session and management access to each Board served by the integration. If Settings rejects a save after access changes, reopen Settings and review the integration’s Board destinations before retrying.
 
 Calendar sync distinguishes an empty successful response from a missing or failed response. A partial or skipped manual sync reports failure with per-calendar outcomes, so existing tasks are not presented as a successful empty import. Use a disposable calendar to check empty success, disconnected failure and partial failure after changing connection settings. Assist uses the current selected agent; an explicit empty selection uses built-in Assist.
 

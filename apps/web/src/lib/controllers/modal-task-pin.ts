@@ -3,11 +3,12 @@ import {
   activatePinUpdate, PinAccessError, pinsInvalidated, readTaskPin, setTaskPin, supportsPersonalPins,
   watchPinLease, type PinLease,
 } from "../task-pin-client"
+import { qs, setAttr } from "@lib/dom-helpers"
 
 export function initModalTaskPin(overlay: HTMLElement, signal: AbortSignal, changed: () => void) {
-  const button = overlay.querySelector<HTMLButtonElement>("#td-pin-action")
-  const retry = overlay.querySelector<HTMLButtonElement>("#td-pin-refresh")
-  const status = overlay.querySelector<HTMLElement>("#td-pin-status")
+  const button = qs<HTMLButtonElement>(overlay, "#td-pin-action")
+  const retry = qs<HTMLButtonElement>(overlay, "#td-pin-refresh")
+  const status = qs<HTMLElement>(overlay, "#td-pin-status")
   let selected: { id: string; signal: AbortSignal } | undefined
   let operation: AbortController | undefined
   let stopLease: (() => void) | undefined
@@ -35,9 +36,9 @@ export function initModalTaskPin(overlay: HTMLElement, signal: AbortSignal, chan
     stopLease = undefined
     lease = undefined
     if (button) {
-      if (document.activeElement === button && relevant()) overlay.querySelector<HTMLElement>("#td-close")?.focus()
+      if (document.activeElement === button && relevant()) qs<HTMLElement>(overlay, "#td-close")?.focus()
       button.hidden = true
-      button.setAttribute("aria-pressed", "false")
+      setAttr(button, "aria-pressed", "false")
     }
   }
 
@@ -64,7 +65,7 @@ export function initModalTaskPin(overlay: HTMLElement, signal: AbortSignal, chan
       lease = result.lease
       stopLease = watchPinLease(result.lease, AbortSignal.any([signal, task.signal]), () => interaction,
         refreshed => { lease = refreshed }, failed)
-      button.setAttribute("aria-pressed", String(result.value.pinned))
+      setAttr(button, "aria-pressed", String(result.value.pinned))
       button.hidden = false
       button.disabled = false
       show(notice)

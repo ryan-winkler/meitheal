@@ -1,21 +1,27 @@
 import { execFile } from "node:child_process"
 import { once } from "node:events"
-import { mkdtemp, rm } from "node:fs/promises"
+import { copyFile, mkdtemp, rm } from "node:fs/promises"
 import { createServer } from "node:http"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
+import { setTimeout as sleepMs } from "node:timers/promises"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { promisify } from "node:util"
 import { expect, test } from "@playwright/test"
+import { TASK_BOARD_SCHEMA_VERSION } from "../../apps/web/drizzle/migrations/task-board-upgrade.mjs"
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core"
 import {
   DATABASE_SCHEMA_VERSION,
   executeWriteWithRetry,
   getDatabaseDiagnostics,
+  isSideEffectFreeQuery,
+  localSnapshotGeneration,
   openDatabase,
   resetDatabaseDiagnosticsForTests,
   runWriteTransaction,
+  tagTaskProjectionRead,
 } from "../../apps/web/scripts/database-client.mjs"
 
 const webRequire = createRequire(new URL("../../apps/web/package.json", import.meta.url))
@@ -58,6 +64,35 @@ test("local results preserve libSQL row indices, metadata, bindings and JSON", a
     await expect(client.execute("SELECT id FROM records WHERE id > 4")).rejects.toThrow(RangeError)
   } finally {
     client.close()
+  }
+})
+
+test("tagged file projections preserve result shape and use fresh bound values", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-sqlite-projection-"))
+  const client = openDatabase(pathToFileURL(join(directory, "tasks.db")).href)
+  const reader = await client.transaction("read")
+  try {
+    const projection = (value: string) => tagTaskProjectionRead({ sql: "SELECT ? AS title, X'00FF' AS bytes", args: [value] }, "task-detail")
+    const first = await reader.execute(projection("first"))
+    expect(first.rows[0]).toMatchObject({ title: "first", bytes: Uint8Array.of(0, 255).buffer })
+    expect(first.rows[0]?.[0]).toBe("first")
+    expect(first.rows[0]?.length).toBe(2)
+    expect(Object.keys(first.rows[0]!)).toEqual(["title", "bytes"])
+    expect(first.toJSON().rows).toEqual([["first", "AP8="]])
+    expect((await reader.execute(projection("second"))).toJSON().rows).toEqual([["second", "AP8="]])
+    const score = tagTaskProjectionRead({ sql: "SELECT ? AS score", args: [9007199254740991n] }, "task-detail")
+    expect((await reader.execute(score)).toJSON().rows).toEqual([[9007199254740991]])
+    const overflow = tagTaskProjectionRead({ ...score, args: [9007199254740992n] }, "task-detail")
+    await expect(reader.execute(overflow)).rejects.toBeInstanceOf(RangeError)
+    const sql = "SELECT ? AS required, ? AS optional"
+    const bound = (args: (number | string)[]) => tagTaskProjectionRead({ sql, args }, "task-detail")
+    expect((await reader.execute(bound([1, "local value"]))).toJSON().rows).toEqual([[1, "local value"]])
+    expect((await reader.execute(bound([2]))).toJSON().rows).toEqual([[2, null]])
+    await reader.commit()
+  } finally {
+    reader.close()
+    client.close()
+    await rm(directory, { recursive: true, force: true })
   }
 })
 
@@ -114,9 +149,17 @@ test("opens an existing libSQL file, keeps transactions isolated and rolls back 
 })
 
 test("starts with remote transports unloaded and sends remote requests through libSQL", async () => {
-  type Command = { type: string; stmt?: { sql: string } }
-  const requests: Command[] = []
+  type Statement = { sql?: string; sql_id?: number; args?: unknown[] }
+  type Command = { type: "execute"; stmt: Statement }
+    | { type: "batch"; batch: { steps: { stmt: Statement }[] } }
+    | { type: "store_sql"; sql_id: number; sql: string }
+    | { type: "close" }
+  const requests: Array<{ baton: string | undefined; stmt: Statement }> = []
+  const storedSql = new Map<number, string>()
+  const catalogSql = /FROM main\.sqlite_schema AS objects/
+  const markerSql = /^SELECT value(?: AS value)? FROM (?:main\.)?app_settings/
   let version = DATABASE_SCHEMA_VERSION + 1
+  let refuseWriterOnce = false
   const server = createServer(async (request, response) => {
     if (request.url !== "/v2/pipeline") {
       response.writeHead(404).end()
@@ -124,22 +167,53 @@ test("starts with remote transports unloaded and sends remote requests through l
     }
     const chunks: Uint8Array[] = []
     for await (const chunk of request) chunks.push(chunk)
-    const { requests: commands } = JSON.parse(Buffer.concat(chunks).toString()) as { requests: Command[] }
-    requests.push(...commands)
-    const results = commands.map(command => {
-      if (command.type !== "execute") return { type: "ok", response: { type: "close" } }
-      const marker = command.stmt?.sql.startsWith("SELECT value AS value FROM app_settings")
-      const missingLedger = command.stmt?.sql.includes("name = '__meitheal_migrations'")
-      const cell = marker ? { type: "text", value: String(version) } : { type: "integer", value: "42" }
-      return {
-        type: "ok",
-        response: {
-          type: "execute",
-          result: { cols: [{ name: marker ? "value" : "answer" }], rows: missingLedger ? [] : [[cell]], affected_row_count: 0 },
-        },
+    const incoming = JSON.parse(Buffer.concat(chunks).toString()) as { baton?: string; requests: Command[] }
+    const textCell = (value: string) => ({ type: "text", value })
+    const result = (stmt: Statement) => {
+      const sql = stmt.sql ?? storedSql.get(stmt.sql_id!)
+      if (!sql) throw new Error("Missing fixture SQL")
+      requests.push({ baton: incoming.baton, stmt: { ...stmt, sql } })
+      let cols = ["answer"]
+      let rows = [[{ type: "integer", value: "42" }]]
+      if (catalogSql.test(sql)) {
+        cols = ["name", "type", "table_name"]
+        rows = [["app_settings", "table", "app_settings"].map(textCell)]
+      } else if (markerSql.test(sql)) {
+        cols = ["value"]
+        rows = [[textCell(String(version))]]
+      } else if (/pragma_table_xinfo|__meitheal_migrations|^BEGIN/.test(sql)) {
+        rows = []
       }
+      return { cols: cols.map(name => ({ name })), rows, affected_row_count: 0 }
+    }
+    const results = incoming.requests.map(command => {
+      if (command.type === "store_sql") {
+        storedSql.set(command.sql_id, command.sql)
+        return { type: "ok", response: { type: "store_sql" } }
+      }
+      if (command.type === "execute") return { type: "ok", response: { type: "execute", result: result(command.stmt) } }
+      if (command.type === "batch") {
+        const first = command.batch.steps[0]?.stmt
+        if (refuseWriterOnce && first?.sql === "BEGIN IMMEDIATE") {
+          refuseWriterOnce = false
+          result(first)
+          const stepErrors = command.batch.steps.map((_, i) => i === 0
+            ? { message: "Fixture writer busy", code: "SQLITE_BUSY" } : null)
+          return { type: "ok", response: { type: "batch", result: {
+            step_results: stepErrors.map(() => null), step_errors: stepErrors,
+          } } }
+        }
+        const stepResults = command.batch.steps.map(({ stmt }) => result(stmt))
+        return { type: "ok", response: { type: "batch", result: {
+          step_results: stepResults, step_errors: stepResults.map(() => null),
+        } } }
+      }
+      return { type: "ok", response: { type: "close" } }
     })
-    response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ results }))
+    const closed = incoming.requests.some(command => command.type === "close")
+    response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
+      baton: closed ? undefined : "startup-read", results,
+    }))
   })
   server.listen(0, "127.0.0.1")
   await once(server, "listening")
@@ -166,33 +240,57 @@ test("starts with remote transports unloaded and sends remote requests through l
       assert.ok(loaded().every(path => !path.endsWith("sqlite3.js") && !path.endsWith(".node")))
     `], { timeout: 10_000 })
     expect(requests).toContainEqual(expect.objectContaining({
-      type: "execute",
       stmt: expect.objectContaining({ sql: "SELECT ? AS answer", args: [{ type: "integer", value: "42" }] }),
     }))
     expect(requests).toContainEqual(expect.objectContaining({
-      type: "execute",
-      stmt: expect.objectContaining({ sql: expect.stringMatching(/^SELECT value AS value FROM app_settings/) }),
+      stmt: expect.objectContaining({ sql: expect.stringMatching(markerSql) }),
     }))
 
     const script = fileURLToPath(new URL("../../apps/web/scripts/migrate.mjs", import.meta.url))
     const migrate = (...args: string[]) => execFileAsync(process.execPath, [script, ...args], {
-      env: { PATH: process.env.PATH, MEITHEAL_DB_URL: url }, timeout: 10_000,
+      env: { PATH: process.env.PATH, MEITHEAL_DB_URL: url, MEITHEAL_BOARD_GRANT_PATH: join(tmpdir(), `meitheal-remote-${address.port}-board-grants.json`) }, timeout: 10_000,
     })
+    const takeStatements = () => requests.splice(0).map(({ baton, stmt }) => [baton, stmt.sql])
     const markerReads = [
-      expect.stringMatching(/^SELECT 1 FROM sqlite_schema .*name = 'app_settings' COLLATE NOCASE$/),
-      expect.stringMatching(/^SELECT value AS value FROM app_settings/),
+      [undefined, expect.stringMatching(/^BEGIN.*READONLY$/)],
+      [undefined, expect.stringMatching(catalogSql)],
+      ["startup-read", expect.stringMatching(markerSql)],
     ]
-    const takeStatements = () => requests.splice(0).filter(command => command.type !== "close").map(command => command.stmt?.sql)
     requests.length = 0
     for (const args of [[], ["--check"]]) {
       await expect(migrate(...args)).rejects.toMatchObject({ code: 1, stderr: expect.stringMatching(/requires a newer App/) })
       expect(takeStatements()).toEqual(markerReads)
     }
-    version = DATABASE_SCHEMA_VERSION
+    version = TASK_BOARD_SCHEMA_VERSION - 1
     await expect(migrate("--check")).rejects.toMatchObject({ code: 1, stderr: expect.stringMatching(/Pending migrations/) })
     expect(takeStatements()).toEqual([
       ...markerReads,
-      expect.stringMatching(/^SELECT 1 FROM sqlite_schema .*name = '__meitheal_migrations' COLLATE NOCASE$/),
+      ["startup-read", expect.stringMatching(/pragma_table_xinfo/)],
+      ...markerReads,
+      ["startup-read", expect.stringMatching(/pragma_table_xinfo/)],
+      ["startup-read", expect.stringMatching(/^SELECT 1 FROM main\.sqlite_schema .*name = '__meitheal_migrations'/)],
+    ])
+
+    refuseWriterOnce = true
+    await execFileAsync(process.execPath, ["--input-type=module", "--eval", `
+      import assert from "node:assert/strict"
+      import { openDatabase, withStartupWriteTransaction } from ${JSON.stringify(modulePath)}
+      const client = openDatabase(${JSON.stringify(url)})
+      let calls = 0
+      try {
+        await withStartupWriteTransaction(client, async tx => {
+          calls++
+          await tx.execute("SELECT 2")
+        })
+        assert.equal(calls, 1)
+      } finally { client.close() }
+    `], { timeout: 10_000 })
+    expect(takeStatements()).toEqual([
+      [undefined, "BEGIN IMMEDIATE"],
+      [undefined, "BEGIN IMMEDIATE"],
+      [undefined, "SELECT 1"],
+      ["startup-read", "SELECT 2"],
+      ["startup-read", "COMMIT"],
     ])
   } finally {
     await new Promise<void>(resolve => server.close(() => resolve()))
@@ -383,6 +481,483 @@ test("rejects with AbortError when signal is pre-aborted or aborts during SQLITE
   } finally {
     locker.close()
     primary.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("reuses one writer between transactions and never pools a writer that changed connection state", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-sqlite-writer-"))
+  const client = openDatabase(pathToFileURL(join(directory, "writer.db")).href)
+  try {
+    await client.executeMultiple("CREATE TABLE notes(id INTEGER PRIMARY KEY, body TEXT NOT NULL);")
+    const first = await client.transaction("write")
+    await first.execute("INSERT INTO notes(id, body) VALUES (7, 'kept')")
+    await first.commit()
+
+    // last_insert_rowid() belongs to a connection, so it shows the pooled writer.
+    const second = await client.transaction("write")
+    expect((await second.execute("SELECT last_insert_rowid() AS id")).rows[0]?.id).toBe(7)
+    await second.execute("INSERT INTO notes(id, body) VALUES (8, 'discarded')")
+    await second.rollback()
+
+    const third = await client.transaction("write")
+    expect((await third.execute("SELECT COUNT(*) AS count FROM notes")).rows[0]?.count).toBe(1)
+    await third.execute("CREATE TEMP TABLE scratch(value)")
+    await third.commit()
+
+    const fourth = await client.transaction("write")
+    await expect(fourth.execute("SELECT value FROM scratch")).rejects.toThrow(/no such table/)
+    await fourth.executeMultiple("CREATE TEMP TABLE other(value);")
+    fourth.close()
+
+    const fifth = await client.transaction("write")
+    await expect(fifth.execute("SELECT value FROM other")).rejects.toThrow(/no such table/)
+    // SQLite ignores leading comments; so does the reuse decision.
+    await fifth.execute("/* setup */ -- note\n CREATE TEMP TABLE commented(value)")
+    await fifth.commit()
+
+    const sixth = await client.transaction("write")
+    await expect(sixth.execute("SELECT value FROM commented")).rejects.toThrow(/no such table/)
+    sixth.close()
+  } finally {
+    client.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("snapshot generations change exactly when a local reader can observe new data", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-sqlite-generation-"))
+  const url = pathToFileURL(join(directory, "generation.db")).href
+  const client = openDatabase(url)
+  const other = openDatabase(url)
+  try {
+    // The App enables WAL at startup, which lets a pinned reader coexist with a writer.
+    await client.execute("PRAGMA journal_mode=WAL")
+    await client.executeMultiple("CREATE TABLE notes(id INTEGER PRIMARY KEY, body TEXT NOT NULL);")
+    const live = localSnapshotGeneration(client)
+    expect(live).toMatch(/^live:/)
+    expect(localSnapshotGeneration(client)).toBe(live)
+    await client.execute("SELECT COUNT(*) FROM notes")
+    expect(localSnapshotGeneration(client)).toBe(live)
+
+    await other.execute("INSERT INTO notes(id, body) VALUES (1, 'other connection')")
+    const afterOther = localSnapshotGeneration(client)
+    expect(afterOther).not.toBe(live)
+    await client.execute("INSERT INTO notes(id, body) VALUES (2, 'own write')")
+    const afterOwn = localSnapshotGeneration(client)
+    expect(afterOwn).not.toBe(afterOther)
+    await client.execute("CREATE INDEX notes_body ON notes(body)")
+    expect(localSnapshotGeneration(client)).not.toBe(afterOwn)
+
+    const reader = await client.transaction("read")
+    await reader.execute("SELECT COUNT(*) FROM notes")
+    const pinned = localSnapshotGeneration(reader)
+    await other.execute("INSERT INTO notes(id, body) VALUES (3, 'after snapshot')")
+    expect((await reader.execute("SELECT COUNT(*) AS count FROM notes")).rows[0]?.count).toBe(2)
+    expect(localSnapshotGeneration(reader)).toBe(pinned)
+    // Restarting the snapshot must invalidate anything derived from the old one.
+    await reader.executeMultiple("COMMIT; BEGIN;")
+    expect(localSnapshotGeneration(reader)).not.toBe(pinned)
+    expect((await reader.execute("SELECT COUNT(*) AS count FROM notes")).rows[0]?.count).toBe(3)
+    const restarted = localSnapshotGeneration(reader)
+    await reader.execute("COMMIT")
+    expect(localSnapshotGeneration(reader)).not.toBe(restarted)
+    reader.close()
+    expect(localSnapshotGeneration(reader)).toBeUndefined()
+
+    const writer = await client.transaction("write")
+    const before = localSnapshotGeneration(writer)
+    await writer.execute("SELECT COUNT(*) FROM notes")
+    expect(localSnapshotGeneration(writer)).toBe(before)
+    await writer.execute("UPDATE notes SET body = 'changed' WHERE id = 1")
+    expect(localSnapshotGeneration(writer)).not.toBe(before)
+    await writer.commit()
+
+    // A reconnect starts new counters, so it must never repeat an earlier token.
+    const beforeReconnect = localSnapshotGeneration(client)
+    client.reconnect()
+    expect(localSnapshotGeneration(client)).not.toBe(beforeReconnect)
+
+    // Decorated clients and in-memory databases never reuse derived results.
+    expect(localSnapshotGeneration({ execute: client.execute.bind(client) })).toBeUndefined()
+    const memory = openDatabase("file::memory:?cache=private")
+    try { expect(localSnapshotGeneration(memory)).toBeUndefined() } finally { memory.close() }
+  } finally {
+    other.close()
+    client.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("rows with unique columns keep libSQL access, serialization and read-only positions", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-sqlite-rows-"))
+  const client = openDatabase(pathToFileURL(join(directory, "rows.db")).href)
+  try {
+    await client.executeMultiple("CREATE TABLE notes(id INTEGER PRIMARY KEY, body TEXT NOT NULL, data BLOB); INSERT INTO notes VALUES (1, 'alpha', X'00FF'), (2, 'beta', NULL);")
+    const plain = await client.execute("SELECT id, body, data FROM notes ORDER BY id")
+    const reader = await client.transaction("read")
+    const tagged = await reader.execute(tagTaskProjectionRead({ sql: "SELECT id, body, data FROM notes ORDER BY id", args: [] }, "task-list"))
+    reader.close()
+    for (const result of [plain, tagged]) {
+      const [first, second] = result.rows
+      expect(first?.length).toBe(3)
+      expect(first?.[0]).toBe(1)
+      expect(first?.[1]).toBe("alpha")
+      expect(first?.data).toEqual(Uint8Array.of(0, 255).buffer)
+      expect(first?.[2]).toEqual(Uint8Array.of(0, 255).buffer)
+      expect(second?.[2]).toBeNull()
+      expect(Object.keys(first!)).toEqual(["id", "body", "data"])
+      expect({ ...first }).toEqual({ id: 1, body: "alpha", data: Uint8Array.of(0, 255).buffer })
+      expect(Array.from(first as unknown as ArrayLike<unknown>)).toEqual([1, "alpha", Uint8Array.of(0, 255).buffer])
+      expect(result.toJSON().rows).toEqual([[1, "alpha", "AP8="], [2, "beta", null]])
+      expect(() => { (first as unknown as Record<number, unknown>)[0] = 9 }).toThrow(TypeError)
+    }
+  } finally {
+    client.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("a reused SELECT returns columns another connection added and writes run once", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-sqlite-schema-"))
+  const url = pathToFileURL(join(directory, "schema.db")).href
+  const client = openDatabase(url)
+  const other = openDatabase(url)
+  try {
+    await client.execute("PRAGMA journal_mode=WAL")
+    await client.executeMultiple("CREATE TABLE drafts(id TEXT PRIMARY KEY); INSERT INTO drafts VALUES ('draft');")
+    expect((await client.execute("SELECT rowid, * FROM drafts")).rows).toEqual([{ rowid: 1, id: "draft" }])
+    await other.executeMultiple("ALTER TABLE drafts ADD COLUMN board_id TEXT NOT NULL DEFAULT 'household';")
+    const after = await client.execute("SELECT rowid, * FROM drafts")
+    expect(after.columns).toEqual(["rowid", "id", "board_id"])
+    expect(after.rows).toEqual([{ rowid: 1, id: "draft", board_id: "household" }])
+    expect(after.toJSON().rows).toEqual([[1, "draft", "household"]])
+
+    // Writes are never cached, so a repeated command still runs exactly once.
+    const insert = "INSERT INTO drafts(id) VALUES (?) RETURNING id, board_id"
+    expect((await client.execute(insert, ["second"])).rows).toEqual([{ id: "second", board_id: "household" }])
+    expect((await client.execute(insert, ["third"])).rows).toEqual([{ id: "third", board_id: "household" }])
+    expect((await client.execute("SELECT COUNT(*) AS count FROM drafts")).rows[0]?.count).toBe(3)
+  } finally {
+    other.close()
+    client.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("SELECT classification ignores special identifiers, refreshes renamed wildcard columns, and keeps TEMP tables on main", async () => {
+  expect(isSideEffectFreeQuery("SELECT [a;b], `c;d`, [DELETE] FROM drafts")).toBe(true)
+  expect(isSideEffectFreeQuery("WITH d AS (DELETE FROM drafts RETURNING *) SELECT * FROM d")).toBe(false)
+
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-sqlite-temp-rename-"))
+  const url = pathToFileURL(join(directory, "schema.db")).href
+  const client = openDatabase(url)
+  const other = openDatabase(url)
+  try {
+    await client.execute("PRAGMA journal_mode=WAL")
+    await client.executeMultiple("CREATE TABLE drafts(id TEXT PRIMARY KEY, board_id TEXT NOT NULL DEFAULT 'household'); INSERT INTO drafts(id) VALUES ('draft');")
+    const before = await client.execute("SELECT rowid, * FROM drafts")
+    expect(before.columns).toEqual(["rowid", "id", "board_id"])
+
+    await other.execute("ALTER TABLE drafts RENAME COLUMN board_id TO workspace_id")
+    const afterRename = await client.execute("SELECT rowid, * FROM drafts")
+    expect(afterRename.columns).toEqual(["rowid", "id", "workspace_id"])
+    expect(afterRename.rows).toEqual([{ rowid: 1, id: "draft", workspace_id: "household" }])
+
+    await client.execute("CREATE TEMP TABLE scratch(v TEXT)")
+    await client.batch(["INSERT INTO scratch VALUES ('batch-ok')"], "write")
+    const txValues = await runWriteTransaction(client, function* () {
+      const [inserted, read] = yield [
+        { sql: "INSERT INTO scratch VALUES (?)", args: ["tx-ok"] },
+        "SELECT v FROM scratch ORDER BY rowid",
+      ]
+      expect(inserted.rowsAffected).toBe(1)
+      return read.rows.map(row => row.v)
+    })
+    expect(txValues).toEqual(["batch-ok", "tx-ok"])
+
+    const [readBatch] = await client.batch(["SELECT v FROM scratch ORDER BY rowid"], "write")
+    expect(readBatch?.rows.map(row => row.v)).toEqual(["batch-ok", "tx-ok"])
+
+    client.reconnect()
+    await client.execute("PRAGMA journal_mode=WAL")
+    await client.executeMultiple("CREATE TEMP TABLE multi_scratch(v TEXT); INSERT INTO multi_scratch VALUES ('multi-ok');")
+    const [multiBatch] = await client.batch(["SELECT v FROM multi_scratch"], "write")
+    expect(multiBatch?.rows.map(row => row.v)).toEqual(["multi-ok"])
+
+    // Standalone task writes keep SQLite connection-local last_insert_rowid(), changes(), and PRAGMAs on main.
+    client.reconnect()
+    await client.execute("PRAGMA journal_mode=WAL")
+    await client.execute("CREATE TABLE tasks(id TEXT PRIMARY KEY, title TEXT)")
+    await client.execute("INSERT INTO tasks(id, title) VALUES ('t-1', 'Alpha')")
+    const connState = await client.execute("SELECT last_insert_rowid() AS row_id, changes() AS changed")
+    expect(connState.rows).toEqual([{ row_id: 1, changed: 1 }])
+    await client.execute("PRAGMA case_sensitive_like = ON")
+    expect((await client.execute("SELECT id FROM tasks WHERE title LIKE 'alpha'")).rows).toEqual([])
+    const [batchLikeLower, batchLikeExact] = await client.batch([
+      "SELECT id FROM tasks WHERE title LIKE 'alpha'",
+      "SELECT id FROM tasks WHERE title LIKE 'Alpha'",
+    ], "write")
+    expect(batchLikeLower?.rows).toEqual([])
+    expect(batchLikeExact?.rows).toEqual([{ id: "t-1" }])
+  } finally {
+    other.close()
+    client.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("writable file connections keep synchronous=FULL, set wal_autocheckpoint=4000, and checkpoint PASSIVE when idle", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-sqlite-wal-checkpoint-"))
+  const dbPath = join(directory, "wal-idle.db")
+  const client = openDatabase(pathToFileURL(dbPath).href)
+  try {
+    await client.execute("PRAGMA journal_mode=WAL")
+    expect((await client.execute("PRAGMA synchronous")).rows[0]?.[0]).toBe(2)
+    expect((await client.execute("PRAGMA wal_autocheckpoint")).rows[0]?.[0]).toBe(4000)
+    await client.execute("CREATE TABLE wal_probe(id INTEGER PRIMARY KEY, body TEXT NOT NULL)")
+
+    for (let i = 1; i <= 7; i += 1) {
+      await client.batch([{ sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "x".repeat(512)] }], "write")
+    }
+
+    await expect.poll(async () => {
+      const mainCopy = join(directory, "main-after-idle.db")
+      await copyFile(dbPath, mainCopy)
+      const probe = new DatabaseSync(mainCopy, { readOnly: true })
+      try {
+        const table = probe.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='wal_probe'").get()
+        if (!table) return 0
+        return Number((probe.prepare("SELECT COUNT(*) AS count FROM wal_probe").get() as { count?: unknown })?.count ?? 0)
+      } finally {
+        probe.close()
+      }
+    }, { intervals: [40, 80, 120], timeout: 2_000 }).toBe(7)
+
+    await client.execute("PRAGMA wal_autocheckpoint=0")
+    expect((await client.execute("PRAGMA wal_autocheckpoint")).rows[0]?.[0]).toBe(0)
+    for (let i = 8; i <= 15; i += 1) {
+      await client.batch([{ sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "y".repeat(512)] }], "write")
+    }
+    await sleepMs(180)
+
+    const disabledCopy = join(directory, "main-after-disable.db")
+    await copyFile(dbPath, disabledCopy)
+    const disabledProbe = new DatabaseSync(disabledCopy, { readOnly: true })
+    try {
+      expect(Number((disabledProbe.prepare("SELECT COUNT(*) AS count FROM wal_probe").get() as { count?: unknown })?.count ?? 0)).toBe(7)
+    } finally {
+      disabledProbe.close()
+    }
+    expect(Number((await client.execute("SELECT COUNT(*) AS count FROM wal_probe")).rows[0]?.count ?? 0)).toBe(15)
+
+    // Unexecuted trailing PRAGMA in a failed batch must keep autocheckpoint enabled,
+    // and successful default deferred write batches + deferred transactions must trigger idle checkpoints.
+    await client.execute("PRAGMA wal_autocheckpoint=4000")
+    await expect(client.batch([
+      "INSERT INTO missing_table VALUES (1)",
+      "PRAGMA wal_autocheckpoint=0",
+    ], "write")).rejects.toThrow(/missing_table/)
+    expect((await client.execute("PRAGMA wal_autocheckpoint")).rows[0]?.[0]).toBe(4000)
+
+    for (let i = 1; i <= 6; i += 1) {
+      const roTx = await client.transaction("deferred")
+      await roTx.execute("SELECT COUNT(*) FROM wal_probe")
+      await roTx.commit()
+    }
+    await sleepMs(140)
+    const readDeferredCopy = join(directory, "main-after-deferred-reads.db")
+    await copyFile(dbPath, readDeferredCopy)
+    const readDeferredProbe = new DatabaseSync(readDeferredCopy, { readOnly: true })
+    try {
+      expect(Number((readDeferredProbe.prepare("SELECT COUNT(*) AS count FROM wal_probe").get() as { count?: unknown })?.count ?? 0)).toBe(7)
+    } finally {
+      readDeferredProbe.close()
+    }
+
+    for (let i = 16; i <= 21; i += 1) {
+      await client.batch([{ sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "d".repeat(512)] }])
+    }
+    await expect.poll(async () => {
+      const deferredBatchCopy = join(directory, "main-after-deferred-batch.db")
+      await copyFile(dbPath, deferredBatchCopy)
+      const probe = new DatabaseSync(deferredBatchCopy, { readOnly: true })
+      try {
+        return Number((probe.prepare("SELECT COUNT(*) AS count FROM wal_probe").get() as { count?: unknown })?.count ?? 0)
+      } finally {
+        probe.close()
+      }
+    }, { intervals: [40, 80, 120], timeout: 2_000 }).toBe(21)
+
+    for (let i = 22; i <= 27; i += 1) {
+      const tx = await client.transaction("deferred")
+      await tx.execute({ sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "t".repeat(512)] })
+      await tx.commit()
+    }
+    await expect.poll(async () => {
+      const deferredTxCopy = join(directory, "main-after-deferred-tx.db")
+      await copyFile(dbPath, deferredTxCopy)
+      const probe = new DatabaseSync(deferredTxCopy, { readOnly: true })
+      try {
+        return Number((probe.prepare("SELECT COUNT(*) AS count FROM wal_probe").get() as { count?: unknown })?.count ?? 0)
+      } finally {
+        probe.close()
+      }
+    }, { intervals: [40, 80, 120], timeout: 2_000 }).toBe(27)
+
+    // Partial failure in executeMultiple must still reconcile PRAGMA wal_autocheckpoint=0 executed before the error.
+    await expect(client.executeMultiple("PRAGMA wal_autocheckpoint=0; SELECT * FROM missing_table;")).rejects.toThrow(/missing_table/)
+    expect((await client.execute("PRAGMA wal_autocheckpoint")).rows[0]?.[0]).toBe(0)
+    for (let i = 28; i <= 35; i += 1) {
+      await client.batch([{ sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "z".repeat(512)] }], "write")
+    }
+    await sleepMs(180)
+    const partialDisabledCopy = join(directory, "main-after-partial-exec.db")
+    await copyFile(dbPath, partialDisabledCopy)
+    const partialDisabledProbe = new DatabaseSync(partialDisabledCopy, { readOnly: true })
+    try {
+      expect(Number((partialDisabledProbe.prepare("SELECT COUNT(*) AS count FROM wal_probe").get() as { count?: unknown })?.count ?? 0)).toBe(27)
+    } finally {
+      partialDisabledProbe.close()
+    }
+
+    const readCopyCount = async (name: string) => {
+      const copyPath = join(directory, name)
+      await copyFile(dbPath, copyPath)
+      const probe = new DatabaseSync(copyPath, { readOnly: true })
+      try {
+        return Number((probe.prepare("SELECT COUNT(*) AS count FROM wal_probe").get() as { count?: unknown })?.count ?? 0)
+      } finally {
+        probe.close()
+      }
+    }
+
+    // Re-enable idle checkpoints, verify recovered deferred tx.batch and tx.executeMultiple partial writes count,
+    // and ensure rolled-back transactions remain excluded.
+    await client.execute("PRAGMA wal_autocheckpoint=4000")
+    const rolledBackBatchTx = await client.transaction("deferred")
+    await expect(rolledBackBatchTx.batch([
+      { sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [999, "r".repeat(512)] },
+      "SELECT * FROM missing_table",
+    ])).rejects.toThrow(/missing_table/)
+    await rolledBackBatchTx.rollback()
+
+    for (let i = 36; i <= 41; i += 1) {
+      const tx = await client.transaction("deferred")
+      await expect(tx.batch([
+        { sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "b".repeat(512)] },
+        "SELECT * FROM missing_table",
+      ])).rejects.toThrow(/missing_table/)
+      await tx.commit()
+    }
+    await expect.poll(() => readCopyCount("main-after-partial-batch-tx.db"), {
+      intervals: [40, 80, 120],
+      timeout: 2_000,
+    }).toBe(41)
+
+    for (let i = 42; i <= 47; i += 1) {
+      const tx = await client.transaction("deferred")
+      await expect(tx.executeMultiple(
+        `INSERT INTO wal_probe VALUES (${i}, '${"m".repeat(512)}'); SELECT * FROM missing_table;`,
+      )).rejects.toThrow(/missing_table/)
+      await tx.commit()
+    }
+    await expect.poll(() => readCopyCount("main-after-partial-exec-tx.db"), {
+      intervals: [40, 80, 120],
+      timeout: 2_000,
+    }).toBe(47)
+
+    // Rolled-back client.executeMultiple scripts must not increment checkpoint accounting or commit rows.
+    for (let i = 0; i < 6; i += 1) {
+      await expect(client.executeMultiple(
+        "BEGIN; INSERT INTO wal_probe VALUES (997, 'open'); SELECT * FROM missing_table;",
+      )).rejects.toThrow(/missing_table/)
+      await expect(client.executeMultiple(
+        "BEGIN; INSERT INTO wal_probe VALUES (998, 'rb'); ROLLBACK; SELECT * FROM missing_table;",
+      )).rejects.toThrow(/missing_table/)
+    }
+    for (let i = 48; i <= 52; i += 1) {
+      await client.batch([{ sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "w".repeat(512)] }], "write")
+    }
+    await sleepMs(160)
+    expect(await readCopyCount("main-after-rolledback-execmulti.db")).toBe(47)
+
+    // Autocommitted prefix inside a failing client.executeMultiple must count toward checkpointing.
+    await expect(client.executeMultiple(
+      `INSERT INTO wal_probe VALUES (53, '${"a".repeat(512)}'); SELECT * FROM missing_table;`,
+    )).rejects.toThrow(/missing_table/)
+    await expect.poll(() => readCopyCount("main-after-partial-autocommit-one.db"), {
+      intervals: [40, 80, 120],
+      timeout: 2_000,
+    }).toBe(53)
+
+    for (let i = 54; i <= 59; i += 1) {
+      await expect(client.executeMultiple(
+        `INSERT INTO wal_probe VALUES (${i}, '${"a".repeat(512)}'); SELECT * FROM missing_table;`,
+      )).rejects.toThrow(/missing_table/)
+    }
+    await expect.poll(() => readCopyCount("main-after-partial-autocommit-six.db"), {
+      intervals: [40, 80, 120],
+      timeout: 2_000,
+    }).toBe(59)
+
+    // Create a conflict-rollback table (commit 1) + 5 batch writes (commits 2..6) to flush and reset commit count.
+    await client.execute("CREATE TABLE wal_conflict_probe (id INTEGER UNIQUE ON CONFLICT ROLLBACK, body TEXT)")
+    for (let i = 60; i <= 64; i += 1) {
+      await client.batch([{ sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "c".repeat(512)] }], "write")
+    }
+    await expect.poll(() => readCopyCount("main-after-conflict-table-setup.db"), {
+      intervals: [40, 80, 120],
+      timeout: 2_000,
+    }).toBe(64)
+
+    // Implicit ON CONFLICT ROLLBACK without a ROLLBACK token must not count toward checkpointing.
+    for (let i = 0; i < 6; i += 1) {
+      await expect(client.executeMultiple(
+        "BEGIN; INSERT INTO wal_conflict_probe VALUES (1, 'x'); INSERT INTO wal_conflict_probe VALUES (1, 'y');",
+      )).rejects.toThrow(/UNIQUE/)
+    }
+    for (let i = 65; i <= 69; i += 1) {
+      await client.batch([{ sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "k".repeat(512)] }], "write")
+    }
+    for (let i = 0; i < 6; i += 1) {
+      await client.batch(["WITH c AS (SELECT replace('a', 'a', 'b') AS v) SELECT v FROM c"])
+    }
+    await sleepMs(160)
+    expect(await readCopyCount("main-after-on-conflict-rollback.db")).toBe(64)
+
+    // Autocommitted prefix before a newly opened failing transaction must count without committing the rolled-back tail.
+    await expect(client.executeMultiple(
+      `INSERT INTO wal_probe VALUES (70, '${"p".repeat(512)}'); BEGIN; INSERT INTO wal_probe VALUES (996, 'uncommitted'); SELECT * FROM missing_table;`,
+    )).rejects.toThrow(/missing_table/)
+    await expect.poll(() => readCopyCount("main-after-prefix-and-open-tx.db"), {
+      intervals: [40, 80, 120],
+      timeout: 2_000,
+    }).toBe(70)
+    expect(Number((await client.execute("SELECT COUNT(*) FROM wal_probe")).rows[0]?.[0] ?? 0)).toBe(70)
+
+    for (let i = 71; i <= 76; i += 1) {
+      await expect(client.executeMultiple(
+        `INSERT INTO wal_probe VALUES (${i}, '${"p".repeat(512)}'); BEGIN; INSERT INTO wal_probe VALUES (996, 'uncommitted'); SELECT * FROM missing_table;`,
+      )).rejects.toThrow(/missing_table/)
+    }
+    await expect.poll(() => readCopyCount("main-after-six-prefix-and-open-tx.db"), {
+      intervals: [40, 80, 120],
+      timeout: 2_000,
+    }).toBe(76)
+    expect(Number((await client.execute("SELECT COUNT(*) FROM wal_probe")).rows[0]?.[0] ?? 0)).toBe(76)
+
+    // Quoted schema qualifiers and PRAGMA names must also reconcile PRAGMA wal_autocheckpoint=0.
+    await expect(client.executeMultiple('PRAGMA /*c*/ "main"."wal_autocheckpoint" = 0; SELECT * FROM missing_table;'))
+      .rejects.toThrow(/missing_table/)
+    expect((await client.execute('PRAGMA "wal_autocheckpoint"')).rows[0]?.[0]).toBe(0)
+    for (let i = 77; i <= 84; i += 1) {
+      await client.batch([{ sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "q".repeat(512)] }], "write")
+    }
+    await sleepMs(180)
+    expect(await readCopyCount("main-after-quoted-pragma.db")).toBe(76)
+  } finally {
+    client.close()
     await rm(directory, { recursive: true, force: true })
   }
 })

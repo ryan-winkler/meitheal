@@ -1,25 +1,27 @@
-import { formatDistanceToNow } from "date-fns";
-import { format as tzFormat, fromZonedTime, toZonedTime } from "date-fns-tz";
-import { createClientLogger } from "@lib/client-logger";
-import { parseCalendarDay } from "./calendar-day";
-
-const log = createClientLogger("utils", "date");
+import { fromZonedTime } from "date-fns-tz"
+import { effectiveTaskScheduledDate } from "@meitheal/domain-tasks"
+import { parseCalendarDay } from "./calendar-day"
 
 export type DateFormat = "relative" | "absolute-iso" | "absolute-eu" | "absolute-us";
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const FLOATING_DATETIME = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?$/;
 const DAY_MS = 86_400_000;
-const DEFAULT_TIMEZONE = "Europe/Dublin";
+export const DEFAULT_TIMEZONE = "Europe/Dublin";
+
+let lastValidatedTimezone: { timeZone: string; valid: boolean } | undefined
 
 export function isValidTimezone(timezone: string): boolean {
   if (!timezone) return false
+  if (lastValidatedTimezone?.timeZone === timezone) return lastValidatedTimezone.valid
+  let valid = true
   try {
     new Intl.DateTimeFormat("en", { timeZone: timezone })
-    return true
   } catch {
-    return false
+    valid = false
   }
+  lastValidatedTimezone = { timeZone: timezone, valid }
+  return valid
 }
 
 export function resolveTimezone(timezone?: string): string {
@@ -27,10 +29,33 @@ export function resolveTimezone(timezone?: string): string {
   return isValidTimezone(candidate) ? candidate : DEFAULT_TIMEZONE
 }
 
+let calendarFormatter: { timeZone: string; format: Intl.DateTimeFormat } | undefined
+let clockFormatter: { timeZone: string; format: Intl.DateTimeFormat } | undefined
+let offsetFormatter: { timeZone: string; format: Intl.DateTimeFormat } | undefined
+let dayHeadingFormatter: { locale: string; timeZone: string; format: Intl.DateTimeFormat } | undefined
+
+export function formatDayHeading(date: Date, locale: string, timeZone: string): string {
+  if (dayHeadingFormatter?.locale !== locale || dayHeadingFormatter.timeZone !== timeZone) {
+    dayHeadingFormatter = { locale, timeZone, format: new Intl.DateTimeFormat(locale, {
+      weekday: "long", day: "numeric", month: "long", timeZone,
+    }) }
+  }
+  return dayHeadingFormatter.format.format(date)
+}
+
 /** Today's calendar date in the given timezone, as YYYY-MM-DD. */
 export function calendarToday(timezone = DEFAULT_TIMEZONE, now = new Date()): string {
-  const tz = resolveTimezone(timezone);
-  return tzFormat(toZonedTime(now, tz), "yyyy-MM-dd", { timeZone: tz });
+  const timeZone = resolveTimezone(timezone)
+  if (calendarFormatter?.timeZone !== timeZone) {
+    calendarFormatter = { timeZone, format: new Intl.DateTimeFormat("en", {
+      timeZone, calendar: "iso8601", numberingSystem: "latn", year: "numeric", month: "2-digit", day: "2-digit",
+    }) }
+  }
+  const parts = calendarFormatter.format.formatToParts(now)
+  const year = parts.find(part => part.type === "year")!.value.padStart(4, "0")
+  const month = parts.find(part => part.type === "month")!.value
+  const day = parts.find(part => part.type === "day")!.value
+  return `${year}-${month}-${day}`
 }
 
 /** Shift a YYYY-MM-DD calendar day by a whole number of days. */
@@ -50,8 +75,6 @@ export function calendarDayFromInput(
   timezone = DEFAULT_TIMEZONE,
 ): string | null {
   if (input === null || input === undefined || input === "") return null;
-  const tz = resolveTimezone(timezone);
-
   if (typeof input === "string") {
     const trimmed = input.trim();
     if (!trimmed) return null;
@@ -72,12 +95,12 @@ export function calendarDayFromInput(
 
     const parsed = new Date(/^\d{12,}$/.test(trimmed) ? Number(trimmed) : trimmed)
     if (Number.isNaN(parsed.getTime())) return null;
-    return calendarToday(tz, parsed);
+    return calendarToday(timezone, parsed);
   }
 
   const parsed = input instanceof Date ? input : new Date(input);
   if (Number.isNaN(parsed.getTime())) return null;
-  return calendarToday(tz, parsed);
+  return calendarToday(timezone, parsed);
 }
 
 /** Extract HH:mm wall-clock time in the target timezone for timed inputs, or null for date-only values. */
@@ -86,8 +109,6 @@ export function formatTimeInZone(
   timezone = DEFAULT_TIMEZONE,
 ): string | null {
   if (input === null || input === undefined || input === "") return null;
-  const tz = resolveTimezone(timezone);
-
   if (typeof input === "string") {
     const trimmed = input.trim();
     if (!trimmed || DATE_ONLY.test(trimmed)) return null;
@@ -95,14 +116,126 @@ export function formatTimeInZone(
     if (floatingMatch) {
       return `${floatingMatch[2]}:${floatingMatch[3]}`;
     }
-    const parsed = new Date(trimmed);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return tzFormat(toZonedTime(parsed, tz), "HH:mm", { timeZone: tz });
   }
 
-  const parsed = input instanceof Date ? input : new Date(input);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return tzFormat(toZonedTime(parsed, tz), "HH:mm", { timeZone: tz });
+  const parsed = input instanceof Date ? input : new Date(typeof input === "string" ? input.trim() : input)
+  if (Number.isNaN(parsed.getTime())) return null
+  const timeZone = resolveTimezone(timezone)
+  if (clockFormatter?.timeZone !== timeZone) {
+    clockFormatter = { timeZone, format: new Intl.DateTimeFormat("en", {
+      timeZone, numberingSystem: "latn", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }) }
+  }
+  return clockFormatter.format.format(parsed)
+}
+
+/** UTC offset of a timezone at an absolute instant. */
+export function timezoneOffsetAt(instant: number, timeZone: string): number {
+  if (offsetFormatter?.timeZone !== timeZone) {
+    offsetFormatter = { timeZone, format: new Intl.DateTimeFormat("en", { timeZone, timeZoneName: "longOffset" }) }
+  }
+  const name = offsetFormatter.format.formatToParts(instant).find(part => part.type === "timeZoneName")?.value
+  if (name === "GMT") return 0
+  const match = name?.match(/^GMT([+-])(\d{2}):(\d{2})(?::(\d{2}))?$/u)
+  if (!match) throw new Error("Could not determine household UTC offset")
+  const seconds = Number(match[2]) * 3600 + Number(match[3]) * 60 + Number(match[4] ?? 0)
+  return (match[1] === "-" ? -1 : 1) * seconds * 1000
+}
+
+export function householdDayRanges(day: string, timezone: string): [number, number][] {
+  const localStart = Date.parse(`${day}T00:00:00Z`)
+  const localEnd = localStart + DAY_MS
+  const offsetAt = (instant: number) => timezoneOffsetAt(instant, timezone)
+
+  // All IANA offsets are within 24 hours of UTC and there is at most one
+  // offset transition in this three-day window. With a constant offset the
+  // local date translates directly to a UTC interval.
+  const windowStart = localStart - DAY_MS
+  const windowEnd = localEnd + DAY_MS
+  const firstOffset = offsetAt(windowStart)
+  const lastOffset = offsetAt(windowEnd - 1)
+  if (firstOffset === lastOffset) return [[localStart - firstOffset, localEnd - firstOffset]]
+
+  let before = windowStart
+  let after = windowEnd - 1
+  while (after - before > 1) {
+    const middle = Math.floor((before + after) / 2)
+    if (offsetAt(middle) === firstOffset) before = middle
+    else after = middle
+  }
+
+  // Intersect the requested local date with each constant-offset segment.
+  // A rollback just after midnight can leave a gap between the two ranges.
+  const ranges: [number, number][] = []
+  for (const [from, to, offset] of [[windowStart, after, firstOffset], [after, windowEnd, lastOffset]] as const) {
+    const start = Math.max(from, localStart - offset)
+    const end = Math.min(to, localEnd - offset)
+    if (start >= end) continue
+    const previous = ranges.at(-1)
+    if (previous?.[1] === start) previous[1] = end
+    else ranges.push([start, end])
+  }
+  return ranges
+}
+
+export function calendarEventInterval(start: string, end: string, timezone: string): [number, number] | null {
+  if (DATE_ONLY.test(start.trim())) return null
+  const first = calendarStartInstant(start.trim(), timezone)
+  const last = calendarStartInstant(end.trim(), timezone)
+  return last > first ? [first, last] : null
+}
+
+export function calendarIntervalOverlaps(interval: [number, number], ranges: [number, number][]): boolean {
+  return ranges.some(([first, last]) => interval[0] < last && interval[1] > first)
+}
+
+function calendarStartInstant(raw: string, timezone: string): number {
+  const wallTime = DATE_ONLY.test(raw) ? raw + "T00:00" : raw
+  if (!FLOATING_DATETIME.test(wallTime)) return parseDueTime(raw, timezone)
+  const wall = Date.parse(wallTime.replace(" ", "T") + "Z")
+  if (!Number.isFinite(wall)) return NaN
+  const offset = timezoneOffsetAt(wall - DAY_MS, timezone)
+  const earlier = wall - offset
+  // Prefer the first occurrence of a repeated time. Use the pre-transition offset in a gap.
+  if (timezoneOffsetAt(earlier, timezone) === offset) return earlier
+  const newOffset = timezoneOffsetAt(wall + DAY_MS, timezone)
+  const later = wall - newOffset
+  return timezoneOffsetAt(later, timezone) === newOffset ? later : earlier
+}
+
+/** Order connected events by instant. Read floating starts in the household timezone. */
+export function compareCalendarStarts(left: string, right: string, timezone: string): number {
+  return calendarStartInstant(left.trim(), timezone) - calendarStartInstant(right.trim(), timezone) ||
+    Number(DATE_ONLY.test(right.trim())) - Number(DATE_ONLY.test(left.trim())) ||
+    left.localeCompare(right)
+}
+
+/** Match timed occurrences by instant while keeping all-day starts distinct. */
+export function calendarOccurrenceStartKey(start: string, timezone: string): string {
+  const raw = start.trim()
+  if (DATE_ONLY.test(raw)) return raw
+  const instant = calendarStartInstant(raw, timezone)
+  return Number.isFinite(instant) ? String(instant) : raw
+}
+
+export function formatCalendarEventTime(start: string, timezone: string): string | null {
+  const raw = start.trim()
+  return DATE_ONLY.test(raw) ? null : formatTimeInZone(calendarStartInstant(raw, timezone), timezone)
+}
+
+export function normalizeCalendarEventSummary(summary: string): string {
+  return summary.trim().toLowerCase().replace(/\s+/g, " ")
+}
+
+/** Project a connected calendar timestamp onto the household day it covers. */
+export function calendarEventDay(value: string, timezone: string, boundary: "start" | "exclusive-end" = "start"): string | null {
+  const raw = value.trim()
+  const exclusive = boundary === "exclusive-end"
+  if (DATE_ONLY.test(raw)) {
+    const day = calendarDayFromInput(raw, timezone)
+    return day && exclusive ? shiftCalendarDay(day, -1) : day
+  }
+  return calendarDayFromInput(calendarStartInstant(raw, timezone) - Number(exclusive), timezone)
 }
 
 /** Whole calendar days from today to a date-only or timed ISO due date in the given timezone, or null if invalid. */
@@ -136,112 +269,63 @@ export function formatRelativeDue(
   return `Due in ${days} days`;
 }
 
-/**
- * A due date without a time is a calendar day, not an instant at UTC midnight.
- * Format it as that day so it never shifts by a day or reads "22 hours ago".
- */
-function formatDueDay(day: string, df: DateFormat, timezone: string, now = new Date()): string {
-  const [y, m, d] = day.split("-");
-  if (df === "absolute-eu") return `${d}/${m}/${y}`;
-  if (df === "absolute-us") return `${m}/${d}/${y}`;
-  if (df !== "relative") return day;
-  const days = calendarDaysFromToday(day, timezone, now) ?? 0;
-  // The Home Assistant image ships with English-only ICU data, as do the existing relative labels.
-  const relative = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
-  if (Math.abs(days) < 7) return relative.format(days, "day");
-  if (Math.abs(days) < 30) return relative.format(Math.round(days / 7), "week");
-  return relative.format(Math.round(days / 30), "month");
-}
-
-/**
- * Format a date string or Date object based on the user's regional settings.
- * Supports running in SSR (where settings are passed in) or CSR (reads from window.mSettings).
- */
-export function formatRegionalDate(
-  dateInput: string | Date | number | null | undefined,
-  options?: {
-    format?: DateFormat;
-    timezone?: string;
-    fallbackFormat?: string;
-    now?: Date;
-  }
-): string {
-  if (!dateInput) return "";
-
-  // Resolve settings (Favor explicit options, then client-side window global, then defaults)
-  let df: DateFormat = "relative";
-  let tz = DEFAULT_TIMEZONE;
-
-  if (typeof window !== "undefined" && window.mSettings) {
-    df = (window.mSettings.dateFormat as DateFormat) || "relative";
-    tz = window.mSettings.timezone || DEFAULT_TIMEZONE;
-  }
-
-  if (options?.format) df = options.format;
-  if (options?.timezone) tz = options.timezone;
-  tz = resolveTimezone(tz);
-  const referenceNow = options?.now;
-
-  try {
-    if (typeof dateInput === "string" && !options?.fallbackFormat) {
-      if (DATE_ONLY.test(dateInput) && parseCalendarDay(dateInput)) {
-        return formatDueDay(dateInput, df, tz, referenceNow);
-      }
-
-      const calendarDay = calendarDayFromInput(dateInput, tz);
-      if (calendarDay) {
-        if (df === "relative") {
-          const days = calendarDaysFromToday(dateInput, tz, referenceNow);
-          if (days === 0) {
-            const time = formatTimeInZone(dateInput, tz);
-            return time ? `Today · ${time}` : "today";
-          }
-          return formatDueDay(calendarDay, df, tz, referenceNow);
-        }
-        return formatDueDay(calendarDay, df, tz, referenceNow);
-      }
-    }
-
-    const d = new Date(dateInput);
-    if (isNaN(d.getTime())) return String(dateInput);
-
-    // If explicit fallback was requested, use date-fns-tz
-    if (options?.fallbackFormat) {
-      const zoned = toZonedTime(d, tz);
-      return tzFormat(zoned, options.fallbackFormat, { timeZone: tz });
-    }
-
-    if (df === "relative") {
-      // e.g "2 days ago"
-      return formatDistanceToNow(d, { addSuffix: true });
-    }
-
-    // Convert to zoned time
-    const zonedDate = toZonedTime(d, tz);
-
-    if (df === "absolute-iso") {
-      return tzFormat(zonedDate, "yyyy-MM-dd", { timeZone: tz });
-    }
-    if (df === "absolute-eu") {
-      return tzFormat(zonedDate, "dd/MM/yyyy", { timeZone: tz });
-    }
-    if (df === "absolute-us") {
-      return tzFormat(zonedDate, "MM/dd/yyyy", { timeZone: tz });
-    }
-
-    // Default fallback
-    return tzFormat(zonedDate, "yyyy-MM-dd", { timeZone: tz });
-  } catch (e) {
-    log.warn("Date formatting error", e);
-    return String(dateInput);
-  }
-}
-
 function parseDueTime(raw: string, timezone: string): number {
   if (/^\d{12,}$/.test(raw)) return Number(raw)
   if (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw)) return Date.parse(raw)
   if (!FLOATING_DATETIME.test(raw) || !calendarDayFromInput(raw, timezone)) return NaN
   return fromZonedTime(raw.replace(" ", "T"), resolveTimezone(timezone)).getTime()
+}
+
+export interface TaskWindowInput {
+  task_kind?: string | null | undefined
+  due_date?: string | null | undefined
+  start_date?: string | null | undefined
+  end_date?: string | null | undefined
+  calendar_sync_state?: string | null | undefined
+}
+
+export function calendarEventSpanDays(
+  task: TaskWindowInput,
+  timezone = DEFAULT_TIMEZONE,
+): { startDay: string; endDay: string } | null {
+  const scheduled = effectiveTaskScheduledDate(task)
+  if (!scheduled) return null
+  const startDay =
+    (task.task_kind === "calendar_event" ? calendarEventDay(scheduled, timezone, "start") : null) ??
+    calendarDayFromInput(scheduled, timezone)
+  if (!startDay) return null
+  if (task.task_kind === "calendar_event" && typeof task.end_date === "string" && task.end_date.trim()) {
+    const endRaw = task.end_date.trim()
+    const boundary = task.calendar_sync_state === "synced" || !DATE_ONLY.test(endRaw) ? "exclusive-end" : "start"
+    const parsedEnd = calendarEventDay(endRaw, timezone, boundary) ?? calendarDayFromInput(endRaw, timezone)
+    const endDay = parsedEnd && parsedEnd > startDay ? parsedEnd : startDay
+    return { startDay, endDay }
+  }
+  return { startDay, endDay: startDay }
+}
+
+export function effectiveOverdueDeadline(
+  task: TaskWindowInput,
+): string | null {
+  if (task.task_kind === "calendar_event" && typeof task.end_date === "string" && task.end_date.trim()) {
+    const endRaw = task.end_date.trim()
+    if (DATE_ONLY.test(endRaw) && task.calendar_sync_state === "synced") {
+      return shiftCalendarDay(endRaw, -1)
+    }
+    return endRaw
+  }
+  return effectiveTaskScheduledDate(task)
+}
+
+export function isTaskOverdue(
+  task: TaskWindowInput,
+  isDone: boolean,
+  timezone = DEFAULT_TIMEZONE,
+  today?: string,
+  now = Date.now(),
+): boolean {
+  if (isDone) return false
+  return isDueOverdue(effectiveOverdueDeadline(task), timezone, today, now)
 }
 
 /**

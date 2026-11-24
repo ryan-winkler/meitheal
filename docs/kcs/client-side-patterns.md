@@ -36,21 +36,31 @@ Vite HMR re-evaluates `<script>` blocks without aborting the previous Astro life
 
 | Approach | When to use |
 |----------|-------------|
-| `cloneNode(true)` + `replaceWith()` | Forms — strips ALL listeners from the element |
+| DOM `dataset` idempotency guard | Long-lived overlays/forms with child lifecycle controllers — e.g. `dataset.newTaskController = "ready"`, cleared on `signal` abort |
+| `cloneNode(true)` + `replaceWith()` | Simple forms without child lifecycle controllers — strips ALL listeners from the element |
 | Window-scoped guard flag | Cross-scope state — `(window as any).__flagName` |
 | Module-scoped guard | **Does NOT work** — each HMR eval creates a new scope |
 
-### Example: Clone-Form Pattern (NewTaskModal.astro)
+### Example: Preserved Form Lifecycle Pattern (NewTaskModal.astro)
+
+Preserve long-lived overlays and form controls that hold child lifecycle listeners (`NewTaskModal.astro`), guarding re-entry with a DOM `dataset` attribute cleared on `pageLifecycle` signal abort before binding `{ signal }`:
 
 ```ts
-if (form) {
-  const freshForm = form.cloneNode(true) as HTMLFormElement
-  form.replaceWith(freshForm)
-  freshForm.addEventListener("submit", async (e) => {
+pageLifecycle.onPageLoad((signal) => {
+  const overlay = document.getElementById("new-task-overlay")
+  if (!overlay || overlay.dataset.newTaskController === "ready") return
+  overlay.dataset.newTaskController = "ready"
+  signal.addEventListener("abort", () => {
+    delete overlay.dataset.newTaskController
+  }, { once: true })
+
+  // Preserve the form so its child controls keep their lifecycle-bound handlers.
+  const form = document.getElementById("new-task-form")
+  form?.addEventListener("submit", async (e) => {
     e.preventDefault()
     // ...handler
   }, { signal })
-}
+})
 ```
 
 Eisenhower keeps one window-scoped controller owner for the current page and lifecycle signal. Repeated `astro:page-load` events reuse that owner. Replacing the owner aborts its listeners, including the delegated triage and weekly review listeners. The page signal also retires that owner on navigation. Keep drag, capture, focus, tabs and action handlers on the same owned signal.
@@ -65,29 +75,33 @@ Page-shell section labels use `--accent-text` on populated and empty pages. Run 
 
 The sidebar area button controls the project list named by its `aria-controls` attribute. Keep the action buttons alongside the disclosure. Update `aria-expanded` and the list's `inert` state together so collapsed project links stay out of keyboard navigation. Sidebar area actions are delegated to the persisted navigation. Dispose that listener on hot reload so Astro page swaps can keep using the existing navigation element.
 
+Read each navigation group's gap once per overflow reflow. While **More** is closed, set its links to `tabindex="-1"` without measuring their visibility. When it opens, give one eligible link a Tab stop and preserve the original Tab stops in the primary navigation. Check resize, focus recovery, and nested disclosures with `e2e/navigation-overflow-recovery.spec.ts` and `e2e/nav-overflow-hidden-links.spec.ts`.
+
 Use `--accent-text` for accent-colored labels on surfaces and keep the accent fill token for backgrounds. Keep the CSS and Tailwind text color channels aligned across themes. Use `--floating-action-bottom` for the Dashboard, Settings, and Habits scroll-to-top buttons. The mobile offset includes the tab bar and device safe area. Keyboard shortcut help is available with `?` and through **Settings → Navigation & Shortcuts → Keyboard shortcuts**. Both render from `apps/web/src/lib/keyboard-shortcuts.ts`. Turn off **Enable letter, number and symbol shortcuts on this device** to disable shortcuts such as `/`, `?`, and the numbered Tasks views. The choice is stored in this browser. Tab, arrow keys, Enter, Space, and shortcuts such as Ctrl or Cmd + K still work.
 
-Tailwind scans `apps/web/src` for complete utility class names. Keep new utility names in application templates or client code. Headings and body text use self-hosted `Geist Variable` (`Outfit` stays self-hosted for optional appearance customization). Keep the `Layout.astro` font preload and `@font-face` pointed at the same `geist-latin-wght-normal.woff2` asset, and check both standalone and Home Assistant ingress when changing font assets.
+Tailwind scans `apps/web/src` for complete utility class names. Keep new utility names in application templates or client code. Headings and body text use self-hosted `Geist Variable` (`Outfit` stays self-hosted for optional appearance customization). The font stack can use an installed Inter font or the system fallback. The app bundles only its primary and selectable fonts. Keep the `Layout.astro` font preload and `@font-face` pointed at the same `geist-latin-wght-normal.woff2` asset, and check both standalone and Home Assistant ingress when changing font assets.
 
 Run `pnpm --filter @meitheal/tests test e2e/shared-shell-ux.spec.ts` against a disposable Meitheal instance. The check samples desktop and mobile in light and dark themes. It exercises Dashboard, Tasks, and the Settings navigation, rule labels, integration badges, and protocol links. The keyboard check creates and removes a synthetic sidebar area and project.
 
 ## Toast System
 
-Located at `apps/web/src/lib/toast.ts`.
+Mounted once in [`ToastRegion.astro`](../../apps/web/src/components/ui/ToastRegion.astro) (`#toast-container`) and managed by [`toast.ts`](../../apps/web/src/lib/toast.ts). See the [Toast Notifications Reference](toast-notifications.md) for Top-Layer popover stacking, mobile safe areas, and swipe gestures.
 
 | Function | Purpose | Auto-dismiss |
 |----------|---------|-------------|
-| `showToast(msg, type)` | General notification | 3s success, 5s error |
-| `showUndoToast(msg, onUndo)` | Action with undo button | 5s |
-| `showRetryToast(msg, onRetry)` | Action with retry button | 8s |
-| `showTaskCreatedToast(key, id, title)` | Task created with clickable ticket key | 4s |
+| `pushToast(options)` | Full-featured notification & persistent update prompt | Configurable (`persistent: true` pins) |
+| `showToast(msg, type, options)` | Standard notification (`success`, `info`, `warning`, `error`) | 3.5s `success`/`info`, 4.5s `warning`, 5.5s `error` |
+| `showUndoToast(msg, onUndo, onCommit, timeout)` | Action with Undo button (`pagehide` / `astro:before-swap` commit) | `5s` (`5000` ms default) |
+| `showRetryToast(msg, onRetry)` | Error notification with Retry button | `8s` |
+| `showTaskCreatedToast(ticketKey, id, title)` | Task created with clickable ticket key (nullable; localized `"Open"` fallback) | `5s` |
+| `dismissToast(id?)` | Dismiss one toast by id or all active toasts | — |
 
 ### Toast Conventions
 
-- Max 5 visible toasts; oldest evicted when exceeded
-- All toasts must have `role="alert"`, `aria-live`, and dismiss button
-- i18n strings loaded from `window.mI18n` (set by `Layout.astro`)
-- `showTaskCreatedToast` renders clickable `MTH-XX` that calls `window.openTaskDetail(id)`
+- Max 5 live toasts (`MAX_ACTIVE_TOASTS = 5`): Pass 1 evicts oldest non-persistent/non-commit toast; Pass 2 evicts uncommitted `onForceCommit` items; Pass 3 enforces the cap across persistent items
+- `"error"` & `"warning"` use `role="alert"` (`aria-live="assertive"`); `"success"` & `"info"` use `role="status"` (`aria-live="polite"`); dismiss button rendered unless `dismissible: false`
+- Single-arg `window.mI18n.get(key)` resolves against the SSR locale catalog set by `Layout.astro`
+- `showTaskCreatedToast` renders clickable `MTH-XX` (or localized `toast.open_task` fallback) calling `window.openTaskDetail(id)`
 
 ## Task API Response Contract
 
@@ -107,6 +121,10 @@ When Astro embeds JSON in a script element, use `serializeForScript` from `lib/s
 
 For a regression check, run `pnpm --filter @meitheal/tests test e2e/sanitize.spec.ts e2e/timeline-bootstrap.spec.ts` with `E2E_BASE_URL` pointed at a disposable Meitheal instance and SQLite database. The timeline check creates and deletes a synthetic task.
 
+The Household ticket inspector displays the description as text while it loads Markdown rendering and sanitization. It keeps the text if rich rendering fails. The renderer loads for nonempty descriptions on ticket open or after a successful save. Rich previews still use sanitized DOM nodes and ingress-aware task links. Only the latest description render can update the current drawer.
+
+To troubleshoot an unformatted preview, check the browser console for `Could not render task description Markdown` and check whether the Markdown modules loaded. Use `task-references.spec.ts` to verify rich previews and task links through ingress and `task-detail-layout.spec.ts` to check description editing and saving.
+
 ## Custom Fields Rendering
 
 Shopping items store complex data in `custom_fields`:
@@ -125,13 +143,11 @@ These are set during modal lifecycle and must be cleaned up on signal abort:
 
 | Property | Purpose |
 |----------|---------|
-| `window.__ntFormSubmitting` | Double-submit guard |
-| `window._removeNTCItem` | Checklist item removal |
-| `window.__ntShoppingItems` | Shopping items state |
-| `window.__meitheal_users` | User list cache |
-| `window.__ntDatePickers` | Date picker instances |
-| `window.openNewTaskModal` | Modal open function |
-| `window.openTaskDetail` | Detail modal open function |
+| `window.__meitheal_users` | User list cache for task assignment |
+| `window.openNewTaskModal` | Task creation modal open function |
+| `window.openTaskDetail` | Task detail modal open function |
+| `window.__pwaBannerTeardown` | Active PWA banner listener & timer teardown |
+| `window.startPomodoro` | Floating Pomodoro timer trigger |
 
 ## Embedded navigation and generated controls
 
@@ -141,6 +157,8 @@ Controls appended by client code outside an Astro component need global CSS sele
 ## Confirmation and prompt text
 
 `confirmDialog` and `promptDialog` accept plain text. Titles, messages and button labels render through `textContent`; prompt values and placeholders use input properties. Pass raw strings, including names read from API records, DOM labels or datasets. Do not pre-escape these options: a name such as `Home & garden` or literal `&amp;` should remain exactly that text. Neither helper supports rich HTML.
+
+The prompt’s animation-frame focus retry runs only while it owns the foreground managed dialog and focus has fallen to the document body. It preserves focus on buttons and controls in newer dialogs.
 
 The shared static templates retain the existing dialog appearance, variant icons and colors, focus traps, Escape/backdrop cancellation and AbortSignal handling. Prompts still select the initial value, trim submitted input, enforce required/custom validation and display validation errors as text. Empty optional messages remain absent. Call the window confirmation alias with an options object, for example `window.confirmDialog?.({ message: "Remove this area?" })`.
 

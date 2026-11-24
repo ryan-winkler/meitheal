@@ -1,0 +1,15 @@
+---
+import "../../styles/sidebar-hierarchy-actions.css"
+import { resolveCanonicalIconName } from "../../generated/icon-registry"
+import type { Locale } from "../../lib/locale"
+import {
+  buildHierarchyActionsHtml,
+  USED_HIERARCHY_ACTION_ICONS,
+} from "../../lib/sidebar-hierarchy-actions-html"
+
+const locale: Locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
+const usedIcons = (Astro.locals.usedIcons ??= new Set())
+for (const name of USED_HIERARCHY_ACTION_ICONS) usedIcons.add(resolveCanonicalIconName(name))
+const html = buildHierarchyActionsHtml(locale)
+---
+<Fragment set:html={html} />

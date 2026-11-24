@@ -138,15 +138,15 @@ export const PARENT_PAGES: ParentPageDescriptor[] = [
     icon: "⚖️",
     route: "/planning",
     description: "Manage areas, projects, and prioritise with strategic frameworks",
-    defaultHash: "spaces",
+    defaultHash: "eisenhower",
     keywords: ["planning", "areas", "projects", "spaces", "eisenhower", "triage", "rice", "prioritize", "strategy"],
     subViews: [
       {
         id: "spaces",
-        label: "Areas & Projects",
+        label: "Boards",
         icon: "🗂️",
         hash: "spaces",
-        description: "Manage your Areas of Responsibility and Projects",
+        description: "Open Boards and their groups and Projects",
         legacyRoute: "/areas",
         keywords: ["areas", "projects", "spaces", "folders", "hierarchy", "organisation"],
       },

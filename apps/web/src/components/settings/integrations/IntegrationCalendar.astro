@@ -145,6 +145,15 @@ const locale = Astro.props.locale || "en"
         <small class="form-hint">{t("settings.cal_write_back_hint", locale)}</small>
       </div>
 
+      <!-- Write ticket details toggle (bidirectional/export, default on) -->
+      <div class="form-group form-group--spaced" id="cal-write-ticket-details-group">
+        <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+          <input type="checkbox" id="cal-write-ticket-details" checked />
+          <span>{t("settings.cal_write_ticket_details_label", locale)}</span>
+        </label>
+        <small class="form-hint">{t("settings.cal_write_ticket_details_hint", locale)}</small>
+      </div>
+
       <!-- Sync interval selector -->
       <div class="form-group form-group--spaced">
         <label class="form-label" for="cal-sync-interval">{t("settings.cal_sync_interval_label", locale)}</label>

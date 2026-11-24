@@ -1,0 +1,447 @@
+---
+import { resolveBoardPageScope } from "@lib/board-http"
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
+import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
+import type { BoardScope } from "@domains/tasks/board-scope"
+import type { readNamedBoardPlanning } from "@domains/tasks/persistence/named-board-planning-repository"
+
+import { boardWorkspaceHref, DEFAULT_GROUP_COLOR, readBoardPlanningSection } from "@lib/board-workspace"
+
+import RetirePlanningForm from "./RetirePlanningForm.astro"
+import ProjectSettings from "./ProjectSettings.astro"
+import GoalsTab from "../progress/GoalsTab.astro"
+import Icon from "../ui/Icon.astro"
+import { mapEntityEmojiToTabler } from "@lib/tabler-svg"
+import { listSharedGoals, type SharedGoalProgress } from "@domains/tasks/persistence/shared-goal-repository"
+import { getPersistenceClient } from "@domains/tasks/persistence/store"
+
+interface Props {
+  workScope?: BoardScope
+  boardId: string
+  areaId?: string | undefined
+  projectId?: string | undefined
+  planning: NonNullable<Awaited<ReturnType<typeof readNamedBoardPlanning>>>
+  canManage: boolean
+  canComplete: boolean
+  routinesEnabled: boolean
+  tickets: { id: string; title: string }[]
+}
+const { boardId, areaId, projectId, planning, canManage, canComplete, routinesEnabled, tickets } = Astro.props
+const resolved = Astro.props.workScope ? { ok: true as const, scope: Astro.props.workScope } : await resolveBoardPageScope(Astro, { boardId })
+const workScope = resolved.ok ? resolved.scope : null
+const label = await organizationLabelsFor(Astro)
+const newLabel = (name: Parameters<typeof label>[0], fallback?: string) => newOrganizationLabel(label(name, false, fallback), organizationLocale(Astro))
+const section = readBoardPlanningSection(Astro.url.searchParams)
+const showPlanning = section === "planning"
+const showGoals = section === "planning" || section === "goals"
+const showPillars = section === "planning" || section === "pillars"
+const goalHref = (filter: string, id: string) => boardWorkspaceHref(boardId, {
+  ...(filter === "project_id" ? { project: id } : { area: id }), groups: true, section: "goals",
+}, "groups")
+const showRoutines = routinesEnabled && (canManage || planning.routines.length > 0) && (section === "planning" || section === "routines")
+const selectedProject = projectId ? planning.projects.find(project => project.id === projectId) : undefined
+const selectedAreaId = areaId ?? selectedProject?.areaId ?? undefined
+const visibleAreas = selectedAreaId ? planning.areas.filter(area => area.id === selectedAreaId) : planning.areas
+let goalProgress: SharedGoalProgress[] = []
+let progressUnavailable = false
+if (workScope && showGoals && available("goals")) {
+  try {
+    goalProgress = await listSharedGoals(getPersistenceClient(), workScope, {
+      ...(projectId ? { projectId } : selectedAreaId ? { areaId: selectedAreaId } : {}),
+    })
+  } catch { progressUnavailable = true }
+}
+const visibleOwnedGoals = planning.goals.filter(goal => (!selectedAreaId || goal.areaId === selectedAreaId) && (!projectId || goal.id === selectedProject?.goalId))
+const ownedGoalIds = new Set(planning.goals.map(goal => goal.id))
+const progressByGoal = new Map(goalProgress.map(goal => [goal.id, goal]))
+const formColor = (color: string) => /^#[0-9a-f]{6}$/i.test(color) ? color : DEFAULT_GROUP_COLOR
+const ownedAreaIds = new Set(planning.areas.map(area => area.id))
+---
+
+{!workScope ? <p role="status">Planning is unavailable. Reload to try again.</p> : <section class="named-boards board-settings board-planning" id="groups" aria-labelledby="board-planning-title">
+  <div class="board-section-header">
+    <Icon name={section === "goals" ? "target" : section === "routines" ? "repeat" : section === "pillars" ? "sparkles" : "folder"} size={18} sprite />
+    <div>
+      <h2 id="board-planning-title">{section !== "planning" ? label(section === "goals" ? "goal" : section === "routines" ? "routine" : "pillar", true) : projectId ? `${label("project")} planning` : areaId ? `${label("group")} planning` : label("group", true)}</h2>
+      {showPlanning && !areaId && !projectId && <p class="board-note-plain">Group work into Areas and Projects, then connect Goals, Routines, and Pillars.</p>}
+    </div>
+  </div>
+  {showPlanning && !areaId && planning.projects.some(project => !project.areaId) && <section class="board-unfiled-bar" aria-labelledby="unfiled-projects">
+    <span class="board-unfiled-bar__label" id="unfiled-projects">
+      <Icon name="folder" size={14} sprite />
+      <span>Unfiled Projects</span>
+    </span>
+    <ul class="board-unfiled-bar__list">{planning.projects.filter(project => !project.areaId && (!projectId || projectId === project.id))
+      .map(project => <li><a href={boardWorkspaceHref(boardId, { project: project.id })} class="board-inline-link">{project.title}</a></li>)}</ul>
+  </section>}
+  {showPlanning && canManage && available("groups") && planning.areas.length === 0 && <p class="board-empty">Choose “{newLabel("group")}” to organize related work.</p>}
+  {section === "goals" && projectId && <GoalsTab {projectId} {boardId} />}
+  <div class="board-settings-grid" hidden={section === "pillars" || (section === "goals" && Boolean(projectId))}>
+    {visibleAreas.map(area => {
+      const areaTablerIcon = mapEntityEmojiToTabler(area.icon)
+      const areaProjects = planning.projects.filter(project => project.areaId === area.id && (!projectId || project.id === projectId))
+      return <section class="board-tile board-area-card">
+      <div class="board-area-card__head">
+        <h3 class="board-name"><a href={boardWorkspaceHref(boardId, { area: area.id })} class="board-area-title"><span class="board-area-swatch" style={`--area-color:${formColor(area.color)}`} aria-hidden="true">{areaTablerIcon ? <Icon name={areaTablerIcon} size={15} sprite /> : <Icon name="folder" size={15} sprite />}</span> <span>{area.name}</span></a></h3>
+        {showPlanning && available("goals") && <a href={goalHref("area_id", area.id)} class="board-inline-link"><Icon name="target" size={14} sprite /><span>View {label("goal", true)}</span></a>}
+      </div>
+      <div class="board-area-card__stack" hidden={!showPlanning}>
+      {canManage && available("groups") && <details id={areaId === area.id && !projectId ? "group-settings" : undefined} class="board-disclosure">
+        <summary class="board-disclosure__summary">
+          <Icon name="settings" size={14} sprite />
+          <span>{label("group")} settings</span>
+          <Icon name="chevron-down" size={14} class="board-disclosure__chevron" sprite />
+        </summary>
+        <div class="board-disclosure__body">
+          <form data-board-form="planning" class="board-form">
+            <input type="hidden" name="action" value="area" />
+            <input type="hidden" name="id" value={area.id} />
+            <label>Name <input name="title" value={area.name} maxlength="150" required /></label>
+            <label>Icon <input name="icon" value={area.icon} maxlength="24" placeholder="e.g. folder, home, star" /></label>
+            <label>Color <input name="color" type="color" value={formColor(area.color)} /></label>
+            <p role="status" data-board-feedback class="board-feedback"></p>
+            <button type="submit" class="btn btn-secondary btn-sm">Save Area</button>
+          </form>
+          <RetirePlanningForm entity="area" id={area.id} />
+        </div>
+      </details>}
+      {available("projects") && <div class="board-sublist">
+        <div class="board-sublist__head">
+          <span class="board-sublist__title">{label("project", true)}</span>
+          <span class="board-sublist__count">{areaProjects.length}</span>
+        </div>
+        {areaProjects.length === 0 && <p class="board-note-plain">No {label("project", true).toLowerCase()} in this {label("group").toLowerCase()} yet.</p>}
+        {areaProjects.map(project => <article class="board-subitem">
+          <div class="board-subitem__head">
+            <h4 class="board-name"><a href={boardWorkspaceHref(boardId, { project: project.id, fromArea: area.id })} class="board-area-title"><Icon name="folder" size={14} sprite /><span>{project.title}</span></a></h4>
+            {available("goals") && <a href={goalHref("project_id", project.id)} class="board-inline-link"><Icon name="target" size={13} sprite /><span>{label("goal", true)}</span></a>}
+          </div>
+          {project.description && <p class="board-note-plain">{project.description}</p>}
+          <ProjectSettings {project} selected={projectId === project.id} {canManage}
+            goals={planning.linkableGoals.filter(goal => goal.sharedAreaId === null || goal.sharedAreaId === area.id)} />
+        </article>)}
+      </div>}
+      {canManage && available("projects") && <details class="board-disclosure">
+        <summary class="board-disclosure__summary">
+          <Icon name="plus" size={14} sprite />
+          <span>{newLabel("project")}</span>
+          <Icon name="chevron-down" size={14} class="board-disclosure__chevron" sprite />
+        </summary>
+        <div class="board-disclosure__body">
+          <form data-board-form="planning" class="board-form">
+            <input type="hidden" name="action" value="project" />
+            <input type="hidden" name="areaId" value={area.id} />
+            <label>Name <input name="title" maxlength="150" required /></label>
+            <label>Details <textarea name="description" rows="2" maxlength="10000"></textarea></label>
+            {available("goals") ? <label>Goal <select name="goalId">
+              <option value="">No Goal</option>
+              {planning.linkableGoals.filter(goal => goal.sharedAreaId === null || goal.sharedAreaId === area.id)
+                .map(goal => <option value={goal.id}>{goal.title}</option>)}
+            </select></label> : <input type="hidden" name="goalId" value="" />}
+            <p role="status" data-board-feedback class="board-feedback"></p>
+            <button type="submit" class="btn btn-secondary btn-sm">Create Project</button>
+          </form>
+        </div>
+      </details>}
+      </div>
+      <div class="board-area-card__stack" hidden={!showGoals}>
+      {visibleOwnedGoals.filter(goal => goal.areaId === area.id).map(goal => <article class="board-subitem">
+        <h4 class="board-name">{goal.title}</h4>
+        {progressUnavailable ? <p class="board-note-plain" role="status">Progress is unavailable. Try again when access can be verified.</p> : progressByGoal.has(goal.id) && <p class="board-note-plain">{progressByGoal.get(goal.id)!.completed_project_count} of {progressByGoal.get(goal.id)!.project_count} accessible Projects complete</p>}
+        {goal.description && <p class="board-note-plain">{goal.description}</p>}
+        {canManage && available("goals") && <details class="board-disclosure">
+          <summary class="board-disclosure__summary">
+            <Icon name="pencil" size={14} sprite />
+            <span>Edit Goal</span>
+            <Icon name="chevron-down" size={14} class="board-disclosure__chevron" sprite />
+          </summary>
+          <div class="board-disclosure__body">
+            <form data-board-form="planning" class="board-form">
+              <input type="hidden" name="action" value="goal" />
+              <input type="hidden" name="id" value={goal.id} />
+              <input type="hidden" name="areaId" value={area.id} />
+              <label>Title <input name="title" value={goal.title} maxlength="150" required /></label>
+              <label>Details <textarea name="description" rows="2" maxlength="10000">{goal.description}</textarea></label>
+              <p role="status" data-board-feedback class="board-feedback"></p>
+              <button type="submit" class="btn btn-secondary btn-sm">Save Goal</button>
+            </form>
+            <RetirePlanningForm entity="goal" id={goal.id} />
+          </div>
+        </details>}
+      </article>)}
+      {goalProgress.filter(goal => goal.area_id === area.id && !ownedGoalIds.has(goal.id)).map(goal => <article class="board-subitem">
+        <h4 class="board-name">{goal.title}</h4>
+        <p class="board-note-plain">Shared Goal · {goal.completed_project_count} of {goal.project_count} accessible Projects complete</p>
+      </article>)}
+      {canManage && available("goals") && <details class="board-disclosure">
+        <summary class="board-disclosure__summary">
+          <Icon name="plus" size={14} sprite />
+          <span>{newLabel("goal")}</span>
+          <Icon name="chevron-down" size={14} class="board-disclosure__chevron" sprite />
+        </summary>
+        <div class="board-disclosure__body">
+          <form data-board-form="planning" class="board-form">
+            <input type="hidden" name="action" value="goal" />
+            <input type="hidden" name="areaId" value={area.id} />
+            <label>Title <input name="title" maxlength="150" required /></label>
+            <label>Details <textarea name="description" rows="2" maxlength="10000"></textarea></label>
+            <p role="status" data-board-feedback class="board-feedback"></p>
+            <button type="submit" class="btn btn-secondary btn-sm">Create Goal</button>
+          </form>
+        </div>
+      </details>}
+      </div>
+      {showRoutines && <div class="board-area-card__stack">
+        {planning.routines.filter(routine => routine.areaId === area.id && (!projectId || routine.projectId === projectId)).map(routine => <article class="board-subitem">
+          <h4 class="board-name">{routine.name}</h4>
+          <p class="board-note">{routine.cadence}{routine.complete ? " · Done" : ""}</p>
+          {canComplete && !routine.complete && <form data-board-form="planning" class="board-form">
+            <input type="hidden" name="action" value="routine-complete" />
+            <input type="hidden" name="id" value={routine.id} />
+            <input type="hidden" name="period" value={routine.period} />
+            <p role="status" data-board-feedback class="board-feedback"></p>
+            <button type="submit" class="btn btn-secondary btn-sm">
+              <Icon name="check" size={14} sprite />
+              <span>Mark routine done</span>
+            </button>
+          </form>}
+          {canManage && available("routines") && <details class="board-disclosure">
+            <summary class="board-disclosure__summary">
+              <Icon name="pencil" size={14} sprite />
+              <span>Edit Routine</span>
+              <Icon name="chevron-down" size={14} class="board-disclosure__chevron" sprite />
+            </summary>
+            <div class="board-disclosure__body">
+              <form data-board-form="planning" class="board-form">
+                <input type="hidden" name="action" value="routine" />
+                <input type="hidden" name="id" value={routine.id} />
+                <input type="hidden" name="areaId" value={area.id} />
+                {routine.projectId && <input type="hidden" name="projectId" value={routine.projectId} />}
+                <label>Title <input name="title" value={routine.name} maxlength="150" required /></label>
+                <label>Details <textarea name="description" rows="2" maxlength="10000">{routine.description}</textarea></label>
+                <label>Frequency <select name="cadence"><option value="daily" selected={routine.cadence === "daily"}>Daily</option><option value="weekly" selected={routine.cadence === "weekly"}>Weekly</option></select></label>
+                <p role="status" data-board-feedback class="board-feedback"></p>
+                <button type="submit" class="btn btn-secondary btn-sm">Save Routine</button>
+              </form>
+              <RetirePlanningForm entity="routine" id={routine.id} />
+            </div>
+          </details>}
+        </article>)}
+        {canManage && available("routines") && <details class="board-disclosure">
+          <summary class="board-disclosure__summary">
+            <Icon name="plus" size={14} sprite />
+            <span>{newLabel("routine")}</span>
+            <Icon name="chevron-down" size={14} class="board-disclosure__chevron" sprite />
+          </summary>
+          <div class="board-disclosure__body">
+            <form data-board-form="planning" class="board-form">
+              <input type="hidden" name="action" value="routine" />
+              <input type="hidden" name="areaId" value={area.id} />
+              {projectId && <input type="hidden" name="projectId" value={projectId} />}
+              <label>Title <input name="title" maxlength="150" required /></label>
+              <label>Details <textarea name="description" rows="2" maxlength="10000"></textarea></label>
+              <label>Frequency <select name="cadence"><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label>
+              <p role="status" data-board-feedback class="board-feedback"></p>
+              <button type="submit" class="btn btn-secondary btn-sm">Create Routine</button>
+            </form>
+          </div>
+        </details>}
+      </div>}
+    </section>})}
+    <div class="board-area-card__stack" hidden={!showPlanning}>
+    {planning.projects.filter(project => (!projectId || project.id === projectId) && (!project.areaId || !ownedAreaIds.has(project.areaId))).map(project => <article class="board-tile board-area-card">
+      <div class="board-area-card__head">
+        <h3 class="board-name"><a href={boardWorkspaceHref(boardId, { project: project.id })} class="board-area-title"><Icon name="folder" size={15} sprite /><span>{project.title}</span></a></h3>
+        {available("goals") && <a href={goalHref("project_id", project.id)} class="board-inline-link"><Icon name="target" size={14} sprite /><span>View {label("project")} {label("goal", true)}</span></a>}
+      </div>
+      {project.description && <p class="board-note-plain">{project.description}</p>}
+      <ProjectSettings {project} selected={projectId === project.id} {canManage}
+        goals={planning.linkableGoals.filter(goal => goal.sharedAreaId === null)} />
+    </article>)}
+    {canManage && available("groups") && <details class="board-tile board-disclosure">
+      <summary class="board-disclosure__summary">
+        <Icon name="plus" size={15} sprite />
+        <span>{newLabel("group")}</span>
+        <Icon name="chevron-down" size={15} class="board-disclosure__chevron" sprite />
+      </summary>
+      <div class="board-disclosure__body">
+        <form data-board-form="planning" class="board-form">
+          <input type="hidden" name="action" value="area" />
+          <label>Name <input name="title" maxlength="150" required placeholder="e.g. Outdoors, Maintenance" /></label>
+          <label>Icon <input name="icon" value="folder" maxlength="24" placeholder="e.g. folder, home, star" /></label>
+          <label>Color <input name="color" type="color" value={DEFAULT_GROUP_COLOR} /></label>
+          <p role="status" data-board-feedback class="board-feedback"></p>
+          <button type="submit" class="btn btn-secondary btn-sm">{organizationLocale(Astro) === "ga" ? newLabel("group") : `Create ${label("group")}`}</button>
+        </form>
+      </div>
+    </details>}
+    </div>
+  </div>
+  {showGoals && canManage && visibleOwnedGoals.length > 0 && <details class="board-tile board-disclosure">
+    <summary class="board-disclosure__summary">
+      <Icon name="users" size={15} sprite />
+      <span>Goal sharing</span>
+      <Icon name="chevron-down" size={15} class="board-disclosure__chevron" sprite />
+    </summary>
+    <div class="board-disclosure__body">
+      {visibleOwnedGoals.map(goal => <section class="board-form">
+        <h3 class="board-name">{goal.title}</h3>
+        {planning.shares.filter(share => share.goalId === goal.id).map(share => <form data-board-form="planning" class="board-move">
+          <span>{share.areaName || "Unavailable Area"}</span>
+          <input type="hidden" name="action" value="goal-share" />
+          <input type="hidden" name="id" value={goal.id} />
+          <input type="hidden" name="target" value={JSON.stringify(share.areaId ? { kind: "area", boardId: share.boardId, areaId: share.areaId } : share.projectId ? { kind: "project", boardId: share.boardId, projectId: share.projectId } : { kind: "board", boardId: share.boardId })} />
+          <input type="hidden" name="enabled" value="false" />
+          <button type="submit" class="btn btn-secondary btn-sm">Stop sharing</button>
+          <p role="status" data-board-feedback class="board-feedback"></p>
+        </form>)}
+        <form data-board-form="planning" class="board-form">
+          <input type="hidden" name="action" value="goal-share" />
+          <input type="hidden" name="id" value={goal.id} />
+          <input type="hidden" name="enabled" value="true" />
+          <label>Share with <select name="target" required>
+            <option value="">Choose a Board, Area or Project</option>
+            {planning.destinations.filter(destination => !planning.shares.some(share => share.goalId === goal.id && share.boardId === destination.boardId &&
+              (destination.kind === "board" ? share.areaId === null && share.projectId === null : destination.kind === "area" ? share.areaId === destination.id : share.projectId === destination.id)))
+              .map(destination => <option value={JSON.stringify(destination.kind === "board" ? { kind: "board", boardId: destination.boardId }
+                : destination.kind === "area" ? { kind: "area", boardId: destination.boardId, areaId: destination.id } : { kind: "project", boardId: destination.boardId, projectId: destination.id })}>
+                {destination.kind === "board" ? destination.name : `${destination.board} / ${destination.name} (${destination.kind})`}</option>)}
+          </select></label>
+          <p class="board-note-plain">People with access to the selected destination can see this title and progress from Projects they can access.</p>
+          <p role="status" data-board-feedback class="board-feedback"></p>
+          <button type="submit" class="btn btn-secondary btn-sm">Share Goal</button>
+        </form>
+      </section>)}
+    </div>
+  </details>}
+  <section class="named-boards" aria-labelledby="board-pillars-title" hidden={!showPillars}>
+    <div class="board-section-header">
+      <Icon name="sparkles" size={18} sprite />
+      <div>
+        <h2 id="board-pillars-title">{label("board")} {label("pillar", true)}</h2>
+      </div>
+    </div>
+    <div class="boards-list">
+      {planning.pillars.map(pillar => <article class="board-tile">
+        <h3 class="board-name">{pillar.name}</h3>
+        {pillar.manifesto && <p class="board-note-plain">{pillar.manifesto}</p>}
+        {pillar.principles.length > 0 && <ul class="board-plain-list">
+          {pillar.principles.map(principle => <li>
+            <span>{principle.statement}{principle.nonNegotiable && " (Non-negotiable)"}</span>
+            {canManage && available("principles") && <details class="board-disclosure">
+              <summary class="board-disclosure__summary">
+                <Icon name="pencil" size={14} sprite />
+                <span>Edit Principle</span>
+                <Icon name="chevron-down" size={14} class="board-disclosure__chevron" sprite />
+              </summary>
+              <div class="board-disclosure__body">
+                <form data-board-form="planning" class="board-form">
+                  <input type="hidden" name="action" value="pillar-principle" />
+                  <input type="hidden" name="pillarId" value={pillar.id} />
+                  <input type="hidden" name="id" value={principle.id} />
+                  <label>Statement <input name="title" value={principle.statement} required maxlength="150" /></label>
+                  <label class="check"><input type="checkbox" name="nonNegotiable" checked={principle.nonNegotiable} /> Non-negotiable</label>
+                  <p role="status" data-board-feedback class="board-feedback"></p>
+                  <button type="submit" class="btn btn-secondary btn-sm">Save Principle</button>
+                </form>
+              </div>
+            </details>}
+          </li>)}
+        </ul>}
+        {pillar.links.length > 0 && <ul class="board-plain-list">
+          {pillar.links.map(link => <li>
+            <span>{link.label}</span>
+            {canManage && <form data-board-form="planning" class="board-preference">
+              <input type="hidden" name="action" value="pillar-link" />
+              <input type="hidden" name="pillarId" value={pillar.id} />
+              <input type="hidden" name="id" value={link.id} />
+              <input type="hidden" name="entityType" value={link.type} />
+              <input type="hidden" name="enabled" value="false" />
+              <button type="submit" class="btn btn-secondary btn-sm">Remove link</button>
+              <p role="status" data-board-feedback class="board-feedback"></p>
+            </form>}
+          </li>)}
+        </ul>}
+        {canManage && available("principles") && <details class="board-disclosure">
+          <summary class="board-disclosure__summary">
+            <Icon name="plus" size={14} sprite />
+            <span>Add Principle</span>
+            <Icon name="chevron-down" size={14} class="board-disclosure__chevron" sprite />
+          </summary>
+          <div class="board-disclosure__body">
+            <form data-board-form="planning" class="board-form">
+              <input type="hidden" name="action" value="pillar-principle" />
+              <input type="hidden" name="pillarId" value={pillar.id} />
+              <label>Statement <input name="title" required maxlength="150" /></label>
+              <label class="check"><input type="checkbox" name="nonNegotiable" /> Non-negotiable</label>
+              <p role="status" data-board-feedback class="board-feedback"></p>
+              <button type="submit" class="btn btn-secondary btn-sm">Add Principle</button>
+            </form>
+          </div>
+        </details>}
+        {canManage && (planning.goals.length + planning.routines.length + tickets.length > 0) && <details class="board-disclosure">
+          <summary class="board-disclosure__summary">
+            <Icon name="link" size={14} sprite />
+            <span>Link work</span>
+            <Icon name="chevron-down" size={14} class="board-disclosure__chevron" sprite />
+          </summary>
+          <div class="board-disclosure__body">
+            <form data-board-form="planning" class="board-form">
+              <input type="hidden" name="action" value="pillar-link" />
+              <input type="hidden" name="pillarId" value={pillar.id} />
+              <input type="hidden" name="enabled" value="true" />
+              <label>Work item <select name="linkedEntity" required>
+                <option value="">Choose a work item</option>
+                {planning.goals.length > 0 && <optgroup label="Goals">
+                  {planning.goals.map(goal => <option value={`goal/${goal.id}`}>{goal.title}</option>)}
+                </optgroup>}
+                {planning.routines.length > 0 && <optgroup label="Routines">
+                  {planning.routines.map(routine => <option value={`routine/${routine.id}`}>{routine.name}</option>)}
+                </optgroup>}
+                {tickets.length > 0 && <optgroup label="Tickets on this page">
+                  {tickets.map(ticket => <option value={`task/${ticket.id}`}>{ticket.title}</option>)}
+                </optgroup>}
+              </select></label>
+              <p role="status" data-board-feedback class="board-feedback"></p>
+              <button type="submit" class="btn btn-secondary btn-sm">Link to Pillar</button>
+            </form>
+          </div>
+        </details>}
+        {canManage && available("pillars") && <details class="board-disclosure">
+          <summary class="board-disclosure__summary">
+            <Icon name="pencil" size={14} sprite />
+            <span>Edit Pillar</span>
+            <Icon name="chevron-down" size={14} class="board-disclosure__chevron" sprite />
+          </summary>
+          <div class="board-disclosure__body">
+            <form data-board-form="planning" class="board-form">
+              <input type="hidden" name="action" value="pillar" />
+              <input type="hidden" name="id" value={pillar.id} />
+              <label>Name <input name="title" value={pillar.name} maxlength="150" required /></label>
+              <label>Manifesto <textarea name="description" rows="2" maxlength="10000">{pillar.manifesto}</textarea></label>
+              <p role="status" data-board-feedback class="board-feedback"></p>
+              <button type="submit" class="btn btn-secondary btn-sm">Save Pillar</button>
+            </form>
+          </div>
+        </details>}
+      </article>)}
+    </div>
+    {canManage && available("pillars") && <details class="board-tile board-disclosure">
+      <summary class="board-disclosure__summary">
+        <Icon name="plus" size={15} sprite />
+        <span>{organizationLocale(Astro) === "en" ? `New ${label("board")} ${label("pillar")}` : newLabel("pillar")}</span>
+        <Icon name="chevron-down" size={15} class="board-disclosure__chevron" sprite />
+      </summary>
+      <div class="board-disclosure__body">
+        <form data-board-form="planning" class="board-form">
+          <input type="hidden" name="action" value="pillar" />
+          <label>Name <input name="title" maxlength="150" required /></label>
+          <label>Manifesto <textarea name="description" rows="2" maxlength="10000"></textarea></label>
+          <p class="board-note-plain">Visible to people with access to this Board.</p>
+          <p role="status" data-board-feedback class="board-feedback"></p>
+          <button type="submit" class="btn btn-secondary btn-sm">Create Pillar</button>
+        </form>
+      </div>
+    </details>}
+  </section>
+</section>}

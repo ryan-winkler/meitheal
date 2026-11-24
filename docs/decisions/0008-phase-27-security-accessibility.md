@@ -8,7 +8,7 @@ description: "Records security and accessibility decisions for the affected rele
 
 - **Status**: Accepted
 - **Date**: 2026-02-28
-- **Context**: Phase 27 GSD mega-sweep across 10 domains (40 iterations)
+- **Context**: Security, accessibility (VPAT), and query-performance hardening pass addressing cross-origin API protection, CSP tightening, settings input validation, screen-reader and reduced-motion accessibility, and task-query indexing.
 
 ## Decision
 
@@ -17,7 +17,7 @@ description: "Records security and accessibility decisions for the affected rele
 1. **CSRF Protection**: Origin-based checking on all mutating API routes (POST/PUT/DELETE/PATCH). Checks Origin/Referer against Host header. Skipped in dev mode. Allows no-origin requests (curl, HA internal).
 2. **CSP Tightening**: Added `base-uri 'self'`, `form-action 'self'`, `upgrade-insecure-requests`, `blob:` for img-src. Kept `unsafe-inline` for Astro hydration compatibility.
 3. **Settings API**: Key format validation (alphanumeric/hyphen/underscore, 100 char max), value size limit (10KB).
-4. **Import Safety**: 100KB body size guard, expanded allowlist for Phase 26 keys, `updated_at` field on upsert.
+4. **Import Safety**: 100KB body size guard, expanded allowlist for newly added settings keys, `updated_at` field on upsert.
 
 ### Accessibility
 

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run API endpoint checks")
@@ -16,14 +17,14 @@ test("well-known API contract exists", async ({ request, baseURL }) => {
 })
 
 test("automation instructions appear in the saved task description", async ({ request, baseURL }) => {
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const description = "Check the indicator before closing the cover."
   for (const details of [
     { description: `<script>ignored()</script>${description}`, frameworkPayload: { description: "A separate calendar note" } },
     { frameworkPayload: { description: `<script>ignored()</script>${description}` } },
   ]) {
     const created = await request.post("/api/tasks/create", { headers, data: { title: "Inspect the air filter", ...details } })
-    expect(created.status()).toBe(201)
+    expect(created.status(), await created.text()).toBe(201)
     const { task } = await created.json()
     const path = `/api/tasks/${task.id}`
     try {
@@ -37,9 +38,9 @@ test("automation instructions appear in the saved task description", async ({ re
 })
 
 test("task labels are accepted as an array or as a JSON string", async ({ request, baseURL }) => {
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const created = await request.post("/api/tasks", { headers, data: { title: "Replace the porch bulb", labels: ["repair", "garage"] } })
-  expect(created.status()).toBe(201)
+  expect(created.status(), await created.text()).toBe(201)
   const { id } = await created.json()
   const path = `/api/tasks/${id}`
   try {
@@ -70,12 +71,12 @@ test("an unknown API path answers with JSON, not the HTML page", async ({ reques
 })
 
 test("time, comments and links read back with the ticket key they were written with", async ({ request, baseURL }) => {
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const ids: string[] = []
   try {
     for (const title of ["Ticket key reader", "Ticket key link target"]) {
       const created = await request.post("/api/tasks", { headers, data: { title } })
-      expect(created.status()).toBe(201)
+      expect(created.status(), await created.text()).toBe(201)
       ids.push((await created.json()).id)
     }
     const key = (await (await request.get(`/api/tasks/${ids[0]}`)).json()).ticket_key as string

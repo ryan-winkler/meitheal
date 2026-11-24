@@ -41,6 +41,7 @@ interface Props {
   weight: number
   principles: Principle[]
   linkedGoalCount: number
+  personal?: boolean
 }
 
 const {
@@ -53,6 +54,7 @@ const {
   weight,
   principles,
   linkedGoalCount,
+  personal = false,
 } = Astro.props
 
 const accentColor = colorHex || "var(--accent)"
@@ -67,8 +69,9 @@ const principlesListId = `pillar-principles-${id}`
 <div
   class="pillar-card"
   data-pillar-id={id}
+  data-pillar-personal={personal ? "" : undefined}
   data-pillar-slug={slug}
-  data-pillar-json={JSON.stringify({ id, slug, name, manifesto, icon, colorHex, weight, principles, linkedGoalCount })}
+  data-pillar-json={JSON.stringify({ id, slug, name, manifesto, icon, colorHex, weight, principles, linkedGoalCount, personal })}
   style={`--pillar-accent: ${accentColor}`}
   role="article"
   aria-label={`${name} — ${manifesto || "No manifesto set"}`}
@@ -76,6 +79,7 @@ const principlesListId = `pillar-principles-${id}`
   <div class="pillar-card__accent-bar"></div>
 
   <div class="pillar-card__content">
+    {personal && <small>Personal</small>}
     <div class="pillar-card__heading">
       <button type="button" class="pillar-card__header" data-action="open-detail" disabled aria-label={`View ${name} details`}>
         <span class="pillar-card__icon" aria-hidden="true">
@@ -130,7 +134,7 @@ const principlesListId = `pillar-principles-${id}`
         {displayPrinciples.map((p) => (
           <li class:list={["pillar-card__principle", { "pillar-card__principle--non-negotiable": p.isNonNegotiable }]}>
             {p.isNonNegotiable && (
-              <span class="pillar-card__principle-shield" title="Non-Negotiable — injected into AI prompts" aria-label="Non-Negotiable">
+              <span class="pillar-card__principle-shield" title={personal ? "Personal Non-Negotiable" : "Household Non-Negotiable"} aria-label="Non-Negotiable">
                 <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /></svg>
               </span>
             )}
@@ -140,7 +144,7 @@ const principlesListId = `pillar-principles-${id}`
         {hiddenPrinciples.map((p) => (
           <li class:list={["pillar-card__principle pillar-card__principle--overflow", { "pillar-card__principle--non-negotiable": p.isNonNegotiable }]} data-overflow-principle aria-hidden="true">
             {p.isNonNegotiable && (
-              <span class="pillar-card__principle-shield" title="Non-Negotiable — injected into AI prompts" aria-label="Non-Negotiable">
+              <span class="pillar-card__principle-shield" title={personal ? "Personal Non-Negotiable" : "Household Non-Negotiable"} aria-label="Non-Negotiable">
                 <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a12 12 0 0 0 8.5 3a12 12 0 0 1 -8.5 15a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3" /></svg>
               </span>
             )}

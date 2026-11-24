@@ -8,6 +8,7 @@
 export {
   recordTaskCompletion,
   getStats,
+  getDailyProgress,
   getWeeklyData,
   getXpForPriority,
   ensureGamificationSchema,
@@ -22,6 +23,7 @@ export {
   getProgressToNextLevel,
   getXpToNextLevel,
   checkAchievements,
+  completeTaskGamification,
   getAllAchievements,
   getYearlyHeatmapData,
   ensureAchievementSchema,
@@ -30,4 +32,5 @@ export {
   type Achievement,
   type UnlockedAchievement,
   type AchievementCheckResult,
+  type TaskCompletionGamificationResult,
 } from "./achievement-engine"

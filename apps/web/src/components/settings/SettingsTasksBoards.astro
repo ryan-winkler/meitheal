@@ -1,11 +1,15 @@
 ---
+import SettingsHomeAssistantArea from "./SettingsHomeAssistantArea.astro"
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
+import { VALID_CUSTOM_FIELD_TYPES } from "../../lib/custom-field-defs"
+import TaskDetailLayoutEditor from "../tasks/TaskDetailLayoutEditor.astro"
 import SettingsActionRow from "./SettingsActionRow.astro"
 import SettingsLabels from "./SettingsLabels.astro"
 import SettingsPanelCard from "./SettingsPanelCard.astro"
 import SettingsSectionIntro from "./SettingsSectionIntro.astro"
+import Icon from "../ui/Icon.astro"
 
 interface Props {
   locale: Locale
@@ -29,6 +33,49 @@ const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "t
       subtitle={t("settings.kanban_area_subtitle", locale)}
     >
       <div class="settings-stack">
+        <!-- New task capture mode (shared with Advanced Setup) -->
+        <div id="task-capture-mode-section">
+          <div class="settings-field-head">
+            <label for="task-capture-mode-select" class="settings-label">New task opens</label>
+            <button
+              type="button"
+              class="settings-help-btn"
+              data-settings-help="taskCaptureMode"
+              data-help-title="New Task Capture Mode"
+              data-help-body="Choose what opens when you press New task or the N shortcut on this browser. Quick add captures a task in one line with natural-language dates; Task form opens the complete editor with projects, labels, and scheduling."
+              aria-label="Help for New task opens"
+            >
+              <Icon name="help" size={16} sprite={true} />
+            </button>
+          </div>
+          <SettingsActionRow>
+            <select
+              id="task-capture-mode-select"
+              class="form-select settings-input-narrow"
+              aria-label="New task opens"
+            >
+              <option value="form">Task form (full details)</option>
+              <option value="quick">Quick add (instant one-line capture)</option>
+            </select>
+            <button
+              type="button"
+              class="btn btn-primary settings-text-sm"
+              id="save-task-capture-mode"
+              >{t("settings.save", locale)}</button
+            >
+          </SettingsActionRow>
+          <p
+            id="task-capture-mode-help"
+            class="settings-hint"
+            data-mode-form="Opens the full New Task dialog with area, labels, due date, and description."
+            data-mode-quick="Opens a compact one-line Quick Add prompt with natural-language date parsing."
+          >
+            Opens the full New Task dialog with area, labels, due date, and description.
+          </p>
+        </div>
+
+        <div class="settings-section-divider"></div>
+
         <!-- Backlog Mode -->
         <div>
           <label
@@ -116,11 +163,9 @@ const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "t
             disabled
           />
           <select class="form-select" aria-label={t("settings.custom_field_sprint_type", locale)} disabled>
-            <option value="text" selected>{t("settings.custom_field_type_text", locale)}</option>
-            <option value="number">{t("settings.custom_field_type_number", locale)}</option>
-            <option value="select">{t("settings.custom_field_type_select", locale)}</option>
-            <option value="date">{t("settings.custom_field_type_date", locale)}</option>
-            <option value="checkbox">{t("settings.custom_field_type_checkbox", locale)}</option>
+            {[...VALID_CUSTOM_FIELD_TYPES].map((type) => (
+              <option value={type} selected={type === "text"}>{t(`settings.custom_field_type_${type}` as any, locale)}</option>
+            ))}
           </select>
           <span class="settings-text-xs text-muted">{t("settings.built_in", locale)}</span>
         </div>
@@ -151,6 +196,12 @@ const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "t
       <div id="feature-toggles-container" class="settings-stack--sm" style="gap: 10px;" data-save-error={t("settings.feature_save_error", locale)}>
         <span class="settings-description">{t("settings.features_loading", locale)}</span>
       </div>
+    </SettingsPanelCard>
+    <SettingsHomeAssistantArea />
+  </div>
+  <div id="settings-task-detail-layout" class="mt-6">
+    <SettingsPanelCard title={t("task_layout.layout", locale)} subtitle={t("task_layout.settings_subtitle", locale)}>
+      <TaskDetailLayoutEditor locale={locale} allowServerSave={true} />
     </SettingsPanelCard>
   </div>
 </section>

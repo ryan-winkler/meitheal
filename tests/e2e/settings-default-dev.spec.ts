@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process"
+import { spawn } from "../helpers/isolated-process"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { createServer } from "node:net"

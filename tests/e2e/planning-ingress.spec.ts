@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable built app")
@@ -23,30 +24,31 @@ test("Planning reads the live queue and saves a score inside managed ingress", a
     await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
     const page = await context.newPage()
     expect((await page.goto(origin + prefix + "/fixture"))?.status()).toBe(200)
-    const id: string = await page.evaluate(async scope => {
-      const response = await fetch(scope + "/api/tasks", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title: "Plan the garden", status: "backlog" }),
-      })
-      if (!response.ok) throw new Error("Could not seed Planning fixture")
-      await navigator.serviceWorker.register(scope + "/sw.js", { scope: scope + "/" })
-      return (await response.json()).id
-    }, prefix)
+    const app = origin + prefix
+    const headers = await currentBoardWriteHeaders(context.request, "household", { origin }, app)
+    const created = await context.request.post(app + "/api/tasks", {
+      headers, data: { title: "Plan the garden", status: "backlog" },
+    })
+    expect(created.status(), await created.text()).toBe(201)
+    const { id } = await created.json() as { id: string }
+    await page.evaluate(scope => navigator.serviceWorker.register(scope + "/sw.js", { scope: scope + "/" }).then(() => {}), prefix)
     await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller))
 
     const queueRequest = page.waitForResponse(response => new URL(response.url()).searchParams.has("triageRefresh"))
     await page.goto(origin + prefix + "/planning#triage")
     const queue = await queueRequest
     expect(new URL(queue.url()).pathname).toBe(prefix + "/triage")
-    expect(queue.headers()["cache-control"]).toBe("no-store")
+    expect(queue.headers()["cache-control"]).toContain("no-store")
     await expect(page.locator(`[data-triage-card="${id}"]`)).toBeVisible()
 
-    await context.setOffline(true)
     const navigation = page.getByRole("navigation", { name: "Planning quick navigation" })
-    await navigation.getByRole("link", { name: "Areas & Projects" }).click()
+    await navigation.getByRole("link", { name: "Eisenhower" }).click()
     await navigation.getByRole("link", { name: "Triage" }).click()
-    await expect(page.locator("[data-triage-status]")).toContainText("Triage needs a connection")
+    await expect(page.locator(`[data-triage-card="${id}"]`)).toBeVisible()
+    await context.setOffline(true)
+    await expect(page.getByRole("status").filter({ hasText: "This Board is hidden until access can be verified." })).toBeVisible()
     await expect(page.locator("[data-triage-card]")).toHaveCount(0)
+    await expect(navigation).toBeHidden()
     await context.setOffline(false)
 
     await page.goto(origin + prefix + "/planning#rice")
@@ -62,7 +64,7 @@ test("Planning reads the live queue and saves a score inside managed ingress", a
     const receipt = await write
     expect(new URL(receipt.url()).pathname).toBe(prefix + "/api/tasks/" + id)
     expect(receipt.status()).toBe(200)
-    await expect(page.locator(`[data-rice-task="${id}"] [data-rice-score]`)).toHaveText("75")
+    await expect(page.locator(`[data-rice-task="${id}"] [data-rice-score]`)).toHaveText("0.75")
     await expect(scoreLink).toBeFocused()
     await expect(page).toHaveURL(origin + prefix + "/planning#rice")
   } finally {

@@ -1,3 +1,7 @@
+import { boardScopeErrorResponse } from "@lib/board-http"
+import { scopePermits } from "@domains/tasks/board-scope"
+import { taskDetailHttpProjection } from "@lib/task-http-projection"
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
@@ -10,7 +14,7 @@ import { formatTicketKey } from "../../../../lib/ticket-key"
 
 const headers = { "content-type": "application/json", "cache-control": "no-store" }
 
-export const PATCH: APIRoute = async ({ params, request, locals }) => {
+export const PATCH: APIRoute = withBoardScope({ resource: "task", action: "edit" }, async ({ params, request, locals }, scope) => {
   try {
     const bytes = await readWithinLimit(request.body, 1024, request.signal)
     if (!bytes) return apiError("Deferral request is too large", 413)
@@ -29,12 +33,12 @@ export const PATCH: APIRoute = async ({ params, request, locals }) => {
     }
 
     await ensureSchema()
-    const repo = new TaskRepository(getPersistenceClient())
-    const resolved = await repo.resolveTaskId(params.id!)
+    const repo = new TaskRepository(getPersistenceClient(), scope)
+    const resolved = await repo.resolveTaskId(params.id!, "edit")
     if (!resolved) return apiError("Task not found", 404)
     const denied = await requireAssignedTaskWriteAccess(
       locals.agentToken,
-      (id) => repo.findById(id),
+      (id) => repo.findTaskForCommand(id, "edit"),
       [resolved.id],
       "Agent can only defer tasks assigned to it",
     )
@@ -47,7 +51,7 @@ export const PATCH: APIRoute = async ({ params, request, locals }) => {
       requestId: locals.requestId ?? crypto.randomUUID(),
     }, restrictedAssigneeId(locals.agentToken))
     if (result.ok) {
-      return new Response(JSON.stringify({ ...result.task, status: normalizeStatus(result.task.status) }), { headers })
+      return new Response(JSON.stringify(scopePermits(scope, { resource: "task", action: "read" }) ? { ...taskDetailHttpProjection(result.task, scope.boardId), status: normalizeStatus(result.task.status) } : { id: result.task.id }), { headers })
     }
     if (result.errorCode === "assignee_mismatch") return apiError("Agent can only defer tasks assigned to it", 403)
     if (result.errorCode === "unavailable") return apiError("Task not found", 404)
@@ -75,7 +79,9 @@ export const PATCH: APIRoute = async ({ params, request, locals }) => {
       errorCode: "TASK_DEFERRAL_TERMINAL",
     }), { status: 409, headers })
   } catch (error) {
+    const scopeFailure = boardScopeErrorResponse(error)
+    if (scopeFailure) return scopeFailure
     logApiError("PATCH", "/api/tasks/:id/deferral", error)
     return apiError("Failed to update deferral")
   }
-}
+})

@@ -62,6 +62,19 @@ export async function registerServiceWorker(): Promise<ServiceWorkerRegistration
     return null
   }
 
+  // Never cache unhashed Vite/Astro modules in dev/preview; purge any previously registered SW.
+  if (import.meta.env.DEV) {
+    try {
+      const existing = await getAppServiceWorkerRegistration()
+      if (existing) await existing.unregister()
+      if ("caches" in window) {
+        const keys = await caches.keys()
+        await Promise.all(keys.filter((k) => /^meitheal-/.test(k)).map((k) => caches.delete(k)))
+      }
+    } catch { /* non-fatal dev cleanup */ }
+    return null
+  }
+
   try {
     // Build ingress-aware SW URL and scope.
     // When accessed via HA ingress, window.__ingress_path contains the

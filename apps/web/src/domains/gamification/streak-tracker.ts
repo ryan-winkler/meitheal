@@ -1,3 +1,6 @@
+import { BoardOperationError, canReadBoardAggregate, scopePermits, type BoardScope } from "@domains/tasks"
+import { calendarToday, shiftCalendarDay } from "../../lib/date"
+import { gamificationClient, gamificationRead } from "./scoped-gamification"
 /**
  * Gamification Domain — Streak Tracker
  *
@@ -8,7 +11,7 @@
  * Streak resets on a missed day (no grace period in v1).
  *
  * @kcs The gamification_stats table stores one row per day with:
- * - date: ISO date string (YYYY-MM-DD)
+ * - date: UTC date string (YYYY-MM-DD)
  * - completed_count: tasks completed that day
  * - streak_count: consecutive days streak as of that date
  * - points: XP earned that day (Phase 5)
@@ -21,7 +24,7 @@
 import {
   ensureSchema,
   getPersistenceClient,
-} from "@domains/tasks/persistence/store"
+} from "@domains/tasks"
 
 /**
  * XP points awarded per priority level.
@@ -58,76 +61,42 @@ export interface DailyRecord {
   points: number
 }
 
-let schemaEnsured = false
-
-/**
- * Ensure gamification schema exists.
- * Creates the gamification_stats table if it doesn't exist.
- */
-export async function ensureGamificationSchema(): Promise<void> {
-  if (schemaEnsured) return
-  await ensureSchema()
-  const client = getPersistenceClient()
-
-  await client.execute(`
-    CREATE TABLE IF NOT EXISTS gamification_stats (
-      date TEXT PRIMARY KEY,
-      completed_count INTEGER NOT NULL DEFAULT 0,
-      streak_count INTEGER NOT NULL DEFAULT 0,
-      points INTEGER NOT NULL DEFAULT 0
-    )
-  `)
-
-  schemaEnsured = true
+type DailyProgress = { currentStreak: number; points: number }
+export function statsDayKey(now: Date, offset = 0, timezone = "UTC"): string {
+  if (!timezone || timezone === "UTC") {
+    if (offset === 0) return now.toISOString().slice(0, 10)
+    const day = new Date(now)
+    day.setUTCDate(day.getUTCDate() + offset)
+    return day.toISOString().slice(0, 10)
+  }
+  return shiftCalendarDay(calendarToday(timezone, now), offset)
 }
 
-/**
- * Record a task completion. Increments today's count and updates streak.
- * @param points - XP points to award (default: 0, Phase 5 adds weighted points)
- */
-export async function recordTaskCompletion(points = 0): Promise<GamificationStats> {
-  await ensureGamificationSchema()
-  const client = getPersistenceClient()
-  const today = new Date().toISOString().split("T")[0]!
-
-  // Get yesterday's streak
-  const yesterday = new Date()
-  yesterday.setDate(yesterday.getDate() - 1)
-  const yesterdayStr = yesterday.toISOString().split("T")[0]!
-
-  const prevResult = await client.execute({
-    sql: "SELECT streak_count FROM gamification_stats WHERE date = ? LIMIT 1",
-    args: [yesterdayStr],
-  })
-  const prevStreak = prevResult.rows.length > 0
-    ? Number((prevResult.rows[0] as Record<string, unknown>).streak_count)
-    : 0
-
-  // Atomic increments avoid losing simultaneous completions from different callers.
-  await client.execute({
-    sql: `INSERT INTO gamification_stats(date, completed_count, streak_count, points)
-          VALUES(?, 1, ?, ?)
-          ON CONFLICT(date) DO UPDATE SET
-            completed_count = completed_count + 1,
-            points = points + excluded.points`,
-    args: [today, prevStreak > 0 ? prevStreak + 1 : 1, points],
-  })
-
-  return getStats()
+/** Today and the sidebar read the same two indexed days for the current request. */
+export function getDailyProgress(scope: BoardScope, now = new Date(), timezone = "UTC"): Promise<DailyProgress> {
+  return readDailyProgress(scope, now, timezone)
 }
 
-/**
- * Get current gamification stats via a single aggregate query.
- */
-export async function getStats(): Promise<GamificationStats> {
+async function readDailyProgress(scope: BoardScope, now: Date, timezone = "UTC"): Promise<DailyProgress> {
   await ensureGamificationSchema()
-  const client = getPersistenceClient()
-  const today = new Date().toISOString().split("T")[0]!
-  const yesterday = new Date()
-  yesterday.setDate(yesterday.getDate() - 1)
-  const yesterdayStr = yesterday.toISOString().split("T")[0]!
+  const today = statsDayKey(now, 0, timezone)
+  const yesterday = statsDayKey(now, -1, timezone)
+  const result = await (await gamificationClient(scope)).execute(gamificationRead(scope, {
+    sql: "SELECT date, streak_count, points FROM board_stats WHERE date IN (?, ?)",
+    args: [today, yesterday],
+  }))
+  const current = result.rows.find(row => row.date === today)
+  const prior = result.rows.find(row => row.date === yesterday)
+  return {
+    currentStreak: Number(current?.streak_count ?? prior?.streak_count ?? 0),
+    points: Number(current?.points ?? 0),
+  }
+}
 
-  const agg = await client.execute({
+export async function ensureGamificationSchema(): Promise<void> { await ensureSchema() }
+
+export function statsQuery(scope: BoardScope, today: string, yesterday: string) {
+  return gamificationRead(scope, {
     sql: `SELECT
             COALESCE(MAX(CASE WHEN date = ? THEN completed_count END), 0) AS today_completed,
             MAX(CASE WHEN date = ? THEN streak_count END) AS today_streak,
@@ -135,11 +104,13 @@ export async function getStats(): Promise<GamificationStats> {
             COALESCE(MAX(streak_count), 0) AS max_streak,
             COALESCE(SUM(completed_count), 0) AS total_completed,
             COALESCE(SUM(points), 0) AS total_points
-          FROM gamification_stats`,
-    args: [today, today, yesterdayStr],
+          FROM board_stats`,
+    args: [today, today, yesterday],
   })
+}
 
-  const row = (agg.rows[0] ?? {}) as Record<string, unknown>
+export function parseStatsRows(rows: ReadonlyArray<Record<string, unknown>>): GamificationStats {
+  const row = rows[0] ?? {}
   const todayCompleted = row.today_streak != null ? Number(row.today_completed ?? 0) : 0
   const currentStreak = row.today_streak != null
     ? Number(row.today_streak)
@@ -157,32 +128,106 @@ export async function getStats(): Promise<GamificationStats> {
   }
 }
 
+export async function readStatsFromRunner(
+  runner: Pick<import("@libsql/client").Client, "execute">,
+  scope: BoardScope,
+  now = new Date(),
+  timezone = "UTC",
+): Promise<GamificationStats> {
+  const today = statsDayKey(now, 0, timezone)
+  const yesterday = statsDayKey(now, -1, timezone)
+  const agg = await runner.execute(statsQuery(scope, today, yesterday))
+  return parseStatsRows(agg.rows as ReadonlyArray<Record<string, unknown>>)
+}
+
+export async function prepareCompletionStatsWrite(
+  scope: BoardScope,
+  points = 0,
+  now = new Date(),
+  timezone = "UTC",
+) {
+  await ensureGamificationSchema()
+  const base = getPersistenceClient()
+  const client = await gamificationClient(scope, true)
+  const today = statsDayKey(now, 0, timezone)
+  const yesterday = statsDayKey(now, -1, timezone)
+  const insertStatement = {
+    sql: `INSERT INTO gamification_stats(board_id, date, completed_count, streak_count, points)
+          VALUES(?, ?, 1, 1 + MAX(0, COALESCE((SELECT streak_count FROM gamification_stats
+            WHERE board_id = ? AND date = ?), 0)), ?)
+          ON CONFLICT(board_id,date) DO UPDATE SET
+            completed_count = completed_count + 1,
+            points = points + excluded.points`,
+    args: [scope.boardId, today, scope.boardId, yesterday, points],
+  }
+  if (!scopePermits(scope, { resource: "task", action: "read" })) {
+    await client.execute(insertStatement)
+    return null
+  }
+  if (!await canReadBoardAggregate(base, scope)) {
+    await client.execute(insertStatement)
+    throw new BoardOperationError("unavailable")
+  }
+  return { base, client, today, yesterday, insertStatement }
+}
+
+/**
+ * Record a task completion. Increments today's count and updates streak.
+ * @param points - XP points to award (default: 0, Phase 5 adds weighted points)
+ */
+export async function recordTaskCompletion(
+  scope: BoardScope,
+  points = 0,
+  now = new Date(),
+  timezone = "UTC",
+): Promise<GamificationStats | null> {
+  const prepared = await prepareCompletionStatsWrite(scope, points, now, timezone)
+  if (!prepared) return null
+  const [, agg] = await prepared.client.batch(
+    [prepared.insertStatement, statsQuery(scope, prepared.today, prepared.yesterday)],
+    "write",
+  )
+  if (!await canReadBoardAggregate(prepared.base, scope)) throw new BoardOperationError("unavailable")
+  return parseStatsRows((agg?.rows ?? []) as ReadonlyArray<Record<string, unknown>>)
+}
+
+/**
+ * Get current gamification stats via a single aggregate query.
+ */
+export async function getStats(scope: BoardScope, now = new Date(), timezone = "UTC"): Promise<GamificationStats> {
+  await ensureGamificationSchema()
+  const client = await gamificationClient(scope)
+  const today = statsDayKey(now, 0, timezone)
+  const yesterday = statsDayKey(now, -1, timezone)
+
+  const agg = await client.execute(statsQuery(scope, today, yesterday))
+  return parseStatsRows(agg.rows as ReadonlyArray<Record<string, unknown>>)
+}
+
 /**
  * Get weekly data for the last 7 days via a single GROUP BY date query.
  */
-export async function getWeeklyData(): Promise<DailyRecord[]> {
+export async function getWeeklyData(scope: BoardScope, now = new Date(), timezone = "UTC"): Promise<DailyRecord[]> {
   await ensureGamificationSchema()
-  const client = getPersistenceClient()
+  const client = await gamificationClient(scope)
 
   const dateKeys: string[] = []
   for (let i = 6; i >= 0; i--) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    dateKeys.push(d.toISOString().split("T")[0]!)
+    dateKeys.push(statsDayKey(now, -i, timezone))
   }
 
   const startStr = dateKeys[0]!
   const endStr = dateKeys[dateKeys.length - 1]!
-  const result = await client.execute({
+  const result = await client.execute(gamificationRead(scope, {
     sql: `SELECT date,
                  COALESCE(SUM(completed_count), 0) AS completed_count,
                  COALESCE(MAX(streak_count), 0) AS streak_count,
                  COALESCE(SUM(points), 0) AS points
-          FROM gamification_stats
+          FROM board_stats
           WHERE date >= ? AND date <= ?
           GROUP BY date`,
     args: [startStr, endStr],
-  })
+  }))
 
   const byDate = new Map<string, DailyRecord>()
   for (const raw of result.rows) {
@@ -206,5 +251,5 @@ export async function getWeeklyData(): Promise<DailyRecord[]> {
 
 /** Reset for tests */
 export function resetGamificationForTests(): void {
-  schemaEnsured = false
+  // No shared schema or audience cache remains.
 }

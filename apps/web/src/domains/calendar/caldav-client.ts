@@ -26,15 +26,21 @@
  */
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
-import { classifyNetworkHost, fetchOutbound, normalizeNetworkHost } from "@meitheal/integration-core"
+import {
+  classifyNetworkHost,
+  fetchOutbound,
+  normalizeNetworkHost
+} from "@meitheal/integration-core"
 import { shiftCalendarDay } from "../../lib/date"
 import { expandRRuleOccurrences, normalizeRRule, RecurrenceScanLimitError } from "./recurrence"
 
 const logger = createLogger({
-  service: "meitheal-web", env: process.env.NODE_ENV ?? "development",
-  minLevel: "info", enabledCategories: ["caldav", "calendar"],
+  service: "meitheal-web",
+  env: process.env.NODE_ENV ?? "development",
+  minLevel: "info",
+  enabledCategories: ["caldav", "calendar"],
   redactPatterns: [...defaultRedactionPatterns, /password=\S+/gi, /Authorization:\s*\S+/gi],
-  auditEnabled: false,
+  auditEnabled: false
 })
 const SYS_REQ = "caldav-system"
 
@@ -44,6 +50,10 @@ export interface CalDAVConfig {
   url: string
   username: string
   password: string
+}
+
+export interface CalDAVOperationOptions {
+  operationAllowed?: (() => Promise<boolean>) | undefined
 }
 
 export interface CalDAVCalendar {
@@ -81,7 +91,13 @@ function isCgnatHost(hostname: string): boolean {
   const octets = hostname.split(".")
   if (
     octets.length === 4 &&
-    octets.every((p) => p.length >= 1 && p.length <= 3 && [...p].every((c) => c >= "0" && c <= "9") && Number(p) <= 255)
+    octets.every(
+      (p) =>
+        p.length >= 1 &&
+        p.length <= 3 &&
+        [...p].every((c) => c >= "0" && c <= "9") &&
+        Number(p) <= 255
+    )
   ) {
     const second = Number(octets[1])
     return Number(octets[0]) === 100 && second >= 64 && second <= 127
@@ -95,7 +111,14 @@ function isCgnatHost(hostname: string): boolean {
   const parts = tail.split(":")
   if (
     parts.length !== 2 ||
-    !parts.every((p) => p.length >= 1 && p.length <= 4 && [...p].every((c) => (c >= "0" && c <= "9") || (c >= "a" && c <= "f") || (c >= "A" && c <= "F")))
+    !parts.every(
+      (p) =>
+        p.length >= 1 &&
+        p.length <= 4 &&
+        [...p].every(
+          (c) => (c >= "0" && c <= "9") || (c >= "a" && c <= "f") || (c >= "A" && c <= "F")
+        )
+    )
   ) {
     return false
   }
@@ -178,9 +201,13 @@ export function resolveCalDAVHref(baseUrl: string, href: string): URL {
 }
 
 async function caldavFetch(
-  url: string, method: string, body: string | null,
-  username: string, password: string,
+  url: string,
+  method: string,
+  body: string | null,
+  username: string,
+  password: string,
   extraHeaders: Record<string, string> = {},
+  options: CalDAVOperationOptions = {}
 ): Promise<{ status: number; text: string }> {
   const urlCheck = validateCalDAVUrl(url)
   if (!urlCheck.valid) {
@@ -201,7 +228,7 @@ async function caldavFetch(
     for (let hop = 0; ; hop++) {
       const requestHeaders: Record<string, string> = {
         Authorization: basicAuthHeader(username, password),
-        ...extraHeaders,
+        ...extraHeaders
       }
       if (currentBody !== null) {
         requestHeaders["Content-Type"] = "application/xml; charset=utf-8"
@@ -212,14 +239,18 @@ async function caldavFetch(
         body: currentBody,
         signal: controller.signal,
         redirect: "manual",
+        operationAllowed: options.operationAllowed
       })
       const location = res.headers.get("location")
       if (!REDIRECT_STATUSES.has(res.status) || !location) break
       await res.body?.cancel().catch(() => undefined)
-      if (hop >= MAX_REDIRECTS) throw new Error(`CalDAV server redirected more than ${MAX_REDIRECTS} times`)
+      if (hop >= MAX_REDIRECTS)
+        throw new Error(`CalDAV server redirected more than ${MAX_REDIRECTS} times`)
       const next = new URL(location, target)
       if (next.protocol !== origin.protocol || next.origin !== origin.origin) {
-        throw new Error(`CalDAV server redirected to another origin (${next.origin}); update the CalDAV URL instead`)
+        throw new Error(
+          `CalDAV server redirected to another origin (${next.origin}); update the CalDAV URL instead`
+        )
       }
       const nextCheck = validateCalDAVUrl(next.toString())
       if (!nextCheck.valid) {
@@ -236,16 +267,22 @@ async function caldavFetch(
     const contentLength = res.headers.get("content-length")
     if (contentLength && parseInt(contentLength, 10) > MAX_RESPONSE_BYTES) {
       await res.body?.cancel().catch(() => undefined)
-      throw new Error(`CalDAV response too large (${contentLength} bytes, max ${MAX_RESPONSE_BYTES})`)
+      throw new Error(
+        `CalDAV response too large (${contentLength} bytes, max ${MAX_RESPONSE_BYTES})`
+      )
     }
 
     const text = await res.text()
 
     // Guard: check actual body size after reading
     if (text.length > MAX_RESPONSE_BYTES) {
-      throw new Error(`CalDAV response body too large (${text.length} chars, max ${MAX_RESPONSE_BYTES})`)
+      throw new Error(
+        `CalDAV response body too large (${text.length} chars, max ${MAX_RESPONSE_BYTES})`
+      )
     }
 
+    if (options.operationAllowed && !(await options.operationAllowed()))
+      throw new Error("CalDAV operation is unavailable")
     return { status: res.status, text }
   } finally {
     clearTimeout(timeout)
@@ -254,7 +291,13 @@ async function caldavFetch(
 
 // ─── XML Parsing (XXE-safe) ─────────────────────────────────────────
 
-const XML_NAMED_ENTITIES: Record<string, string> = { lt: "<", gt: ">", amp: "&", quot: "\"", apos: "'" }
+const XML_NAMED_ENTITIES: Record<string, string> = {
+  lt: "<",
+  gt: ">",
+  amp: "&",
+  quot: '"',
+  apos: "'"
+}
 
 /**
  * Decode XML character data in one pass. SabreDAV servers (Nextcloud, Baïkal)
@@ -262,12 +305,21 @@ const XML_NAMED_ENTITIES: Record<string, string> = { lt: "<", gt: ">", amp: "&",
  * hrefs and text, so RRULE, UNTIL and STATUS values must be decoded before parsing.
  */
 export function decodeXmlText(value: string): string {
-  return value.replace(/&(?:#(\d{1,7})|#x([0-9a-fA-F]{1,6})|(lt|gt|amp|quot|apos));/g, (match, dec, hex, named) => {
-    if (named) return XML_NAMED_ENTITIES[named as string] ?? match
-    const code = dec ? Number.parseInt(dec as string, 10) : Number.parseInt(hex as string, 16)
-    if (!Number.isInteger(code) || code < 1 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) return match
-    return String.fromCodePoint(code)
-  })
+  return value.replace(
+    /&(?:#(\d{1,7})|#x([0-9a-fA-F]{1,6})|(lt|gt|amp|quot|apos));/g,
+    (match, dec, hex, named) => {
+      if (named) return XML_NAMED_ENTITIES[named as string] ?? match
+      const code = dec ? Number.parseInt(dec as string, 10) : Number.parseInt(hex as string, 16)
+      if (
+        !Number.isInteger(code) ||
+        code < 1 ||
+        code > 0x10ffff ||
+        (code >= 0xd800 && code <= 0xdfff)
+      )
+        return match
+      return String.fromCodePoint(code)
+    }
+  )
 }
 
 function unwrapCdata(raw: string): string {
@@ -291,7 +343,11 @@ function isTagBoundaryChar(ch: string | undefined): boolean {
   return ch === ">" || ch === "/" || ch === " " || ch === "\t" || ch === "\n" || ch === "\r"
 }
 
-function findNextOpenTag(lowerXml: string, localName: string, fromIndex: number): {
+function findNextOpenTag(
+  lowerXml: string,
+  localName: string,
+  fromIndex: number
+): {
   contentStart: number
   selfClosing: boolean
   tagName: string
@@ -300,7 +356,11 @@ function findNextOpenTag(lowerXml: string, localName: string, fromIndex: number)
   while (cursor < lowerXml.length) {
     const lt = lowerXml.indexOf("<", cursor)
     if (lt === -1) return null
-    if (lowerXml.startsWith("</", lt) || lowerXml.startsWith("<!", lt) || lowerXml.startsWith("<?", lt)) {
+    if (
+      lowerXml.startsWith("</", lt) ||
+      lowerXml.startsWith("<!", lt) ||
+      lowerXml.startsWith("<?", lt)
+    ) {
       const close = lowerXml.indexOf(">", lt + 2)
       cursor = close === -1 ? lowerXml.length : close + 1
       continue
@@ -362,7 +422,9 @@ function extractTagContents(xml: string, localName: string): string[] {
  * Parse XML string safely with linear tag scanning to prevent XXE
  * declarations and regular-expression backtracking (ReDoS).
  */
-export function extractXmlResponses(xml: string): Array<{ href: string; props: Record<string, string> }> {
+export function extractXmlResponses(
+  xml: string
+): Array<{ href: string; props: Record<string, string> }> {
   // Reject DOCTYPE/ENTITY declarations fail-closed (handles internal DTD subsets too).
   // CDATA sections are character data, not markup: an HTML invite description
   // (X-ALT-DESC "<!DOCTYPE HTML ...>") inside CDATA calendar-data is not a declaration.
@@ -481,8 +543,15 @@ function safeTimeZone(tzid?: string): string {
   return tzid && isValidTimeZone(tzid) ? tzid : "UTC"
 }
 
-function eventEndFromDuration(start: string, duration: string, allDay: boolean, timezone: string): string | undefined {
-  const parts = /^\+?P(?:(\d+)W|(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?)$/i.exec(duration)
+function eventEndFromDuration(
+  start: string,
+  duration: string,
+  allDay: boolean,
+  timezone: string
+): string | undefined {
+  const parts = /^\+?P(?:(\d+)W|(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?)$/i.exec(
+    duration
+  )
   if (!parts || /T$/i.test(duration) || (allDay && /T/i.test(duration))) return
   const [, weeks = "0", days = "0", hours = "0", minutes = "0", seconds = "0"] = parts
   const calendarDays = Number(weeks) * 7 + Number(days)
@@ -491,7 +560,8 @@ function eventEndFromDuration(start: string, duration: string, allDay: boolean, 
 
   try {
     // Weeks and days follow the calendar in the event's zone. The time part is elapsed time.
-    const afterDays = calendarDays > 0 ? shiftWallClock(start, calendarDays * 86_400_000, timezone, allDay) : start
+    const afterDays =
+      calendarDays > 0 ? shiftWallClock(start, calendarDays * 86_400_000, timezone, allDay) : start
     if (clockMs === 0) return afterDays
     const zoned = /Z$/i.test(afterDays)
     const instant = Date.parse(zoned ? afterDays : `${afterDays}Z`)
@@ -624,7 +694,11 @@ export function parseVEvents(ical: string, eventHref: string): CalDAVEvent[] {
     } else if (duration) {
       dtend = eventEndFromDuration(dtstart, duration, allDay, safeTimeZone(tzid))
     }
-    const inclusiveEndDate = allDay ? (dtend && dtend > dtstart ? shiftCalendarDay(dtend, -1) : dtstart) : undefined
+    const inclusiveEndDate = allDay
+      ? dtend && dtend > dtstart
+        ? shiftCalendarDay(dtend, -1)
+        : dtstart
+      : undefined
 
     let recurrenceId: string | undefined
     if (recurrenceIdRaw) {
@@ -647,10 +721,13 @@ export function parseVEvents(ical: string, eventHref: string): CalDAVEvent[] {
       rrule,
       exdates: exdates.length > 0 ? exdates : undefined,
       recurrenceId,
-      recurrenceRange: recurrenceId && recurrenceIdParams.RANGE?.toUpperCase() === "THISANDFUTURE" ? "THISANDFUTURE" : undefined,
+      recurrenceRange:
+        recurrenceId && recurrenceIdParams.RANGE?.toUpperCase() === "THISANDFUTURE"
+          ? "THISANDFUTURE"
+          : undefined,
       tzid,
       href: eventHref,
-      cancelled: cancelled || undefined,
+      cancelled: cancelled || undefined
     }
     events.push(parsedEvent)
   }
@@ -671,7 +748,9 @@ function shiftWallClock(value: string, deltaMs: number, timezone: string, allDay
   if (allDay || /^\d{4}-\d{2}-\d{2}$/.test(value)) return shifted.toISOString().slice(0, 10)
   const wall = shifted.toISOString().slice(0, 19)
   if (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(value)) {
-    return fromZonedTime(wall, timezone).toISOString().replace(/\.\d{3}Z$/, "Z")
+    return fromZonedTime(wall, timezone)
+      .toISOString()
+      .replace(/\.\d{3}Z$/, "Z")
   }
   return wall
 }
@@ -684,7 +763,7 @@ function shiftWallClock(value: string, deltaMs: number, timezone: string, allDay
 function applyThisAndFutureOverride(
   master: CalDAVEvent,
   override: CalDAVEvent,
-  occ: { start: string; end?: string | undefined; inclusiveEndDate?: string | undefined },
+  occ: { start: string; end?: string | undefined; inclusiveEndDate?: string | undefined }
 ): CalDAVEvent {
   const timezone = safeTimeZone(master.tzid)
   const allDay = master.allDay
@@ -699,12 +778,13 @@ function applyThisAndFutureOverride(
     location: override.location ?? master.location,
     dtstart: start,
     dtend: occ.end,
-    inclusiveEndDate: occ.inclusiveEndDate ?? master.inclusiveEndDate,
+    inclusiveEndDate: occ.inclusiveEndDate ?? master.inclusiveEndDate
   }
   // The override's own length applies to every later instance, including when it adds an end
   // the master never had. Without an override end, the master's length is kept.
   const overrideSpan = override.dtend
-    ? wallClockMs(override.dtend, timezone, override.allDay) - wallClockMs(override.dtstart, timezone, override.allDay)
+    ? wallClockMs(override.dtend, timezone, override.allDay) -
+      wallClockMs(override.dtstart, timezone, override.allDay)
     : null
   const duration = override.duration ?? (override.dtend ? undefined : master.duration)
   if (duration) {
@@ -728,9 +808,14 @@ function applyThisAndFutureOverride(
 
 /** Whether an expanded instance overlaps [windowStart, windowEnd] (all-day ends are exclusive). */
 function instanceOverlapsWindow(
-  evt: { dtstart: string; dtend?: string | undefined; inclusiveEndDate?: string | undefined; allDay: boolean },
+  evt: {
+    dtstart: string
+    dtend?: string | undefined
+    inclusiveEndDate?: string | undefined
+    allDay: boolean
+  },
   windowStart: Date,
-  windowEnd: Date,
+  windowEnd: Date
 ): boolean {
   if (evt.allDay) {
     const startMs = Date.parse(evt.dtstart.slice(0, 10))
@@ -740,7 +825,10 @@ function instanceOverlapsWindow(
   const startMs = Date.parse(evt.dtstart)
   if (Number.isNaN(startMs)) return true
   const endMs = evt.dtend ? Date.parse(evt.dtend) : startMs
-  return (Number.isNaN(endMs) ? startMs : endMs) >= windowStart.getTime() && startMs <= windowEnd.getTime()
+  return (
+    (Number.isNaN(endMs) ? startMs : endMs) >= windowStart.getTime() &&
+    startMs <= windowEnd.getTime()
+  )
 }
 
 /** Expand RRULE recurring events and apply EXDATE / RECURRENCE-ID overrides within [start, end]. */
@@ -748,7 +836,7 @@ export function expandCalDAVEventsInWindow(
   parsedEvents: CalDAVEvent[],
   start: Date,
   end: Date,
-  onScanLimit?: () => void,
+  onScanLimit?: () => void
 ): CalDAVEvent[] {
   const byUid = new Map<string, CalDAVEvent[]>()
   for (const evt of parsedEvents) {
@@ -761,8 +849,8 @@ export function expandCalDAVEventsInWindow(
 
   eventSeries: for (const group of byUid.values()) {
     const startIndex = expanded.length
-    const masters = group.filter(e => !e.recurrenceId)
-    const overrides = group.filter(e => Boolean(e.recurrenceId))
+    const masters = group.filter((e) => !e.recurrenceId)
+    const overrides = group.filter((e) => Boolean(e.recurrenceId))
 
     if (masters.length === 0) {
       for (const ov of overrides) {
@@ -773,7 +861,7 @@ export function expandCalDAVEventsInWindow(
           allDay: ov.allDay,
           timezone: safeTimeZone(ov.tzid),
           windowStart: start,
-          windowEnd: end,
+          windowEnd: end
         })
         if (occs.length > 0) expanded.push(ov)
       }
@@ -783,7 +871,7 @@ export function expandCalDAVEventsInWindow(
     for (const master of masters) {
       if (master.cancelled) continue
       const overrideExdates = overrides
-        .map(o => o.recurrenceId)
+        .map((o) => o.recurrenceId)
         .filter((d): d is string => Boolean(d))
       const combinedExdates = [...(master.exdates ?? []), ...overrideExdates]
 
@@ -797,7 +885,8 @@ export function expandCalDAVEventsInWindow(
         const maxShiftMs = rangeOverrides.reduce((max, o) => {
           if (o.cancelled) return max
           const shift = Math.abs(
-            wallClockMs(o.dtstart, timezone, o.allDay) - wallClockMs(o.recurrenceId!, timezone, o.allDay),
+            wallClockMs(o.dtstart, timezone, o.allDay) -
+              wallClockMs(o.recurrenceId!, timezone, o.allDay)
           )
           return Number.isFinite(shift) ? Math.max(max, shift) : max
         }, 0)
@@ -805,7 +894,8 @@ export function expandCalDAVEventsInWindow(
         // can now reach into it. Pad by the longest override length as well.
         const maxSpanMs = rangeOverrides.reduce((max, o) => {
           if (o.cancelled || !o.dtend) return max
-          const span = wallClockMs(o.dtend, timezone, o.allDay) - wallClockMs(o.dtstart, timezone, o.allDay)
+          const span =
+            wallClockMs(o.dtend, timezone, o.allDay) - wallClockMs(o.dtstart, timezone, o.allDay)
           return Number.isFinite(span) ? Math.max(max, span) : max
         }, 0)
         const padMs = rangeOverrides.length > 0 ? maxShiftMs + maxSpanMs + 2 * 86_400_000 : 0
@@ -815,13 +905,15 @@ export function expandCalDAVEventsInWindow(
           occs = expandRRuleOccurrences({
             dtstart: master.dtstart,
             dtend: master.dtend,
-            timedEndForStart: duration ? (start) => eventEndFromDuration(start, duration, false, timezone) : undefined,
+            timedEndForStart: duration
+              ? (start) => eventEndFromDuration(start, duration, false, timezone)
+              : undefined,
             rrule: master.rrule,
             exdates: combinedExdates,
             allDay: master.allDay,
             timezone,
             windowStart: new Date(start.getTime() - padMs),
-            windowEnd: new Date(end.getTime() + padMs),
+            windowEnd: new Date(end.getTime() + padMs)
           })
         } catch (error) {
           if (!(error instanceof RecurrenceScanLimitError) || !onScanLimit) throw error
@@ -831,17 +923,19 @@ export function expandCalDAVEventsInWindow(
         }
         for (const occ of occs) {
           const occMs = Date.parse(occ.start)
-          const range = [...rangeOverrides].reverse().find((o) => Date.parse(o.recurrenceId!) <= occMs)
+          const range = [...rangeOverrides]
+            .reverse()
+            .find((o) => Date.parse(o.recurrenceId!) <= occMs)
           // A cancelled range removes its instance and every later one.
           if (range?.cancelled) continue
           const instance: CalDAVEvent = range
             ? applyThisAndFutureOverride(master, range, occ)
             : {
-              ...master,
-              dtstart: occ.start,
-              dtend: occ.end,
-              inclusiveEndDate: occ.inclusiveEndDate ?? master.inclusiveEndDate,
-            }
+                ...master,
+                dtstart: occ.start,
+                dtend: occ.end,
+                inclusiveEndDate: occ.inclusiveEndDate ?? master.inclusiveEndDate
+              }
           if (padMs === 0 || instanceOverlapsWindow(instance, start, end)) expanded.push(instance)
         }
       } else {
@@ -852,7 +946,7 @@ export function expandCalDAVEventsInWindow(
           allDay: master.allDay,
           timezone: safeTimeZone(master.tzid),
           windowStart: start,
-          windowEnd: end,
+          windowEnd: end
         })
         if (occs.length > 0) expanded.push(master)
       }
@@ -866,13 +960,13 @@ export function expandCalDAVEventsInWindow(
         allDay: ov.allDay,
         timezone: safeTimeZone(ov.tzid),
         windowStart: start,
-        windowEnd: end,
+        windowEnd: end
       })
       if (occs.length > 0) {
-        const masterRRule = masters.find(m => m.rrule)?.rrule
+        const masterRRule = masters.find((m) => m.rrule)?.rrule
         expanded.push({
           ...ov,
-          rrule: ov.rrule ?? masterRRule,
+          rrule: ov.rrule ?? masterRRule
         })
       }
     }
@@ -905,7 +999,9 @@ function formatICalDate(icalDate: string, tzid?: string, allDay = false): string
     const t = base.slice(9, 11) + ":" + base.slice(11, 13) + ":" + base.slice(13, 15)
     if (base.endsWith("Z")) return `${d}T${t}Z`
     if (tzid && isValidTimeZone(tzid)) {
-      return fromZonedTime(`${d}T${t}`, tzid).toISOString().replace(/\.\d{3}Z$/, "Z")
+      return fromZonedTime(`${d}T${t}`, tzid)
+        .toISOString()
+        .replace(/\.\d{3}Z$/, "Z")
     }
     return `${d}T${t}`
   }
@@ -918,7 +1014,10 @@ function formatICalDate(icalDate: string, tzid?: string, allDay = false): string
  * Discover calendars on a CalDAV server.
  * Sends PROPFIND Depth:1 to the base URL to find calendar collections.
  */
-export async function discoverCalendars(config: CalDAVConfig): Promise<CalDAVCalendar[]> {
+export async function discoverCalendars(
+  config: CalDAVConfig,
+  options: CalDAVOperationOptions = {}
+): Promise<CalDAVCalendar[]> {
   const validation = validateCalDAVUrl(config.url)
   if (!validation.valid) {
     throw new Error(`CalDAV URL validation failed: ${validation.error}`)
@@ -926,8 +1025,10 @@ export async function discoverCalendars(config: CalDAVConfig): Promise<CalDAVCal
 
   logger.log("info", {
     event: "caldav.discovery.starting",
-    domain: "caldav", component: "caldav-client",
-    request_id: SYS_REQ, message: `Discovering calendars at ${new URL(config.url).hostname}`,
+    domain: "caldav",
+    component: "caldav-client",
+    request_id: SYS_REQ,
+    message: `Discovering calendars at ${new URL(config.url).hostname}`
   })
 
   const propfindBody = `<?xml version="1.0" encoding="utf-8"?>
@@ -942,9 +1043,13 @@ export async function discoverCalendars(config: CalDAVConfig): Promise<CalDAVCal
 
   try {
     const { status, text } = await caldavFetch(
-      config.url, "PROPFIND", propfindBody,
-      config.username, config.password,
+      config.url,
+      "PROPFIND",
+      propfindBody,
+      config.username,
+      config.password,
       { Depth: "1" },
+      options
     )
 
     if (status === 401 || status === 403) {
@@ -961,7 +1066,8 @@ export async function discoverCalendars(config: CalDAVConfig): Promise<CalDAVCal
       if (resp.props.isCalendar === "true") {
         const cal: CalDAVCalendar = {
           href: resp.href,
-          displayName: resp.props.displayname || resp.href.split("/").filter(Boolean).pop() || "Calendar",
+          displayName:
+            resp.props.displayname || resp.href.split("/").filter(Boolean).pop() || "Calendar"
         }
         if (resp.props.ctag !== undefined) cal.ctag = resp.props.ctag
         if (resp.props.color !== undefined) cal.color = resp.props.color
@@ -971,8 +1077,10 @@ export async function discoverCalendars(config: CalDAVConfig): Promise<CalDAVCal
 
     logger.log("info", {
       event: "caldav.discovery.success",
-      domain: "caldav", component: "caldav-client",
-      request_id: SYS_REQ, message: `Discovered ${calendars.length} calendar(s)`,
+      domain: "caldav",
+      component: "caldav-client",
+      request_id: SYS_REQ,
+      message: `Discovered ${calendars.length} calendar(s)`
     })
 
     return calendars
@@ -993,6 +1101,7 @@ export async function listCalDAVEvents(
   calendarHref: string,
   start: Date,
   end: Date,
+  options: CalDAVOperationOptions = {}
 ): Promise<{ events: CalDAVEvent[]; skippedSeries: number }> {
   const validation = validateCalDAVUrl(config.url)
   if (!validation.valid) {
@@ -1027,9 +1136,13 @@ export async function listCalDAVEvents(
 
   try {
     const { status, text } = await caldavFetch(
-      calUrl, "REPORT", reportBody,
-      config.username, config.password,
+      calUrl,
+      "REPORT",
+      reportBody,
+      config.username,
+      config.password,
       { Depth: "1" },
+      options
     )
 
     if (status === 401 || status === 403) {
@@ -1050,13 +1163,16 @@ export async function listCalDAVEvents(
     }
 
     let skippedSeries = 0
-    const events = expandCalDAVEventsInWindow(parsedEvents, start, end, () => { skippedSeries++ })
+    const events = expandCalDAVEventsInWindow(parsedEvents, start, end, () => {
+      skippedSeries++
+    })
 
     logger.log("info", {
       event: "caldav.sync.success",
-      domain: "caldav", component: "caldav-client",
+      domain: "caldav",
+      component: "caldav-client",
       request_id: SYS_REQ,
-      message: `Fetched ${events.length} events from CalDAV (${startStr} to ${endStr})`,
+      message: `Fetched ${events.length} events from CalDAV (${startStr} to ${endStr})`
     })
 
     return { events, skippedSeries }
@@ -1072,13 +1188,15 @@ export async function listCalDAVEvents(
  * Test connection to a CalDAV server.
  * Returns success/failure with descriptive message.
  */
-export async function testConnection(config: CalDAVConfig): Promise<{ ok: boolean; message: string; calendars?: CalDAVCalendar[] }> {
+export async function testConnection(
+  config: CalDAVConfig
+): Promise<{ ok: boolean; message: string; calendars?: CalDAVCalendar[] }> {
   try {
     const calendars = await discoverCalendars(config)
     return {
       ok: true,
       message: `Connected! Found ${calendars.length} calendar${calendars.length !== 1 ? "s" : ""}: ${calendars.map((c) => c.displayName).join(", ")}`,
-      calendars,
+      calendars
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Connection failed"
@@ -1090,5 +1208,8 @@ export async function testConnection(config: CalDAVConfig): Promise<{ ok: boolea
 
 /** Convert Date to iCal UTC format: YYYYMMDDTHHmmSSZ */
 function toICalUTC(date: Date): string {
-  return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "")
+  return date
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\.\d{3}/, "")
 }

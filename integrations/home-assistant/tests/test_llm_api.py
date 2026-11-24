@@ -24,7 +24,7 @@ except ModuleNotFoundError as error:
     )
 
 from custom_components.meitheal.api import MeithealApi
-from custom_components.meitheal.const import DOMAIN
+from custom_components.meitheal.const import CONF_API_TOKEN, CONF_BOARD_ID, DOMAIN
 from custom_components.meitheal.coordinator import MeithealCoordinator
 from custom_components.meitheal.llm_api import async_register_llm_api
 
@@ -59,19 +59,37 @@ async def async_call(
     )
 
 
+def business_api(native_human_transport, business):
+    """Keep business assertions isolated while actual Core/Supervisor authorization runs.
+
+    Bootstrap metadata/proof uses production HTTP transport. Only task business
+    responses are doubled here; test_board_context covers actual request headers.
+    """
+    api = native_human_transport.make_api()
+    original = api.async_request
+    async def request(method, path, **kwargs):
+        if path == "/api/agent-context":
+            return await original(method, path, **kwargs)
+        return await business.async_request(method, path, **kwargs)
+    api.async_request = request
+    return api
+
+
 async def test_optional_registry_follows_entry_lifecycle(
     hass: HomeAssistant,
     hass_admin_user: User,
     aioclient_mock: AiohttpClientMocker,
+    native_human_transport,
 ) -> None:
     """Core loads ordinary services on both versions and removes the optional API."""
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={CONF_HOST: "tasks.example.test", CONF_PORT: 443, CONF_SSL: True},
+        data={CONF_HOST: "local-meitheal", CONF_PORT: 3000, CONF_SSL: False, CONF_API_TOKEN: "mth_" + "a" * 64, CONF_BOARD_ID: "work"},
+        version=2,
     )
     entry.add_to_hass(hass)
-    aioclient_mock.get("https://tasks.example.test/api/tasks", json={"tasks": []})
-    aioclient_mock.get("https://tasks.example.test/api/gamification", status=403)
+    aioclient_mock.get(native_human_transport.origin + "/api/tasks", json={"tasks": []})
+    aioclient_mock.get(native_human_transport.origin + "/api/gamification", status=403)
     assert await hass.config_entries.async_setup(entry.entry_id)
     assert hass.services.has_service(DOMAIN, "create_task")
 
@@ -89,7 +107,7 @@ async def test_optional_registry_follows_entry_lifecycle(
 
 
 @pytest.fixture
-def registered_entries(hass: HomeAssistant):
+def registered_entries(hass: HomeAssistant, native_human_transport):
     """Provide distinct loaded entries to verify routing without changing the manifest."""
     entries = []
     for label in ("entry-a", "entry-b"):
@@ -100,7 +118,7 @@ def registered_entries(hass: HomeAssistant):
             {"sections": [{"id": "tasks", "items": [{"id": label, "title": label}]}]},
             {"id": label, "title": label, "description": "Fixture", "private": "omit"},
         ]
-        entry.runtime_data = MeithealCoordinator(hass, client)
+        entry.runtime_data = MeithealCoordinator(hass, business_api(native_human_transport, client))
         unregister = async_register_llm_api(hass, entry)
         assert unregister is not None
         entries.append((entry, client, unregister))
@@ -175,7 +193,7 @@ async def test_cached_tools_recheck_user_entry_and_arguments(
             await async_call(instance, name, arguments)
 
     original_coordinator = entry.runtime_data
-    entry.runtime_data = MeithealCoordinator(hass, client)
+    entry.runtime_data = MeithealCoordinator(hass, original_coordinator.api)
     with pytest.raises(HomeAssistantError, match="Meitheal entry is unavailable"):
         await async_call(instance, SEARCH, {"query": "fixture"})
     entry.runtime_data = original_coordinator
@@ -203,6 +221,7 @@ async def test_llm_write_tools_send_verified_origin_headers(
     platform: str,
     assistant: str,
     expected_name: str,
+    native_human_transport,
 ) -> None:
     """Create and complete LLM tools attach verified conversation-agent provenance headers."""
     entry = MockConfigEntry(domain=DOMAIN, title="llm-origin", state=ConfigEntryState.LOADED)
@@ -212,7 +231,7 @@ async def test_llm_write_tools_send_verified_origin_headers(
         {"id": "task-created"},
         {"id": "task-created", "status": "done"},
     ]
-    entry.runtime_data = MeithealCoordinator(hass, client)
+    entry.runtime_data = MeithealCoordinator(hass, business_api(native_human_transport, client))
     entry.runtime_data.async_request_refresh = AsyncMock()
     unregister = async_register_llm_api(hass, entry)
     assert unregister is not None
@@ -244,19 +263,23 @@ async def test_intent_origin_scope_attaches_assist_headers_over_http(
     hass: HomeAssistant,
     hass_admin_user: User,
     aioclient_mock: AiohttpClientMocker,
+    native_human_transport,
 ) -> None:
     """Custom intents attach Home Assistant Assist origin headers via MeithealApi without changing coordinator args."""
     from custom_components.meitheal import intents
     from homeassistant.helpers import intent
 
-    origin = "https://tasks.example.test"
+    origin = native_human_transport.origin
     token = "mth_" + "c" * 64
     aioclient_mock.get(f"{origin}/api/tasks", json={"tasks": []})
     aioclient_mock.get(f"{origin}/api/gamification", status=403)
-    aioclient_mock.post(f"{origin}/api/tasks", json={"id": "assist-task-1"})
+    aioclient_mock.post(native_human_transport.proxy + "/api/tasks", json={"id": "assist-task-1"})
+    aioclient_mock.get(native_human_transport.proxy + "/api/tasks", json={"tasks": []})
+    aioclient_mock.get(native_human_transport.proxy + "/api/gamification", status=403)
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={CONF_HOST: "tasks.example.test", CONF_PORT: 443, CONF_SSL: True, "api_token": token},
+        data={CONF_HOST: "local-meitheal", CONF_PORT: 3000, CONF_SSL: False, CONF_API_TOKEN: token, CONF_BOARD_ID: "work"},
+        version=2,
     )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -274,7 +297,7 @@ async def test_intent_origin_scope_attaches_assist_headers_over_http(
     post_calls = [
         headers
         for method, url, _, headers in aioclient_mock.mock_calls
-        if method == "POST" and str(url) == f"{origin}/api/tasks"
+        if method == "POST" and str(url) == native_human_transport.proxy + "/api/tasks"
     ]
     assert len(post_calls) == 1
     assert post_calls[0]["X-Meitheal-Origin-Kind"] == "conversation_agent"
@@ -284,13 +307,13 @@ async def test_intent_origin_scope_attaches_assist_headers_over_http(
 
 @pytest.mark.skipif(not NATIVE_ADMIN, reason="Core does not provide an admin-aware registry")
 async def test_manage_api_reads_and_changes_tasks_for_the_caller(
-    hass: HomeAssistant, hass_admin_user: User
+    hass: HomeAssistant, hass_admin_user: User, native_human_transport
 ) -> None:
     """The full API lists the caller's tasks, answers, updates, hands off and completes."""
     entry = MockConfigEntry(domain=DOMAIN, title="manage", state=ConfigEntryState.LOADED)
     entry.add_to_hass(hass)
     client = AsyncMock(spec=MeithealApi)
-    coordinator = entry.runtime_data = MeithealCoordinator(hass, client)
+    coordinator = entry.runtime_data = MeithealCoordinator(hass, business_api(native_human_transport, client))
     coordinator.async_request_refresh = AsyncMock()
     coordinator.async_complete_task = AsyncMock()
     unregister = async_register_llm_api(hass, entry)
@@ -309,12 +332,15 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
         assert set(tools) == {
             SEARCH, GET_TASK, "meitheal_list_tasks", "meitheal_get_task_comments",
             "meitheal_create_task", "meitheal_update_task", "meitheal_complete_task",
-            "meitheal_add_comment",
+            "meitheal_add_comment", "meitheal_list_routines", "meitheal_complete_routine",
         }
         for name, tool in tools.items():
             assert probatio.to_openapi(tool.parameters)["type"] == "object"
             assert tool.annotations.read_only is (
-                name in (SEARCH, GET_TASK, "meitheal_list_tasks", "meitheal_get_task_comments")
+                name in (
+                    SEARCH, GET_TASK, "meitheal_list_tasks",
+                    "meitheal_get_task_comments", "meitheal_list_routines",
+                )
             )
             assert not tool.annotations.destructive
 
@@ -473,6 +499,56 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
         await async_call(instance, "meitheal_complete_task", {"task_id": "open"})
         coordinator.async_complete_task.assert_awaited_once_with(task_id="open")
 
+        client.async_request.return_value = {
+            "habits": [
+                {"id": "hab-1", "name": "Evening reset", "cadence": "daily", "currentStreak": 5, "completedThisPeriod": False}
+            ]
+        }
+        routines_res = await async_call(instance, "meitheal_list_routines", {"area_id": "default"})
+        assert routines_res.data["count"] == 1
+        assert routines_res.data["routines"][0]["name"] == "Evening reset"
+        client.async_request.assert_awaited_with(
+            "GET", "/api/habits", params={"area_id": "default"}, read_json=True
+        )
+
+        client.async_request.return_value = {
+            "taskId": "occ-1", "completed": True, "alreadyExisted": False, "newlyCompleted": True
+        }
+        done_routine = await async_call(instance, "meitheal_complete_routine", {"template_id": "hab-1"})
+        assert done_routine.data == {
+            "taskId": "occ-1", "completed": True, "alreadyExisted": False, "newlyCompleted": True
+        }
+        client.async_request.assert_awaited_with(
+            "POST",
+            "/api/habits",
+            payload={"action": "complete", "templateId": "hab-1"},
+            read_json=True,
+            event_authority=ANY,
+            extra_headers=expected_origin_headers,
+        )
+
+        client.async_request.return_value = {
+            "id": "shop-1",
+            "title": "Weekly shop",
+            "task_kind": "shopping_item",
+            "status": "pending",
+            "priority": 3,
+        }
+        shop_res = await async_call(
+            instance,
+            "meitheal_create_task",
+            {
+                "title": "Weekly shop",
+                "task_kind": "shopping_item",
+                "checklists": [{"text": "Oat milk", "done": False}],
+                "custom_fields": {
+                    "items": [{"name": "Oat milk", "qty": "2L", "category": "beverages"}],
+                    "grocy_list": "main",
+                },
+            },
+        )
+        assert shop_res.data["task_kind"] == "shopping_item"
+
         # A rejected or mismatched receipt is never reported as a successful change.
         for receipt in (None, {}, {"id": "other"}, {"id": "open", "error": "Rejected"}):
             client.async_request.return_value = receipt
@@ -492,6 +568,7 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
             ("meitheal_update_task", {"task_id": "..", "title": "x"}),
             ("meitheal_add_comment", {"task_id": "open", "comment": ""}),
             ("meitheal_complete_task", {}),
+            ("meitheal_create_task", {"title": "Bad", "custom_fields": {"items": [{"name": "Salt", "category": "invalid_aisle"}]}}),
         ):
             with pytest.raises(HomeAssistantError, match="invalid_tool_arguments"):
                 await async_call(instance, name, arguments)
@@ -508,3 +585,62 @@ async def test_manage_api_reads_and_changes_tasks_for_the_caller(
     assert not {api.id for api in llm.async_get_apis(hass)} & {
         f"meitheal_tasks-{entry.entry_id}", f"meitheal_tasks_read-{entry.entry_id}"
     }
+
+
+async def test_llm_shopping_qty_routine_kind_and_nullable_event_bounds(
+    hass: HomeAssistant,
+    hass_admin_user: User,
+    native_human_transport,
+) -> None:
+    """Validate LLM qty number|string schema, routine_instance create rejection, and nullable event bounds."""
+    if not NATIVE_ADMIN:
+        pytest.skip("Requires Home Assistant Core with native LLM admin API")
+    business = MagicMock()
+    business.async_request = AsyncMock(
+        side_effect=[
+            {"id": "shop-1", "title": "Market Run", "status": "pending", "task_kind": "shopping_item"},
+            {"id": "ev-1", "title": "Trip", "status": "pending", "task_kind": "calendar_event", "start_date": None, "end_date": None},
+        ]
+    )
+    api = business_api(native_human_transport, business)
+    coordinator = MeithealCoordinator(hass, api)
+    coordinator.async_request_refresh = AsyncMock()  # type: ignore[method-assign]
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        state=ConfigEntryState.LOADED,
+        data={CONF_HOST: "local-meitheal", CONF_PORT: 3000, CONF_SSL: False, CONF_API_TOKEN: "mth_" + "b" * 64, CONF_BOARD_ID: "work"},
+        version=2,
+    )
+    entry.add_to_hass(hass)
+    entry.runtime_data = coordinator
+    unregister = async_register_llm_api(hass, entry)
+    assert unregister is not None
+    try:
+        instance = await llm.async_get_api(hass, f"meitheal_tasks-{entry.entry_id}", llm_context(hass_admin_user.id))
+        create_tool = next(tool for tool in instance.tools if tool.name == CREATE_TASK)
+        update_tool = next(tool for tool in instance.tools if tool.name == "meitheal_update_task")
+
+        res = await async_call(
+            instance,
+            CREATE_TASK,
+            {
+                "title": "Market Run",
+                "task_kind": "shopping_item",
+                "custom_fields": {"items": [{"name": "Eggs", "qty": 12, "category": "dairy"}]},
+            },
+        )
+        assert res.data["id"] == "shop-1"
+
+        with pytest.raises(probatio.Invalid):
+            create_tool.parameters(
+                {"title": "Bad Bool", "custom_fields": {"items": [{"name": "Eggs", "qty": True}]}}
+            )
+        with pytest.raises(probatio.Invalid):
+            create_tool.parameters({"title": "Bad Routine", "task_kind": "routine_instance"})
+
+        validated_update = update_tool.parameters({"task_id": "ev-1", "start_date": None, "end_date": None})
+        assert validated_update["start_date"] is None and validated_update["end_date"] is None
+        updated = await async_call(instance, "meitheal_update_task", {"task_id": "ev-1", "start_date": None, "end_date": None})
+        assert updated.data["id"] == "ev-1"
+    finally:
+        unregister()

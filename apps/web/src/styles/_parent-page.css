@@ -100,26 +100,6 @@
   color: var(--accent);
 }
 
-/* Legacy action button — kept for planning page compatibility */
-.parent-section-hub__action {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.625rem 1.25rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: white;
-  background: var(--accent);
-  border-radius: var(--radius-sm, 6px);
-  text-decoration: none;
-  transition: background 150ms ease, transform 100ms ease;
-}
-
-.parent-section-hub__action:hover {
-  background: color-mix(in srgb, var(--accent) 85%, black);
-  transform: translateY(-1px);
-}
-
 .parent-section-hub__badge {
   display: inline-block;
   padding: 0.25rem 0.75rem;

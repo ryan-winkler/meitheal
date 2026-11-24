@@ -21,6 +21,7 @@ okf_version: "0.2"
 
 - [Calendar sync and idempotency](decisions/0005-ha-calendar-sync-and-idempotency.md) - Understand the calendar sync model and retry behavior.
 - [Webhook setup](kcs/webhook-setup-guide.md) - Connect an external automation receiver.
+- [Plugin development guide](kcs/plugin-development.md) - Build, package, secure, and test sandboxed Meitheal plugins and external connectors.
 
 # Develop and release
 
@@ -29,6 +30,7 @@ okf_version: "0.2"
 - [Security assurance case](security-assurance-case.md) - Learn what Meitheal protects, its trust boundaries, and the evidence.
 - [Home Assistant devcontainer](kcs/home-assistant-devcontainer.md) - Verify Home Assistant integration, ingress, and App packaging.
 - [Client-side patterns](kcs/client-side-patterns.md) - Implement controls that work with the application lifecycle.
+- [Design engineering and UX principles](kcs/design-principles.md) - Follow Tabler, Gestalt, Nielsen, interaction craft, and `DESIGN.md` taste standards.
 - [Operations runbook](kcs/operations-runbook.md) - Diagnose and recover from operating problems.
 - [Home Assistant publishing checklist](kcs/ha-publishing-checklist.md) - Check App packaging and installation.
 - [Release runbook](kcs/releasing.md) - Understand release channels and how to verify builds.
@@ -39,4 +41,4 @@ okf_version: "0.2"
 
 - [Documentation bundle](knowledge-bundle.md) - Scope and maintenance of the Meitheal documentation bundle.
 - [Runbooks and guides](kcs/index.md) - Browse user help, integration guides, and operational procedures.
-- [Decision records](decisions/index.md) - Browse architecture and product decisions.
+- [Architecture decision records (ADRs)](decisions/index.md) - Browse durable architectural, product, security, and policy decisions.

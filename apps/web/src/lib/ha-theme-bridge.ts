@@ -1,5 +1,8 @@
+import { applyPersonalAccent } from "./accent-colors"
+import { applyHAThemePalette, HA_THEME_MATCH_KEY, readHAThemePalette } from "./ha-theme-palette"
 import { pageLifecycle } from "./page-lifecycle"
-import { applyTheme } from "./theme-watcher"
+import { type ThemeMode } from "./theme-mode"
+import { applyTheme, readAppearanceValue } from "./theme-watcher"
 
 type Appearance = "light" | "dark"
 
@@ -25,52 +28,92 @@ function parentAppearance(parent: Window): Appearance | undefined {
   return 0.2126 * red + 0.7152 * green + 0.0722 * blue >= 128 ? "light" : "dark"
 }
 
-export function initHAThemeBridge(): void {
-  const parent = window.parent
-  if (!document.body.classList.contains("ha-ingress") || parent === window) return
-
-  let parentRoot: HTMLElement
+function frameParent(): Window | undefined {
+  if (!window.__ingress_path && !document.body?.classList.contains("ha-ingress")) return
   try {
-    if (parent.location.origin !== window.location.origin) return
-    parentRoot = parent.document.documentElement
+    const parent = window.parent
+    if (parent !== window && parent.location.origin === window.location.origin && window.frameElement?.isConnected) return parent
   } catch {
     return
   }
+}
 
+type HAThemePreview = { theme?: ThemeMode; matchHaTheme?: boolean; accent?: string | null }
+let activePreview: HAThemePreview | undefined
+
+/** An unsaved Look and Feel draft stays previewed when parent theme changes refresh the palette. */
+export function setHAThemePreview(preview?: HAThemePreview): void {
+  activePreview = preview
+}
+
+export function refreshHAThemeMatch(preview: HAThemePreview | undefined = activePreview): void {
   const root = document.documentElement
-  function syncAppearance(): void {
-    let appearance: Appearance | undefined
-    try {
-      if (parent.location.origin !== window.location.origin) return
-      appearance = parentAppearance(parent)
-    } catch {
-      return
+  const wasMatched = root.dataset.haMatch === "light" || root.dataset.haMatch === "dark"
+  const parent = frameParent()
+  const appearance = parent && parentAppearance(parent)
+  if (appearance) root.dataset.haTheme = appearance
+  else delete root.dataset.haTheme
+  const matchEnabled = preview?.matchHaTheme !== undefined
+    ? preview.matchHaTheme
+    : readAppearanceValue(HA_THEME_MATCH_KEY) === "1"
+  const accent = preview && "accent" in preview
+    ? (preview.accent ?? null)
+    : readAppearanceValue("meitheal-accent-color")
+  const match = readHAThemePalette(matchEnabled, Boolean(parent))
+  applyHAThemePalette(root, match, accent, applyPersonalAccent)
+  if (wasMatched || match.state === "active" || (parent && root.dataset.theme === "auto")) applyTheme(preview?.theme)
+  document.dispatchEvent(new Event("meitheal:ha-theme-match"))
+}
+
+export function initHAThemeBridge(): void {
+  let activeSignal: AbortSignal | undefined
+  pageLifecycle.onPageLoad(signal => {
+    if (signal === activeSignal) return
+    activeSignal = signal
+    let scheduled: number | undefined
+    const schedule = () => {
+      if (scheduled !== undefined || signal.aborted) return
+      scheduled = requestAnimationFrame(() => {
+        scheduled = undefined
+        refreshHAThemeMatch()
+      })
+    }
+    const observer = new MutationObserver(schedule)
+    const disconnect = () => {
+      observer.disconnect()
+      if (scheduled !== undefined) cancelAnimationFrame(scheduled)
+      scheduled = undefined
+    }
+    const observe = () => {
+      const parent = frameParent()
+      const frame = window.frameElement
+      if (parent && frame) {
+        const options = { attributeFilter: ["style", "class"] }
+        observer.observe(parent.document.documentElement, options)
+        observer.observe(frame, options)
+      }
+      refreshHAThemeMatch()
     }
 
-    if (root.dataset.haTheme === appearance) return
-    if (appearance) root.dataset.haTheme = appearance
-    else delete root.dataset.haTheme
-    if (root.dataset.theme === "auto") applyTheme()
-  }
-
-  const signal = pageLifecycle.signal
-  const observer = new MutationObserver(syncAppearance)
-  const disconnect = () => observer.disconnect()
-  function observe(): void {
-    observer.observe(parentRoot, { attributes: true })
-    syncAppearance()
-  }
-
-  observe()
-  signal.addEventListener("abort", disconnect, { once: true })
-  // The Home Assistant parent survives native iframe navigation.
-  window.addEventListener("pagehide", disconnect, { signal })
-  window.addEventListener("pageshow", event => {
-    if (event.persisted) observe()
-  }, { signal })
-  document.addEventListener("settheme", syncAppearance, { signal })
-  window.addEventListener("message", event => {
-    if (event.source !== parent || event.origin !== window.location.origin) return
-    if (event.data?.type === "theme-changed") syncAppearance()
-  }, { signal })
+    observe()
+    signal.addEventListener("abort", disconnect, { once: true })
+    window.addEventListener("pagehide", disconnect, { signal })
+    window.addEventListener("pageshow", event => {
+      if (event.persisted) observe()
+    }, { signal })
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") schedule()
+    }, { signal })
+    window.addEventListener("storage", event => {
+      if (event.key === HA_THEME_MATCH_KEY || event.key === null) schedule()
+    }, { signal })
+    for (const query of ["(forced-colors: active)", "(prefers-contrast: more)"]) {
+      matchMedia(query).addEventListener("change", schedule, { signal })
+    }
+    document.addEventListener("settheme", schedule, { signal })
+    window.addEventListener("message", event => {
+      if (event.source !== frameParent() || event.origin !== window.location.origin) return
+      if (event.data?.type === "theme-changed") schedule()
+    }, { signal })
+  })
 }

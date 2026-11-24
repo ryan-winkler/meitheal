@@ -1,3 +1,5 @@
+import { boardScopeErrorResponse } from "@lib/board-http"
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { isCurrentActiveHAUser } from "@domains/ha/ha-users"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
@@ -57,9 +59,10 @@ async function readBody(request: Request): Promise<Record<string, unknown> | Res
 
 function validTaskIdentifier(task: unknown): task is string {
   if (typeof task !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(task)) return false
-  if (!/^MTH-/i.test(task)) return true
-  const ticket = parseTicketKey(task)
-  return ticket !== null && Number.isSafeInteger(ticket) && ticket > 0
+  const ticketMatch = /^([A-Za-z][A-Za-z0-9]{1,9})-(\d+)$/.exec(task)
+  if (!ticketMatch) return !/^MTH-/i.test(task)
+  const ticket = Number(ticketMatch[2])
+  return Number.isSafeInteger(ticket) && ticket > 0
 }
 
 function contextChanged() {
@@ -81,7 +84,7 @@ export const HEAD: APIRoute = async ({ locals, request }) => {
   })
 }
 
-export const POST: APIRoute = async ({ locals, request }) => {
+export const POST: APIRoute = withBoardScope({ resource: "task", action: "read" }, async ({ locals, request }, scope) => {
   const owner = verifiedIngressUser(locals)
   if (!owner || !locals.ingressPath || !validBrowserRequest(request, locals.ingressPath)) {
     return problem(403, "Open personal pins from your verified Home Assistant session.")
@@ -90,10 +93,11 @@ export const POST: APIRoute = async ({ locals, request }) => {
   const body = await readBody(request)
   if (body instanceof Response) return body
   const isList = body.action === "list"
+  const isPresence = body.action === "presence" && Object.keys(body).length === 1
   const page = isList && !Object.hasOwn(body, "page") ? 1 : body.page
-  if (isList ? (Object.keys(body).some(key => key !== "action" && key !== "page") ||
+  if (!isPresence && (isList ? (Object.keys(body).some(key => key !== "action" && key !== "page") ||
       typeof page !== "number" || !Number.isSafeInteger(page) || page < 1) :
-      (body.action !== "detail" || !validTaskIdentifier(body.task) || Object.keys(body).length !== 2)) {
+      (body.action !== "detail" || !validTaskIdentifier(body.task) || Object.keys(body).length !== 2))) {
     return problem(400, "Choose a page or provide a valid task identifier.")
   }
   if (!await isCurrentActiveHAUser(owner.id)) return problem(403, "Home Assistant could not verify this account.")
@@ -101,24 +105,25 @@ export const POST: APIRoute = async ({ locals, request }) => {
   try {
     await ensureSchema()
     const client = getPersistenceClient()
-    const pins = new TaskPinRepository(client)
+    const pins = new TaskPinRepository(client, scope)
     const context = taskPinContext(owner.id)
+    if (isPresence) return json({ context, hasPins: await pins.hasAny(owner.id) })
     if (isList && typeof page === "number") {
       const result = await pins.list(owner.id, page)
       const items = result.items.map(({ ticket_number, ...item }) => ({
-        ...item, ticket_key: formatTicketKey(ticket_number), status: normalizeStatus(item.status),
+        ...item, ticket_key: item.ticket_key ?? formatTicketKey(ticket_number), status: normalizeStatus(item.status),
       }))
       return json({ context, page: result.page, total: result.total, items })
     }
-    const task = await new TaskRepository(client).resolveTaskId(String(body.task))
+    const task = await new TaskRepository(client, scope).resolveTaskId(String(body.task))
     const pin = task && await pins.get(owner.id, task.id)
     return pin ? json({ context, ...pin }) : problem(404, "Task not found.")
   } catch {
     return problem(500, "Could not read personal pins.")
   }
-}
+}, { write: true })
 
-export const PUT: APIRoute = async ({ locals, request }) => {
+export const PUT: APIRoute = withBoardScope({ resource: "task", action: "read" }, async ({ locals, request }, scope) => {
   const owner = verifiedIngressUser(locals)
   if (!owner || !locals.ingressPath || !validBrowserRequest(request, locals.ingressPath)) {
     return problem(403, "Open personal pins from your verified Home Assistant session.")
@@ -134,10 +139,10 @@ export const PUT: APIRoute = async ({ locals, request }) => {
   try {
     await ensureSchema()
     const client = getPersistenceClient()
-    const task = await new TaskRepository(client).resolveTaskId(body.task)
-    const pin = task && await new TaskPinRepository(client).set(owner.id, task.id, body.pinned)
+    const task = await new TaskRepository(client, scope).resolveTaskId(body.task)
+    const pin = task && await new TaskPinRepository(client, scope).set(owner.id, task.id, body.pinned)
     return pin ? json(pin) : problem(404, "Task not found.")
   } catch {
     return problem(500, "Could not update the pin. Refresh its state before trying again.")
   }
-}
+}, { write: true })

@@ -61,6 +61,139 @@ const pinState = { id: { type: "string" }, pinned: { type: "boolean" }, pinned_a
 const pinContextParameter = { name: "X-Meitheal-Pin-Context", in: "header", required: true, schema: pinContext }
 
 const schemas = {
+  WorkBinding: {
+    type: "object", additionalProperties: false,
+    required: ["id", "generation", "integration", "sourceId", "purpose", "enabled", "destination", "allowedOperations"],
+    properties: {
+      id: { type: "string" }, generation: { type: "integer", minimum: 1 },
+      integration: { type: "string", enum: ["todo", "calendar", "caldav", "grocy", "calendar_reminder", "webhook", "ha_events", "notification", "notification_action", "builtin", "routine", "recurrence"] },
+      retired: { const: true, readOnly: true, description: "Replaced receiver identity; cannot be re-enabled." },
+      sourceId: { type: "string" }, purpose: { type: "string" }, enabled: { type: "boolean" },
+      destination: { type: "object", additionalProperties: false, required: ["boardId"], properties: {
+        boardId: { type: "string" }, areaId: { type: "string" }, projectId: { type: "string" },
+      } },
+      allowedOperations: { type: "array", items: { type: "object", additionalProperties: false, required: ["resource", "action"], properties: {
+        resource: { const: "task" }, action: { type: "string", enum: ["read", "create", "edit", "complete", "reopen", "delete"] },
+      } } }, recipientUserIds: { type: "array", uniqueItems: true, items: { type: "string" } },
+    },
+  },
+  WebserverConfig: {
+    type: "object",
+    required: ["serverName", "internalUrl", "externalUrl", "homeAssistantUrl", "portsSpec", "ports", "bindAddress", "tlsEnabled", "sslCertificate", "sslPrivateKeyConfigured", "syncHaOptions"],
+    properties: {
+      serverName: { type: "string", maxLength: 100, description: "Human-readable server display name." },
+      internalUrl: { type: "string", maxLength: 2048, description: "Internal LAN URL or domain (http:// or https://)." },
+      externalUrl: { type: "string", maxLength: 2048, description: "External public URL or domain (https:// recommended)." },
+      homeAssistantUrl: { type: "string", maxLength: 2048, description: "Home Assistant base URL used for integration links." },
+      portsSpec: { type: "string", maxLength: 256, description: "Port specification supporting a single port (3000), comma list (3000, 8095), or range (3000-3005)." },
+      ports: { type: "array", maxItems: 32, items: { type: "integer", minimum: 1, maximum: 65535 }, description: "Resolved sorted list of listening TCP ports." },
+      bindAddress: { type: "string", description: "IPv4 or IPv6 bind interface (default 0.0.0.0)." },
+      tlsEnabled: { type: "boolean", description: "Whether direct SSL/TLS encryption is enabled." },
+      sslCertificate: { type: "string", description: "Certificate path (e.g. /ssl/fullchain.pem) or inline PEM." },
+      sslPrivateKeyConfigured: { type: "boolean", readOnly: true, description: "Whether an SSL private key is stored (never returned in plaintext)." },
+      syncHaOptions: { type: "boolean", description: "Whether changes synchronize with Home Assistant Supervisor add-on options." },
+    },
+  },
+  WebserverMcpEndpoints: {
+    type: "object",
+    required: ["mcpServerUrl", "mcpManifestUrl", "baseUrl", "source", "homeAssistantConnected"],
+    properties: {
+      mcpServerUrl: { type: "string", description: "Resolved MCP JSON-RPC endpoint URL." },
+      mcpManifestUrl: { type: "string", description: "Resolved MCP discovery manifest URL." },
+      baseUrl: { type: "string" },
+      source: { type: "string", enum: ["external", "internal", "current_origin", "port_fallback"] },
+      homeAssistantUrl: { type: ["string", "null"] },
+      homeAssistantAiUrl: { type: ["string", "null"], description: "Direct link to Home Assistant AI & Model Context Protocol page ({haDomain}/config/ai)." },
+      homeAssistantMcpIntegrationUrl: { type: ["string", "null"], description: "Alias for Home Assistant AI & MCP setup page ({haDomain}/config/ai)." },
+      homeAssistantIntegrationsUrl: { type: ["string", "null"] },
+      homeAssistantConnected: { type: "boolean" },
+    },
+  },
+  PluginManifest: {
+    type: "object",
+    required: ["id", "name", "version", "minMeithealVersion", "type", "description", "author", "license", "permissions", "allowedHosts", "dataSharing"],
+    properties: {
+      id: { type: "string", pattern: "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$" },
+      name: { type: "string" },
+      version: { type: "string" },
+      minMeithealVersion: { type: "string" },
+      type: { type: "string", enum: ["extension", "connector"] },
+      description: { type: "string" },
+      author: { type: "string" },
+      license: { type: "string" },
+      permissions: { type: "array", items: { type: "string" } },
+      hooks: { type: "array", items: { type: "string" } },
+      allowedHosts: { type: "array", items: { type: "string" } },
+      dataSharing: {
+        type: "object",
+        required: ["outbound", "destinations", "dataTypes", "summary"],
+        properties: {
+          outbound: { type: "boolean" },
+          destinations: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["host", "purpose"],
+              properties: { host: { type: "string" }, purpose: { type: "string" } },
+            },
+          },
+          dataTypes: { type: "array", items: { type: "string" } },
+          summary: { type: "string" },
+        },
+      },
+    },
+  },
+  PluginHealthReport: {
+    type: "object",
+    required: ["pluginId", "overall", "operationalState", "operationalLabel", "securityTone", "securityLabel", "passedChecks", "totalChecks", "checks"],
+    properties: {
+      pluginId: { type: "string" },
+      overall: { type: "string", enum: ["healthy", "warning", "critical", "inactive"] },
+      operationalState: { type: "string", enum: ["operational", "paused_safe_mode", "needs_config", "blocked_reconsent", "error", "disabled"] },
+      operationalLabel: { type: "string" },
+      securityTone: { type: "string", enum: ["healthy", "warning", "critical", "inactive"] },
+      securityLabel: { type: "string" },
+      passedChecks: { type: "integer" },
+      totalChecks: { type: "integer" },
+      remediation: { type: "string" },
+      checks: {
+        type: "array",
+        items: {
+          type: "object",
+          required: ["id", "label", "category", "status", "detail"],
+          properties: {
+            id: { type: "string" },
+            label: { type: "string" },
+            category: { type: "string", enum: ["elephant", "goldfish"] },
+            status: { type: "string", enum: ["pass", "warn", "fail"] },
+            detail: { type: "string" },
+          },
+        },
+      },
+    },
+  },
+  PluginView: {
+    type: "object",
+    required: ["id", "source", "enabled", "needsReconsent", "manifest", "sha256", "health"],
+    properties: {
+      id: { type: "string" },
+      source: { type: "string", enum: ["builtin", "uploaded"] },
+      enabled: { type: "boolean" },
+      needsReconsent: { type: "boolean" },
+      manifest: { $ref: "#/components/schemas/PluginManifest" },
+      sha256: { type: "string" },
+      approvedUserServer: { type: ["string", "null"] },
+      health: { $ref: "#/components/schemas/PluginHealthReport" },
+    },
+  },
+  AgentContext: {
+    type: "object", required: ["boards", "enrollmentBoardId"], properties: {
+      enrollmentBoardId: { type: ["string", "null"], description: "Only an unambiguous current credential enrollment. Never a browser capture default." },
+      boards: { type: "array", items: { type: "object", required: ["id", "name", "sharedEntityDelivery"], properties: {
+        id: { type: "string" }, name: { type: "string" }, sharedEntityDelivery: { type: "boolean", description: "Current approved broad HA receiver and unrestricted readable audience; private task data is not returned." },
+      } } },
+    },
+  },
   TaskReaction: {
     type: "object",
     required: ["id", "content", "author", "can_manage"],
@@ -78,6 +211,20 @@ const schemas = {
       reactions: { type: "array", items: { $ref: "#/components/schemas/TaskReaction" }, maxItems: 50 },
       next_cursor: { anyOf: [reactionCursor, { type: "null" }], description: "Supply this value as cursor to continue." },
       can_react: { type: "boolean", description: "Whether the caller may add reactions." },
+      groups: {
+        type: "array",
+        description: "Grouped reaction counts and whether the current caller reacted.",
+        items: {
+          type: "object",
+          required: ["content", "count", "reacted", "my_reaction_id"],
+          properties: {
+            content: reactionContent,
+            count: { type: "integer", minimum: 1 },
+            reacted: { type: "boolean" },
+            my_reaction_id: { type: ["integer", "null"], minimum: 1 },
+          },
+        },
+      },
     },
   },
   TaskReactionCounts: {
@@ -149,11 +296,17 @@ const schemas = {
       title: { type: "string", description: "Task title — the primary human-readable label" },
       description: { type: "string", nullable: true, maxLength: 10000, description: "Rich text task description. Oversized create or update requests are rejected without truncation." },
       status: { type: "string", description: "Current workflow status. Also supports custom workflow statuses.", example: "pending" },
-      priority: { type: "integer", minimum: 0, maximum: 5, description: "Priority level: 0=none, 1=lowest, 5=critical" },
-      is_promoted: { type: "boolean", description: "Shared Kanban promotion, returned for task detail and updates." },
-      due_date: { type: "string", format: "date-time", nullable: true },
+      priority: { type: "integer", minimum: 1, maximum: 5, description: "Priority level: 1=Urgent, 2=High, 3=Medium, 4=Low, 5=Minimal" },
+      is_promoted: { type: "boolean", description: "Shared Kanban promotion — pins card to top of lane with Tabler ribbon sash." },
+      actions: { type: "array", items: { type: "string", enum: ["edit", "complete", "delete"] }, description: "Detail-only hints for the current caller. Each write verifies current permission separately." },
+      due_date: { type: "string", nullable: true, description: "Due date as YYYY-MM-DD calendar day or ISO timestamp" },
+      start_date: { type: ["string", "null"], description: "Start date or ISO timestamp (primary schedule timestamp for calendar_event)" },
+      end_date: { type: ["string", "null"], description: "End date or ISO timestamp" },
+      progress: { type: "integer", minimum: 0, maximum: 100 },
+      color: { type: "string", nullable: true },
       assigned_to: { type: "string", nullable: true, description: "User ID prefixed with 'ha_' or 'custom_'" },
       kanban_position: { type: "number", nullable: true, description: "Persisted shared board position; unranked tasks have null." },
+      table_position: { type: "number", nullable: true, description: "Persisted table view sort order position; unranked tasks have null." },
       nfc_tag_id: { type: "string", nullable: true },
       urgency: { type: "integer", minimum: 0, maximum: 5 },
       importance: { type: "integer", minimum: 0, maximum: 5 },
@@ -161,13 +314,43 @@ const schemas = {
       effort_minutes: { type: "integer", nullable: true, minimum: 1, maximum: 480 },
       effort_type: { type: "string", nullable: true },
       blocked_by: { type: "string", nullable: true },
+      time_tracked: { type: "integer", minimum: 0 },
+      calendar_sync_state: { type: "string", nullable: true },
+      recurrence_rule: { type: "string", nullable: true },
+      board_id: { type: "string", nullable: true },
       area_id: { type: "string", nullable: true },
       goal_id: { type: "string", nullable: true },
       project_id: { type: "string", nullable: true },
       parent_id: { type: "string", nullable: true, description: "Parent task ID for subtask hierarchy" },
+      parent_ticket_key: { type: "string", nullable: true },
+      parent_title: { type: "string", nullable: true },
+      parent_task_type: { type: "string", enum: ["epic", "story", "task"], nullable: true },
+      task_type: { type: "string", enum: ["epic", "story", "task"], description: "Hierarchy work item type (epic, story, task)" },
       task_kind: { type: "string", enum: ["standard_action", "shopping_item", "checklist", "routine_instance", "calendar_event", "quick_capture"], description: "Behavioral kind — determines UI rendering and lifecycle rules" },
       labels: { type: "string", nullable: true, description: "JSON-encoded array of label names" },
+      framework_payload: { type: "string", nullable: true, description: "JSON-encoded strategic framework payload (RICE / dRICE)" },
+      custom_fields: { type: ["string", "null"], description: "JSON-encoded custom fields object; shopping_item tasks store structured ShoppingListItem entries under items." },
       checklists: { type: ["string", "null"], description: "A JSON-encoded array of checklist items with text, done, and an optional id. Historical tasks may have null." },
+      subtasks: {
+        type: "array",
+        description: "Direct readable child tasks (returned by single-task detail)",
+        items: {
+          type: "object",
+          required: ["id", "title", "status", "priority", "task_type"],
+          properties: {
+            id: { type: "string" },
+            ticket_number: { type: "integer", nullable: true },
+            ticket_key: { type: "string", nullable: true },
+            title: { type: "string" },
+            status: { type: "string" },
+            priority: { type: "integer", minimum: 1, maximum: 5 },
+            task_type: { type: "string", enum: ["epic", "story", "task"] },
+            assigned_to: { type: "string", nullable: true },
+            due_date: { type: "string", nullable: true },
+          },
+        },
+      },
+      ticket_number: { type: "integer", nullable: true },
       ticket_key: { type: "string", nullable: true, description: "Human-readable key like MTH-42" },
       created_at: { type: "integer", description: "Unix timestamp (ms)" },
       updated_at: { oneOf: [{ type: "integer" }, { type: "string" }], description: "Stored Unix milliseconds or legacy ISO timestamp" },
@@ -176,6 +359,20 @@ const schemas = {
       deferral_revision: { type: "string", nullable: true, pattern: "^[a-f0-9]{32}$", description: "Opaque deferral concurrency token" },
     },
     required: ["id", "title", "status"],
+  },
+  ShoppingListItem: {
+    type: "object",
+    required: ["name"],
+    additionalProperties: false,
+    properties: {
+      name: { type: "string", minLength: 1, description: "Item name" },
+      qty: {
+        oneOf: [{ type: "string" }, { type: "number", exclusiveMinimum: 0 }],
+        description: "Optional quantity label (e.g. '2L', '1 bunch') or positive number",
+      },
+      category: { type: "string", enum: ["produce", "dairy", "meat", "pantry", "frozen", "beverages", "household", "other"], description: "Aisle category" },
+      checked: { type: "boolean", description: "Whether the item has been picked up" },
+    },
   },
   Area: {
     type: "object",
@@ -226,15 +423,49 @@ const schemas = {
     },
     required: ["id", "title"],
   },
+  SharedGoal: {
+    type: "object",
+    properties: {
+      id: { type: "string" },
+      title: { type: "string" },
+      area_id: { type: ["string", "null"] },
+      shared: { type: "boolean", const: true },
+      status: { type: "string", const: "shared" },
+      project_count: { type: "integer", minimum: 0 },
+      completed_project_count: { type: "integer", minimum: 0 },
+    },
+    required: ["id", "title", "area_id", "shared", "status", "project_count", "completed_project_count"],
+  },
+  NamedBoardGoal: {
+    type: "object",
+    properties: {
+      id: { type: "string" },
+      title: { type: "string" },
+      area_id: { type: ["string", "null"] },
+      named: { type: "boolean", const: true },
+      status: { type: "string" },
+      description: { type: ["string", "null"] },
+      target_date: { type: ["string", "null"] },
+      project_count: { type: "integer", minimum: 0 },
+      completed_project_count: { type: "integer", minimum: 0 },
+    },
+    required: ["id", "title", "area_id", "named", "status", "project_count", "completed_project_count"],
+  },
   Pillar: {
     type: "object",
     properties: {
       id: { type: "string" },
       name: { type: "string" },
-      identity_statement: { type: "string", nullable: true },
-      icon: { type: "string", nullable: true },
-      color: { type: "string", nullable: true },
-      sort_order: { type: "integer" },
+      slug: { type: "string" },
+      userId: { type: "string" },
+      manifesto: { type: ["string", "null"] },
+      icon: { type: "string" },
+      colorHex: { type: "string" },
+      weight: { type: "number" },
+      position: { type: "number" },
+      isActive: { type: "boolean" },
+      createdAt: { type: "integer", format: "int64" },
+      updatedAt: { type: "integer", format: "int64" },
     },
     required: ["id", "name"],
   },
@@ -561,7 +792,150 @@ const inactivityObject = (properties) => ({
 })
 const inactivityPolicy = inactivityObject({ days: inactivityDays, revision: inactivityRevision })
 
+const boardIdParam = { name: "id", in: "path", required: true, schema: { type: "string" } }
+const boardTicketParam = { name: "ticket", in: "path", required: true, schema: { type: "string" } }
+const boardSessionParam = { name: "X-Meitheal-Board-Session", in: "header", required: true, schema: { type: "string" } }
+const boardTicketSessionParam = { ...boardSessionParam, required: false, description: "Required for requests authenticated through Home Assistant ingress." }
+const boardJson = properties => ({
+  required: true,
+  content: { "application/json": { schema: { type: "object", properties } } },
+})
+const boardString = { type: "string" }
+const boardBoolean = { type: "boolean" }
+const boardVersion = { type: "integer" }
+const boardOperation = (operationId, summary, parameters, responses, requestBody, agentScope) => ({
+  operationId, summary, tags: ["Boards"], parameters, responses,
+  security: agentScope ? [...ingressSession, { bearerAuth: [] }] : ingressSession,
+  ...(agentScope ? { description: `An agent token needs ${agentScope} and an explicit service grant on this Board.` } : {}),
+  ...(requestBody ? { requestBody } : {}),
+})
+const boardUnavailable = { description: "Board, ticket, or destination unavailable" }
+
+const boardKanbanParams = [
+  { name: "kanban", in: "query", description: "With view=tasks, filter before paging 25 cards per lane and include lane totals and page metadata.", schema: { type: "string", enum: ["1"] } },
+  ...["search", "status", "user", "types", "advancedFilter", "home_assistant_area_id"].map(name => ({ name, in: "query", schema: boardString })),
+  ...["pending", "active", "complete"].map(key => ({ name: `kp.${key}`, in: "query", schema: { type: "integer", minimum: 1 } })),
+]
+
 const paths = {
+  "/api/agent-context": {
+    get: { operationId: "getAgentContext", tags: ["Agents"], summary: "Read the current credential's Board enrollment metadata",
+      security: [{ bearerAuth: [] }], description: "Requires tasks:read. Genuine Supervisor ingress also intersects the current HA caller. No task fields or capture default are returned. A verified human ingress response can provide the existing Board session header.",
+      responses: { 200: { description: "Credential and current caller metadata", content: { "application/json": { schema: { $ref: "#/components/schemas/AgentContext" } } } }, 403: { description: "Credential or current caller unavailable" }, 409: { description: "Current access changed" } },
+    },
+  },
+  "/api/integrations/work-destinations": {
+    get: boardOperation("getWorkDestinations", "Read approved sources for the selected Board", [], { 200: { description: "Current configuration revision and this Board's bindings" }, 403: boardUnavailable }),
+    put: boardOperation("saveWorkDestination", "Review an integration source and its selected Board destination", [boardSessionParam], {
+      200: { description: "Committed binding receipt. Refresh work access after the journal revision changes." }, 400: { description: "Invalid source or destination" }, 403: boardUnavailable, 409: { description: "Approval changed or a required Board is unavailable" },
+    }, boardJson({ revision: { type: "string" }, binding: { $ref: "#/components/schemas/WorkBinding" } })),
+  },
+  "/api/boards": {
+    get: boardOperation("listPrivateBoards", "List Boards and send destinations for the current Home Assistant user", [], {
+      200: { description: "Accessible Boards, personal sidebar preferences, and authorized send destinations. Response includes the Board session header." },
+      403: { description: "A current Home Assistant session is required" },
+    }),
+    head: boardOperation("verifyBoardDirectory", "Verify the current Board directory projection", [], { 200: { description: "The current projection hash and session are in the response headers" } }),
+    post: boardOperation("createPrivateBoard", "Create a Board owned by the current Home Assistant user", [boardSessionParam], {
+      201: { description: "The owned Board ID" }, 202: { description: "The Board was saved, and access verification is pending" },
+      400: { description: "Invalid Board name or preset" }, 503: { description: "Board access is locked" },
+    }, boardJson({ name: boardString, preset: { type: "string", enum: ["standard", "project", "chores"], default: "standard" } })),
+  },
+  "/api/boards/routines": {
+    get: boardOperation("listPrivateBoardRoutines", "List eligible named Board Routine check-ins for the current period", [], { 200: { description: "Up to 100 current actor-scoped Routines and whether there are more" } }),
+  },
+  "/api/boards/due-today": {
+    get: boardOperation("listPrivateBoardDueWork", "List open tasks due today or earlier on eligible named Boards", [], {
+      200: { description: "Up to 30 eligible tasks and whether there are more" },
+    }),
+  },
+  "/api/boards/{id}": {
+    get: boardOperation("getPrivateBoard", "Read a Board and a page of its tickets", [boardIdParam,
+      { name: "offset", in: "query", schema: boardVersion },
+      ...boardKanbanParams,
+      { name: "view", in: "query", description: "Use groups to page Areas, or Projects within the selected Area; tasks reads the Board workspace.", schema: { type: "string", enum: ["groups", "tasks"] } },
+      { name: "after", in: "query", schema: boardString },
+      { name: "selected", in: "query", schema: boardString },
+      { name: "area", in: "query", description: "Board-owned Area ID. With view=groups, returns its paginated Projects.", schema: boardString },
+      { name: "project", in: "query", schema: boardString },
+      { name: "ticket", in: "query", schema: boardString },
+      { name: "planning", in: "query", schema: { type: "string", enum: ["1"] } },
+    ], {
+      200: { description: "Authorized Board work or paged hierarchy. Hierarchy pages include current resource/action hints, clamped by effective actor and feature permissions; these hints never grant command authority." }, 404: boardUnavailable,
+    }, undefined, "tasks:read"),
+    head: boardOperation("verifyPrivateBoard", "Verify the current Board view", [boardIdParam,
+      { name: "offset", in: "query", schema: boardVersion },
+      ...boardKanbanParams,
+      { name: "view", in: "query", description: "Use groups to verify the current Areas or selected Area Project page.", schema: { type: "string", enum: ["groups", "tasks"] } },
+      { name: "after", in: "query", schema: boardString },
+      { name: "selected", in: "query", schema: boardString },
+      { name: "area", in: "query", description: "Board-owned Area ID, including the parent for a Project catalog page.", schema: boardString },
+      { name: "project", in: "query", schema: boardString },
+      { name: "ticket", in: "query", schema: boardString },
+      { name: "planning", in: "query", schema: { type: "string", enum: ["1"] } },
+    ], {
+      200: { description: "The current projection hash and session are returned to a Home Assistant browser" }, 404: boardUnavailable,
+    }, undefined, "tasks:read"),
+    patch: boardOperation("changePrivateBoard", "Change a personal sidebar preference, manage Board access or delete and restore a Board", [boardIdParam, boardSessionParam], {
+      200: { description: "Saved" }, 404: boardUnavailable, 409: { description: "A Board must retain an active owner" },
+    }, boardJson({
+      action: { type: "string", enum: ["sidebar", "policy", "member", "agent", "retire", "restore"] }, hidden: boardBoolean,
+      tokenId: boardString, enabled: boardBoolean,
+      denyCompletion: boardBoolean, denyDeletion: boardBoolean, denyAgentDeletion: boardBoolean,
+      revision: { type: "integer", minimum: 1, description: "Required by browser-only retire and restore actions. Household deletion pauses shared capture and syncing until restored." },
+      memberId: boardString, role: { type: ["string", "null"], enum: ["owner", "member", "viewer", null] },
+    })),
+  },
+  "/api/boards/{id}/tickets": {
+    post: boardOperation("createPrivateBoardTicket", "Create a ticket in an authorized Board column", [boardIdParam, boardTicketSessionParam], {
+      201: { description: "Created ticket identifier, reference and edit version" }, 403: { description: "Ticket creation or completion is denied" }, 404: boardUnavailable,
+    }, boardJson({ title: boardString, description: boardString, laneId: boardString, areaId: boardString, projectId: boardString, goalId: boardString,
+      due_date: { type: ["string", "null"], format: "date" },
+      placement: { type: "object", properties: { areaId: { type: ["string", "null"] }, projectId: { type: ["string", "null"] } } },
+    }), "tasks:write"),
+  },
+  "/api/boards/{id}/tickets/{ticket}": {
+    patch: boardOperation("changePrivateBoardTicket", "Edit, schedule or move a ticket", [boardIdParam, boardTicketParam, boardTicketSessionParam], {
+      200: { description: "New ticket version" }, 403: { description: "A required effect is denied" }, 404: boardUnavailable, 409: { description: "Ticket version is stale" },
+    }, boardJson({ version: boardVersion, title: boardString, description: boardString, laneId: boardString,
+      due_date: { type: ["string", "null"], format: "date" },
+      action: { type: "string", enum: ["file"] }, areaId: { type: ["string", "null"] }, projectId: { type: ["string", "null"] },
+    }), "tasks:write"),
+    delete: boardOperation("deletePrivateBoardTicket", "Delete a ticket when the current Board and actor allow deletion", [boardIdParam, boardTicketParam, boardTicketSessionParam], {
+      200: { description: "Deleted" }, 403: { description: "Deletion is denied" }, 404: boardUnavailable, 409: { description: "Ticket version or relationship changed" },
+    }, boardJson({ version: boardVersion }), "tasks:delete"),
+  },
+  "/api/boards/{id}/intakes": {
+    post: boardOperation("createPrivateBoardIntake", "Create a send-only destination for selected people", [boardIdParam, boardSessionParam], {
+      201: { description: "Destination created" }, 404: boardUnavailable,
+    }, boardJson({ label: boardString, laneId: boardString, senderIds: { type: "array", items: boardString }, recipientId: boardString })),
+    patch: boardOperation("changePrivateBoardIntake", "Enable or disable a send destination", [boardIdParam, boardSessionParam], {
+      200: { description: "Saved" }, 404: boardUnavailable,
+    }, boardJson({ id: boardString, enabled: boardBoolean })),
+  },
+  "/api/boards/{id}/planning": {
+    post: boardOperation("savePrivateBoardPlanning", "Create or manage planning and Pillars on an owned Board", [boardIdParam, boardSessionParam], {
+      200: { description: "Saved" }, 400: { description: "Invalid planning change" }, 404: boardUnavailable,
+      409: { description: "A Routine period changed or an Area still has active planning records" },
+    }, boardJson({
+      action: { type: "string", enum: ["area", "goal", "project", "project-edit", "project-goal", "project-status", "goal-share", "retire", "pillar", "pillar-principle", "pillar-link", "routine", "routine-complete"] },
+      title: boardString, description: boardString, icon: boardString, color: boardString, id: boardString, areaId: boardString, projectId: { type: ["string", "null"] }, goalId: { type: ["string", "null"] },
+      status: { type: "string", enum: ["active", "completed", "archived"] }, enabled: boardBoolean,
+      cadence: { type: "string", enum: ["daily", "weekly"] }, period: { type: "string", format: "date" },
+      entity: { type: "string", enum: ["area", "goal", "project", "routine"] },
+      entityType: { type: "string", enum: ["goal", "routine", "task"] }, pillarId: boardString, nonNegotiable: boardBoolean,
+    })),
+  },
+  "/api/board-intake": {
+    get: boardOperation("listPrivateBoardIntakes", "List send-only destinations for the current user", [], {
+      200: { description: "Send aliases, assignment options, and recent submissions owned by the sender" }, 403: { description: "A current Home Assistant session is required" },
+    }),
+    post: boardOperation("submitPrivateBoardIntake", "Prepare, send, or retry a task without Board read access", [boardSessionParam], {
+      200: { description: "An opaque acknowledgment bound to the sender" }, 201: { description: "A sender-bound submission expires after 24 hours" },
+      404: boardUnavailable, 409: { description: "The token was used with different content" }, 429: { description: "Sender limit reached" },
+    }, boardJson({ action: { type: "string", enum: ["prepare", "send", "retry"] }, id: boardString, token: boardString, resumeId: boardString, title: boardString, description: boardString, assignToRecipient: boardBoolean })),
+  },
+
   "/api/feedback": {
     post: {
       operationId: "submitLocalFeedback",
@@ -707,12 +1081,17 @@ const paths = {
         { name: "deferred", in: "query", schema: { type: "string", enum: ["0", "1"] }, description: "Use 1 for deferred work and 0 for other work. Omission returns both." },
         { name: "area_id", in: "query", schema: { type: "string" } },
         { name: "project_id", in: "query", schema: { type: "string" } },
+        { name: "task_kind", in: "query", schema: { type: "string", enum: ["standard_action", "shopping_item", "checklist", "routine_instance", "calendar_event", "quick_capture"] }, description: "Filter tasks by behavioral kind." },
         { name: "assigned_to", in: "query", schema: { type: "string" } },
         { name: "priority", in: "query", schema: { type: "integer" } },
-        { name: "due_date", in: "query", schema: { type: "string", format: "date" }, description: "Match the household calendar day (date-only, floating datetime, or zoned ISO timestamp in the configured household timezone). Invalid dates return 400." },
+        { name: "due_date", in: "query", schema: { type: "string", format: "date" }, description: "Match the household calendar day (YYYY-MM-DD in the configured household timezone). Invalid dates return 400." },
+        { name: "task_type", in: "query", schema: { type: "string", enum: ["epic", "story", "task"] }, description: "Filter by work item type" },
         { name: "parent_id", in: "query", schema: { type: "string" }, description: "Get subtasks of a parent" },
-        { name: "sort", in: "query", schema: { type: "string", enum: ["created_at", "updated_at", "title", "status", "priority", "due_date", "kanban_position"] }, description: "Equal values use task ID ascending; null values sort last." },
-        { name: "order", in: "query", schema: { type: "string", enum: ["asc", "desc"], default: "desc" } },
+        { name: "q", in: "query", schema: { type: "string" }, description: "Substring search across title and description" },
+        { name: "label", in: "query", schema: { type: "string" }, description: "Filter by attached label name" },
+        { name: "home_assistant_area_id", in: "query", schema: { type: "string" }, description: "Filter by permitted Home Assistant Area ID" },
+        { name: "sort", in: "query", schema: { type: "string", enum: ["created_at", "updated_at", "title", "status", "priority", "due_date", "kanban_position", "table_position"] }, description: "Equal values use task ID ascending; null values sort last." },
+        { name: "order", in: "query", schema: { type: "string", enum: ["asc", "desc"] }, description: "Sort direction. Defaults to asc for priority, due_date, title, status, kanban_position, and table_position; desc for created_at and updated_at." },
         { name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 500, default: 100 } },
         { name: "offset", in: "query", schema: { type: "integer", default: 0 } },
       ],
@@ -733,7 +1112,12 @@ const paths = {
       operationId: "getTodayTaskCounts",
       tags: ["Tasks"],
       summary: "Get the Today page task counters",
-      description: "Returns counts over the full task database using the Today page rules. No task rows are returned.",
+      description: "Returns counts over the full task database using the Today page rules. The optional completed=1 parameter also returns up to 20 completed task summaries for the household day.",
+      parameters: [
+        { name: "completed", in: "query", schema: { type: "string", enum: ["1"] } },
+        { name: "expected_day", in: "query", schema: { type: "string", format: "date" }, description: "Household day shown by the caller. A rollover returns 409." },
+        { name: "expected_timezone", in: "query", schema: { type: "string" }, description: "Household timezone shown by the caller. A timezone change returns 409." },
+      ],
       responses: {
         200: jsonContent({
           type: "object",
@@ -744,9 +1128,57 @@ const paths = {
             carriedForward: { type: "integer", minimum: 0 },
             remaining: { type: "integer", minimum: 0 },
             completionPercent: { type: "integer", minimum: 0, maximum: 100 },
+            completedTasks: { type: "array", maxItems: 20, items: {
+              type: "object", required: ["id", "title"], properties: { id: { type: "string" }, title: { type: "string" }, ticket_key: { type: ["string", "null"] } },
+            } },
           },
         }, "Today counters"),
+        409: { description: "The household day or timezone changed" },
         503: problemContent("Today counters unavailable"),
+      },
+    },
+  },
+  "/api/calendar/agenda": {
+    post: {
+      operationId: "readCalendarAgenda",
+      tags: ["Tasks"],
+      summary: "Read the Calendar agenda for a household day",
+      description: "Read-only browser operation. Returns due tasks and native events that start on the selected day, applying Calendar filters before pagination. The first page also returns saved linked Home Assistant and CalDAV occurrences when Events is selected. If one first-page read fails, its fields are null and the other result is returned. Live Home Assistant events are read separately.",
+      security: ingressSession,
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", additionalProperties: true, required: ["date", "filters", "limit", "offset"], properties: {
+          date: { type: "string", format: "date" },
+          filters: { type: "string", maxLength: 20000, description: "Encoded Calendar query without its leading question mark." },
+          limit: { type: "integer", minimum: 1, maximum: 100 },
+          offset: { type: "integer", minimum: 0 },
+        },
+      } } } },
+      responses: {
+        200: jsonContent({
+          type: "object", required: ["tasks", "total", "linkedEvents"], properties: {
+            tasks: { type: ["array", "null"], items: {
+              type: "object", required: ["id", "title", "status", "priority", "task_kind", "start_date", "deferred_at"],
+              properties: {
+                id: { type: "string" }, title: { type: "string" }, status: { type: "string" }, priority: { type: "integer" },
+                task_kind: { type: ["string", "null"] }, start_date: { type: ["string", "null"] }, deferred_at: { type: ["integer", "null"] },
+              },
+            } },
+            total: { type: ["integer", "null"], minimum: 0 },
+            linkedEvents: { type: ["array", "null"], items: {
+              type: "object", required: ["id", "title", "start", "entity", "uid", "providerSummary"],
+              properties: {
+                id: { type: "string" }, title: { type: "string" }, start: { type: "string" },
+                entity: { type: ["string", "null"] }, uid: { type: ["string", "null"] }, providerSummary: { type: ["string", "null"] },
+              },
+            } },
+          },
+        }, "Scheduled work page and matching total"),
+        400: problemContent("Invalid Calendar query"),
+        408: problemContent("Calendar query timed out"),
+        413: problemContent("Calendar query too large"),
+        415: problemContent("Expected JSON"),
+        500: problemContent("Calendar agenda read failed"),
+        503: problemContent("Calendar agenda unavailable"),
       },
     },
   },
@@ -755,7 +1187,7 @@ const paths = {
       operationId: "createTask",
       tags: ["Tasks"],
       summary: "Create a new task",
-      description: "Create a task with optional calendar sync, assignment, and framework payload. Authenticated callers can retry an identical request with the Idempotency-Key header. Use this when a user or agent wants to capture a new action item.",
+      description: "Compatibility capture envelope over the canonical scoped task command. Calendar timestamps create an Event task; outbound calendar work follows approved Board source bindings. The events array contains no synchronous integration receipts. Retry an identical request with Idempotency-Key; successful replays retain HTTP 201 and idempotency-key-status: cached.",
       parameters: [
         { name: "Idempotency-Key", in: "header", schema: { type: "string" }, description: "Prevents duplicate creation on retry" },
       ],
@@ -769,16 +1201,51 @@ const paths = {
               properties: {
                 title: { type: "string", description: "Task title (required)" },
                 description: { type: "string", maxLength: 10000 },
+                status: { type: "string", description: "Initial status (e.g. backlog, pending, active, complete)" },
+                priority: { type: "number", minimum: 1, maximum: 5, description: "Priority 1-5 (1=urgent, 3=normal, 5=lowest); rounded and clamped to 1..5." },
+                due_date: { type: ["string", "null"], description: "Due date (YYYY-MM-DD or ISO timestamp)" },
+                start_date: { type: ["string", "null"], description: "Start date or ISO timestamp" },
+                end_date: { type: ["string", "null"], description: "End date or ISO timestamp" },
+                progress: { type: "integer", minimum: 0, maximum: 100 },
+                color: { type: "string", nullable: true },
+                task_type: { type: "string", enum: ["epic", "story", "task"] },
+                task_kind: { type: "string", enum: ["standard_action", "shopping_item", "checklist", "calendar_event", "quick_capture"], description: "Behavioral kind — determines UI rendering and lifecycle rules" },
+                parent_id: { type: "string", nullable: true },
+                area_id: { type: "string", nullable: true },
+                project_id: { type: "string", nullable: true },
+                recurrence_rule: { type: "string", nullable: true },
+                urgency: { type: "integer", minimum: 0, maximum: 5 },
+                importance: { type: "integer", minimum: 0, maximum: 5 },
+                effort_minutes: { type: "integer", nullable: true, minimum: 1, maximum: 480 },
+                effort_type: { type: "string", enum: ["deep", "shallow", "admin"], nullable: true },
+                blocked_by: { type: "string", nullable: true },
+                is_promoted: { type: "boolean", description: "Pin the new task to the top of its Kanban lane with a promoted ribbon sash." },
                 assigned_to: { type: "string", maxLength: 255, nullable: true, description: "Must start with 'ha_' or 'custom_'" },
+                labels: {
+                  oneOf: [{ type: "array", items: { type: "string" } }, { type: "string", description: "JSON-encoded array of label names" }],
+                  description: "Label names, as an array or as a JSON-encoded array.",
+                },
+                checklists: {
+                  oneOf: [
+                    { type: "array", items: { type: "object", required: ["text"], properties: { id: { type: "string" }, text: { type: "string" }, done: { type: "boolean" } } } },
+                    { type: "string", description: "JSON-encoded checklist array" },
+                  ],
+                },
+                custom_fields: {
+                  oneOf: [
+                    { type: "object", additionalProperties: true, properties: { items: { type: "array", items: ref("ShoppingListItem"), description: "Structured shopping items (with optional qty, category, checked) for shopping_item tasks" } } },
+                    { type: "string", description: "JSON-encoded custom fields object" },
+                  ],
+                },
                 frameworkPayload: { type: "object" },
                 calendar: {
                   type: "object",
                   properties: {
-                    entityId: { type: "string" },
+                    entityId: { type: "string", deprecated: true, description: "Does not retarget a provider. Configure an approved Board integration source." },
                     startDateTime: { type: "string", format: "date-time" },
                     endDateTime: { type: "string", format: "date-time" },
-                    durationMinutes: { type: "integer" },
-                    timezone: { type: "string" },
+                    durationMinutes: { type: "integer", deprecated: true, description: "Use an explicit endDateTime for Event task dates." },
+                    timezone: { type: "string", deprecated: true, description: "Provide offsets in the Event timestamps; the approved integration owns its timezone." },
                   },
                 },
               },
@@ -789,9 +1256,9 @@ const paths = {
       responses: {
         201: jsonContent({
           type: "object",
-          required: ["task", "events", "integration", "requestId"],
+          required: ["task", "events", "integration"],
           properties: {
-            task: ref("Task"),
+            task: { oneOf: [ref("Task"), { type: "object", required: ["id"], additionalProperties: false, properties: { id: { type: "string" }, ticket_key: { type: ["string", "null"] } } }], description: "The full task requires current task-read authority; create-only callers receive their minimal acknowledgement." },
             events: { type: "array", items: { type: "object" } },
             integration: {
               type: "object",
@@ -802,31 +1269,8 @@ const paths = {
                 retryAfterSeconds: { type: ["integer", "null"] },
               },
             },
-            requestId: { type: "string" },
-            idempotencyKey: { type: ["string", "null"] },
-            idempotentReplay: { type: "boolean" },
           },
         }, "Task created"),
-        200: jsonContent({
-          type: "object",
-          required: ["task", "events", "integration", "requestId"],
-          properties: {
-            task: ref("Task"),
-            events: { type: "array", items: { type: "object" } },
-            integration: {
-              type: "object",
-              properties: {
-                calendarSyncState: { type: "string" },
-                confirmationId: { type: ["string", "null"] },
-                errorCode: { type: ["string", "null"] },
-                retryAfterSeconds: { type: ["integer", "null"] },
-              },
-            },
-            requestId: { type: "string" },
-            idempotencyKey: { type: ["string", "null"] },
-            idempotentReplay: { type: "boolean" },
-          },
-        }, "Idempotent replay — task already existed"),
         400: err400,
         404: problemContent("Requested Board unavailable"),
         500: err500,
@@ -836,7 +1280,11 @@ const paths = {
   "/api/nfc/complete": {
     post: { operationId: "completeTaskByNfcTag", tags: ["Tasks"], summary: "Complete the uniquely assigned incomplete task for an NFC tag",
       requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["tag_id"], properties: { tag_id: { type: "string" } } } } } },
-      responses: { 200: { description: "Task completed (or already complete on retry)" }, 400: err400, 404: { description: "No matching task" }, 409: { description: "Tag is assigned ambiguously" }, 500: err500 },
+      description: "Uses the selected Board's current completion permission. A caller without Task read permission receives only {ok:true}, including retries, without the Task identity or state. Readable callers retain the detailed completion or already-complete response.",
+      responses: { 200: { description: "Completion accepted; details require current Task read permission", content: { "application/json": { schema: { oneOf: [
+        { type: "object", additionalProperties: false, required: ["ok"], properties: { ok: { const: true } } },
+        { type: "object", additionalProperties: false, required: ["ok", "task_id"], properties: { ok: { const: true }, task_id: { type: "string" }, task: { $ref: "#/components/schemas/Task" }, already_complete: { const: true } }, oneOf: [{ required: ["task"] }, { required: ["already_complete"] }] },
+      ] } } } }, 400: err400, 403: { description: "Current completion permission is required" }, 404: { description: "No eligible matching task" }, 409: { description: "Tag is assigned ambiguously or current work changed" }, 500: err500 },
     },
   },
   "/api/tasks/{id}/handoff": {
@@ -915,11 +1363,35 @@ const paths = {
           status: { type: "string", description: "Canonical task status, a supported alias, or a custom status. Backlog decisions require exactly pending or active." },
           priority: { type: "number", description: "The server rounds and clamps this to 1 through 5." },
           is_promoted: { type: "boolean", description: "Show the task above regular cards in its Kanban lane." },
+          task_kind: { type: "string", enum: ["standard_action", "shopping_item", "checklist", "routine_instance", "calendar_event", "quick_capture"], description: "Behavioral kind — routine_instance cannot be assigned to non-routine tasks." },
           due_date: { type: ["string", "null"] },
+          start_date: { type: ["string", "null"] },
+          end_date: { type: ["string", "null"] },
           assigned_to: { type: ["string", "null"] },
           project_id: { type: ["string", "null"] },
           parent_id: { type: ["string", "null"] },
-          area_id: { type: "string" },
+          area_id: { type: ["string", "null"] },
+          goal_id: { type: ["string", "null"] },
+          task_type: { type: "string", enum: ["epic", "story", "task"] },
+          task_kind: { type: "string", enum: ["standard_action", "shopping_item", "checklist", "routine_instance", "calendar_event", "quick_capture"] },
+          framework_payload: { type: "string", description: "JSON-encoded object string" },
+          custom_fields: { type: "string", description: "JSON-encoded object string" },
+          start_date: { type: ["string", "null"] },
+          end_date: { type: ["string", "null"] },
+          progress: { type: "number", minimum: 0, maximum: 100 },
+          color: { type: ["string", "null"] },
+          time_tracked: { type: "number", minimum: 0 },
+          nfc_tag_id: { type: ["string", "null"] },
+          recurrence_rule: { type: ["string", "null"] },
+          recurrence_anchor: { type: "string", enum: ["due_date", "completion_date"] },
+          time_block_start: { type: ["string", "null"] },
+          time_block_end: { type: ["string", "null"] },
+          urgency: { type: "number", minimum: 0, maximum: 5 },
+          importance: { type: "number", minimum: 0, maximum: 5 },
+          eisenhower_override: { type: "boolean" },
+          effort_minutes: { type: ["number", "null"], minimum: 1, maximum: 480 },
+          effort_type: { type: ["string", "null"], enum: ["deep", "shallow", "admin", null] },
+          blocked_by: { type: ["string", "null"] },
           labels: {
             oneOf: [{ type: "array", items: { type: "string" } }, { type: "string", description: "JSON-encoded array of label names" }],
             description: "Label names, as an array or as a JSON-encoded array.",
@@ -927,6 +1399,12 @@ const paths = {
           },
           checklists: { type: "string", description: "Replacement JSON-encoded checklist array" },
           expected_checklists: { type: ["string", "null"], description: "Exact previous checklist value returned by GET" },
+          custom_fields: {
+            oneOf: [
+              { type: "object", additionalProperties: true, properties: { items: { type: "array", items: ref("ShoppingListItem"), description: "Structured shopping items for shopping_item tasks" } } },
+              { type: "string", description: "JSON-encoded custom fields object" },
+            ],
+          },
           updated_at: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER, description: "Observed task version as epoch milliseconds. Send the exact observed value with expected_status backlog." },
           expected_status: { type: "string", const: "backlog", description: "Requires exact updated_at and status pending or active. The task must still be in Backlog." },
         },
@@ -991,16 +1469,22 @@ const paths = {
       summary: "Delete a task",
       description: "Permanently removes a task and its domain events. Consider setting status to 'archived' instead if you want recoverability.",
       parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
-      responses: { 200: { description: "Deleted" }, 404: jsonContent(ref("ProblemDetail"), "Not found") },
+      responses: { 204: { description: "Deleted" }, 404: jsonContent(ref("ProblemDetail"), "Not found") },
     },
   },
   "/api/tasks/clear-completed": {
     post: {
       operationId: "clearCompletedTasks",
       tags: ["Tasks"],
-      summary: "Archive all completed tasks",
-      description: "Moves all tasks with status 'complete' to 'archived'. Use this in daily/weekly cleanup automations.",
-      responses: { 200: jsonContent({ type: "object", properties: { archived: { type: "integer" } } }, "Count of archived tasks") },
+      summary: "Archive Complete tasks last updated on the household day",
+      description: "Moves every eligible Complete task to the archived status, including tasks outside the Today preview. Returns the number changed.",
+      parameters: [
+        { name: "expected_day", in: "query", schema: { type: "string", format: "date" }, description: "Household day the caller reviewed. A rollover returns 409 without changing any tasks." },
+        { name: "expected_timezone", in: "query", schema: { type: "string" }, description: "Household timezone the caller reviewed. A timezone change returns 409 without changing any tasks." },
+      ],
+      responses: { 409: { description: "The household day or timezone changed" }, 200: jsonContent({ type: "object", required: ["ok", "cleared"], properties: {
+        ok: { type: "boolean" }, cleared: { type: "integer" }, message: { type: "string" },
+      } }, "Count of archived tasks") },
     },
   },
   "/api/tasks/delete-completed": {
@@ -1063,6 +1547,7 @@ const paths = {
           type: "object",
           properties: {
             ordered_ids: { type: "array", minItems: 1, items: { type: "string" } },
+            scope: { type: "string", enum: ["kanban", "table"], description: "Rank column to update for ordered_ids (defaults to kanban)" },
             task_id: { type: "string" },
             anchor_id: { type: "string" },
             lane: { type: "string" },
@@ -1073,6 +1558,7 @@ const paths = {
       },
       responses: {
         200: { description: "Reordered" },
+        400: err400,
         409: jsonContent({
           type: "object",
           properties: { error: { type: "string" }, errorCode: { type: "string", const: "TASK_ORDER_CONFLICT" } },
@@ -1115,7 +1601,7 @@ const paths = {
       operationId: "writeTaskDraft",
       tags: ["Tasks"],
       summary: "Save, discard, publish, or abandon an unresolved publication",
-      description: "Send at most 64 KiB. Expected is the current draftId and revision, or null for the first save. Use a stable attemptId for a save or publication. Retry an unresolved publication with its exact original task data, or advance its revision using abandon-publish.",
+      description: "Send at most 64 KiB. Expected is the current draftId and revision, or null for the first save. Use a stable attemptId for a save or publication. Retry an unresolved publication with its exact original task data, or advance its revision using abandon-publish. Snapshot and task may include optional placement {areaId, projectId} with nullable Household IDs; publication revalidates that placement.",
       parameters: [{ in: "header", name: "X-Meitheal-Draft-Context", required: true, schema: pinContext }],
       requestBody: { required: true, content: { "application/json": { schema: {
         type: "object", required: ["action", "expected"], additionalProperties: false,
@@ -1229,11 +1715,13 @@ const paths = {
     post: {
       operationId: "readTaskPins",
       tags: ["Tasks"],
-      summary: "Read your personal pins or check one task",
+      summary: "Read your personal pins, check whether you have any, or check one task",
       description: "Requires a verified Home Assistant browser session. Private reads use POST to avoid legacy worker caches. Send at most 1 KiB of JSON.",
       requestBody: { required: true, content: { "application/json": { schema: { oneOf: [
         { type: "object", required: ["action"], additionalProperties: false,
           properties: { action: { const: "list" }, page: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER, default: 1 } } },
+        { type: "object", required: ["action"], additionalProperties: false,
+          properties: { action: { const: "presence" } } },
         { type: "object", required: ["action", "task"], additionalProperties: false,
           properties: { action: { const: "detail" }, task: pinTaskIdentifier } },
       ] } } } },
@@ -1247,6 +1735,7 @@ const paths = {
                 status: { type: "string" }, deferred_at: { type: ["integer", "null"] }, pinned_at: { type: "integer" },
               } } },
           } },
+          { type: "object", required: ["context", "hasPins"], properties: { context: pinContext, hasPins: { type: "boolean" } } },
           { type: "object", required: ["context", ...Object.keys(pinState)], properties: { context: pinContext, ...pinState } },
         ] }, "Personal results and the account context required for a subsequent HEAD verification"),
         400: problemContent("Invalid pin request"), 401: problemContent("Ingress authentication required"),
@@ -1500,6 +1989,7 @@ const paths = {
         { name: "status", in: "query", schema: { type: "string" }, description: "Filter by status (backlog, pending, active, complete, todo, in_progress, done). Direct /api/search callers must also set include_completed=true to include done or complete tasks." },
         { name: "assigned_to", in: "query", schema: { type: "string" } },
         { name: "priority", in: "query", schema: { type: "integer" } },
+        { name: "task_kind", in: "query", schema: { type: "string", enum: ["standard_action", "shopping_item", "checklist", "routine_instance", "calendar_event", "quick_capture"] }, description: "Filter tasks by behavioral kind." },
         { name: "task_fields", in: "query", schema: { type: "string" }, description: "Comma-separated: id,title,description,labels,custom_fields,comments" },
       ],
       responses: {
@@ -1513,7 +2003,7 @@ const paths = {
 
   // ── Areas ──
   "/api/areas": {
-    get: { operationId: "listAreas", tags: ["Hierarchy"], summary: "List all areas", description: "Areas are the top-level organizational containers (WHERE things happen). Every goal and project belongs to an area.", responses: { 200: jsonContent(arrOf("Area"), "Areas") } },
+    get: { operationId: "listAreas", tags: ["Hierarchy"], summary: "List all areas", description: "Areas organize work by responsibility. Goals and projects can be linked to an area.", responses: { 200: jsonContent(arrOf("Area"), "Areas") } },
     post: { operationId: "createArea", tags: ["Hierarchy"], summary: "Create an area", requestBody: { content: { "application/json": { schema: ref("Area") } } }, responses: { 201: jsonContent(ref("Area"), "Created") } },
   },
   "/api/areas/{id}": {
@@ -1524,11 +2014,34 @@ const paths = {
 
   // ── Goals ──
   "/api/goals": {
-    get: { operationId: "listGoals", tags: ["Hierarchy"], summary: "List all goals", description: "Goals define WHAT you want to achieve. They belong to areas and can have metric tracking (percentage, count, boolean).", responses: { 200: jsonContent(arrOf("Goal"), "Goals") } },
+    head: {
+      operationId: "checkSharedGoalProjection", tags: ["Hierarchy"], summary: "Verify the current viewer's shared Goal projection",
+      parameters: [
+        { name: "X-Meitheal-Goal-Projection", in: "header", required: true, schema: { type: "string" } },
+        { name: "area_id", in: "query", schema: { type: "string" } },
+        { name: "project_id", in: "query", schema: { type: "string" } },
+      ],
+      responses: { 204: { description: "Current shared Goal projection matches" }, 409: { description: "Refresh Goals" }, 503: { description: "Cannot verify projection" } },
+    },
+    get: {
+      operationId: "listGoals",
+      tags: ["Hierarchy"],
+      summary: "List goals",
+      description: "List goals across all Areas, or filter by association. An Area can include shared goals with progress based on Projects the viewer can read.",
+      parameters: [
+        { name: "area_id", in: "query", schema: { type: "string" }, description: "Goals linked to this Area directly or through one of its projects." },
+        { name: "project_id", in: "query", schema: { type: "string" }, description: "The goal linked to this project." },
+        { name: "status", in: "query", schema: { type: "string", enum: ["active", "completed", "archived", "shared"] } },
+        { name: "projection", in: "query", schema: { type: "string", enum: ["household"] }, description: "Select Household Goals for the legacy task editor." },
+      ],
+      responses: { 200: jsonContent({ type: "object", required: ["goals"], properties: {
+        goals: { type: "array", items: { anyOf: [ref("Goal"), ref("SharedGoal"), ref("NamedBoardGoal")] } },
+      } }, "Goals") },
+    },
     post: { operationId: "createGoal", tags: ["Hierarchy"], summary: "Create a goal", requestBody: { content: { "application/json": { schema: ref("Goal") } } }, responses: { 201: jsonContent(ref("Goal"), "Created") } },
   },
   "/api/goals/{id}": {
-    get: { operationId: "getGoal", tags: ["Hierarchy"], summary: "Get goal details", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: jsonContent(ref("Goal"), "Goal") } },
+    get: { operationId: "getGoal", tags: ["Hierarchy"], summary: "Get goal details", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: jsonContent({ anyOf: [ref("Goal"), ref("SharedGoal"), ref("NamedBoardGoal")] }, "Goal") } },
     put: { operationId: "updateGoal", tags: ["Hierarchy"], summary: "Update a goal, including progress metrics", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], requestBody: { content: { "application/json": { schema: ref("Goal") } } }, responses: { 200: jsonContent(ref("Goal"), "Updated") } },
     delete: { operationId: "deleteGoal", tags: ["Hierarchy"], summary: "Delete a goal", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Deleted" } } },
   },
@@ -1542,7 +2055,7 @@ const paths = {
       description: "Projects are containers for tasks within an area. They can be linked to goals for progress tracking.",
       parameters: [
         { name: "goal_id", in: "query", schema: { type: "string" } },
-        { name: "area_id", in: "query", schema: { type: "string" } },
+        { name: "area_id", in: "query", schema: { type: "string" }, description: "Use the project's explicit Area, then its linked goal's Area when no explicit Area is set." },
         { name: "status", in: "query", schema: { type: "string", enum: ["active", "completed", "paused", "archived"] } },
       ],
       responses: { 200: jsonContent({ type: "object", required: ["projects"], properties: { projects: arrOf("Project") } }, "Projects") },
@@ -1611,12 +2124,54 @@ const paths = {
 
   // ── Pillars ──
   "/api/pillars": {
-    get: { operationId: "listPillars", tags: ["Pillars"], summary: "List all identity pillars", description: "Pillars are the WHY layer — permanent motivational anchors representing who the user wants to be. Soft limit of 5-6 pillars.", responses: { 200: jsonContent(arrOf("Pillar"), "Pillars") } },
-    post: { operationId: "createPillar", tags: ["Pillars"], summary: "Create a pillar", requestBody: { content: { "application/json": { schema: ref("Pillar") } } }, responses: { 201: jsonContent(ref("Pillar"), "Created") } },
+    head: {
+      operationId: "checkPersonalPillarSession", tags: ["Pillars"], summary: "Verify the current Personal Pillar viewer",
+      parameters: [{ name: "X-Meitheal-Pillar-Session", in: "header", schema: { type: "string" } }],
+      responses: { 200: { description: "Service available" }, 204: { description: "The Personal viewer still matches" }, 403: { description: "The viewer changed or verification is unavailable" } },
+    },
+    get: {
+      operationId: "listPillars", tags: ["Pillars"], summary: "List visible Pillars",
+      description: "Returns Household Pillars by default. Personal Pillars are opt-in for the verified current Home Assistant user.",
+      parameters: [
+        { name: "include_inactive", in: "query", schema: { type: "boolean" } },
+        { name: "include_personal", in: "query", schema: { type: "boolean" } },
+      ],
+      responses: { 200: jsonContent({
+        type: "object", properties: { pillars: arrOf("Pillar") }, required: ["pillars"],
+      }, "Pillars in the requested audience"), 403: { description: "A current Home Assistant user is required for Personal Pillars" } },
+    },
+    post: {
+      operationId: "createPillar", tags: ["Pillars"], summary: "Create a Pillar",
+      requestBody: { content: { "application/json": { schema: { type: "object", properties: {
+        name: { type: "string", maxLength: 100 },
+        manifesto: { type: ["string", "null"] },
+        icon: { type: ["string", "null"] },
+        colorHex: { type: ["string", "null"] },
+        weight: { type: "number", minimum: 1, maximum: 10 },
+        audience: { type: "string", enum: ["household", "personal"], default: "household" },
+        audienceProof: { type: "string", description: "Required for Personal creation. Issued to the current Home Assistant user in the Progress form." },
+      }, required: ["name"] } } } },
+      responses: { 201: jsonContent({
+        type: "object", properties: { pillar: ref("Pillar"), warning: { type: "string" } }, required: ["pillar"],
+      }, "Pillar created"), 409: { description: "Refresh Progress to confirm the current account" } },
+    },
   },
   "/api/pillars/{id}": {
-    get: { operationId: "getPillar", tags: ["Pillars"], summary: "Get pillar details", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: jsonContent(ref("Pillar"), "Pillar") } },
-    put: { operationId: "updatePillar", tags: ["Pillars"], summary: "Update a pillar", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], requestBody: { content: { "application/json": { schema: ref("Pillar") } } }, responses: { 200: jsonContent(ref("Pillar"), "Updated") } },
+    get: { operationId: "getPillar", tags: ["Pillars"], summary: "Get pillar details", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: jsonContent({ type: "object", properties: { pillar: ref("Pillar") }, required: ["pillar"] }, "Pillar") } },
+    patch: {
+      operationId: "updatePillar", tags: ["Pillars"], summary: "Update a Pillar", description: "Its audience and owner are immutable.",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      requestBody: { content: { "application/json": { schema: { type: "object", properties: {
+        name: { type: "string", maxLength: 100 },
+        manifesto: { type: ["string", "null"] },
+        icon: { type: "string" },
+        colorHex: { type: "string" },
+        weight: { type: "number", minimum: 1, maximum: 10 },
+        position: { type: "number" },
+        isActive: { type: "boolean" },
+      } } } } },
+      responses: { 200: { description: "Pillar updated" }, 404: { description: "Pillar unavailable" } },
+    },
     delete: { operationId: "deletePillar", tags: ["Pillars"], summary: "Delete a pillar", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Deleted" } } },
   },
   "/api/pillars/{id}/principles": {
@@ -1703,13 +2258,175 @@ const paths = {
 
   // ── Habits ──
   "/api/habits": {
-    get: { operationId: "listHabits", tags: ["Habits"], summary: "List all habits and routines", description: "Returns habit templates with current streak data, schedule, and completion history.", responses: { 200: { description: "Habits list" } } },
-    post: { operationId: "createHabit", tags: ["Habits"], summary: "Create a habit template", responses: { 201: { description: "Created" } } },
-    put: { operationId: "updateHabit", tags: ["Habits"], summary: "Update a habit or record completion", description: "Send { complete: true } to record today's completion. Send other fields to update the template.", responses: { 200: { description: "Updated" } } },
-    delete: { operationId: "deleteHabit", tags: ["Habits"], summary: "Delete a habit", responses: { 200: { description: "Deleted" } } },
+    get: {
+      operationId: "listHabits",
+      tags: ["Habits"],
+      summary: "List routine templates and streaks",
+      parameters: [
+        { name: "area_id", in: "query", schema: { type: "string" }, description: "List Routines in an existing Area, or use default for unassigned Routines." },
+        { name: "project_id", in: "query", schema: { type: "string" }, description: "Filter Routines by Project ID." },
+      ],
+      responses: {
+        200: jsonContent({
+          type: "object",
+          required: ["habits"],
+          properties: {
+            habits: {
+              type: "array",
+              items: {
+                type: "object",
+                required: ["id", "name", "cadence"],
+                properties: {
+                  id: { type: "string" },
+                  name: { type: "string" },
+                  icon: { type: "string" },
+                  cadence: { type: "string", enum: ["daily", "weekly"] },
+                  position: { type: "integer" },
+                  template_json: { type: "string" },
+                  boardId: { type: ["string", "null"] },
+                  projectActive: { type: "boolean" },
+                  todayCompleted: { type: "boolean" },
+                  todayTaskId: { type: ["string", "null"] },
+                  lastCompletedDate: { type: ["string", "null"] },
+                  currentStreak: { type: "integer" },
+                  longestStreak: { type: "integer" },
+                  totalCompletions: { type: "integer" },
+                  checklists: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      required: ["text", "done"],
+                      properties: {
+                        text: { type: "string" },
+                        done: { type: "boolean" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        }, "Routines list"),
+      },
+    },
+    post: {
+      operationId: "createHabit", tags: ["Habits"], summary: "Manage a Routine",
+      description: "Create with a name and optional area_id or project_id. Send templateId for complete, update, or delete.",
+      requestBody: { content: { "application/json": { schema: { type: "object", properties: {
+        action: { type: "string", enum: ["create", "complete", "update", "delete"], default: "create" },
+        templateId: { type: "string" },
+        habitId: { type: "string", description: "Legacy template identifier for complete and delete." },
+        name: { type: "string", maxLength: 100 },
+        area_id: { type: "string", description: "Area for new work. Use default for unassigned work." },
+        project_id: { type: ["string", "null"], description: "Project for new work." },
+        cadence: { type: "string", enum: ["daily", "weekly"] },
+        frequency: { type: "string", enum: ["daily", "weekly"], description: "Legacy alias for cadence." },
+        icon: { type: "string" },
+        description: { type: "string" },
+        priority: { type: "number", minimum: 1, maximum: 5, description: "Default priority 1-5 (clamped by server)." },
+        checklists: { type: "array", items: { type: "object", properties: {
+          text: { type: "string" }, done: { type: "boolean" },
+        }, required: ["text"] } },
+        templateJson: { type: "object", additionalProperties: true, description: "Template fields to update, including area_id and project_id." },
+      } } } } },
+      responses: { 200: { description: "Routine action succeeded" }, 201: { description: "Created" } },
+    },
   },
 
   // ── Settings ──
+  "/api/ha/areas": {
+    head: {
+      operationId: "verifyHomeAssistantAreaContext", tags: ["Home Assistant"], summary: "Revalidate task location field access",
+      responses: { 204: { description: "Field access proof in the response header" }, 404: { description: "Field unavailable for this account" } },
+    },
+    get: {
+      operationId: "getHomeAssistantAreaChoices", tags: ["Home Assistant"],
+      summary: "List optional Home Assistant Area choices for an eligible signed-in household user",
+      responses: {
+        200: jsonContent({ type: "object", required: ["areas"], properties: {
+          areas: { type: "array", items: { type: "object", required: ["id", "name"], properties: {
+            id: { type: "string" }, name: { type: "string" },
+          } } },
+        } }),
+        404: { description: "Field unavailable for this account" },
+        503: { description: "Home Assistant area registry unavailable" },
+      },
+    },
+  },
+  "/api/organization-features": {
+    head: {
+      operationId: "verifyOrganizationFeatureAdministration", tags: ["Settings"], summary: "Revalidate the current administrator session",
+      responses: { 204: { description: "Administrator proof in the response header" }, 403: { description: "Current administrator required" } },
+    },
+    get: {
+      operationId: "getOrganizationFeatureAvailability", tags: ["Settings"], summary: "Read organization feature audiences and eligible people",
+      responses: { 200: { description: "Audience and verified Home Assistant roster" }, 403: { description: "Current administrator required" } },
+    },
+    put: {
+      operationId: "saveOrganizationFeatureAvailability", tags: ["Settings"], summary: "Set who can use an organization feature",
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["feature", "audience", "users", "revision"],
+        properties: {
+          feature: { enum: ["organizer", "groups", "projects", "planning", "goals", "routines", "pillars", "principles", "achievements", "home_assistant_area"] }, audience: { enum: ["everyone", "selected", "nobody"] },
+          users: { type: "array", items: { type: "string" } }, revision: { type: ["string", "null"] },
+        },
+      } } } },
+      responses: { 204: { description: "Saved" }, 403: { description: "Current administrator required" }, 409: { description: "Settings changed" } },
+    },
+  },
+  "/api/tasks/{id}/home-assistant-area": {
+    get: {
+      operationId: "getHouseholdTaskHomeAssistantArea", tags: ["Tasks"], summary: "Read a visible task's optional Home Assistant Area and version",
+      responses: { 200: { description: "Optional area registry ID, current task version and private location revision" }, 404: { description: "Task or field unavailable" } },
+    },
+    put: {
+      operationId: "setHouseholdTaskHomeAssistantArea", tags: ["Tasks"], summary: "Set or clear a task's Home Assistant Area with its current version",
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["version", "locationRevision", "home_assistant_area_id"],
+        properties: { version: { type: "integer" }, locationRevision: { type: "integer" }, home_assistant_area_id: { type: ["string", "null"] } },
+      } } } },
+      responses: { 200: { description: "Saved with a new location revision" }, 404: { description: "Task or field unavailable" }, 409: { description: "Task changed" } },
+    },
+  },
+  "/api/boards/{id}/tickets/{ticket}/home-assistant-area": {
+    get: {
+      operationId: "getNamedBoardTaskHomeAssistantArea", tags: ["Tasks"], summary: "Read a visible task's optional Home Assistant Area and version",
+      responses: { 200: { description: "Optional area registry ID, current task version and private location revision" }, 404: { description: "Task or field unavailable" } },
+    },
+    put: {
+      operationId: "setNamedBoardTaskHomeAssistantArea", tags: ["Tasks"], summary: "Set or clear a task's Home Assistant Area with its current version",
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["version", "locationRevision", "home_assistant_area_id"],
+        properties: { version: { type: "integer" }, locationRevision: { type: "integer" }, home_assistant_area_id: { type: ["string", "null"] } },
+      } } } },
+      responses: { 200: { description: "Saved with a new location revision" }, 404: { description: "Task or field unavailable" }, 409: { description: "Task changed" } },
+    },
+  },
+  "/api/organization-labels": {
+    get: {
+      operationId: "getPersonalOrganizationLabels", tags: ["Settings"], summary: "Read personal labels for the current Home Assistant account and language",
+      responses: { 200: { description: "Visible label forms, revision, terms and form proof" }, 403: { description: "Verified Home Assistant account required" } },
+    },
+    head: {
+      operationId: "verifyPersonalOrganizationLabels", tags: ["Settings"], summary: "Revalidate the current personalized page context",
+      responses: { 204: { description: "Current render proof in the response header" }, 403: { description: "Verified Home Assistant account required" } },
+    },
+    put: {
+      operationId: "savePersonalOrganizationLabels", tags: ["Settings"], summary: "Save visible personal labels for the active display language",
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["proof", "revision", "terms", "forms"],
+        properties: {
+          proof: { type: "string" }, revision: { type: "string" },
+          terms: { type: "array", items: { type: "string" } },
+          forms: { type: "object", additionalProperties: { type: "array", items: { type: "string", maxLength: 40 } } },
+        },
+      } } } },
+      responses: { 204: { description: "Saved" }, 400: { description: "Invalid label forms" },
+        403: { description: "Verified Home Assistant account required" },
+        409: { description: "Previously saved labels or available features changed" },
+        412: { description: "Account or language changed" } },
+    },
+  },
   "/api/settings": {
     get: {
       operationId: "getSettings", tags: ["Settings"], summary: "Read application settings",
@@ -1754,14 +2471,74 @@ const paths = {
     },
   },
 
+  // ── Custom Fields (Board-scoped) ──
+  "/api/custom-fields": {
+    get: { operationId: "listCustomFields", tags: ["Tasks"], summary: "List custom field definitions for the current board", responses: { 200: { description: "Board custom field definitions" } } },
+    put: {
+      operationId: "updateCustomFields", tags: ["Tasks"], summary: "Replace custom field definitions for the current board",
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["fields"], properties: {
+          fields: { type: "array", maxItems: 40, items: { type: "object", required: ["name", "type"], properties: {
+            name: { type: "string", minLength: 1, maxLength: 60 },
+            type: { type: "string", enum: ["text", "number", "url", "select", "date", "checkbox"] },
+            options: { type: "array", maxItems: 30, items: { type: "string", minLength: 1, maxLength: 60 } },
+          } } },
+        },
+      } } } },
+      responses: { 200: { description: "Updated board custom field definitions" }, 400: err400 },
+    },
+  },
+
   // ── Lanes (Kanban) ──
   "/api/lanes": {
     get: { operationId: "listLanes", tags: ["Views"], summary: "List kanban board lanes", responses: { 200: { description: "Lanes" } } },
-    post: { operationId: "createLane", tags: ["Views"], summary: "Create a kanban lane", responses: { 201: { description: "Created" } } },
+    post: {
+      operationId: "createLane", tags: ["Views"], summary: "Create a kanban lane",
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["label"], properties: {
+          label: { type: "string", minLength: 1, maxLength: 50 },
+          key: { type: "string" },
+          icon: { type: "string" },
+          color: { type: ["string", "null"], pattern: "^#[0-9a-fA-F]{6}$" },
+          wip_limit: { type: "integer", minimum: 0 },
+          position: { type: "integer", minimum: 0 },
+          includes: { type: "array", items: { type: "string", pattern: "^[a-z0-9_]{1,50}$" } },
+        },
+      } } } },
+      responses: { 201: { description: "Created" }, 400: err400, 409: { description: "Lane key already exists" } },
+    },
+    put: {
+      operationId: "reorderLanes", tags: ["Views"], summary: "Reorder kanban board lanes",
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", required: ["ordered_ids"], properties: { ordered_ids: { type: "array", minItems: 1, items: { type: "string" } } },
+      } } } },
+      responses: { 200: { description: "Reordered" }, 400: err400, 409: { description: "Lanes changed concurrently" } },
+    },
   },
   "/api/lanes/{id}": {
-    put: { operationId: "updateLane", tags: ["Views"], summary: "Update a kanban lane", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Updated" } } },
-    delete: { operationId: "deleteLane", tags: ["Views"], summary: "Delete a kanban lane", parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }], responses: { 200: { description: "Deleted" } } },
+    put: {
+      operationId: "updateLane", tags: ["Views"], summary: "Update a kanban lane",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      requestBody: { required: true, content: { "application/json": { schema: {
+        type: "object", properties: {
+          label: { type: "string", minLength: 1, maxLength: 50 },
+          icon: { type: "string" },
+          color: { type: ["string", "null"] },
+          wip_limit: { type: "integer", minimum: 0 },
+          position: { type: "integer", minimum: 0 },
+          includes: { oneOf: [{ type: "array", items: { type: "string", pattern: "^[a-z0-9_]{1,50}$" } }, { type: "string" }] },
+        },
+      } } } },
+      responses: { 200: { description: "Updated" }, 400: err400, 403: { description: "Cannot change protected fields on built-in lanes" }, 404: { description: "Lane not found" } },
+    },
+    delete: {
+      operationId: "deleteLane", tags: ["Views"], summary: "Delete a kanban lane",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      requestBody: { required: false, content: { "application/json": { schema: {
+        type: "object", properties: { target_lane_id: { type: "string" } },
+      } } } },
+      responses: { 200: { description: "Deleted" }, 400: err400, 403: { description: "Cannot delete built-in lane" }, 404: { description: "Lane or target lane not found" }, 409: { description: "Lane is referenced by an active board intake" } },
+    },
   },
 
   // ── Saved Filters ──
@@ -1800,7 +2577,7 @@ const paths = {
 
   // ── Users ──
   "/api/users": {
-    get: { operationId: "listUsers", tags: ["Users"], summary: "List all users (HA + custom)", description: "Returns users from Home Assistant integration combined with any custom-defined users.", responses: { 200: { description: "User list" } } },
+    get: { operationId: "listUsers", tags: ["Users"], summary: "List all users (HA + custom)", description: "Returns Home Assistant and custom users. ha_roster_verified indicates whether the Home Assistant roster is verified and can distinguish an absent user from an unavailable roster.", responses: { 200: { description: "User list" } } },
   },
   "/api/users/custom": {
     post: {
@@ -1902,8 +2679,8 @@ const paths = {
     post: {
       operationId: "exportDatabase",
       tags: ["Export"],
-      summary: "Download a consistent SQLite snapshot as a verified Home Assistant administrator",
-      description: "Submit the native form from the administrator's Meitheal Settings page. The form token is valid for 15 minutes and bound to the verified user. Includes committed writes in the write-ahead log. Contains private household data and local feedback. Use the database host's backup tools for remote databases.",
+      summary: "Download a consistent SQLite snapshot as the verified current Home Assistant owner",
+      description: "Submit the native form from the current owner's Meitheal Settings page. The form token is valid for 15 minutes and bound to the verified user. Includes committed writes in the write-ahead log. Databases containing protected organization data require Home Assistant backups instead. The download remains bound to its admitted access revision: loss before publication returns unavailable, and loss after headers aborts the remaining stream. Use the database host's backup tools for remote databases.",
       security: ingressSession,
       requestBody: {
         required: true,
@@ -1916,12 +2693,12 @@ const paths = {
       responses: {
         200: { description: "SQLite snapshot", content: { "application/x-sqlite3": { schema: { type: "string", format: "binary" } } } },
         400: { description: "The form could not be read or the app uses a remote database" },
-        403: { description: "Current administrator access and a valid same-origin download form are required" },
+        403: { description: "Current Home Assistant owner access, an eligible database and a valid same-origin download form are required" },
         404: { description: "Local database or download path unavailable" },
         409: { description: "Another database download is in progress" },
         413: { description: "The form exceeds 256 bytes" },
         415: { description: "The form must use application/x-www-form-urlencoded" },
-        503: { description: "Home Assistant Core could not verify current administrator access" },
+        503: { description: "Current owner or installation continuity could not be verified before response publication" },
         507: { description: "Insufficient free space for a snapshot on the database volume" },
       },
     },
@@ -1934,11 +2711,222 @@ const paths = {
     get: { operationId: "getLicenseStatus", tags: ["System"], summary: "Get license key verification status", description: "Returns plan type, expiry, and validation state. Grace mode: app is fully functional without a license.", responses: { 200: { description: "License status" } } },
   },
 
+  // ── Webserver ──
+  "/api/webserver": {
+    get: {
+      operationId: "getWebserverSettings",
+      tags: ["System"],
+      summary: "Get webserver, ports, domains, MCP URL, and Supervisor status",
+      description: "Requires an administrator session. Returns normalized webserver configuration (ports single/list/range, internal/external/Home Assistant URLs, bind interface, TLS status with private key redacted), live MCP server endpoint with Home Assistant deep-link, security posture notices, and Home Assistant Supervisor services/network snapshot.",
+      responses: {
+        200: {
+          description: "Webserver settings and Supervisor snapshot",
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  config: { $ref: "#/components/schemas/WebserverConfig" },
+                  mcp: { $ref: "#/components/schemas/WebserverMcpEndpoints" },
+                  provenance: {
+                    type: "object",
+                    description: "Per-field source of truth across database, supervisor, process_env, dotenv, and default.",
+                  },
+                  activeRuntime: {
+                    type: "object",
+                    description: "Live active HTTP listener ports/host, .env detection state, and restartRequired indicator.",
+                  },
+                },
+              },
+            },
+          },
+        },
+        403: { description: "Administrator required" },
+      },
+    },
+    put: {
+      operationId: "updateWebserverSettings",
+      tags: ["System"],
+      summary: "Save webserver ports, domains, TLS, and bind interface settings",
+      description: "Requires an administrator session. Validates single port, comma list, or port range (max 32 ports), HTTP/HTTPS domains, bind IP, and TLS material. Persists settings and optionally synchronizes Home Assistant Supervisor add-on options.",
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: {
+                serverName: { type: "string", maxLength: 100 },
+                internalUrl: { type: "string", maxLength: 2048 },
+                externalUrl: { type: "string", maxLength: 2048 },
+                homeAssistantUrl: { type: "string", maxLength: 2048 },
+                portsSpec: { oneOf: [{ type: "string" }, { type: "integer" }, { type: "array", items: { type: "integer" } }] },
+                bindAddress: { type: "string" },
+                tlsEnabled: { type: "boolean" },
+                sslCertificate: { type: "string" },
+                sslPrivateKey: { type: ["string", "null"] },
+                syncHaOptions: { type: "boolean" },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: "Saved webserver configuration and Supervisor sync status" },
+        400: { description: "Validation failed" },
+        403: { description: "Administrator required" },
+      },
+    },
+  },
+  "/api/webserver/verify": {
+    post: {
+      operationId: "verifyWebserverSettings",
+      tags: ["System"],
+      summary: "Verify proposed webserver settings before saving",
+      description: "Requires an administrator session. Runs deterministic port, domain, bind interface, TLS pairing, MCP endpoint, and Home Assistant Supervisor checks without mutating persisted settings.",
+      requestBody: {
+        required: true,
+        content: { "application/json": { schema: { type: "object" } } },
+      },
+      responses: {
+        200: { description: "Verification checklist and resolved MCP endpoints" },
+        400: { description: "Malformed request body" },
+        403: { description: "Administrator required" },
+      },
+    },
+  },
+
+  // ── Plugins ──
+  "/api/plugins": {
+    get: {
+      operationId: "listPlugins",
+      tags: ["Plugins"],
+      summary: "List built-in and uploaded plugins, fleet health, or active runtime bundles",
+      description: "Returns the full plugin catalog, fleetHealth summary, per-plugin EGM health reports, and Safe Mode state for administrators, or enabled runtime bundles (without secrets) when ?runtime=1 is requested by an active browser session.",
+      parameters: [
+        { name: "runtime", in: "query", schema: { type: "string", enum: ["1"] }, description: "Return active runtime bundles only." },
+      ],
+      responses: {
+        200: { description: "Plugin catalog with health telemetry or active runtime bundles" },
+        403: { description: "Administrator or active session required" },
+      },
+    },
+    post: {
+      operationId: "managePlugins",
+      tags: ["Plugins"],
+      summary: "Upload a plugin ZIP, install an AI JSON bundle, toggle Safe Mode, or remove all uploaded plugins",
+      description: "Administrator only. Supports multipart ZIP upload, JSON install_bundle (AI builder), set_safe_mode, and remove_all_uploaded with full size, zip-bomb, Zip Slip, manifest, SVG, and dataSharing validation.",
+      responses: {
+        200: { description: "Administrative plugin action completed" },
+        201: { description: "Uploaded or AI-built plugin installed" },
+        400: { description: "Archive, bundle, or manifest validation failed" },
+        403: { description: "Administrator required" },
+      },
+    },
+  },
+  "/api/plugins/{id}": {
+    get: {
+      operationId: "getPlugin",
+      tags: ["Plugins"],
+      summary: "Get details for one plugin",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      responses: { 200: { description: "Plugin view" }, 403: { description: "Administrator required" }, 404: { description: "Plugin not found" } },
+    },
+    patch: {
+      operationId: "updatePlugin",
+      tags: ["Plugins"],
+      summary: "Enable, disable, approve updated permissions, or save plugin configuration",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      responses: { 200: { description: "Updated plugin" }, 400: { description: "Validation failed" }, 403: { description: "Administrator required" }, 409: { description: "Re-consent required" } },
+    },
+    delete: {
+      operationId: "uninstallPlugin",
+      tags: ["Plugins"],
+      summary: "Uninstall an uploaded plugin and delete its storage and secrets",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      responses: { 200: { description: "Plugin uninstalled" }, 400: { description: "Built-in plugins cannot be uninstalled" }, 403: { description: "Administrator required" } },
+    },
+  },
+  "/api/plugins/{id}/storage": {
+    get: {
+      operationId: "readPluginStorage",
+      tags: ["Plugins"],
+      summary: "Read isolated key-value storage for an active plugin",
+      parameters: [
+        { name: "id", in: "path", required: true, schema: { type: "string" } },
+        { name: "key", in: "query", schema: { type: "string" } },
+      ],
+      responses: { 200: { description: "Stored value(s)" }, 403: { description: "Plugin disabled, Safe Mode active, or permission denied" } },
+    },
+    put: {
+      operationId: "writePluginStorage",
+      tags: ["Plugins"],
+      summary: "Write isolated key-value storage for an active plugin (256 KB quota)",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      responses: { 200: { description: "Stored" }, 403: { description: "Permission denied" }, 413: { description: "Storage quota exceeded" } },
+    },
+    delete: {
+      operationId: "deletePluginStorage",
+      tags: ["Plugins"],
+      summary: "Delete one key from a plugin's isolated storage",
+      parameters: [
+        { name: "id", in: "path", required: true, schema: { type: "string" } },
+        { name: "key", in: "query", required: true, schema: { type: "string" } },
+      ],
+      responses: { 200: { description: "Deleted" }, 403: { description: "Permission denied" } },
+    },
+  },
+  "/api/plugins/{id}/secrets": {
+    get: {
+      operationId: "listPluginSecrets",
+      tags: ["Plugins"],
+      summary: "List configured write-only secret keys (values are never returned)",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      responses: { 200: { description: "Configured secret keys" }, 403: { description: "Administrator required" } },
+    },
+    put: {
+      operationId: "setPluginSecret",
+      tags: ["Plugins"],
+      summary: "Save or rotate a write-only plugin secret",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      responses: { 200: { description: "Secret configured" }, 403: { description: "Administrator required" } },
+    },
+    delete: {
+      operationId: "deletePluginSecret",
+      tags: ["Plugins"],
+      summary: "Remove a write-only plugin secret",
+      parameters: [
+        { name: "id", in: "path", required: true, schema: { type: "string" } },
+        { name: "key", in: "query", required: true, schema: { type: "string" } },
+      ],
+      responses: { 200: { description: "Secret deleted" }, 403: { description: "Administrator required" } },
+    },
+  },
+  "/api/plugins/{id}/http": {
+    post: {
+      operationId: "proxyPluginHttp",
+      tags: ["Plugins"],
+      summary: "Send an SSRF-guarded outbound HTTPS request on behalf of an active plugin",
+      description: "Enforces allowedHosts, HTTPS policy, DNS/private-IP CIDR blocking, redirect blocking, and server-side {{secret:key}} header substitution.",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      responses: { 200: { description: "Upstream response" }, 403: { description: "Host blocked or permission denied" }, 502: { description: "Redirect blocked or upstream error" } },
+    },
+  },
+  "/api/plugins/{id}/connector": {
+    post: {
+      operationId: "runPluginConnector",
+      tags: ["Plugins"],
+      summary: "Test or idempotently sync an external connector plugin",
+      parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+      responses: { 200: { description: "Connector test or sync result" }, 400: { description: "Configuration error" }, 403: { description: "Administrator required" } },
+    },
+  },
+
   // ── Home Assistant ──
   "/api/ha/connection": { get: { operationId: "getHAConnection", tags: ["HomeAssistant"], summary: "Get HA WebSocket connection status", responses: { 200: { description: "Connection status" } } } },
-  "/api/ha/calendars": { get: { operationId: "getHACalendars", tags: ["HomeAssistant"], summary: "List HA calendar entities", responses: { 200: { description: "Calendars" } } } },
+  "/api/ha/calendars": { get: { operationId: "getHACalendars", tags: ["HomeAssistant"], summary: "List HA calendar entities", parameters: [{ name: "configured", in: "query", schema: { type: "integer", enum: [1] }, description: "Return only configured calendar entity IDs in the entities array." }], responses: { 200: { description: "Calendars" } } } },
   "/api/ha/events": { get: { operationId: "getHAEvents", tags: ["HomeAssistant"], summary: "List recent HA events", responses: { 200: { description: "Events" } } } },
-  "/api/ha/services": { get: { operationId: "getHAServices", tags: ["HomeAssistant"], summary: "List HA services", responses: { 200: { description: "Services" } } } },
+  "/api/ha/services": { get: { operationId: "getHAServices", tags: ["HomeAssistant"], summary: "List HA services, Supervisor services, and webserver options", description: "Returns Home Assistant Core services, Supervisor Services registry entries, and (for administrators) Meitheal webserver add-on options.", responses: { 200: { description: "Services and webserver options" } } } },
   "/api/ha/addons": { get: { operationId: "getHAAddons", tags: ["HomeAssistant"], summary: "List HA add-ons", responses: { 200: { description: "Add-ons" } } } },
   "/api/ha/agents": { get: { operationId: "getHAAgents", tags: ["HomeAssistant"], summary: "List HA Assist agents", responses: { 200: { description: "Agents" } } } },
   "/api/ha/assist": { post: { operationId: "sendHAAssist", tags: ["HomeAssistant"], summary: "Send a message to HA Assist", requestBody: { content: { "application/json": { schema: { type: "object", properties: { text: { type: "string" } } } } } }, responses: { 200: { description: "Assist response" } } } },
@@ -2256,6 +3244,7 @@ const document = {
     { name: "Events", description: "Server-sent events for real-time updates" },
     { name: "HomeAssistant", description: "Home Assistant integration endpoints" },
     { name: "Integrations", description: "External integrations (n8n, Node-RED, Grocy, calendar)" },
+    { name: "Boards", description: "Named Home Assistant Board access and send-only capture" },
     { name: "Agents", description: "MCP and A2A agent protocol endpoints" },
     { name: "Auth", description: "Agent token management — zero-trust authorization for automations" },
   ],

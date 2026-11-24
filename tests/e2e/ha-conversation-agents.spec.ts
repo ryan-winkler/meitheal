@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test"
 import { fetchHaAgents } from "../../apps/web/src/lib/ha-agent-picker"
 import { readConversationAgents } from "../../apps/web/src/domains/ha/conversation-agents"
-import { shouldSkipBrowserSpecs } from "./_helpers"
+import { deferred, shouldSkipBrowserSpecs } from "./_helpers"
 
 // HA conversation/agent/list covers entity agents and legacy config-entry IDs.
 const registeredAgents = [
@@ -104,9 +104,15 @@ test.describe("Dynamic Home Assistant agent pickers", () => {
     await mockPreference(page, "conversation.household")
     await page.route("**/api/ha/agents", route => route.fulfill({ json: { agents: registeredAgents } }))
     await page.goto("/settings#automation-ai-settings")
-    await expect(page.locator("#refresh-ha-agents")).toHaveText("Athnuaigh gníomhairí")
+    await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
+    const refresh = page.locator("#refresh-ha-agents")
+    const picker = page.locator("#ha-agent-select-settings")
+    await expect(refresh).toHaveText("Athnuaigh gníomhairí")
+    await expect(refresh).toHaveAttribute("aria-busy", "false")
+    await expect(picker).toHaveValue("conversation.household")
     await expect(page.locator("#ha-agent-discovery-status")).toHaveText("3 gníomhaire Home Assistant ar fáil.")
-    await page.locator("#ha-agent-select-settings").selectOption("conversation.home_assistant")
+    await picker.selectOption("conversation.home_assistant")
+    await expect(picker).toHaveValue("conversation.home_assistant")
     await expect(page.locator("#ha-agent-discovery-status")).toContainText("Sábháil chun an gníomhaire comhrá")
   })
 
@@ -153,23 +159,55 @@ test.describe("Dynamic Home Assistant agent pickers", () => {
     let agents = [...registeredAgents]
     let failure = false
     const requests: Array<Record<string, string>> = []
+    const pageResource = deferred<void>()
+    const firstReply = deferred<void>()
+    await page.addInitScript(() => {
+      document.addEventListener("DOMContentLoaded", () => {
+        // Let the modal initialize while a page resource is still loading.
+        const image = new Image()
+        image.src = "/assist-page-load-fixture.svg"
+        image.hidden = true
+        document.body.append(image)
+      }, { once: true })
+      document.addEventListener("astro:page-load", () => {
+        document.documentElement.dataset.assistPageLoaded = "true"
+      }, { once: true })
+    })
+    await page.route("**/assist-page-load-fixture.svg", async route => {
+      await pageResource.promise
+      await route.fulfill({
+        contentType: "image/svg+xml",
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>',
+      })
+    })
     await mockPreference(page, "conversation.household")
     await page.route("**/api/ha/agents", route => route.fulfill(failure
       ? { status: 502, json: { agents: [], error: "Home Assistant did not return its conversation agents" } }
       : { json: { agents } }))
-    await page.route("**/api/ha/assist", route => {
-      requests.push(route.request().postDataJSON())
-      return route.fulfill({ json: { speech: "Ready", response_type: "query_answer", conversation_id: `turn-${requests.length}` } })
+    await page.route("**/api/ha/assist", async route => {
+      const turn = requests.push(route.request().postDataJSON())
+      if (turn === 1) await firstReply.promise
+      return route.fulfill({ json: { speech: "Ready", response_type: "query_answer", conversation_id: `turn-${turn}` } })
     })
-    await page.goto("/tasks")
-    await expect.poll(() => page.evaluate(() => typeof (window as unknown as { openAskHaModal?: unknown }).openAskHaModal)).toBe("function")
-    await openAsk(page)
     const picker = page.locator("#ask-ha-agent-select")
     const input = page.locator("#ask-ha-input")
     const send = page.locator("#submit-ask-ha-btn")
-    await expect(picker).toHaveValue("conversation.household")
-    await input.fill("First question")
-    await send.click()
+    try {
+      await page.goto("/tasks", { waitUntil: "domcontentloaded" })
+      await expect.poll(() => page.evaluate(() => typeof window.openAskHaModal)).toBe("function")
+      await openAsk(page)
+      await expect(picker).toHaveValue("conversation.household")
+      await input.fill("First question")
+      await send.click()
+      await expect.poll(() => requests.length).toBe(1)
+      await expect(page.locator("html")).not.toHaveAttribute("data-assist-page-loaded", "true")
+      pageResource.resolve()
+      // The real initial Astro event lands while the first reply is in flight.
+      await expect(page.locator("html")).toHaveAttribute("data-assist-page-loaded", "true")
+    } finally {
+      pageResource.resolve()
+      firstReply.resolve()
+    }
     await expect(page.locator("#ask-ha-chat")).toContainText("Ready")
     expect(requests[0]).toEqual({ text: "First question", agent_id: "conversation.household" })
     await page.locator("#close-ask-ha-modal").click()

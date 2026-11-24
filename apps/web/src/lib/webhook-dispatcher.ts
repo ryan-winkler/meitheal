@@ -1,3 +1,9 @@
+import {
+  TaskRepository, getPersistenceClient, projectPublicTaskFields, readWorkDestinations,
+  resolveIntegrationScope, validateIntegrationScope, validateBoardScope, validateTaskOperation,
+  readTaskDeletionReceipt, readTaskAssignmentReceipt, validateBoardPlacement,
+  type BoardScope, type WorkOperation, type TaskDeletionReceipt, type TaskAssignmentReceipt,
+} from "@domains/tasks"
 /**
  * Webhook Dispatcher — Unified Event Pipeline
  *
@@ -11,10 +17,10 @@
  * @domain integrations
  * @bounded-context event-dispatch
  */
-import { getPersistenceClient } from "@domains/tasks/persistence/store";
 import { type DomainEvent, type WebhookSubscriberConfig, emitWebhook } from "@meitheal/integration-core";
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
 import { fireHAEvent, type MeithealTaskEventData, type MeithealEventType } from "@domains/ha/ha-events";
+import { localReaderCacheToken } from "../../scripts/database-client.mjs"
 
 const logger = createLogger({
   service: "meitheal-web",
@@ -46,11 +52,15 @@ export const HA_EVENT_AUTHORITY_HEADER = "X-Meitheal-HA-Event-Authority"
  * Keep native fallback when the App bus is absent or the event is disabled.
  * This only reads local policy; it never waits for a HA connection.
  */
-export async function taskEventAuthorityHeaders(eventTypes: string[]): Promise<Record<string, string>> {
+export async function taskEventAuthorityHeaders(eventTypes: string[], scope: BoardScope): Promise<Record<string, string>> {
   if (!process.env.SUPERVISOR_TOKEN) return {}
   const enabled = await getN8nAutoEvents()
-  const owned = eventTypes.filter(type => HA_EVENT_MAP[type] && (enabled.includes(type) || enabled.includes("*")))
-    .map(type => HA_EVENT_MAP[type]!)
+  const owned: MeithealEventType[] = []
+  for (const type of eventTypes) {
+    if (!HA_EVENT_MAP[type] || !(enabled.includes(type) || enabled.includes("*"))) continue
+    const allowed = await outboundChannelAuthority(scope, "ha_events", "meitheal", eventOperation(type))
+    if (allowed && await allowed()) owned.push(HA_EVENT_MAP[type]!)
+  }
   return owned.length ? { [HA_EVENT_AUTHORITY_HEADER]: [...new Set(owned)].join(",") } : {}
 }
 
@@ -59,84 +69,140 @@ export async function taskEventAuthorityHeaders(eventTypes: string[]): Promise<R
  * The Settings UI persists events under `n8n_events` for both auto and
  * standalone modes. Returns the list of enabled event types, defaulting to all.
  */
-// P2.2: Cache n8n auto events with TTL to avoid DB reads on every task event
-let _cachedN8nEvents: string[] | null = null;
-let _n8nEventsCachedAt = 0;
-const N8N_EVENTS_TTL_MS = 60_000; // 60 seconds
-
 async function getN8nAutoEvents(): Promise<string[]> {
-  const now = Date.now();
-  if (_cachedN8nEvents && (now - _n8nEventsCachedAt) < N8N_EVENTS_TTL_MS) {
-    return _cachedN8nEvents;
-  }
+  const { rows: [row] } = await getPersistenceClient().execute({ sql: "SELECT value FROM settings WHERE key='n8n_events'", args: [] })
+  if (!row) return ["task.created", "task.updated", "task.completed", "task.deleted", "task.overdue", "task.commented"]
   try {
-    const client = getPersistenceClient();
-    const result = await client.execute(
-      "SELECT value FROM settings WHERE key = 'n8n_events'"
-    );
-    if (result.rows.length > 0) {
-      const parsed = JSON.parse(String(result.rows[0]!.value));
-      if (Array.isArray(parsed)) {
-        _cachedN8nEvents = parsed;
-        _n8nEventsCachedAt = now;
-        return parsed;
+    const value: unknown = JSON.parse(String(row.value))
+    return Array.isArray(value) && value.every(item => typeof item === "string") ? value : []
+  } catch { return [] }
+}
+
+const webhookSettingsCache = new WeakMap<object, { token: string; settings: Record<string, unknown> }>()
+
+/** Read transport configuration fresh; reuse parsed settings only while the SQLite snapshot is unchanged. */
+async function getCurrentWebhookSettings(): Promise<Record<string, unknown>> {
+  const db = getPersistenceClient()
+  const state = localReaderCacheToken(db)
+  const cached = state ? webhookSettingsCache.get(state.owner) : undefined
+  if (state && cached?.token === state.token) return cached.settings
+  const result = await db.execute(
+    "SELECT key,value FROM settings WHERE key IN ('webhook_endpoint','webhook_secret','n8n_webhook_url','n8n_events','n8n_api_key','n8n_signing_secret') ORDER BY key"
+  )
+  const settings: Record<string, unknown> = {}
+  for (const row of result.rows) {
+    try { settings[String(row.key)] = JSON.parse(String(row.value)) }
+    catch { settings[String(row.key)] = String(row.value) }
+  }
+  if (state && localReaderCacheToken(db)?.token === state.token) {
+    webhookSettingsCache.set(state.owner, { token: state.token, settings })
+  }
+  return settings
+}
+
+/** Kept for existing test/setup callers; transport configuration is no longer cached. */
+export function resetWebhookCacheForTests(): void {}
+
+function eventOperation(eventType: string): WorkOperation {
+  return { resource: "task", action: eventType === "task.created" ? "create" : eventType === "task.deleted" ? "delete"
+    : eventType === "task.completed" ? "complete" : eventType === "task.overdue" ? "read" : "edit" }
+}
+
+async function outboundChannelAuthority(scope: BoardScope, integration: string, sourceId: string,
+  originatingOperation: WorkOperation, taskId?: string, receipt?: TaskDeletionReceipt | TaskAssignmentReceipt): Promise<(() => Promise<boolean>) | null> {
+  const db = getPersistenceClient()
+  if (!(await validateBoardScope(scope, db, originatingOperation)).ok) return null
+  const configuration = await readWorkDestinations(db)
+  for (const binding of configuration?.bindings ?? []) {
+    if (!binding.enabled || binding.integration !== integration || binding.sourceId !== sourceId ||
+      binding.destination.boardId !== scope.boardId || binding.purpose !== "webhook.delivery") continue
+    const service = await resolveIntegrationScope(db, binding.id, binding.generation, { resource: "task", action: "read" })
+    if (!service.ok) continue
+    if (receipt) {
+      if (!receipt.bindingRefs.some(ref => ref.id === binding.id && ref.generation === binding.generation)) continue
+      if (binding.destination.areaId && binding.destination.areaId !== receipt.placement.areaId ||
+        binding.destination.projectId && binding.destination.projectId !== receipt.placement.projectId) continue
+      if (!await validateBoardPlacement(service.value.scope, db, {
+        areaId: typeof receipt.placement.areaId === "string" ? receipt.placement.areaId : null,
+        projectId: typeof receipt.placement.projectId === "string" ? receipt.placement.projectId : null,
+      })) continue
+    }
+    if (taskId && !await new TaskRepository(db, service.value.scope).findById(taskId)) continue
+    if (taskId && !await validateTaskOperation(db, scope, taskId, originatingOperation)) continue
+    if (integration === "ha_events") {
+      const { rows: [board] } = await db.execute({ sql: "SELECT visibility FROM task_boards WHERE id = ?", args: [scope.boardId] })
+      if (board?.visibility !== "shared") continue
+      const { rows } = await db.execute({ sql: "SELECT 1 FROM organization_access_policies WHERE board_id = ? AND audience <> 'everyone' LIMIT 1", args: [scope.boardId] })
+      if (rows.length) continue
+    }
+    return async () => (await validateBoardScope(scope, db, originatingOperation)).ok &&
+      (await validateIntegrationScope(service.value, db, { resource: "task", action: "read" })).ok &&
+      (!receipt || Boolean(await ("deletedAt" in receipt ? readTaskDeletionReceipt(db, scope, receipt.eventId, receipt.id) : readTaskAssignmentReceipt(db, scope, receipt.eventId, receipt.id)))) &&
+      (!receipt || await validateBoardPlacement(service.value.scope, db, {
+        areaId: typeof receipt.placement.areaId === "string" ? receipt.placement.areaId : null,
+        projectId: typeof receipt.placement.projectId === "string" ? receipt.placement.projectId : null,
+      })) &&
+      (!taskId || await validateTaskOperation(db, scope, taskId, originatingOperation)) &&
+      (!taskId || Boolean(await new TaskRepository(db, service.value.scope).findById(taskId)))
+  }
+  return null
+}
+
+/** A source binding does not itself approve disclosure on the shared HA bus. */
+export async function haEventOperationAllowed(
+  scope: BoardScope, originatingOperation: WorkOperation = { resource: "task", action: "read" }, taskId?: string,
+): Promise<boolean> {
+  const allowed = await outboundChannelAuthority(scope, "ha_events", "meitheal", originatingOperation, taskId)
+  return Boolean(allowed && await allowed())
+}
+
+export async function dispatchTaskEvent(eventType: string, input: Record<string, unknown>,
+  requestId: string | undefined, traceId: string | undefined, eventId: string | undefined,
+  responseAuthority: Record<string, string> | undefined, scope: BoardScope) {
+  try {
+    const isSyncEvent = ["task.created", "task.updated", "task.completed", "task.deleted"].includes(eventType)
+    const destinations = isSyncEvent ? await readWorkDestinations(getPersistenceClient()) : null
+    const hasActiveSync = Boolean(destinations?.bindings.some(binding =>
+      binding.enabled
+      && binding.destination.boardId === scope.boardId
+      && (binding.purpose === "todo.sync" || binding.purpose === "calendar.sync" || binding.purpose === "grocy.sync")
+    ))
+    const haEventType = HA_EVENT_MAP[eventType];
+    const hasHaBus = Boolean(haEventType && process.env.SUPERVISOR_TOKEN);
+    const earlyWebhookSettings = !hasHaBus && !hasActiveSync && eventType !== "task.deleted" && !eventId
+      ? await getCurrentWebhookSettings()
+      : null;
+    if (earlyWebhookSettings && !earlyWebhookSettings.webhook_endpoint && !earlyWebhookSettings.n8n_webhook_url) {
+      return;
+    }
+
+    const assignment = eventType === "task.updated" && typeof eventId === "string" && typeof input.id === "string"
+      ? await readTaskAssignmentReceipt(getPersistenceClient(), scope, eventId, input.id) : null
+    const originatingOperation: WorkOperation = assignment ? { resource: "task", action: "assign" } : eventOperation(eventType)
+    const originAllowed = async () => (await validateBoardScope(scope, getPersistenceClient(), originatingOperation)).ok
+    if (!await originAllowed()) return
+    if (typeof input.board_id === "string" && input.board_id !== scope.boardId) return
+    const deletion = eventType === "task.deleted"
+      ? typeof eventId === "string" && typeof input.id === "string"
+        ? await readTaskDeletionReceipt(getPersistenceClient(), scope, eventId, input.id) : null
+      : undefined
+    if (eventType === "task.deleted" && !deletion) return
+    const payload: Record<string, unknown> = { ...projectPublicTaskFields(deletion?.task ?? assignment?.task ?? input), board_id: scope.boardId }
+    if (eventType === "task.commented") {
+      for (const key of ["comment_id", "author", "content"] as const) {
+        if (typeof input[key] === "string" || key === "comment_id" && typeof input[key] === "number") payload[key] = input[key]
+      }
+      if (input.comment && typeof input.comment === "object" && !Array.isArray(input.comment)) {
+        const comment = input.comment as Record<string, unknown>
+        payload.comment = Object.fromEntries(["id", "author", "excerpt", "by_agent"].filter(key => Object.hasOwn(comment, key)).map(key => [key, comment[key]]))
       }
     }
-  } catch { /* fall through to defaults */ }
-  // Default: all events enabled
-  const defaults = ["task.created", "task.updated", "task.completed", "task.deleted", "task.overdue", "task.commented"];
-  _cachedN8nEvents = defaults;
-  _n8nEventsCachedAt = now;
-  return defaults;
-}
-
-// P2.1: Cache webhook/n8n settings with TTL
-let _cachedWebhookSettings: Record<string, unknown> | null = null;
-let _webhookSettingsCachedAt = 0;
-
-async function getCachedWebhookSettings(): Promise<Record<string, unknown>> {
-  const now = Date.now();
-  if (_cachedWebhookSettings && (now - _webhookSettingsCachedAt) < N8N_EVENTS_TTL_MS) {
-    return _cachedWebhookSettings;
-  }
-  const settings: Record<string, unknown> = {};
-  try {
-    const client = getPersistenceClient();
-    const result = await client.execute(
-      "SELECT key, value FROM settings WHERE key IN ('webhook_endpoint', 'webhook_secret', 'n8n_webhook_url', 'n8n_events', 'n8n_api_key', 'n8n_signing_secret')"
-    );
-    for (const row of result.rows) {
-      try {
-        settings[String(row.key)] = JSON.parse(String(row.value));
-      } catch {
-        settings[String(row.key)] = String(row.value);
-      }
-    }
-  } catch { /* no webhook settings — empty */ }
-  _cachedWebhookSettings = settings;
-  _webhookSettingsCachedAt = now;
-  return settings;
-}
-
-/**
- * Reset all module-scoped webhook caches. Test-only.
- * Must be called in `beforeEach` to prevent stale settings leaking across tests.
- */
-export function resetWebhookCacheForTests(): void {
-  _cachedWebhookSettings = null;
-  _webhookSettingsCachedAt = 0;
-  _cachedN8nEvents = null;
-  _n8nEventsCachedAt = 0;
-}
-
-export async function dispatchTaskEvent(eventType: string, payload: Record<string, unknown>, requestId?: string, traceId?: string, eventId?: string, responseAuthority?: Record<string, string>) {
-  try {
+    const taskId = eventType === "task.deleted" || assignment ? undefined : typeof payload.id === "string" ? payload.id : undefined
     // ── 1. HA Event Bus (Addon mode — Node-RED/n8n auto) ──
     // Fire meitheal_task_* events on the HA event bus so Node-RED/n8n
     // can trigger on them via the HA WebSocket integration.
-    const haEventType = HA_EVENT_MAP[eventType];
     if (haEventType && process.env.SUPERVISOR_TOKEN) {
-      const authority = responseAuthority ?? await taskEventAuthorityHeaders([eventType]);
+      const authority = assignment ? { [HA_EVENT_AUTHORITY_HEADER]: haEventType } : responseAuthority ?? await taskEventAuthorityHeaders([eventType], scope);
       if (authority[HA_EVENT_AUTHORITY_HEADER]?.split(",").includes(haEventType)) {
         const eventData: MeithealTaskEventData = {
           task_id: String(payload.id ?? ""),
@@ -157,21 +223,20 @@ export async function dispatchTaskEvent(eventType: string, payload: Record<strin
         };
 
         // Fire the mapped event type
-        fireHAEvent(haEventType, eventData).catch(() => {});
-
-        logger.log("info", {
-          event: "integration.ha_event.dispatched",
-          domain: "integrations",
-          component: "webhook-dispatcher",
-          request_id: requestId ?? "unknown",
-          message: `Fired HA event: ${haEventType} for task ${eventData.task_id}`,
-        });
+        const operationAllowed = await outboundChannelAuthority(scope, "ha_events", "meitheal", originatingOperation, taskId, deletion ?? assignment ?? undefined)
+        if (operationAllowed && await operationAllowed()) {
+          fireHAEvent(haEventType, eventData, { operationAllowed }).catch(() => {})
+          logger.log("info", {
+            event: "integration.ha_event.queued", domain: "integrations", component: "webhook-dispatcher",
+            request_id: requestId ?? "unknown", message: "Queued an approved Home Assistant event delivery",
+          })
+        }
       }
     }
 
     // ── 2. HTTP Webhooks (Standalone mode) ──
     // P2.1: Cache webhook settings with TTL to avoid DB reads on every event
-    const webhookSettings = await getCachedWebhookSettings();
+    const webhookSettings = earlyWebhookSettings ?? await getCurrentWebhookSettings();
 
     const subscribers: WebhookSubscriberConfig[] = [];
 
@@ -205,6 +270,7 @@ export async function dispatchTaskEvent(eventType: string, payload: Record<strin
     }
 
     if (subscribers.length > 0) {
+      const profileFingerprint = JSON.stringify(webhookSettings)
       const event: DomainEvent = {
         eventId: eventId ?? crypto.randomUUID(),
         eventType,
@@ -219,7 +285,11 @@ export async function dispatchTaskEvent(eventType: string, payload: Record<strin
         subscribers
           .filter(s => s.events.includes("*") || s.events.includes(eventType))
           .map(async (s) => {
-            const res = await emitWebhook(event, s);
+            const channelAllowed = await outboundChannelAuthority(scope, "webhook", s.id, originatingOperation, taskId, deletion ?? assignment ?? undefined)
+            const operationAllowed = async () => Boolean(channelAllowed && await channelAllowed()) &&
+              JSON.stringify(await getCurrentWebhookSettings()) === profileFingerprint
+            if (!await operationAllowed()) return
+            const res = await emitWebhook(event, s, { operationAllowed });
             
             // Save last n8n delivery result for the UI
             if (s.id === "n8n-webhook") {
@@ -233,7 +303,7 @@ export async function dispatchTaskEvent(eventType: string, payload: Record<strin
                       success: res.ok, 
                       status: res.statusCode, 
                       timestamp: new Date().toISOString(),
-                      error: res.finalError
+                      error: res.ok ? null : "delivery_failed"
                     }),
                     Date.now()
                   ]
@@ -248,25 +318,35 @@ export async function dispatchTaskEvent(eventType: string, payload: Record<strin
               domain: "integrations",
               component: "webhook-dispatcher",
               request_id: event.requestId,
-              message: `Dispatched to ${s.id}. Status: ${res.statusCode}. Attempts: ${res.attempts}. Error: ${res.finalError ?? "none"}`
+              message: `Webhook delivery status: ${res.statusCode}. Attempts: ${res.attempts}.`
             });
           })
       );
     }
 
+    if (assignment) {
+      const { notifyTaskHandback } = await import("@domains/notifications")
+      await notifyTaskHandback(scope, assignment.eventId, assignment.id).catch(() => {})
+      // Assignment and its optional comment do not change provider Task fields.
+      return
+    }
+
     // ── 3. Outbound Sync (Todo + Calendar push) ──
     // Push task mutations to active sync targets (fire-and-forget).
     // Handles loop prevention and no-sync labels internally.
-    import("./sync-outbound").then(({ pushToActiveSyncs }) => {
-      pushToActiveSyncs(eventType, payload).catch(() => {});
-    }).catch(() => {});
+    if (hasActiveSync) {
+      import("./sync-outbound").then(async ({ pushToActiveSyncs }) => {
+        if (!await originAllowed()) return
+        pushToActiveSyncs(eventType, payload, scope, deletion ?? undefined).catch(() => {});
+      }).catch(() => {});
+    }
   } catch (err) {
     logger.log("error", {
       event: "integration.webhook.failed",
       domain: "integrations",
       component: "webhook-dispatcher",
       request_id: requestId ?? "unknown",
-      message: err instanceof Error ? err.message : String(err)
+      message: "Task event delivery unavailable"
     });
   }
 }

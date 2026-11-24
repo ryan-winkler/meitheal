@@ -1,33 +1,51 @@
 /**
- * Theme settings controller.
+ * Theme & appearance settings controller.
  *
- * Handles theme selection, custom theme import/export/delete,
- * locale, timezone, week start, and date format preferences.
+ * Unifies Theme, Match Home Assistant Theme, Accent Color, Customize Appearance,
+ * and Navigation Layout into a live-preview ("Show me immediately") + explicit-save
+ * ("Make sure I save to commit") experience with Discard and automatic unload revert.
  */
-import { APPEARANCE_PREFERENCES, APPEARANCE_STORAGE_KEY, appearanceAttribute, applyAppearancePreferences, type AppearancePreferences } from "@lib/appearance-preferences"
+import {
+  APPEARANCE_PREFERENCES,
+  APPEARANCE_STORAGE_KEY,
+  appearanceAttribute,
+  applyAppearancePreferences,
+  type AppearancePreferences,
+} from "@lib/appearance-preferences"
+import {
+  cloneAppearanceSnapshot,
+  countAppearanceDraftChanges,
+  isAppearanceDraftDirty,
+  normalizeHexAccent,
+  type AppearanceDraftSnapshot,
+} from "@lib/appearance-draft"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { DEFAULT_ACCENT } from "@lib/design-tokens"
 import { applyPersonalAccent } from "@lib/accent-colors"
+import { refreshHAThemeMatch, setHAThemePreview } from "@lib/ha-theme-bridge"
+import { HA_THEME_MATCH_KEY } from "@lib/ha-theme-palette"
 import { showToast } from "@lib/toast"
-import { setTheme, type ThemeMode } from "@lib/theme-watcher"
+import { isThemeMode } from "@lib/theme-mode"
+import { applyTheme, readAppearanceValue, readStoredThemeMode, setTheme, storeTheme } from "@lib/theme-watcher"
+import { readWorkspacePreferences, saveWorkspacePreferences } from "@lib/workspace-preferences"
 import { attachShortcutTooltips } from "@lib/shortcut-tooltip"
 import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, setSingleKeyShortcuts, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { settingsStore } from "@lib/settings-store"
 import { saveSetting, showSettingsSaveError, sanitizeCSS, MAX_THEME_SIZE, log } from "@lib/settings-utils"
+import { byId, domEl, qs, setAttr } from "@lib/dom-helpers"
 
-// ───── UI helpers ─────
+const ACCENT_KEY = "meitheal-accent-color"
 
-/** Show/hide the custom theme section */
+let syncCommittedTheme: ((mode: string) => void) | null = null
+
 function showCustomThemeSection(show: boolean): void {
-  const section = document.getElementById("custom-theme-section")
+  const section = byId("custom-theme-section")
   if (section) section.style.display = show ? "block" : "none"
 }
 
-/** Update the custom theme loaded display */
 function updateCustomThemeDisplay(filename: string | null): void {
-  const emptyEl = document.getElementById("custom-theme-empty")
-  const loadedEl = document.getElementById("custom-theme-loaded")
-  const nameEl = document.getElementById("custom-theme-filename")
+  const emptyEl = byId("custom-theme-empty")
+  const loadedEl = byId("custom-theme-loaded")
+  const nameEl = byId("custom-theme-filename")
   if (!emptyEl || !loadedEl || !nameEl) return
   if (filename) {
     emptyEl.style.display = "none"
@@ -40,110 +58,445 @@ function updateCustomThemeDisplay(filename: string | null): void {
   }
 }
 
-// ───── Init ─────
+function matchesHaPalette(): boolean {
+  const match = document.documentElement.dataset.haMatch
+  return match === "light" || match === "dark"
+}
 
-const ACCENT_KEY = "meitheal-accent-color"
-
-function initAccentSettings(): void {
-  const swatches = document.querySelectorAll<HTMLButtonElement>(".accent-swatch")
-  const picker = document.querySelector<HTMLInputElement>("#accent-color-custom")
-  const reset = document.getElementById("accent-reset")
+function readStoredAppearanceMap(): Record<string, string> {
   const root = document.documentElement
+  let stored: Record<string, unknown> = {}
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY) ?? "{}")
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) stored = parsed as Record<string, unknown>
+  } catch { /* fallback to active root attributes */ }
+  return Object.fromEntries(
+    Object.entries(APPEARANCE_PREFERENCES).map(([name, pref]) => {
+      const fromStore = typeof stored[name] === "string" && pref.options.includes(stored[name] as string)
+        ? (stored[name] as string)
+        : null
+      const fromRoot = root.getAttribute(appearanceAttribute(name))
+      const resolved = fromStore ?? (fromRoot && pref.options.includes(fromRoot) ? fromRoot : pref.defaultValue)
+      return [name, resolved]
+    }),
+  )
+}
 
-  function updateSelection(color: string): void {
-    const normalized = color.toLowerCase()
-    for (const swatch of swatches) {
-      const selected = swatch.dataset.color?.toLowerCase() === normalized
-      swatch.classList.toggle("active", selected)
-      swatch.setAttribute("aria-pressed", String(selected))
-    }
-    if (picker) picker.value = normalized
-  }
+function resolveFullAppearance(overrides: Record<string, string>): AppearancePreferences {
+  const base = readStoredAppearanceMap()
+  return Object.fromEntries(
+    Object.entries(APPEARANCE_PREFERENCES).map(([name, pref]) => {
+      const val = overrides[name] ?? base[name]
+      return [name, typeof val === "string" && pref.options.includes(val) ? val : pref.defaultValue]
+    }),
+  ) as AppearancePreferences
+}
 
-  function setAccent(color: string): void {
-    if (!/^#[0-9a-f]{6}$/i.test(color)) return
-    applyPersonalAccent(root, color)
-    localStorage.setItem(ACCENT_KEY, color)
-    updateSelection(color)
-  }
-
-  const stored = localStorage.getItem(ACCENT_KEY)
-  updateSelection(stored && /^#[0-9a-f]{6}$/i.test(stored) ? stored : DEFAULT_ACCENT)
-  for (const swatch of swatches) {
-    pageLifecycle.on(swatch, "click", () => setAccent(swatch.dataset.color ?? ""))
-  }
-  if (picker) pageLifecycle.on(picker, "input", () => setAccent(picker.value))
-  if (reset) {
-    pageLifecycle.on(reset, "click", () => {
-      applyPersonalAccent(root, null)
-      localStorage.removeItem(ACCENT_KEY)
-      updateSelection(DEFAULT_ACCENT)
-    })
-  }
+function clearSetupTheme(): Promise<void> {
+  if (!readWorkspacePreferences().theme) return Promise.resolve()
+  return saveWorkspacePreferences({}, true).then((ok) => {
+    if (!ok) throw new Error("The household theme was saved. This browser kept its setup theme.")
+  })
 }
 
 function bindAppearanceForm(form: HTMLFormElement): void {
-  const status =
-    form.querySelector<HTMLElement>("[data-appearance-status]") ??
-    document.getElementById("appearance-save-status")
+  const status = qs<HTMLElement>(form, "[data-appearance-status]")
+  const dirtyBar = qs<HTMLElement>(form, "[data-appearance-dirty-bar]")
+  const dirtyText = qs<HTMLElement>(form, "[data-appearance-dirty-text]")
+  const discardBtn = qs<HTMLButtonElement>(form, "[data-appearance-discard]")
+  const saveBtns = Array.from(form.querySelectorAll<HTMLButtonElement>("[data-appearance-save]"))
   if (!status) return
 
+  const isLookAndFeel = form.dataset.appearanceForm === "look-and-feel"
   const root = document.documentElement
+
   const fields = Object.entries(APPEARANCE_PREFERENCES).flatMap(([name, preference]) => {
     const select = form.elements.namedItem(name) as HTMLSelectElement | null
     if (!select) return []
-    return [{
-      name,
-      attribute: appearanceAttribute(name),
-      select,
-      ...preference,
-    }]
+    return [{ name, attribute: appearanceAttribute(name), select, ...preference }]
   })
   if (fields.length === 0) return
 
-  for (const field of fields) field.select.value = root.getAttribute(field.attribute) ?? field.defaultValue
-  pageLifecycle.on(form, "change", () => { status.textContent = "" })
-  pageLifecycle.on(form, "reset", event => {
-    event.preventDefault()
-    for (const field of fields) field.select.value = field.defaultValue
-    status.textContent = status.dataset.reset ?? ""
-  })
-  pageLifecycle.on(form, "submit", event => {
-    event.preventDefault()
-    const selected = fields.map(field => ({
-      ...field,
-      value: field.options.includes(field.select.value) ? field.select.value : field.defaultValue,
-    }))
-    let previous: Record<string, unknown> = {}
-    try {
-      const stored: unknown = JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY) ?? "{}")
-      if (stored && typeof stored === "object" && !Array.isArray(stored)) previous = stored as Record<string, unknown>
-    } catch { /* A valid save replaces malformed stored preferences. */ }
-    const defaults = Object.fromEntries(
-      Object.entries(APPEARANCE_PREFERENCES).map(([name, preference]) => {
-        const current = root.getAttribute(appearanceAttribute(name))
-        return [name, current && preference.options.includes(current) ? current : preference.defaultValue]
-      }),
-    )
-    const nextStored = {
-      ...defaults,
-      ...previous,
-      ...Object.fromEntries(selected.map(({ name, value }) => [name, value])),
+  const themeSelect = isLookAndFeel ? qs<HTMLSelectElement>(form, "#theme-select") : null
+  const matchHaCheckbox = isLookAndFeel ? qs<HTMLInputElement>(form, "#match-ha-theme") : null
+  const matchHaStatus = isLookAndFeel ? qs<HTMLElement>(form, "#match-ha-theme-status") : null
+  const swatches = isLookAndFeel ? Array.from(form.querySelectorAll<HTMLButtonElement>(".accent-swatch")) : []
+  const picker = isLookAndFeel ? qs<HTMLInputElement>(form, "#accent-color-custom") : null
+  const accentReset = isLookAndFeel ? qs<HTMLButtonElement>(form, "#accent-reset") : null
+  const sidebarFieldGroup = qs<HTMLElement>(form, '[data-appearance-field-group="sidebar"]')
+  const sidebarNavbarNote = qs<HTMLElement>(form, "#appearance-sidebar-navbar-note")
+
+  const readCommitted = (): AppearanceDraftSnapshot => {
+    const storedMap = readStoredAppearanceMap()
+    const appearance = Object.fromEntries(fields.map((f) => [f.name, storedMap[f.name] ?? f.defaultValue]))
+    if (!isLookAndFeel) return { appearance }
+    return {
+      theme: readStoredThemeMode(),
+      matchHaTheme: readAppearanceValue(HA_THEME_MATCH_KEY) === "1",
+      accent: normalizeHexAccent(readAppearanceValue(ACCENT_KEY)),
+      appearance,
     }
-    try {
-      localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(nextStored))
-    } catch {
-      status.textContent = status.dataset.error ?? ""
+  }
+
+  let committed = readCommitted()
+  let draft = cloneAppearanceSnapshot(committed)
+  // A save that finished after its page closed updates what Discard returns to.
+  pageLifecycle.on(window, APPEARANCE_SAVED_EVENT, (event) => {
+    const saved = (event as CustomEvent<AppearanceDraftSnapshot>).detail
+    if (!saved) return
+    const hadDraft = isAppearanceDraftDirty(committed, draft)
+    committed = cloneAppearanceSnapshot(saved)
+    if (!hadDraft) {
+      draft = cloneAppearanceSnapshot(saved)
+      syncInputsFromSnapshot(committed)
+    }
+    updateDirtyUi()
+  })
+  let saving = false
+
+  const syncMatchHaStatus = (): void => {
+    if (!matchHaStatus) return
+    const state = root.dataset.haMatch
+    const msg = matchesHaPalette() ? matchHaStatus.dataset.active : state ? matchHaStatus.dataset[state] : ""
+    if (matchHaStatus.textContent !== (msg ?? "")) matchHaStatus.textContent = msg ?? ""
+  }
+
+  const syncAccentSelection = (accent: string | null): void => {
+    if (!isLookAndFeel) return
+    const fallback = matchesHaPalette()
+      ? root.style.getPropertyValue("--personal-accent").trim()
+      : getComputedStyle(root).getPropertyValue("--palette-accent").trim()
+    const activeColor = (accent ?? fallback).toLowerCase()
+    for (const swatch of swatches) {
+      const selected = swatch.dataset.color?.toLowerCase() === activeColor
+      swatch.classList.toggle("active", selected)
+      setAttr(swatch, "aria-pressed", String(selected))
+    }
+    if (picker && /^#[0-9a-f]{6}$/i.test(activeColor)) picker.value = activeColor
+  }
+
+  const visualOptions = Array.from(form.querySelectorAll<HTMLButtonElement>("[data-visual-field][data-visual-option]"))
+
+  const syncVisualGroup = (fieldName: string, activeValue: string): void => {
+    const groupButtons = visualOptions.filter((btn) => btn.dataset.visualField === fieldName)
+    if (!groupButtons.length) return
+    const hasMatch = groupButtons.some((btn) => btn.dataset.visualOption === activeValue)
+    groupButtons.forEach((btn, index) => {
+      const selected = hasMatch ? btn.dataset.visualOption === activeValue : index === 0
+      setAttr(btn, "aria-checked", String(selected))
+      btn.tabIndex = selected ? 0 : -1
+    })
+  }
+
+  const syncNavigationState = (snap: AppearanceDraftSnapshot): void => {
+    const navMode = snap.appearance.navigation ?? "sidebar"
+    const isNavbar = navMode === "navbar"
+    sidebarFieldGroup?.classList.toggle("is-inactive", isNavbar)
+    if (sidebarNavbarNote) sidebarNavbarNote.hidden = !isNavbar
+    const navSummary = byId("nav-layout-active-summary")
+    if (navSummary) {
+      const layoutLabel = isNavbar ? "Top navigation" : "Sidebar"
+      const toneMap: Record<string, string> = { match: "Match theme", dark: "Dark nav", accent: "Colored nav" }
+      const toneLabel = toneMap[snap.appearance.navTone ?? "match"] ?? "Match theme"
+      const sidebarMap: Record<string, string> = { remember: "Remember state", expanded: "Expanded", folded: "Folded", hover: "Hover expand" }
+      navSummary.textContent = isNavbar
+        ? `${layoutLabel} · ${toneLabel} · Tabler overflow`
+        : `${layoutLabel} · ${toneLabel} · ${sidebarMap[snap.appearance.sidebar ?? "remember"] ?? "Remember state"}`
+    }
+  }
+
+  const syncInputsFromSnapshot = (snap: AppearanceDraftSnapshot): void => {
+    for (const field of fields) {
+      const resolved = snap.appearance[field.name] ?? field.defaultValue
+      field.select.value = resolved
+      syncVisualGroup(field.name, resolved)
+    }
+    if (themeSelect && snap.theme) {
+      themeSelect.value = snap.theme
+      syncVisualGroup("theme", snap.theme)
+      showCustomThemeSection(snap.theme === "custom")
+    }
+    if (matchHaCheckbox && snap.matchHaTheme !== undefined) {
+      matchHaCheckbox.checked = snap.matchHaTheme
+    }
+    syncAccentSelection(snap.accent ?? null)
+    syncNavigationState(snap)
+  }
+
+  const applySnapshotPreview = (snap: AppearanceDraftSnapshot): void => {
+    applyAppearancePreferences(resolveFullAppearance(snap.appearance))
+    syncNavigationState(snap)
+    if (isLookAndFeel) {
+      let previewTheme: ReturnType<typeof readStoredThemeMode> | undefined
+      if (snap.theme && isThemeMode(snap.theme)) {
+        // Custom has nothing to preview until CSS is imported, so keep the saved theme.
+        previewTheme = snap.theme === "custom" && !readAppearanceValue("meitheal-custom-theme-css")
+          && committed.theme && isThemeMode(committed.theme) ? committed.theme : snap.theme
+        applyTheme(previewTheme)
+        showCustomThemeSection(snap.theme === "custom")
+      }
+      const preview = { theme: previewTheme, matchHaTheme: Boolean(snap.matchHaTheme), accent: snap.accent ?? null }
+      setHAThemePreview(isAppearanceDraftDirty(committed, snap) ? preview : undefined)
+      refreshHAThemeMatch(preview)
+      if (!matchesHaPalette()) applyPersonalAccent(root, snap.accent ?? null)
+      syncAccentSelection(snap.accent ?? null)
+      syncMatchHaStatus()
+    }
+  }
+
+  const updateDirtyUi = (): void => {
+    const changes = countAppearanceDraftChanges(committed, draft)
+    const dirty = changes > 0
+    form.dataset.dirty = dirty ? "true" : "false"
+    if (dirtyBar) dirtyBar.hidden = !dirty
+    if (dirtyText && dirty) {
+      dirtyText.textContent = `${changes === 1 ? "1 unsaved change" : `${changes} unsaved changes`} — previewing live. Save to commit.`
+    }
+  }
+
+  const previewDraft = (): void => {
+    status.textContent = ""
+    applySnapshotPreview(draft)
+    updateDirtyUi()
+  }
+
+  // Initial sync
+  syncInputsFromSnapshot(committed)
+  syncMatchHaStatus()
+  updateDirtyUi()
+
+  if (isLookAndFeel) {
+    pageLifecycle.on(document, "meitheal:ha-theme-match", syncMatchHaStatus)
+    pageLifecycle.on(window, "meitheal:theme-changed", () => syncAccentSelection(draft.accent ?? null))
+
+    syncCommittedTheme = (mode: string) => {
+      // Importing or removing custom CSS commits the theme immediately, so an
+      // unsaved Custom choice, or an unchanged theme, follows it; another
+      // unsaved theme choice stays a draft.
+      const follow = draft.theme === committed.theme || draft.theme === "custom"
+      committed.theme = mode
+      if (follow) {
+        draft.theme = mode
+        if (themeSelect) themeSelect.value = mode
+        syncVisualGroup("theme", mode)
+        showCustomThemeSection(mode === "custom")
+      }
+      updateDirtyUi()
+    }
+  }
+
+  const selectVisualOption = (fieldName: string, value: string): void => {
+    if (fieldName === "theme") {
+      draft.theme = value
+      if (themeSelect) themeSelect.value = value
+      syncVisualGroup("theme", value)
+      previewDraft()
       return
     }
-    const resolved = Object.fromEntries(
-      Object.entries(APPEARANCE_PREFERENCES).map(([name, preference]) => {
-        const val = nextStored[name as keyof typeof nextStored]
-        return [name, typeof val === "string" && preference.options.includes(val) ? val : preference.defaultValue]
-      }),
-    ) as AppearancePreferences
-    applyAppearancePreferences(resolved)
-    status.textContent = status.dataset.saved ?? ""
+    const field = fields.find((f) => f.name === fieldName)
+    if (!field) return
+    const nextValue = field.options.includes(value) ? value : field.defaultValue
+    draft.appearance[field.name] = nextValue
+    field.select.value = nextValue
+    syncVisualGroup(field.name, nextValue)
+    previewDraft()
+  }
+
+  // Visual radio card click & ARIA radiogroup arrow-key support
+  pageLifecycle.on(form, "click", (event) => {
+    const btn = (event.target instanceof Element ? event.target : null)?.closest<HTMLButtonElement>("[data-visual-field][data-visual-option]")
+    if (!btn) return
+    const fieldName = btn.dataset.visualField
+    const value = btn.dataset.visualOption
+    if (fieldName && value !== undefined) selectVisualOption(fieldName, value)
+  })
+
+  pageLifecycle.on(form, "keydown", (event) => {
+    if (!(event instanceof KeyboardEvent)) return
+    const btn = (event.target instanceof Element ? event.target : null)?.closest<HTMLButtonElement>("[data-visual-field][data-visual-option]")
+    if (!btn) return
+    const fieldName = btn.dataset.visualField
+    if (!fieldName) return
+    const keys = ["ArrowRight", "ArrowDown", "ArrowLeft", "ArrowUp", "Home", "End"]
+    if (!keys.includes(event.key)) return
+    const groupButtons = visualOptions.filter((candidate) => candidate.dataset.visualField === fieldName)
+    const idx = groupButtons.indexOf(btn)
+    if (idx === -1 || groupButtons.length < 2) return
+    event.preventDefault()
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? groupButtons.length - 1
+        : (idx + (event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : -1) + groupButtons.length) % groupButtons.length
+    const nextBtn = groupButtons[nextIndex]
+    if (nextBtn?.dataset.visualOption !== undefined) {
+      selectVisualOption(fieldName, nextBtn.dataset.visualOption)
+      nextBtn.focus()
+    }
+  })
+
+  // Live preview on select/checkbox change
+  pageLifecycle.on(form, "change", (event) => {
+    const target = event.target
+    if (target instanceof HTMLSelectElement) {
+      if (target === themeSelect) {
+        selectVisualOption("theme", target.value)
+        return
+      }
+      const field = fields.find((f) => f.select === target)
+      if (field) selectVisualOption(field.name, target.value)
+      return
+    }
+    if (target === matchHaCheckbox && matchHaCheckbox) {
+      draft.matchHaTheme = matchHaCheckbox.checked
+      previewDraft()
+    }
+  })
+
+  // Live preview on accent swatches / custom picker / accent reset
+  for (const swatch of swatches) {
+    pageLifecycle.on(swatch, "click", () => {
+      const hex = normalizeHexAccent(swatch.dataset.color)
+      if (!hex) return
+      draft.accent = hex
+      previewDraft()
+    })
+  }
+  if (picker) {
+    pageLifecycle.on(picker, "input", () => {
+      const hex = normalizeHexAccent(picker.value)
+      if (!hex) return
+      draft.accent = hex
+      previewDraft()
+    })
+  }
+  if (accentReset) {
+    pageLifecycle.on(accentReset, "click", () => {
+      draft.accent = null
+      previewDraft()
+    })
+  }
+
+  // Reset previews defaults live so user sees them before committing
+  pageLifecycle.on(form, "reset", (event) => {
+    event.preventDefault()
+    for (const field of fields) draft.appearance[field.name] = field.defaultValue
+    if (isLookAndFeel) {
+      draft.accent = null
+      draft.matchHaTheme = false
+    }
+    syncInputsFromSnapshot(draft)
+    applySnapshotPreview(draft)
+    updateDirtyUi()
+    status.textContent = isAppearanceDraftDirty(committed, draft)
+      ? (status.dataset.reset ?? "Defaults previewed — save to commit.")
+      : ""
+  })
+
+  // Discard reverts live preview back to committed snapshot
+  if (discardBtn) {
+    pageLifecycle.on(discardBtn, "click", () => {
+      draft = cloneAppearanceSnapshot(committed)
+      syncInputsFromSnapshot(committed)
+      applySnapshotPreview(committed)
+      updateDirtyUi()
+      status.textContent = ""
+    })
+  }
+
+  // Auto-revert uncommitted live previews if user navigates away
+  pageLifecycle.signal.addEventListener("abort", () => {
+    if (isLookAndFeel) syncCommittedTheme = null
+    if (isAppearanceDraftDirty(committed, draft)) applySnapshotPreview(committed)
+  }, { once: true })
+
+  // Keep subsequent edits separate from the submitted values.
+  pageLifecycle.on(form, "submit", async (event) => {
+    event.preventDefault()
+    if (saving) return
+    const submitted = cloneAppearanceSnapshot(draft)
+    // Navigation aborts this signal and restores the committed preview; a save
+    // that finishes afterwards must not re-apply the abandoned draft.
+    const lifecycleSignal = pageLifecycle.signal
+    saving = true
+    for (const btn of saveBtns) {
+      btn.disabled = true
+      btn.classList.add("btn-loading")
+    }
+    try {
+      const nextStored = resolveFullAppearance(submitted.appearance)
+      // 1. Persist Theme (server-backed setting) if changed
+      if (isLookAndFeel && submitted.theme && submitted.theme !== committed.theme) {
+        if (submitted.theme === "custom" && !readAppearanceValue("meitheal-custom-theme-css")) {
+          showToast("Import a CSS file first to use a custom theme.", "error")
+          return
+        }
+        if (isThemeMode(submitted.theme)) {
+          await saveSetting("theme", submitted.theme)
+          await clearSetupTheme()
+          // After navigation, a page previewing its own draft keeps that preview.
+          if (lifecycleSignal.aborted && document.querySelector('form[data-dirty="true"]')) storeTheme(submitted.theme)
+          else setTheme(submitted.theme)
+        }
+      }
+
+      // 2. Persist Match HA Theme & Accent to localStorage
+      if (isLookAndFeel) {
+        if (submitted.matchHaTheme) localStorage.setItem(HA_THEME_MATCH_KEY, "1")
+        else localStorage.removeItem(HA_THEME_MATCH_KEY)
+
+        if (submitted.accent) localStorage.setItem(ACCENT_KEY, submitted.accent)
+        else localStorage.removeItem(ACCENT_KEY)
+      }
+
+      // 3. Persist appearance preferences to localStorage, keeping keys from newer versions
+      let previous: Record<string, unknown> = {}
+      try {
+        const stored: unknown = JSON.parse(localStorage.getItem(APPEARANCE_STORAGE_KEY) ?? "{}")
+        if (stored && typeof stored === "object" && !Array.isArray(stored)) previous = stored as Record<string, unknown>
+      } catch { /* A valid save replaces malformed stored preferences. */ }
+      localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify({ ...previous, ...nextStored }))
+      committed = submitted
+      // After navigation the save is persisted. Show it on the next page unless that page is
+      // previewing its own unsaved draft.
+      if (lifecycleSignal.aborted) {
+        if (!document.querySelector('form[data-dirty="true"]')) {
+          applyAppearancePreferences(nextStored)
+          // Storage events do not reach the writing document, so refresh the HA palette here.
+          if (isLookAndFeel) {
+            setHAThemePreview()
+            refreshHAThemeMatch()
+            if (!matchesHaPalette()) applyPersonalAccent(root, submitted.accent ?? null)
+          }
+        }
+        // The next page's form adopts this save as its committed state, keeping any draft.
+        window.dispatchEvent(new CustomEvent(APPEARANCE_SAVED_EVENT, { detail: submitted }))
+        return
+      }
+      if (isAppearanceDraftDirty(committed, draft)) {
+        applySnapshotPreview(draft)
+      } else {
+        applyAppearancePreferences(nextStored)
+        if (isLookAndFeel) {
+          setHAThemePreview()
+          refreshHAThemeMatch()
+          if (!matchesHaPalette()) applyPersonalAccent(root, submitted.accent ?? null)
+        }
+        status.textContent = status.dataset.saved ?? "Saved."
+      }
+      updateDirtyUi()
+      showToast("common.updated")
+    } catch (error) {
+      if (!lifecycleSignal.aborted && isAppearanceDraftDirty(submitted, draft)) applySnapshotPreview(draft)
+      status.textContent = status.dataset.error ?? ""
+      showSettingsSaveError(error)
+    } finally {
+      saving = false
+      for (const btn of saveBtns) {
+        btn.disabled = false
+        btn.classList.remove("btn-loading")
+      }
+    }
   })
 }
 
@@ -154,6 +507,8 @@ function initAppearanceSettings(): void {
   document.querySelectorAll<HTMLFormElement>("[data-appearance-form]").forEach((form) => forms.add(form))
   forms.forEach((form) => bindAppearanceForm(form))
 }
+
+const APPEARANCE_SAVED_EVENT = "meitheal:appearance-saved-elsewhere"
 
 export function initThemeSettings(): void {
   const singleKeys = document.querySelector<HTMLInputElement>("#single-key-shortcuts")
@@ -176,31 +531,19 @@ export function initThemeSettings(): void {
     }, { signal: pageLifecycle.signal })
   }
 
-  initAccentSettings()
   initAppearanceSettings()
 
-  // Theme Config — init select from localStorage
-  const themeSelect = document.getElementById("theme-select") as HTMLSelectElement
-  if (themeSelect) {
-    themeSelect.value = localStorage.getItem("meitheal-theme") || "dark"
-    showCustomThemeSection(themeSelect.value === "custom")
-  }
-
-  function bindPreference(id: string, key: string, apply: (value: string) => void): void {
-    const select = document.getElementById(id) as HTMLSelectElement | null
+  function bindPreference(id: string, key: string, apply: (value: string) => void | Promise<void>): void {
+    const select = byId<HTMLSelectElement>(id)
     if (!select) return
 
     pageLifecycle.on(select, "change", async () => {
       const value = select.value
-      if (key === "theme") {
-        showCustomThemeSection(value === "custom")
-        if (value === "custom" && !localStorage.getItem("meitheal-custom-theme-css")) return
-      }
       select.disabled = true
-      select.setAttribute("aria-busy", "true")
+      setAttr(select, "aria-busy", "true")
       try {
         await saveSetting(key, value)
-        apply(value)
+        await apply(value)
         showToast("common.updated")
       } catch (error) {
         const settings = await settingsStore.load().catch(() => null)
@@ -213,7 +556,6 @@ export function initThemeSettings(): void {
     })
   }
 
-  bindPreference("theme-select", "theme", mode => setTheme(mode as ThemeMode))
   bindPreference("locale-select", "locale", (locale) => {
     localStorage.setItem("meitheal-locale", locale)
     document.cookie = `meitheal-locale=${locale};path=/;max-age=31536000;SameSite=Lax`
@@ -224,9 +566,10 @@ export function initThemeSettings(): void {
   bindPreference("week-start-select", "week_start", (value) => localStorage.setItem("meitheal-week-start", value))
   bindPreference("date-format-select", "date_format", (value) => localStorage.setItem("meitheal-date-format", value))
 
+  const themeSelect = byId<HTMLSelectElement>("theme-select")
   const input = document.querySelector<HTMLInputElement>("#custom-theme-input")
   const remove = document.querySelector<HTMLButtonElement>("#custom-theme-delete")
-  const filename = document.getElementById("custom-theme-filename")
+  const filename = byId("custom-theme-filename")
   if (!input || !remove || !filename || !themeSelect) return
 
   const saveFile = async (css: string, name: string) => {
@@ -234,6 +577,7 @@ export function initThemeSettings(): void {
     themeSelect.disabled = input.disabled = remove.disabled = true
     try {
       await settingsStore.saveSetting("custom_theme_css", css, name)
+      await clearSetupTheme()
       if (!restoreTheme({ theme: css ? "custom" : "dark", custom_theme_css: css, custom_theme_name: name })) {
         showToast("settings.appearance_save_error", "error")
         return
@@ -270,17 +614,17 @@ export function initThemeSettings(): void {
 
   pageLifecycle.on(remove, "click", async () => {
     const { confirmDialog } = await import("@lib/confirm-dialog")
-    if (await confirmDialog({ message: "Remove custom theme? The app will revert to Dark mode.", variant: "warning" })) {
+    if (await confirmDialog({ message: "Remove custom theme? The app will switch to Emerald Isle.", variant: "warning" })) {
       if (await saveFile("", "")) themeSelect.focus()
     }
   })
 
-  pageLifecycle.on(filename, "click", event => {
+  pageLifecycle.on(filename, "click", (event) => {
     event.preventDefault()
     const css = localStorage.getItem("meitheal-custom-theme-css")
     if (!css) return
     const url = URL.createObjectURL(new Blob([css], { type: "text/css" }))
-    const link = document.createElement("a")
+    const link = domEl("a")
     link.href = url
     link.download = filename.textContent || "custom-theme.css"
     link.click()
@@ -288,22 +632,19 @@ export function initThemeSettings(): void {
   })
 }
 
-// ───── Restore ─────
-
 function restoreTheme(settings: Record<string, unknown>): boolean {
   try {
-    const savedTheme = settings.theme ?? localStorage.getItem("meitheal-theme")
-    const themeEl = document.querySelector<HTMLSelectElement>("#theme-select")
-    const css = document.getElementById("custom-theme-input") && typeof settings.custom_theme_css === "string"
+    const savedTheme = settings.theme ?? readStoredThemeMode()
+    const css = byId("custom-theme-input") && typeof settings.custom_theme_css === "string"
       ? sanitizeCSS(settings.custom_theme_css) : ""
     const hasCSS = Boolean(css.trim())
     if (hasCSS) localStorage.setItem("meitheal-custom-theme-css", css)
     else localStorage.removeItem("meitheal-custom-theme-css")
-    const mode = savedTheme === "light" || savedTheme === "auto" || (savedTheme === "custom" && hasCSS)
+    const mode = isThemeMode(savedTheme) && (savedTheme !== "custom" || hasCSS)
       ? savedTheme : "dark"
-    if (themeEl) themeEl.value = mode
+    const selectedMode = readWorkspacePreferences().theme ?? mode
     setTheme(mode)
-    showCustomThemeSection(mode === "custom")
+    syncCommittedTheme?.(selectedMode)
     updateCustomThemeDisplay(hasCSS ? String(settings.custom_theme_name || "custom-theme.css") : null)
     return true
   } catch (e) {
@@ -317,32 +658,25 @@ export function restoreThemeSettings(settings: Record<string, unknown>): void {
   restoreTheme(settings)
 
   try {
-    // Restore locale
-    const localeSelect = document.getElementById("locale-select") as HTMLSelectElement | null
+    const localeSelect = byId<HTMLSelectElement>("locale-select")
     if (localeSelect) {
-      if (settings.locale) {
-        localeSelect.value = String(settings.locale)
-      } else {
-        const stored = localStorage.getItem("meitheal-locale") || "en"
-        localeSelect.value = stored
-      }
+      localeSelect.value = settings.locale
+        ? String(settings.locale)
+        : (localStorage.getItem("meitheal-locale") || "en")
     }
   } catch (e) {
     log.error("Locale restore error", e)
   }
 
   try {
-    const tz = (settings.timezone as string) || localStorage.getItem("meitheal-timezone") || "Europe/Dublin"
-    const tzEl = document.getElementById("timezone-select") as HTMLSelectElement
-    if (tzEl) tzEl.value = tz
+    const tzEl = byId<HTMLSelectElement>("timezone-select")
+    if (tzEl) tzEl.value = (settings.timezone as string) || localStorage.getItem("meitheal-timezone") || "Europe/Dublin"
 
-    const ws = (settings.week_start as string) || localStorage.getItem("meitheal-week-start") || "monday"
-    const wsEl = document.getElementById("week-start-select") as HTMLSelectElement
-    if (wsEl) wsEl.value = ws
+    const wsEl = byId<HTMLSelectElement>("week-start-select")
+    if (wsEl) wsEl.value = (settings.week_start as string) || localStorage.getItem("meitheal-week-start") || "monday"
 
-    const df = (settings.date_format as string) || localStorage.getItem("meitheal-date-format") || "relative"
-    const dfEl = document.getElementById("date-format-select") as HTMLSelectElement
-    if (dfEl) dfEl.value = df
+    const dfEl = byId<HTMLSelectElement>("date-format-select")
+    if (dfEl) dfEl.value = (settings.date_format as string) || localStorage.getItem("meitheal-date-format") || "relative"
   } catch (e) {
     log.error("UI settings error", e)
   }

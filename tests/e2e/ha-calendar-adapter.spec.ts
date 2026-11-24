@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { AddressInfo } from "node:net";
+import type { AddressInfo } from "node:net";
 import { expect, test } from "@playwright/test";
 import { HomeAssistantCalendarAdapter } from "../../packages/integration-core/src";
 

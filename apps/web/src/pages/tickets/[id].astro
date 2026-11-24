@@ -1,5 +1,31 @@
 ---
 import Tasks from "../tasks.astro"
+import Layout from "../../layouts/Layout.astro"
+import TaskDetailModal from "../../components/tasks/TaskDetailModal.astro"
+import { boardScopeResponse, resolveBoardPageScope } from "../../lib/board-http"
+
+// A missing/private permalink must not ask a nested workspace to return an HTTP response.
+const ticketScope = await resolveBoardPageScope(Astro)
+if (!ticketScope.ok) {
+  Astro.response.status = boardScopeResponse(ticketScope.errorCode).status
+  Astro.response.headers.set("Cache-Control", "private, no-store")
+}
 ---
 
-<Tasks />
+{ticketScope.ok ? <Tasks workScope={ticketScope.scope} /> : <Layout title="Meitheal — Task detail" privatePageShell hideSearchHub>
+  <main class="container" data-unavailable-ticket>
+    <nav aria-label="Task views"><a href="/tasks#kanban" data-view-tab aria-current="page">Kanban</a></nav>
+    <p>Open your task views to continue.</p>
+    <TaskDetailModal />
+  </main>
+</Layout>}
+
+<script>
+  import { pageLifecycle } from "../../lib/page-lifecycle"
+  pageLifecycle.onPageLoad(() => {
+    const returnLink = document.querySelector<HTMLAnchorElement>("[data-unavailable-ticket] [data-view-tab]")
+    if (!returnLink || history.state?.ticketDrawer?.returnTo) return
+    // Reuse the existing inspector's ingress-scoped close/history recovery.
+    history.replaceState({ ...history.state, ticketDrawer: { returnTo: returnLink.href, pushed: false } }, "")
+  })
+</script>

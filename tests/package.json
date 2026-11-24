@@ -11,10 +11,10 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
     "@bcoe/v8-coverage": "^1.0.2",
-    "@playwright/test": "^1.65.0",
+    "@playwright/test": "^1.65.1",
     "@types/node": "^26.6.6",
     "drizzle-orm": "^0.45.4",
-    "fast-check": "^4.10.2",
+    "fast-check": "^4.10.3",
     "istanbul-lib-coverage": "^3.2.2",
     "istanbul-lib-report": "^3.0.1",
     "istanbul-reports": "^3.2.0",

@@ -93,15 +93,16 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    # The isolated spec loop reached spec 211 of 215 at the 25-minute limit.
-    timeout-minutes: 35
+    # The isolated spec loop reached spec 295 of 388 at the 45-minute limit.
+    # Leave time for the remaining specs and coverage generation.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
-          version: 12.18.0
+          version: 12.22.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
@@ -150,7 +151,7 @@ jobs:
           persist-credentials: false
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
-          version: 12.18.0
+          version: 12.22.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
@@ -175,7 +176,7 @@ jobs:
           persist-credentials: false
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
-          version: 12.18.0
+          version: 12.22.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
@@ -186,7 +187,7 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: "3.14"
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: "0.13.6"
           enable-cache: true
@@ -242,14 +243,14 @@ jobs:
           persist-credentials: false
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
-          version: 12.18.0
+          version: 12.22.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: MEITHEAL_DB_URL=file:./.data/ci-migrations.db pnpm --filter @meitheal/web db:migrate
-      - run: MEITHEAL_DB_URL=file:./.data/ci-migrations.db pnpm --filter @meitheal/web db:migrate:check
+      - run: MEITHEAL_DB_URL=file:./.data/ci-migrations.db MEITHEAL_BOARD_GRANT_PATH=./.data/ci-migrations-grants.json pnpm --filter @meitheal/web db:migrate
+      - run: MEITHEAL_DB_URL=file:./.data/ci-migrations.db MEITHEAL_BOARD_GRANT_PATH=./.data/ci-migrations-grants.json pnpm --filter @meitheal/web db:migrate:check
 
   schema-drift:
     runs-on: ubuntu-latest
@@ -259,7 +260,7 @@ jobs:
           persist-credentials: false
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
-          version: 12.18.0
+          version: 12.22.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
@@ -275,7 +276,7 @@ jobs:
           persist-credentials: false
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
-          version: 12.18.0
+          version: 12.22.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
@@ -299,13 +300,25 @@ jobs:
           persist-credentials: false
       - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
-          version: 12.18.0
+          version: 12.22.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm audit
+      - name: Audit dependency advisories
+        run: |
+          production_paths=$(pnpm -r why --prod picomatch --json)
+          jq -e 'type == "array"' <<< "$production_paths" >/dev/null
+          ignore_status=0
+          if [ "$(date -u +%s)" -lt "$(date -u -d 2026-11-24T00:00:00Z +%s)" ] &&
+             jq -e 'length == 0' <<< "$production_paths" >/dev/null; then
+            echo '::warning::Temporary build-only exception for GHSA-fc5q-39xc-vjpf expires 2026-11-24 UTC. See ADR 0023.'
+            pnpm audit --ignore GHSA-fc5q-39xc-vjpf || ignore_status=$?
+          fi
+          # Print the complete advisory report even if the first audit failed.
+          pnpm audit
+          exit "$ignore_status"
 
   coverage-reporting:
     name: Report coverage (advisory)

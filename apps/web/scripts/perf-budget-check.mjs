@@ -12,6 +12,8 @@ const execFileAsync = promisify(execFile);
 
 const defaultBudgets = {
   clientBytesMax: 100 * 1024,
+  commonClientBytesMax: undefined,
+  workspaceUiBytesMax: 50_000,
   rssKbMax: 220 * 1024,
   p95MsMax: 250
 };
@@ -49,6 +51,8 @@ async function loadBudgets(scriptDir) {
       if (fromFile) {
         budgets = {
           clientBytesMax: parsePositiveInteger(String(fromFile.clientBytesMax)) ?? budgets.clientBytesMax,
+          commonClientBytesMax: parsePositiveInteger(String(fromFile.commonClientBytesMax)),
+          workspaceUiBytesMax: parsePositiveInteger(String(fromFile.workspaceUiBytesMax)) ?? budgets.workspaceUiBytesMax,
           rssKbMax: parsePositiveInteger(String(fromFile.rssKbMax)) ?? budgets.rssKbMax,
           p95MsMax: parsePositiveNumber(String(fromFile.p95MsMax)) ?? budgets.p95MsMax
         };
@@ -59,6 +63,7 @@ async function loadBudgets(scriptDir) {
   }
 
   budgets = {
+    ...budgets,
     clientBytesMax: parsePositiveInteger(process.env.MEITHEAL_PERF_BUDGET_CLIENT_BYTES_MAX) ?? budgets.clientBytesMax,
     rssKbMax: parsePositiveInteger(process.env.MEITHEAL_PERF_BUDGET_RSS_KB_MAX) ?? budgets.rssKbMax,
     p95MsMax: parsePositiveNumber(process.env.MEITHEAL_PERF_BUDGET_P95_MS_MAX) ?? budgets.p95MsMax
@@ -80,6 +85,14 @@ async function sizeOfDirectoryBytes(dir) {
     total += stat.size;
   }
   return total;
+}
+
+// Setup, Quick Add and Dashboard customization load these assets on demand.
+async function workspaceUiBytes(dir) {
+  const optional = /^(?:dashboard-layout(?:-editor)?|dashboard-widget-controller|modal|tabler-modal|tabler-styles|tabler-surface|preferred-quick-add|setup(?:\.astro_astro_type_script_index_0_lang)?)\.[\w-]+\.(?:js|css)$/
+  const files = (await fs.readdir(dir)).filter(filename => optional.test(filename))
+  const sizes = await Promise.all(files.map(filename => fs.stat(path.join(dir, filename))))
+  return sizes.reduce((bytes, file) => bytes + file.size, 0)
 }
 
 async function waitForHealth(url, version, maxAttempts = 30, delayMs = 500) {
@@ -111,11 +124,12 @@ async function getRssKb(pid) {
   return rssKb;
 }
 
-async function createTask(baseUrl, title) {
+async function createTask(baseUrl, title, session) {
   const start = performance.now();
   const response = await fetch(`${baseUrl}/api/tasks`, { // nosemgrep
     method: "POST",
-    headers: { "content-type": "application/json", origin: baseUrl },
+    headers: { "content-type": "application/json", origin: baseUrl,
+      "x-meitheal-board-id": "household", "x-meitheal-board-session": session },
     body: JSON.stringify({ title }),
     signal: AbortSignal.timeout(5_000),
   });
@@ -161,7 +175,10 @@ async function main() {
 
   const clientDir = path.join(appRoot, "dist/client");
   const serviceWorker = await fs.stat(path.join(clientDir, "sw.js")); // nosemgrep
-  const clientBytes = await sizeOfDirectoryBytes(path.join(clientDir, "_astro")) + serviceWorker.size;
+  const generatedDir = path.join(clientDir, "_astro");
+  const clientBytes = await sizeOfDirectoryBytes(generatedDir) + serviceWorker.size;
+  const optionalBytes = await workspaceUiBytes(generatedDir);
+  const commonBytes = clientBytes - optionalBytes;
   const distClientBytes = await sizeOfDirectoryBytes(clientDir);
 
   const scratchDir = await fs.mkdtemp(path.join(os.tmpdir(), "meitheal-perf-"));
@@ -170,10 +187,13 @@ async function main() {
   const dbUrl = `file:${dbPath}`;
   // Ask the kernel for a free port and read it from this child only.
   const server = spawn(process.execPath, ["--max-old-space-size=128", "--input-type=module", "--eval", `
-    const { startServer } = await import("./dist/server/entry.mjs")
-    const { server, done } = startServer()
-    server.server.once("listening", () => process.send(server.server.address().port))
-    await done
+    const { Server } = await import("node:http")
+    const listen = Server.prototype.listen
+    Server.prototype.listen = function (...args) {
+      this.once("listening", () => process.send(this.address().port))
+      return Reflect.apply(listen, this, args)
+    }
+    await import("./scripts/serve.mjs")
   `], {
     cwd: appRoot,
     env: {
@@ -183,7 +203,8 @@ async function main() {
       PORT: "0",
       ASTRO_NODE_AUTOSTART: "disabled",
       MEITHEAL_VERSION: version,
-      MEITHEAL_DB_URL: dbUrl
+      MEITHEAL_DB_URL: dbUrl,
+      MEITHEAL_BOARD_GRANT_PATH: path.join(scratchDir, "meitheal-board-grants.json")
     },
     stdio: ["ignore", "ignore", "inherit", "ipc"]
   })
@@ -201,16 +222,20 @@ async function main() {
     }
     const baseUrl = `http://127.0.0.1:${port}`
     await waitForHealth(`${baseUrl}/api/health`, version);
+    const boardAccess = await fetch(`${baseUrl}/api/boards`, { signal: AbortSignal.timeout(5_000) });
+    const boardSession = boardAccess.headers.get("x-meitheal-board-session");
+    await boardAccess.body?.cancel();
+    if (!boardAccess.ok || !boardSession) throw new Error("Benchmark requires the current fixture operator's Board session");
     const warmups = 5;
     const requests = 100;
     for (let index = 0; index < warmups; index += 1) {
-      await createTask(baseUrl, `perf-warmup-${index}`);
+      await createTask(baseUrl, `perf-warmup-${index}`, boardSession);
     }
     const rssKb = await getRssKb(server.pid);
 
     const latenciesMs = [];
     for (let index = 0; index < requests; index += 1) {
-      latenciesMs.push(await createTask(baseUrl, `perf-check-${index}`));
+      latenciesMs.push(await createTask(baseUrl, `perf-check-${index}`, boardSession));
     }
 
     let kanbanWarm2000;
@@ -278,7 +303,13 @@ async function main() {
     const p95Ms = percentile(latenciesMs, 0.95);
     const failures = [];
     if (clientBytes > budgets.clientBytesMax) {
-      failures.push(`Generated client assets too large: ${clientBytes} bytes > ${budgets.clientBytesMax}`);
+      failures.push(`Client assets too large: ${clientBytes} bytes > ${budgets.clientBytesMax}`);
+    }
+    if (budgets.commonClientBytesMax !== undefined && commonBytes > budgets.commonClientBytesMax) {
+      failures.push(`Common generated client assets too large: ${commonBytes} bytes > ${budgets.commonClientBytesMax}`);
+    }
+    if (optionalBytes > budgets.workspaceUiBytesMax) {
+      failures.push(`Optional workspace assets too large: ${optionalBytes} bytes > ${budgets.workspaceUiBytesMax}`);
     }
     if (rssKb > budgets.rssKbMax) {
       failures.push(`RSS too high: ${rssKb} KB > ${budgets.rssKbMax} KB`);
@@ -301,6 +332,8 @@ async function main() {
           },
           observed: {
             clientBytes,
+            commonClientBytes: commonBytes,
+            workspaceUiBytes: optionalBytes,
             distClientBytes,
             rssKb,
             warmups,

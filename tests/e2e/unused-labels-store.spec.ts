@@ -3,12 +3,23 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test as base } from "@playwright/test"
 import { createLabel, updateLabel, UnusedLabelRepository, type CleanupLabel } from "../../apps/web/src/domains/labels"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
-import { openDatabase } from "../../apps/web/scripts/database-client.mjs"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
+import { runWithIngressTransport } from "../../apps/web/scripts/ingress-transport.mjs"
+import { verifiedBoardRequestPrincipal } from "../../apps/web/src/lib/board-request-context"
+import { boardSessionProof } from "../../apps/web/src/lib/named-board-request"
 import { POST as cleanupPost } from "../../apps/web/src/pages/api/labels/cleanup"
 
 type Database = ReturnType<typeof getPersistenceClient>
-const test = base.extend<{ db: Database; cleanup: UnusedLabelRepository }>({
+import { BoardAccessService } from "../../apps/web/src/domains/tasks/board-access-service"
+import { registerVerifiedPrincipal, type BoardScope } from "../../apps/web/src/domains/tasks/board-scope"
+
+const test = base.extend<{ db: Database; scope: BoardScope; cleanup: UnusedLabelRepository }>({
+  scope: async ({ db }, use) => {
+    const principal = registerVerifiedPrincipal({ kind: "ha_user", id: "owner-a" }, { administrator: true, expiresAt: Date.now() + 60_000 })
+    const access = await new BoardAccessService(db).resolve(principal, "household", { resource: "board", action: "manage" })
+    if (!access.ok) throw new Error(access.errorCode)
+    await use(access.scope)
+  },
   db: async ({}, use) => {
     const previous = process.env.MEITHEAL_DB_URL
     const work = await mkdtemp(join(tmpdir(), "meitheal-unused-labels-"))
@@ -24,7 +35,7 @@ const test = base.extend<{ db: Database; cleanup: UnusedLabelRepository }>({
       await rm(work, { recursive: true, force: true })
     }
   },
-  cleanup: async ({ db }, use) => { await use(new UnusedLabelRepository(db)) },
+  cleanup: async ({ db, scope }, use) => { await use(new UnusedLabelRepository(db, scope)) },
 })
 
 async function seedTask(db: Database, id: string, labels: unknown, status = "pending", area = "default") {
@@ -46,8 +57,13 @@ async function definitions(db: Database) {
   return (await db.execute("SELECT id,title FROM vikunja_labels ORDER BY id")).rows
 }
 
-test("a cancelled streamed body returns cancelled before any repository work", async () => {
+test("a cancelled streamed body returns cancelled before any repository work", async ({ db }) => {
   test.skip(Boolean(process.env.SUPERVISOR_TOKEN), "Direct parser check uses the standalone administrator boundary")
+  const transport = { peer: "127.0.0.1", fromSupervisor: false, identityHeadersSafe: true, configuredPath: undefined }
+  const url = new URL("http://localhost/api/labels/cleanup")
+  const principal = await runWithIngressTransport(transport, () => verifiedBoardRequestPrincipal({ request: new Request(url), locals: {} as App.Locals }))
+  if (principal?.kind !== "local_operator") throw new Error("Local operator fixture was not admitted")
+  const before = await definitions(db)
   let markWaiting = () => {}
   const waiting = new Promise<void>(resolve => { markWaiting = resolve })
   let first = true
@@ -63,28 +79,32 @@ test("a cancelled streamed body returns cancelled before any repository work", a
     },
   })
   const cancellation = new AbortController()
-  const request = new Request("http://localhost/api/labels/cleanup", {
+  const request = new Request(url, {
     method: "POST", body, duplex: "half", signal: cancellation.signal,
     headers: { "content-type": "application/json", origin: "http://localhost", referer: "http://localhost/settings",
-      "sec-fetch-site": "same-origin", "sec-fetch-mode": "same-origin" },
+      "sec-fetch-site": "same-origin", "sec-fetch-mode": "same-origin", "x-meitheal-board-id": "household",
+      "x-meitheal-board-session": boardSessionProof(principal.id) },
   } as RequestInit)
-  const response = cleanupPost({ request, locals: { hassIsAdmin: true } } as Parameters<typeof cleanupPost>[0])
-  await waiting
+  const context = { request, url, locals: {}, params: {} } as Parameters<typeof cleanupPost>[0]
+  const response = Promise.resolve(runWithIngressTransport(transport, () => cleanupPost(context)))
+  const enteredReader = await Promise.race([waiting.then(() => true), response.then(() => false)])
+  expect(enteredReader).toBe(true)
   cancellation.abort()
   const result = await response
   expect(result.status).toBe(499)
   expect(await result.json()).toMatchObject({ ok: false, errorCode: "cancelled" })
+  expect(await definitions(db)).toEqual(before)
 })
 
-test("preserves JSON, junction and legacy object usage across Areas and lifecycle states", async ({ db, cleanup }) => {
-  for (const title of ["Roof", "Garden", "Archive", "Deferred", "Legacy", "Unused"]) await createLabel(title)
+test("preserves JSON, junction and legacy object usage across Areas and lifecycle states", async ({ db, scope, cleanup }) => {
+  for (const title of ["Roof", "Garden", "Archive", "Deferred", "Legacy", "Unused"]) await createLabel(scope, title)
   await seedTask(db, "roof", ["Roof"])
   await seedTask(db, "garden", ["Garden"], "pending", "other-area")
   await seedTask(db, "archive", ["Archive"], "archived")
   await seedTask(db, "deferred", ["Deferred"])
   await db.execute("UPDATE tasks SET deferred_at = 1 WHERE id = 'deferred'")
   await seedTask(db, "object", [{ name: "Legacy", color: "#abcdef" }], "complete")
-  const linked = await createLabel("Junction")
+  const linked = await createLabel(scope, "Junction")
   await db.execute({ sql: "INSERT INTO vikunja_task_labels (task_id,label_id,created_at) VALUES ('old-missing-task',?,1)", args: [linked.id] })
   const before = (await db.execute("SELECT id,labels,updated_at FROM tasks ORDER BY id")).rows
   const preview = await candidates(cleanup)
@@ -94,16 +114,16 @@ test("preserves JSON, junction and legacy object usage across Areas and lifecycl
   expect((await definitions(db)).map(row => row.title)).toEqual(["Roof", "Garden", "Archive", "Deferred", "Legacy", "Junction"])
 })
 
-test("retains every definition matching Unicode case, canonical accents and whitespace", async ({ db, cleanup }) => {
-  await createLabel("Bríd")
-  await createLabel("BRÍD")
-  await createLabel("حديقة المنزل")
+test("retains every definition matching Unicode case, canonical accents and whitespace", async ({ db, scope, cleanup }) => {
+  await createLabel(scope, "Bríd")
+  await createLabel(scope, "BRÍD")
+  await createLabel(scope, "حديقة المنزل")
   await seedTask(db, "unicode", ["  BRI\u0301D  ", { name: "حديقة المنزل" }])
   expect((await candidates(cleanup)).labels).toEqual([])
 })
 
-test("treats JavaScript whitespace-only task selections as empty without rewriting them", async ({ db, cleanup }) => {
-  await createLabel("Unused")
+test("treats JavaScript whitespace-only task selections as empty without rewriting them", async ({ db, scope, cleanup }) => {
+  await createLabel(scope, "Unused")
   const values = ["", "   ", "\t\r\n", "\u00a0", "\ufeff\u2028"]
   for (const [index, value] of values.entries()) {
     await seedTask(db, "empty-" + index, [])
@@ -116,24 +136,16 @@ test("treats JavaScript whitespace-only task selections as empty without rewriti
   expect((await db.execute("SELECT id,labels FROM tasks ORDER BY id")).rows).toEqual(before)
 })
 
-test("retains nullable legacy task storage while removing an unused definition", async () => {
-  const db = openDatabase("file::memory:")
-  try {
-    await db.batch([
-      "CREATE TABLE tasks (id TEXT PRIMARY KEY, labels TEXT)",
-      "CREATE TABLE task_drafts (snapshot_json TEXT)",
-      "CREATE TABLE task_templates (template_json TEXT)",
-      "CREATE TABLE vikunja_task_labels (label_id INTEGER)",
-      "CREATE TABLE vikunja_labels (id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT,hex_color TEXT)",
-      "INSERT INTO tasks VALUES ('legacy',NULL)",
-      "INSERT INTO vikunja_labels VALUES (1,'Unused','abcdef')",
-    ], "write")
-    const cleanup = new UnusedLabelRepository(db)
-    const selected = (await candidates(cleanup)).labels
-    expect(selected.map(label => label.title)).toEqual(["Unused"])
-    expect(await cleanup.remove(selected)).toEqual({ ok: true, removed: [1] })
-    expect((await db.execute("SELECT labels FROM tasks")).rows[0]?.labels).toBeNull()
-  } finally { db.close() }
+test("retains nullable legacy task storage while removing an unused definition", async ({ db, scope, cleanup }) => {
+  // Reproduce a predecessor's nullable column in this owned synthetic store.
+  await db.batch(["ALTER TABLE tasks DROP COLUMN labels", "ALTER TABLE tasks ADD COLUMN labels TEXT"], "write")
+  const label = await createLabel(scope, "Unused")
+  await seedTask(db, "legacy", [])
+  await db.execute("UPDATE tasks SET labels=NULL WHERE id='legacy'")
+  const selected = (await candidates(cleanup)).labels
+  expect(selected.map(candidate => candidate.title)).toEqual(["Unused"])
+  expect(await cleanup.remove(selected)).toEqual({ ok: true, removed: [label.id] })
+  expect((await db.execute("SELECT labels FROM tasks")).rows[0]?.labels).toBeNull()
 })
 
 for (const [table, json] of [
@@ -151,12 +163,12 @@ for (const [table, json] of [
   ["task_drafts", '{"version":1,"labels\\u0000junk":[],"labels":["Roof"],"newLabels":[]}'],
   ["task_drafts", '{"version":1,"labels":["Roof"],"labels\\u0000junk":[],"newLabels":[]}'],
 ] as const) {
-  test("blocks ambiguous duplicate fields in " + table + ": " + json, async ({ db, cleanup }) => {
-    await createLabel("Roof")
+  test("blocks ambiguous duplicate fields in " + table + ": " + json, async ({ db, scope, cleanup }) => {
+    await createLabel(scope, "Roof")
     const selected = (await candidates(cleanup)).labels
     if (table === "task_drafts") {
-      await db.execute({ sql: `INSERT INTO task_drafts (owner_id,draft_id,revision,snapshot_json,save_attempt_id,save_digest,updated_at)
-        VALUES ('owner','draft',1,?,'attempt','digest',1)`, args: [json] })
+      await db.execute({ sql: `INSERT INTO task_drafts (owner_id,board_id,draft_id,revision,snapshot_json,save_attempt_id,save_digest,updated_at)
+        VALUES ('owner-a','household','draft',1,?,'attempt','digest',1)`, args: [json] })
     } else {
       await db.execute({ sql: "INSERT INTO task_templates (id,name,template_json,created_at,updated_at) VALUES ('template','template',?,1,1)", args: [json] })
     }
@@ -166,12 +178,12 @@ for (const [table, json] of [
   })
 }
 
-test("retains private draft selections and templates without returning their payloads", async ({ db, cleanup }) => {
-  for (const title of ["Draft", "New draft", "Template", "Unused"]) await createLabel(title)
+test("retains private draft selections and templates without returning their payloads", async ({ db, scope, cleanup }) => {
+  for (const title of ["Draft", "New draft", "Template", "Unused"]) await createLabel(scope, title)
   const snapshot = JSON.stringify({ version: 1, labels: ["Draft"], newLabels: ["New draft"], description: "Private capture ".repeat(10_000) })
   await db.execute({
-    sql: `INSERT INTO task_drafts (owner_id,draft_id,revision,snapshot_json,save_attempt_id,save_digest,updated_at)
-      VALUES ('private-owner','private-draft',1,?,'attempt','digest',1)`,
+    sql: `INSERT INTO task_drafts (owner_id,board_id,draft_id,revision,snapshot_json,save_attempt_id,save_digest,updated_at)
+      VALUES ('owner-a','household','private-draft',1,?,'attempt','digest',1)`,
     args: [snapshot],
   })
   await db.execute({
@@ -181,13 +193,13 @@ test("retains private draft selections and templates without returning their pay
   await db.execute("INSERT INTO task_templates (id,name,created_at,updated_at) VALUES ('empty','empty',1,1)")
   const result = await candidates(cleanup)
   expect(result.labels.map(label => label.title)).toEqual(["Unused"])
-  expect(JSON.stringify(result)).not.toMatch(/private-owner|private-draft|Private capture|Long template/)
+  expect(JSON.stringify(result)).not.toMatch(/owner-a|private-draft|Private capture|Long template/)
   expect((await db.execute("SELECT snapshot_json FROM task_drafts")).rows[0]?.snapshot_json).toBe(snapshot)
 })
 
 for (const raw of ['{"name":"Roof"}', '[17]', '[{"name":17}]', 'not-json', JSON.stringify(["x".repeat(65_536)])]) {
-  test("blocks deletion for an unrecognized or oversized task selection " + raw.slice(0, 25), async ({ db, cleanup }) => {
-    await createLabel("Unused")
+  test("blocks deletion for an unrecognized or oversized task selection " + raw.slice(0, 25), async ({ db, scope, cleanup }) => {
+    await createLabel(scope, "Unused")
     const selected = (await candidates(cleanup)).labels
     await seedTask(db, "malformed", raw)
     expect(await cleanup.preview(null)).toEqual({ ok: false, errorCode: "blocked" })
@@ -196,12 +208,12 @@ for (const raw of ['{"name":"Roof"}', '[17]', '[{"name":17}]', 'not-json', JSON.
   })
 }
 
-test("rejects unknown draft versions and malformed template envelopes", async ({ db, cleanup }) => {
-  await createLabel("Unused")
+test("rejects unknown draft versions and malformed template envelopes", async ({ db, scope, cleanup }) => {
+  await createLabel(scope, "Unused")
   const selected = (await candidates(cleanup)).labels
   await db.execute({
-    sql: `INSERT INTO task_drafts (owner_id,draft_id,revision,snapshot_json,save_attempt_id,save_digest,updated_at)
-      VALUES ('owner','draft',1,?,'attempt','digest',1)`,
+    sql: `INSERT INTO task_drafts (owner_id,board_id,draft_id,revision,snapshot_json,save_attempt_id,save_digest,updated_at)
+      VALUES ('owner-a','household','draft',1,?,'attempt','digest',1)`,
     args: [JSON.stringify({ version: 2, labels: [], newLabels: [] })],
   })
   expect(await cleanup.remove(selected)).toEqual({ ok: false, errorCode: "blocked" })
@@ -211,9 +223,9 @@ test("rejects unknown draft versions and malformed template envelopes", async ({
   expect(await definitions(db)).toHaveLength(1)
 })
 
-test("metadata and usage changes invalidate the whole selected batch", async ({ db, cleanup }) => {
-  await createLabel("First")
-  const second = await createLabel("Second")
+test("metadata and usage changes invalidate the whole selected batch", async ({ db, scope, cleanup }) => {
+  await createLabel(scope, "First")
+  const second = await createLabel(scope, "Second")
   const original = (await candidates(cleanup)).labels
   await db.execute({ sql: "UPDATE vikunja_labels SET hex_color='abcdef' WHERE id=?", args: [second.id] })
   expect(await cleanup.remove(original)).toEqual({ ok: false, errorCode: "stale" })
@@ -224,22 +236,22 @@ test("metadata and usage changes invalidate the whole selected batch", async ({ 
   expect(await definitions(db)).toHaveLength(2)
 })
 
-test("label edits report only committed rows and invalidate cleanup revisions", async ({ db, cleanup }) => {
-  const label = await createLabel("Planned", "#abcdef")
+test("label edits report only committed rows and invalidate cleanup revisions", async ({ db, scope, cleanup }) => {
+  const label = await createLabel(scope, "Planned", "#abcdef")
   const selected = (await candidates(cleanup)).labels
-  expect(await updateLabel(label.id, { title: "Renamed" })).toMatchObject({ id: label.id, title: "Renamed", hexColor: "#abcdef" })
+  expect(await updateLabel(scope, label.id, { title: "Renamed" })).toMatchObject({ id: label.id, title: "Renamed", hexColor: "#abcdef" })
   expect(await cleanup.remove(selected)).toEqual({ ok: false, errorCode: "stale" })
   await db.execute("CREATE TRIGGER ignore_label_edit BEFORE UPDATE ON vikunja_labels BEGIN SELECT RAISE(IGNORE); END")
-  expect(await updateLabel(label.id, { hexColor: "#123456" })).toBeNull()
+  expect(await updateLabel(scope, label.id, { hexColor: "#123456" })).toBeNull()
   expect((await db.execute("SELECT title,hex_color FROM vikunja_labels")).rows[0]).toMatchObject({ title: "Renamed", hex_color: "abcdef" })
   await db.execute("DROP TRIGGER ignore_label_edit")
   expect((await cleanup.remove((await candidates(cleanup)).labels)).ok).toBe(true)
-  expect(await updateLabel(label.id, { title: "Too late" })).toBeNull()
+  expect(await updateLabel(scope, label.id, { title: "Too late" })).toBeNull()
 })
 
-test("retries, duplicate IDs and partially ignored deletion preserve consistent state", async ({ db, cleanup }) => {
-  await createLabel("First")
-  await createLabel("Second")
+test("retries, duplicate IDs and partially ignored deletion preserve consistent state", async ({ db, scope, cleanup }) => {
+  await createLabel(scope, "First")
+  await createLabel(scope, "Second")
   const selected = (await candidates(cleanup)).labels
   expect(await cleanup.remove([selected[0]!, selected[0]!])).toEqual({ ok: false, errorCode: "stale" })
   await db.execute(`CREATE TRIGGER ignore_second_label BEFORE DELETE ON vikunja_labels
@@ -253,9 +265,9 @@ test("retries, duplicate IDs and partially ignored deletion preserve consistent 
 })
 
 for (const count of [1000, 2000]) {
-  test(`bounds previews and selection with ${count} tasks and 1,000 definitions`, async ({ db, cleanup }) => {
+  test(`bounds previews and selection with ${count} tasks and 1,000 definitions`, async ({ db, scope, cleanup }) => {
     await db.execute(`WITH RECURSIVE seq(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM seq WHERE n<1000)
-      INSERT INTO vikunja_labels (id,title,hex_color) SELECT n,'Label ' || n,'abcdef' FROM seq`)
+      INSERT INTO vikunja_labels (id,title,hex_color,board_id) SELECT n,'Label ' || n,'abcdef','household' FROM seq`)
     await db.execute(`WITH RECURSIVE seq(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM seq WHERE n<${count})
       INSERT INTO tasks (id,title,request_id,idempotency_key,status,area_id,labels,created_at,updated_at)
       SELECT 'task-' || n,'Task ' || n,'task-' || n,'task-' || n,'pending','default',

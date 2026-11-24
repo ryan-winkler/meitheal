@@ -1,3 +1,4 @@
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro";
 import { createLabel, isWellFormedLabelName, listLabels } from "@domains/labels"
 import { stripHtml } from "../../lib/strip-html";
@@ -19,9 +20,9 @@ const logger = createLogger({
  * POST /api/labels — create a label { title, hex_color }
  */
 
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = withBoardScope({ resource: "label", action: "read" }, async (context, scope) => {
   try {
-    const labels = await listLabels()
+    const labels = await listLabels(scope)
     return apiJson(labels.map(({ id, title, hexColor }) => ({
       id,
       title,
@@ -37,9 +38,9 @@ export const GET: APIRoute = async () => {
     });
     return apiError("Failed to list labels");
   }
-};
+});
 
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = withBoardScope({ resource: "label", action: "create" }, async ({ request }, scope) => {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const input = typeof body.title === "string" ? body.title : ""
@@ -56,7 +57,7 @@ export const POST: APIRoute = async ({ request }) => {
       ? body.hex_color
       : "#6b7280";
 
-    const label = await createLabel(input, hexColor)
+    const label = await createLabel(scope, input, hexColor)
     return apiJson({ id: label.id, title: label.title, hex_color: label.hexColor.slice(1) }, 201)
   } catch (err) {
     logger.log("error", {
@@ -68,4 +69,4 @@ export const POST: APIRoute = async ({ request }) => {
     });
     return apiError("Failed to create label");
   }
-};
+});

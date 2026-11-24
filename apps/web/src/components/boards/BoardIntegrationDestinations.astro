@@ -1,0 +1,137 @@
+---
+import { HierarchyRepository, SettingsRepository, getPersistenceClient, readWorkDestinations, type BoardScope } from "@domains/tasks"
+import { getCalendarEntities, getTodoEntities } from "@domains/ha"
+import { currentSettingsAccess } from "@lib/current-settings-access"
+import Icon from "../ui/Icon.astro"
+const { scope, session, people = [] } = Astro.props as { scope: BoardScope, session: string, people?: { id: string, name: string }[] }
+const db = getPersistenceClient()
+const config = await readWorkDestinations(db)
+const bindings = config?.bindings.filter(binding => binding.destination.boardId === scope.boardId) ?? []
+const hierarchy = new HierarchyRepository(db, scope)
+const [areas, projects] = await Promise.all([hierarchy.findAllAreas(), hierarchy.findAllProjects()])
+const access = await currentSettingsAccess(Astro.request, Astro.locals, true)
+const admin = !(access instanceof Response)
+const settings = admin ? await new SettingsRepository(db).getByKeys(["caldav_url", "grocy_url", "webhook_endpoint", "n8n_webhook_url", "notification_preferences"]) : {}
+type Source = { integration: string, purpose: string, sourceId: string, label: string }
+const sources: Source[] = [
+  { integration: "builtin", purpose: "builtin.overdue.observe", sourceId: `builtin:overdue:${scope.boardId}`, label: "Overdue tracking" },
+  { integration: "builtin", purpose: "builtin.reminders.observe", sourceId: `builtin:reminders:${scope.boardId}`, label: "Due date reminders" },
+  { integration: "builtin", purpose: "builtin.inactivity.defer", sourceId: `builtin:inactivity:${scope.boardId}`, label: "Inactivity rules" },
+]
+if (admin) {
+  for (const entity of getTodoEntities()) sources.push({ integration: "todo", purpose: "todo.sync", sourceId: entity.entity_id, label: `To-do · ${entity.attributes.friendly_name ?? entity.entity_id}` })
+  for (const entity of getCalendarEntities()) sources.push({ integration: "calendar", purpose: "calendar.sync", sourceId: entity.entity_id, label: `Calendar · ${entity.attributes.friendly_name ?? entity.entity_id}` })
+  for (const entity of getCalendarEntities()) sources.push({ integration: "calendar_reminder", purpose: "calendar.reminder", sourceId: entity.entity_id, label: `Due reminder calendar · ${entity.attributes.friendly_name ?? entity.entity_id}` })
+  if (settings.caldav_url) sources.push({ integration: "caldav", purpose: "calendar.sync", sourceId: "configured-caldav", label: "CalDAV" })
+  if (settings.grocy_url) sources.push({ integration: "grocy", purpose: "grocy.sync", sourceId: "configured-grocy", label: "Grocy" })
+  if (settings.webhook_endpoint) sources.push({ integration: "webhook", purpose: "webhook.delivery", sourceId: "generic-webhook", label: "Webhook" })
+  if (settings.n8n_webhook_url) sources.push({ integration: "webhook", purpose: "webhook.delivery", sourceId: "n8n-webhook", label: "n8n" })
+  sources.push({ integration: "ha_events", purpose: "webhook.delivery", sourceId: "meitheal", label: "Home Assistant shared events and entities" })
+  sources.push({ integration: "notification", purpose: "notify.delivery", sourceId: "persistent_notification", label: "Home Assistant shared notifications" })
+  const prefs = settings.notification_preferences as { mobile_targets?: unknown } | undefined
+  if (Array.isArray(prefs?.mobile_targets)) for (const target of prefs.mobile_targets) if (typeof target === "string") {
+    sources.push({ integration: "notification", purpose: "notify.delivery", sourceId: target, label: `Mobile notification · ${target}` })
+    sources.push({ integration: "notification_action", purpose: "notify.task.complete", sourceId: target, label: `Mark Done action · ${target}` })
+  }
+}
+const payload = { sources, bindings, revision: config?.revision, boardId: scope.boardId }
+---
+<section class="board-form board-settings-card board-integrations" data-board-integrations data-config={JSON.stringify(payload)} data-session={session}>
+  <div class="board-settings-card__head">
+    <Icon name="plug" size={16} sprite />
+    <h2>Integrations and automation</h2>
+  </div>
+  <p class="board-note-plain">Choose where connected work belongs. Each source keeps its own permissions. Missing or retired destinations pause work.</p>
+  {bindings.length ? <ul class="integration-list">{bindings.map(binding => <li>
+    <div><strong>{sources.find(source => source.integration === binding.integration && source.sourceId === binding.sourceId && source.purpose === binding.purpose)?.label ?? binding.sourceId}</strong>
+      <span>{binding.destination.projectId ? projects.find(project => project.id === binding.destination.projectId)?.title ?? "Unavailable Project" : binding.destination.areaId ? areas.find(area => area.id === binding.destination.areaId)?.name ?? "Unavailable Area" : "Whole Board"} · {binding.retired ? "Replaced source" : binding.enabled ? "Approved" : "Paused"}</span></div>
+    <button type="button" class="btn btn-secondary btn-sm" data-edit-binding={binding.id} disabled={binding.retired}>Edit</button>
+  </li>)}</ul> : <p class="board-note-plain">No sources send work to this Board yet.</p>}
+  {!admin && <p class="board-note-plain">Board owners can configure local rules. A Home Assistant administrator with Board management access configures external sources.</p>}
+  <details data-binding-editor class="board-disclosure">
+    <summary class="board-disclosure__summary">
+      <Icon name="plus" size={14} sprite />
+      <span>Add a source</span>
+      <Icon name="chevron-down" size={14} class="board-disclosure__chevron" sprite />
+    </summary>
+    <div class="board-disclosure__body">
+      <form data-binding-form>
+        <label>Source<select name="source" required>{sources.map((source, index) => <option value={index}>{source.label}</option>)}</select></label>
+        <label>Area<select name="area"><option value="">Whole Board</option>{areas.map(area => <option value={area.id}>{area.name}</option>)}</select></label>
+        <label>Project<select name="project"><option value="">No Project</option>{projects.map(project => <option value={project.id} data-area={project.area_id ?? ""}>{project.title}</option>)}</select></label>
+        <fieldset><legend>Allowed task actions</legend>{["read", "create", "edit", "complete", "reopen", "delete"].map(action => <label class="check"><input type="checkbox" name="action" value={action} checked={action === "read" || action === "edit"} />{({ read: "Read for this integration", create: "Create", edit: "Update details", complete: "Mark done", reopen: "Reopen", delete: "Delete" } as Record<string,string>)[action]}</label>)}</fieldset>
+        <fieldset data-recipients hidden><legend>People who can receive this mobile notification</legend>{people.map(person => <label class="check"><input type="checkbox" name="recipient" value={person.id} />{person.name}</label>)}<p class="board-note-plain">Every selected person must still be able to read the task when it is sent.</p></fieldset>
+        <label class="check"><input type="checkbox" name="enabled" checked /> Enable this source</label>
+        <div class="board-form-actions">
+          <button type="submit" class="btn btn-primary btn-sm">Save source</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-cancel-binding>Cancel</button>
+        </div>
+      </form>
+    </div>
+  </details>
+  <p data-binding-feedback role="status" aria-live="polite" class="board-feedback"></p>
+</section>
+<script>
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  pageLifecycle.onPageLoad(signal => {
+    for (const root of document.querySelectorAll<HTMLElement>("[data-board-integrations]")) {
+      const config = JSON.parse(root.dataset.config ?? "{}")
+      const form = root.querySelector<HTMLFormElement>("[data-binding-form]")!
+      const editor = root.querySelector<HTMLDetailsElement>("[data-binding-editor]")!
+      const feedback = root.querySelector<HTMLElement>("[data-binding-feedback]")!
+      const source = form.elements.namedItem("source") as HTMLSelectElement
+      const area = form.elements.namedItem("area") as HTMLSelectElement
+      const project = form.elements.namedItem("project") as HTMLSelectElement
+      let editing: string | undefined
+      const refreshActions = () => {
+        const selected = config.sources[Number(source.value)]
+        const allowed = selected?.integration === "notification_action" ? ["read", "complete"] : selected?.integration === "builtin" ? ["read", "edit"] : ["webhook", "ha_events", "notification", "calendar_reminder"].includes(selected?.integration) ? ["read"] : ["read", "create", "edit", "complete", "reopen", "delete"]
+        for (const input of form.querySelectorAll<HTMLInputElement>("[name=action]")) { input.disabled = !allowed.includes(input.value); if (input.disabled) input.checked = false; input.required = input.value === "read" || selected?.integration === "builtin" && input.value === "edit" || selected?.integration === "notification_action" && input.value === "complete" }
+        root.querySelector<HTMLElement>("[data-recipients]")!.hidden = !["notification", "notification_action"].includes(selected?.integration) || selected.sourceId === "persistent_notification"
+      }
+      source.addEventListener("change", refreshActions, { signal })
+      area.addEventListener("change", () => {
+        for (const option of project.options) option.hidden = Boolean(area.value && option.value && option.dataset.area !== area.value)
+        if (project.selectedOptions[0]?.hidden) project.value = ""
+      }, { signal })
+      project.addEventListener("change", () => { const selected = project.selectedOptions[0]; if (selected?.value) area.value = selected.dataset.area ?? "" }, { signal })
+      root.querySelector("[data-cancel-binding]")?.addEventListener("click", () => { form.reset(); editing = undefined; source.disabled = false; editor.open = false; refreshActions() }, { signal })
+      for (const button of root.querySelectorAll<HTMLElement>("[data-edit-binding]")) button.addEventListener("click", () => {
+        const binding = config.bindings.find((item: {id:string}) => item.id === button.dataset.editBinding)
+        const index = config.sources.findIndex((item: {integration:string,sourceId:string,purpose:string}) => item.integration === binding.integration && item.sourceId === binding.sourceId && item.purpose === binding.purpose)
+        if (index < 0) { feedback.textContent = "This source is unavailable. Restore its integration configuration before editing."; return }
+        form.reset(); editing = binding.id; source.value = String(index); source.disabled = true; area.value = binding.destination.areaId ?? ""; project.value = binding.destination.projectId ?? ""
+        for (const input of form.querySelectorAll<HTMLInputElement>("[name=action]")) input.checked = binding.allowedOperations.some((operation: {resource:string,action:string}) => operation.resource === "task" && operation.action === input.value)
+        for (const input of form.querySelectorAll<HTMLInputElement>("[name=recipient]")) input.checked = binding.recipientUserIds?.includes(input.value) ?? false
+        const enabled = form.elements.namedItem("enabled") as HTMLInputElement
+        enabled.checked = binding.enabled
+        refreshActions(); editor.open = true; area.focus()
+      }, { signal })
+      form.addEventListener("submit", async event => {
+        event.preventDefault()
+        const selected = config.sources[Number(source.value)]
+        if (selected?.integration === "notification_action" && !form.querySelector("[name=recipient]:checked")) {
+          feedback.textContent = "Choose the people allowed to use Mark Done for this destination."
+          return
+        }
+        const old = config.bindings.find((item: {id:string}) => item.id === editing)
+        const data = new FormData(form)
+        const actions = Array.from(form.querySelectorAll<HTMLInputElement>("[name=action]:checked")).filter(input => !input.disabled).map(input => ({ resource: "task", action: input.value }))
+        const binding = { ...selected, id: editing ?? crypto.randomUUID(), generation: old?.generation ?? 1, enabled: data.has("enabled"),
+          destination: { boardId: config.boardId, ...(area.value ? { areaId: area.value } : {}), ...(project.value ? { projectId: project.value } : {}) }, allowedOperations: actions,
+          ...(["notification", "notification_action"].includes(selected.integration) && selected.sourceId !== "persistent_notification" ? { recipientUserIds: data.getAll("recipient") } : {}) }
+        const submit = form.querySelector<HTMLButtonElement>("[type=submit]")!; submit.disabled = true; feedback.textContent = "Saving approval…"
+        try {
+          const response = await fetch("/api/integrations/work-destinations", { method: "PUT", signal, headers: { "Content-Type": "application/json", "X-Meitheal-Board-Id": config.boardId, "X-Meitheal-Board-Session": root.dataset.session ?? "" }, body: JSON.stringify({ revision: config.revision, binding }) })
+          if (!response.ok) { feedback.textContent = "Approval could not be saved. Refresh this Board and review its source and destination."; return }
+          if (!signal.aborted && root.isConnected) window.location.reload()
+        } catch { if (!signal.aborted) feedback.textContent = "Could not confirm the save. Refresh this Board before retrying." }
+        finally { if (!signal.aborted && root.isConnected) submit.disabled = false }
+      }, { signal })
+      refreshActions()
+    }
+  })
+</script>
+<style>
+  .board-integrations{grid-column:1/-1;min-width:0}.integration-list{list-style:none;padding:0;margin:0}.integration-list li{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.75rem 0;border-bottom:1px solid var(--border-color)}.integration-list strong,.integration-list span{display:block;overflow-wrap:anywhere}.integration-list span{font-size:.875rem;color:var(--text-secondary)}[data-binding-form]{display:grid;gap:.75rem;margin-top:1rem}[data-binding-form] label:not(.check){display:grid;gap:.25rem}[data-binding-form] fieldset{display:flex;flex-wrap:wrap;gap:.75rem;border:1px solid var(--border-color);padding:.75rem}[data-binding-form] select{min-width:0;width:100%}
+</style>

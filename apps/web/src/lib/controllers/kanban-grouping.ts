@@ -3,13 +3,54 @@
  * @domain kanban
  */
 
+import { CANONICAL_STATUSES, getStatusDef, normalizeStatus, STATUS } from "../status-config"
+
+function collapseKey(board: HTMLElement, group: HTMLElement): string {
+  const column = group.closest<HTMLElement>(".kanban-column")
+  return `meitheal-swimlane-v2-${JSON.stringify([board.dataset.groupBy, column?.dataset.laneId, group.dataset.swimlaneType])}`
+}
+
+function setCollapsed(group: HTMLElement, collapsed: boolean): void {
+  const header = group.querySelector<HTMLButtonElement>(".swimlane-header")
+  const cards = group.querySelector<HTMLElement>(".swimlane-cards")
+  if (!header || !cards) return
+
+  if (collapsed && cards.contains(document.activeElement)) header.focus({ preventScroll: true })
+  cards.hidden = collapsed
+  group.classList.toggle("swimlane-collapsed", collapsed)
+  header.setAttribute("aria-expanded", String(!collapsed))
+}
+
+function initCollapse(board: HTMLElement, signal: AbortSignal): void {
+  const mode = board.dataset.groupBy
+  const groups = board.querySelectorAll<HTMLElement>(".swimlane-group:not([hidden])")
+  groups.forEach((group, index) => {
+    const header = group.querySelector<HTMLButtonElement>(".swimlane-header")
+    const cards = group.querySelector<HTMLElement>(".swimlane-cards")
+    if (!header || !cards) return
+
+    cards.id = `kanban-swimlane-cards-${index}`
+    header.setAttribute("aria-controls", cards.id)
+    const key = collapseKey(board, group)
+    try {
+      const legacy = mode === "type" || mode === "area" || mode === "priority"
+        ? `meitheal-swimlane-${group.dataset.swimlaneType}` : null
+      const stored = localStorage.getItem(key) ?? (legacy && localStorage.getItem(legacy))
+      setCollapsed(group, stored === "collapsed")
+    } catch {
+      setCollapsed(group, false)
+    }
+    header.addEventListener("click", () => {
+      const collapsed = !cards.hidden
+      setCollapsed(group, collapsed)
+      try { localStorage.setItem(key, collapsed ? "collapsed" : "expanded") } catch { /* Storage is optional. */ }
+    }, { signal })
+  })
+}
+
 /** Group the server-selected page without replacing authoritative lane totals. */
-export function initKanbanGrouping(board: HTMLElement): void {
+export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): void {
   const mode = board.dataset.groupBy ?? "none"
-  const areaTitleMap: Record<string, string> = { default: "📋 Default" }
-  for (const option of document.querySelectorAll<HTMLElement>("#area-selector-dropdown [data-area-id]")) {
-    if (option.dataset.areaId) areaTitleMap[option.dataset.areaId] = `${option.dataset.areaIcon ?? "📋"} ${option.dataset.areaName ?? ""}`
-  }
 
   if (mode === "type") {
     // Use the pre-rendered type swimlane groups
@@ -36,9 +77,9 @@ export function initKanbanGrouping(board: HTMLElement): void {
           if (countEl) countEl.textContent = String(cards.length)
         })
     })
-  } else if (mode === "area" || mode === "priority") {
-    // Dynamic swimlane generation for board/priority
-    const dataAttr = mode === "area" ? "area" : "priority"
+  } else if (mode === "area" || mode === "priority" || mode === "epic" || mode === "status" || mode === "assigned" || mode === "project") {
+    const byProject = mode === "project"
+    const byAssignee = mode === "assigned"
     const icons: Record<string, string> =
       mode === "priority"
         ? {
@@ -49,8 +90,7 @@ export function initKanbanGrouping(board: HTMLElement): void {
             "5": "⚪ P5 — Minimal",
           }
         : {}
-    const defaultLabel =
-      mode === "priority" ? "🟡 P3 — Medium" : "📋 Default"
+    const areaLabel = (card: HTMLElement | undefined) => card?.dataset.areaName || board.dataset.noAreaLabel || "No area"
 
     // O1: Hoist getComputedStyle outside column loop
     const cs = getComputedStyle(document.documentElement)
@@ -69,23 +109,50 @@ export function initKanbanGrouping(board: HTMLElement): void {
       const cardsContainer = col.querySelector(".kanban-cards")
       if (!cardsContainer) return
       const flatCards = Array.from(
-        cardsContainer.querySelectorAll(".flat-card"),
+        cardsContainer.querySelectorAll<HTMLElement>(".flat-card"),
       )
 
       // Collect unique values
-      const groups = new Map<string, Element[]>()
+      const groups = new Map<string, HTMLElement[]>()
       flatCards.forEach((card) => {
-        const val =
-          (card as HTMLElement).dataset[dataAttr] ||
-          (mode === "priority" ? "3" : "default")
-        if (!groups.has(val)) groups.set(val, [])
-        groups.get(val)!.push(card)
+        const value = card.dataset[mode]
+        let val = mode === "status" ? normalizeStatus(value || STATUS.PENDING)
+          : byAssignee || mode === "area" ? value ?? "" : value || (mode === "priority" ? "3" : mode === "epic" ? "epic:none" : "default")
+        if (byProject) val = card.dataset.projectGroup || "unavailable-project"
+        if (byAssignee && card.dataset.assigneeKey) {
+          try {
+            const key: unknown = JSON.parse(card.dataset.assigneeKey)
+            if (typeof key === "string") val = key
+          } catch { /* Keep the unencoded identity when metadata is malformed. */ }
+        }
+        // Unfiled and masked placement share a neutral label; visible real Areas retain their identity.
+        const key = mode === "area" && !card.dataset.areaName ? "" : val
+        if (!groups.has(key)) groups.set(key, [])
+        groups.get(key)!.push(card)
       })
 
-      // Sort: priority by number, board alphabetically
+      const statusRank = (key: string) => {
+        const index = CANONICAL_STATUSES.indexOf(key)
+        return index < 0 ? CANONICAL_STATUSES.length : index
+      }
+      const groupLabel = (key: string) => {
+        const card = groups.get(key)?.[0]
+        if (byProject) return card?.dataset.projectLabel ?? window.mI18n?.get("kanban.unknown_project") ?? "Unknown Project"
+        if (mode === "epic") return card?.dataset.epicLabel || board.dataset.noEpicLabel || "No Epic"
+        if (byAssignee) return key ? window.mI18n?.get("tasks.assignee_loading") ?? "Loading assignee…"
+          : window.mI18n?.get("tasks.unassigned") ?? "Unassigned"
+        if (mode === "area") return areaLabel(card)
+        if (mode === "status") {
+          const status = getStatusDef(key)
+          return status ? window.mI18n?.get(status.i18nKey) ?? status.label : key
+        }
+        return icons[key] || "🟡 P3 — Medium"
+      }
       const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
         if (mode === "priority") return Number(a) - Number(b)
-        return a.localeCompare(b)
+        if (mode === "status") return statusRank(a) - statusRank(b) || a.localeCompare(b)
+        if (byAssignee) return Number(!a) - Number(!b) || a.localeCompare(b)
+        return groupLabel(a).localeCompare(groupLabel(b), document.documentElement.lang || undefined) || a.localeCompare(b)
       })
 
       sortedKeys.forEach((key) => {
@@ -97,12 +164,13 @@ export function initKanbanGrouping(board: HTMLElement): void {
         const accentColor = colorMap[key] || defaultAccent
         group.style.borderTop = `3px solid ${accentColor}`
 
-        const header = document.createElement("div")
+        const header = document.createElement("button")
+        header.type = "button"
         header.className = "swimlane-header"
-        const label =
-          icons[key] || (mode === "area" ? (areaTitleMap[key] || `📋 ${key}`) : defaultLabel)
+        const label = groupLabel(key)
         const toggleSpan = document.createElement("span")
         toggleSpan.className = "swimlane-toggle"
+        toggleSpan.setAttribute("aria-hidden", "true")
         toggleSpan.textContent = "▼"
 
         // Color dot (matches static .swimlane-type-dot)
@@ -112,14 +180,31 @@ export function initKanbanGrouping(board: HTMLElement): void {
 
         const labelSpan = document.createElement("span")
         labelSpan.className = "swimlane-label"
-        labelSpan.textContent = label
+        labelSpan.textContent = mode === "area" ? `${cards[0]?.dataset.areaIcon || "📋"} ${label}` : label
+        let heading = labelSpan
+        if (byProject) {
+          heading = document.createElement("span")
+          heading.className = "swimlane-heading"
+          heading.appendChild(labelSpan)
+          const qualifier = cards[0]?.dataset.projectQualifier
+          if (qualifier) {
+            const detail = document.createElement("span")
+            detail.className = "swimlane-qualifier"
+            detail.textContent = qualifier
+            heading.appendChild(detail)
+            header.setAttribute("aria-label", `${label} · ${qualifier}`)
+          }
+          heading.title = qualifier ? `${label} · ${qualifier}` : label
+        } else if (byAssignee) {
+          labelSpan.dataset.assigneeGroup = ""
+          labelSpan.dir = "auto"
+          if (key) labelSpan.dataset.taskAssignee = key
+        }
+        if (mode === "status") labelSpan.title = label
         const countSpan = document.createElement("span")
         countSpan.className = "swimlane-count"
         countSpan.textContent = String(cards.length)
-        header.append(toggleSpan, dotSpan, labelSpan, countSpan)
-
-        // Collapse toggle — matches static swimlane CSS class pattern
-        header.style.cursor = "pointer"
+        header.append(toggleSpan, dotSpan, heading, countSpan)
 
         const swimlaneCards = document.createElement("div")
         swimlaneCards.className = "swimlane-cards"
@@ -132,36 +217,8 @@ export function initKanbanGrouping(board: HTMLElement): void {
         group.appendChild(header)
         group.appendChild(swimlaneCards)
         cardsContainer.appendChild(group)
-
-        // Restore saved collapse state for dynamic swimlane
-        const collapseKey = `meitheal-swimlane-${key}`
-        if (localStorage.getItem(collapseKey) === "collapsed") {
-          swimlaneCards.classList.add("collapsed")
-          toggleSpan.classList.add("collapsed")
-          toggleSpan.textContent = "▶"
-          group.classList.add("swimlane-collapsed")
-        }
       }) // end sortedKeys.forEach
     }) // end col.forEach
   } // end else if
-  // Swimlane header collapse toggle — CSS animation + localStorage persistence
-  board.querySelectorAll(".swimlane-header[data-type]").forEach((header) => {
-    const group = header.closest(".swimlane-group")
-    if (!group) return
-    const cards = group.querySelector(".swimlane-cards")
-    const toggle = header.querySelector(".swimlane-toggle")
-    const type = (header as HTMLElement).dataset.type || "unknown"
-    const storageKey = `meitheal-swimlane-${type}`
-
-    // Restore saved collapse state
-    const saved = localStorage.getItem(storageKey)
-    if (saved === "collapsed" && cards) {
-      cards.classList.add("collapsed")
-      if (toggle) {
-        toggle.classList.add("collapsed")
-        toggle.textContent = "▶"
-      }
-      group.classList.add("swimlane-collapsed")
-    }
-  })
+  initCollapse(board, signal)
 }

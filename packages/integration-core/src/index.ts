@@ -23,7 +23,7 @@ export class IntegrationBus {
   }
 
   async emit(event: DomainEvent): Promise<void> {
-    await Promise.all(this.plugins.map((plugin) => plugin.handle(event)));
+    await Promise.all(this.plugins.map(async (plugin) => plugin.handle(event)));
   }
 }
 

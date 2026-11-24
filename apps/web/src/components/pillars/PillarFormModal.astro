@@ -12,6 +12,8 @@
 import IconPicker from "../ui/IconPicker.astro"
 import ColorPicker from "../ui/ColorPicker.astro"
 import { t } from "../../i18n/translations"
+interface Props { personalForm?: string | undefined }
+const { personalForm } = Astro.props
 ---
 
 <div
@@ -37,7 +39,7 @@ import { t } from "../../i18n/translations"
       >✕</button>
     </div>
 
-    <form id="pillar-form" class="space-y-4"
+    <form id="pillar-form" class="space-y-4" autocomplete="off"
       data-created-toast={t("pillars.created_toast")}
       data-updated-toast={t("pillars.updated_toast")}
       data-error-save={t("pillars.error_save")}
@@ -59,6 +61,19 @@ import { t } from "../../i18n/translations"
         />
         <p class="pillar-form__hint">{t("pillars.name_hint")}</p>
       </div>
+
+      {personalForm ? (
+        <div class="form-group">
+          <label for="pillar-audience" class="form-label">Visible to</label>
+          <select id="pillar-audience" class="form-input" data-audience-proof={personalForm} aria-describedby="pillar-audience-hint">
+            <option value="board">Board</option>
+            <option value="personal">Only me</option>
+          </select>
+          <p id="pillar-audience-hint" class="pillar-form__hint">Choose the audience before saving.</p>
+        </div>
+      ) : (
+        <p class="pillar-form__hint">New Pillars here are visible to the Board. To create one only you can see, open Progress in an active Home Assistant session.</p>
+      )}
 
       <!-- Manifesto (WHY) -->
       <div class="form-group">
@@ -193,6 +208,8 @@ import { t } from "../../i18n/translations"
     const closeBtn = document.getElementById("close-pillar-modal")
     const cancelBtn = document.getElementById("cancel-pillar-modal")
     const form = document.getElementById("pillar-form") as HTMLFormElement | null
+    const audience = document.querySelector<HTMLSelectElement>("#pillar-audience")
+    const audienceHint = document.getElementById("pillar-audience-hint")
     const titleEl = document.getElementById("pillar-form-title")
     const submitBtn = document.getElementById("submit-pillar-btn") as HTMLButtonElement | null
     const iconHidden = document.getElementById("pillar-icon") as HTMLInputElement | null
@@ -204,6 +221,7 @@ import { t } from "../../i18n/translations"
 
     // --- State: tracks current editing context ---
     let editingPillarId: string | null = null
+    let editingPersonal = false
     let opener: HTMLElement | null = null
     const savedMessageKey = "meitheal-pillar-saved"
     try {
@@ -213,6 +231,68 @@ import { t } from "../../i18n/translations"
         showToast(saved, "success")
       }
     } catch { /* Session storage can be unavailable in embedded browsers. */ }
+
+    const pillarSection = document.getElementById("progress-section-pillars")
+    if (audience?.dataset.audienceProof && pillarSection) {
+      const proof = audience.dataset.audienceProof
+      let activeRecheck: AbortController | undefined
+      const hidePersonal = () => {
+        pillarSection.style.visibility = "hidden"
+        pillarSection.inert = true
+      }
+      const clearPersonal = () => {
+        if (pillarSection.querySelector(".modal-overlay.active")) document.body.style.overflow = ""
+        const message = document.createElement("p")
+        message.textContent = "Reconnect and refresh Progress to see your Personal Pillars."
+        pillarSection.replaceChildren(message)
+        pillarSection.style.visibility = ""
+        pillarSection.inert = false
+      }
+      const recheckPersonal = async () => {
+        activeRecheck?.abort()
+        hidePersonal()
+        if (document.hidden) return
+        const recheck = new AbortController()
+        activeRecheck = recheck
+        const requestSignal = AbortSignal.any([signal, recheck.signal])
+        try {
+          const response = await fetch("/api/pillars", {
+            method: "HEAD",
+            cache: "no-store",
+            headers: { "X-Meitheal-Pillar-Session": proof },
+            signal: requestSignal,
+          })
+          if (requestSignal.aborted || document.hidden) return
+          if (response.status !== 204) {
+            clearPersonal()
+            window.location.reload()
+          } else {
+            pillarSection.style.visibility = ""
+            pillarSection.inert = false
+          }
+        } catch {
+          if (!requestSignal.aborted) clearPersonal()
+        } finally {
+          if (activeRecheck === recheck) activeRecheck = undefined
+        }
+      }
+      document.addEventListener("visibilitychange", recheckPersonal, { signal })
+      window.addEventListener("focus", recheckPersonal, { signal })
+      window.addEventListener("offline", () => {
+        activeRecheck?.abort()
+        clearPersonal()
+      }, { signal })
+      window.addEventListener("pagehide", event => {
+        activeRecheck?.abort()
+        if (event.persisted) {
+          hidePersonal()
+          pillarSection.replaceChildren()
+        }
+      }, { signal })
+      window.addEventListener("pageshow", event => {
+        if (event.persisted) window.location.reload()
+      }, { signal })
+    }
 
     // --- Init shared pickers ---
     const iconPickerCleanup = initIconPicker("pillar-icon-picker", {
@@ -271,6 +351,12 @@ import { t } from "../../i18n/translations"
       opener = source ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null)
       form?.reset()
       editingPillarId = null
+      editingPersonal = editData?.personal === true
+      if (audience) {
+        audience.disabled = Boolean(editData?.id)
+        audience.value = editingPersonal ? "personal" : "board"
+        if (audienceHint) audienceHint.hidden = audience.disabled
+      }
 
       // Reset picker previews
       const iconPreview = document.querySelector<HTMLElement>("#pillar-icon-picker .icon-picker__preview-icon")
@@ -365,6 +451,7 @@ import { t } from "../../i18n/translations"
         ? (submitBtn.dataset.savingLabel || "Saving…")
         : (submitBtn.dataset.creatingLabel || "Creating…")
 
+      const isPersonal = editingPillarId ? editingPersonal : audience?.value === "personal"
       try {
         const body: Record<string, unknown> = {
           name,
@@ -374,6 +461,10 @@ import { t } from "../../i18n/translations"
           weight: parseInt((document.getElementById("pillar-weight") as HTMLInputElement).value, 10),
         }
 
+        if (!editingPillarId && isPersonal) {
+          body.audience = "personal"
+          body.audienceProof = audience?.dataset.audienceProof
+        }
         const url = editingPillarId ? `/api/pillars/${editingPillarId}` : "/api/pillars"
         const method = editingPillarId ? "PATCH" : "POST"
 
@@ -392,7 +483,7 @@ import { t } from "../../i18n/translations"
           const toastTemplate = editingPillarId
             ? (form.dataset.updatedToast || '"{name}" updated')
             : (form.dataset.createdToast || 'Pillar "{name}" created')
-          const message = toastTemplate.replace("{name}", name)
+          const message = isPersonal ? "Personal Pillar saved." : toastTemplate.replace("{name}", name)
           try { sessionStorage.setItem(savedMessageKey, message) } catch { showToast(message, "success") }
           closePillarModal(true)
           window.location.reload()

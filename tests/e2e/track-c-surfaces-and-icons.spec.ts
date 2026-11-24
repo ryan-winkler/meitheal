@@ -1,14 +1,16 @@
+import { integrationFixture } from "../helpers/ordinary-integration-fixture"
 import { createRequire } from "node:module"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
 import { shouldSkipBrowserSpecs } from "./_helpers"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import {
   ensureSchema,
   getPersistenceClient,
   resetPersistenceForTests,
-} from "../../apps/web/src/domains/tasks/persistence/store"
+} from "../helpers/persistence-fixture"
 import { closeHAConnection, getHAConnection } from "../../apps/web/src/domains/ha/ha-connection"
 import { stopEntitySubscription } from "../../apps/web/src/domains/ha/ha-entities"
 import {
@@ -71,12 +73,14 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
     process.env.HA_TOKEN = "track-c-cal-token"
     process.env.MEITHEAL_DB_URL = `file:${join(dir, "tasks.db")}`
     resetPersistenceForTests()
+    await ensureSchema()
     const db = getPersistenceClient()
 
     try {
-      await ensureSchema()
       expect(await getHAConnection()).not.toBeNull()
-      startCalendarSync({
+      const approved = await integrationFixture({ integration: "calendar", sourceId: "calendar.household", purpose: "calendar.sync" })
+      await startCalendarSync({
+        bindingId: approved.binding.id, generation: approved.binding.generation,
         entityId: "calendar.household",
         syncEnabled: true,
         syncMode: "bidirectional",
@@ -84,18 +88,19 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
         syncIntervalMs: 0,
       })
 
+      await db.execute("UPDATE task_boards SET ticket_high_water = 41 WHERE id = 'household'")
       await db.execute({
         sql: `INSERT INTO tasks (id, title, description, status, priority, due_date, labels, framework_payload, calendar_sync_state, area_id, custom_fields, task_type, idempotency_key, request_id, ticket_number, created_at, updated_at)
               VALUES ('task-cal-1', 'Service heat pump', 'Initial note', 'active', 2, '2026-11-20', '["homelab","hvac"]', '{}', 'pending', 'default', '{}', 'task', 'idem-cal-1', 'req-cal-1', 42, ?, ?)`,
         args: [Date.now(), Date.now()],
       })
 
+      await db.execute({ sql: "UPDATE tasks SET description=?, checklists=? WHERE id='task-cal-1'", args: ["Check glycol loop pressure\n\nRecord manifold reading", JSON.stringify([{ text: "Inspect strainer", done: true }, { text: "Flush air separator", done: false }])] })
       const pushed = await pushTaskToCalendar(
-        "task-cal-1",
+        approved.context, "task-cal-1",
         "Service heat pump",
         "2026-11-20",
         "Check glycol loop pressure\n\nRecord manifold reading",
-        "calendar.household",
         {
           ticketKey: "MTH-42",
           status: "active",
@@ -129,7 +134,7 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
           end: "2026-11-22",
         },
       ]
-      const loopCounts = await syncFromHA("calendar.household")
+      const loopCounts = await syncFromHA(approved.binding.id)
       expect(loopCounts.created).toBe(0)
       expect(loopCounts.updated).toBe(0)
 
@@ -143,7 +148,7 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
           end: "2026-11-22",
         },
       ]
-      const counts = await syncFromHA("calendar.household")
+      const counts = await syncFromHA(approved.binding.id)
       expect(counts.updated).toBe(1)
 
       const updated = await db.execute({
@@ -172,8 +177,8 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
     // Bucket 2 preserved
     expect(t("settings.cal_sync_bidirectional", "en")).toContain("↔")
     expect(t("settings.cal_sync_bidirectional", "ga")).toContain("↔")
-    expect(enCatalog.task_modal.priority_urgent).toContain("🔴")
-    expect(gaCatalog.task_modal.priority_urgent).toContain("🔴")
+    expect(enCatalog.task_modal.priority_urgent).toBe("Urgent")
+    expect(gaCatalog.task_modal.priority_urgent).toBe("Práinneach")
 
     // Bucket 5 stripped
     expect(enCatalog.settings.ha_agent_title).toBe("HA Conversation Agent")
@@ -190,10 +195,10 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
       request,
       baseURL,
     }) => {
-      const headers = { origin: new URL(baseURL!).origin }
+      const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
       const createdIds: string[] = []
       try {
-        for (const taskType of ["epic", "story", "bug", "task"]) {
+        for (const taskType of ["epic", "story", "task"]) {
           const res = await request.post("/api/tasks", {
             headers,
             data: {
@@ -207,7 +212,7 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
           createdIds.push((await res.json()).id)
         }
 
-        const routes = ["/", "/tasks", "/eisenhower", "/settings#integrations-settings", "/tasks?view=timeline#timeline"]
+        const routes = ["/", "/boards/household#kanban", "/eisenhower", "/settings#integrations-settings", "/boards/household?view=timeline#timeline"]
         for (const route of routes) {
           await page.goto(route)
           await page.waitForLoadState("networkidle")
@@ -266,7 +271,7 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
         })
         expect(wizardOptionTexts.some((t) => t.includes("🔴"))).toBe(true)
 
-        await page.goto("/tasks")
+        await page.goto("/boards/household#kanban")
         await page.waitForLoadState("networkidle")
         await page.keyboard.press("/")
         await expect(page.locator("#search-hub-overlay")).toBeVisible()

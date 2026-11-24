@@ -1,13 +1,13 @@
 ---
 import { t } from "../../i18n/translations"
-import { APPEARANCE_PREFERENCES, type AppearancePreferenceName } from "../../lib/appearance-preferences"
 import type { Locale } from "../../lib/locale"
 import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
 import { TASK_NAV_TYPES } from "../../lib/task-nav-types"
-import KeyboardShortcutList from "../layout/KeyboardShortcutList.astro"
-import SettingsActionRow from "./SettingsActionRow.astro"
-import SettingsPanelCard from "./SettingsPanelCard.astro"
+import { SHORTCUT_DEFINITIONS, type ShortcutCategory } from "@domains/navigation/keyboard-shortcuts"
+import { CUSTOM_LINK_ICONS } from "@domains/navigation/sidebar-menu"
+import SettingsOrganizationLabels from "./SettingsOrganizationLabels.astro"
 import SettingsSectionIntro from "./SettingsSectionIntro.astro"
+import Icon from "../ui/Icon.astro"
 
 interface Props {
   locale: Locale
@@ -16,12 +16,26 @@ const { locale } = Astro.props
 
 const navigationSection = SETTINGS_SECTIONS.find((section) => section.id === "navigation-settings")!
 
-const NAV_PREFERENCE_KEYS: readonly AppearancePreferenceName[] = [
-  "navigation",
-  "navTone",
-  "navStyle",
-  "sidebar",
+const SHORTCUT_GROUPS: readonly { id: ShortcutCategory; title: string; subtitle: string }[] = [
+  {
+    id: "global",
+    title: "Global Shortcuts (application-wide)",
+    subtitle: "Search, quick create, command palette, sidebar toggle, and help.",
+  },
+  {
+    id: "navigation",
+    title: "Navigation",
+    subtitle: "Jump straight to Dashboard, Today, Upcoming, Kanban, Table, or Calendar.",
+  },
+  {
+    id: "tasks",
+    title: "Tasks (on the Tasks page)",
+    subtitle: "Switch views directly while working inside the Tasks workspace.",
+  },
 ]
+
+const editableShortcutsByCategory = (category: ShortcutCategory) =>
+  SHORTCUT_DEFINITIONS.filter((def) => def.category === category && def.editable)
 ---
 
 <section
@@ -31,167 +45,755 @@ const NAV_PREFERENCE_KEYS: readonly AppearancePreferenceName[] = [
   hidden
 >
   <SettingsSectionIntro section={navigationSection} />
-  <div class="settings-grid">
-    <!-- Navigation Layout & Hover Behavior -->
-    <SettingsPanelCard
-      title={t("settings.nav_layout_card_title", locale)}
-      subtitle={t("settings.nav_layout_card_subtitle", locale)}
-    >
-      <form id="navigation-appearance-form" data-appearance-form class="appearance-preferences-form" aria-describedby="navigation-appearance-scope">
-        <p id="navigation-appearance-scope" class="settings-hint">{t("settings.appearance_scope", locale)}</p>
-        <div class="appearance-preferences-grid">
-          {NAV_PREFERENCE_KEYS.map((name) => {
-            const preference = APPEARANCE_PREFERENCES[name]
-            return (
-              <div class="form-group">
-                <label class="form-label" for={`appearance-${name}`}>{t(`settings.appearance_${name}`, locale)}</label>
-                <select class="form-select" id={`appearance-${name}`} name={name} aria-describedby={`appearance-${name}-help`}>
-                  {preference.options.map((value) => (
-                    <option value={value} selected={value === preference.defaultValue}>
-                      {t(`settings.appearance_${name}_${value.replace(".", "_")}`, locale)}
-                    </option>
-                  ))}
-                </select>
-                <p id={`appearance-${name}-help`} class="settings-hint">{t(`settings.appearance_${name}_help`, locale)}</p>
-              </div>
-            )
-          })}
-        </div>
-        <div class="flex flex-wrap gap-2">
-          <button type="reset" class="btn btn-secondary">{t("settings.appearance_reset", locale)}</button>
-          <button type="submit" class="btn btn-primary">{t("settings.nav_layout_save", locale)}</button>
-        </div>
-        <p
-          id="navigation-appearance-save-status"
-          data-appearance-status
-          class="settings-hint"
-          role="status"
-          data-saved={t("settings.appearance_saved", locale)}
-          data-reset={t("settings.appearance_reset_staged", locale)}
-          data-error={t("settings.appearance_save_error", locale)}
-        ></p>
-      </form>
-    </SettingsPanelCard>
 
-    <!-- Tasks Menu & Pinned Task Types -->
-    <SettingsPanelCard
-      title={t("settings.task_nav_prefs_title", locale)}
-      subtitle={t("settings.task_nav_prefs_subtitle", locale)}
-    >
-      <div id="task-nav-prefs-card" class="settings-stack">
-        <div>
-          <span class="settings-label">{t("settings.task_nav_mode_label", locale)}</span>
-          <div class="task-nav-mode-group" role="group" aria-label={t("settings.task_nav_mode_label", locale)}>
-            <button type="button" class="btn btn-secondary settings-text-sm" data-task-nav-mode="all">
-              {t("settings.task_nav_mode_all", locale)}
-            </button>
-            <button type="button" class="btn btn-secondary settings-text-sm" data-task-nav-mode="custom">
-              {t("settings.task_nav_mode_custom", locale)}
-            </button>
-            <button type="button" class="btn btn-secondary settings-text-sm" data-task-nav-mode="none">
-              {t("settings.task_nav_mode_none", locale)}
+  <div class="nav-settings-stack">
+    <!-- Integrated Look & Feel Navigation Layout Summary Card -->
+    <div class="nav-handoff-card">
+      <div class="nav-handoff-card__main">
+        <span class="nav-handoff-card__icon" aria-hidden="true">
+          <Icon name="palette" size={18} sprite={true} />
+        </span>
+        <div class="nav-handoff-card__copy">
+          <strong>Navigation Layout &amp; Appearance</strong>
+          <p class="settings-hint" id="nav-layout-active-summary">
+            Sidebar · Match theme · Remember state
+          </p>
+        </div>
+      </div>
+      <div class="nav-handoff-card__actions">
+        <button
+          type="button"
+          class="settings-help-btn"
+          data-settings-help="navLookFeelHandoff"
+          aria-label="Help for Navigation Layout location"
+        >
+          <Icon name="help" size={16} sprite={true} />
+        </button>
+        <button
+          type="button"
+          class="btn btn-secondary btn-sm whitespace-nowrap shrink-0"
+          data-customize-sidebar-menu
+        >
+          <Icon name="pencil" size={14} sprite={true} />
+          <span>{t("sidebar.customize_menu", locale)}</span>
+        </button>
+        <a
+          href="#navigation-appearance-form"
+          class="btn btn-primary btn-sm whitespace-nowrap shrink-0"
+          data-settings-section-link
+        >
+          <Icon name="sparkles" size={15} sprite={true} />
+          <span>Layout &amp; Look &amp; Feel</span>
+        </a>
+      </div>
+    </div>
+
+    <!-- 1. Editable Keyboard Shortcuts (Super Productivity–style) -->
+    <details class="nav-accordion" id="nav-shortcuts-section" open>
+      <summary class="nav-accordion__summary">
+        <span class="nav-accordion__icon" aria-hidden="true">
+          <Icon name="keyboard" size={18} sprite={true} />
+        </span>
+        <span class="nav-accordion__heading">
+          <span class="nav-accordion__title">{t("settings.shortcuts_title", locale)}</span>
+          <span class="nav-accordion__subtitle">Click any shortcut field and press keys to rebind. Changes apply live immediately.</span>
+        </span>
+        <span class="nav-accordion__meta" id="shortcuts-summary-meta">15 editable · defaults</span>
+        <button
+          type="button"
+          class="settings-help-btn"
+          data-settings-help="keyboardShortcuts"
+          aria-label="Help for Keyboard Shortcuts"
+        >
+          <Icon name="help" size={16} sprite={true} />
+        </button>
+        <span class="nav-accordion__chevron" aria-hidden="true">
+          <Icon name="chevron-down" size={16} sprite={true} />
+        </span>
+      </summary>
+
+      <div class="nav-accordion__body" id="shortcuts-editor-root">
+        <div class="shortcuts-toolbar">
+          <div class="shortcuts-toolbar__toggle">
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input id="single-key-shortcuts" type="checkbox" checked />
+              <span>{t("settings.shortcut_single_keys", locale)}</span>
+            </label>
+            <button
+              type="button"
+              class="settings-help-btn"
+              data-settings-help="singleKeyShortcuts"
+              aria-label="Help for Single-key shortcuts"
+            >
+              <Icon name="help" size={16} sprite={true} />
             </button>
           </div>
+          <button
+            type="button"
+            id="shortcuts-reset-all"
+            class="btn btn-secondary btn-sm whitespace-nowrap shrink-0"
+            disabled
+          >
+            <Icon name="refresh" size={14} sprite={true} />
+            <span>Reset all defaults</span>
+          </button>
         </div>
 
-        <div class="settings-stack--xs" id="task-nav-type-rows">
-          {TASK_NAV_TYPES.map((entry) => (
-            <div class="task-nav-pref-row" data-task-nav-row={entry.id}>
-              <label class="task-nav-pref-row__check">
-                <input
-                  type="checkbox"
-                  data-task-nav-visible={entry.id}
-                  checked
-                />
-                <span>{entry.label}</span>
-              </label>
-              <button
-                type="button"
-                class="btn btn-ghost settings-text-sm task-nav-pin-btn"
-                data-task-nav-pin={entry.id}
-                aria-pressed="false"
-              >
-                {t("settings.task_nav_pin", locale)}
-              </button>
+        <p class="settings-hint">
+          Click any input and press a key or modifier combo (e.g. <code>Ctrl+K</code>, <code>Shift+N</code>, or <code>D</code>). Press <code>Esc</code> to cancel or <code>Backspace</code> to unbind.
+        </p>
+
+        <div class="shortcuts-categories">
+          {SHORTCUT_GROUPS.map((group) => (
+            <div class="shortcuts-category">
+              <div class="shortcuts-category__head">
+                <h4>{group.title}</h4>
+                <span class="settings-hint">{group.subtitle}</span>
+              </div>
+              <div class="shortcuts-edit-grid">
+                {editableShortcutsByCategory(group.id).map((def) => {
+                  const actionLabel = t(def.labelKey, locale)
+                  return (
+                    <div
+                      class="shortcut-edit-field"
+                      data-shortcut-field={def.id}
+                      data-shortcut-label={actionLabel}
+                    >
+                      <label class="shortcut-edit-field__label" for={`shortcut-input-${def.id}`}>
+                        <span>{actionLabel}</span>
+                        {def.noteKey && <small class="shortcut-edit-field__note">{t(def.noteKey, locale)}</small>}
+                      </label>
+                      <div class="shortcut-edit-field__control">
+                        <input
+                          id={`shortcut-input-${def.id}`}
+                          type="text"
+                          class="form-input shortcut-edit-input"
+                          data-shortcut-input
+                          readonly
+                          value={def.defaultCombo.replace(/\bCtrl\b/g, "Ctrl/Cmd")}
+                          placeholder="None — click to set"
+                          aria-label={`Keyboard shortcut for ${actionLabel}`}
+                        />
+                        <button
+                          type="button"
+                          class="shortcut-action-btn"
+                          data-shortcut-reset
+                          title={`Reset to default (${def.defaultCombo})`}
+                          aria-label={`Reset ${actionLabel} to default`}
+                          hidden
+                        >
+                          <Icon name="refresh" size={14} sprite={true} />
+                        </button>
+                        <button
+                          type="button"
+                          class="shortcut-action-btn"
+                          data-shortcut-clear
+                          title="Clear shortcut"
+                          aria-label={`Clear shortcut for ${actionLabel}`}
+                        >
+                          <Icon name="x" size={14} sprite={true} />
+                        </button>
+                      </div>
+                      <p class="shortcut-conflict-msg" data-shortcut-conflict role="alert" hidden></p>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           ))}
         </div>
-        <p class="settings-hint">{t("settings.task_nav_prefs_hint", locale)}</p>
-      </div>
-    </SettingsPanelCard>
 
-    <!-- Sidebar Configuration -->
-    <SettingsPanelCard
-      title={t("settings.sidebar_config_title", locale)}
-      subtitle={t("settings.sidebar_config_desc", locale)}
-    >
-      <div>
-        <div
-          id="sidebar-item-list"
-          class="settings-stack--sm"
+        <p id="shortcuts-save-status" class="settings-hint mt-2" role="status" aria-live="polite"></p>
+      </div>
+    </details>
+
+    <!-- 2. Sidebar & Top Bar Menu Configuration (Server-wide default, unified with Task Detail Layout UX) -->
+    <details class="nav-accordion" id="nav-sidebar-menu-section">
+      <summary class="nav-accordion__summary">
+        <span class="nav-accordion__icon" aria-hidden="true">
+          <Icon name="menu" size={18} sprite={true} />
+        </span>
+        <span class="nav-accordion__heading">
+          <span class="nav-accordion__title">{t("settings.sidebar_config_title", locale)}</span>
+          <span class="nav-accordion__subtitle">Set the server-wide default navigation menu for all users, or customize your own per-user menu.</span>
+        </span>
+        <button
+          type="button"
+          class="settings-help-btn"
+          data-settings-help="sidebarMenu"
+          aria-label="Help for Sidebar and Top Bar Menu"
         >
-          <!-- Populated by JS -->
-        </div>
-        <div class="settings-section-divider--spaced">
-          <div style="margin-bottom: 8px; font-weight: 500;">{t("settings.sidebar_custom_links", locale)}</div>
-          <div
-            id="custom-links-list"
-            style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px;"
-          >
-          </div>
-          <button type="button" class="btn btn-ghost" id="add-custom-link-btn"
-            >{t("settings.sidebar_add_custom_link", locale)}</button
-          >
-        </div>
-        <SettingsActionRow class="mt-4">
-          <button
-            type="button"
-            class="btn btn-primary settings-text-sm"
-            id="save-sidebar"
-            >{t("settings.sidebar_save_config", locale)}</button
-          >
-          <button
-            type="button"
-            class="btn btn-ghost settings-text-sm"
-            id="reset-sidebar"
-            >{t("settings.sidebar_reset_default", locale)}</button
-          >
-        </SettingsActionRow>
-      </div>
-    </SettingsPanelCard>
+          <Icon name="help" size={16} sprite={true} />
+        </button>
+        <span class="nav-accordion__chevron" aria-hidden="true">
+          <Icon name="chevron-down" size={16} sprite={true} />
+        </span>
+      </summary>
 
-    <!-- Keyboard Shortcuts -->
-    <SettingsPanelCard
-      title={t("settings.shortcuts_title", locale)}
-      subtitle={t("settings.shortcuts_subtitle", locale)}
-    >
-      <label class="flex items-center gap-2">
-        <input id="single-key-shortcuts" type="checkbox" checked />
-        {t("settings.shortcut_single_keys", locale)}
-      </label>
-      <KeyboardShortcutList locale={locale} variant="settings" />
-    </SettingsPanelCard>
+      <div class="nav-accordion__body">
+        <div class="td-layout-editor" id="sidebar-layout-editor" data-drag-ready="true">
+          <!-- Server-wide Default Scope Banner (exact parity with Task Detail Layout Editor) -->
+          <div class="td-layout-scope td-layout-scope--server" role="note">
+            <span class="td-layout-scope__icon" aria-hidden="true"><Icon name="world" size={18} sprite={true} /></span>
+            <div class="td-layout-scope__body">
+              <div class="td-layout-scope__head">
+                <strong>Server-wide default</strong>
+                <span class="td-layout-scope__badge">All users</span>
+              </div>
+              <p>Changes saved below set the default sidebar and top bar menu for every user on this server who has not saved a personal override.</p>
+            </div>
+          </div>
+
+          <!-- Per-User Live Customization Card -->
+          <div class="nav-personal-handoff">
+            <div class="nav-personal-handoff__copy">
+              <div class="td-layout-scope__head">
+                <strong>Per-user menu</strong>
+                <span class="td-layout-scope__badge">Only you · This browser</span>
+              </div>
+              <p>Want to tweak the menu just for yourself without changing other household members? Use live edit mode directly in the sidebar or top bar.</p>
+            </div>
+            <button
+              type="button"
+              id="nav-customize-menu"
+              class="btn btn-secondary btn-sm"
+              data-customize-sidebar-menu
+            >
+              <Icon name="pencil" size={14} sprite={true} />
+              <span>Customize my menu</span>
+            </button>
+          </div>
+
+          <!-- Personal Override Active Notice -->
+          <div class="td-layout-personal-notice" id="sidebar-personal-notice" hidden>
+            <span class="td-layout-personal-notice__text">
+              <Icon name="info-circle" size={16} sprite={true} />
+              <span>This browser has a personal menu override that takes priority over the server default for you.</span>
+            </span>
+            <button type="button" class="btn btn-secondary btn-sm" id="sidebar-clear-personal-btn">
+              Clear my personal override
+            </button>
+          </div>
+
+          <!-- Unified Toolbar (matches Task Detail Layout Editor) -->
+          <div class="td-layout-editor__intro">
+            <p>Drag grips across or within sections, use arrows to reorder, click the pencil to rename, or toggle the eye icon to show or hide sections and items.</p>
+            <div class="nav-editor-toolbar-actions">
+              <button type="button" class="btn btn-secondary btn-sm" id="settings-add-section-toggle" aria-expanded="false" aria-controls="settings-add-section-form">
+                <Icon name="folder" size={14} sprite={true} />
+                <span>Add section</span>
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" id="settings-add-link-toggle" aria-expanded="false" aria-controls="settings-add-link-form">
+                <Icon name="link" size={14} sprite={true} />
+                <span>Add custom link</span>
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" id="reset-sidebar">
+                <Icon name="refresh" size={14} sprite={true} />
+                <span>Reset defaults</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Inline Add Section Form -->
+          <form id="settings-add-section-form" class="nav-editor-inline-form" hidden novalidate>
+            <div class="nav-editor-inline-form__row">
+              <input
+                type="text"
+                name="sectionLabel"
+                class="form-input"
+                placeholder="New section name (e.g. Smart Home)"
+                maxlength="64"
+                required
+                aria-label="New section name"
+              />
+              <button type="button" class="btn btn-secondary btn-sm" id="settings-add-section-cancel">Cancel</button>
+              <button type="submit" class="btn btn-primary btn-sm">Add section</button>
+            </div>
+            <p class="td-layout-editor__error" id="settings-add-section-error" role="alert" hidden></p>
+          </form>
+
+          <!-- Inline Add Custom Link Form with Tabler Icon Picker -->
+          <form id="settings-add-link-form" class="nav-editor-inline-form" hidden novalidate>
+            <div class="nav-editor-inline-form__grid">
+              <input
+                type="text"
+                name="label"
+                class="form-input"
+                placeholder="Label (e.g. Home Assistant)"
+                maxlength="64"
+                required
+                aria-label="Custom link label"
+              />
+              <input
+                type="text"
+                name="href"
+                class="form-input"
+                placeholder="URL (https://… or /today)"
+                required
+                aria-label="Custom link URL"
+              />
+              <select name="section" class="form-select" id="settings-add-link-section" aria-label="Target section"></select>
+            </div>
+            <div class="nav-editor-icon-picker-wrap">
+              <span class="settings-hint">Choose a Tabler icon:</span>
+              <input type="hidden" name="icon" value="link" />
+              <div class="nav-editor-icon-picker" role="group" aria-label="Choose link icon" data-settings-icon-picker>
+                {CUSTOM_LINK_ICONS.map(iconName => (
+                  <button
+                    type="button"
+                    class={`nav-editor-icon-choice${iconName === "link" ? " is-selected" : ""}`}
+                    data-settings-icon-choice={iconName}
+                    aria-pressed={iconName === "link" ? "true" : "false"}
+                    aria-label={`Icon: ${iconName.replace(/-/g, " ")}`}
+                    title={iconName.replace(/-/g, " ")}
+                  >
+                    <Icon name={iconName} size={16} sprite={true} />
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p class="td-layout-editor__error" id="settings-add-link-error" role="alert" hidden></p>
+            <div class="nav-editor-inline-form__actions">
+              <button type="button" class="btn btn-secondary btn-sm" id="settings-add-link-cancel">Cancel</button>
+              <button type="submit" class="btn btn-primary btn-sm">Add custom link</button>
+            </div>
+          </form>
+
+          <!-- Unified Draggable Section & Item Tree -->
+          <ol id="sidebar-item-list" class="td-layout-editor__list" aria-label="Server default navigation sections"></ol>
+
+          <!-- Server-wide Dirty Bar (matches Task Detail Layout Editor) -->
+          <div class="settings-dirty-bar" id="sidebar-dirty-bar" role="status" aria-live="polite" hidden>
+            <span class="settings-dirty-bar__info">
+              <span class="settings-dirty-bar__icon" aria-hidden="true"><Icon name="alert-triangle" size={16} sprite={true} /></span>
+              <span>Unsaved server-wide navigation changes — click Save server default to apply for all users.</span>
+            </span>
+            <div class="settings-dirty-bar__actions">
+              <button type="button" class="btn btn-secondary btn-sm" id="discard-sidebar">
+                <Icon name="refresh" size={14} sprite={true} />
+                <span>Discard</span>
+              </button>
+              <button type="button" class="btn btn-primary btn-sm" id="save-sidebar">
+                <Icon name="check" size={14} sprite={true} />
+                <span>Save server default</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- SSR Templates for Section & Item Rows (DRY, minimal client JS) -->
+          <template data-nav-section-template>
+            <li class="td-layout-editor__item" data-nav-section-row>
+              <div class="td-layout-editor__row">
+                <button type="button" class="td-layout-icon-btn td-layout-editor__handle" data-nav-section-drag draggable="true" title="Drag to reorder section">
+                  <Icon name="grip-vertical" size={16} sprite={true} />
+                </button>
+                <span class="td-layout-editor__icon" aria-hidden="true"><Icon name="folder" size={16} sprite={true} /></span>
+                <span class="td-layout-editor__label" data-nav-label></span>
+                <div class="td-layout-editor__actions">
+                  <button type="button" class="td-layout-icon-btn" data-nav-section-rename title="Rename section">
+                    <Icon name="pencil" size={15} sprite={true} />
+                  </button>
+                  <button type="button" class="td-layout-icon-btn" data-nav-section-vis aria-pressed="false" title="Hide section">
+                    <Icon name="eye" size={16} sprite={true} class="td-layout-eye-on" />
+                    <Icon name="eye-off" size={16} sprite={true} class="td-layout-eye-off" />
+                  </button>
+                  <button type="button" class="td-layout-icon-btn" data-nav-section-move="up" title="Move section up">
+                    <Icon name="arrow-up" size={16} sprite={true} />
+                  </button>
+                  <button type="button" class="td-layout-icon-btn" data-nav-section-move="down" title="Move section down">
+                    <Icon name="arrow-down" size={16} sprite={true} />
+                  </button>
+                  <button type="button" class="td-layout-icon-btn nav-editor-danger-btn" data-nav-section-delete title="Delete custom section" hidden>
+                    <Icon name="trash" size={15} sprite={true} />
+                  </button>
+                </div>
+              </div>
+              <details class="td-layout-editor__fields" open>
+                <summary>
+                  <Icon name="chevron-down" size={15} sprite={true} class="td-layout-editor__chevron" />
+                  <span data-nav-fields-title>Items</span>
+                  <span class="td-layout-editor__count" data-nav-fields-count></span>
+                </summary>
+                <ol class="td-layout-editor__list" data-nav-section-items></ol>
+              </details>
+            </li>
+          </template>
+
+          <template data-nav-item-template>
+            <li class="td-layout-editor__item" data-nav-item-row>
+              <div class="td-layout-editor__row">
+                <button type="button" class="td-layout-icon-btn td-layout-editor__handle" data-nav-item-drag draggable="true" title="Drag to reorder or move between sections">
+                  <Icon name="grip-vertical" size={16} sprite={true} />
+                </button>
+                <span class="td-layout-editor__icon" data-nav-item-icon aria-hidden="true"></span>
+                <span class="td-layout-editor__label" data-nav-label></span>
+                <span class="nav-editor-item-href" data-nav-item-href hidden></span>
+                <div class="td-layout-editor__actions">
+                  <button type="button" class="td-layout-icon-btn" data-nav-item-rename title="Rename item">
+                    <Icon name="pencil" size={15} sprite={true} />
+                  </button>
+                  <button type="button" class="td-layout-icon-btn" data-nav-item-vis aria-pressed="false" title="Hide item">
+                    <Icon name="eye" size={16} sprite={true} class="td-layout-eye-on" />
+                    <Icon name="eye-off" size={16} sprite={true} class="td-layout-eye-off" />
+                  </button>
+                  <button type="button" class="td-layout-icon-btn" data-nav-item-move="up" title="Move item up">
+                    <Icon name="arrow-up" size={16} sprite={true} />
+                  </button>
+                  <button type="button" class="td-layout-icon-btn" data-nav-item-move="down" title="Move item down">
+                    <Icon name="arrow-down" size={16} sprite={true} />
+                  </button>
+                  <button type="button" class="td-layout-icon-btn nav-editor-danger-btn" data-nav-item-delete title="Remove custom link" hidden>
+                    <Icon name="trash" size={15} sprite={true} />
+                  </button>
+                </div>
+              </div>
+            </li>
+          </template>
+        </div>
+      </div>
+    </details>
+
+    <!-- 3. New Task Types Menu -->
+    <details class="nav-accordion" id="nav-task-types-section">
+      <summary class="nav-accordion__summary">
+        <span class="nav-accordion__icon" aria-hidden="true">
+          <Icon name="plus" size={18} sprite={true} />
+        </span>
+        <span class="nav-accordion__heading">
+          <span class="nav-accordion__title">{t("settings.task_nav_prefs_title", locale)}</span>
+          <span class="nav-accordion__subtitle">{t("settings.task_nav_prefs_subtitle", locale)}</span>
+        </span>
+        <button
+          type="button"
+          class="settings-help-btn"
+          data-settings-help="taskNavTypes"
+          aria-label="Help for New Task Types Menu"
+        >
+          <Icon name="help" size={16} sprite={true} />
+        </button>
+        <span class="nav-accordion__chevron" aria-hidden="true">
+          <Icon name="chevron-down" size={16} sprite={true} />
+        </span>
+      </summary>
+
+      <div class="nav-accordion__body">
+        <div id="task-nav-prefs-card" class="settings-stack">
+          <div>
+            <span class="settings-label">{t("settings.task_nav_mode_label", locale)}</span>
+            <div class="task-nav-mode-group" role="group" aria-label={t("settings.task_nav_mode_label", locale)}>
+              <button type="button" class="btn btn-secondary settings-text-sm" data-task-nav-mode="all">
+                {t("settings.task_nav_mode_all", locale)}
+              </button>
+              <button type="button" class="btn btn-secondary settings-text-sm" data-task-nav-mode="custom">
+                {t("settings.task_nav_mode_custom", locale)}
+              </button>
+              <button type="button" class="btn btn-secondary settings-text-sm" data-task-nav-mode="none">
+                {t("settings.task_nav_mode_none", locale)}
+              </button>
+            </div>
+          </div>
+
+          <div class="settings-stack--xs" id="task-nav-type-rows">
+            {TASK_NAV_TYPES.map((entry) => (
+              <div class="task-nav-pref-row" data-task-nav-row={entry.id}>
+                <label class="task-nav-pref-row__check">
+                  <input type="checkbox" data-task-nav-visible={entry.id} checked />
+                  <span>{entry.label}</span>
+                </label>
+                <button
+                  type="button"
+                  class="btn btn-ghost settings-text-sm task-nav-pin-btn"
+                  data-task-nav-pin={entry.id}
+                  aria-pressed="false"
+                  aria-label={`${t("settings.task_nav_pin", locale)} · ${entry.label}`}
+                >
+                  {t("settings.task_nav_pin", locale)}
+                </button>
+              </div>
+            ))}
+          </div>
+          <p class="settings-hint">{t("settings.task_nav_prefs_hint", locale)}</p>
+        </div>
+      </div>
+    </details>
+
+    <!-- 4. Personal Labels (Home Assistant Native) -->
+    <details class="nav-accordion" id="nav-labels-section">
+      <summary class="nav-accordion__summary">
+        <span class="nav-accordion__icon" aria-hidden="true">
+          <Icon name="home" size={18} sprite={true} />
+        </span>
+        <span class="nav-accordion__heading">
+          <span class="nav-accordion__title">{t("organization_labels.title", locale)}</span>
+          <span class="nav-accordion__subtitle">{t("organization_labels.description", locale)}</span>
+        </span>
+        <button
+          type="button"
+          class="settings-help-btn"
+          data-settings-help="personalLabels"
+          aria-label="Help for Personal Labels"
+        >
+          <Icon name="help" size={16} sprite={true} />
+        </button>
+        <span class="nav-accordion__chevron" aria-hidden="true">
+          <Icon name="chevron-down" size={16} sprite={true} />
+        </span>
+      </summary>
+
+      <div class="nav-accordion__body">
+        <SettingsOrganizationLabels locale={locale} embedded={true} />
+      </div>
+    </details>
   </div>
 </section>
 
-<style>
-  .appearance-preferences-grid {
+<style is:inline>
+  .nav-settings-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .nav-handoff-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px 16px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 10px);
+    background: var(--bg-card);
+  }
+  .nav-handoff-card__main {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    flex: 1 1 280px;
+    min-width: 0;
+  }
+  .nav-handoff-card__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: var(--radius-sm, 6px);
+    background: rgb(var(--accent-rgb) / 0.12);
+    color: var(--accent-text, var(--accent));
+    flex-shrink: 0;
+  }
+  .nav-handoff-card__copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .nav-handoff-card__copy strong {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .nav-handoff-card__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  /* Collapsible Accordion Cards */
+  .nav-accordion {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 10px);
+    background: var(--bg-card);
+    overflow: hidden;
+  }
+  .nav-accordion__summary {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+    transition: background-color 140ms ease;
+  }
+  .nav-accordion__summary::-webkit-details-marker { display: none; }
+  .nav-accordion__summary:hover { background: var(--bg-hover); }
+  .nav-accordion__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: var(--radius-sm, 6px);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    flex-shrink: 0;
+  }
+  .nav-accordion__heading {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .nav-accordion__title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .nav-accordion__subtitle {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+  }
+  .nav-accordion__meta {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .nav-accordion__chevron {
+    display: inline-flex;
+    align-items: center;
+    color: var(--text-muted);
+    transition: transform 160ms ease;
+    flex-shrink: 0;
+  }
+  .nav-accordion[open] > .nav-accordion__summary .nav-accordion__chevron {
+    transform: rotate(180deg);
+  }
+  .nav-accordion__body {
+    padding: 16px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  /* Editable Keyboard Shortcuts (Super Productivity style) */
+  .shortcuts-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+  }
+  .shortcuts-toolbar__toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .shortcuts-categories {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .shortcuts-category__head {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 10px;
+  }
+  .shortcuts-category__head h4 {
+    margin: 0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  #navigation-settings input[type="checkbox"] {
+    accent-color: var(--accent);
+    width: 16px;
+    height: 16px;
+  }
+  .shortcuts-edit-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
-    gap: 8px 24px;
+    gap: 12px 16px;
   }
-  .appearance-preferences-grid .form-group { min-width: 0; }
-  .appearance-preferences-grid .form-select { min-height: 44px; width: 100%; }
-  .appearance-preferences-form > .flex { padding-top: 12px; border-top: 1px solid var(--border); }
-  .appearance-preferences-form .btn { min-height: 44px; }
+  .shortcut-edit-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 6px);
+    background: var(--bg-secondary);
+    transition: border-color 140ms ease;
+  }
+  .shortcut-edit-field.is-custom {
+    border-color: rgb(var(--accent-rgb) / 0.55);
+  }
+  .shortcut-edit-field.has-conflict {
+    border-color: var(--danger);
+  }
+  .shortcut-edit-field__label {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .shortcut-edit-field__note {
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--text-muted);
+  }
+  .shortcut-edit-field__control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .shortcut-edit-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 36px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    caret-color: transparent;
+  }
+  .shortcut-edit-input.is-recording {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.28);
+    background: var(--bg-card);
+  }
+  .shortcut-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 6px);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .shortcut-action-btn:hover,
+  .shortcut-action-btn:focus-visible {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+  .shortcut-conflict-msg {
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--danger-text, var(--danger));
+  }
 
+  /* Task nav & sidebar config rows */
   .task-nav-mode-group {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
     margin-top: 6px;
   }
-
   .task-nav-pref-row {
     display: flex;
     align-items: center;
@@ -202,7 +804,6 @@ const NAV_PREFERENCE_KEYS: readonly AppearancePreferenceName[] = [
     border-radius: var(--radius-sm);
     background: var(--bg-secondary);
   }
-
   .task-nav-pref-row__check {
     display: inline-flex;
     align-items: center;
@@ -212,99 +813,127 @@ const NAV_PREFERENCE_KEYS: readonly AppearancePreferenceName[] = [
     font-weight: 500;
     cursor: pointer;
   }
-
-  .task-nav-pin-btn {
-    min-height: 36px;
-  }
-
-  :global(.sidebar-config-row) {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+  .task-nav-pin-btn { min-height: 36px; }
+  .nav-personal-handoff {
+    display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md, 10px);
     background: var(--bg-secondary);
   }
-
-  :global(.sidebar-config-row .drag-handle) {
-    grid-row: span 2;
-    padding: 0.5rem;
-    cursor: grab;
+  .nav-personal-handoff__copy {
+    flex: 1 1 260px;
+    min-width: 0;
+  }
+  .nav-personal-handoff__copy p {
+    margin: 4px 0 0;
+    font-size: 0.8125rem;
     color: var(--text-secondary);
-    user-select: none;
   }
-
-  :global(.sidebar-config-row__visibility) {
+  .nav-editor-toolbar-actions {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
-    min-height: 44px;
-    min-width: 0;
-    font-weight: 500;
-    overflow-wrap: anywhere;
+    gap: 8px;
   }
-
-  :global(.sidebar-config-row__moves) {
+  .nav-editor-inline-form {
     display: flex;
-    grid-column: 3;
-    grid-row: 1 / span 2;
-  }
-
-  :global(.sidebar-config-row__moves .btn),
-  :global(.sidebar-custom-link .btn) {
-    min-width: 44px;
-    min-height: 44px;
-    padding-inline: 0.5rem;
-  }
-
-  :global(.sidebar-config-row .sidebar-label-input) {
-    grid-column: 2;
-    min-width: 0;
-    width: 100%;
-  }
-
-  :global(.sidebar-custom-link) {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 0.5rem;
-    padding: 0.5rem;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    margin-bottom: 12px;
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md, 10px);
     background: var(--bg-secondary);
   }
-
-  :global(.sidebar-custom-link .form-input) {
-    width: 100%;
-    min-width: 0;
+  .nav-editor-inline-form[hidden] { display: none !important; }
+  .nav-editor-inline-form__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
   }
-
-  :global(.sidebar-custom-link .custom-item-href) {
-    grid-column: 1;
+  .nav-editor-inline-form__row .form-input { flex: 1 1 200px; min-width: 0; }
+  .nav-editor-inline-form__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+    gap: 8px;
   }
-
-  :global(.sidebar-custom-link .remove-custom-link) {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    align-self: center;
+  .nav-editor-inline-form__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
   }
-
-  @media (max-width: 480px) {
-    :global(.sidebar-config-row) {
-      grid-template-columns: minmax(0, 1fr) auto;
-    }
-
-    :global(.sidebar-config-row .drag-handle) {
-      display: none;
-    }
-
-    :global(.sidebar-config-row__moves) {
-      grid-column: 2;
-    }
-
-    :global(.sidebar-config-row .sidebar-label-input) {
-      grid-column: 1;
-    }
+  .nav-editor-icon-picker-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .nav-editor-icon-picker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .nav-editor-icon-choice {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 6px);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  }
+  .nav-editor-icon-choice:hover,
+  .nav-editor-icon-choice:focus-visible {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+  .nav-editor-icon-choice.is-selected {
+    border-color: var(--accent);
+    background: rgb(var(--accent-rgb) / 0.16);
+    color: var(--accent-text, var(--text-primary));
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+  .nav-editor-item-href {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    max-width: 14rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .nav-editor-danger-btn:hover,
+  .nav-editor-danger-btn:focus-visible {
+    background: rgba(239, 68, 68, 0.14) !important;
+    color: var(--danger, #ef4444) !important;
+  }
+  #sidebar-layout-editor [data-nav-drop="before"] { box-shadow: inset 0 2px 0 0 var(--accent); }
+  #sidebar-layout-editor [data-nav-drop="after"] { box-shadow: inset 0 -2px 0 0 var(--accent); }
+  #sidebar-layout-editor [data-nav-drop="into"] {
+    outline: 1px dashed var(--accent);
+    outline-offset: -1px;
+    background: rgb(var(--accent-rgb) / 0.06);
+  }
+  #sidebar-layout-editor [data-nav-empty-drop] {
+    padding: 10px 12px;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm, 6px);
+    text-align: center;
+  }
+  @media (max-width: 560px) {
+    .nav-accordion__meta,
+    .nav-editor-item-href { display: none; }
   }
 </style>

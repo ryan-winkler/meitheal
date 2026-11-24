@@ -5,12 +5,12 @@ import { TASK_COUNTS_CHANGED } from "./deferral-client"
 import { initIngressNavigation } from "./ingress-navigation"
 import { initStatePersistence } from "./ingress-state-persistence"
 import { pageLifecycle } from "./page-lifecycle"
+import { showToast } from "./toast"
 
 pageLifecycle.onPageLoad(initIngressNavigation)
 
 // ───── Sidebar Badge Hydration ─────
-// SSR renders the badge with server-side count, but it can be stale or 0
-// if the DB wasn't ready during SSR. This hydrates it client-side.
+// Refresh the active-task count when an integration mounts the optional badge.
 async function refreshSidebarBadge() {
   const badge = document.getElementById("nav-count-tasks")
   if (!badge) return
@@ -41,13 +41,11 @@ window.addEventListener("meitheal-tasks-changed", () =>
 
 // ───── Sync Notifications ─────
 // ⚠️ Intentionally permanent: app-wide sync notification handler.
-window.addEventListener("meitheal-sync", async (e: Event) => {
+window.addEventListener("meitheal-sync", (e: Event) => {
   const ce = e as CustomEvent
   if (ce.detail?.type === "conflict-resolved") {
-    const { showToast } = await import("@lib/toast")
     showToast("common.sync_conflict_merged", "success")
   } else if (ce.detail?.type === "sync-error" && ce.detail.error) {
-    const { showToast } = await import("@lib/toast")
     showToast(ce.detail.error, "error")
   }
 })
@@ -65,3 +63,15 @@ window.addEventListener("pagehide", () => {
 
 // ───── Ingress State Persistence ─────
 initStatePersistence()
+
+// ───── Lazy Tabler Function Tour Trigger ─────
+const launchTour = () => {
+  void import("./tabler-tour-controller").then(({ startFunctionTour }) => startFunctionTour())
+}
+window.addEventListener("meitheal:tour-start", launchTour)
+document.addEventListener("click", event => {
+  if (event.target instanceof Element && event.target.closest("[data-tour-start]")) {
+    event.preventDefault()
+    launchTour()
+  }
+})

@@ -1,0 +1,389 @@
+---
+import { TASK_NAV_TYPES } from "../../lib/task-nav-types"
+import Icon from "../ui/Icon.astro"
+
+interface Props {
+  id: string
+  variant: "sidebar" | "toolbar"
+  enabled?: boolean
+}
+const { id, variant, enabled = true } = Astro.props
+---
+
+{enabled ? (
+<div id={id} class:list={["task-creation", `task-creation--${variant}`]} data-task-creation={variant}>
+  <div class="task-creation__split">
+    <slot />
+    <button
+      type="button"
+      class="task-creation__toggle"
+      data-task-creation-toggle
+      data-tooltip="Task types"
+      aria-label="Task types"
+      aria-expanded="false"
+      aria-controls={`${id}-options`}
+      title="Task types"
+    >
+      <Icon name="chevron-down" size={14} sprite={true} />
+    </button>
+    <div id={`${id}-options`} class="task-creation__options" data-task-creation-options hidden>
+      <ul class="task-creation__list">
+        {TASK_NAV_TYPES.map(entry => (
+          <li class="task-creation__item" data-task-nav-item={entry.id}>
+            <button type="button" class="task-creation__action" data-create-task-kind={entry.kind}>
+              <Icon name={entry.icon} size={16} sprite={true} />
+              <span>New {entry.label.toLowerCase()}</span>
+            </button>
+            <button type="button" class="task-creation__pin" aria-pressed="false" data-task-nav-pin={entry.id}
+              aria-label={`Pin new ${entry.label.toLowerCase()}`} title={`Pin new ${entry.label.toLowerCase()}`}>
+              <Icon name="pin" size={15} sprite={true} />
+            </button>
+          </li>
+        ))}
+      </ul>
+      <a class="task-creation__action task-creation__settings" href="/settings#navigation-settings">
+        <Icon name="sliders" size={14} sprite={true} /> Choose visible types
+      </a>
+    </div>
+  </div>
+  <ul class="task-creation__list task-creation__pins" aria-label="Pinned task types" data-task-creation-pins hidden>
+    {TASK_NAV_TYPES.map(entry => (
+      <li class="task-creation__item" data-task-nav-pinned-item={entry.id} hidden>
+        <button type="button" class="task-creation__action" data-create-task-kind={entry.kind}
+          aria-label={`New ${entry.label.toLowerCase()}`} title={`New ${entry.label.toLowerCase()}`} data-tooltip={`New ${entry.label.toLowerCase()}`}>
+          <Icon name={entry.icon} size={16} sprite={true} />
+          <span>New {entry.label.toLowerCase()}</span>
+        </button>
+        {variant === "sidebar" && (
+          <button type="button" class="task-creation__pin task-creation__unpin" data-task-nav-pin={entry.id}
+            aria-label={`Unpin new ${entry.label.toLowerCase()}`} title={`Unpin new ${entry.label.toLowerCase()}`}>
+            <Icon name="x" size={14} sprite={true} />
+          </button>
+        )}
+      </li>
+    ))}
+  </ul>
+</div>
+) : <slot />}
+
+<style>
+  .task-creation,
+  .task-creation__split,
+  .task-creation__item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-inline-size: 0;
+  }
+
+  .task-creation--sidebar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .task-creation__split { position: relative; }
+  .task-creation__split > :global(#sidebar-rail-new-task) { flex: 1 1 auto; min-inline-size: 0; }
+
+  .task-creation__toggle,
+  .task-creation__action,
+  .task-creation__pin {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-block-size: 32px;
+    padding: 4px 8px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm, 6px);
+    background: transparent;
+    color: var(--text-secondary);
+    text-decoration: none;
+    text-align: start;
+    font-size: 0.8125rem;
+    cursor: pointer;
+  }
+
+  .task-creation__toggle,
+  .task-creation__pin {
+    justify-content: center;
+    min-inline-size: 30px;
+    padding: 0 4px;
+    flex-shrink: 0;
+  }
+
+  .task-creation__toggle {
+    border-color: var(--border);
+    background: var(--bg-card);
+  }
+
+  .task-creation__toggle[aria-expanded="true"] { background: var(--bg-hover); }
+  .task-creation__toggle[aria-expanded="true"] svg { rotate: 180deg; }
+  .task-creation__action { flex: 1 1 auto; min-inline-size: 0; }
+  .task-creation__action svg { flex: none; }
+
+  .task-creation__toggle:hover,
+  .task-creation__action:hover,
+  .task-creation__pin:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .task-creation__pin[aria-pressed="true"] {
+    background: rgb(var(--accent-rgb) / 0.14);
+    color: var(--text-primary);
+    border-color: currentColor;
+  }
+
+  .task-creation__options {
+    position: absolute;
+    inset-block-start: calc(100% + 4px);
+    inset-inline-start: 0;
+    z-index: 260;
+    inline-size: max(100%, 13rem);
+    max-block-size: min(24rem, calc(100dvh - 7rem));
+    overflow-y: auto;
+    padding: 4px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md, 8px);
+    background: var(--bg-card);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.26);
+  }
+
+  .task-creation__list {
+    display: flex;
+    flex-direction: column;
+    list-style: none;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+  }
+
+  [hidden] { display: none !important; }
+  .task-creation__settings { display: flex; }
+
+  .task-creation__list:has(.task-creation__item:not([hidden])) + .task-creation__settings {
+    margin-block-start: 4px;
+    border-block-start-color: var(--border);
+  }
+
+  .task-creation--toolbar .task-creation__options { inset-inline: auto 0; }
+  .task-creation--toolbar:not(:has(.task-creation__pins li:not([hidden]))) { display: contents; }
+
+  @media (min-width: 769px) {
+    :global(:root[data-appearance-navigation="navbar"]) .task-creation--sidebar {
+      flex-direction: row;
+      align-items: center;
+    }
+
+    :global(:root[data-appearance-navigation="navbar"]) .task-creation__options {
+      position: fixed;
+      inset-block-start: var(--task-creation-top, 64px);
+      inset-inline-start: var(--task-creation-left, 12px);
+      inset-inline-end: auto;
+      z-index: 260;
+      inline-size: 13.5rem;
+    }
+
+    .task-creation--toolbar .task-creation__pins,
+    :global(:root[data-appearance-navigation="navbar"]) .task-creation--sidebar .task-creation__pins {
+      flex-direction: row;
+      overflow-x: auto;
+      scrollbar-width: thin;
+    }
+
+    .task-creation--toolbar .task-creation__pins { max-inline-size: min(8.5rem, 14vw); }
+    :global(:root[data-appearance-navigation="navbar"]) .task-creation--sidebar .task-creation__pins { max-inline-size: 9rem; }
+
+    .task-creation--toolbar .task-creation__pins > li,
+    :global(:root[data-appearance-navigation="navbar"]) .task-creation--sidebar .task-creation__pins > li { flex: 0 0 auto; }
+    .task-creation--toolbar .task-creation__pins .task-creation__action,
+    :global(:root[data-appearance-navigation="navbar"]) .task-creation--sidebar .task-creation__pins .task-creation__action { padding-inline: 7px; }
+    .task-creation--toolbar .task-creation__pins span,
+    :global(:root[data-appearance-navigation="navbar"]) .task-creation--sidebar :is(.task-creation__pins span, .task-creation__unpin) { display: none; }
+
+    :global(:root:not([data-appearance-navigation="navbar"]) body.sidebar-collapsed) .task-creation--sidebar .task-creation__split {
+      flex-direction: column;
+    }
+
+    :global(:root:not([data-appearance-navigation="navbar"]) body.sidebar-collapsed) .task-creation--sidebar :is(.task-creation__toggle, .task-creation__pins .task-creation__action) {
+      inline-size: 40px;
+      justify-content: center;
+    }
+
+    :global(:root:not([data-appearance-navigation="navbar"]) body.sidebar-collapsed) .task-creation--sidebar :is(.task-creation__pins span, .task-creation__unpin) { display: none; }
+    :global(:root:not([data-appearance-navigation="navbar"]) body.sidebar-collapsed) .task-creation--sidebar .task-creation__options {
+      inset-block-start: 0;
+      inset-inline-start: calc(100% + 8px);
+    }
+
+    :global(:root:not([data-appearance-navigation="navbar"])) .task-creation--toolbar,
+    :global(:root:not([data-appearance-navigation="navbar"])) .task-creation--toolbar :is(.task-creation__split) {
+      display: contents;
+    }
+
+    :global(:root:not([data-appearance-navigation="navbar"])) .task-creation--toolbar :is(.task-creation__toggle, .task-creation__pins, .task-creation__options) {
+      display: none !important;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .task-creation--toolbar,
+    .task-creation--toolbar .task-creation__split { display: contents; }
+    .task-creation--toolbar :is(.task-creation__toggle, .task-creation__pins, .task-creation__options) { display: none !important; }
+  }
+
+  @media (min-width: 769px) and (max-height: 420px) {
+    :global(:root[data-appearance-navigation="sidebar"]) .task-creation--sidebar .task-creation__pins {
+      max-block-size: clamp(44px, 20dvh, 84px);
+      overflow-y: auto;
+      scrollbar-width: none;
+    }
+  }
+
+  @media (pointer: coarse) {
+    .task-creation__toggle, .task-creation__action, .task-creation__pin { min-block-size: 44px; }
+    .task-creation__toggle, .task-creation__pin { min-inline-size: 44px; }
+  }
+</style>
+
+<script>
+  import { pageLifecycle } from "../../lib/page-lifecycle"
+  import {
+    TASK_NAV_PREFS_EVENT,
+    TASK_NAV_PREFS_KEY,
+    getTaskNavTypeById,
+    isTaskNavTypeVisible,
+    readTaskNavPrefs,
+    toggleTaskNavPin,
+    type TaskNavPrefs,
+  } from "../../lib/task-nav-types"
+
+  const runtime = window as typeof window & { __meithealTaskCreationMenu?: AbortController }
+  runtime.__meithealTaskCreationMenu?.abort()
+  const controller = new AbortController()
+  runtime.__meithealTaskCreationMenu = controller
+  let boundSignal: AbortSignal | undefined
+  pageLifecycle.onPageLoad(pageSignal => {
+    if (controller.signal.aborted || pageSignal === boundSignal) return
+    boundSignal = pageSignal
+    const signal = AbortSignal.any([pageSignal, controller.signal])
+    document.querySelectorAll<HTMLElement>("[data-task-creation]").forEach(root => {
+      const trigger = root.querySelector<HTMLButtonElement>("[data-task-creation-toggle]")
+      const options = root.querySelector<HTMLElement>("[data-task-creation-options]")
+      const pins = root.querySelector<HTMLElement>("[data-task-creation-pins]")
+      if (!trigger || !options || !pins) return
+
+      const render = (prefs = readTaskNavPrefs()) => {
+        for (const row of options.querySelectorAll<HTMLElement>("[data-task-nav-item]")) {
+          const entry = getTaskNavTypeById(row.dataset.taskNavItem ?? "")
+          if (!entry) continue
+          row.hidden = !isTaskNavTypeVisible(prefs, entry.id)
+          row.querySelector("[data-task-nav-pin]")?.setAttribute("aria-pressed", String(prefs.pinned.includes(entry.id)))
+        }
+
+        const pinnedRows = new Map<string, HTMLElement>()
+        for (const row of pins.querySelectorAll<HTMLElement>("[data-task-nav-pinned-item]")) {
+          const id = row.dataset.taskNavPinnedItem
+          const entry = id && getTaskNavTypeById(id)
+          if (!entry) continue
+          pinnedRows.set(entry.id, row)
+          row.hidden = !prefs.pinned.includes(entry.id)
+          if (row.hidden && row.contains(document.activeElement)) trigger.focus()
+        }
+        const active = document.activeElement
+        for (const id of prefs.pinned) {
+          const row = pinnedRows.get(id)
+          if (row) pins.append(row)
+        }
+        if (active instanceof HTMLElement && pins.contains(active) && document.activeElement !== active) {
+          active.focus({ preventScroll: true })
+        }
+        pins.hidden = prefs.pinned.length === 0
+      }
+      const positionOptions = () => {
+        if (options.hidden) return
+        const isNavbar = document.documentElement.dataset.appearanceNavigation === "navbar" && innerWidth > 768
+        if (!isNavbar) {
+          options.style.removeProperty("--task-creation-top")
+          options.style.removeProperty("--task-creation-left")
+          return
+        }
+        const rect = trigger.getBoundingClientRect()
+        const menuWidth = options.offsetWidth || 216
+        const menuHeight = options.offsetHeight || 220
+        const preferRightAligned = root.dataset.taskCreation === "toolbar"
+        const rawLeft = preferRightAligned ? rect.right - menuWidth : rect.left - 80
+        const left = Math.max(12, Math.min(rawLeft, innerWidth - menuWidth - 12))
+        const top = Math.max(8, Math.min(rect.bottom + 8, innerHeight - menuHeight - 12))
+        options.style.setProperty("--task-creation-top", `${Math.round(top)}px`)
+        options.style.setProperty("--task-creation-left", `${Math.round(left)}px`)
+      }
+      const close = (returnFocus = false) => {
+        if (returnFocus) trigger.focus()
+        trigger.setAttribute("aria-expanded", "false")
+        options.hidden = true
+      }
+      close()
+      render()
+
+      matchMedia("(min-width: 769px)").addEventListener("change", () => close(), { signal })
+      window.addEventListener("resize", positionOptions, { signal })
+      window.addEventListener("scroll", positionOptions, { signal, passive: true })
+      trigger.addEventListener("click", event => {
+        event.stopPropagation()
+        if (!options.hidden) close()
+        else {
+          window.dispatchEvent(new CustomEvent("meitheal:nav-submenu-open", { detail: { id: root.id } }))
+          options.hidden = false
+          trigger.setAttribute("aria-expanded", "true")
+          positionOptions()
+          requestAnimationFrame(positionOptions)
+        }
+      }, { signal })
+      window.addEventListener("meitheal:nav-submenu-open", event => {
+        const id = (event as CustomEvent<{ id?: string }>).detail?.id
+        if (id !== root.id && !options.hidden) close()
+      }, { signal })
+      root.addEventListener("click", event => {
+        const target = event.target instanceof Element ? event.target : null
+        const pin = target?.closest<HTMLElement>("[data-task-nav-pin]")
+        const entry = getTaskNavTypeById(pin?.dataset.taskNavPin ?? "")
+        if (entry) {
+          event.preventDefault()
+          event.stopPropagation()
+          toggleTaskNavPin(readTaskNavPrefs(), entry.id)
+          return
+        }
+        const capture = target?.closest<HTMLButtonElement>("[data-create-task-kind]")
+        if (!capture) return
+        const kind = capture.dataset.createTaskKind
+        if (kind === "quick_capture") {
+          close(options.contains(capture))
+          void import("../../lib/preferred-quick-add")
+            .then(({ openQuickAdd }) => openQuickAdd(capture, signal))
+            .catch(() => { if (!signal.aborted) window.openNewTaskModal?.() })
+        } else if (kind === "standard_action" || kind === "shopping_item" || kind === "checklist" || kind === "calendar_event") {
+          close(options.contains(capture))
+          window.openNewTaskModal?.(kind)
+        }
+      }, { signal })
+      root.addEventListener("focusout", event => {
+        const next = event.relatedTarget
+        if (!options.hidden && next instanceof Node && !options.contains(next) && next !== trigger) close()
+      }, { signal })
+      root.addEventListener("keydown", event => {
+        if (event.key !== "Escape" || options.hidden) return
+        event.preventDefault()
+        close(true)
+      }, { signal })
+      document.addEventListener("click", event => {
+        if (!options.hidden && event.target instanceof Node && !root.contains(event.target)) close()
+      }, { signal })
+      window.addEventListener(TASK_NAV_PREFS_EVENT, event => {
+        render((event as CustomEvent<TaskNavPrefs>).detail)
+      }, { signal })
+      window.addEventListener("storage", event => {
+        if (event.key === TASK_NAV_PREFS_KEY || event.key === null) render()
+      }, { signal })
+    })
+  })
+</script>

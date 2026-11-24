@@ -6,14 +6,15 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { expect, test } from "@playwright/test"
 import { startCoreFixture } from "../scripts/task-pins-fixture"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
-function holdReview(url: string, origin: string, body: object) {
+function holdReview(url: string, origin: string, body: object, owner: Record<string, string>) {
   const data = JSON.stringify(body)
   let finish!: () => void
   let abort!: () => void
   const response = new Promise<number>((resolve, reject) => {
     const request = httpRequest(url, { method: "POST", headers: {
-      cookie: "feedback-fixture=admin", origin, "content-type": "application/json", "x-meitheal-fixture-held-body": "1",
+      ...owner, cookie: "feedback-fixture=admin", origin, "content-type": "application/json", "x-meitheal-fixture-held-body": "1",
     } }, result => {
       result.resume()
       result.once("end", () => resolve(result.statusCode ?? 0))
@@ -32,12 +33,17 @@ test("proposal credentials cannot write or approve; same-site current administra
   const child = startCoreFixture(work, true)
   child.stdout?.resume()
   child.stderr?.resume()
+  let agentApi
   let api
   try {
     const [info] = await once(child, "message", { signal: AbortSignal.timeout(10000) })
     const origin = `http://127.0.0.1:${info.port}`
     api = await playwright.request.newContext({ baseURL: origin, extraHTTPHeaders: { cookie: "feedback-fixture=admin", origin } })
     const path = (value: string) => info.configuredPath + value
+    const owner = await currentBoardWriteHeaders(api, "household", { origin, cookie: "feedback-fixture=admin" }, info.configuredPath)
+    await api.dispose()
+    api = await playwright.request.newContext({ baseURL: origin, extraHTTPHeaders: owner })
+    agentApi = await playwright.request.newContext({ baseURL: origin, extraHTTPHeaders: {} })
     const created = await api.post(path("/api/tasks"), { data: { title: "Original", description: "Existing description" } })
     expect(created.status()).toBe(201)
     const task = await created.json()
@@ -45,19 +51,20 @@ test("proposal credentials cannot write or approve; same-site current administra
     const minted = await api.post(path("/api/agent-tokens"), { data: { name: "Proposal fixture", scopes: ["tasks:propose"] } })
     expect(minted.status()).toBe(201)
     const token = (await minted.json()).token
-    const agent = { authorization: `Bearer ${token}`, cookie: "feedback-fixture=admin" }
-    expect((await api.put(taskPath, { headers: agent, data: { title: "Must not apply" } })).status()).toBe(403)
+    const agent = { authorization: `Bearer ${token}`, "x-meitheal-board-id": "household" }
+    const agentPath = `/api/tasks/${task.id}`
+    expect((await agentApi.put(agentPath, { headers: agent, data: { title: "Must not apply" } })).status()).toBe(403)
     expect((await api.post(taskPath + "/handoff", { headers: { cookie: "feedback-fixture=admin" }, data: { action: "claim" } })).status()).toBe(401)
-    const claimResponse = await api.post(taskPath + "/handoff", { headers: agent, data: { action: "claim" } })
+    const claimResponse = await agentApi.post(agentPath + "/handoff", { headers: agent, data: { action: "claim" } })
     expect(claimResponse.status()).toBe(200)
     const claim = await claimResponse.json()
-    expect((await api.post(taskPath + "/handoff", { headers: agent, data: { action: "propose", lease: crypto.randomUUID(), summary: "Wrong lease", updates: { title: "Wrong" } } })).status()).toBe(409)
-    const proposed = await api.post(taskPath + "/handoff", { headers: agent, data: { action: "propose", lease: claim.lease, summary: "Clarify", updates: { title: "<script>bad()</script>Reviewed title" } } })
+    expect((await agentApi.post(agentPath + "/handoff", { headers: agent, data: { action: "propose", lease: crypto.randomUUID(), summary: "Wrong lease", updates: { title: "Wrong" } } })).status()).toBe(409)
+    const proposed = await agentApi.post(agentPath + "/handoff", { headers: agent, data: { action: "propose", lease: claim.lease, summary: "Clarify", updates: { title: "<script>bad()</script>Reviewed title" } } })
     expect(proposed.status()).toBe(200)
     const hash = (await proposed.json()).hash
     expect((await (await api.get(taskPath)).json()).title).toBe("Original")
     const decision = { action: "accept", proposal_hash: hash }
-    expect((await api.post(taskPath + "/accept-proposal", { headers: agent, data: decision })).status()).toBe(403)
+    expect((await agentApi.post(agentPath + "/accept-proposal", { headers: agent, data: decision })).status()).toBe(403)
     expect((await api.post(taskPath + "/accept-proposal", { headers: { cookie: "feedback-fixture=member" }, data: decision })).status()).toBe(403)
     expect((await api.post(taskPath + "/accept-proposal", { headers: { origin: "https://unrelated.invalid" }, data: decision })).status()).toBe(403)
     const accepted = await api.post(taskPath + "/accept-proposal", { data: decision })
@@ -65,8 +72,8 @@ test("proposal credentials cannot write or approve; same-site current administra
     expect((await (await api.get(taskPath)).json()).title).toBe("Reviewed title")
     expect((await api.post(taskPath + "/accept-proposal", { data: decision })).status()).toBe(409)
 
-    const nextClaim = await (await api.post(taskPath + "/handoff", { headers: agent, data: { action: "claim" } })).json()
-    const next = await api.post(taskPath + "/handoff", { headers: agent, data: {
+    const nextClaim = await (await agentApi.post(agentPath + "/handoff", { headers: agent, data: { action: "claim" } })).json()
+    const next = await agentApi.post(agentPath + "/handoff", { headers: agent, data: {
       action: "propose", lease: nextClaim.lease, summary: "Delayed review", updates: { title: "Must not apply after revocation" },
     } })
     expect(next.status()).toBe(200)
@@ -75,7 +82,7 @@ test("proposal credentials cannot write or approve; same-site current administra
     try {
       const beforeHistory = db.prepare("SELECT count(*) AS count FROM task_activity_log WHERE task_id = ?").get(task.id)
       const bodyStarted = once(child, "message", { signal: AbortSignal.timeout(4000) })
-      const held = holdReview(origin + taskPath + "/accept-proposal", origin, nextDecision)
+      const held = holdReview(origin + taskPath + "/accept-proposal", origin, nextDecision, owner)
       expect((await bodyStarted)[0]).toEqual({ participantBodyStarted: true })
       const changed = once(child, "message", { signal: AbortSignal.timeout(4000) })
       child.send({ type: "fixture-core", user: "admin", isOwner: false, groupIds: ["system-users"] })
@@ -89,7 +96,7 @@ test("proposal credentials cannot write or approve; same-site current administra
       child.send({ type: "fixture-core", user: "admin", isOwner: true, groupIds: ["system-admin"] })
       expect((await restored)[0]).toEqual({ coreChanged: true })
       const cancelledBody = once(child, "message", { signal: AbortSignal.timeout(4000) })
-      const cancelled = holdReview(origin + taskPath + "/accept-proposal", origin, nextDecision)
+      const cancelled = holdReview(origin + taskPath + "/accept-proposal", origin, nextDecision, owner)
       const cancelledResponse = cancelled.response.catch(() => 0)
       expect((await cancelledBody)[0]).toEqual({ participantBodyStarted: true })
       cancelled.abort()
@@ -98,6 +105,7 @@ test("proposal credentials cannot write or approve; same-site current administra
       expect(db.prepare("SELECT count(*) AS count FROM task_activity_log WHERE task_id = ?").get(task.id)).toEqual(beforeHistory)
     } finally { db.close() }
   } finally {
+    await agentApi?.dispose()
     await api?.dispose()
     if (child.exitCode === null && child.signalCode === null) {
       const exited = once(child, "exit")

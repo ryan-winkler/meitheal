@@ -3,7 +3,10 @@
  * @domain kanban
  */
 import type { KanbanRefreshFocus } from "./kanban-page-controller"
+import { toggleCardPromotion } from "./kanban-promotion"
 import { confirmDialog } from "@lib/confirm-dialog"
+import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
+import { normalizeEditableTaskType } from "@lib/task-editor-fields"
 import { showToast } from "@lib/toast"
 import { isDeferralTerminalStatus } from "@domains/tasks/persistence/task-deferral-status"
 import { allowsDeferral, notifyTaskCountsChanged, readDeferralGuard, writeDeferral } from "@lib/deferral-client"
@@ -14,6 +17,7 @@ export function initContextMenu(
   moveTask: (card: HTMLElement, lane: HTMLElement) => Promise<void>,
   refreshBoard: (focus?: KanbanRefreshFocus) => Promise<void>,
   signal: AbortSignal,
+  pendingPromotions: Set<string> = new Set(),
 ): void {
   const menu = document.createElement("div")
   menu.id = "kanban-card-menu"
@@ -23,7 +27,6 @@ export function initContextMenu(
   document.body.append(menu)
 
   let trigger: HTMLButtonElement | null = null
-  const pendingPromotions = new Set<string>()
   let deferralBusy = false
   const workers = navigator.serviceWorker
   let workerCheck = allowsDeferral()
@@ -116,7 +119,7 @@ export function initContextMenu(
     closeMenu()
     trigger = btn
     btn.setAttribute("aria-expanded", "true")
-    menu.setAttribute("aria-label", btn.title)
+    menu.setAttribute("aria-label", btn.title || "Task actions")
     menu.replaceChildren()
 
     const current = card.closest<HTMLElement>(".kanban-column")
@@ -125,27 +128,8 @@ export function initContextMenu(
       const action = promoted
         ? window.mI18n?.get("kanban.demote_card") ?? "Remove promotion"
         : window.mI18n?.get("kanban.promote_card") ?? "Promote to top"
-      addAction(action, async () => {
-        pendingPromotions.add(id)
-        try {
-          const response = await fetch(buildTaskApiUrl(id), {
-            method: "PATCH",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ is_promoted: !promoted }),
-            signal,
-          })
-          if (!response.ok) throw new Error("Promotion rejected")
-          if (signal.aborted) return
-          showToast(promoted
-            ? window.mI18n?.get("kanban.card_demoted") ?? "Promotion removed"
-            : window.mI18n?.get("kanban.card_promoted") ?? "Promoted to the top of the lane")
-          const lane = current?.dataset.status
-          await refreshBoard(lane ? { taskId: id, lane, firstPage: !promoted } : { taskId: id })
-        } catch {
-          if (!signal.aborted) showToast(window.mI18n?.get("kanban.promotion_failed") ?? "Couldn’t save the promotion. Try again.", "error")
-        } finally {
-          pendingPromotions.delete(id)
-        }
+      addAction(action, () => {
+        void toggleCardPromotion({ card, buildTaskApiUrl, refreshBoard, pendingPromotions, signal })
       })
     }
 
@@ -159,11 +143,33 @@ export function initContextMenu(
       if (title) addAction(title, () => { void moveTask(card, lane) })
     }
 
+    addAction("Add child item", () => {
+      if (window.openNewTaskModal) {
+        window.openNewTaskModal("standard_action", {
+          parent: {
+            parentId: id,
+            parentTitle: card.dataset.title || "Task",
+            parentTicketKey: card.querySelector(".kanban-ticket-key")?.textContent?.trim() || null,
+            parentType: normalizeEditableTaskType(card.dataset.taskType),
+            areaId: card.dataset.area || null,
+            projectId: card.dataset.areaId || null,
+          },
+          priority: Number(card.dataset.priority) || 3,
+        })
+      }
+    })
+
     const deleteAction = addAction(window.mI18n?.get("kanban.delete_task") ?? "Delete task", async () => {
-      const confirmed = await confirmDialog({ message: "Delete this task permanently?", variant: "danger", confirmText: "Delete" })
-      if (!confirmed) return
+      const confirmed = await confirmDialog({ message: "Delete this task permanently?", variant: "danger", confirmText: "Delete", signal })
+      if (!confirmed || signal.aborted) return
       try {
-        const res = await fetch(buildTaskApiUrl(id), { method: "DELETE" })
+        const ctx = currentTaskApiContext()
+        const version = Number(card.dataset.version)
+        const res = await fetch(buildTaskApiUrl(id), {
+          method: "DELETE",
+          ...(ctx ? { headers: taskApiHeaders(ctx, { "content-type": "application/json" }) } : {}),
+          ...(Number.isSafeInteger(version) ? { body: JSON.stringify({ version }) } : {}),
+        })
         if (res.ok) {
           const lane = current instanceof HTMLElement ? current.dataset.status : undefined
           showToast("Task deleted")
@@ -209,6 +215,7 @@ export function initContextMenu(
         event.preventDefault()
         closeMenu(true)
       } else if (!event.shiftKey && event.target === actions[actions.length - 1]) {
+        event.preventDefault()
         closeMenu(true)
       }
     }

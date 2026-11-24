@@ -1,6 +1,6 @@
 import { commentMentions } from "@lib/comment-mentions"
-import { buildTaskPath, buildTaskPermalink } from "@lib/task-detail-handoff"
-import { ticketIdFromPath } from "@lib/task-page-url"
+import { buildTaskPermalink } from "@lib/task-detail-handoff"
+import { taskDetailPath, ticketIdFromPath } from "@lib/task-page-url"
 
 function getReferenceTaskId(path: string): string | null {
   const prefix = "/tasks?open="
@@ -9,7 +9,7 @@ function getReferenceTaskId(path: string): string | null {
     return id && path === `/tasks?${new URLSearchParams({ open: id })}` ? id : null
   }
   const id = ticketIdFromPath(path)
-  return id && path === buildTaskPath(id) ? id : null
+  return id && path === taskDetailPath(id) ? id : null
 }
 
 export function resolveDescriptionTaskReferences(description: HTMLElement): void {
@@ -26,7 +26,7 @@ export function renderCommentTaskReferences(body: HTMLElement, content: string, 
     mention.textContent = "@" + label
     return { start, end, element: mention as HTMLElement }
   })
-  for (const match of content.matchAll(/\[(MTH-[0-9]+|Task)\]\((\/(?:tasks\?open=|tickets\/)[^\s)]+)\)/g)) {
+  for (const match of content.matchAll(/\[([A-Z0-9]+-[0-9]+|Task)\]\((\/(?:tasks\?open=|tickets\/)[^\s)]+)\)/g)) {
     const id = getReferenceTaskId(match[2] ?? "")
     if (!id) continue
     const link = document.createElement("a")

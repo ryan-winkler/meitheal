@@ -4,7 +4,9 @@
  * Extracted from the monolithic settings-controller.ts to provide
  * reusable save/load and CSS sanitization helpers.
  */
+import { byId, domEl } from "@lib/dom-helpers"
 import { createClientLogger } from "@lib/client-logger"
+import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
 import { settingsStore } from "@lib/settings-store"
 
@@ -56,6 +58,40 @@ export function settingsAction(handler: (event: Event) => unknown): (event: Even
 }
 
 
+
+export { byId, domEl }
+
+/** Trigger a client-side file download from text/JSON content. */
+export function downloadBlob(content: BlobPart, mimeType: string, filename: string, appendToBody = false): void {
+  const url = URL.createObjectURL(new Blob([content], { type: mimeType }))
+  const link = domEl("a")
+  link.href = url
+  link.download = filename
+  if (appendToBody) document.body.append(link)
+  link.click()
+  if (appendToBody) link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+/** Defer initial fetches for collapsed Settings sections until revealed. */
+export function whenSectionVisible(target: Element | null, run: () => void): void {
+  if (!target) return
+  const section = target.closest<HTMLElement>("[data-settings-shell-section]")
+  if (!section || !section.hidden) {
+    run()
+    return
+  }
+  let done = false
+  const observer = new MutationObserver(() => {
+    if (!section.hidden && !done) {
+      done = true
+      observer.disconnect()
+      run()
+    }
+  })
+  observer.observe(section, { attributes: true, attributeFilter: ["hidden"] })
+  pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), { once: true })
+}
 
 /** Load all settings from the API */
 export async function loadAllSettings(): Promise<Record<string, unknown>> {

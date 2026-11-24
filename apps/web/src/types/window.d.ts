@@ -15,7 +15,7 @@ interface MeithealWindowExtensions {
   openTaskDetail?: (taskId: string, commentTarget?: string | null, search?: import("../lib/task-detail-handoff").SearchDetailHandoff) => void;
   openPinnedTaskDetail?: (taskId: string, reconcile: () => void) => void;
   /** Opens the new task creation modal */
-  openNewTaskModal?: () => void;
+  openNewTaskModal?: (kind?: import("@meitheal/domain-tasks").TaskKind, options?: import("../lib/task-editor-draft-stack").OpenNewTaskOptions) => void;
 
   // === Settings UI ===
   /** Expands an integration settings card by its DOM ID */
@@ -74,10 +74,20 @@ interface MeithealWindowExtensions {
   // === Intervals / Singleton Guards ===
   /** Health check interval ID (prevents accumulation across navigations) */
   __healthIntervalId?: ReturnType<typeof setInterval>;
-  /** PWA banner event listeners already bound */
-  __pwaBannerListenersBound?: boolean;
-  /** PWA compact install listeners already bound */
-  __pwaCompactListenersBound?: boolean;
+  /** Global AbortController for PWA banner listeners across HMR */
+  __pwaBannerGlobalAc?: AbortController;
+  /** Teardown active PWA banner listeners & timers across HMR / swaps */
+  __pwaBannerTeardown?: () => void;
+  /** Global AbortController for layout PWA update listeners across HMR */
+  __meithealPwaGlobalAc?: AbortController;
+  /** Global AbortController for Settings App & Companion listeners across HMR */
+  __pwaSettingsHmrAc?: AbortController;
+  /** Global AbortController for Pomodoro lifecycle listeners across HMR */
+  __pomodoroGlobalAc?: AbortController;
+  /** Global AbortController for toast lifecycle listeners across HMR */
+  __meithealToastGlobalAc?: AbortController;
+  /** Global AbortController for toast event bridge listeners across HMR */
+  __meithealToastInitAc?: AbortController;
 
   // === Cached Data ===
   /** Cached users list from API (used by NewTaskModal assignee dropdown) */
@@ -91,7 +101,11 @@ interface MeithealWindowExtensions {
   /** Filter visibility check registered by FilterToolbar */
   __isTaskVisible?: (el: HTMLElement, state?: any) => boolean;
   /** Show toast notification */
-  showToast?: (message: string, type?: string) => void;
+  showToast?: typeof import("../lib/toast").showToast;
+  /** Unified toast dispatcher registered by @lib/toast */
+  __meithealToast?: typeof import("../lib/toast").pushToast;
+  /** Early inline <head> toast queue drained on @lib/toast hydration */
+  __meithealToastQueue?: Array<import("../lib/toast").ToastOptions>;
   /** Start pomodoro timer for a task */
   startPomodoro?: (taskId?: string) => void;
 
@@ -105,16 +119,19 @@ interface MeithealWindowExtensions {
   // === Calendar ===
   /** Pre-fill date for new task creation from calendar day drawer */
   __prefillTaskDate?: string;
-}
 
-/** BeforeInstallPromptEvent — not in lib.dom.d.ts */
-interface BeforeInstallPromptEvent extends Event {
-  readonly platforms: string[];
-  readonly userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
-  prompt(): Promise<void>;
+  // === Dynamic interval guards ===
+  [key: `__meitheal_interval_${string}`]: ReturnType<typeof setInterval> | undefined;
 }
 
 declare global {
+  /** BeforeInstallPromptEvent — not in lib.dom.d.ts */
+  interface BeforeInstallPromptEvent extends Event {
+    readonly platforms: string[];
+    readonly userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+    prompt(): Promise<void>;
+  }
+
   interface Window extends MeithealWindowExtensions {}
 }
 

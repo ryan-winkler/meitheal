@@ -1,3 +1,4 @@
+import { boardScopeErrorResponse, withBoardScope } from "@lib/board-http"
 /**
  * POST /api/tasks/reorder — Persist kanban card positions within a lane.
  *
@@ -18,10 +19,20 @@ import { TaskRepository } from "@domains/tasks/persistence/task-repository"
 import { apiLogger, logApiError } from "../../../lib/api-logger"
 import { apiJson } from "../../../lib/api-response"
 
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = withBoardScope({ resource: "task", action: "edit" }, async ({ request }, scope) => {
   try {
-    const body = await request.json() as Record<string, unknown>
+    const body = await request.json().catch(() => null) as Record<string, unknown> | null
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return new Response(JSON.stringify({ error: "Expected a JSON object" }), {
+        status: 400, headers: { "content-type": "application/json" },
+      })
+    }
     if (hasBoardSelection(body)) return unavailableBoardResponse()
+    if (body.scope !== undefined && body.scope !== "kanban" && body.scope !== "table") {
+      return new Response(JSON.stringify({ error: "scope must be 'kanban' or 'table'" }), {
+        status: 400, headers: { "content-type": "application/json" },
+      })
+    }
     if (body && "task_id" in body) {
       const { task_id, anchor_id, lane, before } = body
       if (typeof task_id !== "string" || typeof anchor_id !== "string" || task_id === anchor_id ||
@@ -31,7 +42,7 @@ export const POST: APIRoute = async ({ request }) => {
         })
       }
       await ensureSchema()
-      const repo = new TaskRepository(getPersistenceClient())
+      const repo = new TaskRepository(getPersistenceClient(), scope)
       const ok = await repo.reorderKanbanCard({ id: task_id, anchorId: anchor_id, lane, before })
       return ok ? apiJson({ ok }) :
         apiJson({ error: "The cards are no longer available in the same lane and promotion group", errorCode: "TASK_ORDER_CONFLICT" }, 409)
@@ -50,22 +61,30 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     await ensureSchema()
-    const repo = new TaskRepository(getPersistenceClient())
+    const repo = new TaskRepository(getPersistenceClient(), scope)
+    const ok = body.scope === "table"
+      ? await repo.reorderTableTasks(body.ordered_ids)
+      : await repo.reorderTasks(body.ordered_ids)
 
-    if (!await repo.reorderTasks(body.ordered_ids)) {
-      return apiJson({ error: "The requested cards are no longer available to reorder", errorCode: "TASK_ORDER_CONFLICT" }, 409)
+    if (!ok) {
+      return apiJson({ error: "The requested tasks are no longer available to reorder", errorCode: "TASK_ORDER_CONFLICT" }, 409)
     }
-    apiLogger.log("info", { event: "reorder.success", domain: "tasks", component: "reorder", request_id: "kanban-reorder", message: `Reordered ${body.ordered_ids.length} tasks` })
+    apiLogger.log("info", { event: "reorder.success", domain: "tasks", component: "reorder", request_id: body.scope === "table" ? "table-reorder" : "kanban-reorder", message: `Reordered ${body.ordered_ids.length} tasks` })
 
     return new Response(
       JSON.stringify({ ok: true, count: body.ordered_ids.length }),
       { status: 200, headers: { "content-type": "application/json" } },
     )
   } catch (err: unknown) {
+    if (err && typeof err === "object" && "errorCode" in err && err.errorCode === "unavailable") {
+      return apiJson({ error: "The cards are no longer available to reorder", errorCode: "TASK_ORDER_CONFLICT" }, 409)
+    }
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
     logApiError("POST", "/api/tasks/reorder", err)
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { "content-type": "application/json" },
     })
   }
-}
+})

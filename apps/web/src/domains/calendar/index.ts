@@ -9,6 +9,7 @@ export {
   stopCalendarSync,
   syncFromHA,
   pushTaskToCalendar,
+  buildCalendarDescription,
   removeTaskCalendarEvent,
   getCalendarSyncStatus,
   getCalendarSyncConfigs,
@@ -20,5 +21,14 @@ export {
   type CalendarSyncConfig,
   type CalendarSyncMode,
   type CalendarSyncStatusEntity,
-  type TaskCalendarMeta,
+  type TaskCalendarMeta
 } from "./calendar-bridge"
+export { CALENDAR_ENTITY_SETTINGS, configuredCalendarEntityIds } from "./resolve-calendar-entities"
+
+export type { CalDAVOperationOptions } from "./caldav-client"
+export {
+  isHtmlDescription,
+  stripHtmlTags,
+  normalizeCalendarDescription,
+  isMeithealOriginatedEvent,
+} from "./calendar-event-identity"

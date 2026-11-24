@@ -2,11 +2,7 @@ import { expect, test, type Page } from "@playwright/test"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 const targets = [
-  { selector: ".dashboard-hero__title", minimum: 3 },
-  { selector: ".dashboard-hero__description", minimum: 4.5 },
-  { selector: ".dashboard-hero__eyebrow", minimum: 4.5 },
-  { selector: ".dashboard-hero__status-label", minimum: 4.5 },
-  { selector: ".dashboard-hero__chip", minimum: 4.5 },
+  { selector: "#dashboard-overview h1", minimum: 3 },
   { selector: ".stats-grid .stat-value", minimum: 3 },
   { selector: ".stats-grid .stat-label", minimum: 4.5 },
 ]
@@ -89,18 +85,18 @@ test.describe("Dashboard contrast", () => {
 
   test("hidden metric text cannot receive a passing contrast proof", async ({ page }) => {
     await page.goto("/")
-    await expect(page.locator(".dashboard-hero__title")).toBeVisible()
-    const heroStyle = await page.locator(".dashboard-hero__title").getAttribute("style")
+    await expect(page.locator("#dashboard-overview h1")).toBeVisible()
+    const heroStyle = await page.locator("#dashboard-overview h1").getAttribute("style")
     const metric = page.locator("#dashboard-stat-open-count")
     await expect(metric).toBeVisible()
     await page.addStyleTag({ content: "#dashboard-stat-open-count { visibility: hidden !important }" })
     await expect(metric).toBeHidden()
     await expect(paintedTextContrast(page)).rejects.toThrow("Visible text required")
-    expect(await page.locator(".dashboard-hero__title").getAttribute("style")).toBe(heroStyle)
+    expect(await page.locator("#dashboard-overview h1").getAttribute("style")).toBe(heroStyle)
   })
 
   for (const [theme, system] of [["light", "dark"], ["dark", "light"], ["auto", "light"], ["auto", "dark"]] as const) {
-    test(`${theme} with system ${system} keeps hero and metric text readable`, async ({ page }, testInfo) => {
+    test(`${theme} with system ${system} keeps the heading and metric text readable`, async ({ page }, testInfo) => {
       const errors: string[] = []
       page.on("pageerror", error => errors.push(error.message))
       await page.emulateMedia({ colorScheme: system })
@@ -109,7 +105,7 @@ test.describe("Dashboard contrast", () => {
         localStorage.setItem("meitheal_sidebar_collapsed", "true")
       }, theme)
       await page.goto("/")
-      await expect(page.locator(".dashboard-hero__title")).toBeVisible()
+      await expect(page.locator("#dashboard-overview h1")).toBeVisible()
       await page.evaluate(async () => {
         await document.fonts.ready
         // Read the settled paint after entrance fades, without waiting on looping effects.

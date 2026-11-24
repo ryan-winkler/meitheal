@@ -110,6 +110,16 @@ test.describe("License Key Verification", () => {
     }
   });
 
+  test("validates signed claim types and time boundaries", () => {
+    const now = Math.floor(Date.now() / 1000)
+    const verify = (claims: Record<string, unknown>) =>
+      verifyLicenseKeyWithPublicKey(createTestJWT({ iss: "meitheal", ...claims }), TEST_PUBLIC_KEY_PEM)
+    for (const exp of [0, now]) expect(verify({ exp })).toMatchObject({ valid: false, reason: "expired" })
+    for (const claims of [{ exp: null }, { exp: "0" }, { nbf: now + 3600 }, { nbf: "0" }, { sub: 42 }])
+      expect(verify(claims).valid).toBe(false)
+    expect(verify({ nbf: now })).toMatchObject({ valid: true, expiresAt: null, email: "unknown" })
+  })
+
   test("valid key: no-expiry token is valid", () => {
     const now = Math.floor(Date.now() / 1000);
     const token = createTestJWT({

@@ -17,18 +17,21 @@ test.describe("Tasks Page — /tasks default view", () => {
   test("opens the Kanban view by default", async ({ page }) => {
     await page.goto("/tasks")
     await expect(page).toHaveURL(/\/tasks#kanban$/)
-    await expect(page.getByRole("toolbar", { name: "Kanban view actions" })).toBeVisible()
+    await expect(page.locator("#tasks-view-kanban")).toBeVisible()
+    const actions = page.locator("#tasks-filter-row").getByRole("group", { name: "Kanban board actions" })
+    await expect(actions.getByRole("link", { name: "Deferred", exact: true })).toBeVisible()
   })
 })
 
 test.describe("Progress Parent Page — /progress", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
+  test.use({ reducedMotion: "reduce" })
 
   test.beforeEach(async ({ page }) => {
     await page.goto("/progress")
   })
 
-  test("switches from Pillars to Routines with stat cards and helper", async ({ page }) => {
+  test("switches from Pillars to Routines and offers direct creation and browsing", async ({ page }) => {
     const pillars = page.locator("#progress-section-pillars")
     await expect(pillars).toHaveAttribute("aria-hidden", "false")
     await expect(pillars).toBeVisible()
@@ -41,17 +44,8 @@ test.describe("Progress Parent Page — /progress", () => {
     const section = page.locator("#progress-section-routines")
     await expect(section).toBeVisible()
 
-    // Helper visible
-    const helper = page.locator("[data-helper-id='progress-routines-explainer']")
-    await expect(helper).toBeVisible()
-
-    // Stat cards
-    const statCards = section.locator(".stat-card")
-    await expect(statCards.first()).toBeVisible()
-
-    // Deep link
-    const link = section.locator("a[href='/habits']")
-    await expect(link).toBeVisible()
+    await expect(section.getByRole("link", { name: "New Routine" })).toHaveAttribute("href", "/habits?board_id=household&new=1")
+    await expect(section.getByRole("link", { name: "View Routines" })).toHaveAttribute("href", "/habits?board_id=household")
   })
 
   test("navigating to goals hash shows goals section", async ({ page }) => {
@@ -61,9 +55,7 @@ test.describe("Progress Parent Page — /progress", () => {
     await expect(goalsSection).toHaveAttribute("aria-hidden", "false")
     await expect(goalsSection).toBeVisible()
 
-    // Goals helper
-    const helper = page.locator("[data-helper-id='progress-goals-explainer']")
-    await expect(helper).toBeVisible()
+    await expect(goalsSection.getByRole("button", { name: "+ New Goal" })).toBeVisible()
   })
 
   test("navigating to achievements hash shows achievements section", async ({ page }) => {
@@ -82,46 +74,46 @@ test.describe("Planning Parent Page — /planning", () => {
     await page.goto("/planning")
   })
 
-  test("renders spaces section as default view", async ({ page }) => {
-    const spacesSection = page.locator("#planning-section-spaces")
-    await expect(spacesSection).toHaveAttribute("aria-hidden", "false")
-    await expect(spacesSection).toBeVisible()
+  test("renders Eisenhower as the default planning view", async ({ page }) => {
+    const matrix = page.locator("#planning-section-eisenhower")
+    await expect(matrix).toHaveAttribute("aria-hidden", "false")
+    await expect(matrix).toBeVisible()
   })
 
   test("section links keep native Tab order and announce the current location", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 960 })
     const navigation = page.locator("#planning-bar-tabs")
-    const spaces = navigation.locator('a[href="#spaces"]')
     const eisenhower = navigation.locator('a[href="#eisenhower"]')
     const triage = navigation.locator('a[href="#triage"]')
+    const rice = navigation.locator('a[href="#rice"]')
 
-    await expect(spaces).toHaveAttribute("aria-current", "location")
-    await expect(navigation.locator("a[aria-selected]")).toHaveCount(0)
-    await spaces.focus()
-    await page.keyboard.press("Tab")
-    await expect(eisenhower).toBeFocused()
-    await page.keyboard.press("Enter")
     await expect(eisenhower).toHaveAttribute("aria-current", "location")
-    await expect(page.locator("#planning-section-eisenhower")).toBeVisible()
+    await expect(navigation.locator("a[aria-selected]")).toHaveCount(0)
+    await eisenhower.focus()
+    await page.keyboard.press("Tab")
+    await expect(triage).toBeFocused()
+    await page.keyboard.press("Enter")
+    await expect(triage).toHaveAttribute("aria-current", "location")
+    await expect(page.locator("#planning-section-triage")).toBeVisible()
 
     await page.keyboard.press("ArrowRight")
-    await expect(triage).toBeFocused()
-    await expect(triage).toHaveAttribute("aria-current", "location")
+    await expect(rice).toBeFocused()
+    await expect(rice).toHaveAttribute("aria-current", "location")
     await expect(navigation.locator('a[aria-current="location"]')).toHaveCount(1)
     await page.goBack()
-    await expect(eisenhower).toHaveAttribute("aria-current", "location")
-    await page.goForward()
     await expect(triage).toHaveAttribute("aria-current", "location")
+    await page.goForward()
+    await expect(rice).toHaveAttribute("aria-current", "location")
   })
 
-  test("renders planning helper with correct variant", async ({ page }) => {
-    const helper = page.locator("[data-helper-id='spaces-explainer']")
-    await expect(helper).toBeVisible()
-    await expect(helper).toHaveClass(/inline-helper--info/)
+  test("opens the Boards directory from a legacy Spaces bookmark", async ({ page }) => {
+    await page.goto("/planning#spaces")
+    await expect(page).toHaveURL(/\/boards$/)
+    await expect(page.getByRole("link", { name: "Household" }).first()).toBeVisible()
   })
 
-  test("eisenhower, triage, and rice sections are hidden by default", async ({ page }) => {
-    await expect(page.locator("#planning-section-eisenhower")).toHaveAttribute("hidden", "")
+  test("only the default section is visible on first load", async ({ page }) => {
+    await expect(page.locator("#planning-section-spaces")).toHaveAttribute("hidden", "")
     await expect(page.locator("#planning-section-triage")).toHaveAttribute("hidden", "")
     await expect(page.locator("#planning-section-rice")).toHaveAttribute("hidden", "")
   })

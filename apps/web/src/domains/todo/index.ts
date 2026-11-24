@@ -14,9 +14,10 @@ export {
   pushTaskToTodoList,
   removeTaskFromTodoList,
   syncTodoFromHA,
+  mergeHATodoItems,
 } from "./todo-bridge";
 
-export type { TodoSyncConfig } from "./todo-bridge";
+export type { TodoSyncConfig, TodoSyncStatus } from "./todo-bridge";
 
 export {
   haStatusToMeitheal,

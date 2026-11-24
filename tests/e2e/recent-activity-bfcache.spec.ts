@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { chromium, expect, test, type Browser } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { recentActivityPersonKey } from "../../apps/web/src/domains/tasks/persistence/recent-activity"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
@@ -33,32 +34,43 @@ for (const revoked of [false, true]) {
       await cdp.send("Page.enable")
       let historyDiagnostic: unknown
       cdp.on("Page.backForwardCacheNotUsed", event => { historyDiagnostic = event.notRestoredExplanationsTree })
-      // Isolate history restoration from the ordinary event stream.
+      // Unrelated no-store fetches can make Chromium discard the history entry.
+      // Keep the actual activity document and its permission refresh in the test.
       await page.route(/\/api\/sse(?:[/?]|$)/, route => route.fulfill({ status: 204 }))
+      await page.route(/\/api\/boards$/, route => route.fulfill({ json: { boards: [] } }))
+      await page.route(url => url.pathname.startsWith(prefix + "/"), route => {
+        const request = route.request()
+        if (request.isNavigationRequest()) return route.fallback()
+        const path = new URL(request.url()).pathname.slice(prefix.length)
+        // App-wide warmups are unrelated to restoring and rechecking the activity document.
+        if (["/api/pomodoro", "/api/task-pins"].includes(path) ||
+            (request.resourceType() === "fetch" && ["/", "/boards", "/planning", "/progress", "/settings", "/tasks", "/today", "/upcoming"].includes(path))) {
+          return route.fulfill({ status: 204 })
+        }
+        return route.fallback()
+      })
       const prefixMessage = "activity-history-snapshot:"
       let snapshot: unknown
       page.on("console", message => {
         if (message.text().startsWith(prefixMessage)) snapshot = JSON.parse(message.text().slice(prefixMessage.length))
       })
-      await page.addInitScript(prefixMessage => {
+      await page.addInitScript(({ prefixMessage, sentinel }) => {
         window.addEventListener("pageshow", event => {
           if (!event.persisted) return
           const section = document.querySelector<HTMLElement>("[data-recent-activity]")
           console.info(prefixMessage + JSON.stringify({
-            hidden: section?.hidden,
-            rows: section?.querySelectorAll("[data-activity-event]").length,
-            filters: section?.querySelectorAll("select").length,
+            hidden: section?.hidden ?? true,
+            rows: section?.querySelectorAll("[data-activity-event]").length ?? 0,
+            filters: section?.querySelectorAll("select").length ?? 0,
+            retainedSentinel: document.body.textContent?.includes(sentinel) ?? false,
           }))
         })
-      }, prefixMessage)
+      }, { prefixMessage, sentinel })
       expect((await page.goto(origin + prefix + "/fixture"))?.status()).toBe(200)
-      const seeded = await page.evaluate(async ({ path, title }) => {
-        const response = await fetch(path, {
-          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title }),
-        })
-        return response.status
-      }, { path: prefix + "/api/tasks", title: sentinel })
-      expect(seeded).toBe(201)
+      const app = origin + prefix
+      const headers = await currentBoardWriteHeaders(context.request, "household", { origin }, app)
+      const seeded = await context.request.post(app + "/api/tasks", { headers, data: { title: sentinel, area_id: "default" } })
+      expect(seeded.status(), await seeded.text()).toBe(201)
       expect((await page.goto(url))?.headers()["cache-control"]).toBe("private, no-store")
       const section = page.locator("[data-recent-activity]")
       await expect(section).toHaveAttribute("data-history-guard", "true")
@@ -82,7 +94,7 @@ for (const revoked of [false, true]) {
         page.goBack({ waitUntil: "commit" }),
       ])
       try {
-        await expect.poll(() => snapshot).toEqual({ hidden: true, rows: 0, filters: 0 })
+        await expect.poll(() => snapshot).toEqual({ hidden: true, rows: 0, filters: 0, retainedSentinel: false })
       } catch (error) {
         console.error(JSON.stringify({ historyDiagnostic }))
         throw error

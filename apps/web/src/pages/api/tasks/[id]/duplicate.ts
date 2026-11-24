@@ -1,7 +1,13 @@
+import { boardScopeErrorResponse } from "@lib/board-http"
+import { scopePermits } from "@domains/tasks/board-scope"
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { rejectBoardSelectionInJson } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { TaskRepository } from "@domains/tasks/persistence/task-repository"
+import { TaskRepository, prepareTaskCreation, dispatchTaskCreation, type taskCreationPayload } from "@domains/tasks"
+import { taskHttpProjection } from "@lib/task-http-projection"
+import { taskEventAuthorityHeaders } from "@lib/webhook-dispatcher"
+import { resolveRecentActivityActor } from "@lib/recent-activity-actor"
 import { apiError, apiJson } from "../../../../lib/api-response"
 import { formatTicketKey } from "../../../../lib/ticket-key"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
@@ -20,15 +26,16 @@ const logger = createLogger({
  * Competitive parity: Jira, Asana, Linear all have "Clone/Duplicate" actions.
  * Copies all fields except id, created_at, updated_at, and calendar_sync_state.
  */
-export const POST: APIRoute = async ({ params, request }) => {
+export const POST: APIRoute = withBoardScope({ resource: "task", action: "create" }, async ({ params, request, locals }, scope) => {
     try {
         const boardSelection = await rejectBoardSelectionInJson(request)
         if (boardSelection) return boardSelection
 
         await ensureSchema()
-        const repo = new TaskRepository(getPersistenceClient())
+        const repo = new TaskRepository(getPersistenceClient(), scope)
         const sourceId = params.id!
 
+        if (!scopePermits(scope, { resource: "task", action: "read" })) return apiError("Source task unavailable", 404)
         // Fetch source task
         const row = await repo.findById(sourceId)
         if (!row) {
@@ -38,46 +45,66 @@ export const POST: APIRoute = async ({ params, request }) => {
         const newTitle = `${String(row.title)} (copy)`
         const newId = crypto.randomUUID()
 
-        const ticket_number = await repo.createTask({
-            id: newId,
-            title: newTitle,
-            description: row.description ? String(row.description) : "",
-            status: "pending",
-            priority: row.priority != null ? Number(row.priority) : 3,
-            due_date: row.due_date ? String(row.due_date) : null,
-            labels: row.labels ? String(row.labels) : "[]",
-            framework_payload: row.framework_payload ? String(row.framework_payload) : "{}",
-            parent_id: row.parent_id ? String(row.parent_id) : null,
-            area_id: row.area_id ? String(row.area_id) : "default",
-            custom_fields: row.custom_fields ? String(row.custom_fields) : "{}",
-            start_date: row.start_date ? String(row.start_date) : null,
-            end_date: row.end_date ? String(row.end_date) : null,
-            progress: row.progress != null ? Number(row.progress) : 0,
-            color: row.color ? String(row.color) : null,
-            is_favorite: row.is_favorite ? Number(row.is_favorite) : 0,
-            task_type: row.task_type ? String(row.task_type) : "task",
-            assigned_to: null,
-        })
+        const source = taskHttpProjection(row, scope.boardId)
+        const prepared = await prepareTaskCreation(repo, {
+          title: newTitle,
+          description: source.description,
+          priority: source.priority,
+          status: "pending",
+          due_date: source.due_date,
+          labels: source.labels,
+          framework_payload: source.framework_payload,
+          task_type: source.task_type,
+          parent_id: source.parent_id,
+          area_id: source.area_id,
+          project_id: source.project_id,
+          goal_id: source.goal_id,
+          custom_fields: source.custom_fields,
+          start_date: source.start_date,
+          end_date: source.end_date,
+          progress: 0,
+          color: source.color,
+          is_promoted: false,
+          assigned_to: null,
+          checklists: typeof source.checklists === "string" ? source.checklists : "[]",
+          urgency: source.urgency,
+          importance: source.importance,
+          effort_minutes: source.effort_minutes,
+          effort_type: source.effort_type,
+          blocked_by: source.blocked_by,
+          recurrence_rule: source.recurrence_rule,
+          // A copied occurrence is ordinary work, not a second completion of its source Routine.
+          task_kind: row.task_kind === "routine_instance" ? "standard_action" : row.task_kind,
+          source_template_id: null,
+        }, { id: newId, useDefaultAssignee: false })
+        if (!prepared.ok) return apiError("The source task cannot be duplicated in its current placement.", 409)
+        const created = await repo.createWorkCommand(prepared.task, { activityActor: resolveRecentActivityActor(locals, request) })
+        if (!created.ok) return apiError("The task could not be duplicated.", created.errorCode === "denied" ? 403 : 409)
+        const payload = taskHttpProjection(created.task, scope.boardId)
+        const authority = await taskEventAuthorityHeaders(["task.created"], scope)
+        dispatchTaskCreation(payload as ReturnType<typeof taskCreationPayload>, undefined, undefined, authority, scope)
+
 
         logger.audit({
             event: "audit.task.duplicated",
             domain: "audit",
             component: "duplicate-api",
             request_id: crypto.randomUUID(),
-            task_id: newId,
+            task_id: created.task.id,
             message: `Task duplicated from ${sourceId}`,
         })
 
-        const now = Date.now()
         return apiJson({
-            id: newId,
-            ticket_number,
-            ticket_key: formatTicketKey(ticket_number),
+            id: created.task.id,
+            ticket_number: created.ticketNumber,
+            ticket_key: payload.ticket_key,
             title: newTitle,
             source_id: sourceId,
-            created_at: now,
+            created_at: created.task.created_at,
         }, 201)
     } catch (err) {
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
         logger.log("error", {
             event: "api.duplicate.post.failed",
             domain: "tasks",
@@ -87,4 +114,4 @@ export const POST: APIRoute = async ({ params, request }) => {
         })
         return apiError("Failed to duplicate task")
     }
-}
+})

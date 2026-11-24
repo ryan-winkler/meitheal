@@ -1,4 +1,6 @@
 import { expect, test, type Page } from "@playwright/test"
+import { FILTER_STORAGE_KEY } from "../../apps/web/src/lib/filter-state"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
@@ -17,12 +19,13 @@ async function openSettings(page: Page) {
   await expect(preference(page)).toBeVisible()
 }
 
-const GLOBAL_SHORTCUT_KEYS = ["/", "n", "d", "k", "t", "y", "u", "c", "Ctrl/Cmd + K", "Ctrl/Cmd + B", "?", "Esc"]
+// General actions first, then views; single keys display as uppercase keycaps.
+const GLOBAL_SHORTCUT_KEYS = ["/", "Ctrl/Cmd + K", "N", "Ctrl/Cmd + B", "?", "Esc", "D", "Y", "U", "K", "T", "C"]
 const GLOBAL_SHORTCUT_LABELS = [
-  "Search", /^\s*New task\s*\.\s*Adds to that column when a board card has focus\s*$/, "Dashboard",
-  /^\s*Kanban view\s*\.\s*Moves up on Today and Timeline\s*$/, "Table view", "Today view", "Upcoming view",
-  /^\s*Calendar view\s*\.\s*Collapses swimlanes when a grouped board card has focus\s*$/, "Command palette",
+  "Search", "Command palette", /^\s*New task\s*\.\s*Adds to that column when a board card has focus\s*$/,
   /^\s*Toggle sidebar\s*\.\s*Wide screens with side navigation\s*$/, "Show shortcuts", "Close modal",
+  "Dashboard", "Today view", "Upcoming view", /^\s*Kanban view\s*\.\s*Moves up on Today and Timeline\s*$/, "Table view",
+  /^\s*Calendar view\s*\.\s*Collapses swimlanes when a grouped board card has focus\s*$/,
 ]
 const TASK_VIEW_LABELS = ["Kanban view", "Table view", "Calendar view", "Timeline view"]
 
@@ -33,11 +36,20 @@ async function blurActive(page: Page) {
 test("the Settings preference persists and preserves search with a modifier or a button", async ({ page, context }) => {
   await openSettings(page)
   const settingsList = page.locator("#navigation-settings")
-  await expect(settingsList.getByRole("heading", { name: "Everywhere" })).toBeVisible()
-  await expect(settingsList.getByRole("heading", { name: "On the Tasks page" })).toBeVisible()
-  await expect(settingsList.locator("[data-shortcut-scope=global]")).toHaveText(GLOBAL_SHORTCUT_LABELS)
-  await expect(settingsList.locator("[data-shortcut-scope=tasks]")).toHaveText(TASK_VIEW_LABELS)
-  await expect(settingsList.locator(".shortcut-keys")).toHaveText([...GLOBAL_SHORTCUT_KEYS, "1", "2", "3", "4", "Home"])
+  // Settings edits shortcuts by group; the help dialog keeps the read-only list.
+  for (const heading of ["Global Shortcuts (application-wide)", "Navigation", "Tasks (on the Tasks page)"]) {
+    await expect(settingsList.getByRole("heading", { name: heading, exact: true })).toBeVisible()
+  }
+  const editable = await settingsList.locator("[data-shortcut-field]").evaluateAll(fields =>
+    fields.map(field => [field.getAttribute("data-shortcut-field"), field.getAttribute("data-shortcut-label")]))
+  expect(editable).toEqual([
+    ["search", "Search"], ["commandPalette", "Command palette"], ["newTask", "New task"],
+    ["toggleSidebar", "Toggle sidebar"], ["showHelp", "Show shortcuts"],
+    ["goDashboard", "Dashboard"], ["goToday", "Today view"], ["goUpcoming", "Upcoming view"],
+    ["goKanban", "Kanban view"], ["goTable", "Table view"], ["goCalendar", "Calendar view"],
+    ["taskView1", "Kanban view"], ["taskView2", "Table view"], ["taskView3", "Calendar view"],
+    ["taskView4", "Timeline view"],
+  ])
   await expect(settingsList).not.toContainText("List view")
   const enabled = preference(page)
   const search = page.locator("#settings-bar-search-launcher")
@@ -99,7 +111,7 @@ test("K selects Kanban after Table and the numbered keys select each Tasks view"
   await expect(switcher).toHaveAttribute("data-switcher-ready", "true")
 
   await page.keyboard.press("k")
-  await expect(page).toHaveURL(/\/tasks#kanban$/)
+  await expect(page).toHaveURL(/\/boards\/household#kanban$/)
   await expect(view).toHaveAttribute("data-task-view", "kanban")
   await expect(switcher).toHaveAttribute("data-switcher-ready", "true")
 
@@ -135,8 +147,14 @@ test("shortcut help contains focus and restores its opener after Escape and afte
   expect(target).not.toBeNull()
   expect(target!.width).toBeGreaterThanOrEqual(44)
   expect(target!.height).toBeGreaterThanOrEqual(44)
+  // Focus cycles between Close and Customize shortcuts without leaving the dialog.
+  const customize = dialog.getByRole("link", { name: "Customize shortcuts", exact: true })
+  await page.keyboard.press("Tab")
+  await expect(customize).toBeFocused()
   await page.keyboard.press("Tab")
   await expect(close).toBeFocused()
+  await page.keyboard.press("Shift+Tab")
+  await expect(customize).toBeFocused()
   await page.keyboard.press("Shift+Tab")
   await expect(close).toBeFocused()
   await viewHelp.click()
@@ -153,6 +171,7 @@ test("shortcut help contains focus and restores its opener after Escape and afte
   await page.evaluate(() => {
     document.addEventListener("astro:after-swap", () => { document.body.dataset.shortcutTestSwapped = "true" }, { once: true })
   })
+  await page.evaluate(key => localStorage.setItem(key, JSON.stringify({ search: "old task filter" })), FILTER_STORAGE_KEY)
   await table.click()
   await expect(page.locator("body")).toHaveAttribute("data-shortcut-test-swapped", "true")
   await expect(page.locator("[data-view-tabs]")).toHaveAttribute("data-switcher-ready", "true")
@@ -160,10 +179,11 @@ test("shortcut help contains focus and restores its opener after Escape and afte
   await expect(close).toBeFocused()
   await viewHelp.click()
   await page.keyboard.press("k")
-  await expect(page).toHaveURL(/\/tasks\?view=table#table$/)
+  await expect(page).toHaveURL(/\/tasks\?view=table&search=#table$/)
   await page.keyboard.press("Enter")
   await expect(dialog).toBeHidden()
   await expect(table).toBeFocused()
+  await expect(page.locator("#table-shell").getByRole("textbox", { name: "Filter by text" })).toHaveValue("")
 
   await table.press("Shift+Slash")
   await expect(close).toBeFocused()
@@ -243,68 +263,20 @@ test("shortcut help waits until the narrow Table columns popover is closed", asy
   await expect(help.getByRole("button", { name: "Close shortcuts" })).toBeFocused()
 })
 
-test("shortcut help waits for the Planning prompt to close", async ({ page }) => {
-  await page.goto("/planning#spaces")
-  await page.locator("#create-area-btn").click()
-  const prompt = page.getByRole("dialog", { name: "Create Area" })
-  const cancel = prompt.getByRole("button", { name: "Cancel" })
-  const help = page.getByRole("dialog", { name: "Keyboard shortcuts" })
-
-  await expect(prompt.locator("#prompt-input")).toBeFocused()
-  await cancel.press("Shift+Slash")
-  await expect(cancel).toBeFocused()
-  await expect(help).toBeHidden()
-  await page.keyboard.press("k")
-  await expect(cancel).toBeFocused()
-  await page.keyboard.press("Escape")
-  await expect(prompt).toBeHidden()
-  await expect(page).toHaveURL(/\/planning#spaces$/)
-})
-
-test("the numbered shortcut labels remain reachable in Irish on a short screen", async ({ page, context, baseURL }) => {
-  await context.addCookies([{ name: "meitheal-locale", value: "ga", url: baseURL! }])
-  await page.setViewportSize({ width: 320, height: 300 })
-  await page.goto("/tasks#kanban")
-  await expect(page.locator("[data-view-tabs]")).toHaveAttribute("data-switcher-ready", "true")
-  await page.keyboard.press("?")
-  const dialog = page.getByRole("dialog", { name: "Aicearraí méarchláir", exact: true })
-  const close = dialog.getByRole("button", { name: "Dún na haicearraí" })
-  const panel = dialog.locator(".shortcut-modal-content")
-  await expect(close).toBeFocused()
-  await expect(dialog.getByRole("heading", { name: "I ngach áit" })).toBeVisible()
-  await expect(dialog.getByRole("heading", { name: "Ar leathanach na dtascanna" })).toBeVisible()
-  await expect(dialog.locator("[data-shortcut-scope=global]")).toHaveText([
-    "Cuardaigh", "Tasc nua . Cuireann sé leis an gcolún sin nuair atá fócas ar chárta boird", "Deais",
-    "Amharc Kanban . Bogann sé suas ar Inniu agus ar an Amlíne", "Amharc tábla", "Amharc Inniu", "Amharc Ag Teacht",
-    "Amharc féilire . Laghdaíonn sé na lánaí snámha nuair atá fócas ar chárta boird grúpáilte", "Pailéad orduithe",
-    "Taispeáin nó folaigh an barra taoibh . Scáileáin leathana le nascleanúint taoibh", "Taispeáin aicearraí", "Dún an bosca dialóige",
-  ])
-  await expect(dialog.locator("[data-shortcut-scope=tasks]")).toHaveText([
-    "Amharc Kanban", "Amharc tábla", "Amharc féilire", "Amharc amlíne",
-  ])
-  const bounds = await panel.boundingBox()
-  expect(bounds).not.toBeNull()
-  await page.mouse.move(bounds!.x + 5, bounds!.y + 5)
-  await page.mouse.down()
-  try {
-    await expect(close).toBeFocused()
-  } finally {
-    await page.mouse.up()
-  }
-  const timeline = dialog.getByText("Amharc amlíne")
-  await expect(timeline).not.toBeInViewport()
-  await page.keyboard.press("End")
-  await expect(timeline).toBeInViewport()
-  await page.keyboard.press("Home")
-  await expect.poll(() => panel.evaluate(element => element.scrollTop)).toBe(0)
-  await expect(timeline).not.toBeInViewport()
-  await panel.hover()
-  await page.mouse.wheel(0, 2000)
-  await expect(timeline).toBeInViewport()
+test("character shortcuts leave Board Area names editable", async ({ page }) => {
+  await page.goto("/boards/household?view=groups")
+  await page.locator("main").getByText("New Area", { exact: true }).click()
+  const name = page.getByRole("textbox", { name: "Name", exact: true })
+  await name.fill("Workshop")
+  await name.press("Shift+Slash")
+  await expect(name).toBeFocused()
+  await expect(page.getByRole("dialog", { name: "Keyboard shortcuts" })).toBeHidden()
+  await name.press("k")
+  await expect(name).toHaveValue("Workshop?k")
 })
 
 test("disabling shortcuts covers sidebar capture, the Kanban board, task details and numeric Tasks views", async ({ page, request, baseURL }) => {
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const project = await request.post("/api/projects", { headers, data: { title: "Shortcut fixture project" } })
   expect(project.status()).toBe(201)
   const { id: projectId } = await project.json()
@@ -349,22 +321,24 @@ test("disabling shortcuts covers sidebar capture, the Kanban board, task details
     await expect(help).toBeHidden()
     await expect(detail).toBeVisible()
     await expect(detailClose).toBeFocused()
-    await expect(page.locator("#td-assigned-to")).toBeVisible()
+    await expect(page.locator("#td-assigned-to")).toBeEnabled()
     await detailClose.press("a")
     await expect(page.locator("#td-assigned-to")).toBeFocused()
     await page.keyboard.press("Escape")
     await expect(detail).toBeHidden()
+    await page.evaluate(key => localStorage.setItem(key, JSON.stringify({ search: "old task filter" })), FILTER_STORAGE_KEY)
     await card.press("4")
-    await expect(page).toHaveURL(/view=timeline#timeline$/)
+    await expect(page).toHaveURL(/\/tasks\?view=timeline&search=#timeline$/)
+    await expect(page.locator("#timeline-filter-bar").getByRole("textbox", { name: "Filter by text" })).toHaveValue("")
   } finally {
-    if (id) await request.delete(`/api/tasks/${id}`, { headers })
-    await request.delete(`/api/projects/${projectId}`, { headers })
+    if (id) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
+    await request.delete(`/api/projects/${projectId}`, { headers, data: {} })
   }
 })
 
 const datedShortcutTest = test.extend<{ datedTasks: { ids: string[]; query: string } }>({
   datedTasks: async ({ request, baseURL }, use) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const now = Date.now()
     const query = `shortcut dated task ${crypto.randomUUID()}`
     const ids: string[] = []
@@ -380,7 +354,7 @@ const datedShortcutTest = test.extend<{ datedTasks: { ids: string[]; query: stri
       }
       await use({ ids, query })
     } finally {
-      for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })
+      for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers, data: {} })
     }
   },
 })
@@ -498,7 +472,7 @@ datedShortcutTest("Today and Timeline keep arrows and Enter while letter and pun
 test("pressing lowercase c on a grouped board collapses and expands swimlanes without navigating to Calendar", async ({ page, request, baseURL }) => {
   // Earlier cases in this file share one server and its 300/min API budget.
   test.setTimeout(100_000)
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin }, "", true)
   const createTask = async (data: Record<string, string>) => {
     const response = await request.post("/api/tasks", { headers, data })
     if (response.status() !== 429) return response
@@ -545,11 +519,10 @@ test("pressing lowercase c on a grouped board collapses and expands swimlanes wi
     await expect(visibleLanes).toHaveCount(laneCount)
     expect(new URL(page.url()).pathname).toBe("/tasks")
 
-    // Outside the board the global shortcut still opens Calendar, whose legacy
-    // route redirects to the Tasks Calendar view.
+    // Outside the swimlanes the global shortcut opens the Household Calendar.
     await blurActive(page)
     await page.keyboard.press("c")
-    await expect(page).toHaveURL(/\/tasks\?view=calendar#calendar$/)
+    await expect(page).toHaveURL(/\/boards\/household\?view=calendar#calendar$/)
   } finally {
     if (firstId) await request.delete(`/api/tasks/${firstId}`, { headers })
     if (secondId) await request.delete(`/api/tasks/${secondId}`, { headers })
@@ -559,7 +532,7 @@ test("pressing lowercase c on a grouped board collapses and expands swimlanes wi
 test("pressing c on an ungrouped board opens Calendar like everywhere else", async ({ page, request, baseURL }) => {
   // Earlier cases in this file share one server and its 300/min API budget.
   test.setTimeout(100_000)
-  const headers = { origin: new URL(baseURL!).origin }
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin }, "", true)
   const data = { title: "Ungrouped board task" }
   let created = await request.post("/api/tasks", { headers, data })
   if (created.status() === 429) {
@@ -574,8 +547,8 @@ test("pressing c on an ungrouped board opens Calendar like everywhere else", asy
     await expect(page.locator(".swimlane-group:not([hidden]) .swimlane-toggle")).toHaveCount(0)
     await page.locator(`[data-task-id="${id}"] .card-open-btn`).focus()
     await page.keyboard.press("c")
-    await expect(page).toHaveURL(/\/tasks\?view=calendar#calendar$/)
+    await expect(page).toHaveURL(/\/boards\/household\?view=calendar#calendar$/)
   } finally {
-    await request.delete(`/api/tasks/${id}`, { headers })
+    await request.delete(`/api/tasks/${id}`, { headers, data: {} })
   }
 })

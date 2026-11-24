@@ -1,3 +1,6 @@
+import { boardScopeErrorResponse } from "@lib/board-http"
+import { dispatchTaskEvent, taskEventAuthorityHeaders } from "@lib/webhook-dispatcher"
+import { withBoardScope } from "@lib/board-http"
 /**
  * GET/DELETE /api/tasks/delete-completed — Age-based deletion of completed tasks
  *
@@ -51,14 +54,14 @@ function validateMonths(url: URL): { months: number } | Response {
 }
 
 /** GET — dry-run preview: count tasks that would be deleted */
-export const GET: APIRoute = async ({ url }) => {
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async ({ url }, scope) => {
   try {
     const result = validateMonths(url)
     if (result instanceof Response) return result
     const { months } = result
 
     await ensureSchema()
-    const repo = new TaskRepository(getPersistenceClient())
+    const repo = new TaskRepository(getPersistenceClient(), scope)
     const cutoffMs = monthsToCutoffMs(months)
     const cutoffDate = new Date(cutoffMs).toISOString().split("T")[0]
 
@@ -67,6 +70,8 @@ export const GET: APIRoute = async ({ url }) => {
       { status: 200, headers: { "content-type": "application/json" } },
     )
   } catch (err) {
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
     if (isDbUnavailable(err)) return db503Response("delete-completed-preview", err)
     logApiError("delete-completed", "GET preview failed", err)
     return new Response(
@@ -74,10 +79,10 @@ export const GET: APIRoute = async ({ url }) => {
       { status: 500, headers: { "content-type": "application/json" } },
     )
   }
-}
+})
 
 /** DELETE — permanently remove completed/archived tasks older than threshold */
-export const DELETE: APIRoute = async ({ request, url }) => {
+export const DELETE: APIRoute = withBoardScope({ resource: "task", action: "delete" }, async ({ request, url }, scope) => {
   try {
     const result = validateMonths(url)
     if (result instanceof Response) return result
@@ -95,11 +100,14 @@ export const DELETE: APIRoute = async ({ request, url }) => {
     if (boardSelection) return boardSelection
     await ensureSchema()
     const client = getPersistenceClient()
-    const repo = new TaskRepository(client)
+    const repo = new TaskRepository(client, scope)
     const cutoffMs = monthsToCutoffMs(months)
     const cutoffDate = new Date(cutoffMs).toISOString().split("T")[0]
 
-    const deleted = await repo.deleteCompletedBefore(cutoffMs)
+    const receipts = await repo.purgeWorkCommand(cutoffMs)
+    const deleted = receipts.length
+    const authority = await taskEventAuthorityHeaders(["task.deleted"], scope)
+    for (const receipt of receipts) dispatchTaskEvent("task.deleted", { id: receipt.id }, undefined, undefined, receipt.eventId, authority, scope).catch(() => {})
 
     // Audit trail entry
     try {
@@ -132,6 +140,8 @@ export const DELETE: APIRoute = async ({ request, url }) => {
       { status: 200, headers: { "content-type": "application/json" } },
     )
   } catch (err) {
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
     if (isDbUnavailable(err)) return db503Response("delete-completed", err)
     logApiError("delete-completed", "DELETE failed", err)
     return new Response(
@@ -139,4 +149,4 @@ export const DELETE: APIRoute = async ({ request, url }) => {
       { status: 500, headers: { "content-type": "application/json" } },
     )
   }
-}
+})

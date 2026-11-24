@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Focus Pulse</title>
+  <style>
+    body { margin: 0; padding: 14px; font-family: var(--font-sans, system-ui, sans-serif); background: var(--bg-primary, #101210); color: var(--text-primary, #f3f7f4); }
+    .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+    .card { padding: 12px; border-radius: 8px; background: var(--bg-card, #171c19); border: 1px solid var(--border, #28332c); }
+    .num { font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .lbl { font-size: 0.78rem; color: var(--text-secondary, #a3b2aa); }
+    label { display: block; font-size: 0.85rem; margin-bottom: 6px; }
+    input { width: 100%; box-sizing: border-box; padding: 9px 10px; border-radius: 6px; border: 1px solid var(--border, #28332c); background: var(--bg-card, #171c19); color: var(--text-primary, #f3f7f4); margin-bottom: 8px; }
+    button { min-height: 36px; padding: 8px 12px; border-radius: 6px; border: 0; background: var(--accent, #22c55e); color: #052e16; font-weight: 600; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="cards">
+    <div class="card"><div id="open" class="num">-</div><div class="lbl">Open tasks</div></div>
+    <div class="card"><div id="done" class="num">-</div><div class="lbl">Completed</div></div>
+  </div>
+  <label for="intent">Today's household intention</label>
+  <input id="intent" maxlength="140" placeholder="e.g. Finish kitchen prep before 18:00" />
+  <button id="save" type="button">Save intention</button>
+  <script>
+    async function load() {
+      const res = await window.MeithealUI.send({ type: "load" })
+      if (!res || !res.ok) return
+      document.getElementById("open").textContent = String(res.open)
+      document.getElementById("done").textContent = String(res.done)
+      document.getElementById("intent").value = String(res.intention || "")
+    }
+    document.getElementById("save").addEventListener("click", async () => {
+      const val = document.getElementById("intent").value
+      await window.MeithealUI.send({ type: "save_intention", value: val })
+    })
+    load()
+  </script>
+</body>
+</html>

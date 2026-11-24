@@ -1,16 +1,18 @@
 """Meitheal REST transport for the configured origin."""
 
 import re
-from collections.abc import Iterator, Mapping
-from contextlib import contextmanager
+from hashlib import sha256
+from collections.abc import AsyncIterator, Iterator, Mapping
+from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 from ipaddress import IPv6Address
 from typing import Any
 from urllib.parse import quote
 
 import aiohttp
 from homeassistant.const import CONF_HOST, CONF_PORT, CONF_SSL
-from homeassistant.core import HomeAssistant
+from homeassistant.core import Context, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from yarl import URL
 
@@ -33,6 +35,26 @@ _ORIGIN_HEADER_KEYS = frozenset({
     "X-Meitheal-Origin-Target",
 })
 _CURRENT_ORIGIN: ContextVar[dict[str, str] | None] = ContextVar("_CURRENT_ORIGIN", default=None)
+
+
+@dataclass(repr=False)
+class _HumanTransport:
+    hass: HomeAssistant
+    user_id: str
+    cache_key: str
+    origin: URL
+    prefix: str
+    cookie: str
+    proof: str | None = None
+    active: bool = True
+
+    async def validate(self, api: "MeithealApi") -> None:
+        user = await self.hass.auth.async_get_user(self.user_id)
+        if not self.active or api.cache_key != self.cache_key or not user or not user.is_active:
+            raise MeithealResponseError(403)
+
+
+_CURRENT_HUMAN: ContextVar[_HumanTransport | None] = ContextVar("_CURRENT_HUMAN", default=None)
 
 
 # Invisible and bidi formatting characters could reorder the token name shown beside the origin.
@@ -189,16 +211,34 @@ class MeithealApi:
     """Send requests on a certificate-verifying, cookie-free HA session."""
 
     def __init__(
-        self, session: aiohttp.ClientSession, origin: URL, token: str | None
+        self, session: aiohttp.ClientSession, origin: URL, token: str | None, board_id: str | None = None
     ) -> None:
+        if board_id is not None and (not isinstance(board_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,149}", board_id)):
+            raise ValueError("Invalid Meitheal Board identifier")
         self.session = session
         self.origin = origin
+        self._board_id = board_id
+        self._cache_key = sha256(f"{origin}\0{board_id or ''}\0{token or ''}".encode()).hexdigest()
         # Bodyless DELETE is still a JSON API request, not an HTML form.
         self._headers = {"Accept": "application/json", "Content-Type": "application/json"}
-        # Tokenless standalone writes use the existing same-origin proof.
-        if not token:
-            self._headers["Origin"] = str(origin)
+        if board_id:
+            self._headers["X-Meitheal-Board-Id"] = board_id
         self._authorization = f"Bearer {token}" if token else None
+
+    @property
+    def board_id(self) -> str | None:
+        """The explicitly configured destination, fixed for this credential client."""
+        return self._board_id
+
+    @property
+    def cache_key(self) -> str:
+        """Opaque per-origin, credential and Board partition; never diagnostics data."""
+        return self._cache_key
+
+    @property
+    def configured(self) -> bool:
+        """Whether protected requests have both a credential and destination."""
+        return bool(self._authorization and self._board_id)
 
     async def async_request(
         self,
@@ -210,10 +250,26 @@ class MeithealApi:
         read_json: bool = False,
         event_authority: set[str] | None = None,
         extra_headers: Mapping[str, str] | None = None,
+        session_proof: list[str] | None = None,
     ) -> Any:
         """Request a fixed API path without following redirects or exposing errors."""
-        url = self.origin.with_path(path, encoded=True)
-        headers = self._headers
+        health = path == "/api/health" and method in ("GET", "HEAD")
+        metadata = path == "/api/agent-context" and method == "GET"
+        if not health and (not self._authorization or not metadata and not self._board_id):
+            raise MeithealResponseError(401)
+        if params and "board_id" in params and params["board_id"] != self._board_id:
+            raise MeithealResponseError(404)
+        if payload and any(key in payload for key in ("board_id", "boardId", "board")):
+            raise MeithealResponseError(400)
+        human = _CURRENT_HUMAN.get()
+        if human is not None:
+            await human.validate(self)
+        url = (human.origin.with_path(human.prefix + path, encoded=True) if human else self.origin.with_path(path, encoded=True))
+        headers = dict(self._headers)
+        if human:
+            headers["Cookie"] = f"ingress_session={human.cookie}"
+            if human.proof:
+                headers["X-Meitheal-Board-Session"] = human.proof
         origin_hdrs = (
             extra_headers
             if extra_headers is not None
@@ -238,8 +294,14 @@ class MeithealApi:
                 timeout=_TIMEOUT,
                 allow_redirects=False,
             ) as response:
+                if human:
+                    await human.validate(self)
                 if not 200 <= response.status < 300:
                     raise MeithealResponseError(response.status)
+                if session_proof is not None:
+                    proof = response.headers.get("X-Meitheal-Board-Session", "")
+                    if re.fullmatch(r"[a-f0-9]{64}", proof):
+                        session_proof.append(proof)
                 if event_authority is not None:
                     # Response-local authority, not an acknowledgement of bus delivery.
                     # Never store this on the shared API client: mutations can overlap.
@@ -252,7 +314,105 @@ class MeithealApi:
                         }
                     )
                 if read_json:
-                    return await response.json()
+                    result = await response.json()
+                    if human:
+                        await human.validate(self)
+                    return result
         except (aiohttp.ClientError, TimeoutError, ValueError):
             raise MeithealConnectionError("Cannot read a response from Meitheal") from None
         return None
+
+
+async def async_credential_context(api: MeithealApi) -> dict[str, Any]:
+    """Read the current credential's server-proven Board metadata, never infer a default."""
+    data = await api.async_request("GET", "/api/agent-context", read_json=True)
+    if not isinstance(data, dict) or not isinstance(data.get("boards"), list):
+        raise MeithealConnectionError("Meitheal did not verify the credential destination")
+    boards = data["boards"]
+    ids: set[str] = set()
+    for board in boards:
+        if (not isinstance(board, dict) or not isinstance(board.get("id"), str)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,149}", board["id"])
+            or board["id"] in ids or not isinstance(board.get("name"), str)
+            or type(board.get("sharedEntityDelivery")) is not bool):
+            raise MeithealConnectionError("Meitheal did not verify the credential destination")
+        ids.add(board["id"])
+    enrollment = data.get("enrollmentBoardId")
+    if enrollment is not None and (len(ids) != 1 or enrollment not in ids):
+        raise MeithealConnectionError("Meitheal did not verify the credential destination")
+    return data
+
+
+@asynccontextmanager
+async def human_request_scope(hass: HomeAssistant, api: MeithealApi, context: Context | None) -> AsyncIterator[None]:
+    """Use Supervisor's genuine per-user ingress for an actual HA call context.
+
+    An automation without a user keeps only its configured credential ceiling.
+    No caller identity header, OAuth credential or signing key is invented.
+    """
+    user_id = context.user_id if isinstance(context, Context) else None
+    if not user_id:
+        yield
+        return
+    user = await hass.auth.async_get_user(user_id)
+    if not user or not user.is_active or not api.configured:
+        raise MeithealResponseError(403)
+    current = _CURRENT_HUMAN.get()
+    if current:
+        if current.user_id != user_id:
+            raise MeithealResponseError(403)
+        await current.validate(api)
+        yield
+        return
+
+    from aiohasupervisor import SupervisorError
+    from aiohasupervisor.models import CreateSessionOptions
+    from homeassistant.components.hassio import get_supervisor_client
+    from homeassistant.helpers.network import NoURLAvailableError, get_url
+
+    match = _APP_HOST.fullmatch(api.origin.raw_host or "")
+    if not match or api.origin.port != DEFAULT_PORT or "hassio" not in hass.config.components:
+        raise MeithealConnectionError("Human Board access requires this instance's verified Supervisor ingress")
+    slug = f"{match[1]}_{match[2].replace('-', '_')}"
+    try:
+        supervisor = get_supervisor_client(hass)
+        addon = await supervisor.addons.addon_info(slug)
+        if not addon.hostname or addon.hostname.replace("_", "-").lower() != api.origin.raw_host:
+            raise MeithealConnectionError("Supervisor did not verify this Meitheal App")
+        prefix = addon.ingress_url
+        if not isinstance(prefix, str) or not re.fullmatch(r"/api/hassio_ingress/[A-Za-z0-9_-]+/?", prefix):
+            raise MeithealConnectionError("Supervisor did not provide this App's ingress route")
+        if not user.is_admin:
+            panels = await supervisor.ingress.panels()
+            panel = panels.get(slug)
+            if panel is None or panel.admin:
+                raise MeithealResponseError(403)
+        core_url = URL(get_url(hass, allow_external=False, allow_cloud=False, prefer_external=False))
+        if core_url.scheme not in ("http", "https") or core_url.user or core_url.password or core_url.path not in ("", "/") or core_url.query_string or core_url.fragment:
+            raise MeithealConnectionError("Home Assistant did not provide a local ingress origin")
+        # Recheck the actual caller after discovery and immediately before creating the official session.
+        user = await hass.auth.async_get_user(user_id)
+        if not user or not user.is_active:
+            raise MeithealResponseError(403)
+        cookie = await supervisor.ingress.create_session(CreateSessionOptions(user_id=user.id))
+        if not isinstance(cookie, str) or not re.fullmatch(r"[a-f0-9]{128}", cookie):
+            raise MeithealConnectionError("Supervisor did not confirm the caller session")
+    except (SupervisorError, NoURLAvailableError, ValueError, TimeoutError):
+        raise MeithealConnectionError("Cannot verify current Home Assistant Board access") from None
+
+    transport = _HumanTransport(hass, user_id, api.cache_key, core_url.origin(), prefix.rstrip("/"), cookie)
+    reset = _CURRENT_HUMAN.set(transport)
+    try:
+        proofs: list[str] = []
+        metadata = await api.async_request("GET", "/api/agent-context", read_json=True, session_proof=proofs)
+        if (not proofs or not isinstance(metadata, dict) or not isinstance(metadata.get("boards"), list)
+            or not any(isinstance(board, dict) and board.get("id") == api.board_id for board in metadata["boards"])):
+            raise MeithealResponseError(403)
+        transport.proof = proofs[-1]
+        await transport.validate(api)
+        yield
+    finally:
+        transport.active = False
+        transport.cookie = ""
+        transport.proof = None
+        _CURRENT_HUMAN.reset(reset)

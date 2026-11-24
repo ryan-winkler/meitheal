@@ -6,7 +6,7 @@ Python-only local runs may skip App cases. No installed HA, Supervisor,
 physical device or registry is accessed by this fixture.
 """
 import asyncio
-from contextlib import asynccontextmanager, closing
+from contextlib import AsyncExitStack, asynccontextmanager, closing
 from datetime import date
 import json
 import os
@@ -31,6 +31,87 @@ ROOT = Path(__file__).resolve().parents[3]
 HEADER = "X-Meitheal-HA-Event-Authority"
 TYPES = ["created", "updated", "completed", "deleted", "overdue"]
 pytestmark = pytest.mark.usefixtures("socket_enabled")
+
+
+@asynccontextmanager
+async def loopback_app(log_path, env):
+    """Run one disposable App process against the fixture database."""
+    with log_path.open("wb") as log:
+        process = await asyncio.create_subprocess_exec(
+            "node", str(ROOT / "tests/scripts/native-event-authority-fixture.mjs"),
+            cwd=ROOT, env=env, stdout=asyncio.subprocess.PIPE, stderr=log)
+
+        async def port_line():
+            while line := await process.stdout.readline():
+                log.write(line)
+                try:
+                    info = json.loads(line)
+                except ValueError:
+                    continue
+                if "eventFixturePort" in info:
+                    return info["eventFixturePort"]
+            raise AssertionError("Loopback App exited before listening")
+
+        async def drain():
+            while line := await process.stdout.readline():
+                log.write(line)
+
+        try:
+            port = await asyncio.wait_for(port_line(), 15)
+            reader = asyncio.create_task(drain())
+            try:
+                yield URL(f"http://127.0.0.1:{port}")
+            finally:
+                reader.cancel()
+                await asyncio.gather(reader, return_exceptions=True)
+        finally:
+            if process.returncode is None:
+                process.terminate()
+                await asyncio.wait_for(process.wait(), 5)
+
+
+async def event_board_operator_headers(session, origin):
+    async with session.get(origin / "api/boards") as response:
+        assert response.status == 200
+        proof = response.headers["X-Meitheal-Board-Session"]
+        [board] = (await response.json())["boards"]
+    return {
+        "Origin": str(origin),
+        "X-Meitheal-Board-Id": board["id"],
+        "X-Meitheal-Board-Session": proof,
+    }
+
+
+async def configure_event_binding(session, origin, headers, *, enabled):
+    destinations = origin / "api/integrations/work-destinations"
+    async with session.get(destinations, headers=headers) as response:
+        assert response.status == 200
+        configuration = await response.json()
+    # The Household migration seeds this binding. Update it in place so
+    # revocation leaves no second approval for the same shared receiver.
+    [binding] = [item for item in configuration["bindings"]
+                 if item["integration"] == "ha_events" and item["sourceId"] == "meitheal"]
+    async with session.put(destinations, headers=headers, json={
+        "revision": configuration["revision"], "binding": {**binding, "enabled": enabled},
+    }) as response:
+        assert response.status == 200
+        current = (await response.json())["binding"]
+        assert current["id"] == binding["id"] and current["generation"] > binding["generation"]
+
+
+async def approve_event_board(session, origin):
+    """Approve shared event delivery and enroll a real Board-limited token."""
+    headers = await event_board_operator_headers(session, origin)
+    board_id = headers["X-Meitheal-Board-Id"]
+    await configure_event_binding(session, origin, headers, enabled=True)
+    async with session.post(origin / "api/agent-tokens", headers=headers, json={
+        "name": "Native event authority fixture",
+        "scopes": ["tasks:read", "tasks:write", "tasks:delete"],
+    }) as response:
+        assert response.status == 201
+        credential = await response.json()
+        assert credential["boardId"] == board_id
+        return credential["token"], board_id
 
 
 @asynccontextmanager
@@ -90,6 +171,7 @@ async def app_core(hass, aiohttp_server, tmp_path, *, mode="app", enabled=None):
     protocol.router.add_get("/core", core)
     core_server = await aiohttp_server(protocol)
     env = {**os.environ, "MEITHEAL_DB_URL": f"file:{tmp_path / 'tasks.db'}",
+           "MEITHEAL_BOARD_GRANT_PATH": str(tmp_path / "meitheal-board-grants.json"),
            "MEITHEAL_EVENT_CORE_WS": str(core_server.make_url("/core")).replace("http:", "ws:"),
            "SUPERVISOR_TOKEN": "event-authority-fixture", "NODE_ENV": "production",
            "TZ": "Europe/Dublin"}
@@ -97,47 +179,33 @@ async def app_core(hass, aiohttp_server, tmp_path, *, mode="app", enabled=None):
         env.pop("SUPERVISOR_TOKEN", None)
     for key in ["HA_BASE_URL", "HA_TOKEN", "MEITHEAL_DEV_USER_ID"]:
         env.pop(key, None)
-    with sqlite3.connect(tmp_path / "tasks.db") as db:
-        db.execute("CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at INTEGER NOT NULL)")
-        if enabled is not None:
-            db.execute("INSERT INTO settings(key,value,updated_at) VALUES(?,?,0)", ("n8n_events", json.dumps(enabled)))
-    log_path = tmp_path / "app.log"
-    with log_path.open("wb") as log:
-        process = await asyncio.create_subprocess_exec(
-            "node", str(ROOT / "tests/scripts/native-event-authority-fixture.mjs"),
-            cwd=ROOT, env=env, stdout=asyncio.subprocess.PIPE, stderr=log)
+    migrate = await asyncio.create_subprocess_exec(
+        "node", str(ROOT / "apps/web/scripts/migrate.mjs"),
+        cwd=ROOT / "apps/web", env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    _, migrate_err = await asyncio.wait_for(migrate.communicate(), 15)
+    assert migrate.returncode == 0, migrate_err.decode()
+    if enabled is not None:
+        with closing(sqlite3.connect(tmp_path / "tasks.db")) as db:
+            db.execute("INSERT OR REPLACE INTO settings(key,value,updated_at) VALUES(?,?,0)", ("n8n_events", json.dumps(enabled)))
+            db.commit()
+    # Enroll as a standalone local operator so Core's held-auth test can leave
+    # the real event socket unauthenticated until the first mutation returns.
+    setup_env = dict(env)
+    setup_env.pop("SUPERVISOR_TOKEN", None)
+    async with ClientSession() as session, AsyncExitStack() as apps:
+        operator = await apps.enter_async_context(loopback_app(tmp_path / "setup-app.log", setup_env))
+        token, board_id = await approve_event_board(session, operator)
 
-        async def port_line():
-            while line := await process.stdout.readline():
-                log.write(line)
-                try:
-                    info = json.loads(line)
-                except ValueError:
-                    continue
-                if "eventFixturePort" in info:
-                    return info["eventFixturePort"]
-            raise AssertionError(f"App exited before listening: {log_path.read_text()}")
+        async def revoke_event_binding():
+            headers = await event_board_operator_headers(session, operator)
+            await configure_event_binding(session, operator, headers, enabled=False)
 
-        try:
-            port = await asyncio.wait_for(port_line(), 15)
-
-            async def drain():
-                while line := await process.stdout.readline():
-                    log.write(line)
-
-            reader = asyncio.create_task(drain())
-            async with ClientSession() as session:
-                api = MeithealApi(session, URL(f"http://127.0.0.1:{port}"), None)
-                await api.async_request("GET", "/api/tasks", read_json=True)
-                coordinator = MeithealCoordinator(hass, api)
-                coordinator.async_request_refresh = AsyncMock()
-                yield coordinator, frames, held, authenticated
-            reader.cancel()
-            await asyncio.gather(reader, return_exceptions=True)
-        finally:
-            if process.returncode is None:
-                process.terminate()
-                await asyncio.wait_for(process.wait(), 5)
+        origin = operator if mode == "standalone" else await apps.enter_async_context(loopback_app(tmp_path / "app.log", env))
+        api = MeithealApi(session, origin, token, board_id)
+        await api.async_request("GET", "/api/tasks", read_json=True)
+        coordinator = MeithealCoordinator(hass, api)
+        coordinator.async_request_refresh = AsyncMock()
+        yield coordinator, frames, held, authenticated, revoke_event_binding
 
 
 async def attach_actions(hass):
@@ -234,7 +302,7 @@ async def test_concurrent_native_requests_bind_authority_to_their_own_receipts(a
     server_app.router.add_delete("/api/tasks/fallback", response)
     server = await aiohttp_server(server_app)
     async with ClientSession() as session:
-        api = MeithealApi(session, server.make_url("").origin(), None)
+        api = MeithealApi(session, server.make_url("").origin(), "mth_" + "a" * 64, "work")
         owned, fallback = set(), set()
         await asyncio.gather(
             api.async_request("PUT", "/api/tasks/owned", payload={"title": "Owned"}, event_authority=owned),
@@ -248,7 +316,7 @@ async def test_concurrent_native_requests_bind_authority_to_their_own_receipts(a
 async def test_app_owned_delivery_failure_never_starts_native_second_producer(hass, aiohttp_server, tmp_path, mode, expected):
     actions, detaches = await attach_actions(hass)
     try:
-        async with app_core(hass, aiohttp_server, tmp_path, mode=mode) as (coordinator, frames, held, authenticated):
+        async with app_core(hass, aiohttp_server, tmp_path, mode=mode) as (coordinator, frames, held, authenticated, _):
             # A held Core connection or lost fire_event acknowledgement cannot hold the mutation response.
             await asyncio.wait_for(coordinator.async_create_task("Best effort delivery"), 3)
             if mode == "held-auth":
@@ -262,6 +330,27 @@ async def test_app_owned_delivery_failure_never_starts_native_second_producer(ha
                 await held[0].send_json({"type": "auth_ok", "ha_version": "2026.11.1"})
                 await settled(hass, lambda: len(actions) == 1)
                 assert actions[0][1]["source"] == "meitheal"
+    finally:
+        for detach in detaches:
+            detach()
+
+
+async def test_native_deletion_stays_private_after_event_binding_revocation(hass, aiohttp_server, tmp_path):
+    actions, detaches = await attach_actions(hass)
+    try:
+        async with app_core(hass, aiohttp_server, tmp_path) as (coordinator, frames, _, _, revoke):
+            await coordinator.async_create_task("Delete after revoking event delivery")
+            tasks = await coordinator.api.async_request("GET", "/api/tasks", read_json=True)
+            [task] = tasks["tasks"]
+            await settled(hass, lambda: len(frames) == len(actions) == 1)
+            assert frames[0]["event_type"] == actions[0][0] == "meitheal_task_created"
+
+            await revoke()
+            assert not await coordinator.async_can_publish_shared()
+            await coordinator.async_delete_task(task["id"])
+            assert (await coordinator.api.async_request("GET", "/api/tasks", read_json=True))["tasks"] == []
+            await hass.async_block_till_done()
+            assert len(frames) == len(actions) == 1
     finally:
         for detach in detaches:
             detach()
@@ -459,7 +548,7 @@ async def test_todo_completion_rejects_an_unmatched_successful_receipt(hass, aio
     actions, detaches = await attach_actions(hass)
     try:
         async with ClientSession() as session:
-            coordinator = MeithealCoordinator(hass, MeithealApi(session, server.make_url("").origin(), token))
+            coordinator = MeithealCoordinator(hass, MeithealApi(session, server.make_url("").origin(), token, "work"))
             coordinator.async_request_refresh = AsyncMock()
             todo = MeithealTodoListEntity(coordinator, SimpleNamespace(entry_id="event-todo"))
             with pytest.raises(UpdateFailed, match="did not acknowledge task completion"):

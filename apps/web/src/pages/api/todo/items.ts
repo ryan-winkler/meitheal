@@ -1,170 +1,110 @@
-/**
- * Todo Items API — CRUD Operations
- *
- * Proxies CRUD operations to HA todo entities:
- *   GET    /api/todo/items?entity_id=todo.xyz&status=needs_action — list items
- *   POST   /api/todo/items — add item
- *   PUT    /api/todo/items — update item
- *   DELETE /api/todo/items — remove item(s)
- *
- * @domain todo
- * @bounded-context integration
- */
-import type { APIRoute } from "astro";
-import {
-  getTodoItems,
-  addTodoItem,
-  updateTodoItem,
-  removeTodoItem,
-  removeTodoCompletedItems,
-} from "@domains/ha";
-import { logApiError } from "../../../lib/api-logger";
+import type { APIContext, APIRoute } from "astro"
+import { TaskRepository, getPersistenceClient, validateIntegrationScope, scopePermits, hasBoardSelection, type BoardScope, type IntegrationScope } from "@domains/tasks"
+import { getTodoItems } from "@domains/ha"
+import { todoRequestBinding } from "./index"
+import { withBoardScope } from "@lib/board-http"
+import { apiError, apiJson } from "@lib/api-response"
+import { readBoardRequest } from "@lib/named-board-request"
+import { POST as createTask } from "../tasks/index"
+import { PUT as updateTask, DELETE as deleteTask } from "../tasks/[id]"
+import { haStatusToMeitheal } from "@domains/todo"
 
-/**
- * GET /api/todo/items?entity_id=todo.xyz&status=needs_action,completed
- */
-export const GET: APIRoute = async ({ url }) => {
-  const entityId = url.searchParams.get("entity_id");
-  if (!entityId) {
-    return new Response(JSON.stringify({ ok: false, error: "entity_id required" }), {
-      status: 400, headers: { "Content-Type": "application/json" },
-    });
+async function itemsForBinding(context: IntegrationScope, completedOnly = false) {
+  const db = getPersistenceClient()
+  const operationAllowed = async () => (await validateIntegrationScope(context, db, { resource: "task", action: "read" })).ok
+  let items
+  try { items = await getTodoItems(context.binding.sourceId, completedOnly ? ["completed"] : undefined, { operationAllowed, throwOnError: true }) } catch { return null }
+  if (!await operationAllowed()) return null
+  const matches = await new TaskRepository(db, context.scope).findTasksByExternalSyncIds({ source: "ha_todo", entityId: context.binding.sourceId,
+    externalIds: items.map(item => item.uid).filter((id): id is string => typeof id === "string") }, context)
+  return items.flatMap(item => {
+    const match = item.uid ? matches.get(item.uid) : null
+    return match && !match.taskDeleted && !match.suppressed && match.taskId ? [{ ...item, task_id: match.taskId }] : []
+  })
+}
+function taskContext(context: APIContext, scope: BoardScope, method: string, taskId?: string, body?: unknown): APIContext {
+  const url = new URL(taskId ? `/api/tasks/${encodeURIComponent(taskId)}` : "/api/tasks", context.request.url)
+  const headers = new Headers(context.request.headers)
+  headers.set("X-Meitheal-Board-Id", scope.boardId)
+  headers.set("Content-Type", "application/json")
+  return { ...context, url, params: taskId ? { id: taskId } : {}, request: new Request(url, { method, headers, signal: context.request.signal,
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }) }) }
+}
+async function boundTask(scope: BoardScope, binding: IntegrationScope, input: Record<string, unknown>, action: "edit" | "delete"): Promise<string | null> {
+  if (typeof input.task_id === "string") {
+    const task = await new TaskRepository(getPersistenceClient(), scope).resolveTaskId(input.task_id, action)
+    if (!task) return null
+    const snapshot = await new TaskRepository(getPersistenceClient(), binding.scope).findSyncConfirmation(task.id, binding)
+    return snapshot?.confirmation ? task.id : null
   }
+  if (typeof input.item !== "string") return null
+  const matches = await new TaskRepository(getPersistenceClient(), binding.scope).findTasksByExternalSyncIds({ source: "ha_todo", entityId: binding.binding.sourceId, externalIds: [input.item] }, binding)
+  const match = matches.get(input.item)
+  return match && !match.taskDeleted && !match.suppressed && match.taskId ? match.taskId : null
+}
 
-  const statusParam = url.searchParams.get("status");
-  const statusFilter = statusParam
-    ? statusParam.split(",").filter((s): s is "needs_action" | "completed" => ["needs_action", "completed"].includes(s))
-    : undefined;
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async (context, scope) => {
+  const input = Object.fromEntries(context.url.searchParams)
+  const binding = await todoRequestBinding(scope, { ...input, generation: Number(input.generation) }, { resource: "task", action: "read" })
+  if (!binding) return apiError("Choose an accessible current Todo binding.", 404)
+  const items = await itemsForBinding(binding)
+  return items ? apiJson({ ok: true, items }) : apiError("Todo items could not be confirmed. Check the Home Assistant connection and retry.", 503)
+})
 
-  try {
-    const items = await getTodoItems(entityId, statusFilter);
-    return new Response(JSON.stringify({ ok: true, items }), {
-      status: 200, headers: { "Content-Type": "application/json" },
-    });
-  } catch (err) {
-    logApiError("todo-items", "GET failed", err);
-    return new Response(JSON.stringify({ ok: false, error: "Internal server error" }), {
-      status: 500, headers: { "Content-Type": "application/json" },
-    });
+/** Todo compatibility writes use the same task commands, events, ceilings and receipts. */
+export const POST: APIRoute = withBoardScope({ resource: "task", action: "create" }, async (context, scope) => {
+  if (context.request.headers.has("x-meitheal-capture-attempt")) return apiError("Use the canonical task capture endpoint.", 400)
+  const body = await readBoardRequest(context.request)
+  if (body && hasBoardSelection(body)) return apiError("Select the Board using the request context.", 400)
+  if (!body || typeof body.summary !== "string") return apiError("Provide a task summary and current Todo binding.", 400)
+  const binding = await todoRequestBinding(scope, body, { resource: "task", action: "create" })
+  if (!binding) return apiError("This Todo binding is unavailable.", 404)
+  return createTask(taskContext(context, scope, "POST", undefined, { title: body.summary, description: body.description ?? "",
+    due_date: body.due ?? null, area_id: binding.binding.destination.areaId ?? null, project_id: binding.binding.destination.projectId ?? null }))
+})
+
+export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }, async (context, scope) => {
+  const body = await readBoardRequest(context.request)
+  if (body && hasBoardSelection(body)) return apiError("Select the Board using the request context.", 400)
+  if (!body) return apiError("Provide a linked task and current Todo binding.", 400)
+  const binding = await todoRequestBinding(scope, body, { resource: "task", action: "edit" })
+  if (!binding) return apiError("This Todo binding is unavailable.", 404)
+  const taskId = await boundTask(scope, binding, body, "edit")
+  if (!taskId) return apiError("This linked task is unavailable.", 404)
+  if (body.status !== undefined && body.status !== "needs_action" && body.status !== "completed") return apiError("Choose a valid Todo status.", 400)
+  if (body.due_date !== undefined && body.due_datetime !== undefined) return apiError("Choose one due date format.", 400)
+  const updates: Record<string, unknown> = {
+    ...(body.rename === undefined ? {} : { title: body.rename }), ...(body.description === undefined ? {} : { description: body.description }),
+    ...(body.status === undefined ? {} : { status: haStatusToMeitheal(body.status) }),
+    ...(body.due_date === undefined && body.due_datetime === undefined ? {} : { due_date: body.due_date ?? body.due_datetime }),
+    ...(body.updated_at === undefined ? {} : { updated_at: body.updated_at }),
   }
-};
+  return updateTask(taskContext(context, scope, "PUT", taskId, updates))
+})
 
-/**
- * POST /api/todo/items
- * Body: { entity_id, summary, due?, description? }
- */
-export const POST: APIRoute = async ({ request }) => {
-  try {
-    const body = await request.json() as {
-      entity_id?: string;
-      summary?: string;
-      due?: string;
-      description?: string;
-    };
-
-    if (!body.entity_id || !body.summary) {
-      return new Response(JSON.stringify({ ok: false, error: "entity_id and summary required" }), {
-        status: 400, headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    const success = await addTodoItem(body.entity_id, {
-      summary: body.summary,
-      due: body.due,
-      description: body.description,
-    });
-
-    return new Response(JSON.stringify({ ok: success }), {
-      status: success ? 201 : 502,
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (err) {
-    logApiError("todo-items", "POST failed", err);
-    return new Response(JSON.stringify({ ok: false, error: "Internal server error" }), {
-      status: 500, headers: { "Content-Type": "application/json" },
-    });
+export const DELETE: APIRoute = withBoardScope({ resource: "task", action: "delete" }, async (context, scope) => {
+  const body = await readBoardRequest(context.request)
+  if (body && hasBoardSelection(body)) return apiError("Select the Board using the request context.", 400)
+  if (!body) return apiError("Choose linked tasks and a current Todo binding.", 400)
+  const binding = await todoRequestBinding(scope, body, { resource: "task", action: "delete" })
+  if (!binding) return apiError("This Todo binding is unavailable.", 404)
+  let ids: string[]
+  if (typeof body.task_id === "string") {
+    const id = await boundTask(scope, binding, body, "delete")
+    ids = id ? [id] : []
+  } else {
+    if (!scopePermits(scope, { resource: "task", action: "read" })) return apiError("Read this Board to choose linked tasks.", 403)
+    if (body.clear_completed !== true && (!Array.isArray(body.items) || !body.items.length || body.items.length > 100 || !body.items.every(item => typeof item === "string"))) return apiError("Choose linked item IDs or completed work.", 400)
+    const items = await itemsForBinding(binding, body.clear_completed === true)
+    if (!items) return apiError("Todo items could not be confirmed. Check the Home Assistant connection and retry.", 503)
+    ids = items.filter(item => body.clear_completed === true || (body.items as string[]).includes(item.uid!)).map(item => item.task_id)
   }
-};
-
-/**
- * PUT /api/todo/items
- * Body: { entity_id, item (uid or summary), rename?, status?, due_date?, due_datetime?, description? }
- */
-export const PUT: APIRoute = async ({ request }) => {
-  try {
-    const body = await request.json() as {
-      entity_id?: string;
-      item?: string;
-      rename?: string;
-      status?: "needs_action" | "completed";
-      due_date?: string;
-      due_datetime?: string;
-      description?: string;
-    };
-
-    if (!body.entity_id || !body.item) {
-      return new Response(JSON.stringify({ ok: false, error: "entity_id and item required" }), {
-        status: 400, headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    const success = await updateTodoItem(body.entity_id, body.item, {
-      summary: body.rename,
-      status: body.status,
-      due_date: body.due_date,
-      due_datetime: body.due_datetime,
-      description: body.description,
-    });
-
-    return new Response(JSON.stringify({ ok: success }), {
-      status: success ? 200 : 502,
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (err) {
-    logApiError("todo-items", "PUT failed", err);
-    return new Response(JSON.stringify({ ok: false, error: "Internal server error" }), {
-      status: 500, headers: { "Content-Type": "application/json" },
-    });
+  if (!ids.length) return apiError("No linked task is available.", 404)
+  const deleted: string[] = []
+  for (const id of [...new Set(ids)]) {
+    const response = await deleteTask(taskContext(context, scope, "DELETE", id))
+    if (!response.ok) return apiJson({ ok: false, deleted, error: "Some tasks could not be deleted. Refresh before continuing." }, response.status)
+    deleted.push(id)
   }
-};
-
-/**
- * DELETE /api/todo/items
- * Body: { entity_id, items: string[] } OR { entity_id, clear_completed: true }
- */
-export const DELETE: APIRoute = async ({ request }) => {
-  try {
-    const body = await request.json() as {
-      entity_id?: string;
-      items?: string[];
-      clear_completed?: boolean;
-    };
-
-    if (!body.entity_id) {
-      return new Response(JSON.stringify({ ok: false, error: "entity_id required" }), {
-        status: 400, headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    let success: boolean;
-    if (body.clear_completed) {
-      success = await removeTodoCompletedItems(body.entity_id);
-    } else if (body.items?.length) {
-      success = await removeTodoItem(body.entity_id, body.items);
-    } else {
-      return new Response(JSON.stringify({ ok: false, error: "items or clear_completed required" }), {
-        status: 400, headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    return new Response(JSON.stringify({ ok: success }), {
-      status: success ? 200 : 502,
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (err) {
-    logApiError("todo-items", "DELETE failed", err);
-    return new Response(JSON.stringify({ ok: false, error: "Internal server error" }), {
-      status: 500, headers: { "Content-Type": "application/json" },
-    });
-  }
-};
+  return apiJson({ ok: true, deleted })
+})

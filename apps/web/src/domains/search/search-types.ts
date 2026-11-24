@@ -21,12 +21,15 @@ export interface SearchQueryOptions {
   status?: string
   priority?: number
   assignedTo?: string
+  taskKind?: string
 }
 
 export interface SearchResultItem {
   id: string
   kind:
     | "task"
+    | "routine"
+    | "board"
     | "area"
     | "saved_filter"
     | "setting"
@@ -40,6 +43,7 @@ export interface SearchResultItem {
   actionId?: string
   icon?: string
   color?: string | null
+  keywords?: string[]
   meta?: Record<string, unknown>
 }
 
@@ -59,5 +63,6 @@ export interface SearchResponse {
     include_archived: boolean
     sort: SearchSort
     task_fields: TaskSearchField[]
+    task_kind?: string
   }
 }

@@ -15,8 +15,7 @@ export function initUpcomingPage(): void {
     sectionSelector: "[data-upcoming-section]",
     sectionIds: UPCOMING_SECTIONS.map((section) => section.id),
     defaultSectionId: "upcoming-overview",
-    flashClass: "page-shell__section--flash",
-    sectionLinkSelectors: ["[data-upcoming-section-link]"],
+    preserveOverviewOnLoad: true,
   })
 
   initTaskCheckboxes()

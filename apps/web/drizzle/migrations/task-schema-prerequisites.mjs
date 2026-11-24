@@ -202,8 +202,13 @@ function createIndex({ name, table, columns, unique }) {
   return `CREATE ${unique ? "UNIQUE " : ""}INDEX IF NOT EXISTS ${name} ON ${table} (${columns.join(", ")})`
 }
 
-/** @param {ResultSet} columnInfo @param {ResultSet} indexInfo @param {ResultSet} foreignKeyInfo */
-function validateMetadata(columnInfo, indexInfo, foreignKeyInfo) {
+/**
+ * @param {ResultSet} columnInfo
+ * @param {ResultSet} indexInfo
+ * @param {ResultSet} foreignKeyInfo
+ * @param {boolean} boardScopedLanes
+ */
+function validateMetadata(columnInfo, indexInfo, foreignKeyInfo, boardScopedLanes = false) {
   const existingColumns = readColumns(columnInfo)
   for (const [table, columns] of Object.entries(requiredColumns)) {
     if (!existingColumns[table].size) throw new Error(`Missing task prerequisite table: ${table}`)
@@ -246,12 +251,15 @@ function validateMetadata(columnInfo, indexInfo, foreignKeyInfo) {
     throw new Error("Unexpected task prerequisite timestamp default: comments.created_at")
   }
 
-  const uniqueLaneIndexes = indexInfo.rows.filter(row => row.table_name === "kanban_lanes" && Number(row.is_unique) === 1)
-  const hasUniqueLaneKey = uniqueLaneIndexes.some(key => key.column_name === "key" && Number(key.is_partial) === 0 &&
-    uniqueLaneIndexes.filter(row => row.index_name === key.index_name).length === 1)
-  if (!hasUniqueLaneKey) throw new Error("Missing task prerequisite unique key: kanban_lanes.key")
+  if (!boardScopedLanes) {
+    const uniqueLaneIndexes = indexInfo.rows.filter(row => row.table_name === "kanban_lanes" && Number(row.is_unique) === 1)
+    const hasUniqueLaneKey = uniqueLaneIndexes.some(key => key.column_name === "key" && Number(key.is_partial) === 0 &&
+      uniqueLaneIndexes.filter(row => row.index_name === key.index_name).length === 1)
+    if (!hasUniqueLaneKey) throw new Error("Missing task prerequisite unique key: kanban_lanes.key")
+  }
 
   for (const index of indexes) {
+    if (boardScopedLanes && index.table === "kanban_lanes") continue
     if (!matchesIndex(indexInfo, index)) throw new Error(`Unexpected task prerequisite index: ${index.name}`)
   }
 }
@@ -277,6 +285,58 @@ function insertLane(now, [key, label, icon, position, includes]) {
   }
 }
 
+const householdLanes = "board_id = 'household'"
+const legacyLanes = "1"
+
+/** @param {string} scope */
+function laneSummary(scope) {
+  return `SELECT EXISTS(SELECT 1 FROM kanban_lanes WHERE ${scope}) AS has_lanes,
+    EXISTS(SELECT 1 FROM kanban_lanes WHERE ${scope} AND key = 'backlog') AS has_backlog`
+}
+
+/** @param {number} now @param {import("@libsql/core/api").Row} state @param {string} scope @returns {InStatement[]} */
+function laneRepairs(now, state, scope) {
+  if (Number(state.has_lanes) === 0) return lanes.map(lane => insertLane(now, lane))
+
+  const repairs = [["pending", "Pending", "Todo"], ["active", "Active", "In Progress"], ["complete", "Complete", "Done"]]
+    .map(([key, oldLabel, label]) => ({
+      sql: `UPDATE kanban_lanes SET label = ? WHERE ${scope} AND key = ? AND label = ? AND built_in = 1`,
+      args: [label, key, oldLabel],
+    }))
+  if (Number(state.has_backlog) === 0) {
+    return [...repairs, `UPDATE kanban_lanes SET position = position + 1 WHERE ${scope}`, insertLane(now, lanes[0])]
+  }
+  return repairs
+}
+
+/** @param {number} now @returns {InStatement} */
+function defaultArea(now) {
+  return {
+    sql: `INSERT INTO areas (id, name, icon, color, position, created_at, updated_at)
+          SELECT 'default', 'Default', '📋', '#6366F1', 0, ?, ? WHERE NOT EXISTS (SELECT 1 FROM areas)`,
+    args: [now, now],
+  }
+}
+
+/** @param {number} now @returns {InStatement} */
+function defaultProject(now) {
+  return {
+    sql: `INSERT INTO projects (id, goal_id, title, description, status, icon, color, position, is_default, created_at, updated_at)
+          SELECT 'every-day', NULL, 'Every Day', 'Your daily tasks and quick captures', 'active', '☀️', '#F59E0B', -1, 1, ?, ?
+          WHERE NOT EXISTS (SELECT 1 FROM projects WHERE is_default = 1)`,
+    args: [now, now],
+  }
+}
+
+/** @param {import("@libsql/core/api").Transaction} tx */
+export async function seedHouseholdTaskPrerequisites(tx) {
+  const { rows: [board] } = await tx.execute("SELECT state FROM task_boards WHERE id = 'household'")
+  if (board?.state === "retired") return
+  const now = Date.now()
+  const [, , { rows: [state] }] = await tx.batch([defaultArea(now), defaultProject(now), laneSummary(householdLanes)])
+  await tx.batch(laneRepairs(now, state, householdLanes))
+}
+
 /** @returns {Generator<InStatement[], void, ResultSet[]>} */
 function* reconcileSteps() {
   yield* databaseSchemaCheckSteps()
@@ -297,11 +357,7 @@ function* reconcileSteps() {
       if (!existingColumns[table].has(name)) changes.push(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`)
     }
   }
-  changes.push({
-    sql: `INSERT INTO areas (id, name, icon, color, position, created_at, updated_at)
-          SELECT 'default', 'Default', '📋', '#6366F1', 0, ?, ? WHERE NOT EXISTS (SELECT 1 FROM areas)`,
-    args: [now, now],
-  })
+  changes.push(defaultArea(now))
   if (!existingColumns.tasks.has("ticket_number")) {
     // Preserve numbers issued by the runtime and issue rowid-based numbers only on first addition.
     changes.push("UPDATE tasks SET ticket_number = rowid WHERE ticket_number IS NULL")
@@ -311,18 +367,7 @@ function* reconcileSteps() {
                   WHERE goal_id IS NOT NULL AND area_id IS NULL`)
   }
 
-  const setup = yield [...changes,
-    {
-      sql: `INSERT INTO projects (id, goal_id, title, description, status, icon, color, position, is_default, created_at, updated_at)
-            SELECT 'every-day', NULL, 'Every Day', 'Your daily tasks and quick captures', 'active', '☀️', '#F59E0B', -1, 1, ?, ?
-            WHERE NOT EXISTS (SELECT 1 FROM projects WHERE is_default = 1)`,
-      args: [now, now],
-    },
-    ...indexes.map(createIndex),
-    indexMetadata,
-    `SELECT EXISTS(SELECT 1 FROM kanban_lanes) AS has_lanes,
-            EXISTS(SELECT 1 FROM kanban_lanes WHERE key = 'backlog') AS has_backlog`,
-  ]
+  const setup = yield [...changes, defaultProject(now), ...indexes.map(createIndex), indexMetadata, laneSummary(legacyLanes)]
 
   /** @type {InStatement[]} */
   const repairs = []
@@ -330,16 +375,7 @@ function* reconcileSteps() {
     // The Board-to-Area upgrade kept this index name on installed databases.
     repairs.push("DROP INDEX tasks_board_status_idx", createIndex(areaStatusIndex))
   }
-  const [laneState] = setup[setup.length - 1].rows
-  if (Number(laneState.has_lanes) === 0) {
-    repairs.push(...lanes.map(lane => insertLane(now, lane)))
-  }
-  for (const [key, oldLabel, label] of [["pending", "Pending", "Todo"], ["active", "Active", "In Progress"], ["complete", "Complete", "Done"]]) {
-    repairs.push({ sql: "UPDATE kanban_lanes SET label = ? WHERE key = ? AND label = ? AND built_in = 1", args: [label, key, oldLabel] })
-  }
-  if (Number(laneState.has_lanes) === 1 && Number(laneState.has_backlog) === 0) {
-    repairs.push("UPDATE kanban_lanes SET position = position + 1", insertLane(now, lanes[0]))
-  }
+  repairs.push(...laneRepairs(now, setup[setup.length - 1].rows[0], legacyLanes))
 
   const verification = yield [...repairs, columnMetadata, indexMetadata, foreignKeyMetadata]
   const [columnInfo, indexInfo, foreignKeyInfo] = verification.slice(repairs.length)
@@ -352,14 +388,24 @@ export function reconcileTaskSchemaPrerequisites(client) {
   return runWriteTransaction(client, reconcileSteps)
 }
 
-/** @param {Pick<Client, "execute">} db */
-export async function validateTaskSchemaPrerequisites(db) {
+/** @param {import("@libsql/core/api").Transaction} tx */
+export async function applyTaskSchemaPrerequisites(tx) {
+  const steps = reconcileSteps()
+  let step = steps.next()
+  while (!step.done) step = steps.next(await tx.batch(step.value))
+}
+
+/**
+ * @param {Pick<Client, "execute">} db
+ * @param {{ boardScopedLanes?: boolean }} [options]
+ */
+export async function validateTaskSchemaPrerequisites(db, { boardScopedLanes = false } = {}) {
   const [columnInfo, indexInfo, foreignKeyInfo] = await Promise.all([
     db.execute(columnMetadata),
     db.execute(indexMetadata),
     db.execute(foreignKeyMetadata),
   ])
-  validateMetadata(columnInfo, indexInfo, foreignKeyInfo)
+  validateMetadata(columnInfo, indexInfo, foreignKeyInfo, boardScopedLanes)
   if (hasCommentMentionsForeignKey(foreignKeyInfo)) {
     const { rows } = await db.execute("SELECT 1 FROM pragma_foreign_key_check('comment_mentions') LIMIT 1")
     if (rows.length > 0) throw new Error("Unexpected comment mention reference")

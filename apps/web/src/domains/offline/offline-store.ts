@@ -1,3 +1,4 @@
+import { currentTaskApiContext } from "@lib/task-api"
 /**
  * Offline Store — IndexedDB schema and CRUD operations
  *
@@ -39,6 +40,7 @@ export interface PendingSyncOperation {
   payload: string
   createdAt: string
   retryCount: number
+  partition: OfflinePartition
 }
 
 // --- IndexedDB Schema ---
@@ -54,9 +56,9 @@ const STORES = {
 
 // --- Database Initialization ---
 
-function openDatabase(): Promise<IDBDatabase> {
+function openDatabase(name: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION)
+    const request = indexedDB.open(name, DB_VERSION)
 
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result
@@ -102,19 +104,63 @@ function openDatabase(): Promise<IDBDatabase> {
 
 // --- Singleton ---
 
-let dbInstance: IDBDatabase | null = null
+export interface OfflinePartition { readonly actorKey: string, readonly boardId: string }
+const databases = new Map<string, IDBDatabase>()
+const partitionByDatabase = new WeakMap<IDBDatabase, OfflinePartition>()
 
-async function getDb(): Promise<IDBDatabase | null> {
+export function currentOfflinePartition(): OfflinePartition | null {
+  if (typeof document === "undefined") return null
+  const context = currentTaskApiContext()
+  return context?.actorKey && /^[a-f0-9]{64}$/.test(context.actorKey)
+    ? Object.freeze({ actorKey: context.actorKey, boardId: context.boardId }) : null
+}
+
+export function offlinePartitionKey(partition: OfflinePartition): string {
+  return `${partition.actorKey}:${encodeURIComponent(partition.boardId)}`
+}
+
+export function assertOfflinePartition(partition: OfflinePartition): void {
+  const current = currentOfflinePartition()
+  if (!current || offlinePartitionKey(current) !== offlinePartitionKey(partition)) {
+    throw new Error("Offline work belongs to another Board or account. Return to its original context.")
+  }
+}
+
+function settleCurrent(db: IDBDatabase, complete: () => void, reject: (reason?: unknown) => void) {
+  try {
+    const partition = partitionByDatabase.get(db)
+    if (!partition) throw new Error("Offline work has no verified context.")
+    assertOfflinePartition(partition)
+    complete()
+  } catch (error) { reject(error) }
+}
+
+async function getDb(selected?: OfflinePartition): Promise<IDBDatabase | null> {
   if (!shouldEnableIDB()) return null
-  if (dbInstance) return dbInstance
-  dbInstance = await openDatabase()
-  return dbInstance
+  const partition = selected ?? currentOfflinePartition()
+  if (!partition) throw new Error("Open an authenticated Board before using offline work.")
+  assertOfflinePartition(partition)
+  const name = `${DB_NAME}-v4:${offlinePartitionKey(partition)}`
+  let database = databases.get(name)
+  if (!database) {
+    database = await openDatabase(name)
+    assertOfflinePartition(partition)
+    partitionByDatabase.set(database, partition)
+    databases.set(name, database)
+  }
+  return database
+}
+
+/** Old global data is retained without attributing or replaying it as the current user. */
+export async function hasUnattributedOfflineData(): Promise<boolean> {
+  if (typeof indexedDB === "undefined" || typeof indexedDB.databases !== "function") return false
+  return (await indexedDB.databases()).some(database => database.name === DB_NAME)
 }
 
 // --- Task CRUD ---
 
-export async function putTask(task: OfflineTask): Promise<void> {
-  const db = await getDb()
+export async function putTask(task: OfflineTask, partition?: OfflinePartition): Promise<void> {
+  const db = await getDb(partition)
   if (!db) return
   if (navigator.storage && navigator.storage.estimate) {
     try {
@@ -139,7 +185,8 @@ export async function putTask(task: OfflineTask): Promise<void> {
     const tx = db.transaction(STORES.tasks, "readwrite")
     const store = tx.objectStore(STORES.tasks)
     const request = store.put(task)
-    request.onsuccess = () => resolve()
+    tx.onabort = () => reject(new Error("The offline write was not committed."))
+    tx.oncomplete = () => settleCurrent(db, () => resolve(), reject)
     request.onerror = () => reject(new Error(`putTask failed: ${request.error?.message}`))
     tx.onerror = () => reject(new Error(`putTask tx failed: ${tx.error?.message}`))
   })
@@ -152,19 +199,19 @@ export async function getTask(id: string): Promise<OfflineTask | undefined> {
     const tx = db.transaction(STORES.tasks, "readonly")
     const store = tx.objectStore(STORES.tasks)
     const request = store.get(id)
-    request.onsuccess = () => resolve(request.result as OfflineTask | undefined)
+    request.onsuccess = () => settleCurrent(db, () => resolve(request.result as OfflineTask | undefined), reject)
     request.onerror = () => reject(new Error(`getTask failed: ${request.error?.message}`))
   })
 }
 
-export async function getAllTasks(): Promise<OfflineTask[]> {
-  const db = await getDb()
+export async function getAllTasks(partition?: OfflinePartition): Promise<OfflineTask[]> {
+  const db = await getDb(partition)
   if (!db) return []
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.tasks, "readonly")
     const store = tx.objectStore(STORES.tasks)
     const request = store.getAll()
-    request.onsuccess = () => resolve(request.result as OfflineTask[])
+    request.onsuccess = () => settleCurrent(db, () => resolve(request.result as OfflineTask[]), reject)
     request.onerror = () => reject(new Error(`getAllTasks failed: ${request.error?.message}`))
   })
 }
@@ -176,7 +223,8 @@ export async function deleteTask(id: string): Promise<void> {
     const tx = db.transaction(STORES.tasks, "readwrite")
     const store = tx.objectStore(STORES.tasks)
     const request = store.delete(id)
-    request.onsuccess = () => resolve()
+    tx.onabort = () => reject(new Error("The offline write was not committed."))
+    tx.oncomplete = () => settleCurrent(db, () => resolve(), reject)
     request.onerror = () => reject(new Error(`deleteTask failed: ${request.error?.message}`))
   })
 }
@@ -185,7 +233,7 @@ export async function deleteTask(id: string): Promise<void> {
 
 const MAX_QUEUE_DEPTH = 100
 
-export async function enqueueSyncOp(op: Omit<PendingSyncOperation, "id" | "createdAt" | "retryCount">): Promise<string> {
+export async function enqueueSyncOp(op: Omit<PendingSyncOperation, "id" | "createdAt" | "retryCount" | "partition">): Promise<string> {
   const db = await getDb()
   if (!db) return ""
 
@@ -195,14 +243,10 @@ export async function enqueueSyncOp(op: Omit<PendingSyncOperation, "id" | "creat
     log.warn(`Sync queue at capacity (${depth}/${MAX_QUEUE_DEPTH})`)
   }
 
-  // Deduplication: collapse updates to same entity
-  if (op.operation === "update") {
-    await deduplicateUpdate(op.entityId, op.table)
-  }
-
   const entry: PendingSyncOperation = {
     id: crypto.randomUUID(),
     ...op,
+    partition: partitionByDatabase.get(db)!,
     createdAt: new Date().toISOString(),
     retryCount: 0,
   }
@@ -211,77 +255,65 @@ export async function enqueueSyncOp(op: Omit<PendingSyncOperation, "id" | "creat
     const tx = db.transaction(STORES.pendingSync, "readwrite")
     const store = tx.objectStore(STORES.pendingSync)
     const request = store.put(entry)
-    request.onsuccess = () => resolve(entry.id)
+    if (op.operation === "update") {
+      const older = store.index("table").openCursor(IDBKeyRange.only(op.table))
+      older.onsuccess = () => {
+        const cursor = older.result
+        if (!cursor) return
+        const prior = cursor.value as PendingSyncOperation
+        if (prior.id !== entry.id && prior.entityId === op.entityId && prior.operation === "update") cursor.delete()
+        cursor.continue()
+      }
+      older.onerror = () => reject(new Error("Could not combine this offline edit. It was not saved."))
+    }
+    tx.onabort = () => reject(new Error("The offline edit was not committed."))
+    tx.oncomplete = () => settleCurrent(db, () => resolve(entry.id), reject)
     request.onerror = () => reject(new Error(`enqueueSyncOp failed: ${request.error?.message}`))
   })
 }
 
-async function deduplicateUpdate(entityId: string, table: string): Promise<void> {
-  const db = await getDb()
-  if (!db) return
-  return new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORES.pendingSync, "readwrite")
-    const store = tx.objectStore(STORES.pendingSync)
-    const index = store.index("table")
-    const request = index.openCursor(IDBKeyRange.only(table))
-
-    request.onsuccess = () => {
-      const cursor = request.result
-      if (cursor) {
-        const entry = cursor.value as PendingSyncOperation
-        if (entry.entityId === entityId && entry.operation === "update") {
-          cursor.delete()
-        }
-        cursor.continue()
-      } else {
-        resolve()
-      }
-    }
-    request.onerror = () => reject(new Error(`deduplicateUpdate failed: ${request.error?.message}`))
-  })
-}
-
-export async function getSyncQueue(): Promise<PendingSyncOperation[]> {
-  const db = await getDb()
+export async function getSyncQueue(partition?: OfflinePartition): Promise<PendingSyncOperation[]> {
+  const db = await getDb(partition)
   if (!db) return []
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.pendingSync, "readonly")
     const store = tx.objectStore(STORES.pendingSync)
     const index = store.index("createdAt")
     const request = index.getAll()
-    request.onsuccess = () => resolve(request.result as PendingSyncOperation[])
+    request.onsuccess = () => settleCurrent(db, () => resolve(request.result as PendingSyncOperation[]), reject)
     request.onerror = () => reject(new Error(`getSyncQueue failed: ${request.error?.message}`))
   })
 }
 
-export async function removeSyncOp(id: string): Promise<void> {
-  const db = await getDb()
+export async function removeSyncOp(id: string, partition?: OfflinePartition): Promise<void> {
+  const db = await getDb(partition)
   if (!db) return
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.pendingSync, "readwrite")
     const store = tx.objectStore(STORES.pendingSync)
     const request = store.delete(id)
-    request.onsuccess = () => resolve()
+    tx.onabort = () => reject(new Error("The offline write was not committed."))
+    tx.oncomplete = () => settleCurrent(db, () => resolve(), reject)
     request.onerror = () => reject(new Error(`removeSyncOp failed: ${request.error?.message}`))
   })
 }
 
-export async function incrementRetryCount(id: string): Promise<void> {
-  const db = await getDb()
+export async function incrementRetryCount(id: string, partition?: OfflinePartition): Promise<void> {
+  const db = await getDb(partition)
   if (!db) return
   return new Promise<void>((resolve, reject) => {
     const tx = db.transaction(STORES.pendingSync, "readwrite")
     const store = tx.objectStore(STORES.pendingSync)
+    tx.onabort = () => reject(new Error("The offline write was not committed."))
+    tx.oncomplete = () => settleCurrent(db, () => resolve(), reject)
+    tx.onabort = () => reject(new Error("The retry state was not saved."))
     const getReq = store.get(id)
     getReq.onsuccess = () => {
       const entry = getReq.result as PendingSyncOperation | undefined
       if (entry) {
         entry.retryCount += 1
         const putReq = store.put(entry)
-        putReq.onsuccess = () => resolve()
         putReq.onerror = () => reject(new Error(`incrementRetryCount put failed`))
-      } else {
-        resolve()
       }
     }
     getReq.onerror = () => reject(new Error(`incrementRetryCount get failed`))
@@ -295,46 +327,25 @@ export async function getSyncQueueDepth(): Promise<number> {
     const tx = db.transaction(STORES.pendingSync, "readonly")
     const store = tx.objectStore(STORES.pendingSync)
     const request = store.count()
-    request.onsuccess = () => resolve(request.result)
+    request.onsuccess = () => settleCurrent(db, () => resolve(request.result), reject)
     request.onerror = () => reject(new Error(`getSyncQueueDepth failed: ${request.error?.message}`))
   })
 }
 
 // --- TTL Cleanup (T-514: 7-day expiry) ---
 
-const SYNC_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
-
-export async function cleanupExpiredSyncOps(): Promise<number> {
-  const db = await getDb()
-  if (!db) return 0
-  const cutoff = new Date(Date.now() - SYNC_TTL_MS).toISOString()
-  let removed = 0
-
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORES.pendingSync, "readwrite")
-    const store = tx.objectStore(STORES.pendingSync)
-    const index = store.index("createdAt")
-    const range = IDBKeyRange.upperBound(cutoff)
-    const request = index.openCursor(range)
-
-    request.onsuccess = () => {
-      const cursor = request.result
-      if (cursor) {
-        cursor.delete()
-        removed++
-        cursor.continue()
-      } else {
-        resolve(removed)
-      }
-    }
-    request.onerror = () => reject(new Error(`cleanupExpiredSyncOps failed: ${request.error?.message}`))
-  })
+/** Unconfirmed edits never expire into an implicit success or deletion. */
+export async function cleanupExpiredSyncOps(partition?: OfflinePartition): Promise<number> {
+  const selected = partition ?? currentOfflinePartition()
+  if (selected) assertOfflinePartition(selected)
+  return 0
 }
 
 // --- Metadata ---
 
 export function getDbName(): string {
-  return DB_NAME
+  const partition = currentOfflinePartition()
+  return partition ? `${DB_NAME}-v4:${offlinePartitionKey(partition)}` : ""
 }
 
 export function getDbVersion(): number {
@@ -359,21 +370,22 @@ export async function saveAttachment(attachment: TaskAttachment): Promise<void> 
     const tx = db.transaction(STORES.taskAttachments, "readwrite")
     const store = tx.objectStore(STORES.taskAttachments)
     const request = store.put(attachment)
-    request.onsuccess = () => resolve()
+    tx.onabort = () => reject(new Error("The offline write was not committed."))
+    tx.oncomplete = () => settleCurrent(db, () => resolve(), reject)
     request.onerror = () => reject(new Error(`saveAttachment failed: ${request.error?.message}`))
     tx.onerror = () => reject(new Error(`saveAttachment tx failed: ${tx.error?.message}`))
   })
 }
 
-export async function getAttachmentsByTaskId(taskId: string): Promise<TaskAttachment[]> {
-  const db = await getDb()
+export async function getAttachmentsByTaskId(taskId: string, partition?: OfflinePartition): Promise<TaskAttachment[]> {
+  const db = await getDb(partition)
   if (!db) return []
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.taskAttachments, "readonly")
     const store = tx.objectStore(STORES.taskAttachments)
     const index = store.index("taskId")
     const request = index.getAll(IDBKeyRange.only(taskId))
-    request.onsuccess = () => resolve((request.result || []) as TaskAttachment[])
+    request.onsuccess = () => settleCurrent(db, () => resolve((request.result || []) as TaskAttachment[]), reject)
     request.onerror = () => reject(new Error(`getAttachmentsByTaskId failed: ${request.error?.message}`))
   })
 }
@@ -385,7 +397,29 @@ export async function deleteAttachment(id: string): Promise<void> {
     const tx = db.transaction(STORES.taskAttachments, "readwrite")
     const store = tx.objectStore(STORES.taskAttachments)
     const request = store.delete(id)
-    request.onsuccess = () => resolve()
+    tx.onabort = () => reject(new Error("The offline write was not committed."))
+    tx.oncomplete = () => settleCurrent(db, () => resolve(), reject)
     request.onerror = () => reject(new Error(`deleteAttachment failed: ${request.error?.message}`))
+  })
+}
+
+/** Clear only the current verified cache; unconfirmed edits and their context stay intact. */
+export async function clearCurrentOfflineCache(): Promise<void> {
+  const partition = currentOfflinePartition()
+  if (!partition) throw new Error("Open an authenticated Board before clearing its cache.")
+  const db = await getDb(partition)
+  if (!db) return
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction([STORES.tasks, STORES.pendingSync], "readwrite")
+    const count = tx.objectStore(STORES.pendingSync).count()
+    let pending = false
+    count.onsuccess = () => {
+      try { assertOfflinePartition(partition) } catch (error) { tx.abort(); reject(error); return }
+      if (count.result) { pending = true; tx.abort(); return }
+      tx.objectStore(STORES.tasks).clear()
+    }
+    tx.oncomplete = () => settleCurrent(db, resolve, reject)
+    tx.onabort = () => reject(new Error(pending ? "Unconfirmed offline edits are kept. Reconnect to resolve them before clearing this Board’s cache." : "The cache was not cleared."))
+    tx.onerror = () => reject(new Error("The cache was not cleared."))
   })
 }

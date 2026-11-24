@@ -1,3 +1,4 @@
+import { withBoardScope } from "./board-http"
 import type { APIContext, APIRoute } from "astro"
 import { hasScope } from "@meitheal/domain-auth"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
@@ -82,7 +83,7 @@ async function readContent(request: Request): Promise<string | Response> {
 }
 
 function reactionRoute(
-  scope: "tasks:read" | "tasks:write",
+  tokenScope: "tasks:read" | "tasks:write",
   handler: (
     context: APIContext,
     repo: TaskReactionRepository,
@@ -90,20 +91,20 @@ function reactionRoute(
     canReact: boolean,
   ) => Promise<Response>,
 ): APIRoute {
-  return async context => {
+  return withBoardScope({ resource: "task", action: tokenScope === "tasks:read" ? "read" : "edit" }, async (context, workScope) => {
     const { locals, request } = context
     const actor = resolveTaskAuthor(locals)
     const token = locals.agentToken
     if (!actor) return activeParticipantRequired()
-    if (!actor.owner || (token && !hasScope(token.scopes, scope))) {
+    if (!actor.owner || (token && !hasScope(token.scopes, tokenScope))) {
       return reactionProblem(403, "Use a verified Home Assistant session or an automation credential with the required task permission")
     }
     const canReact = !token || hasScope(token.scopes, "tasks:write")
 
     try {
-      if (scope === "tasks:read" && !await hasCurrentTaskParticipant(locals, request.signal)) return activeParticipantRequired()
+      if (tokenScope === "tasks:read" && !await hasCurrentTaskParticipant(locals, request.signal)) return activeParticipantRequired()
       await ensureSchema()
-      return await handler(context, new TaskReactionRepository(getPersistenceClient()), { ...actor, owner: actor.owner }, canReact)
+      return await handler(context, new TaskReactionRepository(getPersistenceClient(), workScope), { ...actor, owner: actor.owner }, canReact)
     } catch {
       logger.log("error", {
         event: "api.reactions.error",
@@ -114,7 +115,7 @@ function reactionRoute(
       })
       return reactionProblem(500, "Failed to process task reactions")
     }
-  }
+  })
 }
 
 export const listReactions = reactionRoute("tasks:read", async ({ params, url }, repo, actor, canReact) => {

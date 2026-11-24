@@ -1,3 +1,7 @@
+import { resolveTaskEpics } from "@domains/tasks"
+import { effectiveTaskScheduledDate } from "@meitheal/domain-tasks"
+
+import { getEpicGroupLabel } from "./epic-group-labels"
 import { parseCalendarDay } from "./calendar-day"
 import { getGroupKey, isTaskVisible, type FilterState } from "./filter-state"
 import { CANONICAL_STATUSES, normalizeStatus, STATUS } from "./status-config"
@@ -6,23 +10,26 @@ import { formatTicketKey } from "./ticket-key"
 
 export const TABLE_PAGE_SIZE = 50
 
-export interface TableGroupStats {
+export interface TableGroupStats<RiceSum = number> {
   count: number
-  riceSum: number
+  riceSum: RiceSum
   riceCount: number
 }
 
-export interface TablePageStats {
-  total: TableGroupStats
-  groups: [string, TableGroupStats][]
-  subgroups: [string, TableGroupStats][]
+export interface TablePageStats<RiceSum = number> {
+  total: TableGroupStats<RiceSum>
+  groups: [string, TableGroupStats<RiceSum>][]
+  subgroups: [string, TableGroupStats<RiceSum>][]
+  epicLabels: [string, string][]
 }
 
 interface TableRow {
   task: TaskViewItem
   depth: number
   parentId?: string | undefined
+  workflowColumnId: string
   hasChildren: boolean
+  epicGroup: string
   parentOutsidePage?: TaskViewItem
 }
 
@@ -50,10 +57,11 @@ function sortValue(task: TaskViewItem, column: string): string | number | null {
     case "status": return task.status
     case "priority": return task.priority
     case "due_date": {
-      const date = Date.parse(task.due_date ?? "")
+      const date = Date.parse(effectiveTaskScheduledDate(task) ?? "")
       return Number.isFinite(date) ? date : null
     }
     case "rice": return task.rice ?? 0
+    case "manual": return task.table_position ?? null
     default: return 0
   }
 }
@@ -73,8 +81,39 @@ function groupStats(map: Map<string, TableGroupStats>, key: string, rice: number
 
 export interface TableWorkflowColumn {
   id: string
+  key: string
   label: string
   includes: readonly unknown[]
+}
+
+export function getTableWorkflowColumns(columns: readonly TableWorkflowColumn[], noWorkflowLabel: string) {
+  const titles = columns.map(column => column.label.normalize("NFC").replace(/\s+/g, " ").trim() || column.key)
+  const counts = new Map<string, number>()
+  for (const title of titles) counts.set(title, (counts.get(title) ?? 0) + 1)
+
+  const used = new Set([noWorkflowLabel, ...titles])
+  return columns.map((column, index) => {
+    const title = titles[index]!
+    if (title !== noWorkflowLabel && counts.get(title) === 1) return { ...column, label: title }
+    let label = `${title} (${column.key})`
+    while (used.has(label)) label += " ·"
+    used.add(label)
+    return { ...column, label }
+  })
+}
+
+function indexWorkflowStatuses(columns: readonly TableWorkflowColumn[]) {
+  const byStatus = new Map<string, TableWorkflowColumn>()
+  for (const column of columns) {
+    if (!Array.isArray(column.includes)) continue
+    for (const include of column.includes) {
+      if (typeof include !== "string") continue
+      const status = normalizeStatus(include)
+      const current = byStatus.get(status)
+      if (!current || (current.key !== status && column.key === status)) byStatus.set(status, column)
+    }
+  }
+  return byStatus
 }
 
 function creationDateFormatter(timezone: string | undefined) {
@@ -118,14 +157,24 @@ export function getTablePage(
 ) {
   const { createdFrom, createdThrough } = filters
   const creationDay = createdFrom || createdThrough ? creationDateFormatter(timezone) : undefined
-  const laneIds = new Set(filters.laneIds)
-  const laneStatuses = new Set(workflowColumns
-    .filter(column => laneIds.has(column.id))
-    .flatMap(column => Array.isArray(column.includes)
-      ? column.includes.filter((status): status is string => typeof status === "string").map(normalizeStatus)
-      : []))
   const groupBy = filters.groupBy ?? "none"
   const subgroupBy = filters.subGroupBy ?? "none"
+  const laneIds = new Set(filters.laneIds)
+  const scopedColumns = laneIds.size ? workflowColumns.filter(column => laneIds.has(column.id)) : workflowColumns
+  const groupsByWorkflow = groupBy === "workflow" || (groupBy !== "none" && subgroupBy === "workflow")
+  const workflowByStatus = groupsByWorkflow || laneIds.size ? indexWorkflowStatuses(scopedColumns) : undefined
+  const workflowOrder = groupsByWorkflow ? new Map(scopedColumns.map((column, index) => [column.id, index])) : undefined
+  const workflowRank = (key: string) => workflowOrder?.get(key) ?? scopedColumns.length
+  const groupsByEpic = groupBy === "epic" || (groupBy !== "none" && subgroupBy === "epic")
+  const epicsByTask = resolveTaskEpics(groupsByEpic ? tasks : [])
+  const epicLabels = new Map<string, string>()
+  for (const epic of epicsByTask.values()) {
+    const key = `epic:${epic.id}`
+    if (!epicLabels.has(key)) epicLabels.set(key, getEpicGroupLabel(epic))
+  }
+  const compareEpicGroups = (a: string, b: string) =>
+    Number(a === "epic:none") - Number(b === "epic:none") ||
+    (epicLabels.get(a) ?? "").localeCompare(epicLabels.get(b) ?? "") || a.localeCompare(b)
   const [column = "", direction] = (filters.sort ?? "").split("-")
   const compare = (a: TaskViewItem, b: TaskViewItem) => {
     const left = sortValue(a, column)
@@ -138,7 +187,7 @@ export function getTablePage(
   }
 
   const byId = new Map<string, TaskViewItem>()
-  const matching = new Map<string, { task: TaskViewItem; group: string; subgroup: string }>()
+  const matching = new Map<string, { task: TaskViewItem; group: string; subgroup: string; workflowColumnId: string; epicGroup: string }>()
   const groups = new Map<string, TableGroupStats>()
   const subgroups = new Map<string, TableGroupStats>()
   const total = { count: 0, riceSum: 0, riceCount: 0 }
@@ -152,7 +201,11 @@ export function getTablePage(
       ...source, status, is_done: isDone, is_overdue: !isDone && source.is_overdue,
     }
     byId.set(task.id, task)
-    if (laneIds.size > 0 && !laneStatuses.has(status)) continue
+    const workflowColumn = workflowByStatus?.get(status)
+    if (laneIds.size > 0 && !workflowColumn) continue
+    const workflowColumnId = workflowColumn?.id ?? ""
+    const epic = epicsByTask.get(task.id)
+    const epicGroup = epic ? `epic:${epic.id}` : "epic:none"
     const row = {
       dataset: {
         title: task.title.toLowerCase(),
@@ -161,9 +214,11 @@ export function getTablePage(
         priority: String(task.priority),
         rice: task.rice === null ? "" : String(task.rice),
         assigned: task.assigned_to ?? "",
-        area: task.area_id,
+        area: task.area_id ?? "",
         taskType: task.task_type,
+        epicGroup,
         taskKind: task.task_kind ?? "standard_action",
+        workflowColumnId,
         labels: filters.advancedFilter || filters.labels?.length ? JSON.stringify(task.labels) : "[]",
         overdue: String(task.is_overdue),
       },
@@ -175,7 +230,7 @@ export function getTablePage(
     }
     const group = groupBy === "none" ? "" : getGroupKey(row, groupBy)
     const subgroup = subgroupBy === "none" ? "" : JSON.stringify([group, getGroupKey(row, subgroupBy)])
-    matching.set(task.id, { task, group, subgroup })
+    matching.set(task.id, { task, group, subgroup, workflowColumnId, epicGroup })
     recordMatch(total, task.rice)
     if (task.status === STATUS.ACTIVE && task.deferred_at === null) active++
     if (task.is_overdue) overdue++
@@ -190,10 +245,21 @@ export function getTablePage(
   const ordered: TableRow[] = []
   if (groupBy !== "none") {
     const matches = [...matching.values()]
-    matches.sort((a, b) => compareGroups(groupBy, a.group, b.group)
-      || (subgroupOrder.get(a.subgroup) ?? 0) - (subgroupOrder.get(b.subgroup) ?? 0)
-      || compare(a.task, b.task))
-    for (const { task } of matches) ordered.push({ task, depth: 0, hasChildren: false })
+    matches.sort((a, b) => {
+      const primary = groupBy === "workflow"
+        ? workflowRank(a.group) - workflowRank(b.group)
+        : groupBy === "epic" ? compareEpicGroups(a.group, b.group) : compareGroups(groupBy, a.group, b.group)
+      if (primary) return primary
+      const secondary = subgroupBy === "workflow"
+        ? workflowRank(a.workflowColumnId) - workflowRank(b.workflowColumnId)
+        : subgroupBy === "epic"
+          ? compareEpicGroups(a.epicGroup, b.epicGroup)
+          : (subgroupOrder.get(a.subgroup) ?? 0) - (subgroupOrder.get(b.subgroup) ?? 0)
+      return secondary || compare(a.task, b.task)
+    })
+    for (const { task, workflowColumnId, epicGroup } of matches) {
+      ordered.push({ task, workflowColumnId, epicGroup, depth: 0, hasChildren: false })
+    }
   } else {
     const children = new Map<string, TaskViewItem[]>()
     const roots: TaskViewItem[] = []
@@ -206,7 +272,10 @@ export function getTablePage(
       if (siblings) siblings.push(task)
       else children.set(task.parent_id, [task])
     }
-    if (column) roots.sort(compare)
+    if (column) {
+      roots.sort(compare)
+      for (const siblings of children.values()) siblings.sort(compare)
+    }
     const visited = new Set<string>()
     const stack: Array<{ task: TaskViewItem; depth: number; parentId?: string | undefined }> = []
     function append(root: TaskViewItem) {
@@ -215,16 +284,16 @@ export function getTablePage(
         const { task, depth, parentId } = stack.pop()!
         if (visited.has(task.id)) continue
         visited.add(task.id)
-        const included = matching.has(task.id)
-        if (included) ordered.push({ task, depth, parentId, hasChildren: false })
+        const match = matching.get(task.id)
+        if (match) ordered.push({ task, workflowColumnId: match.workflowColumnId, epicGroup: match.epicGroup, depth, parentId, hasChildren: false })
 
         // Push in reverse to keep the original depth-first sibling order.
         const siblings = children.get(task.id) ?? []
         for (let index = siblings.length - 1; index >= 0; index--) {
           stack.push({
             task: siblings[index]!,
-            depth: depth + Number(included),
-            parentId: included ? task.id : parentId,
+            depth: depth + Number(Boolean(match)),
+            parentId: match ? task.id : parentId,
           })
         }
       }
@@ -244,7 +313,10 @@ export function getTablePage(
   const pageParents = new Set(rows.map(row => row.parentId))
   const pageGroups = new Set<string>()
   const pageSubgroups = new Set<string>()
+  const pageEpicLabels = new Map<string, string>()
   for (const row of rows) {
+    const epicLabel = epicLabels.get(row.epicGroup)
+    if (epicLabel !== undefined) pageEpicLabels.set(row.epicGroup, epicLabel)
     if (groupBy === "none") {
       row.hasChildren = pageParents.has(row.task.id)
       const parent = row.task.parent_id ? byId.get(row.task.parent_id) : undefined
@@ -257,6 +329,7 @@ export function getTablePage(
   }
   const stats: TablePageStats = {
     total,
+    epicLabels: [...pageEpicLabels],
     groups: [...pageGroups].map(key => [key, groups.get(key)!]),
     subgroups: [...pageSubgroups].map(key => [key, subgroups.get(key)!]),
   }

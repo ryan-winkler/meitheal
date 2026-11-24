@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { expect, test } from "@playwright/test"
 import { startDueDateReminders, stopDueDateReminders } from "../../apps/web/src/domains/notifications/due-date-reminders"
-import { resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, resetPersistenceForTests } from "../helpers/persistence-fixture"
 
 const signals = ["SIGTERM", "SIGINT", "beforeExit"] as const
 
@@ -24,8 +24,10 @@ test("the reminder scheduler keeps the default SIGTERM exit and does not hold th
   }) as typeof setInterval
   let firstRun: Promise<void> | undefined
   try {
+    await ensureSchema({ markerPath: join(directory, "grants.json") })
     const before = signals.map(name => process.listenerCount(name))
     firstRun = startDueDateReminders()
+    await firstRun
     expect(signals.map(name => process.listenerCount(name))).toEqual(before)
     expect(timers).toHaveLength(1)
     expect(timers[0]!.hasRef()).toBe(false)

@@ -1,3 +1,4 @@
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { expect, type Page } from "@playwright/test"
 import { test } from "../scripts/settings-persistence-fixture"
 import { deferred } from "./_helpers"
@@ -51,8 +52,9 @@ async function holdAcknowledgement(page: Page, id: string) {
 }
 
 test("Today celebrates the acknowledged 40 XP and achievement once without another counter write", async ({ page, request }) => {
+  const headers = await currentBoardWriteHeaders(request, "household", {})
   const date = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Dublin" })
-  const created = await request.post("/api/tasks", { data: { title: "Acknowledged Today completion", priority: 2, due_date: date } })
+  const created = await request.post("/api/tasks", { headers, data: { title: "Acknowledged Today completion", priority: 2, due_date: date } })
   expect(created.status()).toBe(201)
   const { id } = await created.json()
   const initial = (await (await request.get("/api/gamification")).json()).stats
@@ -70,7 +72,7 @@ test("Today celebrates the acknowledged 40 XP and achievement once without anoth
     await expect.poll(feedback.messages).toEqual(["+40 XP", "🎯 Achievement: First Steps"])
     const recorded = (await (await request.get("/api/gamification")).json()).stats
     expect(recorded).toMatchObject({ totalCompleted: 1, totalPoints: 40 })
-    const repeat = await request.put(`/api/tasks/${id}`, { data: { status: "complete" } })
+    const repeat = await request.put(`/api/tasks/${id}`, { headers, data: { status: "complete" } })
     expect(repeat.status()).toBe(200)
     expect((await repeat.json()).gamification).toBeUndefined()
     expect((await (await request.get("/api/gamification")).json()).stats).toEqual(recorded)
@@ -80,9 +82,10 @@ test("Today celebrates the acknowledged 40 XP and achievement once without anoth
 })
 
 test("Kanban celebrates acknowledged XP while a rejected move stays pending without earned feedback", async ({ page, request }) => {
+  const headers = await currentBoardWriteHeaders(request, "household", {})
   const ids: string[] = []
   for (const title of ["Acknowledged Kanban completion", "Rejected Kanban completion"]) {
-    const created = await request.post("/api/tasks", { data: { title, priority: 2 } })
+    const created = await request.post("/api/tasks", { headers, data: { title, priority: 2 } })
     expect(created.status()).toBe(201)
     ids.push((await created.json()).id)
   }

@@ -1,4 +1,6 @@
-import { execFile } from "node:child_process"
+import { BOARD_LIFECYCLE_MIGRATION } from "../../apps/web/drizzle/migrations/0015_board_lifecycle.mjs"
+import { ORDINARY_BOARD_MIGRATION } from "../../apps/web/drizzle/migrations/0016_ordinary_boards.mjs"
+import { execFile } from "../helpers/isolated-process"
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
@@ -6,9 +8,20 @@ import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { expect, test as base } from "@playwright/test"
+import { nextHouseholdTicketNumberSql } from "../../apps/web/drizzle/migrations/task-board-tickets.mjs"
+import { PERSONAL_PILLAR_MIGRATION } from "../../apps/web/drizzle/migrations/0010_personal_pillars.mjs"
+import { BOARD_ACCESS_MIGRATION } from "../../apps/web/drizzle/migrations/0011_board_access.mjs"
+import { ORGANIZATION_LABEL_MIGRATION } from "../../apps/web/drizzle/migrations/0012_organization_labels.mjs"
+import { ORGANIZATION_ACCESS_MIGRATION } from "../../apps/web/drizzle/migrations/0013_organization_access.mjs"
+import { ORGANIZATION_FEATURE_MIGRATION } from "../../apps/web/drizzle/migrations/0014_organization_features.mjs"
+import { TASK_BOARD_MIGRATION } from "../../apps/web/drizzle/migrations/task-board-upgrade.mjs"
 import { reconcileTaskSchemaPrerequisites } from "../../apps/web/drizzle/migrations/task-schema-prerequisites.mjs"
 import { assertSupportedDatabaseSchema, DATABASE_SCHEMA_VERSION, openDatabase } from "../../apps/web/scripts/database-client.mjs"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { readBoardGrantRevision } from "../../apps/web/scripts/board-grant-journal.mjs"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
+import { prepareTaskBoardPredecessor } from "../scripts/task-board-predecessor"
+import { CUSTOM_BOARD_KEYS_MIGRATION } from "../../apps/web/drizzle/migrations/0017_custom_board_keys.mjs"
+import { TASK_EXPERIENCE_MIGRATION } from "../../apps/web/drizzle/migrations/0018_task_experience.mjs"
 
 const execFileAsync = promisify(execFile)
 const webRoot = fileURLToPath(new URL("../../apps/web", import.meta.url))
@@ -32,19 +45,33 @@ function migrate(databasePath: string, ...args: string[]) {
   })
 }
 
+async function qualifyOwnedPredecessor(databasePath: string) {
+  await migrate(databasePath, "--check")
+  expect(await readBoardGrantRevision(databasePath + ".board-grants.json")).toMatch(/^[a-f0-9-]{36}$/)
+}
+
 async function bootstrapRuntime(databasePath: string) {
   const previousDbUrl = process.env.MEITHEAL_DB_URL
   process.env.MEITHEAL_DB_URL = `file:${databasePath}`
   resetPersistenceForTests()
   let client: ReturnType<typeof getPersistenceClient> | undefined
   try {
-    client = getPersistenceClient()
     await ensureSchema()
+    client = getPersistenceClient()
   } finally {
     client?.close()
     resetPersistenceForTests()
     if (previousDbUrl === undefined) delete process.env.MEITHEAL_DB_URL
     else process.env.MEITHEAL_DB_URL = previousDbUrl
+  }
+}
+
+async function seedPredecessor(databasePath: string) {
+  const client = openDatabase(`file:${databasePath}`)
+  try {
+    await prepareTaskBoardPredecessor(client)
+  } finally {
+    client.close()
   }
 }
 
@@ -67,17 +94,17 @@ function seedHierarchy(database: DatabaseSync) {
       VALUES ('fixture-project', 'fixture-goal', 'fixture-area', 'Repairs', 1, 1);
     INSERT INTO tasks (id, area_id, goal_id, project_id, title, status, kanban_position, ticket_number,
                        idempotency_key, request_id, created_at, updated_at)
-      VALUES ('fixture-task', 'fixture-area', 'fixture-goal', 'fixture-project', 'Repair door', 'pending', 7, 211,
+      VALUES ('fixture-task', 'fixture-area', 'fixture-goal', 'fixture-project', 'Repair door', 'pending', 7, ${nextHouseholdTicketNumberSql},
               'fixture-task-key', 'fixture-request', 1, 1);
-    INSERT INTO task_inactivity_policy (scope, area_id, days, revision)
-      VALUES ('area:fixture-area', 'fixture-area', 5, '${memberKey}');
+    INSERT INTO task_inactivity_policy (board_id, scope, area_id, days, revision)
+      VALUES ('household', 'area:fixture-area', 'fixture-area', 5, '${memberKey}');
     INSERT INTO comments (task_id, content, owner_key)
       VALUES ('fixture-task', 'Check the hinges', '${memberKey}');
     INSERT INTO comment_mentions (id, task_id, comment_id, recipient_key, created_at)
       VALUES (101, 'fixture-task', last_insert_rowid(), '${memberKey}', 1);
     INSERT INTO app_settings (key, value, updated_at) VALUES ('fixture-preference', 'kept', 1);
-    INSERT INTO kanban_lanes (id, key, label, position, created_at, updated_at)
-      VALUES ('fixture-lane', 'fixture', 'Review', 9, 1, 1);
+    INSERT INTO kanban_lanes (id, board_id, key, label, position, created_at, updated_at)
+      VALUES ('fixture-lane', 'household', 'fixture', 'Review', 9, 1, 1);
   `)
 }
 
@@ -122,7 +149,7 @@ function savedHierarchy(database: DatabaseSync) {
 const expectedHierarchy = {
   area: "fixture-area", area_name: "Household", wip_limit: 3,
   goal: "fixture-goal", metric_current: 2, project: "fixture-project", task: "fixture-task",
-  kanban_position: 7, ticket_number: 211, days: 5, comment: 1, content: "Check the hinges",
+  kanban_position: 7, ticket_number: 1, days: 5, comment: 1, content: "Check the hinges",
   owner_key: memberKey, mention: 101, recipient_key: memberKey,
   lane: "fixture-lane", label: "Review", preference: "kept",
 }
@@ -139,7 +166,7 @@ test("fresh CLI prepares writable hierarchy, policy and comments before runtime"
   await migrate(databasePath)
   await expect(migrate(databasePath, "--check")).resolves.toMatchObject({ stdout: expect.stringContaining("Migration check passed") })
   withDatabase(databasePath, database => {
-    expect(runtimeMarker(database)).toBeUndefined()
+    expect(runtimeMarker(database)).toBe(String(DATABASE_SCHEMA_VERSION))
     expect(database.prepare("SELECT id FROM areas").all()).toEqual([{ id: "default" }])
     expect(database.prepare("SELECT id FROM projects WHERE is_default = 1").all()).toEqual([{ id: "every-day" }])
     expect(lanes(database).map(lane => [lane.key, lane.label, lane.position])).toEqual([
@@ -156,8 +183,8 @@ test("fresh CLI prepares writable hierarchy, policy and comments before runtime"
       VALUES ('invalid-goal', 'missing', 'Invalid goal', 1, 1)`)).toThrow(/FOREIGN KEY constraint failed/i)
     expect(() => database.exec(`INSERT INTO projects (id, goal_id, title, created_at, updated_at)
       VALUES ('invalid-project', 'missing', 'Invalid project', 1, 1)`)).toThrow(/FOREIGN KEY constraint failed/i)
-    expect(() => database.prepare(`INSERT INTO task_inactivity_policy (scope, area_id, days, revision)
-      VALUES ('area:missing', 'missing', 1, ?)`).run(memberKey)).toThrow(/FOREIGN KEY constraint failed/i)
+    expect(() => database.prepare(`INSERT INTO task_inactivity_policy (board_id, scope, area_id, days, revision)
+      VALUES ('household', 'area:missing', 'missing', 1, ?)`).run(memberKey)).toThrow(/FOREIGN KEY constraint failed/i)
     expect(() => database.exec(`INSERT INTO comment_mentions (task_id, comment_id, recipient_key, created_at)
       VALUES ('wrong-task', 1, 'fedcba9876543210fedcba9876543210', 1)`)).toThrow(/FOREIGN KEY constraint failed/i)
     database.exec("DELETE FROM comments WHERE id = 1")
@@ -191,9 +218,9 @@ for (const first of ["CLI", "runtime"] as const) {
   })
 }
 
-test("CLI check rejects missing prerequisites in a completed ledger without writing", async ({ databasePath }) => {
-  await migrate(databasePath)
-  await migrate(databasePath, "--check")
+test("CLI check detects missing predecessor prerequisites without writing", async ({ databasePath }) => {
+  await seedPredecessor(databasePath)
+  await expect(migrate(databasePath, "--check")).rejects.toThrow(/Pending migrations: 0009_task_boards.mjs/)
   const ledger = withDatabase(databasePath, database => {
     database.exec("DROP TABLE kanban_lanes")
     return database.prepare("SELECT name, applied_at FROM __meitheal_migrations ORDER BY name").all()
@@ -206,15 +233,16 @@ test("CLI check rejects missing prerequisites in a completed ledger without writ
   expect((await readdir(directory)).sort()).toEqual(beforeFiles)
 
   await migrate(databasePath)
-  await migrate(databasePath, "--check")
+  await qualifyOwnedPredecessor(databasePath)
   withDatabase(databasePath, database => {
-    expect(database.prepare("SELECT name, applied_at FROM __meitheal_migrations ORDER BY name").all()).toEqual(ledger)
+    expect(database.prepare("SELECT name, applied_at FROM __meitheal_migrations WHERE name NOT IN (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ORDER BY name").all(TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION, ORGANIZATION_FEATURE_MIGRATION, BOARD_LIFECYCLE_MIGRATION, ORDINARY_BOARD_MIGRATION, CUSTOM_BOARD_KEYS_MIGRATION, TASK_EXPERIENCE_MIGRATION))
+      .toEqual(ledger)
     expect(lanes(database).map(lane => lane.key)).toEqual(["backlog", "pending", "active", "complete"])
   })
 })
 
 test("CLI rejects an incompatible comment parent index and rolls back prerequisite repair", async ({ databasePath }) => {
-  await migrate(databasePath)
+  await seedPredecessor(databasePath)
   withDatabase(databasePath, database => database.exec(`
     DROP INDEX comments_id_task_idx;
     CREATE UNIQUE INDEX comments_id_task_idx ON comments(id, task_id COLLATE NOCASE);
@@ -274,7 +302,7 @@ for (const [object, remove, error] of [
     ALTER TABLE tasks DROP COLUMN last_activity_spike_at`, /Unexpected stall column: tasks.last_activity_spike_at/],
 ] as const) {
   test(`CLI leaves prerequisites untouched when the numbered ${object} is invalid`, async ({ databasePath }) => {
-    await migrate(databasePath)
+    await seedPredecessor(databasePath)
     withDatabase(databasePath, database => database.exec(`${remove}; DROP TABLE kanban_lanes;`))
     await expect(migrate(databasePath)).rejects.toThrow(error)
     withDatabase(databasePath, database => {
@@ -284,7 +312,7 @@ for (const [object, remove, error] of [
 }
 
 test("prerequisite writer rechecks a newer marker committed while waiting for the lock", async ({ databasePath }) => {
-  await migrate(databasePath)
+  await seedPredecessor(databasePath)
   const client = openDatabase(`file:${databasePath}`)
   try {
     await assertSupportedDatabaseSchema(client)
@@ -357,7 +385,7 @@ test("CLI restores the default Area before backfilling an imported Project", asy
     UPDATE goals SET area_id = 'default';
   `))
   await migrate(databasePath)
-  await migrate(databasePath, "--check")
+  await qualifyOwnedPredecessor(databasePath)
   withDatabase(databasePath, database => {
     expect(database.prepare("SELECT area_id FROM projects WHERE id = 'legacy-project'").get()).toEqual({ area_id: "default" })
     expect(database.prepare("PRAGMA foreign_key_check").all()).toEqual([])
@@ -400,6 +428,7 @@ test("legacy names, project Area, Backlog positions and ticket numbers upgrade o
     return currentLanes
   })
 
+  await qualifyOwnedPredecessor(databasePath)
   await bootstrapRuntime(databasePath)
   await migrate(databasePath)
   await migrate(databasePath, "--check")
@@ -431,7 +460,7 @@ test("failed Backlog insertion rolls back the shared schema upgrade", async ({ d
     database.exec("DROP TRIGGER refuse_backlog")
   })
   await migrate(databasePath)
-  await migrate(databasePath, "--check")
+  await qualifyOwnedPredecessor(databasePath)
   withDatabase(databasePath, database => {
     expect(lanes(database).map(lane => [lane.id, lane.position])).toEqual([
       ["lane-backlog", 0], ["old-pending", 1], ["old-active", 2], ["old-complete", 3], ["old-custom", 6],

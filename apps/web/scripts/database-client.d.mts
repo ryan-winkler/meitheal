@@ -1,4 +1,4 @@
-import type { Client, InArgs, InStatement, ResultSet } from "@libsql/client"
+import type { Client, InArgs, InStatement, ResultSet, Transaction } from "@libsql/client"
 
 export interface DatabaseDiagnostics {
   sqliteBusyRetriesTotal: number
@@ -18,6 +18,26 @@ export function resetDatabaseDiagnosticsForTests(): void
 export function databaseSchemaCheckSteps(): Generator<[string], void, ResultSet[]>
 export function assertSupportedDatabaseSchema(client: Pick<Client, "execute">): Promise<void>
 export function openDatabase(url: string, options?: { readOnly?: boolean }): Client
+export function isMemoryDatabase(url: string): boolean
+export function isLocalReadSnapshot(transaction: Transaction): boolean
+export function isLocalFileWriter(transaction: Transaction): boolean
+export function localSnapshotGeneration(reader: Transaction | Pick<Client, "execute">): string | undefined
+export function localReaderCacheToken(reader: Transaction | Pick<Client, "execute">): { owner: object; token: string } | undefined
+export function registerReaderCacheSource(wrapper: object, target: object): void
+export function isLocalFileClient(client: Client): boolean
+export function isSideEffectFreeQuery(sql: string): boolean
+export function tagTodayRead<T extends Exclude<InStatement, string>>(statement: T, kind: "rows" | "completed"): T
+export function tagBoardPolicyRead<T extends Exclude<InStatement, string>>(statement: T): T
+export function tagTaskProjectionRead<T extends Exclude<InStatement, string>>(statement: T, kind: "task-list" | "task-count" | "task-detail" | "task-search" | "task-locator" | "task-command" | "task-cascade" | "task-subtasks"): T
+export interface DatabaseStartupOptions {
+  readOnly?: boolean
+  markerPath?: string | undefined
+  trustedInitialization?: { kind: "isolated-memory" }
+}
+export function openDatabaseForStartup(url: string, options?: DatabaseStartupOptions): Promise<Client>
+export function enableStartupWal(client: Client): Promise<ResultSet>
+export function withStartupWriteTransaction<T>(client: Client, apply: (tx: Transaction) => Promise<T>): Promise<T>
+export function acquireWriteTransaction(client: Pick<Client, "transaction">, options?: WriteExecutionOptions): Promise<Transaction>
 export function runWriteTransaction<T>(
   client: Client,
   steps: () => Generator<InStatement[], T, ResultSet[]>,

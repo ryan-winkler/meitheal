@@ -1,3 +1,5 @@
+import { boardScopeErrorResponse } from "@lib/board-http"
+import { withBoardScope } from "@lib/board-http"
 /**
  * Task Templates API — Phase 31
  *
@@ -13,27 +15,29 @@ import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/s
 import { TemplateRepository } from "@domains/tasks/persistence/template-repository"
 import { logApiError } from "../../lib/api-logger"
 
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = withBoardScope({ resource: "routine", action: "read" }, async (context, scope) => {
   try {
     await ensureSchema()
-    const repo = new TemplateRepository(getPersistenceClient())
+    const repo = new TemplateRepository(getPersistenceClient(), scope)
     const templates = await repo.findAll()
     return new Response(JSON.stringify({ templates }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     })
   } catch (error) {
+    const scopeFailure = boardScopeErrorResponse(error)
+    if (scopeFailure) return scopeFailure
     return new Response(
       JSON.stringify({ error: "Failed to fetch templates" }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     )
   }
-}
+})
 
-export const POST: APIRoute = async ({ request }) => {
+const createOrInstantiate: Parameters<typeof withBoardScope>[1] = async ({ request }, scope) => {
   try {
     await ensureSchema()
-    const repo = new TemplateRepository(getPersistenceClient())
+    const repo = new TemplateRepository(getPersistenceClient(), scope)
 
     let body: Record<string, unknown>
     try {
@@ -58,7 +62,7 @@ export const POST: APIRoute = async ({ request }) => {
       const template = JSON.parse(String(tmpl.template_json ?? "{}")) as Record<string, unknown>
       const taskId = crypto.randomUUID()
 
-      await repo.instantiateFromTemplate(taskId, template)
+      await repo.instantiateFromTemplate(taskId, template, String(tmpl.id))
 
       return new Response(
         JSON.stringify({ id: taskId, created_from_template: body.template_id }),
@@ -103,6 +107,8 @@ export const POST: APIRoute = async ({ request }) => {
       { status: 201, headers: { "Content-Type": "application/json" } },
     )
   } catch (error) {
+    const scopeFailure = boardScopeErrorResponse(error)
+    if (scopeFailure) return scopeFailure
     logApiError("templates", "POST error", error)
     return new Response(
       JSON.stringify({ error: "Failed to process template request" }),
@@ -111,10 +117,15 @@ export const POST: APIRoute = async ({ request }) => {
   }
 }
 
-export const DELETE: APIRoute = async ({ request }) => {
+export const POST: APIRoute = async context => {
+  const body = await context.request.clone().json().catch(() => null) as Record<string, unknown> | null
+  return withBoardScope({ resource: "routine", action: body?.template_id ? "read" : "create" }, createOrInstantiate, { write: true })(context)
+}
+
+export const DELETE: APIRoute = withBoardScope({ resource: "routine", action: "delete" }, async ({ request }, scope) => {
   try {
     await ensureSchema()
-    const repo = new TemplateRepository(getPersistenceClient())
+    const repo = new TemplateRepository(getPersistenceClient(), scope)
     const url = new URL(request.url)
     const id = url.searchParams.get("id")
 
@@ -132,9 +143,11 @@ export const DELETE: APIRoute = async ({ request }) => {
       headers: { "Content-Type": "application/json" },
     })
   } catch (error) {
+    const scopeFailure = boardScopeErrorResponse(error)
+    if (scopeFailure) return scopeFailure
     return new Response(
       JSON.stringify({ error: "Failed to delete template" }),
       { status: 500, headers: { "Content-Type": "application/json" } },
     )
   }
-}
+})

@@ -1,4 +1,5 @@
 import { expect } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { test } from "../scripts/settings-persistence-fixture"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the built App and disposable authenticated fixture")
@@ -8,6 +9,7 @@ for (const enabled of [false, true]) {
     await page.clock.setFixedTime(new Date("2030-06-10T12:00:00.000Z"))
     await page.goto("/today")
     const headers = { origin: new URL(page.url()).origin }
+    const workHeaders = await currentBoardWriteHeaders(request, "household", headers)
     const originalResponse = await request.get("/api/settings?key=feature_nlp_parser", { headers })
     expect(originalResponse.status()).toBe(200)
     const original = await originalResponse.json()
@@ -25,7 +27,8 @@ for (const enabled of [false, true]) {
       const input = page.locator("#quick-add-input")
       const preview = page.locator("#quick-add-feedback")
       const title = `Capture fixture ${crypto.randomUUID()}`
-      const literal = `${title} tomorrow p1 #household @ryan`
+      const person = "ha_fixture-admin"
+      const literal = `${title} tomorrow p1 #household @${person}`
       const posts: unknown[] = []
       page.on("request", request => {
         if (request.method() === "POST" && new URL(request.url()).pathname.endsWith("/api/tasks")) posts.push(request.postDataJSON())
@@ -41,12 +44,13 @@ for (const enabled of [false, true]) {
       await expect(input).toBeVisible()
       await input.fill(literal)
       await expect(preview).toBeVisible()
-      if (enabled) {
-        await expect(preview).toHaveText("📅 Due: 2030-06-11 · 🔴 Priority: P1 · 🏷️ household · 👤 ryan")
-      } else {
-        // Soft assertions preserve both preview and submit evidence on the old
-        // controller; any mismatch still fails the test.
-        await expect.soft(preview).toHaveText("📅 Due: Today (default)")
+      const feedback: Array<[icon: string, label: string]> = enabled
+        ? [["calendar-event", "Due: 2030-06-11"], ["alert-triangle", "Priority: P1"], ["tag", "household"], ["user", person]]
+        : [["calendar-event", "Due: Today (default)"]]
+      const parts = preview.locator(".quick-add-feedback-part")
+      await expect(parts).toHaveText(feedback.map(([, label]) => label))
+      for (const [index, [icon]] of feedback.entries()) {
+        await expect(parts.nth(index).locator("svg[aria-hidden=true] use")).toHaveAttribute("href", `#mt-icon-${icon}`)
       }
       expect(posts).toHaveLength(0)
       const submitted = page.waitForResponse(response => response.request().method() === "POST" &&
@@ -67,8 +71,8 @@ for (const enabled of [false, true]) {
       expect(persisted.status()).toBe(200)
       const saved = await persisted.json()
       if (enabled) {
-        expect(payload).toMatchObject({ title, due_date: "2030-06-11", priority: 1, labels: '["household"]', assigned_to: "ryan" })
-        expect(saved).toMatchObject({ title, due_date: "2030-06-11", priority: 1, labels: '["household"]', assigned_to: "ryan" })
+        expect(payload).toMatchObject({ title, due_date: "2030-06-11", priority: 1, labels: '["household"]', assigned_to: person })
+        expect(saved).toMatchObject({ title, due_date: "2030-06-11", priority: 1, labels: '["household"]', assigned_to: person })
       } else {
         expect.soft(payload).toMatchObject({ title: literal, due_date: "2030-06-10" })
         for (const key of ["priority", "labels", "assigned_to"]) expect.soft(payload).not.toHaveProperty(key)
@@ -79,7 +83,7 @@ for (const enabled of [false, true]) {
       await expect(preview).toBeHidden()
       await expect.poll(() => page.evaluate(() => Number(sessionStorage.getItem("nlp-created-events")))).toBe(1)
     } finally {
-      if (id) expect((await request.delete(`/api/tasks/${id}`, { headers, data: {} })).status()).toBe(204)
+      if (id) expect((await request.delete(`/api/tasks/${id}`, { headers: workHeaders, data: {} })).status()).toBe(204)
       expect((await request.put("/api/settings", { headers, data: { key: "feature_nlp_parser", value: originalValue } })).status()).toBe(200)
     }
   })

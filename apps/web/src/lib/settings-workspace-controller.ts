@@ -1,4 +1,7 @@
 import { createClientLogger } from "./client-logger"
+import { settingsWriteHeaders } from "./settings-store"
+import { readWorkspacePreferences, saveWorkspacePreferences } from "./workspace-preferences"
+import { byId, domEl, setAttr } from "@lib/dom-helpers"
 
 const log = createClientLogger("settings", "workspace")
 
@@ -33,10 +36,50 @@ interface NotificationPrefs {
   reminder_window_minutes?: number
 }
 
+function initTaskCaptureMode(signal: AbortSignal): void {
+  const select = byId<HTMLSelectElement>("task-capture-mode-select")
+  const saveBtn = byId("save-task-capture-mode")
+  const helpEl = byId("task-capture-mode-help")
+  if (!select) return
+
+  const updateHelp = (): void => {
+    if (!helpEl) return
+    helpEl.textContent = select.value === "quick"
+      ? (helpEl.dataset.modeQuick ?? "")
+      : (helpEl.dataset.modeForm ?? "")
+  }
+
+  const prefs = readWorkspacePreferences()
+  select.value = prefs.capture === "quick" ? "quick" : "form"
+  updateHelp()
+
+  select.addEventListener("change", updateHelp, { signal })
+  saveBtn?.addEventListener(
+    "click",
+    () => {
+      const capture = select.value === "quick" ? "quick" : "form"
+      void saveWorkspacePreferences({ capture }).then((ok) => {
+        if (signal.aborted) return
+        if (ok) {
+          window.showToast?.(
+            capture === "quick"
+              ? "New task now opens Quick add on this browser"
+              : "New task now opens the full Task form on this browser",
+            "success",
+          )
+        } else {
+          window.showToast?.("settings.save_error", "error")
+        }
+      })
+    },
+    { signal },
+  )
+}
+
 function initBacklogMode(signal: AbortSignal): void {
-  const select = document.getElementById("backlog-mode-select") as HTMLSelectElement | null
-  const saveBtn = document.getElementById("save-backlog-mode")
-  const helpDiv = document.getElementById("backlog-mode-help")
+  const select = byId<HTMLSelectElement>("backlog-mode-select")
+  const saveBtn = byId("save-backlog-mode")
+  const helpDiv = byId("backlog-mode-help")
   if (!select) return
 
   const helpTexts: Record<string, string | undefined> = {
@@ -90,8 +133,8 @@ function initBacklogMode(signal: AbortSignal): void {
 }
 
 function initCompletedRetention(signal: AbortSignal): void {
-  const select = document.getElementById("completed-retention-select") as HTMLSelectElement | null
-  const saveBtn = document.getElementById("save-completed-retention")
+  const select = byId<HTMLSelectElement>("completed-retention-select")
+  const saveBtn = byId("save-completed-retention")
   if (!select) return
 
   fetch("/api/settings?key=completed_auto_hide_days", { signal })
@@ -131,7 +174,7 @@ function initCompletedRetention(signal: AbortSignal): void {
 }
 
 function initFeatureToggles(signal: AbortSignal): void {
-  const container = document.getElementById("feature-toggles-container")
+  const container = byId("feature-toggles-container")
   if (!container) return
 
   const categories: Record<string, { label: string }> = {
@@ -159,49 +202,47 @@ function initFeatureToggles(signal: AbortSignal): void {
         if (!features || features.length === 0) continue
 
         const catInfo = categories[cat]
-        const section = document.createElement("div")
+        const section = domEl("div")
         section.style.cssText = "margin-bottom: 8px;"
 
-        const heading = document.createElement("div")
+        const heading = domEl("div")
         heading.style.cssText =
           "font-weight: 600; font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; padding-top: 4px;"
         heading.textContent = catInfo?.label ?? cat
         section.appendChild(heading)
 
         for (const f of features) {
-          const row = document.createElement("div")
+          const row = domEl("div")
           row.style.cssText =
             "display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px;"
 
-          const toggleLabel = document.createElement("label")
-          toggleLabel.className = "toggle-switch"
+          const toggleLabel = domEl("label", "toggle-switch")
           toggleLabel.style.flexShrink = "0"
 
-          const checkbox = document.createElement("input")
+          const checkbox = domEl("input")
           checkbox.type = "checkbox"
           checkbox.id = `feature-toggle-${f.name}`
           checkbox.dataset.feature = f.name
           checkbox.checked = Boolean(f.enabled)
-          checkbox.setAttribute("aria-label", f.label)
+          setAttr(checkbox, "aria-label", f.label)
 
-          const slider = document.createElement("span")
+          const slider = domEl("span")
           slider.className = "toggle-slider"
           toggleLabel.append(checkbox, slider)
 
-          const body = document.createElement("div")
+          const body = domEl("div")
           body.style.flex = "1"
 
-          const titleEl = document.createElement("div")
+          const titleEl = domEl("div")
           titleEl.style.cssText = "font-weight: 500; font-size: 13px;"
           titleEl.textContent = f.label
 
-          const descEl = document.createElement("div")
+          const descEl = domEl("div")
           descEl.style.cssText = "font-size: 12px; color: var(--text-secondary);"
           descEl.textContent = f.description
 
-          const status = document.createElement("span")
-          status.className = "text-danger settings-text-xs"
-          status.setAttribute("role", "status")
+          const status = domEl("span", "text-danger settings-text-xs")
+          setAttr(status, "role", "status")
           body.append(titleEl, descEl, status)
           row.append(toggleLabel, body)
 
@@ -249,17 +290,17 @@ function initFeatureToggles(signal: AbortSignal): void {
         container.appendChild(section)
       }
 
-      const hint = document.createElement("div")
+      const hint = domEl("div")
       hint.style.cssText =
         "font-size: 12px; color: var(--text-secondary); margin-top: 4px; padding: 8px 12px; background: var(--bg-secondary); border-radius: 6px; border: 1px dashed var(--border);"
-      const noteStrong = document.createElement("strong")
+      const noteStrong = domEl("strong")
       noteStrong.textContent = "Note:"
       hint.append(noteStrong, document.createTextNode(" Some changes take effect on the next page load."))
       container.appendChild(hint)
     })
     .catch(() => {
       if (signal.aborted) return
-      const errorSpan = document.createElement("span")
+      const errorSpan = domEl("span")
       errorSpan.style.cssText = "color: var(--danger); font-size: 12px;"
       errorSpan.textContent = "Failed to load features"
       container.replaceChildren(errorSpan)
@@ -283,19 +324,19 @@ function makeAvatar(name: string | undefined, bg: string): HTMLElement {
 }
 
 function initNotificationsPanel(signal: AbortSignal): ((users: WorkspaceUser[]) => void) | undefined {
-  const globalToggle = document.getElementById("notif-global-toggle") as HTMLInputElement | null
-  const sidebarCb = document.getElementById("notif-channel-sidebar") as HTMLInputElement | null
-  const mobileCb = document.getElementById("notif-channel-mobile") as HTMLInputElement | null
-  const remindersCb = document.getElementById("notif-channel-reminders") as HTMLInputElement | null
-  const reminderMinutesInput = document.getElementById("notif-reminder-minutes") as HTMLInputElement | null
-  const reminderWindowConfig = document.getElementById("reminder-window-config")
-  const mobileTargetsPanel = document.getElementById("notif-mobile-targets")
-  const mobileTargetList = document.getElementById("notif-mobile-target-list")
-  const userTogglesContainer = document.getElementById("notif-user-toggles")
-  const saveBtn = document.getElementById("save-notif-prefs") as HTMLButtonElement | null
-  const prefsStatus = document.getElementById("notif-prefs-status")
-  const retryPrefs = document.getElementById("retry-notif-prefs")
-  const retryTargets = document.getElementById("retry-notif-mobile-targets")
+  const globalToggle = byId<HTMLInputElement>("notif-global-toggle")
+  const sidebarCb = byId<HTMLInputElement>("notif-channel-sidebar")
+  const mobileCb = byId<HTMLInputElement>("notif-channel-mobile")
+  const remindersCb = byId<HTMLInputElement>("notif-channel-reminders")
+  const reminderMinutesInput = byId<HTMLInputElement>("notif-reminder-minutes")
+  const reminderWindowConfig = byId("reminder-window-config")
+  const mobileTargetsPanel = byId("notif-mobile-targets")
+  const mobileTargetList = byId("notif-mobile-target-list")
+  const userTogglesContainer = byId("notif-user-toggles")
+  const saveBtn = byId<HTMLButtonElement>("save-notif-prefs")
+  const prefsStatus = byId("notif-prefs-status")
+  const retryPrefs = byId("retry-notif-prefs")
+  const retryTargets = byId("retry-notif-mobile-targets")
   if (!globalToggle || !userTogglesContainer) return undefined
 
   let prefs: NotificationPrefs = {}
@@ -341,7 +382,7 @@ function initNotificationsPanel(signal: AbortSignal): ((users: WorkspaceUser[]) 
 
       mobileTargetList.replaceChildren()
       if (mobileServices.length === 0) {
-        const empty = document.createElement("span")
+        const empty = domEl("span")
         empty.style.cssText = "color: var(--text-secondary); font-size: 12px; font-style: italic;"
         empty.textContent =
           "No HA Companion App devices found. Install the HA Companion App on your phone to enable mobile push."
@@ -351,23 +392,23 @@ function initNotificationsPanel(signal: AbortSignal): ((users: WorkspaceUser[]) 
 
       const savedSet = new Set(prefs.mobile_targets ?? [])
       for (const svc of mobileServices) {
-        const row = document.createElement("div")
+        const row = domEl("div")
         row.style.cssText = "display: flex; align-items: center; gap: 8px; padding: 4px 0;"
 
-        const cb = document.createElement("input")
+        const cb = domEl("input")
         cb.type = "checkbox"
         cb.checked = prefs.mobile_targets === undefined || savedSet.has(svc.service)
         cb.dataset.mobileTarget = svc.service
-        cb.setAttribute("aria-label", svc.name)
+        setAttr(cb, "aria-label", svc.name)
         cb.style.cssText = "accent-color: var(--accent);"
         row.appendChild(cb)
 
-        const label = document.createElement("span")
+        const label = domEl("span")
         label.style.cssText = "font-size: 13px;"
         label.textContent = svc.name
         row.appendChild(label)
 
-        const svcLabel = document.createElement("span")
+        const svcLabel = domEl("span")
         svcLabel.style.cssText =
           "font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono);"
         svcLabel.textContent = svc.service
@@ -446,13 +487,13 @@ function initNotificationsPanel(signal: AbortSignal): ((users: WorkspaceUser[]) 
     const disabledSet = new Set(prefs.disabled_users ?? [])
 
     userTogglesContainer.replaceChildren()
-    const heading = document.createElement("div")
+    const heading = domEl("div")
     heading.style.cssText = "font-weight: 600; font-size: 13px; margin-bottom: 4px;"
     heading.textContent = "Per-user overrides"
     userTogglesContainer.appendChild(heading)
 
     if (users.length === 0) {
-      const empty = document.createElement("span")
+      const empty = domEl("span")
       empty.style.cssText = "color: var(--text-secondary); font-size: 12px; font-style: italic;"
       empty.textContent = "No users found — notifications will apply globally."
       userTogglesContainer.appendChild(empty)
@@ -460,31 +501,30 @@ function initNotificationsPanel(signal: AbortSignal): ((users: WorkspaceUser[]) 
     }
 
     for (const u of users) {
-      const row = document.createElement("div")
+      const row = domEl("div")
       row.style.cssText =
         "display: flex; align-items: center; gap: 10px; padding: 6px 10px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px;"
 
-      const avatar = document.createElement("span")
+      const avatar = domEl("span")
       avatar.style.cssText = `display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; color: #fff; font-size: 11px; font-weight: 700; background: ${u.source === "home_assistant" ? "var(--accent)" : "var(--warning, #f59e0b)"}`
       avatar.textContent = (u.display_name || u.name || "?").slice(0, 2).toUpperCase()
       row.appendChild(avatar)
 
-      const nameEl = document.createElement("span")
+      const nameEl = domEl("span")
       nameEl.style.cssText = "font-size: 13px; font-weight: 500; flex: 1;"
       nameEl.textContent = formatWorkspaceUserLabel(u)
       row.appendChild(nameEl)
 
-      const label = document.createElement("label")
-      label.className = "toggle-switch"
+      const label = domEl("label", "toggle-switch")
       label.style.cssText = "flex-shrink: 0;"
 
-      const checkbox = document.createElement("input")
+      const checkbox = domEl("input")
       checkbox.type = "checkbox"
       checkbox.checked = current.get(u.id) ?? !disabledSet.has(u.id)
       checkbox.dataset.userId = u.id
-      checkbox.setAttribute("aria-label", formatWorkspaceUserLabel(u))
+      setAttr(checkbox, "aria-label", formatWorkspaceUserLabel(u))
 
-      const slider = document.createElement("span")
+      const slider = domEl("span")
       slider.className = "toggle-slider"
 
       label.appendChild(checkbox)
@@ -533,7 +573,7 @@ function initNotificationsPanel(signal: AbortSignal): ((users: WorkspaceUser[]) 
 
       fetch("/api/settings", {
         method: "PUT",
-        headers: { "content-type": "application/json" },
+        headers: settingsWriteHeaders("notification_preferences"),
         body: JSON.stringify({ key: "notification_preferences", value: payload }),
         signal,
       })
@@ -566,9 +606,9 @@ function initNotificationsPanel(signal: AbortSignal): ((users: WorkspaceUser[]) 
 }
 
 function initPeopleAndNotifications(signal: AbortSignal): void {
-  const select = document.getElementById("default-assignee-select") as HTMLSelectElement | null
-  const discoveredList = document.getElementById("discovered-users-list")
-  const customList = document.getElementById("custom-users-list")
+  const select = byId<HTMLSelectElement>("default-assignee-select")
+  const discoveredList = byId("discovered-users-list")
+  const customList = byId("custom-users-list")
   const renderNotificationUsers = initNotificationsPanel(signal)
   if (!select && !renderNotificationUsers) return
 
@@ -616,14 +656,14 @@ function initPeopleAndNotifications(signal: AbortSignal): void {
         )
       }
 
-      const delBtn = document.createElement("button")
+      const delBtn = domEl("button")
       delBtn.type = "button"
       delBtn.className = "btn-icon text-danger"
       delBtn.style.cssText = "font-size: 16px; cursor: pointer;"
       delBtn.textContent = "×"
       delBtn.title = "Remove user"
-      delBtn.setAttribute("aria-label", `Remove ${u.display_name || u.name || "user"}`)
-      delBtn.setAttribute("data-user-id", u.id)
+      setAttr(delBtn, "aria-label", `Remove ${u.display_name || u.name || "user"}`)
+      setAttr(delBtn, "data-user-id", u.id)
       delBtn.addEventListener(
         "click",
         () => {
@@ -651,20 +691,20 @@ function initPeopleAndNotifications(signal: AbortSignal): void {
   ): void {
     if (!select) return
     select.replaceChildren()
-    const noneOpt = document.createElement("option")
+    const noneOpt = domEl("option")
     noneOpt.value = ""
     noneOpt.textContent = "None (unassigned)"
     select.appendChild(noneOpt)
 
     for (const u of allUsers) {
-      const opt = document.createElement("option")
+      const opt = domEl("option")
       opt.value = u.id
       opt.textContent = formatWorkspaceUserLabel(u)
       select.appendChild(opt)
     }
     if (defaultAssignee) {
       if (!allUsers.some(user => user.id === defaultAssignee)) {
-        const option = document.createElement("option")
+        const option = domEl("option")
         option.value = defaultAssignee
         option.textContent = select.dataset.unavailableAssignee ?? ""
         select.appendChild(option)
@@ -725,10 +765,10 @@ function initPeopleAndNotifications(signal: AbortSignal): void {
     renderNotificationUsers?.(users ?? customUsersData)
   }
 
-  document.getElementById("save-default-assignee")?.addEventListener(
+  byId("save-default-assignee")?.addEventListener(
     "click",
     () => {
-      if (!select) return
+      if (!select || select.disabled) return
       fetch("/api/users/default", {
         method: "PUT",
         headers: { "content-type": "application/json" },
@@ -746,10 +786,10 @@ function initPeopleAndNotifications(signal: AbortSignal): void {
     { signal },
   )
 
-  document.getElementById("add-custom-user-btn")?.addEventListener(
+  byId("add-custom-user-btn")?.addEventListener(
     "click",
     () => {
-      const input = document.getElementById("new-custom-user-name") as HTMLInputElement | null
+      const input = byId<HTMLInputElement>("new-custom-user-name")
       const name = (input?.value || "").trim()
       if (!name) {
         input?.focus()
@@ -779,6 +819,7 @@ function initPeopleAndNotifications(signal: AbortSignal): void {
 }
 
 export function initSettingsWorkspace(signal: AbortSignal): void {
+  initTaskCaptureMode(signal)
   initBacklogMode(signal)
   initCompletedRetention(signal)
   initFeatureToggles(signal)

@@ -1,7 +1,7 @@
 /**
  * Service Worker — Meitheal PWA
  *
- * Cache-first for static assets, network-first for API routes.
+ * Cache-first for static assets; current work and APIs remain network-only.
  * Offline fallback for navigation requests.
  * Background sync trigger for pending operations.
  * Push notification handler for task reminders.
@@ -26,7 +26,7 @@
  *
  * @kcs Kept in sync automatically via astro.config.mjs build hook.
  */
-let CACHE_VERSION = "0.0.2";
+let CACHE_VERSION = "0.0.3";
 const SYNC_TAG = "meitheal-background-sync";
 
 /**
@@ -46,11 +46,11 @@ function buildCacheNames() {
 }
 let CACHES = buildCacheNames();
 
-/** Eviction limits per cache bucket. */
+/** Eviction limits per cache bucket, keyed by bucket so they follow version changes. */
 const EVICTION_POLICY = {
-  [CACHES.static]:  { maxEntries: 100, maxAgeMs: 7  * 24 * 60 * 60 * 1000 },
-  [CACHES.api]:     { maxEntries: 50,  maxAgeMs: 1  * 60 * 60 * 1000 },
-  [CACHES.nav]:     { maxEntries: 20,  maxAgeMs: 24 * 60 * 60 * 1000 },
+  static: { maxEntries: 100, maxAgeMs: 7  * 24 * 60 * 60 * 1000 },
+  api:    { maxEntries: 50,  maxAgeMs: 1  * 60 * 60 * 1000 },
+  nav:    { maxEntries: 20,  maxAgeMs: 24 * 60 * 60 * 1000 },
   // precache: no eviction policy — cleaned entirely on version bump
 };
 
@@ -58,20 +58,10 @@ const EVICTION_POLICY = {
 const scopePath = new URL(self.registration.scope).pathname.replace(/\/+$/, "")
 const ingressPath = /^\/api\/hassio_ingress\/[A-Za-z0-9_-]+$/.test(scopePath) ? scopePath : ""
 
-// Static assets to precache (app shell + key pages).
+// Public static shell only. Actor/Board-rendered HTML never enters precache.
 // Paths are relative to root — ingressPath is prepended at install time.
 const PRECACHE_PATHS = [
-  "/",
-  "/offline",
-  "/today",
-  "/upcoming",
-  "/tasks",
-  "/planning",
-  "/settings",
-  "/gamification",
-  "/habits",
-  "/goals",
-  "/eisenhower",
+  "/offline.html",
   "/manifest.webmanifest",
   "/icon-192.png",
 ];
@@ -107,11 +97,11 @@ async function matchCacheable(request, cacheName) {
  * Prevents disk bloat from dynamic IPs, stale ingress tokens,
  * or long-running browser sessions accumulating responses.
  */
-async function evictCache(cacheName) {
-  const policy = EVICTION_POLICY[cacheName];
+async function evictCache(bucket) {
+  const policy = EVICTION_POLICY[bucket];
   if (!policy) return;
 
-  const cache = await caches.open(cacheName);
+  const cache = await caches.open(CACHES[bucket]);
   const requests = await cache.keys();
   const now = Date.now();
 
@@ -149,9 +139,9 @@ async function evictCache(cacheName) {
 /** Run eviction on all runtime caches. */
 async function evictAllCaches() {
   await Promise.all([
-    evictCache(CACHES.static),
-    evictCache(CACHES.api),
-    evictCache(CACHES.nav),
+    evictCache("static"),
+    evictCache("api"),
+    evictCache("nav"),
   ]);
 }
 
@@ -190,6 +180,7 @@ self.addEventListener("install", (event) => {
               const request = new Request(url, { redirect: "error" });
               const response = await fetch(request);
               if (response.ok && !hasNoStore(response)) await cache.put(request, response);
+              else await response.body?.cancel();
             } catch {
               // Ignore individual failures (e.g. SSR pages that 404 during install)
             }
@@ -215,15 +206,34 @@ function isBoardRequest(path, params) {
       (path === "/api/search" || /^\/api\/(?:tasks|lanes)(?:\/|$)/.test(path)))
 }
 
+function isCaptureReceiptLookup(path, params) {
+  return path === "/api/tasks" && params.has("captureReceipt")
+}
+
+const privateBoardPath = /^\/(?:api\/)?boards(?:\/|$)|^\/api\/board-intake$/
+const organizationApiPath = /^\/api\/(?:features|organization-features|organization-labels|habits|gamification|achievements|areas|projects|goals)(?:\/|$)/
+const workPagePath = /^\/(?:tasks|kanban|table|calendar|timeline|today|upcoming|planning|progress|activity|areas|projects|goals|habits|pillars|gamification|inactivity|deferred|review|pinned|mention-inbox|eisenhower|triage|tickets)(?:\/|$)/
+
+function isMutableWorkPath(path) {
+  // Canonical APIs use an actor and Board header while retaining the same URL.
+  // Neither Cache Storage nor the HTTP cache may key their work by URL alone.
+  return path === "/" || path === "/offline" || path.startsWith("/api/") || workPagePath.test(path)
+}
+
 function privateResourcePath(url) {
   const privatePath = pathname => {
     const path = appRoutePath(pathname)
-    if (path === "/api/export/database.sqlite" || path === "/api/task-pins" ||
+    if (isMutableWorkPath(path) || /^\/(?:planning|today|upcoming|habits|areas|projects)(?:\/|$)/.test(path) ||
+        organizationApiPath.test(path) ||
+        privateBoardPath.test(path) || path === "/api/export/database.sqlite" || path === "/api/task-pins" ||
         path === "/pinned" || path === "/activity" || path === "/api/search" ||
+        path === "/progress" || path === "/goals" ||
+        /^\/(?:api\/)?pillars(?:\/|$)/.test(path) ||
         path === "/api/comment-people" || path === "/api/mention-inbox" || path === "/mention-inbox" ||
         path === "/api/saved-filters" || path === "/api/task-drafts" ||
         path === "/inactivity" || path === "/api/task-inactivity" || path === "/api/labels/cleanup" ||
-        taskHistoryPath.test(path) || (url.search && isBoardRequest(path, url.searchParams)) ||
+        taskHistoryPath.test(path) || isCaptureReceiptLookup(path, url.searchParams) ||
+        (url.search && isBoardRequest(path, url.searchParams)) ||
         /^\/api\/tasks\/(?:reaction-counts|[^/]+\/(?:comments(?:\/[^/]+(?:\/reactions(?:\/[^/]+)?)?)?|reactions(?:\/[^/]+)?))$/.test(path)) return path
   }
 
@@ -249,12 +259,17 @@ function privateResourcePath(url) {
 }
 
 function isNetworkOnlyPage(path, params) {
-  return path === "/triage" || path === "/deferred" || path === "/review" ||
+  return path === "/setup" || path === "/triage" || path === "/deferred" || path === "/review" ||
     path === "/.well-known/mcp.json" ||
     path === "/.well-known/agent.json" || path === "/.well-known/agent-card.json" || path.startsWith("/api/a2a/") ||
     (/^\/api\/tasks\/[^/]+$/.test(path) && params.has("deferralRead")) ||
     (path === "/tasks" && (params.has("boardRefresh") || (params.get("view") === "table" && params.has("tableRefresh")))) ||
     (path === "/today" && params.has("unscheduledPage"))
+}
+
+function isDevModuleRequest(path, params) {
+  return /^\/(?:@vite|@fs|@id|src|node_modules)\//.test(path) ||
+    params.has("t") || params.has("astro") || params.has("direct") || params.has("import")
 }
 
 async function purgeSensitiveCacheEntries() {
@@ -264,7 +279,8 @@ async function purgeSensitiveCacheEntries() {
     const requests = await cache.keys()
     await Promise.all(requests.filter(request => {
       const url = new URL(request.url)
-      return privateResourcePath(url) || isNetworkOnlyPage(appRoutePath(url.pathname), url.searchParams)
+      const path = appRoutePath(url.pathname)
+      return privateResourcePath(url) || isNetworkOnlyPage(path, url.searchParams) || isDevModuleRequest(path, url.searchParams)
     }).map(request => cache.delete(request, { ignoreVary: true })))
   }))
 }
@@ -309,6 +325,7 @@ self.addEventListener("fetch", (event) => {
 
   // Ignore non-http/https requests (e.g. chrome-extension://)
   if (!url.protocol.startsWith("http")) return;
+  if (url.origin !== self.location.origin) return;
 
   // Trigger periodic eviction (non-blocking)
   maybeEvict();
@@ -322,18 +339,22 @@ self.addEventListener("fetch", (event) => {
   // Keep sensitive API routes out of Cache Storage, even before the worker receives an ingress path.
   const apiPath = url.pathname.replace(/^\/api\/hassio_ingress\/[^/]+/, "");
   const privatePath = privateResourcePath(url)
-  if (privatePath && (taskHistoryPath.test(privatePath) || (url.search && isBoardRequest(privatePath, url.searchParams)))) {
+  const pagePath = appRoutePath(url.pathname)
+  if (isNetworkOnlyPage(pagePath, url.searchParams) && !isMutableWorkPath(pagePath)) return
+  // Keep direct network reads for existing clients that own their offline handling.
+  if (privatePath && (isMutableWorkPath(privatePath) || privateBoardPath.test(privatePath) || taskHistoryPath.test(privatePath) ||
+      organizationApiPath.test(privatePath) || isCaptureReceiptLookup(privatePath, url.searchParams) ||
+      /^\/(?:planning|progress|activity|areas\/[^/]+)$/.test(privatePath) ||
+      (url.search && isBoardRequest(privatePath, url.searchParams)))) {
     const headers = { "cache-control": "private, no-store" }
     event.respondWith(fetch(event.request, { cache: "no-store" })
       .catch(() => privatePath.startsWith("/api/")
         ? offlineApiResponse(headers)
-        : new Response("Offline", { status: 503, headers })))
+        : offlineWorkPage(headers)))
     return
   }
-  if (privatePath || /^\/api\/(?:settings|ha\/connection|feedback|agent-tokens|export\/database\.sqlite)(?:\/|$)/.test(apiPath)) return;
-
-  const pagePath = appRoutePath(url.pathname)
-  if (isNetworkOnlyPage(pagePath, url.searchParams)) return
+  if (privatePath || isDevModuleRequest(routePath, url.searchParams) ||
+      /^\/api\/(?:settings|ha\/connection|feedback|agent-tokens|plugins|webserver|export\/database\.sqlite)(?:\/|$)/.test(apiPath)) return;
   if (pagePath === "/planning") {
     event.respondWith(navigationHandler(event.request))
     return
@@ -354,6 +375,13 @@ self.addEventListener("fetch", (event) => {
   // Static assets: cache-first
   event.respondWith(cacheFirst(event.request));
 });
+
+async function offlineWorkPage(headers) {
+  const shell = await matchCacheable(`${ingressPath}/offline.html`, CACHES.precache)
+  return shell
+    ? new Response(shell.body, { status: 503, headers: { ...headers, "content-type": "text/html; charset=utf-8" } })
+    : new Response("Offline", { status: 503, headers })
+}
 
 /**
  * Cache-first for static assets (CSS, JS, fonts, images).
@@ -426,8 +454,17 @@ async function navigationHandler(request) {
     const precached = await matchCacheable(request, CACHES.precache);
     if (precached) return precached;
 
+    const launch = new URL(request.url)
+    if (!ingressPath && (
+      (launch.pathname === "/" && launch.search === "?view=dashboard") ||
+      (launch.pathname === "/tasks" && launch.search === "?view=kanban")
+    )) {
+      const launchPage = await matchCacheable(launch.origin + launch.pathname, CACHES.precache)
+      if (launchPage) return launchPage
+    }
+
     // Offline fallback page
-    const offlinePage = await matchCacheable(`${ingressPath}/offline`, CACHES.precache);
+    const offlinePage = await matchCacheable(`${ingressPath}/offline.html`, CACHES.precache);
     if (offlinePage) return offlinePage;
 
     return new Response("Offline", { status: 503 });

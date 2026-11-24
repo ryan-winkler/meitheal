@@ -19,8 +19,95 @@
  */
 
 import { safeFetch, type SafeFetchOptions } from "./safe-fetch"
+import { currentTaskApiContext, taskApiHeaders, type TaskApiContext } from "./task-api"
+
+/** Canonical task versions are normalized milliseconds, including retained ISO rows. */
+export function taskRecordVersion(task: Record<string, unknown>): number | null {
+  const value = Object.hasOwn(task, "task_version") ? task.task_version : task.updated_at
+  const number = typeof value === "number" ? value : typeof value === "string" && /^\d+$/.test(value) ? Number(value)
+    : typeof value === "string" && /(?:Z|[+-]\d\d:\d\d)$/.test(value) ? Date.parse(value) : NaN
+  return Number.isSafeInteger(number) && number >= 0 ? number : null
+}
+
+export function sameTaskApiContext(a: TaskApiContext | null, b: TaskApiContext | null): boolean {
+  return Boolean(a && b && a.boardId === b.boardId && a.session === b.session && a.actorKey === b.actorKey)
+}
+
+export type VersionedTaskSave = { ok: true; task: Record<string, unknown>; version: number }
+  | { ok: false; status: number; errorCode: "conflict" | "unavailable" | "unconfirmed" | "hierarchy_invalid" | "hierarchy_conflict"; message?: string }
+
+/** Existing browser writes retain their loaded version and original actor/Board through publication. */
+export async function saveVersionedTask(id: string, fields: Record<string, unknown>, version: number | null,
+  context = currentTaskApiContext(), signal?: AbortSignal): Promise<VersionedTaskSave> {
+  if (version === null || !Number.isSafeInteger(version) || version < 0 || !sameTaskApiContext(context, currentTaskApiContext())) {
+    return { ok: false, status: 0, errorCode: "unavailable" }
+  }
+  let status = 0
+  try {
+    const response = await safeFetch(`/api/tasks/${encodeURIComponent(id)}`, {
+      method: "PUT", headers: taskApiHeaders(context!, { "content-type": "application/json" }),
+      body: JSON.stringify({ ...fields, updated_at: version }), ...(signal ? { signal } : {}),
+    })
+    status = response.status
+    if (!sameTaskApiContext(context, currentTaskApiContext()) || signal?.aborted) return { ok: false, status, errorCode: "unavailable" }
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as Record<string, unknown> | null
+      const serverCode = typeof payload?.errorCode === "string" ? payload.errorCode : ""
+      const message = typeof payload?.error === "string" ? payload.error : typeof payload?.detail === "string" ? payload.detail : undefined
+      if (status === 409 && serverCode === "hierarchy_conflict") {
+        return { ok: false, status, errorCode: "hierarchy_conflict", ...(message ? { message } : {}) }
+      }
+      if (status === 400 && serverCode === "hierarchy_invalid") {
+        return { ok: false, status, errorCode: "hierarchy_invalid", ...(message ? { message } : {}) }
+      }
+      return { ok: false, status, errorCode: status === 409 ? "conflict" : "unavailable" }
+    }
+    const task: unknown = await response.json()
+    if (!sameTaskApiContext(context, currentTaskApiContext()) || signal?.aborted) return { ok: false, status, errorCode: "unavailable" }
+    if (!task || typeof task !== "object" || Array.isArray(task) || !("id" in task) || task.id !== id) return { ok: false, status, errorCode: "unconfirmed" }
+    const saved = task as Record<string, unknown>
+    const nextVersion = taskRecordVersion(saved)
+    return nextVersion === null ? { ok: false, status, errorCode: "unconfirmed" } : { ok: true, task: saved, version: nextVersion }
+  } catch {
+    return { ok: false, status, errorCode: "unconfirmed" }
+  }
+}
+
+/** Browser deletion uses the same loaded-version and original-context preconditions as edits. */
+export async function deleteVersionedTask(id: string, version: number | null,
+  context = currentTaskApiContext(), signal?: AbortSignal): Promise<{ ok: true } | Exclude<VersionedTaskSave, { ok: true }>> {
+  if (version === null || !Number.isSafeInteger(version) || version < 0 || !sameTaskApiContext(context, currentTaskApiContext())) {
+    return { ok: false, status: 0, errorCode: "unavailable" }
+  }
+  let status = 0
+  try {
+    const response = await safeFetch(`/api/tasks/${encodeURIComponent(id)}`, {
+      method: "DELETE", headers: taskApiHeaders(context!, { "content-type": "application/json" }),
+      body: JSON.stringify({ version }), ...(signal ? { signal } : {}),
+    })
+    status = response.status
+    if (!sameTaskApiContext(context, currentTaskApiContext()) || signal?.aborted) return { ok: false, status, errorCode: "unavailable" }
+    return response.ok ? { ok: true } : { ok: false, status, errorCode: status === 409 ? "conflict" : "unavailable" }
+  } catch {
+    return { ok: false, status, errorCode: "unconfirmed" }
+  }
+}
+
+const pendingStatusWrites = new Set<string>()
+
+export function lockTaskStatusWrite(id: string): (() => void) | null {
+  if (pendingStatusWrites.has(id)) return null
+  pendingStatusWrites.add(id)
+  return () => { pendingStatusWrites.delete(id) }
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
+
+export interface AssigneeDirectory {
+  users: Array<{ id: string; name: string; display_name?: string; color?: string; kind?: string }>
+  ha_connected?: boolean
+  ha_roster_verified?: boolean
+}
 
 /** Fields accepted by PATCH /api/tasks/:id */
 export interface TaskPatchPayload {
@@ -34,7 +121,7 @@ export interface TaskPatchPayload {
   labels?: string
   area_id?: string
   color?: string | null
-  is_favorite?: number
+  is_promoted?: boolean
   task_type?: string
   parent_id?: string | null
   assigned_to?: string | null
@@ -53,75 +140,11 @@ export interface TaskCreatePayload {
   status?: string
   priority?: number
   due_date?: string | null
-  area_id?: string
+  area_id?: string | null
   project_id?: string | null
   task_type?: string
   assigned_to?: string | null
   [key: string]: unknown
-}
-
-/** Reorder payload for POST /api/tasks/reorder */
-export interface ReorderPayload {
-  taskId: string
-  status: string
-  position: number
-}
-
-/** Lane definition from GET /api/lanes */
-export interface LanePayload {
-  id: string
-  key: string
-  label: string
-  icon: string
-  position: number
-  wip_limit: number
-  includes: string[]
-  built_in: boolean
-}
-
-/** Area definition from GET /api/areas */
-export interface AreaPayload {
-  id: string
-  name: string
-  icon?: string
-  color?: string
-  position?: number
-  [key: string]: unknown
-}
-
-/** Goal definition from GET /api/goals */
-export interface GoalPayload {
-  id: string
-  title: string
-  area_id?: string | null
-  description?: string | null
-  status: string
-  target_date?: string | null
-  [key: string]: unknown
-}
-
-/** Project definition from GET /api/projects */
-export interface ProjectPayload {
-  id: string
-  title: string
-  goal_id?: string | null
-  description?: string | null
-  status: string
-  icon?: string
-  color?: string
-  position?: number
-  [key: string]: unknown
-}
-
-/** Task link payload for POST /api/tasks/:id/links */
-export interface TaskLinkPayload {
-  target_task_id: string
-  link_type: string
-}
-
-/** Comment payload for POST /api/tasks/:id/comments */
-export interface TaskCommentPayload {
-  body: string
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -129,6 +152,12 @@ export interface TaskCommentPayload {
 /** Standard JSON headers for POST/PATCH/PUT. */
 const JSON_HEADERS: HeadersInit = {
   "Content-Type": "application/json",
+}
+
+export class TaskApiError extends Error {
+  constructor(readonly status: number, detail: string) {
+    super(`API ${status}: ${detail}`)
+  }
 }
 
 /**
@@ -139,7 +168,7 @@ async function parseResponse<T>(res: Response): Promise<T | undefined> {
   if (res.status === 204) return undefined
   if (!res.ok) {
     const body = await res.text().catch(() => "")
-    throw new Error(`API ${res.status}: ${body || res.statusText}`)
+    throw new TaskApiError(res.status, body || res.statusText)
   }
   return res.json() as Promise<T>
 }
@@ -157,22 +186,6 @@ function enc(id: string): string {
  * Ingress prefixing is handled by Layout.astro's fetch monkey-patch.
  */
 export const taskApi = {
-  // ── Tasks CRUD ────────────────────────────────────────────────────
-
-  /** GET /api/tasks — list all tasks */
-  async listTasks(params?: Record<string, string>): Promise<any[]> {
-    const qs = params ? `?${new URLSearchParams(params).toString()}` : ""
-    const res = await safeFetch(`/api/tasks${qs}`)
-    return (await parseResponse<any[]>(res)) ?? []
-  },
-
-  /** GET /api/tasks?q=&limit= — search tasks */
-  async searchTasks(query: string, limit = 50): Promise<any[]> {
-    const qs = new URLSearchParams({ q: query, limit: String(limit) })
-    const res = await safeFetch(`/api/tasks?${qs.toString()}`)
-    return (await parseResponse<any[]>(res)) ?? []
-  },
-
   /** GET /api/tasks/:id — single task */
   async getTask(id: string): Promise<any> {
     const res = await safeFetch(`/api/tasks/${enc(id)}`)
@@ -180,23 +193,17 @@ export const taskApi = {
   },
 
   /** POST /api/tasks — create a task */
-  async createTask(payload: TaskCreatePayload): Promise<any> {
+  async createTask(payload: TaskCreatePayload, signal?: AbortSignal, context?: TaskApiContext): Promise<any> {
+    if (context && !sameTaskApiContext(context, currentTaskApiContext())) throw new Error("The selected Board changed. Your input is kept.")
     const res = await safeFetch("/api/tasks", {
       method: "POST",
-      headers: JSON_HEADERS,
+      headers: context ? taskApiHeaders(context, JSON_HEADERS) : JSON_HEADERS,
       body: JSON.stringify(payload),
+      ...(signal ? { signal } : {}),
     })
-    return parseResponse<any>(res)
-  },
-
-  /** POST /api/tasks/create — alternative create endpoint */
-  async createTaskAlt(payload: TaskCreatePayload): Promise<any> {
-    const res = await safeFetch("/api/tasks/create", {
-      method: "POST",
-      headers: JSON_HEADERS,
-      body: JSON.stringify(payload),
-    })
-    return parseResponse<any>(res)
+    const task = await parseResponse<any>(res)
+    if (context && !sameTaskApiContext(context, currentTaskApiContext())) throw new Error("The save could not be confirmed in the original Board. Your input is kept.")
+    return task
   },
 
   /** PUT /api/tasks/:id — update a task */
@@ -227,243 +234,13 @@ export const taskApi = {
     return parseResponse<any>(res)
   },
 
-  /** POST /api/tasks/reorder — reorder kanban tasks */
-  async reorderTasks(payload: ReorderPayload[]): Promise<any> {
-    const res = await safeFetch("/api/tasks/reorder", {
-      method: "POST",
-      headers: JSON_HEADERS,
-      body: JSON.stringify(payload),
-    })
-    return parseResponse<any>(res)
-  },
-
-  // ── Task Activity ────────────────────────────────────────────────
-
-  /** GET /api/tasks/:id/activity — task activity log */
-  async getTaskActivity(id: string): Promise<any[]> {
-    const res = await safeFetch(`/api/tasks/${enc(id)}/activity`)
-    return (await parseResponse<any[]>(res)) ?? []
-  },
-
-  // ── Task Comments ────────────────────────────────────────────────
-
-  /** GET /api/tasks/:id/comments — list comments */
-  async getTaskComments(id: string): Promise<any[]> {
-    const res = await safeFetch(`/api/tasks/${enc(id)}/comments`)
-    return (await parseResponse<any[]>(res)) ?? []
-  },
-
-  /** POST /api/tasks/:id/comments — add a comment */
-  async addTaskComment(id: string, payload: TaskCommentPayload): Promise<any> {
-    const res = await safeFetch(`/api/tasks/${enc(id)}/comments`, {
-      method: "POST",
-      headers: JSON_HEADERS,
-      body: JSON.stringify(payload),
-    })
-    return parseResponse<any>(res)
-  },
-
-  // ── Task Links ───────────────────────────────────────────────────
-
-  /** GET /api/tasks/:id/links — list task links */
-  async getTaskLinks(id: string): Promise<any[]> {
-    const res = await safeFetch(`/api/tasks/${enc(id)}/links`)
-    return (await parseResponse<any[]>(res)) ?? []
-  },
-
-  /** POST /api/tasks/:id/links — create a task link */
-  async addTaskLink(id: string, payload: TaskLinkPayload): Promise<any> {
-    const res = await safeFetch(`/api/tasks/${enc(id)}/links`, {
-      method: "POST",
-      headers: JSON_HEADERS,
-      body: JSON.stringify(payload),
-    })
-    return parseResponse<any>(res)
-  },
-
-  /** DELETE /api/tasks/:id/links?link_id= — remove a task link */
-  async deleteTaskLink(id: string, linkId: string): Promise<void> {
-    await safeFetch(
-      `/api/tasks/${enc(id)}/links?link_id=${enc(linkId)}`,
-      { method: "DELETE" },
-    )
-  },
-
-  // ── Settings ──────────────────────────────────────────────────────
-
-  /** GET /api/settings — fetch all settings */
-  async getSettings(): Promise<Record<string, any>> {
-    const res = await safeFetch("/api/settings")
-    return (await parseResponse<Record<string, any>>(res)) ?? {}
-  },
-
-  /** PUT /api/settings — save settings */
-  async saveSettings(payload: Record<string, unknown>): Promise<any> {
-    const res = await safeFetch("/api/settings", {
-      method: "PUT",
-      headers: JSON_HEADERS,
-      body: JSON.stringify(payload),
-    })
-    return parseResponse<any>(res)
-  },
-
-  // ── Areas ────────────────────────────────────────────────────────
-
-  /** GET /api/areas — list all areas */
-  async listAreas(): Promise<AreaPayload[]> {
-    const res = await safeFetch("/api/areas")
-    return (await parseResponse<AreaPayload[]>(res)) ?? []
-  },
-
-  /** POST /api/areas — create an area */
-  async createArea(payload: Partial<AreaPayload>): Promise<any> {
-    const res = await safeFetch("/api/areas", {
-      method: "POST",
-      headers: JSON_HEADERS,
-      body: JSON.stringify(payload),
-    })
-    return parseResponse<any>(res)
-  },
-
-  // ── Goals ────────────────────────────────────────────────────────
-
-  /** GET /api/goals — list all goals */
-  async listGoals(params?: Record<string, string>): Promise<GoalPayload[]> {
-    const qs = params ? `?${new URLSearchParams(params).toString()}` : ""
-    const res = await safeFetch(`/api/goals${qs}`)
-    const data = await parseResponse<{ goals: GoalPayload[] }>(res)
-    return data?.goals ?? []
-  },
-
-  /** POST /api/goals — create a goal */
-  async createGoal(payload: Partial<GoalPayload>): Promise<any> {
-    const res = await safeFetch("/api/goals", {
-      method: "POST",
-      headers: JSON_HEADERS,
-      body: JSON.stringify(payload),
-    })
-    return parseResponse<any>(res)
-  },
-
-  /** PUT /api/goals/:id — update a goal */
-  async updateGoal(id: string, payload: Partial<GoalPayload>): Promise<any> {
-    const res = await safeFetch(`/api/goals/${enc(id)}`, {
-      method: "PUT",
-      headers: JSON_HEADERS,
-      body: JSON.stringify(payload),
-    })
-    return parseResponse<any>(res)
-  },
-
-  /** DELETE /api/goals/:id — delete a goal */
-  async deleteGoal(id: string): Promise<void> {
-    await safeFetch(`/api/goals/${enc(id)}`, { method: "DELETE" })
-  },
-
-  // ── Projects ─────────────────────────────────────────────────────
-
-  /** GET /api/projects — list all projects */
-  async listProjects(params?: Record<string, string>): Promise<ProjectPayload[]> {
-    const qs = params ? `?${new URLSearchParams(params).toString()}` : ""
-    const res = await safeFetch(`/api/projects${qs}`)
-    const data = await parseResponse<{ projects: ProjectPayload[] }>(res)
-    return data?.projects ?? []
-  },
-
-  /** POST /api/projects — create a project */
-  async createProject(payload: Partial<ProjectPayload>): Promise<any> {
-    const res = await safeFetch("/api/projects", {
-      method: "POST",
-      headers: JSON_HEADERS,
-      body: JSON.stringify(payload),
-    })
-    return parseResponse<any>(res)
-  },
-
-  /** PUT /api/projects/:id — update a project */
-  async updateProject(id: string, payload: Partial<ProjectPayload>): Promise<any> {
-    const res = await safeFetch(`/api/projects/${enc(id)}`, {
-      method: "PUT",
-      headers: JSON_HEADERS,
-      body: JSON.stringify(payload),
-    })
-    return parseResponse<any>(res)
-  },
-
-  /** DELETE /api/projects/:id — delete a project */
-  async deleteProject(id: string): Promise<void> {
-    await safeFetch(`/api/projects/${enc(id)}`, { method: "DELETE" })
-  },
-
-  // ── Lanes ─────────────────────────────────────────────────────────
-
-  /** GET /api/lanes — fetch kanban lanes */
-  async getLanes(): Promise<LanePayload[]> {
-    const res = await safeFetch("/api/lanes")
-    return (await parseResponse<LanePayload[]>(res)) ?? []
-  },
-
-  /** PUT /api/lanes/:id — update a lane */
-  async updateLane(id: string, payload: Partial<LanePayload>): Promise<any> {
-    const res = await safeFetch(`/api/lanes/${enc(id)}`, {
-      method: "PUT",
-      headers: JSON_HEADERS,
-      body: JSON.stringify(payload),
-    })
-    return parseResponse<any>(res)
-  },
-
-  /** DELETE /api/lanes/:id — delete a lane */
-  async deleteLane(id: string): Promise<void> {
-    await safeFetch(`/api/lanes/${enc(id)}`, {
-      method: "DELETE",
-    })
-  },
-
-  /** POST /api/lanes — create a lane */
-  async createLane(payload: Partial<LanePayload>): Promise<any> {
-    const res = await safeFetch("/api/lanes", {
-      method: "POST",
-      headers: JSON_HEADERS,
-      body: JSON.stringify(payload),
-    })
-    return parseResponse<any>(res)
-  },
-
-  // ── Users ─────────────────────────────────────────────────────────
-
   /** GET /api/users — list users */
-  async listUsers(): Promise<any[]> {
-    const res = await safeFetch("/api/users")
-    return (await parseResponse<any[]>(res)) ?? []
+  async listUserDirectory(signal?: AbortSignal): Promise<AssigneeDirectory> {
+    const res = await safeFetch("/api/users", signal ? { signal } : undefined)
+    const data = await parseResponse<AssigneeDirectory>(res)
+    if (!Array.isArray(data?.users)) throw new Error("Assignee directory unavailable")
+    return data
   },
-
-  // ── Todo Sync ─────────────────────────────────────────────────────
-
-  /** GET /api/todo — list HA to-do entities */
-  async listTodoEntities(): Promise<any[]> {
-    const res = await safeFetch("/api/todo")
-    return (await parseResponse<any[]>(res)) ?? []
-  },
-
-  /** POST /api/todo/sync — trigger todo sync */
-  async syncTodo(payload: Record<string, unknown>): Promise<any> {
-    const res = await safeFetch("/api/todo/sync", {
-      method: "POST",
-      headers: JSON_HEADERS,
-      body: JSON.stringify(payload),
-    })
-    return parseResponse<any>(res)
-  },
-
-  // ── Export ────────────────────────────────────────────────────────
-
-  /** GET /api/export/tasks.csv — export tasks as CSV (returns raw Response) */
-  async exportTasks(): Promise<Response> {
-    return safeFetch("/api/export/tasks.csv")
-  },
-
-  // ── Raw fetch (escape hatch) ──────────────────────────────────────
 
   /**
    * Raw safeFetch for endpoints not covered above.

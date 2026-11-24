@@ -1,41 +1,76 @@
 ---
-import { t } from "../../i18n/translations";
-import type { Locale } from "../../lib/locale";
-import Icon from "../ui/Icon.astro";
-import SidebarNavList from "./SidebarNavList.astro";
-import NavOverflowMore from "./NavOverflowMore.astro";
-import SidebarHierarchyTree from "./SidebarHierarchyTree.astro";
-import SidebarFooter from "./SidebarFooter.astro";
-import StreakBadge from "../gamification/StreakBadge.astro";
+import { newOrganizationLabel, organizationLabelsFor, type OrganizationTerm } from "@lib/organization-labels"
+import sidebarReorderCss from "../../styles/_sidebar-reorder.css?raw"
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import Icon from "../ui/Icon.astro"
+import SidebarHierarchyActions from "./SidebarHierarchyActions.astro"
+import SidebarNavList, { type SidebarNavItemView, type SidebarSectionView } from "./SidebarNavList.astro"
+import { currentBoardContext } from "@lib/named-board-request"
+import { resolveBoardPageScope } from "@lib/board-http"
+import { scopePermits, type BoardScope } from "@domains/tasks"
+import TaskCreationMenu from "./TaskCreationMenu.astro"
+import NavOverflowMore from "./NavOverflowMore.astro"
+import SidebarFooter from "./SidebarFooter.astro"
+import StreakBadge from "../gamification/StreakBadge.astro"
 import {
   ensureSchema,
   getPersistenceClient,
-} from "@domains/tasks/persistence/store";
-import { getStats as getGamificationStats } from "@domains/gamification";
-import { getFeatureFlags } from "../../lib/feature-flags";
+} from "@domains/tasks/persistence/store"
+import { getDailyProgress } from "@domains/gamification"
+import { boardNavigationLinks, readBoardNavigationContext } from "@lib/board-workspace"
+import { readCachedSidebarAndProfile } from "@lib/shell-settings-cache"
+import { getFeatureFlags } from "../../lib/feature-flags"
+import { TASK_VIEW_ICONS, TASK_VIEW_LABELS, taskViewUrl, type TaskView } from "../../lib/task-view-route"
+import {
+  CUSTOM_LINK_ICONS,
+  DEFAULT_SIDEBAR_SECTIONS,
+  TASK_VIEW_ITEM_KEYS,
+  flattenSidebarOrder,
+  isBuiltinSidebarSectionId,
+  isItemHidden,
+  isStoredItemHidden,
+  isSectionHidden,
+  normalizeSidebarConfig,
+  serializeSidebarConfig,
+} from "@domains/navigation/sidebar-menu"
+import { normalizeUserProfile, type UserProfile } from "@domains/auth/user-profile"
 
-const currentPath = Astro.url.pathname;
+const currentPath = Astro.url.pathname
+const workNavigation = Astro.props.workNavigation
+const selectedScope = workNavigation ? { ok: true as const, scope: workNavigation.scope } : await resolveBoardPageScope(Astro).catch(() => null)
+const captureDenied = selectedScope?.ok === true && !scopePermits(selectedScope.scope, { resource: "task", action: "create" })
+const boardContext = readBoardNavigationContext(Astro.url) ?? (selectedScope?.ok ? { boardId: selectedScope.scope.boardId } : undefined)
+const boardLinks = boardContext ? boardNavigationLinks(boardContext) : undefined
+const settingsHref = boardContext?.boardId ? `/settings?board_id=${encodeURIComponent(boardContext.boardId)}` : "/settings"
+
 export interface Props {
-  locale?: Locale;
-  taskCounts?: { total: number; active: number; pending: number };
+  workNavigation?: { scope: BoardScope, dailyStreak?: number } | undefined
+  locale?: Locale
 }
 const {
   locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en",
-  taskCounts = { total: 0, active: 0, pending: 0 },
-} = Astro.props;
+} = Astro.props
 
 /** Default nav item definitions */
 interface NavItemDef {
-  href: string;
-  i18nKey: string;
-  icon: string;
-  matchExact?: boolean;
-  showBadge?: boolean;
+  href: string
+  i18nKey: string
+  icon: string
+  matchExact?: boolean
+  taskView?: TaskView
+  defaultLabel?: string
+}
+
+const taskViewBaseUrl = new URL(boardContext ? `/boards/${encodeURIComponent(boardContext.boardId)}` : "/tasks", Astro.url)
+const taskViewHref = (view: TaskView) => {
+  const url = taskViewUrl(taskViewBaseUrl, view, true)
+  return url.pathname + url.search + url.hash
 }
 
 const NAV_ITEMS: Record<string, NavItemDef> = {
   dashboard: {
-    href: "/",
+    href: "/?view=dashboard",
     i18nKey: "nav.dashboard",
     icon: "dashboard",
     matchExact: true,
@@ -47,6 +82,40 @@ const NAV_ITEMS: Record<string, NavItemDef> = {
     i18nKey: "nav.tasks",
     icon: "kanban",
   },
+  "view-calendar": {
+    href: taskViewHref("calendar"),
+    i18nKey: "",
+    defaultLabel: TASK_VIEW_LABELS.calendar,
+    icon: TASK_VIEW_ICONS.calendar,
+    taskView: "calendar",
+  },
+  "view-kanban": {
+    href: taskViewHref("kanban"),
+    i18nKey: "",
+    defaultLabel: TASK_VIEW_LABELS.kanban,
+    icon: TASK_VIEW_ICONS.kanban,
+    taskView: "kanban",
+  },
+  "view-timeline": {
+    href: taskViewHref("timeline"),
+    i18nKey: "",
+    defaultLabel: TASK_VIEW_LABELS.timeline,
+    icon: TASK_VIEW_ICONS.timeline,
+    taskView: "timeline",
+  },
+  "view-table": {
+    href: taskViewHref("table"),
+    i18nKey: "",
+    defaultLabel: TASK_VIEW_LABELS.table,
+    icon: TASK_VIEW_ICONS.table,
+    taskView: "table",
+  },
+  "system-pinned": {
+    href: "/pinned",
+    i18nKey: "pins.title",
+    icon: "pin",
+    matchExact: true,
+  },
   mentionInbox: { href: "/mention-inbox", i18nKey: "mention_inbox.title", icon: "inbox", matchExact: true },
   activity: { href: "/activity", i18nKey: "recent_activity.title", icon: "bolt", matchExact: true },
   progress: {
@@ -54,166 +123,155 @@ const NAV_ITEMS: Record<string, NavItemDef> = {
     i18nKey: "nav.progress",
     icon: "trophy",
   },
-  areas: {
-    href: "/planning#spaces",
-    i18nKey: "sidebar.areas_header",
-    icon: "folder",
-  },
+  boards: { href: "/boards", i18nKey: "Boards", icon: "kanban" },
   planning: {
     href: "/planning",
     i18nKey: "nav.planning",
     icon: "eisenhower",
   },
-};
-
-type NavKey = string;
-const DEFAULT_ORDER: NavKey[] = [
-  "dashboard",
-  "today",
-  "upcoming",
-  "tasks",
-  "activity",
-  "mentionInbox",
-  "progress",
-  "planning",
-  "areas",
-];
-
-interface CustomNavItem {
-  id: string;
-  href: string;
-  icon: string;
-  label: string;
+  settings: {
+    href: settingsHref,
+    i18nKey: "nav.settings",
+    icon: "settings",
+  },
 }
 
-/** Sidebar configuration from settings DB */
-interface SidebarConfig {
-  /** Visibility toggles (legacy format preserved) */
-  [key: string]: unknown;
-  /** Display order — array of nav keys */
-  order?: string[];
-  /** Custom labels per nav key */
-  labels?: Record<string, string>;
-  /** Custom dynamically added nav items */
-  customItems?: CustomNavItem[];
-}
-
-let sidebarConfig: SidebarConfig = {
-  dashboard: true,
-  today: true,
-  upcoming: true,
-  tasks: true,
-  progress: true,
-  planning: true,
-  areas: true,
-};
+let showNamedBoardShortcuts = false
+let rawSidebarConfig: unknown = null
+let rawUserProfile: unknown = null
 
 /** Feature flags — hide gamification/habits if disabled */
-const ff = await getFeatureFlags();
-const gamificationEnabled = ff.gamification !== false;
-const habitsEnabled = ff.habits !== false;
-const hierarchyEnabled = ff.hierarchy !== false;
+const ff = await getFeatureFlags()
+const gamificationEnabled = ff.gamification !== false
+const hierarchyEnabled = ff.hierarchy !== false && ff.organizer !== false
 
 /** Fetch streak data for sidebar badge */
-let currentStreak = 0;
-if (gamificationEnabled) {
+let currentStreak = 0
+if (gamificationEnabled && selectedScope?.ok) {
   try {
-    const stats = await getGamificationStats();
-    currentStreak = stats.currentStreak;
+    currentStreak = workNavigation?.dailyStreak ?? (await getDailyProgress(selectedScope.scope)).currentStreak
   } catch {
     /* gamification schema may not exist yet */
   }
 }
 
 try {
-  await ensureSchema();
-  const c = getPersistenceClient();
-  const res = await c.execute(
-    "SELECT value FROM settings WHERE key = 'sidebar_config'",
-  );
-  if (res.rows.length > 0) {
-    let parsed = JSON.parse(String(res.rows[0]?.value));
-    // Handle double-encoded JSON (API stores JSON.stringify'd values)
-    if (typeof parsed === "string") {
-      try {
-        parsed = JSON.parse(parsed);
-      } catch {
-        /* not double-encoded */
-      }
-    }
-    if (parsed && typeof parsed === "object") {
-      sidebarConfig = { ...sidebarConfig, ...parsed };
-    }
-  }
+  await ensureSchema()
+  const c = getPersistenceClient()
+  showNamedBoardShortcuts = hierarchyEnabled && Boolean(await currentBoardContext(Astro))
+  ;({ rawSidebarConfig, rawUserProfile } = await readCachedSidebarAndProfile(c))
 } catch (e) {
-  const { logApiError } = await import("@lib/api-logger");
-  logApiError("sidebar", "load_sidebar_config", e);
-  // DB fallback — use defaults
+  const { logApiError } = await import("@lib/api-logger")
+  logApiError("sidebar", "load_sidebar_config", e)
 }
 
-/** Inject custom items into NAV_ITEMS before processing */
-if (Array.isArray(sidebarConfig.customItems)) {
-  sidebarConfig.customItems.forEach((c) => {
-    if (c.id && c.id !== "system-pinned" && c.href) {
-      NAV_ITEMS[c.id] = {
-        href: c.href,
-        i18nKey: "",
-        icon: c.icon || "link",
-        matchExact: false, // Default matching
-      };
-      if (!sidebarConfig.labels) sidebarConfig.labels = {};
-      sidebarConfig.labels[c.id] = c.label || c.id;
-    }
-  });
-}
-
-/** Build ordered, filtered nav item list */
-const rawOrder: NavKey[] =
-  Array.isArray(sidebarConfig.order) && sidebarConfig.order.length > 0
-    ? (sidebarConfig.order as string[]).filter((k: string) => k in NAV_ITEMS)
-    : [];
-// Fall back to defaults if saved order is empty / invalid, then append any missing defaults
-const order: NavKey[] = rawOrder.length > 0 ? rawOrder : [...DEFAULT_ORDER];
-DEFAULT_ORDER.forEach((k) => {
-  if (!order.includes(k)) order.push(k);
-});
-// Append custom items that were injected into NAV_ITEMS but aren't in the order yet
-Object.keys(NAV_ITEMS).forEach((k) => {
-  if (!order.includes(k)) order.push(k);
-});
-
-const labels: Record<string, string> =
-  (sidebarConfig.labels as Record<string, string>) ?? {};
-
-const navItems = order
-  .filter((key) => {
-    if (sidebarConfig[key] === false) return false
-    if (!(key in NAV_ITEMS)) return false
-    // Feature flag: hide progress parent page when all sub-features disabled
-    if (key === "progress" && !gamificationEnabled && !habitsEnabled) return false
-    if ((key === "tasks" || key === "areas") && !hierarchyEnabled) return false
-    if ((key === "activity" || key === "mentionInbox") && !Astro.locals.hassUserId) return false
-    return true
-  })
-  .map((key) => {
-    const def = NAV_ITEMS[key]!;
-    const label = labels[key] || t(def.i18nKey, locale);
-    const isActive = def.matchExact
-      ? currentPath === def.href
-      : currentPath.startsWith(def.href);
-    return { key, label, isActive, ...def };
-  });
-const tasksIndex = navItems.findIndex(item => item.key === "tasks")
-const pinIndex = tasksIndex >= 0 ? tasksIndex + 1 : navItems.findIndex(item => item.key === "today") + 1
-navItems.splice(pinIndex, 0, {
-  key: "system-pinned", href: "/pinned", label: t("pins.title", locale), i18nKey: "pins.title",
-  icon: "pin", isActive: currentPath === "/pinned", matchExact: true,
+const eligibleBuiltInKeys = Object.keys(NAV_ITEMS).filter(key => {
+  if (key === "planning" && ff.planning === false) return false
+  if (key === "progress" && ff.pillars === false && ff.goals === false && ff.habits === false && ff.gamification === false) return false
+  if (key === "boards" && !hierarchyEnabled) return false
+  if ((key === "activity" || key === "mentionInbox") && !Astro.locals.hassUserId) return false
+  return true
 })
 
-const areaPosition = navItems.findIndex(item => item.key === "areas")
-const areaLabel = labels.areas || t("sidebar.areas_header", locale)
-const primaryItems = areaPosition < 0 ? navItems : navItems.slice(0, areaPosition)
-const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
+const sidebarMenuConfig = normalizeSidebarConfig(rawSidebarConfig, eligibleBuiltInKeys)
+const customItemIds = new Set(sidebarMenuConfig.customItems.map(item => item.id))
+
+for (const custom of sidebarMenuConfig.customItems) {
+  NAV_ITEMS[custom.id] = {
+    href: custom.href,
+    i18nKey: "",
+    defaultLabel: custom.label,
+    icon: custom.icon || "link",
+    matchExact: false,
+  }
+}
+
+const resolveLabel = await organizationLabelsFor(Astro)
+const quickCreate = newOrganizationLabel(resolveLabel("task", false, locale === "en" ? "task" : undefined), locale)
+const terminology: Partial<Record<string, OrganizationTerm>> = {
+  boards: "board", tasks: "task", planning: "planning", progress: "progress",
+}
+
+const sectionMetaMap = new Map<string, (typeof DEFAULT_SIDEBAR_SECTIONS)[number]>(DEFAULT_SIDEBAR_SECTIONS.map(section => [section.id, section]))
+
+const sections: SidebarSectionView[] = sidebarMenuConfig.sectionOrder.map(sectionId => {
+  const spec = sectionMetaMap.get(sectionId)
+  const defaultLabel = spec ? t(spec.i18nKey, locale) : sectionId
+  const label = sidebarMenuConfig.sectionLabels[sectionId] || defaultLabel
+  const hidden = isSectionHidden(sidebarMenuConfig, sectionId)
+  const keys = sidebarMenuConfig.sectionItems[sectionId] ?? []
+
+  const items: SidebarNavItemView[] = keys
+    .filter(key => key in NAV_ITEMS)
+    .map(key => {
+      const def = NAV_ITEMS[key]!
+      const term = terminology[key]
+      const customEntry = sidebarMenuConfig.customItems.find(entry => entry.id === key)
+      const baseLabel = customEntry?.label
+        || def.defaultLabel
+        || (key === "boards" ? (locale === "ga" ? "Cláir" : "Boards") : t(def.i18nKey, locale))
+      const defaultItemLabel = term ? resolveLabel(term, true, baseLabel) : baseLabel
+      const itemLabel = sidebarMenuConfig.itemLabels[key] || defaultItemLabel
+      const resolvedHref = key === "settings"
+        ? settingsHref
+        : key === "system-pinned"
+          ? (boardLinks?.pinned ?? "/pinned")
+          : def.taskView
+            ? def.href
+            : (boardLinks && key in boardLinks ? boardLinks[key as keyof typeof boardLinks] : def.href)
+      const comparePath = def.href.split("?", 1)[0] ?? def.href
+      const isActive = def.taskView
+        ? false
+        : def.matchExact
+          ? currentPath === comparePath
+          : currentPath === comparePath || currentPath.startsWith(comparePath + "/")
+
+      return {
+        key,
+        label: itemLabel,
+        defaultLabel: defaultItemLabel,
+        isActive,
+        href: resolvedHref,
+        defaultHref: def.href,
+        icon: def.icon,
+        hidden: isItemHidden(sidebarMenuConfig, key),
+        removable: customItemIds.has(key),
+        taskView: def.taskView,
+      }
+    })
+
+  const hasVisibleItems = items.some(item => !item.hidden && item.key !== "system-pinned")
+  return {
+    id: sectionId,
+    label,
+    defaultLabel,
+    hidden,
+    hasVisibleItems,
+    removable: !isBuiltinSidebarSectionId(sectionId),
+    items,
+  }
+})
+
+const pinnedTaskViews: TaskView[] = TASK_VIEW_ITEM_KEYS
+  .filter(key => !isItemHidden(sidebarMenuConfig, key))
+  .map(key => key.slice("view-".length) as TaskView)
+
+const sidebarDefaultOrder = flattenSidebarOrder(sidebarMenuConfig)
+const serializedSidebarConfig = serializeSidebarConfig(sidebarMenuConfig)
+
+const haDisplayName = (Astro.locals as unknown as Record<string, unknown>).hassDisplayName
+const haUsername = (Astro.locals as unknown as Record<string, unknown>).hassUserName ?? Astro.locals.hassUserId
+const userProfile: UserProfile = normalizeUserProfile(rawUserProfile, {
+  displayName: typeof haDisplayName === "string" && haDisplayName.trim()
+    ? haDisplayName
+    : typeof haUsername === "string" && haUsername.trim()
+      ? haUsername
+      : "Household Member",
+  username: typeof haUsername === "string" && haUsername.trim() ? haUsername : "local",
+  role: Astro.locals.hassIsAdmin ? "Admin" : "",
+})
+
+const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemHidden(rawSidebarConfig, "areas")
 ---
 
 <nav
@@ -221,6 +279,9 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
   id="sidebar"
   role="navigation"
   aria-label="Main Navigation"
+  data-sidebar-config={JSON.stringify(serializedSidebarConfig)}
+  data-sidebar-server-config={JSON.stringify(serializedSidebarConfig)}
+  data-storage-error={t("sidebar.reorder_storage_error", locale)}
 >
   <button
     type="button"
@@ -228,19 +289,20 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     id="sidebar-edge-toggle"
     aria-label="Collapse sidebar (Ctrl+B)"
     aria-expanded="true"
+    aria-controls="sidebar"
     title="Collapse sidebar (Ctrl+B)"
   >
     <span class="sidebar-edge-toggle__circle" aria-hidden="true">
       <span class="sidebar-edge-toggle__icon">
-        <Icon name="chevron-down" size={14} class="rotate-90" />
+        <Icon name="chevron-down" size={14} sprite={true} />
       </span>
     </span>
   </button>
 
-  <div class="sidebar-header flex items-center gap-2 pb-4 mb-0 px-2">
+  <div class="sidebar-header flex items-center gap-2 pb-3 mb-0">
     <div class="sidebar-brand-group flex flex-col flex-1 min-w-0">
       <a
-        href="/"
+        href="/?view=dashboard"
         data-astro-prefetch="viewport"
         class="sidebar-brand text-xl font-medium tracking-[-0.05em] text-text-primary hover:text-accent transition-colors flex items-center gap-2 no-underline overflow-hidden shrink min-w-0"
         aria-label="Meitheal Home"
@@ -269,55 +331,226 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     </div>
     <button
       type="button"
-      class="sidebar-toggle-top ml-auto flex items-center justify-center p-1.5 rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors shrink-0 relative w-8 h-8"
+      class="sidebar-toggle-top ml-auto flex items-center justify-center rounded-md text-text-muted hover:text-text-primary hover:bg-bg-hover transition-colors shrink-0 w-11 h-11"
       id="sidebar-toggle-btn"
-      aria-label="Toggle sidebar (Ctrl+B)"
-      title="Toggle sidebar (Ctrl+B)"
+      aria-controls="sidebar"
+      aria-label={t("topbar.close_menu", locale)}
+      title={t("topbar.close_menu", locale)}
     >
-      <Icon name="layout-sidebar-left-collapse" class="sidebar-icon-expanded w-5 h-5 shrink-0 absolute" />
-      <Icon name="menu-2" class="sidebar-icon-collapsed w-5 h-5 shrink-0 absolute hidden" />
+      <Icon name="x" size={20} sprite={true} />
     </button>
   </div>
 
-  <div class="sidebar-cta-wrap">
-    <button
-      type="button"
-      id="sidebar-rail-new-task"
-      class="sidebar-rail-cta"
-      data-tooltip="New task"
-      aria-label="New task"
-    >
-      <span class="sidebar-rail-cta__icon" aria-hidden="true">
-        <Icon name="plus" size={18} />
+  <div class="sidebar-main">
+    <div class="sidebar-cta-wrap">
+      <TaskCreationMenu id="sidebar-task-types" variant="sidebar">
+        <button
+          type="button"
+          id="sidebar-rail-new-task"
+          disabled={captureDenied}
+          class="sidebar-rail-cta"
+          data-tooltip={quickCreate}
+          aria-label={quickCreate}
+        >
+          <span class="sidebar-rail-cta__icon" aria-hidden="true">
+            <Icon name="plus" size={18} sprite={true} />
+          </span>
+          <span class="sidebar-rail-cta__label">{quickCreate}</span>
+        </button>
+      </TaskCreationMenu>
+    </div>
+
+    <div class="sidebar-scroll" data-nav-overflow="sidebar" data-sidebar-default-order={JSON.stringify(sidebarDefaultOrder)}>
+      <SidebarNavList sections={sections} pinnedTaskViews={pinnedTaskViews}>
+        <ul slot="boards" id="sidebar-board-children" class="sidebar-board-children" data-sidebar-board-children
+          data-sidebar-boards={showNamedBoardShortcuts ? "" : undefined} data-board-group-label={resolveLabel("group", true, sidebarMenuConfig.itemLabels.areas || undefined)}
+          data-board-project-label={resolveLabel("project", true)} data-projects-enabled={String(ff.projects !== false)}
+          data-areas-enabled={String(ff.groups !== false && areasVisible)} aria-label={resolveLabel("board", true)}>
+        </ul>
+      </SidebarNavList>
+      <NavOverflowMore id="sidebar-more-destinations" list locale={locale} />
+      <SidebarHierarchyActions />
+    </div>
+  </div>
+
+  <!-- Edit Mode Actions: Per-User Scope, Add Section, Add Custom Link + Icon Picker, Leave Edit Mode -->
+  <div class="sidebar-edit-footer" data-sidebar-leave-edit hidden>
+    <div class="sidebar-edit-scope" role="note">
+      <span class="sidebar-edit-scope__badge">
+        <Icon name="user" size={12} sprite={true} />
+        <span>Per-user menu</span>
       </span>
-      <span class="sidebar-rail-cta__label">New task</span>
+      <button
+        type="button"
+        class="sidebar-edit-scope__reset"
+        data-sidebar-reset-personal
+        hidden
+      >
+        Reset to server default
+      </button>
+    </div>
+
+    <div class="sidebar-edit-moves" data-sidebar-edit-moves hidden>
+      <button
+        type="button"
+        data-sidebar-step="-1"
+        aria-label={t("sidebar.reorder_up", locale)}
+        title={t("sidebar.reorder_up", locale)}
+      >
+        <Icon name="chevron-down" size={16} class="rotate-180" />
+      </button>
+      <button
+        type="button"
+        data-sidebar-step="1"
+        aria-label={t("sidebar.reorder_down", locale)}
+        title={t("sidebar.reorder_down", locale)}
+      >
+        <Icon name="chevron-down" size={16} />
+      </button>
+    </div>
+
+    <div class="sidebar-edit-quick-actions">
+      <button
+        type="button"
+        id="sidebar-add-section-btn"
+        class="sidebar-add-link-trigger"
+        data-sidebar-add-section-trigger
+        aria-expanded="false"
+        aria-controls="sidebar-add-section-form"
+      >
+        <Icon name="folder" size={14} sprite={true} />
+        <span>Add section</span>
+      </button>
+
+      <button
+        type="button"
+        id="sidebar-add-link-btn"
+        class="sidebar-add-link-trigger"
+        data-sidebar-add-link-trigger
+        aria-expanded="false"
+        aria-controls="sidebar-add-link-form"
+      >
+        <Icon name="link" size={14} sprite={true} />
+        <span>Add custom link</span>
+      </button>
+    </div>
+
+    <form id="sidebar-add-section-form" class="sidebar-add-link-form" data-sidebar-add-section-form hidden novalidate>
+      <input
+        type="text"
+        name="sectionLabel"
+        class="form-input"
+        placeholder="Section name (e.g. Smart Home)"
+        maxlength="64"
+        required
+        aria-label="New section name"
+      />
+      <p class="sidebar-add-link-error" data-sidebar-add-section-error role="alert" hidden></p>
+      <div class="sidebar-add-link-actions">
+        <button type="button" class="btn btn-ghost" data-sidebar-add-section-cancel>Cancel</button>
+        <button type="submit" class="btn btn-primary">Add section</button>
+      </div>
+    </form>
+
+    <form id="sidebar-add-link-form" class="sidebar-add-link-form" data-sidebar-add-link-form hidden novalidate>
+      <input
+        type="text"
+        name="label"
+        class="form-input"
+        placeholder="Label (e.g. Home Assistant)"
+        maxlength="64"
+        required
+        aria-label="Custom link label"
+      />
+      <input
+        type="text"
+        name="href"
+        class="form-input"
+        placeholder="URL (https://… or /path)"
+        required
+        aria-label="Custom link URL"
+      />
+      <select name="section" class="form-select" aria-label="Section">
+        {sections.map(sec => (
+          <option value={sec.id}>{sec.label}</option>
+        ))}
+      </select>
+      <div class="sidebar-icon-picker-wrap">
+        <span class="sidebar-icon-picker__label">Icon</span>
+        <input type="hidden" name="icon" value="link" />
+        <div class="sidebar-icon-picker" role="group" aria-label="Choose link icon" data-link-icon-picker>
+          {CUSTOM_LINK_ICONS.map(iconName => (
+            <button
+              type="button"
+              class={`sidebar-icon-choice${iconName === "link" ? " is-selected" : ""}`}
+              data-link-icon-choice={iconName}
+              aria-pressed={iconName === "link" ? "true" : "false"}
+              aria-label={`Icon: ${iconName.replace(/-/g, " ")}`}
+              title={iconName.replace(/-/g, " ")}
+            >
+              <Icon name={iconName} size={15} sprite={true} />
+            </button>
+          ))}
+        </div>
+      </div>
+      <p class="sidebar-add-link-error" data-sidebar-add-link-error role="alert" hidden></p>
+      <div class="sidebar-add-link-actions">
+        <button type="button" class="btn btn-ghost" data-sidebar-add-link-cancel>Cancel</button>
+        <button type="submit" class="btn btn-primary">Pin link</button>
+      </div>
+    </form>
+
+    <button type="button" id="sidebar-leave-edit" class="sidebar-leave-edit__btn" data-sidebar-leave-edit-btn>
+      <Icon name="check" size={16} sprite={true} />
+      <span>{t("sidebar.leave_edit_mode", locale)}</span>
     </button>
   </div>
+  <span role="status" aria-live="polite" class="sr-only" data-sidebar-reorder-status></span>
 
-  <div class="sidebar-scroll" data-nav-overflow="sidebar">
-    {primaryItems.length > 0 && <SidebarNavList navItems={primaryItems} taskCounts={taskCounts} />}
-    {areaPosition >= 0 && (
-      <div id="sidebar-hierarchy-panel">
-        <a href="/planning#spaces" class="nav-link sidebar-compact-areas" data-tooltip={areaLabel} aria-label={areaLabel}>
-          <span class="nav-icon"><Icon name="folder" /></span>
-        </a>
-        <SidebarHierarchyTree locale={locale} label={areaLabel} />
-      </div>
-    )}
-    {remainingItems.length > 0 && <SidebarNavList navItems={remainingItems} taskCounts={taskCounts} />}
-    <NavOverflowMore id="sidebar-more-destinations" list locale={locale} />
-  </div>
-
-  {gamificationEnabled && (
+  {gamificationEnabled && currentStreak > 0 && (
     <div class="sidebar-gamification-wrapper">
       <StreakBadge streak={currentStreak} compact />
     </div>
   )}
 
-  <SidebarFooter locale={locale} />
-
-
+  <SidebarFooter locale={locale} profile={userProfile} settingsHref={settingsHref} />
 </nav>
+
+<script>
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  import { bindSidebarBoards } from "@lib/sidebar-boards"
+  import { bindSidebarReorder } from "@lib/sidebar-order"
+  import { bindSidebarPinPresence } from "@lib/sidebar-pin-presence"
+  import { bindSidebarUserMenu } from "@lib/sidebar-user-menu"
+
+  const runtime = window as Window & { __meithealSidebarController?: AbortController }
+  runtime.__meithealSidebarController?.abort()
+  const controller = new AbortController()
+  runtime.__meithealSidebarController = controller
+  let boundSignal: AbortSignal | undefined
+  pageLifecycle.onPageLoad(pageSignal => {
+    if (controller.signal.aborted || boundSignal === pageSignal) return
+    boundSignal = pageSignal
+    const signal = AbortSignal.any([pageSignal, controller.signal])
+    bindSidebarBoards(signal)
+    const sidebar = document.getElementById("sidebar")
+    const capture = sidebar?.querySelector<HTMLButtonElement>("#sidebar-rail-new-task")
+    const capturePermission = document.querySelector<HTMLMetaElement>('meta[name="meitheal-task-create"]')
+    if (capture && capturePermission) capture.disabled = capturePermission.content !== "true"
+    if (capture) {
+      document.addEventListener("meitheal:board-revoked", event => {
+        const boardId = (event as CustomEvent<{ boardId?: string }>).detail?.boardId
+        if (boardId && boardId === document.querySelector<HTMLMetaElement>('meta[name="meitheal-work-board"]')?.content) capture.disabled = true
+      }, { signal })
+    }
+    if (sidebar) {
+      // Recent activity restores through guarded browser history.
+      bindSidebarPinPresence(sidebar, signal, Boolean(document.querySelector("[data-recent-activity]")))
+      bindSidebarReorder(sidebar, signal)
+      bindSidebarUserMenu(sidebar, signal)
+    }
+  })
+</script>
 
 <style>
   .sidebar {
@@ -337,139 +570,13 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     overflow: visible;
   }
 
-  .sidebar-edge-toggle {
-    position: absolute;
-    top: 56px;
-    right: -16px;
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    z-index: 50;
-    color: var(--text-secondary);
-    transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
-  }
-
-  .sidebar-edge-toggle__circle {
-    width: 28px;
-    height: 28px;
-    border-radius: 9999px;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    transition:
-      background-color 180ms cubic-bezier(0.23, 1, 0.32, 1),
-      border-color 180ms cubic-bezier(0.23, 1, 0.32, 1),
-      color 180ms cubic-bezier(0.23, 1, 0.32, 1),
-      transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
-  }
-
-  .sidebar-edge-toggle:hover .sidebar-edge-toggle__circle,
-  .sidebar-edge-toggle:focus-visible .sidebar-edge-toggle__circle {
-    background: var(--bg-hover);
-    border-color: var(--accent);
-    color: var(--text-primary);
-  }
-
-  .sidebar-edge-toggle:active .sidebar-edge-toggle__circle {
-    transform: scale(0.94);
-  }
-
-  .sidebar-edge-toggle__icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
-    transform: rotate(0deg);
-  }
-
-  :global(body.sidebar-collapsed) .sidebar-edge-toggle__icon {
-    transform: rotate(180deg);
-  }
-
   @media (min-width: 769px) {
     .sidebar-toggle-top {
       display: none !important;
     }
   }
 
-  .sidebar-cta-wrap {
-    padding: 0 0.25rem 0.625rem;
-    flex-shrink: 0;
-  }
-
-  .sidebar-rail-cta {
-    width: 100%;
-    min-height: 38px;
-    padding: 0 0.75rem;
-    border-radius: 10px;
-    border: 1px solid rgb(var(--accent-rgb) / 0.38);
-    background: rgb(var(--accent-rgb) / 0.14);
-    color: var(--text-primary);
-    display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 0.625rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition:
-      background-color 180ms cubic-bezier(0.23, 1, 0.32, 1),
-      border-color 180ms cubic-bezier(0.23, 1, 0.32, 1),
-      transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
-  }
-
-  .sidebar-rail-cta:hover,
-  .sidebar-rail-cta:focus-visible {
-    background: rgb(var(--accent-rgb) / 0.22);
-    border-color: var(--accent);
-  }
-
-  .sidebar-rail-cta:active {
-    transform: scale(0.97);
-  }
-
-  .sidebar-rail-cta__icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .sidebar-rail-cta__label {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  @media (max-width: 768px) {
-    .sidebar-edge-toggle {
-      display: none !important;
-    }
-  }
-
-  /* Scope through .sidebar so this outranks the global .nav-link display. */
-  .sidebar .sidebar-compact-areas {
-    display: none;
-  }
-
-  @media (min-width: 769px) {
-    :global(body.sidebar-collapsed) .sidebar .sidebar-compact-areas {
-      display: flex;
-    }
-
-    :global(body.sidebar-collapsed) #sidebar-hierarchy-panel :global(#project-nav) {
-      display: none;
-    }
-  }
+  .sidebar-main { display: contents; }
 
   .sidebar-scroll {
     flex: 1;
@@ -477,20 +584,29 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     overflow-x: hidden;
     overscroll-behavior: contain;
     min-height: 0;
-    padding-top: 8px;
-    scrollbar-width: none; /* Hide scrollbar Firefox */
+    padding-top: 4px;
+    scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
-    overscroll-behavior: contain;
   }
 
-  /* Hide scrollbar WebKit */
+  @media (max-width: 768px) {
+    .sidebar-main {
+      display: block;
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+    .sidebar-scroll { overflow: visible; }
+  }
+
   .sidebar-scroll::-webkit-scrollbar {
     display: none;
   }
 
   .sidebar-header {
-    margin-bottom: 0.625rem;
-    padding: 0 0.25rem;
+    margin-bottom: 0.5rem;
+    padding: 0 0.125rem;
     position: relative;
   }
 
@@ -507,52 +623,12 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     font-family: "JetBrains Mono", ui-monospace, monospace;
   }
 
-  .sidebar-tooltip {
-    display: none;
-    position: absolute;
-    left: 0.5rem;
-    top: calc(100% + 2px);
-    /* Prevent overflow clipping — constrain width to sidebar */
-    max-width: calc(100% - 1rem);
-    white-space: normal;
-    overflow-wrap: break-word;
-    font-size: 10px;
-    font-weight: 400;
-    font-style: italic;
-    color: var(--text-muted);
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 3px 8px;
-    pointer-events: none;
-    z-index: 50;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  }
-
-  :global(body:not(.sidebar-collapsed)) .sidebar-header:hover .sidebar-tooltip {
-    display: block !important;
-    animation: tooltip-fade-in 200ms ease forwards;
-  }
-
-  @keyframes tooltip-fade-in {
-    from {
-      opacity: 0;
-      transform: translateY(-2px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  /* Subtle mint glow on the brand completion dot when hovering the brand link */
   @media (hover: hover) and (pointer: fine) {
     .sidebar-brand:hover .sidebar-logo-svg circle {
       filter: drop-shadow(0 0 5px rgb(var(--accent-rgb) / 0.55));
     }
   }
 
-  /* Expose these styles globally for the sub-components to use cleanly without duplicate scopes */
   :global(.sidebar .nav-links) {
     display: flex;
     flex-direction: column;
@@ -567,7 +643,7 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     align-items: center;
     justify-content: flex-start;
     gap: 0.625rem;
-    padding: 0.5rem 0.625rem;
+    padding: 0.45rem 0.625rem;
     border-radius: var(--radius-sm, 6px);
     font-size: 0.875rem;
     font-weight: 500;
@@ -601,11 +677,12 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 1.5rem;
-    height: 1.5rem;
-    margin-right: 0.75rem;
+    width: 1.25rem;
+    height: 1.25rem;
+    margin-right: 0;
     color: var(--text-muted);
     transition: color 200ms ease;
+    flex-shrink: 0;
   }
 
   :global(.sidebar .nav-badge) {
@@ -634,12 +711,10 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
       z-index: 200;
       box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
     }
-
   }
 
   .sidebar-gamification-wrapper {
-    padding: 0.5rem 0.75rem;
-    border-top: 1px solid var(--border, #334155);
+    padding: 0.4rem 0.25rem 0;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -647,6 +722,290 @@ const remainingItems = areaPosition < 0 ? [] : navItems.slice(areaPosition + 1)
     :global(.sidebar .nav-link:active),
     :global(.sidebar .nav-link:hover) {
       transform: none;
+    }
+  }
+</style>
+
+<style is:inline set:html={sidebarReorderCss} />
+<style is:inline>
+  .sidebar-board-children { list-style: none; margin: 0; padding-inline-start: 0.75rem; }
+  .sidebar-board-children[hidden] { display: none !important; }
+  body.sidebar-collapsed .sidebar-board-children { display: none; }
+  .sidebar-board-children [data-named-board-shortcut] a { display: block; padding: 0.3rem 0.5rem; overflow-wrap: anywhere; }
+  .sidebar-board-children .sidebar-board-row { display: flex; align-items: center; gap: 2px; }
+  .sidebar-board-children .sidebar-board-row .nav-link { flex: 1; min-width: 0; }
+  .sidebar-board-children .sidebar-board-toggle { min-inline-size: 26px; inline-size: 26px; block-size: 26px; padding: 0; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--text-secondary); }
+  .sidebar-board-children .sidebar-board-toggle:hover,
+  .sidebar-board-children .sidebar-board-toggle:focus-visible { background: var(--bg-hover); color: var(--text-primary); }
+  .sidebar-board-children .sidebar-board-toggle[aria-expanded="true"] { transform: rotate(90deg); }
+  .sidebar-board-children [data-board-groups], .sidebar-board-children [data-board-projects] { list-style: none; padding-left: 1rem; }
+  .sidebar-board-children [data-board-group-notice] { padding-inline-start: 1rem; margin: 0; }
+
+  [data-appearance-nav-tone]:not([data-appearance-nav-tone="match"]) #sidebar .sidebar-board-children.stree {
+    background: rgba(15, 23, 42, 0.24);
+    border-color: var(--appearance-nav-border);
+    color: var(--appearance-nav-text);
+  }
+  [data-appearance-nav-tone]:not([data-appearance-nav-tone="match"]) #sidebar .sidebar-board-children :is(.nav-link, .sidebar-board-toggle, .sidebar-board-pin, .stree__toggle, .stree__area-link, .stree__project-link, .stree__new-area) {
+    color: var(--appearance-nav-text);
+  }
+  [data-appearance-nav-tone]:not([data-appearance-nav-tone="match"]) #sidebar .sidebar-board-children :is(.sidebar-board-toggle, .sidebar-board-pin, .stree__toggle):hover,
+  [data-appearance-nav-tone]:not([data-appearance-nav-tone="match"]) #sidebar .sidebar-board-children :is(.sidebar-board-toggle, .sidebar-board-pin, .stree__toggle):focus-visible {
+    background: var(--appearance-nav-hover);
+    border-color: var(--appearance-nav-border);
+  }
+
+  .sidebar-edge-toggle {
+    position: absolute; top: 37px; right: -16px; width: 32px; height: 32px; padding: 0; border: 0;
+    background: transparent; display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer; z-index: 50; color: var(--text-secondary);
+    transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .sidebar-edge-toggle__circle {
+    width: 28px; height: 28px; border-radius: var(--sidebar-toggle-radius, var(--radius-md, 10px));
+    background: var(--bg-card); border: 1px solid var(--border); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: background-color 180ms cubic-bezier(0.23, 1, 0.32, 1), border-color 180ms cubic-bezier(0.23, 1, 0.32, 1), border-radius 180ms cubic-bezier(0.23, 1, 0.32, 1), color 180ms cubic-bezier(0.23, 1, 0.32, 1), transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .sidebar-edge-toggle:hover .sidebar-edge-toggle__circle,
+  .sidebar-edge-toggle:focus-visible .sidebar-edge-toggle__circle { background: var(--bg-hover); border-color: var(--accent); color: var(--text-primary); }
+  .sidebar-edge-toggle:active .sidebar-edge-toggle__circle { transform: scale(0.94); }
+  .sidebar-edge-toggle__icon { display: inline-flex; align-items: center; justify-content: center; transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1); transform: rotate(90deg); }
+  body.sidebar-collapsed .sidebar-edge-toggle { top: 22px; }
+  body.sidebar-collapsed .sidebar-edge-toggle__icon { transform: rotate(-90deg); }
+  @media (max-width: 768px) { .sidebar-edge-toggle { display: none !important; } }
+
+  .sidebar-cta-wrap { padding: 0 0 0.625rem; flex-shrink: 0; }
+  .sidebar-rail-cta {
+    width: 100%; min-height: 38px; padding: 0 0.75rem; border-radius: 10px;
+    border: 1px solid rgb(var(--accent-rgb) / 0.38); background: rgb(var(--accent-rgb) / 0.14);
+    color: var(--text-primary); display: flex; align-items: center; justify-content: flex-start;
+    gap: 0.625rem; font-size: 0.875rem; font-weight: 600; cursor: pointer;
+    transition: background-color 180ms cubic-bezier(0.23, 1, 0.32, 1), border-color 180ms cubic-bezier(0.23, 1, 0.32, 1), transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .sidebar-rail-cta:hover, .sidebar-rail-cta:focus-visible { background: rgb(var(--accent-rgb) / 0.22); border-color: var(--accent); }
+  .sidebar-rail-cta:active { transform: scale(0.97); }
+  .sidebar-rail-cta__icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .sidebar-rail-cta__label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ── Top Navigation Docked Menu Editor Sheet ── */
+  @media (min-width: 769px) {
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing] .sidebar-scroll {
+      --nav-overflow-enabled: 0;
+      position: fixed;
+      inset-block-start: calc(var(--appearance-navbar-offset, 64px) + 10px);
+      inset-block-end: 120px;
+      inset-inline-end: 12px;
+      inline-size: min(360px, calc(100vw - 24px));
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 6px;
+      padding: 12px 12px 16px;
+      overflow-y: auto;
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md, 10px);
+      box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
+      z-index: 240;
+    }
+
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing]:has(#sidebar-add-section-form:not([hidden])) .sidebar-scroll {
+      inset-block-end: 236px;
+    }
+
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing]:has(#sidebar-add-link-form:not([hidden])) .sidebar-scroll {
+      inset-block-end: 374px;
+    }
+
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing] .sidebar-scroll .sidebar-cta-wrap {
+      display: none;
+    }
+
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing] .sidebar-scroll .sidebar-sections,
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing] .sidebar-scroll .sidebar-section {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      flex: none;
+      inline-size: 100%;
+    }
+
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing] .sidebar-scroll .sidebar-sections {
+      gap: 10px;
+    }
+
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing] .sidebar-scroll:not([data-nav-overflow-active]) .nav-list,
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing] .sidebar-scroll .nav-list {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      flex: none;
+      inline-size: 100%;
+      overflow: visible;
+      gap: 2px;
+    }
+
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing] .sidebar-scroll .sidebar-section__header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 4.75rem 4px 1.625rem;
+    }
+
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing] .sidebar-scroll .nav-link {
+      min-block-size: 36px;
+      padding: 6px 4.75rem 6px 8px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing] .sidebar-edit-footer {
+      position: fixed;
+      inset-block-end: 12px;
+      inset-inline-end: 12px;
+      inline-size: min(360px, calc(100vw - 24px));
+      max-block-size: calc(100dvh - 140px);
+      overflow-y: auto;
+      padding: 10px 12px 12px;
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md, 10px);
+      box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
+      z-index: 245;
+    }
+
+    :root[data-appearance-navigation="navbar"] #sidebar[data-sidebar-editing] .nav-overflow__more {
+      display: none !important;
+    }
+  }
+
+  #sidebar[data-sidebar-editing] #sidebar-board-children {
+    display: none !important;
+  }
+
+  .sidebar-board-empty {
+    padding: 0.4rem 0.625rem;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+  }
+
+  /* ── Per-User Scope Row, Quick Actions & Visual Tabler Icon Picker ── */
+  #sidebar .sidebar-edit-scope {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 2px 2px 4px;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+  }
+
+  #sidebar .sidebar-edit-scope__badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm, 6px);
+    background: var(--bg-hover);
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+
+  #sidebar .sidebar-edit-scope__reset {
+    padding: 2px 4px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  #sidebar .sidebar-edit-scope__reset:hover,
+  #sidebar .sidebar-edit-scope__reset:focus-visible {
+    color: var(--text-primary);
+  }
+
+  #sidebar .sidebar-edit-quick-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+
+  #sidebar .sidebar-icon-picker-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  #sidebar .sidebar-icon-picker__label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  #sidebar .sidebar-icon-picker {
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  #sidebar .sidebar-icon-choice {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    block-size: 28px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-input, var(--bg-secondary));
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  }
+
+  #sidebar .sidebar-icon-choice:hover,
+  #sidebar .sidebar-icon-choice:focus-visible {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  #sidebar .sidebar-icon-choice.is-selected {
+    border-color: var(--accent);
+    background: rgb(var(--accent-rgb) / 0.22);
+    color: var(--text-primary);
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+
+  #sidebar .sidebar-add-link-form .form-input,
+  #sidebar .sidebar-add-link-form .form-select {
+    background: var(--bg-input, var(--bg-secondary));
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+  }
+
+  #sidebar .sidebar-add-link-form .form-input::placeholder {
+    color: var(--text-muted);
+    opacity: 0.88;
+  }
+
+  #sidebar .sidebar-add-link-form .form-select option {
+    background: var(--bg-card);
+    color: var(--text-primary);
+  }
+
+  /* ── Mobile Touch-Friendly Edit Controls ── */
+  @media (max-width: 768px) {
+    #sidebar[data-sidebar-editing] .sidebar-edit-grip,
+    #sidebar[data-sidebar-editing] .sidebar-edit-actions {
+      opacity: 1 !important;
+      visibility: visible !important;
     }
   }
 </style>

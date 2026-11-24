@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.describe("Eisenhower Shell", () => {
@@ -104,7 +105,7 @@ test.describe("Eisenhower Shell", () => {
   })
 
   test("task list semantics follow a drag into an empty quadrant", async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const title = "Eisenhower quadrant list semantics"
     const created = await request.post("/api/tasks", {
       headers,

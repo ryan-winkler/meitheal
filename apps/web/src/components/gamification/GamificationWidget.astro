@@ -44,6 +44,7 @@ interface Props {
   level?: number
   progressToNext?: number
   achievements?: WidgetAchievement[]
+  achievementsHref: string
   timezone?: string
 }
 
@@ -54,6 +55,7 @@ const {
   level = 1,
   progressToNext = 0,
   achievements = [],
+  achievementsHref,
 } = Astro.props
 
 const progress = Math.min(stats.todayCompleted / dailyGoal, 1)
@@ -180,7 +182,7 @@ const streakLinkTitle = stats.currentStreak > 0
       <span class="gam-stat__label">XP</span>
     </div>
     <a
-      href="/progress#achievements"
+      href={achievementsHref}
       class="gam-stat gam-stat--link"
       title={streakLinkTitle}
     >
@@ -206,7 +208,7 @@ const streakLinkTitle = stats.currentStreak > 0
     <div class="gam-achievements">
       <div class="gam-achievements__header">
         <span class="gam-achievements__title">Achievements</span>
-        <a href="/progress#achievements" class="gam-achievements__all">
+        <a href={achievementsHref} class="gam-achievements__all">
           {unlockedAchievements.length}/{achievements.length}
         </a>
       </div>
@@ -215,7 +217,7 @@ const streakLinkTitle = stats.currentStreak > 0
           const badgeTitle = getWidgetAchievementTitle(a)
           return (
             <a
-              href="/progress#achievements"
+              href={achievementsHref}
               class={`gam-achievement-badge ${a.unlockedAt ? "gam-achievement-badge--unlocked" : "gam-achievement-badge--locked"}`}
               title={badgeTitle}
             >

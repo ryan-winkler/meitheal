@@ -9,12 +9,13 @@
  * - Bulk actions (status, priority, board, delete)
  * - Column sorting (within groups when grouped)
  * - Table scroll shadow detection
- * - Area selector population from /api/areas
+ * - Area choices and grouping labels from the accepted Table response
  *
  * @domain tasks
  * @bounded-context tasks (view-layer controller)
  */
 
+import { createTableTaskWrites, type TableTaskWrites } from "./table-task-writes"
 import { showToast } from "@lib/toast"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { onTaskCompleted } from "@lib/gamification-hook"
@@ -22,10 +23,12 @@ import { pageLifecycle } from "@lib/page-lifecycle"
 import { initPageShellNavigation } from "@lib/page-shell-controller"
 import { escapeHtml, sanitizeCssColor } from "@lib/safe-html"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
-import { taskBackgroundUrl } from "@lib/task-page-url"
-import { parseTaskView, taskViewUrl } from "@lib/task-view-route"
+import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
+import { hydrateTaskAssignees } from "@lib/task-assignee-display"
+import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "@lib/task-page-url"
+import { TASK_REFRESH_FRAGMENT_HEADER } from "@lib/task-view-route"
 import { loadTableColumnPreferences, TABLE_COLUMNS, TABLE_SECTIONS } from "@lib/table-registry"
-import { getRememberedAreaId } from "@lib/area-selector-controller"
+import { getRememberedAreaId, TABLE_AREA_CATALOG_EVENT } from "@lib/area-selector-controller"
 import {
   saveTableFilterState,
   loadTableFilterState,
@@ -41,24 +44,21 @@ import { isSelectableTableRow, setupBulkActions, updateBulkBar } from "@lib/cont
 import type { TableGroupStats, TablePageStats } from "@lib/table-page"
 import { notifyTaskCountsChanged } from "@lib/deferral-client"
 import { reconcileTableDeferral } from "@lib/controllers/table-deferral"
+import { byId, domEl, qs, setAttr } from "@lib/dom-helpers"
 
 // =============================================================================
 // Types
 // =============================================================================
 
-interface AreaInfo {
-  id: string
-  name: string
-  icon?: string
-  color?: string
-}
+type AreaDisplay = ReturnType<typeof getGroupDisplay>
+type RenderGroupStats = TableGroupStats<number | null>
+type RenderPageStats = TablePageStats<number | null>
 
 // =============================================================================
 // State
 // =============================================================================
 
 let currentGroupBy = "none"
-let areaMap: Record<string, AreaInfo> = {}
 
 // =============================================================================
 // Initialization
@@ -66,15 +66,29 @@ let areaMap: Record<string, AreaInfo> = {}
 
 const PAGE_FOCUS_KEY = "meitheal:table-page-focus"
 
+function hasTablePageStats(stats: RenderPageStats | null): stats is RenderPageStats {
+  // JSON serializes an overflowing RICE sum as null.
+  const hasTotals = (totals: RenderGroupStats) =>
+    Number.isFinite(totals?.count) && Number.isFinite(totals?.riceCount) &&
+    (totals.riceSum === null || Number.isFinite(totals.riceSum))
+  return Boolean(stats && Array.isArray(stats.epicLabels) && stats.epicLabels.every(entry =>
+    Array.isArray(entry) && entry.length === 2 && entry.every(value => typeof value === "string"),
+  ) && hasTotals(stats.total) && [stats.groups, stats.subgroups].every(entries =>
+    Array.isArray(entries) && entries.every(entry =>
+      Array.isArray(entry) && entry.length === 2 && typeof entry[0] === "string" && hasTotals(entry[1]),
+    ),
+  ))
+}
+
 function focusTablePage(shell: HTMLElement, direction: string) {
-  const pager = shell.querySelector<HTMLElement>("#table-pagination:not([hidden])")
+  const pager = qs<HTMLElement>(shell, "#table-pagination:not([hidden])")
   const links = Array.from(pager?.querySelectorAll<HTMLAnchorElement>("[data-table-page-link]") ?? [])
-  const target = links.find(link => link.rel === direction) ?? links[0] ?? shell.querySelector<HTMLElement>("#table-search")
+  const target = links.find(link => link.rel === direction) ?? links[0] ?? qs<HTMLElement>(shell, "#table-search")
   target?.focus()
 }
 
 function setupPagerFocus(shell: HTMLElement, signal: AbortSignal) {
-  shell.querySelector("#table-pagination")?.addEventListener("click", event => {
+  qs(shell, "#table-pagination")?.addEventListener("click", event => {
     if (!(event instanceof MouseEvent) || event.defaultPrevented || event.detail !== 0 ||
         event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
     const link = (event.target as Element).closest<HTMLAnchorElement>("[data-table-page-link]")
@@ -99,12 +113,11 @@ function setupPagerFocus(shell: HTMLElement, signal: AbortSignal) {
 }
 
 function init(signal: AbortSignal) {
-  const shell = document.getElementById("table-shell")
+  const shell = byId("table-shell")
   if (!shell || shell.dataset.tableReady === "true") return
   shell.dataset.tableReady = "true"
   signal.addEventListener("abort", () => { delete shell.dataset.tableReady }, { once: true })
-  areaMap = Object.create(null)
-  if (document.getElementById("table-bar")) {
+  if (byId("table-bar")) {
     initPageShellNavigation({
       barId: "table-bar",
       shellId: "table-shell",
@@ -116,16 +129,22 @@ function init(signal: AbortSignal) {
     })
   }
 
-  const table = shell.querySelector<HTMLTableElement>("#task-table")
-  const container = shell.querySelector<HTMLElement>(".table-container")
+  const table = qs<HTMLTableElement>(shell, "#task-table")
+  const container = qs<HTMLElement>(shell, ".table-container")
   const tbody = table?.tBodies[0]
-  const status = shell.querySelector<HTMLElement>("#table-refresh-status")
-  const message = status?.querySelector<HTMLElement>("[data-table-refresh-message]")
-  const retry = status?.querySelector<HTMLButtonElement>("[data-table-retry]")
+  const status = qs<HTMLElement>(shell, "#table-refresh-status")
+  const message = qs<HTMLElement>(status, "[data-table-refresh-message]")
+  const retry = qs<HTMLButtonElement>(status, "[data-table-retry]")
   if (!table || !container || !tbody || !status || !message || !retry) return
+  const bulkArea = document.querySelector<HTMLSelectElement>("#bulk-area")
+  const areaSelector = byId("area-selector-dropdown")
+  const areaPicker = "#area-selector-dropdown[data-area-catalog-ready='true']"
+  const initialAreaCatalog = document.querySelector(areaPicker)
+  let areas = applyAreaCatalog(initialAreaCatalog, bulkArea)
+  void hydrateTaskAssignees(tbody, signal)
 
   const initial = loadTableFilterState()
-  initial.area ??= getRememberedAreaId()
+  initial.area = areaSelector ? initial.area ?? getRememberedAreaId() : ""
   const initialColumns = initial.columns ?? loadTableColumnPreferences()
   initial.columns = initialColumns
   const rendered = JSON.parse(shell.dataset.tableFilters ?? "{}") as Partial<FilterState>
@@ -136,22 +155,23 @@ function init(signal: AbortSignal) {
   let resetPageOnRetry = false
   const replacedTitleEditors = new WeakSet<HTMLElement>()
 
-  const renderRows = () => {
-    const stats = JSON.parse(table.dataset.tableStats ?? "{}") as TablePageStats
+  const renderRows = (stats = JSON.parse(table.dataset.tableStats ?? "{}") as RenderPageStats) => {
     currentGroupBy = applied.groupBy ?? "none"
-    applyGrouping(currentGroupBy, applied.subGroupBy ?? "none", stats)
+    applyGrouping(currentGroupBy, applied.subGroupBy ?? "none", stats, areas)
     applyColumns(applied.columns)
     updateTableSort(applied.sort)
+    const manualBtn = byId("table-manual-order-btn")
+    if (manualBtn) setAttr(manualBtn, "aria-pressed", String(applied.sort === "manual-asc" && (!applied.groupBy || applied.groupBy === "none")))
     shell.dataset.tableFilters = JSON.stringify(applied)
     const createdRange = tableCreationRangeLabel(applied.createdFrom, applied.createdThrough)
-    shell.querySelector("[data-table-created-summary]")?.classList.toggle("filter-pill--active", Boolean(createdRange))
-    const createdDateIndicator = shell.querySelector<HTMLElement>("[data-table-created-active]")
+    qs(shell, "[data-table-created-summary]")?.classList.toggle("filter-pill--active", Boolean(createdRange))
+    const createdDateIndicator = qs<HTMLElement>(shell, "[data-table-created-active]")
     if (createdDateIndicator) {
       createdDateIndicator.textContent = createdRange
       createdDateIndicator.hidden = !createdRange
     }
     document.dispatchEvent(new Event("meitheal:table-filters-applied"))
-    const selectAll = table.querySelector<HTMLInputElement>("#select-all")
+    const selectAll = qs<HTMLInputElement>(table, "#select-all")
     if (selectAll) selectAll.checked = false
     updateBulkBar()
     container.classList.toggle("has-scroll", container.scrollWidth > container.clientWidth)
@@ -164,11 +184,11 @@ function init(signal: AbortSignal) {
     pending?.abort()
     const request = new AbortController()
     pending = request
-    table.setAttribute("aria-busy", "true")
+    setAttr(table, "aria-busy", "true")
     status.hidden = true
     retry.hidden = true
 
-    const url = new URL(location.href)
+    const url = taskBackgroundUrl()
     writeTableFilterParams(url.searchParams, nextState)
     for (const key of ["open", "comment"]) url.searchParams.delete(key)
     if (resetPage) url.searchParams.delete("tp")
@@ -179,17 +199,24 @@ function init(signal: AbortSignal) {
 
     try {
       const response = await fetch(url, {
+        headers: { [TASK_REFRESH_FRAGMENT_HEADER]: "1" },
         cache: "no-store", redirect: "error",
         signal: AbortSignal.any([request.signal, signal, AbortSignal.timeout(10_000)]),
       })
       if (!response.ok) throw new Error("Table refresh unavailable")
       const html = new DOMParser().parseFromString(await response.text(), "text/html")
       if (request.signal.aborted || signal.aborted || pending !== request) return
-      const replacement = html.querySelector<HTMLTableElement>("#task-table")
+      const replacement = qs<HTMLTableElement>(html, "#task-table")
+      const areaCatalog = areaSelector ? qs<HTMLElement>(html, areaPicker) : null
       const fragments = ["#task-summary", "#table-pagination", "#table-empty", ".table-container", "#table-workflow-notice"].map(selector =>
-        [shell.querySelector<HTMLElement>(selector), html.querySelector<HTMLElement>(selector)] as const)
-      if (!replacement?.tBodies[0] || fragments.some(([current, fresh]) => !current || !fresh)) {
+        [qs<HTMLElement>(shell, selector), qs<HTMLElement>(html, selector)] as const)
+      if (!replacement?.tBodies[0] || (areaSelector && !areaCatalog) || fragments.some(([current, fresh]) => !current || !fresh)) {
         throw new Error("Table refresh missing content")
+      }
+      const page = Number(replacement.dataset.tablePage)
+      const stats = JSON.parse(replacement.dataset.tableStats ?? "null") as RenderPageStats | null
+      if (!Number.isSafeInteger(page) || page < 1 || !hasTablePageStats(stats)) {
+        throw new Error("Table refresh missing pagination or group totals")
       }
 
       const focused = document.activeElement
@@ -208,17 +235,22 @@ function init(signal: AbortSignal) {
       table.dataset.tablePage = replacement.dataset.tablePage
       table.dataset.tableStats = replacement.dataset.tableStats
       tbody.replaceChildren(...replacement.tBodies[0].children)
+      writes.restore()
+      areas = applyAreaCatalog(areaCatalog, bulkArea)
+      if (areaCatalog) document.dispatchEvent(new CustomEvent(TABLE_AREA_CATALOG_EVENT, { detail: areaCatalog }))
+      void hydrateTaskAssignees(tbody, signal)
       for (const [current, fresh] of fragments) {
         current!.hidden = fresh!.hidden
-        if (current!.matches("#task-summary, #table-pagination")) current!.replaceChildren(...fresh!.childNodes)
+        if (current!.matches("#task-summary, #table-pagination, #table-empty")) current!.replaceChildren(...fresh!.childNodes)
       }
-      const workflowOptions = shell.querySelector("[data-table-workflow-options]")
-      const freshWorkflowOptions = html.querySelector('[data-table-workflow-options="ready"]')
+      const workflowOptions = qs<HTMLElement>(shell, "[data-table-workflow-options]")
+      const freshWorkflowOptions = qs(html, '[data-table-workflow-options="ready"]')
       if (workflowOptions && freshWorkflowOptions) {
         const lane = focused instanceof HTMLInputElement && workflowOptions.contains(focused) ? focused.value : null
         workflowOptions.replaceChildren(...freshWorkflowOptions.childNodes)
+        workflowOptions.dataset.tableWorkflowOptions = "ready"
         if (lane !== null) {
-          const control = workflowOptions.querySelector<HTMLInputElement>(`[data-table-lane][value="${CSS.escape(lane)}"]`)
+          const control = qs<HTMLInputElement>(workflowOptions, `[data-table-lane][value="${CSS.escape(lane)}"]`)
           const summary = workflowOptions.parentElement?.querySelector("summary")
           const target = control && !control.disabled ? control : summary
           target?.focus({ preventScroll: true })
@@ -226,13 +258,8 @@ function init(signal: AbortSignal) {
       }
       // Column visibility can change while the rows are loading.
       applied = { ...nextState, columns: desired.columns ?? initialColumns }
-      saveTableFilterState(applied, Number(table.dataset.tablePage))
-      const background = taskBackgroundUrl(new URL(location.href))
-      for (const link of document.querySelectorAll<HTMLAnchorElement>("[data-view-tab]")) {
-        const view = parseTaskView(link.dataset.viewTab ?? null)
-        if (view) link.href = taskViewUrl(background, view).href
-      }
-      const count = renderRows()
+      saveTableFilterState(applied, page)
+      const count = renderRows(stats)
       resetPageOnRetry = false
 
       status.classList.add("sr-only")
@@ -241,20 +268,22 @@ function init(signal: AbortSignal) {
       if (pagerLink && !pagerLink.isConnected) {
         focusTablePage(shell, pagerLink.rel)
       } else if (focused && !focused.isConnected && (row || group)) {
-        const replacementRow = id && table.querySelector<HTMLElement>(`.table-row[data-id="${CSS.escape(id)}"]`)
+        const replacementRow = id && qs<HTMLElement>(table, `.table-row[data-id="${CSS.escape(id)}"]`)
         const replacementGroup = group && Array.from(table.querySelectorAll<HTMLElement>(".group-header-row")).find(header =>
           header.dataset.groupKey === group.dataset.groupKey && header.dataset.parentGroupKey === group.dataset.parentGroupKey)
-        const target = (control && replacementRow && replacementRow.querySelector<HTMLElement>(control))
-          || (groupControl && replacementGroup && replacementGroup.querySelector<HTMLElement>(groupControl))
+        const target = (control && replacementRow && qs<HTMLElement>(replacementRow, control))
+          || (groupControl && replacementGroup && qs<HTMLElement>(replacementGroup, groupControl))
         if (target && titleEditor && titleDraft != null && titleDraft.trim() !== titleEditor.dataset.original) {
           target.textContent = titleDraft
         }
-        ;(target || (container.hidden ? shell.querySelector<HTMLElement>("#table-search") : container))?.focus()
+        ;(target || (container.hidden ? qs<HTMLElement>(shell, "#table-search") : container))?.focus()
       }
     } catch {
       if (request.signal.aborted || signal.aborted || pending !== request) return
       status.classList.remove("sr-only")
-      message.textContent = status.dataset.tableFailure ?? ""
+      const groupingChanged = (nextState.groupBy ?? "none") !== (applied.groupBy ?? "none") ||
+        (nextState.subGroupBy ?? "none") !== (applied.subGroupBy ?? "none")
+      message.textContent = (groupingChanged ? status.dataset.tableSelectionPending : status.dataset.tableFailure) ?? ""
       status.hidden = false
       retry.hidden = false
     } finally {
@@ -268,17 +297,189 @@ function init(signal: AbortSignal) {
   setupPagerFocus(shell, signal)
   setupGroupHeaderListeners(tbody, signal)
   setupSubtaskToggles(tbody, signal)
-  setupInlineEditing(table, signal, () => void refresh(), replacedTitleEditors)
-  setupRowClicks(table, signal, () => void refresh())
-  setupBulkActions({ signal, onTasksChanged: () => void refresh() })
+  const writes = createTableTaskWrites(table, signal, () => void refresh())
+  const refreshAfterWrite = () => { if (!writes.hasPending()) void refresh() }
+  setupInlineEditing(table, signal, refreshAfterWrite, replacedTitleEditors, writes)
+  setupRowClicks(table, signal, refreshAfterWrite, writes)
+  setupBulkActions({ signal, onTasksChanged: refreshAfterWrite, writes })
   setupSortableHeaders(signal, (column, direction) => void refresh({ ...desired, sort: `${column}-${direction}` }, true), () => desired.sort)
+  const manualOrderBtn = byId("table-manual-order-btn")
+  manualOrderBtn?.addEventListener("click", () => {
+    const isManual = desired.sort === "manual-asc" && (!desired.groupBy || desired.groupBy === "none")
+    void refresh(isManual ? { ...desired, sort: undefined } : { ...desired, sort: "manual-asc", groupBy: "none", subGroupBy: "none" }, true)
+  }, { signal })
+
+  const persistTableOrder = async (movedRow: HTMLElement, rollback: () => void) => {
+    const needsSwitch = (desired.groupBy && desired.groupBy !== "none") || (desired.sort && !desired.sort.startsWith("manual"))
+    if (needsSwitch) {
+      rollback()
+      const approved = await confirmDialog({
+        title: "Switch to Manual order?",
+        message: "Reordering rows switches the table to ungrouped Manual order.",
+        confirmText: "Switch & Reorder",
+        signal,
+      })
+      if (!approved || signal.aborted) return
+      desired = { ...desired, sort: "manual-asc", groupBy: "none", subGroupBy: "none" }
+      await refresh(desired, true)
+      showToast("Manual order enabled — drag or press Alt+Up/Down to position rows")
+      return
+    }
+    const orderedIds = Array.from(tbody.querySelectorAll<HTMLElement>(".table-row[data-id]"))
+      .map(row => row.dataset.id)
+      .filter((id): id is string => Boolean(id))
+    if (!orderedIds.length) return
+    try {
+      const ctx = currentTaskApiContext()
+      const res = await fetch("/api/tasks/reorder", {
+        method: "POST",
+        headers: ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" },
+        body: JSON.stringify({ scope: "table", ordered_ids: orderedIds }),
+        signal,
+      })
+      if (!res.ok) throw new Error("Table reorder failed")
+      if (!desired.sort) desired = { ...desired, sort: "manual-asc" }
+      await refresh(desired)
+    } catch {
+      rollback()
+      if (!signal.aborted) showToast("Could not save table order", "error")
+    }
+  }
+
+  const getRowTier = (row: HTMLElement) => ({
+    parentId: row.dataset.parentId ?? "",
+    depth: Number(row.dataset.depth ?? 0),
+  })
+
+  const getRowSubtreeBlock = (rows: HTMLElement[], startIdx: number): HTMLElement[] => {
+    const startRow = rows[startIdx]
+    if (!startRow) return []
+    const baseDepth = Number(startRow.dataset.depth ?? 0)
+    let endIdx = startIdx + 1
+    while (endIdx < rows.length && Number(rows[endIdx]!.dataset.depth ?? 0) > baseDepth) {
+      endIdx++
+    }
+    return rows.slice(startIdx, endIdx)
+  }
+
+  const canSwapTableRows = (dragged: HTMLElement, target: HTMLElement): boolean => {
+    if (table.dataset.canEdit === "false") return false
+    const a = getRowTier(dragged)
+    const b = getRowTier(target)
+    if (a.parentId !== b.parentId || a.depth !== b.depth) return false
+    const rows = Array.from(tbody.querySelectorAll<HTMLElement>(":scope > .table-row"))
+    const idxA = rows.indexOf(dragged)
+    const idxB = rows.indexOf(target)
+    if (idxA < 0 || idxB < 0 || idxA === idxB) return false
+    const lo = Math.min(idxA, idxB)
+    const hi = Math.max(idxA, idxB)
+    for (let i = lo + 1; i < hi; i++) {
+      if (Number(rows[i]!.dataset.depth ?? 0) < a.depth) return false
+    }
+    return true
+  }
+
+  const moveRowBlock = (dragged: HTMLElement, target: HTMLElement, direction: "before" | "after"): void => {
+    const rows = Array.from(tbody.querySelectorAll<HTMLElement>(":scope > .table-row"))
+    const draggedIdx = rows.indexOf(dragged)
+    const targetIdx = rows.indexOf(target)
+    if (draggedIdx < 0 || targetIdx < 0) return
+    const block = getRowSubtreeBlock(rows, draggedIdx)
+    if (block.includes(target)) return
+    const anchor = direction === "before"
+      ? target
+      : (getRowSubtreeBlock(rows, targetIdx).at(-1)?.nextElementSibling ?? null)
+    for (const node of block) tbody.insertBefore(node, anchor)
+  }
+
+  const restoreBlockBefore = (block: HTMLElement[], anchor: Element | null): void => {
+    for (const node of block) {
+      if (node.parentElement === tbody) tbody.insertBefore(node, anchor)
+    }
+  }
+
+  let preDragState: { block: HTMLElement[]; anchor: Element | null } | null = null
+  void import("@lib/list-drag-reorder")
+    .then(({ attachVerticalListDragReorder }) => {
+      if (signal.aborted) return
+      attachVerticalListDragReorder(tbody, {
+        handle: ".table-row-drag-handle",
+        item: ".table-row",
+        ghostClass: "dragging",
+        signal,
+        canSwap: canSwapTableRows,
+        moveItem: moveRowBlock,
+        onStart: () => {
+          const dragging = qs<HTMLElement>(tbody, ".table-row.dragging")
+          if (!dragging) return
+          const rows = Array.from(tbody.querySelectorAll<HTMLElement>(":scope > .table-row"))
+          const idx = rows.indexOf(dragging)
+          const block = idx >= 0 ? getRowSubtreeBlock(rows, idx) : [dragging]
+          preDragState = { block, anchor: block.at(-1)?.nextElementSibling ?? null }
+        },
+        onEnd: ({ item, oldIndex, newIndex }) => {
+          const snapshot = preDragState
+          preDragState = null
+          if (oldIndex === newIndex || !snapshot) return
+          void persistTableOrder(item, () => {
+            restoreBlockBefore(snapshot.block, snapshot.anchor)
+          })
+        },
+      })
+    })
+    .catch(() => {})
+
+  tbody.addEventListener("keydown", (event) => {
+    if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return
+    if (table.dataset.canEdit === "false") return
+    const handle = (event.target as Element | null)?.closest<HTMLElement>(".table-row-drag-handle")
+    const row = handle?.closest<HTMLElement>(".table-row")
+    if (!handle || !row || row.parentElement !== tbody) return
+    event.preventDefault()
+    const rows = Array.from(tbody.querySelectorAll<HTMLElement>(":scope > .table-row"))
+    const idx = rows.indexOf(row)
+    const { parentId, depth } = getRowTier(row)
+    const block = getRowSubtreeBlock(rows, idx)
+    let target: HTMLElement | undefined
+    if (event.key === "ArrowUp") {
+      for (let i = idx - 1; i >= 0; i--) {
+        const candidate = rows[i]!
+        const cTier = getRowTier(candidate)
+        if (cTier.depth < depth) break
+        if (cTier.depth === depth && cTier.parentId === parentId) {
+          target = candidate
+          break
+        }
+      }
+    } else {
+      for (let i = idx + block.length; i < rows.length; i++) {
+        const candidate = rows[i]!
+        const cTier = getRowTier(candidate)
+        if (cTier.depth < depth) break
+        if (cTier.depth === depth && cTier.parentId === parentId) {
+          target = candidate
+          break
+        }
+      }
+    }
+    if (!target) return
+    const prevAnchor = block.at(-1)?.nextElementSibling ?? null
+    moveRowBlock(row, target, event.key === "ArrowUp" ? "before" : "after")
+    handle.focus()
+    void persistTableOrder(row, () => { restoreBlockBefore(block, prevAnchor) })
+  }, { signal })
+
   setupTableOverflow()
   retry.addEventListener("click", () => {
-    shell.querySelector<HTMLElement>("#table-search")?.focus()
+    qs<HTMLElement>(shell, "#table-search")?.focus()
     void refresh(desired, resetPageOnRetry)
   }, { signal })
-  void loadAreas(signal)
   renderRows()
+  if (!initialAreaCatalog && retry.hidden) {
+    status.hidden = false
+    retry.hidden = false
+    message.textContent = window.mI18n?.get("table.area_catalog_failed") ?? "Area names could not load."
+  }
 
   const rowParams = (state: Partial<FilterState>) => {
     const params = new URLSearchParams()
@@ -292,7 +493,7 @@ function init(signal: AbortSignal) {
     const page = Number(table.dataset.tablePage)
     if (page > 1) url.searchParams.set("tp", String(page))
     else url.searchParams.delete("tp")
-    if (url.href !== location.href) history.replaceState(history.state, "", url)
+    if (url.href !== location.href) replaceTaskBackgroundUrl(url)
   }
 
   document.addEventListener("meitheal:filter-change", event => {
@@ -332,6 +533,20 @@ function init(signal: AbortSignal) {
     void refresh({ ...desired, area: areaId }, true)
   }, { signal })
 
+  document.addEventListener("meitheal:task-hierarchy-changed", () => {
+    if (desired.groupBy === "epic" || desired.subGroupBy === "epic") refreshAfterWrite()
+  }, { signal })
+
+  document.addEventListener("meitheal:lanes-changed", () => {
+    refreshAfterWrite()
+  }, { signal })
+
+  document.addEventListener("meitheal:tasks-changed", event => {
+    const detail = (event as CustomEvent<{ action?: string }>).detail
+    if (detail?.action === "deferral") return
+    refreshAfterWrite()
+  }, { signal })
+
   document.addEventListener("meitheal:columns-change", event => {
     const { visible } = (event as CustomEvent<{ visible: string[] }>).detail
     const columns = normalizeTableColumns(visible)
@@ -344,7 +559,7 @@ function init(signal: AbortSignal) {
 }
 
 function applyColumns(columns: readonly string[] | undefined) {
-  const table = document.getElementById("task-table")
+  const table = byId("task-table")
   if (!table) return
   for (const column of TABLE_COLUMNS) {
     table.classList.toggle(`hide-col-${column.id}`, columns !== undefined && !columns.includes(column.id))
@@ -364,53 +579,43 @@ function applyColumns(columns: readonly string[] | undefined) {
 // Area Data Loading
 // =============================================================================
 
-async function loadAreas(signal: AbortSignal) {
-  try {
-    const res = await fetch("/api/areas", { signal })
-    if (!res.ok) return
-    const data = await res.json()
-    if (signal.aborted) return
-    const boards: AreaInfo[] = data.areas || []
-
-    boards.forEach((b) => {
-      areaMap[b.id] = b
+function applyAreaCatalog(catalog: Element | null, bulkArea: HTMLSelectElement | null): Map<string, AreaDisplay> {
+  const areas = new Map<string, AreaDisplay>()
+  for (const { dataset } of catalog?.querySelectorAll<HTMLElement>("[data-area-id]") ?? []) {
+    const { areaId, areaName, areaIcon, areaColor } = dataset
+    if (areaId && areaName) areas.set(areaId, {
+      label: areaName, icon: areaIcon || "📋", color: areaColor || "var(--accent)",
     })
-
-    // NOTE: Area filter <select> is populated by FilterToolbar's client script
-    // We only populate the bulk board selector and update group headers here
-
-    // Populate bulk board selector
-    const bulkArea = document.getElementById("bulk-area") as HTMLSelectElement | null
-    if (bulkArea) {
-      boards.forEach((b) => {
-        const opt = document.createElement("option")
-        opt.value = b.id
-        opt.textContent = `${b.icon ?? "📋"} ${b.name}`
-        bulkArea.appendChild(opt)
-      })
-    }
-
-    // Update group headers with board names if grouped by board
-    if (currentGroupBy === "area") {
-      updateGroupHeaderLabels()
-    }
-
-  } catch {
-    /* offline fallback — board filter stays as-is */
   }
+  const prompt = bulkArea?.options[0]
+  if (bulkArea && prompt) {
+    const selected = bulkArea.value
+    const options = Array.from(areas, ([id, area]) => new Option(`${area.icon} ${area.label}`, id))
+    bulkArea.replaceChildren(prompt, ...options)
+    bulkArea.value = areas.has(selected) ? selected : ""
+  }
+  return areas
 }
 
 // =============================================================================
 // Row Grouping Engine
 // =============================================================================
 
-function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStats) {
+function groupDecoration(className: string, text = "") {
+  const span = domEl("span", className)
+  setAttr(span, "aria-hidden", "true")
+  span.textContent = text
+  return span
+}
+
+function applyGrouping(groupBy: string, subGroupBy: string, stats: RenderPageStats, areas: Map<string, AreaDisplay>) {
   const tbody = document.querySelector<HTMLElement>("#task-table tbody")
   if (!tbody) return
 
   if (groupBy === "none") return
   const groupTotals = new Map(stats.groups)
   const subgroupTotals = new Map(stats.subgroups)
+  const epicLabels = new Map(stats.epicLabels)
 
   // Collect rows and compute groups
   const rows = Array.from(tbody.querySelectorAll<HTMLElement>(".table-row"))
@@ -420,7 +625,7 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
   rows.forEach((row, index) => {
     row.id = `table-task-row-${index}`
     const key = getGroupKey(row, groupBy)
-    row.setAttribute("data-group-value", key)
+    setAttr(row, "data-group-value", key)
     if (!groups.has(key)) {
       groups.set(key, [])
       groupOrder.push(key)
@@ -440,67 +645,52 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
 
   function associateHeaders(rows: HTMLElement[], ...headers: string[]) {
     for (const row of rows) {
-      row.querySelector(".col-title")?.setAttribute("headers", ["table-title-header", ...headers].join(" "))
+      setAttr(row.querySelector(".col-title"), "headers", ["table-title-header", ...headers].join(" "))
     }
   }
 
   for (const [index, key] of groupOrder.entries()) {
     const groupId = `table-group-heading-${index}`
     const groupRows = groups.get(key) ?? []
-    const display = getGroupDisplayForKey(groupBy, key)
+    const display = getGroupDisplayForKey(groupBy, key, areas, epicLabels, groupRows[0])
     const isCollapsed = collapsedGroups.includes(key)
 
     // Create group header row
-    const headerRow = document.createElement("tr")
-    headerRow.className = `group-header-row${isCollapsed ? " collapsed" : ""}`
-    headerRow.setAttribute("data-group-key", key)
-    headerRow.setAttribute("data-group-by", groupBy)
-    const headerCell = document.createElement("th")
+    const headerRow = domEl("tr", `group-header-row${isCollapsed ? " collapsed" : ""}`)
+    setAttr(headerRow, "data-group-key", key)
+    setAttr(headerRow, "data-group-by", groupBy)
+    const headerCell = domEl("th")
     headerCell.id = groupId
     headerCell.scope = "row"
     headerCell.colSpan = TABLE_COLUMNS.length + 2
     headerCell.className = "group-header-cell"
-    headerCell.setAttribute("aria-labelledby", groupId + "-label")
-    const contentDiv = document.createElement("div")
-    contentDiv.className = "group-header-content"
+    setAttr(headerCell, "aria-labelledby", groupId + "-label")
+    const contentDiv = domEl("div", "group-header-content")
 
-    const toggleBtn = document.createElement("button")
+    const toggleBtn = domEl("button")
     toggleBtn.type = "button"
     toggleBtn.className = "group-toggle"
-    toggleBtn.setAttribute("aria-label", `Toggle group ${display.label}`)
-    toggleBtn.setAttribute("aria-expanded", String(!isCollapsed))
-    const arrowSpan = document.createElement("span")
-    arrowSpan.className = "group-toggle-arrow"
-    arrowSpan.setAttribute("aria-hidden", "true")
-    arrowSpan.textContent = "▾"
-    toggleBtn.appendChild(arrowSpan)
+    setAttr(toggleBtn, "aria-label", `Toggle group ${display.label}`)
+    setAttr(toggleBtn, "aria-expanded", String(!isCollapsed))
+    toggleBtn.append(groupDecoration("group-toggle-arrow", "▾"))
 
-    const dotSpan = document.createElement("span")
-    dotSpan.className = "group-dot"
-    dotSpan.setAttribute("aria-hidden", "true")
+    const dotSpan = groupDecoration("group-dot")
     dotSpan.style.background = sanitizeCssColor(display.color)
 
-    const iconSpan = document.createElement("span")
-    iconSpan.className = "group-icon"
-    iconSpan.setAttribute("aria-hidden", "true")
-    iconSpan.textContent = display.icon
+    const iconSpan = groupDecoration("group-icon", display.icon)
 
-    const labelSpan = document.createElement("span")
-    labelSpan.className = "group-label"
+    const labelSpan = domEl("span", "group-label")
     labelSpan.id = `${groupId}-label`
     labelSpan.textContent = display.label
 
-    const countSpan = document.createElement("span")
-    countSpan.className = "group-count"
-    countSpan.textContent = String(groupTotals.get(key)?.count ?? 0)
+    const countSpan = domEl("span", "group-count", String(groupTotals.get(key)?.count ?? 0))
 
-    const cbWrapper = document.createElement("span")
-    cbWrapper.className = "group-checkbox-wrapper"
-    const cb = document.createElement("input")
+    const cbWrapper = domEl("span", "group-checkbox-wrapper")
+    const cb = domEl("input")
     cb.type = "checkbox"
     cb.className = "group-select-all"
     cb.dataset.groupKey = key
-    cb.setAttribute("aria-label", `Select visible tasks in ${display.label} on this page`)
+    setAttr(cb, "aria-label", `Select visible tasks in ${display.label} on this page`)
     cbWrapper.appendChild(cb)
 
     contentDiv.append(toggleBtn, dotSpan, iconSpan, labelSpan, countSpan, cbWrapper)
@@ -515,7 +705,7 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
       const subOrder: string[] = []
       groupRows.forEach((row) => {
         const sk = getGroupKey(row, subGroupBy)
-        row.setAttribute("data-sub-group-value", sk)
+        setAttr(row, "data-sub-group-value", sk)
         if (!subGroups.has(sk)) { subGroups.set(sk, []); subOrder.push(sk) }
         subGroups.get(sk)!.push(row)
       })
@@ -527,55 +717,46 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
       for (const [subIndex, sk] of subOrder.entries()) {
         const subgroupId = `${groupId}-sub-${subIndex}`
         const subRows = subGroups.get(sk) ?? []
-        const subDisplay = getGroupDisplayForKey(subGroupBy, sk)
+        const subDisplay = getGroupDisplayForKey(subGroupBy, sk, areas, epicLabels, subRows[0])
         const subIsCollapsed = collapsedSubs.includes(sk)
 
-        const subHeaderRow = document.createElement("tr")
-        subHeaderRow.className = `group-header-row sub-group-header-row${subIsCollapsed ? " collapsed" : ""}`
-        subHeaderRow.setAttribute("data-group-key", sk)
-        subHeaderRow.setAttribute("data-group-by", subGroupBy)
-        subHeaderRow.setAttribute("data-parent-group-key", key)
-        subHeaderRow.setAttribute("data-sub-group-collapse-key", subCollapseKey)
+        const subHeaderRow = domEl("tr", `group-header-row sub-group-header-row${subIsCollapsed ? " collapsed" : ""}`)
+        setAttr(subHeaderRow, "data-group-key", sk)
+        setAttr(subHeaderRow, "data-group-by", subGroupBy)
+        setAttr(subHeaderRow, "data-parent-group-key", key)
+        setAttr(subHeaderRow, "data-sub-group-collapse-key", subCollapseKey)
         subHeaderRow.id = subgroupId + "-row"
         controlledRows.push(subHeaderRow.id)
         if (isCollapsed) subHeaderRow.classList.add("group-collapsed-row")
 
-        const subCell = document.createElement("th")
+        const subCell = domEl("th")
         subCell.id = subgroupId
         subCell.scope = "row"
         subCell.colSpan = TABLE_COLUMNS.length + 2
         subCell.className = "group-header-cell sub-group-header-cell"
-        subCell.setAttribute("aria-labelledby", subgroupId + "-label")
-        const subContent = document.createElement("div")
-        subContent.className = "group-header-content"
+        setAttr(subCell, "aria-labelledby", subgroupId + "-label")
+        const subContent = domEl("div", "group-header-content")
 
-        const subToggleBtn = document.createElement("button")
+        const subToggleBtn = domEl("button")
         subToggleBtn.type = "button"
         subToggleBtn.className = "group-toggle sub-group-toggle"
-        subToggleBtn.setAttribute("aria-label", `Toggle sub-group ${subDisplay.label}`)
-        subToggleBtn.setAttribute("aria-expanded", String(!subIsCollapsed))
-        subToggleBtn.setAttribute("aria-controls", subRows.map(row => row.id).join(" "))
-        const subArrow = document.createElement("span")
-        subArrow.className = "group-toggle-arrow"
-        subArrow.setAttribute("aria-hidden", "true")
-        subArrow.textContent = "▾"
-        subToggleBtn.appendChild(subArrow)
+        setAttr(subToggleBtn, "aria-label", `Toggle sub-group ${subDisplay.label}`)
+        setAttr(subToggleBtn, "aria-expanded", String(!subIsCollapsed))
+        setAttr(subToggleBtn, "aria-controls", subRows.map(row => row.id).join(" "))
+        subToggleBtn.append(groupDecoration("group-toggle-arrow", "▾"))
 
-        const subDot = document.createElement("span")
-        subDot.className = "group-dot"
-        subDot.setAttribute("aria-hidden", "true")
+        const subDot = groupDecoration("group-dot")
         subDot.style.background = sanitizeCssColor(subDisplay.color)
 
-        const subLabel = document.createElement("span")
-        subLabel.className = "group-label"
+        const subLabel = domEl("span", "group-label")
         subLabel.id = `${subgroupId}-label`
         subLabel.textContent = subDisplay.label
 
-        const subCount = document.createElement("span")
-        subCount.className = "group-count"
-        subCount.textContent = String(subgroupTotals.get(JSON.stringify([key, sk]))?.count ?? 0)
+        const subCount = domEl("span", "group-count", String(subgroupTotals.get(JSON.stringify([key, sk]))?.count ?? 0))
 
-        subContent.append(subToggleBtn, subDot, subLabel, subCount)
+        subContent.append(subToggleBtn, subDot)
+        if (subGroupBy === "area") subContent.append(groupDecoration("group-icon", subDisplay.icon))
+        subContent.append(subLabel, subCount)
         subCell.replaceChildren(subContent)
         subHeaderRow.appendChild(subCell)
         fragment.appendChild(subHeaderRow)
@@ -594,19 +775,31 @@ function applyGrouping(groupBy: string, subGroupBy: string, stats: TablePageStat
         fragment.appendChild(row)
       })
     }
-    headerCell.querySelector("button")?.setAttribute("aria-controls", controlledRows.join(" "))
+    setAttr(headerCell.querySelector("button"), "aria-controls", controlledRows.join(" "))
   }
 
-  const noResults = tbody.querySelector(".no-results-row")
+  const noResults = qs(tbody, ".no-results-row")
   tbody.replaceChildren(fragment)
   if (noResults) tbody.append(noResults)
   renderSummaryRows(tbody, groupTotals, stats.total)
 }
 
-function getGroupDisplayForKey(groupBy: string, key: string): { label: string, icon: string, color: string } {
-  if (groupBy === "area" && areaMap[key]) {
-    const b = areaMap[key]
-    return { label: b.name, icon: b.icon ?? "📋", color: (b.color ?? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()) || "#146C4E" }
+function getGroupDisplayForKey(
+  groupBy: string, key: string, areas: Map<string, AreaDisplay>, epicLabels: Map<string, string>, row?: HTMLElement,
+): AreaDisplay {
+  if (groupBy === "workflow") return { label: row?.dataset.workflowLabel ?? "", icon: "📋", color: "var(--accent)" }
+  if (groupBy === "epic") return {
+    label: epicLabels.get(key) ?? window.mI18n?.get("table.no_epic") ?? "No Epic",
+    icon: "🎯", color: "var(--type-epic, #8b5cf6)",
+  }
+  if (groupBy === "area") {
+    const area = areas.get(key)
+    if (area) return area
+    if (key !== "default") return {
+      label: key ? window.mI18n?.get("table.unavailable_area") ?? "Unavailable Area"
+        : window.mI18n?.get("recent_activity.no_area") ?? "No area",
+      icon: "📋", color: "var(--accent)",
+    }
   }
   return getGroupDisplay(groupBy, key)
 }
@@ -632,7 +825,7 @@ function setupGroupHeaderListeners(tbody: HTMLElement, signal: AbortSignal) {
     const groupKey = header.dataset.groupKey ?? ""
     const groupBy = header.dataset.groupBy ?? currentGroupBy
     const isCollapsed = header.classList.toggle("collapsed")
-    header.querySelector("button")?.setAttribute("aria-expanded", String(!isCollapsed))
+    setAttr(header.querySelector("button"), "aria-expanded", String(!isCollapsed))
 
     if (isSubGroup) {
       // Sub-group: collapse rows until next sub-group or primary group header
@@ -682,7 +875,7 @@ function setupGroupHeaderListeners(tbody: HTMLElement, signal: AbortSignal) {
     const checked = (target as HTMLInputElement).checked
     let sibling = header.nextElementSibling
     while (sibling && !sibling.matches(".group-header-row:not(.sub-group-header-row), .no-results-row")) {
-      const checkbox = sibling.querySelector<HTMLInputElement>(".row-check")
+      const checkbox = qs<HTMLInputElement>(sibling, ".row-check")
       if (checkbox && isSelectableTableRow(sibling)) checkbox.checked = checked
       sibling = sibling.nextElementSibling
     }
@@ -690,23 +883,18 @@ function setupGroupHeaderListeners(tbody: HTMLElement, signal: AbortSignal) {
   }, { signal })
 }
 
-function renderSummaryRows(tbody: HTMLElement, groups: Map<string, TableGroupStats>, total: TableGroupStats) {
-  function summary(stats: TableGroupStats, grandTotal = false) {
-    const row = document.createElement("tr")
+function renderSummaryRows(tbody: HTMLElement, groups: Map<string, RenderGroupStats>, total: RenderGroupStats) {
+  function summary(stats: RenderGroupStats, grandTotal = false) {
+    const row = domEl("tr")
     row.className = grandTotal ? "grand-total-row" : "group-summary-row"
     const cell = row.insertCell()
     cell.colSpan = TABLE_COLUMNS.length + 2
     cell.className = grandTotal ? "grand-total-cell" : "group-summary-cell"
-    const avgRice = stats.riceCount > 0 ? (stats.riceSum / stats.riceCount).toFixed(1) : "—"
-    const labelSpan = document.createElement("span")
-    labelSpan.className = "summary-label"
-    labelSpan.textContent = `${grandTotal ? "Total: " : ""}${stats.count} task${stats.count !== 1 ? "s" : ""}`
-    const sepSpan = document.createElement("span")
-    sepSpan.className = "summary-separator"
-    sepSpan.textContent = "·"
-    const riceSpan = document.createElement("span")
-    riceSpan.className = "summary-rice"
-    riceSpan.textContent = `Avg RICE: ${avgRice}`
+    const avgRice = stats.riceCount > 0 && stats.riceSum !== null
+      ? (stats.riceSum / stats.riceCount).toFixed(1) : "—"
+    const labelSpan = domEl("span", "summary-label", `${grandTotal ? "Total: " : ""}${stats.count} task${stats.count !== 1 ? "s" : ""}`)
+    const sepSpan = domEl("span", "summary-separator", "·")
+    const riceSpan = domEl("span", "summary-rice", `Avg RICE: ${avgRice}`)
     cell.replaceChildren(labelSpan, sepSpan, riceSpan)
     return row
   }
@@ -721,24 +909,6 @@ function renderSummaryRows(tbody: HTMLElement, groups: Map<string, TableGroupSta
   if (total.count > 0) tbody.append(summary(total, true))
 }
 
-function updateGroupHeaderLabels() {
-  // Called after boards load — updates board group header labels
-  document.querySelectorAll<HTMLElement>(".group-header-row[data-group-by='area']").forEach((header) => {
-    const key = header.dataset.groupKey ?? ""
-    if (areaMap[key]) {
-      const label = header.querySelector<HTMLElement>(".group-label")
-      const icon = header.querySelector<HTMLElement>(".group-icon")
-      const dot = header.querySelector<HTMLElement>(".group-dot")
-      if (label) label.textContent = areaMap[key].name
-      const subgroup = header.classList.contains("sub-group-header-row")
-      header.querySelector(".group-toggle")?.setAttribute("aria-label", `Toggle ${subgroup ? "sub-group" : "group"} ${areaMap[key].name}`)
-      header.querySelector(".group-select-all")?.setAttribute("aria-label", `Select visible tasks in ${areaMap[key].name} on this page`)
-      if (icon) icon.textContent = areaMap[key].icon ?? "📋"
-      if (dot) dot.style.background = (areaMap[key].color ?? getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()) || "#146C4E"
-    }
-  })
-}
-
 // =============================================================================
 // Subtask Tree (mutually exclusive with grouping)
 // =============================================================================
@@ -750,7 +920,7 @@ function setupSubtaskToggles(tbody: HTMLTableSectionElement, signal: AbortSignal
     if (!toggle || !parentId) return
     const expanded = toggle.getAttribute("aria-expanded") === "false"
     toggle.textContent = expanded ? "▾" : "▸"
-    toggle.setAttribute("aria-expanded", String(expanded))
+    setAttr(toggle, "aria-expanded", String(expanded))
     toggleChildRows(parentId, expanded)
     updateBulkBar()
   }, { signal })
@@ -763,10 +933,10 @@ function toggleChildRows(parentId: string, show: boolean) {
   childRows.forEach(row => {
     row.hidden = !show
     if (row.dataset.hasChildren !== "true" || show) return
-    const toggle = row.querySelector<HTMLButtonElement>(".subtree-toggle")
+    const toggle = qs<HTMLButtonElement>(row, ".subtree-toggle")
     if (toggle) {
       toggle.textContent = "▸"
-      toggle.setAttribute("aria-expanded", "false")
+      setAttr(toggle, "aria-expanded", "false")
     }
     toggleChildRows(row.dataset.id ?? "", false)
   })
@@ -776,7 +946,7 @@ function toggleChildRows(parentId: string, show: boolean) {
 // Inline Editing
 // =============================================================================
 
-function setupInlineEditing(table: HTMLTableElement, signal: AbortSignal, refresh: () => void, replacedTitleEditors: WeakSet<HTMLElement>) {
+function setupInlineEditing(table: HTMLTableElement, signal: AbortSignal, refresh: () => void, replacedTitleEditors: WeakSet<HTMLElement>, writes: TableTaskWrites) {
   table.addEventListener("focusout", async event => {
     const cell = (event.target as Element).closest<HTMLElement>(".editable-cell")
     if (!cell || !cell.isConnected || replacedTitleEditors.has(cell)) return
@@ -790,19 +960,16 @@ function setupInlineEditing(table: HTMLTableElement, signal: AbortSignal, refres
     if (!id) return
 
     try {
-      const response = await fetch(`/api/tasks/${id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title }), signal,
-      })
-      if (!response.ok) throw new Error("Title update failed")
-      if (signal.aborted) return
+      const row = cell.closest<HTMLElement>(".table-row")
+      if (!row) return
+      const updated = await writes.edit(row, { title })
+      if (!updated || signal.aborted) return
       cell.dataset.original = title
       showToast("Title updated", "success")
       refresh()
     } catch {
       if (signal.aborted) return
-      cell.textContent = original
-      showToast("Failed to update", "error")
+      showToast("Could not confirm the change. Your input is kept.", "error")
     }
   }, { signal })
 
@@ -821,31 +988,25 @@ function setupInlineEditing(table: HTMLTableElement, signal: AbortSignal, refres
     const row = select?.closest<HTMLElement>(".table-row")
     if (!id || !field || !row || !select) return
     const value = select.value
-    const previous = row.dataset[field] ?? ""
     try {
-      const response = await fetch(`/api/tasks/${id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [field]: field === "priority" ? Number(value) : value }), signal,
-      })
-      if (!response.ok) throw new Error("Task update failed")
-      if (signal.aborted) return
+      const updated = await writes.edit(row, { [field]: field === "priority" ? Number(value) : value })
+      if (!updated || signal.aborted) return
       showToast(`${field} updated`, "success")
       if (field === "status") {
         row.dataset.status = value
         row.classList.toggle("row-done", value === "complete")
         void reconcileTableDeferral(row, value, signal)
-        if (value === "complete") onTaskCompleted(await response.json())
+        if (value === "complete") onTaskCompleted(updated)
       }
       refresh()
     } catch {
       if (signal.aborted) return
-      select.value = previous
-      showToast("Failed to update", "error")
+      showToast("Could not confirm the change. Your input is kept.", "error")
     }
   }, { signal })
 }
 
-function setupRowClicks(table: HTMLTableElement, signal: AbortSignal, refresh: () => void) {
+function setupRowClicks(table: HTMLTableElement, signal: AbortSignal, refresh: () => void, writes: TableTaskWrites) {
   table.addEventListener("click", async event => {
     if (!(event.target instanceof Element)) return
     if (event.defaultPrevented || event.target.closest("a[data-task-detail-link]")) return
@@ -864,15 +1025,15 @@ function setupRowClicks(table: HTMLTableElement, signal: AbortSignal, refresh: (
       return
     }
     if (!control.classList.contains("delete-row")) return
+    const intent = writes.capture(row)
+    if (!intent) return
     const confirmed = await confirmDialog({
       title: "Delete task?", message: "This action cannot be undone.",
-      confirmText: "Delete", variant: "danger", signal,
+      confirmText: "Delete", variant: "danger", signal: intent.signal,
     })
-    if (!confirmed || signal.aborted) return
+    if (!confirmed || !writes.current(intent)) return
     try {
-      const response = await fetch(`/api/tasks/${id}`, { method: "DELETE", signal })
-      if (!response.ok) throw new Error("Task deletion failed")
-      if (signal.aborted) return
+      if (!await writes.remove(row, intent) || signal.aborted) return
       notifyTaskCountsChanged(row.dataset.projectId)
       showToast("Task deleted", "success")
       refresh()

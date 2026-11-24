@@ -1,424 +1,290 @@
-/**
- * Due-Date Reminder Scheduler
- *
- * Periodically checks for tasks with upcoming due dates and sends
- * reminder notifications via configured channels (sidebar, mobile push).
- * Also creates a short "reminder" calendar event on the synced HA calendar
- * so the reminder propagates to phone calendars (Google Calendar, Apple, etc.).
- *
- * Production safety:
- *   - Processing flag in `finally` prevents concurrent runs (no race conditions)
- *   - Sent-reminders Set prevents duplicate notifications (bounded, bulk-pruned)
- *   - Proper cleanup on shutdown (clearInterval + process listeners)
- *   - All errors are caught — never crashes the process
- *   - No memory leaks: Set bounded to MAX_TRACKED_REMINDERS
- *   - Module refs cached after first load (no repeated dynamic imports)
- *   - Settings cached with TTL to avoid DB reads every cycle
- *
- * @domain notifications
- * @bounded-context due-date-reminders
- */
-import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability";
-import { STATUS } from "../../lib/status-config";
+import { serializeCalendarDelivery } from "@domains/calendar/calendar-delivery"
+import { decodeCalendarSetting, ticketDetailsEnabled } from "@domains/calendar/calendar-policy"
+import { isClosedStatus } from "@lib/status-config"
+import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
+import {
+  ensureSchema, getPersistenceClient, TaskRepository, readWorkDestinations, resolveIntegrationScope,
+  validateIntegrationScope, validateTaskOperation, type IntegrationScope, type WorkBinding,
+} from "@domains/tasks"
+import { homeAssistantWorkLink } from "@lib/ha-app-link"
+import { notificationOperationAllowed, sendTaskNotification } from "./task-notifications"
 
-const logger = createLogger({
-  service: "meitheal-web",
-  env: process.env.NODE_ENV ?? "development",
-  minLevel: "info",
-  enabledCategories: ["notifications", "tasks"],
-  redactPatterns: defaultRedactionPatterns,
-  auditEnabled: false,
-});
-const SYS_REQ = "due-date-reminder";
+const logger = createLogger({ service: "meitheal-web", env: process.env.NODE_ENV ?? "development", minLevel: "info",
+  enabledCategories: ["notifications", "tasks"], redactPatterns: defaultRedactionPatterns, auditEnabled: false })
+const intervalMs = 5 * 60_000
+const defaultWindowMs = 60 * 60_000
+const maxTracked = 1000
+let interval: ReturnType<typeof setInterval> | null = null
+let processing = false
+const sentReminders = new Set<string>()
 
-// ── Configuration ──
+/** Preferences are read per run. Authority and receiver bindings are never cached here. */
+export function invalidateSettingsCache(): void {}
 
-const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-const REMINDER_WINDOW_MS = 60 * 60 * 1000; // 1 hour before due
-const MAX_TRACKED_REMINDERS = 500; // Prevent unbounded Set growth
-const PRUNE_BATCH_SIZE = 50; // Bulk-prune when over limit (F18)
-
-// ── State ──
-
-let intervalHandle: ReturnType<typeof setInterval> | null = null;
-let processing = false;
-const sentReminders = new Set<string>(); // "taskId:YYYY-MM-DD" — prevents duplicates
-const SENT_REMINDERS_MAX = 1000; // Cap to prevent unbounded memory growth
-
-/** Evict oldest 25% when Set exceeds max size (FIFO via insertion order). */
-function evictSentReminders(): void {
-  if (sentReminders.size <= SENT_REMINDERS_MAX) return;
-  const evictCount = Math.floor(SENT_REMINDERS_MAX * 0.25);
-  let removed = 0;
-  for (const key of sentReminders) {
-    if (removed >= evictCount) break;
-    sentReminders.delete(key);
-    removed++;
+function track(key: string): void {
+  sentReminders.add(key)
+  if (sentReminders.size <= maxTracked) return
+  let removed = 0
+  for (const oldest of sentReminders) {
+    sentReminders.delete(oldest)
+    if (++removed >= Math.floor(maxTracked / 4)) break
   }
 }
-let schemaEnsured = false; // Skip repeated ensureSchema after first run (F1)
 
-// ── Cached module refs (F2) ──
-let _callHAService: typeof import("@domains/ha/ha-services").callHAService | null = null;
-let _formatTicketKey: typeof import("../../lib/ticket-key").formatTicketKey | null = null;
-let _getIngressEntry: typeof import("@domains/ha/ha-connection").getIngressEntry | null = null;
-let _getHABaseUrl: typeof import("@domains/ha/ha-connection").getHABaseUrl | null = null;
-
-async function getModuleRefs() {
-  if (!_callHAService) {
-    const mod = await import("@domains/ha/ha-services");
-    _callHAService = mod.callHAService;
-  }
-  if (!_formatTicketKey) {
-    const mod = await import("../../lib/ticket-key");
-    _formatTicketKey = mod.formatTicketKey;
-  }
-  if (!_getIngressEntry || !_getHABaseUrl) {
-    try {
-      const mod = await import("@domains/ha/ha-connection");
-      _getIngressEntry = mod.getIngressEntry;
-      _getHABaseUrl = mod.getHABaseUrl;
-    } catch { /* ingress unavailable */ }
-  }
-  return {
-    callHAService: _callHAService!,
-    formatTicketKey: _formatTicketKey!,
-    getIngressEntry: _getIngressEntry,
-    getHABaseUrl: _getHABaseUrl,
-  };
+export async function startDueDateReminders(): Promise<void> {
+  await ensureSchema()
+  if (interval) return
+  const first = checkDueDates()
+  interval = setInterval(() => { void checkDueDates() }, intervalMs)
+  interval.unref?.()
+  logger.log("info", { event: "due_date_reminders.started", domain: "notifications", component: "due-date-reminders",
+    request_id: "due-date-reminder", message: "Due-date reminder scheduler started" })
+  await first
 }
-
-// ── Cached settings (F3: avoid re-reading DB every cycle) ──
-interface CachedNotifSettings {
-  enabled: boolean;
-  channels: { sidebar: boolean; mobile_push: boolean };
-  mobileTargets: string[];
-  calendarEntity: string | null;
-  reminderEnabled: boolean;
-  reminderWindowMs: number;
-  cachedAt: number;
-}
-let settingsCache: CachedNotifSettings | null = null;
-const SETTINGS_CACHE_TTL_MS = 5 * 60 * 1000; // Match check interval
-
-async function getCachedSettings(): Promise<CachedNotifSettings> {
-  const now = Date.now();
-  if (settingsCache && (now - settingsCache.cachedAt) < SETTINGS_CACHE_TTL_MS) {
-    return settingsCache;
-  }
-
-  const { getPersistenceClient } = await import("@domains/tasks/persistence/store");
-  const client = getPersistenceClient();
-
-  let enabled = true;
-  let channels = { sidebar: true, mobile_push: false };
-  let mobileTargets: string[] = [];
-  let calendarEntity: string | null = null;
-  let reminderEnabled = true;
-  let reminderWindowMs = REMINDER_WINDOW_MS;
-
-  try {
-    const prefsResult = await client.execute({
-      sql: "SELECT value FROM settings WHERE key = 'notification_preferences' LIMIT 1",
-      args: [],
-    });
-    if (prefsResult.rows.length > 0) {
-      const raw = JSON.parse(String((prefsResult.rows[0] as Record<string, unknown>).value));
-      if (typeof raw === "object" && raw !== null) {
-        enabled = raw.enabled !== false;
-        if (raw.channels) channels = raw.channels;
-        if (Array.isArray(raw.mobile_targets)) mobileTargets = raw.mobile_targets;
-        if (raw.due_date_reminders === false) reminderEnabled = false;
-        if (typeof raw.reminder_window_minutes === "number" && raw.reminder_window_minutes > 0) {
-          reminderWindowMs = raw.reminder_window_minutes * 60 * 1000;
-        }
-      }
-    }
-  } catch { /* defaults */ }
-
-  try {
-    const calResult = await client.execute({
-      sql: "SELECT value FROM settings WHERE key IN ('calendar_entity', 'calendar_entities') LIMIT 1",
-      args: [],
-    });
-    if (calResult.rows.length > 0) {
-      const val = JSON.parse(String((calResult.rows[0] as Record<string, unknown>).value));
-      if (typeof val === "string") calendarEntity = val;
-      else if (Array.isArray(val) && val.length > 0) calendarEntity = val[0];
-    }
-  } catch { /* no calendar configured */ }
-
-  settingsCache = { enabled, channels, mobileTargets, calendarEntity, reminderEnabled, reminderWindowMs, cachedAt: now };
-  return settingsCache;
-}
-
-/** Invalidate settings cache (called when settings are saved) */
-export function invalidateSettingsCache(): void {
-  settingsCache = null;
-}
-
-// ── Notification target helper (F17: extracted shared logic) ──
-
-function parseNotifyTarget(target: string): { domain: string; service: string } | null {
-  const [domain, ...rest] = target.split(".");
-  const service = rest.join(".");
-  return (domain && service) ? { domain, service } : null;
-}
-
-/**
- * Start the due-date reminder scheduler.
- * Idempotent — calling multiple times is safe. The returned promise settles when
- * the immediate first check finishes; it never rejects.
- */
-export function startDueDateReminders(): Promise<void> {
-  if (intervalHandle !== null) return Promise.resolve();
-
-  logger.log("info", {
-    event: "due_date_reminders.started",
-    domain: "notifications",
-    component: "due-date-reminders",
-    request_id: SYS_REQ,
-    message: `Due-date reminder scheduler started (interval: ${CHECK_INTERVAL_MS}ms)`,
-  });
-
-  // Run once immediately, then on interval
-  const firstRun = checkDueDates().catch(() => {});
-  intervalHandle = setInterval(() => {
-    checkDueDates().catch(() => {});
-  }, CHECK_INTERVAL_MS);
-  // The scheduler must not keep the process alive. Signal listeners would also
-  // replace Node's default exit, so Supervisor would have to kill the App on stop.
-  intervalHandle.unref?.();
-  return firstRun;
-}
-
-/**
- * Stop the scheduler and clean up resources.
- */
 export function stopDueDateReminders(): void {
-  if (intervalHandle !== null) {
-    clearInterval(intervalHandle);
-    intervalHandle = null;
-    logger.log("info", {
-      event: "due_date_reminders.stopped",
-      domain: "notifications",
-      component: "due-date-reminders",
-      request_id: SYS_REQ,
-      message: "Due-date reminder scheduler stopped",
-    });
+  if (interval) clearInterval(interval)
+  interval = null
+}
+
+/** Reset in-memory reminder dedup state between test runs. */
+export function resetDueDateRemindersForTests(): void {
+  stopDueDateReminders()
+  sentReminders.clear()
+  processing = false
+}
+
+async function resolveObserver(binding: WorkBinding): Promise<IntegrationScope | null> {
+  const result = await resolveIntegrationScope(getPersistenceClient(), binding.id, binding.generation, { resource: "task", action: "read" })
+  return result.ok ? result.value : null
+}
+
+async function calendarReminder(context: IntegrationScope, task: Awaited<ReturnType<TaskRepository["findDueReminderTasks"]>>[number],
+  receiver: WorkBinding, link: string | null): Promise<boolean> {
+  if (receiver.integration !== "calendar_reminder" || receiver.purpose !== "calendar.reminder" || receiver.destination.boardId !== context.scope.boardId) return false
+  const db = getPersistenceClient()
+  const resolved = await resolveIntegrationScope(db, receiver.id, receiver.generation, { resource: "task", action: "read" }, context.scope, { resource: "task", action: "read" })
+  if (!resolved.ok) return false
+
+  // Respect active calendar sync mode & writeTicketDetails preference (fail-closed on import-only)
+  const repo = new TaskRepository(db, resolved.value.scope)
+  let writeTicketDetails = true
+  try {
+    const calSettings = await repo.getSettings(["calendar_sync_mode", "calendar_sync_modes", "calendar_write_ticket_details"])
+    let perEntityMode: string | undefined
+    if (calSettings.calendar_sync_modes) {
+      try {
+        const parsed: unknown = JSON.parse(calSettings.calendar_sync_modes)
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const val = (parsed as Record<string, unknown>)[receiver.sourceId]
+          if (typeof val === "string") perEntityMode = val
+        }
+      } catch { /* ignore invalid JSON */ }
+    }
+    const dbMode = perEntityMode ?? decodeCalendarSetting(calSettings.calendar_sync_mode)
+    if (dbMode === "import") return false
+    writeTicketDetails = ticketDetailsEnabled(calSettings.calendar_write_ticket_details)
+
+    const { getCalendarSyncConfigs } = await import("@domains/calendar")
+    const bindings = (await readWorkDestinations(db))?.bindings ?? []
+    const activeConfig = getCalendarSyncConfigs().find(c => c.entityId === receiver.sourceId &&
+      bindings.some(b => b.enabled && b.integration === "calendar" && b.purpose === "calendar.sync" &&
+        b.destination.boardId === context.scope.boardId && b.sourceId === c.entityId &&
+        b.id === c.bindingId && b.generation === c.generation))
+    if (activeConfig) {
+      if (activeConfig.syncMode === "import") return false
+      if (calSettings.calendar_write_ticket_details === undefined && activeConfig.writeTicketDetails === false) {
+        writeTicketDetails = false
+      }
+    }
+  } catch { return false }
+
+  // Loop prevention: skip tasks already synced to this calendar, or already reminded for this receiver & due timestamp
+  const reminderRequestId = `due-reminder-${receiver.id}-${task.id}-${task.due_ms}`
+  const covered = async () => {
+    const existingConf = await db.execute({
+      sql: `SELECT confirmation_id FROM calendar_confirmations
+            WHERE task_id = ?
+              AND (
+                (source != 'ha.due_reminder' AND json_extract(payload, '$.entity_id') = ?)
+                OR request_id = ?
+                OR provider_event_id = ?
+              )
+            LIMIT 1`,
+      args: [task.id, receiver.sourceId, reminderRequestId, reminderRequestId],
+    })
+    return existingConf.rows.length > 0
+  }
+  if (await covered()) return false
+
+  const operationAllowed = async () => {
+    if (!(await validateIntegrationScope(context, db, { resource: "task", action: "read" })).ok ||
+      !(await validateIntegrationScope(resolved.value, db, { resource: "task", action: "read" })).ok ||
+      !await validateTaskOperation(db, context.scope, task.id, { resource: "task", action: "read" })) return false
+    const current = await new TaskRepository(db, resolved.value.scope).findById(task.id).catch(() => null)
+    return Boolean(current && Number(current.task_version) === task.task_version && current.due_date === task.due_date &&
+      current.deferred_at == null && !isClosedStatus(current.status))
+  }
+  if (!await operationAllowed()) return false
+
+  let fullLink: string | undefined
+  if (link && link.startsWith("/")) {
+    try {
+      const { getHABaseUrl } = await import("@domains/ha")
+      const baseUrl = await getHABaseUrl()
+      if (baseUrl && ["http:", "https:"].includes(new URL(baseUrl).protocol)) fullLink = `${baseUrl.replace(/\/$/, "")}${link}`
+    } catch { /* omit unavailable link */ }
+  }
+
+  const summary = writeTicketDetails
+    ? `📋 ${task.ticket_key}: ${task.title} — DUE`
+    : `📋 ${task.title} — DUE`
+  const startIso = new Date(task.due_ms).toISOString()
+  const endIso = new Date(task.due_ms + 15 * 60_000).toISOString()
+  const detailLines: string[] = []
+  if (writeTicketDetails) {
+    detailLines.push(`📋 ${task.ticket_key}`)
+    if (fullLink) detailLines.push(`Open ${task.ticket_key} in Meitheal: ${fullLink}`)
+  }
+  detailLines.push("Added from Meitheal")
+  const headerLine = writeTicketDetails ? `Task ${task.ticket_key} is due.` : "Task reminder."
+  const description = `${headerLine}\n\n${detailLines.join("\n")}`
+
+  const { createCalendarEvent } = await import("@domains/ha")
+  return serializeCalendarDelivery(task.id, receiver.sourceId, async () => {
+    if (await covered()) return false
+    const reservation = await db.execute({
+      sql: `INSERT INTO calendar_reminder_deliveries
+        (request_id, task_id, entity_id, due_ms, payload, created_at) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT DO NOTHING`,
+      args: [reminderRequestId, task.id, receiver.sourceId, task.due_ms,
+        JSON.stringify({ entity_id: receiver.sourceId, summary, start: startIso, end: endIso }), Date.now()],
+    })
+    if (!reservation.rowsAffected) return false
+    const created = await createCalendarEvent(receiver.sourceId, { summary, start: startIso, end: endIso, description },
+      { operationAllowed: async () => await operationAllowed() && !await covered() })
+    if (!created) {
+      await db.execute({ sql: "DELETE FROM calendar_reminder_deliveries WHERE request_id=?", args: [reminderRequestId] })
+      return false
+    }
+    await db.execute({ sql: "UPDATE calendar_reminder_deliveries SET acknowledged=1 WHERE request_id=?", args: [reminderRequestId] })
+    await finishReminderBookkeeping()
+    return true
+  })
+}
+
+// Each local insert and its completion flag commit together. Neither retry path contacts HA.
+async function finishReminderBookkeeping(): Promise<void> {
+  const db = getPersistenceClient()
+  const pending = await db.execute("SELECT request_id FROM calendar_reminder_deliveries WHERE acknowledged=1 AND (confirmed=0 OR logged=0)")
+  for (const row of pending.rows) {
+    const args = [String(row.request_id)]
+    for (const [flag, insert] of [
+      ["confirmed", `INSERT INTO calendar_confirmations (confirmation_id, task_id, request_id, provider_event_id, source, payload, created_at)
+        SELECT request_id, task_id, request_id, request_id, 'ha.due_reminder', payload, created_at`],
+      ["logged", `INSERT INTO task_activity_log (task_id, field, new_value, actor, actor_type, event_type, summary, correlation_id, created_at)
+        SELECT task_id, 'calendar_sync', request_id, 'calendar-sync', 'calendar_sync', 'calendar_sync',
+          'Calendar due reminder sent to ' || entity_id, request_id, created_at`],
+    ] as const) {
+      try {
+        await db.batch([
+          { sql: insert + ` FROM calendar_reminder_deliveries WHERE request_id=? AND ${flag}=0` +
+            (flag === "confirmed" ? " ON CONFLICT(task_id, request_id) DO NOTHING" : ""), args },
+          { sql: `UPDATE calendar_reminder_deliveries SET ${flag}=1 WHERE request_id=?`, args },
+        ], "write")
+      } catch {
+        logger.log("warn", { event: "calendar.reminder.bookkeeping_pending", domain: "notifications",
+          component: "due-date-reminders", request_id: "due-date-reminder", message: "Calendar reminder bookkeeping will retry" })
+      }
+    }
   }
 }
 
-/**
- * Core check: query tasks with due dates in the upcoming window,
- * send notifications for any not yet reminded.
- */
+/** One scheduler, independent observers for every approved Board and receiver. */
 export async function checkDueDates(now = Date.now()): Promise<void> {
-  // Guard: prevent concurrent runs (F15: processing flag always reset in finally)
-  if (processing) return;
-  processing = true;
-
+  if (processing) return
+  processing = true
   try {
-    // Ensure schema once (F1)
-    if (!schemaEnsured) {
-      const { ensureSchema } = await import("@domains/tasks/persistence/store");
-      await ensureSchema();
-      schemaEnsured = true;
-    }
-
-    const { getPersistenceClient } = await import("@domains/tasks/persistence/store");
-    const client = getPersistenceClient();
-
-    // Domain transitions are independent of notification preferences and HA
-    // connectivity. Reuse this timer rather than creating a second scheduler.
-    const { checkOverdueTaskEvents } = await import("@domains/tasks/overdue-task-events");
-    const { dispatchTaskEvent } = await import("../../lib/webhook-dispatcher");
-    const overdue = await checkOverdueTaskEvents(client, dispatchTaskEvent, now);
-    if (overdue.observed > 0) {
-      logger.log(overdue.dispatchFailed > 0 ? "warn" : "info", {
-        event: "tasks.overdue.observed", domain: "tasks", component: "due-date-reminders",
-        request_id: SYS_REQ, message: "Recorded overdue transitions for best-effort routing",
-        metadata: { observed: overdue.observed, dispatch_failed: overdue.dispatchFailed },
-      });
-    }
-
-    // Load cached settings (F3); only reminder delivery is opted out here.
-    const settings = await getCachedSettings();
-    if (!settings.enabled || !settings.reminderEnabled) return;
-
-    const windowEnd = now + settings.reminderWindowMs;
-
-    // F6: Use ISO date strings for SQL comparison instead of fetching ALL tasks
-    // due_date is stored as ISO string — use string comparison for efficiency
-    const nowIso = new Date(now).toISOString();
-    const windowEndIso = new Date(windowEnd).toISOString();
-
-    const result = await client.execute({
-      sql: `SELECT id, title, due_date, priority, ticket_number, assigned_to, status
-            FROM tasks
-            WHERE status NOT IN ('${STATUS.COMPLETE}')
-              AND deferred_at IS NULL
-              AND due_date IS NOT NULL
-              AND due_date != ''
-              AND due_date >= ?
-              AND due_date <= ?
-            ORDER BY due_date ASC
-            LIMIT 50`,
-      args: [nowIso, windowEndIso],
-    });
-
-    // P7.1: Also query tasks with epoch-ms due dates (numeric values bypass ISO comparison)
-    const epochResult = await client.execute({
-      sql: `SELECT id, title, due_date, priority, ticket_number, assigned_to, status
-            FROM tasks
-            WHERE status NOT IN ('${STATUS.COMPLETE}')
-              AND deferred_at IS NULL
-              AND due_date IS NOT NULL
-              AND due_date != ''
-              AND CAST(due_date AS INTEGER) >= ?
-              AND CAST(due_date AS INTEGER) <= ?
-              AND due_date GLOB '[0-9]*'
-            ORDER BY due_date ASC
-            LIMIT 50`,
-      args: [now, windowEnd],
-    }).catch(() => ({ rows: [] })); // If CAST fails, skip epoch query
-
-    // Merge rows, dedup by id
-    const seenIds = new Set<string>();
-    const allRows = [];
-    for (const row of [...result.rows, ...epochResult.rows]) {
-      const id = String((row as Record<string, unknown>).id);
-      if (!seenIds.has(id)) { seenIds.add(id); allRows.push(row); }
-    }
-
-    if (allRows.length === 0) return;
-
-    // Load module refs (F2: cached after first call)
-    const { callHAService, formatTicketKey, getIngressEntry, getHABaseUrl } = await getModuleRefs();
-
-    let ingressPath: string | null = null;
-    if (getIngressEntry) {
-      try { ingressPath = await getIngressEntry(); } catch { /* ingress unavailable */ }
-    }
-
-    // Resolve HA base URL for full deep links (mobile push needs scheme+host)
-    // @see https://companion.home-assistant.io/docs/notifications/notifications-basic/#opening-a-url
-    let baseUrl: string | null = null;
-    if (getHABaseUrl) {
-      try { baseUrl = await getHABaseUrl(); } catch { /* standalone mode */ }
-    }
-
-    for (const row of allRows) {
-      const task = row as Record<string, unknown>;
-      const taskId = String(task.id);
-      const dueRaw = task.due_date;
-
-      // Parse due date
-      let dueMs: number;
-      if (typeof dueRaw === "number") {
-        dueMs = dueRaw;
-      } else if (typeof dueRaw === "string") {
-        const parsed = Date.parse(dueRaw);
-        if (Number.isNaN(parsed)) continue;
-        dueMs = parsed;
-      } else {
-        continue;
+    await ensureSchema()
+    const db = getPersistenceClient()
+    await finishReminderBookkeeping()
+    const configuration = await readWorkDestinations(db)
+    if (!configuration) return
+    // Overdue domain observation remains independent of delivery preferences.
+    for (const binding of configuration.bindings) {
+      if (!binding.enabled || binding.purpose !== "builtin.overdue.observe") continue
+      try {
+        const context = await resolveObserver(binding)
+        if (!context) continue
+        const { checkOverdueTaskEvents } = await import("@domains/tasks")
+        const { dispatchTaskEvent } = await import("@lib/webhook-dispatcher")
+        const observed = await checkOverdueTaskEvents(db, (event, task, requestId, scope) =>
+          dispatchTaskEvent(event, task, requestId, undefined, undefined, undefined, scope), now, context)
+        if (observed.observed) logger.log(observed.dispatchFailed ? "warn" : "info", { event: "tasks.overdue.observed", domain: "tasks",
+          component: "due-date-reminders", request_id: "due-date-reminder", message: "Recorded overdue transitions",
+          metadata: { observed: observed.observed, dispatch_failed: observed.dispatchFailed } })
+      } catch {
+        logger.log("warn", { event: "due_date_reminders.observer_unavailable", domain: "notifications", component: "due-date-reminders",
+          request_id: "due-date-reminder", message: "An overdue observer is unavailable" })
       }
-
-      // Double-check window (SQL filter handles most, but epoch-stored dates need recheck)
-      if (dueMs < now || dueMs > windowEnd) continue;
-
-      // Dedup check
-      const dueDateStr = new Date(dueMs).toISOString().slice(0, 10);
-      const dedupKey = `${taskId}:${dueDateStr}`;
-      if (sentReminders.has(dedupKey)) continue;
-      sentReminders.add(dedupKey);
-
-      // Evict oldest entries when Set grows past cap (memory safety)
-      evictSentReminders();
-
-      const title = String(task.title || "Untitled task");
-      const ticketKey = formatTicketKey(task.ticket_number != null ? Number(task.ticket_number) : null) ?? "Task";
-      const minutesUntilDue = Math.round((dueMs - now) / 60000);
-      const timeLabel = minutesUntilDue <= 5
-        ? "now"
-        : minutesUntilDue < 60
-          ? `in ${minutesUntilDue} min`
-          : "in ~1 hour";
-
-      // Full URL for mobile push — Companion app needs scheme+host+path
-      // Relative ingress path for sidebar — renders inside HA frontend iframe
-      const fullDeepLink = (baseUrl && ingressPath)
-        ? `${baseUrl}${ingressPath}/kanban`
-        : null;
-      const sidebarLink = ingressPath
-        ? `\n\n[Open ${ticketKey} in Meitheal →](${ingressPath}/kanban)`
-        : "";
-      const notifId = `meitheal_due_${taskId}`;
-
-      // Sidebar notification
-      if (settings.channels.sidebar !== false) {
-        callHAService("persistent_notification", "create", {
-          title: `⏰ Due ${timeLabel}: ${title}`,
-          message: `${ticketKey} is due ${timeLabel}.${sidebarLink}`,
-          notification_id: notifId,
-        }).catch(() => {});
-      }
-
-      // Mobile push with enrichments
-      if (settings.channels.mobile_push && settings.mobileTargets.length > 0) {
-        for (const target of settings.mobileTargets) {
-          const parsed = parseNotifyTarget(target);
-          if (parsed) {
-            callHAService(parsed.domain, parsed.service, {
-              title: `⏰ Due ${timeLabel}: ${title}`,
-              message: `${ticketKey} is due ${timeLabel}.`,
-              data: {
-                ...(fullDeepLink ? { clickAction: fullDeepLink, url: fullDeepLink } : {}),
-                tag: notifId,
-                group: "meitheal",
-                channel: "meitheal_reminders",
-                color: "#f59e0b",
-                push: { "interruption-level": "time-sensitive" },
-                actions: [
-                  ...(fullDeepLink ? [{ action: "URI", title: "Open Task", uri: fullDeepLink }] : []),
-                  { action: `MEITHEAL_TASK_DONE_${taskId}`, title: "✅ Mark Done" },
-                ],
+    }
+    for (const binding of configuration.bindings) {
+      if (!binding.enabled || binding.purpose !== "builtin.reminders.observe") continue
+      try {
+        let context = await resolveObserver(binding)
+        if (!context) continue
+        const repo = new TaskRepository(db, context.scope)
+        const prefs = await repo.getNotificationPreferences()
+        const settings = await repo.getSettings(["notification_preferences"])
+        let policy: Record<string, unknown> = {}
+        try {
+            const parsed: unknown = JSON.parse(settings.notification_preferences ?? "{}")
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) policy = parsed as Record<string, unknown>
+          } catch {}
+          if (!prefs.enabled || policy.due_date_reminders === false) continue
+          const windowMs = typeof policy.reminder_window_minutes === "number" && Number.isFinite(policy.reminder_window_minutes) && policy.reminder_window_minutes > 0
+            ? policy.reminder_window_minutes * 60_000 : defaultWindowMs
+          const tasks = await repo.findDueReminderTasks(now, now + windowMs)
+          for (const candidate of tasks) {
+            const key = `${binding.id}:${binding.generation}:${context.scope.boardId}:${candidate.id}:${new Date(candidate.due_ms).toISOString().slice(0, 10)}`
+            if (sentReminders.has(key) || candidate.assigned_to && prefs.disabledUsers.has(candidate.assigned_to)) continue
+            // Each item retains the original binding identity/generation, while a
+            // new finite proof is resolved outside every provider/SQLite writer.
+            context = await resolveObserver(binding)
+            if (!context) break
+            const current = await new TaskRepository(db, context.scope).findById(candidate.id).catch(() => null)
+            if (!current || Number(current.task_version) !== candidate.task_version || current.due_date !== candidate.due_date || current.deferred_at != null || isClosedStatus(current.status)) continue
+            const task = candidate
+            const sidebar = prefs.channels.sidebar !== false && await notificationOperationAllowed(context.scope, "persistent_notification", { resource: "task", action: "read" }, task.id)
+            const targets: string[] = []
+            if (prefs.channels.mobile_push) for (const target of prefs.mobileTargets) {
+              if (await notificationOperationAllowed(context.scope, target, { resource: "task", action: "read" }, task.id)) targets.push(target)
+            }
+            const link = await homeAssistantWorkLink(context.scope.boardId, task.id)
+            let attempted = sidebar || targets.length > 0
+            const minutes = Math.round((task.due_ms - now) / 60_000)
+            const time = minutes <= 5 ? "now" : minutes < 60 ? `in ${minutes} min` : "in ~1 hour"
+            const deliveryContext = context
+            if (attempted) await sendTaskNotification({ ...prefs, channels: { sidebar, mobile_push: targets.length > 0 }, mobileTargets: targets }, {
+              title: `⏰ Due ${time}: ${task.title}`, message: `${task.ticket_key} is due ${time}.${link ? `\n\n[Open ${task.ticket_key} in Meitheal →](${link})` : ""}`,
+              notificationId: `meitheal_due_${task.id}`, ingress: null, taskId: task.id, taskVersion: task.task_version, isUrgent: true,
+              operationAllowed: async () => {
+                const latest = await new TaskRepository(db, deliveryContext.scope).findById(task.id).catch(() => null)
+                return Boolean(latest && Number(latest.task_version) === task.task_version && latest.due_date === task.due_date && latest.deferred_at == null && !isClosedStatus(latest.status))
               },
-            }).catch(() => {});
+            }, context.scope, { resource: "task", action: "read" })
+            for (const receiver of configuration.bindings) {
+              if (!receiver.enabled || receiver.integration !== "calendar_reminder" || receiver.purpose !== "calendar.reminder") continue
+              try { attempted = await calendarReminder(context, task, receiver, link) || attempted } catch {}
+            }
+            if (attempted) track(key)
           }
-        }
+      } catch {
+        logger.log("warn", { event: "due_date_reminders.observer_unavailable", domain: "notifications", component: "due-date-reminders",
+          request_id: "due-date-reminder", message: "A reminder observer is unavailable" })
       }
-
-      // Calendar reminder event (propagates to phone calendars)
-      if (settings.calendarEntity) {
-        const startIso = new Date(dueMs).toISOString();
-        const endIso = new Date(dueMs + 15 * 60 * 1000).toISOString();
-        callHAService("calendar", "create_event", {
-          summary: `📋 ${ticketKey}: ${title} — DUE`,
-          start_date_time: startIso,
-          end_date_time: endIso,
-          description: `Task ${ticketKey} is due. ${fullDeepLink ? `Open in Meitheal: ${fullDeepLink}` : ""}`,
-        }, { entity_id: settings.calendarEntity }).catch(() => {});
-      }
-
-      logger.log("info", {
-        event: "due_date_reminders.sent",
-        domain: "notifications",
-        component: "due-date-reminders",
-        request_id: SYS_REQ,
-        message: `Sent due-date reminder for ${ticketKey}: "${title}" (due ${timeLabel})`,
-      });
     }
-  } catch (err) {
-    logger.log("error", {
-      event: "due_date_reminders.check_failed",
-      domain: "notifications",
-      component: "due-date-reminders",
-      request_id: SYS_REQ,
-      message: `Due-date check failed: ${err}`,
-    });
-  } finally {
-    processing = false; // F15: Always reset, even on early returns
-  }
+  } catch {
+    logger.log("error", { event: "due_date_reminders.check_failed", domain: "notifications", component: "due-date-reminders",
+      request_id: "due-date-reminder", message: "Due-date reminder check unavailable" })
+  } finally { processing = false }
 }

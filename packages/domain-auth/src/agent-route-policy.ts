@@ -6,6 +6,8 @@ const taskRead = { GET: "tasks:read" } satisfies MethodScopes
 const taskCreate = { POST: "tasks:write" } satisfies MethodScopes
 const taskDelete = { DELETE: "tasks:delete" } satisfies MethodScopes
 const routes = new Map<string, MethodScopes>([
+  // Sender-owned destinations, drafts and acknowledgements grant no task read.
+  ["/api/board-intake", { GET: "tasks:write", POST: "tasks:write" }],
   ["/api/nfc/complete", { POST: "tasks:write" }],
   ["/api/tasks", { ...taskRead, ...taskCreate, ...taskDelete }],
   ["/api/tasks/create", taskCreate],
@@ -15,6 +17,9 @@ const routes = new Map<string, MethodScopes>([
   ["/api/tasks/today-counts", taskRead],
   ["/api/tasks/reaction-counts", taskRead],
   ["/api/users", { GET: "tasks:read" }],
+  ["/api/agent-context", { GET: "tasks:read" }],
+  ["/api/habits", { GET: "tasks:read", POST: "tasks:write" }],
+  ["/api/boards/routines", { GET: "tasks:read" }],
   ["/api/projects", { GET: "projects:read", POST: "projects:write" }],
   ["/api/search", { GET: "search:read" }],
   ["/api/mcp", { GET: "mcp:execute", POST: "mcp:execute" }],
@@ -77,6 +82,11 @@ export function resolveAgentRouteScope(pathname: string, method: string): AgentS
   if (reaction) return (reaction[1] ? reactionItem : reactionList)[verb]
   const task = pathname.match(/^\/api\/tasks\/[\w-]+(?:\/([\w-]+))?$/)
   if (task) return taskRoutes.get(task[1] ?? "")?.[verb]
+  if (/^\/api\/boards\/[\w-]+$/.test(pathname)) return verb === "GET" ? "tasks:read" : undefined
+  if (/^\/api\/boards\/[\w-]+\/tickets$/.test(pathname)) return verb === "POST" ? "tasks:write" : undefined
+  if (/^\/api\/boards\/[\w-]+\/tickets\/[\w-]+$/.test(pathname)) {
+    return verb === "PATCH" ? "tasks:write" : verb === "DELETE" ? "tasks:delete" : undefined
+  }
   if (/^\/api\/projects\/[\w-]+$/.test(pathname)) return project[verb]
   if (/^\/api\/a2a\/tasks\/[\w-]+$/.test(pathname)) return a2aTask[verb]
   if (verb === "POST" && /^\/api\/a2a\/tasks\/[\w-]+:cancel$/.test(pathname)) return "a2a:execute"
@@ -92,9 +102,15 @@ export interface AgentRouteAccess {
 
 /** Decide whether a token may use a route, including the assigned-only write grant. */
 export function resolveAgentRouteAccess(pathname: string, method: string, scopes: AgentScope[]): AgentRouteAccess {
+  const verb = method === "HEAD" ? "GET" : method
   const scope = resolveAgentRouteScope(pathname, method)
   if (!scope) return { scope, allowed: false }
   if (hasScope(scopes, scope)) return { scope, allowed: true }
+  // POST /api/habits dispatches create/update (tasks:write) and delete (tasks:delete);
+  // keep tasks:write:assigned excluded because /api/habits is not an assigned-task route.
+  if (pathname === "/api/habits" && verb === "POST" && hasScope(scopes, "tasks:delete")) {
+    return { scope: "tasks:delete", allowed: true }
+  }
   if (scope !== "tasks:write" || !hasScope(scopes, "tasks:write:assigned")) return { scope, allowed: false }
 
   // Each of these names one existing task, so its assignee can be checked.

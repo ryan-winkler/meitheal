@@ -96,6 +96,8 @@ Dismissed helpers stay hidden on reload. When letter, number and symbol shortcut
 
 Meitheal needs Grocy App information from Home Assistant Supervisor to replace an older ingress URL. If Supervisor cannot return that information, Meitheal keeps the saved URL and retries startup up to three times. Check that the Grocy App is started, then retry the connection in Settings if the automatic retries have ended. Saving a different URL in Settings takes precedence over an automatic migration already in progress.
 
+Disabling a Board's Grocy destination stops its scheduled sync for the running App and prevents startup retries from restarting it. Other approved destinations can continue. Use **Enable** to resume the destination during the same App session.
+
 ### Sync Queue Stuck
 
 **Symptoms**: "Pending" indicator never clears, tasks don't sync.
