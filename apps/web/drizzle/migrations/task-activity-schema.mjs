@@ -33,14 +33,41 @@ export const ordinaryStallExpressions = {
 }
 export const ordinaryStallTriggerDefinitions = taskStallTriggerDefinitions(ordinaryStallExpressions)
 
-async function currentStallExpressions(db) {
-  const { rows: [version] } = await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")
-  return Number(version?.value) >= 26 ? ordinaryStallExpressions : stallExpressions
+const legacyPredecessorStallExpressions = {
+  ...stallExpressions,
+  openStatuses: "'pending', 'todo', 'active', 'in_progress'",
+  completeStatuses: "'complete', 'done'",
+}
+const legacyPredecessorStallDefinitions = new Map(
+  taskStallTriggerDefinitions(legacyPredecessorStallExpressions).map(definition => [definition[0], definition]),
+)
+
+function matchesExactTriggerDefinition(trigger, definition) {
+  if (!definition || trigger?.type !== "trigger") return false
+  if (trigger.name !== definition[0] || trigger.tbl_name !== definition[1]) return false
+  return typeof trigger.sql === "string" && trigger.sql.trim() === definition[2].trim()
 }
 
+async function currentStallExpressions(db) {
+  const { rows: [version] } = await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")
+  if (Number(version?.value) >= 26) return ordinaryStallExpressions
+  const { rows } = await db.execute({
+    sql: "SELECT name, type, tbl_name, sql FROM sqlite_schema WHERE name COLLATE NOCASE = ?",
+    args: ["tasks_stall_transition"],
+  })
+  const existing = findActivityTrigger(rows, "tasks_stall_transition")
+  const legacyDefinition = legacyPredecessorStallDefinitions.get("tasks_stall_transition")
+  return matchesExactTriggerDefinition(existing, legacyDefinition) ? legacyPredecessorStallExpressions : stallExpressions
+}
+
+/** @type {Array<{ family: string, definitions: string[][], legacyDefinitions?: Map<string, string[]> }>} */
 const triggerGroups = [
   { family: "inactivity", definitions: taskInactivityTriggerDefinitions },
-  { family: "stall", definitions: taskStallTriggerDefinitions(stallExpressions) },
+  {
+    family: "stall",
+    definitions: taskStallTriggerDefinitions(stallExpressions),
+    legacyDefinitions: legacyPredecessorStallDefinitions,
+  },
 ]
 
 export const taskWriteTriggerMetadata = activityTriggerCatalogQuery([
@@ -51,10 +78,13 @@ export const taskWriteTriggerMetadata = activityTriggerCatalogQuery([
 /** @param {import("@libsql/core/api").ResultSet} metadata */
 export function validateExistingTaskWriteTriggers({ rows }) {
   validateExistingTaskDeferralTrigger(findActivityTrigger(rows, taskDeferralTriggerName))
-  for (const { family, definitions } of triggerGroups) {
+  for (const { family, definitions, legacyDefinitions } of triggerGroups) {
     for (const definition of definitions) {
       const trigger = findActivityTrigger(rows, definition[0])
-      if (trigger) validateActivityTriggerDefinition(trigger, definition, family)
+      if (!trigger) continue
+      const legacy = legacyDefinitions?.get(definition[0])
+      const expected = matchesExactTriggerDefinition(trigger, legacy) ? legacy : definition
+      validateActivityTriggerDefinition(trigger, expected, family)
     }
   }
 }
