@@ -431,3 +431,32 @@ test("a malformed stall column preserves predecessor activity state through both
     })
   })
 })
+
+test("pre-0016 installations with initial four-alias stall transition upgrade cleanly to ordinary triggers", async ({ databasePath }) => {
+  await seedPredecessor(databasePath)
+  await migrate(databasePath)
+  const legacyPredecessorTransitionSql = `CREATE TRIGGER tasks_stall_transition
+      AFTER UPDATE OF assigned_to, status ON tasks
+      WHEN ((NULLIF(trim(NEW.assigned_to, char(9,10,11,12,13,32)), '') IS NOT NULL AND NULLIF(trim(NEW.assigned_to, char(9,10,11,12,13,32)), '') IS NOT NULLIF(trim(OLD.assigned_to, char(9,10,11,12,13,32)), ''))
+        OR (lower(OLD.status) IN ('complete', 'done') AND lower(NEW.status) IN ('pending', 'todo', 'active', 'in_progress')))
+        AND (COALESCE(NULLIF(((SELECT CASE WHEN length(revision) = 32 AND length(CAST(revision AS BLOB)) = 32 AND revision NOT GLOB '*[^0-9a-f]*' THEN days ELSE 0 END FROM task_inactivity_policy WHERE area_id = NEW.area_id)), -1), ((SELECT CASE WHEN length(revision) = 32 AND length(CAST(revision AS BLOB)) = 32 AND revision NOT GLOB '*[^0-9a-f]*' THEN days ELSE 0 END FROM task_inactivity_policy WHERE scope = 'default')), 0)) BETWEEN 1 AND 365
+    AND EXISTS (SELECT 1 FROM areas WHERE id = NEW.area_id)
+      BEGIN
+        UPDATE tasks SET last_activity_spike_at = MAX(CASE WHEN typeof(last_activity_spike_at) = 'integer' AND last_activity_spike_at BETWEEN 1 AND 9007199254740991 THEN last_activity_spike_at ELSE 0 END, (unixepoch('now') * 1000 + CAST(substr(strftime('%f','now'), 4, 3) AS INTEGER))) WHERE id = NEW.id;
+      END`
+
+  withDatabase(databasePath, database => {
+    expect(readMarker(database)).toBe("25")
+    database.exec("DROP TRIGGER tasks_stall_transition")
+    database.exec(legacyPredecessorTransitionSql)
+  })
+
+  await bootstrapRuntime(databasePath)
+  await qualifyOwnedPredecessor(databasePath)
+  await bootstrapRuntime(databasePath)
+
+  withDatabase(databasePath, database => {
+    expect(readMarker(database)).toBe(String(DATABASE_SCHEMA_VERSION))
+    expectOrdinaryActivityTriggers(database)
+  })
+})

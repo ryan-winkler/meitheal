@@ -350,6 +350,7 @@ test("admitted conversion preserves optional records, filter bytes and deleted l
     await tx.execute(
       "CREATE TABLE vikunja_labels(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL UNIQUE,hex_color TEXT NOT NULL DEFAULT '3f51b5')"
     )
+    await tx.execute("CREATE INDEX vikunja_labels_title_idx ON vikunja_labels(title)")
     await tx.execute(
       "INSERT INTO vikunja_labels(id,title,hex_color) VALUES (1,'Existing','abcdef'),(99,'Deleted','ffffff')"
     )
@@ -357,6 +358,7 @@ test("admitted conversion preserves optional records, filter bytes and deleted l
     await tx.execute(
       "CREATE TABLE saved_filters(id TEXT PRIMARY KEY,name TEXT NOT NULL,query_json TEXT NOT NULL DEFAULT '{}',icon TEXT NOT NULL DEFAULT '🔍',position INTEGER NOT NULL DEFAULT 0,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL)"
     )
+    await tx.execute("CREATE INDEX saved_filters_position_idx ON saved_filters(position)")
     await tx.execute(
       "INSERT INTO saved_filters VALUES ('saved','Private work','{\"labels\":[\"Original\"]}','🔍',7,100,101)"
     )
@@ -501,4 +503,17 @@ test("only current Board managers receive exact persisted sharing and denial pol
   const viewer = await boards.findAccess(human("viewer"), created.result.id)
   expect(viewer?.role).toBe("viewer")
   expect(viewer?.policy).toBeUndefined()
+})
+
+test("admitted conversion rejects a malformed legacy label title index", async () => {
+  await expect(
+    withStartupWriteTransaction(db, async (tx) => {
+      await applyStartupTaskSchema(tx)
+      await tx.execute(
+        "CREATE TABLE vikunja_labels(id INTEGER PRIMARY KEY AUTOINCREMENT,title TEXT NOT NULL UNIQUE,hex_color TEXT NOT NULL DEFAULT '3f51b5')"
+      )
+      await tx.execute("CREATE INDEX vikunja_labels_title_idx ON vikunja_labels(hex_color)")
+      return applyStartupBoardSchema(db, tx)
+    })
+  ).rejects.toThrow("Unexpected label title index")
 })

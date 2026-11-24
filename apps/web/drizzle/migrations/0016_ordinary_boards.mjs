@@ -239,6 +239,47 @@ async function exists(db, name) {
   return rows.length === 1
 }
 
+const predecessorSmallTableShapes = {
+  vikunja_labels:
+    "CREATE TABLE vikunja_labels (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL UNIQUE, hex_color TEXT NOT NULL DEFAULT '3f51b5')",
+  gamification_stats:
+    "CREATE TABLE gamification_stats (date TEXT PRIMARY KEY, completed_count INTEGER NOT NULL DEFAULT 0, streak_count INTEGER NOT NULL DEFAULT 0, points INTEGER NOT NULL DEFAULT 0)",
+  gamification_achievements:
+    "CREATE TABLE gamification_achievements (id TEXT PRIMARY KEY, unlocked_at TEXT NOT NULL)",
+  saved_filters:
+    "CREATE TABLE saved_filters (id TEXT PRIMARY KEY, name TEXT NOT NULL, query_json TEXT NOT NULL DEFAULT '{}', icon TEXT NOT NULL DEFAULT '🔍', position INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)"
+}
+
+const predecessorSmallTableIndexes = {
+  saved_filters: {
+    name: "saved_filters_position_idx",
+    sql: "CREATE INDEX saved_filters_position_idx ON saved_filters(position)",
+    error: "Unexpected saved-filter ordering index"
+  },
+  vikunja_labels: {
+    name: "vikunja_labels_title_idx",
+    sql: "CREATE INDEX vikunja_labels_title_idx ON vikunja_labels(title)",
+    error: "Unexpected label title index"
+  }
+}
+
+function validateSmallTableObjects(name, objects) {
+  const knownIndex = predecessorSmallTableIndexes[name]
+  if (objects.some((object) => object.name !== name && object.name !== knownIndex?.name))
+    throw new Error(`Unexpected migration dependency on ${name}`)
+  const expectedShape = predecessorSmallTableShapes[name]
+  if (
+    expectedShape &&
+    !matchesSql(objects.find((object) => object.name === name)?.sql, expectedShape)
+  )
+    throw new Error(`Unexpected predecessor table: ${name}`)
+  if (
+    knownIndex &&
+    objects.some((object) => object.name !== name && !matchesSql(object.sql, knownIndex.sql))
+  )
+    throw new Error(knownIndex.error)
+}
+
 async function replaceSmallTable(tx, name, definition, columns, boardId) {
   if (!(await exists(tx, name))) {
     await tx.execute(definition)
@@ -248,36 +289,7 @@ async function replaceSmallTable(tx, name, definition, columns, boardId) {
     sql: "SELECT name,type,sql FROM sqlite_schema WHERE tbl_name=? AND sql IS NOT NULL",
     args: [name]
   })
-  const knownIndexes = name === "saved_filters" ? ["saved_filters_position_idx"] : []
-  if (objects.some((object) => object.name !== name && !knownIndexes.includes(String(object.name))))
-    throw new Error(`Unexpected migration dependency on ${name}`)
-  const legacyShapes = {
-    vikunja_labels:
-      "CREATE TABLE vikunja_labels (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL UNIQUE, hex_color TEXT NOT NULL DEFAULT '3f51b5')",
-    gamification_stats:
-      "CREATE TABLE gamification_stats (date TEXT PRIMARY KEY, completed_count INTEGER NOT NULL DEFAULT 0, streak_count INTEGER NOT NULL DEFAULT 0, points INTEGER NOT NULL DEFAULT 0)",
-    gamification_achievements:
-      "CREATE TABLE gamification_achievements (id TEXT PRIMARY KEY, unlocked_at TEXT NOT NULL)",
-    saved_filters:
-      "CREATE TABLE saved_filters (id TEXT PRIMARY KEY, name TEXT NOT NULL, query_json TEXT NOT NULL DEFAULT '{}', icon TEXT NOT NULL DEFAULT '🔍', position INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)"
-  }
-  if (
-    legacyShapes[name] &&
-    !matchesSql(objects.find((object) => object.name === name)?.sql, legacyShapes[name])
-  )
-    throw new Error(`Unexpected predecessor table: ${name}`)
-  if (
-    name === "saved_filters" &&
-    objects.some(
-      (object) =>
-        object.name !== name &&
-        !matchesSql(
-          object.sql,
-          "CREATE INDEX saved_filters_position_idx ON saved_filters(position)"
-        )
-    )
-  )
-    throw new Error("Unexpected saved-filter ordering index")
+  validateSmallTableObjects(name, objects)
   let sequence
   if (name === "vikunja_labels") {
     const { rows: sequences } = await tx.execute(
