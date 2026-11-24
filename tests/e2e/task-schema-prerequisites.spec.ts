@@ -17,8 +17,8 @@ import { ORGANIZATION_FEATURE_MIGRATION } from "../../apps/web/drizzle/migration
 import { TASK_BOARD_MIGRATION } from "../../apps/web/drizzle/migrations/task-board-upgrade.mjs"
 import { reconcileTaskSchemaPrerequisites } from "../../apps/web/drizzle/migrations/task-schema-prerequisites.mjs"
 import { assertSupportedDatabaseSchema, DATABASE_SCHEMA_VERSION, openDatabase } from "../../apps/web/scripts/database-client.mjs"
+import { readBoardGrantRevision } from "../../apps/web/scripts/board-grant-journal.mjs"
 import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
-import { enrollCurrentOwnedLegacyFixture } from "../helpers/current-legacy-fixture"
 import { prepareTaskBoardPredecessor } from "../scripts/task-board-predecessor"
 import { CUSTOM_BOARD_KEYS_MIGRATION } from "../../apps/web/drizzle/migrations/0017_custom_board_keys.mjs"
 import { TASK_EXPERIENCE_MIGRATION } from "../../apps/web/drizzle/migrations/0018_task_experience.mjs"
@@ -46,14 +46,8 @@ function migrate(databasePath: string, ...args: string[]) {
 }
 
 async function qualifyOwnedPredecessor(databasePath: string) {
-  await expect(migrate(databasePath, "--check")).rejects.toThrow(/Pending migrations:.*0016_ordinary_boards/)
-  const proof = await enrollCurrentOwnedLegacyFixture({ database: databasePath, markerPath: databasePath + ".board-grants.json",
-    provenance: "created-in-this-test-and-never-restored" })
-  try {
-    await migrate(databasePath, "--check")
-  } finally {
-    await rm(proof.custodyDirectory, { recursive: true, force: true })
-  }
+  await migrate(databasePath, "--check")
+  expect(await readBoardGrantRevision(databasePath + ".board-grants.json")).toMatch(/^[a-f0-9-]{36}$/)
 }
 
 async function bootstrapRuntime(databasePath: string) {

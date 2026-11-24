@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
@@ -8,8 +8,10 @@ import {
   withStartupWriteTransaction
 } from "../../apps/web/scripts/database-client.mjs"
 import {
+  admitStartupBoardTransition,
   finalizeStartupBoardGrant,
-  initializeBoardGrantContinuity
+  initializeBoardGrantContinuity,
+  readBoardGrantRevision
 } from "../../apps/web/scripts/board-grant-journal.mjs"
 import {
   applyStartupBoardSchema,
@@ -199,9 +201,47 @@ test("legacy propose-only tokens retain proposals without generic editing or pri
   ).toEqual({ ok: false, errorCode: "unavailable" })
 })
 
-test("epochless reopened schema25 remains controlled pending26 without policy conversion", async () => {
+test("epochless reopened schema25 without a conflicting marker auto-enrolls and finishes upgrade", async () => {
   await withStartupWriteTransaction(db, (tx) => applyStartupTaskSchema(tx))
   db.close()
+  db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
+  const result = await initialize()
+  expect(result.state).toBe("ready")
+  expect(result.revision).toBeTruthy()
+  expect(result.applied).toEqual(["0016_ordinary_boards.mjs", CUSTOM_BOARD_KEYS_MIGRATION, TASK_EXPERIENCE_MIGRATION])
+  expect(await readBoardGrantRevision(marker)).toBe(result.revision)
+  expect(
+    (await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")).rows[0]?.value
+  ).toBe("28")
+  await validateStartupTaskSchema(db)
+})
+
+test("pre-0016 reopened schema25 with an epoch row and absent marker recovers continuity", async () => {
+  const priorEpoch = "93c9b2e7-cd3b-4b29-b517-d1bdf8c52886"
+  await withStartupWriteTransaction(db, async (tx) => {
+    await applyStartupTaskSchema(tx)
+    await tx.execute({
+      sql: "INSERT INTO board_access_epoch(singleton, revision) VALUES (1, ?)",
+      args: [priorEpoch]
+    })
+  })
+  db.close()
+  db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
+  const result = await initialize()
+  expect(result.state).toBe("ready")
+  expect(result.revision).toBeTruthy()
+  expect(result.revision).not.toBe(priorEpoch)
+  expect(await readBoardGrantRevision(marker)).toBe(result.revision)
+  expect(
+    (await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")).rows[0]?.value
+  ).toBe("28")
+  await validateStartupTaskSchema(db)
+})
+
+test("epochless reopened schema25 with a conflicting marker remains controlled pending26 without policy conversion", async () => {
+  await withStartupWriteTransaction(db, (tx) => applyStartupTaskSchema(tx))
+  db.close()
+  await writeFile(marker, JSON.stringify({ epoch: randomUUID() }), { mode: 0o600 })
   db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
   const result = await initialize()
   expect(result).toMatchObject({
@@ -217,7 +257,75 @@ test("epochless reopened schema25 remains controlled pending26 without policy co
       (row) => row.name === "storage_encoding"
     )
   ).toBe(false)
+  expect(
+    (await db.execute("SELECT value FROM app_settings WHERE key = 'continuity_auto_enroll_blocked'")).rows
+  ).toEqual([])
   await expect(validateStartupTaskSchema(db)).rejects.toThrow("Pending migrations")
+})
+
+test("eligible pre-0016 schema25 locks on symlink or unresolved pending journal without blocking future recovery", async () => {
+  await withStartupWriteTransaction(db, (tx) => applyStartupTaskSchema(tx))
+  db.close()
+
+  const symlinkTarget = join(directory, "symlink-target.json")
+  await writeFile(symlinkTarget, JSON.stringify({ epoch: randomUUID() }), { mode: 0o600 })
+  await symlink(symlinkTarget, marker)
+  db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
+  expect(await initialize()).toMatchObject({
+    state: "continuity_locked",
+    pending: ["0016_ordinary_boards.mjs"],
+    revision: null
+  })
+  expect(
+    (await db.execute("SELECT value FROM app_settings WHERE key = 'continuity_auto_enroll_blocked'")).rows
+  ).toEqual([])
+  db.close()
+  await rm(marker, { force: true })
+
+  const pendingDir = join(directory, "meitheal-board-grants-pending")
+  await mkdir(pendingDir, { mode: 0o700 })
+  await writeFile(join(pendingDir, `${randomUUID()}.json`), JSON.stringify({ epoch: randomUUID() }), { mode: 0o600 })
+  db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
+  expect(await initialize()).toMatchObject({
+    state: "continuity_locked",
+    pending: ["0016_ordinary_boards.mjs"],
+    revision: null
+  })
+  expect(
+    (await db.execute("SELECT value FROM app_settings WHERE key = 'continuity_auto_enroll_blocked'")).rows
+  ).toEqual([])
+  await rm(pendingDir, { recursive: true, force: true })
+
+  // Retrying on the same open client after conflict clears succeeds cleanly.
+  const recovered = await initialize()
+  expect(recovered.state).toBe("ready")
+  expect(await readBoardGrantRevision(marker)).toBe(recovered.revision)
+  expect(
+    (await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")).rows[0]?.value
+  ).toBe("28")
+})
+
+test("rolled-back transition removes its uncommitted pending journal and same client can retry", async () => {
+  await withStartupWriteTransaction(db, (tx) => applyStartupTaskSchema(tx))
+  db.close()
+  db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
+  await expect(
+    withStartupWriteTransaction(db, async (tx) => {
+      const transition = await admitStartupBoardTransition(db, tx)
+      expect(transition?.revision).toBeTruthy()
+      throw new Error("synthetic migration failure before commit")
+    })
+  ).rejects.toThrow("synthetic migration failure")
+  const pendingDir = join(directory, "meitheal-board-grants-pending")
+  expect(await readdir(pendingDir)).toEqual([])
+
+  // Retrying on the same open client (without reopening) succeeds because eligibility was retained across rollback.
+  const result = await initialize()
+  expect(result.state).toBe("ready")
+  expect(await readBoardGrantRevision(marker)).toBe(result.revision)
+  expect(
+    (await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")).rows[0]?.value
+  ).toBe("28")
 })
 
 test("an independently current schema25 upgrade converts policy and journals the next epoch atomically", async () => {

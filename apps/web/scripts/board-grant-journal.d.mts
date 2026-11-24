@@ -9,6 +9,6 @@ export function publishCommittedMarker(path: string, revision: string): Promise<
 export function boardGrantStillCurrent(db: Pick<Client, "execute">, revision: string, path?: string): Promise<boolean>
 export function currentBoardGrantRevision(db: Pick<Client, "execute" | "transaction">, path?: string): Promise<string | null>
 export function initializeBoardGrantContinuity(client: Client, tx: Transaction): Promise<string | null>
-export function prepareInitialBoardGrant(tx: Transaction, markerPath: string): Promise<string>
+export function prepareInitialBoardGrant(tx: Transaction, markerPath: string, client?: Client): Promise<string>
 export function finalizeStartupBoardGrant(client: Client, revision: string | null): Promise<void>
-export function admitStartupBoardTransition(client: Client, tx: Transaction, operatorAdmission?: object): Promise<{ admission: object, revision: string } | null>
+export function admitStartupBoardTransition(client: Client, tx: Transaction, operatorAdmission?: object, onRefused?: (reason: "no_authority" | "conflict") => void): Promise<{ admission: object, revision: string } | null>

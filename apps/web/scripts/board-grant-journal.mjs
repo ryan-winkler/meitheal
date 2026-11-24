@@ -3,7 +3,7 @@ import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from "
 import { mkdir, open, readdir, rename, rm } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { acquireWriteTransaction, readLocalGrantRevision, retryStartupLock } from "./database-client.mjs"
-import { boardGrantPath, boardGrantRevisionQuery, consumeDatabaseCreation, getBoardGrantPath, unwrapBoardGrantClient } from "./board-grant-context.mjs"
+import { boardGrantPath, boardGrantRevisionQuery, consumeDatabaseCreation, getBoardGrantPath, hasPre0016LocalUpgrade, registerPreparedGrantMarker, unwrapBoardGrantClient } from "./board-grant-context.mjs"
 import { consumeOperatorAdmission, registerStartupBoardAdmission } from "./startup-board-admission.mjs"
 
 export { boardGrantPath, getBoardGrantPath }
@@ -86,13 +86,19 @@ export async function prepareGrantMarker(path, revision) {
   rejectSymlinkPath(directory)
   await mkdir(directory, { recursive: true, mode: 0o700 })
   if (!lstatSync(directory).isDirectory() || (lstatSync(directory).mode & 0o077) !== 0) throw new Error("Board pending journal must be a private directory")
-  const file = await open(pendingFile(path, revision), "wx", 0o600)
+  const target = pendingFile(path, revision)
+  const file = await open(target, "wx", 0o600)
   try {
-    await file.writeFile(JSON.stringify({ epoch: revision }))
-    await file.sync()
-  } finally { await file.close() }
-  await syncDirectory(directory)
-  await syncDirectory(dirname(path))
+    try {
+      await file.writeFile(JSON.stringify({ epoch: revision }))
+      await file.sync()
+    } finally { await file.close() }
+    await syncDirectory(directory)
+    await syncDirectory(dirname(path))
+  } catch (error) {
+    await rm(target, { force: true }).catch(() => {})
+    throw error
+  }
 }
 
 export async function publishCommittedMarker(path, revision) {
@@ -135,39 +141,87 @@ export async function initializeBoardGrantContinuity(client, tx) {
   return prepareInitialBoardGrant(tx, getBoardGrantPath(client))
 }
 
+async function inspectPendingDirectory(markerPath) {
+  const directory = pendingDirectory(markerPath)
+  rejectSymlinkPath(directory)
+  const stats = lstatSync(directory, { throwIfNoEntry: false })
+  if (!stats) return "missing"
+  if (!stats.isDirectory()) return "non_directory"
+  return (await readdir(directory)).length ? "non_empty" : "empty"
+}
+
+async function hasMarkerOrPendingEntries(markerPath) {
+  rejectSymlinkPath(markerPath)
+  if (lstatSync(markerPath, { throwIfNoEntry: false })) return true
+  const pendingState = await inspectPendingDirectory(markerPath)
+  return pendingState === "non_empty" || pendingState === "non_directory"
+}
+
+async function checkPre0016Destination(client, markerPath) {
+  if (!hasPre0016LocalUpgrade(client)) return "ineligible"
+  try {
+    return (await hasMarkerOrPendingEntries(markerPath)) ? "conflict" : "clear"
+  } catch (error) {
+    if (error instanceof Error && error.message === "Board continuity refuses symlink paths") return "conflict"
+    throw error
+  }
+}
+
+async function rotateStartupBoardGrant(client, tx, path, revision) {
+  const next = randomUUID()
+  await prepareGrantMarker(path, next)
+  try {
+    await tx.execute({ sql: "UPDATE board_access_epoch SET revision = ? WHERE singleton = 1 AND revision = ?", args: [next, revision] })
+    registerPreparedGrantMarker(tx, pendingFile(path, next), next, client)
+  } catch (error) {
+    await rm(pendingFile(path, next), { force: true }).catch(() => {})
+    throw error
+  }
+  return { admission: registerStartupBoardAdmission(tx), revision: next }
+}
+
 /** Prove conversion authority on the same startup writer, then prepare its next excluded journal. */
-export async function admitStartupBoardTransition(client, tx, operatorAdmission) {
+export async function admitStartupBoardTransition(client, tx, operatorAdmission, onRefused) {
   const path = getBoardGrantPath(client)
   const revision = await databaseRevision(tx)
   const created = consumeDatabaseCreation(client)
   const operator = consumeOperatorAdmission(operatorAdmission)
   if (!revision) {
-    if (!created && !operator) return null
-    const next = await prepareInitialBoardGrant(tx, path)
-    return { admission: registerStartupBoardAdmission(tx), revision: next }
+    if (!created && !operator) {
+      const status = await checkPre0016Destination(client, path)
+      if (status !== "clear") {
+        onRefused?.(status === "conflict" ? "conflict" : "no_authority")
+        return null
+      }
+    }
+    return { admission: registerStartupBoardAdmission(tx), revision: await prepareInitialBoardGrant(tx, path, client) }
   }
   if (operator) throw new Error("Legacy enrollment cannot replace an existing authority revision")
-  // A committed journal may be recovered, but arbitrary database bytes never
-  // manufacture the independently retained current marker.
-  if (!await publishCommittedMarker(path, revision) || !await boardGrantStillCurrent(tx, revision, path)) return null
-  const next = randomUUID()
-  await prepareGrantMarker(path, next)
-  await tx.execute({ sql: "UPDATE board_access_epoch SET revision = ? WHERE singleton = 1 AND revision = ?", args: [next,revision] })
-  return { admission: registerStartupBoardAdmission(tx), revision: next }
+  // A committed journal may be recovered, or a pre-0016 local database restored
+  // before backups included the marker may re-enroll when no conflicting file exists.
+  const currentMatched = await publishCommittedMarker(path, revision) && await boardGrantStillCurrent(tx, revision, path)
+  if (!currentMatched) {
+    const status = await checkPre0016Destination(client, path)
+    if (status !== "clear") {
+      onRefused?.(status === "conflict" ? "conflict" : "no_authority")
+      return null
+    }
+  }
+  return rotateStartupBoardGrant(client, tx, path, revision)
 }
 
 /** Called only by exclusive creation or independently verified offline operator enrollment. */
-export async function prepareInitialBoardGrant(tx, markerPath) {
+export async function prepareInitialBoardGrant(tx, markerPath, client) {
   if (await databaseRevision(tx)) throw new Error("Board continuity is already enrolled")
   rejectSymlinkPath(markerPath)
   if (lstatSync(markerPath, { throwIfNoEntry: false })) throw new Error("Board marker destination already exists")
-  const directory = pendingDirectory(markerPath)
-  rejectSymlinkPath(directory)
-  if (lstatSync(directory, { throwIfNoEntry: false }) && (await readdir(directory)).length) throw new Error("Unresolved Board journal prevents initial enrollment")
+  const pendingState = await inspectPendingDirectory(markerPath)
+  if (pendingState !== "missing" && pendingState !== "empty") throw new Error("Unresolved Board journal prevents initial enrollment")
   const revision = randomUUID()
   await prepareGrantMarker(markerPath, revision)
   try {
     await tx.execute({ sql: "INSERT INTO board_access_epoch(singleton, revision) VALUES (1, ?)", args: [revision] })
+    registerPreparedGrantMarker(tx, pendingFile(markerPath, revision), revision, client)
     return revision
   } catch (error) {
     await rm(pendingFile(markerPath, revision), { force: true }).catch(() => {})

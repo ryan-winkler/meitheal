@@ -214,8 +214,20 @@ export async function applyStartupBoardSchema(client, tx, prepareRuntime, { oper
     const ready = revision && await publishCommittedMarker(path, revision) && await boardGrantStillCurrent(tx, revision, path)
     return { applied, state: ready ? "ready" : "continuity_locked", pending: [], revision: ready ? revision : null }
   }
-  const transition = await admitStartupBoardTransition(client, tx, operatorAdmission)
-  if (!transition) return { applied, state: "continuity_locked", pending: [ORDINARY_BOARD_MIGRATION], revision: null }
+  let refusalReason = null
+  const transition = await admitStartupBoardTransition(client, tx, operatorAdmission, reason => {
+    refusalReason = reason
+  })
+  if (!transition) {
+    if (refusalReason !== "conflict") {
+      await tx.execute({
+        sql: "INSERT OR IGNORE INTO main.app_settings (key, value, updated_at) VALUES ('continuity_auto_enroll_blocked', '1', ?)",
+        args: [Date.now()],
+      })
+    }
+    return { applied, state: "continuity_locked", pending: [ORDINARY_BOARD_MIGRATION], revision: null }
+  }
+  await tx.execute("DELETE FROM main.app_settings WHERE key = 'continuity_auto_enroll_blocked'")
   await applyOrdinaryBoardMigration(tx, transition.admission)
   applied.push(ORDINARY_BOARD_MIGRATION)
   if (await applyCustomBoardKeysMigration(tx)) applied.push(CUSTOM_BOARD_KEYS_MIGRATION)

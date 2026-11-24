@@ -30,3 +30,4 @@
 - [Trusted Board continuity at startup and recovery](0026-board-continuity-enrollment.md) - First enrollment, current operator custody and fail-closed recovery.
 - [ADR 0028: Sandboxed Plugin Bounded Context and Extension Contract](0028-plugin-bounded-context-and-sandbox.md) - Defines the dedicated plugins bounded context, dual-layer browser sandbox, server HTTP gateway, and permission model.
 - [ADR 0029: Unified Task Experience, Hierarchy Boundaries, and Scoring Normalization](0029-unified-task-experience-and-scoring.md) - Defines canonical Epic/Story/Task hierarchy limits, shared editor shells, Markdown preservation, RICE percent scaling, board-scoped custom fields, and manual ordering invariants.
+- [ADR 0030: Home Assistant Backup and Pre-0016 Upgrade Continuity](0030-home-assistant-backup-and-upgrade-continuity.md) - Includes the committed Board grant marker in Home Assistant cold backups and auto-enrolls pre-0016 local upgrades without conflicting markers.
