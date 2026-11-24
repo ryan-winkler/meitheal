@@ -18,13 +18,23 @@ function rejectSymlinkPath(path) {
   }
 }
 
-/** @type {Map<string, { identity: string, revision: string | null }>} */
+/** @type {Map<string, { stats: import("node:fs").BigIntStats, revision: string | null }>} */
 const markerReads = new Map()
 const MARKER_SETTLED_MS = 1_000
 
-/** @param {import("node:fs").BigIntStats} stats */
-function markerIdentity(stats) {
-  return `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeNs}:${stats.ctimeNs}:${stats.birthtimeNs}`
+/**
+ * @param {import("node:fs").BigIntStats} a
+ * @param {import("node:fs").BigIntStats} b
+ */
+function sameMarkerStats(a, b) {
+  return (
+    a.dev === b.dev
+    && a.ino === b.ino
+    && a.size === b.size
+    && a.mtimeNs === b.mtimeNs
+    && a.ctimeNs === b.ctimeNs
+    && a.birthtimeNs === b.birthtimeNs
+  )
 }
 
 export async function readBoardGrantRevision(path = boardGrantPath) {
@@ -34,9 +44,8 @@ export async function readBoardGrantRevision(path = boardGrantPath) {
     // in-place change moves its change time. Only then reuse the parsed epoch.
     const current = lstatSync(path, { bigint: true, throwIfNoEntry: false })
     if (!current?.isFile() || current.size > 160n) return null
-    const identity = markerIdentity(current)
     const known = markerReads.get(path)
-    if (known?.identity === identity) return known.revision
+    if (known && sameMarkerStats(known.stats, current)) return known.revision
     // The marker is a bounded local file. Read the opened descriptor without
     // queueing each stat, read and close separately on the I/O worker pool.
     const file = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
@@ -52,7 +61,7 @@ export async function readBoardGrantRevision(path = boardGrantPath) {
       // before opening. File times can be coarser than successive writes, so a
       // marker changed within the last second is always read again.
       const settled = Date.now() - Number(current.ctimeMs) > MARKER_SETTLED_MS
-      if (settled && markerIdentity(fstatSync(file, { bigint: true })) === identity) markerReads.set(path, { identity, revision })
+      if (settled && sameMarkerStats(fstatSync(file, { bigint: true }), current)) markerReads.set(path, { stats: current, revision })
       else markerReads.delete(path)
       return revision
     } finally { closeSync(file) }

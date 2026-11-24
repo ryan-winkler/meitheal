@@ -124,10 +124,12 @@ export async function searchMeithealCatalog(
 
   const canDirectory =
     scope.principal.kind === "ha_user" || scope.principal.kind === "local_operator"
-  const accessibleBoards =
-    canDirectory && (options.scope === "all" || options.scope === "views" || options.scope === "tasks")
-      ? await new BoardRepository(client).findDirectory(scope.principal)
-      : []
+  let accessibleBoardsPromise: Promise<Awaited<ReturnType<BoardRepository["findDirectory"]>>> | undefined
+  const getAccessibleBoards = () => {
+    if (!canDirectory) return Promise.resolve([])
+    accessibleBoardsPromise ??= new BoardRepository(client).findDirectory(scope.principal)
+    return accessibleBoardsPromise
+  }
 
   if (options.scope === "all" || options.scope === "tasks") {
     const searchOptions: Parameters<typeof taskRepo.searchCatalog>[0] = {
@@ -148,10 +150,11 @@ export async function searchMeithealCatalog(
 
     // When the query matches another accessible Board's key (e.g. "GRD" or "GRD-1"),
     // search that Board with its own verified BoardScope so ticket-key lookup works globally.
-    if (options.query && accessibleBoards.length > 0 && taskItems.length < options.limit) {
+    if (options.query && canDirectory && taskItems.length < options.limit) {
       const normalizedQuery = options.query.trim().toUpperCase()
       const keyPrefix = /^([A-Z][A-Z0-9]{1,9})(?:-\d*)?$/.exec(normalizedQuery)?.[1]
-      if (keyPrefix) {
+      const accessibleBoards = keyPrefix ? await getAccessibleBoards() : []
+      if (keyPrefix && accessibleBoards.length > 0) {
         const otherBoards = accessibleBoards.filter(
           (board) =>
             board.id !== scope.boardId &&
@@ -195,6 +198,7 @@ export async function searchMeithealCatalog(
   }
 
   if (options.scope === "all" || options.scope === "views") {
+    const accessibleBoards = canDirectory ? await getAccessibleBoards() : []
     if (accessibleBoards.length > 0) {
       const needle = options.query.trim().toLowerCase()
       const boardItems: SearchResultItem[] = accessibleBoards

@@ -55,6 +55,7 @@ import { openTaskDependencies } from "./task-dependencies"
 
 const notifPrefsCache = new WeakMap<object, { token: string; rawValue: string | null }>()
 const defaultAssigneeCache = new WeakMap<object, { token: string; byBoard: Map<string, string | null> }>()
+const commentsPresenceCache = new WeakMap<object, { token: string; hasComments: boolean }>()
 
 const taskHistoryPredicate = "(feed_action IS NULL OR field <> 'activity')"
 const openStatusPredicate = `lower(status) NOT IN (${CLOSED_TASK_STATUSES.map(() => "?").join(", ")})`
@@ -603,11 +604,24 @@ export class TaskRepository {
   }
 
   private normalizeTaskRows(rows: readonly unknown[]): TaskRow[] {
-    return rows.map(value => {
-      const row = value as TaskRow
-      const key = typeof row.ticket_ref === "string" ? row.ticket_ref : row.ticket_number == null ? null : `${scopeBoardAccess(this.scope).ticketPrefix}-${row.ticket_number}`
-      return { ...row, ticket_ref: key, ticket_key: key }
-    })
+    const out = new Array<TaskRow>(rows.length)
+    const fallbackPrefix = scopeBoardAccess(this.scope).ticketPrefix
+    for (let i = 0; i < rows.length; i += 1) {
+      const row = rows[i] as TaskRow
+      const key = typeof row.ticket_ref === "string"
+        ? row.ticket_ref
+        : row.ticket_number == null
+          ? null
+          : `${fallbackPrefix}-${row.ticket_number}`
+      if (Object.isExtensible(row)) {
+        row.ticket_ref = key
+        row.ticket_key = key
+        out[i] = row
+      } else {
+        out[i] = { ...row, ticket_ref: key, ticket_key: key }
+      }
+    }
+    return out
   }
 
   private async effectiveTaskPlacement(reader: Pick<Client, "execute">, task: Record<string, unknown>) {
@@ -1443,6 +1457,19 @@ export class TaskRepository {
     return rows.map(row => ({ id: row.id, title: row.title, ticket_key: typeof row.ticket_ref === "string" ? row.ticket_ref : null }))
   }
 
+  private async hasAnyComments(): Promise<boolean> {
+    const state = localReaderCacheToken(this.client)
+    if (!state) return true
+    const cached = commentsPresenceCache.get(state.owner)
+    if (cached?.token === state.token) return cached.hasComments
+    const result = await this.client.execute("SELECT 1 FROM comments LIMIT 1")
+    const hasComments = result.rows.length > 0
+    if (localReaderCacheToken(this.client)?.token === state.token) {
+      commentsPresenceCache.set(state.owner, { token: state.token, hasComments })
+    }
+    return hasComments
+  }
+
   private async searchCatalogWithOperation(opts: TaskCatalogOptions, operation: "read" | "search"): Promise<TaskCatalogRow[]> {
     const query = (opts.query ?? "").trim().toLowerCase()
     const fields = new Set((opts.fields ?? ["id", "title", "description", "labels", "custom_fields", "comments"])
@@ -1488,11 +1515,12 @@ export class TaskRepository {
 
     const parsedTicket = this.ticketNumberForScope(query) ?? (/^[0-9]+$/.test(query) ? Number(query) : 0)
     const ticket = Number.isSafeInteger(parsedTicket) && parsedTicket > 0 ? parsedTicket : null
+    const hasCommentsField = fields.has("comments") && (await this.hasAnyComments())
     const selected = (field: string, sql: string) => fields.has(field) ? sql : "0"
     // INSTR treats percent, underscore and backslash literally. The needle and
     // the stored field keep their existing JavaScript/SQLite case behavior.
     const position = (column: string) => `instr(lower(coalesce(${column}, '')), needle.value)`
-    const commentMatch = `c.task_id = tasks.id AND ${position("c.content")} > 0`
+    const commentMatch = `c.task_id = page.id AND ${position("c.content")} > 0`
     const snippet = (column: string) => {
       const start = `max(${position(column)} - 32, 1)`
       return `(CASE WHEN ${start} > 1 THEN '...' ELSE '' END) ||
@@ -1500,63 +1528,74 @@ export class TaskRepository {
               (CASE WHEN length(${column}) >= ${start} + 174 THEN '...' ELSE '' END)`
     }
     const snippets = [
-      fields.has("description") ? `WHEN page.description_hit THEN ${snippet("tasks.description")}` : "",
-      fields.has("comments") ? `WHEN page.comments_hit THEN (
+      fields.has("description") ? `WHEN page.description_hit THEN ${snippet("page.description")}` : "",
+      hasCommentsField ? `WHEN page.comments_hit THEN (
         SELECT ${snippet("c.content")} FROM comments c
         WHERE ${commentMatch} ORDER BY c.created_at DESC, c.id DESC LIMIT 1
       )` : "",
-      fields.has("custom_fields") ? `WHEN page.custom_fields_hit THEN ${snippet("tasks.custom_fields")}` : "",
-      fields.has("labels") ? `WHEN page.labels_hit THEN ${snippet("tasks.labels")}` : "",
+      fields.has("custom_fields") ? `WHEN page.custom_fields_hit THEN ${snippet("page.custom_fields")}` : "",
+      fields.has("labels") ? `WHEN page.labels_hit THEN ${snippet("page.labels")}` : "",
     ].filter(Boolean)
     const excerpt = snippets.length ? `CASE ${snippets.join("\n")} END` : "NULL"
     const orderBy = opts.sort === "updated" ? "" : "score DESC, "
 
-    const hasCommentsField = fields.has("comments")
     const useLikeFastPath = !query.includes("\0") && query.length <= 500
     const searchQuery = useLikeFastPath
       ? (() => {
           const escaped = query.replace(/[\\%_]/g, "\\$&")
+          const likeEsc = escaped === query ? "" : " ESCAPE '\\'"
           const likeAny = `%${escaped}%`
           const likePrefix = `${escaped}%`
-          const hasDigit = /\d/.test(query) ? 1 : 0
+          const hasDigit = /\d/.test(query)
           const codepointLen = [...query].length
           const isScopedStorage = storageBoardId(this.scope) !== null
-          const canMatchTicketRef = isScopedStorage || /^[a-z0-9-]+$/i.test(query) ? 1 : 0
+          const canMatchTicketRef = isScopedStorage || /^[a-z0-9-]+$/i.test(query)
+          const emptyLabelsMatch = "[]".includes(query)
+          const emptyCustomFieldsMatch = "{}".includes(query)
           const fastUpdatedAt = `CASE WHEN typeof(updated_at) = 'integer' AND updated_at >= 0 AND updated_at <= 9007199254740991 THEN updated_at ELSE ${taskTimestampMs("updated_at")} END`
-          const refHitSql = selected("id", "needle.can_match_ref AND tasks.ticket_ref IS NOT NULL AND tasks.ticket_ref <> '' AND tasks.ticket_ref LIKE needle.like_any ESCAPE '\\'")
-          const numHitSql = selected("id", "needle.has_digit AND tasks.ticket_number IS NOT NULL AND instr(cast(tasks.ticket_number AS TEXT), needle.value) > 0")
-          const titleAtSql = selected("title", "CASE WHEN tasks.title LIKE needle.like_prefix ESCAPE '\\' THEN 1 WHEN tasks.title LIKE needle.like_any ESCAPE '\\' THEN 2 ELSE 0 END")
-          const descriptionPred = "tasks.description IS NOT NULL AND tasks.description <> '' AND tasks.description LIKE needle.like_any ESCAPE '\\'"
-          const labelsPred = "tasks.labels IS NOT NULL AND tasks.labels <> '' AND (tasks.labels <> '[]' OR instr('[]', needle.value) > 0) AND tasks.labels LIKE needle.like_any ESCAPE '\\'"
-          const customFieldsPred = "tasks.custom_fields IS NOT NULL AND tasks.custom_fields <> '' AND (tasks.custom_fields <> '{}' OR instr('{}', needle.value) > 0) AND tasks.custom_fields LIKE needle.like_any ESCAPE '\\'"
+          const refHitSql = canMatchTicketRef
+            ? selected("id", `tasks.ticket_ref IS NOT NULL AND tasks.ticket_ref <> '' AND tasks.ticket_ref LIKE needle.like_any${likeEsc}`)
+            : "0"
+          const numHitSql = hasDigit
+            ? selected("id", "tasks.ticket_number IS NOT NULL AND instr(cast(tasks.ticket_number AS TEXT), needle.value) > 0")
+            : "0"
+          const titleAtSql = selected("title", `CASE WHEN tasks.title LIKE needle.like_prefix${likeEsc} THEN 1 WHEN tasks.title LIKE needle.like_any${likeEsc} THEN 2 ELSE 0 END`)
+          const descriptionPred = `tasks.description IS NOT NULL AND tasks.description <> '' AND tasks.description LIKE needle.like_any${likeEsc}`
+          const labelsPred = `tasks.labels IS NOT NULL AND tasks.labels <> ''${emptyLabelsMatch ? "" : " AND tasks.labels <> '[]'"} AND tasks.labels LIKE needle.like_any${likeEsc}`
+          const customFieldsPred = `tasks.custom_fields IS NOT NULL AND tasks.custom_fields <> ''${emptyCustomFieldsMatch ? "" : " AND tasks.custom_fields <> '{}'"} AND tasks.custom_fields LIKE needle.like_any${likeEsc}`
           const commentProbe = hasCommentsField ? "((SELECT v FROM has_comments) AND tasks.id IN comment_hits)" : "0"
+          const ticketNumberHitSql = ticket !== null ? "coalesce(tasks.ticket_number = needle.ticket, 0) OR " : ""
           const matchClauses: string[] = []
-          if (fields.has("title")) matchClauses.push("tasks.title LIKE needle.like_any ESCAPE '\\'")
+          if (fields.has("title")) matchClauses.push(`tasks.title LIKE needle.like_any${likeEsc}`)
           if (fields.has("description")) matchClauses.push(`(${descriptionPred})`)
           if (fields.has("labels")) matchClauses.push(`(${labelsPred})`)
           if (fields.has("custom_fields")) matchClauses.push(`(${customFieldsPred})`)
           if (fields.has("id")) {
-            matchClauses.push(`tasks.id LIKE needle.like_any ESCAPE '\\' OR coalesce(tasks.ticket_number = needle.ticket, 0) OR (${refHitSql}) OR (${numHitSql})`)
+            matchClauses.push(`tasks.id LIKE needle.like_any${likeEsc} OR ${ticketNumberHitSql}(${refHitSql}) OR (${numHitSql})`)
           }
           if (hasCommentsField) matchClauses.push(commentProbe)
           const hitsWhere = [...conditions, matchClauses.length ? `(${matchClauses.join(" OR ")})` : "0"].join(" AND ")
-          const exactIdSql = selected("id", "(coalesce(tasks.ticket_number = needle.ticket, 0) OR (length(tasks.id) = needle.value_len AND tasks.id LIKE needle.like_any ESCAPE '\\'))")
+          const idExactExpr = "(length(tasks.id) = needle.value_len AND lower(tasks.id) = needle.value)"
+          const exactIdSql = selected("id", ticket !== null ? `(coalesce(tasks.ticket_number = needle.ticket, 0) OR ${idExactExpr})` : idExactExpr)
           const exactIdWithTitleSql = fields.has("title")
-            ? `(${EXACT_TASK_IDENTIFIER_SCORE} + (CASE WHEN tasks.title LIKE needle.like_any ESCAPE '\\' THEN 60 ELSE 0 END))`
+            ? `(${EXACT_TASK_IDENTIFIER_SCORE} + (CASE WHEN tasks.title LIKE needle.like_any${likeEsc} THEN 60 ELSE 0 END))`
             : `${EXACT_TASK_IDENTIFIER_SCORE}`
           const titleScoreSql = fields.has("title")
-            ? "CASE WHEN tasks.title LIKE needle.like_prefix ESCAPE '\\' THEN CASE WHEN length(tasks.title) = needle.value_len THEN 3060 ELSE 2060 END WHEN tasks.title LIKE needle.like_any ESCAPE '\\' THEN 1060 ELSE 1000 END"
+            ? `CASE WHEN tasks.title LIKE needle.like_prefix${likeEsc} THEN CASE WHEN length(tasks.title) = needle.value_len THEN 3060 ELSE 2060 END WHEN tasks.title LIKE needle.like_any${likeEsc} THEN 1060 ELSE 1000 END`
             : "1000"
+          const openBoostSql = opts.includeCompleted !== true && opts.includeArchived !== true
+            ? "6"
+            : "(tasks.status NOT IN ('complete', 'archived')) * 6"
           const commentCtes = hasCommentsField
             ? `comment_hits(task_id) AS MATERIALIZED (
               SELECT DISTINCT c.task_id FROM comments c CROSS JOIN needle
-              WHERE c.content LIKE needle.like_any ESCAPE '\\'
+              WHERE c.content LIKE needle.like_any${likeEsc}
             ),
             has_comments(v) AS MATERIALIZED (
               SELECT EXISTS(SELECT 1 FROM comment_hits)
             ),`
             : ""
-          return sourceSql(`needle(value, value_len, ticket, like_any, like_prefix, has_digit, can_match_ref) AS (VALUES (?, ?, ?, ?, ?, ?, ?)),
+          return sourceSql(`needle(value, value_len, ticket, like_any, like_prefix) AS (VALUES (?, ?, ?, ?, ?)),
             ${commentCtes}
             top_hits AS MATERIALIZED (
               SELECT tasks.id, tasks.priority, ${fastUpdatedAt} AS updated_at_ms,
@@ -1565,7 +1604,7 @@ export class TaskRepository {
                  + (${selected("labels", labelsPred)}) * 18
                  + (${selected("custom_fields", customFieldsPred)}) * 15
                  + (${selected("comments", commentProbe)}) * 12
-                 + (tasks.status NOT IN ('complete', 'archived')) * 6) AS score
+                 + ${openBoostSql}) AS score
               FROM scoped_task_records AS tasks CROSS JOIN needle WHERE ${hitsWhere}
               ORDER BY ${orderBy}updated_at_ms DESC, tasks.priority ASC, tasks.id ASC
               LIMIT ?
@@ -1573,21 +1612,22 @@ export class TaskRepository {
             page AS MATERIALIZED (
               SELECT top_hits.id, tasks.ticket_number, tasks.ticket_ref, tasks.title, tasks.status,
                 top_hits.priority, tasks.task_kind, tasks.deferred_at,
+                tasks.description, tasks.labels, tasks.custom_fields,
                 top_hits.updated_at_ms, top_hits.score,
                 (${exactIdSql}) AS exact_id,
-                (${selected("id", "tasks.id LIKE needle.like_any ESCAPE '\\'")} OR (${refHitSql}) OR (${numHitSql})) AS id_hit,
+                (${selected("id", `tasks.id LIKE needle.like_any${likeEsc}`)} OR (${refHitSql}) OR (${numHitSql})) AS id_hit,
                 ${titleAtSql} AS title_at,
                 (${selected("description", descriptionPred)}) AS description_hit,
                 (${selected("labels", labelsPred)}) AS labels_hit,
                 (${selected("custom_fields", customFieldsPred)}) AS custom_fields_hit,
                 (${selected("comments", commentProbe)}) AS comments_hit
-              FROM top_hits JOIN scoped_task_records AS tasks ON tasks.id = top_hits.id CROSS JOIN needle
+              FROM top_hits CROSS JOIN scoped_task_records AS tasks ON tasks.id = top_hits.id CROSS JOIN needle
             )
             SELECT page.id, page.ticket_number, page.ticket_ref, page.title, page.status, page.priority, page.task_kind, page.deferred_at,
               page.score, page.id_hit, page.exact_id, page.title_at,
               page.description_hit, page.labels_hit, page.custom_fields_hit, page.comments_hit, ${excerpt} AS excerpt
-            FROM page JOIN tasks ON tasks.id = page.id CROSS JOIN needle
-            ORDER BY ${orderBy}page.updated_at_ms DESC, page.priority ASC, page.id ASC`, [query, codepointLen, ticket, likeAny, likePrefix, hasDigit, canMatchTicketRef, ...args, limit])
+            FROM page CROSS JOIN needle
+            ORDER BY ${orderBy}page.updated_at_ms DESC, page.priority ASC, page.id ASC`, [query, codepointLen, ticket, likeAny, likePrefix, ...args, limit])
         })()
       : sourceSql(`needle(value, ticket) AS (VALUES (?, ?)),
             ${hasCommentsField ? `comment_hits(task_id) AS MATERIALIZED (
@@ -1596,6 +1636,7 @@ export class TaskRepository {
             ),` : ""}
             hits AS MATERIALIZED (
               SELECT tasks.id, tasks.ticket_number, tasks.ticket_ref, tasks.title, tasks.status, tasks.priority, tasks.task_kind, tasks.deferred_at,
+                tasks.description, tasks.labels, tasks.custom_fields,
                 ${updatedAt} AS updated_at_ms,
                 ${selected("id", `(coalesce(length(tasks.id) = length(needle.value), 0) AND lower(tasks.id) = needle.value) OR coalesce(tasks.ticket_number = needle.ticket, 0)`)} AS exact_id,
                 ${selected("id", `${position("tasks.id")} > 0 OR
@@ -1626,7 +1667,7 @@ export class TaskRepository {
             SELECT page.id, page.ticket_number, page.ticket_ref, page.title, page.status, page.priority, page.task_kind, page.deferred_at,
               page.score, page.id_hit, page.exact_id, page.title_at,
               page.description_hit, page.labels_hit, page.custom_fields_hit, page.comments_hit, ${excerpt} AS excerpt
-            FROM page JOIN tasks ON tasks.id = page.id CROSS JOIN needle
+            FROM page CROSS JOIN needle
             ORDER BY ${orderBy}page.updated_at_ms DESC, page.priority ASC, page.id ASC`, [query, ticket, ...args, limit])
     const search = scopedTaskRead(this.scope, searchQuery, "with", "search")
     const result = await this.forOperation(operation).execute(tagTaskProjectionRead(search, "task-search"))
@@ -2144,7 +2185,7 @@ export class TaskRepository {
     targetLaneId?: string,
     integrationContext?: IntegrationScope,
   ): Promise<
-    { ok: true; task: TaskRow; previousStatus?: string; successor?: RecurrenceSuccessor; assignmentEventId?: string }
+    { ok: true; task: TaskRow; previousStatus?: string; successor?: RecurrenceSuccessor; assignmentEventId?: string; hasOpenChildren?: boolean }
     | { ok: false; errorCode: "unavailable"; reason?: "routine-date" }
     | { ok: false; errorCode: "assignee_mismatch" }
     | { ok: false; errorCode: "checklist_conflict"; checklists: string | null }
@@ -2258,6 +2299,7 @@ export class TaskRepository {
     let previousStatus: string
     let recurrence: RecurrenceOutcome
     let assignmentEventId: string | undefined
+    let hasOpenChildren: boolean | undefined
     {
       const repo = this
       const steps = function* (): Generator<
@@ -2287,9 +2329,19 @@ export class TaskRepository {
             else yield [sql`INSERT INTO board_task_planning(task_id, area_id, project_id, goal_id) VALUES (${id}, ${area as InValue}, ${project as InValue}, ${goal as InValue})
               ON CONFLICT(task_id) DO UPDATE SET area_id = excluded.area_id, project_id = excluded.project_id, goal_id = excluded.goal_id`]
           }
-          const [projection] = yield [scopedTaskRead(repo.scope, sql`SELECT * FROM scoped_tasks AS tasks WHERE id = ${id}`)]
-          if (!projection?.rows[0]) throw new BoardOperationError("unavailable")
-          writeResults[writeIndex] = projection
+          if (completing && !existingWriter) {
+            const [projection, openChildrenProbe] = yield [
+              scopedTaskRead(repo.scope, sql`SELECT * FROM scoped_tasks AS tasks WHERE id = ${id}`),
+              sql`SELECT 1 FROM tasks WHERE ${taskOwnedBy(repo.scope)} AND parent_id = ${id} AND status != ${STATUS.COMPLETE} LIMIT 1`,
+            ]
+            if (!projection?.rows[0]) throw new BoardOperationError("unavailable")
+            writeResults[writeIndex] = projection
+            hasOpenChildren = Boolean(openChildrenProbe?.rows.length)
+          } else {
+            const [projection] = yield [scopedTaskRead(repo.scope, sql`SELECT * FROM scoped_tasks AS tasks WHERE id = ${id}`)]
+            if (!projection?.rows[0]) throw new BoardOperationError("unavailable")
+            writeResults[writeIndex] = projection
+          }
         }
         return writeResults
       }
@@ -2427,6 +2479,7 @@ export class TaskRepository {
       ...(typeof fields.status === "string" ? { previousStatus } : {}),
       ...(successor ? { successor } : {}),
       ...(assignmentEventId ? { assignmentEventId } : {}),
+      ...(hasOpenChildren !== undefined ? { hasOpenChildren } : {}),
     }
 
     if (assigneeIndex >= 0 && results[assigneeIndex]?.rows.length) {

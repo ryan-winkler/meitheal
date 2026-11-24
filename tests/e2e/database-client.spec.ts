@@ -1,10 +1,12 @@
 import { execFile } from "node:child_process"
 import { once } from "node:events"
-import { mkdtemp, rm } from "node:fs/promises"
+import { copyFile, mkdtemp, rm } from "node:fs/promises"
 import { createServer } from "node:http"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
+import { setTimeout as sleepMs } from "node:timers/promises"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { promisify } from "node:util"
 import { expect, test } from "@playwright/test"
@@ -700,6 +702,55 @@ test("SELECT classification ignores special identifiers, refreshes renamed wildc
     expect(batchLikeExact?.rows).toEqual([{ id: "t-1" }])
   } finally {
     other.close()
+    client.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("writable file connections keep synchronous=FULL, set wal_autocheckpoint=4000, and checkpoint PASSIVE when idle", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-sqlite-wal-checkpoint-"))
+  const dbPath = join(directory, "wal-idle.db")
+  const client = openDatabase(pathToFileURL(dbPath).href)
+  try {
+    await client.execute("PRAGMA journal_mode=WAL")
+    expect((await client.execute("PRAGMA synchronous")).rows[0]?.[0]).toBe(2)
+    expect((await client.execute("PRAGMA wal_autocheckpoint")).rows[0]?.[0]).toBe(4000)
+    await client.execute("CREATE TABLE wal_probe(id INTEGER PRIMARY KEY, body TEXT NOT NULL)")
+
+    for (let i = 1; i <= 7; i += 1) {
+      await client.batch([{ sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "x".repeat(512)] }], "write")
+    }
+
+    await expect.poll(async () => {
+      const mainCopy = join(directory, "main-after-idle.db")
+      await copyFile(dbPath, mainCopy)
+      const probe = new DatabaseSync(mainCopy, { readOnly: true })
+      try {
+        const table = probe.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' AND name='wal_probe'").get()
+        if (!table) return 0
+        return Number((probe.prepare("SELECT COUNT(*) AS count FROM wal_probe").get() as { count?: unknown })?.count ?? 0)
+      } finally {
+        probe.close()
+      }
+    }, { intervals: [40, 80, 120], timeout: 2_000 }).toBe(7)
+
+    await client.execute("PRAGMA wal_autocheckpoint=0")
+    expect((await client.execute("PRAGMA wal_autocheckpoint")).rows[0]?.[0]).toBe(0)
+    for (let i = 8; i <= 15; i += 1) {
+      await client.batch([{ sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "y".repeat(512)] }], "write")
+    }
+    await sleepMs(180)
+
+    const disabledCopy = join(directory, "main-after-disable.db")
+    await copyFile(dbPath, disabledCopy)
+    const disabledProbe = new DatabaseSync(disabledCopy, { readOnly: true })
+    try {
+      expect(Number((disabledProbe.prepare("SELECT COUNT(*) AS count FROM wal_probe").get() as { count?: unknown })?.count ?? 0)).toBe(7)
+    } finally {
+      disabledProbe.close()
+    }
+    expect(Number((await client.execute("SELECT COUNT(*) AS count FROM wal_probe")).rows[0]?.count ?? 0)).toBe(15)
+  } finally {
     client.close()
     await rm(directory, { recursive: true, force: true })
   }

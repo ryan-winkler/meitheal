@@ -228,7 +228,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
 <html lang={locale} dir="ltr" data-workspace-scope={workspaceScope} data-custom-theme-admin={canManageSystemSettings(Astro.request, Astro.locals) ? "" : undefined} data-plugins-active={hasActivePlugins ? "1" : undefined}>
   <head>
     {boardContext && <><meta name="meitheal-work-board" content={boardContext.boardId} /><meta name="meitheal-work-session" content={boardContext.session} /><meta name="meitheal-work-actor" content={boardContext.actorKey} /><meta name="meitheal-work-board-name" content={boardContext.boardName} />{layoutTaskCreate !== undefined && <meta name="meitheal-task-create" content={String(layoutTaskCreate)} />}{layoutTaskActions && <meta name="meitheal-task-actions" content={JSON.stringify(layoutTaskActions)} />}</>}
-    <CachedHtmlSlot cacheKey={headCacheKey}>
+    <CachedHtmlSlot cacheKey={headCacheKey} asBytes={true}>
     <!-- Scroll-lock guard: prevent external tools from locking body scroll (P0) -->
     <script is:inline>
       (function () {
@@ -733,7 +733,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     >
     <PwaInstallBanner locale={locale} />
     {!privatePageShell && <div class="layout-navigation" transition:persist="sidebar">
-      <CachedHtmlSlot cacheKey={sidebarCacheKey}><Sidebar locale={locale} workNavigation={workNavigation} /></CachedHtmlSlot>
+      <CachedHtmlSlot cacheKey={sidebarCacheKey} asBytes={true}><Sidebar locale={locale} workNavigation={workNavigation} /></CachedHtmlSlot>
     </div>}
 
     <div class="main-content" style={privatePageShell ? "margin-inline-start: 0" : undefined}>
@@ -768,6 +768,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     </div>
 
     <!-- PRA-16: Mobile bottom tab bar — thumb-zone navigation for HA Companion App -->
+    <CachedHtmlSlot cacheKey={`mobile-tabs-v1:${mobileLinks?.dashboard ?? ""}:${mobileLinks?.today ?? ""}:${mobileTaskHref}:${mobileCalendarHref}`} asBytes={true}>
     <nav class="mobile-tab-bar" id="mobile-tab-bar" aria-label="Mobile navigation">
       <a href={mobileLinks?.dashboard ?? "/?view=dashboard"} class="mobile-tab-bar__item" data-page="dashboard">
         <span class="mobile-tab-bar__icon" aria-hidden="true"><Icon name="home" size={20} sprite={true} /></span>
@@ -848,6 +849,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         window.__meithealUpdateMobileTabBar();
       })();
     </script>
+    </CachedHtmlSlot>
 
     <!-- Unified Toast & Growler Region (single root mount) -->
     <ToastRegion locale={locale} />
@@ -896,7 +898,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       }
     </script>
 
-    <CachedHtmlSlot cacheKey={bottomChromeCacheKey}>{!privatePageShell && <>
+    <CachedHtmlSlot cacheKey={bottomChromeCacheKey} asBytes={true}>{!privatePageShell && <>
       {!suppressHouseholdTaskModals && <>
         <NewTaskModal />
         <QuickAddDialog locale={locale} />
@@ -923,7 +925,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       window.__featureFlags = JSON.parse(featureFlagsJson);
     </script>
     <!-- Keyboard Shortcuts Modal (must be outside task-detail-overlay for visibility) -->
-    <CachedHtmlSlot cacheKey={`shortcut-v1:${locale}`}><div id="shortcut-modal" class="shortcut-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="shortcut-modal-title">
+    <CachedHtmlSlot cacheKey={`shortcut-v1:${locale}`} asBytes={true}><div id="shortcut-modal" class="shortcut-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="shortcut-modal-title">
       <div class="shortcut-modal-content">
         <div class="shortcut-modal-header">
           <h3 id="shortcut-modal-title"><Icon name="keyboard" size={18} sprite={true} />{t("settings.shortcut_modal_title", locale)}</h3>

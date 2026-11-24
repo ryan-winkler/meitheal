@@ -23,6 +23,7 @@ export {
   getProgressToNextLevel,
   getXpToNextLevel,
   checkAchievements,
+  recordTaskCompletionWithAchievements,
   getAllAchievements,
   getYearlyHeatmapData,
   ensureAchievementSchema,

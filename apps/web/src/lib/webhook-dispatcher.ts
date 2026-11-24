@@ -222,7 +222,6 @@ export async function dispatchTaskEvent(eventType: string, input: Record<string,
     // ── 2. HTTP Webhooks (Standalone mode) ──
     // P2.1: Cache webhook settings with TTL to avoid DB reads on every event
     const webhookSettings = await getCurrentWebhookSettings();
-    const profileFingerprint = JSON.stringify(webhookSettings)
 
     const subscribers: WebhookSubscriberConfig[] = [];
 
@@ -256,6 +255,7 @@ export async function dispatchTaskEvent(eventType: string, input: Record<string,
     }
 
     if (subscribers.length > 0) {
+      const profileFingerprint = JSON.stringify(webhookSettings)
       const event: DomainEvent = {
         eventId: eventId ?? crypto.randomUUID(),
         eventType,
@@ -319,10 +319,20 @@ export async function dispatchTaskEvent(eventType: string, input: Record<string,
     // ── 3. Outbound Sync (Todo + Calendar push) ──
     // Push task mutations to active sync targets (fire-and-forget).
     // Handles loop prevention and no-sync labels internally.
-    import("./sync-outbound").then(async ({ pushToActiveSyncs }) => {
-      if (!await originAllowed()) return
-      pushToActiveSyncs(eventType, payload, scope, deletion ?? undefined).catch(() => {});
-    }).catch(() => {});
+    if (["task.created", "task.updated", "task.completed", "task.deleted"].includes(eventType)) {
+      const destinations = await readWorkDestinations(getPersistenceClient())
+      const hasActiveSync = destinations?.bindings.some(binding =>
+        binding.enabled
+        && binding.destination.boardId === scope.boardId
+        && (binding.purpose === "todo.sync" || binding.purpose === "calendar.sync" || binding.purpose === "grocy.sync")
+      )
+      if (hasActiveSync) {
+        import("./sync-outbound").then(async ({ pushToActiveSyncs }) => {
+          if (!await originAllowed()) return
+          pushToActiveSyncs(eventType, payload, scope, deletion ?? undefined).catch(() => {});
+        }).catch(() => {});
+      }
+    }
   } catch (err) {
     logger.log("error", {
       event: "integration.webhook.failed",

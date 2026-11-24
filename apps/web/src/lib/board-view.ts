@@ -202,8 +202,18 @@ export async function admitBoardResponse(
     }
   }
   if (chunks !== undefined) {
-    const body = chunks.length === 0 ? new Uint8Array(0) : chunks.length === 1 ? chunks[0]! : Buffer.concat(chunks)
-    return new Response(body as BodyInit, {
+    const body: BodyInit = chunks.length === 0
+      ? new Uint8Array(0)
+      : new ReadableStream<Uint8Array>({
+          start(controller) {
+            for (let i = 0; i < chunks.length; i++) {
+              const chunk = chunks[i]
+              if (chunk && chunk.byteLength > 0) controller.enqueue(chunk)
+            }
+            controller.close()
+          },
+        })
+    return new Response(body, {
       status: response.status,
       statusText: response.statusText,
       headers: response.headers,

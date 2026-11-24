@@ -3,7 +3,7 @@
  * @domain ha
  * @bounded-context integration
  */
-export { getHAConnection, getHAConnectionStatus, getHAConfig, getHABaseUrl, closeHAConnection, getIngressEntry, onHAConnectionStatus, haRestFetch } from "./ha-connection"
+export { getHAConnection, getHAConfiguration, getHAConnectionStatus, getHAConfig, getHABaseUrl, closeHAConnection, getIngressEntry, onHAConnectionStatus, haRestFetch } from "./ha-connection"
 export type { HAConnectionState } from "./ha-connection"
 export { initEntitySubscription, waitForInitialEntityHydration, getEntityCacheDiagnostics, getAllEntities, getEntity, getEntitiesByDomain, getCalendarEntities, getTodoEntities, onEntityChange, stopEntitySubscription, resetEntityConnection } from "./ha-entities"
 export type { SlimHassEntity } from "./ha-entities"

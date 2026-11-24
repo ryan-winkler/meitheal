@@ -489,43 +489,71 @@ export async function getTodayTaskRows(
   const completionFilter = todayCompletionFilter(today, resolvedTimezone)
   const tasksQuery = {
     sql: `
-      totals AS (
-        SELECT COUNT(*) FILTER (WHERE ${completionFilter.sql}) AS completed_today,
-               COUNT(*) FILTER (
-                 WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND (${SCHEDULED_DATE_SQL} IS NULL OR ${SCHEDULED_DATE_SQL} = '')
-               ) AS open_unscheduled
-        FROM scoped_task_records AS tasks WHERE ${context.sql}
-      ),
-      open_candidates AS MATERIALIZED (
-        SELECT tasks.id
+      classified AS MATERIALIZED (
+        SELECT tasks.id,
+               tasks.rowid AS task_rowid,
+               CASE WHEN status = 'complete' THEN -2
+                    WHEN status = 'archived' OR deferred_at IS NOT NULL THEN -1
+                    WHEN ${SCHEDULED_DATE_SQL} IS NOT NULL AND ${SCHEDULED_DATE_SQL} <> '' THEN 2
+                    WHEN ? = 1 OR is_favorite NOT IN (0, '') OR framework_payload NOT IN ('{}', '') THEN 1
+                    ELSE 0 END AS open_state,
+               CASE WHEN status = 'complete' AND (${completionFilter.sql}) THEN 1 ELSE 0 END AS is_completed_today
         FROM scoped_task_records AS tasks
         WHERE ${context.sql}
-          AND status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL
-          AND (
-            ? = 1
-            OR (${SCHEDULED_DATE_SQL} IS NOT NULL AND ${SCHEDULED_DATE_SQL} <> '')
-            OR is_favorite NOT IN (0, '')
-            OR framework_payload NOT IN ('{}', '')
-          )
+      ),
+      totals AS MATERIALIZED (
+        SELECT COUNT(*) FILTER (WHERE is_completed_today = 1) AS completed_today,
+               COUNT(*) FILTER (WHERE open_state IN (0, 1)) AS open_unscheduled,
+               (
+                 SELECT COALESCE(
+                   json_group_array(json_object('id', id, 'title', title, 'ticket_key', ticket_key)),
+                   '[]'
+                 )
+                 FROM (
+                   SELECT c.id, tasks.title, tasks.ticket_ref AS ticket_key
+                   FROM classified AS c
+                   CROSS JOIN scoped_task_records AS tasks ON tasks.id = c.id
+                   WHERE c.is_completed_today = 1
+                   ORDER BY CASE WHEN typeof(tasks.updated_at) = 'text' AND tasks.updated_at NOT LIKE '%T%' AND tasks.updated_at NOT LIKE '%:%'
+                     THEN ? ELSE ${taskTimestampMs("tasks.updated_at")} END DESC, c.task_rowid DESC
+                   LIMIT 20
+                 )
+               ) AS completed_today_json
+        FROM classified
+      ),
+      open_candidates AS (
+        SELECT id
+        FROM classified
+        WHERE open_state >= 1
       )
-      SELECT ${TASK_VIEW_COLUMNS}, completed_today, open_unscheduled
+      SELECT ${TASK_VIEW_COLUMNS}, completed_today, open_unscheduled, completed_today_json
       FROM totals
       LEFT JOIN (
         SELECT scoped_tasks.*
         FROM open_candidates
-        JOIN scoped_tasks ON scoped_tasks.id = open_candidates.id
+        CROSS JOIN scoped_tasks ON scoped_tasks.id = open_candidates.id
       ) AS tasks ON 1 = 1
       ORDER BY tasks.created_at DESC, tasks.rowid DESC
     `,
-    args: [...completionFilter.args, ...context.args, ...context.args, includeUnscheduled ? 1 : 0],
+    args: [includeUnscheduled ? 1 : 0, ...completionFilter.args, ...context.args, completionFilter.firstInstant],
   }
   const overview = tagTodayRead(scopedTaskRead(scope, sourceSql(tasksQuery.sql, tasksQuery.args), "with"), "rows")
-  const [taskResult, completed] = await client.batch([overview, completedTodayQuery(scope, completionFilter, placement)], "read")
+  const taskResult = await client.execute(overview)
   const rows = taskResult?.rows ?? []
+  const completedTodayCount = Number(rows[0]?.completed_today ?? 0)
+  let completedRows: Record<string, unknown>[] = []
+  if (completedTodayCount > 0 && typeof rows[0]?.completed_today_json === "string") {
+    try {
+      const parsed: unknown = JSON.parse(rows[0].completed_today_json)
+      if (Array.isArray(parsed)) completedRows = parsed as Record<string, unknown>[]
+    } catch {
+      /* ignore malformed aggregate */
+    }
+  }
 
   return {
-    completedTasks: completedTodaySummaries(completed?.rows ?? []),
-    completedTodayCount: Number(rows[0]?.completed_today ?? 0),
+    completedTasks: completedRows.length ? completedTodaySummaries(completedRows as Row[]) : [],
+    completedTodayCount,
     openUnscheduledCount: Number(rows[0]?.open_unscheduled ?? 0),
     tasks: rows.filter(row => row.id !== null).map(row => toTaskViewItem(row as Record<string, unknown>, false, resolvedTimezone, now)),
   }

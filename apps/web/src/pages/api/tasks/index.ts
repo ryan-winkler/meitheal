@@ -37,6 +37,8 @@ import { dispatchTaskEvent, taskEventAuthorityHeaders } from "../../../lib/webho
 
 /** GET /api/tasks — list all tasks, POST /api/tasks — create a task */
 
+const jsonTextEncoder = new TextEncoder()
+
 export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async( context, scope) => {
   const { url, locals, request } = context
   try {
@@ -117,22 +119,34 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
   }
   const { tasks: rawTasks, total } = await repo.findAll(findOpts)
 
-  const tasks = rawTasks.map((r) => {
+  const tasks = new Array<Record<string, unknown>>(rawTasks.length)
+  for (let i = 0; i < rawTasks.length; i += 1) {
+    const r = rawTasks[i] as Record<string, unknown>
     const ticketNum = r.ticket_number != null ? Number(r.ticket_number) : null
-    return {
-      ...taskHttpProjection(r, scope.boardId),
+    const urgency = Number(r.urgency ?? 0)
+    const importance = Number(r.importance ?? 0)
+    const taskVersion = r.task_version !== undefined
+      ? r.task_version
+      : typeof r.updated_at === "number"
+        ? r.updated_at
+        : typeof r.updated_at === "string" && /^\d+$/.test(r.updated_at)
+          ? Number(r.updated_at)
+          : undefined
+    tasks[i] = {
       id: r.id,
-      ticket_number: ticketNum,
-      ticket_key: r.ticket_key ?? r.ticket_ref ?? formatTicketKey(ticketNum),
-      board_id: scope.boardId,
       title: r.title,
       description: r.description ?? "",
-      status: normalizeStatus(r.status),
+      status: normalizeStatus(r.status as string),
       priority: Number(r.priority ?? 3),
-      due_date: r.due_date ?? null,
-      labels: r.labels ? String(r.labels) : "[]",
       framework_payload: typeof r.framework_payload === "string" ? r.framework_payload : "{}",
       calendar_sync_state: r.calendar_sync_state ?? "pending",
+      created_at: r.created_at,
+      updated_at: r.updated_at,
+      task_version: taskVersion,
+      deferred_at: r.deferred_at,
+      due_date: r.due_date ?? null,
+      labels: r.labels ? String(r.labels) : "[]",
+      parent_id: Object.hasOwn(r, "public_parent_id") ? r.public_parent_id : r.parent_id,
       time_tracked: Number(r.time_tracked ?? 0),
       custom_fields: typeof r.custom_fields === "string" ? r.custom_fields : "{}",
       start_date: r.start_date ?? null,
@@ -142,31 +156,46 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
       is_favorite: Number(r.is_favorite ?? 0),
       is_promoted: Boolean(r.is_promoted),
       task_type: r.task_type ?? "task",
-      task_kind: r.task_kind ?? "standard_action",
+      summary: r.summary,
+      recurrence_rule: r.recurrence_rule,
+      recurrence_anchor: r.recurrence_anchor,
+      rotation_mode: r.rotation_mode,
+      nfc_tag_id: r.nfc_tag_id ?? null,
+      checklists: r.checklists,
+      reminder_at: r.reminder_at,
+      source_template_id: r.source_template_id,
+      routine_occurrence: r.routine_occurrence,
       assigned_to: r.assigned_to ?? null,
       kanban_position: r.kanban_position != null ? Number(r.kanban_position) : null,
-      nfc_tag_id: r.nfc_tag_id ?? null,
-      urgency: Number(r.urgency ?? 0),
-      importance: Number(r.importance ?? 0),
-      eisenhower_quadrant: deriveEisenhowerQuadrant(Number(r.urgency ?? 0), Number(r.importance ?? 0)),
+      task_kind: r.task_kind ?? "standard_action",
+      handoff_state: r.handoff_state,
+      time_block_start: r.time_block_start,
+      time_block_end: r.time_block_end,
+      urgency,
+      importance,
       eisenhower_override: Number(r.eisenhower_override ?? 0),
       effort_minutes: r.effort_minutes != null ? Number(r.effort_minutes) : null,
       effort_type: r.effort_type ?? null,
       blocked_by: r.blocked_by ?? null,
-      created_at: r.created_at,
-      updated_at: r.updated_at,
-      task_version: r.task_version,
-      deferred_at: r.deferred_at,
+      area_id: Object.hasOwn(r, "public_area_id") ? r.public_area_id : r.area_id,
+      project_id: Object.hasOwn(r, "public_project_id") ? r.public_project_id : r.project_id,
+      goal_id: Object.hasOwn(r, "public_goal_id") ? r.public_goal_id : r.goal_id,
+      ticket_number: ticketNum,
+      source: r.source,
+      created_by: r.created_by,
+      board_id: scope.boardId,
+      ticket_key: r.ticket_key ?? r.ticket_ref ?? formatTicketKey(ticketNum),
+      eisenhower_quadrant: deriveEisenhowerQuadrant(urgency, importance),
       deferral_revision: r.deferral_revision,
     }
-  })
+  }
 
-  const body = JSON.stringify({ tasks, total, limit, offset })
-  return new Response(body, {
+  const bytes = jsonTextEncoder.encode(JSON.stringify({ tasks, total, limit, offset }))
+  return new Response(bytes as BodyInit, {
     status: 200,
     headers: {
       "content-type": "application/json",
-      "content-length": String(Buffer.byteLength(body, "utf8")),
+      "content-length": String(bytes.byteLength),
       ...(findOpts.homeAssistantArea ? { "cache-control": "private, no-store" } : {}),
     },
   })

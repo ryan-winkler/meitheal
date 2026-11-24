@@ -1,4 +1,4 @@
-import type { BoardScope } from "@domains/tasks"
+import { BoardOperationError, canReadBoardAggregate, scopePermits, type BoardScope } from "@domains/tasks"
 import { gamificationClient, gamificationRead } from "./scoped-gamification"
 /**
  * Achievement Engine — Gamification Domain
@@ -24,7 +24,13 @@ import {
   getPersistenceClient,
 } from "@domains/tasks"
 
-import type { GamificationStats } from "./streak-tracker"
+import {
+  ensureGamificationSchema,
+  parseStatsRows,
+  statsDayKey,
+  statsQuery,
+  type GamificationStats,
+} from "./streak-tracker"
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -194,6 +200,75 @@ export async function ensureAchievementSchema(): Promise<void> { await ensureSch
  * @kcs Idempotent — already-unlocked achievements are skipped.
  * Called after every task completion via the gamification API.
  */
+export async function recordTaskCompletionWithAchievements(
+  scope: BoardScope,
+  points = 0,
+  now = new Date(),
+  timezone = "UTC",
+): Promise<{ stats: GamificationStats; achievements: AchievementCheckResult } | null> {
+  await ensureGamificationSchema()
+  const base = getPersistenceClient()
+  const client = await gamificationClient(scope, true)
+  const today = statsDayKey(now, 0, timezone)
+  const yesterday = statsDayKey(now, -1, timezone)
+  const insertStatement = {
+    sql: `INSERT INTO gamification_stats(board_id, date, completed_count, streak_count, points)
+          VALUES(?, ?, 1, 1 + MAX(0, COALESCE((SELECT streak_count FROM gamification_stats
+            WHERE board_id = ? AND date = ?), 0)), ?)
+          ON CONFLICT(board_id,date) DO UPDATE SET
+            completed_count = completed_count + 1,
+            points = points + excluded.points`,
+    args: [scope.boardId, today, scope.boardId, yesterday, points],
+  }
+  if (!scopePermits(scope, { resource: "task", action: "read" })) {
+    await client.execute(insertStatement)
+    return null
+  }
+  if (!await canReadBoardAggregate(base, scope)) {
+    await client.execute(insertStatement)
+    throw new BoardOperationError("unavailable")
+  }
+  const query = gamificationRead(scope, "SELECT id FROM board_achievements")
+  const [, agg, snapshot] = await client.batch([
+    insertStatement,
+    statsQuery(scope, today, yesterday),
+    query,
+  ], "write")
+  if (!await canReadBoardAggregate(base, scope)) throw new BoardOperationError("unavailable")
+  const stats = parseStatsRows((agg?.rows ?? []) as ReadonlyArray<Record<string, unknown>>)
+  const eligible = ACHIEVEMENTS.filter(achievement => CONDITIONS.get(achievement.id)?.(stats))
+  const observed = new Set((snapshot?.rows ?? []).map(row => String(row.id)))
+  if (eligible.every(achievement => observed.has(achievement.id))) {
+    return {
+      stats,
+      achievements: { newlyUnlocked: [], total: ACHIEVEMENTS.length, unlocked: observed.size },
+    }
+  }
+  const tx = await client.transaction("write")
+  try {
+    // Another completion may have awarded a candidate since the read.
+    const existing = await tx.execute(query)
+    const unlocked = new Set(existing.rows.map(row => String(row.id)))
+    const candidates = eligible.filter(achievement => !unlocked.has(achievement.id))
+    const unlockedAt = new Date().toISOString()
+    if (candidates.length) {
+      await tx.batch(candidates.map(achievement => ({
+        sql: "INSERT INTO gamification_achievements(board_id, id, unlocked_at) VALUES(?, ?, ?)",
+        args: [scope.boardId, achievement.id, unlockedAt],
+      })))
+    }
+    await tx.commit()
+    return {
+      stats,
+      achievements: {
+        newlyUnlocked: candidates.map(achievement => ({ ...achievement, unlockedAt })),
+        total: ACHIEVEMENTS.length,
+        unlocked: unlocked.size + candidates.length,
+      },
+    }
+  } finally { tx.close() }
+}
+
 export async function checkAchievements(
   scope: BoardScope,
   stats: GamificationStats,

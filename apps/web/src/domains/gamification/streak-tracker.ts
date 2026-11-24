@@ -62,7 +62,7 @@ export interface DailyRecord {
 }
 
 type DailyProgress = { currentStreak: number; points: number }
-function statsDayKey(now: Date, offset = 0, timezone = "UTC"): string {
+export function statsDayKey(now: Date, offset = 0, timezone = "UTC"): string {
   if (!timezone || timezone === "UTC") {
     if (offset === 0) return now.toISOString().slice(0, 10)
     const day = new Date(now)
@@ -95,7 +95,7 @@ async function readDailyProgress(scope: BoardScope, now: Date, timezone = "UTC")
 
 export async function ensureGamificationSchema(): Promise<void> { await ensureSchema() }
 
-function statsQuery(scope: BoardScope, today: string, yesterday: string) {
+export function statsQuery(scope: BoardScope, today: string, yesterday: string) {
   return gamificationRead(scope, {
     sql: `SELECT
             COALESCE(MAX(CASE WHEN date = ? THEN completed_count END), 0) AS today_completed,
@@ -109,7 +109,7 @@ function statsQuery(scope: BoardScope, today: string, yesterday: string) {
   })
 }
 
-function parseStatsRows(rows: ReadonlyArray<Record<string, unknown>>): GamificationStats {
+export function parseStatsRows(rows: ReadonlyArray<Record<string, unknown>>): GamificationStats {
   const row = rows[0] ?? {}
   const todayCompleted = row.today_streak != null ? Number(row.today_completed ?? 0) : 0
   const currentStreak = row.today_streak != null

@@ -53,6 +53,7 @@ const management = new Set<WorkAction>(["manage", "retire", "restore"])
 const ALL_GATED_FEATURES = ["organizer", "groups", "projects", "goals", "routines", "pillars"] as const
 const MAX_SNAPSHOT_ENTRIES = 256
 const snapshotReads = new WeakMap<object, Map<string, { generation: string; value: unknown }>>()
+type ReaderCacheToken = { owner: object; token: string }
 type PlacementPolicySnapshot = { invalid: boolean; policies: Array<Record<string, unknown>> }
 const placementSnapshotCache = new WeakMap<object, { token: string; entries: Map<string, PlacementPolicySnapshot> }>()
 
@@ -62,16 +63,17 @@ const placementSnapshotCache = new WeakMap<object, { token: string; entries: Map
  * schema or own writes change. Every caller still evaluates the complete
  * decision, the grant marker, the live epoch and the principal proof.
  */
-async function snapshotRead<T>(
+async function snapshotReadEntry<T>(
   db: Pick<Client, "execute">,
   principal: VerifiedPrincipal,
   key: string,
   read: () => Promise<T>,
-  useCache = true
-): Promise<T> {
-  if (!useCache || !principalProof(principal)) return read()
-  const state = localReaderCacheToken(db)
-  if (!state) return read()
+  useCache = true,
+  knownState?: ReaderCacheToken
+): Promise<{ value: T; hit: boolean }> {
+  if (!useCache || !principalProof(principal)) return { value: await read(), hit: false }
+  const state = knownState ?? localReaderCacheToken(db)
+  if (!state) return { value: await read(), hit: false }
   let values = snapshotReads.get(state.owner)
   if (!values) snapshotReads.set(state.owner, (values = new Map()))
   const cacheKey = `${principal.kind}\0${principal.id}\0${key}`
@@ -79,7 +81,7 @@ async function snapshotRead<T>(
   if (known?.generation === state.token) {
     values.delete(cacheKey)
     values.set(cacheKey, known)
-    return known.value as T
+    return { value: known.value as T, hit: true }
   }
   const value = await read()
   // Keep a result only if nothing changed while it was being read.
@@ -93,7 +95,7 @@ async function snapshotRead<T>(
   } else {
     values.delete(cacheKey)
   }
-  return value
+  return { value, hit: false }
 }
 
 function parsed(value: unknown): Record<string, unknown> | null {
@@ -178,19 +180,36 @@ function audienceAllows(row: Record<string, unknown>, principal: VerifiedPrincip
   }
 }
 
+async function allowedFeaturesEntry(
+  principal: VerifiedPrincipal,
+  db: Pick<Client, "execute">,
+  features: readonly string[],
+  useCache = true,
+  knownState?: ReaderCacheToken
+): Promise<{ rights: Set<string>; hit: boolean }> {
+  if (!features.length) return { rights: new Set(), hit: true }
+  const entry = await snapshotReadEntry(
+    db,
+    principal,
+    `features:${features.join(",")}`,
+    async () => {
+      const { rows } = await db.execute(joinSql(features.map(feature => sql`SELECT ${feature} AS feature,
+        ${featureAudienceAllowed(principal, feature)} AS allowed`), " UNION ALL "))
+      return rows.filter(row => row.allowed === 1).map(row => String(row.feature))
+    },
+    useCache,
+    knownState
+  )
+  return { rights: new Set(entry.value), hit: entry.hit }
+}
+
 async function allowedFeatures(
   principal: VerifiedPrincipal,
   db: Pick<Client, "execute">,
   features: readonly string[],
   useCache = true
 ): Promise<Set<string>> {
-  if (!features.length) return new Set()
-  const allowed = await snapshotRead(db, principal, `features:${features.join(",")}`, async () => {
-    const { rows } = await db.execute(joinSql(features.map(feature => sql`SELECT ${feature} AS feature,
-      ${featureAudienceAllowed(principal, feature)} AS allowed`), " UNION ALL "))
-    return rows.filter(row => row.allowed === 1).map(row => String(row.feature))
-  }, useCache)
-  return new Set(allowed)
+  return (await allowedFeaturesEntry(principal, db, features, useCache)).rights
 }
 
 export async function validateBoardFeature(
@@ -363,7 +382,7 @@ export class BoardAccessService {
     const proof = principalProof(principal)
     if (!proof) return { ok: false, errorCode: "stale" }
     const tokenState = useCache ? localReaderCacheToken(db) : undefined
-    const row = await snapshotRead(db, principal, `policy:${boardId}\0${revision}`, async () => {
+    const { value: row, hit: policyHit } = await snapshotReadEntry(db, principal, `policy:${boardId}\0${revision}`, async () => {
       const {
         rows: [policy]
       } = await db.execute(tagBoardPolicyRead(sql`SELECT board.id, board.name, board.ticket_prefix, board.state, board.revision, board.visibility, board.storage_encoding,
@@ -381,7 +400,9 @@ export class BoardAccessService {
           SELECT 1 FROM board_access_epoch WHERE singleton = 1 AND revision = ${revision}
         )`))
       return policy
-    }, useCache)
+    }, useCache, tokenState)
+    let executedInterveningQuery =
+      !policyHit || principal.kind === "agent" || principal.kind === "service"
     if (!row) return { ok: false, errorCode: "unavailable" }
     let role = typeof row.role === "string" ? row.role : null
     if (!role && principal.kind === "ha_user" && row.visibility === "shared") {
@@ -505,7 +526,14 @@ export class BoardAccessService {
     const uniqueFeatures = !existingScope || requestedFeatures.length <= 1
       ? requestedFeatures
       : [...new Set(requestedFeatures)]
-    const rights = await allowedFeatures(principal, db, uniqueFeatures, useCache)
+    const { rights, hit: featuresHit } = await allowedFeaturesEntry(
+      principal,
+      db,
+      uniqueFeatures,
+      useCache,
+      !executedInterveningQuery ? tokenState : undefined
+    )
+    if (!featuresHit) executedInterveningQuery = true
     const allowed = (intent: WorkOperation) => {
       if (intent.action === "search" && intent.resource !== "task") return false
       if (
@@ -562,7 +590,7 @@ export class BoardAccessService {
     }
     if (!operations.every(allowed) || row.audience_allowed !== 1 || !principalProof(principal))
       return { ok: false, errorCode: "denied" }
-    if (tokenState && localReaderCacheToken(db)?.token !== tokenState.token) {
+    if (tokenState && executedInterveningQuery && localReaderCacheToken(db)?.token !== tokenState.token) {
       return null
     }
     if (existingScope) {

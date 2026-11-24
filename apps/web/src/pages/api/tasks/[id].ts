@@ -590,8 +590,9 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
   // Notification preference guard
   const notifPrefs = await repo.getNotificationPreferences()
 
-  // F4/F5: Load callHAService once for all notification helpers
-  const haServicesImport = import("@domains/ha")
+  // F4/F5: Load callHAService only when a notification channel dispatches
+  let haServicesImport: Promise<typeof import("@domains/ha")> | undefined
+  const loadHaServices = () => (haServicesImport ??= import("@domains/ha"))
 
   // Helper: dispatch notification to configured channels
   interface DispatchOpts { isUrgent?: boolean; badgeCount?: number }
@@ -608,7 +609,7 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
   // Helper: dismiss mobile notifications
   async function dismissMobileNotification(notifTag: string) {
     if (!notifPrefs.channels.mobile_push || notifPrefs.mobileTargets.length === 0) return
-    const { callHAService } = await haServicesImport
+    const { callHAService } = await loadHaServices()
     for (const target of notifPrefs.mobileTargets) {
       const [domain, ...rest] = target.split(".")
       const service = rest.join(".")
@@ -701,7 +702,8 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     dismissMobileNotification(`meitheal_assigned_${resolvedId}`)
     dismissMobileNotification(`meitheal_due_${resolvedId}`)
     if (notifPrefs.channels.sidebar !== false) {
-      haServicesImport.then(({ callHAService }) => {
+      loadHaServices().then(async ({ callHAService, getHAConfiguration }) => {
+        if (!await getHAConfiguration()) return
         callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_urgent_${resolvedId}` }, undefined, { operationAllowed: () => notificationOperationAllowed(scope, "persistent_notification.dismiss", { resource: "task", action: "edit" }, resolvedId, undefined, updatedRow.task_version) }).catch(() => {})
         callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_assigned_${resolvedId}` }, undefined, { operationAllowed: () => notificationOperationAllowed(scope, "persistent_notification.dismiss", { resource: "task", action: "edit" }, resolvedId, undefined, updatedRow.task_version) }).catch(() => {})
         callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_due_${resolvedId}` }, undefined, { operationAllowed: () => notificationOperationAllowed(scope, "persistent_notification.dismiss", { resource: "task", action: "edit" }, resolvedId, undefined, updatedRow.task_version) }).catch(() => {})
@@ -712,18 +714,20 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
   if (newlyCompleted) {
     dispatchTaskEvent("task.completed", { ...taskPayload, completed_at: new Date().toISOString() }, requestId || undefined, undefined, undefined, authority, scope).catch(() => {})
     try {
-      const { isFeatureEnabled } = await import("../../../lib/feature-flags")
-      const [gamificationEnabled, confettiEnabled] = await Promise.all([
-        isFeatureEnabled("gamification"),
-        isFeatureEnabled("confetti"),
-      ])
-      if (gamificationEnabled) {
-        const { recordTaskCompletion, getXpForPriority, checkAchievements, getLevel } = await import("@domains/gamification")
+      const { getFeatureFlags } = await import("../../../lib/feature-flags")
+      const flags = await getFeatureFlags()
+      if (flags.gamification) {
+        const { recordTaskCompletionWithAchievements, getXpForPriority, getLevel } = await import("@domains/gamification")
         const xp = getXpForPriority(Number(updatedRow.priority ?? 3))
-        const stats = await recordTaskCompletion(scope, xp)
-        if (stats) {
-          const achievements = await checkAchievements(scope, stats)
-          taskPayload.gamification = { stats, xp, newAchievements: achievements.newlyUnlocked, level: getLevel(stats.totalPoints), confetti: confettiEnabled }
+        const completionStats = await recordTaskCompletionWithAchievements(scope, xp)
+        if (completionStats) {
+          taskPayload.gamification = {
+            stats: completionStats.stats,
+            xp,
+            newAchievements: completionStats.achievements.newlyUnlocked,
+            level: getLevel(completionStats.stats.totalPoints),
+            confetti: Boolean(flags.confetti),
+          }
         }
       }
     } catch {
@@ -740,13 +744,15 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     }
 
     // Phase 6: Cascade completion — complete all subtasks when parent is completed
-    try {
-      const childIds = await repo.cascadeCompleteIds(resolvedId, expectedAssignedTo)
-      for (const childId of childIds) {
-        dispatchTaskEvent("task.updated", { id: childId, status: STATUS.COMPLETE }, undefined, undefined, undefined, undefined, scope).catch(() => {})
+    if (update.hasOpenChildren !== false) {
+      try {
+        const childIds = await repo.cascadeCompleteIds(resolvedId, expectedAssignedTo)
+        for (const childId of childIds) {
+          dispatchTaskEvent("task.updated", { id: childId, status: STATUS.COMPLETE }, undefined, undefined, undefined, undefined, scope).catch(() => {})
+        }
+      } catch (err) {
+        logApiError("cascade-complete", "Failed to cascade-complete subtasks", err)
       }
-    } catch (err) {
-      logApiError("cascade-complete", "Failed to cascade-complete subtasks", err)
     }
   }
 
