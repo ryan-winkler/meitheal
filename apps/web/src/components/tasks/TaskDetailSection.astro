@@ -10,9 +10,9 @@ const section = taskDetailSections.find(section => section.id === name)!
 ---
 <details id={`td-section-${name}`} class="td-section" data-layout-item={name} open={name !== "activity"}>
   <summary class="td-section__summary">
-    <Icon name={section.icon} size={18} />
+    <Icon name={section.icon} size={18} sprite={true} />
     <span>{section.label}</span>
-    <Icon name="chevron-down" size={16} class="td-section__chevron" />
+    <Icon name="chevron-down" size={16} class="td-section__chevron" sprite={true} />
   </summary>
   <div class="td-section__body">
     <slot />

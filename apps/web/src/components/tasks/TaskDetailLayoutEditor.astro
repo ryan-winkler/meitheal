@@ -1,10 +1,11 @@
 ---
-import { ensureSchema, getPersistenceClient, SettingsRepository } from "@domains/tasks"
+import { ensureSchema, getPersistenceClient } from "@domains/tasks"
 import { organizationLabelsFor } from "@lib/organization-labels"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import type { OrganizationFeature } from "@lib/organization-availability"
+import { readCachedTaskDetailLayout } from "@lib/shell-settings-cache"
 import Icon from "../ui/Icon.astro"
-import { taskDetailSections, taskDetailServerSettingKey } from "@lib/task-detail-layout"
+import { taskDetailSections } from "@lib/task-detail-layout"
 import { t, type Locale } from "../../i18n/translations"
 
 interface Props {
@@ -18,9 +19,7 @@ if (scope === "server" && passedServerLayout === undefined) {
   try {
     const client = getPersistenceClient()
     await ensureSchema()
-    const stored = await new SettingsRepository(client).getByKeys([taskDetailServerSettingKey])
-    const raw = stored[taskDetailServerSettingKey]
-    if (typeof raw === "string" && raw.trim()) serverLayoutJson = raw
+    serverLayoutJson = await readCachedTaskDetailLayout(client)
   } catch { /* fallback to built-in layout defaults */ }
 }
 

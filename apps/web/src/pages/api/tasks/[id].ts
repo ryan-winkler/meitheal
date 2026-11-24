@@ -55,15 +55,7 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
     ...(url.searchParams.has("deferralRead") ? { "cache-control": "no-store" } : {}),
   }
 
-  const resolved = await repo.resolveTaskId(params.id!)
-  if (!resolved) {
-    return new Response(JSON.stringify({ error: "Task not found" }), {
-      status: 404,
-      headers,
-    })
-  }
-
-  const row = await repo.findById(resolved.id)
+  const row = await repo.findById(params.id!)
   if (!row) {
     return new Response(JSON.stringify({ error: "Task not found" }), {
       status: 404,

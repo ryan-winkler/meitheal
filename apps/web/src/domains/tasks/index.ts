@@ -107,6 +107,7 @@ export {
 
 export { isWorkIntegrationSetting, saveWorkIntegrationSettings, saveWorkBinding } from "./work-binding-manager"
 export { currentBoardGrantRevision } from "./persistence/board-grant-fence"
+export { ContinuityLockedError, isGuardedContinuityClient } from "./persistence/continuity-client"
 export { persistManualCalendarConfirmation } from "./persistence/store"
 
 export { readTaskAssignmentReceipt, type TaskAssignmentReceipt } from "./persistence/task-assignment-receipt"

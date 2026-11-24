@@ -66,7 +66,7 @@ const lookFeelHref = `${settingsHref}#look-and-feel-settings`
       aria-label="Navigation, shortcuts and settings menu"
       title="Navigation, shortcuts & settings"
     >
-      <Icon name="keyboard" size={18} />
+      <Icon name="keyboard" size={18} sprite={true} />
     </button>
   </div>
 </div>
@@ -86,15 +86,15 @@ const lookFeelHref = `${settingsHref}#look-and-feel-settings`
   <div class="sidebar-user-popover__divider" role="separator"></div>
   <div class="sidebar-user-popover__actions">
     <button type="button" class="sidebar-user-popover__item" role="menuitem" data-utility-action="edit-menu">
-      <span class="sidebar-user-popover__icon" aria-hidden="true"><Icon name="pencil" size={16} /></span>
+      <span class="sidebar-user-popover__icon" aria-hidden="true"><Icon name="pencil" size={16} sprite={true} /></span>
       <span>{t("sidebar.edit_menu", locale)}</span>
     </button>
     <button type="button" class="sidebar-user-popover__item" role="menuitem" data-utility-action="add-link">
-      <span class="sidebar-user-popover__icon" aria-hidden="true"><Icon name="link" size={16} /></span>
+      <span class="sidebar-user-popover__icon" aria-hidden="true"><Icon name="link" size={16} sprite={true} /></span>
       <span>Add custom link</span>
     </button>
     <button type="button" class="sidebar-user-popover__item" role="menuitem" data-utility-action="shortcuts">
-      <span class="sidebar-user-popover__icon" aria-hidden="true"><Icon name="keyboard" size={16} /></span>
+      <span class="sidebar-user-popover__icon" aria-hidden="true"><Icon name="keyboard" size={16} sprite={true} /></span>
       <span>Keyboard shortcuts</span>
       <kbd class="nav-utility-kbd" aria-hidden="true">?</kbd>
     </button>
@@ -102,19 +102,19 @@ const lookFeelHref = `${settingsHref}#look-and-feel-settings`
   <div class="sidebar-user-popover__divider" role="separator"></div>
   <div class="sidebar-user-popover__actions">
     <a href={settingsHref} class="sidebar-user-popover__item" role="menuitem" data-utility-link>
-      <span class="sidebar-user-popover__icon" aria-hidden="true"><Icon name="settings" size={16} /></span>
+      <span class="sidebar-user-popover__icon" aria-hidden="true"><Icon name="settings" size={16} sprite={true} /></span>
       <span>{t("nav.settings", locale)}</span>
     </a>
     <a href={navSettingsHref} class="sidebar-user-popover__item" role="menuitem" data-utility-link>
-      <span class="sidebar-user-popover__icon" aria-hidden="true"><Icon name="layout-grid" size={16} /></span>
+      <span class="sidebar-user-popover__icon" aria-hidden="true"><Icon name="layout-grid" size={16} sprite={true} /></span>
       <span>Manage shortcuts &amp; links</span>
     </a>
     <a href={lookFeelHref} class="sidebar-user-popover__item" role="menuitem" data-utility-link>
-      <span class="sidebar-user-popover__icon" aria-hidden="true"><Icon name="palette" size={16} /></span>
+      <span class="sidebar-user-popover__icon" aria-hidden="true"><Icon name="palette" size={16} sprite={true} /></span>
       <span>Look &amp; Feel</span>
     </a>
     <button type="button" class="sidebar-user-popover__item" role="menuitem" data-utility-action="start-tour">
-      <span class="sidebar-user-popover__icon" aria-hidden="true"><Icon name="sparkles" size={16} /></span>
+      <span class="sidebar-user-popover__icon" aria-hidden="true"><Icon name="sparkles" size={16} sprite={true} /></span>
       <span>Interactive tour</span>
     </button>
   </div>
@@ -223,7 +223,7 @@ const lookFeelHref = `${settingsHref}#look-and-feel-settings`
               aria-label={swatch.label}
               aria-pressed={selected ? "true" : "false"}
             >
-              {isTheme && <Icon name="palette" size={14} />}
+              {isTheme && <Icon name="palette" size={14} sprite={true} />}
             </button>
           )
         })}

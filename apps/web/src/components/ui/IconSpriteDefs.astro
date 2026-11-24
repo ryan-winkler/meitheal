@@ -19,6 +19,7 @@ const lazySprites = {
     }
     if (symbolSet.size === 0) return ""
     const symbols = Array.from(symbolSet)
+      .sort()
       .map(
         (name) =>
           `<symbol id="mt-icon-${name}" viewBox="0 0 24 24">${ICON_INNER_SVG[name]}</symbol>`,

@@ -36,7 +36,7 @@ import { effectiveTaskScheduledDate, isValidTaskKind } from "@meitheal/domain-ta
 import { taskLabelInsert } from "./label-reference-repository"
 import { homeAssistantTaskAreaCondition } from "./home-assistant-task-area"
 import type { Client, InStatement, InValue, ResultSet, Transaction } from "@libsql/client"
-import { acquireWriteTransaction, executeWriteWithRetry, runWriteTransaction, tagTaskProjectionRead } from "../../../../scripts/database-client.mjs"
+import { acquireWriteTransaction, executeWriteWithRetry, localReaderCacheToken, runWriteTransaction, tagTaskProjectionRead } from "../../../../scripts/database-client.mjs"
 import { CLOSED_TASK_STATUSES, getStatusDef, isClosedStatus, isDoneStatus, normalizeStatus, STATUS } from "../../../lib/status-config"
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "../../../lib/task-search-score"
@@ -52,6 +52,9 @@ import { discardUnappliedTaskActivity, sanitizeOriginName, taskAddedActivity, ta
 import { canAdvanceTaskTimestampMs, nextTaskTimestampMs, taskTimestampMs } from "./task-timestamp"
 import { inactivityRuleActor, inactivityWriteGuard } from "./task-inactivity-query"
 import { openTaskDependencies } from "./task-dependencies"
+
+const notifPrefsCache = new WeakMap<object, { token: string; rawValue: string | null }>()
+const defaultAssigneeCache = new WeakMap<object, { token: string; byBoard: Map<string, string | null> }>()
 
 const taskHistoryPredicate = "(feed_action IS NULL OR field <> 'activity')"
 const openStatusPredicate = `lower(status) NOT IN (${CLOSED_TASK_STATUSES.map(() => "?").join(", ")})`
@@ -1189,8 +1192,8 @@ export class TaskRepository {
     const number = this.ticketNumberForScope(idOrKey)
     const identity = number === null ? sql`id = ${idOrKey}` : sql`(id = ${idOrKey} OR ticket_number = ${number})`
     const assigned = action === "read" ? undefined : scopeAssignedTo(this.scope)
-    const locate = scopedTaskRead(this.scope, sql`SELECT id, ${sourceSql(taskTimestampMs("updated_at"))} AS updated_at FROM scoped_tasks AS tasks
-      WHERE ${identity} ${assigned === undefined ? sourceSql("") : sql`AND assigned_to = ${assigned}`} LIMIT 1`)
+    const locate = scopedTaskRead(this.scope, sql`SELECT id, ${sourceSql(taskTimestampMs("updated_at"))} AS updated_at FROM scoped_task_records AS tasks
+      WHERE ${identity} ${assigned === undefined ? sourceSql("") : sql`AND assigned_to = ${assigned}`} LIMIT 1`, "select", "records")
     const { rows: [row] } = await this.readCommandStatement(action, tagTaskProjectionRead(locate, "task-locator"))
     return row ? { id: String(row.id), updated_at: row.updated_at } : null
   }
@@ -1208,9 +1211,11 @@ export class TaskRepository {
     const number = this.ticketNumberForScope(idOrKey)
     const identity = number === null ? sql`t.id = ${idOrKey}` : sql`(t.id = ${idOrKey} OR t.ticket_number = ${number})`
     const detail = scopedTaskRead(this.scope, sql`SELECT t.*, t.ticket_ref AS ticket_key,
-      ${sourceSql(taskTimestampMs("t.updated_at"))} AS task_version, parent.title AS parent_title,
-      parent.task_type AS parent_task_type, parent.ticket_number AS parent_ticket_number
-      FROM scoped_tasks AS t LEFT JOIN scoped_tasks AS parent ON parent.id = t.parent_id
+      ${sourceSql(taskTimestampMs("t.updated_at"))} AS task_version,
+      CASE WHEN t.parent_id IS NOT NULL THEN (SELECT parent.title FROM scoped_task_records AS parent WHERE parent.id = t.parent_id) END AS parent_title,
+      CASE WHEN t.parent_id IS NOT NULL THEN (SELECT parent.task_type FROM scoped_task_records AS parent WHERE parent.id = t.parent_id) END AS parent_task_type,
+      CASE WHEN t.parent_id IS NOT NULL THEN (SELECT parent.ticket_number FROM scoped_task_records AS parent WHERE parent.id = t.parent_id) END AS parent_ticket_number
+      FROM scoped_tasks AS t
       WHERE ${identity} LIMIT 1`)
     const result = await this.forOperation("read").execute(tagTaskProjectionRead(detail, "task-detail"))
     return (result.rows[0] as unknown as TaskRow) ?? null;
@@ -1407,12 +1412,21 @@ export class TaskRepository {
       }
     }
 
-    const selectSql = `SELECT ${projection} FROM scoped_tasks AS tasks${where} ${ordering} LIMIT ${limit} OFFSET ${offset}`
-    const countSql = `SELECT COUNT(*) as cnt FROM scoped_tasks AS tasks${where}`;
+    const useRecordFilter = !opts.areaId && !opts.workspaceAreaId && !opts.projectId
+    const selectSql = useRecordFilter
+      ? `SELECT ${projection}
+         FROM (SELECT id FROM scoped_task_records AS tasks${where} ${ordering} LIMIT ${limit} OFFSET ${offset}) AS page_ids
+         CROSS JOIN scoped_tasks AS tasks
+         WHERE tasks.id = page_ids.id
+         ${ordering}`
+      : `SELECT ${projection} FROM scoped_tasks AS tasks${where} ${ordering} LIMIT ${limit} OFFSET ${offset}`
+    const countRead = useRecordFilter
+      ? scopedTaskRead(this.scope, sourceSql(`SELECT COUNT(*) as cnt FROM scoped_task_records AS tasks${where}`, args), "select", "records")
+      : scopedTaskRead(this.scope, sourceSql(`SELECT COUNT(*) as cnt FROM scoped_tasks AS tasks${where}`, args))
 
     const [result, countResult] = await this.forOperation("read").batch([
       tagTaskProjectionRead(scopedTaskRead(this.scope, sourceSql(selectSql, args)), "task-list"),
-      tagTaskProjectionRead(scopedTaskRead(this.scope, sourceSql(countSql, args)), "task-count"),
+      tagTaskProjectionRead(countRead, "task-count"),
     ], "read")
 
     const total = Number(countResult?.rows[0]?.cnt ?? 0)
@@ -1465,10 +1479,10 @@ export class TaskRepository {
     const projection = "tasks.id, tasks.ticket_number, tasks.ticket_ref, tasks.title, tasks.status, tasks.priority, tasks.task_kind, tasks.deferred_at"
     const updatedAt = taskTimestampMs("tasks.updated_at")
     if (!query) {
-      const result = await this.forOperation(operation).execute(scopedTaskRead(this.scope, sourceSql(`SELECT ${projection}, 0 AS score
-              FROM scoped_tasks AS tasks ${where}
+      const result = await this.forOperation(operation).execute(tagTaskProjectionRead(scopedTaskRead(this.scope, sourceSql(`SELECT ${projection}, 0 AS score
+              FROM scoped_task_records AS tasks ${where}
               ORDER BY ${updatedAt} DESC, tasks.priority ASC, tasks.id ASC
-              LIMIT ?`, [...args, limit]), "select"))
+              LIMIT ?`, [...args, limit]), "select", "search"), "task-search"))
       return result.rows as unknown as TaskCatalogRow[]
     }
 
@@ -1497,21 +1511,104 @@ export class TaskRepository {
     const excerpt = snippets.length ? `CASE ${snippets.join("\n")} END` : "NULL"
     const orderBy = opts.sort === "updated" ? "" : "score DESC, "
 
-    const search = scopedTaskRead(this.scope, sourceSql(`needle(value, ticket) AS (VALUES (?, ?)),
+    const hasCommentsField = fields.has("comments")
+    const useLikeFastPath = !query.includes("\0") && query.length <= 500
+    const searchQuery = useLikeFastPath
+      ? (() => {
+          const escaped = query.replace(/[\\%_]/g, "\\$&")
+          const likeAny = `%${escaped}%`
+          const likePrefix = `${escaped}%`
+          const hasDigit = /\d/.test(query) ? 1 : 0
+          const codepointLen = [...query].length
+          const isScopedStorage = storageBoardId(this.scope) !== null
+          const canMatchTicketRef = isScopedStorage || /^[a-z0-9-]+$/i.test(query) ? 1 : 0
+          const fastUpdatedAt = `CASE WHEN typeof(updated_at) = 'integer' AND updated_at >= 0 AND updated_at <= 9007199254740991 THEN updated_at ELSE ${taskTimestampMs("updated_at")} END`
+          const refHitSql = selected("id", "needle.can_match_ref AND tasks.ticket_ref IS NOT NULL AND tasks.ticket_ref <> '' AND tasks.ticket_ref LIKE needle.like_any ESCAPE '\\'")
+          const numHitSql = selected("id", "needle.has_digit AND tasks.ticket_number IS NOT NULL AND instr(cast(tasks.ticket_number AS TEXT), needle.value) > 0")
+          const titleAtSql = selected("title", "CASE WHEN tasks.title LIKE needle.like_prefix ESCAPE '\\' THEN 1 WHEN tasks.title LIKE needle.like_any ESCAPE '\\' THEN 2 ELSE 0 END")
+          const descriptionPred = "tasks.description IS NOT NULL AND tasks.description <> '' AND tasks.description LIKE needle.like_any ESCAPE '\\'"
+          const labelsPred = "tasks.labels IS NOT NULL AND tasks.labels <> '' AND (tasks.labels <> '[]' OR instr('[]', needle.value) > 0) AND tasks.labels LIKE needle.like_any ESCAPE '\\'"
+          const customFieldsPred = "tasks.custom_fields IS NOT NULL AND tasks.custom_fields <> '' AND (tasks.custom_fields <> '{}' OR instr('{}', needle.value) > 0) AND tasks.custom_fields LIKE needle.like_any ESCAPE '\\'"
+          const commentProbe = hasCommentsField ? "((SELECT v FROM has_comments) AND tasks.id IN comment_hits)" : "0"
+          const matchClauses: string[] = []
+          if (fields.has("title")) matchClauses.push("tasks.title LIKE needle.like_any ESCAPE '\\'")
+          if (fields.has("description")) matchClauses.push(`(${descriptionPred})`)
+          if (fields.has("labels")) matchClauses.push(`(${labelsPred})`)
+          if (fields.has("custom_fields")) matchClauses.push(`(${customFieldsPred})`)
+          if (fields.has("id")) {
+            matchClauses.push(`tasks.id LIKE needle.like_any ESCAPE '\\' OR coalesce(tasks.ticket_number = needle.ticket, 0) OR (${refHitSql}) OR (${numHitSql})`)
+          }
+          if (hasCommentsField) matchClauses.push(commentProbe)
+          const hitsWhere = [...conditions, matchClauses.length ? `(${matchClauses.join(" OR ")})` : "0"].join(" AND ")
+          const exactIdSql = selected("id", "(coalesce(tasks.ticket_number = needle.ticket, 0) OR (length(tasks.id) = needle.value_len AND tasks.id LIKE needle.like_any ESCAPE '\\'))")
+          const exactIdWithTitleSql = fields.has("title")
+            ? `(${EXACT_TASK_IDENTIFIER_SCORE} + (CASE WHEN tasks.title LIKE needle.like_any ESCAPE '\\' THEN 60 ELSE 0 END))`
+            : `${EXACT_TASK_IDENTIFIER_SCORE}`
+          const titleScoreSql = fields.has("title")
+            ? "CASE WHEN tasks.title LIKE needle.like_prefix ESCAPE '\\' THEN CASE WHEN length(tasks.title) = needle.value_len THEN 3060 ELSE 2060 END WHEN tasks.title LIKE needle.like_any ESCAPE '\\' THEN 1060 ELSE 1000 END"
+            : "1000"
+          const commentCtes = hasCommentsField
+            ? `comment_hits(task_id) AS MATERIALIZED (
+              SELECT DISTINCT c.task_id FROM comments c CROSS JOIN needle
+              WHERE c.content LIKE needle.like_any ESCAPE '\\'
+            ),
+            has_comments(v) AS MATERIALIZED (
+              SELECT EXISTS(SELECT 1 FROM comment_hits)
+            ),`
+            : ""
+          return sourceSql(`needle(value, value_len, ticket, like_any, like_prefix, has_digit, can_match_ref) AS (VALUES (?, ?, ?, ?, ?, ?, ?)),
+            ${commentCtes}
+            top_hits AS MATERIALIZED (
+              SELECT tasks.id, tasks.priority, ${fastUpdatedAt} AS updated_at_ms,
+                (CASE WHEN ${exactIdSql} THEN ${exactIdWithTitleSql} ELSE ${titleScoreSql} END
+                 + (${selected("description", descriptionPred)}) * 25
+                 + (${selected("labels", labelsPred)}) * 18
+                 + (${selected("custom_fields", customFieldsPred)}) * 15
+                 + (${selected("comments", commentProbe)}) * 12
+                 + (tasks.status NOT IN ('complete', 'archived')) * 6) AS score
+              FROM scoped_task_records AS tasks CROSS JOIN needle WHERE ${hitsWhere}
+              ORDER BY ${orderBy}updated_at_ms DESC, tasks.priority ASC, tasks.id ASC
+              LIMIT ?
+            ),
+            page AS MATERIALIZED (
+              SELECT top_hits.id, tasks.ticket_number, tasks.ticket_ref, tasks.title, tasks.status,
+                top_hits.priority, tasks.task_kind, tasks.deferred_at,
+                top_hits.updated_at_ms, top_hits.score,
+                (${exactIdSql}) AS exact_id,
+                (${selected("id", "tasks.id LIKE needle.like_any ESCAPE '\\'")} OR (${refHitSql}) OR (${numHitSql})) AS id_hit,
+                ${titleAtSql} AS title_at,
+                (${selected("description", descriptionPred)}) AS description_hit,
+                (${selected("labels", labelsPred)}) AS labels_hit,
+                (${selected("custom_fields", customFieldsPred)}) AS custom_fields_hit,
+                (${selected("comments", commentProbe)}) AS comments_hit
+              FROM top_hits JOIN scoped_task_records AS tasks ON tasks.id = top_hits.id CROSS JOIN needle
+            )
+            SELECT page.id, page.ticket_number, page.ticket_ref, page.title, page.status, page.priority, page.task_kind, page.deferred_at,
+              page.score, page.id_hit, page.exact_id, page.title_at,
+              page.description_hit, page.labels_hit, page.custom_fields_hit, page.comments_hit, ${excerpt} AS excerpt
+            FROM page JOIN tasks ON tasks.id = page.id CROSS JOIN needle
+            ORDER BY ${orderBy}page.updated_at_ms DESC, page.priority ASC, page.id ASC`, [query, codepointLen, ticket, likeAny, likePrefix, hasDigit, canMatchTicketRef, ...args, limit])
+        })()
+      : sourceSql(`needle(value, ticket) AS (VALUES (?, ?)),
+            ${hasCommentsField ? `comment_hits(task_id) AS MATERIALIZED (
+              SELECT DISTINCT c.task_id FROM comments c CROSS JOIN needle
+              WHERE ${position("c.content")} > 0
+            ),` : ""}
             hits AS MATERIALIZED (
-              SELECT tasks.id, tasks.priority, ${updatedAt} AS updated_at_ms,
-                ${selected("id", `lower(tasks.id) = needle.value OR coalesce(tasks.ticket_number = needle.ticket, 0)`)} AS exact_id,
+              SELECT tasks.id, tasks.ticket_number, tasks.ticket_ref, tasks.title, tasks.status, tasks.priority, tasks.task_kind, tasks.deferred_at,
+                ${updatedAt} AS updated_at_ms,
+                ${selected("id", `(coalesce(length(tasks.id) = length(needle.value), 0) AND lower(tasks.id) = needle.value) OR coalesce(tasks.ticket_number = needle.ticket, 0)`)} AS exact_id,
                 ${selected("id", `${position("tasks.id")} > 0 OR
-                  ${position("tasks.ticket_ref")} > 0 OR
-                  ${position("cast(tasks.ticket_number AS TEXT)")} > 0`)} AS id_hit,
-                ${selected("title", "lower(tasks.title) = needle.value")} AS exact_title,
+                  (tasks.ticket_ref IS NOT NULL AND tasks.ticket_ref <> '' AND ${position("tasks.ticket_ref")} > 0) OR
+                  (tasks.ticket_number IS NOT NULL AND instr(cast(tasks.ticket_number AS TEXT), needle.value) > 0)`)} AS id_hit,
+                ${selected("title", "coalesce(length(tasks.title) = length(needle.value), 0) AND lower(tasks.title) = needle.value")} AS exact_title,
                 ${selected("title", position("tasks.title"))} AS title_at,
-                ${selected("description", `${position("tasks.description")} > 0`)} AS description_hit,
-                ${selected("labels", `${position("tasks.labels")} > 0`)} AS labels_hit,
-                ${selected("custom_fields", `${position("tasks.custom_fields")} > 0`)} AS custom_fields_hit,
-                ${selected("comments", `EXISTS (SELECT 1 FROM comments c WHERE ${commentMatch})`)} AS comments_hit,
+                ${selected("description", `tasks.description IS NOT NULL AND tasks.description <> '' AND ${position("tasks.description")} > 0`)} AS description_hit,
+                ${selected("labels", `tasks.labels IS NOT NULL AND tasks.labels <> '' AND (tasks.labels <> '[]' OR instr('[]', needle.value) > 0) AND ${position("tasks.labels")} > 0`)} AS labels_hit,
+                ${selected("custom_fields", `tasks.custom_fields IS NOT NULL AND tasks.custom_fields <> '' AND (tasks.custom_fields <> '{}' OR instr('{}', needle.value) > 0) AND ${position("tasks.custom_fields")} > 0`)} AS custom_fields_hit,
+                ${selected("comments", "tasks.id IN comment_hits")} AS comments_hit,
                 (tasks.status NOT IN ('complete', 'archived')) * 6 AS open_boost
-              FROM scoped_tasks AS tasks CROSS JOIN needle ${where}
+              FROM scoped_task_records AS tasks CROSS JOIN needle ${where}
             ),
             page AS (
               SELECT hits.*,
@@ -1526,10 +1623,12 @@ export class TaskRepository {
               ORDER BY ${orderBy}updated_at_ms DESC, priority ASC, id ASC
               LIMIT ?
             )
-            SELECT ${projection}, page.score, page.id_hit, page.exact_id, page.title_at,
+            SELECT page.id, page.ticket_number, page.ticket_ref, page.title, page.status, page.priority, page.task_kind, page.deferred_at,
+              page.score, page.id_hit, page.exact_id, page.title_at,
               page.description_hit, page.labels_hit, page.custom_fields_hit, page.comments_hit, ${excerpt} AS excerpt
-            FROM page JOIN scoped_tasks AS tasks ON tasks.id = page.id CROSS JOIN needle
-            ORDER BY ${orderBy}page.updated_at_ms DESC, page.priority ASC, page.id ASC`, [query, ticket, ...args, limit]), "with")
+            FROM page JOIN tasks ON tasks.id = page.id CROSS JOIN needle
+            ORDER BY ${orderBy}page.updated_at_ms DESC, page.priority ASC, page.id ASC`, [query, ticket, ...args, limit])
+    const search = scopedTaskRead(this.scope, searchQuery, "with", "search")
     const result = await this.forOperation(operation).execute(tagTaskProjectionRead(search, "task-search"))
 
     return result.rows as unknown as TaskCatalogRow[]
@@ -1540,12 +1639,25 @@ export class TaskRepository {
     try {
       const intent = { resource: "task", action: "create" } as const
       if (!(await validateBoardScope(this.scope, this.client, intent)).ok) return null
+      const state = localReaderCacheToken(this.client)
+      let value: string | null | undefined =
+        state && defaultAssigneeCache.get(state.owner)?.token === state.token
+          ? defaultAssigneeCache.get(state.owner)!.byBoard.get(this.scope.boardId)
+          : undefined
+      if (value !== undefined) return value
       const result = await this.client.execute(sql`SELECT value FROM app_settings
         WHERE key = ${`default_assignee:${this.scope.boardId}`} LIMIT 1`)
       if (!(await validateBoardScope(this.scope, this.client, intent)).ok) return null
-      if (result.rows.length > 0) {
-        return String((result.rows[0] as Record<string, unknown>).value);
+      value = result.rows.length > 0 ? String((result.rows[0] as Record<string, unknown>).value) : null
+      if (state && localReaderCacheToken(this.client)?.token === state.token) {
+        let boardCache = defaultAssigneeCache.get(state.owner)
+        if (!boardCache || boardCache.token !== state.token) {
+          boardCache = { token: state.token, byBoard: new Map() }
+          defaultAssigneeCache.set(state.owner, boardCache)
+        }
+        boardCache.byBoard.set(this.scope.boardId, value)
       }
+      return value
     } catch { /* ignore — default is optional */ }
     return null;
   }
@@ -2133,7 +2245,7 @@ export class TaskRepository {
     let writerActivity = activity
     const buildBatch = (txNow: number): { update: InStatement; statements: InStatement[] } => {
       const eventId = activity ? crypto.randomUUID() : null
-      const update: InStatement = scopedTaskRead(this.scope, sourceSql(updateSql, [...args, txNow, ...whereArgs]), "select")
+      const update: InStatement = sourceSql(updateSql, [...args, txNow, ...whereArgs])
       const statements: InStatement[] = [...diagnostics]
       // Capture the old state and commit the event and update in the same writer batch.
       if (writerActivity && eventId) statements.push(taskChangedActivity(this.scope, fields, where, whereArgs, writerActivity, txNow, eventId))
@@ -2161,7 +2273,7 @@ export class TaskRepository {
           if (priorAssignee !== nextAssignee) {
             const commitTs = Number(updatedRow.updated_at) || txNow
             const keepKey = reassignmentReceipt?.key ?? null
-            yield [scopedTaskRead(repo.scope, sourceSql("UPDATE integration_attempts SET status = 'superseded', updated_at = ? WHERE integration = 'task.reassignment' AND task_id = ? AND status = 'completed' AND (? IS NULL OR idempotency_key != ?)", [commitTs, id, keepKey, keepKey]), "select")]
+            yield [sourceSql("UPDATE integration_attempts SET status = 'superseded', updated_at = ? WHERE integration = 'task.reassignment' AND task_id = ? AND status = 'completed' AND (? IS NULL OR idempotency_key != ?)", [commitTs, id, keepKey, keepKey])]
           }
         }
         if (updatedRow) {
@@ -2847,14 +2959,27 @@ export class TaskRepository {
       mobileTargets: [] as string[],
     };
     try {
-      const result = await this.forOperation("read").execute(scopedTaskRead(this.scope, sourceSql("SELECT value FROM settings WHERE key = 'notification_preferences' LIMIT 1", []), "select"));
-      if (result.rows.length > 0) {
-        const raw = JSON.parse(String((result.rows[0] as Record<string, unknown>).value));
+      const intent = { resource: "task", action: "read" } as const;
+      if (!(await validateBoardScope(this.scope, this.client, intent)).ok) return defaults;
+      const state = localReaderCacheToken(this.client);
+      let rawValue: string | null | undefined = state && notifPrefsCache.get(state.owner)?.token === state.token
+        ? notifPrefsCache.get(state.owner)!.rawValue
+        : undefined;
+      if (rawValue === undefined) {
+        const result = await this.client.execute("SELECT value FROM settings WHERE key = 'notification_preferences' LIMIT 1");
+        if (!(await validateBoardScope(this.scope, this.client, intent)).ok) return defaults;
+        rawValue = result.rows.length > 0 ? String((result.rows[0] as Record<string, unknown>).value) : null;
+        if (state && localReaderCacheToken(this.client)?.token === state.token) {
+          notifPrefsCache.set(state.owner, { token: state.token, rawValue });
+        }
+      }
+      if (rawValue !== null) {
+        const raw = JSON.parse(rawValue);
         if (typeof raw === "object" && raw !== null) {
           defaults.enabled = raw.enabled !== false;
           if (Array.isArray(raw.disabled_users)) defaults.disabledUsers = new Set(raw.disabled_users);
-          if (raw.channels) defaults.channels = raw.channels;
-          if (Array.isArray(raw.mobile_targets)) defaults.mobileTargets = raw.mobile_targets;
+          if (raw.channels && typeof raw.channels === "object") defaults.channels = { ...raw.channels };
+          if (Array.isArray(raw.mobile_targets)) defaults.mobileTargets = [...raw.mobile_targets];
         }
       }
     } catch { /* settings not available */ }

@@ -53,9 +53,9 @@ const resolvedIcon = mapEntityEmojiToTabler(icon) ?? "sparkles"
       aria-label="Toggle helper"
       aria-expanded="true"
     >
-      <span class="inline-helper__chevron"><Icon name="chevron-down" size={14} /></span>
+      <span class="inline-helper__chevron"><Icon name="chevron-down" size={14} sprite={true} /></span>
     </button>
-    <span class="inline-helper__icon" aria-hidden="true"><Icon name={resolvedIcon} size={16} /></span>
+    <span class="inline-helper__icon" aria-hidden="true"><Icon name={resolvedIcon} size={16} sprite={true} /></span>
     <span class="inline-helper__title">{title}</span>
     <button
       type="button"
@@ -64,7 +64,7 @@ const resolvedIcon = mapEntityEmojiToTabler(icon) ?? "sparkles"
       aria-label="Dismiss helper"
       title="Dismiss (press ? to restore all)"
     >
-      <Icon name="x" size={14} />
+      <Icon name="x" size={14} sprite={true} />
     </button>
   </div>
   <div class="inline-helper__body">

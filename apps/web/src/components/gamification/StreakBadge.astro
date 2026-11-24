@@ -28,7 +28,7 @@ const { streak, compact = false } = Astro.props
     aria-label={`${streak} day completion streak`}
   >
     <span class="streak-badge__icon inline-flex items-center" aria-hidden="true">
-      <Icon name="flame" size={compact ? 13 : 14} />
+      <Icon name="flame" size={compact ? 13 : 14} sprite={true} />
     </span>
     <span class="streak-badge__count">{streak}</span>
     {!compact && <span class="streak-badge__label">day streak</span>}
