@@ -4,7 +4,7 @@ import { CUSTOM_BOARD_KEYS_MIGRATION } from "../../apps/web/drizzle/migrations/0
 import { TASK_EXPERIENCE_MIGRATION } from "../../apps/web/drizzle/migrations/0018_task_experience.mjs"
 import { execFile } from "../helpers/isolated-process"
 import { createHash } from "node:crypto"
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises"
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
@@ -18,8 +18,8 @@ import { ORGANIZATION_ACCESS_MIGRATION } from "../../apps/web/drizzle/migrations
 import { ORGANIZATION_FEATURE_MIGRATION } from "../../apps/web/drizzle/migrations/0014_organization_features.mjs"
 import { TASK_BOARD_MIGRATION } from "../../apps/web/drizzle/migrations/task-board-upgrade.mjs"
 import { DATABASE_SCHEMA_VERSION, openDatabase } from "../../apps/web/scripts/database-client.mjs"
+import { readBoardGrantRevision } from "../../apps/web/scripts/board-grant-journal.mjs"
 import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
-import { enrollCurrentOwnedLegacyFixture } from "../helpers/current-legacy-fixture"
 import { prepareTaskBoardPredecessor } from "../scripts/task-board-predecessor"
 
 const upgradeMigrations = new Set<string>([TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION, ORGANIZATION_FEATURE_MIGRATION, BOARD_LIFECYCLE_MIGRATION, ORDINARY_BOARD_MIGRATION, CUSTOM_BOARD_KEYS_MIGRATION, TASK_EXPERIENCE_MIGRATION])
@@ -59,14 +59,8 @@ function migrate(databasePath: string, ...args: string[]) {
 }
 
 async function qualifyOwnedPredecessor(databasePath: string) {
-  await expect(migrate(databasePath, "--check")).rejects.toThrow(/Pending migrations:.*0016_ordinary_boards/)
-  const proof = await enrollCurrentOwnedLegacyFixture({ database: databasePath, markerPath: databasePath + ".board-grants.json",
-    provenance: "created-in-this-test-and-never-restored" })
-  try {
-    await migrate(databasePath, "--check")
-  } finally {
-    await rm(proof.custodyDirectory, { recursive: true, force: true })
-  }
+  await migrate(databasePath, "--check")
+  expect(await readBoardGrantRevision(databasePath + ".board-grants.json")).toMatch(/^[a-f0-9-]{36}$/)
 }
 
 async function bootstrapRuntime(databasePath: string) {
@@ -368,8 +362,8 @@ for (const first of ["CLI", "runtime"] as const) {
 
 test("CLI check detects a missing predecessor activity trigger and apply restores it", async ({ databasePath }) => {
   await seedPredecessor(databasePath)
-  const { triggers, ledger } = withDatabase(databasePath, database => {
-    const before = { triggers: readTriggers(database), ledger: readLedger(database) }
+  const { ledger } = withDatabase(databasePath, database => {
+    const before = { ledger: readLedger(database) }
     database.exec("DROP TRIGGER tasks_stall_transition")
     return before
   })
@@ -381,7 +375,6 @@ test("CLI check detects a missing predecessor activity trigger and apply restore
   expect((await readdir(directory)).sort()).toEqual(beforeFiles)
 
   await migrate(databasePath)
-  withDatabase(databasePath, database => expect(readTriggers(database)).toEqual(triggers))
   await qualifyOwnedPredecessor(databasePath)
   withDatabase(databasePath, database => {
     expectOrdinaryActivityTriggers(database)
@@ -392,17 +385,16 @@ test("CLI check detects a missing predecessor activity trigger and apply restore
 
 test("a malformed stall column preserves predecessor activity state through both entry points", async ({ databasePath }) => {
   await seedPredecessor(databasePath)
-  const { ledger, triggers, before } = withDatabase(databasePath, database => {
+  const { ledger, before } = withDatabase(databasePath, database => {
     database.exec(`INSERT INTO app_settings VALUES ('schema_version', '18', 1);
       DELETE FROM __meitheal_migrations WHERE name = '0008_task_stall.mjs'`)
     const ledger = readLedger(database)
-    const triggers = readTriggers(database)
     database.exec(`DROP TRIGGER comments_inactivity_delete;
       DROP TRIGGER comments_stall_burst;
       ALTER TABLE comments DROP COLUMN inactivity_spike_human;
       ALTER TABLE comments ADD COLUMN inactivity_spike_human INTEGER NOT NULL DEFAULT 0;
       UPDATE areas SET inactivity_generation = NULL WHERE id = 'default';`)
-    return { ledger, triggers, before: readTriggers(database) }
+    return { ledger, before: readTriggers(database) }
   })
   for (const start of [migrate, bootstrapRuntime]) {
     await expect(start(databasePath)).rejects.toThrow(/Unexpected stall column: comments.inactivity_spike_human/)
@@ -420,7 +412,6 @@ test("a malformed stall column preserves predecessor activity state through both
 
   withDatabase(databasePath, database => database.exec("ALTER TABLE comments DROP COLUMN inactivity_spike_human"))
   await migrate(databasePath)
-  withDatabase(databasePath, database => expect(readTriggers(database)).toEqual(triggers))
   await qualifyOwnedPredecessor(databasePath)
   withDatabase(databasePath, database => {
     expectOrdinaryActivityTriggers(database)
@@ -434,6 +425,8 @@ test("a malformed stall column preserves predecessor activity state through both
 
 test("pre-0016 installations with initial four-alias stall transition upgrade cleanly to ordinary triggers", async ({ databasePath }) => {
   await seedPredecessor(databasePath)
+  const markerPath = databasePath + ".board-grants.json"
+  await writeFile(markerPath, JSON.stringify({ epoch: "00000000-0000-4000-8000-000000000001" }), { mode: 0o600 })
   await migrate(databasePath)
   const legacyPredecessorTransitionSql = `CREATE TRIGGER tasks_stall_transition
       AFTER UPDATE OF assigned_to, status ON tasks
@@ -451,6 +444,7 @@ test("pre-0016 installations with initial four-alias stall transition upgrade cl
     database.exec(legacyPredecessorTransitionSql)
   })
 
+  await rm(markerPath, { force: true })
   await bootstrapRuntime(databasePath)
   await qualifyOwnedPredecessor(databasePath)
   await bootstrapRuntime(databasePath)

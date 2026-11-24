@@ -3,7 +3,7 @@ import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from "
 import { mkdir, open, readdir, rename, rm } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
 import { acquireWriteTransaction, readLocalGrantRevision, retryStartupLock } from "./database-client.mjs"
-import { boardGrantPath, boardGrantRevisionQuery, consumeDatabaseCreation, consumePre0016LocalUpgrade, getBoardGrantPath, registerPreparedGrantMarker, unwrapBoardGrantClient } from "./board-grant-context.mjs"
+import { boardGrantPath, boardGrantRevisionQuery, consumeDatabaseCreation, getBoardGrantPath, hasPre0016LocalUpgrade, registerPreparedGrantMarker, unwrapBoardGrantClient } from "./board-grant-context.mjs"
 import { consumeOperatorAdmission, registerStartupBoardAdmission } from "./startup-board-admission.mjs"
 
 export { boardGrantPath, getBoardGrantPath }
@@ -151,49 +151,22 @@ async function hasMarkerOrPendingEntries(markerPath) {
   return pendingState === "non_empty" || pendingState === "non_directory"
 }
 
-/** Prove conversion authority on the same startup writer, then prepare its next excluded journal. */
-export async function admitStartupBoardTransition(client, tx, operatorAdmission, onRefused) {
-  const path = getBoardGrantPath(client)
-  const revision = await databaseRevision(tx)
-  const created = consumeDatabaseCreation(client)
-  const pre0016LocalUpgrade = consumePre0016LocalUpgrade(client)
-  const operator = consumeOperatorAdmission(operatorAdmission)
-  const checkPre0016Clear = async () => {
-    if (!pre0016LocalUpgrade) return "ineligible"
-    try {
-      return (await hasMarkerOrPendingEntries(path)) ? "conflict" : "clear"
-    } catch (error) {
-      if (error instanceof Error && error.message === "Board continuity refuses symlink paths") return "conflict"
-      throw error
-    }
+async function checkPre0016Destination(client, markerPath) {
+  if (!hasPre0016LocalUpgrade(client)) return "ineligible"
+  try {
+    return (await hasMarkerOrPendingEntries(markerPath)) ? "conflict" : "clear"
+  } catch (error) {
+    if (error instanceof Error && error.message === "Board continuity refuses symlink paths") return "conflict"
+    throw error
   }
-  if (!revision) {
-    if (!created && !operator) {
-      const eligibility = await checkPre0016Clear()
-      if (eligibility !== "clear") {
-        onRefused?.(eligibility === "conflict" ? "conflict" : "no_authority")
-        return null
-      }
-    }
-    const next = await prepareInitialBoardGrant(tx, path)
-    return { admission: registerStartupBoardAdmission(tx), revision: next }
-  }
-  if (operator) throw new Error("Legacy enrollment cannot replace an existing authority revision")
-  // A committed journal may be recovered, or a pre-0016 local database restored
-  // before backups included the marker may re-enroll when no conflicting file exists.
-  const currentMatched = await publishCommittedMarker(path, revision) && await boardGrantStillCurrent(tx, revision, path)
-  if (!currentMatched) {
-    const eligibility = await checkPre0016Clear()
-    if (eligibility !== "clear") {
-      onRefused?.(eligibility === "conflict" ? "conflict" : "no_authority")
-      return null
-    }
-  }
+}
+
+async function rotateStartupBoardGrant(client, tx, path, revision) {
   const next = randomUUID()
   await prepareGrantMarker(path, next)
   try {
     await tx.execute({ sql: "UPDATE board_access_epoch SET revision = ? WHERE singleton = 1 AND revision = ?", args: [next, revision] })
-    registerPreparedGrantMarker(tx, pendingFile(path, next), next)
+    registerPreparedGrantMarker(tx, pendingFile(path, next), next, client)
   } catch (error) {
     await rm(pendingFile(path, next), { force: true }).catch(() => {})
     throw error
@@ -201,8 +174,38 @@ export async function admitStartupBoardTransition(client, tx, operatorAdmission,
   return { admission: registerStartupBoardAdmission(tx), revision: next }
 }
 
+/** Prove conversion authority on the same startup writer, then prepare its next excluded journal. */
+export async function admitStartupBoardTransition(client, tx, operatorAdmission, onRefused) {
+  const path = getBoardGrantPath(client)
+  const revision = await databaseRevision(tx)
+  const created = consumeDatabaseCreation(client)
+  const operator = consumeOperatorAdmission(operatorAdmission)
+  if (!revision) {
+    if (!created && !operator) {
+      const status = await checkPre0016Destination(client, path)
+      if (status !== "clear") {
+        onRefused?.(status === "conflict" ? "conflict" : "no_authority")
+        return null
+      }
+    }
+    return { admission: registerStartupBoardAdmission(tx), revision: await prepareInitialBoardGrant(tx, path, client) }
+  }
+  if (operator) throw new Error("Legacy enrollment cannot replace an existing authority revision")
+  // A committed journal may be recovered, or a pre-0016 local database restored
+  // before backups included the marker may re-enroll when no conflicting file exists.
+  const currentMatched = await publishCommittedMarker(path, revision) && await boardGrantStillCurrent(tx, revision, path)
+  if (!currentMatched) {
+    const status = await checkPre0016Destination(client, path)
+    if (status !== "clear") {
+      onRefused?.(status === "conflict" ? "conflict" : "no_authority")
+      return null
+    }
+  }
+  return rotateStartupBoardGrant(client, tx, path, revision)
+}
+
 /** Called only by exclusive creation or independently verified offline operator enrollment. */
-export async function prepareInitialBoardGrant(tx, markerPath) {
+export async function prepareInitialBoardGrant(tx, markerPath, client) {
   if (await databaseRevision(tx)) throw new Error("Board continuity is already enrolled")
   rejectSymlinkPath(markerPath)
   if (lstatSync(markerPath, { throwIfNoEntry: false })) throw new Error("Board marker destination already exists")
@@ -212,7 +215,7 @@ export async function prepareInitialBoardGrant(tx, markerPath) {
   await prepareGrantMarker(markerPath, revision)
   try {
     await tx.execute({ sql: "INSERT INTO board_access_epoch(singleton, revision) VALUES (1, ?)", args: [revision] })
-    registerPreparedGrantMarker(tx, pendingFile(markerPath, revision), revision)
+    registerPreparedGrantMarker(tx, pendingFile(markerPath, revision), revision, client)
     return revision
   } catch (error) {
     await rm(pendingFile(markerPath, revision), { force: true }).catch(() => {})

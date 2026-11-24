@@ -34,6 +34,11 @@ export function consumeDatabaseCreation(client) {
   return true
 }
 
+export function hasPre0016LocalUpgrade(client) {
+  client = unwrapBoardGrantClient(client)
+  return Boolean(contexts.get(client)?.pre0016LocalUpgrade)
+}
+
 export function consumePre0016LocalUpgrade(client) {
   client = unwrapBoardGrantClient(client)
   const context = contexts.get(client)
@@ -42,8 +47,8 @@ export function consumePre0016LocalUpgrade(client) {
   return true
 }
 
-export function registerPreparedGrantMarker(tx, pendingPath, revision) {
-  if (tx && typeof tx === "object") preparedGrantMarkers.set(tx, { pendingPath, revision })
+export function registerPreparedGrantMarker(tx, pendingPath, revision, client) {
+  if (tx && typeof tx === "object") preparedGrantMarkers.set(tx, { pendingPath, revision, client })
 }
 
 export function consumePreparedGrantMarker(tx) {

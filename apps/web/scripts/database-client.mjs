@@ -7,7 +7,7 @@ import { setTimeout as sleepMs } from "node:timers/promises"
 import { LibsqlBatchError, LibsqlError } from "@libsql/core/api"
 import { expandConfig, isInMemoryConfig } from "@libsql/core/config"
 import { ResultSetImpl } from "@libsql/core/util"
-import { boardGrantRevisionQuery, consumePreparedGrantMarker, getBoardGrantPath, registerBoardGrantContext } from "./board-grant-context.mjs"
+import { boardGrantRevisionQuery, consumePreparedGrantMarker, consumePre0016LocalUpgrade, getBoardGrantPath, registerBoardGrantContext } from "./board-grant-context.mjs"
 import { TASK_EXPERIENCE_SCHEMA_VERSION } from "../drizzle/migrations/0018_task_experience.mjs"
 import {
   readTaskBoardMigrationState, taskBoardMigrationStateSteps,
@@ -2018,19 +2018,26 @@ async function isPre0016MeithealDatabase(tx, migrationState) {
      WHERE type = 'table' AND lower(name) IN ('tasks', '__meitheal_migrations', 'app_settings')`
   )
   const tables = new Set(rows.map(row => String(row.name)))
-  if (!tables.has("tasks") || (!tables.has("__meitheal_migrations") && !tables.has("app_settings"))) return false
+  if (!tables.has("tasks")) return false
+  if (!tables.has("__meitheal_migrations") && !tables.has("app_settings")) {
+    const { rows: taskColumns } = await tx.execute("SELECT lower(name) AS name FROM pragma_table_xinfo('tasks', 'main')")
+    const names = new Set(taskColumns.map(row => String(row.name)))
+    return names.has("id") && names.has("title") && names.has("idempotency_key") && names.has("request_id")
+  }
   if (!tables.has("app_settings")) return true
   const { rows: settingsColumns } = await tx.execute("SELECT lower(name) AS name FROM pragma_table_xinfo('app_settings', 'main')")
   const columnNames = new Set(settingsColumns.map(row => String(row.name)))
   if (!columnNames.has("key") || !columnNames.has("value")) return false
+  const { rows: [blocked] } = await tx.execute("SELECT value FROM app_settings WHERE key = 'continuity_auto_enroll_blocked'")
+  if (blocked !== undefined) return false
   const { rows: [version] } = await tx.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")
   if (version === undefined || version === null) return true
   const parsed = Number(version.value)
   return Number.isInteger(parsed) && parsed > 0 && parsed < ORDINARY_BOARD_SCHEMA_VERSION
 }
 
-/** @param {Client} client */
-async function inspectStartupSchema(client) {
+/** @param {Client} client @param {{ checkPre0016?: boolean }} [options] */
+async function inspectStartupSchema(client, { checkPre0016 = false } = {}) {
   const tx = await client.transaction("read")
   try {
     const migrationState = await readTaskBoardMigrationState(tx)
@@ -2038,7 +2045,7 @@ async function inspectStartupSchema(client) {
       const { validateStartupTaskSchema } = await import("./task-schema-startup.mjs")
       await validateStartupTaskSchema(tx, { allowPending: true })
     }
-    return await isPre0016MeithealDatabase(tx, migrationState)
+    return checkPre0016 ? await isPre0016MeithealDatabase(tx, migrationState) : false
   } finally {
     tx.close()
   }
@@ -2122,14 +2129,14 @@ export function openDatabaseForStartup(url, { readOnly = false, markerPath, trus
     let pre0016 = false
     try {
       inspection = openLocal(local.path, false, true, true)
-      pre0016 = await inspectStartupSchema(inspection)
+      pre0016 = await inspectStartupSchema(inspection, { checkPre0016: !readOnly })
     } catch (error) {
       inspection?.close()
       if (readOnly || !needsJournalRecovery(error)) throw error
       // SQLite may have to restore a hot journal before any read can succeed.
       inspection = openLocal(local.path, false, false, true)
       try {
-        pre0016 = await inspectStartupSchema(inspection)
+        pre0016 = await inspectStartupSchema(inspection, { checkPre0016: true })
         recovered = true
       } catch (recoveryError) {
         inspection.close()
@@ -2155,7 +2162,7 @@ export function openDatabaseForStartup(url, { readOnly = false, markerPath, trus
       if (!existingStats?.isFile() || !openedStats?.isFile() || openedStats.dev !== existingStats.dev || openedStats.ino !== existingStats.ino) {
         throw new Error("Database identity changed during startup inspection")
       }
-      const reopenedPre0016 = openedStats.size > 0 && await inspectStartupSchema(client)
+      const reopenedPre0016 = openedStats.size > 0 && await inspectStartupSchema(client, { checkPre0016: true })
       registerBoardGrantContext(client, { markerPath, pre0016LocalUpgrade: reopenedPre0016 })
       return client
     } catch (error) {
@@ -2212,6 +2219,8 @@ export async function withStartupWriteTransaction(client, apply) {
     const value = await apply(tx)
     await tx.commit()
     committed = true
+    const prepared = consumePreparedGrantMarker(tx)
+    if (prepared?.client) consumePre0016LocalUpgrade(prepared.client)
     return value
   } finally {
     tx.close()

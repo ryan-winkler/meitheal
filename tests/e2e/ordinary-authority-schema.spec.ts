@@ -294,10 +294,9 @@ test("eligible pre-0016 schema25 locks on symlink or unresolved pending journal 
   expect(
     (await db.execute("SELECT value FROM app_settings WHERE key = 'continuity_auto_enroll_blocked'")).rows
   ).toEqual([])
-  db.close()
   await rm(pendingDir, { recursive: true, force: true })
 
-  db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
+  // Retrying on the same open client after conflict clears succeeds cleanly.
   const recovered = await initialize()
   expect(recovered.state).toBe("ready")
   expect(await readBoardGrantRevision(marker)).toBe(recovered.revision)
@@ -306,7 +305,7 @@ test("eligible pre-0016 schema25 locks on symlink or unresolved pending journal 
   ).toBe("28")
 })
 
-test("rolled-back transition removes its uncommitted pending journal so the next startup enrolls", async () => {
+test("rolled-back transition removes its uncommitted pending journal and same client can retry", async () => {
   await withStartupWriteTransaction(db, (tx) => applyStartupTaskSchema(tx))
   db.close()
   db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
@@ -319,9 +318,8 @@ test("rolled-back transition removes its uncommitted pending journal so the next
   ).rejects.toThrow("synthetic migration failure")
   const pendingDir = join(directory, "meitheal-board-grants-pending")
   expect(await readdir(pendingDir)).toEqual([])
-  db.close()
 
-  db = await openDatabaseForStartup(`file:${join(directory, "test.db")}`, { markerPath: marker })
+  // Retrying on the same open client (without reopening) succeeds because eligibility was retained across rollback.
   const result = await initialize()
   expect(result.state).toBe("ready")
   expect(await readBoardGrantRevision(marker)).toBe(result.revision)
