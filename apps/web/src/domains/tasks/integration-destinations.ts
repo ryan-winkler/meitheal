@@ -1,6 +1,8 @@
 import type { Client } from "@libsql/client"
 import { localReaderCacheToken } from "../../../scripts/database-client.mjs"
 import type { WorkOperation } from "./board-scope"
+import { currentBoardGrantRevision } from "./persistence/board-grant-fence"
+import { ContinuityLockedError, isGuardedContinuityClient } from "./persistence/continuity-client"
 
 export const WORK_DESTINATIONS_KEY = "work-destinations"
 
@@ -86,7 +88,12 @@ export async function readWorkDestinations(db: Pick<Client, "execute">): Promise
   const state = localReaderCacheToken(db)
   if (state) {
     const cached = workDestinationsCache.get(state.owner)
-    if (cached && cached.token === state.token) return cached.value
+    if (cached && cached.token === state.token) {
+      if (isGuardedContinuityClient(db as object) && !(await currentBoardGrantRevision(db as Client))) {
+        throw new ContinuityLockedError()
+      }
+      return cached.value
+    }
   }
   const { rows: [row] } = await db.execute({ sql: "SELECT value FROM settings WHERE key = ?", args: [WORK_DESTINATIONS_KEY] })
   const value = row ? parseWorkDestinations(row.value) : null
