@@ -1,6 +1,6 @@
 # Meitheal Canary
 
-**0.0.2 Canary preview** of Meitheal, the household task manager for Home Assistant.
+**0.0.4 Canary preview** of Meitheal, the household task manager for Home Assistant.
 
 > **Warning:** Do not use Canary for your everyday tasks. Canary builds come directly from the latest source code. They can be unstable and they can lose data. Use the **Meitheal** app for everyday use. If you use Canary, make backups frequently.
 
@@ -14,7 +14,7 @@ Canary is a separate app (`meitheal_canary`). It has its own container and its o
 
 | Channel | App | Use it for | Version |
 |---|---|---|---|
-| Stable | **Meitheal** | Everyday household tasks | A release number, such as `0.0.1` |
+| Stable | **Meitheal** | Everyday household tasks | A release number, such as `0.0.3` |
 | Canary | **Meitheal Canary** | Tests of new features and fixes | Preview number in this guide, source commit under **Current version** |
 
 ## About Meitheal
