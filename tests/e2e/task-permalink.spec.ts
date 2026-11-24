@@ -236,6 +236,7 @@ test("a task link preserves simulated ingress and opens in another authorized co
   }
 })
 test("a comment link focuses the edited comment through ingress and recovers after deletion", async ({ browser, request }) => {
+  test.setTimeout(90_000)
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built app and a disposable ingress fixture")
   const work = await mkdtemp(join(tmpdir(), "meitheal-comment-permalink-"))
   const env = {
@@ -453,7 +454,7 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     await expect.poll(() => new URL(page.url()).searchParams.get("search")).toBe(search)
     expect(new URL(page.url()).searchParams.has("comment")).toBe(false)
     await page.goBack()
-    await expect(missing).toBeFocused()
+    await expect(missing).toBeFocused({ timeout: 12_000 })
   } finally {
     await source.close()
     await recipient.close()

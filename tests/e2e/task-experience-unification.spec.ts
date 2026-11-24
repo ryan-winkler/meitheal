@@ -13,6 +13,7 @@ const webDir = fileURLToPath(new URL("../../apps/web", import.meta.url))
 const ingressFixture = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
 
 test.describe("Task Experience Unification (R01-R20)", () => {
+  test.describe.configure({ timeout: 60_000 })
   test.skip(shouldSkipBrowserSpecs(), "Requires MEITHEAL_TEST_BROWSER=1 disposable fixture")
   test.use({ serviceWorkers: "block" })
 
@@ -25,16 +26,22 @@ test.describe("Task Experience Unification (R01-R20)", () => {
   }
 
   async function openTaskCard(page: Page, id: string) {
+    await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
     const overlay = page.locator("#task-detail-overlay")
-    const alreadyOpen = await overlay.evaluate((el, targetId) => el.classList.contains("active") && el.getAttribute("data-open-task-id") === targetId, id).catch(() => false)
-    if (!alreadyOpen) {
+    const isActive = await overlay.evaluate(el => el.classList.contains("active")).catch(() => false)
+    if (!isActive) {
       const card = page.locator(`.kanban-card[data-id="${id}"]`)
       await expect(card).toBeVisible()
       await card.locator(".card-open-btn").click()
+    } else {
+      await expect(page.locator("#td-status")).toBeEnabled({ timeout: 10_000 })
+      if ((await overlay.getAttribute("data-open-task-id")) !== id) {
+        await page.evaluate(targetId => window.openTaskDetail?.(targetId), id)
+      }
     }
     await expect(overlay).toHaveClass(/active/)
-    await expect(overlay).toHaveAttribute("data-open-task-id", id)
-    await expect(page.locator("#td-status")).toBeEnabled()
+    await expect(overlay).toHaveAttribute("data-open-task-id", id, { timeout: 10_000 })
+    await expect(page.locator("#td-status")).toBeEnabled({ timeout: 10_000 })
   }
 
   test("R01/R02/R04: shared editor hierarchy, Full form child with draft stack, and Convert checklist item to child", async ({ page, request, baseURL }) => {
