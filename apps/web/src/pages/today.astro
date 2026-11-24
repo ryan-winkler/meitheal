@@ -26,6 +26,7 @@ import BoardRoutineCheckins from "../components/boards/BoardRoutineCheckins.astr
 import Icon from "../components/ui/Icon.astro"
 import Layout from "../layouts/Layout.astro"
 import CachedHtmlSlot from "../components/ui/CachedHtmlSlot.astro"
+import { readCachedBoardName } from "@lib/shell-settings-cache"
 import UnifiedBar from "../components/layout/UnifiedBar.astro"
 import { readRequestOrganizationLabels } from "@lib/organization-labels"
 import EmptyState from "../components/ui/EmptyState.astro"
@@ -57,11 +58,7 @@ const placement = pagePlacement.placement
 const contextHref = (path: string) => boardContextHref({ boardId: workScope.boardId, area: pagePlacement.area?.id, project: pagePlacement.project?.id }, path)
 let todayBoardName = workScope.boardId === "household" ? "Household Board" : "Board"
 try {
-  const { rows: [boardRow] } = await getPersistenceClient().execute({
-    sql: "SELECT name FROM task_boards WHERE id = ?",
-    args: [workScope.boardId],
-  })
-  if (boardRow?.name) todayBoardName = String(boardRow.name)
+  todayBoardName = await readCachedBoardName(getPersistenceClient(), workScope.boardId, todayBoardName)
 } catch { /* fallback to default label */ }
 
 
