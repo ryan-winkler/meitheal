@@ -31,6 +31,8 @@ for (const outcome of ["accepted", "dismissed"] as const) {
     await page.evaluate(outcome => {
       window.dispatchEvent(new CustomEvent("test:install-choice", { detail: outcome }))
     }, outcome)
+    await expect(settingsInstall).toBeHidden()
+    await expect(banner).not.toHaveClass(/pwa-banner--visible/)
     await expect(badge).toBeHidden()
     await page.evaluate(() => {
       const event = new Event("beforeinstallprompt", { cancelable: true })

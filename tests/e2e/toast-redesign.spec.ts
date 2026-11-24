@@ -686,4 +686,58 @@ test.describe("Unified toast, persistent notifications & mobile UX", () => {
       expect(clearances.withBulkAndPomodoro).toBe("308px")
     }
   })
+
+  test("dismisses a toast via real browser touch swipe protocol with touch pointerType", async ({ browser, baseURL }) => {
+    const context = await browser.newContext({
+      baseURL,
+      viewport: { width: 390, height: 844 },
+      hasTouch: true,
+      isMobile: true,
+      serviceWorkers: "block",
+    })
+    const page = await context.newPage()
+    const cdp = await context.newCDPSession(page)
+    try {
+      await page.goto("/")
+      await page.evaluate(() => {
+        window.__meithealToast?.({ id: "real-touch-swipe", message: "Swipe via touch", duration: 15000 })
+      })
+      const card = page.locator('[data-toast-id="real-touch-swipe"]')
+      await expect(card).toBeVisible()
+      await card.evaluate((el) => {
+        const w = window as unknown as { __touchPointers?: string[] }
+        w.__touchPointers = []
+        el.addEventListener("pointerdown", (e: Event) => {
+          if (e instanceof PointerEvent) w.__touchPointers?.push(e.pointerType)
+        })
+      })
+
+      const box = await card.boundingBox()
+      expect(box).not.toBeNull()
+      const startX = Math.round(box!.x + box!.width * 0.5)
+      const startY = Math.round(box!.y + box!.height * 0.5)
+
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchStart",
+        touchPoints: [{ x: startX, y: startY, id: 1 }],
+      })
+      for (let i = 1; i <= 8; i++) {
+        await cdp.send("Input.dispatchTouchEvent", {
+          type: "touchMove",
+          touchPoints: [{ x: startX, y: startY + Math.round(12 * i), id: 1 }],
+        })
+      }
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchEnd",
+        touchPoints: [],
+      })
+
+      await expect(card).toHaveCount(0)
+      const pointerTypes = await page.evaluate(() => (window as unknown as { __touchPointers?: string[] }).__touchPointers ?? [])
+      expect(pointerTypes).toContain("touch")
+    } finally {
+      await cdp.detach().catch(() => {})
+      await context.close()
+    }
+  })
 })
