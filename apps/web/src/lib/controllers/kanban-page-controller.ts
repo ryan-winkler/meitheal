@@ -47,11 +47,6 @@ function carryCardBlockSizes(current: HTMLElement, replacement: HTMLElement): vo
   }
 }
 
-let kanbanMutationEpoch = 0
-export function bumpKanbanMutationEpoch(): number {
-  return ++kanbanMutationEpoch
-}
-
 export function initKanbanPage(signal: AbortSignal): void {
   const shell = document.getElementById("kanban-shell")
   const initialBoard = shell?.querySelector<HTMLElement>("#kanban-board")
@@ -141,7 +136,6 @@ export function initKanbanPage(signal: AbortSignal): void {
     document.addEventListener("focusin", markFocusMoved, { signal: focusLifetime.signal })
     document.addEventListener("pointerdown", markFocusMoved, { signal: focusLifetime.signal })
     const statusSaved = focus?.afterSave === "status" || focus?.afterSave === "lane-move"
-    const loadEpoch = kanbanMutationEpoch
     board.setAttribute("aria-busy", "true")
     if (!dataOnly) renderStatus(window.mI18n?.get("kanban.board_loading") ?? "Loading board…")
 
@@ -160,7 +154,7 @@ export function initKanbanPage(signal: AbortSignal): void {
       const html = new DOMParser().parseFromString(await response.text(), "text/html")
       const replacement = html.querySelector<HTMLElement>('#kanban-board[data-available="true"]')
       if (request.signal.aborted || signal.aborted) return
-      if (dataOnly && (location.href !== origin || loadEpoch !== kanbanMutationEpoch)) {
+      if (dataOnly && location.href !== origin) {
         renderStatus("")
         return
       }

@@ -52,7 +52,7 @@ export function attachVerticalListDragReorder(
       const target = siblings[targetIdx]!
       if (canSwap && !canSwap(dragged, target)) continue
       const box = target.getBoundingClientRect()
-      const threshold = Math.min(box.height, draggedHeight) / 2
+      const threshold = Math.min(box.height, draggedHeight, 56) / 2
       if (draggedIdx < targetIdx && clientY > box.top + threshold) {
         if (moveItem) moveItem(dragged, target, "after")
         else list.insertBefore(dragged, target.nextElementSibling)
@@ -72,7 +72,6 @@ export function attachVerticalListDragReorder(
     const grip = el?.closest<HTMLElement>(handle)
     const row = grip?.closest<HTMLElement>(itemSelector)
     if (!grip || !row || row.parentElement !== list) return false
-    grip.style.touchAction = "none"
     dragged = row
     oldIndex = items().indexOf(row)
     activeMode = mode

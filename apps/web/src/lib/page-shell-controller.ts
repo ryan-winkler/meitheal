@@ -204,11 +204,18 @@ export function initPageShellNavigation<SectionId extends string>({
   })
 
   const hash = window.location.hash.replace("#", "")
-  if (hash && document.getElementById(hash)) {
+  if (hash && document.getElementById(hash) && bar?.dataset.initialHashSynced !== hash) {
+    if (bar) {
+      bar.dataset.initialHashSynced = hash
+      pageLifecycle.signal.addEventListener("abort", () => { delete bar.dataset.initialHashSynced }, { once: true })
+    }
     const signal = pageLifecycle.signal
     const initialUrl = window.location.href
+    const initialScrollY = window.scrollY
     requestAnimationFrame(() => {
+      const active = document.activeElement
       if (signal.aborted || (bar && !bar.isConnected) || window.location.href !== initialUrl) return
+      if (window.scrollY !== initialScrollY || (active && active !== document.body && active !== document.documentElement)) return
       scrollToAnchor(hash, "auto", false)
     })
   }

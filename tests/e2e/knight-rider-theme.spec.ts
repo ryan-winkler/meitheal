@@ -29,7 +29,7 @@ test("Knight Rider persists and fills active work and task colors on Today and B
   await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" })
   const dueDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin", dateStyle: "short" }).format(new Date())
   async function create(title: string, status: string, color?: string, rice = 4): Promise<string> {
-    const framework_payload = JSON.stringify({ reach: rice, impact: 1, confidence: 1, effort: 1 })
+    const framework_payload = JSON.stringify({ reach: rice, impact: 1, confidence: 100, confidence_unit: "percent", effort: 1 })
     const response = await request.post("/api/tasks", {
       headers: boardHeaders, data: { title, due_date: dueDate, status, color, priority: color || rice > 4 ? 3 : 1, framework_payload },
     })

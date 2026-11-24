@@ -267,6 +267,7 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "create
         ...authority, ...(clientKey ? { "idempotency-key-status": result.replayed ? "cached" : "processed" } : {}),
       } })
   } catch (err) {
+    if ((err as Error)?.name === "AbortError") throw err
     const scoped = boardScopeErrorResponse(err)
     if (scoped) return scoped
     if (isDbUnavailable(err)) return db503Response("tasks-post", err)

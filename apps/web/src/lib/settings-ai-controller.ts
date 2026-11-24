@@ -100,9 +100,17 @@ function initHaAgentSettings() {
   if (refresh) pageLifecycle.on(refresh, "click", () => {
     if (refresh.getAttribute("aria-busy") !== "true") void restoreHaAgent(select.value)
   })
-  whenSectionVisible(select, () => {
-    void restoreHaAgent(select.value)
-  })
+  const section = select.closest<HTMLElement>("[data-settings-shell-section]")
+  if (!section || !section.hidden) void restoreHaAgent(select.value)
+  if (section) {
+    let wasHidden = section.hidden
+    const observer = new MutationObserver(() => {
+      if (wasHidden && !section.hidden) void restoreHaAgent(select.value)
+      wasHidden = section.hidden
+    })
+    observer.observe(section, { attributes: true, attributeFilter: ["hidden"] })
+    pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), { once: true })
+  }
   const save = document.querySelector<HTMLButtonElement>("#save-ha-agent")
   if (save) pageLifecycle.on(save, "click", withAsyncButton(save, async () => {
     await saveSetting("ha-assist-agent", select.value)

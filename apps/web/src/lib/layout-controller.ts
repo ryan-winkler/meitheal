@@ -3,6 +3,7 @@
 
         import { confirmDialog } from "@lib/confirm-dialog";
         import { findModalTrapTarget } from "@lib/dialog-overlay"
+        import { promptDialog } from "@lib/prompt-dialog";
         import { createClientLogger, registerGlobalLogger } from "@lib/client-logger";
         import { containTabFocus } from "@lib/focus-trap"
         import { applyAppearancePreferences, bindAppearanceNavigation, readAppearancePreferences } from "@lib/appearance-preferences"
@@ -38,6 +39,7 @@
 
         // Expose for is:inline scripts (kanban)
         window.confirmDialog = confirmDialog;
+        window.promptDialog = promptDialog;
         // Connection status check — singleton interval (P0-4: prevent accumulation)
         async function checkHealth() {
           const indicator = document.getElementById("connection-status");
@@ -167,35 +169,22 @@
             }
             return tasks.pathname + tasks.search + tasks.hash
           }
-          const openTasks = (view?: TaskView) => {
-            const href = taskDestination(view)
-            if (!href) return
+          const navigateTo = (href: string) => {
             syncIngressDestination(href)
             window.location.assign(safeIngressHref(href))
           }
+          const openTasks = (view?: TaskView) => navigateTo(taskDestination(view))
+          const openBoardLink = (key: "dashboard" | "today" | "upcoming") => () => {
+            const context = navigationContext()
+            navigateTo(context ? boardNavigationLinks(context)[key] : "/boards")
+          }
 
           const SHORTCUT_NAV = {
-            dashboard: () => {
-              const context = navigationContext()
-              const destination = context ? boardNavigationLinks(context).dashboard : "/boards"
-              syncIngressDestination(destination)
-              window.location.assign(safeIngressHref(destination))
-            },
-            tasks: () => openTasks(),
+            dashboard: openBoardLink("dashboard"),
             kanban: () => openTasks("kanban"),
             table: () => openTasks("table"),
-            today: () => {
-              const context = navigationContext()
-              const destination = context ? boardNavigationLinks(context).today : "/boards"
-              syncIngressDestination(destination)
-              window.location.assign(safeIngressHref(destination))
-            },
-            upcoming: () => {
-              const context = navigationContext()
-              const destination = context ? boardNavigationLinks(context).upcoming : "/boards"
-              syncIngressDestination(destination)
-              window.location.assign(safeIngressHref(destination))
-            },
+            today: openBoardLink("today"),
+            upcoming: openBoardLink("upcoming"),
             calendar: () => openTasks("calendar"),
           } as const
 
@@ -207,7 +196,7 @@
               modalFn()
               return
             }
-            SHORTCUT_NAV.tasks()
+            openTasks()
           }
           function openNewTaskAction() {
             const trigger = document.activeElement
@@ -336,51 +325,28 @@
                 SHORTCUT_NAV.table()
                 return
               }
-              if (matchesShortcutEvent(e, shortcuts.goDashboard, singleEnabled)) {
-                e.preventDefault()
-                SHORTCUT_NAV.dashboard()
-                return
-              }
-              if (matchesShortcutEvent(e, shortcuts.goToday, singleEnabled)) {
-                e.preventDefault()
-                SHORTCUT_NAV.today()
-                return
-              }
-              if (matchesShortcutEvent(e, shortcuts.goUpcoming, singleEnabled)) {
-                e.preventDefault()
-                SHORTCUT_NAV.upcoming()
-                return
-              }
-              if (matchesShortcutEvent(e, shortcuts.goCalendar, singleEnabled)) {
-                e.preventDefault()
-                SHORTCUT_NAV.calendar()
-                return
+              for (const [action, go] of [
+                [shortcuts.goDashboard, SHORTCUT_NAV.dashboard],
+                [shortcuts.goToday, SHORTCUT_NAV.today],
+                [shortcuts.goUpcoming, SHORTCUT_NAV.upcoming],
+                [shortcuts.goCalendar, SHORTCUT_NAV.calendar],
+              ] as const) {
+                if (matchesShortcutEvent(e, action, singleEnabled)) {
+                  e.preventDefault()
+                  go()
+                  return
+                }
               }
 
               // Phase 20 (ADHD Optimization): T/S/E shortcuts for detail panel task_type
               // Only active when task detail is modal OR focus resides inside the docked panel
               if (!e.ctrlKey && !e.metaKey && !e.altKey && singleEnabled && (modalTaskDetailOpen || (taskDetailOpen && document.getElementById("task-detail-panel")?.contains(document.activeElement)))) {
-                const tdTag = (e.target as HTMLElement)?.tagName;
-                const tdIsEditing =
-                  ["INPUT", "TEXTAREA", "SELECT"].includes(tdTag) ||
-                  (e.target as HTMLElement)?.contentEditable === "true";
-
-                if (!tdIsEditing) {
-                  const typeSelect = document.getElementById(
-                    "td-task-type",
-                  ) as HTMLSelectElement | null;
-                  if (typeSelect) {
-                    let newType = null;
-                    if (e.key.toLowerCase() === "t") newType = "task";
-                    if (e.key.toLowerCase() === "s") newType = "story";
-                    if (e.key.toLowerCase() === "e") newType = "epic";
-
-                    if (newType && typeSelect.value !== newType) {
-                      e.preventDefault();
-                      typeSelect.value = newType;
-                      typeSelect.dispatchEvent(new Event("change"));
-                    }
-                  }
+                const typeSelect = document.getElementById("td-task-type") as HTMLSelectElement | null
+                const newType = ({ t: "task", s: "story", e: "epic" } as Record<string, string | undefined>)[e.key.toLowerCase()]
+                if (typeSelect && newType && typeSelect.value !== newType) {
+                  e.preventDefault()
+                  typeSelect.value = newType
+                  typeSelect.dispatchEvent(new Event("change"))
                 }
               }
             },

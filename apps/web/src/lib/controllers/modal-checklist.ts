@@ -108,6 +108,7 @@ export function showTaskChecklist(
   let items = saved.slice()
   let problem: "retry" | "conflict" | null = null
   let textEditPending = false
+  let saveQueued = false
   let rendering = false
 
   add.disabled = loaded === null
@@ -161,6 +162,7 @@ export function showTaskChecklist(
       const delBtn = document.createElement("button")
       delBtn.type = "button"
       delBtn.className = "text-danger opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-xs p-1"
+      delBtn.dataset.checklistDelete = "1"
       delBtn.setAttribute("aria-label", `Delete checklist item ${index + 1}`)
       delBtn.title = "Delete item"
       delBtn.textContent = "×"
@@ -233,7 +235,7 @@ export function showTaskChecklist(
       }, { signal })
       delBtn.addEventListener("click", () => {
         items.splice(index, 1)
-        render({ index: Math.min(index, items.length - 1), selector: "button" })
+        render({ index: Math.min(index, items.length - 1), selector: "[data-checklist-delete]" })
         void save()
       }, { signal })
       return row
@@ -254,21 +256,35 @@ export function showTaskChecklist(
     recover!.hidden = false
   }
 
-  function save() {
-    if (problem || pendingChecklistSaves.has(taskId)) return
+  function save(): Promise<boolean> | undefined {
+    if (problem) return
+    const active = pendingChecklistSaves.get(taskId)
+    if (active) {
+      saveQueued = true
+      return active
+    }
     if (equal(saved, items)) {
       textEditPending = false
       return
     }
-    const pending = persist().then(saved => {
-      if (saved) textEditPending = false
-      return saved
-    }).finally(() => {
-      pendingChecklistSaves.delete(taskId)
-      if (ticketKey && pendingChecklistSaves.get(ticketKey) === pending) pendingChecklistSaves.delete(ticketKey)
-    })
+    let pending!: Promise<boolean>
+    pending = (async () => {
+      try {
+        let ok = true
+        do {
+          saveQueued = false
+          ok = await persist()
+        } while (ok && saveQueued && !equal(saved, items) && !problem)
+        if (ok) textEditPending = false
+        return ok
+      } finally {
+        if (pendingChecklistSaves.get(taskId) === pending) pendingChecklistSaves.delete(taskId)
+        if (ticketKey && pendingChecklistSaves.get(ticketKey) === pending) pendingChecklistSaves.delete(ticketKey)
+      }
+    })()
     pendingChecklistSaves.set(taskId, pending)
     if (ticketKey) pendingChecklistSaves.set(ticketKey, pending)
+    return pending
   }
 
   async function persist(): Promise<boolean> {

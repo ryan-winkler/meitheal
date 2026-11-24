@@ -537,6 +537,27 @@
     display: none !important;
   }
 
+  .sidebar-edit-moves {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+  .sidebar-edit-moves[hidden] {
+    display: none !important;
+  }
+  .sidebar-edit-moves button {
+    min-width: 44px;
+    min-height: 44px;
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-input);
+    color: var(--text-primary);
+  }
+
   :root[data-appearance-navigation="navbar"] #sidebar:not([data-sidebar-editing]) .sidebar-sections,
   :root[data-appearance-navigation="navbar"] #sidebar:not([data-sidebar-editing]) .sidebar-section:not([data-sidebar-section-hidden]):not([data-sidebar-section-empty]) {
     display: contents;

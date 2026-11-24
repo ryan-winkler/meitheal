@@ -9,7 +9,7 @@ import { initContextMenu } from "@lib/controllers/kanban-context-menu";
 import { toggleCardPromotion } from "@lib/controllers/kanban-promotion";
 import { initKeyboardAndSearch } from "@lib/controllers/kanban-keyboard";
 import { initKanbanGrouping } from "@lib/controllers/kanban-grouping";
-import { bumpKanbanMutationEpoch, type KanbanRefreshFocus } from "@lib/controllers/kanban-page-controller"
+import type { KanbanRefreshFocus } from "@lib/controllers/kanban-page-controller"
 import { isDoneStatus } from "@lib/status-config"
 import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
@@ -108,37 +108,11 @@ export function initKanbanArea(
 
       const restoreFocus = card.contains(document.activeElement)
       const wasDone = isDoneStatus(card.dataset.status ?? "")
-      const prevParent = card.parentElement
-      const prevNext = card.nextElementSibling
-      const prevStatus = card.dataset.status ?? ""
-      const prevType = card.dataset.taskType ?? ""
-      const adjustCount = (col: Element | null, delta: number) => {
-        if (!(col instanceof HTMLElement)) return
-        const nextTotal = Math.max(0, (Number(col.dataset.total) || 0) + delta)
-        col.dataset.total = String(nextTotal)
-        const badge = col.querySelector(".kanban-count")
-        if (badge && /^\d+$/.test(badge.textContent?.trim() ?? "")) badge.textContent = String(nextTotal)
-      }
-      const targetContainer = typeGroup?.querySelector<HTMLElement>(".swimlane-cards") ?? lane.querySelector<HTMLElement>(".kanban-cards")
 
       pendingMoves.set(card, lane)
       card.setAttribute("aria-busy", "true")
-      bumpKanbanMutationEpoch()
-      if (targetContainer && prevParent !== targetContainer) {
-        if (typeGroup) typeGroup.hidden = false
-        targetContainer.append(card)
-        card.dataset.status = status
-        if (typeChanged && newType) card.dataset.taskType = newType
-        if (source !== lane) { adjustCount(source, -1); adjustCount(lane, 1) }
-      }
       syncMoveStatus(lane)
       let saved = false
-      const rollbackMove = () => {
-        if (prevParent?.isConnected) prevParent.insertBefore(card, prevNext)
-        card.dataset.status = prevStatus
-        card.dataset.taskType = prevType
-        if (source !== lane) { adjustCount(source, 1); adjustCount(lane, -1) }
-      }
       try {
         const ctx = currentTaskApiContext()
         const res = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
@@ -152,11 +126,10 @@ export function initKanbanArea(
           return
         }
         if (!res.ok) {
-          rollbackMove()
           const problem = res.status === 409 ? await res.json().catch(() => null) : null
           const message = problem?.blocked_by?.length
             ? window.mI18n?.get("kanban.move_blocked") ?? "Finish the blocking tasks before moving this one into progress."
-            : problem?.error ?? window.mI18n?.get("kanban.move_failed") ?? "Couldn’t move the task. Try again."
+            : window.mI18n?.get("kanban.move_failed") ?? "Couldn’t move the task. Try again."
           showToast(message, "error")
           return
         }
@@ -170,13 +143,12 @@ export function initKanbanArea(
         }
       } catch (error) {
         if (__signal.aborted) return
-        rollbackMove()
         log.warn("Could not update the Kanban lane", error)
         showToast(window.mI18n?.get("kanban.move_failed") ?? "Couldn’t move the task. Try again.", "error")
       } finally {
         // An accepted move still reserves space until the Board replaces its older totals.
         if (saved) card.draggable = false
-        else { pendingMoves.delete(card); card.draggable = true }
+        else pendingMoves.delete(card)
         card.removeAttribute("aria-busy")
         syncMoveStatus(lane)
       }
@@ -284,7 +256,6 @@ export function initKanbanArea(
 
         const prevSibling = card.nextElementSibling
         pendingMoves.set(card, col)
-        bumpKanbanMutationEpoch()
         targetList.insertBefore(card, position.before ? position.anchor : position.anchor.nextElementSibling)
         try {
           const ctx = currentTaskApiContext()

@@ -54,9 +54,13 @@ export async function saveVersionedTask(id: string, fields: Record<string, unkno
       const payload = await response.json().catch(() => null) as Record<string, unknown> | null
       const serverCode = typeof payload?.errorCode === "string" ? payload.errorCode : ""
       const message = typeof payload?.error === "string" ? payload.error : typeof payload?.detail === "string" ? payload.detail : undefined
-      if (status === 409 && serverCode === "hierarchy_conflict") return { ok: false, status, errorCode: "hierarchy_conflict", message }
-      if (status === 400 && serverCode === "hierarchy_invalid") return { ok: false, status, errorCode: "hierarchy_invalid", message }
-      return { ok: false, status, errorCode: status === 409 ? "conflict" : "unavailable", message }
+      if (status === 409 && serverCode === "hierarchy_conflict") {
+        return { ok: false, status, errorCode: "hierarchy_conflict", ...(message ? { message } : {}) }
+      }
+      if (status === 400 && serverCode === "hierarchy_invalid") {
+        return { ok: false, status, errorCode: "hierarchy_invalid", ...(message ? { message } : {}) }
+      }
+      return { ok: false, status, errorCode: status === 409 ? "conflict" : "unavailable" }
     }
     const task: unknown = await response.json()
     if (!sameTaskApiContext(context, currentTaskApiContext()) || signal?.aborted) return { ok: false, status, errorCode: "unavailable" }
@@ -182,13 +186,6 @@ function enc(id: string): string {
  * Ingress prefixing is handled by Layout.astro's fetch monkey-patch.
  */
 export const taskApi = {
-  /** GET /api/tasks — list all tasks */
-  async listTasks(params?: Record<string, string>): Promise<any[]> {
-    const qs = params ? `?${new URLSearchParams(params).toString()}` : ""
-    const res = await safeFetch(`/api/tasks${qs}`)
-    return (await parseResponse<any[]>(res)) ?? []
-  },
-
   /** GET /api/tasks/:id — single task */
   async getTask(id: string): Promise<any> {
     const res = await safeFetch(`/api/tasks/${enc(id)}`)

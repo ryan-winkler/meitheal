@@ -4,6 +4,7 @@ import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers";
 
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs");
+test.use({ serviceWorkers: "block" });
 
 for (const theme of ["light", "dark"]) {
   test(`dashboard accessibility in ${theme} theme`, async ({ page }) => {

@@ -143,8 +143,22 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
     recovery.remove()
     delete root.dataset.bound
   }, { once: true })
-  document.addEventListener("visibilitychange", () => { void recheck(true) }, { signal })
-  window.addEventListener("focus", () => { void recheck(true) }, { signal })
+  const isEditorIframe = (el: Element | null): el is HTMLIFrameElement =>
+    el instanceof HTMLIFrameElement && el.classList.contains("tox-edit-area__iframe") && el.isConnected
+  let inEditorIframe = false
+  document.addEventListener("pointerdown", event => {
+    inEditorIframe = event.isTrusted && !document.hidden && document.hasFocus() && isEditorIframe(document.activeElement)
+  }, { capture: true, signal })
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) inEditorIframe = false
+    void recheck(true)
+  }, { signal })
+  window.addEventListener("blur", () => { inEditorIframe = false }, { signal })
+  window.addEventListener("focus", event => {
+    const fromEditor = event.isTrusted && inEditorIframe && !document.hidden && document.hasFocus()
+    inEditorIframe = false
+    void recheck(!fromEditor)
+  }, { signal })
   window.addEventListener("offline", () => { checking?.abort(); detach() }, { signal })
   window.addEventListener("online", () => { void recheck(true) }, { signal })
   window.addEventListener("pagehide", () => { checking?.abort(); detach() }, { signal })

@@ -341,7 +341,7 @@ function relativeTime(dueDate: string): string {
                         {ticketNumber && (
                           <span class="dashboard-ticket-key">{ticketNumber}</span>
                         )}
-                        {String(favorite.title)}
+                        <span>{String(favorite.title)}</span>
                       </div>
                       <div class="dashboard-task-meta">
                         <span class={`task-badge badge-${String(favorite.status)}`}>

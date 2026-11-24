@@ -995,17 +995,24 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
       } catch { /* non-critical: task count fetch failed silently */ }
     }
 
-    // Fetch counts with staggered delay to avoid thundering herd
-    const countBadges = Array.from(nav.querySelectorAll<HTMLElement>("[data-project-task-count]"))
-    countBadges.forEach((badge, i) => {
-      const projectId = badge.dataset.projectTaskCount
-      if (!projectId) return
-      const timer = setTimeout(() => {
-        countTimers.delete(timer)
-        void updateProjectTaskCount(projectId)
-      }, i * 50)
-      countTimers.add(timer)
-    })
+    // Fetch counts with staggered delay and deduplicate queued/loaded badges across refresh cycles
+    const queuedCounts = new Set<string>()
+    function queueBadgeCounts() {
+      let i = 0
+      for (const badge of nav.querySelectorAll<HTMLElement>("[data-project-task-count]:not([data-loaded])")) {
+        const id = badge.dataset.projectTaskCount
+        if (!id || queuedCounts.has(id)) continue
+        queuedCounts.add(id)
+        const timer = setTimeout(() => {
+          countTimers.delete(timer)
+          void updateProjectTaskCount(id).finally(() => {
+            if (!badge.isConnected || !badge.dataset.loaded) queuedCounts.delete(id)
+          })
+        }, i++ * 50)
+        countTimers.add(timer)
+      }
+    }
+    queueBadgeCounts()
     window.addEventListener(TASK_COUNTS_CHANGED, event => {
       const ids = (event as CustomEvent<{ projectIds?: string[] }>).detail?.projectIds ?? []
       for (const id of ids) void updateProjectTaskCount(id)
@@ -1025,9 +1032,7 @@ export function bindSidebarHierarchyActions(nav: HTMLElement, pageSignal: AbortS
     }
     const api: SidebarHierarchyActions = { insertAreaNode, insertProjectNode, newArea, refresh: () => {
       renderPinned()
-      for (const badge of nav.querySelectorAll<HTMLElement>("[data-project-task-count]:not([data-loaded])")) {
-        if (badge.dataset.projectTaskCount) void updateProjectTaskCount(badge.dataset.projectTaskCount)
-      }
+      queueBadgeCounts()
     }, dispose: () => areaActions.abort() }
     host.__meithealHierarchyActions = { nav, signal: pageSignal, controller: areaActions, api }
     return api

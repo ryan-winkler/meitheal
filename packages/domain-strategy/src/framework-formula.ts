@@ -1,5 +1,6 @@
 /** Round computed framework scores cleanly to at most two decimal places. */
 export function roundFrameworkScore(score: number): number {
+  if (!Number.isFinite(score) || Number.isInteger(score) || Math.abs(score) >= 1e12) return score
   return Math.round((score + Number.EPSILON) * 100) / 100
 }
 

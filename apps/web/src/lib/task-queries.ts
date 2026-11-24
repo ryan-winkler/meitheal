@@ -253,7 +253,7 @@ export async function getTasksForView(options: TaskViewOptions = {}, scope: Boar
       selectArgs.push(Math.floor(limit));
     }
 
-    const taskQuery = scopedTaskRead(scope, sourceSql(`SELECT ${columnsSql} FROM scoped_tasks AS tasks${whereSql} ORDER BY created_at DESC, id ASC${limitSql}`, selectArgs));
+    const taskQuery = scopedTaskRead(scope, sourceSql(`SELECT ${columnsSql} FROM scoped_tasks AS tasks${whereSql} ORDER BY created_at DESC, tasks.rowid DESC${limitSql}`, selectArgs));
     const counts = { total: 0, open: 0, active: 0, pending: 0, complete: 0, overdue: 0 };
     const useGlobalCounts = slim || hasPushdownFilter;
     let rows: Record<string, unknown>[];

@@ -135,6 +135,10 @@ try {
           </div>
         </fieldset>
       </div>
+      <div id="nt-layout-panel" hidden>
+        <h4 class="td-layout-title">{t("task_layout.layout", locale)}</h4>
+        <TaskDetailLayoutEditor locale={locale} scope="personal" serverLayoutJson={serverLayoutJson} />
+      </div>
       <div id="nt-sections" class="nt-sections" data-server-layout={serverLayoutJson ?? undefined}>
         <fieldset class="nt-group" id="nt-properties-group">
           <div class="nt-group-header">
@@ -143,10 +147,6 @@ try {
               aria-controls="nt-layout-panel" aria-label={t("task_layout.layout", locale)} title={t("task_layout.layout", locale)}>
               <Icon name="adjustments-horizontal" size={16} sprite={true} />
             </button>
-          </div>
-          <div id="nt-layout-panel" hidden>
-            <h4 class="td-layout-title">{t("task_layout.layout", locale)}</h4>
-            <TaskDetailLayoutEditor locale={locale} scope="personal" serverLayoutJson={serverLayoutJson} />
           </div>
           <div class="nt-form-grid" data-layout-order="properties">
             <div class="nt-field nt-field--full" data-layout-item="status">
@@ -469,6 +469,10 @@ try {
     let captureOptionsRequest: AbortController | undefined
     let lanesLoaded = false
     let goalsLoaded = false
+    let usersLoadedBoard: string | null = null
+    let propertiesLoadedBoard: string | null = null
+    let customFieldsLoadedBoard: string | null = null
+    const ntOptions = overlay.querySelector<HTMLDetailsElement>("#nt-options")
     let submitting = false
     let captureSession = 0
     let preserveAssignee = false
@@ -1012,11 +1016,16 @@ try {
 
       captureOptionsRequest = new AbortController()
       const requestSignal = AbortSignal.any([signal, captureOptionsRequest.signal, AbortSignal.timeout(10_000)])
+      const boardId = captureContext.boardId
       if (!unconfirmedAttempt) {
-        void loadAssigneeDropdown(requestSignal)
+        if (usersLoadedBoard !== boardId) void loadAssigneeDropdown(requestSignal, boardId)
+        else if (!preserveAssignee && assignee && !assignee.value && defaultAssignee) assignee.value = defaultAssignee
         if (!lanesLoaded) void loadStatusPills(requestSignal)
         if (!goalsLoaded) void loadGoals(requestSignal)
-        void loadPropertiesCatalog(requestSignal)
+        void loadPropertiesCatalog(requestSignal, boardId)
+        if ((ntOptions?.open || urlPrefillCustomFields) && customFieldsLoadedBoard !== boardId) {
+          void loadBoardCustomFields(requestSignal, boardId)
+        }
       }
       focusTrap.activate()
       if (!unconfirmedAttempt) void loadDraftEditor(captureSession)
@@ -1024,7 +1033,7 @@ try {
     };
 
     // Fetch users and populate the Assign To dropdown
-    async function loadAssigneeDropdown(requestSignal: AbortSignal) {
+    async function loadAssigneeDropdown(requestSignal: AbortSignal, boardId = captureContext?.boardId ?? null) {
       const select = document.querySelector<HTMLSelectElement>("#new-task-assigned-to")
       const hint = document.getElementById("new-task-assignee-hint")
       if (!select) return
@@ -1046,6 +1055,7 @@ try {
         defaultAssignee = fallback
         if (preserveAssignee || submitting) selectSavedOption(select, selected, taskDraftText("assignee_missing"))
         else select.value = fallback
+        usersLoadedBoard = boardId
 
         // Used only by the existing @mention parser.
         ;(window as any).__meitheal_users = users
@@ -1337,15 +1347,39 @@ try {
       })
     }
 
-    async function loadPropertiesCatalog(requestSignal: AbortSignal) {
+    document.addEventListener("meitheal:custom-fields-updated", () => { customFieldsLoadedBoard = null }, { signal })
+    ntOptions?.addEventListener("toggle", () => {
+      if (ntOptions.open && captureContext && customFieldsLoadedBoard !== captureContext.boardId) {
+        const reqSig = AbortSignal.any([signal, ...(captureOptionsRequest ? [captureOptionsRequest.signal] : []), AbortSignal.timeout(10_000)])
+        void loadBoardCustomFields(reqSig, captureContext.boardId)
+      }
+    }, { signal })
+
+    async function loadBoardCustomFields(requestSignal: AbortSignal, boardId = captureContext?.boardId ?? null) {
+      if (!boardCustomList || customFieldsLoadedBoard === boardId) return
+      const headers = captureContext ? taskApiHeaders(captureContext) : undefined
+      const cfRes = await fetch("/api/custom-fields", { signal: requestSignal, cache: "no-store", ...(headers ? { headers } : {}) }).catch(() => null)
+      if (requestSignal.aborted || !cfRes?.ok) return
+      const cfData = await cfRes.json().catch(() => null) as { fields?: Array<{ name: string; type: string; options?: string[] }> } | null
+      if (Array.isArray(cfData?.fields)) {
+        renderBoardCustomFieldDefs(cfData.fields)
+        customFieldsLoadedBoard = boardId
+      }
+    }
+
+    async function loadPropertiesCatalog(requestSignal: AbortSignal, boardId = captureContext?.boardId ?? null) {
+      if (propertiesLoadedBoard === boardId) {
+        if (areaSelect) selectSavedOption(areaSelect, capturePlacement?.areaId ?? areaSelect.value, "Unavailable group")
+        if (projectSelect) selectSavedOption(projectSelect, capturePlacement?.projectId ?? projectSelect.value, "Unavailable project")
+        return
+      }
       const headers = captureContext ? taskApiHeaders(captureContext) : undefined
       const fetchOpt = { signal: requestSignal, ...(headers ? { headers } : {}) }
       const areaPromise = areaSelect ? fetch("/api/areas", fetchOpt).catch(() => null) : null
       const projectPromise = projectSelect ? fetch("/api/projects", fetchOpt).catch(() => null) : null
       const pillarPromise = pillarSelect ? fetch("/api/pillars", fetchOpt).catch(() => null) : null
-      const cfPromise = boardCustomList ? fetch("/api/custom-fields", { ...fetchOpt, cache: "no-store" }).catch(() => null) : null
 
-      const [areaRes, projectRes, pillarRes, cfRes] = await Promise.all([areaPromise, projectPromise, pillarPromise, cfPromise])
+      const [areaRes, projectRes, pillarRes] = await Promise.all([areaPromise, projectPromise, pillarPromise])
       if (requestSignal.aborted) return
 
       if (areaSelect && areaRes?.ok) {
@@ -1387,11 +1421,8 @@ try {
         }
       }
 
-      if (cfRes?.ok) {
-        const cfData = await cfRes.json().catch(() => null) as { fields?: Array<{ name: string; type: string; options?: string[] }> } | null
-        if (Array.isArray(cfData?.fields)) {
-          renderBoardCustomFieldDefs(cfData.fields)
-        }
+      if ((!areaSelect || areaRes?.ok) && (!projectSelect || projectRes?.ok) && (!pillarSelect || pillarRes?.ok)) {
+        propertiesLoadedBoard = boardId
       }
     }
 
@@ -1606,9 +1637,8 @@ try {
         cfContainer?.classList.toggle("hidden", snapshot.fields.length === 0)
         cfToggle?.setAttribute("aria-expanded", String(snapshot.fields.length > 0))
         cfAddBtn?.setAttribute("aria-expanded", "false")
-        const options = overlay?.querySelector<HTMLDetailsElement>("#nt-options")
         const hasBoardCf = Boolean(snapshot.boardCustomFields && Object.keys(snapshot.boardCustomFields).length)
-        if (options) options.open = !!(snapshot.goal || snapshot.recurrence || snapshot.progress || snapshot.color || snapshot.labels.length || snapshot.newLabels.length || snapshot.fields.length || hasBoardCf)
+        if (ntOptions) ntOptions.open = !!(snapshot.goal || snapshot.recurrence || snapshot.progress || snapshot.color || snapshot.labels.length || snapshot.newLabels.length || snapshot.fields.length || hasBoardCf)
         cfDropdown?.classList.add("hidden")
         if (cfDropdown) cfDropdown.style.display = ""
         for (const field of snapshot.fields) {

@@ -396,6 +396,25 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
       </button>
     </div>
 
+    <div class="sidebar-edit-moves" data-sidebar-edit-moves hidden>
+      <button
+        type="button"
+        data-sidebar-step="-1"
+        aria-label={t("sidebar.reorder_up", locale)}
+        title={t("sidebar.reorder_up", locale)}
+      >
+        <Icon name="chevron-down" size={16} class="rotate-180" />
+      </button>
+      <button
+        type="button"
+        data-sidebar-step="1"
+        aria-label={t("sidebar.reorder_down", locale)}
+        title={t("sidebar.reorder_down", locale)}
+      >
+        <Icon name="chevron-down" size={16} />
+      </button>
+    </div>
+
     <div class="sidebar-edit-quick-actions">
       <button
         type="button"

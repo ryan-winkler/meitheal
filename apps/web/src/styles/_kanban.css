@@ -218,7 +218,7 @@
     background-color 0.15s ease;
 }
 
-.kanban-card[data-promoted="true"] {
+.kanban-card[data-promoted="true"]:not([data-task-color]) {
   border-color: color-mix(in srgb, var(--tblr-yellow, #f59f00) 48%, var(--border));
   box-shadow: 0 2px 10px -2px color-mix(in srgb, var(--tblr-yellow, #f59f00) 18%, transparent);
 }

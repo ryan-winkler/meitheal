@@ -112,12 +112,16 @@ async function loadSettings(): Promise<void> {
   const settings = await settingsStore.load()
 
   // Delegate restore to each controller — wrapped in try/catch per domain
-  try { restoreThemeSettings(settings) } catch (e) { log.error("Theme restore error", e) }
-  try { restoreSidebarSettings(settings) } catch (e) { log.error("Sidebar restore error", e) }
-  try { restoreDataSettings(settings) } catch (e) { log.error("Data restore error", e) }
-  try { restoreAISettings(settings) } catch (e) { log.error("AI restore error", e) }
-  try { restoreHASettings(settings) } catch (e) { log.error("HA restore error", e) }
-  try { restoreN8nSettings(settings) } catch (e) { log.error("n8n restore error", e) }
-  try { restoreCalendarTodoSettings(settings) } catch (e) { log.error("Calendar/Todo restore error", e) }
-  try { restoreShortcutsSettings(settings) } catch (e) { log.error("Shortcuts restore error", e) }
+  for (const [restore, name] of [
+    [restoreThemeSettings, "Theme"],
+    [restoreSidebarSettings, "Sidebar"],
+    [restoreDataSettings, "Data"],
+    [restoreAISettings, "AI"],
+    [restoreHASettings, "HA"],
+    [restoreN8nSettings, "n8n"],
+    [restoreCalendarTodoSettings, "Calendar/Todo"],
+    [restoreShortcutsSettings, "Shortcuts"],
+  ] as const) {
+    try { restore(settings) } catch (e) { log.error(`${name} restore error`, e) }
+  }
 }
