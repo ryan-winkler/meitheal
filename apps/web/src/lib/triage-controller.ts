@@ -6,7 +6,7 @@ import { workerAllowsNetworkOnly } from "./network-only-worker"
 const cacheModes = new Set(["visible", "hidden", "disabled", "unavailable"])
 
 function queueUrl(): URL {
-  const url = taskBackgroundUrl(new URL(location.href))
+  const url = taskBackgroundUrl()
   url.searchParams.delete("open")
   url.searchParams.delete("comment")
   return url
@@ -34,6 +34,7 @@ function initTriage(signal: AbortSignal) {
   let visible = false
   let pending = false
   let suspended = false
+  let awaitingBoardVerification = false
   let updateRequired = false
 
   const live = () => !signal.aborted && ui.root.isConnected && !suspended && !planningTab?.hidden
@@ -249,6 +250,20 @@ function initTriage(signal: AbortSignal) {
   window.addEventListener("popstate", checkTaskLocation, { signal })
   window.addEventListener("hashchange", checkTaskLocation, { signal })
   workers?.addEventListener("controllerchange", () => { if (live()) void readQueue(true) }, { signal })
+  function protectsQueue(event: Event) {
+    return event.target instanceof Element && event.target.contains(ui.root)
+  }
+  document.addEventListener("meitheal:board-hidden", event => {
+    if (!protectsQueue(event)) return
+    awaitingBoardVerification = true
+    refreshGeneration++
+    withdrawQueue()
+  }, { signal })
+  document.addEventListener("meitheal:board-verified", event => {
+    if (!awaitingBoardVerification || !protectsQueue(event)) return
+    awaitingBoardVerification = false
+    void readQueue(true)
+  }, { signal })
   window.addEventListener("pagehide", () => {
     suspended = true
     refreshGeneration++
@@ -257,7 +272,7 @@ function initTriage(signal: AbortSignal) {
   window.addEventListener("pageshow", event => {
     if (!event.persisted) return
     suspended = false
-    void readQueue(true)
+    if (!awaitingBoardVerification) void readQueue(true)
   }, { signal })
   if (planningTab) {
     const tabVisibility = new MutationObserver(() => {

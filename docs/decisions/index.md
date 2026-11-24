@@ -1,4 +1,8 @@
-# Architecture and product decisions
+# Architecture decision records (ADRs)
+
+- [ADR template and guidelines](adr-template.md) - Template and do's and don'ts for writing durable Architecture Decision Records.
+- [One Board model](0027-ordinary-board-workspaces.md) - User-defined peer Boards, one work engine, scoped planning and connected-work authority.
+- [Shared Board workspace and recoverable removal](0025-board-workspace-lifecycle.md) - Records the shared Kanban, Area terminology and Board deletion and restoration behavior.
 
 - [ADR 0001: Legal and Naming Strategy](0001-legal-and-naming-strategy.md) - Records the product naming and legal strategy.
 - [ADR 0002: Target Architecture](0002-target-architecture.md) - Describes runtime, domain, persistence, and integration boundaries.
@@ -21,3 +25,9 @@
 - [Separate App, browser, A2A, and Home Assistant Core agent protocols](0020-agent-protocol-boundaries.md) - Defines protocol boundaries, authorization rules, and status aliases across MCP, WebMCP, A2A, and Home Assistant Core.
 - [ADR 0021: Hardware, Memory, and UI Surface Architecture](0021-hardware-memory-and-ui-architecture.md) - Scopes Home Assistant entity state, streams Ingress HTML, bounds SQLite concurrency, standardizes Evergreen Carbon surfaces and Tabler sprites, and virtualizes the timeline.
 - [ADR 0022: AGPL-3.0-only Source License with Commercial Licensing](0022-agpl-source-license.md) - Replaces the custom source-available license with AGPL-3.0-only, keeps commercial licensing through the contributor agreement, and keeps the OpenSSF FLOSS criteria met.
+- [Temporary build-only Picomatch audit exception](0023-temporary-build-only-picomatch-audit.md) - Bounds GHSA-fc5q-39xc-vjpf handling to verified build dependencies through November 23, 2026.
+
+- [Trusted Board continuity at startup and recovery](0026-board-continuity-enrollment.md) - First enrollment, current operator custody and fail-closed recovery.
+- [ADR 0028: Sandboxed Plugin Bounded Context and Extension Contract](0028-plugin-bounded-context-and-sandbox.md) - Defines the dedicated plugins bounded context, dual-layer browser sandbox, server HTTP gateway, and permission model.
+- [ADR 0029: Unified Task Experience, Hierarchy Boundaries, and Scoring Normalization](0029-unified-task-experience-and-scoring.md) - Defines canonical Epic/Story/Task hierarchy limits, shared editor shells, Markdown preservation, RICE percent scaling, board-scoped custom fields, and manual ordering invariants.
+- [ADR 0030: Home Assistant Backup and Pre-0016 Upgrade Continuity](0030-home-assistant-backup-and-upgrade-continuity.md) - Includes the committed Board grant marker in Home Assistant cold backups and auto-enrolls pre-0016 local upgrades without conflicting markers.

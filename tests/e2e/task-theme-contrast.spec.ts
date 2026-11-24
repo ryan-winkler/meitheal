@@ -2,6 +2,7 @@ import { expect, test, type Frame, type Page } from "@playwright/test"
 import { mkdir, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { shouldSkipBrowserSpecs } from "./_helpers"
+import { saveAppearance } from "../helpers/appearance-settings"
 
 const evidenceDir = process.env.MEITHEAL_CONTRAST_EVIDENCE_DIR
 const states = [
@@ -99,7 +100,7 @@ test.describe("Shopping theme contrast", () => {
           const response = await route.fetch(), data = await response.json()
           await route.fulfill({ response, json: data.users?.length ? data : { ...data, users: [{ id: "contrast-fixture-user", name: "Fixture household member", source: "custom" }] } })
         })
-        await page.route("**/api/goals", async route => {
+        await page.route(url => url.pathname === "/api/goals", async route => {
           const response = await route.fetch(), data = await response.json()
           const goal = { id: "contrast-fixture-goal", title: "Fixture goal" }
           await route.fulfill({ response, json: Array.isArray(data) ? data.length ? data : [goal] : data.goals?.length ? data : { ...data, goals: [goal] } })
@@ -120,15 +121,22 @@ test.describe("Shopping theme contrast", () => {
             observer.observe(document, { childList: true, subtree: true })
             mark()
           })
-          await page.goto(`${baseURL}/__task-theme-parent`)
-          const iframe = page.frames().find(candidate => candidate !== page.mainFrame())!
-          await iframe.waitForSelector("#new-task-title-input", { state: "attached" })
+          await page.goto(`${baseURL}/__task-theme-parent`, { waitUntil: "domcontentloaded" })
+          const host = page.locator('iframe[title="Synthetic HA frontend"]')
+          const iframe = await (await host.elementHandle())?.contentFrame()
+          if (!iframe) throw new Error("Synthetic Home Assistant frame did not load")
+          await iframe.waitForSelector("#new-task-title-input", { state: "attached", timeout: 8_000 })
           frame = iframe
           await expect(frame.locator("html")).toHaveAttribute("data-ha-theme", state.ha)
           await expect(frame.locator("html")).toHaveClass(new RegExp(state.effective))
         } else await page.goto(`${baseURL}/today`)
-        await frame.getByRole("button", { name: "New Task", exact: true }).click()
-        await frame.getByRole("button", { name: "Shopping", exact: true }).click()
+        const capture = frame.getByRole("button", { name: "New Task", exact: true })
+        const overlay = frame.locator("#new-task-overlay")
+        await expect(overlay).toHaveAttribute("data-new-task-controller", "ready")
+        await capture.focus()
+        await expect(overlay).not.toHaveAttribute("hidden", "")
+        await frame.evaluate(() => window.openNewTaskModal?.("shopping_item"))
+        await expect(overlay).toHaveClass(/active/)
         await frame.locator("#nt-options > summary").click()
         await expect(frame.locator('#new-task-assigned-to option[value]:not([value=""])').first()).toBeAttached()
         await expect(frame.locator('#new-task-goal option[value]:not([value=""])').first()).toBeAttached()
@@ -193,6 +201,7 @@ test.describe("Shopping theme contrast", () => {
         await page.goto("/settings#look-and-feel-settings")
         await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
         await page.locator("#accent-color-custom").fill(color)
+        await saveAppearance(page)
         await expect.poll(() => page.evaluate(() => localStorage.getItem("meitheal-accent-color"))).toBe(color)
         await page.goto("/today")
         await openShopping()
@@ -211,6 +220,7 @@ test.describe("Shopping theme contrast", () => {
       await page.goto("/settings#look-and-feel-settings")
       await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
       await page.locator("#accent-reset").click()
+      await saveAppearance(page)
       await expect.poll(() => page.evaluate(() => localStorage.getItem("meitheal-accent-color"))).toBeNull()
       expect(await page.evaluate(() => ["--personal-accent", "--personal-accent-foreground", "--personal-accent-hover-foreground"].map(key => document.documentElement.style.getPropertyValue(key)))).toEqual(["", "", ""])
       await page.goto("/today")

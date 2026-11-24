@@ -1,0 +1,291 @@
+import type { ChildProcess } from "node:child_process"
+import { randomUUID } from "node:crypto"
+import { once } from "node:events"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
+
+import { expect, test, type Browser } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
+import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
+
+test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable built app")
+
+test("Timeline keeps unavailable Project and Area references out of its grouping data", async () => {
+  test.setTimeout(60_000)
+  const work = await mkdtemp(join(tmpdir(), "meitheal-timeline-project-scope-"))
+  let child: ChildProcess | undefined
+  let browser: Browser | undefined
+  try {
+    child = startCoreFixture(work, false, undefined, undefined, work)
+    child.stdout?.resume()
+    child.stderr?.resume()
+    const [fixture] = await once(child, "message", { signal: AbortSignal.timeout(10_000) })
+    const origin = `https://127.0.0.1:${fixture.port}`
+    const app = origin + fixture.configuredPath
+    browser = await launchPinBrowser(work)
+    const context = await browser.newContext({ ignoreHTTPSErrors: true, serviceWorkers: "block" })
+    await context.setExtraHTTPHeaders({})
+    await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+    const headers = await currentBoardWriteHeaders(context.request, "household", { origin }, app)
+    async function create(path: string, data: object, writeHeaders = headers): Promise<string> {
+      const response = await context.request.post(app + path, { headers: writeHeaders, data })
+      expect(response.status(), await response.text()).toBe(201)
+      return (await response.json() as { id: string }).id
+    }
+
+    const retiredTitle = "Retired project title"
+    const retiredProject = await create("/api/projects", { title: retiredTitle })
+    const missingProject = randomUUID()
+    const missingArea = randomUUID()
+    const start = Date.now()
+    const dates = {
+      start_date: new Date(start).toISOString().slice(0, 10),
+      due_date: new Date(start + 86_400_000).toISOString().slice(0, 10),
+    }
+    const prefix = "Timeline catalog scope"
+    const retiredTask = await create("/api/tasks", { ...dates, title: `${prefix} retired`, project_id: retiredProject })
+    const danglingTask = await create("/api/tasks", { ...dates, title: `${prefix} missing` })
+    const groupName = "Timeline feature access group"
+    const projectTitle = "Timeline feature access project"
+    const group = await create("/api/areas", { name: groupName })
+    const project = await create("/api/projects", { title: projectTitle, area_id: group })
+    const assigned = await create("/api/tasks", { ...dates, title: `${prefix} assigned`, area_id: group, project_id: project })
+    const namedBoard = await create("/api/boards", { name: "Timeline catalog scope Board" }, {
+      origin, "x-meitheal-board-session": headers["x-meitheal-board-session"]!,
+    })
+    const namedHeaders = await currentBoardWriteHeaders(context.request, namedBoard, { origin }, app)
+    const namedAreaTitle = "Retired named Board Area"
+    const namedProjectTitle = "Retired named Board Project"
+    const namedArea = await create("/api/areas", { name: namedAreaTitle }, namedHeaders)
+    const namedProject = await create("/api/projects", { title: namedProjectTitle, area_id: namedArea }, namedHeaders)
+    const namedAssigned = await create("/api/tasks", {
+      ...dates, title: `${prefix} named assigned`, project_id: namedProject,
+    }, namedHeaders)
+    const namedUnfiled = await create("/api/tasks", { ...dates, title: `${prefix} named unfiled` }, namedHeaders)
+    const db = new DatabaseSync(join(work, "pins.db"))
+    try {
+      // The public project lifecycle clears associations. Seed legacy references directly.
+      expect(db.prepare("UPDATE projects SET retired_at = ? WHERE id = ?").run(start, retiredProject).changes).toBe(1)
+      expect(db.prepare("UPDATE tasks SET project_id = ?, area_id = ? WHERE id = ?").run(missingProject, missingArea, danglingTask).changes).toBe(1)
+      expect(db.prepare("UPDATE projects SET retired_at = ? WHERE id = ?").run(start, namedProject).changes).toBe(1)
+      expect(db.prepare("UPDATE areas SET retired_at = ? WHERE id = ?").run(start, namedArea).changes).toBe(1)
+      expect(db.prepare("SELECT area_id FROM board_task_planning WHERE task_id = ?").get(namedAssigned)).toMatchObject({ area_id: null })
+    } finally {
+      db.close()
+    }
+
+    const page = await context.newPage()
+    const query = new URLSearchParams({ view: "timeline", search: prefix, area: "", groupBy: "project" })
+    await page.goto(`${app}/tasks?${query}#timeline`)
+    const data = (await page.locator("#timeline-data").textContent())!
+    const labels = (await page.locator("#timeline-projects").textContent())!
+    expect(labels).toContain(projectTitle)
+    expect(await page.locator("#timeline-areas").textContent()).toContain(groupName)
+    for (const value of [retiredProject, retiredTitle, missingProject, missingArea]) {
+      expect(data).not.toContain(value)
+      expect(labels).not.toContain(value)
+    }
+    const tasks = JSON.parse(data) as { id: string; project_group: string }[]
+    for (const id of [retiredTask, danglingTask]) {
+      const task = tasks.find(task => task.id === id)
+      expect(task?.project_group).toBe("unavailable-project")
+      expect(task).not.toHaveProperty("project_id")
+      await expect(page.locator(`.gantt-bar[data-task-id="${id}"]`)).toBeVisible()
+    }
+    const paneToggle = page.getByRole("button", { name: "Task pane" })
+    await expect(paneToggle).toBeEnabled()
+    if (await paneToggle.getAttribute("aria-expanded") === "false") await paneToggle.press("Enter")
+    await expect(page.getByRole("heading", { name: "Group: Unknown Project", exact: true })).toBeVisible()
+
+    const namedUrl = `${app}/boards/${namedBoard}`
+    await page.goto(`${namedUrl}?${query}#timeline`)
+    const namedData = (await page.locator("#timeline-data").textContent())!
+    const namedTasks = JSON.parse(namedData) as typeof tasks
+    expect(namedTasks.find(task => task.id === namedAssigned)).toMatchObject({ project_group: "unavailable-project" })
+    expect(namedTasks.find(task => task.id === namedAssigned)).not.toHaveProperty("area_id")
+    expect(namedTasks.find(task => task.id === namedUnfiled)).toMatchObject({ project_group: "project-", area_id: null })
+    for (const value of [retiredTask, namedProject, namedArea, namedProjectTitle, namedAreaTitle]) {
+      expect(namedData).not.toContain(value)
+    }
+    expect(await page.locator("#timeline-projects").textContent()).not.toContain(namedProjectTitle)
+    expect(await page.locator("#timeline-areas").textContent()).not.toContain(namedAreaTitle)
+    await expect(paneToggle).toBeEnabled()
+    if (await paneToggle.getAttribute("aria-expanded") === "false") await paneToggle.press("Enter")
+    await expect(page.getByRole("heading", { name: "Group: Unknown Project", exact: true })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Group: No Project", exact: true })).toBeVisible()
+    const namedAreaQuery = new URLSearchParams(query)
+    namedAreaQuery.set("groupBy", "area")
+    await page.goto(`${namedUrl}?${namedAreaQuery}#timeline`)
+    await expect(page.getByRole("heading", { name: "Group: Unknown Area", exact: true })).toBeVisible()
+
+    const admin = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {} })
+    await admin.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
+    const endpoint = app + "/api/organization-features"
+    async function setFeature(feature: string, audience: "everyone" | "selected" | "nobody", users: string[] = []) {
+      const current = await admin.request.get(endpoint)
+      expect(current.status()).toBe(200)
+      const settings = await current.json()
+      const saved = await admin.request.put(endpoint, {
+        headers: { origin, "x-meitheal-area-admin": current.headers()["x-meitheal-area-admin"]! },
+        data: { feature, audience, users, revision: settings.features[feature].revision },
+      })
+      expect(saved.status(), await saved.text()).toBe(204)
+    }
+
+    const areaQuery = new URLSearchParams(query)
+    areaQuery.set("groupBy", "area")
+    const areaUrl = `${app}/tasks?${areaQuery}#timeline`
+    await setFeature("groups", "selected", ["fixture-member"])
+    await page.goto(areaUrl)
+    await expect(page.getByRole("heading", { name: `Group: ${groupName}`, exact: true })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Group: Default", exact: true })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Group: Unknown Area", exact: true })).toBeVisible()
+    await expect(page.locator(`.gantt-bar[data-task-id="${danglingTask}"]`)).toBeVisible()
+    expect(await page.locator("#timeline-data").textContent()).toContain(group)
+
+    const visitor = await browser.newContext({ extraHTTPHeaders: {}, serviceWorkers: "block" })
+    await visitor.addCookies([{ name: "feedback-fixture", value: "member-two", url: origin }])
+    try {
+      const fresh = await visitor.newPage()
+      await fresh.goto(areaUrl)
+      const visitorPane = fresh.getByRole("button", { name: "Task pane" })
+      await expect(visitorPane).toBeEnabled()
+      if (await visitorPane.getAttribute("aria-expanded") === "false") await visitorPane.press("Enter")
+      const unavailable = fresh.getByRole("heading", { name: "Group: Unknown Area", exact: true })
+      await expect(unavailable).toBeVisible()
+      await expect(unavailable.locator(".gantt-sidebar-group-qualifier")).toHaveCount(0)
+      await expect(fresh.getByRole("heading", { name: new RegExp(groupName) })).toHaveCount(0)
+      for (const selector of ["#timeline-data", "#timeline-areas", "#timeline-projects"]) {
+        const json = await fresh.locator(selector).textContent()
+        expect(json).not.toContain(group)
+        expect(json).not.toContain(groupName)
+      }
+      await expect(fresh.locator(`.gantt-bar[data-task-id="${assigned}"]`)).toBeVisible()
+      expect(await fresh.locator("#timeline-projects").textContent()).toContain(projectTitle)
+    } finally {
+      await visitor.close()
+    }
+
+    await setFeature("groups", "everyone")
+    await setFeature("projects", "nobody")
+    await page.reload()
+    await expect(page.getByRole("heading", { name: `Group: ${groupName}`, exact: true })).toBeVisible()
+    expect(await page.locator("#timeline-projects").textContent()).not.toContain(projectTitle)
+    await expect(page.locator(`.gantt-bar[data-task-id="${assigned}"]`)).toBeVisible()
+
+    await setFeature("groups", "nobody")
+    await page.goto(`${app}/tasks?${query}#timeline`)
+    expect((await context.request.get(app + "/api/projects")).status()).toBe(404)
+    expect((await context.request.get(app + "/api/boards/household?view=groups")).status()).toBe(404)
+
+    const restrictedProjects = (await page.locator("#timeline-projects").textContent())!
+    const restrictedAreas = (await page.locator("#timeline-areas").textContent())!
+    const restrictedData = (await page.locator("#timeline-data").textContent())!
+    expect(restrictedProjects).not.toContain(projectTitle)
+    expect(restrictedProjects).not.toContain(project)
+    expect(restrictedAreas).not.toContain(groupName)
+    expect(restrictedData).not.toContain(project)
+    expect(restrictedData).not.toContain(group)
+    const visibleTask = (JSON.parse(restrictedData) as typeof tasks).find(task => task.id === assigned)
+    expect(visibleTask?.project_group).toBe("unavailable-project")
+    await expect(page.locator(`.gantt-bar[data-task-id="${assigned}"]`)).toBeVisible()
+
+    query.set("groupBy", "area")
+    await page.goto(`${app}/tasks?${query}#timeline`)
+    const unknownArea = page.getByRole("heading", { name: "Group: Unknown Area", exact: true })
+    await expect(unknownArea).toHaveCount(1)
+    await expect(unknownArea.locator(".gantt-sidebar-group-qualifier")).toHaveCount(0)
+    await expect(page.getByRole("heading", { name: new RegExp(groupName) })).toHaveCount(0)
+    await expect(page.locator(`.gantt-bar[data-task-id="${assigned}"]`)).toBeVisible()
+  } finally {
+    await browser?.close()
+    if (child && child.exitCode === null && child.signalCode === null) {
+      const exited = once(child, "exit", { signal: AbortSignal.timeout(3_000) })
+      child.kill("SIGTERM")
+      await exited
+    }
+    await rm(work, { recursive: true, force: true })
+  }
+})
+
+
+test("Timeline remounts project rows in visual keyboard order and keeps long-Area identity visible", async ({ page, request, baseURL }) => {
+  test.setTimeout(90_000)
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+  const prefix = `Timeline ordered ${randomUUID()}`
+  const cleanup: string[] = []
+  const cleanupFailures: string[] = []
+  async function create(path: string, data: object): Promise<string> {
+    const response = await request.post(path, { headers, data })
+    expect(response.status(), await response.text()).toBe(201)
+    const id = (await response.json() as { id: string }).id
+    cleanup.push(`${path}/${id}`)
+    return id
+  }
+  try {
+    const area = await create("/api/areas", { name: "A long household Area name that must not conceal the distinguishing project identity token" })
+    const start_date = new Date().toISOString().slice(0, 10)
+    const due_date = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
+    const ids: string[] = []
+    for (let index = 0; index < 45; index++) {
+      const project = await create("/api/projects", { title: index < 2 ? "A shared project" : `Ordered project ${String(index).padStart(2, "0")}`, area_id: area })
+      ids.push(project)
+      await create("/api/tasks", { title: `${prefix} ${index}`, project_id: project, start_date, due_date })
+    }
+    await page.goto(`/tasks?view=timeline&search=${encodeURIComponent(prefix)}&area=&groupBy=project#timeline`)
+    const pane = page.getByRole("button", { name: "Task pane" })
+    if (await pane.getAttribute("aria-expanded") === "false") await pane.click()
+    const headings = page.locator('.gantt-sidebar-row[role="heading"]')
+    await expect(headings.first()).toBeVisible()
+    const shared = headings.filter({ hasText: "A shared project" })
+    await expect(shared).toHaveCount(2)
+    const qualifiers = shared.locator(".gantt-sidebar-group-qualifier")
+    expect(await qualifiers.allTextContents()).toEqual(expect.arrayContaining(ids.slice(0, 2).map(id => expect.stringContaining(`#${id.slice(-8)} · `))))
+    for (const element of await qualifiers.all()) {
+      expect(await element.evaluate(node => {
+        const range = document.createRange()
+        range.setStart(node.firstChild!, 0)
+        range.setEnd(node.firstChild!, 9)
+        return range.getBoundingClientRect().right <= node.getBoundingClientRect().right + 1
+      })).toBe(true)
+    }
+    const firstToggle = headings.first().locator("button")
+    await firstToggle.focus()
+    const firstNode = await firstToggle.elementHandle()
+    await page.locator(".gantt-scroll-wrapper").evaluate(node => { node.scrollTop = node.scrollHeight; node.dispatchEvent(new Event("scroll")) })
+    await expect.poll(() => page.locator('.gantt-sidebar-row[data-row-index="88"]').count()).toBe(1)
+    await expect(firstToggle).toBeFocused()
+    const remounted = await page.locator(".gantt-scroll-wrapper").evaluate(node => {
+      node.scrollTop = Math.max(0, node.scrollTop - node.clientHeight / 2)
+      const height = document.querySelector<HTMLElement>(".gantt-sidebar-row")!.getBoundingClientRect().height
+      node.dispatchEvent(new Event("scroll"))
+      return Math.max(0, Math.floor(node.scrollTop / height) - 8)
+    })
+    await expect.poll(() => page.locator(`.gantt-sidebar-row[data-row-index="${remounted}"]`).count()).toBe(1)
+    const order = await page.locator(".gantt-sidebar-row").evaluateAll(nodes => nodes.map(node => Number((node as HTMLElement).dataset.rowIndex)))
+    expect(order).toEqual([...order].sort((a, b) => a - b))
+    expect(await firstNode!.evaluate(node => node.isConnected)).toBe(true)
+    await page.locator(".gantt-scroll-wrapper").evaluate(node => { node.scrollTop = 0; node.dispatchEvent(new Event("scroll")) })
+    await expect.poll(() => page.locator('.gantt-sidebar-row[data-row-index="1"]').count()).toBe(1)
+    await expect(headings.nth(1)).toBeVisible()
+    await firstToggle.press("Tab")
+    await expect(page.locator('.gantt-sidebar-row[data-row-index="1"]')).toBeFocused()
+    const secondToggle = headings.nth(1).locator("button")
+    const stops = await page.locator('.gantt-sidebar-row[data-row-index="1"]').locator('button, input, select, textarea, a[href], [tabindex="0"]').count() + 2
+    for (let index = 0; index < stops && !await secondToggle.evaluate(node => node === document.activeElement); index++) {
+      await page.keyboard.press("Tab")
+      const row = await page.evaluate(() => document.activeElement?.closest<HTMLElement>(".gantt-sidebar-row")?.dataset.rowIndex)
+      expect(row).toBeDefined()
+      expect(Number(row)).toBeLessThanOrEqual(2)
+    }
+    await expect(secondToggle).toBeFocused()
+  } finally {
+    for (const path of cleanup.reverse()) {
+      const response = await request.delete(path, { headers, data: {} })
+      if (!response.ok()) cleanupFailures.push(`${path}: ${response.status()} ${await response.text()}`)
+    }
+  }
+  expect(cleanupFailures).toEqual([])
+})

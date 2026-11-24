@@ -17,14 +17,11 @@ Open Meitheal from the Home Assistant sidebar. Set up the [optional Core integra
 
 ## URL Handler and X-Callback-URL
 
-The redesigned `Settings → App & Companion` section now surfaces companion-safe deep links directly in the UI:
+Use the complete sidebar path for saved links, Shortcuts, and automations. Published Canary uses `/8d9fd00d_meitheal_canary`; local Canary uses `/local_meitheal_canary`. Copy the complete path after the Home Assistant host. The generic `/app/<full-slug>` route (such as `/app/local_meitheal_canary`) also works; preserve every segment.
 
-- `Open in Companion` uses Home Assistant's documented URL handler:
-  `homeassistant://navigate/api/hassio_ingress/<TOKEN>/settings#app-pwa-settings`
-- `Copy x-callback URL` generates the companion x-callback equivalent for Shortcuts and automation flows:
-  `homeassistant://x-callback-url/navigate?path=%2Fapi%2Fhassio_ingress%2F<TOKEN>%2Fsettings%23app-pwa-settings`
+For published Canary use `homeassistant://navigate/8d9fd00d_meitheal_canary` or `homeassistant://x-callback-url/navigate?path=%2F8d9fd00d_meitheal_canary`. These open the Home Assistant panel, which establishes an ingress session using the Companion app's login.
 
-Use the Settings copy action when possible so you do not have to hand-encode the ingress path or hash.
+The Settings **Open in Companion** and **Copy x-callback URL** actions currently copy the active `/api/hassio_ingress/<TOKEN>/...` URL. These require an existing ingress session in the destination webview; Companion login alone does not establish it. Do not save those session URLs for shortcuts or automations. Open the sidebar panel instead.
 
 **Official references:**
 - URL handler: <https://companion.home-assistant.io/docs/integrations/url-handler>
@@ -38,19 +35,20 @@ Create home screen shortcuts to Meitheal:
 
 1. **Settings → Companion App → Manage Shortcuts**
 2. Select **Dashboard** type
-3. Enter path: `/api/hassio_ingress/<YOUR_TOKEN>/`
-   - Find your token in HA sidebar → click Meitheal → copy URL after `/api/hassio_ingress/`
+3. Enter path: `/8d9fd00d_meitheal_canary`
+   - Use the sidebar path from your browser address bar when Meitheal is open, such as `/8d9fd00d_meitheal_canary` or `/local_meitheal_canary`
+   - Do not use an `/api/hassio_ingress/` address. It needs a session that only the Home Assistant sidebar creates, so a shortcut or notification that opens it directly shows an authorization error.
 4. Set label: "Meitheal" (10 chars max)
 
-**Shortcut paths:**
+**Shortcut paths:** add `?meitheal=` and an encoded Meitheal page to open that page inside the sidebar panel.
 
 | Shortcut | Path |
 |----------|------|
-| Dashboard | `/api/hassio_ingress/<TOKEN>/` |
-| Kanban | `/api/hassio_ingress/<TOKEN>/kanban` |
-| Today | `/api/hassio_ingress/<TOKEN>/today` |
-| Calendar | `/api/hassio_ingress/<TOKEN>/calendar` |
-| Settings | `/api/hassio_ingress/<TOKEN>/settings#app-pwa-settings` |
+| Dashboard | `/8d9fd00d_meitheal_canary` |
+| Tasks | `/8d9fd00d_meitheal_canary?meitheal=%2Ftasks` |
+| Today | `/8d9fd00d_meitheal_canary?meitheal=%2Ftoday` |
+| Calendar | `/8d9fd00d_meitheal_canary?meitheal=%2Fcalendar` |
+| Settings | `/8d9fd00d_meitheal_canary?meitheal=%2Fsettings%23app-pwa-settings` |
 
 ### Quick Settings Tile
 
@@ -66,10 +64,10 @@ Set up the optional Core integration so Home Assistant can call `meitheal.comple
 
 1. **Settings → Automations → Blueprints → Import Blueprint**
 2. Import [Task Notification with Actions](https://github.com/ryan-winkler/meitheal/blob/dev/integrations/home-assistant/blueprints/meitheal_task_notification.yaml) and [Complete Task from Notification](https://github.com/ryan-winkler/meitheal/blob/dev/integrations/home-assistant/blueprints/meitheal_complete_from_notification.yaml).
-3. Create an automation from each blueprint. Choose the same notification device, then set the task event and ingress path in the sender.
+3. Create an automation from each blueprint. Choose the same notification device, then set the task event and the Meitheal sidebar path, such as `/8d9fd00d_meitheal_canary` or `/local_meitheal_canary`, in the sender.
 4. Save and enable both automations. Send a notification for a sample task and check that **Complete** marks it done.
 
-Notifications for events with a task ID include **View task** and **Complete**. Other events, such as a board update, link to the Meitheal dashboard. If an App event is missing, check that its type is enabled in the Canary's event settings.
+Tapping a notification opens Meitheal inside the Companion app. Notifications for events with a task ID open that ticket and include **View task** and **Complete**. Older automations with session URLs or unprefixed slugs now stop with an error. Set the complete sidebar path instead. The blueprint accepts Meitheal and Meitheal Canary slugs with their repository prefix (such as `8d9fd00d_`) or `local_` as `/<full-slug>` or `/app/<full-slug>`. Other paths are rejected without substituting a target. The selected App must be installed and accessible to the Companion user. Other events, such as a board update, link to the Meitheal dashboard. If an App event is missing, check that its type is enabled in the Canary's event settings.
 
 ### Widgets
 

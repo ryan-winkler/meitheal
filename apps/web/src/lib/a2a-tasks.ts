@@ -1,11 +1,12 @@
 import { hasScope } from "@meitheal/domain-auth"
 import { TaskRepository, ensureSchema, getPersistenceClient } from "@domains/tasks"
+import type { BoardScope } from "@domains/tasks/board-scope"
 import type { ResolvedAgent } from "./agent-token-guard"
 import { isActiveStatus, isClosedStatus, isDoneStatus, normalizeStatus } from "./status-config"
 import { formatTicketKey } from "./ticket-key"
 
 /**
- * Meitheal tasks in A2A's task shape. A2A tasks here are the household's own
+ * Meitheal tasks in A2A's task shape. A2A tasks here are the selected Board's own
  * tasks, read through the token's scopes; nothing is invented for the protocol.
  */
 
@@ -29,9 +30,10 @@ function timestamp(value: unknown): string | undefined {
   return Number.isFinite(ms) ? new Date(ms).toISOString() : undefined
 }
 
-export function toA2aTask(row: Row, base: string, includeArtifacts = true) {
+export function toA2aTask(row: Row, base: string, includeArtifacts = true, boardId?: string) {
   const id = String(row.id)
-  const ticket = row.ticket_number == null ? null : formatTicketKey(Number(row.ticket_number))
+  const ticket = typeof row.ticket_key === "string" ? row.ticket_key
+    : row.ticket_number == null ? null : formatTicketKey(Number(row.ticket_number))
   const updated = timestamp(row.task_version ?? row.updated_at)
   return {
     id,
@@ -52,7 +54,7 @@ export function toA2aTask(row: Row, base: string, includeArtifacts = true) {
             priority: row.priority ?? null,
             due_date: row.due_date ?? null,
             assigned_to: row.assigned_to ?? null,
-            url: `${base}/tasks?open=${encodeURIComponent(id)}`,
+            url: `${base}${boardId ? `/boards/${encodeURIComponent(boardId)}` : "/tasks"}?open=${encodeURIComponent(id)}`,
           },
           mediaType: "application/json",
         }],
@@ -63,15 +65,17 @@ export function toA2aTask(row: Row, base: string, includeArtifacts = true) {
 }
 
 const canRead = (agent: ResolvedAgent) => hasScope(agent.scopes, "tasks:read")
+const sameAgent = (agent: ResolvedAgent, scope: BoardScope) =>
+  scope.principal.kind === "agent" && scope.principal.tokenId === agent.tokenId
 
 /** One task by ID or ticket key, or null when it is missing or the token may not read tasks. */
-export async function getA2aTask(agent: ResolvedAgent, idOrKey: string, base: string) {
-  if (!canRead(agent) || !/^[\w-]{1,128}$/.test(idOrKey)) return null
+export async function getA2aTask(agent: ResolvedAgent, idOrKey: string, base: string, scope: BoardScope) {
+  if (!canRead(agent) || !sameAgent(agent, scope) || !/^[\w-]{1,128}$/.test(idOrKey)) return null
   await ensureSchema()
-  const repo = new TaskRepository(getPersistenceClient())
+  const repo = new TaskRepository(getPersistenceClient(), scope)
   const resolved = await repo.resolveTaskId(idOrKey)
   const row = resolved ? await repo.findById(resolved.id) : null
-  return row ? toA2aTask(row as unknown as Row, base) : null
+  return row ? toA2aTask(row as unknown as Row, base, true, scope.boardId) : null
 }
 
 /** The open tasks assigned to the token's agent assignee, newest change first. */
@@ -86,11 +90,12 @@ export async function listA2aTasks(
     contextId?: string | undefined
     statusTimestampAfterMs?: number | undefined
   },
+  scope: BoardScope,
 ) {
   const empty = { tasks: [], nextPageToken: "", pageSize: options.pageSize, totalSize: 0 }
-  if (!canRead(agent) || !agent.assigneeId) return empty
+  if (!canRead(agent) || !sameAgent(agent, scope) || !agent.assigneeId) return empty
   await ensureSchema()
-  const repo = new TaskRepository(getPersistenceClient())
+  const repo = new TaskRepository(getPersistenceClient(), scope)
   const rows: Row[] = []
   for (let offset = 0; ; offset += 200) {
     const { tasks: batch } = await repo.findAll({
@@ -118,7 +123,7 @@ export async function listA2aTasks(
   const page = matching.slice(options.offset, options.offset + options.pageSize)
   const next = options.offset + page.length
   return {
-    tasks: page.map(row => toA2aTask(row, base, options.includeArtifacts)),
+    tasks: page.map(row => toA2aTask(row, base, options.includeArtifacts, scope.boardId)),
     nextPageToken: next < matching.length ? String(next) : "",
     pageSize: options.pageSize,
     totalSize: matching.length,

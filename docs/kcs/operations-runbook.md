@@ -12,6 +12,12 @@ Working-tree image builds exclude local `.keys` signing material, `.data` direct
 
 Passkey sign-in is unavailable. The checked-in auth configuration leaves it disabled; there is no registration or authentication verifier to enable. Use the existing Home Assistant ingress or scoped API credential paths. The offline license signature verifier remains separate from sign-in.
 
+### Standalone Home Assistant startup
+
+When Home Assistant is unconfigured, startup checks retry at most once every five seconds for the same database, settings revision and environment. Normal settings saves, an environment change or a different database admit a new check immediately. An external database edit is discovered on the next request after that pause. Local due-date reminders start independently; configured connection failures retain the existing next-request retry.
+
+For repeated startup logging or delayed activation, check `ha.startup.skipped`, then save complete Home Assistant URL and token settings and confirm connection status. Never copy token values into diagnostics. Run `e2e/ha-standalone-connection.spec.ts` to verify repeated unconfigured requests, configuration changes, database replacement and failed-authentication recovery. Physical Green qualification still uses the unchanged resource and latency limits.
+
 ## Eisenhower scoring saves
 
 Triage reads the task's existing framework values before adding delay impact or interest metadata. A failed or malformed read leaves the wizard and its inputs open, reports the failed update and sends no replacement payload. Retry after the connection recovers. Null and empty objects are valid for an unscored task. Missing fields, arrays, scalar values and responses for another task reject the save.
@@ -41,7 +47,7 @@ If an SVG is rejected, export a single SVG and retry. If its appearance changes,
 
 ## Live Updates
 
-Open `GET /api/sse` through an authorized Home Assistant ingress session or the standalone app. The response should start with a `connected` event and send a heartbeat comment every 30 seconds. To verify Home Assistant delivery, open two streams and change a disposable calendar or to-do entity. Each stream should receive one `ha:entity_changed` event for the change. Closing the final stream releases the Meitheal event listeners.
+Open `GET /api/sse` through an authorized Home Assistant ingress session or the standalone app. The response should start with a `connected` event and send a heartbeat comment every 30 seconds. To verify Home Assistant delivery, use two Board members and change a disposable calendar or to-do entity bound to an active Area or Project that only one member can access. The member with placement access should receive one `ha:entity_changed` event. Both members should receive updates from a Board-wide binding they can access. Retiring the first binding's destination should stop its events for both members. Closing the final stream releases the Meitheal event listeners.
 
 Calendar and to-do updates use the Home Assistant entity subscription. Event-bus subscriptions are limited to Companion notification actions and Meitheal-specific events. To check the notification path, complete a disposable task from a configured notification and confirm its status in Meitheal. Use Home Assistant's automation traces for service call diagnostics.
 
@@ -72,7 +78,7 @@ Use this after changing dashboard shell, search-launcher, or top-level navigatio
 - `#dashboard-recent`
 
 4. Confirm the shell `New Task` button still opens the shared task modal and not a page-local implementation.
-5. Check **Current signal** at 320 px and on desktop. The label aligns with the greeting. Active and overdue links show keyboard focus and stay inside ingress.
+5. Check the Dashboard heading and workload tiles at 320 px and on desktop. Active and Overdue show keyboard focus and open their corresponding task filters inside ingress.
 
 ## Habits Shell Verification
 
@@ -87,8 +93,10 @@ Use this after changing habits shell, shell navigation, or the habits controller
 - `#habits-library`
 - `#habits-flow`
 
-4. Confirm the shell `New Habit` button opens the shared habits modal.
+4. Confirm the shell **New Routine** button opens the Household Routine modal. The Household library retains its **New Habit** action.
 5. Confirm the shell search launcher still opens SearchHub instead of a page-local search surface.
+
+Through Home Assistant, also verify **Routines on your Boards** in the library and Today. Use the named Board verification below to check permissions, Project placement and repeat completion.
 
 ## Today Shell Verification
 
@@ -118,11 +126,31 @@ When changing translucent theme colors, check dropdown selection, task focus and
 
 Check the plain links back from Deferred, Inactivity and Triage in both themes, including pointer hover. In Planning, Progress and Habits, each visible section link is reachable with Tab. Enter opens the destination, and the current link announces its location. Verify arrow navigation and Planning history with `e2e/parent-page-shell.spec.ts` and `e2e/habits-shell.spec.ts`.
 
+In disposable Home Assistant ingress, open **Boards → Household → Areas**, then open an Area and Project. Confirm its task view and settings stay inside ingress. Repeat an older Area and Project bookmark, including a supported settings fragment, and verify the matching Household context. Run `e2e/area-management.spec.ts` against a built App to verify the Area editor, contextual Goal creation and a Household Routine that creates work in the selected Area. Explicit personal naming preferences can change the displayed labels.
+
+For navbar navigation, open the Boards dropdown and check the same branch when it overflows into **More**, including a long saved Areas label at 769 px and an Area with more than twenty Projects. Expand Boards and Areas with the keyboard; their links must remain reachable inside the owning menu and Settings must stay visible. Escape first cancels an inline editor, action popup or deletion confirmation immediately and restores its trigger; a subsequent Escape dismisses the owning navigation. On the phone, use Tab and Shift+Tab within an open Area or Project action menu to move between its edit link and Rename without leaving the menu. If focused Boards moves from More into the primary navbar, More must close without covering the Boards dropdown. Check Area and Project Rename cancellation and Project Delete cancellation in both menus.
+
+Resize to a wide navbar and then a phone drawer, checking that the original links and disclosure state survive and keyboard focus stays visible. Opening the phone drawer normally uses its existing focus handoff. A focused sidebar link or editor keeps its context visible by opening the drawer on resize, without saving the editor. This handoff must survive in-app navigation while the next page is loading when the control remains available in the same sidebar. Closing the drawer returns focus to the menu toggle. If the user chooses another sidebar control while the page loads, preserve that newer choice. If a new-page input or dialog takes focus, preserve that focus and keep the drawer closed; a later unrelated navigation must not reopen it. Resize an open action popup to the navbar; it must dismiss and restore a visible trigger.
+
+Repeat Project editing with a pinned copy present; the editable row and pinned title/icon must stay consistent. Create a Project from its Area, then open Add task without reloading and cancel with Escape. Confirm focus returns to Add task. With Boards collapsed, N opens the shared New Task modal rather than a hidden Project editor. Check popup dismissal in both phone-to-navbar and navbar-to-phone resizing; the closed phone drawer returns focus to its visible menu opener.
+
+For hover navigation, open Area and Project actions with the pointer outside the sidebar, then cancel Rename and task capture with the keyboard. The owning sidebar must stay expanded. At a short phone viewport, every Color & Icon control and Save must remain reachable by keyboard and pointer.
+
+At phone width, select Project options and verify the menu opens without navigating to the Project. With Boards in the primary desktop navbar, the first Escape from a pointer- or keyboard-opened menu returns focus to its trigger. The next Escape closes the Boards disclosure and focuses its button.
+
+While a changed Area draft has focus, change font or navigation style from another tab. The same draft must stay visible and focused without sending a save request. Escape must still cancel it; a deliberate outside-click save keeps its normal behavior.
+
+In the Board sidebar, a screen reader must distinguish an Area link from its **Projects in [Area name]** disclosure, including after an inline rename. If retrying an empty page removes the focused retry button, return focus to the disclosure. Leave focus where the user moved it if they left the list while the retry was loading.
+
+Run `e2e/navigation-overflow-recovery.spec.ts`, `e2e/nav-overflow-hidden-links.spec.ts`, `e2e/navbar-hierarchy-actions.spec.ts`, `e2e/sidebar-popup-layouts.spec.ts`, `e2e/sidebar-appearance-edit.spec.ts` and `e2e/appearance-preferences.spec.ts` for these journeys.
+
 ## Task Link Verification
 
-Open a task and select **Copy task link**. If the browser cannot access the clipboard, copy the selected link from the text field. Links use `/tickets/{id}` with the immutable task ID. Opening the ordinary task drawer updates the address bar. Comment links append `?comment={id}`. Recipients use their existing installation access.
+Open a task and select **Copy task link**. If the browser cannot access the clipboard, copy the selected link from the text field. Links use the ticket key, such as `/tickets/MTH-4`. Card, list, Today, Upcoming, Activity, Review, pin and comment links use the same path, and opening the ordinary task drawer shows it in the address bar and in the Home Assistant panel route. Comment links append `?comment={id}`. Recipients use their existing installation access.
 
-1. Open the copied link in a fresh authorized browser tab. Reload and confirm the same title and ticket number.
+A ticket keeps its Board and its number, but its key follows the Board's ticket prefix. When a Board owner changes the prefix, every key on that Board changes with it, and links that use the old prefix stop opening the ticket. Links that use the task ID, such as `/tickets/3f2a…`, keep working after a prefix change, and lower-case keys work too. The address bar then shows the current key. A link uses the task ID only when the key is not known yet. If a key link shows the unavailable message but the ID link works, compare the key with the one in the task panel header; the Board's prefix may have changed.
+
+1. Open the copied link in a fresh authorized browser tab. Reload and confirm the same title and ticket number. Open the task's older ID link and confirm the address bar changes to the key without reopening the drawer.
 2. Repeat through Home Assistant. Confirm the URL keeps its ingress prefix and that the destination still requires Home Assistant access. Use Back and Forward to close and reopen the ordinary drawer. Modified clicks on task links open the ticket in another tab.
 3. Open old `/tasks?open=…` and `/tasks#task-MTH-…` links. Confirm they open the task at its ticket URL and restore the original view when closed. Pin and search drawers keep their existing return flow.
 4. Delete a disposable task and reopen its link. Confirm the unavailable message appears and **Close detail** returns to the Tasks view.
@@ -159,8 +187,18 @@ Use this after changing the Calendar shell, `calendar-controller.ts`, or route-s
 - `#calendar-flow`
 
 3. Confirm `TaskViewTabs` still preserve the current query string when switching routes.
+
 4. Confirm clicking a month cell opens the day drawer.
 5. Confirm `Add Task` from the day drawer opens the shared task modal.
+
+### Calendar Sync Loop & Ticket Details Check
+
+Use this after changing `calendar-bridge.ts`, `calendar-event-identity.ts`, `due-date-reminders.ts`, or `cleanup-corrupt-titles.ts`.
+
+1. Run `pnpm --filter @meitheal/tests test e2e/calendar-duplication-loop.spec.ts e2e/calendar-sync-failures.spec.ts e2e/caldav-sync-failures.spec.ts e2e/due-date-reminder-shutdown.spec.ts`.
+2. Confirm an imported Google Calendar or WebDAV/CalDAV event does not spawn a duplicate due-date reminder event on the same calendar and that HTML-wrapped or reminder-shaped echoes are skipped on inbound sync.
+3. Confirm bidirectional calendars expose `calendar_write_ticket_details` (default on) to append a blank line, ticket key, and direct Meitheal link while preserving `Added from Meitheal` attribution when disabled.
+4. Confirm outbound calendar syncs and due-date calendar reminders record a `calendar_sync` confirmation entry in `task_activity_log`.
 
 ## Kanban Shell Verification
 
@@ -187,7 +225,9 @@ In a disposable ingress session, open **Planning → RICE**. Edit an open task, 
 
 ## Deferred Work Verification
 
-In a disposable ingress session, defer an open card from the Kanban menu. Confirm the lane count and active sidebar update, and find the task through search or Table. Open **Tasks → Deferred**, resume the card, and confirm focus moves to the next row or queue heading. Complete a deferred task in Details and verify that its badge and queue row disappear. Use **Reload Deferred** to activate a waiting service worker before opening the live queue.
+In a disposable ingress session, defer an open card from the Kanban menu. Confirm the lane count and active sidebar update, and find the task through search or Table. Return to Kanban and select **Deferred**. On narrow screens, open **Board actions** first. Resume the card and confirm focus moves to the next row or queue heading. Complete a deferred task in Details and verify that its badge and queue row disappear. Use **Reload Deferred** to activate a waiting service worker before opening the live queue.
+
+Open **Deferred** from a board with an Area selected. Check that the queue and its count cover that Area, then choose **All areas → Apply area** to include the rest of the Household Board. **Back to Tasks** returns to Kanban with the displayed Area selection.
 
 Use the most recent `task_version` and `deferral_revision` from task Details for `PATCH /api/tasks/{id}/deferral`. On `TASK_VERSION_CONFLICT` or an interrupted response, refresh the task and inspect its current state before making another decision. `TASK_BLOCKED` includes the open prerequisites and leaves the task deferred.
 
@@ -197,15 +237,15 @@ The timestamp returned when creating a task is its initial stored version. Use i
 
 In a disposable ingress session, open **Planning → Triage**. Confirm the queue is paged, then open Details and accept a card using the keyboard. Reload the queue in Hidden mode and check that it displays the Table handoff. If an older service worker controls the browser, use **Reload Triage** before verifying the live queue. See [Triage household tasks](triage-workflow.md).
 
+### Verify sidebar navigation and task pins
+
+In a disposable browser session, select **Expand on hover or focus**, open the rail with the edge arrow, and close it with the arrow. Move the pointer within the rail after closing with **Ctrl+B**, then leave and re-enter to verify hover expansion. Choose **Edit menu** in the keyboard menu, reorder **Tasks** and **Boards**, reload, and check that Household, Areas and Projects move with Boards. On a phone, check that the drawer's move handles are at least 44px.
+
+In disposable HTTPS ingress, pin a Household task in Details. Open **Pinned tasks** from the sidebar and use the row’s thumbtack to remove the last pin. The sidebar destination should disappear. Switch to a second Home Assistant user and confirm their navigation uses their own pins. Run `e2e/sidebar-personalization.spec.ts` and `e2e/sidebar-pin-presence.spec.ts` against a built App for browser coverage.
+
 ## Planning RICE Verification
 
 In a disposable ingress session, open **Planning → RICE**. Edit an open task, check the live estimate, and save it. Confirm the task appears in Ranked work with the new score. Open the editor in two sessions and save in one. Verify the other offers **Reload score** and the first score is retained. See [Rank work with RICE](planning-rice.md).
-
-## Deferred Work Verification
-
-In a disposable ingress session, defer an open card from the Kanban menu. Confirm the lane count and active sidebar update, and find the task through search or Table. Open **Tasks → Deferred**, resume the card, and confirm focus moves to the next row or queue heading. Complete a deferred task in Details and verify that its badge and queue row disappear. Use **Reload Deferred** to activate a waiting service worker before opening the live queue.
-
-Use the most recent `task_version` and `deferral_revision` from task Details for `PATCH /api/tasks/{id}/deferral`. On `TASK_VERSION_CONFLICT` or an interrupted response, refresh the task and inspect its current state before making another decision. `TASK_BLOCKED` includes the open prerequisites and leaves the task deferred.
 
 ## Table Shell Verification
 
@@ -282,15 +322,23 @@ Leave `LOKI_URL` unset whenever an external Alloy collector scrapes container st
 - verify `MEITHEAL_DB_URL` and add-on write permissions.
 - for a manual migration check in the add-on shell, use `s6-setuidgid meitheal node scripts/migrate.mjs --check` from `/opt/meitheal/apps/web` with the configured database URL.
 
-The check reports pending migrations without creating the database or migration ledger. SQLite can create WAL support files when it opens an existing database for a read-only check. If startup reports that the stored schema version requires a newer App, use an App that supports that version, or restore the older App and its matching cold backup together. Startup checks the stored version before App schema changes, backup rotation or authentication writes. SQLite may still need to recover its own journal after an interrupted process.
+The check reports pending migrations without creating the database or migration ledger. SQLite can create WAL support files when it opens an existing database for a read-only check. If startup reports that the stored schema version requires a newer App, use an App that supports that version. Retain the older App and its matching cold backup as historical rollback material. Before any restore or start, follow the [current operator checkpoint procedure](home-assistant-backup-and-restore.md#recover-governed-access-from-a-current-operator-checkpoint); an incapable predecessor must stay stopped and an unknown snapshot remains locked. Startup checks the stored version before App schema changes, backup rotation or authentication writes. SQLite may still need to recover its own journal after an interrupted process.
 
-Stop App writers before replacing or upgrading their database, including Apps sharing a remote libSQL database. This startup check uses `app_settings.schema_version`. A migration that introduces an incompatible schema must commit its new version marker with the schema changes, even when the migration is run separately from the App.
+Stop App writers before replacing or upgrading their database, including Apps sharing a remote libSQL database. Keep the exact predecessor App image and a verified cold database backup together outside automatic backup rotation.
 
-The migration command and web startup reconcile the same existing task prerequisites. These include Areas, Goals, Projects, comments, Household Kanban lanes, and task ordering fields such as priority and promotion. Both install the inactivity and stall triggers in a transaction. A failure rolls back the activity transaction. Earlier numbered migrations retain their ledger entries. The read-only check validates the triggers and Area generation values. If `--check` reports missing prerequisites on a database created by an older CLI, stop App writers, retain the matching backup, run `node scripts/migrate.mjs`, and check again. The CLI's `No migrations to apply` message refers to the numbered ledger. Existing ticket numbers and unnumbered rows are preserved when the ticket column already exists. Web startup records the full runtime schema version after its remaining initialization.
+The migration command and web startup share the Board and Personal Pillar migrations. One transaction reconciles task prerequisites and activity triggers, scopes Household lanes and drafts, and commits `app_settings.schema_version` together with the `0009_task_boards.mjs` ledger entry. Existing tasks, Areas, drafts, publication receipts, and ticket numbers are retained. New Household tickets advance from the highest valid number in retained tasks or task creation events. Deleting a task leaves the counter intact.
+
+Run `node scripts/migrate.mjs --check` after the upgrade. A valid result confirms the marker pair, task prerequisites, activity triggers and Household storage. The same transaction installs immutable Personal Pillar ownership and records `0010_personal_pillars.mjs`. Pre-`0016` databases retain compatibility for the four-alias `tasks_stall_transition` trigger during validation and replace that trigger and `vikunja_labels_title_idx` during `0016_ordinary_boards.mjs`, reaching schema `28` after `0018_task_experience.mjs`. The retained example uses the same access, task and planning model as every other Board. If SQLite reports a busy writer, let that writer finish before restarting. If the check reports mismatched markers or an unexpected table or index, retain the database and inspect it in a disposable copy. To prepare a rollback, stop the candidate and keep its closed database separately with the exact predecessor image and matching cold backup. Follow the [current operator checkpoint procedure](home-assistant-backup-and-restore.md#recover-governed-access-from-a-current-operator-checkpoint) before replacing data or starting an image. Historical image/data identity alone does not authorize recovery, and an incapable predecessor stays stopped.
+
+Schema 18 tokens created before assignee identities were stored retain their existing scopes on the Household Board after a verified upgrade. Assigned-only writes require an approved assignee identity.
+
+During startup, a brief SQLite lock can delay confirmation of the committed Board grant marker. A marker mismatch still leaves Board work locked.
 
 The add-on defaults to `file:/data/meitheal.db`. Startup and migrations open file and in-memory databases with Node’s built-in SQLite. Verify the SQLite version in the actual runtime with `node -e 'console.log(new (require("node:sqlite").DatabaseSync)(":memory:").prepare("SELECT sqlite_version() AS version").get().version)'`. The app requires 3.51.3 or newer for safe WAL writes. An explicit remote database URL still selects the standard libSQL network client. [SQLite WAL fix](https://sqlite.org/wal.html#the_wal_reset_bug).
 
 Local SQLite returns busy errors immediately so feedback can retry without blocking the event loop. Check the primary SQLite error code and the numeric `rawCode` when diagnosing a failure. The adapter also names extended busy and constraint codes.
+
+Planning read bursts keep the existing 19-transaction connection limit. Up to 64 waiting reads acquire released slots in order, with a five-second admission deadline. Overload returns a temporary unavailable response; retry after the indicated delay. Admission never replays a query or preserves an old permission snapshot. If permissions change while a read waits, it returns a stale response without the former work: refresh the page before retrying. Daily lists, counts and archive-completed actions retain the selected Area or Project.
 
 On a Supervisor start, s6 prepares the App’s files under `/data`, including a restored database and any SQLite sidecars, before starting migrations and the web server as `meitheal` (UID and GID `10001`). Supervisor’s `/data/options.json` keeps its ownership. If the ownership transfer fails, startup stops before opening the database and retries the transfer on the next start. Check that the volume permits writes and ownership changes. For a local database configured outside `/data`, provision directory and file access for UID and GID `10001` separately.
 
@@ -325,7 +373,7 @@ In the task panel, **Edit comment** and **Delete comment** appear on comments yo
 
 Each comment timestamp is a permanent link. Copy the link from the timestamp and open it in an authorized session. The task detail opens and focuses that comment, even after the author edits it. If the comment was removed or belongs to another task, Meitheal keeps the task open and focuses an unavailable message. Links through Home Assistant keep the current ingress path and still require the recipient’s existing access.
 
-Typing `#` in a task description or comment uses the authenticated, private `GET /api/search` route with a five-task limit and only ID and title matching. Stored references use the task ID, and the current Home Assistant ingress prefix is applied when they are displayed. If the picker asks for an update, activate it from Search or reload after the installed app updates. You can continue editing while offline.
+Typing `#` in a task description or comment uses the authenticated, private `GET /api/search` route with a five-task limit and only ID and title matching. Stored references save the task ID, such as `[MTH-4](/tickets/<task-id>)`, so they keep working after a Board prefix change. Opening one shows the current key in the address bar. The current Home Assistant ingress prefix is applied when they are displayed. If the picker asks for an update, activate it from Search or reload after the installed app updates. You can continue editing while offline.
 
 If posting fails in the task panel, the text remains in the composer. Retry on that task after resolving the reported problem. Check that the task still exists and use an authenticated Home Assistant session or a credential with task-write scope. Check `api.comments.post.failed` for storage failures.
 
@@ -396,7 +444,7 @@ The `schema-drift` CI job validates migration SQL against runtime schema expecta
 
 The `perf-budgets` job and local `pnpm --filter @meitheal/web perf:budget` command read [the same thresholds](../../apps/web/scripts/perf-budget-baseline.json). Run the web build first. The check starts its own production web process on an available loopback port assigned by the operating system. The check measures:
 
-- Up to 1.5 MiB for Astro build assets and the service worker. The full public directory, including install screenshots and API specifications, is reported separately.
+- Up to 1,820,000 bytes for all generated Astro build assets and the service worker. Within that aggregate, common assets are capped at 1,770,000 bytes and the optional Setup, Quick Add and Dashboard customization assets at 50,000 bytes. The full public directory, including install screenshots and API specifications, is reported separately.
 - Up to 224 MiB (`229,376 KiB`) of web process RSS after five warmup writes. This is a single process measurement on the CI host.
 - Up to 250 ms at p95 across 100 consecutive requests to `POST /api/tasks` against a fresh local SQLite database. Each timed sample includes reading and validating the response body. The nearest-rank p95 is observation 95 of 100 after sorting. Read it alongside p50, p99, maximum and the number of requests over the threshold. A p95 pass permits up to five requests above the threshold. The job fails on an unexpected response or readback.
 - A report-only `kanbanWarm2000` result. The check inserts 2,000 undated tasks directly into the same SQLite database, then times five warmup and 25 measured `GET /tasks` page loads. It reports the seeded and total task counts, every sample, p50, p95 and maximum. No threshold applies, but an unexpected response still fails the job. If seeding fails, the result names the reason under `skipped` instead of reporting a smaller board. Compare it with the Green 2,000-card board timings; it does not replace them.
@@ -425,6 +473,8 @@ For calibration, the check accepts these overrides.
 - `MEITHEAL_PERF_BUDGET_P95_MS_MAX`
 - `MEITHEAL_PERF_BUDGET_FILE`
 
+Custom budget files can set `budgets.workspaceUiBytesMax`. Files that omit it use the default 50,000-byte ceiling for optional workspace assets.
+
 ## Label storage
 
 The native Labels API and task views use the original label tables. Updates keep existing IDs, names, colours, and task links. After an upgrade, open a task that has a coloured label. Confirm the label still appears in the task and in the label picker.
@@ -433,13 +483,13 @@ The Settings editor mounts at most 25 definitions. Search covers the complete lo
 
 Paging, search and unused-label cleanup preserve other rows’ unsaved names, colours and write results during the current visit. An off-page Save still completes; return to its page to inspect its badge and row message. Cleanup removes only acknowledged IDs and prevents late responses from restoring them. Unsaved edits are held in memory, and leaving or reloading Settings discards them. After a rename, the row can leave the current search because matching uses committed names. A create result may be on another page or outside the search; the creation status confirms the result without changing your position.
 
-Settings uses an explicit **Save** for shared names and colours. The badge represents the committed definition. A failed write retains the previous badge and unsaved input; inspect the row message before retrying. Confirm **Delete** deliberately. A successful rename atomically rewrites current task labels, private draft selections and template labels along with the definition. Deleting the final equivalent definition removes those references; deleting one duplicate keeps shared name references while another definition survives. Unrelated draft/template content and completed publication receipts are preserved. Current private drafts advance their revision and clear stale save-attempt metadata, so another tab must reload before overwriting an older revision.
+Settings uses an explicit **Save** for shared names and colours. The badge represents the committed definition. A failed write retains the previous badge and unsaved input; inspect the row message before retrying. Confirm **Delete** deliberately. A successful rename atomically rewrites published task labels, the current actor’s private draft selections and template labels in the selected Board along with the definition. Other actors’ private draft bodies remain unchanged and never affect the preview. Their next save or publication returns a stale-label conflict with retained inputs when a selection needs review; it does not recreate the removed label. Deleting the final equivalent definition removes those references; deleting one duplicate keeps shared name references while another definition survives. Unrelated draft/template content and completed publication receipts are preserved. The current actor’s affected private drafts advance their revision and clear stale save-attempt metadata, so another tab must reload before overwriting an older revision.
 
 Historical label-object metadata retains exact JSON numeric values, including identifiers larger than JavaScript's safe integer range. The packaged Node runtime must support JSON parse source context and JSON.rawJSON. A runtime missing that capability blocks affected metadata rather than rounding it. Include a large numeric reference in package and restore checks; inspecting the stored JSON text avoids accidentally rounding the value in the verification client.
 
 Renames and final deletions scan bounded label selections inside one writer transaction. Invalid, ambiguous or oversized selections return `409 blocked` without a partial change. A rename that would expand either rewritten label array beyond 64 KiB of UTF-8 also rolls back; choose a shorter name or reduce the affected task/template selection through its supported workflow. Equivalent old/new definitions return `409 conflict` for a rename. A colour-only change does not scan selections. Follow the backup-based repair procedure below; do not erase private drafts to bypass the guard. Affected task modification timestamps advance by one millisecond without changing their human-activity timestamp, so label maintenance does not restart inactivity policy. Existing task compare-and-set writes must reload the changed timestamp.
 
-`PUT /api/labels/{id}` accepts a strict JSON object containing `title`, `hex_color`, or both; the UTF-8 body is limited to 4 KiB and five seconds. HTML is stripped from titles before trimming and validating well-formed Unicode of 1–100 UTF-16 code units. Colours use six hexadecimal digits, with an optional leading `#`. `DELETE` accepts no body. Both retain their existing success response shapes and use private, no-store errors. A fresh Home Assistant administrator roster check occurs after body parsing immediately before repository work. Agent tokens are denied; unavailable verification returns `503` and makes no change. A demoted member must not be able to save from a retained page.
+`PUT /api/labels/{id}` accepts a strict JSON object containing `title`, `hex_color`, or both; the UTF-8 body is limited to 4 KiB and five seconds. HTML is stripped from titles before trimming and validating well-formed Unicode of 1–100 UTF-16 code units. Colours use six hexadecimal digits, with an optional leading `#`. `DELETE` accepts no body. Both retain their existing success response shapes and use private, no-store errors. Household edits and removals through Home Assistant check the current administrator role again after body parsing. Named Boards check the current Board manager. Agent tokens are denied. If Core cannot verify access at admission or before the write, the request fails and makes no change. A demoted administrator cannot save from a retained page.
 
 For upgrade and recovery, retain a task, a private saved draft and a template with the same label in a disposable copy. Rename and verify all three, restart, then restore the candidate App backup and check the new name and draft revision. Include an emoji in the new name to verify valid UTF-16 pairs survive the round trip. Restore the exact predecessor image and data backup and verify the old name, revision and links. A data-only restore against a different image is not predecessor rollback proof. After any uncertain network response, reload Labels before retrying.
 
@@ -453,6 +503,8 @@ Use HTTPS Home Assistant ingress and a current administrator session. An unavail
 
 Use a disposable dataset. Confirm the shared policy starts Off and a specific Area can remain Off under an enabled default. Preview a change, verify the ready and upcoming counts, and confirm a stale preview cannot save after another administrator changes the policy. A stale or denied browser session should show a retry state with no preview rows.
 
+Open **Inactivity** from Kanban (under **Board actions** on narrow screens). Confirm the selected Area carries over, then change the Area and use **Back to Tasks** to return to the board with that selection.
+
 After enabling a policy, restart the App and allow one five-minute sweep. Verify up to 25 eligible cards move and protected or recently edited cards stay in place. Confirm each move has one system audit event and appears in **Deferred** with the inactivity label. Resume one card and confirm its status is preserved and its next inactivity deadline uses the new activity window. App-only SQLite backups retain the policy, including explicit Area inheritance and its revision.
 
 Use HTTPS for Home Assistant ingress so the browser can send same-origin request metadata. If preview stays unavailable and the database integrity check reports a malformed inactivity policy, restore a verified App backup with a valid policy before re-enabling the rule.
@@ -460,6 +512,10 @@ Use HTTPS for Home Assistant ingress so the browser can send same-origin request
 For the Stalled cue, check the applicable Inactivity policy first. A qualifying assignment, reopen or at least three recent comments from two verified Home Assistant members creates the marker. The comment window is 33% of the configured inactivity period. Existing cards keep their original activity history and begin recording markers when qualifying events occur. On a disposable dataset, verify the Stalled filter, clear a cue by editing its card, and confirm a protected scheduled task stays out of automatic deferral.
 
 Card quick-action menus use viewport-bounded positions and 44-pixel color targets. Check a color change at a 320-pixel viewport when verifying board cues. The menu styles cover elements created by the client controller.
+
+### Kanban assignment troubleshooting
+
+In **Assign User**, a failed directory request shows **Could not load assignees**. The Home Assistant lookup waits up to three seconds for the Core roster. During an unverified lookup, cached names from the current source and custom assignees remain selectable. An uncached saved Home Assistant assignee is marked unverified. Use **Retry** after a failed or unverified lookup. The Board keeps the choices already shown selectable while it checks again. A confirmed missing assignee shows **Assignee unavailable**. A verified empty directory shows **No users configured** when the card has no unresolved assignment. These messages preserve the saved assignee.
 
 ## Checklist edits from multiple sessions
 
@@ -473,12 +529,15 @@ Ticket drawers keep their canonical URL while editing. On standalone pages, Layo
 
 Label removal confirmations render the count and each selected name as plain text in a bounded list. Markup in a stored label name must be visible as text and never create elements. Successful card-color changes refresh the board after acknowledgement; inactivity cues must revalidate without navigating away or clearing peer cues.
 
+## First-time setup and browser storage
+
+Confirm **Set up Meitheal** is offered on a new browser session. Finish or skip and check that the invitation disappears. **Settings → Run setup again** should reopen it even when the shared Settings request fails. Verify a second Home Assistant identity in the same browser can choose independent settings. A blocked browser storage write should leave the draft available and offer a Dashboard link. See [First-time setup](first-time-setup.md).
+
 ## Database readiness
 
 `GET /api/health` reports HTTP 503 and `status: degraded` when the database is reachable but its startup integrity check failed. A successful connection alone does not establish healthy storage. Inspect `db_status` and `db_integrity` separately. Keep a copy of the database and its WAL together before recovery, and restore a verified backup in a disposable installation before replacing live data. `HEAD /api/health` remains a lightweight process/schema liveness check; its 200 response does not override degraded readiness.
 
 MCP tool inputs resolve local OpenAPI component references with bounded expansion. Search uses native `q`, keeps `query` as an alias and remains task-scoped. Native operation responses must contain a valid JSON object without a rejection flag; HTTP204/205 are acknowledged empty success. A malformed or rejected completion response must produce a tool error, including completion by title. Human-only rule and framework settings mutations are not advertised as token tools. Use scoped disposable credentials when checking these paths.
-
 
 ## Application logging and optional Loki forwarding
 
@@ -502,17 +561,37 @@ To verify email redaction in a disposable environment, use a synthetic address
 with a plus tag. The address is redacted and surrounding punctuation remains visible.
 
 An optional `loki_url` must be an HTTP(S) push endpoint without embedded
-credentials. The native sender does not follow redirects. It forwards the same
+credentials. Both add-on manifests set `loki_url` to `""` with optional schema
+`"str?"`. `meitheal-hub/run.sh` checks `bashio::config.has_value` for optional
+`loki_url` and `license_key` and exports empty strings instead of `"null"` when
+unset. The native sender does not follow redirects. It forwards the same
 redacted lines under the five fixed low-cardinality labels (`addon`, `service`,
-`env`, `level`, `domain`). It queues at most
-200 waiting lines, sends batches of 50, omits remote lines larger than 16 KiB,
-and uses a 250 ms flush delay with a one-second request timeout. Overflow,
-invalid endpoints, non-success responses and timeouts drop remote logs with a
-generic stderr warning at most once per process per 60 seconds. Changing the
-trimmed `LOKI_URL` clears pending lines on the next enqueue. There are no
-retries, durable queues or guaranteed
-shutdown drains. Stdout continues; remote loss does not imply successful Loki
-ingestion. Check receiver ingestion separately using synthetic data.
+`env`, `level`, `domain`). It queues at most 200 waiting lines, sends batches
+of 50, omits remote lines larger than 16 KiB, and uses a 250 ms flush delay
+with a one-second request timeout. After a delivery failure, the sender applies
+exponential backoff from 2 seconds to 60 seconds with a monotonic clock. Each
+consecutive failure doubles the delay up to 60 seconds. The backoff resets
+after a successful push or on the next enqueue after a trimmed `LOKI_URL`
+change. Late responses or timeouts from a previous URL do not cause backoff or
+warnings for the new URL. Overflow, invalid endpoints, non-success responses
+and timeouts drop remote logs with a generic stderr warning at most once per
+process per 60 seconds. Changing the trimmed `LOKI_URL` clears queued lines and
+cancels any active backoff timer on the next enqueue. There are no retries,
+durable queues or guaranteed shutdown drains. Stdout continues; remote loss
+does not imply successful Loki ingestion. Check receiver ingestion separately
+using synthetic data.
+
+On startup failure, `apps/web/scripts/serve.mjs` writes a `web.startup_error`
+JSON record to stderr and exits with code `1`. On a bind `error` event, it
+writes a `web.listen_error` JSON record to stderr and exits with code `1`. On a
+server `error` event after listening, it writes a `web.server_error` JSON
+record to stderr and starts shutdown with exit code `1`. On `SIGTERM` or
+`SIGINT`, `serve.mjs` writes a `web.stopping` JSON record synchronously to
+stdout. It stops accepting new connections, signals active SSE streams to
+close, closes idle sockets, and exits with code `0`. If connections remain
+after 3 seconds, it closes all connections and exits before
+`meitheal-hub/run.sh` sends `SIGKILL` at 5 seconds (`S6_SERVICES_GRACETIME` is
+8 seconds in `meitheal-hub/Dockerfile`).
 
 ## Local image builds
 
@@ -542,3 +621,71 @@ MCP completion acknowledgements require the expected task ID or exact ticket key
 ### Local Feedback access and request failures
 
 For Feedback 503, check the Home Assistant Core connection and current account availability before investigating local storage/quota.403 requires an active nonsystem account for submission and a current administrator for queue access. Reopen Settings after correcting permissions.408 indicates the 8KiB JSON body did not arrive within five seconds; retry the unchanged form to retain its submission receipt.499 indicates cancellation. Optional app-version context accepts the published 12-character lowercase Canary version or the existing bounded release-context format; source hash abbreviations/full hashes are rejected. Administrator review drafts remain local to the current Settings lifecycle and export previews must be prepared again after refresh.
+
+Household task lists, task exports, Routine cleanup, Calendar and Todo matching, and due-date reminders operate on Household records. Today separately links authorized due work from named Boards. Named Board task and Routine endpoints check current grants, and their ticket links open the owning Board.
+
+### Board access storage
+
+Schema 21 records ownership for Areas, Projects, Goals and Pillars. It adds named Board grants, personal sidebar preferences and shares pinned to the Area and its receiving Board. Existing planning records stay in Household. A shared Goal shows the Goal title and counts for eligible Projects. On post-`0016` installations, a missing or mismatched grant revision hides all shared Goal data and locks governed access (`503 continuity_locked`). Home Assistant App cold backups now include `meitheal-board-grants.json` and exclude only `*.log`, `*.tmp`, and `meitheal-board-grants-pending`. Genuine eligible pre-`0016` local predecessors (`schema_version < 26`) without a persisted provenance block (`continuity_auto_enroll_blocked`), conflicting marker, or unresolved pending entry auto-enroll during startup migration; empty or unknown SQLite files that failed admission record `continuity_auto_enroll_blocked` and remain locked across restarts. Otherwise recover governed access through the [independently current operator checkpoint](home-assistant-backup-and-restore.md#recover-governed-access-from-a-current-operator-checkpoint).
+
+On an unconfigured installation, inherited feature defaults require an empty policy scope and a valid enrolled epoch and independently current matching marker. Run `pnpm --filter @meitheal/tests test e2e/organization-access-policy.spec.ts` to verify that unverified or mismatched continuity keeps the scope locked, including an existing epochless database. First installation must enroll its initial matching revision before inherited defaults become available.
+
+### Named Board access
+
+Use [Named Boards](./named-boards.md) to verify owner, member, viewer and send-only journeys after a schema upgrade. Exercise an active Home Assistant administrator outside the Board as well as a member with completion and deletion denied. Use [Home Assistant backups and restore](./home-assistant-backup-and-restore.md) for revision mismatches and App restore. Confirm that an interrupted live revision publication recovers and that a restored revision remains closed pending verified recovery.
+
+### Board organization and Routine verification
+
+After building the App, run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/board-organizer.spec.ts e2e/named-board-authority.spec.ts`. Use disposable Home Assistant ingress for the complete browser journey.
+
+1. Open a named Board, create a Area and Project, then create a task in that Project. Use **File task** to change placement within the Board and verify the ticket key and column survive.
+2. Give Board and Area personal display names in **Settings → Navigation & Shortcuts → Labels**. Verify navigation, headings and search in the same account and language. Open a second account to check its own terms and repeat the saved links.
+3. In **Tasks & Boards → Organization features**, exercise Everyone, Selected people and Nobody for the ten available modules. Verify the selected account’s page and API access. Board membership still governs the work on each named Board. See [Settings troubleshooting](settings-troubleshooting.md#choose-who-can-use-organization-features) for the choices and legacy-switch conflicts.
+4. Offer **Home Assistant Area** to a test account. Set and clear a task’s physical location and confirm its Board, Area and Project placement stays intact.
+5. Open `/planning#spaces`, an existing `/areas/{id}` bookmark and an existing `/projects/{id}` bookmark. Check the canonical Boards destinations, supported section fragments and ingress prefixes.
+6. From an active named Project’s settings, submit **New Routine** through the browser. Verify the saved template and its first completed ticket retain that Project and Area. Check the Routine in both its library and Today, mark it done once and verify the same occurrence is shown as Done. A viewer can read the row and a completion-denied member cannot mark it done.
+7. Close the Project and verify a new occurrence cannot be created. Retry a previously completed period with current Board permissions and confirm it returns the original ticket. Revoke Board access or change the signed-in account and confirm the Routine list clears after revalidation. Reconnect and refresh after a failed check-in before retrying.
+
+### Historical predecessor: Board deletion and paused Household recovery (schema 25)
+
+This section records the pre-26 migration and its compatibility checks. For the current schema-26 model, use [Boards, Areas and Projects](named-boards.md): every Board, including the editable example, uses the same work engine, lifecycle and configured audience. Its historical identifier only preserves existing storage and ticket identities. Do not use the predecessor distinction to configure new work.
+
+Schema 25 retains the reserved Household identity and MTH ticket counter while allowing an active/retired lifecycle. It replaces the Household state guard and installs storage guards that reject writes to retired Household tasks, Areas, Projects, Goals, templates, workflow lanes, drafts, pins, reactions, comments and mention receipts, Home Assistant locations, Calendar/Todo confirmation links and shared Pillars/Principles. Personal Pillars remain available. The migration and web startup share the same transaction and validation; startup does not reseed or repair retired Household work. Activity, mentions, reminders and inactivity views exclude retired Household work. Shared Goal reads and the Routine library continue to show authorized work from active named Boards.
+
+Run `pnpm --filter @meitheal/web perf:budget` against a fresh production build. The check caps aggregate generated assets at 1,855,000 bytes, common assets at 1,805,000 bytes, and the optional Setup, Quick Add and Dashboard customization assets at 50,000 bytes. Existing custom `clientBytesMax` settings continue to limit the aggregate. The separate common-assets allowance is configured with `commonClientBytesMax`. The benchmark starts the official `scripts/serve.mjs` wrapper and gets the local fixture operator’s Board session to measure complete authorized task-create responses. The physical Green benchmark has its own limits. See [the workspace decision](../decisions/0025-board-workspace-lifecycle.md) and [the continuity decision](../decisions/0026-board-continuity-enrollment.md) for the measured allowances.
+
+In a disposable database, run `tests/e2e/board-lifecycle.spec.ts`. Delete populated and empty named Boards, verify owners can restore them, and confirm a member, deletion-blocked child and agent cannot delete them. Delete Household as the verified browser administrator. Confirm named Boards remain usable, global shared counts disappear, legacy capture returns the explicit paused message, and calendar/Todo import and write-back create no changes. Restart and verify Household stays deleted, then restore it and compare exact task IDs, ticket numbers, planning relationships, draft receipts and sync identifiers. Require `PRAGMA integrity_check` and `PRAGMA foreign_key_check` after restart and recovery.
+
+Use a Supervisor cold App backup (which includes `/data/meitheal-board-grants.json`) for governed recovery only after the [current operator checkpoint procedure](./home-assistant-backup-and-restore.md#recover-governed-access-from-a-current-operator-checkpoint) confirms that it is current. Otherwise use a separately retained current operator checkpoint. Refresh an external checkpoint after every committed grant or Board lifecycle change when retaining out-of-band custody. Deleted Boards are retained named records, so raw DB download remains protected. Do not restore a database snapshot alone to an older App: retain the exact predecessor App and its matching cold backup. Transient pending publication journals (`meitheal-board-grants-pending`) remain excluded from App backups; on post-`0016` installations, a missing or mismatched restored revision keeps governed reads, writes and delivery locked. A live marker publication interruption can finish only from its exact committed pending marker.
+
+### Board navigation and recovery controls
+
+Verify `planning-navigation.spec.ts`, `board-project-pagination.spec.ts`, `board-lifecycle-ux.spec.ts` and `board-organizer.spec.ts` against a fresh build. Area arrow keys must select only local panels; the separate Tasks link opens the scoped Kanban. Check Settings at 320 and 375 pixels with default and long personal labels. For Project pagination, hold a real request, fail the next page, retry the same cursor and preserve loaded choices. Confirm loading/error announcements, current-pager focus handoff, no duplicate request and no focus theft after leaving the pager. A successful empty retry returns keyboard focus to its existing disclosure button. A 401, 403, 404 or actual membership revocation must clear named shortcuts.
+
+On direct navigation, Goals and Routines retain their context through Astro navigation without replacing the document after a successful swap. Legacy Board-section fragments are canonicalized only on the actual Board page. Behind Home Assistant ingress, keep the existing full-page navigation behavior and scoped links.
+
+Delete Board must use the danger confirmation with initial Cancel focus. Native keyboard cancellation must send no lifecycle mutation and return focus to its trigger. While that dialog is open, go offline and revoke a real test owner in a separate session. Require immediate private-dialog removal, no resumed write from its retained old button, preserved public recovery focus, and a fresh working confirmation after revalidation. Retire two disposable Boards and identify each restore action by its Board name. Verify personalized and Irish Area creation labels, and an account without Areas must retain Unfiled Projects without instructions to create an unavailable Area.
+
+### Access rules cannot be verified after restore
+
+Recovery lock is different from a deleted Household Board. On post-`0016` installations (`schema_version >= 26`), a missing, invalid or mismatched marker state blocks governed reads, writes and delivery while content-free health diagnostics remain available. Automatic enrollment runs only for genuine eligible pre-`0016` predecessors that have no persisted `continuity_auto_enroll_blocked` flag, no conflicting marker or symlink, and no unresolved pending journal on disk; empty or unknown SQLite files initialized without admission record `continuity_auto_enroll_blocked` and remain locked across SSR opens and restarts even when non-empty on disk. Pre-`0016` snapshots paired with a conflicting marker stay locked. Do not use ordinary Restore Board controls to resolve this lock. Keep the App stopped for the final current-custody check, archive restore, marker verification or publication, or `enroll-legacy-continuity.mjs` operator recovery. Use the [backup and continuity runbook](./home-assistant-backup-and-restore.md) and preserve the failed state.
+
+For a genuinely new database, verify initial enrollment completes in the migrator and survives a separate server process and restart. For an already enrolled installation, verify its current epoch remains compatible. For a conflicting-marker legacy snapshot or an external custody restore, require the one-shot offline current-checkpoint procedure; the identical snapshot without valid proof stays locked. Rehearse missing-marker post-`0016` and stale-epoch snapshots against Household API reads/writes/counts/exports, agent/MCP paths and cached background delivery. Do not start an older binary that cannot enforce later restrictions.
+
+The public runtime database client guards direct services and timers as well as repositories. Verify `continuity-public-client.spec.ts` for task-time writes, Pomodoro callbacks and valid grant/lifecycle transitions. Content-free health remains available during lock. Grocy must stop polling and retries, refuse a newly dispatched cached task and withhold late confirmations when current Household authority is lost; concurrent calls to one active adapter coalesce. Verify `grocy-continuity.spec.ts` and the existing adapter/bridge controls. A SQLite download must stop before publication if its admitted revision changes during backup, and abort remaining reads if it changes after headers. Verify `continuity-sqlite-export.spec.ts`, retaining cancellation, temp-file cleanup and one-download-at-a-time checks. Do not describe a stream aborted after headers as an HTTP 503 response.
+
+## Ordinary Board workspace checks
+
+Use the same journey on a renamed example Board and a newly created Board. Verify the Board remains selected across all four task views, Today, planning, progress and capture. Check a Project without an Area and a Project under a private Area. A Project's parent Area policy still applies when the task has no direct Area field.
+
+With a remembered Household Area and an unavailable Area list, Kanban must keep the unfiltered cards hidden while waiting for verification. When **Retry** succeeds, the active Area appears in the URL and only its cards are shown. An Area or Project in the original URL takes precedence over the remembered Area.
+
+An explicit Board bookmark with both a Project and its Area opens normally. A mismatched Area and Project return the standard unavailable response. Verify both on Household and on a named Board. The `from` query parameter tracks the previous Area for navigation.
+
+Restart through the actual runtime startup path, including runtime table/trigger validation. Migration-only read checks are a separate gate. Schema26 expects the exact version-aware trigger definitions and must preserve Board IDs, revisions and existing tasks. Do not replace a failed definition or publish a journal from database contents to make startup pass.
+
+Review integrations in Board settings. A denied or retired destination pauses its job. Never retarget it to another Board as a repair. Changing a global provider profile requires management of every affected Board. Verify an old in-flight request cannot send or commit after the binding generation changes.
+
+Startup no longer deletes tasks by matching recursive ticket prefixes in their titles. Provider import normalization remains in the scoped command path. Review existing duplicates and repair them through ordinary authorized task commands.
+
+Native Home Assistant integration setup binds a credential to an explicit Board. Only unambiguous current server credential metadata can migrate an older entry. Private work stays out of global HA entities and logbook. Human calls use the official current-user Supervisor ingress path and retain the configured credential as a separate ceiling; an absent or invalid user proof cannot fall back to a broader credential. Verify this in the native Supervisor tier before acceptance.

@@ -4,6 +4,8 @@ import { isDoneStatus } from "@lib/status-config"
 import type { TaskViewItem } from "@lib/task-queries"
 import { formatTicketKey } from "@lib/ticket-key"
 import type { Locale } from "@lib/locale"
+import { readRiceAssessment } from "@lib/rice-lens"
+import { roundFrameworkScore } from "@meitheal/domain-strategy"
 import { t } from "../../i18n/translations"
 import RiceScoreEditor from "./RiceScoreEditor.astro"
 
@@ -71,7 +73,7 @@ const groups = [
 <div class="planning-rice" aria-labelledby="planning-rice-heading">
   <h2 id="planning-rice-heading" tabindex="-1">{t("planning_rice.title", locale)}</h2>
   <p>{t("planning_rice.description", locale)}</p>
-  <p>{t("planning_rice.summary", locale, { ranked: String(ranked.length), unscored: String(unscored.length), average: ranked.length ? String(Math.round(scoreTotal / ranked.length)) : "—" })}</p>
+  <p>{t("planning_rice.summary", locale, { ranked: String(ranked.length), unscored: String(unscored.length), average: ranked.length ? String(roundFrameworkScore(scoreTotal / ranked.length)) : "—" })}</p>
 
   {saved && <p role="status">{t("planning_rice.saved", locale)}</p>}
   {selected && <RiceScoreEditor task={selected} closeHref={href({ riceFocus: selected.id })} savedHref={href({ riceFocus: selected.id, riceSaved: "1" })} {locale} />}
@@ -85,10 +87,14 @@ const groups = [
           {items.map(task => (
             <li class="rice-row" data-rice-task={task.id}>
               <div>
-                <span class="rice-key">{formatTicketKey(task.ticket_number ?? 0)}</span>
+                <span class="rice-key">{task.ticket_key ?? formatTicketKey(task.ticket_number ?? 0)}</span>
                 <p>{task.title}</p>
               </div>
-              {task.rice !== null && <span data-rice-score>{task.rice}</span>}
+              {task.rice !== null ? <span data-rice-score>{task.rice}</span> : (
+                readRiceAssessment(task.framework_payload).status === "legacy_ambiguous" && (
+                  <span class="badge bg-warning-lt text-warning" data-rice-legacy-badge>Confirm % scale</span>
+                )
+              )}
               <a href={href({ score: task.id })} class="btn btn-outline" data-astro-prefetch="false">
                 {t("planning_rice.edit", locale)}<span class="sr-only"> {task.title}</span>
               </a>

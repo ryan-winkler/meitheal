@@ -78,6 +78,28 @@ const canManageAi = canManageSystemSettings(Astro.request, Astro.locals)
               aria-live="polite"
               style="font-size: 12px; color: var(--text-muted);"></span>
           </div>
+          <div class="form-group" style="padding-top: 12px; border-top: 1px solid var(--border); display: grid; gap: 10px;">
+            <div class="settings-row--simple">
+              <label class="toggle-label">
+                <input type="checkbox" id="toggle-hide-ask-ai" aria-labelledby="toggle-hide-ask-ai-label" />
+                <span class="toggle-slider"></span>
+              </label>
+              <div>
+                <strong id="toggle-hide-ask-ai-label" class="settings-text-sm">{t("settings.hide_ask_ai_title", locale)}</strong>
+                <div class="settings-caption">{t("settings.hide_ask_ai_desc", locale)}</div>
+              </div>
+            </div>
+            <div class="settings-row--simple">
+              <label class="toggle-label">
+                <input type="checkbox" id="toggle-disable-ai-assist" aria-labelledby="toggle-disable-ai-assist-label" disabled={!canManageAi} />
+                <span class="toggle-slider"></span>
+              </label>
+              <div>
+                <strong id="toggle-disable-ai-assist-label" class="settings-text-sm">{t("settings.disable_ai_assist_title", locale)}</strong>
+                <div class="settings-caption">{t("settings.disable_ai_assist_desc", locale)}</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -250,6 +272,32 @@ const canManageAi = canManageSystemSettings(Astro.request, Astro.locals)
                   >
                     {t("settings.view_mcp_manifest", locale)}
                   </a>
+                  <div class="ws-agent-mcp-bar" id="agent-mcp-unified">
+                    <div class="ws-agent-mcp-row">
+                      <div class="ws-agent-mcp-url">
+                        <span class="ws-agent-mcp-label">MCP Server URL</span>
+                        <code id="agent-mcp-url-display">/api/mcp</code>
+                      </div>
+                      <button type="button" class="btn btn-secondary btn-sm" id="agent-mcp-copy-btn" aria-label="Copy MCP Server URL">
+                        <Icon name="copy" size={14} sprite={true} />
+                        <span>Copy</span>
+                      </button>
+                    </div>
+                    <div class="ws-agent-mcp-links">
+                      <a href="#webserver-settings" class="protocol-link" data-settings-section-link>Configure domains &amp; ports in Webserver</a>
+                      <a href="#plugins-settings" class="protocol-link" data-settings-section-link>Manage sandboxed Plugins</a>
+                      <a
+                        id="agent-ha-ai-link"
+                        href="#"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="protocol-link"
+                        hidden
+                      >
+                        Open Home Assistant AI (/config/ai)
+                      </a>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

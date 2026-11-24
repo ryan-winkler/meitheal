@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test, type Page } from "@playwright/test"
 import type { TaskDraftSnapshot } from "../../apps/web/src/lib/task-draft-state"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
 const noStore = "private, no-store"
@@ -33,12 +34,15 @@ test("packaged draft path rejects aliases and direct writes without ingress", as
   expect(direct.headers()["cache-control"]).toBe(noStore)
 })
 
-async function draftRequest(page: Page, path: string, method: "POST" | "PUT" | "HEAD", data?: object, context?: string) {
-  return page.evaluate(async ({ path, method, data, context }) => {
+type DraftFixtureActor = { page: Page; boardHeaders: Record<string, string> }
+
+async function draftRequest(actor: DraftFixtureActor, path: string, method: "POST" | "PUT" | "HEAD", data?: object, context?: string) {
+  return actor.page.evaluate(async ({ path, method, data, context, boardHeaders }) => {
     const response = await fetch(path, {
       method, mode: "same-origin", referrerPolicy: "same-origin", cache: "no-store", redirect: "error",
       signal: AbortSignal.timeout(5_000),
       headers: {
+        ...boardHeaders,
         ...(data ? { "Content-Type": "application/json" } : {}),
         ...(context ? { "X-Meitheal-Draft-Context": context } : {}),
         "Idempotency-Key": "external-replay-header-fixture",
@@ -49,7 +53,7 @@ async function draftRequest(page: Page, path: string, method: "POST" | "PUT" | "
       status: response.status, cache: response.headers.get("cache-control"),
       cached: response.headers.get("idempotency-key-status"), body: method === "HEAD" ? null : await response.json(),
     }
-  }, { path, method, data, context })
+  }, { path, method, data, context, boardHeaders: actor.boardHeaders })
 }
 
 test("draft authorization and exact receipt through browser HTTPS ingress", async () => {
@@ -67,12 +71,13 @@ test("draft authorization and exact receipt through browser HTTPS ingress", asyn
     const path = prefix + "/api/task-drafts"
     browser = await launchPinBrowser(work)
     async function open(user: string) {
-      const context = await browser!.newContext({ extraHTTPHeaders: {} })
+      const context = await browser!.newContext({ extraHTTPHeaders: {}, ignoreHTTPSErrors: true })
       await context.addCookies([{ name: "feedback-fixture", value: user, url: origin }])
       const page = await context.newPage()
       expect((await page.goto(origin + prefix + "/fixture"))?.ok()).toBe(true)
       expect(await page.evaluate(() => isSecureContext)).toBe(true)
-      return page
+      const boardHeaders = await currentBoardWriteHeaders(page.request, "household", { origin }, origin + prefix)
+      return { page, boardHeaders }
     }
     const [a, b] = await Promise.all([open("member"), open("member-two")])
     const read = { action: "read" }
@@ -91,7 +96,7 @@ test("draft authorization and exact receipt through browser HTTPS ingress", asyn
     expect(saved).toMatchObject({ status: 200, cache: noStore, cached: null, body: { draft: { snapshot: { title: secret } } } })
     expect(await draftRequest(b, path, "PUT", save, aContext)).toMatchObject({ status: 409, body: { errorCode: "ACCOUNT_CHANGED" } })
     expect(await draftRequest(b, path, "POST", read)).toMatchObject({ body: { draft: null } })
-    const shared = await b.evaluate(async (tasks: string) => {
+    const shared = await b.page.evaluate(async (tasks: string) => {
       const response = await fetch(tasks)
       return { status: response.status, body: await response.text() }
     }, prefix + "/api/tasks")

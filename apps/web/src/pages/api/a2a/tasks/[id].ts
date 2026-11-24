@@ -2,6 +2,10 @@ import type { APIRoute } from "astro"
 import { hasScope } from "@meitheal/domain-auth"
 import { A2A_RESPONSE_HEADERS, checkA2aAvailability, getA2ALinkOrigin } from "@domains/agents"
 import { getA2aTask } from "@lib/a2a-tasks"
+import { resolveBoardRequestScope } from "@lib/board-request-context"
+import { boardScopeResponse } from "@lib/board-http"
+import { getPersistenceClient } from "@domains/tasks"
+import { validateBoardScope } from "@domains/tasks/board-scope"
 import { apiProblem } from "@lib/api-response"
 
 const notFound = () => apiProblem({
@@ -40,7 +44,11 @@ export const GET: APIRoute = async ({ locals, params, request, url }) => {
       extraHeaders: A2A_RESPONSE_HEADERS,
     })
   }
-  const task = await getA2aTask(token, params.id ?? "", getA2ALinkOrigin(request, url) + (locals.ingressPath ?? ""))
+  const selected = await resolveBoardRequestScope({ request, locals }, { operation: { resource: "task", action: "read" }, record: { resource: "task", id: params.id ?? "" }, write: false })
+  if (!selected.ok) return boardScopeResponse(selected.errorCode)
+  const task = await getA2aTask(token, params.id ?? "", getA2ALinkOrigin(request, url) + (locals.ingressPath ?? ""), selected.scope)
+  const current = await validateBoardScope(selected.scope, getPersistenceClient(), { resource: "task", action: "read" })
+  if (!current.ok) return boardScopeResponse(current.errorCode)
   return task ? Response.json(task, { headers: A2A_RESPONSE_HEADERS }) : notFound()
 }
 

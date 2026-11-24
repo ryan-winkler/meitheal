@@ -4,8 +4,9 @@ import {
   initUnifiedBarNewTaskButton,
   initUnifiedBarSearchLauncher,
   initUnifiedBarTabOverflow,
+  initUnifiedBarTabsKeyboard,
   initUnifiedBarTitleSwitcher,
-  setUnifiedBarSwitcherActiveState,
+  syncUnifiedBarSectionState,
 } from "@lib/unified-bar-controller"
 
 const log = createClientLogger("app", "page-shell")
@@ -17,6 +18,7 @@ export interface PageShellNavigationOptions<SectionId extends string> {
   defaultSectionId: SectionId
   shellId?: string
   flashClass?: string
+  preserveOverviewOnLoad?: boolean
   sectionLinkSelectors?: string[]
   rootMargin?: string
   threshold?: number[]
@@ -37,6 +39,7 @@ export function initPageShellNavigation<SectionId extends string>({
   defaultSectionId,
   shellId,
   flashClass,
+  preserveOverviewOnLoad = false,
   sectionLinkSelectors = [],
   rootMargin = "-25% 0px -45% 0px",
   threshold = [0.2, 0.45, 0.7],
@@ -56,44 +59,9 @@ export function initPageShellNavigation<SectionId extends string>({
 
   const sectionIdSet = new Set(sectionIds)
   const sections = document.querySelectorAll<HTMLElement>(sectionSelector)
-  let linkedSection: {
-    element: HTMLElement
-    wasVisible: boolean
-  } | null = null
-
-  function resumeSectionTracking(): void {
-    linkedSection = null
-    let mostVisibleSectionId: SectionId | null = null
-    let greatestVisibleHeight = 0
-
-    for (const section of sections) {
-      const { top, bottom } = section.getBoundingClientRect()
-      const visibleHeight = Math.min(window.innerHeight, bottom) - Math.max(0, top)
-      const sectionId = resolveSectionId(section.id)
-      if (sectionId && visibleHeight > greatestVisibleHeight) {
-        greatestVisibleHeight = visibleHeight
-        mostVisibleSectionId = sectionId
-      }
-    }
-
-    if (mostVisibleSectionId) updateActiveState(mostVisibleSectionId)
-  }
-
-  function syncLinkedSectionVisibility(): void {
-    if (!linkedSection) return
-    const { top, bottom } = linkedSection.element.getBoundingClientRect()
-    if (bottom > 0 && top < window.innerHeight) {
-      linkedSection.wasVisible = true
-    } else if (linkedSection.wasVisible) {
-      resumeSectionTracking()
-    }
-  }
-
-  function trackLinkedSection(sectionId: SectionId | null): void {
-    const element = sectionId ? document.getElementById(sectionId) : null
-    linkedSection = element ? { element, wasVisible: false } : null
-    syncLinkedSectionVisibility()
-  }
+  const trackLinkedSection = initPageShellSectionTracking(
+    sections, resolveSectionId, updateActiveState, rootMargin, threshold,
+  )
 
   function resolveSectionId(anchorId: string): SectionId | null {
     const target = document.getElementById(anchorId)
@@ -112,20 +80,7 @@ export function initPageShellNavigation<SectionId extends string>({
   }
 
   function updateActiveState(sectionId: SectionId): void {
-    document
-      .querySelectorAll<HTMLElement>("[data-unified-bar-section]")
-      .forEach((link) => {
-        const active = link.dataset.unifiedBarSection === sectionId
-        link.classList.toggle("is-active", active)
-        if (link.matches('[role="tab"]')) {
-          link.setAttribute("aria-selected", String(active))
-        } else if (link.matches("a[href]")) {
-          link.setAttribute("aria-current", active ? "location" : "false")
-        }
-        link.setAttribute("tabindex", active ? "0" : "-1")
-      })
-
-    setUnifiedBarSwitcherActiveState(barId, sectionId)
+    syncUnifiedBarSectionState(barId, sectionId, { manageTabindex: true })
   }
 
   function scrollToAnchor(
@@ -141,14 +96,15 @@ export function initPageShellNavigation<SectionId extends string>({
 
     const sectionId = resolveSectionId(anchorId)
     trackLinkedSection(sectionId)
-    target.scrollIntoView({ behavior, block: "start" })
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    target.scrollIntoView({ behavior: reduceMotion ? "auto" : behavior, block: "start" })
     if (updateLocation) history.replaceState(history.state, "", `#${anchorId}`)
 
     if (sectionId) {
       updateActiveState(sectionId)
     }
 
-    if (flashClass) {
+    if (flashClass && !reduceMotion) {
       target.classList.add(flashClass)
       setTimeout(() => target.classList.remove(flashClass), 1000)
     }
@@ -157,18 +113,21 @@ export function initPageShellNavigation<SectionId extends string>({
   function syncFromHash(): void {
     const hash = window.location.hash.replace("#", "")
     const sectionId = hash ? resolveSectionId(hash) : null
-    trackLinkedSection(sectionId)
     updateActiveState(sectionId ?? defaultSectionId)
+    trackLinkedSection(sectionId ?? (preserveOverviewOnLoad ? defaultSectionId : null), sectionId !== null)
   }
 
   const selectors = ["[data-unified-bar-section-link]", ...sectionLinkSelectors]
   document.querySelectorAll<HTMLElement>(selectors.join(", ")).forEach((link) => {
     pageLifecycle.on(link, "click", (event) => {
       const href = link.getAttribute("href")
-      if (!href?.startsWith("#")) return
+      const targetId = link instanceof HTMLAnchorElement
+        ? (link.pathname === location.pathname ? link.hash.slice(1) : "")
+        : (href?.startsWith("#") ? href.slice(1) : "")
+      if (!targetId) return
 
       event.preventDefault()
-      scrollToAnchor(href.replace("#", ""))
+      scrollToAnchor(targetId)
     })
   })
 
@@ -177,35 +136,6 @@ export function initPageShellNavigation<SectionId extends string>({
       barId,
       sectionSelector,
       shellId: shellId ?? null,
-    })
-  }
-
-  if (sections.length > 0) {
-    pageLifecycle.on(window, "scroll", syncLinkedSectionVisibility, { passive: true })
-    pageLifecycle.on(document, "scrollend", () => {
-      if (linkedSection && !linkedSection.wasVisible) resumeSectionTracking()
-    })
-    const observer = new IntersectionObserver(
-      (entries) => {
-        // Keep the linked section current during the jump and until it leaves view.
-        if (linkedSection) return
-        const active = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0]
-
-        if (!active?.target.id) return
-
-        const sectionId = resolveSectionId(active.target.id)
-        if (sectionId) {
-          updateActiveState(sectionId)
-        }
-      },
-      { rootMargin, threshold },
-    )
-
-    sections.forEach((section) => observer.observe(section))
-    pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), {
-      once: true,
     })
   }
 
@@ -241,37 +171,13 @@ export function initPageShellNavigation<SectionId extends string>({
         `${window.location.pathname}${window.location.search}`,
       )
       trackLinkedSection(defaultSectionId)
-      window.scrollTo({ top: 0, behavior: "smooth" })
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" })
       updateActiveState(defaultSectionId)
     })
   }
 
-  const tabContainer = document.getElementById(`${barId}-tabs`)
-  if (tabContainer) {
-    pageLifecycle.on(tabContainer, "keydown", (event) => {
-      const keyboardEvent = event as KeyboardEvent
-      if (keyboardEvent.key !== "ArrowLeft" && keyboardEvent.key !== "ArrowRight") {
-        return
-      }
-
-      const visibleTabs = Array.from(
-        tabContainer.querySelectorAll<HTMLElement>(
-          "[data-unified-bar-tab]:not([data-overflow-hidden])",
-        ),
-      )
-      const currentIndex = visibleTabs.findIndex((tab) => tab === document.activeElement)
-      if (currentIndex === -1) return
-
-      keyboardEvent.preventDefault()
-      const direction = keyboardEvent.key === "ArrowRight" ? 1 : -1
-      const nextIndex = (currentIndex + direction + visibleTabs.length) % visibleTabs.length
-      const nextTab = visibleTabs[nextIndex]
-      if (!nextTab) return
-
-      nextTab.focus()
-      nextTab.click()
-    })
-  }
+  initUnifiedBarTabsKeyboard(barId)
 
   initUnifiedBarTitleSwitcher({
     barId,
@@ -301,11 +207,18 @@ export function initPageShellNavigation<SectionId extends string>({
   })
 
   const hash = window.location.hash.replace("#", "")
-  if (hash && document.getElementById(hash)) {
+  if (hash && document.getElementById(hash) && bar?.dataset.initialHashSynced !== hash) {
+    if (bar) {
+      bar.dataset.initialHashSynced = hash
+      pageLifecycle.signal.addEventListener("abort", () => { delete bar.dataset.initialHashSynced }, { once: true })
+    }
     const signal = pageLifecycle.signal
     const initialUrl = window.location.href
+    const initialScrollY = window.scrollY
     requestAnimationFrame(() => {
+      const active = document.activeElement
       if (signal.aborted || (bar && !bar.isConnected) || window.location.href !== initialUrl) return
+      if (window.scrollY !== initialScrollY || (active && active !== document.body && active !== document.documentElement)) return
       scrollToAnchor(hash, "auto", false)
     })
   }
@@ -315,4 +228,106 @@ export function initPageShellNavigation<SectionId extends string>({
     syncFromHash,
     updateActiveState,
   }
+}
+
+export function initPageShellSectionTracking<SectionId extends string>(
+  sections: NodeListOf<HTMLElement>,
+  resolveSectionId: (anchorId: string) => SectionId | null,
+  updateActiveState: (sectionId: SectionId) => void,
+  rootMargin = "-25% 0px -45% 0px",
+  threshold = [0, 0.2, 0.45, 0.7],
+): (sectionId: SectionId | null, awaitVisibility?: boolean) => void {
+  let linkedSection: {
+    element: HTMLElement
+    wasVisible: boolean
+    leftTop: boolean
+  } | null = null
+
+  function resumeSectionTracking(preferTop = false): void {
+    linkedSection = null
+    if (preferTop && sections[0]) {
+      const topId = resolveSectionId(sections[0].id)
+      if (topId) {
+        updateActiveState(topId)
+        return
+      }
+    }
+    const atTop = window.scrollY <= 8
+    let mostVisibleSectionId: SectionId | null = null
+    let greatestVisibleHeight = 0
+
+    for (const section of sections) {
+      const { top, bottom } = section.getBoundingClientRect()
+      const visibleHeight = Math.min(window.innerHeight, bottom) - Math.max(0, top)
+      const sectionId = resolveSectionId(section.id)
+      if (!sectionId || visibleHeight <= 0) continue
+      if (atTop && bottom > 0 && top < window.innerHeight) {
+        updateActiveState(sectionId)
+        return
+      }
+      if (visibleHeight > greatestVisibleHeight) {
+        greatestVisibleHeight = visibleHeight
+        mostVisibleSectionId = sectionId
+      }
+    }
+
+    if (mostVisibleSectionId) updateActiveState(mostVisibleSectionId)
+  }
+
+  function syncLinkedSectionVisibility(fromScroll = false): void {
+    if (!linkedSection) return
+    if (window.scrollY > 2) linkedSection.leftTop = true
+    const { top, bottom } = linkedSection.element.getBoundingClientRect()
+    if (fromScroll && linkedSection.wasVisible && linkedSection.leftTop && window.scrollY <= 2 && sections[0] && linkedSection.element !== sections[0]) {
+      resumeSectionTracking(true)
+      return
+    }
+    if (bottom > 0 && top < window.innerHeight) {
+      linkedSection.wasVisible = true
+    } else if (linkedSection.wasVisible) {
+      resumeSectionTracking()
+    }
+    if (!linkedSection && window.scrollY <= 8) resumeSectionTracking()
+  }
+
+  function trackLinkedSection(sectionId: SectionId | null, awaitVisibility = true): void {
+    const element = sectionId ? document.getElementById(sectionId) : null
+    linkedSection = element ? { element, wasVisible: false, leftTop: window.scrollY > 2 } : null
+    syncLinkedSectionVisibility()
+    if (!awaitVisibility && !linkedSection?.wasVisible) {
+      linkedSection = null
+      if (window.scrollY > 8) resumeSectionTracking()
+    }
+  }
+
+  if (sections.length > 0) {
+    pageLifecycle.on(window, "scroll", () => syncLinkedSectionVisibility(true), { passive: true })
+    pageLifecycle.on(document, "scrollend", () => {
+      if ((linkedSection && !linkedSection.wasVisible) || (!linkedSection && window.scrollY <= 8)) resumeSectionTracking()
+    })
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Keep the linked section current during the jump and until it leaves view.
+        if (linkedSection) return
+        const active = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0]
+
+        if (!active?.target.id) return
+
+        const sectionId = resolveSectionId(active.target.id)
+        if (sectionId) {
+          updateActiveState(sectionId)
+        }
+      },
+      { rootMargin, threshold },
+    )
+
+    sections.forEach((section) => observer.observe(section))
+    pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), {
+      once: true,
+    })
+  }
+
+  return trackLinkedSection
 }

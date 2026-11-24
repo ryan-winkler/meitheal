@@ -1,0 +1,18 @@
+---
+import Icon from "../ui/Icon.astro"
+interface Props {
+  entity: "area" | "goal" | "project" | "routine"
+  id: string
+}
+const { entity, id } = Astro.props
+---
+<form data-board-form="planning" class="board-form">
+  <input type="hidden" name="action" value="retire" />
+  <input type="hidden" name="entity" value={entity} />
+  <input type="hidden" name="id" value={id} />
+  <p role="status" data-board-feedback class="board-feedback"></p>
+  <button type="submit" class="btn btn-secondary btn-sm board-danger">
+    <Icon name="trash" size={14} sprite />
+    <span>Remove from active planning</span>
+  </button>
+</form>

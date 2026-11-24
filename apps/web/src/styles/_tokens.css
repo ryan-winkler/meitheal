@@ -17,7 +17,7 @@
  * Danger:          #EF4444 (dark) / #DC2626 (light)
  *
  * Typography:
- * Headings/Body: Geist Variable (fallback Inter Variable)
+ * Headings/Body: Geist Variable, then locally available sans-serif fonts
  * Optional Display: Outfit (self-hosted, retained for appearance presets)
  * Mono/Phonetic: JetBrains Mono
  *
@@ -71,16 +71,6 @@
   --spacing-sidebar: 240px;
 }
 
-/* Self-hosted Inter font — latin subset only (fallback for Geist/Outfit) */
-@font-face {
-  font-family: 'Inter Variable';
-  font-style: normal;
-  font-display: swap;
-  font-weight: 100 900;
-  src: url('@fontsource-variable/inter/files/inter-latin-wght-normal.woff2') format('woff2-variations');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
 /* Self-hosted Geist — primary heading/body/UI font (matches meitheal.io) */
 @font-face {
   font-family: 'Geist Variable';
@@ -96,25 +86,17 @@
   font-family: 'Outfit';
   font-style: normal;
   font-display: swap;
-  font-weight: 400 700;
+  font-weight: 100 900;
   src: url('@fontsource-variable/outfit/files/outfit-latin-wght-normal.woff2') format('woff2-variations');
 }
 
-/* Self-hosted JetBrains Mono — latin subset only (inline, not @import — must come before @tailwind) */
+/* Self-hosted JetBrains Mono variable font, Latin subset. */
 @font-face {
   font-family: 'JetBrains Mono';
   font-style: normal;
   font-display: swap;
-  font-weight: 400;
-  src: url('@fontsource/jetbrains-mono/files/jetbrains-mono-latin-400-normal.woff2') format('woff2');
-}
-
-@font-face {
-  font-family: 'JetBrains Mono';
-  font-style: normal;
-  font-display: swap;
-  font-weight: 500;
-  src: url('@fontsource/jetbrains-mono/files/jetbrains-mono-latin-500-normal.woff2') format('woff2');
+  font-weight: 100 800;
+  src: url('@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2') format('woff2-variations');
 }
 
 /* ===== Design Tokens — Evergreen Carbon + Living Mint (meitheal.io) ===== */
@@ -135,7 +117,7 @@
     --palette-on-accent: #07140F;
     --palette-accent-light: rgba(105, 227, 178, 0.12);
     --accent: var(--personal-accent, var(--palette-accent));
-    --accent-text: #ADF8D7;
+    --accent-text: var(--personal-accent-text-dark, #ADF8D7);
     --accent-hover: var(--personal-accent-hover, var(--personal-accent, var(--palette-accent-hover)));
     --accent-light: var(--personal-accent-light, var(--personal-accent, var(--palette-accent-light)));
     --warning: #F0B86D;
@@ -158,7 +140,7 @@
     --text-primary-rgb: 241 239 232;
     --text-secondary-rgb: 194 203 195;
     --text-muted-rgb: 169 183 176;
-    --accent-rgb: 105 227 178;
+    --accent-rgb: var(--personal-accent-rgb, 105 227 178);
     --accent-hover-rgb: 138 240 197;
     --warning-rgb: 240 184 109;
     --danger-rgb: 239 68 68;
@@ -208,6 +190,48 @@
     --text: var(--text-primary);
   }
 
+  /* Knight Rider — Super Productivity's charcoal workspace and blue actions. */
+  [data-theme="knight-rider"] {
+    --bg-primary-rgb: 19 19 20;
+    --bg-secondary-rgb: 26 26 27;
+    --bg-card-rgb: 36 36 36;
+    --bg-hover-rgb: 48 48 50;
+    --bg-input-rgb: 16 16 17;
+    --text-primary-rgb: 230 230 230;
+    --text-secondary-rgb: 205 205 210;
+    --knight-task-muted-rgb: 185 183 190;
+    --text-muted-rgb: var(--knight-task-muted-rgb);
+    --accent-rgb: var(--personal-accent-rgb, 100 149 237);
+    --accent-hover-rgb: 125 165 246;
+    --border-rgb: 54 54 58;
+    --border-focus-rgb: 166 192 249;
+    --bg-primary: rgb(var(--bg-primary-rgb));
+    --bg-secondary: rgb(var(--bg-secondary-rgb));
+    --bg-card: rgb(var(--bg-card-rgb));
+    --bg-hover: rgb(var(--bg-hover-rgb));
+    --bg-input: rgb(var(--bg-input-rgb));
+    --text-primary: rgb(var(--text-primary-rgb));
+    --text-secondary: rgb(var(--text-secondary-rgb));
+    --text-muted: rgb(var(--text-muted-rgb));
+    --palette-accent: #6495ED;
+    --palette-accent-hover: rgb(var(--accent-hover-rgb));
+    --palette-accent-light: rgb(var(--accent-rgb) / 0.14);
+    --palette-on-accent: #131314;
+    --accent-text: var(--personal-accent-text-dark, #ACC5FC);
+    --border: rgb(var(--border-rgb));
+    --border-focus: rgb(var(--border-focus-rgb));
+    --color-success: rgb(var(--success-rgb) / 0.9);
+    --success: #76C99B;
+    --success-rgb: 118 201 155;
+    --type-task: #8AB0FA;
+    --prio-low: #76C99B;
+    --prio-none: #A4A4AA;
+    --control-border: #88888C;
+    --knight-active-fill: #593541;
+    --knight-active-indicator: #FF5E92;
+    --danger-text: #FFADB1;
+  }
+
   /* Light theme overrides — Warm Architectural Paper + Forest Emerald */
   :is([data-theme="light"], [data-theme="auto"][data-ha-theme="light"]) {
     color-scheme: light;
@@ -220,7 +244,7 @@
     --text-secondary: #34473F;
     --text-muted: #4A5E55;
     --palette-accent: #146C4E;
-    --accent-text: #0E533B;
+    --accent-text: var(--personal-accent-text-light, #0E533B);
     --palette-accent-hover: #0E533B;
     --palette-on-accent: #FFFFFF;
     --palette-accent-light: rgba(20, 108, 78, 0.1);
@@ -243,7 +267,7 @@
     --text-primary-rgb: 16 35 27;
     --text-secondary-rgb: 52 71 63;
     --text-muted-rgb: 74 94 85;
-    --accent-rgb: 20 108 78;
+    --accent-rgb: var(--personal-accent-rgb, 20 108 78);
     --accent-hover-rgb: 14 83 59;
     --warning-rgb: 180 83 9;
     --danger-rgb: 220 38 38;
@@ -281,7 +305,7 @@
       --text-secondary: #34473F;
       --text-muted: #4A5E55;
       --palette-accent: #146C4E;
-      --accent-text: #0E533B;
+      --accent-text: var(--personal-accent-text-light, #0E533B);
       --palette-accent-hover: #0E533B;
       --palette-on-accent: #FFFFFF;
       --palette-accent-light: rgba(20, 108, 78, 0.1);
@@ -304,7 +328,7 @@
       --text-primary-rgb: 16 35 27;
       --text-secondary-rgb: 52 71 63;
       --text-muted-rgb: 74 94 85;
-      --accent-rgb: 20 108 78;
+      --accent-rgb: var(--personal-accent-rgb, 20 108 78);
       --accent-hover-rgb: 14 83 59;
       --warning-rgb: 180 83 9;
       --danger-rgb: 220 38 38;
@@ -349,6 +373,16 @@
       --palette-accent-light: rgba(105, 227, 178, 0.25);
     }
 
+    [data-theme="knight-rider"] {
+      --knight-task-muted-rgb: 215 213 220;
+      --text-muted-rgb: var(--knight-task-muted-rgb);
+      --text-muted: rgb(var(--text-muted-rgb));
+      --border-rgb: 119 119 123;
+      --border: rgb(var(--border-rgb));
+      --palette-accent-light: rgb(var(--accent-rgb) / 0.25);
+      --control-border: #ADADB3;
+    }
+
     :is([data-theme="light"], [data-theme="auto"][data-ha-theme="light"]) {
       --text-muted: #34473F;
       --text-muted-rgb: 52 71 63;
@@ -370,50 +404,5 @@
       --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.2);
       --palette-accent-light: rgba(20, 108, 78, 0.2);
     }
-  }
-}
-
-/* --- Page Transition Loading Bar --- */
-.page-loading-bar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 0;
-  height: 3px;
-  background: linear-gradient(90deg, var(--accent), var(--info));
-  z-index: 9999;
-  transition: width 0.3s var(--ease-out, ease);
-  pointer-events: none;
-  opacity: 0;
-}
-
-.page-loading-bar.active {
-  opacity: 1;
-  animation: loading-progress 1.5s ease-in-out;
-}
-
-@keyframes loading-progress {
-  0% {
-    width: 0;
-    opacity: 1;
-  }
-
-  60% {
-    width: 70%;
-    opacity: 1;
-  }
-
-  100% {
-    width: 100%;
-    opacity: 0;
-  }
-}
-
-/* Suppress loading bar animation for reduced motion preference */
-@media (prefers-reduced-motion: reduce) {
-  .page-loading-bar.active {
-    animation: none;
-    width: 100%;
-    opacity: 0;
   }
 }

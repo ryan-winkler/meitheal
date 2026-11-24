@@ -1,12 +1,28 @@
 import { AsyncLocalStorage } from "node:async_hooks"
 import { once } from "node:events"
 import { readFileSync } from "node:fs"
+import fs from "node:fs/promises"
 import http from "node:http"
 import https from "node:https"
-import { createRequire } from "node:module"
+import { createRequire, syncBuiltinESMExports } from "node:module"
 import { runWithIngressTransport, waitForDownloadDrain } from "../../apps/web/scripts/ingress-transport.mjs"
 
 const pinFixture = process.env.MEITHEAL_PIN_FIXTURE === "1"
+const boardDataDirectory = pinFixture && process.env.MEITHEAL_FIXTURE_BOARD_DATA
+if (boardDataDirectory) {
+  // Give this fixture the isolated grant journal the App normally gets from its /data mount.
+  const remap = value => typeof value === "string" &&
+    (value === "/data" || value === "/data/meitheal-board-grants.json" ||
+      /^\/data\/meitheal-board-grants-pending(?:\/|$)/.test(value))
+    ? boardDataDirectory + value.slice("/data".length) : value
+  for (const name of ["open", "mkdir", "rm"]) {
+    const original = fs[name]
+    fs[name] = (path, ...rest) => original(remap(path), ...rest)
+  }
+  const rename = fs.rename
+  fs.rename = (from, to) => rename(remap(from), remap(to))
+  syncBuiltinESMExports()
+}
 const activeMemberFixture = pinFixture || process.env.MEITHEAL_ACTIVE_MEMBER_FIXTURE === "1"
 const heldBodies = new AsyncLocalStorage()
 if (activeMemberFixture) {
@@ -32,9 +48,13 @@ if (activeMemberFixture) {
   const core = new WebSocketServer({ host: "127.0.0.1", port: 0 })
   await once(core, "listening")
   const users = ["admin", "member", "member-two"].map(user => ({
-    id: `fixture-${user}`, is_active: true, system_generated: false,
+    id: `fixture-${user}`, name: `Fixture ${user}`, is_active: true, system_generated: false,
     is_owner: user === "admin", group_ids: [user === "admin" ? "system-admin" : "system-users"],
   }))
+  let registry = [
+    { area_id: "fixture_kitchen", name: "Fixture Kitchen", aliases: ["Private alias"], floor_id: "upstairs" },
+    { area_id: "fixture_yard", name: "Fixture Yard" },
+  ]
   let unavailable = false
   let resultOverride
   let membershipQueries = 0
@@ -54,7 +74,13 @@ if (activeMemberFixture) {
       else {
         const isMembership = message.type === "config/auth/list"
         if (isMembership) membershipQueries++
-        const result = isMembership ? structuredClone(resultOverride === undefined ? users : resultOverride) : []
+        const areaRequest = message.type === "config/area_registry/list"
+        if (areaRequest && registry === null) {
+          socket.send(JSON.stringify({ type: "result", id: message.id, success: false, error: { code: "unavailable" } }))
+          return
+        }
+        const result = isMembership ? structuredClone(resultOverride === undefined ? users : resultOverride)
+          : areaRequest ? structuredClone(registry) : []
         const reply = value => {
           if (socket.readyState !== socket.OPEN) return
           socket.send(JSON.stringify({
@@ -81,6 +107,11 @@ if (activeMemberFixture) {
   }
   process.env.SUPERVISOR_TOKEN ??= "synthetic-pin-fixture"
   process.on("message", message => {
+    if (message?.type === "fixture-area-registry") {
+      registry = message.registry
+      process.send({ registryChanged: true })
+      return
+    }
     if (message?.type === "fixture-core-metrics") {
       process.send({ membershipQueries, lookupStillHeld: heldLookup?.readyState === heldLookup?.OPEN && Boolean(heldLookup) })
       return
@@ -177,7 +208,7 @@ const handle = (request, response) => {
   }
   const user = /(?:^|;\s*)feedback-fixture=(admin|member|member-two|old)(?:;|$)/.exec(request.headers.cookie ?? "")?.[1]
   if (fromSupervisor) {
-    request.url = request.url.slice(configuredPath.length)
+    request.url = request.url.slice(configuredPath.length).replace(/^\/+/, "/")
     delete request.headers["x-remote-user-id"]
     delete request.headers["x-remote-user-groups"]
     if (user) request.headers["x-remote-user-id"] = `fixture-${user}`
@@ -213,7 +244,7 @@ const handle = (request, response) => {
     }
   }
   runWithIngressTransport({
-    peer: fromSupervisor ? "172.30.32.2" : "172.30.33.7",
+    peer: fromSupervisor ? "172.30.32.2" : process.env.MEITHEAL_TEST_LOOPBACK_OPERATOR === "1" ? "127.0.0.1" : "172.30.33.7",
     fromSupervisor,
     identityHeadersSafe: user !== "old",
     configuredPath,
@@ -230,6 +261,10 @@ const server = pinFixture && process.env.MEITHEAL_PIN_FIXTURE_HTTP !== "1" ? htt
   key: readFileSync(process.env.MEITHEAL_PIN_FIXTURE_TLS_KEY),
   cert: readFileSync(process.env.MEITHEAL_PIN_FIXTURE_TLS_CERT),
 }, handle) : http.createServer(handle)
+
+// Owned ingress journeys can leave API connections idle during browser assertions.
+// Keep those sockets alive across the journey. Teardown closes them explicitly.
+if (pinFixture) server.keepAliveTimeout = 60_000
 
 if (process.env.MEITHEAL_TEST_CORE_USER_LOOKUP === "1") {
   const requireWeb = createRequire(new URL("../../apps/web/package.json", import.meta.url))
@@ -298,7 +333,7 @@ if (process.env.MEITHEAL_TEST_CORE_USER_LOOKUP === "1") {
           name: "Fixture admin",
           is_active: role !== "inactive",
           system_generated: role === "system",
-          is_owner: role === "owner",
+          is_owner: role === "owner" || role === "allowed",
           group_ids: role === "demoted" || role === "owner" ? ["system-users"] : ["system-admin"],
         }
         const result = role === "missing" ? []

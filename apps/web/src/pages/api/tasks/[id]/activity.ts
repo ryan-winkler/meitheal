@@ -1,3 +1,5 @@
+import { boardScopeErrorResponse } from "@lib/board-http"
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
@@ -18,10 +20,10 @@ const logger = createLogger({
  * Returns field-level change history for a task with pagination total.
  * Competitive parity: Jira, Asana, Linear all show activity logs.
  */
-export const GET: APIRoute = async ({ params, url }) => {
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async ({ params, url }, scope) => {
   try {
     await ensureSchema()
-    const repo = new TaskRepository(getPersistenceClient())
+    const repo = new TaskRepository(getPersistenceClient(), scope)
     const resolved = await repo.resolveTaskId(params.id!)
     if (!resolved) {
       return new Response(JSON.stringify({ error: "Task not found" }), {
@@ -36,6 +38,8 @@ export const GET: APIRoute = async ({ params, url }) => {
     const history = await repo.getActivityLog(resolved.id, limit, offset)
     return apiJson({ ...history, limit, offset })
   } catch (err) {
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
     logger.log("error", {
       event: "api.activity.get.failed",
       domain: "tasks",
@@ -45,4 +49,4 @@ export const GET: APIRoute = async ({ params, url }) => {
     })
     return apiError("Failed to fetch activity")
   }
-}
+})

@@ -1,3 +1,4 @@
+import { organizationLegacyFeatureWrite } from "@lib/organization-legacy-feature-write"
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
@@ -28,7 +29,7 @@ export const GET: APIRoute = async () => {
   }
 }
 
-export const PUT: APIRoute = async ({ request }) => {
+export const PUT: APIRoute = async ({ request, locals }) => {
   try {
     await ensureSchema()
     const repo = new SettingsRepository(getPersistenceClient())
@@ -42,6 +43,8 @@ export const PUT: APIRoute = async ({ request }) => {
       return apiError(`Unknown feature: ${feature}. Valid: ${Object.keys(FEATURE_DEFAULTS).join(", ")}`, 400)
     }
 
+    const denied = await organizationLegacyFeatureWrite(request, locals, ["feature_" + feature])
+    if (denied) return denied
     await repo.upsert(`feature_${feature}`, JSON.stringify(enabled))
 
     return apiJson({

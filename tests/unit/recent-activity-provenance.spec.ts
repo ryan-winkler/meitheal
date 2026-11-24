@@ -1,3 +1,8 @@
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
+import { currentBoardScope } from "../helpers/current-board-scope"
 import { expect, test } from "@playwright/test"
 import { runWithIngressTransport } from "../../apps/web/scripts/ingress-transport.mjs"
 import {
@@ -234,20 +239,26 @@ test("formats verified agent labels and resolves HA/internal provenance links ac
 })
 
 test("builds activity statements and reads paginated provenance history", async () => {
-  const added = expectStatementObject(taskAddedActivity("task-1", {
+  const previous = process.env.MEITHEAL_DB_URL, directory = await mkdtemp(join(tmpdir(), "meitheal-activity-normalizer-"))
+  process.env.MEITHEAL_DB_URL = `file:${join(directory, "activity.db")}`
+  resetPersistenceForTests()
+  await ensureSchema()
+  const actual = getPersistenceClient(), scope = await currentBoardScope(actual)
+  try {
+  const added = expectStatementObject(taskAddedActivity(scope, "task-1", {
     kind: "agent",
     personKey: null,
     provenance: { tokenName: "Bridge", originKind: "mcp", originName: "Claude", originTarget: "/config/voice" },
   }, 1_000))
   expect(added.args[2]).toContain('"originKind":"mcp"')
 
-  const closed = expectStatementObject(taskChangedActivity({ status: "complete", title: "Updated" }, "WHERE id = ?", ["task-1"], {
+  const closed = expectStatementObject(taskChangedActivity(scope, { status: "complete", title: "Updated" }, "WHERE id = ?", ["task-1"], {
     kind: "human",
     personKey: "pk-1",
   }, 2_000, "evt-1"))
   expect(closed.sql).toContain("'closed'")
 
-  const reopened = expectStatementObject(taskChangedActivity({ status: "pending" }, "WHERE id = ?", ["task-1"], {
+  const reopened = expectStatementObject(taskChangedActivity(scope, { status: "pending" }, "WHERE id = ?", ["task-1"], {
     kind: "system",
     personKey: null,
   }, 3_000, "evt-2"))
@@ -315,17 +326,31 @@ test("builds activity statements and reads paginated provenance history", async 
       area_name: "Home",
     })),
   ]
-  const client = {
-    async execute(stmt: { sql: string; args?: unknown[] }) {
-      capturedSql = stmt.sql
-      capturedArgs = stmt.args ?? []
-      return { rows }
-    },
-  } as unknown as Parameters<typeof readRecentActivity>[0]
+  const normalizerRows = (await actual.batch(rows.map(row => ({ sql: `SELECT ${Object.keys(row).map(key => `? AS ${key}`).join(",")}`, args: Object.values(row) })), "read")).flatMap(result => result.rows)
+  // Normalizer fixtures substitute only the final row set after executing the
+  // actual scoped SQL; authorization and pinned/live publication use real SQLite.
+  const client = new Proxy(actual, { get(target, property) {
+    if (property === "transaction") return async (...args: Parameters<typeof actual.transaction>) => {
+      const tx = await target.transaction(...args), execute = tx.execute.bind(tx)
+      tx.execute = async statement => {
+        const result = await execute(statement)
+        const sql = typeof statement === "string" ? statement : statement.sql
+        if (!sql.includes("SELECT activity.id, activity.created_at")) return result
+        capturedSql = sql
+        capturedArgs = typeof statement === "string" || !Array.isArray(statement.args) ? [] : [...statement.args]
+        return { ...result, rows: normalizerRows }
+      }
+      return tx
+    }
+    const value = Reflect.get(target, property)
+    return typeof value === "function" ? value.bind(target) : value
+  } })
 
-  const page = await readRecentActivity(client, { areaId: "home", personKey: "pk-1", before: { at: 4_000, id: 99 } })
-  expect(capturedSql).toContain("task.area_id = ?")
-  expect(capturedArgs).toEqual(["home", "pk-1", 4_000, 99, 26])
+  const page = await readRecentActivity(client, scope, { areaId: "home", personKey: "pk-1", before: { at: 4_000, id: 99 } })
+  expect(capturedSql).toContain("AND area.id = ?")
+  expect(capturedSql).toContain("scoped_tasks")
+  expect(capturedSql).toContain("owner_board_id IS NULL")
+  expect(capturedArgs.slice(-5)).toEqual(["home", "pk-1", 4_000, 99, 26])
   expect(page.items).toHaveLength(25)
   expect(page.items[0]?.provenance).toEqual({
     tokenName: "HA Bridge",
@@ -342,5 +367,10 @@ test("builds activity statements and reads paginated provenance history", async 
   // A pre-provenance close row is not credited to the token that created the task.
   expect(page.items[2]?.provenance).toBeNull()
   expect(page.items[3]?.provenance).toBeNull()
-  expect(page.next).toEqual({ at: 2_800 - 21, id: 6 })
+  expect(page.next).toEqual({ at: 2_800 - 21, id: 6 })  } finally {
+    resetPersistenceForTests()
+    if (previous === undefined) delete process.env.MEITHEAL_DB_URL; else process.env.MEITHEAL_DB_URL = previous
+    await rm(directory, { recursive: true, force: true })
+  }
+
 })

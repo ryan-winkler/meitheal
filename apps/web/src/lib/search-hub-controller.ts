@@ -1,11 +1,13 @@
+import { currentTaskApiContext } from "@lib/task-api"
 import { createFocusTrap } from "@lib/focus-trap"
 import { safeIngressHref, syncIngressDestination } from "@lib/ingress-navigation"
 import { hasPriorityOverlay } from "@lib/layout-shortcuts-controller"
 import { workerAllowsNetworkOnly } from "@lib/network-only-worker"
 import { fetchOnlineSearch, searchRegistration, searchWorkerReady, searchWorkerScope } from "@lib/online-search-client"
 import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
+import { matchesShortcutEvent, readResolvedShortcuts } from "@domains/navigation/keyboard-shortcuts"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { createTablerSvgElement, type TablerIconName } from "@lib/tabler-svg"
+import { createTablerSvgElement, mapEntityEmojiToTabler, type TablerIconName } from "@lib/tabler-svg"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "@lib/task-search-score"
 import type {
@@ -50,7 +52,7 @@ function getStaticRegistry(): StaticRegistry {
 function itemMatchesQuery(item: SearchResultItem, query: string): boolean {
   if (!query) return true
   const needle = query.toLowerCase()
-  return [item.title, item.subtitle, item.description]
+  return [item.title, item.subtitle, item.description, ...(item.keywords ?? [])]
     .filter(Boolean)
     .join(" ")
     .toLowerCase()
@@ -60,14 +62,27 @@ function itemMatchesQuery(item: SearchResultItem, query: string): boolean {
 function resolveSearchIconName(item: SearchResultItem): TablerIconName {
   if (item.id === "page-dashboard") return "dashboard"
   if (item.id === "page-today") return "today"
+  if (item.id === "page-upcoming") return "calendar-event"
   if (item.id === "page-calendar") return "calendar"
   if (item.id === "page-table") return "table"
   if (item.id === "page-tasks") return "kanban"
+  if (item.id === "page-routines") return "repeat"
   if (item.id === "page-settings") return "settings"
   if (item.id === "action-new-task") return "plus"
   switch (item.kind) {
-    case "task":
+    case "task": {
+      const taskKind = item.meta?.task_kind
+      if (taskKind === "calendar_event") return "calendar-event"
+      if (taskKind === "shopping_item") return "shopping-cart"
+      if (taskKind === "routine_instance") return "repeat"
+      if (taskKind === "checklist") return "list-check"
+      if (taskKind === "quick_capture") return "bolt"
       return "checkbox"
+    }
+    case "routine":
+      return (item.icon && mapEntityEmojiToTabler(item.icon)) || "repeat"
+    case "board":
+      return "kanban"
     case "area":
       return "folder"
     case "saved_filter":
@@ -344,12 +359,16 @@ pageLifecycle.onPageLoad((signal) => {
       if (isSafeUrl(target)) {
         const url = new URL(target, window.location.href)
         if (url.origin !== window.location.origin) return
+        const ingress = window.__ingress_path || ""
+        const path = ingress && url.pathname.startsWith(ingress + "/") ? url.pathname.slice(ingress.length) : url.pathname
+        const board = currentTaskApiContext()?.boardId
+        if (board && /^\/(?:tasks|kanban|table|calendar|timeline|today|upcoming|progress|habits|planning|eisenhower|triage|review|pinned|inactivity|activity|mention-inbox|gamification)(?:\/|$)/.test(path) && !url.searchParams.has("board_id")) url.searchParams.set("board_id", board)
         const settingsShell = document.getElementById("settings-shell")
         if (item.kind === "setting" && settingsShell && url.href === window.location.href) {
           settingsShell.dispatchEvent(new Event("meitheal:settings-jump"))
           return
         }
-        syncIngressDestination(item.href)
+        syncIngressDestination(url.pathname + url.search + url.hash)
         window.location.href = url.pathname + url.search + url.hash // nosemgrep
       }
     }
@@ -555,22 +574,23 @@ pageLifecycle.onPageLoad((signal) => {
   window.openSearchHub = openHub
 
   document.addEventListener("keydown", event => {
-    if (event.defaultPrevented) return
+    if (event.defaultPrevented || document.documentElement.hasAttribute("data-shortcut-recording")) return
     const target = event.target
     if (target instanceof HTMLElement && (target.matches("input, textarea, select") || target.isContentEditable)) return
     const tdOverlay = document.getElementById("task-detail-overlay")
     if (tdOverlay?.classList.contains("active") && !document.body.classList.contains("has-docked-inspector")) return
     if (hasPriorityOverlay()) return
 
-    if (event.key === "/" && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey
-      && singleKeyShortcutsEnabled()) {
+    const shortcuts = readResolvedShortcuts()
+    const singleEnabled = singleKeyShortcutsEnabled()
+    if (matchesShortcutEvent(event, shortcuts.search, singleEnabled)) {
       event.preventDefault()
       const scope = document.getElementById("settings-bar")?.dataset.searchScope
       openHub(scope ? { scope } : undefined)
       return
     }
 
-    if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) {
+    if (matchesShortcutEvent(event, shortcuts.commandPalette, singleEnabled)) {
       event.preventDefault()
       openHub()
     }

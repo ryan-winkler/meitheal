@@ -28,6 +28,23 @@ const { locale } = Astro.props
     <IntegrationGrocy locale={locale} />
     <IntegrationN8n locale={locale} />
     <IntegrationWebhooks locale={locale} />
+
+    <div class="integration-plugins-bridge">
+      <div class="integration-plugins-bridge__copy">
+        <span class="integration-card__icon" aria-hidden="true">
+          <Icon name="package" size={18} sprite={true} />
+        </span>
+        <div class="integration-card__title-info">
+          <strong>Plugins &amp; Extensions</strong>
+          <span class="integration-card__desc">
+            Manage optional connectors, custom workspace extensions, and plugin health in Plugins.
+          </span>
+        </div>
+      </div>
+      <a href="#plugins-settings" class="btn btn-secondary btn-sm whitespace-nowrap" data-settings-section-link>
+        Open Plugins
+      </a>
+    </div>
   </div>
 
   <!-- ═══════ Integration Explainer Dialog ═══════ -->
@@ -56,6 +73,26 @@ const { locale } = Astro.props
     display: flex;
     flex-direction: column;
     gap: 12px;
+  }
+
+  .integration-plugins-bridge {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding: 14px 18px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-primary);
+  }
+
+  .integration-plugins-bridge__copy {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    flex: 1 1 260px;
   }
 
   /* ═══════ Integration Card ═══════ */
@@ -454,12 +491,6 @@ const { locale } = Astro.props
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .integration-card__actions {
-      flex-direction: column;
-    }
-    .integration-card__actions .btn {
-      width: 100%;
-    }
     .event-checkbox-grid {
       grid-template-columns: 1fr;
     }
@@ -817,47 +848,84 @@ const { locale } = Astro.props
    * Opens a native <dialog> with explainer content for each integration.
    * Content is defined inline to keep it colocated with the component.
    */
-  const EXPLAINER_CONTENT: Record<string, { title: string; body: string }> = {
+  type ExplainerSegment = string | readonly ["b" | "c", string] | null;
+  type ExplainerEntry = { title: string; paragraphs: ExplainerSegment[][] };
+
+  const EXPLAINER_CONTENT: Record<string, ExplainerEntry> = {
     ha: {
       title: "Home Assistant",
-      body: `<p>Meitheal connects to Home Assistant via <strong>WebSocket</strong>, allowing it to consume and provide data automatically.</p>
-             <p>When running as an HA addon, no configuration is needed — the connection is established through the Supervisor API with a built-in token.</p>
-             <p>The connection test checks the Supervisor connection. The Advanced section stores standalone settings separately.</p>`,
+      paragraphs: [
+        ["Meitheal connects to Home Assistant via ", ["b", "WebSocket"], ", allowing it to consume and provide data automatically."],
+        ["When running as an HA addon, no configuration is needed — the connection is established through the Supervisor API with a built-in token."],
+        ["The connection test checks the Supervisor connection. The Advanced section stores standalone settings separately."],
+      ],
     },
     calendar: {
       title: "Calendar Sync",
-      body: `<p>Directional sync between Meitheal tasks and HA calendar events. Choose per calendar:</p>
-             <p><strong>↔ Bidirectional</strong> — tasks ↔ events flow both ways. Duplicates prevented via confirmation tracking.<br>
-             <strong>↓ Import only</strong> — HA calendar events create Meitheal tasks. No write-back.<br>
-             <strong>↑ Export only</strong> — Meitheal tasks with due dates appear as calendar events. No inbound sync.</p>
-             <p>Select calendars from the toggle cards — Meitheal auto-detects available HA calendars. For external servers (Nextcloud, Radicale, Baikal), expand the CalDAV section.</p>
-             <p>Sync window: past 7 days → next 30 days.</p>`,
+      paragraphs: [
+        ["Directional sync between Meitheal tasks and HA calendar events. Choose per calendar:"],
+        [
+          ["b", "↔ Bidirectional"], " — tasks ↔ events flow both ways. Duplicates prevented via confirmation tracking.", null,
+          ["b", "↓ Import only"], " — HA calendar events create Meitheal tasks. No write-back.", null,
+          ["b", "↑ Export only"], " — Meitheal tasks with due dates appear as calendar events. No inbound sync.",
+        ],
+        ["Select calendars from the toggle cards — Meitheal auto-detects available HA calendars. For external servers (Nextcloud, Radicale, Baikal), expand the CalDAV section."],
+        ["Sync window: past 7 days → next 30 days."],
+      ],
     },
     todo: {
       title: "Todo Sync",
-      body: `<p>Bridges Home Assistant's built-in todo lists (<code>todo.*</code> entities) with Meitheal.</p>
-             <p>This ensures your HA dashboards, automations, and voice assistants that use <code>todo.*</code> entities stay in sync with tasks managed here.</p>
-             <p>Enable only for lists you actively use — disabled by default to save power.</p>`,
+      paragraphs: [
+        ["Bridges Home Assistant's built-in todo lists (", ["c", "todo.*"], " entities) with Meitheal."],
+        ["This ensures your HA dashboards, automations, and voice assistants that use ", ["c", "todo.*"], " entities stay in sync with tasks managed here."],
+        ["Enable only for lists you actively use — disabled by default to save power."],
+      ],
     },
     grocy: {
       title: "Grocy",
-      body: `<p>Grocy is a household inventory and chore management system. This integration syncs Grocy chores and products with Meitheal tasks.</p>
-             <p>When Grocy is running as an HA addon, Meitheal auto-detects it and fills in the URL automatically. For standalone Grocy servers, enter the URL and API key manually.</p>
-             <p>Generate an API key in Grocy → Settings → API Keys.</p>`,
+      paragraphs: [
+        ["Grocy is a household inventory and chore management system. This integration syncs Grocy chores and products with Meitheal tasks."],
+        ["When Grocy is running as an HA addon, Meitheal auto-detects it and fills in the URL automatically. For standalone Grocy servers, enter the URL and API key manually."],
+        ["Generate an API key in Grocy → Settings → API Keys."],
+      ],
     },
     n8n: {
       title: "n8n / Node-RED",
-      body: `<p>Trigger automation workflows when task events occur (created, updated, completed, deleted).</p>
-             <p><strong>HA Addon mode:</strong> Node-RED and n8n addons communicate automatically through the HA WebSocket — no webhook URL needed.</p>
-             <p><strong>Standalone mode:</strong> Enter the webhook URL from your n8n/Node-RED flow, plus optional API key and signing secret for authentication.</p>`,
+      paragraphs: [
+        ["Trigger automation workflows when task events occur (created, updated, completed, deleted)."],
+        [["b", "HA Addon mode:"], " Node-RED and n8n addons communicate automatically through the HA WebSocket — no webhook URL needed."],
+        [["b", "Standalone mode:"], " Enter the webhook URL from your n8n/Node-RED flow, plus optional API key and signing secret for authentication."],
+      ],
     },
     webhooks: {
       title: "Webhooks",
-      body: `<p>Generic outgoing HTTP webhooks that send task event payloads to any URL you specify (e.g., Zapier, IFTTT, custom APIs).</p>
-             <p>Each event is POSTed as JSON with an optional HMAC-SHA256 signature for verification.</p>
-             <p><strong>Not the same as Agents & AI</strong> — webhooks are for data pipelines and automations. For AI agent protocols (A2A, MCP, WebMCP), use the Agents & AI tab.</p>`,
+      paragraphs: [
+        ["Generic outgoing HTTP webhooks that send task event payloads to any URL you specify (e.g., Zapier, IFTTT, custom APIs)."],
+        ["Each event is POSTed as JSON with an optional HMAC-SHA256 signature for verification."],
+        [["b", "Not the same as Agents & AI"], " — webhooks are for data pipelines and automations. For AI agent protocols (A2A, MCP, WebMCP), use the Agents & AI tab."],
+      ],
     },
   };
+
+  function renderExplainerBody(container: HTMLElement, paragraphs: ExplainerSegment[][]) {
+    const frag = document.createDocumentFragment();
+    for (const segments of paragraphs) {
+      const p = document.createElement("p");
+      for (const seg of segments) {
+        if (seg === null) {
+          p.appendChild(document.createElement("br"));
+        } else if (typeof seg === "string") {
+          p.appendChild(document.createTextNode(seg));
+        } else {
+          const el = document.createElement(seg[0] === "b" ? "strong" : "code");
+          el.textContent = seg[1];
+          p.appendChild(el);
+        }
+      }
+      frag.appendChild(p);
+    }
+    container.replaceChildren(frag);
+  }
 
   function initExplainerDialog() {
     const dialog = document.getElementById(
@@ -871,26 +939,29 @@ const { locale } = Astro.props
     dialog.dataset.explainerInit = "true";
 
     // Open on info button click
+    const signal = pageLifecycle.signal;
     document.querySelectorAll(".info-btn[data-explainer]").forEach((btn) => {
       btn.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
         const key = (btn as HTMLElement).dataset.explainer || "";
-        const content = EXPLAINER_CONTENT[key];
+        const content = Object.prototype.hasOwnProperty.call(EXPLAINER_CONTENT, key)
+          ? EXPLAINER_CONTENT[key]
+          : undefined;
         if (!content) return;
         titleEl.textContent = content.title;
-        bodyEl.innerHTML = content.body;
+        renderExplainerBody(bodyEl, content.paragraphs);
         dialog.showModal();
-      });
+      }, { signal });
     });
 
     // Close button
-    closeBtn?.addEventListener("click", () => dialog.close());
+    closeBtn?.addEventListener("click", () => dialog.close(), { signal });
 
     // Close on backdrop click
     dialog.addEventListener("click", (e) => {
       if (e.target === dialog) dialog.close();
-    });
+    }, { signal });
   }
   /**
    * Calendar Entity Dropdown Population
@@ -918,7 +989,7 @@ const { locale } = Astro.props
         manual.style.display = "none";
         manual.value = "";
       }
-    });
+    }, { signal: pageLifecycle.signal });
 
     // Populate from API
     (async () => {
@@ -933,42 +1004,27 @@ const { locale } = Astro.props
         const calendars = data.calendars ?? [];
         const activeEntity = data.sync?.entityId ?? "";
 
-        // Clear loading option
-        select.innerHTML = "";
-
-        if (calendars.length === 0) {
-          select.innerHTML =
-            '<option value="" disabled selected>No calendars detected</option>';
-        } else {
-          // Default option
-          select.innerHTML =
-            '<option value="" disabled>Select a calendar…</option>';
-          for (const cal of calendars) {
-            const opt = document.createElement("option");
-            opt.value = cal.entity_id;
-            opt.textContent = `${cal.friendly_name} (${cal.entity_id})`;
-            if (cal.entity_id === activeEntity) opt.selected = true;
-            select.appendChild(opt);
-          }
-          // Auto-select if only one and nothing pre-selected
-          if (calendars.length === 1 && !activeEntity) {
-            select.selectedIndex = 1;
-          }
+        const makeDisabled = (label: string, selected = false) => {
+          const opt = new Option(label, "", selected, selected)
+          opt.disabled = true
+          return opt
         }
 
-        // Add custom option
-        const customOpt = document.createElement("option");
-        customOpt.value = "__custom__";
-        customOpt.textContent = "Custom entity…";
-        select.appendChild(customOpt);
+        if (calendars.length === 0) {
+          select.replaceChildren(makeDisabled("No calendars detected", true))
+        } else {
+          select.replaceChildren(makeDisabled("Select a calendar…"))
+          for (const cal of calendars) {
+            select.add(new Option(`${cal.friendly_name} (${cal.entity_id})`, cal.entity_id, false, cal.entity_id === activeEntity))
+          }
+          if (calendars.length === 1 && !activeEntity) select.selectedIndex = 1
+        }
+
+        select.add(new Option("Custom entity…", "__custom__"))
       } catch {
-        select.innerHTML =
-          '<option value="" disabled selected>Could not load calendars</option>';
-        // Add custom option as fallback
-        const customOpt = document.createElement("option");
-        customOpt.value = "__custom__";
-        customOpt.textContent = "Custom entity…";
-        select.appendChild(customOpt);
+        const errOpt = new Option("Could not load calendars", "", true, true)
+        errOpt.disabled = true
+        select.replaceChildren(errOpt, new Option("Custom entity…", "__custom__"))
         manual.style.display = "";
       }
     })();
@@ -1032,7 +1088,7 @@ const { locale } = Astro.props
           urlGroup.style.display = "";
           keyGroup.style.display = "";
           customToggle.style.display = "none";
-        });
+        }, { signal: pageLifecycle.signal });
       }
     } catch {
       log.warn("Grocy auto-detect failed");

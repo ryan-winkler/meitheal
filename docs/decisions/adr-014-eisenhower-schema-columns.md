@@ -41,7 +41,7 @@ Quadrant derivation uses threshold of 3: `urgency ≥ 3 AND importance ≥ 3` �
 - **Schema version bumped** to 7 — existing tasks get urgency/importance backfilled from priority + due_date
 - **MCP and LLM API updated** — urgency/importance are top-level fields on all task CRUD tools
 - **Drag-and-drop fixed** — dragging updates urgency/importance and sets `eisenhower_override=1`
-- **"Eliminate" renamed to "Not Now"** — gentler framing for ADHD users (based on persona audit: "Wall of Awful" concept)
+- **"Eliminate" renamed to "Not Now"** — gentler ADHD-friendly framing to reduce avoidance friction ("Wall of Awful" concept)
 - **Framework YAML** (`eisenhower.yaml`) makes this a discoverable strategic lens alongside RICE, ICE, etc.
 
 ## Alternatives Considered

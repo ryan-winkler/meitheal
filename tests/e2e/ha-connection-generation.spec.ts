@@ -16,7 +16,7 @@ for (const heldInitial of [false, true]) {
         "fixture-second": { "calendar.second": { s: "on", a: {}, lc: 1, c: "fixture" } },
       },
     })
-    const store = await import("../../apps/web/src/domains/tasks/persistence/store")
+    const store = await import("../helpers/persistence-fixture")
     const ha = await import("../../apps/web/src/domains/ha/ha-connection")
     const entities = await import("../../apps/web/src/domains/ha/ha-entities")
     try {
@@ -142,7 +142,7 @@ for (const settlement of ["pong", "close"] as const) {
       },
     })
     const foreignCore = await startHAWebSocketFixture()
-    const store = await import("../../apps/web/src/domains/tasks/persistence/store")
+    const store = await import("../helpers/persistence-fixture")
     const ha = await import("../../apps/web/src/domains/ha/ha-connection")
     const entities = await import("../../apps/web/src/domains/ha/ha-entities")
     const websocket = await import(createRequire(new URL("../../apps/web/package.json", import.meta.url)).resolve("home-assistant-js-websocket"))

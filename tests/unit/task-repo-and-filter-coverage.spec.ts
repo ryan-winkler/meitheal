@@ -1,4 +1,5 @@
-import { execFileSync } from "node:child_process"
+import { currentBoardScope } from "../helpers/current-board-scope"
+import { execFileSync } from "../helpers/isolated-process"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
@@ -22,9 +23,12 @@ test("filter-state and appearance-preferences cover filtering, serialization, gr
 
   const prevWindow = (globalThis as Record<string, unknown>).window
   const prevDocument = (globalThis as Record<string, unknown>).document
+  const prevLocation = (globalThis as Record<string, unknown>).location
+  const prevHistory = (globalThis as Record<string, unknown>).history
   const prevStorage = (globalThis as Record<string, unknown>).localStorage
   const prevMatchMedia = (globalThis as Record<string, unknown>).matchMedia
   const prevInnerWidth = (globalThis as Record<string, unknown>).innerWidth
+  const prevHTMLElement = (globalThis as Record<string, unknown>).HTMLElement
 
   const docDataset: Record<string, string> = {}
   const bodyClasses = new Set<string>()
@@ -42,6 +46,7 @@ test("filter-state and appearance-preferences cover filtering, serialization, gr
   const fakeWindow = {
     location: {
       get href() { return href },
+      get pathname() { return new URL(href).pathname },
       get search() { return new URL(href).search },
     },
     history: {
@@ -51,6 +56,10 @@ test("filter-state and appearance-preferences cover filtering, serialization, gr
       },
     },
     addEventListener: addListener,
+    dispatchEvent: (event: Event) => {
+      listeners.get(event.type)?.forEach(listener => listener(event))
+      return true
+    },
   }
   const fakeDocument = {
     cookie: "",
@@ -80,15 +89,24 @@ test("filter-state and appearance-preferences cover filtering, serialization, gr
     },
     getElementById: () => null,
     querySelector: () => null,
+    querySelectorAll: () => [],
     addEventListener: addListener,
+    dispatchEvent: (event: Event) => {
+      listeners.get(event.type)?.forEach(listener => listener(event))
+      return true
+    },
   }
 
   Object.assign(globalThis, {
-    window: fakeWindow,
+    window: { ...fakeWindow, fetch: globalThis.fetch.bind(globalThis) },
     document: fakeDocument,
+    location: fakeWindow.location,
+    history: fakeWindow.history,
     localStorage: fakeStorage,
     matchMedia: () => ({ matches: true }),
     innerWidth: 1280,
+    // The browser-only focus helper checks this constructor even with no active element.
+    HTMLElement: class {},
   })
 
   try {
@@ -207,10 +225,14 @@ test("filter-state and appearance-preferences cover filtering, serialization, gr
     Object.assign(globalThis, {
       window: prevWindow,
       document: prevDocument,
+      location: prevLocation,
+      history: prevHistory,
       localStorage: prevStorage,
       matchMedia: prevMatchMedia,
       innerWidth: prevInnerWidth,
     })
+    if (prevHTMLElement === undefined) delete (globalThis as Record<string, unknown>).HTMLElement
+    else (globalThis as Record<string, unknown>).HTMLElement = prevHTMLElement
   }
 })
 
@@ -219,10 +241,10 @@ test("TaskRepository and SettingsRepository AI handoff persistence cover full CR
   const webDir = path.resolve(process.cwd(), "../apps/web")
   execFileSync(process.execPath, ["scripts/migrate.mjs"], {
     cwd: webDir,
-    env: { ...process.env, MEITHEAL_DB_URL: dbUrl },
+    env: { ...process.env, MEITHEAL_DB_URL: dbUrl, MEITHEAL_BOARD_GRANT_PATH: dbFile + ".board-grants.json" },
   })
 
-  const store = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const store = await import("../helpers/persistence-fixture")
   await store.ensureSchema()
   const client = store.getPersistenceClient()
 
@@ -242,6 +264,8 @@ test("TaskRepository and SettingsRepository AI handoff persistence cover full CR
   )).toBe(false)
   await settingsMod.saveLegacyAiHandoffUrl(client, "https://legacy.example/api")
 
+  await client.execute("INSERT INTO custom_users(id,name,color,kind,created_at,updated_at) VALUES ('ryan','Ryan','#112233','human',1,1)")
+  await client.execute("INSERT OR IGNORE INTO areas(id,name,created_at,updated_at) VALUES ('default','A real default Area',1,1)")
   // Seed project so project_id queries have a match
   const now = Date.now()
   await client.execute({
@@ -251,7 +275,7 @@ test("TaskRepository and SettingsRepository AI handoff persistence cover full CR
   })
 
   const { TaskRepository } = await import("../../apps/web/src/domains/tasks/persistence/task-repository")
-  const repo = new TaskRepository(client)
+  const repo = new TaskRepository(client, await currentBoardScope(client))
 
   const todayStr = new Date(now).toISOString().split("T")[0]!
   const tomorrowStr = new Date(now + 86_400_000).toISOString().split("T")[0]!
@@ -273,7 +297,7 @@ test("TaskRepository and SettingsRepository AI handoff persistence cover full CR
     end_date: tomorrowStr,
     progress: 10,
     color: "#3b82f6",
-    is_favorite: 1,
+    is_promoted: 1,
     task_type: "epic",
     assigned_to: "ryan",
   }, now)
@@ -296,7 +320,6 @@ test("TaskRepository and SettingsRepository AI handoff persistence cover full CR
     end_date: tomorrowStr,
     progress: 0,
     color: "#ef4444",
-    is_favorite: 0,
     task_type: "task",
     assigned_to: "ryan",
     recurrence_rule: "FREQ=WEEKLY;INTERVAL=1",
@@ -319,7 +342,6 @@ test("TaskRepository and SettingsRepository AI handoff persistence cover full CR
     end_date: null,
     progress: 0,
     color: null,
-    is_favorite: 0,
     task_type: "task",
     assigned_to: null,
   }, now)
@@ -340,7 +362,7 @@ test("TaskRepository and SettingsRepository AI handoff persistence cover full CR
     end_date: todayStr,
     progress: 50,
     color: null,
-    is_favorite: 1,
+    is_promoted: 1,
     task_type: "task",
     assigned_to: "ryan",
   }, now)
@@ -352,7 +374,7 @@ test("TaskRepository and SettingsRepository AI handoff persistence cover full CR
   expect((await repo.getRecentTasks(5)).length).toBeGreaterThanOrEqual(4)
   expect((await repo.findByProjectId("proj-1")).length).toBe(2)
   expect((await repo.getProjectTaskCounts()).get("proj-1")?.total).toBe(2)
-  expect((await repo.getFavoriteTasks(5)).length).toBeGreaterThanOrEqual(1)
+  expect((await repo.getPromotedTasks(5)).length).toBeGreaterThanOrEqual(1)
   expect((await repo.getOpenTasks(10)).length).toBeGreaterThanOrEqual(3)
   expect((await repo.getStatusCounts()).total).toBeGreaterThanOrEqual(4)
   expect(await repo.getOverdueCount(todayStr)).toBeGreaterThanOrEqual(1)
@@ -464,4 +486,61 @@ test("TaskRepository and SettingsRepository AI handoff persistence cover full CR
 
   await repo.deleteTask("backlog-1")
   expect(await repo.findById("backlog-1")).toBeNull()
+})
+
+test("Kanban groups visible Household descendants under an Epic outside the lane", async () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "meitheal-kanban-epic-repo-"))
+  const previousDb = process.env.MEITHEAL_DB_URL
+  const { ensureSchema, getPersistenceClient, resetPersistenceForTests } =
+    await import("../helpers/persistence-fixture")
+  const { TaskRepository } = await import("../../apps/web/src/domains/tasks/persistence/task-repository")
+  const { loadKanbanBoard } = await import("../../apps/web/src/lib/kanban-board-data")
+  process.env.MEITHEAL_DB_URL = `file:${path.join(directory, "epic.db")}`
+  resetPersistenceForTests()
+
+  try {
+    await ensureSchema()
+    const client = getPersistenceClient()
+    const repo = new TaskRepository(client, await currentBoardScope(client))
+    const createTask = (id: string, title: string, status: string, taskType: string, parentId: string | null) =>
+      repo.createTask({
+        id, title, status, task_type: taskType, parent_id: parentId,
+        description: "", priority: 3, area_id: null, labels: "[]",
+        framework_payload: "{}", custom_fields: "{}", progress: 0,
+        due_date: null, start_date: null, end_date: null, color: null, assigned_to: null,
+      })
+
+    const epicTicket = await createTask("outside-epic", "Boiler upgrade", "complete", "epic", null)
+    await createTask("outside-story", "Heating preparation", "active", "story", "outside-epic")
+    await createTask("direct-child", "Order parts", "pending", "task", "outside-epic")
+    await createTask("nested-child", "Measure pipes", "pending", "task", "outside-story")
+    await createTask("standalone-card", "Book inspection", "pending", "task", null)
+    await createTask("cross-board-card", "Look up warranty", "pending", "task", null)
+
+    // A legacy link to an Epic in a different Board must leave the visible card ungrouped.
+    await client.batch([
+      `INSERT INTO task_boards (id, name, visibility, ticket_prefix, ticket_high_water, created_at, updated_at)
+       VALUES ('work-board', 'Work', 'restricted', 'WORKABCD', 1, 1, 1)`,
+      `INSERT INTO kanban_lanes (id, key, label, board_id, created_at, updated_at)
+       VALUES ('work-lane', 'pending', 'Pending', 'work-board', 1, 1)`,
+      `INSERT INTO tasks (id, title, task_type, area_id, task_board_id, board_column_id, ticket_ref,
+        idempotency_key, request_id, status, created_at, updated_at)
+       VALUES ('private-epic', 'Private Epic', 'epic', '__meitheal_no_area__', 'work-board', 'work-lane',
+        'WORKABCD-1', 'private-epic', 'private-epic', 'pending', 1, 1)`,
+      "UPDATE tasks SET parent_id = 'private-epic' WHERE id = 'cross-board-card'",
+    ], "write")
+
+    const pending = { id: "pending", key: "pending", label: "Pending", icon: "clock", includes: ["pending"], builtIn: true, wipLimit: 0 }
+    const board = await loadKanbanBoard(repo, [pending], 0, new URLSearchParams("groupBy=epic"))
+    const lane = board.get("pending")!
+    expect(lane.ids.slice().sort()).toEqual(["cross-board-card", "direct-child", "nested-child", "standalone-card"])
+    expect(lane.cards.map(card => card.id)).toEqual(lane.ids)
+    const epic = { id: "epic:outside-epic", label: `Boiler upgrade (MTH-${epicTicket})` }
+    expect(lane.epicsByCard).toEqual(new Map([["direct-child", epic], ["nested-child", epic]]))
+  } finally {
+    resetPersistenceForTests()
+    if (previousDb === undefined) delete process.env.MEITHEAL_DB_URL
+    else process.env.MEITHEAL_DB_URL = previousDb
+    rmSync(directory, { recursive: true, force: true })
+  }
 })

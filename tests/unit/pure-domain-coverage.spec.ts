@@ -24,7 +24,8 @@ test("grocy-mapper translates chores, categorized tasks, and consolidated shoppi
   })
   expect(overdueChore.status).toBe("active")
   expect(overdueChore.priority).toBe(1)
-  expect(overdueChore.areaId).toBe("monthly-ops-chores")
+  // Imported category names remain labels; only an owner-approved binding supplies placement.
+  expect(overdueChore).not.toHaveProperty("areaId")
   expect(overdueChore.labels).toContain("overdue")
   expect(overdueChore.description).toContain("Assigned to: Aoife")
 
@@ -43,7 +44,7 @@ test("grocy-mapper translates chores, categorized tasks, and consolidated shoppi
   })
   expect(upcomingChore.status).toBe("pending")
   expect(upcomingChore.priority).toBe(3)
-  expect(upcomingChore.areaId).toBe("default")
+  expect(upcomingChore).not.toHaveProperty("areaId")
   expect(upcomingChore.description).toBeNull()
 
   const categorizedTask = taskToTask(
@@ -61,7 +62,7 @@ test("grocy-mapper translates chores, categorized tasks, and consolidated shoppi
     "House Chores",
   )
   expect(categorizedTask.status).toBe("complete")
-  expect(categorizedTask.areaId).toBe("house-chores")
+  expect(categorizedTask).not.toHaveProperty("areaId")
   expect(categorizedTask.labels).toContain("category:house chores")
 
   const plainTask = taskToTask({
@@ -76,7 +77,7 @@ test("grocy-mapper translates chores, categorized tasks, and consolidated shoppi
     assignedToUserId: null,
   })
   expect(plainTask.status).toBe("pending")
-  expect(plainTask.areaId).toBe("default")
+  expect(plainTask).not.toHaveProperty("areaId")
 
   const manyItems = Array.from({ length: 22 }, (_, i) => ({
     productId: i + 1,

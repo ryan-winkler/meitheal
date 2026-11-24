@@ -1,38 +1,10 @@
-export type SettingsSectionId =
-  | "look-and-feel-settings"
-  | "language-time-settings"
-  | "navigation-settings"
-  | "tasks-boards-settings"
-  | "people-notifications-settings"
-  | "scoring-settings"
-  | "ai-agents-settings"
-  | "connections-settings"
-  | "app-pwa-settings"
-  | "backups-reset-settings"
+import {
+  LEGACY_SETTINGS_SECTION_ALIASES,
+  resolveSettingsSectionId,
+  type SettingsSectionId,
+} from "./settings-section-ids"
 
-export const LEGACY_SETTINGS_SECTION_ALIASES: Record<string, SettingsSectionId> = {
-  "personal-settings": "look-and-feel-settings",
-  "appearance-settings": "look-and-feel-settings",
-  "language-settings": "language-time-settings",
-  "locale-settings": "language-time-settings",
-  "general-settings": "navigation-settings",
-  "sidebar-settings": "navigation-settings",
-  "shortcuts-settings": "navigation-settings",
-  "workflow-settings": "tasks-boards-settings",
-  "labels-settings": "tasks-boards-settings",
-  "boards-settings": "tasks-boards-settings",
-  "users-settings": "people-notifications-settings",
-  "people-settings": "people-notifications-settings",
-  "notifications-settings": "people-notifications-settings",
-  "rules-lenses-settings": "scoring-settings",
-  "rules-settings": "scoring-settings",
-  "automation-ai-settings": "ai-agents-settings",
-  "agents-settings": "ai-agents-settings",
-  "integrations-settings": "connections-settings",
-  "app-pwa": "app-pwa-settings",
-  "danger-zone-settings": "backups-reset-settings",
-  "data-settings": "backups-reset-settings",
-}
+export { LEGACY_SETTINGS_SECTION_ALIASES, resolveSettingsSectionId, type SettingsSectionId }
 
 export interface SettingsFieldDescriptor {
   id: string
@@ -42,11 +14,31 @@ export interface SettingsFieldDescriptor {
   keywords: string[]
 }
 
+export type SettingsDomainGroupId =
+  | "workspace"
+  | "tasks-household"
+  | "integrations-extensions"
+  | "system-data"
+
+export interface SettingsDomainGroup {
+  id: SettingsDomainGroupId
+  label: string
+  boundedContexts: string
+}
+
+export const SETTINGS_DOMAIN_GROUPS: readonly SettingsDomainGroup[] = [
+  { id: "workspace", label: "Workspace", boundedContexts: "appearance, locale, navigation" },
+  { id: "tasks-household", label: "Tasks & Household", boundedContexts: "domain-tasks, domain-strategy, notifications" },
+  { id: "integrations-extensions", label: "Integrations & Extensions", boundedContexts: "domains/agents, integration-core, domains/ha, domains/plugins" },
+  { id: "system-data", label: "System & Data", boundedContexts: "domains/webserver, domain-auth, backups" },
+] as const
+
 export interface SettingsSectionDescriptor {
   id: SettingsSectionId
+  domainGroup: SettingsDomainGroupId
   label: string
   icon: string
-  outlineIcon: "sparkles" | "calendar" | "link" | "kanban" | "bell" | "sliders" | "automation" | "plug" | "phone" | "warning"
+  outlineIcon: "sparkles" | "calendar" | "link" | "kanban" | "bell" | "sliders" | "automation" | "plug" | "package" | "world" | "phone" | "warning"
   description: string
   navDetail: string
   statusLabel: string
@@ -71,23 +63,25 @@ export interface SettingsSearchResult {
 export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
   {
     id: "look-and-feel-settings",
+    domainGroup: "workspace",
     label: "Look & Feel",
     icon: "🎨",
     outlineIcon: "sparkles",
-    description: "Set your theme mode, accent color, font family, and surface contrast.",
-    navDetail: "Theme mode, accent color, typography, and density",
+    description: "Set your theme mode, accent color, navigation layout & color, font family, and surface contrast.",
+    navDetail: "Theme mode, accent color, navigation layout & color, typography",
     statusLabel: "Theme",
     summaryTitle: "Look & Feel",
     summaryDetail: "Theme",
     introTitle: "Make Meitheal comfortable to read and use",
     introDescription:
-      "Choose your theme mode, accent color, typeface, corner roundness, and layout width across Home Assistant, mobile, and standalone sessions.",
-    featuredTasks: ["Theme and accent", "Font and density", "Custom theme CSS"],
+      "Choose your theme mode, accent color, sidebar or top navigation layout, bar tinting, typeface, corner roundness, and layout width across Home Assistant, mobile, and standalone sessions.",
+    featuredTasks: ["Theme and accent", "Navigation layout & color", "Font and density"],
     statusTargetId: "settings-summary-theme",
-    keywords: ["theme", "appearance", "accent", "font", "typeface", "typography", "contrast", "density", "look", "feel", "colors"],
+    keywords: ["theme", "appearance", "accent", "navigation", "navbar", "top bar", "sidebar", "nav color", "floating", "hover", "font", "typeface", "typography", "contrast", "density", "look", "feel", "colors"],
   },
   {
     id: "language-time-settings",
+    domainGroup: "workspace",
     label: "Language & Time",
     icon: "🌐",
     outlineIcon: "calendar",
@@ -105,23 +99,25 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
   },
   {
     id: "navigation-settings",
+    domainGroup: "workspace",
     label: "Navigation & Shortcuts",
     icon: "🧭",
     outlineIcon: "link",
-    description: "Arrange the sidebar or top bar, task menu items, and keyboard shortcuts.",
-    navDetail: "Navigation layout, sidebar behavior, pinned task types, shortcuts",
+    description: "Customize keyboard shortcuts, arrange menu items and custom links, pin task types, and set personal labels.",
+    navDetail: "Editable keyboard shortcuts, menu items, pinned task types, labels",
     statusLabel: "Navigation",
     summaryTitle: "Navigation",
-    summaryDetail: "Sidebar & keys",
+    summaryDetail: "Menu & keys",
     introTitle: "Keep your favorite views one tap or keystroke away",
     introDescription:
-      "Choose sidebar or top navigation, hover-to-expand behavior, which task views appear in the Tasks menu, custom links, and keyboard shortcuts.",
-    featuredTasks: ["Sidebar or top bar", "Tasks menu & pinned types", "Keyboard shortcuts"],
+      "Rebind keyboard shortcuts, reorder sidebar and top bar menu destinations, add custom links, pin task types, and personalize Home Assistant labels.",
+    featuredTasks: ["Editable keyboard shortcuts", "Menu items & custom links", "Task types & personal labels"],
     statusTargetId: "sidebar-item-list",
-    keywords: ["sidebar", "navbar", "top bar", "navigation", "hover", "pinned", "task types", "shortcuts", "keyboard", "custom links"],
+    keywords: ["sidebar", "menu", "navigation", "pinned", "task types", "shortcuts", "keyboard", "hotkeys", "keybindings", "custom links", "labels"],
   },
   {
     id: "tasks-boards-settings",
+    domainGroup: "tasks-household",
     label: "Tasks & Boards",
     icon: "📋",
     outlineIcon: "kanban",
@@ -139,6 +135,7 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
   },
   {
     id: "people-notifications-settings",
+    domainGroup: "tasks-household",
     label: "People & Notifications",
     icon: "👥",
     outlineIcon: "bell",
@@ -156,6 +153,7 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
   },
   {
     id: "scoring-settings",
+    domainGroup: "tasks-household",
     label: "Scoring & Rules",
     icon: "⚖️",
     outlineIcon: "sliders",
@@ -173,6 +171,7 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
   },
   {
     id: "ai-agents-settings",
+    domainGroup: "integrations-extensions",
     label: "AI & Agent Access",
     icon: "🤖",
     outlineIcon: "automation",
@@ -190,6 +189,7 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
   },
   {
     id: "connections-settings",
+    domainGroup: "integrations-extensions",
     label: "Connected Services",
     icon: "🔌",
     outlineIcon: "plug",
@@ -206,7 +206,44 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     keywords: ["home assistant", "ha", "calendar", "caldav", "ical", "todo", "grocy", "n8n", "node-red", "webhooks", "sync", "integrations"],
   },
   {
+    id: "plugins-settings",
+    domainGroup: "integrations-extensions",
+    label: "Plugins",
+    icon: "🧩",
+    outlineIcon: "package",
+    description: "Monitor plugin health, enable external issue connectors, and install sandboxed custom plugins.",
+    navDetail: "Plugin health, GitHub/Gitea connectors, Safe Mode, ZIP & AI builder",
+    statusLabel: "Plugins",
+    summaryTitle: "Plugins",
+    summaryDetail: "Sandboxed",
+    introTitle: "Extend Meitheal safely with sandboxed plugins and connectors",
+    introDescription:
+      "Monitor live plugin health and Elephant-Goldfish compliance, enable external connectors, upload ZIP packages, or build a plugin with AI.",
+    featuredTasks: ["Plugin health & compliance", "External issue connectors", "Upload ZIP or build with AI"],
+    statusTargetId: "plugins-active-badge",
+    keywords: ["plugins", "plugin health", "extensions", "connectors", "zip", "github", "gitea", "issues", "safe mode", "sandbox", "compliance", "ai builder"],
+  },
+  {
+    id: "webserver-settings",
+    domainGroup: "system-data",
+    label: "Webserver",
+    icon: "🌍",
+    outlineIcon: "world",
+    description: "Configure listening ports, internal and external domains, Home Assistant URL, TLS, and MCP server access.",
+    navDetail: "Ports, domains, MCP URL, TLS, and Supervisor services",
+    statusLabel: "Server",
+    summaryTitle: "Webserver",
+    summaryDetail: "Ports & API",
+    introTitle: "Configure the web server, domains, and MCP endpoint",
+    introDescription:
+      "Set listening ports (single, list, or range), internal and external domains, Home Assistant links, and optional SSL/TLS.",
+    featuredTasks: ["Ports & bind interface", "Internal & external domains", "MCP URL & HA link"],
+    statusTargetId: "ws-ha-status-badge",
+    keywords: ["webserver", "server", "port", "ports", "domain", "internal url", "external url", "home assistant url", "mcp", "ssl", "tls", "bind", "supervisor"],
+  },
+  {
     id: "app-pwa-settings",
+    domainGroup: "system-data",
     label: "App & Companion",
     icon: "📲",
     outlineIcon: "phone",
@@ -224,6 +261,7 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
   },
   {
     id: "backups-reset-settings",
+    domainGroup: "system-data",
     label: "Backups & Reset",
     icon: "🗂️",
     outlineIcon: "warning",
@@ -246,12 +284,12 @@ export const SETTINGS_FIELDS: SettingsFieldDescriptor[] = [
     label: "Theme",
     anchorId: "theme-select",
     sectionId: "look-and-feel-settings",
-    keywords: ["theme", "dark", "light", "auto", "custom theme", "appearance", "accent"],
+    keywords: ["theme", "dark", "light", "auto", "custom theme", "appearance", "accent", "emerald isle", "knight rider"],
   },
   {
     id: "field-appearance-customize",
     label: "Typography & Density",
-    anchorId: "appearance-settings",
+    anchorId: "appearance-typography",
     sectionId: "look-and-feel-settings",
     keywords: ["font", "typeface", "typography", "corners", "roundness", "radius", "palette", "width", "density", "outfit", "inter", "geist"],
   },
@@ -273,8 +311,15 @@ export const SETTINGS_FIELDS: SettingsFieldDescriptor[] = [
     id: "field-navigation-layout",
     label: "Navigation Layout & Hover",
     anchorId: "navigation-appearance-form",
-    sectionId: "navigation-settings",
+    sectionId: "look-and-feel-settings",
     keywords: ["navigation", "sidebar", "top bar", "navbar", "hover", "folded", "expanded", "edges", "color"],
+  },
+  {
+    id: "field-organization-labels",
+    label: "Personal Labels",
+    anchorId: "organization-labels-settings",
+    sectionId: "navigation-settings",
+    keywords: ["labels", "alias", "relabel", "rename", "terminology", "board", "project", "area", "group"],
   },
   {
     id: "field-sidebar",
@@ -284,8 +329,15 @@ export const SETTINGS_FIELDS: SettingsFieldDescriptor[] = [
     keywords: ["sidebar", "navigation", "custom links", "menu", "order", "visibility"],
   },
   {
+    id: "field-task-detail-layout",
+    label: "Task detail layout",
+    anchorId: "settings-task-detail-layout",
+    sectionId: "tasks-boards-settings",
+    keywords: ["ticket", "task details", "sections", "reorder", "focus mode", "description"],
+  },
+  {
     id: "field-task-nav-prefs",
-    label: "Tasks Menu & Pinned Types",
+    label: "New task types",
     anchorId: "task-nav-prefs-card",
     sectionId: "navigation-settings",
     keywords: ["tasks menu", "submenu", "pinned", "standard", "shopping", "checklists", "events"],
@@ -296,6 +348,13 @@ export const SETTINGS_FIELDS: SettingsFieldDescriptor[] = [
     anchorId: "single-key-shortcuts",
     sectionId: "navigation-settings",
     keywords: ["shortcuts", "keyboard", "hotkeys", "single key"],
+  },
+  {
+    id: "field-task-capture-mode",
+    label: "New Task Opens (Quick Add or Task Form)",
+    anchorId: "task-capture-mode-select",
+    sectionId: "tasks-boards-settings",
+    keywords: ["new task", "quick add", "task form", "capture", "modal", "dialog"],
   },
   {
     id: "field-boards-behavior",
@@ -431,6 +490,76 @@ export const SETTINGS_FIELDS: SettingsFieldDescriptor[] = [
     keywords: ["webhooks", "zapier", "ifttt", "n8n", "node-red", "endpoint", "signing secret"],
   },
   {
+    id: "field-plugins-health",
+    label: "Plugin Health & Compliance",
+    anchorId: "plugins-health-view",
+    sectionId: "plugins-settings",
+    keywords: ["plugin health", "health", "compliance", "security", "elephant", "goldfish", "audit", "status", "operational"],
+  },
+  {
+    id: "field-plugins-connectors",
+    label: "External Issue Connectors",
+    anchorId: "plugins-connectors-grid",
+    sectionId: "plugins-settings",
+    keywords: ["plugins", "connectors", "github", "gitea", "issues", "sync", "secrets"],
+  },
+  {
+    id: "field-plugins-extensions",
+    label: "Installed Extensions & Custom Plugins",
+    anchorId: "plugins-uploaded-section",
+    sectionId: "plugins-settings",
+    keywords: ["plugins", "extensions", "custom plugins", "uploaded", "side panel", "sandbox"],
+  },
+  {
+    id: "field-plugins-directory",
+    label: "Reference & Community Plugins",
+    anchorId: "plugins-directory-section",
+    sectionId: "plugins-settings",
+    keywords: ["reference plugins", "community plugins", "examples", "get listed", "carryover", "focus pulse"],
+  },
+  {
+    id: "field-plugins-safe-mode",
+    label: "Plugin Safe Mode",
+    anchorId: "plugins-safe-mode",
+    sectionId: "plugins-settings",
+    keywords: ["plugins", "safe mode", "pause", "disable all", "sandbox"],
+  },
+  {
+    id: "field-plugins-install",
+    label: "Install Plugin (ZIP & AI Builder)",
+    anchorId: "plugins-install-card",
+    sectionId: "plugins-settings",
+    keywords: ["install plugin", "upload zip", "build with ai", "extension", "connector"],
+  },
+  {
+    id: "field-webserver-ports",
+    label: "Webserver Ports & Domains",
+    anchorId: "ws-ports",
+    sectionId: "webserver-settings",
+    keywords: ["port", "ports", "range", "internal url", "external url", "domain", "home assistant url"],
+  },
+  {
+    id: "field-webserver-mcp",
+    label: "MCP Server URL",
+    anchorId: "ws-mcp-url-text",
+    sectionId: "webserver-settings",
+    keywords: ["mcp", "model context protocol", "home assistant", "supervisor", "services", "api url"],
+  },
+  {
+    id: "field-webserver-tls",
+    label: "SSL/TLS & Bind Interface",
+    anchorId: "ws-advanced-toggle",
+    sectionId: "webserver-settings",
+    keywords: ["ssl", "tls", "certificate", "private key", "bind", "ip", "interface", "https"],
+  },
+  {
+    id: "field-workspace-setup",
+    label: "Run setup again",
+    anchorId: "run-setup-again",
+    sectionId: "app-pwa-settings",
+    keywords: ["setup", "wizard", "onboarding", "first page", "quick add"],
+  },
+  {
     id: "field-pwa",
     label: "PWA & Version Status",
     anchorId: "pwa-status-compact",
@@ -486,15 +615,17 @@ const SEARCHABLE: SettingsSearchResult[] = [
   })),
 ]
 
-export function resolveSettingsSectionId(id: string): SettingsSectionId | undefined {
-  if (SETTINGS_SECTIONS.some((section) => section.id === id)) {
-    return id as SettingsSectionId
-  }
-  return LEGACY_SETTINGS_SECTION_ALIASES[id]
-}
-
 export function getSettingsSection(sectionId: SettingsSectionId): SettingsSectionDescriptor | undefined {
   return SETTINGS_SECTIONS.find((section) => section.id === sectionId)
+}
+
+export function getGroupedSettingsSections(
+  sections: readonly SettingsSectionDescriptor[] = SETTINGS_SECTIONS,
+): Array<SettingsDomainGroup & { sections: SettingsSectionDescriptor[] }> {
+  return SETTINGS_DOMAIN_GROUPS.map((group) => ({
+    ...group,
+    sections: sections.filter((section) => section.domainGroup === group.id),
+  })).filter((group) => group.sections.length > 0)
 }
 
 export function searchSettingsRegistry(query: string): SettingsSearchResult[] {

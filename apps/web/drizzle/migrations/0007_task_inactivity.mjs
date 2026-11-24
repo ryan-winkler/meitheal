@@ -1,4 +1,5 @@
 import { reconcileActivityTriggerDefinitions } from "../task-activity-sql.mjs"
+import { ordinaryInactivityPolicyTable } from "./0016_ordinary_boards.mjs"
 
 const policyTable = "task_inactivity_policy"
 const policySql = `CREATE TABLE task_inactivity_policy (
@@ -55,13 +56,15 @@ async function reconcileColumn(db, createMissing) {
 }
 
 async function reconcilePolicy(db, createMissing) {
+  const { rows: [version] } = await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'").catch(() => ({rows:[]}))
+  const expectedPolicy = Number(version?.value) >= 26 ? ordinaryInactivityPolicyTable : policySql
   const { rows: [table] } = await db.execute({
     sql: "SELECT type, sql FROM sqlite_schema WHERE name = ?", args: [policyTable],
   })
   if (!table && createMissing) {
-    await db.execute(policySql)
+    await db.execute(expectedPolicy)
   } else if (table?.type !== "table" || typeof table.sql !== "string" ||
-    table.sql.trim() !== policySql.trim()) {
+    table.sql.trim() !== expectedPolicy.trim()) {
     throw new Error("Unexpected task inactivity policy table")
   }
 }

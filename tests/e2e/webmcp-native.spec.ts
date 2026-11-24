@@ -1,4 +1,5 @@
 import { expect } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { test } from "../scripts/settings-persistence-fixture"
 import { saveWebMcp, toolNames } from "../scripts/webmcp-browser-helpers"
 
@@ -27,7 +28,8 @@ test("native Chromium WebMCP searches persisted tasks and unregisters on saved d
     const names = () => page.evaluate(async () => (await (document as any).modelContext.getTools()).map((t: any) => t.name).sort())
     await expect.poll(names).toEqual([])
     const title = `NativeWebMcp${crypto.randomUUID().replaceAll("-", "")}`
-    const created = await request.post("/api/tasks", { data: { title } })
+    const headers = await currentBoardWriteHeaders(request, "household", {})
+    const created = await request.post("/api/tasks", { headers, data: { title } })
     expect(created.status()).toBe(201)
     const id = (await created.json()).id
     await saveWebMcp(request, true)
@@ -39,13 +41,13 @@ test("native Chromium WebMCP searches persisted tasks and unregisters on saved d
       const tool = (await model.getTools()).find((t: any) => t.name === "meitheal_search_tasks")
       return JSON.parse(await model.executeTool(tool, { query }))
     }, title)
-    expect(await search()).toEqual({ tasks: [{ title, url: `${household.prefix}/tasks?open=${id}` }] })
+    expect(await search()).toEqual({ tasks: [{ title, url: `${household.prefix}/boards/household?ticket=${id}` }] })
     const moduleUrl = `${household.origin}${household.prefix}/src/lib/webmcp-controller.ts`
     const module = await page.request.get(moduleUrl)
     if (module.ok() && module.headers()["content-type"]?.includes("javascript")) {
       await page.evaluate(async url => { await import(/* @vite-ignore */ `${url}?webmcp-native-hmr=${Date.now()}`) }, moduleUrl)
       await expect.poll(names).toEqual(toolNames)
-      expect(await search()).toEqual({ tasks: [{ title, url: `${household.prefix}/tasks?open=${id}` }] })
+      expect(await search()).toEqual({ tasks: [{ title, url: `${household.prefix}/boards/household?ticket=${id}` }] })
       test.info().annotations.push({ type: "native-hmr", description: "Actual Astro dev module replacement; native registry retains exactly two tools" })
     }
     await page.evaluate(async () => {
@@ -63,7 +65,7 @@ test("native Chromium WebMCP searches persisted tasks and unregisters on saved d
     await page.locator("#agent-webmcp-enabled").check()
     await page.locator("#save-agent-protocols").click()
     await expect.poll(names).toEqual(toolNames)
-    expect(await search()).toEqual({ tasks: [{ title, url: `${household.prefix}/tasks?open=${id}` }] })
+    expect(await search()).toEqual({ tasks: [{ title, url: `${household.prefix}/boards/household?ticket=${id}` }] })
     await page.evaluate(() => document.dispatchEvent(new Event("astro:before-swap")))
     await expect.poll(names).toEqual([])
     await page.evaluate(() => document.dispatchEvent(new Event("astro:page-load")))

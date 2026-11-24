@@ -49,9 +49,12 @@ export async function validateTaskStallSchema(db) {
   await reconcileColumn(db, "tasks", spike, spikeDefinition, 0, null, false)
 }
 
-export function taskStallTriggerDefinitions({ newTaskDays, storedTaskDays, openStatuses, completeStatuses, commentClock }) {
+export function taskStallTriggerDefinitions({ newTaskDays, storedTaskDays, openStatuses, completeStatuses, commentClock,
+  newAreaExists = "EXISTS (SELECT 1 FROM areas WHERE id = NEW.area_id)",
+  storedAreaExists = "EXISTS (SELECT 1 FROM areas WHERE id = tasks.area_id)",
+}) {
   const newAreaEnabled = `(${newTaskDays}) BETWEEN 1 AND 365
-    AND EXISTS (SELECT 1 FROM areas WHERE id = NEW.area_id)`
+    AND ${newAreaExists}`
   const recentHuman = `FROM comments comment
     WHERE comment.task_id = NEW.task_id AND comment.${human} = 1 AND comment.owner_key IS NOT NULL
       AND ${commentClock} BETWEEN MAX(1, ${now} - (${storedTaskDays}) * 86400000 * 33 / 100) AND ${now}`
@@ -74,7 +77,7 @@ export function taskStallTriggerDefinitions({ newTaskDays, storedTaskDays, openS
       BEGIN
         UPDATE tasks SET ${advance}
         WHERE id = NEW.task_id AND (${storedTaskDays}) BETWEEN 1 AND 365
-          AND EXISTS (SELECT 1 FROM areas WHERE id = tasks.area_id)
+          AND ${storedAreaExists}
           AND EXISTS (SELECT 1 ${recentHuman} AND comment.id = NEW.id)
           AND EXISTS (SELECT 1 ${recentHuman} LIMIT 1 OFFSET 2)
           AND EXISTS (SELECT 1 ${recentHuman} AND comment.owner_key <> NEW.owner_key);

@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "carryover-helper",
+  "name": "Yesterday Carryover",
+  "version": "1.0.0",
+  "type": "extension",
+  "description": "Review overdue and unscheduled tasks in a sandboxed side panel and pull them into Today.",
+  "author": "Meitheal Reference",
+  "license": "AGPL-3.0-only",
+  "minMeithealVersion": "0.0.1",
+  "entry": "plugin.js",
+  "iFrame": "index.html",
+  "icon": "icon.svg",
+  "sidePanel": true,
+  "permissions": [
+    "tasks:read",
+    "tasks:write",
+    "ui:header-button",
+    "ui:side-panel",
+    "ui:toast"
+  ],
+  "hooks": [],
+  "allowedHosts": [],
+  "dataSharing": {
+    "outbound": false,
+    "destinations": [],
+    "dataTypes": ["tasks"],
+    "summary": "Runs locally inside your browser sandbox. Sends zero data outside Meitheal."
+  }
+}

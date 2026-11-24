@@ -27,6 +27,10 @@ export interface InlineDatePickerOptions {
   onClear: () => void
   /** Format for display (default: "MMM d") */
   formatFn?: (d: Date) => string
+  /** Optional text displayed beside the calendar icon when no date is set */
+  placeholderText?: string
+  /** Show leading calendar icon alongside a chosen date */
+  showIconWithDate?: boolean
   /** AbortSignal for cleanup */
   signal?: AbortSignal
 }
@@ -147,12 +151,17 @@ export class InlineDatePicker {
     wrap.className = "idp-trigger idp-has-date"
     wrap.title = "Click to change date"
 
+    if (this.options.showIconWithDate) {
+      wrap.appendChild(createTablerSvgElement("calendar", 15))
+    }
+
     const text = document.createElement("span")
     text.className = "idp-date-text"
     text.textContent = this.formatFn(this.options.value!)
     wrap.appendChild(text)
 
     const clear = document.createElement("button")
+    clear.type = "button"
     clear.className = "idp-clear-btn"
     clear.title = "Remove date"
     clear.setAttribute("aria-label", "Remove scheduled date")
@@ -175,10 +184,18 @@ export class InlineDatePicker {
 
   private renderPlaceholder() {
     const btn = document.createElement("button")
+    btn.type = "button"
     btn.className = "idp-trigger idp-placeholder"
-    btn.title = "Set date"
+    btn.title = this.options.placeholderText || "Set date"
 
-    btn.appendChild(createTablerSvgElement("calendar", 14))
+    btn.appendChild(createTablerSvgElement("calendar", 15))
+
+    if (this.options.placeholderText) {
+      const label = document.createElement("span")
+      label.className = "idp-placeholder-text"
+      label.textContent = this.options.placeholderText
+      btn.appendChild(label)
+    }
 
     btn.addEventListener("click", (e) => {
       e.stopPropagation()
@@ -296,7 +313,7 @@ export class InlineDatePicker {
     this.cleanups.push(() => document.removeEventListener("keydown", escHandler as EventListener))
   }
 
-  private closePanel() {
+  closePanel() {
     if (this.panel) {
       this.panel.remove()
       this.panel = null

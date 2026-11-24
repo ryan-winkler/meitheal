@@ -71,7 +71,7 @@ const {
 </div>
 
 <script>
-  import { escapeHtml, sanitizeCssColor } from "@lib/safe-html"
+  import { sanitizeCssColor } from "@lib/safe-html"
   import { pageLifecycle } from "@lib/page-lifecycle"
   import { stripHtml } from "@lib/strip-html"
   /**
@@ -109,28 +109,29 @@ const {
     }
 
     function renderSelected() {
-      selectedEl.innerHTML = selectedLabels
-        .map(
-          (label) => `
-        <span class="label-badge label-badge--default" data-label="${escapeHtml(label)}">
-          ${escapeHtml(label)}
-          <button type="button" class="label-badge__remove" data-remove="${escapeHtml(label)}" aria-label="Remove ${escapeHtml(label)}">×</button>
-        </span>
-      `,
-        )
-        .join("")
-
-      // Bind remove buttons
-      selectedEl.querySelectorAll<HTMLButtonElement>("[data-remove]").forEach((btn) => {
+      const frag = document.createDocumentFragment()
+      for (const label of selectedLabels) {
+        const badge = document.createElement("span")
+        badge.className = "label-badge label-badge--default"
+        badge.dataset.label = label
+        badge.append(document.createTextNode(label + " "))
+        const btn = document.createElement("button")
+        btn.type = "button"
+        btn.className = "label-badge__remove"
+        btn.dataset.remove = label
+        btn.setAttribute("aria-label", `Remove ${label}`)
+        btn.textContent = "×"
         btn.addEventListener("click", (e) => {
           e.stopPropagation()
-          const name = btn.dataset.remove!
-          selectedLabels = selectedLabels.filter((l) => l !== name)
-          newLabels.delete(name)
+          selectedLabels = selectedLabels.filter((l) => l !== label)
+          newLabels.delete(label)
           renderSelected()
           updateHidden()
         }, { signal })
-      })
+        badge.appendChild(btn)
+        frag.appendChild(badge)
+      }
+      selectedEl.replaceChildren(frag)
     }
 
     function renderDropdown(query: string) {
@@ -140,39 +141,43 @@ const {
         (l) => l.title.toLowerCase().includes(q) && !selectedLabels.includes(l.title),
       )
 
-      let html = filtered
-        .map(
-          (l) => `
-        <div class="label-picker__option" data-title="${escapeHtml(l.title)}" data-color="${escapeHtml(l.hex_color)}">
-          <span class="label-picker__dot" style="background: ${sanitizeCssColor(l.hex_color)}"></span>
-          ${escapeHtml(l.title)}
-        </div>
-      `,
-        )
-        .join("")
-
-      // Show "create" option if query doesn't match existing
-      if (newName && !allLabels.some((l) => l.title.toLowerCase() === newName) && !selectedLabels.includes(newName)) {
-        html += `
-          <div class="label-picker__option label-picker__option--create" data-create="${escapeHtml(newName)}">
-            + Create "${escapeHtml(newName)}"
-          </div>
-        `
-      }
-
-      dropdownEl.innerHTML = html || '<div class="label-picker__option">No labels found</div>'
-      dropdownEl.classList.add("label-picker__dropdown--open")
-
-      // Bind option clicks
-      dropdownEl.querySelectorAll<HTMLElement>("[data-title]").forEach((opt) => {
+      const frag = document.createDocumentFragment()
+      for (const l of filtered) {
+        const opt = document.createElement("div")
+        opt.className = "label-picker__option"
+        opt.dataset.title = l.title
+        opt.dataset.color = l.hex_color
+        const dot = document.createElement("span")
+        dot.className = "label-picker__dot"
+        dot.style.background = sanitizeCssColor(l.hex_color)
+        opt.append(dot, document.createTextNode(" " + l.title))
         opt.addEventListener("click", () => {
-          selectedLabels.push(opt.dataset.title!)
+          selectedLabels.push(l.title)
           renderSelected()
           updateHidden()
           inputEl.value = ""
           dropdownEl.classList.remove("label-picker__dropdown--open")
         }, { signal })
-      })
+        frag.appendChild(opt)
+      }
+
+      if (newName && !allLabels.some((l) => l.title.toLowerCase() === newName) && !selectedLabels.includes(newName)) {
+        const createOpt = document.createElement("div")
+        createOpt.className = "label-picker__option label-picker__option--create"
+        createOpt.dataset.create = newName
+        createOpt.textContent = `+ Create "${newName}"`
+        frag.appendChild(createOpt)
+      }
+
+      if (!frag.childNodes.length) {
+        const empty = document.createElement("div")
+        empty.className = "label-picker__option"
+        empty.textContent = "No labels found"
+        frag.appendChild(empty)
+      }
+
+      dropdownEl.replaceChildren(frag)
+      dropdownEl.classList.add("label-picker__dropdown--open")
 
       dropdownEl.querySelectorAll<HTMLElement>("[data-create]").forEach((opt) => {
         opt.addEventListener("click", async () => {

@@ -1,6 +1,6 @@
 # Meitheal Canary
 
-**0.0.2 Canary preview** of Meitheal, the household task manager for Home Assistant.
+**0.0.4 Canary preview** of Meitheal, the household task manager for Home Assistant.
 
 > **Warning:** Do not use Canary for your everyday tasks. Canary builds come directly from the latest source code. They can be unstable and they can lose data. Use the **Meitheal** app for everyday use. If you use Canary, make backups frequently.
 
@@ -14,7 +14,7 @@ Canary is a separate app (`meitheal_canary`). It has its own container and its o
 
 | Channel | App | Use it for | Version |
 |---|---|---|---|
-| Stable | **Meitheal** | Everyday household tasks | A release number, such as `0.0.1` |
+| Stable | **Meitheal** | Everyday household tasks | A release number, such as `0.0.3` |
 | Canary | **Meitheal Canary** | Tests of new features and fixes | Preview number in this guide, source commit under **Current version** |
 
 ## About Meitheal
@@ -35,7 +35,7 @@ Meitheal keeps all data in a SQLite database on your Home Assistant machine. It 
 - **Assist and automations**: The optional Meitheal integration adds the `todo.meitheal_tasks` entity, task sensors and actions such as `meitheal.create_task`. It also adds voice commands for Assist in English and Irish.
 - **API tokens**: Give webhooks, n8n, Node-RED and MCP clients their own tokens, each with limited permissions.
 - **Phone and offline use**: Meitheal works in the Home Assistant Companion app. You can also install it as a PWA. The PWA keeps your changes when you are offline and sends them when you connect again.
-- **Your data**: Home Assistant backups include the database. You can export your data as JSON, CSV or SQLite at any time.
+- **Your data**: Home Assistant backups include the database. The data available to export from Settings depends on your access.
 
 ## Examples
 
@@ -71,9 +71,9 @@ Meitheal Canary keeps all of its data in its own app data folder:
 - The database (`/data/meitheal.db`). It holds your tasks, projects, routines and settings.
 - Your API tokens and the local audit log.
 
-Meitheal uses cold backups. Home Assistant stops the app for a short time, so that all database writes are complete before the backup starts. Thus a Home Assistant backup of Meitheal Canary holds all of its data.
+Home Assistant briefly stops Canary to back up its database after writes finish. Recovering Board access also requires a current recovery checkpoint kept separately by your Home Assistant operator. It pairs the backup with the file that records current Board permissions. Refresh the checkpoint whenever Board access changes or you delete or restore a Board.
 
-Canary gets updates frequently. Make a backup before each update and before you change between Canary and Stable. Then you can go back to the previous build if you have a problem.
+Review the checkpoint and upgrade steps before updating or restoring Canary. Moving between Canary and Stable or changing the Store repository takes separate planning. [Canary backup, upgrade and recovery guide](https://github.com/ryan-winkler/meitheal/blob/dev/docs/kcs/home-assistant-backup-and-restore.md)
 
 > **Note:** The PWA keeps offline changes in your browser until they sync. Home Assistant backups do not include these changes until they sync.
 

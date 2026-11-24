@@ -1,3 +1,5 @@
+import { boardScopeErrorResponse } from "@lib/board-http"
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
@@ -18,22 +20,24 @@ import { logApiError } from "../../../lib/api-logger"
  * @see docs/decisions/ADR-007-hierarchy-model.md
  */
 
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = withBoardScope({ resource: "area", action: "read" }, async (context, scope) => {
   try {
     await ensureSchema()
-    const repo = new HierarchyRepository(getPersistenceClient())
+    const repo = new HierarchyRepository(getPersistenceClient(), scope)
     const areas = await repo.findAllAreas()
     return apiJson({ areas })
   } catch (error) {
+    const scopeFailure = boardScopeErrorResponse(error)
+    if (scopeFailure) return scopeFailure
     logApiError("areas", "GET error", error)
     return apiError("Failed to list areas")
   }
-}
+})
 
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = withBoardScope({ resource: "area", action: "create" }, async ({ request }, scope) => {
   try {
     await ensureSchema()
-    const repo = new HierarchyRepository(getPersistenceClient())
+    const repo = new HierarchyRepository(getPersistenceClient(), scope)
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
 
     const name = stripHtml(String(body.name ?? "").trim())
@@ -54,7 +58,9 @@ export const POST: APIRoute = async ({ request }) => {
 
     return apiJson({ id, name, icon, color, position, created_at: Date.now(), updated_at: Date.now() }, 201)
   } catch (error) {
+    const scopeFailure = boardScopeErrorResponse(error)
+    if (scopeFailure) return scopeFailure
     logApiError("areas", "POST error", error)
     return apiError("Failed to create area")
   }
-}
+})

@@ -5,7 +5,8 @@ import { join } from "node:path"
 import type { ChildProcess } from "node:child_process"
 import { expect, test, type Browser, type Page } from "@playwright/test"
 import { commentMentionToken, commentMentions } from "../../apps/web/src/lib/comment-mentions"
-import { launchPinBrowser, pinRequest, startCoreFixture } from "../scripts/task-pins-fixture"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
+import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 
 test("only canonical markers outside escaped text, code and links are comment mentions", () => {
   const key = "a".repeat(32)
@@ -43,7 +44,7 @@ test("comment picker and inbox stay private through edits, removal, restart and 
     expect(denied.headers()["cache-control"]).toBe("private, no-store")
   }
   const work = await mkdtemp(join(tmpdir(), "mention-"))
-  let child = startCoreFixture(work)
+  let child = startCoreFixture(work, false, undefined, undefined, work)
   let browser: Browser | undefined
   function fixture() {
     child.stdout?.resume()
@@ -65,12 +66,15 @@ test("comment picker and inbox stay private through edits, removal, restart and 
       return context.newPage()
     }))
     const [sender, recipient, other] = sessions as [Page, Page, Page]
-    expect((await sender.goto(root + "/fixture"))?.status()).toBe(200)
-    const created = await pinRequest(sender, prefix + "/api/tasks", "POST", { title: "Private mention journey" })
-    expect(created.status).toBe(201)
-    const taskId = created.body.id as string
-    const commentUrl = root + `/api/tasks/${taskId}/comments`
     const apiHeaders = { origin, "sec-fetch-site": "same-origin" }
+    const boardHeaders = () => currentBoardWriteHeaders(sender.request, "household", apiHeaders, root)
+    expect((await sender.goto(root + "/fixture"))?.status()).toBe(200)
+    const created = await sender.request.post(root + "/api/tasks", {
+      headers: await boardHeaders(), data: { title: "Private mention journey" },
+    })
+    expect(created.status(), await created.text()).toBe(201)
+    const { id: taskId, ticket_key: ticketKey } = await created.json() as { id: string, ticket_key: string }
+    const commentUrl = root + `/api/tasks/${taskId}/comments`
     const peopleUrl = root + "/api/comment-people"
     await sender.goto(root + "/today?open=" + taskId)
     await sender.waitForFunction(() => navigator.serviceWorker.controller?.state === "activated")
@@ -130,14 +134,22 @@ test("comment picker and inbox stay private through edits, removal, restart and 
     await expect(input).toHaveValue(/Please check @\{person:/)
     const text = await input.inputValue()
     const marker = text.slice("Please check ".length)
-    const writeHeaders = () => ({ ...apiHeaders, "x-meitheal-mention-context": writeContext })
-    const switchSender = (user: string) => sender.context().addCookies([{ name: "feedback-fixture", value: user, url: origin }])
+    const writeHeaders = async () => ({ ...await boardHeaders(), "x-meitheal-mention-context": writeContext })
+    const switchSender = async (user: string) => {
+      await sender.context().addCookies([{ name: "feedback-fixture", value: user, url: origin }])
+      const headers = await boardHeaders()
+      // Keep the loaded mention context so these requests reach and test its independent session check.
+      await sender.locator('meta[name="meitheal-work-session"]').evaluate((meta, proof) => {
+        (meta as HTMLMetaElement).content = proof
+      }, headers["x-meitheal-board-session"]!)
+    }
     const postFromEditor = async () => (await Promise.all([
       sender.waitForResponse(response => response.url() === commentUrl && response.request().method() === "POST"),
       sender.locator("#td-comment-submit").click(),
     ]))[0]
     const inbox = root + "/mention-inbox"
     const recipientLink = recipient.getByRole("link", { name: "Private mention journey" })
+    const verificationRetry = recipient.getByRole("button", { name: "Retry verification" })
     const commentError = sender.locator("#td-comment-error")
     const contextProblem = "https://meitheal.local/problems/comment-mention-context"
 
@@ -155,11 +167,11 @@ test("comment picker and inbox stay private through edits, removal, restart and 
     await expect(recipient.getByText("You have no mentions.")).toBeVisible()
     await switchSender("admin")
 
-    const literal = await sender.request.post(commentUrl, { headers: apiHeaders, data: { content: "    " + marker } })
+    const literal = await sender.request.post(commentUrl, { headers: await boardHeaders(), data: { content: "    " + marker } })
     expect(literal.status()).toBe(201)
     const literalComment = await literal.json()
     expect(literalComment.content).toBe("    " + marker)
-    expect((await sender.request.delete(commentUrl + "/" + literalComment.id, { headers: apiHeaders })).status()).toBe(204)
+    expect((await sender.request.delete(commentUrl + "/" + literalComment.id, { headers: await boardHeaders() })).status()).toBe(204)
 
     let committedStatus: number | undefined
     await sender.route(commentUrl, async route => {
@@ -183,7 +195,7 @@ test("comment picker and inbox stay private through edits, removal, restart and 
     expect((await truncated.request().allHeaders())["x-meitheal-comment-attempt"]).toBe(attempt)
     await expect(input).toHaveValue("")
     await expect(sender.locator("#td-comment-" + id)).toContainText("@Bríd Byrne")
-    const replay = () => sender.request.post(commentUrl, { headers: { ...writeHeaders(), "x-meitheal-comment-attempt": attempt }, data: { content: text } })
+    const replay = async () => sender.request.post(commentUrl, { headers: { ...await writeHeaders(), "x-meitheal-comment-attempt": attempt }, data: { content: text } })
     await switchSender("member-two")
     const staleReplay = await replay()
     expect(staleReplay.status()).toBe(409)
@@ -191,15 +203,15 @@ test("comment picker and inbox stay private through edits, removal, restart and 
     await switchSender("admin")
     expect((await (await replay()).json()).id).toBe(id)
     expect((await sender.request.post(commentUrl, {
-      headers: { ...writeHeaders(), "x-meitheal-comment-attempt": attempt }, data: { content: "Changed " + marker },
+      headers: { ...await writeHeaders(), "x-meitheal-comment-attempt": attempt }, data: { content: "Changed " + marker },
     })).status()).toBe(409)
 
     await recipient.getByRole("button", { name: "Refresh inbox" }).click()
-    await expect(recipientLink).toHaveAttribute("href", `${prefix}/tickets/${taskId}?comment=${id}`)
+    await expect(recipientLink).toHaveAttribute("href", `${prefix}/tickets/${ticketKey}?comment=${id}`)
     await expect(recipient.getByRole("status").filter({ hasText: "Unread: 1" })).toBeVisible()
     await recipient.context().setOffline(true)
     await expect(recipientLink).toHaveCount(0)
-    await expect(recipient.getByText("Could not load mentions. Refresh and try again.")).toBeVisible()
+    await expect(verificationRetry).toBeVisible()
     await recipient.context().setOffline(false)
     await expect(recipientLink).toBeVisible()
     await other.goto(inbox)
@@ -256,16 +268,22 @@ test("comment picker and inbox stay private through edits, removal, restart and 
 
     // Changing the HA session under a loaded page must not expose a new account.
     const contextKey = await recipient.locator("[data-mention-inbox]").getAttribute("data-context")
-    const contextStatus = () => recipient.evaluate(async ({ path, contextKey }) => {
+    const contextStatus = (headers?: Record<string, string>) => recipient.evaluate(async ({ path, contextKey, headers }) => {
       const response = await fetch(path, {
         method: "POST", mode: "same-origin", referrerPolicy: "same-origin", headers: {
+          ...headers,
           "Content-Type": "application/json", "X-Meitheal-Mention-Context": contextKey!,
         }, body: JSON.stringify({ action: "list", before: null }),
       })
       return [response.status, response.headers.get("cache-control")]
-    }, { path: prefix + "/api/mention-inbox", contextKey })
+    }, { path: prefix + "/api/mention-inbox", contextKey, headers })
     await recipient.context().addCookies([{ name: "feedback-fixture", value: "member-two", url: origin }])
-    expect(await contextStatus()).toEqual([409, "private, no-store"])
+    expect(await contextStatus()).toEqual([403, "private, no-store"])
+    const currentRecipient = await currentBoardWriteHeaders(recipient.request, "household", apiHeaders, root)
+    expect(await contextStatus({
+      "x-meitheal-board-id": currentRecipient["x-meitheal-board-id"]!,
+      "x-meitheal-board-session": currentRecipient["x-meitheal-board-session"]!,
+    })).toEqual([409, "private, no-store"])
     await recipient.context().addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
     await coreChange(child, "member", { active: false })
     expect(await contextStatus()).toEqual([403, "private, no-store"])
@@ -275,28 +293,32 @@ test("comment picker and inbox stay private through edits, removal, restart and 
     const revokedList = await recipient.request.get(commentUrl)
     const revokedSingle = await recipient.request.get(commentUrl + "/" + id)
     for (const result of [revokedList, revokedSingle]) {
-      expect(result.status()).toBe(200)
-      expect(result.headers()["cache-control"]).toBe("no-store")
+      expect(result.status()).toBe(403)
+      expect(result.headers()["cache-control"]).toBe("private, no-store")
+      const body = await result.text()
+      expect(body).not.toContain("Mention again")
+      expect(body).not.toContain("Bríd Byrne")
     }
-    expect((await revokedList.json()).comments).toMatchObject([{ content: "Mention again @…", can_manage: false }])
-    expect((await revokedSingle.json()).content).toBe("Mention again @…")
 
     const priorWhileRecipientRevoked = await replay()
     expect(priorWhileRecipientRevoked.status()).toBe(201)
     expect((await priorWhileRecipientRevoked.json()).id).toBe(id)
+    const outageHeaders = await writeHeaders()
     await coreChange(child, "member", { unavailable: true })
-    expect((await replay()).status()).toBe(403)
+    expect((await sender.request.post(commentUrl, {
+      headers: { ...outageHeaders, "x-meitheal-comment-attempt": attempt }, data: { content: text },
+    })).status()).toBe(403)
     const attemptWhileUnavailable = await sender.request.post(commentUrl, {
-      headers: { ...writeHeaders(), "x-meitheal-comment-attempt": `${Date.now()}.${crypto.randomUUID()}` },
+      headers: { ...outageHeaders, "x-meitheal-comment-attempt": `${Date.now()}.${crypto.randomUUID()}` },
       data: { content: text },
     })
     expect(attemptWhileUnavailable.status()).toBe(403)
     await coreChange(child, "member", { unavailable: false })
     expect((await (await sender.request.get(commentUrl)).json()).comments).toHaveLength(1)
-    const deletion = await sender.request.delete(commentUrl + "/" + id, { headers: apiHeaders })
+    const deletion = await sender.request.delete(commentUrl + "/" + id, { headers: await boardHeaders() })
     expect(deletion.status(), await deletion.text()).toBe(204)
     await stop(child)
-    child = startCoreFixture(work, false, info.port)
+    child = startCoreFixture(work, false, info.port, undefined, work)
     await fixture()
     await coreChange(child, "member", { name: "Bríd Byrne" })
     expect((await replay()).status()).toBe(409)
@@ -311,8 +333,8 @@ test("comment picker and inbox stay private through edits, removal, restart and 
     await recipient.goto(inbox)
     await expect(recipient.getByText("You have no mentions.")).toBeVisible()
     await recipient.context().setOffline(true)
-    await recipient.getByRole("button", { name: "Refresh inbox" }).click()
-    await expect(recipient.getByText("Could not load mentions. Refresh and try again.")).toBeVisible()
+    await expect(recipient.getByRole("button", { name: "Refresh inbox" })).toBeHidden()
+    await expect(verificationRetry).toBeVisible()
   } finally {
     await browser?.close()
     await stop(child)

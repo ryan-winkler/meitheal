@@ -1,0 +1,107 @@
+export const DEFAULT_GROUP_COLOR = "#64748b"
+
+export interface BoardWorkspaceSelection {
+  areaId: string | null
+  projectId: string | null
+  ticketId: string | null
+  planning: boolean
+  fromArea?: string | null
+}
+
+export function readBoardWorkspaceSelection(params: URLSearchParams): BoardWorkspaceSelection {
+  return {
+    areaId: params.get("area") || null,
+    projectId: params.get("project") || null,
+    ticketId: params.get("ticket") || null,
+    fromArea: params.get("from") || null,
+    planning: params.get("view") === "groups" || params.get("planning") === "1",
+  }
+}
+
+export function boardWorkspaceHref(
+  board: string,
+  context: { area?: string | undefined; project?: string | undefined; ticket?: string; groups?: boolean; section?: BoardPlanningSection; offset?: number; fromArea?: string | undefined; homeArea?: string | undefined } = {},
+  fragment = "",
+): string {
+  const query = new URLSearchParams()
+  if (context.groups) query.set("view", "groups")
+  if (context.section) query.set("section", context.section)
+  if (context.area) query.set("area", context.area)
+  if (context.project) query.set("project", context.project)
+  if (context.fromArea) query.set("from", context.fromArea)
+  if (context.ticket) query.set("ticket", context.ticket)
+  if (context.homeArea) query.set("home_assistant_area_id", context.homeArea)
+  if (context.offset) query.set("offset", String(context.offset))
+  const search = query.toString()
+  return `/boards/${encodeURIComponent(board)}${search ? `?${search}` : ""}${fragment ? `#${fragment}` : ""}`
+}
+
+export function parseBoardPlacement(value: unknown): { areaId: string | null; projectId: string | null } | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  const fields = Object.entries(value)
+  if (fields.some(([key, id]) => !["areaId", "projectId"].includes(key) ||
+    (id !== null && (typeof id !== "string" || !id || id.length > 150)))) return null
+  const { areaId, projectId } = value as { areaId?: string | null; projectId?: string | null }
+  return { areaId: areaId ?? null, projectId: projectId ?? null }
+}
+
+
+export const BOARD_PLANNING_SECTIONS = ["planning", "goals", "routines", "pillars"] as const
+export type BoardPlanningSection = (typeof BOARD_PLANNING_SECTIONS)[number]
+
+export function readBoardPlanningSection(params: URLSearchParams): BoardPlanningSection {
+  return BOARD_PLANNING_SECTIONS.find(section => section === params.get("section")) ?? "planning"
+}
+
+export function readBoardNavigationContext(url: URL) {
+  const match = /^\/boards\/([^/]+)\/?$/.exec(url.pathname)
+  let boardId: string | undefined
+  try { boardId = match ? decodeURIComponent(match[1]!) : url.searchParams.get("board_id") ?? url.searchParams.get("board") ?? undefined } catch { return }
+  if (!boardId || boardId.length > 150) return
+  return {
+    boardId,
+    area: url.searchParams.get("area") ?? url.searchParams.get("area_id") ?? undefined,
+    project: url.searchParams.get("project") ?? url.searchParams.get("project_id") ?? undefined,
+    fromArea: url.searchParams.get("from") ?? undefined,
+  }
+}
+
+export function boardNavigationLinks(context: { boardId: string; area?: string | undefined; project?: string | undefined; fromArea?: string | undefined }) {
+  const { boardId, area, project, fromArea } = context
+  const placement = { area: project ? undefined : area, project, fromArea }
+  const progress = new URLSearchParams({ board_id: boardId })
+  if (project) progress.set("project_id", project)
+  else if (area) progress.set("area_id", area)
+  return {
+    dashboard: `/?${progress}`,
+    today: `/today?${progress}`,
+    upcoming: `/upcoming?${progress}`,
+    activity: `/activity?board_id=${encodeURIComponent(boardId)}`,
+    mentionInbox: `/mention-inbox?board_id=${encodeURIComponent(boardId)}`,
+    pinned: `/pinned?board_id=${encodeURIComponent(boardId)}`,
+    review: `/review?board_id=${encodeURIComponent(boardId)}`,
+    tasks: boardWorkspaceHref(boardId, placement, "kanban"),
+    planning: boardWorkspaceHref(boardId, { ...placement, groups: true }, "groups"),
+    progress: `/progress?${progress}#goals`,
+    pillars: `/progress?${progress}#pillars`,
+    routines: `/habits?${progress}`,
+  }
+}
+
+/** Existing page-flow links keep the same validated Board and placement. */
+export function boardContextHref(context: { boardId: string; area?: string | undefined; project?: string | undefined }, path: string): string {
+  const [beforeHash = "/", fragment] = path.split("#", 2)
+  const separator = beforeHash.indexOf("?")
+  let pathname = separator < 0 ? beforeHash : beforeHash.slice(0, separator)
+  const query = new URLSearchParams(separator < 0 ? "" : beforeHash.slice(separator + 1))
+  if (pathname === "/tasks") {
+    pathname = `/boards/${encodeURIComponent(context.boardId)}`
+    if (context.project) query.set("project", context.project)
+    else if (context.area) query.set("area", context.area)
+  } else {
+    query.set("board_id", context.boardId)
+    if (context.project) query.set("project_id", context.project)
+    else if (context.area) query.set("area_id", context.area)
+  }
+  return pathname + (query.size ? `?${query}` : "") + (fragment ? `#${fragment}` : "")
+}

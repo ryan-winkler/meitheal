@@ -14,9 +14,10 @@
 import { VALID_TASK_KINDS, VALID_TASK_TYPES } from "@meitheal/domain-tasks"
 
 import { parseCalendarDay } from "./calendar-day"
-import { evaluateFilterGroup, extractDataFromElement, type FilterGroup, type FilterOperator } from "./filter-engine"
+import { evaluateFilterGroup, extractDataFromElement, normalizeStatusRuleValue, type FilterGroup, type FilterOperator } from "./filter-engine"
 import { normalizeStatus } from "./status-config"
 import { TABLE_COLUMNS } from "./table-registry"
+import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "./task-page-url"
 
 // =============================================================================
 // Types
@@ -56,6 +57,7 @@ export interface FilterState {
 
 /** Shared localStorage key — so switching between tasks/table preserves filters */
 export const FILTER_STORAGE_KEY = "meitheal-task-view-filters"
+const TABLE_GROUPING_STORAGE_KEY = "meitheal-table-grouping"
 
 /** Default sort order for task lists */
 export const DEFAULT_SORT = "created_at-desc"
@@ -63,14 +65,16 @@ export const DEFAULT_SORT = "created_at-desc"
 /** Valid status filter values including the computed 'overdue' pseudo-status */
 export const STATUS_VALUES = ["pending", "active", "complete", "overdue"] as const
 
-/** Valid group-by dimensions */
+/** Valid Table group-by dimensions */
 export const GROUP_BY_OPTIONS = [
   "none",
   "type",
+  "epic",
   "priority",
   "area",
   "assignee",
   "status",
+  "workflow",
   "rice",
 ] as const
 
@@ -115,16 +119,27 @@ function parseJsonParam(val: string | null | undefined): any | null {
 // Persistence
 // =============================================================================
 
-/** All persisted filter keys (scalar + array) */
 const SCALAR_KEYS = ["search", "status", "priority", "rice", "sort", "user", "area", "groupBy", "subGroupBy"] as const
 const ARRAY_KEYS = ["types", "labels"] as const
 const JSON_KEYS = ["advancedFilter", "columns"] as const
 const ALL_KEYS = [...SCALAR_KEYS, ...ARRAY_KEYS, ...JSON_KEYS] as const
+export const TASK_PERSISTED_FILTER_KEYS = ALL_KEYS
+export const TASK_SCALAR_FILTER_KEYS = [...SCALAR_KEYS, "promoted"] as const
+
+export function readTaskScalarParam(params: URLSearchParams, key: string, view: string): string | null {
+  return view === "table" && key !== "promoted" || (view === "calendar" && key === "task_type")
+    ? params.getAll(key).at(-1) ?? null : params.get(key)
+}
+
+export function readTaskAreaParam(params: URLSearchParams): string | null {
+  return params.get("area_id") ?? params.get("area") ?? params.get("board")
+}
 
 const TABLE_DATE_KEYS = ["createdFrom", "createdThrough"] as const
 const TABLE_KEYS = [...ALL_KEYS, "task_type", "label", "area_id", "board", "lane", ...TABLE_DATE_KEYS] as const
-const SORT_COLUMNS = ["key", "title", "type", "status", "priority", "due_date", "rice"]
+const SORT_COLUMNS = ["key", "title", "type", "status", "priority", "due_date", "rice", "manual"]
 const LEGACY_SORTS = new Map([
+  ["manual", "manual-asc"],
   ["due_asc", "due_date-asc"],
   ["due_desc", "due_date-desc"],
   ["priority_desc", "priority-asc"],
@@ -164,6 +179,23 @@ function stringList(value: unknown): string[] {
   ))].slice(0, FILTER_LIST_LIMIT)
 }
 
+export function readTaskKindFilter(value: unknown): string[] {
+  return normalizeTaskKindAliases(stringList(value))
+}
+
+export function readTableTaskKindFilter(value: unknown): string[] {
+  return readTaskKindFilter(value).filter(kind => VALID_TASK_KINDS.some(valid => valid === kind))
+}
+
+export function effectiveCalendarKinds(kinds: string[]): string[] {
+  return VALID_TASK_KINDS.every(kind => kinds.includes(kind)) ? [] : kinds
+}
+
+export function readTableTaskTypeParam(params: URLSearchParams) {
+  const value = readTaskScalarParam(params, "task_type", "table")
+  return VALID_TASK_TYPES.find(type => type === value)
+}
+
 export function readFilterLabels(params: URLSearchParams): string[] {
   return stringList(params.has("label") ? params.getAll("label") : params.get("labels"))
 }
@@ -184,7 +216,7 @@ function ruleValue(value: unknown): value is string | number | boolean {
     (typeof value === "string" && value.length <= 500)
 }
 
-function normalizeTableRules(raw: unknown): FilterGroup | undefined {
+export function normalizeTableRules(raw: unknown): FilterGroup | undefined {
   const root = decodeFilterJson(raw)
   let count = 0
   function group(node: unknown, depth: number): FilterGroup | undefined {
@@ -210,9 +242,7 @@ function normalizeTableRules(raw: unknown): FilterGroup | undefined {
         id: typeof item.id === "string" && item.id.length <= 100 ? item.id : String(count),
         field,
         operator: operator as FilterOperator,
-        value: field === "status" && typeof value === "string" && (operator === "equals" || operator === "notEquals")
-          ? normalizeStatus(value)
-          : value ?? "",
+        value: typeof value === "string" ? normalizeStatusRuleValue(field, operator, value) : value ?? "",
         ...(item.logic === "OR" || item.logic === "AND" ? { logic: item.logic } : {}),
       })
     }
@@ -236,6 +266,10 @@ export function normalizeTableColumns(value: unknown): string[] | undefined {
 function tableGroup(value: unknown): string | undefined {
   const group = value === "board" ? "area" : value
   return GROUP_BY_OPTIONS.find(option => option !== "none" && option === group)
+}
+
+export function tableNeedsWorkflowColumns(filters: Partial<FilterState>): boolean {
+  return Boolean(filters.laneIds?.length || filters.groupBy === "workflow" || filters.subGroupBy === "workflow")
 }
 
 export function normalizeTableCreationRange(from: unknown, through: unknown): Pick<FilterState, typeof TABLE_DATE_KEYS[number]> | null {
@@ -269,8 +303,7 @@ function normalizeTableValues(input: Record<string, unknown>): Partial<FilterSta
     const laneIds = stringList(input.laneIds)
     if (laneIds.length) result.laneIds = laneIds
   }
-  const kindValues = normalizeTaskKindAliases(stringList(input.types))
-  const types = kindValues.filter(kind => VALID_TASK_KINDS.some(valid => valid === kind))
+  const types = readTableTaskKindFilter(input.types)
   if (types.length) result.types = types
   const labels = stringList(input.labels)
   if (labels.length) result.labels = labels
@@ -317,12 +350,13 @@ export function normalizeSavedFilter(raw: unknown): Partial<FilterState> | null 
 }
 
 export function readTableFilterParams(params: URLSearchParams): Partial<FilterState> {
-  const area = params.get("area_id") ?? params.get("area") ?? params.get("board") ?? undefined
+  const area = readTaskAreaParam(params) ?? undefined
   return normalizeTableValues({
     ...Object.fromEntries(params),
     area,
     area_id: undefined,
     board: undefined,
+    task_type: readTableTaskTypeParam(params),
     labels: readFilterLabels(params),
     laneIds: params.getAll("lane"),
     createdFrom: params.getAll("createdFrom").length > 1 ? null : params.get("createdFrom") ?? undefined,
@@ -346,9 +380,20 @@ export function writeTableFilterParams(params: URLSearchParams, state: Partial<F
 }
 
 export function loadTableFilterState(): Partial<FilterState> {
-  const params = new URLSearchParams(window.location.search)
+  const params = taskBackgroundUrl().searchParams
   if (TABLE_KEYS.some(key => params.has(key))) return readTableFilterParams(params)
-  const state = normalizeTableValues({ ...loadFilterState() })
+  const shared = loadFilterState()
+  try {
+    const stored = decodeFilterJson(localStorage.getItem(TABLE_GROUPING_STORAGE_KEY))
+    if (isPlainRecord(stored)) {
+      const grouping = normalizeTableValues({ groupBy: stored.groupBy, subGroupBy: stored.subGroupBy })
+      if (grouping.groupBy === "epic" || grouping.subGroupBy === "epic") {
+        if (grouping.groupBy !== undefined) shared.groupBy = grouping.groupBy
+        if (grouping.subGroupBy !== undefined) shared.subGroupBy = grouping.subGroupBy
+      }
+    }
+  } catch { /* storage unavailable */ }
+  const state = normalizeTableValues({ ...shared })
   delete state.area
   delete state.laneIds
   for (const key of TABLE_DATE_KEYS) delete state[key]
@@ -358,15 +403,24 @@ export function loadTableFilterState(): Partial<FilterState> {
 export function saveTableFilterState(state: Partial<FilterState>, page?: number): void {
   try {
     const { laneIds: _laneIds, createdFrom: _createdFrom, createdThrough: _createdThrough, ...sharedState } = state
+    if (sharedState.groupBy === "workflow" || sharedState.groupBy === "epic") {
+      delete sharedState.groupBy
+      delete sharedState.subGroupBy
+    } else if (sharedState.subGroupBy === "workflow" || sharedState.subGroupBy === "epic") {
+      delete sharedState.subGroupBy
+    }
     localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(sharedState))
+    if (state.groupBy === "epic" || state.subGroupBy === "epic") {
+      localStorage.setItem(TABLE_GROUPING_STORAGE_KEY, JSON.stringify({ groupBy: state.groupBy, subGroupBy: state.subGroupBy }))
+    } else localStorage.removeItem(TABLE_GROUPING_STORAGE_KEY)
   } catch { /* storage unavailable */ }
-  const url = new URL(window.location.href)
+  const url = taskBackgroundUrl()
   writeTableFilterParams(url.searchParams, state)
   if (page !== undefined) {
     if (page > 1) url.searchParams.set("tp", String(page))
     else url.searchParams.delete("tp")
   }
-  window.history.replaceState(window.history.state, "", url)
+  replaceTaskBackgroundUrl(url)
 }
 
 /**
@@ -376,7 +430,7 @@ export function saveTableFilterState(state: Partial<FilterState>, page?: number)
 export function saveFilterState(state: Partial<FilterState>): void {
   localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(state))
 
-  const url = new URL(window.location.href)
+  const url = taskBackgroundUrl()
   for (const key of SCALAR_KEYS) {
     const val = state[key]
     if (typeof val === "string" && val && val !== DEFAULT_SORT) {
@@ -401,7 +455,7 @@ export function saveFilterState(state: Partial<FilterState>): void {
       url.searchParams.delete(key)
     }
   }
-  window.history.replaceState(null, "", url.toString())
+  replaceTaskBackgroundUrl(url)
 }
 
 /**
@@ -409,19 +463,19 @@ export function saveFilterState(state: Partial<FilterState>): void {
  * Returns a partial state — callers apply only the fields they support.
  */
 export function loadFilterState(): Partial<FilterState> {
-  const urlParams = new URLSearchParams(window.location.search)
+  const urlParams = taskBackgroundUrl().searchParams
   const hasUrlFilters = ALL_KEYS.some((k) => urlParams.has(k))
 
   if (hasUrlFilters) {
     return {
       search: urlParams.get("search") ?? "",
-      status: urlParams.get("status") ?? "",
+      status: normalizeStatus(urlParams.get("status") ?? ""),
       priority: urlParams.get("priority") ?? "",
       rice: urlParams.get("rice") ?? "",
       sort: urlParams.get("sort") ?? DEFAULT_SORT,
       user: urlParams.get("user") ?? "",
       area: urlParams.get("area") ?? "",
-      types: normalizeTaskKindAliases(deserializeArray(urlParams.get("types"))),
+      types: readTaskKindFilter(urlParams.get("types")),
       groupBy: urlParams.get("groupBy") ?? "none",
       subGroupBy: urlParams.get("subGroupBy") ?? "none",
       labels: deserializeArray(urlParams.get("labels")),
@@ -434,6 +488,7 @@ export function loadFilterState(): Partial<FilterState> {
     // Ensure array fields are arrays after parse
     if (stored.types && !Array.isArray(stored.types)) stored.types = []
     else if (Array.isArray(stored.types)) stored.types = normalizeTaskKindAliases(stored.types)
+    if (typeof stored.status === "string") stored.status = normalizeStatus(stored.status)
     if (stored.labels && !Array.isArray(stored.labels)) stored.labels = []
     return stored
   } catch {
@@ -446,11 +501,12 @@ export function loadFilterState(): Partial<FilterState> {
  */
 export function clearFilterState(): void {
   localStorage.removeItem(FILTER_STORAGE_KEY)
-  const url = new URL(window.location.href)
+  localStorage.removeItem(TABLE_GROUPING_STORAGE_KEY)
+  const url = taskBackgroundUrl()
   for (const key of ALL_KEYS) {
     url.searchParams.delete(key)
   }
-  window.history.replaceState(null, "", url.toString())
+  replaceTaskBackgroundUrl(url)
 }
 
 // =============================================================================
@@ -469,7 +525,7 @@ export function matchesStatusFilter(
   if (statusFilter === "overdue") {
     return el.dataset.overdue === "true"
   }
-  return el.dataset.status === statusFilter
+  return normalizeStatus(el.dataset.status ?? "") === normalizeStatus(statusFilter)
 }
 
 /**
@@ -591,10 +647,14 @@ export function getGroupKey(el: Pick<HTMLElement, "dataset">, groupBy: string): 
   switch (groupBy) {
     case "type":
       return el.dataset.taskType ?? el.dataset.task_type ?? "task"
+    case "workflow":
+      return el.dataset.workflowColumnId ?? ""
+    case "epic":
+      return el.dataset.epicGroup || "epic:none"
     case "priority":
       return el.dataset.priority ?? "3"
     case "area":
-      return el.dataset.area ?? "default"
+      return el.dataset.area ?? ""
     case "assignee":
       return el.dataset.assigned || "__unassigned__"
     case "status":

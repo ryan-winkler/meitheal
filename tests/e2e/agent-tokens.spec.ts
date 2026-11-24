@@ -1,4 +1,7 @@
-import { execFileSync, fork } from "node:child_process"
+import { runWithIngressTransport } from "../../apps/web/scripts/ingress-transport.mjs"
+import { integrationRoute } from "../helpers/ordinary-integration-fixture"
+import { currentBoardScope } from "../helpers/current-board-scope"
+import { execFileSync, fork } from "../helpers/isolated-process"
 import { once } from "node:events"
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -17,7 +20,7 @@ import {
   type AgentTokenRecord,
 } from "../../packages/domain-auth/src/agent-tokens"
 import { GET, POST, PATCH, DELETE } from "../../apps/web/src/pages/api/agent-tokens/index"
-import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../../apps/web/src/domains/tasks/persistence/store"
+import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 import { UserRepository } from "../../apps/web/src/domains/tasks/persistence/user-repository"
 
 /**
@@ -142,28 +145,18 @@ const handlerTest = test.extend<{ invoke: InvokeAgentRoute }>({
 
     try {
       await ensureSchema()
-      const users = new UserRepository(getPersistenceClient())
+      const db = getPersistenceClient()
+      const users = new UserRepository(db, await currentBoardScope(db))
       await users.createCustomUser("custom_agent_1", "Claude", "#6366f1", "agent")
       await users.createCustomUser("custom_agent_2", "Codex", "#10b981", "agent")
       await users.createCustomUser("custom_human_1", "Aoife", "#f59e0b", "human")
 
       await use((method, data, search = "") => {
-        const request = new Request(`http://localhost/api/agent-tokens${search}`, {
-          method,
-          ...(data === undefined ? {} : {
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(data),
-          }),
-        })
-
-        // Ingress authentication is outside the route handler's boundary.
-        return handlers[method]({
-          request,
-          locals: { hassIsAdmin: true },
-        } as unknown as Parameters<typeof GET>[0])
+        const params = new URLSearchParams(search)
+        params.set("board_id", "household")
+        return integrationRoute(handlers[method], `/api/agent-tokens?${params}`, data, method)
       })
     } finally {
-      getPersistenceClient().close()
       resetPersistenceForTests()
       if (previousDbUrl === undefined) {
         delete process.env.MEITHEAL_DB_URL
@@ -312,11 +305,14 @@ handlerTest.describe("Agent Token — Authorized Handler", () => {
   })
 })
 
-test("anonymous standalone HTTP requests cannot manage agent tokens", async ({ request }) => {
-  test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Set MEITHEAL_TEST_BROWSER=1 to start the standalone fixture")
-  const response = await request.get("/api/agent-tokens")
-  expect(response.status()).toBe(403)
-  expect(response.headers()["cache-control"]).toBe("no-store")
+test("anonymous non-loopback standalone requests cannot manage agent tokens", async () => {
+  const url = new URL("http://localhost/api/agent-tokens")
+  const untrusted = { peer: "198.51.100.7", fromSupervisor: false, identityHeadersSafe: false, configuredPath: undefined }
+  const response = await runWithIngressTransport(untrusted, () => GET({
+    request: new Request(url), url, params: {}, locals: {},
+  } as Parameters<typeof GET>[0]))
+  expect(response.status).toBe(403)
+  expect(response.headers.get("cache-control")).toBe("no-store")
   expect(await response.json()).toMatchObject({ title: "Admin Required" })
 })
 
@@ -339,15 +335,23 @@ test("encoded API namespace cannot bypass agent authorization in managed ingress
     const [{ port, configuredPath }] = await once(server, "message", { signal: AbortSignal.timeout(10_000) })
     const origin = `http://127.0.0.1:${port}`
     const ingress = origin + configuredPath
-    const admin = { origin, cookie: "feedback-fixture=admin" }
-    const member = { origin, cookie: "feedback-fixture=member" }
+    const current = async (cookie: string) => {
+      const headers = { origin, cookie }
+      const board = await api.get(ingress + "/api/boards", { headers })
+      expect(board.ok()).toBe(true)
+      const session = board.headers()["x-meitheal-board-session"]
+      if (!session) throw new Error("Native Board session not issued")
+      return { ...headers, "x-meitheal-board-id": "household", "x-meitheal-board-session": session }
+    }
+    const admin = await current("feedback-fixture=admin")
+    const member = await current("feedback-fixture=member")
     const credential = "/api/agent-tokens"
     const tasks = "/api/tasks"
     const created = await api.post(ingress + credential, {
       headers: admin, data: { name: "Scoped ingress fixture", scopes: ["tasks:read"] },
     })
     expect(created.status()).toBe(201)
-    expect(created.headers()["cache-control"]).toBe("no-store")
+    expect(created.headers()["cache-control"]).toMatch(/(?:^|,\s*)no-store(?:$|,)/)
     const { token, id } = await created.json()
     const scoped = { authorization: `Bearer ${token}` }
     const invalid = { authorization: "Bearer mth_invalid" }
@@ -364,7 +368,7 @@ test("encoded API namespace cannot bypass agent authorization in managed ingress
     expect((await list(credential, scoped)).status()).toBe(403)
     const invalidCanonical = await list(credential, invalid)
     expect(invalidCanonical.status()).toBe(401)
-    expect(invalidCanonical.headers()["cache-control"]).toBe("no-store")
+    expect(invalidCanonical.headers()["cache-control"]).toMatch(/(?:^|,\s*)no-store(?:$|,)/)
     expect((await list(credential, {})).status()).toBe(200)
     expect((await api.get(ingress + credential, { headers: member })).status()).toBe(403)
 
@@ -388,7 +392,7 @@ test("encoded API namespace cannot bypass agent authorization in managed ingress
     expect((await api.delete(ingress + credential, { headers: admin, data: { id } })).status()).toBe(200)
     const revoked = await write(tasks, scoped)
     expect(revoked.status()).toBe(401)
-    expect(revoked.headers()["cache-control"]).toBe("no-store")
+    expect(revoked.headers()["cache-control"]).toMatch(/(?:^|,\s*)no-store(?:$|,)/)
     for (const encoded of ["/%61pi/tasks", "/%2561pi/tasks"]) {
       expect((await write(encoded, scoped)).status()).toBe(404)
     }
@@ -426,6 +430,12 @@ test("agent routes require the permission for the concrete operation", () => {
   expect(resolveAgentRouteScope("/api/tasks/a-task", "DELETE")).toBe("tasks:delete")
   expect(resolveAgentRouteScope("/api/tasks/a-task/links", "DELETE")).toBe("tasks:write")
   expect(resolveAgentRouteScope("/api/tasks/clear-completed", "POST")).toBe("tasks:delete")
+  expect(resolveAgentRouteScope("/api/boards/a-board", "HEAD")).toBe("tasks:read")
+  expect(resolveAgentRouteScope("/api/boards/a-board", "PATCH")).toBeUndefined()
+  expect(resolveAgentRouteScope("/api/boards/a-board/tickets", "POST")).toBe("tasks:write")
+  expect(resolveAgentRouteScope("/api/boards/a-board/tickets/a-ticket", "PATCH")).toBe("tasks:write")
+  expect(resolveAgentRouteScope("/api/boards/a-board/tickets/a-ticket", "DELETE")).toBe("tasks:delete")
+  expect(resolveAgentRouteScope("/api/boards/a-board/intakes", "POST")).toBeUndefined()
   expect(resolveAgentRouteScope("/api/projects/a-project", "DELETE")).toBe("projects:write")
   expect(resolveAgentRouteScope("/api/search", "GET")).toBe("search:read")
   expect(resolveAgentRouteScope("/.well-known/mcp.json", "GET")).toBe("mcp:execute")
@@ -619,13 +629,18 @@ settingsBrowserTest("Settings Agent Tokens UI handles deferred load, retry, focu
   await expect(page.locator("#agent-token-create-btn")).toBeFocused()
 })
 
-test("standalone ClientRouter navigation enforces non-admin notice and cleans up without errors", async ({ page }) => {
+test("standalone ClientRouter navigation keeps local token management and cleans up without errors", async ({ page }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Set MEITHEAL_TEST_BROWSER=1 to start the standalone fixture")
   const errors: string[] = []
   page.on("pageerror", error => errors.push(error.message))
 
+  await page.context().route(/\/api\/agent-tokens(?:\?|$)/, route => route.fulfill({
+    status: 403,
+    contentType: "application/problem+json",
+    body: JSON.stringify({ status: 403, title: "Admin Required", detail: "Administrator access is required." }),
+  }))
   await page.goto("/settings#automation-ai-settings")
-  await expect(page.locator("#agent-tokens-status")).toContainText("Home Assistant administrator access is required")
+  await expect(page.locator("#agent-tokens-status")).toContainText("Administrator access is required")
   await expect(page.locator("#agent-token-create-btn")).toBeDisabled()
   await expect(page.locator("#agent-token-form")).toBeHidden()
   await expect(page.locator("#agent-token-reveal")).toBeHidden()
@@ -633,7 +648,7 @@ test("standalone ClientRouter navigation enforces non-admin notice and cleans up
   await page.locator("#bot-allow-proposals").click()
   await expect(page).toHaveURL(/\/review$/)
   await page.goBack()
-  await expect(page.locator("#agent-tokens-status")).toContainText("Home Assistant administrator access is required")
+  await expect(page.locator("#agent-tokens-status")).toContainText("Administrator access is required")
   await expect(page.locator("#agent-token-create-btn")).toBeDisabled()
   expect(errors).toEqual([])
 })

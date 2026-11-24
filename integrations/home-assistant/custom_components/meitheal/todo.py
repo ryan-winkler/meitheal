@@ -16,9 +16,9 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .coordinator import MeithealCoordinator, MeithealTask
+from .api import human_request_scope
+from .coordinator import MeithealBoardEntity, MeithealCoordinator, MeithealTask
 from .helpers import PARALLEL_UPDATES as _PARALLEL_UPDATES
 from .helpers import device_info
 
@@ -51,7 +51,7 @@ async def async_setup_entry(
     async_add_entities([MeithealTodoListEntity(coordinator, entry)], True)
 
 
-class MeithealTodoListEntity(CoordinatorEntity[MeithealCoordinator], TodoListEntity):
+class MeithealTodoListEntity(MeithealBoardEntity, TodoListEntity):
     """Meitheal task list exposed as HA todo entity.
 
     Home Assistant controls whether Assist can target this entity. When it
@@ -85,7 +85,7 @@ class MeithealTodoListEntity(CoordinatorEntity[MeithealCoordinator], TodoListEnt
     @property
     def todo_items(self) -> list[TodoItem] | None:
         """Return todo items from coordinator data."""
-        if not self.coordinator.data:
+        if not self.coordinator.data or not self.coordinator.shared_entity_delivery:
             return None
         return [self._task_to_item(t) for t in self.coordinator.data.todo_tasks]
 
@@ -112,47 +112,51 @@ class MeithealTodoListEntity(CoordinatorEntity[MeithealCoordinator], TodoListEnt
 
     async def async_create_todo_item(self, item: TodoItem) -> None:
         """Create a new task in Meitheal."""
-        await self.coordinator.async_create_task(
-            title=item.summary or "Untitled",
-            description=item.description,
-            due_date=item.due.isoformat() if item.due else None,
-        )
+        async with human_request_scope(self.coordinator.hass, self.coordinator.api, self._context):
+            await self.coordinator.async_create_task(
+                title=item.summary or "Untitled",
+                description=item.description,
+                due_date=item.due.isoformat() if item.due else None,
+            )
 
     async def async_update_todo_item(self, item: TodoItem) -> None:
         """Update an existing task."""
-        if not item.uid:
-            return
-        updates: dict[str, Any] = {}
-        if item.summary is not None:
-            updates["title"] = item.summary
-        if item.status is not None:
-            updates["status"] = _status_from_ha(item.status)
-        if item.description is not None:
-            updates["description"] = item.description
-        if item.due is not None:
-            updates["due_date"] = str(item.due)
-        if updates:
-            await self.coordinator.async_update_task(item.uid, updates)
+        async with human_request_scope(self.coordinator.hass, self.coordinator.api, self._context):
+            if not item.uid:
+                return
+            updates: dict[str, Any] = {}
+            if item.summary is not None:
+                updates["title"] = item.summary
+            if item.status is not None:
+                updates["status"] = _status_from_ha(item.status)
+            if item.description is not None:
+                updates["description"] = item.description
+            if item.due is not None:
+                updates["due_date"] = str(item.due)
+            if updates:
+                await self.coordinator.async_update_task(item.uid, updates)
 
     async def async_delete_todo_items(self, uids: list[str]) -> None:
         """Delete tasks by UID."""
-        for uid in uids:
-            await self.coordinator.async_delete_task(uid)
+        async with human_request_scope(self.coordinator.hass, self.coordinator.api, self._context):
+            for uid in uids:
+                await self.coordinator.async_delete_task(uid)
 
     async def async_move_todo_item(
         self, uid: str, previous_uid: str | None = None
     ) -> None:
         """Reorder a task in the list."""
-        if not self.coordinator.data:
-            raise HomeAssistantError("No task data available")
-        ordered_ids = [task.id for task in self.coordinator.data.todo_tasks]
-        if uid not in ordered_ids:
-            raise HomeAssistantError("Task not found")
-        ordered_ids.remove(uid)
-        target_pos = 0
-        if previous_uid:
-            if previous_uid not in ordered_ids:
-                raise HomeAssistantError("Previous task not found")
-            target_pos = ordered_ids.index(previous_uid) + 1
-        ordered_ids.insert(target_pos, uid)
-        await self.coordinator.async_reorder_tasks(ordered_ids)
+        async with human_request_scope(self.coordinator.hass, self.coordinator.api, self._context):
+            if not self.coordinator.data or not self.coordinator.shared_entity_delivery:
+                raise HomeAssistantError("No task data available")
+            ordered_ids = [task.id for task in self.coordinator.data.todo_tasks]
+            if uid not in ordered_ids:
+                raise HomeAssistantError("Task not found")
+            ordered_ids.remove(uid)
+            target_pos = 0
+            if previous_uid:
+                if previous_uid not in ordered_ids:
+                    raise HomeAssistantError("Previous task not found")
+                target_pos = ordered_ids.index(previous_uid) + 1
+            ordered_ids.insert(target_pos, uid)
+            await self.coordinator.async_reorder_tasks(ordered_ids)

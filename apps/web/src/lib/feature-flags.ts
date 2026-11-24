@@ -17,8 +17,10 @@
  * 3. The settings UI auto-discovers features from this registry
  */
 
-import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
+import { effectiveOrganizationFlags } from "./organization-request-context"
+import { getSettingsRevision, SettingsRepository } from "@domains/tasks/persistence/settings-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import { localReaderCacheToken } from "../../scripts/database-client.mjs"
 
 /** Feature definition with metadata for the settings UI */
 export interface FeatureDefinition {
@@ -90,28 +92,34 @@ export const FEATURE_DEFAULTS: Record<string, FeatureDefinition> = {
 /** Resolved feature flag state */
 export type FeatureFlags = Record<string, boolean>
 
-/**
- * Per-request cache — prevents N+1 DB queries when Layout, Sidebar,
- * and API guards all call getFeatureFlags() during the same SSR render.
- * TTL of 100ms is long enough to cover a single render cycle but short
- * enough to pick up changes between requests.
- */
-let _cachedFlags: FeatureFlags | null = null
-let _cacheTimestamp = 0
-const CACHE_TTL_MS = 100
+// Invalidate immediately on app settings writes and reread when the local snapshot advances.
+let cachedFlags: { flags: FeatureFlags; revision: number; expiresAt: number } | undefined
+const snapshotFlagsCache = new WeakMap<object, { token: string; revision: number; flags: FeatureFlags }>()
+const CACHE_TTL_MS = 1000
 
 /** Get all feature flags (server-side — reads from DB, cached per request) */
 export async function getFeatureFlags(): Promise<FeatureFlags> {
-  // Return cached result if within TTL
-  const now = Date.now()
-  if (_cachedFlags && (now - _cacheTimestamp) < CACHE_TTL_MS) {
-    return _cachedFlags
-  }
+  return effectiveOrganizationFlags(await getStoredFeatureFlags())
+}
+
+export async function getStoredFeatureFlags(): Promise<FeatureFlags> {
+  const now = performance.now()
+  const revision = getSettingsRevision()
 
   try {
     await ensureSchema()
-    const repo = new SettingsRepository(getPersistenceClient())
-    await repo.ensureSettingsTable()
+    const client = getPersistenceClient()
+    const state = localReaderCacheToken(client)
+    if (state) {
+      const cached = snapshotFlagsCache.get(state.owner)
+      if (cached && cached.token === state.token && cached.revision === revision) {
+        return cached.flags
+      }
+    } else if (cachedFlags?.revision === revision && now < cachedFlags.expiresAt) {
+      return cachedFlags.flags
+    }
+
+    const repo = new SettingsRepository(client)
 
     const featureKeys = Object.keys(FEATURE_DEFAULTS).map((k) => `feature_${k}`)
     const stored = await repo.getByKeys(featureKeys)
@@ -125,8 +133,13 @@ export async function getFeatureFlags(): Promise<FeatureFlags> {
         flags[name] = def.default
       }
     }
-    _cachedFlags = flags
-    _cacheTimestamp = now
+    if (state) {
+      if (localReaderCacheToken(client)?.token === state.token && getSettingsRevision() === revision) {
+        snapshotFlagsCache.set(state.owner, { token: state.token, revision, flags })
+      }
+    } else {
+      cachedFlags = { flags, revision, expiresAt: now + CACHE_TTL_MS }
+    }
     return flags
   } catch {
     // Fallback: all defaults (safe degradation)

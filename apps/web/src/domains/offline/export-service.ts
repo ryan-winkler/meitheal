@@ -1,3 +1,4 @@
+import { currentOfflinePartition, assertOfflinePartition, getSyncQueue } from "./offline-store"
 /**
  * Export Service
  *
@@ -9,11 +10,13 @@ import { getAllTasks } from "./offline-store";
 import { getAttachmentsByTaskId } from "./offline-store";
 
 export async function exportLocalDataAsJson(): Promise<void> {
-    const tasks = await getAllTasks();
+    const partition = currentOfflinePartition()
+    if (!partition) throw new Error("Open the original authenticated Board before exporting local work.")
+    const tasks = await getAllTasks(partition);
     const payload = [];
 
     for (const task of tasks) {
-        const attachments = await getAttachmentsByTaskId(task.id);
+        const attachments = await getAttachmentsByTaskId(task.id, partition);
         payload.push({
             ...task,
             _attachments: attachments.map(a => ({
@@ -26,8 +29,11 @@ export async function exportLocalDataAsJson(): Promise<void> {
         });
     }
 
-    const dataStr = JSON.stringify(payload, null, 2);
+    const pendingOperations = await getSyncQueue(partition)
+    assertOfflinePartition(partition)
+    const dataStr = JSON.stringify({ version: 1, boardId: partition.boardId, tasks: payload, pendingOperations }, null, 2);
     const blob = new Blob([dataStr], { type: "application/json" });
+    assertOfflinePartition(partition)
     triggerDownload(blob, `meitheal-local-export-${new Date().toISOString().split("T")[0]}.json`);
 }
 
@@ -36,7 +42,9 @@ export async function exportLocalDataAsJson(): Promise<void> {
  * Includes BOM for Excel UTF-8 compatibility.
  */
 export async function exportLocalDataAsCsv(): Promise<void> {
-    const tasks = await getAllTasks();
+    const partition = currentOfflinePartition()
+    if (!partition) throw new Error("Open the original authenticated Board before exporting local work.")
+    const tasks = await getAllTasks(partition);
 
     const headers = ["id", "title", "description", "status", "priority", "due_date", "labels", "created_at", "updated_at"];
 
@@ -54,6 +62,7 @@ export async function exportLocalDataAsCsv(): Promise<void> {
     const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8" });
+    assertOfflinePartition(partition)
     triggerDownload(blob, `meitheal-local-export-${new Date().toISOString().split("T")[0]}.csv`);
 }
 

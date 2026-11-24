@@ -108,12 +108,18 @@ export function injectShortcutStyles(): void {
       font-weight: 600;
       font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
       line-height: 1;
-      color: var(--text-secondary, #94a3b8);
-      background: var(--bg-surface, rgba(148, 163, 184, 0.12));
+      color: var(--text-primary, #e2e8f0);
+      background: var(--bg-card, var(--bg-surface, rgba(148, 163, 184, 0.16)));
       border: 1px solid var(--border, #334155);
       border-radius: 5px;
       pointer-events: none;
       white-space: nowrap;
+    }
+
+    [data-appearance-nav-tone]:not([data-appearance-nav-tone="match"]) #sidebar .shortcut-badge {
+      background: rgba(15, 23, 42, 0.56);
+      color: #ffffff;
+      border-color: rgba(255, 255, 255, 0.34);
     }
 
     .nav-badge:not([hidden]) + .shortcut-badge {

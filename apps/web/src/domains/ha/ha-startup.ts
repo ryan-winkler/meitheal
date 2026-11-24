@@ -1,3 +1,5 @@
+import { guardClientContinuity } from "../tasks/persistence/continuity-client"
+import { readWorkDestinations, currentBoardGrantRevision } from "@domains/tasks"
 /**
  * HA Startup — Server-Side Integration Initialization
  *
@@ -8,12 +10,14 @@
  *   - Grocy connectivity validation
  *   - n8n/Webhook endpoint reachability validation
  *
- * Called once from middleware.ts via a "lazy init" guard.
+ * Called from middleware.ts via a lazy initialization guard. Successful startup
+ * runs once; unconfigured or failed startup remains eligible for retries.
  * Must be idempotent — safe to call multiple times.
  *
  * @domain ha
  * @bounded-context integration
  */
+import { createHash } from "node:crypto"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import { fetchOutbound } from "@meitheal/integration-core"
 import { getHAConnection, getHAConfiguration } from "./ha-connection"
@@ -32,19 +36,34 @@ const SYS_REQ = "ha-system";
 // Cached DB references — avoids 4x repeated dynamic import + ensureSchema
 let _dbReady = false
 let _getPersistenceClient: (() => ReturnType<typeof import("@domains/tasks")["getPersistenceClient"]>) | null = null
+let _getSettingsRevision: (() => number) | null = null
 
 async function getDB() {
   if (!_dbReady) {
     const mod = await import("@domains/tasks")
     await mod.ensureSchema()
     _getPersistenceClient = mod.getPersistenceClient
+    _getSettingsRevision = mod.getSettingsRevision
     _dbReady = true
   }
-  return _getPersistenceClient!()
+  return guardClientContinuity(_getPersistenceClient!())
 }
 
 let initialized = false;
 let initializing = false;
+const UNCONFIGURED_RETRY_MS = 5_000
+let unconfiguredStartup: {
+  client: Awaited<ReturnType<typeof getDB>>
+  settingsRevision: number
+  environmentFingerprint: string
+  retryAfter: number
+} | undefined
+
+function startupEnvironmentFingerprint(): string {
+  return createHash("sha256").update(JSON.stringify([
+    process.env.SUPERVISOR_TOKEN, process.env.HA_BASE_URL, process.env.HA_TOKEN,
+  ])).digest("hex")
+}
 
 function withStartupCap(task: Promise<unknown>, timeoutMs: number): Promise<void> {
   return new Promise<void>((resolve) => {
@@ -70,7 +89,7 @@ function withStartupCap(task: Promise<unknown>, timeoutMs: number): Promise<void
  *   0. Verify/ensure local SQLite schema once
  *   1. Start local due-date reminder scheduler & establish WebSocket connection to HA Core
  *   2. Subscribe to scoped entity state changes
- *   3. Auto-start Todo sync -> title cleanup -> Calendar sync -> Grocy sync -> Webhook validation sequentially
+ *   3. Auto-start Todo sync -> Calendar sync -> Grocy sync -> Webhook validation sequentially
  */
 export async function initHAIntegrations(): Promise<void> {
   if (initialized || initializing) return;
@@ -78,7 +97,15 @@ export async function initHAIntegrations(): Promise<void> {
 
   try {
     // Ensure schema verification completes once before background schedulers or WS frames run.
-    await getDB();
+    const client = await getDB()
+    if (!await currentBoardGrantRevision(client)) return
+    const settingsRevision = _getSettingsRevision!()
+    const environmentFingerprint = startupEnvironmentFingerprint()
+    // Unconfigured standalone requests need no repeated settings DDL or startup logs.
+    // Successful settings saves, a different database or changed environment bypass this pause.
+    if (unconfiguredStartup?.client === client && unconfiguredStartup.settingsRevision === settingsRevision &&
+        unconfiguredStartup.environmentFingerprint === environmentFingerprint && performance.now() < unconfiguredStartup.retryAfter) return
+    unconfiguredStartup = undefined
 
     // Task deadlines are local domain transitions, including in standalone
     // mode or while HA is unavailable. The scheduler itself is idempotent.
@@ -86,6 +113,7 @@ export async function initHAIntegrations(): Promise<void> {
 
     // Only initialize when running as HA addon or configured standalone HA
     if (!(await getHAConfiguration())) {
+      unconfiguredStartup = { client, settingsRevision, environmentFingerprint, retryAfter: performance.now() + UNCONFIGURED_RETRY_MS }
       logger.log("info", {
         event: "ha.startup.skipped",
         domain: "ha",
@@ -122,9 +150,6 @@ export async function initHAIntegrations(): Promise<void> {
 
     // Step 3: Read saved todo sync settings and auto-start
     await autoStartTodoSync();
-
-    // Step 3.1: One-time cleanup of corrupt task titles from HA todo sync
-    await cleanupCorruptTitleData();
 
     // Step 4: Read saved calendar sync settings and auto-start
     await autoStartCalendarSync();
@@ -221,12 +246,12 @@ async function autoStartTodoSync(): Promise<void> {
     const { startTodoSync } = await import("@domains/todo");
     await withStartupCap(
       startTodoSync(
-        entityIds.map((entityId) => ({
-          entityId,
+        (await readWorkDestinations(client))?.bindings.filter(binding => binding.enabled && binding.integration === "todo" && binding.purpose === "todo.sync" && entityIds.includes(binding.sourceId)).map((binding) => ({
+          bindingId: binding.id, generation: binding.generation, entityId: binding.sourceId,
           syncEnabled: true,
           writeBack: direction === "outbound" || direction === "bidirectional",
           syncDirection: direction,
-        })),
+        })) ?? [],
       ),
       5_000,
     );
@@ -257,16 +282,18 @@ async function autoStartTodoSync(): Promise<void> {
  */
 async function autoStartCalendarSync(): Promise<void> {
   try {
+    const { CALENDAR_ENTITY_SETTINGS, configuredCalendarEntityIds, startMultiCalendarSync, startCalDAVSync } =
+      await import("@domains/calendar")
     const client = await getDB();
 
     const res = await client.execute({
       sql: `SELECT key, value FROM settings WHERE key IN (
-        'calendar_entities', 'calendar_entity', 'cal_entity', 'calendar-entity',
-        'calendar_sync_enabled', 'calendar_write_back', 'calendar_sync_interval_ms',
+        ${CALENDAR_ENTITY_SETTINGS.map(() => "?").join(", ")},
+        'calendar_sync_enabled', 'calendar_write_back', 'calendar_write_ticket_details', 'calendar_sync_interval_ms',
         'calendar_sync_mode', 'calendar_sync_modes',
         'caldav_url'
       )`,
-      args: [],
+      args: [...CALENDAR_ENTITY_SETTINGS],
     });
 
     const settings: Record<string, string> = {};
@@ -280,46 +307,12 @@ async function autoStartCalendarSync(): Promise<void> {
       }
     }
 
-    const enabled = settings.calendar_sync_enabled !== "false";
-    const writeBack = settings.calendar_write_back === "true";
+    const enabled = settings.calendar_sync_enabled !== "false" && (settings.calendar_sync_enabled as unknown) !== false;
+    const writeBack = settings.calendar_write_back === "true" || (settings.calendar_write_back as unknown) === true;
+    const writeTicketDetails = settings.calendar_write_ticket_details !== "false" && (settings.calendar_write_ticket_details as unknown) !== false;
     const syncIntervalMs = Number(settings.calendar_sync_interval_ms) || 5 * 60 * 1000;
 
-    // Resolve entity list: prefer multi-calendar array, then legacy single key
-    let entityIds: string[] = [];
-
-    // Try calendar_entities (JSON array from multi-select UI)
-    const entitiesRaw = settings.calendar_entities;
-    if (entitiesRaw) {
-      try {
-        const parsed = typeof entitiesRaw === "string" ? JSON.parse(entitiesRaw) : entitiesRaw;
-        if (Array.isArray(parsed)) {
-          entityIds = parsed.filter((id: unknown) => typeof id === "string" && id.length > 0);
-        }
-      } catch { /* invalid JSON — fall through to legacy */ }
-    }
-
-    // Fallback: legacy single entity key
-    if (entityIds.length === 0) {
-      const legacyId =
-        settings.calendar_entity ?? settings.cal_entity ?? settings["calendar-entity"];
-      if (legacyId) entityIds = [legacyId];
-    }
-
-    // Backward-compat migration: copy legacy key to canonical
-    if (entityIds.length > 0 && !settings.calendar_entity && (settings.cal_entity || settings["calendar-entity"])) {
-      try {
-        await client.execute({
-          sql: `INSERT INTO settings (key, value, updated_at) VALUES ('calendar_entity', ?, ?)
-                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-          args: [JSON.stringify(entityIds[0]), Date.now()],
-        });
-        logger.log("info", {
-          event: "ha.startup.calendar_sync.key_migrated",
-          domain: "calendar", component: "ha-startup",
-          request_id: SYS_REQ, message: `Migrated legacy calendar key to calendar_entity: ${entityIds[0]}`,
-        });
-      } catch { /* non-critical */ }
-    }
+    const entityIds = configuredCalendarEntityIds(settings)
 
     if (entityIds.length === 0 && !settings.caldav_url) {
       logger.log("info", {
@@ -343,8 +336,7 @@ async function autoStartCalendarSync(): Promise<void> {
       return;
     }
 
-    const { startMultiCalendarSync, startCalDAVSync } = await import("@domains/calendar/calendar-bridge");
-    type CalSyncMode = import("@domains/calendar/calendar-bridge").CalendarSyncMode;
+    type CalSyncMode = import("@domains/calendar").CalendarSyncMode;
 
     // Per-entity sync modes from settings (JSON map: {entity_id: mode})
     let perEntityModes: Record<string, CalSyncMode> = {};
@@ -359,13 +351,16 @@ async function autoStartCalendarSync(): Promise<void> {
     const globalMode: CalSyncMode =
       (settings.calendar_sync_mode as CalSyncMode) ?? "bidirectional";
 
-    const configs = entityIds.map((entityId) => {
+    const approvedBindings = (await readWorkDestinations(client))?.bindings.filter(binding => binding.enabled && binding.purpose === "calendar.sync") ?? []
+    const configs = approvedBindings.filter(binding => binding.integration === "calendar" && entityIds.includes(binding.sourceId)).map((binding) => {
+      const entityId = binding.sourceId
       const mode = perEntityModes[entityId] ?? globalMode;
       return {
-        entityId,
+        bindingId: binding.id, generation: binding.generation, entityId,
         syncEnabled: true,
         syncMode: mode,
         writeBack: mode !== "import" ? writeBack : false,
+        writeTicketDetails: mode !== "import" ? writeTicketDetails : false,
         syncIntervalMs,
       };
     });
@@ -375,7 +370,9 @@ async function autoStartCalendarSync(): Promise<void> {
     }
 
     if (settings.caldav_url) {
-      startCalDAVSync(settings.caldav_url, syncIntervalMs);
+      for (const binding of approvedBindings.filter(binding => binding.integration === "caldav" && binding.sourceId === "configured-caldav")) {
+        await startCalDAVSync(settings.caldav_url, syncIntervalMs, { bindingId: binding.id, generation: binding.generation })
+      }
     }
 
     logger.log("info", {
@@ -437,7 +434,7 @@ export async function autoStartGrocySync(
 ): Promise<void> {
   const runEpoch = grocyStartupEpoch
   try {
-    const { getGrocySyncStatus, onGrocySyncStopped, startGrocySync } = await import("@domains/grocy")
+    const { onGrocySyncStopped, startGrocySync } = await import("@domains/grocy")
     if (!grocyStopHookRegistered) {
       onGrocySyncStopped(clearGrocyStartupRetry)
       grocyStopHookRegistered = true
@@ -503,11 +500,6 @@ export async function autoStartGrocySync(
     // Validate & migrate Grocy URL through createGrocyClient before starting sync bridge
     const { createGrocyClient, isLegacySupervisorIngressUrl } = await import("../../lib/grocy-client")
 
-    if (retryAttempt > 0 && getGrocySyncStatus().active) {
-      resetGrocyStartupRetryTimer()
-      return
-    }
-
     const adapter = await createGrocyClient()
     if (runEpoch !== grocyStartupEpoch) return
 
@@ -537,10 +529,13 @@ export async function autoStartGrocySync(
     }
 
     resetGrocyStartupRetryTimer()
-    startGrocySync(
-      { syncEnabled: true, syncMode, intervalMs },
-      adapter,
-    )
+    let started = false
+    for (const binding of (await readWorkDestinations(client))?.bindings ?? []) {
+      if (runEpoch !== grocyStartupEpoch) return
+      if (!binding.enabled || binding.integration !== "grocy" || binding.purpose !== "grocy.sync" || binding.sourceId !== "configured-grocy") continue
+      if (await startGrocySync({ bindingId: binding.id, generation: binding.generation, syncEnabled: true, syncMode, intervalMs }, adapter)) started = true
+    }
+    if (!started) return
 
     logger.log("info", {
       event: "ha.startup.grocy.started",
@@ -660,13 +655,6 @@ async function autoStartDueDateReminders(): Promise<void> {
       "@domains/notifications/due-date-reminders"
     );
     await startDueDateReminders();
-    logger.log("info", {
-      event: "ha.startup.due_date_reminders.started",
-      domain: "notifications",
-      component: "ha-startup",
-      request_id: SYS_REQ,
-      message: "Due-date reminder scheduler started",
-    });
   } catch (err) {
     logger.log("error", {
       event: "ha.startup.due_date_reminders.failed",
@@ -677,34 +665,3 @@ async function autoStartDueDateReminders(): Promise<void> {
     });
   }
 }
-
-/**
- * One-time cleanup of corrupt task titles from HA todo sync.
- * Strips recursive MTH-NN prefixes and trailing DUE repetitions.
- * Idempotent — safe to call multiple times (no-ops on clean data).
- */
-async function cleanupCorruptTitleData(): Promise<void> {
-  try {
-    const { cleanupCorruptTitles } = await import("@lib/cleanup-corrupt-titles");
-    const cleaned = await cleanupCorruptTitles();
-    if (cleaned > 0) {
-      logger.log("info", {
-        event: "ha.startup.title_cleanup.complete",
-        domain: "tasks",
-        component: "ha-startup",
-        request_id: SYS_REQ,
-        message: `Cleaned ${cleaned} corrupt task titles`,
-        metadata: { cleaned },
-      });
-    }
-  } catch (err) {
-    logger.log("error", {
-      event: "ha.startup.title_cleanup.failed",
-      domain: "tasks",
-      component: "ha-startup",
-      request_id: SYS_REQ,
-      message: `Title cleanup failed: ${err}`,
-    });
-  }
-}
-

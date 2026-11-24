@@ -1,3 +1,5 @@
+import { boardScopeErrorResponse } from "@lib/board-http"
+import { journaledBoardCommandAck, withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
@@ -14,10 +16,10 @@ import { logApiError } from "../../../lib/api-logger"
 
 const VALID_STATUSES = ["active", "completed", "paused", "archived"]
 
-export const GET: APIRoute = async ({ params, url }) => {
+export const GET: APIRoute = withBoardScope({ resource: "project", action: "read" }, async ({ params, url }, scope) => {
   try {
     await ensureSchema()
-    const repo = new HierarchyRepository(getPersistenceClient())
+    const repo = new HierarchyRepository(getPersistenceClient(), scope)
     const project = await repo.findProjectById(params.id!)
     if (!project) return apiError("Project not found", 404)
     if (url.searchParams.get("task_counts") === "1") {
@@ -25,15 +27,17 @@ export const GET: APIRoute = async ({ params, url }) => {
     }
     return apiJson(project)
   } catch (error) {
+    const scopeFailure = boardScopeErrorResponse(error)
+    if (scopeFailure) return scopeFailure
     logApiError("projects", "GET detail error", error)
     return apiError("Failed to get project")
   }
-}
+})
 
-export const PUT: APIRoute = async ({ params, request }) => {
+export const PUT: APIRoute = withBoardScope({ resource: "project", action: "edit" }, async ({ params, request }, scope) => {
   try {
     await ensureSchema()
-    const repo = new HierarchyRepository(getPersistenceClient())
+    const repo = new HierarchyRepository(getPersistenceClient(), scope)
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
 
     const updates: Parameters<typeof repo.updateProject>[1] = {}
@@ -57,26 +61,29 @@ export const PUT: APIRoute = async ({ params, request }) => {
     const project = await repo.findProjectById(params.id!)
     return apiJson(project)
   } catch (error) {
+    const scopeFailure = boardScopeErrorResponse(error)
+    if (scopeFailure) return scopeFailure
     logApiError("projects", "PUT error", error)
     return apiError("Failed to update project")
   }
-}
+})
 
-export const DELETE: APIRoute = async ({ params }) => {
+export const DELETE: APIRoute = withBoardScope({ resource: "project", action: "delete" }, async ({ params }, scope) => {
   try {
     await ensureSchema()
-    const repo = new HierarchyRepository(getPersistenceClient())
+    const repo = new HierarchyRepository(getPersistenceClient(), scope)
 
     // Phase 15: prevent deleting the default "Every Day" project
     const project = await repo.findProjectById(params.id!)
     if (!project) return apiError("Project not found", 404)
-    if (project.is_default) return apiError("Cannot delete the default project", 403)
 
     const deleted = await repo.deleteProject(params.id!)
     if (!deleted) return apiError("Project not found", 404)
-    return apiJson({ ok: true })
+    return journaledBoardCommandAck(scope, { resource: "project", action: "delete" })
   } catch (error) {
+    const scopeFailure = boardScopeErrorResponse(error)
+    if (scopeFailure) return scopeFailure
     logApiError("projects", "DELETE error", error)
     return apiError("Failed to delete project")
   }
-}
+})

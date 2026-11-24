@@ -1,10 +1,19 @@
+import { saveVersionedTask, taskRecordVersion, sameTaskApiContext } from "./task-api-client"
+import { currentTaskApiContext, type TaskApiContext } from "./task-api"
+import { boardWorkspaceHref } from "./board-workspace"
+import { safeIngressHref } from "./ingress-navigation"
 import { InlineDatePicker } from "../components/shared/InlineDatePicker"
 import { getSelectedAreaId, initAreaSelector } from "@lib/area-selector-controller"
 import { hasPriorityOverlay } from "@lib/layout-shortcuts-controller"
 import { isDisabledCharacterShortcut } from "@lib/single-key-shortcuts"
 import { createClientLogger } from "@lib/client-logger"
+import { showToast } from "@lib/toast"
 import { FieldPickerPanel, TASK_FIELD_DEFS, loadVisibleFields } from "./field-picker-panel"
 import { loadFilterState } from "./filter-state"
+import { isDoneStatus as isComplete, normalizeStatus } from "./status-config"
+import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "./task-page-url"
+import type { HouseholdProjectLabel } from "./household-project-grouping"
+import { createSpriteIconElement } from "../generated/icon-registry"
 /**
  * Timeline/GANTT Controller — native SVG GANTT renderer.
  * @domain Task Visualization
@@ -36,24 +45,27 @@ const ganttLog = createClientLogger("timeline", "gantt")
 interface TimelineTask {
   id: string
   title: string
+  task_version?: number
+  updated_at?: string | number
+  ticket_key?: string
   status: string
   priority: number
-  due_date: string | null
-  start_date: string | null
-  end_date: string | null
-  color: string | null
-  task_type: string | null
-  task_kind: string | null
-  progress: number | null
-  ticket_number: number | null
-  parent_id: string | null
-  blocked_by: string | null
-  effort_minutes: number | null
-  labels: string | null
-  area_id: string | null
-  project_id: string | null
-  assigned_to: string | null
-  deferred_at: number | null
+  due_date?: string | null
+  start_date?: string | null
+  end_date?: string | null
+  color?: string | null
+  task_type?: string | null
+  task_kind?: string | null
+  progress?: number | null
+  ticket_number?: number | null
+  parent_id?: string | null
+  blocked_by?: string | null
+  effort_minutes?: number | null
+  labels?: string | null
+  area_id?: string | null
+  project_group: string
+  assigned_to?: string | null
+  deferred_at?: number | null
   is_overdue: boolean
 }
 
@@ -92,8 +104,9 @@ interface ZoomConfig {
 }
 
 // ── Area/Project name lookups (populated from SSR data) ──────────────────
-let areaLookup: Record<string, string> = {}
-let projectLookup: Record<string, string> = {}
+const UNKNOWN_AREA_NAME = "Unknown Area"
+let areaLookup = new Map<string, { title: string; qualifier?: string }>()
+let projectLookup: Record<string, HouseholdProjectLabel> = {}
 
 // ── Unscheduled section collapse state ─────────────────────────────────────
 const UNSCHEDULED_COLLAPSED_KEY = "meitheal-gantt-unscheduled-collapsed"
@@ -108,6 +121,7 @@ const BAR_Y_PAD = (ROW_HEIGHT - BAR_HEIGHT) / 2
 const HEADER_HEIGHT = 56
 const BAR_RADIUS = 6
 const BASE_SIDEBAR_WIDTH = 200
+const SIDEBAR_PREFERENCE_KEY = "meitheal-gantt-show-sidebar"
 const FIELD_COL_WIDTH = 80
 const ZOOM_KEY = "meitheal-timeline-zoom"
 const SCROLL_KEY_PREFIX = "meitheal-timeline-scroll-"
@@ -124,10 +138,6 @@ function sidebarWidth(): number {
 }
 
 let showSidebar = true
-try {
-  const sidebarStored = typeof window !== "undefined" ? localStorage.getItem("meitheal-gantt-show-sidebar") : null
-  if (sidebarStored === "false") showSidebar = false
-} catch { /* ignore */ }
 
 const PRIORITY_COLOURS: Record<number, string> = {
   1: "#EF4444", // P1 — urgent red
@@ -170,64 +180,6 @@ const ZOOM_CONFIGS: Record<ZoomLevel, ZoomConfig> = {
 
 // ── Utility Helpers ────────────────────────────────────────────────────────
 
-let activeDropdownController: AbortController | null = null
-
-function createDropdown(
-  triggerBtn: HTMLElement,
-  align: "left" | "right",
-  buildMenu: (menu: HTMLElement, closeCb: () => void) => void
-) {
-  // Clear any existing menu to prevent listeners leaking
-  if (activeDropdownController) {
-    activeDropdownController.abort()
-    activeDropdownController = null
-  }
-  const existing = document.querySelector(".gantt-col-menu")
-  if (existing) {
-    const isSameTrigger = existing.getAttribute("data-gantt-trigger") === triggerBtn.dataset.ganttTriggerId
-    existing.remove()
-    if (isSameTrigger) return // Toggle off
-  }
-
-  // Assign a trigger ID so toggle-off detection works with body-appended menus
-  if (!triggerBtn.dataset.ganttTriggerId) {
-    triggerBtn.dataset.ganttTriggerId = String(Date.now())
-  }
-
-  const rect = triggerBtn.getBoundingClientRect()
-  const menu = document.createElement("div")
-  menu.className = "gantt-col-menu"
-  menu.setAttribute("data-gantt-trigger", triggerBtn.dataset.ganttTriggerId)
-  menu.style.cssText = `
-    position:fixed;top:${rect.bottom + 4}px;
-    ${align === "right" ? `right:${window.innerWidth - rect.right}px` : `left:${rect.left}px`};
-    background:var(--bg-card);border:1px solid var(--border);border-radius:6px;
-    padding:4px 0;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:9999;min-width:140px;
-  `
-
-  activeDropdownController = new AbortController()
-
-  const closeMenu = () => {
-    if (activeDropdownController) {
-      activeDropdownController.abort()
-      activeDropdownController = null
-    }
-    menu.remove()
-  }
-
-  buildMenu(menu, closeMenu)
-
-  // Close on outside click
-  const onBodyClick = (ev: MouseEvent) => {
-    if (!menu.contains(ev.target as Node) && !triggerBtn.contains(ev.target as Node)) {
-      closeMenu()
-    }
-  }
-  setTimeout(() => document.addEventListener("click", onBodyClick, { signal: activeDropdownController!.signal }), 0)
-  
-  document.body.appendChild(menu)
-}
-
 function daysBetween(a: Date, b: Date): number {
   const ms = b.getTime() - a.getTime()
   return Math.round(ms / (1000 * 60 * 60 * 24))
@@ -255,11 +207,6 @@ function alignToUnit(d: Date, zoom: ZoomLevel): Date {
     s.setDate(1)
   }
   return s
-}
-
-function isWeekend(d: Date): boolean {
-  const day = d.getDay()
-  return day === 0 || day === 6
 }
 
 function parseDate(s: string): Date {
@@ -297,10 +244,6 @@ function statusLabel(status: string): string {
   return map[status] ?? status
 }
 
-function isComplete(status: string): boolean {
-  return status === "complete" || status === "done"
-}
-
 // ── SVG Helper ─────────────────────────────────────────────────────────────
 
 function svgEl<K extends keyof SVGElementTagNameMap>(
@@ -314,53 +257,56 @@ function svgEl<K extends keyof SVGElementTagNameMap>(
   return el
 }
 
-// ── Toast Helper ───────────────────────────────────────────────────────────
-
-// M3: Track toast timers for cleanup on abort
-let toastTimers: ReturnType<typeof setTimeout>[] = []
-
-function showToast(message: string, type: "success" | "error" = "success") {
-  const existing = document.querySelector(".gantt-toast")
-  if (existing) existing.remove()
-
-  const toast = document.createElement("div")
-  toast.className = `gantt-toast gantt-toast--${type}`
-  toast.textContent = message
-  document.body.appendChild(toast)
-
-  requestAnimationFrame(() => toast.classList.add("gantt-toast--visible"))
-  const hideTimer = setTimeout(() => {
-    toast.classList.remove("gantt-toast--visible")
-    const removeTimer = setTimeout(() => toast.remove(), 300)
-    toastTimers.push(removeTimer)
-  }, 2500)
-  toastTimers.push(hideTimer)
-}
-
-function clearToastTimers() {
-  toastTimers.forEach(t => clearTimeout(t))
-  toastTimers = []
-  document.querySelectorAll(".gantt-toast").forEach(t => t.remove())
-}
-
 // ── PATCH Helper ───────────────────────────────────────────────────────────
 
-async function patchTask(
-  taskId: string,
-  fields: Record<string, unknown>,
-): Promise<boolean> {
-  try {
-    const res = await fetch(`/api/tasks/${taskId}`, { // nosemgrep
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(fields),
-    })
-    if (!res.ok) ganttLog.warn(`PATCH /api/tasks/${taskId} → ${res.status}`)
-    return res.ok
-  } catch (e) {
-    ganttLog.warn("PATCH failed:", e)
-    return false
+let timelineSignal: AbortSignal | undefined
+let timelineWithheld = false
+const pendingTimelineEdits = new Map<string, { task: TimelineTask; fields: Record<string, unknown>; context: TaskApiContext }>()
+
+function renderPendingTimelineEdits() {
+  document.getElementById("timeline-pending-edits")?.remove()
+  if (!pendingTimelineEdits.size || timelineWithheld) return
+  const panel = document.createElement("section")
+  panel.id = "timeline-pending-edits"
+  panel.className = "alert alert-warning"
+  panel.setAttribute("role", "alert")
+  const explanation = document.createElement("p")
+  explanation.textContent = "These dates were not confirmed. Your proposed dates are kept below. Review the saved task before applying them."
+  panel.append(explanation)
+  for (const [id, entry] of pendingTimelineEdits) {
+    if (!sameTaskApiContext(entry.context, currentTaskApiContext())) continue
+    const row = document.createElement("p")
+    const dates = Object.entries(entry.fields).map(([field, value]) => `${({ start_date: "Start", end_date: "End", due_date: "Due" } as Record<string, string>)[field] ?? field}: ${value ?? "No date"}`).join(" · ")
+    row.append(`${entry.task.title} — ${dates} `)
+    const review = document.createElement("a")
+    review.href = safeIngressHref(boardWorkspaceHref(entry.context.boardId, { ticket: id }))
+    review.textContent = "Review saved task"
+    const discard = document.createElement("button")
+    discard.type = "button"
+    discard.className = "btn btn-ghost"
+    discard.textContent = "Discard proposed dates"
+    discard.addEventListener("click", () => { pendingTimelineEdits.delete(id); renderPendingTimelineEdits() }, timelineSignal ? { signal: timelineSignal } : {})
+    row.append(review, " ", discard)
+    panel.append(row)
   }
+  document.getElementById("gantt-chart")?.before(panel)
+}
+
+async function patchTask(task: TimelineTask, fields: Record<string, unknown>): Promise<boolean> {
+  const context = currentTaskApiContext()
+  if (!context || timelineSignal?.aborted || pendingTimelineEdits.has(task.id)) return false
+  const result = await saveVersionedTask(task.id, fields, taskRecordVersion({ ...task }), context, timelineSignal)
+  if (result.ok) {
+    Object.assign(task, result.task, { task_version: result.version })
+    return true
+  }
+  if (sameTaskApiContext(context, currentTaskApiContext()) && !timelineSignal?.aborted
+    && (result.errorCode === "conflict" || result.errorCode === "unconfirmed")) {
+    pendingTimelineEdits.set(task.id, { task, fields: { ...fields }, context })
+    renderPendingTimelineEdits()
+  }
+  ganttLog.warn(`Task date update was not confirmed: ${result.status}`)
+  return false
 }
 
 // ── Data Mapping ───────────────────────────────────────────────────────────
@@ -406,7 +352,11 @@ function mapTasks(tasks: TimelineTask[]): MapTasksResult {
       }
     }
 
-    const ticketPrefix = t.ticket_number ? `MTH-${t.ticket_number} ` : ""
+    const resolvedKey =
+      (t as { ticket_key?: string | null; ticket_ref?: string | null }).ticket_key ||
+      (t as { ticket_ref?: string | null }).ticket_ref ||
+      (t.ticket_number ? `MTH-${t.ticket_number}` : "")
+    const ticketPrefix = resolvedKey ? `${resolvedKey} ` : ""
     const name = `${ticketPrefix}${t.title}`
     const isMilestone = startStr === endStr
 
@@ -602,7 +552,7 @@ function filterBars(bars: GanttBar[], filter: TimelineFilterState): GanttBar[] {
       if (filter.status === "overdue") {
         if (!bar.isOverdue) return false
       } else {
-        if (bar.original.status !== filter.status) return false
+        if (normalizeStatus(bar.original.status) !== filter.status) return false
       }
     }
     // Priority
@@ -629,22 +579,60 @@ interface HierarchyBar extends GanttBar {
   hasChildren: boolean
   isCollapsed: boolean
   isGroupHeader?: boolean
+  groupQualifier?: string
 }
 
 /** Collapsed parent IDs — persisted in module scope across re-renders */
 const collapsedParents = new Set<string>()
+const collapsedGroups = new Set<string>()
+const GROUP_ROW_SELECTOR = "[role=heading][data-row-index]"
+
+function readAreaGroupLabels(json: string): typeof areaLookup {
+  const catalog: unknown = JSON.parse(json)
+  if (!catalog || typeof catalog !== "object" || Array.isArray(catalog)) return new Map()
+
+  const entries = Object.entries(catalog)
+    .filter((entry): entry is [string, string] => Boolean(entry[0]) && typeof entry[1] === "string" && Boolean(entry[1].trim()))
+    .sort(([left], [right]) => left.localeCompare(right))
+  // Match the uppercase Timeline headings as users see them.
+  const normalizeTitle = (name: string) => name.trim().replace(/\s+/g, " ").toUpperCase().normalize("NFC")
+  const counts = new Map([[normalizeTitle(UNKNOWN_AREA_NAME), 1]])
+  for (const [, name] of entries) {
+    const title = normalizeTitle(name)
+    counts.set(title, (counts.get(title) ?? 0) + 1)
+  }
+  const used = new Set(counts.keys())
+  const labels: typeof areaLookup = new Map()
+  for (const [id, title] of entries) {
+    const titleKey = normalizeTitle(title)
+    if (counts.get(titleKey) === 1) {
+      labels.set(id, { title })
+      continue
+    }
+
+    const suffix = id.slice(-8)
+    let qualifier = `#${suffix}`
+    let disambiguator = 1
+    while (used.has(normalizeTitle(`${title} · ${qualifier}`))) qualifier = `#${disambiguator++}-${suffix}`
+    used.add(normalizeTitle(`${title} · ${qualifier}`))
+    labels.set(id, { title, qualifier })
+  }
+  return labels
+}
 
 /**
  * Build a flat list sorted parent→children with depth levels.
  * Parents appear before their children. Orphan tasks stay at depth 0.
  */
 function buildHierarchy(bars: GanttBar[], groupByKey: string = "none"): HierarchyBar[] {
-  if (["status", "priority", "project", "area", "assignee", "assigned", "type"].includes(groupByKey)) {
+  if (["status", "priority", "project", "area", "assignee", "type"].includes(groupByKey)) {
     const groupKey = groupByKey
     
     // Group bars
-    const grouped = new Map<string, GanttBar[]>()
+    const grouped = new Map<string, HouseholdProjectLabel & { bars: GanttBar[] }>()
     for (const bar of bars) {
+      let key: string | undefined
+      let qualifier: string | undefined
       let val = "Uncategorized"
       if (groupKey === "status") val = bar.original.status || "Uncategorized"
       else if (groupKey === "priority") {
@@ -652,40 +640,47 @@ function buildHierarchy(bars: GanttBar[], groupByKey: string = "none"): Hierarch
         val = labels[bar.priority] || `Priority ${bar.priority}`
       }
       else if (groupKey === "project") {
-        const rawId = bar.original.project_id || ""
-        val = rawId ? (projectLookup[rawId] || "Unknown Project") : "No Project"
+        key = bar.original.project_group
+        const label = projectLookup[key]
+        val = label?.title ?? "Unknown Project"
+        qualifier = label?.qualifier
       }
       else if (groupKey === "area") {
-        const rawId = bar.original.area_id || "default"
-        val = areaLookup[rawId] || "Unknown Area"
+        const areaId = bar.original.area_id
+        const groupId = areaId === undefined ? "" : (areaId || "default")
+        const label = areaLookup.get(groupId)
+        key = label ? `area-${groupId}` : "unavailable-area"
+        val = label?.title ?? UNKNOWN_AREA_NAME
+        qualifier = label?.qualifier
       }
-      else if (groupKey === "assignee" || groupKey === "assigned") val = bar.original.assigned_to || "Unassigned"
+      else if (groupKey === "assignee") val = bar.original.assigned_to || "Unassigned"
       else if (groupKey === "type") {
         const kind = bar.original.task_kind || bar.original.task_type || "standard_action"
         const kindLabels: Record<string, string> = {
-          standard_action: "Task", routine: "Routine", shopping_item: "Shopping",
-          calendar_event: "Event",
+          standard_action: "Task", routine: "Routine", routine_instance: "Routine", shopping_item: "Shopping",
+          calendar_event: "Event", checklist: "Checklist", quick_capture: "Quick Capture",
         }
         val = kindLabels[kind] || kind
       }
       
-      if (!grouped.has(val)) grouped.set(val, [])
-      grouped.get(val)!.push(bar)
+      key ??= val
+      const group = grouped.get(key)
+      if (group) group.bars.push(bar)
+      else grouped.set(key, { title: val, ...(qualifier && { qualifier }), bars: [bar] })
     }
 
-    // Sort group keys
-    const sortedKeys = Array.from(grouped.keys()).sort((a,b) => a.localeCompare(b))
-    
+    const sortedGroups = [...grouped].sort(([a, left], [b, right]) =>
+      left.title.localeCompare(right.title) || (left.qualifier ?? "").localeCompare(right.qualifier ?? "") || a.localeCompare(b),
+    )
     const result: HierarchyBar[] = []
-    for (const key of sortedKeys) {
-      const gBars = grouped.get(key)!
-      // Add fake header
+    for (const [key, { title, qualifier, bars: groupBars }] of sortedGroups) {
       const headerId = `group-${key}`
-      const collapsed = collapsedParents.has(headerId)
-      
+      const collapsed = collapsedGroups.has(`${groupKey}:${headerId}`)
+
       result.push({
         id: headerId,
-        name: key,
+        name: title,
+        ...(qualifier && { groupQualifier: qualifier }),
         start: new Date(), end: new Date(),
         progress: 0, colour: "transparent", taskType: "group",
         isComplete: false, isOverdue: false, isMilestone: false, priority: 0,
@@ -694,7 +689,7 @@ function buildHierarchy(bars: GanttBar[], groupByKey: string = "none"): Hierarch
       })
       
       if (!collapsed) {
-        gBars.forEach(b => {
+        groupBars.forEach(b => {
           result.push({ ...b, depth: 1, hasChildren: false, isCollapsed: false })
         })
       }
@@ -923,6 +918,11 @@ function renderGantt(
   undatedTasks: TimelineTask[] = [],
   groupByKey: string = "none",
 ) {
+  if (groupByKey === "assigned") groupByKey = "assignee"
+  const focusedGroup = document.activeElement?.closest<HTMLElement>(GROUP_ROW_SELECTOR)
+  const focusGroupId = showSidebar && focusedGroup && outerContainer.contains(focusedGroup) &&
+    outerContainer.dataset.timelineGrouping === groupByKey ? focusedGroup.dataset.taskId : undefined
+  outerContainer.dataset.timelineGrouping = groupByKey
   // Preserve vertical scroll across re-renders (e.g. inline drag/resize completion or collapse)
   const prevScrollWrapper = outerContainer.querySelector<HTMLElement>(".gantt-scroll-wrapper")
   const preservedScrollTop = prevScrollWrapper ? prevScrollWrapper.scrollTop : 0
@@ -964,6 +964,7 @@ function renderGantt(
     const rowIndex = displayRows.length
     if (bar.isGroupHeader) {
       displayRows.push({ kind: "group", rowIndex, bar })
+      if (showSidebar) navigableRowIndices.push(rowIndex)
     } else {
       displayRows.push({ kind: "bar", rowIndex, bar })
       taskRowIndexById.set(bar.id, rowIndex)
@@ -1004,6 +1005,7 @@ function renderGantt(
 
   // Sidebar (fixed left) — hidden via display:none when toggle is off
   const sidebar = document.createElement("div")
+  sidebar.id = "timeline-task-pane"
   sidebar.className = "gantt-sidebar"
   sidebar.style.cssText = `
     flex:0 0 auto;width:${sidebarWidth()}px;
@@ -1466,10 +1468,12 @@ function renderGantt(
 
     if (dRow.kind === "group") {
       const bar = dRow.bar
+      const groupName = [bar.name, bar.groupQualifier].filter(Boolean).join(" · ")
       const row = document.createElement("div")
       row.className = "gantt-sidebar-row gantt-sidebar-row--parent"
       row.setAttribute("role", "heading")
-      row.setAttribute("aria-label", `Group: ${bar.name}`)
+      row.setAttribute("aria-label", `Group: ${groupName}`)
+      row.setAttribute("aria-level", "3")
       row.setAttribute("aria-rowindex", String(rowIndex + 1))
       row.dataset.rowIndex = String(rowIndex)
       row.dataset.taskId = bar.id
@@ -1485,8 +1489,8 @@ function renderGantt(
       const toggle = document.createElement("button")
       toggle.className = "gantt-sidebar-toggle"
       toggle.type = "button"
-      toggle.setAttribute("aria-label", bar.isCollapsed ? "Expand group" : "Collapse group")
-      toggle.setAttribute("tabindex", "-1")
+      toggle.setAttribute("aria-label", `${bar.isCollapsed ? "Expand" : "Collapse"} group: ${groupName}`)
+      toggle.setAttribute("aria-expanded", String(!bar.isCollapsed))
       toggle.style.cssText = `
         width:16px;height:16px;display:flex;align-items:center;justify-content:center;
         background:none;border:none;cursor:pointer;color:var(--text-muted);
@@ -1496,19 +1500,29 @@ function renderGantt(
       const onToggle = (e: Event) => {
         e.stopPropagation()
         e.preventDefault()
-        if (collapsedParents.has(bar.id)) collapsedParents.delete(bar.id)
-        else collapsedParents.add(bar.id)
+        const key = `${groupByKey}:${bar.id}`
+        if (bar.isCollapsed) collapsedGroups.delete(key)
+        else collapsedGroups.add(key)
         renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
       }
       toggle.addEventListener("click", onToggle, { signal: rowSignal })
       row.addEventListener("click", onToggle, { signal: rowSignal })
       row.appendChild(toggle)
 
+      const label = document.createElement("span")
+      label.className = "gantt-sidebar-group-label"
+      label.title = groupName
       const name = document.createElement("span")
       name.className = "gantt-sidebar-row-title"
-      name.style.cssText = "flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;"
       name.textContent = bar.name
-      row.appendChild(name)
+      label.appendChild(name)
+      if (bar.groupQualifier) {
+        const qualifier = document.createElement("span")
+        qualifier.className = "gantt-sidebar-group-qualifier"
+        qualifier.textContent = bar.groupQualifier
+        label.appendChild(qualifier)
+      }
+      row.appendChild(label)
 
       const groupSvg = svgEl("g", {
         class: "gantt-group-row",
@@ -1564,7 +1578,11 @@ function renderGantt(
     if (dRow.kind === "unscheduled") {
       const ut = dRow.task
       const ui = dRow.unscheduledIndex
-      const ticketPrefix = ut.ticket_number ? `MTH-${ut.ticket_number} ` : ""
+      const utKey =
+        (ut as { ticket_key?: string | null; ticket_ref?: string | null }).ticket_key ||
+        (ut as { ticket_ref?: string | null }).ticket_ref ||
+        (ut.ticket_number ? `MTH-${ut.ticket_number}` : "")
+      const ticketPrefix = utKey ? `${utKey} ` : ""
       const utName = `${ticketPrefix}${ut.title}`
       const utRow = document.createElement("div")
       utRow.className = `gantt-sidebar-row gantt-sidebar-row--unscheduled${activeFocusedTaskId === ut.id ? " gantt-sidebar-row--focused" : ""}`
@@ -1605,7 +1623,7 @@ function renderGantt(
           null,
           async (date) => {
             const iso = toISODate(date)
-            const ok = await patchTask(ut.id, { due_date: iso, start_date: iso })
+            const ok = await patchTask(ut, { due_date: iso, start_date: iso })
             if (ok) {
               ut.due_date = iso
               ut.start_date = iso
@@ -1616,7 +1634,7 @@ function renderGantt(
               const overdue = !complete && date < startOfDay(new Date())
               bars.push({
                 id: ut.id,
-                name: `${ut.ticket_number ? `MTH-${ut.ticket_number} ` : ""}${ut.title}`,
+                name: `${utKey ? `${utKey} ` : ""}${ut.title}`,
                 start: date,
                 end: date,
                 progress: Number(ut.progress ?? 0),
@@ -1695,7 +1713,7 @@ function renderGantt(
         const dayOffset = Math.floor(clickX / pxPerDay)
         const clickedDate = addDays(rangeStart, dayOffset)
         const iso = toISODate(clickedDate)
-        const ok = await patchTask(ut.id, { start_date: iso, due_date: iso })
+        const ok = await patchTask(ut, { start_date: iso, due_date: iso })
         if (ok) {
           ut.start_date = iso
           ut.due_date = iso
@@ -1706,7 +1724,7 @@ function renderGantt(
           const overdue = !complete && clickedDate < startOfDay(new Date())
           bars.push({
             id: ut.id,
-            name: `${ut.ticket_number ? `MTH-${ut.ticket_number} ` : ""}${ut.title}`,
+            name: `${utKey ? `${utKey} ` : ""}${ut.title}`,
             start: clickedDate,
             end: clickedDate,
             progress: Number(ut.progress ?? 0),
@@ -1805,14 +1823,14 @@ function renderGantt(
           bar.original.due_date,
           async (date) => {
             const iso = toISODate(date)
-            const ok = await patchTask(bar.id, { due_date: iso })
+            const ok = await patchTask(bar.original, { due_date: iso })
             if (ok) {
               bar.original.due_date = iso
               renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
             }
           },
           async () => {
-            const ok = await patchTask(bar.id, { due_date: null })
+            const ok = await patchTask(bar.original, { due_date: null })
             if (ok) {
               bar.original.due_date = null
               renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
@@ -1826,14 +1844,14 @@ function renderGantt(
           bar.original.start_date,
           async (date) => {
             const iso = toISODate(date)
-            const ok = await patchTask(bar.id, { start_date: iso })
+            const ok = await patchTask(bar.original, { start_date: iso })
             if (ok) {
               bar.original.start_date = iso
               renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
             }
           },
           async () => {
-            const ok = await patchTask(bar.id, { start_date: null })
+            const ok = await patchTask(bar.original, { start_date: null })
             if (ok) {
               bar.original.start_date = null
               renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey)
@@ -1851,7 +1869,8 @@ function renderGantt(
         cell.textContent = statusLabel(bar.original.status)
         cell.style.color = bar.isComplete ? "var(--accent-success, #10b981)" : "var(--text-muted)"
       } else if (fieldId === "ticket_number") {
-        cell.textContent = bar.original.ticket_number ? `MTH-${bar.original.ticket_number}` : "—"
+        const orig = bar.original as { ticket_key?: string | null; ticket_ref?: string | null; ticket_number?: number | null }
+        cell.textContent = orig.ticket_key || orig.ticket_ref || (orig.ticket_number ? `MTH-${orig.ticket_number}` : "—")
         cell.style.color = "var(--text-muted)"
       } else if (fieldId === "progress") {
         cell.textContent = `${bar.progress}%`
@@ -1867,7 +1886,15 @@ function renderGantt(
         }
         cell.style.color = "var(--text-muted)"
       } else if (fieldId === "task_kind") {
-        cell.textContent = bar.original.task_kind || bar.original.task_type || "—"
+        const kind = bar.original.task_kind || bar.original.task_type || ""
+        const kindLabels: Record<string, string> = {
+          standard_action: "Task", routine: "Routine", routine_instance: "Routine", shopping_item: "Shopping",
+          calendar_event: "Event", checklist: "Checklist", quick_capture: "Quick Capture",
+        }
+        cell.textContent = kindLabels[kind] || kind || "—"
+        if (kind === "calendar_event" && (bar.original.start_date || bar.original.end_date)) {
+          cell.title = `${bar.original.start_date || "—"} → ${bar.original.end_date || "—"}`
+        }
         cell.style.color = "var(--text-muted)"
       }
 
@@ -1888,16 +1915,17 @@ function renderGantt(
         "aria-rowindex": rowIndex + 1,
         tabindex: 0,
         role: "button",
-        "aria-label": `Milestone: ${bar.name}`,
+        "aria-label": `Milestone: ${bar.name}${bar.isOverdue ? ", overdue" : ""}`,
       })
       milestoneGroup.style.cursor = "pointer"
       milestoneGroup.appendChild(
         svgEl("polygon", {
           points: `${mx},${my - ms} ${mx + ms},${my} ${mx},${my + ms} ${mx - ms},${my}`,
-          fill: bar.colour,
-          opacity: bar.isComplete ? 0.4 : 1,
-          stroke: bar.isOverdue ? "var(--accent-danger, #ef4444)" : "none",
-          "stroke-width": bar.isOverdue ? 2 : 0,
+          fill: bar.original.color || bar.colour,
+          "fill-opacity": bar.isComplete ? 0.4 : 1,
+          stroke: bar.isOverdue ? "var(--danger-text, var(--text-secondary))" : "var(--text-secondary)",
+          "stroke-width": bar.isOverdue ? 2 : 1.5,
+          "vector-effect": "non-scaling-stroke",
         }),
       )
 
@@ -2062,7 +2090,10 @@ function renderGantt(
     const viewportH = scrollWrapper.clientHeight > 0 ? scrollWrapper.clientHeight : 600
     const startRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 8)
     const endRow = Math.min(totalRowCount - 1, Math.ceil((scrollTop + viewportH) / ROW_HEIGHT) + 8)
-    const focusRow = activeFocusedTaskId !== null ? (taskRowIndexById.get(activeFocusedTaskId) ?? -1) : -1
+    const group = document.activeElement?.closest<HTMLElement>(GROUP_ROW_SELECTOR)
+    const focusRow = group && sidebarTrack.contains(group)
+      ? Number(group.dataset.rowIndex)
+      : taskRowIndexById.get(activeFocusedTaskId ?? "") ?? -1
     const dragRow = activeDragTaskId !== null ? (taskRowIndexById.get(activeDragTaskId) ?? -1) : -1
     const windowKey = `${startRow}:${endRow}:${focusRow}:${dragRow}`
     if (!force && windowKey === lastWindowKey) return
@@ -2084,13 +2115,18 @@ function renderGantt(
 
     const sidebarFrag = document.createDocumentFragment()
     const svgFrag = document.createDocumentFragment()
-    for (const idx of wanted) {
-      if (!mountedRows.has(idx)) {
-        const mounted = mountDisplayRow(idx, sidebarFrag, svgFrag)
-        if (mounted) mountedRows.set(idx, mounted)
+    // Insert a whole run of new rows at the next retained row. Keeping the
+    // retained nodes in place also preserves keyboard focus and drag state.
+    for (const idx of [...wanted].sort((a, b) => a - b)) {
+      const retained = mountedRows.get(idx)
+      if (retained) {
+        if (sidebarFrag.hasChildNodes()) sidebarTrack.insertBefore(sidebarFrag, retained.sidebarEl)
+        continue
       }
+      const mounted = mountDisplayRow(idx, sidebarFrag, svgFrag)
+      if (mounted) mountedRows.set(idx, mounted)
     }
-    if (sidebarFrag.childNodes.length > 0) sidebarTrack.appendChild(sidebarFrag)
+    if (sidebarFrag.hasChildNodes()) sidebarTrack.appendChild(sidebarFrag)
     if (svgFrag.childNodes.length > 0) barsGroup.appendChild(svgFrag)
 
     // Mount dependency <path> connectors whenever at least one endpoint row is mounted
@@ -2119,7 +2155,16 @@ function renderGantt(
   // ── Delegated Row & Bar Interaction Handlers (Zero Per-Row Listeners) ─
 
   sidebarTrack.addEventListener("focusin", (e) => {
-    const rowEl = (e.target as Element | null)?.closest<HTMLElement>(".gantt-vrow")
+    const target = e.target as Element | null
+    const group = target?.closest<HTMLElement>(GROUP_ROW_SELECTOR)
+    if (group) {
+      const rowIndex = Number(group.dataset.rowIndex)
+      focusedNavPos = navigableRowIndices.indexOf(rowIndex)
+      activeFocusedTaskId = null
+      scrollRowIntoView(rowIndex)
+      return
+    }
+    const rowEl = target?.closest<HTMLElement>(".gantt-vrow")
     if (!rowEl) return
     const rIdx = Number(rowEl.dataset.rowIndex ?? -1)
     const dRow = displayRows[rIdx]
@@ -2282,28 +2327,21 @@ function renderGantt(
   if (preservedScrollTop > 0) {
     scrollWrapper.scrollTop = preservedScrollTop
   }
+  const groupFocusRow = focusGroupId === undefined ? -1 : displayRows.findIndex(row =>
+    row.kind === "group" && row.bar.id === focusGroupId,
+  )
+  if (groupFocusRow >= 0) scrollRowIntoView(groupFocusRow)
   sidebarTrack.style.transform = `translateY(-${scrollWrapper.scrollTop}px)`
   headerSvg.style.transform = `translateX(-${scrollWrapper.scrollLeft}px)`
   syncVirtualWindow(true)
+  mountedRows.get(groupFocusRow)?.sidebarEl.querySelector("button")?.focus({ preventScroll: true })
 
   // ── T5: Scroll-to-Today FAB ──────────────────────────────────────────
 
   const fab = document.createElement("button")
   fab.className = "gantt-today-fab"
   fab.title = "Scroll to today (T)"
-  const fabSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
-  fabSvg.setAttribute("width", "16")
-  fabSvg.setAttribute("height", "16")
-  fabSvg.setAttribute("viewBox", "0 0 16 16")
-  fabSvg.setAttribute("fill", "none")
-  const c1 = document.createElementNS("http://www.w3.org/2000/svg", "circle")
-  c1.setAttribute("cx", "8"); c1.setAttribute("cy", "8"); c1.setAttribute("r", "7")
-  c1.setAttribute("stroke", "currentColor"); c1.setAttribute("stroke-width", "1.5")
-  const c2 = document.createElementNS("http://www.w3.org/2000/svg", "circle")
-  c2.setAttribute("cx", "8"); c2.setAttribute("cy", "8"); c2.setAttribute("r", "2.5")
-  c2.setAttribute("fill", "currentColor")
-  fabSvg.appendChild(c1); fabSvg.appendChild(c2)
-  fab.appendChild(fabSvg)
+  fab.appendChild(createSpriteIconElement("target", { size: 16 }))
   fab.style.cssText = `
     position:absolute;bottom:16px;right:16px;z-index:20;
     width:36px;height:36px;border-radius:50%;border:1px solid var(--border);
@@ -2357,9 +2395,7 @@ function renderGantt(
     focusedNavPos = Math.max(0, Math.min(nextNavPos, navigableRowIndices.length - 1))
     const targetRowIndex = navigableRowIndices[focusedNavPos]!
     const targetRow = displayRows[targetRowIndex]
-    if (targetRow && targetRow.kind === "bar") {
-      activeFocusedTaskId = targetRow.bar.id
-    }
+    activeFocusedTaskId = targetRow?.kind === "bar" ? targetRow.bar.id : null
     scrollRowIntoView(targetRowIndex)
     syncVirtualWindow(true)
 
@@ -2370,6 +2406,10 @@ function renderGantt(
     sidebarRowEl?.classList.add("gantt-sidebar-row--focused")
     setChartRowHighlight(targetRowIndex)
 
+    if (targetRow?.kind === "group") {
+      sidebarRowEl?.querySelector("button")?.focus({ preventScroll: true })
+      return
+    }
     const barEl = barsGroup.querySelector<SVGGElement>(
       `.gantt-bar[data-row-index="${targetRowIndex}"], .gantt-milestone[data-row-index="${targetRowIndex}"]`,
     )
@@ -2502,7 +2542,7 @@ function setupBarDrag(
     const newStart = addDays(bar.start, daysDelta)
     const newEnd = addDays(bar.end, daysDelta)
 
-    const ok = await patchTask(bar.id, {
+    const ok = await patchTask(bar.original, {
       start_date: toISODate(newStart),
       end_date: toISODate(newEnd),
       due_date: toISODate(newEnd),
@@ -2651,7 +2691,7 @@ function setupResizeDrag(
         onComplete()
         return
       }
-      const ok = await patchTask(bar.id, { start_date: toISODate(newStart) })
+      const ok = await patchTask(bar.original, { start_date: toISODate(newStart) })
       if (ok) { bar.start = newStart; showToast("Start date updated") }
       else showToast("Failed to update start date", "error")
     } else {
@@ -2661,7 +2701,7 @@ function setupResizeDrag(
         onComplete()
         return
       }
-      const ok = await patchTask(bar.id, { end_date: toISODate(newEnd), due_date: toISODate(newEnd) })
+      const ok = await patchTask(bar.original, { end_date: toISODate(newEnd), due_date: toISODate(newEnd) })
       if (ok) { bar.end = newEnd; showToast("End date updated") }
       else showToast("Failed to update end date", "error")
     }
@@ -2711,7 +2751,7 @@ export function initTimelineController(signal: AbortSignal) {
   const emptyState = document.getElementById("timeline-empty")
   const skeleton = document.getElementById("timeline-skeleton")
 
-  if (!container || !dataEl) return
+  if (!container || !dataEl || container.dataset.timelineReady === "true") return
 
   let tasks: TimelineTask[] = []
   try {
@@ -2721,15 +2761,41 @@ export function initTimelineController(signal: AbortSignal) {
     return
   }
 
+  timelineSignal = signal
+  timelineWithheld = false
+  const clearPendingEdits = () => { pendingTimelineEdits.clear(); document.getElementById("timeline-pending-edits")?.remove() }
+  clearPendingEdits()
+  signal.addEventListener("abort", clearPendingEdits, { once: true })
+  // A focus check hides private content before it knows whether authority changed.
+  // Keep original actor/Board-bound proposals until verification proves otherwise.
+  document.addEventListener("meitheal:board-hidden", () => { timelineWithheld = true; document.getElementById("timeline-pending-edits")?.remove() }, { signal })
+  document.addEventListener("meitheal:board-revoked", event => {
+    const boardId = (event as CustomEvent<{ boardId?: string }>).detail?.boardId
+    if (!boardId || boardId === currentTaskApiContext()?.boardId) clearPendingEdits()
+  }, { signal })
+  document.addEventListener("meitheal:board-verified", () => {
+    timelineWithheld = false
+    const current = currentTaskApiContext()
+    for (const [id, entry] of pendingTimelineEdits) {
+      if (!current || current.boardId !== entry.context.boardId || current.actorKey !== entry.context.actorKey) pendingTimelineEdits.delete(id)
+      else entry.context = current
+    }
+    renderPendingTimelineEdits()
+  }, { signal })
+  window.addEventListener("pagehide", clearPendingEdits, { signal })
+  container.dataset.timelineReady = "true"
   const { dated: allBars, undated: allUndated } = mapTasks(tasks)
 
   // Load area name lookup from SSR data
   const areasEl = document.getElementById("timeline-areas")
-  if (areasEl) {
-    try { areaLookup = JSON.parse(areasEl.textContent || "{}") } catch { /* ignore */ }
+  try {
+    areaLookup = readAreaGroupLabels(areasEl?.textContent ?? "{}")
+  } catch {
+    areaLookup = new Map()
   }
 
   // Load project name lookup from SSR data
+  projectLookup = {}
   const projectsEl = document.getElementById("timeline-projects")
   if (projectsEl) {
     try { projectLookup = JSON.parse(projectsEl.textContent || "{}") } catch { /* ignore */ }
@@ -2761,7 +2827,7 @@ export function initTimelineController(signal: AbortSignal) {
       if (currentFilter.status === "overdue") {
         result = result.filter(t => t.is_overdue)
       } else {
-        result = result.filter(t => t.status === currentFilter.status)
+        result = result.filter(t => normalizeStatus(t.status) === currentFilter.status)
       }
     }
     if (currentFilter.priority) {
@@ -2779,7 +2845,12 @@ export function initTimelineController(signal: AbortSignal) {
   function doRender(zoom: ZoomLevel) {
     const bars = getVisibleBars()
     const undated = getVisibleUndated()
-    if (bars.length === 0 && undated.length === 0) {
+    const available = bars.length + undated.length > 0
+    if (sidebarToggle) {
+      sidebarToggle.disabled = !available
+      sidebarToggle.setAttribute("aria-expanded", String(available && showSidebar))
+    }
+    if (!available) {
       if (skeleton) skeleton.style.display = "none"
       if (emptyState) {
         emptyState.style.display = "flex"
@@ -2800,6 +2871,7 @@ export function initTimelineController(signal: AbortSignal) {
           }
         }
       }
+      sidebarToggle?.removeAttribute("aria-controls")
       container!.style.display = "none"
       return
     }
@@ -2807,6 +2879,7 @@ export function initTimelineController(signal: AbortSignal) {
     if (emptyState) emptyState.style.display = "none"
     container!.style.display = "flex"
     renderGantt(container!, bars, zoom, signal, undated, currentFilter.groupBy)
+    sidebarToggle?.setAttribute("aria-controls", "timeline-task-pane")
 
     // Update signal bar count — P8: aria-live for screen readers
     const countEl = document.querySelector("#tasks-view-timeline .signal-bar span")
@@ -2825,7 +2898,26 @@ export function initTimelineController(signal: AbortSignal) {
   const validZooms: ZoomLevel[] = ["Day", "Week", "Month"]
   let currentZoom: ZoomLevel = savedZoom && validZooms.includes(savedZoom) ? savedZoom : "Week"
 
+  const sidebarToggle = document.querySelector<HTMLButtonElement>("#timeline-sidebar-toggle")
+  const phoneViewport = window.matchMedia("(max-width: 640px)")
+  let sidebarPreference: boolean | undefined
+  try {
+    const saved = localStorage.getItem(SIDEBAR_PREFERENCE_KEY)
+    if (saved === "true" || saved === "false") sidebarPreference = saved === "true"
+  } catch { /* ignore */ }
+
+  function syncSidebar() {
+    showSidebar = sidebarPreference ?? !phoneViewport.matches
+  }
+
+  phoneViewport.addEventListener("change", () => {
+    if (sidebarPreference !== undefined) return
+    syncSidebar()
+    doRender(currentZoom)
+  }, { signal })
+
   // Initial render
+  syncSidebar()
   doRender(currentZoom)
 
   // Wire zoom dropdown (custom <details> dropdown instead of <select>)
@@ -2835,18 +2927,7 @@ export function initTimelineController(signal: AbortSignal) {
   /** Update the zoom dropdown label and active state */
   function updateZoomLabel(z: ZoomLevel) {
     if (zoomLabel) {
-      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
-      svg.setAttribute("width", "10")
-      svg.setAttribute("height", "6")
-      svg.setAttribute("viewBox", "0 0 10 6")
-      svg.setAttribute("fill", "none")
-      const path = document.createElementNS("http://www.w3.org/2000/svg", "path")
-      path.setAttribute("d", "M1 1l4 4 4-4")
-      path.setAttribute("stroke", "currentColor")
-      path.setAttribute("stroke-width", "1.5")
-      path.setAttribute("stroke-linecap", "round")
-      svg.appendChild(path)
-      zoomLabel.replaceChildren(document.createTextNode(`${z} `), svg)
+      zoomLabel.replaceChildren(document.createTextNode(`${z} `), createSpriteIconElement("chevron-down", { size: 12 }))
     }
     // Update active option styling
     document.querySelectorAll(".timeline-zoom-option").forEach((btn) => {
@@ -2875,15 +2956,12 @@ export function initTimelineController(signal: AbortSignal) {
     }, { signal })
   })
 
-  // Wire sidebar toggle button (⊞)
-  const sidebarToggle = document.getElementById("timeline-sidebar-toggle")
-  if (sidebarToggle) {
-    sidebarToggle.addEventListener("click", () => {
-      showSidebar = !showSidebar
-      try { localStorage.setItem("meitheal-gantt-show-sidebar", String(showSidebar)) } catch { /* ignore */ }
-      doRender(currentZoom)
-    }, { signal })
-  }
+  sidebarToggle?.addEventListener("click", () => {
+    sidebarPreference = !showSidebar
+    try { localStorage.setItem(SIDEBAR_PREFERENCE_KEY, String(sidebarPreference)) } catch { /* ignore */ }
+    syncSidebar()
+    doRender(currentZoom)
+  }, { signal })
 
   // M6: Listen for zoom keyboard shortcut dispatches
   window.addEventListener("meitheal:timeline-zoom", ((e: CustomEvent) => {
@@ -2897,7 +2975,7 @@ export function initTimelineController(signal: AbortSignal) {
   }) as EventListener, { signal })
 
   function applyFilters(): void {
-    const url = new URL(location.href)
+    const url = taskBackgroundUrl()
     for (const key of ["search", "status", "priority", "groupBy"] as const) {
       const value = currentFilter[key]
       if (value && value !== "none") url.searchParams.set(key, value)
@@ -2906,7 +2984,7 @@ export function initTimelineController(signal: AbortSignal) {
     if (currentFilter.types.length) url.searchParams.set("types", currentFilter.types.join(","))
     else url.searchParams.delete("types")
     url.searchParams.set("area", currentFilter.area)
-    history.replaceState(history.state, "", url)
+    replaceTaskBackgroundUrl(url)
     doRender(currentZoom)
   }
 
@@ -2951,8 +3029,8 @@ export function initTimelineController(signal: AbortSignal) {
   signal.addEventListener("abort", () => {
     renderAbort?.abort() // M4: Clean up per-render listeners
     renderAbort = null
+    delete container.dataset.timelineReady
     container.replaceChildren()
     hideTooltip()
-    clearToastTimers() // M3: Clean up toast timers
   })
 }

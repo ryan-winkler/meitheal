@@ -1,0 +1,120 @@
+---
+import { ensureSchema, getPersistenceClient } from "@domains/tasks"
+import { organizationLabelsFor } from "@lib/organization-labels"
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
+import type { OrganizationFeature } from "@lib/organization-availability"
+import { readCachedTaskDetailLayout } from "@lib/shell-settings-cache"
+import Icon from "../ui/Icon.astro"
+import { taskDetailSections } from "@lib/task-detail-layout"
+import { t, type Locale } from "../../i18n/translations"
+
+interface Props {
+  locale: Locale
+  scope?: "server" | "personal"
+  serverLayoutJson?: string | null
+  allowServerSave?: boolean
+}
+const {
+  locale,
+  scope = "personal",
+  serverLayoutJson: passedServerLayout,
+  allowServerSave = false,
+} = Astro.props
+let serverLayoutJson = passedServerLayout ?? null
+if (passedServerLayout === undefined && (scope === "server" || allowServerSave)) {
+  try {
+    const client = getPersistenceClient()
+    await ensureSchema()
+    serverLayoutJson = await readCachedTaskDetailLayout(client)
+  } catch { /* fallback to built-in layout defaults */ }
+}
+
+const organization = await organizationLabelsFor(Astro)
+const fieldFeatures: Partial<Record<string, OrganizationFeature>> = { area: "groups", project: "projects", pillar: "pillars", principle: "principles", "home-assistant-area": "home_assistant_area" }
+const fieldLabel = (id: string, fallback: string) => id === "area" ? organization("group")
+  : id === "project" ? organization("project") : id === "pillar" ? organization("pillar")
+  : id === "principle" ? organization("principle") : fallback
+const sections = taskDetailSections.map(section => ({
+  id: section.id,
+  label: section.label,
+  icon: section.icon,
+  ...("fields" in section && {
+    fields: section.fields
+      .filter(([id]) => !fieldFeatures[id] || available(fieldFeatures[id]!))
+      .map(([id, fallback]) => [id, fieldLabel(id, fallback)]),
+  }),
+}))
+---
+<div class="td-layout-editor" data-task-layout-editor
+  data-layout-scope={scope}
+  data-server-layout={serverLayoutJson ?? undefined}
+  data-layout-sections={JSON.stringify(sections)}
+  data-layout-fields-label={t("task_layout.fields", locale)}
+  data-layout-move-up={t("task_layout.move_up", locale)}
+  data-layout-move-down={t("task_layout.move_down", locale)}
+  data-moved={t("task_layout.moved", locale)}
+  data-reset={t("task_layout.reset_done", locale)}
+  data-save-failed={t("task_layout.save_failed", locale)}
+  data-drag-failed={t("task_layout.drag_failed", locale)}
+>
+  <div class="td-layout-scope td-layout-scope--personal">
+    <span class="td-layout-scope__badge" data-layout-scope-badge>Using server default</span>
+    <p>Changes here apply only to this browser and override the server default.</p>
+  </div>
+
+  <div class="td-layout-editor__intro">
+    <p>{t("task_layout.instructions", locale)}</p>
+    <div class="flex items-center gap-2 flex-wrap">
+      {allowServerSave && (
+        <button type="button" class="btn btn-secondary btn-sm" data-layout-save>
+          <Icon name="world" size={14} sprite />
+          <span>Save as server default</span>
+        </button>
+      )}
+      <button type="button" class="btn btn-secondary btn-sm" data-layout-reset>
+        <Icon name="refresh" size={14} sprite />
+        <span>{t("task_layout.reset", locale)}</span>
+      </button>
+    </div>
+  </div>
+  <p class="td-layout-editor__error" data-layout-error hidden></p>
+  <p class="sr-only" role="status" data-layout-status></p>
+  <ol class="td-layout-editor__list" data-layout-order="sections" aria-label={t("task_layout.sections", locale)}></ol>
+
+  <template data-layout-row>
+    <li class="td-layout-editor__item" data-layout-item>
+      <div class="td-layout-editor__row">
+        <span class="td-layout-editor__handle" data-layout-handle aria-hidden="true">
+          <Icon name="grip-vertical" size={18} sprite />
+        </span>
+        <span class="td-layout-editor__icon" data-layout-icon aria-hidden="true"></span>
+        <span class="td-layout-editor__label" data-layout-label></span>
+        <div class="td-layout-editor__actions">
+          <button type="button" class="td-layout-icon-btn" data-layout-rename title="Rename">
+            <Icon name="pencil" size={15} sprite />
+          </button>
+          <button type="button" class="td-layout-icon-btn" data-layout-toggle-vis aria-pressed="false" title="Hide">
+            <Icon name="eye" size={16} sprite class="td-layout-eye-on" />
+            <Icon name="eye-off" size={16} sprite class="td-layout-eye-off" />
+          </button>
+          <button type="button" class="td-layout-icon-btn" data-layout-move="up">
+            <Icon name="arrow-up" size={16} sprite />
+          </button>
+          <button type="button" class="td-layout-icon-btn" data-layout-move="down">
+            <Icon name="arrow-down" size={16} sprite />
+          </button>
+        </div>
+      </div>
+    </li>
+  </template>
+  <template data-layout-fields>
+    <details class="td-layout-editor__fields">
+      <summary>
+        <Icon name="chevron-down" size={15} sprite class="td-layout-editor__chevron" />
+        <span data-layout-fields-title></span>
+        <span class="td-layout-editor__count" data-layout-fields-count></span>
+      </summary>
+      <ol class="td-layout-editor__list" data-layout-order></ol>
+    </details>
+  </template>
+</div>

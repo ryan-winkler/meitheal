@@ -31,7 +31,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
         class="text-base font-semibold flex items-center gap-2 text-text-primary m-0"
         id="ask-ha-title"
       >
-        <Icon name="sparkles" size={20} class="text-accent" />
+        <Icon name="sparkles" size={20} class="text-accent" sprite={true} />
         <span>Ask Home Assistant</span>
       </h2>
       <div class="flex items-center gap-2">
@@ -66,7 +66,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     >
       <!-- Welcome message -->
       <div class="ask-welcome" id="ask-ha-welcome">
-        <Icon name="sparkles" size={32} class="text-accent" />
+        <Icon name="sparkles" size={32} class="text-accent" sprite={true} />
         <p class="ask-welcome__text">
           Ask about your tasks, create new ones, or check what's overdue.
         </p>
@@ -133,10 +133,19 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   import { createClientLogger } from "@lib/client-logger";
   import { pageLifecycle } from "@lib/page-lifecycle"
   import { fetchHaAgents, renderHaAgentOptions } from "@lib/ha-agent-picker"
-  import { renderSpriteIconSvg, type IconName } from "../../generated/icon-registry"
+  import { createSpriteIconElement, type IconName } from "../../generated/icon-registry"
 
   pageLifecycle.onPageLoad((pageSignal) => {
-  const runtime = window as unknown as { __meithealAskAssist?: AbortController }
+  const overlay = document.getElementById("ask-ha-overlay");
+  if (!overlay) return
+  const runtime = window as unknown as {
+    __meithealAskAssist?: AbortController
+    __meithealAskAssistBinding?: { overlay: HTMLElement; pageSignal: AbortSignal }
+  }
+  // Keep one binding during both initial lifecycle callbacks and HMR reevaluation.
+  const binding = runtime.__meithealAskAssistBinding
+  if (binding?.overlay === overlay && binding.pageSignal === pageSignal) return
+  runtime.__meithealAskAssistBinding = { overlay, pageSignal }
   runtime.__meithealAskAssist?.abort()
   runtime.__meithealAskAssist = new AbortController()
   const signal = AbortSignal.any([pageSignal, runtime.__meithealAskAssist.signal])
@@ -144,7 +153,6 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
   const log = createClientLogger("ai", "assist-modal");
   // Toast import removed — errors shown inline in chat bubbles
 
-  const overlay = document.getElementById("ask-ha-overlay");
   const closeBtn = document.getElementById("close-ask-ha-modal");
   const form = document.getElementById("ask-ha-form") as HTMLFormElement;
   const input = document.getElementById("ask-ha-input") as HTMLInputElement;
@@ -296,7 +304,7 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     if (!isUser && responseType) {
       const icon = document.createElement("span");
       icon.className = "ask-bubble__icon inline-flex items-center";
-      icon.innerHTML = renderSpriteIconSvg(getResponseIcon(responseType), { size: 15 });
+      icon.replaceChildren(createSpriteIconElement(getResponseIcon(responseType), { size: 15 }))
       icon.setAttribute("aria-hidden", "true");
       bubble.appendChild(icon);
     }
@@ -316,11 +324,11 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
     typing.className = "ask-typing";
     typing.id = "ask-typing-indicator";
     typing.setAttribute("aria-label", "Assistant is thinking");
-    typing.innerHTML = `
-      <span class="ask-typing__dot"></span>
-      <span class="ask-typing__dot"></span>
-      <span class="ask-typing__dot"></span>
-    `;
+    for (let i = 0; i < 3; i += 1) {
+      const dot = document.createElement("span")
+      dot.className = "ask-typing__dot"
+      typing.appendChild(dot)
+    }
     chatContainer.appendChild(typing);
     chatContainer.scrollTop = chatContainer.scrollHeight;
     return typing;

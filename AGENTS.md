@@ -205,7 +205,7 @@ Meitheal uses a **three-branch, two-channel release strategy** (see `docs/kcs/re
 | `main` | Beta channel (mostly unused) | **No** (explicit maintainer promotion only) | Staging / Beta |
 | `release` | Full production release (`meitheal-hub/`) | **No** (explicit maintainer release promotion only) | Strict SemVer `0.0.{digit}` (`stable`) |
 
-- **Canary (`dev`)**: Pushes to `dev` trigger `publish-canary-images.yml` (`build-only` multi-arch smoke checks). It must never automatically push to `main` or `release`.
+- **Canary (`dev`)**: Pushes to `dev` trigger the multi-arch smoke workflow. The release host publishes the exact candidate after a passing physical Green benchmark and prepares the App Store change for review. Canary does not push to the source `main` or `release` branches.
 - **Beta (`main`)**: Kept mostly unused; reserved for explicit maintainer beta promotion before full release.
 - **Stable (`release`)**: Only explicit maintainer promotions to `release` or matching `v*` tags trigger `publish-addon-images.yml`. The system validates version sync across manifests and builds multi-arch release images.
 - **SemVer Policy (Mandatory)**: Do not boost versions without explicit reason and maintainer approval. Keep versions on the `0.0.{one digit}` line (for example `0.0.1`) and increment strictly by `+0.0.1` via `node scripts/bump-version.mjs patch` unless explicitly told otherwise (`--force-semver`).
@@ -232,8 +232,20 @@ Changes **must** be verified in the correct environment tier before completion.
 ## KCS Rules
 
 - New behavior requires updated docs and a runbook touchpoint
-- ADRs capture architectural and legal/security decisions
+- Commit only durable Architecture Decision Records (ADRs) to `docs/decisions/` for lasting architectural, product, security, licensing, or bounded policy decisions; state technical rationale directly without citing individual agent runs
+- Keep non-ADR decision records, individual agent run logs, persona audits, review receipts, and working progress notes outside Git under `.planning/` — never inside `docs/`
 - Error messages should support self-service debugging
+
+## Design Engineering & UX Governance (Mandatory)
+
+All UI and UX changes must comply with [DESIGN.md](DESIGN.md) and [docs/kcs/design-principles.md](docs/kcs/design-principles.md):
+
+- **Tabler First**: Use Tabler icons (`src/generated/icon-registry.ts`), Tabler `nav-overflow`, Tabler modals, and Tabler `ThemeSettings.astro` visual SVG tiles (`96×64`) for appearance/layout pickers instead of raw dropdowns.
+- **Gestalt Principles**: Keep peer setting groups at the same top-level `SettingsPanelCard` hierarchy with unified `20px` spacing (never nest peer domains in touching disclosure boxes); match visual weight for peer buttons; elevate popovers (`z-index: 240–260`) so sticky headers never clip them.
+- **Nielsen's Heuristics & Kathy Sierra ("Badass")**: Avoid duplicate triggers/popovers (Profile opens Edit Profile directly; Keyboard utility on the right holds Edit Menu, Add Link, Shortcuts, Settings, Look & Feel, and Tour). Allow hiding *Settings* in navigation while keeping it permanently reachable in the Keyboard utility menu. Place workflow settings (such as *New task opens: Quick add vs Task form*) in their owning DDD section (*Tasks & Boards*).
+- **Interaction Craft (`emil-design-eng`) & Continuous Taste (`learn-taste`)**: Use `cubic-bezier(0.23, 1, 0.32, 1)` ease-out transitions, subtle `:active` press feedback (`scale(0.97–0.98)`), origin-aware popover entry, and `@media (prefers-reduced-motion: reduce)` fallbacks. Record recurring UI corrections in `DESIGN.md` as **Before / After / Why** entries.
+
+- **Local-First & Security (OWASP Top 10)**: Self-host all fonts locally, compute WCAG AA contrast tokens for dynamic accents and theme-matched avatars, enforce authorization checks before parsing request bodies, and keep `pnpm --filter @meitheal/web perf:budget` within baseline.
 
 ## Licensing Boundaries
 

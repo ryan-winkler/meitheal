@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { setTimeout } from "node:timers/promises"
 import { expect, test } from "@playwright/test"
+import { openDatabase } from "../../apps/web/scripts/database-client.mjs"
 import {
   FeedbackQueue,
   FEEDBACK_PAGE_SIZE,
@@ -12,10 +13,6 @@ import {
   MAX_FEEDBACK_RESERVED_BYTES,
   type VerifiedFeedbackActor,
 } from "../../apps/web/src/domains/support/feedback-queue"
-import {
-  getPersistenceClient,
-  resetPersistenceForTests,
-} from "../../apps/web/src/domains/tasks/persistence/store"
 
 const member: VerifiedFeedbackActor = { installationId: "install-a", actorId: "member", role: "member" }
 const admin: VerifiedFeedbackActor = { ...member, actorId: "admin", role: "admin" }
@@ -24,26 +21,21 @@ const payload = () => ({ submissionId: randomUUID(), category: "problem", messag
 const migration = new URL("../../apps/web/drizzle/migrations/0003_feedback_reports.sql", import.meta.url)
 
 const feedbackTest = test.extend<{
-  clients: { first: ReturnType<typeof getPersistenceClient>, second: ReturnType<typeof getPersistenceClient> }
+  clients: { first: ReturnType<typeof openDatabase>, second: ReturnType<typeof openDatabase> }
 }>({
   clients: async ({}, use) => {
     const directory = await mkdtemp(join(tmpdir(), "meitheal-feedback-"))
-    const previous = process.env.MEITHEAL_DB_URL
-    process.env.MEITHEAL_DB_URL = `file:${join(directory, "feedback.db")}`
-    resetPersistenceForTests()
-    const first = getPersistenceClient()
-    resetPersistenceForTests()
-    const second = getPersistenceClient()
-
+    const url = `file:${join(directory, "feedback.db")}`
+    let first: ReturnType<typeof openDatabase> | undefined
+    let second: ReturnType<typeof openDatabase> | undefined
     try {
+      first = openDatabase(url)
+      second = openDatabase(url)
       await first.executeMultiple(await readFile(migration, "utf8"))
       await use({ first, second })
     } finally {
-      second.close()
-      first.close()
-      resetPersistenceForTests()
-      if (previous === undefined) delete process.env.MEITHEAL_DB_URL
-      else process.env.MEITHEAL_DB_URL = previous
+      second?.close()
+      first?.close()
       await rm(directory, { recursive: true, force: true })
     }
   },

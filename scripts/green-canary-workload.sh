@@ -35,6 +35,10 @@ cycles=$3
 workdir=$(mktemp -d /dev/shm/meitheal-response.XXXXXX)
 trap 'unlink "$workdir/body" 2>/dev/null || true; rmdir "$workdir"' EXIT
 response="$workdir/body"
+session=$(curl --fail --silent --show-error --max-time 5 --dump-header - --output /dev/null "$origin/api/boards" |
+  awk 'tolower($1) == "x-meitheal-board-session:" { sub(/\r$/, "", $2); print $2 }')
+[[ "$session" =~ ^[a-f0-9]{64}$ ]]
+board_headers=(-H "X-Meitheal-Board-Id: household" -H "X-Meitheal-Board-Session: $session")
 run() {
   local operation=$1 expected=$2 path=$3
   shift 3
@@ -53,9 +57,9 @@ for ((i=1;i<=cycles;i+=1)); do
   run search 200 "/api/search?q=Green+fixture+task&scope=tasks"
   run open 200 "/api/tasks/$fixture_id"
   jq -e --arg id "$fixture_id" '.id == $id' "$response" >/dev/null
-  run create 201 /api/tasks --json "{\"title\":\"Green measured mutation $i\"}"
+  run create 201 /api/tasks "${board_headers[@]}" --json "{\"title\":\"Green measured mutation $i\"}"
   id=$(jq -er '.id' "$response")
-  run complete 200 "/api/tasks/$id" --request PATCH --json '{"status":"done"}'
+  run complete 200 "/api/tasks/$id" "${board_headers[@]}" --request PATCH --json '{"status":"done"}'
   run readback 200 "/api/tasks/$id"
   jq -e --arg id "$id" '.id == $id and .status == "complete"' "$response" >/dev/null
   sleep 2.5

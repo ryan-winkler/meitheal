@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test"
 import { shouldSkipBrowserSpecs } from "./_helpers"
+import { SETTINGS_SECTION_IDS } from "../../apps/web/src/lib/settings-section-ids"
 
 const sections = [
   ["look-and-feel-settings", "Look & Feel"],
@@ -68,7 +69,7 @@ test.describe("Settings Shell", () => {
     }
     await openSettings(page, "#appearance-settings")
     await expect(page.locator("#look-and-feel-settings")).toBeVisible()
-    await expect(page.locator("#appearance-settings > summary")).toBeFocused()
+    await expect(page.getByRole("heading", { name: "Look & Feel", exact: true, level: 2 })).toBeFocused()
   })
 
   test("agent handoff shows its current status and links to Review", async ({ page }) => {
@@ -148,7 +149,7 @@ test.describe("Settings Shell", () => {
     await expect(page.getByRole("heading", { name: "Look & Feel", exact: true })).toBeVisible()
     await toggle.press("Enter")
     await expect(toggle).toHaveAttribute("aria-expanded", "true")
-    await expect(directory.getByRole("link")).toHaveCount(10)
+    await expect(directory.getByRole("link")).toHaveCount(SETTINGS_SECTION_IDS.length)
   })
 
   test("search opens the destination integration and focuses its control", async ({ page }) => {
@@ -179,7 +180,7 @@ test.describe("Settings Shell", () => {
     await picker.focus()
     await picker.press("Enter")
     const directory = page.getByRole("navigation", { name: "Sections" })
-    await expect(directory.getByRole("link")).toHaveCount(10)
+    await expect(directory.getByRole("link")).toHaveCount(SETTINGS_SECTION_IDS.length)
     await page.keyboard.press("Tab")
     await expect(page.getByRole("button", { name: "Search settings" })).toBeFocused()
     await page.keyboard.press("Tab")

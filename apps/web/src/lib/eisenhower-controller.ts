@@ -20,6 +20,7 @@
  *   Q4 (not-now)    → urgency 1, importance 1
  */
 
+import { hydrateTaskAssignees } from "./task-assignee-display"
 import { STATUS, STATUS_LABELS } from "@lib/status-config"
 import { taskApi, type TaskPatchPayload } from "@lib/task-api-client"
 import { initPageShellNavigation } from "@lib/page-shell-controller"
@@ -84,6 +85,7 @@ export function initEisenhowerPage({ signal }: { signal: AbortSignal }) {
     if (host.__meithealEisenhowerController === owner) delete host.__meithealEisenhowerController
   }, { once: true })
   const lifecycle = controller.signal
+  void hydrateTaskAssignees(page, lifecycle)
 
   initPageShellNavigation({
     barId: "eisenhower-bar",
@@ -352,7 +354,23 @@ async function quadrantPatch(action: string, signal: AbortSignal): Promise<TaskP
     }
     case "assign-q3": {
       const assignee = await promptDialog({ title: "Assign Delegate Tasks", placeholder: "Assignee name", required: true, signal })
-      return assignee ? { assigned_to: assignee.trim() } : undefined
+      if (!assignee || signal.aborted) return undefined
+      try {
+        const directory = await taskApi.listUserDirectory(signal)
+        if (signal.aborted) return undefined
+        const entered = assignee.trim().toLocaleLowerCase()
+        const matches = directory.users.filter(user => user.id.toLocaleLowerCase() === entered ||
+          (user.display_name || user.name || "").trim().toLocaleLowerCase() === entered)
+        const unique = [...new Map(matches.map(user => [user.id, user])).values()]
+        if (unique.length !== 1) {
+          showToast(unique.length ? "More than one assignee has this name. Enter the exact assignee ID." : "No eligible assignee matches that name. Choose a current person or agent.", "error")
+          return undefined
+        }
+        return { assigned_to: unique[0]!.id }
+      } catch {
+        if (!signal.aborted) showToast("Could not verify assignees. No tasks were assigned.", "error")
+        return undefined
+      }
     }
     case "defer-q4": return { status: STATUS.BACKLOG }
     case "complete-q4": return { status: STATUS.COMPLETE }
@@ -397,6 +415,7 @@ async function updateQuadrant(page: HTMLElement, bar: HTMLElement, action: strin
     if (patch.status === STATUS.BACKLOG) {
       for (const task of saved) {
         task.dataset.status = STATUS.BACKLOG
+        task.removeAttribute("data-work-active")
         const badge = task.querySelector<HTMLElement>(".status-badge")
         if (!badge) continue
         badge.dataset.badgeStatus = STATUS.BACKLOG

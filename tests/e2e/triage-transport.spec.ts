@@ -1,3 +1,4 @@
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { createServer, request as proxyRequest, type IncomingMessage, type ServerResponse } from "node:http"
 import { expect, test, type APIRequestContext } from "@playwright/test"
 
@@ -99,8 +100,8 @@ test("the disposable proxy rejects alternate destinations and only forwards loca
   }
 })
 
-async function createBacklog(request: APIRequestContext, title: string) {
-  const result = await request.post("/api/tasks", { data: { title, status: "backlog" } })
+async function createBacklog(request: APIRequestContext, headers: Record<string, string>, title: string) {
+  const result = await request.post("/api/tasks", { headers, data: { title, status: "backlog" } })
   expect(result.status()).toBe(201)
   return (await result.json()).id as string
 }
@@ -110,7 +111,8 @@ async function setMode(request: APIRequestContext, value: string) {
 }
 
 test("an older worker cannot expose cached rows, even when the replacement takes control in place", async ({ browser, request, baseURL }) => {
-  const id = await createBacklog(request, "Cached repair from the old worker")
+  const boardHeaders = await currentBoardWriteHeaders(request, "household", {})
+  const id = await createBacklog(request, boardHeaders, "Cached repair from the old worker")
   let old = true
   const fixture = await proxy(baseURL!, (req, res) => {
     if (!old || req.url?.split("?")[0] !== "/sw.js") return false
@@ -170,12 +172,13 @@ test("an older worker cannot expose cached rows, even when the replacement takes
     await context.close()
     await fixture.close()
     await setMode(request, "visible")
-    expect((await request.delete(`/api/tasks/${id}`, { data: {} })).status()).toBe(204)
+    expect((await request.delete(`/api/tasks/${id}`, { headers: boardHeaders, data: {} })).status()).toBe(204)
   }
 })
 
 test("the decision deadline covers an incomplete conflict response body", async ({ browser, request, baseURL }) => {
-  const id = await createBacklog(request, "Decision deadline fixture")
+  const boardHeaders = await currentBoardWriteHeaders(request, "household", {})
+  const id = await createBacklog(request, boardHeaders, "Decision deadline fixture")
   let stalled = false
   const path = `/api/tasks/${id}`
   const fixture = await proxy(baseURL!, (req, res) => {
@@ -202,6 +205,6 @@ test("the decision deadline covers an incomplete conflict response body", async 
   } finally {
     await context.close()
     await fixture.close()
-    expect((await request.delete(path, { data: {} })).status()).toBe(204)
+    expect((await request.delete(path, { headers: boardHeaders, data: {} })).status()).toBe(204)
   }
 })

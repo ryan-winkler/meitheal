@@ -21,14 +21,16 @@ const OUTPUT_PATH = resolve(SCRIPT_DIR, "../src/generated/mcp-tools.json")
 
 /** Must match EXCLUDED_OPS in apps/web/src/pages/api/mcp.ts */
 export const EXCLUDED_OPS = new Set([
+  "getAgentContext", "getWorkDestinations", "saveWorkDestination",
   "reviewTaskProposal", "acceptTaskProposal",
   "createRule", "replaceRules", "updateRule", "deleteRule", "restoreRuleDefaults",
   "createFramework", "updateFramework", "deleteFramework",
   "useLabelCleanup",
   "updateLabel", "deleteLabel",
   "taskInactivity",
+  "readCalendarAgenda",
   "mcpEndpoint",
-  "getA2AAgentCard", "sendA2AMessage",
+  "getA2AAgentCard", "sendA2AMessage", "getA2ATask",
   "healthPing",
   "getRuntimeDiagnostics",
   "subscribeSSE",
@@ -39,6 +41,20 @@ export const EXCLUDED_OPS = new Set([
   "readTaskPins", "verifyTaskPinContext", "setTaskPin",
   "findCommentPeople", "useMentionInbox",
   "readTaskDraft", "verifyTaskDraftContext", "writeTaskDraft",
+  "checkPersonalPillarSession",
+  "checkSharedGoalProjection",
+  "listPrivateBoards", "listPrivateBoardRoutines", "listPrivateBoardDueWork", "verifyBoardDirectory", "createPrivateBoard", "getPrivateBoard", "verifyPrivateBoard", "changePrivateBoard",
+  "createPrivateBoardTicket", "changePrivateBoardTicket", "deletePrivateBoardTicket",
+  "createPrivateBoardIntake", "changePrivateBoardIntake", "listPrivateBoardIntakes", "submitPrivateBoardIntake",
+  "savePrivateBoardPlanning",
+  "getOrganizationFeatureAvailability", "saveOrganizationFeatureAvailability", "verifyOrganizationFeatureAdministration",
+  "verifyHomeAssistantAreaContext",
+  "sendHAAssist",
+  "getHouseholdTaskHomeAssistantArea", "setHouseholdTaskHomeAssistantArea",
+  "getNamedBoardTaskHomeAssistantArea", "setNamedBoardTaskHomeAssistantArea",
+  "getPersonalOrganizationLabels", "savePersonalOrganizationLabels", "verifyPersonalOrganizationLabels", "getHomeAssistantAreaChoices",
+  "listCustomFields", "updateCustomFields",
+  "listLanes", "createLane", "reorderLanes", "updateLane", "deleteLane",
 ])
 
 /** Must match FRIENDLY_NAMES in apps/web/src/pages/api/mcp.ts */
@@ -146,7 +162,7 @@ export function buildMcpCatalogFromYaml(specContent) {
       tools.push({
         name: toolName,
         description: toolName === "searchTasks"
-          ? "Search tasks by query text, status, priority, or assignee. Returns a clean list of matching tasks."
+          ? "Search tasks by query text, status, priority, task_kind, or assignee. Returns a clean list of matching tasks."
           : (op.description ?? op.summary ?? `${method.toUpperCase()} ${path}`),
         inputSchema: {
           type: "object",

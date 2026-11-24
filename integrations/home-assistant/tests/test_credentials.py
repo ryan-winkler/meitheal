@@ -28,7 +28,7 @@ from custom_components.meitheal.api import (
     MeithealResponseError,
     connection_origin,
 )
-from custom_components.meitheal.const import CONF_API_TOKEN, DOMAIN
+from custom_components.meitheal.const import CONF_API_TOKEN, CONF_BOARD_ID, DOMAIN
 from custom_components.meitheal.coordinator import MeithealCoordinator
 from custom_components.meitheal.diagnostics import async_get_config_entry_diagnostics
 
@@ -36,9 +36,18 @@ TOKEN = "mth_" + "a" * 64
 REPLACEMENT = "mth_" + "b" * 64
 HOST = "tasks.example.test"
 ORIGIN = f"https://{HOST}"
-CONNECTION = {CONF_HOST: HOST, CONF_PORT: 443, CONF_SSL: True}
+CONNECTION = {CONF_HOST: HOST, CONF_PORT: 443, CONF_SSL: True, CONF_BOARD_ID: "work"}
 PROBE = f"{ORIGIN}/api/tasks?limit=1"
 TASKS = f"{ORIGIN}/api/tasks"
+
+
+@pytest.fixture(autouse=True)
+def configured_board_metadata(aioclient_mock):
+    """Historical adapter cases use an explicit approved shared Board."""
+    for origin in [ORIGIN, "http://2e8c4a3f-meitheal-canary:3000"]:
+        aioclient_mock.get(origin + "/api/agent-context", json={
+            "boards": [{"id": "work", "name": "Work", "sharedEntityDelivery": True}], "enrollmentBoardId": "work"
+        })
 
 
 @pytest.mark.usefixtures("socket_enabled")
@@ -59,7 +68,7 @@ async def test_malformed_json_http_success_is_sanitized_without_announcing_creat
     remove_logbook = hass.bus.async_listen("logbook_entry", events.append)
     try:
         async with ClientSession() as session:
-            api = MeithealApi(session, server.make_url("").origin(), TOKEN)
+            api = MeithealApi(session, server.make_url("").origin(), TOKEN, "work")
             coordinator = MeithealCoordinator(hass, api)
             coordinator.async_request_refresh = AsyncMock()
             with pytest.raises(MeithealConnectionError) as failure:
@@ -81,7 +90,7 @@ def mock_entry(
     hass: HomeAssistant, data: dict[str, object], *, source: str = config_entries.SOURCE_USER
 ) -> MockConfigEntry:
     """Create an existing Meitheal entry."""
-    entry = MockConfigEntry(domain=DOMAIN, title="Meitheal", data=data, unique_id=DOMAIN, source=source)
+    entry = MockConfigEntry(domain=DOMAIN, title="Meitheal", data=data, unique_id=DOMAIN, source=source, version=2)
     entry.add_to_hass(hass)
     return entry
 
@@ -97,18 +106,16 @@ async def test_existing_entry_keeps_entity_after_enrollment(
 ) -> None:
     """Legacy use, credential enrollment, and authenticated polling share one entry."""
     entry = mock_entry(hass, CONNECTION)
-    aioclient_mock.get(TASKS, json={"tasks": [{"id": "one", "status": "complete"}]})
+    aioclient_mock.get(TASKS, json={"tasks": [{"id": "one", "status": "complete", "board_id": "work"}]})
     aioclient_mock.get("https://tasks.example.test/api/gamification", status=403)
     aioclient_mock.get(PROBE, json={"tasks": []})
     aioclient_mock.get("https://tasks.example.test/api/gamification", status=403)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    assert "Authorization" not in aioclient_mock.mock_calls[0][3]
-    assert aioclient_mock.mock_calls[0][3]["Origin"] == ORIGIN
     registry = er.async_get(hass)
-    entity_id = registry.async_get_entity_id("todo", DOMAIN, f"{entry.entry_id}_todo")
-    assert entity_id is not None
-    assert entry.runtime_data.data.active_count == 0
+    legacy = registry.async_get_or_create("todo", DOMAIN, f"{entry.entry_id}_todo", config_entry=entry)
+    entity_id = legacy.entity_id
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert aioclient_mock.call_count == 0
 
     flow = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_RECONFIGURE, "entry_id": entry.entry_id}
@@ -187,6 +194,7 @@ async def test_rejected_poll_opens_reauth_on_existing_entry(
     assert not await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     aioclient_mock.clear_requests()
+    aioclient_mock.get(ORIGIN + "/api/agent-context", json={"boards": [{"id": "work", "name": "Work", "sharedEntityDelivery": True}], "enrollmentBoardId": "work"})
     aioclient_mock.get(PROBE, json={"tasks": []})
     aioclient_mock.get("https://tasks.example.test/api/gamification", status=403)
     aioclient_mock.get(TASKS, json={"tasks": []})
@@ -196,7 +204,7 @@ async def test_rejected_poll_opens_reauth_on_existing_entry(
     assert flow["step_id"] == "reauth_confirm"
     assert TOKEN not in str(flow)
     result = await hass.config_entries.flow.async_configure(
-        flow["flow_id"], {CONF_API_TOKEN: REPLACEMENT}
+        flow["flow_id"], {CONF_API_TOKEN: REPLACEMENT, CONF_BOARD_ID: "work"}
     )
     assert result["reason"] == "reauth_successful"
     await hass.async_block_till_done()
@@ -226,7 +234,7 @@ async def test_reauth_cannot_save_token_after_concurrent_origin_change(
         side_effect=change_origin,
     ):
         result = await hass.config_entries.flow.async_configure(
-            flow["flow_id"], {CONF_API_TOKEN: REPLACEMENT}
+            flow["flow_id"], {CONF_API_TOKEN: REPLACEMENT, CONF_BOARD_ID: "work"}
         )
     assert result["reason"] == "configuration_changed"
     assert CONF_API_TOKEN not in entry.data
@@ -247,6 +255,7 @@ async def test_manual_http_refuses_token_before_request(
             CONF_PORT: 3000,
             CONF_SSL: False,
             CONF_API_TOKEN: TOKEN,
+            CONF_BOARD_ID: "work",
         },
     )
     assert result["errors"] == {"base": "insecure_connection"}
@@ -282,13 +291,13 @@ async def test_supervisor_discovery_only_uses_operator_token_for_installed_app(
         return_value=SimpleNamespace(addons=SimpleNamespace(addon_info=addon_info)),
     ):
         result = await hass.config_entries.flow.async_configure(
-            flow["flow_id"], {CONF_API_TOKEN: REPLACEMENT}
+            flow["flow_id"], {CONF_API_TOKEN: REPLACEMENT, CONF_BOARD_ID: "work"}
         )
         assert result["errors"] == {"base": "insecure_connection"}
         assert aioclient_mock.call_count == 0
         addon_info.return_value = SimpleNamespace(hostname=reported_host)
         result = await hass.config_entries.flow.async_configure(
-            flow["flow_id"], {CONF_API_TOKEN: REPLACEMENT}
+            flow["flow_id"], {CONF_API_TOKEN: REPLACEMENT, CONF_BOARD_ID: "work"}
         )
         await hass.async_block_till_done()
     assert result["type"] is FlowResultType.CREATE_ENTRY
@@ -313,7 +322,7 @@ async def test_transport_blocks_redirects_and_omits_token_from_health(aiohttp_se
     app.router.add_get("/api/{resource}", collect)
     server = await aiohttp_server(app)
     async with ClientSession() as session:
-        api = MeithealApi(session, server.make_url("").origin(), TOKEN)
+        api = MeithealApi(session, server.make_url("").origin(), TOKEN, "work")
         await api.async_request("GET", "/api/health")
         with pytest.raises(MeithealResponseError, match="HTTP 302"):
             await api.async_request("GET", "/api/tasks")

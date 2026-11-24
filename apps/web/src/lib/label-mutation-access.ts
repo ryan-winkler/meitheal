@@ -1,33 +1,31 @@
-import { verifyCurrentHAAdministrator } from "@domains/ha/current-admin"
-import { canManageSystemSettings } from "./settings-security"
-import { verifiedIngressUser } from "./verified-ingress-user"
+import { verifyCurrentHAAdministrator } from "@domains/ha"
+import { getPersistenceClient, scopePermits, validateBoardScope, type BoardScope } from "@domains/tasks"
 
 export const labelMutationHeaders = { "cache-control": "private, no-store" }
-
 export function labelMutationFailure(status: number, errorCode: string, detail: string) {
   return Response.json({ ok: false, errorCode, detail }, { status, headers: labelMutationHeaders })
 }
 
-export function labelMutationContextFailure(request: Request, locals: App.Locals) {
+export function labelMutationContextFailure(request: Request, locals: App.Locals, scope: BoardScope) {
   if (request.signal.aborted) return labelMutationFailure(499, "cancelled", "The label change was cancelled.")
-  const user = verifiedIngressUser(locals)
-  if (!canManageSystemSettings(request, locals) || locals.agentToken ||
-      (process.env.SUPERVISOR_TOKEN && (!user || !locals.ingressPath))) {
-    return labelMutationFailure(403, "denied", "Open Labels with a current Home Assistant administrator account or a local standalone operator session.")
+  if (locals.agentToken || !["ha_user", "local_operator"].includes(scope.principal.kind) ||
+    !scopePermits(scope, { resource: "board", action: "manage" })) {
+    return labelMutationFailure(403, "denied", "Manage this Board to change its label definitions.")
   }
   return null
 }
 
-/** Run after bounded body parsing, immediately before repository work. */
-export async function requireLabelMutationAdministrator(request: Request, locals: App.Locals) {
-  const denied = labelMutationContextFailure(request, locals)
+/** Recheck Board authority and the current Core role used for Household management. */
+export async function requireLabelBoardManager(request: Request, locals: App.Locals, scope: BoardScope) {
+  const denied = labelMutationContextFailure(request, locals, scope)
   if (denied) return denied
-  const user = verifiedIngressUser(locals)
-  if (user) {
-    const current = await verifyCurrentHAAdministrator(user.id, request.signal)
+  if (scope.boardId === "household" && scope.principal.kind === "ha_user") {
+    const status = await verifyCurrentHAAdministrator(scope.principal.id, request.signal)
     if (request.signal.aborted) return labelMutationFailure(499, "cancelled", "The label change was cancelled.")
-    if (current === "unavailable") return labelMutationFailure(503, "unavailable", "Home Assistant could not verify administrator access. Try again.")
-    if (current !== "allowed") return labelMutationFailure(403, "denied", "Only a current Home Assistant administrator can change shared labels.")
+    if (status === "unavailable") return labelMutationFailure(503, "unavailable", "Home Assistant could not verify administrator access. Try again.")
+    if (status === "denied") return labelMutationFailure(403, "denied", "Only a current Home Assistant administrator can change Household labels.")
   }
-  return null
+  const current = await validateBoardScope(scope, getPersistenceClient(), { resource: "board", action: "manage" })
+  return current.ok ? null : labelMutationFailure(current.errorCode === "stale" ? 409 : current.errorCode === "continuity_locked" ? 503 : 403,
+    current.errorCode, "Board access changed. Refresh Labels before continuing.")
 }

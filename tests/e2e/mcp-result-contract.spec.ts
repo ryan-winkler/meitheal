@@ -1,4 +1,4 @@
-import { execFileSync, fork } from "node:child_process"
+import { execFileSync, fork } from "../helpers/isolated-process"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -6,12 +6,15 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, test } from "@playwright/test"
 
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
+
 test("scoped MCP resolves native schemas and rejects false mutation successes", async ({ playwright }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and disposable ingress")
   const work = await mkdtemp(join(tmpdir(), "meitheal-mcp-results-"))
   const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
   const env = { PATH: process.env.PATH, NODE_ENV: "production", MEITHEAL_DB_URL: `file:${join(work, "result.db")}`, MEITHEAL_TEST_CORE_USER_LOOKUP: "1" }
-  const api = await playwright.request.newContext()
+  const api = await playwright.request.newContext({ extraHTTPHeaders: {} })
+  const agentApi = await playwright.request.newContext({ extraHTTPHeaders: {} })
   let child: ReturnType<typeof fork> | undefined
   try {
     execFileSync(process.execPath, ["scripts/migrate.mjs"], { cwd: web, env })
@@ -19,15 +22,17 @@ test("scoped MCP resolves native schemas and rejects false mutation successes", 
     const [info] = await once(child, "message", { signal: AbortSignal.timeout(10_000) })
     const origin = `http://127.0.0.1:${info.port}`
     const base = origin + info.configuredPath
-    const enrolled = await api.post(base + "/api/agent-tokens", { headers: { origin, cookie: "feedback-fixture=admin" }, data: { name: "MCP result fixture", scopes: ["mcp:execute", "tasks:read", "tasks:write", "tasks:delete", "search:read"] } })
+    const owner = await currentBoardWriteHeaders(api, "household", { origin, cookie: "feedback-fixture=admin" }, base)
+    const enrolled = await api.post(base + "/api/agent-tokens", { headers: owner, data: { name: "MCP result fixture", scopes: ["mcp:execute", "tasks:read", "tasks:write", "tasks:delete", "search:read"] } })
     expect(enrolled.status()).toBe(201)
     const { token } = await enrolled.json()
-    const headers = { origin, authorization: `Bearer ${token}`, "content-type": "application/json" }
+    const headers = { authorization: `Bearer ${token}`, "x-meitheal-board-id": "household", "content-type": "application/json" }
+    expect((await agentApi.get(base + "/api/tasks", { headers })).status()).toBe(403)
     const rpc = async (method: string, params?: Record<string, unknown>, modern = false) => {
       const version = "2026-07-28"
-      const modernHeaders = modern ? { "mcp-protocol-version": version, "mcp-method": method, "mcp-name": String(params?.name ?? "") } : {}
+      const modernHeaders: Record<string, string> = modern ? { "mcp-protocol-version": version, "mcp-method": method, "mcp-name": String(params?.name ?? "") } : {}
       const supplied = modern ? { ...params, _meta: { "io.modelcontextprotocol/protocolVersion": version, "io.modelcontextprotocol/clientCapabilities": {} } } : params
-      const response = await api.post(base + "/api/mcp", { headers: { ...headers, ...modernHeaders }, data: { jsonrpc: "2.0", id: 1, method, params: supplied } })
+      const response = await agentApi.post(origin + "/api/mcp", { headers: { ...headers, ...modernHeaders }, data: { jsonrpc: "2.0", id: 1, method, params: supplied } })
       expect(response.status()).toBe(200)
       return response.json()
     }
@@ -46,7 +51,7 @@ test("scoped MCP resolves native schemas and rejects false mutation successes", 
     const unique = `MCPResult${crypto.randomUUID().replaceAll("-", "")}`
     try {
       for (const suffix of ["heating", "garden"]) {
-        const created = await api.post(base + "/api/tasks", { headers, data: { title: `${unique} ${suffix}`, description: `${unique} privateboundary` } })
+        const created = await agentApi.post(origin + "/api/tasks", { headers, data: { title: `${unique} ${suffix}`, description: `${unique} privateboundary` } })
         expect(created.status()).toBe(201)
         owned.push((await created.json()).id)
       }
@@ -77,11 +82,11 @@ test("scoped MCP resolves native schemas and rejects false mutation successes", 
           expect(JSON.stringify(scoped)).not.toContain(unique)
         }
       }
-      const retained = await api.get(base + `/api/tasks/${owned[0]}`, { headers })
+      const retained = await agentApi.get(origin + `/api/tasks/${owned[0]}`, { headers })
       expect(await retained.json()).toMatchObject({ status: "pending" })
     } finally {
       for (const id of owned) {
-        const removed = await api.delete(base + `/api/tasks/${id}`, { headers })
+        const removed = await agentApi.delete(origin + `/api/tasks/${id}`, { headers })
         expect(removed.status(), await removed.text()).toBe(204)
       }
     }
@@ -129,6 +134,7 @@ test("scoped MCP resolves native schemas and rejects false mutation successes", 
     await setResult({ status: 200, body: '{"id":"result-fixture","ticket_key":"MTH-42","status":"complete"}' })
     expect((await rpc("tools/call", { name: "completeTask", arguments: { id: "MTH-42" } })).result.isError).toBe(false)
   } finally {
+    await agentApi.dispose()
     await api.dispose()
     if (child && child.exitCode === null) {
       const stopped = once(child, "exit")

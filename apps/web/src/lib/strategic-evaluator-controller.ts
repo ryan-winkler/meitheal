@@ -1,7 +1,14 @@
-import { evaluateFrameworkFormula, isFrameworkFieldOptions, validateFrameworkScoring, type FrameworkConfig } from "@meitheal/domain-strategy"
+import { evaluateFrameworkFormulaDecimal, isFrameworkFieldOptions, validateFrameworkScoring, type FrameworkConfig } from "@meitheal/domain-strategy"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { escapeHtml } from "@lib/safe-html"
-import { frameworkPayloadObject as asFrameworkPayload, RICE_FIELDS, riceLensScore, readRiceInputs } from "@lib/rice-lens"
+import {
+  detectLegacyConfidenceFraction,
+  formatRiceFormulaBreakdown,
+  frameworkPayloadObject as asFrameworkPayload,
+  parseRiceInputs,
+  RICE_FIELDS,
+  readRiceAssessment,
+  riceLensScore,
+} from "@lib/rice-lens"
 
 export interface StrategicLensSession {
   signal: AbortSignal
@@ -35,8 +42,8 @@ function isCheckbox(field: Field): boolean {
   return field.type === "boolean" || field.ui_type === "checkbox"
 }
 
-function minimum(field: Field, frameworkId: string): number | undefined {
-  return frameworkId === "rice" && field.key === "effort" ? 0.01 : field.min
+function minimum(field: Field, _frameworkId: string): number | undefined {
+  return field.min
 }
 
 function suggestedValue(field: Field, value: unknown, frameworkId: string): string | number | boolean | undefined {
@@ -127,6 +134,8 @@ pageLifecycle.onPageLoad(signal => {
   const panel = document.querySelector<HTMLElement>("#strategic-evaluator-inline")
   const select = panel?.querySelector<HTMLSelectElement>("#se-framework")
   const form = panel?.querySelector<HTMLFormElement>("#se-form")
+  const legacyBanner = panel?.querySelector<HTMLElement>("#se-legacy-banner")
+  const formulaPreview = panel?.querySelector<HTMLElement>("#se-formula-preview")
   const fields = panel?.querySelector<HTMLFieldSetElement>("#se-fields")
   const content = panel?.querySelector<HTMLElement>("#se-content")
   const output = panel?.querySelector<HTMLOutputElement>("#se-live-result")
@@ -141,6 +150,7 @@ pageLifecycle.onPageLoad(signal => {
   let persisted: Record<string, unknown> = {}
   let payload: Record<string, unknown> = {}
   let renderedFrameworkId = ""
+  const resolvedLegacyScale = new Set<string>()
   let lifetime = new AbortController()
   let taskSignal = signal
   let saveEvaluation: StrategicLensSession["save"] | undefined
@@ -150,10 +160,18 @@ pageLifecycle.onPageLoad(signal => {
   const framework = () => frameworks.find(item => item.id === select.value)
   function scoreFields(selected: Framework, values: Record<string, unknown>): number | null {
     if (selected.id === "rice") {
-      const inputs = readRiceInputs({ rice: values })
+      const inputs = parseRiceInputs(values)
       return inputs ? riceLensScore(inputs) : null
     }
-    return selected.data.formula ? evaluateFrameworkFormula(selected.data.formula, values) : null
+    if (selected.id === "drice") {
+      const effort = Number(values.effort)
+      const deps = Number(values.dependencies)
+      const conf = Number(values.confidence)
+      if (!Number.isFinite(effort) || effort <= 0 || !Number.isFinite(deps) || deps <= 0 || !Number.isFinite(conf) || conf < 0 || conf > 100) {
+        return null
+      }
+    }
+    return selected.data.formula ? evaluateFrameworkFormulaDecimal(selected.data.formula, values) : null
   }
   function readFields(): Record<string, unknown> {
     const values: Record<string, unknown> = Object.create(null)
@@ -166,20 +184,71 @@ pageLifecycle.onPageLoad(signal => {
 
   function unsupportedScoring(selected: Framework): string | undefined {
     const formula = selected.data.formula
-    return validateFrameworkScoring(selected.data.fields, selected.id === "rice" && typeof formula === "string" ? undefined : formula)[0]
+    return validateFrameworkScoring(selected.data.fields, formula)[0]
   }
   const scoringError = "This framework has unsupported scoring settings. Ask an administrator to correct its formula, bounds, or options in the Rules & Lenses export."
+
+  function updateLegacyBanner(selected: Framework, values: Record<string, unknown>): void {
+    if (!legacyBanner) return
+    legacyBanner.replaceChildren()
+    legacyBanner.hidden = true
+    if ((selected.id !== "rice" && selected.id !== "drice") || resolvedLegacyScale.has(selected.id)) return
+    const legacy = detectLegacyConfidenceFraction(values)
+    if (!legacy) return
+    const { legacyConfidence: rawConf, suggestedPercent: suggested } = legacy
+    const msg = document.createElement("div")
+    msg.textContent = `Legacy Confidence value (${rawConf}) detected. Confirm whether this means ${suggested}% or ${rawConf}%:`
+    const actions = document.createElement("div")
+    actions.className = "d-flex gap-2 mt-2"
+    const convBtn = document.createElement("button")
+    convBtn.type = "button"
+    convBtn.className = "btn btn-sm btn-warning"
+    convBtn.textContent = `Convert to ${suggested}%`
+    convBtn.addEventListener("click", () => {
+      const confInput = content!.querySelector<HTMLInputElement>('input[name="confidence"]')
+      if (confInput) confInput.value = String(suggested)
+      resolvedLegacyScale.add(selected.id)
+      legacyBanner.hidden = true
+      preview()
+    }, { signal })
+    const keepBtn = document.createElement("button")
+    keepBtn.type = "button"
+    keepBtn.className = "btn btn-sm btn-outline"
+    keepBtn.textContent = `Keep as ${rawConf}%`
+    keepBtn.addEventListener("click", () => {
+      resolvedLegacyScale.add(selected.id)
+      legacyBanner.hidden = true
+      preview()
+    }, { signal })
+    actions.append(convBtn, keepBtn)
+    legacyBanner.append(msg, actions)
+    legacyBanner.hidden = false
+  }
 
   function preview() {
     const selected = framework()
     if (!selected) return
     if (unsupportedScoring(selected)) {
       output!.textContent = scoringError
+      if (formulaPreview) formulaPreview.textContent = ""
       return
     }
-    const score = scoreFields(selected, readFields())
+    const vals = readFields()
+    const score = scoreFields(selected, vals)
     output!.textContent = selected.data.formula ? score === null ? "Enter valid estimates to calculate a score" : `Score: ${score}`
       : "Save your framework evaluation"
+    if (formulaPreview) {
+      if (selected.id === "rice" && score !== null) {
+        const parsed = parseRiceInputs(vals)
+        formulaPreview.textContent = parsed ? `Formula: ${formatRiceFormulaBreakdown(parsed, score)}` : ""
+      } else if (selected.id === "drice" && score !== null) {
+        formulaPreview.textContent = `Formula: (${vals.reach} × ${vals.impact} × ${vals.confidence}%) ÷ (${vals.effort} × ${vals.dependencies}) = ${score}`
+      } else if (selected.data.formula) {
+        formulaPreview.textContent = `Formula: ${selected.data.formula}`
+      } else {
+        formulaPreview.textContent = ""
+      }
+    }
   }
 
   function render() {
@@ -188,6 +257,7 @@ pageLifecycle.onPageLoad(signal => {
     const values = asFrameworkPayload(payload[selected.id])
     renderedFrameworkId = selected.id
     content!.replaceChildren(...selected.data.fields.map(field => renderField(field, values[field.key], selected.id)))
+    updateLegacyBanner(selected, values)
     preview()
   }
 
@@ -204,9 +274,10 @@ pageLifecycle.onPageLoad(signal => {
     renderedFrameworkId = ""
     persisted = parsePayload(raw)
     payload = { ...persisted }
+    resolvedLegacyScale.clear()
     if (!payload.rice) {
-      const legacyRice = readRiceInputs(payload)
-      if (legacyRice) payload.rice = legacyRice
+      const legacyAssessment = readRiceAssessment(payload)
+      if (legacyAssessment.status !== "unscored") payload.rice = legacyAssessment.inputs
     }
     select.disabled = true
     fields.disabled = true
@@ -304,7 +375,13 @@ pageLifecycle.onPageLoad(signal => {
         status.textContent = "This framework's saved evaluation changed. Your estimates are still here. Reopen the ticket to review the latest values."
         return
       }
-      latest[selected.id] = { ...asFrameworkPayload(latest[selected.id]), ...values, ...(score === null ? {} : { score }), _evaluatedAt: new Date().toISOString() }
+      latest[selected.id] = {
+        ...asFrameworkPayload(latest[selected.id]),
+        ...values,
+        ...(selected.id === "rice" || selected.id === "drice" ? { confidence_unit: "percent" } : {}),
+        ...(score === null ? {} : { score }),
+        _evaluatedAt: new Date().toISOString(),
+      }
       const encoded = JSON.stringify(latest)
       const updatedAt = task.task_version
       if (!Number.isSafeInteger(updatedAt) || updatedAt < 0) throw new Error("Missing task version")

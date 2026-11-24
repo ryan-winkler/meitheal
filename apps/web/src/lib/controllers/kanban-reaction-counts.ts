@@ -33,7 +33,8 @@ export function initKanbanReactionCounts(board: HTMLElement, signal: AbortSignal
         const count = Object.hasOwn(counts, id) ? counts[id] ?? 0 : 0
         for (const badge of badges.get(id) ?? []) {
           badge.hidden = count <= 0
-          badge.textContent = count > 0 ? String(count) : ""
+          const valueEl = badge.querySelector<HTMLElement>("[data-reaction-count-value]") ?? badge
+          valueEl.textContent = count > 0 ? String(count) : ""
           if (count > 0) badge.setAttribute("aria-label", board.dataset.reactionCountLabel?.replace("{count}", String(count)) ?? "")
           else badge.removeAttribute("aria-label")
         }

@@ -26,7 +26,7 @@ test("Feedback cancels stalled producers at five seconds and on request abort", 
 })
 
 test("Feedback bounds bytes and cancels early media and declared-length failures", async () => {
-  for (const headers of [{ "content-type": "text/plain" }, { "content-length": "8193" }]) {
+  for (const headers of [{ "content-type": "text/plain" }, { "content-length": "8193" }] as Record<string, string>[]) {
     let cancelled = false
     const request = streamingRequest(new ReadableStream({ cancel() { cancelled = true } }), headers)
     const result = await readFeedbackJson(request)

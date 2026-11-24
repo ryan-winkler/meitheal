@@ -4,17 +4,19 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
-import { expect, test, type Browser, type Page } from "@playwright/test"
+import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test"
 import { commentPersonKey } from "../../apps/web/src/lib/comment-mention-request"
 import { commentMentionToken } from "../../apps/web/src/lib/comment-mentions"
-import { launchPinBrowser, pinRequest, startCoreFixture } from "../scripts/task-pins-fixture"
+import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
-test("only new verified human comments advance a spike across both comment writers", async () => {
+test("only new verified human comments advance a spike across both comment writers", async ({ playwright }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built app and HTTPS ingress fixture")
   const work = await mkdtemp(join(tmpdir(), "meitheal-stall-comments-"))
   const child = startCoreFixture(work)
   child.stdout?.resume()
   child.stderr?.resume()
+  let native!: APIRequestContext
   let browser: Browser | undefined
   let db: DatabaseSync | undefined
   try {
@@ -30,16 +32,19 @@ test("only new verified human comments advance a spike across both comment write
       return page
     }))
     const [admin, member] = pages as [Page, Page]
-    const created = await pinRequest(admin, prefix + "/api/tasks", "POST", { title: "Stall comment provenance" })
-    expect(created.status).toBe(201)
-    const taskId = created.body.id as string
+    const adminProof = await currentBoardWriteHeaders(admin.request, "household", { origin }, origin + prefix)
+    const memberProof = await currentBoardWriteHeaders(member.request, "household", { origin }, origin + prefix)
+    native = await playwright.request.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {} })
+    const created = await admin.request.post(origin + prefix + "/api/tasks", { headers: adminProof, data: { title: "Stall comment provenance", area_id: "default" } })
+    expect(created.status()).toBe(201)
+    const taskId = (await created.json()).id as string
     const path = prefix + "/api/tasks/" + taskId + "/comments"
     db = new DatabaseSync(join(work, "pins.db"))
     db.exec("PRAGMA busy_timeout = 3000")
-    db.exec("INSERT INTO task_inactivity_policy (scope, area_id, days, revision) VALUES ('default', NULL, 30, lower(hex(randomblob(16))))")
+    db.exec("INSERT INTO task_inactivity_policy (board_id, scope, area_id, days, revision) VALUES ('household', 'default', NULL, 30, lower(hex(randomblob(16))))")
     const readSpike = () => db!.prepare("SELECT last_activity_spike_at AS spike FROM tasks WHERE id = ?").get(taskId)?.spike
     const readComments = () => db!.prepare("SELECT id, inactivity_spike_human AS human FROM comments WHERE task_id = ? ORDER BY id").all(taskId)
-    const headers = { origin, "sec-fetch-site": "same-origin", "sec-fetch-mode": "same-origin" }
+    const headers = { ...adminProof, origin, "sec-fetch-site": "same-origin", "sec-fetch-mode": "same-origin" }
     const cachedKey = randomUUID()
     const plain = () => admin.request.post(origin + path, {
       headers: { ...headers, "idempotency-key": cachedKey }, data: { content: "First ordinary comment" },
@@ -59,10 +64,9 @@ test("only new verified human comments advance a spike across both comment write
       await expect(picker).toHaveAttribute("data-person-context", /^[A-Za-z0-9_-]{43}$/)
       contexts.push((await picker.getAttribute("data-person-context"))!)
     }
-    const secondAttempt = `${Date.now()}.${randomUUID()}`
     const second = await admin.request.post(origin + path, {
-      headers: { ...headers, referer: admin.url(), "x-meitheal-mention-context": contexts[0]!, "x-meitheal-comment-attempt": secondAttempt },
-      data: { content: "Second ordinary comment through a durable attempt" },
+      headers,
+      data: { content: "Second ordinary comment through the plain writer" },
     })
     expect(second.status(), await second.text()).toBe(201)
     expect(readComments().map(row => row.human)).toEqual([1, 1])
@@ -70,7 +74,7 @@ test("only new verified human comments advance a spike across both comment write
 
     const thirdAttempt = `${Date.now()}.${randomUUID()}`
     const content = "A mentioned reply " + commentMentionToken(commentPersonKey("fixture-admin"), "Admin")
-    const mentionHeaders = { ...headers, referer: member.url(), "x-meitheal-mention-context": contexts[1]!, "x-meitheal-comment-attempt": thirdAttempt }
+    const mentionHeaders = { ...headers, ...memberProof, referer: member.url(), "x-meitheal-mention-context": contexts[1]!, "x-meitheal-comment-attempt": thirdAttempt }
     const third = await member.request.post(origin + path, { headers: mentionHeaders, data: { content } })
     expect(third.status(), await third.text()).toBe(201)
     const thirdBody = await third.json()
@@ -92,8 +96,8 @@ test("only new verified human comments advance a spike across both comment write
     })
     expect(tokenResponse.status()).toBe(201)
     const { token } = await tokenResponse.json()
-    const automated = await admin.request.post(origin + "/api/tasks/" + taskId + "/comments", {
-      headers: { authorization: `Bearer ${token}` }, data: { content: "An automated comment" },
+    const automated = await native.post(origin + "/api/tasks/" + taskId + "/comments", {
+      headers: { authorization: `Bearer ${token}`, "x-meitheal-board-id": "household" }, data: { content: "An automated comment" },
     })
     expect(automated.status()).toBe(201)
     expect(readComments().map(row => row.human)).toEqual([1, 1, 1, 0])
@@ -116,6 +120,7 @@ test("only new verified human comments advance a spike across both comment write
     expect(readComments()).toHaveLength(3)
     expect(readSpike()).toBe(preservedSpike)
   } finally {
+    await native?.dispose()
     db?.close()
     await browser?.close()
     if (child.exitCode === null && child.signalCode === null) {

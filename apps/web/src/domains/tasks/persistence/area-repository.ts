@@ -1,3 +1,9 @@
+import { planningVisible } from "./board-work-query"
+import { requireBoardScope, type BoardScope, type WorkAction } from "../board-scope"
+import { boardOperationClient } from "./board-operation-client"
+import { ownedPlanning } from "./board-storage"
+import { HierarchyRepository } from "./hierarchy-repository"
+import { sql, sourceSql, joinSql } from "./sql-fragment"
 /**
  * AreaRepository — domain service for area-related database queries.
  * @domain Task Management (Areas context)
@@ -28,69 +34,24 @@ export interface AreaRow {
 }
 
 export class AreaRepository {
-  constructor(private client: Client) {}
-
-  /** List all areas ordered by position */
+  constructor(private readonly client: Client, private readonly scope: BoardScope) { requireBoardScope(scope) }
+  private db(action: WorkAction = "read") { return boardOperationClient(this.client, this.scope, { resource: "area", action }) }
   async findAll(): Promise<AreaRow[]> {
-    const result = await this.client.execute(
-      "SELECT id, name, icon, color, position, created_at, updated_at FROM areas ORDER BY position ASC, created_at ASC"
-    )
+    const result = await this.db().execute(sql`SELECT * FROM areas WHERE ${ownedPlanning(this.scope, "areas")} AND ${planningVisible(this.scope, "areas")} AND retired_at IS NULL ORDER BY position, created_at`)
     return result.rows as unknown as AreaRow[]
   }
-
-  /** Count total areas (for abuse limits) */
-  async count(): Promise<number> {
-    const result = await this.client.execute("SELECT COUNT(*) as c FROM areas")
-    return Number(result.rows[0]?.c || 0)
+  async count(): Promise<number> { return new HierarchyRepository(this.client, this.scope).countAreas() }
+  async getNextPosition(): Promise<number> { return new HierarchyRepository(this.client, this.scope).getNextAreaPosition() }
+  async create(data: { id: string; name: string; icon: string; color: string; position: number }): Promise<void> {
+    return new HierarchyRepository(this.client, this.scope).createArea(data)
   }
-
-  /** Get the next available position */
-  async getNextPosition(): Promise<number> {
-    const result = await this.client.execute("SELECT COALESCE(MAX(position), 0) + 1 as next_pos FROM areas")
-    return Number(result.rows[0]?.next_pos ?? 0)
-  }
-
-  /** Insert a new area */
-  async create(data: {
-    id: string; name: string; icon: string; color: string; position: number
-  }): Promise<void> {
-    const now = Date.now()
-    await this.client.execute({
-      sql: "INSERT INTO areas (id, name, icon, color, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      args: [data.id, data.name, data.icon, data.color, data.position, now, now],
-    })
-  }
-
-  /** Dynamic update — only SET the columns present in `fields` */
   async update(id: string, fields: Record<string, InValue>): Promise<void> {
-    const updates: string[] = []
-    const args: InValue[] = []
-
-    for (const [col, val] of Object.entries(fields)) {
-      updates.push(`${col} = ?`)
-      args.push(val)
-    }
-    if (updates.length === 0) return
-
-    updates.push("updated_at = ?")
-    args.push(Date.now())
-    args.push(id)
-
-    await this.client.execute({
-      sql: `UPDATE areas SET ${updates.join(", ")} WHERE id = ?`,
-      args,
-    })
-  }
-
-  /** Delete an area and reassign its tasks to 'default' */
-  async delete(id: string): Promise<void> {
-    await this.client.execute({
-      sql: "UPDATE tasks SET area_id = 'default' WHERE area_id = ?",
-      args: [id],
-    })
-    await this.client.execute({
-      sql: "DELETE FROM areas WHERE id = ?",
-      args: [id],
-    })
+    const columns = new Set(["name", "icon", "color", "position", "wip_limit", "energy_budget", "review_cadence", "last_reviewed_at"])
+    const entries = Object.entries(fields)
+    if (entries.some(([column]) => !columns.has(column))) throw new Error("Unsupported Area field")
+    if (!entries.length) return
+    const sets = entries.map(([column, value]) => sql`${sourceSql(column)} = ${value}`)
+    sets.push(sql`updated_at = ${Date.now()}`)
+    await this.db("edit").execute(sql`UPDATE areas SET ${joinSql(sets)} WHERE id = ${id} AND ${ownedPlanning(this.scope, "areas")} AND ${planningVisible(this.scope, "areas")} AND retired_at IS NULL`)
   }
 }

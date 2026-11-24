@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright"
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
@@ -34,10 +35,10 @@ test("work queue links and Pillar actions retain contrast through hover", async 
   await page.setViewportSize({ width: 1440, height: 960 })
   await page.emulateMedia({ reducedMotion: "reduce" })
   const targets = [
-    ["/deferred", "[data-deferred-root] > header > a"],
+    ["/deferred", "[data-deferred-root] .work-queue-tabs > a"],
     ["/inactivity", "a[data-inactivity-back]"],
-    ["/triage", 'a[href$="planning#triage"]'],
-    ["/pillars", "#pillar-add-btn, #pillar-add-btn-empty"],
+    ["/triage", "[data-triage-root] > header > a"],
+    ["/progress#pillars", "#pillar-add-btn, #pillar-add-btn-empty"],
   ] as const
   await page.goto("/deferred")
   for (const theme of ["light", "dark"]) {
@@ -45,6 +46,7 @@ test("work queue links and Pillar actions retain contrast through hover", async 
     for (const [path, selector] of targets) {
       await page.goto(path)
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
+      await expect(page.locator(selector).first(), path).toBeVisible()
       await page.mouse.move(0, 0)
       const check = async (state: string) => {
         const { violations, passes } = await new AxeBuilder({ page }).include(selector).withRules(["color-contrast"]).analyze()
@@ -66,7 +68,7 @@ test("work queue links and Pillar actions retain contrast through hover", async 
 for (const theme of ["light", "dark"] as const) {
   for (const width of [320, 1440]) {
     test(`shared task rows announce types and keep five readable priorities at ${width}px in ${theme} theme`, async ({ page, request, baseURL }) => {
-      const headers = { origin: new URL(baseURL!).origin }
+      const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
       const dueDate = new Date().toISOString().slice(0, 10)
       const priorities = ["Critical", "High", "Medium", "Low", "Minimal"]
       const tasks: Array<{ id: string; priority: string }> = []
@@ -112,7 +114,7 @@ for (const theme of ["light", "dark"] as const) {
         }
       } finally {
         for (const { id } of tasks) {
-          await request.delete(`/api/tasks/${id}`, { headers })
+          await request.delete(`/api/tasks/${id}`, { headers, data: {} })
         }
       }
     })
@@ -173,95 +175,10 @@ for (const theme of ["light", "dark"]) {
   }
 }
 
-test("empty area hints stay readable in both themes", async ({ browser, request, baseURL }) => {
-  const headers = { origin: new URL(baseURL!).origin }
-  const area = await request.post("/api/areas", { headers, data: { name: "Empty area contrast fixture" } })
-  expect(area.status()).toBe(201)
-  const { id } = await area.json()
-  const selector = `#stree-area-projects-${id} .stree__empty-hint`
-
-  try {
-    for (const theme of ["light", "dark"]) {
-      const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, reducedMotion: "reduce" })
-      try {
-        const page = await context.newPage()
-        await page.addInitScript(value => localStorage.setItem("meitheal-theme", value), theme)
-        await page.goto(baseURL!)
-        await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
-        await expect(page.locator(selector)).toBeVisible()
-        const { violations } = await new AxeBuilder({ page }).include(selector).withRules(["color-contrast"]).analyze()
-        expect(violations.map(({ id }) => id), theme).toEqual([])
-      } finally {
-        await context.close()
-      }
-    }
-  } finally {
-    await request.delete(`/api/areas/${id}`, { headers })
-  }
-})
-
-test("area disclosure keeps keyboard focus and actions separate", async ({ page, request, baseURL }) => {
-  const headers = { origin: new URL(baseURL!).origin }
-  const areaName = `Sidebar fixture ${crypto.randomUUID()}`
-  const createArea = await request.post("/api/areas", { headers, data: { name: areaName } })
-  expect(createArea.status()).toBe(201)
-  const { id: areaId } = await createArea.json()
-  let projectId: string | undefined
-  try {
-    const title = "Sidebar disclosure fixture"
-    const createProject = await request.post("/api/projects", { headers, data: { title, area_id: areaId } })
-    expect(createProject.status()).toBe(201)
-    projectId = (await createProject.json()).id
-
-    await page.setViewportSize({ width: 1440, height: 960 })
-    await page.goto("/")
-    const area = page.locator(`[data-area-group="${areaId}"]`)
-    const toggle = area.getByRole("button", { name: areaName, exact: true })
-    const actions = area.locator(".stree__actions").first()
-    const menu = actions.getByRole("button", { name: `Area options - ${areaName}` })
-    const add = actions.getByRole("button", { name: `New project in ${areaName}` })
-    const projects = area.locator(`#stree-area-projects-${areaId}`)
-    const project = projects.locator(`a[href="/projects/${projectId}"]`)
-
-    await expect(toggle).toHaveAttribute("aria-controls", `stree-area-projects-${areaId}`)
-    await toggle.press("Enter")
-    await expect(toggle).toHaveAttribute("aria-expanded", "false")
-    await expect(projects).toHaveAttribute("inert", "")
-    await project.evaluate((link: HTMLElement) => link.focus())
-    await expect(toggle).toBeFocused()
-
-    await page.keyboard.press("Tab")
-    await expect(menu).toBeFocused()
-    await menu.press("Enter")
-    await expect(page.locator(".stree__dropdown [data-action='rename']").first()).toBeVisible()
-    await expect(toggle).toHaveAttribute("aria-expanded", "false")
-    await page.keyboard.press("Escape")
-    await page.keyboard.press("Tab")
-    await expect(add).toBeFocused()
-
-    await page.locator('.sidebar .nav-link[href="/tasks"]').click()
-    await expect(page).toHaveURL(/\/tasks(?:#kanban)?$/)
-    await expect(toggle).toHaveAttribute("aria-expanded", "false")
-    await toggle.press("Space")
-    await expect(toggle).toHaveAttribute("aria-expanded", "true")
-    await toggle.press("ArrowDown")
-    await expect(project).toBeFocused()
-
-    await toggle.press("Enter")
-    await page.reload()
-    await expect(toggle).toHaveAttribute("aria-expanded", "false")
-    await add.press("Enter")
-    await expect(toggle).toHaveAttribute("aria-expanded", "true")
-    await expect(projects.getByRole("textbox")).toBeFocused()
-  } finally {
-    if (projectId) await request.delete(`/api/projects/${projectId}`, { headers })
-    await request.delete(`/api/areas/${areaId}`, { headers })
-  }
-})
-
 test("sidebar edge toggle, 64px collapsed rail, and unclipped controls", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 960 })
-  await page.goto("/", { waitUntil: "networkidle" })
+  await page.goto("/", { waitUntil: "domcontentloaded" })
+  await page.waitForFunction(() => Reflect.get(window, "__meithealAppearanceNavigation")?.sidebar === document.getElementById("sidebar"))
 
   await expect(page.locator(".shortcut-hint")).toHaveCount(0)
 

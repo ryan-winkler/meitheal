@@ -1,4 +1,5 @@
-import { execFileSync, fork } from "node:child_process"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
+import { execFileSync, fork } from "../helpers/isolated-process"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -8,11 +9,13 @@ import { expect, test } from "@playwright/test"
 
 test("task detail preserves separate checklist edits made in two sessions", async ({ browser, request }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and disposable browser fixture")
+  const headers = await currentBoardWriteHeaders(request, "household", {})
   const original = [
     { id: "first-step", text: "Check the lock", done: false },
     { id: "second-step", text: "Close the window", done: false },
   ]
   const task = await request.post("/api/tasks", {
+    headers,
     data: { title: "Concurrent checklist", checklists: JSON.stringify(original) },
   })
   expect(task.status()).toBe(201)
@@ -65,9 +68,11 @@ test("task detail preserves separate checklist edits made in two sessions", asyn
 
 test("a long checklist item wraps in a narrow detail panel and can be edited", async ({ page, request }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and disposable browser fixture")
+  const headers = await currentBoardWriteHeaders(request, "household", {})
   await page.setViewportSize({ width: 360, height: 760 })
   const longText = "Confirm the booking details " + "REFERENCE".repeat(30)
   const created = await request.post("/api/tasks", {
+    headers,
     data: {
       title: "Narrow checklist",
       checklists: JSON.stringify([{ id: "booking", text: longText, done: false }]),
@@ -112,8 +117,10 @@ test("a long checklist item wraps in a narrow detail panel and can be edited", a
 
 test("reopening by ticket key waits for only that task's pending checklist save", async ({ page, request }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and disposable browser fixture")
+  const headers = await currentBoardWriteHeaders(request, "household", {})
   const makeTask = async (title: string) => {
     const response = await request.post("/api/tasks", {
+    headers,
       data: {
         title,
         checklists: JSON.stringify([
@@ -187,40 +194,45 @@ test("reopening by ticket key waits for only that task's pending checklist save"
 
 test("a stale checklist guard rejects the entire update and keeps the legacy API working", async ({ request }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and disposable API fixture")
+  const headers = await currentBoardWriteHeaders(request, "household", {})
   const original = '[ {"text":"Check the lock","done":false} ]'
   const created = await request.post("/api/tasks", {
+    headers,
     data: { title: "Guarded checklist", checklists: original },
   })
   expect(created.status()).toBe(201)
   const { id } = await created.json()
   const taskPath = "/api/tasks/" + encodeURIComponent(id)
-  const update = await request.put(taskPath, { data: { title: "An unrelated change" } })
+  const update = await request.put(taskPath, { headers, data: { title: "An unrelated change" } })
   expect(update.status()).toBe(200)
   const candidates = [
     JSON.stringify([{ text: "Check the lock", done: true }]),
     JSON.stringify([{ text: "Check the other lock", done: false }]),
   ]
   const writes = await Promise.all(candidates.map((checklists, index) => request.put(taskPath, {
+    headers,
     data: { title: "Candidate " + index, expected_checklists: original, checklists },
   })))
   expect(writes.map(response => response.status()).sort()).toEqual([200, 409])
   const winner = writes.findIndex(response => response.status() === 200)
   const conflict = writes.find(response => response.status() === 409)!
-  expect(conflict.headers()["cache-control"]).toBe("no-store")
+  expect(conflict.headers()["cache-control"]).toBe("private, no-store")
   expect(await conflict.json()).toMatchObject({ code: "checklist_conflict", checklists: candidates[winner] })
   const after = await request.get(taskPath)
   expect(await after.json()).toMatchObject({ title: "Candidate " + winner, checklists: candidates[winner] })
-  const invalid = await request.put(taskPath, { data: { title: "Invalid", expected_checklists: original } })
+  const invalid = await request.put(taskPath, { headers, data: { title: "Invalid", expected_checklists: original } })
   expect(invalid.status()).toBe(400)
-  const legacy = await request.put(taskPath, { data: { checklists: original } })
+  const legacy = await request.put(taskPath, { headers, data: { checklists: original } })
   expect(legacy.status()).toBe(200)
   expect(await legacy.json()).toMatchObject({ title: "Candidate " + winner, checklists: original })
 })
 
 test("a conflict on a legacy checklist step preserves the text draft and lets the user reload", async ({ page, request }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and disposable browser fixture")
+  const headers = await currentBoardWriteHeaders(request, "household", {})
   const original = '[ "Check the lock" ]'
   const created = await request.post("/api/tasks", {
+    headers,
     data: { title: "Recover checklist draft", checklists: original },
   })
   expect(created.status()).toBe(201)
@@ -242,7 +254,7 @@ test("a conflict on a legacy checklist step preserves the text draft and lets th
     checklists: JSON.stringify([{ text: "Check the lock", done: true }]),
   })
   const newer = JSON.stringify([{ text: "Other session", done: false }])
-  const update = await request.put(taskPath, { data: { checklists: newer } })
+  const update = await request.put(taskPath, { headers, data: { checklists: newer } })
   expect(update.status()).toBe(200)
   await first.fill("Keep my draft")
   await first.press("Enter")
@@ -284,11 +296,11 @@ test("a conflict on a legacy checklist step preserves the text draft and lets th
 
 test("retry after a lost checklist write response keeps only one new step", async ({ page, request }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and disposable browser fixture")
-  const created = await request.post("/api/tasks", { data: { title: "Checklist write response lost" } })
+  const headers = await currentBoardWriteHeaders(request, "household", {})
+  const created = await request.post("/api/tasks", { headers, data: { title: "Checklist write response lost" } })
   expect(created.status()).toBe(201)
   const { id } = await created.json()
   const taskPath = "/api/tasks/" + encodeURIComponent(id)
-  await page.goto("/tasks?open=" + encodeURIComponent(id))
   let loseResponse = true
   await page.route("**" + taskPath, async route => {
     if (route.request().method() !== "PUT" || !loseResponse) {
@@ -300,6 +312,9 @@ test("retry after a lost checklist write response keeps only one new step", asyn
     expect(persisted.status()).toBe(200)
     await route.abort("failed")
   })
+  await page.goto("/tasks")
+  await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+  await page.getByRole("link", { name: /^Task: Checklist write response lost,/ }).click()
   await page.getByRole("button", { name: "Add Item" }).click()
   const retry = page.getByRole("button", { name: "Retry checklist save" })
   await expect(retry).toBeVisible()
@@ -329,6 +344,7 @@ test("a historical SQL NULL checklist can be edited and distinguished from an em
     NODE_ENV: "production",
     MEITHEAL_DB_URL: `file:${join(work, "meitheal.db")}`,
     MEITHEAL_INGRESS_FIXTURE_PORT: process.env.MEITHEAL_INGRESS_FIXTURE_PORT,
+    MEITHEAL_ACTIVE_MEMBER_FIXTURE: "1",
   }
   const id = "legacy-null-checklist"
   let server: ReturnType<typeof fork> | undefined
@@ -349,15 +365,16 @@ test("a historical SQL NULL checklist can be edited and distinguished from an em
     const [info] = await once(server, "message", { signal: AbortSignal.timeout(10_000) })
     const origin = `http://127.0.0.1:${info.port}`
     const taskPath = `/api/tasks/${id}`
-    const url = origin + taskPath
+    const url = origin + info.configuredPath + taskPath
     const read = async () => {
-      const response = await request.get(url)
+      const response = await request.get(url, { headers: { cookie: "feedback-fixture=admin" }, maxRetries: 1 })
       expect(response.status()).toBe(200)
       return response.json()
     }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin, cookie: "feedback-fixture=admin" }, origin + info.configuredPath)
     expect(await read()).toMatchObject({ checklists: null })
     const staleEmpty = await request.put(url, {
-      headers: { origin },
+      headers,
       data: { checklists: "[]", expected_checklists: "[]", title: "Stale title" },
     })
     expect(staleEmpty.status()).toBe(409)
@@ -382,7 +399,7 @@ test("a historical SQL NULL checklist can be edited and distinguished from an em
       const newChecklist = (await read()).checklists
       expect(JSON.parse(newChecklist)).toEqual([{ id: expect.any(String), text: "New Item", done: false }])
       const staleNull = await request.put(url, {
-        headers: { origin },
+        headers,
         data: { checklists: "[]", expected_checklists: null },
       })
       expect(staleNull.status()).toBe(409)
@@ -402,8 +419,10 @@ test("a historical SQL NULL checklist can be edited and distinguished from an em
 
 test("a checklist rebase preserves the selected new-item placeholder before typing", async ({ page, request }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and disposable browser fixture")
+  const headers = await currentBoardWriteHeaders(request, "household", {})
   const original = [{ id: "first", text: "First step", done: false }]
   const created = await request.post("/api/tasks", {
+    headers,
     data: { title: "Checklist selected replacement", checklists: JSON.stringify(original) },
   })
   expect(created.status()).toBe(201)
@@ -424,6 +443,7 @@ test("a checklist rebase preserves the selected new-item placeholder before typi
     await page.goto("/tasks?open=" + encodeURIComponent(id))
     await expect(page.locator("#td-checklists textarea")).toHaveCount(1)
     expect((await request.put(path, {
+    headers,
       data: { checklists: JSON.stringify([{ ...original[0], done: true }]) },
     })).status()).toBe(200)
     await page.getByRole("button", { name: "Add Item" }).click()

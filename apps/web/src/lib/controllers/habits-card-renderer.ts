@@ -9,6 +9,8 @@
 
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { formatCalendarDay } from "@lib/calendar-day"
+import { mapEntityEmojiToTabler } from "@lib/tabler-svg"
+import { taskDetailPath } from "@lib/task-page-url"
 import { createSpriteIconElement, type IconName } from "../../generated/icon-registry"
 
 export interface HabitChecklistItem {
@@ -17,6 +19,8 @@ export interface HabitChecklistItem {
 }
 
 export interface HabitData {
+  areaId?: string | undefined
+  projectId?: string | undefined
   id: string
   name: string
   icon: string
@@ -27,6 +31,7 @@ export interface HabitData {
   currentStreak: number
   longestStreak: number
   totalCompletions: number
+  projectActive: boolean
   description: string
   priority: number
   checklists: HabitChecklistItem[]
@@ -121,9 +126,17 @@ function createHabitCard(habit: HabitData): HTMLElement {
   const completeButton = document.createElement("button")
   completeButton.type = "button"
   completeButton.className = "habit-card__check"
+  completeButton.disabled =
+    document.getElementById("habits-shell")?.dataset.canComplete === "false" ||
+    habit.todayCompleted ||
+    !habit.projectActive
   completeButton.dataset.action = "complete"
   completeButton.dataset.id = habit.id
-  completeButton.setAttribute("aria-label", `Complete ${habit.name} today`)
+  completeButton.setAttribute("aria-pressed", habit.todayCompleted ? "true" : "false")
+  completeButton.setAttribute(
+    "aria-label",
+    habit.todayCompleted ? `${habit.name} completed for this period` : `Complete ${habit.name} today`,
+  )
   if (habit.todayCompleted) {
     completeButton.replaceChildren(createSpriteIconElement("check", { size: 16 }))
   }
@@ -131,7 +144,9 @@ function createHabitCard(habit: HabitData): HTMLElement {
   const icon = document.createElement("span")
   icon.className = "habit-card__icon"
   icon.setAttribute("aria-hidden", "true")
-  icon.textContent = habit.icon
+  const mappedIcon = mapEntityEmojiToTabler(habit.icon)
+  if (mappedIcon) icon.replaceChildren(createSpriteIconElement(mappedIcon, { size: 20 }))
+  else icon.textContent = habit.icon || ""
 
   const info = document.createElement("div")
   info.className = "habit-card__info"
@@ -157,9 +172,21 @@ function createHabitCard(habit: HabitData): HTMLElement {
     streakItem.style.gap = "4px"
     streakItem.replaceChildren(
       createSpriteIconElement("flame", { size: 14 }),
-      document.createTextNode(`${habit.currentStreak} day streak`),
+      document.createTextNode(`${habit.currentStreak} ${habit.cadence === "weekly" ? "week" : "day"} streak`),
     )
     meta.prepend(streakItem)
+  }
+
+  if (!habit.projectActive) {
+    meta.append(createMetaItem("Paused project", "habit-card__inactive"))
+  }
+
+  if (habit.todayTaskId) {
+    const taskLink = document.createElement("a")
+    taskLink.className = "habit-card__meta-item habit-card__task-link"
+    taskLink.href = taskDetailPath(habit.todayTaskId)
+    taskLink.textContent = "View task"
+    meta.append(taskLink)
   }
 
   if (habit.checklists.length > 0) {
@@ -170,10 +197,11 @@ function createHabitCard(habit: HabitData): HTMLElement {
 
   const actions = document.createElement("div")
   actions.className = "habit-card__actions"
-  actions.append(
-    createIconButton("edit", habit.id, `Edit ${habit.name}`, "pencil"),
-    createIconButton("delete", habit.id, `Delete ${habit.name}`, "trash"),
-  )
+  const edit = createIconButton("edit", habit.id, `Edit ${habit.name}`, "pencil")
+  const remove = createIconButton("delete", habit.id, `Delete ${habit.name}`, "trash")
+  edit.disabled = document.getElementById("habits-shell")?.dataset.canEdit === "false"
+  remove.disabled = document.getElementById("habits-shell")?.dataset.canDelete === "false"
+  actions.append(edit, remove)
 
   top.append(completeButton, icon, info, actions)
   card.append(top)
@@ -207,20 +235,8 @@ export function renderHabits(habits: HabitData[]): void {
 
     const title = document.createElement("p")
     title.className = "habits-empty__title"
-    title.textContent = "No habits yet. Create your first daily routine."
-
-    const detail = document.createElement("p")
-    detail.className = "habits-empty__detail"
-    detail.textContent =
-      "Habits create real tasks that surface in Today, Kanban, Table, and Upcoming."
-
-    const button = document.createElement("button")
-    button.type = "button"
-    button.className = "btn btn-primary"
-    button.dataset.openHabitModal = "true"
-    button.textContent = "Create Habit"
-
-    emptyState.append(title, detail, button)
+    title.textContent = "No routines yet."
+    emptyState.append(title)
     list.append(emptyState)
     return
   }
@@ -248,7 +264,6 @@ export function updateStats(habits: HabitData[]): void {
   const statCompletedToday = document.getElementById("stat-completed-today")
   const statLongestStreak = document.getElementById("stat-longest-streak")
   const statTotal = document.getElementById("stat-total")
-  const signalSummary = document.getElementById("habits-signal-summary")
   const cadenceSummary = document.getElementById("habits-cadence-summary")
   const libraryCount = document.getElementById("habits-library-count")
 
@@ -257,23 +272,16 @@ export function updateStats(habits: HabitData[]): void {
   if (statLongestStreak) statLongestStreak.textContent = String(bestStreak)
   if (statTotal) statTotal.textContent = String(totalCompletions)
 
-  if (signalSummary) {
-    signalSummary.textContent =
-      activeCount === 0
-        ? "No active habits yet"
-        : `${completedToday} completed today across ${activeCount} active habit${activeCount === 1 ? "" : "s"}`
-  }
-
   if (cadenceSummary) {
     cadenceSummary.textContent =
       activeCount === 0
-        ? "Create your first habit to start a routine cadence."
+        ? "Create your first routine to begin a consistent cadence."
         : `${dailyCount} daily · ${weeklyCount} weekly routines`
   }
 
   if (libraryCount) {
-    libraryCount.textContent =
-      activeCount === 0 ? "No active habits yet" : `${activeCount} active habit${activeCount === 1 ? "" : "s"}`
+    libraryCount.hidden = activeCount === 0
+    libraryCount.textContent = `${activeCount} active routine${activeCount === 1 ? "" : "s"}`
   }
 }
 

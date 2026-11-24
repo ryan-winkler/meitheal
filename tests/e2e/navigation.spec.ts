@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { shouldSkipBrowserSpecs } from "./_helpers";
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
+import { readScopedNavigation, shouldSkipBrowserSpecs } from "./_helpers";
 
 test.describe("Responsive Navigation", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs");
@@ -55,30 +56,40 @@ test.describe("Responsive Navigation", () => {
     await expect(sidebar).toHaveCSS("pointer-events", "none");
   });
 
-  test("renaming a sidebar area also updates its accessible controls", async ({ page }) => {
+  test("renaming a sidebar area also updates its accessible controls", async ({ page, request }) => {
+    const headers = await currentBoardWriteHeaders(request, "household", {})
+    const created = await request.post("/api/areas", { headers, data: { name: "Sidebar rename fixture" } })
+    expect(created.status()).toBe(201)
+    const { id: areaId } = await created.json()
     await page.setViewportSize({ width: 1440, height: 960 })
     await page.goto("/")
-    const row = page.locator(".stree__area-row").first()
-    const toggle = row.locator("[data-area-toggle]")
-    const menu = row.locator("[data-area-menu]")
-    const name = "Renamed fixture area"
-    const areaId = await toggle.getAttribute("data-area-toggle")
-    expect(areaId).toBeTruthy()
-    await page.route("**/api/areas/" + areaId, route => route.fulfill({ json: { name } }))
-    const initiallyExpanded = await toggle.getAttribute("aria-expanded") === "true"
-    await row.hover()
-    await menu.click()
-    await page.locator('#area-menu-dropdown [data-action="rename"]').click()
-    const input = row.locator(".stree__inline-input")
-    await input.fill(name)
-    await input.press("Enter")
-    await expect(toggle).toHaveAccessibleName(name)
-    await expect(toggle).toHaveAttribute("data-area-name-label", name)
-    await expect(menu).toHaveAccessibleName(new RegExp(name + "$"))
-    await expect(row.locator("[data-area-add]")).toHaveAccessibleName(`New project in ${name}`)
-    await expect(toggle).toHaveAttribute("title", (initiallyExpanded ? "Collapse " : "Expand ") + name)
-    await toggle.click()
-    await expect(toggle).toHaveAttribute("title", (initiallyExpanded ? "Expand " : "Collapse ") + name)
+    const household = page.locator('[data-named-board-shortcut="household"]')
+    const boardsToggle = page.locator("[data-sidebar-boards-toggle]")
+    if (await boardsToggle.getAttribute("aria-expanded") === "false") await boardsToggle.click()
+    const areasToggle = household.locator(".sidebar-board-toggle")
+    if (await areasToggle.getAttribute("aria-expanded") === "false") await areasToggle.click()
+    try {
+      const row = household.locator(`[data-area-group="${areaId}"] .stree__area-row`)
+      const toggle = row.locator("[data-area-toggle]")
+      const menu = row.locator("[data-area-menu]")
+      const name = "Renamed fixture area"
+      const initiallyExpanded = await toggle.getAttribute("aria-expanded") === "true"
+      await row.hover()
+      await menu.click()
+      await page.locator('#area-menu-dropdown [data-action="rename"]').click()
+      const input = row.locator(".stree__inline-input")
+      await input.fill(name)
+      await input.press("Enter")
+      await expect(toggle).toHaveAccessibleName(`Projects in ${name}`)
+      await expect(toggle).toHaveAttribute("data-area-name-label", name)
+      await expect(menu).toHaveAccessibleName(new RegExp(name + "$"))
+      await expect(row.locator("[data-area-add]")).toHaveAccessibleName(`New project in ${name}`)
+      await expect(toggle).toHaveAttribute("title", (initiallyExpanded ? "Collapse " : "Expand ") + name)
+      await toggle.click()
+      await expect(toggle).toHaveAttribute("title", (initiallyExpanded ? "Expand " : "Collapse ") + name)
+    } finally {
+      await request.delete(`/api/areas/${areaId}`, { headers })
+    }
   })
 
   test("Mobile: sidebar hierarchy actions are discoverable touch targets when opened", async ({ page }) => {
@@ -121,33 +132,42 @@ test.describe("Responsive Navigation", () => {
     expect(await bottomNav.locator(".shortcut-badge").count()).toBe(0);
   });
 
-  test("Mobile: Calendar tab targets the consolidated task calendar view", async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 812 });
+  test("Mobile: Calendar and Tasks tabs identify the active view on the Household Board", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 })
     await page.goto("/", { waitUntil: "domcontentloaded" })
 
-    const calendarTab = page.locator('#mobile-tab-bar [data-page="calendar"]');
-    await expect(calendarTab).toHaveAttribute("href", "/tasks?view=calendar#calendar");
-
-    await calendarTab.click();
-    await expect(page).toHaveURL(/\/tasks\?view=calendar#calendar$/);
-    await expect(calendarTab).toHaveClass(/active/);
-    await expect(calendarTab).toHaveAttribute("aria-current", "page");
-  });
-
-  test("Mobile: direct Calendar view is current before hash normalization", async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 812 })
-    // Block deferred scripts so the document keeps its incoming query URL.
-    await page.route("**/*", route =>
-      route.request().resourceType() === "script" ? route.abort() : route.continue(),
-    )
-    await page.goto("/tasks?view=calendar")
-
     const bottomNav = page.getByRole("navigation", { name: "Mobile navigation" })
-    await expect(page).toHaveURL(/\/tasks\?view=calendar$/)
-    await expect(page.locator("#tasks-view-calendar")).toBeVisible()
+    const calendarTab = bottomNav.locator('[data-page="calendar"]')
+    await expect(calendarTab).toHaveAttribute("href", "/boards/household?view=calendar#calendar")
+    await calendarTab.click()
+    await expect(page).toHaveURL("/boards/household?view=calendar#calendar")
+    await expect(calendarTab).toHaveClass(/active/)
+    await expect(calendarTab).toHaveAttribute("aria-current", "page")
     await expect(bottomNav.locator('[aria-current="page"]')).toHaveCount(1)
-    await expect(bottomNav.locator('[data-page="calendar"]')).toHaveAttribute("aria-current", "page")
+
+    const tasksTab = bottomNav.locator('[data-page="tasks"]')
+    await tasksTab.click()
+    await expect(page).toHaveURL("/boards/household#kanban")
+    await expect(tasksTab).toHaveAttribute("aria-current", "page")
+    await expect(calendarTab).not.toHaveAttribute("aria-current", "page")
   })
+
+  for (const calendarPath of ["/tasks?view=calendar", "/boards/household?view=calendar"]) {
+    test(`Mobile: ${calendarPath} is current before hash normalization`, async ({ page }) => {
+      await page.setViewportSize({ width: 375, height: 812 })
+      // Block deferred scripts so the document keeps its incoming query URL.
+      await page.route("**/*", route =>
+        route.request().resourceType() === "script" ? route.abort() : route.continue(),
+      )
+      await page.goto(calendarPath)
+
+      const bottomNav = page.getByRole("navigation", { name: "Mobile navigation" })
+      await expect(page).toHaveURL(calendarPath)
+      await expect(page.locator("#tasks-view-calendar")).toBeVisible()
+      await expect(bottomNav.locator('[aria-current="page"]')).toHaveCount(1)
+      await expect(bottomNav.locator('[data-page="calendar"]')).toHaveAttribute("aria-current", "page")
+    })
+  }
 
   test("Tasks view links use native keyboard order and identify the current page", async ({ page }) => {
     await page.goto("/tasks?status=active#kanban")
@@ -209,22 +229,19 @@ test.describe("Responsive Navigation", () => {
     await expect(page.locator("#settings-shell")).toBeVisible();
 
     await page.locator('.sidebar .nav-link[data-page="dashboard"]').click();
-    await expect(page).toHaveURL(new RegExp(`${ingressPrefix}/?$`));
+    const dashboard = `${origin}${ingressPrefix}/?view=dashboard`;
+    await expect(page).toHaveURL(dashboard);
     await expect(page.locator("#main-content")).toBeVisible();
 
     // Wait past any delayed restore scripts and ensure we did not bounce back to /settings
     await page.waitForTimeout(400);
-    await expect(page).toHaveURL(new RegExp(`${ingressPrefix}/?$`));
-    const storedPath = await page.evaluate(() => {
-      const raw = sessionStorage.getItem("meitheal-navigation-state");
-      return raw ? JSON.parse(raw).path : null;
-    });
-    expect(storedPath).toBe("/");
+    await expect(page).toHaveURL(dashboard);
+    expect(await readScopedNavigation(page)).toMatchObject({ path: "/?view=dashboard" });
     await page.unrouteAll({ behavior: "ignoreErrors" });
   });
 
   test('Desktop: "Every Day" project label in Areas tree is not prematurely truncated', async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin };
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const areaRes = await request.post("/api/areas", {
       headers,
       data: { name: `Routine Area ${crypto.randomUUID().slice(0, 8)}` },
@@ -244,13 +261,19 @@ test.describe("Responsive Navigation", () => {
       await page.setViewportSize({ width: 1440, height: 960 });
       await page.goto("/", { waitUntil: "networkidle" });
 
+      const household = page.locator('[data-named-board-shortcut="household"]')
+      const boardsToggle = page.locator("[data-sidebar-boards-toggle]")
+      if (await boardsToggle.getAttribute("aria-expanded") === "false") await boardsToggle.click()
+      const areasToggle = household.locator(".sidebar-board-toggle")
+      if (await areasToggle.getAttribute("aria-expanded") === "false") await areasToggle.click()
+
       const area = page.locator(`[data-area-group="${areaId}"]`);
       const toggle = area.locator(".stree__area-toggle");
       if ((await toggle.getAttribute("aria-expanded")) === "false") {
         await toggle.click();
       }
 
-      const label = area.locator(`.stree__project-link[href="/projects/${projectId}"] .stree__project-name`);
+      const label = area.locator(`.stree__project-link[data-project-id="${projectId}"] .stree__project-name`);
       await expect(label).toHaveText("Every Day");
       const metrics = await label.evaluate((el) => ({
         scrollWidth: el.scrollWidth,
@@ -265,7 +288,7 @@ test.describe("Responsive Navigation", () => {
     }
   });
 
-  test("Desktop: Task Types menu and pins work when Tasks is ordered after Areas", async ({ page, request, baseURL }) => {
+  test("Desktop: Task view menu and pins work when Tasks is ordered after Areas", async ({ page, request, baseURL }) => {
     const headers = { origin: new URL(baseURL!).origin };
     const before = await (await request.get("/api/settings")).json();
     const prevSidebar = before.sidebar_config;
@@ -283,12 +306,12 @@ test.describe("Responsive Navigation", () => {
       await page.evaluate(() => localStorage.removeItem("meitheal-task-nav-prefs"));
       await page.reload({ waitUntil: "networkidle" });
 
-      await page.locator("#tasks-submenu-config-btn").click();
-      await expect(page.locator("#tasks-nav-config-popover")).toBeVisible();
-      const pinBtn = page.locator('#tasks-nav-config-popover [data-task-nav-pin="shopping_item"]').first();
+      await page.locator("#tasks-submenu-toggle").click();
+      await expect(page.locator("#tasks-nav-submenu")).toBeVisible();
+      const pinBtn = page.locator('#tasks-nav-submenu [data-task-view-pin="calendar"]');
       await pinBtn.click();
       await expect(pinBtn).toHaveAttribute("aria-pressed", "true");
-      await expect(page.locator('#sidebar [data-task-nav-pinned-item="shopping_item"]')).toBeVisible();
+      await expect(page.locator('.nav-item--tasks + [data-task-view-pinned-item="calendar"]')).toBeVisible();
     } finally {
       await page.evaluate(() => localStorage.removeItem("meitheal-task-nav-prefs")).catch(() => {});
       await request.put("/api/settings", {
@@ -339,49 +362,10 @@ test.describe("Responsive Navigation", () => {
     await expect(badge).toBeHidden();
   });
 
-  test("Task Types submenu toggle, visibility config, pinning, and Events filter work end-to-end", async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 960 });
-    await page.addInitScript(() => localStorage.removeItem("meitheal-task-nav-prefs"));
-    await page.goto("/", { waitUntil: "networkidle" });
-
-    await page.locator("#tasks-submenu-toggle").click();
-    const submenu = page.locator("#tasks-nav-submenu");
-    await expect(submenu).toBeVisible();
-    await expect(submenu.locator('[data-task-nav-item="standard"]')).toBeVisible();
-    await expect(submenu.locator('[data-task-nav-item="shopping_item"]')).toBeVisible();
-    await expect(submenu.locator('[data-task-nav-item="checklist"]')).toBeVisible();
-    await expect(submenu.locator('[data-task-nav-item="calendar_event"]')).toBeVisible();
-
-    await page.locator("#tasks-submenu-config-btn").click();
-    const popover = page.locator("#tasks-nav-config-popover");
-    await expect(popover).toBeVisible();
-    await popover.locator('[data-task-nav-mode="none"]').click();
-    await expect(submenu).toBeHidden();
-
-    await popover.locator('[data-task-nav-mode="all"]').click();
-    await expect(submenu).toBeVisible();
-
-    await popover.locator('[data-task-nav-toggle="shopping_item"]').click();
-    await expect(submenu.locator('[data-task-nav-item="shopping_item"]')).toBeHidden();
-    await popover.locator('[data-task-nav-toggle="shopping_item"]').click();
-    await expect(submenu.locator('[data-task-nav-item="shopping_item"]')).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(popover).toBeHidden();
-
-    await submenu.locator('[data-task-nav-item="calendar_event"] [data-task-nav-pin="calendar_event"]').click();
-    const pinnedRow = page.locator('[data-task-nav-pinned-item="calendar_event"]');
-    await expect(pinnedRow).toBeVisible();
-
-    await pinnedRow.locator('[data-task-nav-pinned-link="calendar_event"]').click();
-    await expect(page).toHaveURL(/\/tasks\?types=calendar_event/);
-
-    await expect(pinnedRow.locator('[data-task-nav-pinned-link="calendar_event"]')).toHaveClass(/active/);
-    await expect(page.locator('.sidebar .nav-link[data-page="tasks"]')).not.toHaveClass(/active/);
+  test("Kanban type filters still open a filtered task list", async ({ page }) => {
+    await page.goto("/tasks?types=calendar_event#kanban", { waitUntil: "networkidle" });
     await expect(page.locator('.filter-toolbar__type-btn[data-type="calendar_event"]').first()).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator('.filter-toolbar__type-btn[data-type="shopping_item"]').first()).toHaveAttribute("aria-pressed", "false");
-
-    await pinnedRow.locator(".task-nav-unpin-btn").click();
-    await expect(pinnedRow).toBeHidden();
   });
 
   test("Settings Navigation pins and task nav modes apply once without double-toggling", async ({ page }) => {
@@ -396,8 +380,10 @@ test.describe("Responsive Navigation", () => {
     await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "");
 
     const navSection = page.locator("#navigation-settings");
+    const taskTypesDetails = navSection.locator("#nav-task-types-section");
+    await taskTypesDetails.locator(":scope > summary").click();
     const pinBtn = navSection.locator('[data-task-nav-pin="calendar_event"]');
-    const pinnedRow = page.locator('[data-nav-overflow-primary] [data-task-nav-pinned-item="calendar_event"]');
+    const pinnedRow = page.locator('#sidebar-task-types [data-task-nav-pinned-item="calendar_event"]');
 
     await expect(pinBtn).toHaveAttribute("aria-pressed", "false");
     await pinBtn.click();
@@ -408,6 +394,7 @@ test.describe("Responsive Navigation", () => {
     await expect(navSection.locator('[data-task-nav-mode="none"]')).toHaveAttribute("aria-pressed", "true");
 
     await page.reload({ waitUntil: "networkidle" });
+    await taskTypesDetails.locator(":scope > summary").click();
     await expect(pinBtn).toHaveAttribute("aria-pressed", "true");
     await expect(pinnedRow).toBeVisible();
     await expect(navSection.locator('[data-task-nav-mode="none"]')).toHaveAttribute("aria-pressed", "true");
@@ -417,23 +404,23 @@ test.describe("Responsive Navigation", () => {
     await expect(pinnedRow).toBeHidden();
   });
 
-  test("task-nav pinned items hide in navbar mode on desktop without reload and stay visible in mobile drawer", async ({ page }) => {
+  test("task-nav Shopping stays available after changing navigation layout and on mobile", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 960 });
     await page.goto("/settings#navigation-settings", { waitUntil: "networkidle" });
 
     const navSection = page.locator("#navigation-settings");
+    await navSection.locator("#nav-task-types-section > summary").click();
     const pinBtn = navSection.locator('[data-task-nav-pin="shopping_item"]');
     const pinnedRow = page.locator('#sidebar [data-task-nav-pinned-item="shopping_item"]');
-    const form = page.locator("#navigation-appearance-form");
+    const lookFeelSection = page.locator("#look-and-feel-settings");
 
     const setNavigationLayout = async (mode: "navbar" | "sidebar") => {
-      const radio = form.locator(`input[name="navigation"][value="${mode}"]`);
-      if ((await radio.count()) > 0) {
-        await radio.check();
-      } else {
-        await form.locator('[name="navigation"]').selectOption(mode);
+      if (await lookFeelSection.isHidden()) {
+        await page.locator('[data-settings-nav="look-and-feel-settings"]').first().click();
       }
-      await form.getByRole("button", { name: "Save navigation layout" }).click();
+      await lookFeelSection.locator(`#navigation-appearance-form [data-visual-field="navigation"][data-visual-option="${mode}"]`).click();
+      await page.locator("#appearance-save-btn").click();
+      await expect(page.locator("#appearance-save-status")).toHaveText("Appearance saved on this device.");
     };
 
     try {
@@ -444,7 +431,12 @@ test.describe("Responsive Navigation", () => {
 
       await setNavigationLayout("navbar");
       await expect(page.locator("html")).toHaveAttribute("data-appearance-navigation", "navbar");
-      await expect(pinnedRow).toBeHidden();
+      const pinnedShopping = pinnedRow.getByRole("button", { name: "New shopping list", exact: true });
+      await pinnedShopping.click();
+      await expect(page.locator("#new-task-kind")).toHaveValue("shopping_item");
+      await page.keyboard.press("Escape");
+      await expect(page.locator("#new-task-overlay")).toBeHidden();
+      await expect(pinnedShopping).toBeFocused();
 
       await setNavigationLayout("sidebar");
       await expect(page.locator("html")).toHaveAttribute("data-appearance-navigation", "sidebar");
@@ -453,15 +445,15 @@ test.describe("Responsive Navigation", () => {
       await setNavigationLayout("navbar");
       await expect(page.locator("html")).toHaveAttribute("data-appearance-navigation", "navbar");
 
-      await expect(pinnedRow).toBeHidden()
+      await expect(pinnedRow).toBeVisible()
       await page.setViewportSize({ width: 390, height: 844 })
       await expect(page.locator("html")).toHaveAttribute("data-appearance-navigation", "navbar")
-      await expect(page).toHaveURL(/settings#navigation-settings$/)
+      await expect(page).toHaveURL(/settings#look-and-feel-settings$/)
       await expect(pinnedRow).toHaveCount(1)
       await page.goto("/", { waitUntil: "networkidle" })
       await page.locator("#menu-toggle").click()
       await expect(page.locator("#tasks-submenu-toggle")).toBeVisible();
-      await expect(page.locator("#tasks-submenu-config-btn")).toBeVisible();
+      await expect(page.locator("#sidebar-task-types [data-task-creation-toggle]")).toBeVisible();
       await expect(pinnedRow).toBeVisible();
     } finally {
       await page.evaluate(() => {

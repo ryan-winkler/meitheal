@@ -1,11 +1,12 @@
-import AxeBuilder from "@axe-core/playwright"
 import { expect, test } from "@playwright/test"
+import { contrastAudit } from "../helpers/axe-contrast"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
 test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
 
 for (const [theme, colorScheme] of [["light", "light"], ["dark", "dark"], ["auto", "light"]] as const) {
   test(`Kanban due-today text has sufficient contrast with ${theme} theme and ${colorScheme} system appearance`, async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const dueDate = new Intl.DateTimeFormat("en-CA", {
       timeZone: "Europe/Dublin",
       dateStyle: "short",
@@ -26,11 +27,11 @@ for (const [theme, colorScheme] of [["light", "light"], ["dark", "dark"], ["auto
       await expect(due).toBeVisible()
       await due.evaluate(() => document.fonts.ready.then(() => undefined))
 
-      const result = await new AxeBuilder({ page }).include(selector).withRules(["color-contrast"]).analyze()
+      const result = await contrastAudit(page).include(selector).analyze()
       expect(result.violations).toEqual([])
       expect(result.passes.map(({ id }) => id)).toContain("color-contrast")
     } finally {
-      await request.delete(`/api/tasks/${id}`, { headers })
+      await request.delete(`/api/tasks/${id}`, { headers, data: {} })
     }
   })
 }

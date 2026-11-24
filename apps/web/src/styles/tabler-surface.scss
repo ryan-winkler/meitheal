@@ -1,0 +1,44 @@
+@use "sass:meta";
+@use "@tabler/core/scss/config" as tabler;
+
+/* Scope official Tabler partials to their owning UI. */
+.tabler-surface {
+  --primary: var(--accent);
+  --primary-fg: var(--personal-accent-foreground, var(--palette-on-accent));
+  --secondary: var(--text-secondary);
+  --body-color: var(--text-primary);
+  --emphasis-color: var(--text-primary);
+  --bg-surface: var(--bg-card);
+  --bg-surface-secondary: var(--bg-secondary);
+  --bg-forms: var(--bg-input);
+  --border-color: var(--border);
+  --border-color-translucent: var(--border);
+  --border-width: 1px;
+  --border-style: solid;
+  --border-radius: 0.5rem;
+  --border-radius-lg: 0.75rem;
+  --border-radius-pill: 50rem;
+  --font-weight-medium: 600;
+  --focus-ring-width: 2px;
+  --focus-ring-color: var(--accent);
+  --box-shadow-sm: none;
+  --white: #fff;
+  --black: #000;
+
+  @include meta.load-css("@tabler/core/scss/bootstrap/progress");
+  @include meta.load-css("@tabler/core/scss/bootstrap/modal");
+  @include meta.load-css("@tabler/core/scss/ui/empty");
+  @include meta.load-css("@tabler/core/scss/ui/forms/form-selectgroup");
+}
+
+/* Tabler mounts its backdrop under body. */
+body:has([data-meitheal-tabler-modal].show) > .modal-backdrop {
+  @include tabler.overlay-backdrop(10000, #000, 0.62);
+}
+
+.tabler-surface [data-meitheal-tabler-modal] {
+  --modal-zindex: 10001;
+  --modal-border-color: var(--border);
+  --modal-header-border-color: var(--border);
+  --modal-footer-border-color: var(--border);
+}

@@ -12,9 +12,8 @@ from homeassistant.components.binary_sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .coordinator import MeithealCoordinator
+from .coordinator import MeithealBoardEntity, MeithealCoordinator
 from .helpers import PARALLEL_UPDATES as _PARALLEL_UPDATES
 from .helpers import device_info
 
@@ -39,7 +38,7 @@ async def async_setup_entry(
 
 
 class MeithealAllClearSensor(
-    CoordinatorEntity[MeithealCoordinator], BinarySensorEntity
+    MeithealBoardEntity, BinarySensorEntity
 ):
     """Binary sensor: True when zero overdue tasks (all-clear state).
 
@@ -66,14 +65,14 @@ class MeithealAllClearSensor(
         - is_on = True means "there is a problem" (overdue tasks exist)
         - is_on = False means "all clear" (no overdue tasks)
         """
-        if not self.coordinator.data:
+        if not self.coordinator.data or not self.coordinator.shared_entity_delivery:
             return None
         return self.coordinator.data.overdue_count > 0
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Expose overdue context for automations."""
-        if not self.coordinator.data:
+        if not self.coordinator.data or not self.coordinator.shared_entity_delivery:
             return None
         return {
             "overdue_count": self.coordinator.data.overdue_count,

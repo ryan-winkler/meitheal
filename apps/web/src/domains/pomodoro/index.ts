@@ -6,6 +6,7 @@
  */
 
 export {
+  PomodoroTaskUnavailableError,
   getTimerState,
   startFocus,
   skipToBreak,

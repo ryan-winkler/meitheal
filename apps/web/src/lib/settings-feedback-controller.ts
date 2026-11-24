@@ -1,6 +1,9 @@
+import { browserUuid } from "./browser-uuid"
 import type { FeedbackCursor, FeedbackReceipt, FeedbackReport } from "@domains/support/feedback-queue"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { downloadBlob } from "@lib/settings-utils"
+import { byId, qs } from "@lib/dom-helpers"
 
 const endpoint = "/api/feedback"
 const labels: Record<string, string> = {
@@ -67,20 +70,9 @@ function reportError(status: HTMLElement, error: unknown, signal: AbortSignal): 
     : "Could not reach local feedback. Check your Home Assistant connection."
 }
 
-function submissionId(): string {
-  if (typeof crypto.randomUUID === "function") return crypto.randomUUID()
-
-  // Home Assistant also serves ingress on local HTTP, where only getRandomValues is available.
-  const bytes = crypto.getRandomValues(new Uint8Array(16))
-  bytes[6] = (bytes[6]! & 0x0f) | 0x40
-  bytes[8] = (bytes[8]! & 0x3f) | 0x80
-  const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("")
-  return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join("-")
-}
-
 function initSubmission(panel: HTMLElement, signal: AbortSignal): void {
-  const form = panel.querySelector<HTMLFormElement>("[data-feedback-form]")!
-  const status = panel.querySelector<HTMLElement>("[data-feedback-status]")!
+  const form = qs<HTMLFormElement>(panel, "[data-feedback-form]")!
+  const status = qs<HTMLElement>(panel, "[data-feedback-status]")!
   const controls = form.querySelector("fieldset")!
   const message = form.elements.namedItem("message") as HTMLTextAreaElement
   let retry: { contents: string, submissionId: string } | null = null
@@ -105,7 +97,7 @@ function initSubmission(panel: HTMLElement, signal: AbortSignal): void {
     }
     const contents = JSON.stringify(payload)
     if (retry?.contents !== contents) {
-      retry = { contents, submissionId: submissionId() }
+      retry = { contents, submissionId: browserUuid() }
     }
 
     const focus = focusOwner(form, signal)
@@ -134,13 +126,13 @@ function initSubmission(panel: HTMLElement, signal: AbortSignal): void {
 }
 
 function initQueue(panel: HTMLElement, queue: HTMLDetailsElement, signal: AbortSignal): void {
-  const controls = queue.querySelector<HTMLFieldSetElement>("[data-queue-controls]")!
-  const filter = queue.querySelector<HTMLSelectElement>("[data-feedback-filter]")!
-  const refresh = queue.querySelector<HTMLButtonElement>("[data-feedback-refresh]")!
-  const more = queue.querySelector<HTMLButtonElement>("[data-feedback-more]")!
-  const list = queue.querySelector<HTMLElement>("[data-feedback-list]")!
-  const status = queue.querySelector<HTMLElement>("[data-queue-status]")!
-  const template = queue.querySelector<HTMLTemplateElement>("[data-feedback-report]")!
+  const controls = qs<HTMLFieldSetElement>(queue, "[data-queue-controls]")!
+  const filter = qs<HTMLSelectElement>(queue, "[data-feedback-filter]")!
+  const refresh = qs<HTMLButtonElement>(queue, "[data-feedback-refresh]")!
+  const more = qs<HTMLButtonElement>(queue, "[data-feedback-more]")!
+  const list = qs<HTMLElement>(queue, "[data-feedback-list]")!
+  const status = qs<HTMLElement>(queue, "[data-queue-status]")!
+  const template = qs<HTMLTemplateElement>(queue, "[data-feedback-report]")!
   let previews = new WeakMap<HTMLDetailsElement, string>()
   const drafts = new Map<string, { disposition: string, reviewedMessage: string }>()
   let denied = false
@@ -154,8 +146,8 @@ function initQueue(panel: HTMLElement, queue: HTMLDetailsElement, signal: AbortS
   function captureDrafts() {
     for (const entry of list.querySelectorAll<HTMLDetailsElement>("[data-report-id]")) {
       drafts.set(entry.dataset.reportId!, {
-        disposition: entry.querySelector<HTMLTextAreaElement>('[name="disposition"]')!.value,
-        reviewedMessage: entry.querySelector<HTMLTextAreaElement>('[name="reviewedMessage"]')!.value,
+        disposition: qs<HTMLTextAreaElement>(entry, '[name="disposition"]')!.value,
+        reviewedMessage: qs<HTMLTextAreaElement>(entry, '[name="reviewedMessage"]')!.value,
       })
     }
   }
@@ -192,27 +184,27 @@ function initQueue(panel: HTMLElement, queue: HTMLDetailsElement, signal: AbortS
     const existing = [...list.querySelectorAll<HTMLDetailsElement>("[data-report-id]")].find(entry => entry.dataset.reportId === report.id)
     const entry = existing ?? template.content.firstElementChild!.cloneNode(true) as HTMLDetailsElement
     entry.dataset.reportId = report.id
-    entry.querySelector("[data-report-summary]")!.textContent =
+    qs(entry, "[data-report-summary]")!.textContent =
       `${labels[report.category]} · ${labels[report.state]} · ${formatTime.format(report.receivedAt)}`
-    entry.querySelector("[data-report-message]")!.textContent = report.message
-    entry.querySelector("[data-report-context]")!.textContent = [
+    qs(entry, "[data-report-message]")!.textContent = report.message
+    qs(entry, "[data-report-context]")!.textContent = [
       `Submitted by ${report.submitterId}`,
       report.appVersion && `Version ${report.appVersion}`,
       report.routeFamily && `Page category ${report.routeFamily}`,
       report.claimedBy && `Claimed by ${report.claimedBy}`,
       report.closedBy && `Closed by ${report.closedBy}`,
     ].filter(Boolean).join(" · ")
-    const disposition = entry.querySelector<HTMLElement>("[data-report-disposition]")!
+    const disposition = qs<HTMLElement>(entry, "[data-report-disposition]")!
     disposition.hidden = !report.disposition
     disposition.textContent = report.disposition ? `Disposition: ${report.disposition}` : ""
-    entry.querySelector<HTMLElement>("[data-claim-report]")!.hidden = report.state !== "open"
-    entry.querySelector<HTMLElement>("[data-close-report]")!.hidden = report.state !== "in_progress"
-    entry.querySelector<HTMLElement>("[data-delete-report]")!.hidden =
+    qs<HTMLElement>(entry, "[data-claim-report]")!.hidden = report.state !== "open"
+    qs<HTMLElement>(entry, "[data-close-report]")!.hidden = report.state !== "in_progress"
+    qs<HTMLElement>(entry, "[data-delete-report]")!.hidden =
       report.state !== "resolved" && report.state !== "declined"
     const draft = drafts.get(report.id)
     if (draft) {
-      entry.querySelector<HTMLTextAreaElement>('[name="disposition"]')!.value = draft.disposition
-      entry.querySelector<HTMLTextAreaElement>('[name="reviewedMessage"]')!.value = draft.reviewedMessage
+      qs<HTMLTextAreaElement>(entry, '[name="disposition"]')!.value = draft.disposition
+      qs<HTMLTextAreaElement>(entry, '[name="reviewedMessage"]')!.value = draft.reviewedMessage
     }
     return entry
   }
@@ -319,7 +311,7 @@ function initQueue(panel: HTMLElement, queue: HTMLDetailsElement, signal: AbortS
         confirmText: "Delete report", variant: "danger", signal: dialogSignal,
       })
       const focus = focusOwner(queue, signal, previousFocus)
-      focus.allowDialog(document.getElementById("meitheal-confirm-overlay"))
+      focus.allowDialog(byId("meitheal-confirm-overlay"))
       const confirmed = await pending
       const cancelled = dialogSignal.aborted
       // Remove the helper's trap now and suppress its delayed unconditional focus return.
@@ -345,12 +337,7 @@ function initQueue(panel: HTMLElement, queue: HTMLDetailsElement, signal: AbortS
     if (button.hasAttribute("data-download-export")) {
       const reviewed = previews.get(entry)
       if (!reviewed) return
-      const url = URL.createObjectURL(new Blob([reviewed], { type: "application/json" }))
-      const download = document.createElement("a")
-      download.href = url
-      download.download = "meitheal-feedback.json"
-      download.click()
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      downloadBlob(reviewed, "application/json", "meitheal-feedback.json")
       status.textContent = "Reviewed export is ready in your downloads."
     }
   }, { signal })
@@ -374,10 +361,10 @@ function initQueue(panel: HTMLElement, queue: HTMLDetailsElement, signal: AbortS
         if (signal.aborted || denied || !entry.isConnected) return
         const json = JSON.stringify(reviewed, null, 2)
         previews.set(entry, json)
-        const preview = form.querySelector<HTMLElement>("[data-export-preview]")!
+        const preview = qs<HTMLElement>(form, "[data-export-preview]")!
         preview.textContent = json
         preview.hidden = false
-        form.querySelector<HTMLButtonElement>("[data-download-export]")!.hidden = false
+        qs<HTMLButtonElement>(form, "[data-download-export]")!.hidden = false
         status.textContent = "Review the preview before downloading."
       })
     }
@@ -390,10 +377,10 @@ function initQueue(panel: HTMLElement, queue: HTMLDetailsElement, signal: AbortS
     const entry = form?.closest<HTMLDetailsElement>("[data-report-id]")
     if (!form || !entry) return
     previews.delete(entry)
-    const preview = form.querySelector<HTMLElement>("[data-export-preview]")!
+    const preview = qs<HTMLElement>(form, "[data-export-preview]")!
     preview.hidden = true
     preview.textContent = ""
-    form.querySelector<HTMLButtonElement>("[data-download-export]")!.hidden = true
+    qs<HTMLButtonElement>(form, "[data-download-export]")!.hidden = true
   }, { signal })
 }
 
@@ -406,6 +393,6 @@ export function initSettingsFeedback(): void {
   registry.__meithealFeedbackScope = scope
   const signal = AbortSignal.any([pageLifecycle.signal, scope.signal])
   initSubmission(panel, signal)
-  const queue = panel.querySelector<HTMLDetailsElement>("[data-feedback-queue]")
+  const queue = qs<HTMLDetailsElement>(panel, "[data-feedback-queue]")
   if (queue) initQueue(panel, queue, signal)
 }

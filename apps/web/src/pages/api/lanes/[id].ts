@@ -1,8 +1,19 @@
+import { boardScopeErrorResponse, withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import type { InValue } from "@libsql/client"
-import { hasBoardSelection, rejectBoardSelectionInJson, unavailableBoardResponse } from "@domains/tasks/board-availability"
+import { hasBoardSelection, unavailableBoardResponse } from "@domains/tasks/board-availability"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
-import { LaneRepository } from "@domains/tasks/persistence/lane-repository"
+import { LaneDeleteError, LaneRepository } from "@domains/tasks/persistence/lane-repository"
+
+function parseIncludes(raw: unknown): string[] {
+  if (typeof raw !== "string") return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((s): s is string => typeof s === "string") : []
+  } catch {
+    return []
+  }
+}
 import { stripHtml } from "../../../lib/strip-html"
 import { apiError, apiJson } from "../../../lib/api-response"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
@@ -18,12 +29,12 @@ const logger = createLogger({
 
 /** PUT /api/lanes/[id], DELETE /api/lanes/[id] */
 
-export const PUT: APIRoute = async ({ params, request }) => {
+export const PUT: APIRoute = withBoardScope({ resource: "board", action: "manage" }, async ({ params, request }, scope) => {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     if (hasBoardSelection(body)) return unavailableBoardResponse()
     await ensureSchema()
-    const repo = new LaneRepository(getPersistenceClient())
+    const repo = new LaneRepository(getPersistenceClient(), scope)
 
     const existing = await repo.findById(params.id!)
     if (!existing) {
@@ -46,21 +57,45 @@ export const PUT: APIRoute = async ({ params, request }) => {
       fields.label = label
     }
     if (typeof body.icon === "string") {
-      fields.icon = body.icon.slice(0, 4)
+      const icon = Array.from(body.icon).slice(0, 4).join("")
+      if (icon) fields.icon = icon
     }
-    if (typeof body.position === "number") {
+    if (body.color === null || body.color === "") {
+      fields.color = null
+    } else if (typeof body.color === "string") {
+      const color = body.color.trim()
+      if (!/^#[0-9a-fA-F]{6}$/.test(color)) {
+        return apiError("Invalid lane color (expected #RRGGBB)", 400)
+      }
+      fields.color = color
+    }
+    if (body.position !== undefined) {
+      if (typeof body.position !== "number" || !Number.isFinite(body.position)) {
+        return apiError("position must be a finite number", 400)
+      }
       fields.position = Math.max(0, Math.round(body.position))
     }
-    if (typeof body.wip_limit === "number") {
+    if (body.wip_limit !== undefined) {
+      if (typeof body.wip_limit !== "number" || !Number.isFinite(body.wip_limit)) {
+        return apiError("wip_limit must be a finite number", 400)
+      }
       fields.wip_limit = Math.max(0, Math.round(body.wip_limit))
     }
-    if (typeof body.includes === "string") {
+    if (Array.isArray(body.includes)) {
+      const valid = body.includes.filter((s): s is string => typeof s === "string" && /^[a-z0-9_]{1,50}$/.test(s))
+      if (!valid.length) return apiError("Choose valid lane statuses", 400)
+      fields.includes = JSON.stringify([...new Set(valid)])
+    } else if (typeof body.includes === "string") {
       try {
         const parsed = JSON.parse(body.includes)
-        if (Array.isArray(parsed)) {
-          fields.includes = body.includes
+        if (Array.isArray(parsed) && parsed.length && parsed.every((s): s is string => typeof s === "string" && /^[a-z0-9_]{1,50}$/.test(s))) {
+          fields.includes = JSON.stringify([...new Set(parsed)])
+        } else {
+          return apiError("Choose valid lane statuses", 400)
         }
-      } catch { /* skip invalid JSON */ }
+      } catch {
+        return apiError("Choose valid lane statuses", 400)
+      }
     }
 
     if (Object.keys(fields).length === 0) {
@@ -77,14 +112,17 @@ export const PUT: APIRoute = async ({ params, request }) => {
       key: updated.key,
       label: updated.label,
       icon: updated.icon,
+      color: typeof updated.color === "string" && /^#[0-9a-fA-F]{6}$/.test(updated.color) ? updated.color : null,
       position: Number(updated.position ?? 0),
       wip_limit: Number(updated.wip_limit ?? 0),
-      includes: typeof updated.includes === "string" ? JSON.parse(String(updated.includes)) : [],
+      includes: parseIncludes(updated.includes),
       builtIn: Number(updated.built_in ?? 0) === 1,
       created_at: updated.created_at,
       updated_at: updated.updated_at,
     })
   } catch (err) {
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
     logger.log("error", {
       event: "api.lanes.put.failed",
       domain: "tasks",
@@ -94,14 +132,15 @@ export const PUT: APIRoute = async ({ params, request }) => {
     })
     return apiError("Failed to update lane")
   }
-}
+})
 
-export const DELETE: APIRoute = async ({ params, request }) => {
+export const DELETE: APIRoute = withBoardScope({ resource: "board", action: "manage" }, async ({ params, request }, scope) => {
   try {
-    const boardSelection = await rejectBoardSelectionInJson(request)
-    if (boardSelection) return boardSelection
+    const rawBody = await request.clone().json().catch(() => null) as Record<string, unknown> | null
+    if (hasBoardSelection(rawBody)) return unavailableBoardResponse()
+    const targetLaneId = typeof rawBody?.target_lane_id === "string" && rawBody.target_lane_id ? rawBody.target_lane_id : undefined
     await ensureSchema()
-    const repo = new LaneRepository(getPersistenceClient())
+    const repo = new LaneRepository(getPersistenceClient(), scope)
 
     const existing = await repo.findForDelete(params.id!)
     if (!existing) {
@@ -113,10 +152,14 @@ export const DELETE: APIRoute = async ({ params, request }) => {
     }
 
     const key = String(existing.key)
-    await repo.delete(params.id!, key)
+    const outcome = await repo.delete(params.id!, key, targetLaneId)
+    if (!outcome) return apiError("Lane not found", 404)
 
-    return apiJson({ deleted: true, tasksReassigned: key })
+    return apiJson({ deleted: true, tasksReassigned: outcome.replacementKey, targetLaneId: outcome.replacementId })
   } catch (err) {
+    if (err instanceof LaneDeleteError) return apiError(err.message, err.status)
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
     logger.log("error", {
       event: "api.lanes.delete.failed",
       domain: "tasks",
@@ -126,4 +169,4 @@ export const DELETE: APIRoute = async ({ params, request }) => {
     })
     return apiError("Failed to delete lane")
   }
-}
+})

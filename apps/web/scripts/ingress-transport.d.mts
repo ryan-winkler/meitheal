@@ -11,6 +11,7 @@ export interface IngressTransport {
     readonly writableLength: number
     destroy(): void
   } | undefined
+  shutdownSignal?: AbortSignal | undefined
   waitForDatabaseDownloadDrain?: WaitForResponseDrain | undefined
   waitForHtmlDrain?: WaitForResponseDrain | undefined
   behindIngress?: boolean | undefined

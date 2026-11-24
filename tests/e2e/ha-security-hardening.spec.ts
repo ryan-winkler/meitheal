@@ -44,6 +44,7 @@ test.describe("Phase 27: HA Security Hardening", () => {
                 expect(content).not.toContain("auth_api:");
                 expect(content).not.toContain("homeassistant_config:");
                 expect(content).toContain('loki_url: ""');
+                expect(content).toContain('loki_url: "str?"');
                 expect(content).toContain("panel_admin: false");
                 expect(content).toContain("tmpfs: true");
                 expect(content).toContain("ingress: true");
@@ -57,19 +58,20 @@ test.describe("Phase 27: HA Security Hardening", () => {
     test.describe("Translations", () => {
         test("translations/en.yaml exists and covers config options", async () => {
             const fs = await import("node:fs/promises");
-            const path = await import("node:path");
-            const transPath = path.resolve(
-                path.dirname(new URL(import.meta.url).pathname),
-                "../../meitheal-hub/translations/en.yaml"
-            );
-            const content = await fs.readFile(transPath, "utf-8");
+            for (const channel of ["meitheal-hub", "meitheal-hub-canary"]) {
+                const content = await fs.readFile(new URL(`../../${channel}/translations/en.yaml`, import.meta.url), "utf-8");
 
-            // Must have all config option keys
-            expect(content).toContain("log_level:");
-            expect(content).toContain("log_categories:");
-            expect(content).toContain("log_redaction:");
-            expect(content).toContain("audit_enabled:");
-            expect(content).toContain("loki_url:");
+                // Must have all config option keys
+                expect(content).toContain("log_level:");
+                expect(content).toContain("log_categories:");
+                expect(content).toContain("log_redaction:");
+                expect(content).toContain("audit_enabled:");
+                expect(content).toContain("loki_url:");
+                expect(content.replace(/\s+/g, " ")).toContain("Keep this field empty to turn off remote log forwarding.");
+                expect(content).not.toContain("Keep the default value");
+                const docs = await fs.readFile(new URL(`../../${channel}/DOCS.md`, import.meta.url), "utf-8");
+                expect(docs).toContain("Keep this field empty to turn off remote log forwarding.");
+            }
         });
     });
 
@@ -90,8 +92,9 @@ test.describe("Phase 27: HA Security Hardening", () => {
             expect(content).toContain("addgroup -S -g 10001 meitheal")
             expect(content).toContain("-u 10001 -G meitheal meitheal")
             const startup = await fs.readFile(path.join(path.dirname(dockerPath), "run.sh"), "utf-8")
-            expect(startup).toContain("s6-setuidgid meitheal node scripts/migrate.mjs")
-            expect(startup).toContain("s6-setuidgid meitheal node scripts/serve.mjs")
+            expect(startup).toContain('s6-setuidgid meitheal "$@" &')
+            expect(startup).toContain("start_child node scripts/migrate.mjs")
+            expect(startup).toContain("start_child node scripts/serve.mjs")
 
             // HEALTHCHECK for Supervisor watchdog integration
             expect(content).toContain("HEALTHCHECK");

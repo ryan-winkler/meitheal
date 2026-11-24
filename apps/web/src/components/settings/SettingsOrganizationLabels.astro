@@ -1,0 +1,159 @@
+---
+import { t } from "../../i18n/translations"
+import type { Locale } from "../../lib/locale"
+import {
+  defaultOrganizationLabel, hasPluralOrganizationLabel, labelsProof, newOrganizationLabel,
+  organizationLabelResolver, readRequestOrganizationLabels,
+} from "../../lib/organization-labels"
+import { verifiedIngressUser } from "../../lib/verified-ingress-user"
+import SettingsPanelCard from "./SettingsPanelCard.astro"
+
+interface Props {
+  locale: Locale
+  embedded?: boolean
+}
+const { locale, embedded = false } = Astro.props
+const user = verifiedIngressUser(Astro.locals)
+const state = await readRequestOrganizationLabels(Astro)
+const label = organizationLabelResolver(state, locale)
+const copy = (key: string) => t(`organization_labels.${key}`, locale)
+const headingExample = label("board", true)
+const actionExample = newOrganizationLabel(label("board"), locale)
+---
+
+{embedded ? (
+  <div id="organization-labels-settings" class="settings-stack">
+    {state && user ? (
+      <form
+        class="settings-stack"
+        id="organization-labels-form"
+        data-proof={labelsProof(user.id, locale)}
+        data-revision={state.revision}
+        data-error={copy("error")}
+        data-conflict={copy("conflict")}
+        data-reload={copy("reload")}
+        data-duplicate={copy("duplicate")}
+      >
+        <div class="organization-labels-rows">
+          {state.visible.map(term => (
+            <fieldset class="organization-labels-row" data-label-term={term}>
+              <legend class="form-label">{defaultOrganizationLabel(term, locale, hasPluralOrganizationLabel(term))}</legend>
+              <div class="organization-labels-inputs">
+                {(hasPluralOrganizationLabel(term) ? [false, true] : [false]).map((plural) => {
+                  const index = plural ? 1 : 0
+                  const original = defaultOrganizationLabel(term, locale, plural)
+                  return (
+                    <label class="form-label organization-labels-field">
+                      {hasPluralOrganizationLabel(term) ? copy(plural ? "plural" : "singular") : copy("title")}
+                      <input type="text" class="form-input" data-label-form value={state.forms[term]?.[index] ?? ""} placeholder={original} maxlength="80" autocomplete="off" spellcheck="false" />
+                      <small class="settings-hint" data-label-saved data-caption={copy("saved")} hidden></small>
+                    </label>
+                  )
+                })}
+              </div>
+              <button type="button" class="btn btn-ghost btn-sm" data-label-clear>{copy("use_default")}</button>
+            </fieldset>
+          ))}
+        </div>
+        {state.visible.includes("board") && (
+          <div class="settings-hint" data-label-preview>
+            <strong>{copy("preview")}</strong>
+            <p><span data-preview-heading>{headingExample}</span> · <span data-preview-heading>{headingExample}</span> › Household · <span data-preview-action>{actionExample}</span></p>
+          </div>
+        )}
+        <p class="settings-hint" data-label-warning role="status" hidden></p>
+        <div class="flex flex-wrap gap-2">
+          <button type="submit" class="btn btn-primary">{copy("save")}</button>
+          <button type="button" class="btn btn-secondary" data-label-clear-all>{copy("reset_all")}</button>
+        </div>
+        <p class="settings-hint" data-label-status role="status"></p>
+      </form>
+    ) : (
+      <div class="nav-ha-note">
+        <p class="settings-hint">{copy(user ? "unavailable" : "needed")}</p>
+        {!user && (
+          <a href="#connections-settings" class="settings-inline-link" data-settings-section-link>
+            <span>Check Home Assistant connection</span>
+          </a>
+        )}
+      </div>
+    )}
+  </div>
+) : (
+  <SettingsPanelCard id="organization-labels-settings" title={copy("title")} subtitle={copy("description")}>
+    {state && user ? (
+      <form
+        class="settings-stack"
+        id="organization-labels-form"
+        data-proof={labelsProof(user.id, locale)}
+        data-revision={state.revision}
+        data-error={copy("error")}
+        data-conflict={copy("conflict")}
+        data-reload={copy("reload")}
+        data-duplicate={copy("duplicate")}
+      >
+        <div class="organization-labels-rows">
+          {state.visible.map(term => (
+            <fieldset class="organization-labels-row" data-label-term={term}>
+              <legend class="form-label">{defaultOrganizationLabel(term, locale, hasPluralOrganizationLabel(term))}</legend>
+              <div class="organization-labels-inputs">
+                {(hasPluralOrganizationLabel(term) ? [false, true] : [false]).map((plural) => {
+                  const index = plural ? 1 : 0
+                  const original = defaultOrganizationLabel(term, locale, plural)
+                  return (
+                    <label class="form-label organization-labels-field">
+                      {hasPluralOrganizationLabel(term) ? copy(plural ? "plural" : "singular") : copy("title")}
+                      <input type="text" class="form-input" data-label-form value={state.forms[term]?.[index] ?? ""} placeholder={original} maxlength="80" autocomplete="off" spellcheck="false" />
+                      <small class="settings-hint" data-label-saved data-caption={copy("saved")} hidden></small>
+                    </label>
+                  )
+                })}
+              </div>
+              <button type="button" class="btn btn-ghost btn-sm" data-label-clear>{copy("use_default")}</button>
+            </fieldset>
+          ))}
+        </div>
+        {state.visible.includes("board") && (
+          <div class="settings-hint" data-label-preview>
+            <strong>{copy("preview")}</strong>
+            <p><span data-preview-heading>{headingExample}</span> · <span data-preview-heading>{headingExample}</span> › Household · <span data-preview-action>{actionExample}</span></p>
+          </div>
+        )}
+        <p class="settings-hint" data-label-warning role="status" hidden></p>
+        <div class="flex flex-wrap gap-2">
+          <button type="submit" class="btn btn-primary">{copy("save")}</button>
+          <button type="button" class="btn btn-secondary" data-label-clear-all>{copy("reset_all")}</button>
+        </div>
+        <p class="settings-hint" data-label-status role="status"></p>
+      </form>
+    ) : <p class="settings-hint">{copy(user ? "unavailable" : "needed")}</p>}
+  </SettingsPanelCard>
+)}
+
+<style is:inline>
+  .organization-labels-row {
+    border: 0;
+    padding: 0 0 0.75rem;
+    margin: 0 0 0.75rem;
+    min-inline-size: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .organization-labels-inputs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+    gap: 0.5rem;
+  }
+  .organization-labels-field {
+    display: grid;
+    gap: 0.25rem;
+    min-width: 0;
+  }
+  .organization-labels-field small, [data-label-preview] {
+    overflow-wrap: anywhere;
+  }
+  .nav-ha-note {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+</style>

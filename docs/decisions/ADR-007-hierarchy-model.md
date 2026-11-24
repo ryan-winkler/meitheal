@@ -70,6 +70,12 @@ Replace `epic → story → task` with a 3-tiered DDD model:
 - **Bot proposals never trigger notifications** — queued for human review during triage
 - **Agent scratchpad excluded from all SELECTs** — sanitized at the repository layer
 
+### Area and Goal associations
+
+Projects may set an Area directly. A Project with no explicit Area uses the Area of its linked Goal when one is set. A Goal may exist independently, have its own Area, or be linked by multiple Projects.
+
+The full Goals view includes standalone Goals. In an Area, show only directly linked Goals and Goals linked by Projects in that Area. In a Project, show its linked Goal. A cross-Area Goal link can place the Goal in both relevant Area views while the Project itself appears under its explicit Area. These links organize work. A future board-level audience controls access to the underlying work and any projected relationships.
+
 ## Consequences
 
 ### Positive

@@ -1,4 +1,5 @@
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { openWorkspaceQuickAdd } from "@lib/open-workspace-capture"
 import { showToast } from "@lib/toast"
 
 interface UnifiedBarTitleSwitcherOptions {
@@ -19,17 +20,64 @@ export function setUnifiedBarSwitcherActiveState(
   if (!dropdown) return
 
   dropdown.querySelectorAll<HTMLElement>(".unified-bar__switcher-item").forEach((item) => {
-    item.classList.toggle("is-active", item.dataset.sectionId === activeSectionId)
+    item.classList.toggle("is-active", !item.hidden && item.dataset.sectionId === activeSectionId)
+  })
+}
+
+export function syncUnifiedBarSectionState(
+  barId: string,
+  sectionId: string | undefined,
+  opts: { root?: ParentNode; checkHidden?: boolean; manageTabindex?: boolean } = {},
+): void {
+  const root = opts.root ?? document
+  root.querySelectorAll<HTMLElement>("[data-unified-bar-section]").forEach((link) => {
+    const active = (!opts.checkHidden || !link.hidden) && link.dataset.unifiedBarSection === sectionId
+    link.classList.toggle("is-active", active)
+    if (link.matches('[role="tab"]')) {
+      link.setAttribute("aria-selected", String(active))
+    } else if (!opts.manageTabindex || link.matches("a[href]")) {
+      link.setAttribute("aria-current", active ? "location" : "false")
+    }
+    if (opts.manageTabindex) link.setAttribute("tabindex", active ? "0" : "-1")
+  })
+
+  setUnifiedBarSwitcherActiveState(barId, sectionId)
+}
+
+export function initUnifiedBarTabsKeyboard(barId: string): void {
+  const tabContainer = document.getElementById(`${barId}-tabs`)
+  if (!tabContainer) return
+
+  pageLifecycle.on(tabContainer, "keydown", (event) => {
+    const keyboardEvent = event as KeyboardEvent
+    if (keyboardEvent.key !== "ArrowLeft" && keyboardEvent.key !== "ArrowRight") return
+
+    const visibleTabs = Array.from(
+      tabContainer.querySelectorAll<HTMLElement>(
+        "[data-unified-bar-tab]:not([hidden], [data-overflow-hidden])",
+      ),
+    )
+    const currentIndex = visibleTabs.findIndex((tab) => tab === document.activeElement)
+    if (currentIndex === -1) return
+
+    keyboardEvent.preventDefault()
+    const direction = keyboardEvent.key === "ArrowRight" ? 1 : -1
+    const nextTab = visibleTabs[(currentIndex + direction + visibleTabs.length) % visibleTabs.length]
+    if (!nextTab) return
+
+    nextTab.focus()
+    nextTab.click()
   })
 }
 
 export function initUnifiedBarTitleSwitcher({
   barId,
   onSelect,
-}: UnifiedBarTitleSwitcherOptions): void {
+}: UnifiedBarTitleSwitcherOptions): (() => void) | undefined {
   const btn = document.getElementById(`${barId}-switcher-btn`) as HTMLElement | null
   const dropdown = document.getElementById(`${barId}-switcher-dropdown`) as HTMLElement | null
   if (!btn || !dropdown) return
+  const visibleItem = ".unified-bar__switcher-item:not([hidden])"
 
   let isOpen = false
   let openedAtX = 0
@@ -55,8 +103,8 @@ export function initUnifiedBarTitleSwitcher({
     if (!isOpen) return
 
     const activeItem =
-      dropdown.querySelector<HTMLElement>(".unified-bar__switcher-item.is-active") ??
-      dropdown.querySelector<HTMLElement>(".unified-bar__switcher-item")
+      dropdown.querySelector<HTMLElement>(`${visibleItem}.is-active`) ??
+      dropdown.querySelector<HTMLElement>(visibleItem)
     activeItem?.focus({ preventScroll: true })
   })
 
@@ -73,7 +121,7 @@ export function initUnifiedBarTitleSwitcher({
 
   pageLifecycle.on(dropdown, "keydown", (event) => {
     const keyboardEvent = event as KeyboardEvent
-    const items = Array.from(dropdown.querySelectorAll<HTMLElement>(".unified-bar__switcher-item"))
+    const items = Array.from(dropdown.querySelectorAll<HTMLElement>(visibleItem))
     const currentIndex = items.findIndex((item) => item === document.activeElement)
 
     if (keyboardEvent.key === "Escape") {
@@ -111,6 +159,7 @@ export function initUnifiedBarTitleSwitcher({
     },
     { passive: true } as AddEventListenerOptions,
   )
+  return closeDropdown
 }
 
 export function initUnifiedBarSearchLauncher(barId: string): void {
@@ -132,13 +181,15 @@ export function initUnifiedBarNewTaskButton({
   const button = document.getElementById(`${barId}-new-task`) as HTMLButtonElement | null
   if (!button) return
 
-  pageLifecycle.on(button, "click", () => {
+  function openTaskForm() {
     if (typeof window.openNewTaskModal === "function") {
       window.openNewTaskModal()
       return
     }
 
+    const signal = pageLifecycle.signal
     requestAnimationFrame(() => {
+      if (signal.aborted) return
       if (typeof window.openNewTaskModal === "function") {
         window.openNewTaskModal()
         return
@@ -146,19 +197,19 @@ export function initUnifiedBarNewTaskButton({
 
       showToast(fallbackMessage, "error")
     })
+  }
+
+  pageLifecycle.on(button, "click", () => {
+    if (!openWorkspaceQuickAdd(button, openTaskForm)) openTaskForm()
   })
 }
 
-export function initUnifiedBarTabOverflow(barId: string): void {
+export function initUnifiedBarTabOverflow(barId: string): (() => void) | undefined {
   const tabsContainer = document.getElementById(`${barId}-tabs`) as HTMLElement | null
   if (!tabsContainer) return
 
-  const tabs = Array.from(
-    tabsContainer.querySelectorAll<HTMLElement>("[data-unified-bar-tab]"),
-  )
-  if (tabs.length === 0) return
-
   function recalcOverflow(): void {
+    const tabs = tabsContainer!.querySelectorAll<HTMLElement>("[data-unified-bar-tab]:not([hidden])")
     tabs.forEach((tab) => {
       tab.removeAttribute("data-overflow-hidden")
       tab.removeAttribute("tabindex")
@@ -192,4 +243,5 @@ export function initUnifiedBarTabOverflow(barId: string): void {
   requestAnimationFrame(recalcOverflow)
 
   pageLifecycle.signal.addEventListener("abort", () => observer.disconnect(), { once: true })
+  return recalcOverflow
 }

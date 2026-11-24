@@ -7,12 +7,13 @@
 import { withAsyncButton } from "@lib/async-button"
 import { LEGACY_HASSIO_INGRESS_PATH, normalizeBrowserReachableGrocyUrl } from "@lib/grocy-url-ui"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
-import { saveSetting, log } from "@lib/settings-utils"
+import { whenSectionVisible } from "@lib/settings-utils"
+import { settingsWriteHeaders } from "./settings-store"
+import { byId, domEl } from "@lib/dom-helpers"
 
 function syncOpenGrocyLink(rawUrl: string | undefined): void {
-  const openLink = document.getElementById("open-grocy-link") as HTMLAnchorElement | null
+  const openLink = byId<HTMLAnchorElement>("open-grocy-link")
   if (!openLink) return
   const safeHref = typeof rawUrl === "string" ? normalizeBrowserReachableGrocyUrl(rawUrl) : null
   if (safeHref && (safeHref.startsWith("http://") || safeHref.startsWith("https://"))) {
@@ -26,21 +27,21 @@ function syncOpenGrocyLink(rawUrl: string | undefined): void {
 
 export function initGrocySettings(): void {
   // Auto-key generation
-  const autoKeyBtn = document.getElementById("grocy-auto-key")
+  const autoKeyBtn = byId("grocy-auto-key")
   if (autoKeyBtn) {
     pageLifecycle.on(autoKeyBtn, "click", async () => {
-    const btn = document.getElementById("grocy-auto-key") as HTMLButtonElement
+    const btn = byId("grocy-auto-key") as HTMLButtonElement
     const origText = btn.textContent
     btn.disabled = true
     btn.textContent = "…"
     try {
-      const urlInput = document.getElementById("grocy-url") as HTMLInputElement
-      const keyInput = document.getElementById("grocy-key") as HTMLInputElement
+      const urlInput = byId("grocy-url") as HTMLInputElement
+      const keyInput = byId("grocy-key") as HTMLInputElement
       const body: Record<string, string> = {}
       if (urlInput?.value?.trim()) body.url = urlInput.value.trim()
       const res = await fetch("/api/grocy/auto-key", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: settingsWriteHeaders("grocy_api_key"),
         body: JSON.stringify(body),
         signal: pageLifecycle.signal,
       })
@@ -65,20 +66,20 @@ export function initGrocySettings(): void {
   }
 
   // Save Grocy settings
-  const saveGrocyBtn = document.getElementById("save-grocy") as HTMLButtonElement
+  const saveGrocyBtn = byId("save-grocy") as HTMLButtonElement
   if (saveGrocyBtn) {
     pageLifecycle.on(saveGrocyBtn, "click", withAsyncButton(saveGrocyBtn, async () => {
-    const rawUrl = (document.getElementById("grocy-url") as HTMLInputElement).value.trim()
-    const key = (document.getElementById("grocy-key") as HTMLInputElement).value
-    const syncMode = (document.getElementById("grocy-sync-mode") as HTMLSelectElement).value
-    const syncInterval = (document.getElementById("grocy-sync-interval") as HTMLSelectElement).value
+    const rawUrl = (byId("grocy-url") as HTMLInputElement).value.trim()
+    const key = (byId("grocy-key") as HTMLInputElement).value
+    const syncMode = (byId("grocy-sync-mode") as HTMLSelectElement).value
+    const syncInterval = (byId("grocy-sync-interval") as HTMLSelectElement).value
 
-    const grocyAutoDetected = document.getElementById("grocy-auto-info")
+    const grocyAutoDetected = byId("grocy-auto-info")
     const isAutoDetected = Boolean(grocyAutoDetected && grocyAutoDetected.style.display !== "none")
     const url = rawUrl
     if (!url && !isAutoDetected) {
       showToast("settings.grocy_required", "error")
-      const urlInput = document.getElementById("grocy-url")
+      const urlInput = byId("grocy-url")
       urlInput?.classList.add("form-input--error")
       urlInput?.addEventListener("input", () => urlInput.classList.remove("form-input--error"), {
         once: true,
@@ -89,7 +90,7 @@ export function initGrocySettings(): void {
     if (url && !LEGACY_HASSIO_INGRESS_PATH.test(url)) {
       try { new URL(url) } catch {
         showToast("Please enter a valid URL", "error")
-        const urlInput = document.getElementById("grocy-url")
+        const urlInput = byId("grocy-url")
         urlInput?.classList.add("form-input--error")
         urlInput?.addEventListener("input", () => urlInput.classList.remove("form-input--error"), {
           once: true,
@@ -109,22 +110,22 @@ export function initGrocySettings(): void {
       if (key) payload.grocy_api_key = key
       const res = await fetch("/api/grocy/settings", {
         method: "PUT",
-        headers: { "content-type": "application/json" },
+        headers: settingsWriteHeaders("grocy_url"),
         body: JSON.stringify(payload),
         signal: pageLifecycle.signal,
       })
       const data = await res.json()
       if (data.ok) {
         if (typeof data.url === "string" && data.url) {
-          const urlInput = document.getElementById("grocy-url") as HTMLInputElement | null
+          const urlInput = byId<HTMLInputElement>("grocy-url")
           if (urlInput) urlInput.value = data.url
           syncOpenGrocyLink(data.url)
         } else {
           syncOpenGrocyLink(url || undefined)
         }
-        const statusEl = document.getElementById("grocy-status")
+        const statusEl = byId("grocy-status")
         if (statusEl) { statusEl.textContent = "Configured"; statusEl.className = "badge badge-active" }
-        const syncBtn = document.getElementById("sync-grocy-now")
+        const syncBtn = byId("sync-grocy-now")
         if (syncBtn) syncBtn.style.display = ""
         showToast("Grocy settings saved")
       } else {
@@ -137,20 +138,22 @@ export function initGrocySettings(): void {
   }
 
   // Test Connection
-  const testGrocyBtn = document.getElementById("test-grocy")
+  const testGrocyBtn = byId("test-grocy")
   if (testGrocyBtn) {
     pageLifecycle.on(testGrocyBtn, "click", async () => {
-    const url = (document.getElementById("grocy-url") as HTMLInputElement).value
-    const key = (document.getElementById("grocy-key") as HTMLInputElement).value
-    const resultEl = document.getElementById("grocy-test-result")
-    const btn = document.getElementById("test-grocy") as HTMLButtonElement
-    const grocyAutoDetected = document.getElementById("grocy-auto-info")
+    const url = (byId("grocy-url") as HTMLInputElement).value
+    const key = (byId("grocy-key") as HTMLInputElement).value
+    const resultEl = byId("grocy-test-result")
+    const btn = byId("test-grocy") as HTMLButtonElement
+    const grocyAutoDetected = byId("grocy-auto-info")
     const isAutoDetected = grocyAutoDetected && grocyAutoDetected.style.display !== "none"
     if (!isAutoDetected && (!url || !key)) {
       if (resultEl) {
         resultEl.style.display = "block"
         resultEl.className = "integration-callout integration-callout--warning"
-        resultEl.innerHTML = "<strong>⚠ URL and API key required</strong>"
+        const strong = domEl("strong")
+        strong.textContent = "URL and API key required"
+        resultEl.replaceChildren(strong)
       }
       return
     }
@@ -166,9 +169,8 @@ export function initGrocySettings(): void {
       const data = await res.json()
       if (resultEl) {
         resultEl.style.display = "block"
-        const title = document.createElement("strong")
-        const detail = document.createElement("div")
-        detail.className = "integration-callout__detail"
+        const title = domEl("strong")
+        const detail = domEl("div", "integration-callout__detail")
         if (data.ok) {
           resultEl.className = "integration-callout integration-callout--success"
           title.textContent = `✓ Connected to Grocy ${String(data.version ?? "")}`
@@ -185,11 +187,9 @@ export function initGrocySettings(): void {
       if (resultEl) {
         resultEl.style.display = "block"
         resultEl.className = "integration-callout integration-callout--warning"
-        const title = document.createElement("strong")
+        const title = domEl("strong")
         title.textContent = "✗ Network error"
-        const detail = document.createElement("div")
-        detail.className = "integration-callout__detail"
-        detail.textContent = err instanceof Error ? err.message : "Unknown"
+        const detail = domEl("div", "integration-callout__detail", err instanceof Error ? err.message : "Unknown")
         resultEl.replaceChildren(title, detail)
       }
     }
@@ -199,34 +199,34 @@ export function initGrocySettings(): void {
   }
 
   // Sync Now
-  const syncGrocyBtn = document.getElementById("sync-grocy-now")
+  const syncGrocyBtn = byId("sync-grocy-now")
   if (syncGrocyBtn) {
     pageLifecycle.on(syncGrocyBtn, "click", async () => {
-    const btn = document.getElementById("sync-grocy-now") as HTMLButtonElement
+    const btn = byId("sync-grocy-now") as HTMLButtonElement
     btn.textContent = "Syncing..."
     btn.disabled = true
     try {
-      const syncMode = (document.getElementById("grocy-sync-mode") as HTMLSelectElement).value
-      const syncInterval = (document.getElementById("grocy-sync-interval") as HTMLSelectElement).value
+      const syncMode = (byId("grocy-sync-mode") as HTMLSelectElement).value
+      const syncInterval = (byId("grocy-sync-interval") as HTMLSelectElement).value
       const res = await fetch("/api/grocy/sync", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: settingsWriteHeaders("grocy_sync_enabled"),
         body: JSON.stringify({ action: "sync", sync_mode: syncMode, interval_ms: Number(syncInterval) }),
         signal: pageLifecycle.signal,
       })
       const data = await res.json()
       if (data.ok) {
         showToast(data.message || "Grocy sync complete")
-        const lastSyncedEl = document.getElementById("grocy-last-synced")
-        const itemCountEl = document.getElementById("grocy-item-count")
-        const syncInfoEl = document.getElementById("grocy-sync-info")
+        const lastSyncedEl = byId("grocy-last-synced")
+        const itemCountEl = byId("grocy-item-count")
+        const syncInfoEl = byId("grocy-sync-info")
         if (syncInfoEl) syncInfoEl.style.display = ""
         if (lastSyncedEl) lastSyncedEl.textContent = `Last synced: ${new Date().toLocaleTimeString()}`
         if (itemCountEl && data.status) {
           const total = (data.status.choreCount || 0) + (data.status.taskCount || 0) + (data.status.shoppingCount || 0)
           itemCountEl.textContent = `${total} item${total !== 1 ? "s" : ""}`
         }
-        const statusEl = document.getElementById("grocy-status")
+        const statusEl = byId("grocy-status")
         if (statusEl) {
           const total = (data.chores || 0) + (data.tasks || 0) + (data.shopping || 0)
           statusEl.textContent = total > 0 ? `Active (${total})` : "Active"
@@ -243,8 +243,8 @@ export function initGrocySettings(): void {
     })
   }
 
-  // Hydrate on load
-  hydrateGrocyStatus()
+  // Hydrate once Grocy's section is visible
+  whenSectionVisible(byId("grocy-url"), () => { void hydrateGrocyStatus() })
 }
 
 async function hydrateGrocyStatus() {
@@ -253,14 +253,14 @@ async function hydrateGrocyStatus() {
     if (!res.ok) return
     const data = await res.json()
     const s = data.settings || {}
-    if (s.grocy_url) (document.getElementById("grocy-url") as HTMLInputElement).value = s.grocy_url
-    if (s.grocy_api_key_set) (document.getElementById("grocy-key") as HTMLInputElement).placeholder = s.grocy_api_key_masked || "••••"
-    if (s.grocy_sync_mode) (document.getElementById("grocy-sync-mode") as HTMLSelectElement).value = s.grocy_sync_mode
-    if (s.grocy_sync_interval !== undefined) (document.getElementById("grocy-sync-interval") as HTMLSelectElement).value = String(s.grocy_sync_interval)
+    if (s.grocy_url) (byId("grocy-url") as HTMLInputElement).value = s.grocy_url
+    if (s.grocy_api_key_set) (byId("grocy-key") as HTMLInputElement).placeholder = s.grocy_api_key_masked || "••••"
+    if (s.grocy_sync_mode) (byId("grocy-sync-mode") as HTMLSelectElement).value = s.grocy_sync_mode
+    if (s.grocy_sync_interval !== undefined) (byId("grocy-sync-interval") as HTMLSelectElement).value = String(s.grocy_sync_interval)
     if (s.grocy_url || s.grocy_api_key_set) {
-      const statusEl = document.getElementById("grocy-status")
+      const statusEl = byId("grocy-status")
       if (statusEl) { statusEl.textContent = "Configured"; statusEl.className = "badge badge-active" }
-      const syncBtn = document.getElementById("sync-grocy-now")
+      const syncBtn = byId("sync-grocy-now")
       if (syncBtn) syncBtn.style.display = ""
       syncOpenGrocyLink(typeof s.grocy_url === "string" ? s.grocy_url : undefined)
     }
@@ -269,7 +269,7 @@ async function hydrateGrocyStatus() {
       const syncData = await syncRes.json()
       const sync = syncData.sync
       if (sync?.active) {
-        const statusEl = document.getElementById("grocy-status")
+        const statusEl = byId("grocy-status")
         if (statusEl) {
           statusEl.textContent = sync.itemCount > 0 ? `Active (${sync.itemCount})` : "Active"
           statusEl.className = "badge badge-active"
@@ -277,16 +277,16 @@ async function hydrateGrocyStatus() {
         }
       }
       if (sync?.lastSyncAt) {
-        const syncInfoEl = document.getElementById("grocy-sync-info")
-        const lastSyncedEl = document.getElementById("grocy-last-synced")
-        const itemCountEl = document.getElementById("grocy-item-count")
+        const syncInfoEl = byId("grocy-sync-info")
+        const lastSyncedEl = byId("grocy-last-synced")
+        const itemCountEl = byId("grocy-item-count")
         if (syncInfoEl) syncInfoEl.style.display = ""
         if (lastSyncedEl) {
           const ts = new Date(sync.lastSyncAt).toLocaleTimeString()
           if (sync.lastSyncError) {
             lastSyncedEl.textContent = `⚠ ${sync.lastSyncError} — last sync: ${ts}`
             lastSyncedEl.style.color = "var(--danger, #e74c3c)"
-            const statusEl = document.getElementById("grocy-status")
+            const statusEl = byId("grocy-status")
             if (statusEl) { statusEl.textContent = "Sync Error"; statusEl.className = "badge badge-error" }
           } else {
             lastSyncedEl.textContent = `Last synced: ${ts}`

@@ -1,0 +1,36 @@
+---
+import { organizationLabelsFor } from "@lib/organization-labels"
+
+interface Props {
+  href: string
+  kind: "group" | "project"
+  fragments: Record<string, string>
+}
+const { href, kind, fragments } = Astro.props
+const organization = await organizationLabelsFor(Astro)
+---
+
+<p data-legacy-board-bridge data-board-href={href} data-ingress-prefix={Astro.locals.ingressPath ?? ""} data-board-fragments={JSON.stringify(fragments)}>
+  <a href={href}>Open {organization(kind)}</a>
+</p>
+
+<script>
+  import { safeIngressHref } from "@lib/ingress-navigation"
+  import { pageLifecycle } from "@lib/page-lifecycle"
+
+  pageLifecycle.onPageLoad(() => {
+    const bridge = document.querySelector<HTMLElement>("[data-legacy-board-bridge]")
+    if (!bridge?.dataset.boardHref || !bridge.dataset.boardFragments) return
+    const fragments: Record<string, string> = JSON.parse(bridge.dataset.boardFragments)
+    const target = new URL(bridge.dataset.boardHref, location.origin)
+    const query = new URLSearchParams(location.search)
+    for (const name of ["offset", "open", "q", "status", "priority", "sort"]) {
+      const value = query.get(name)
+      if (value !== null) target.searchParams.set(name, value)
+    }
+    target.hash = fragments[location.hash.slice(1)] ?? ""
+    if (target.hash === "#tasks") { target.searchParams.delete("view"); target.hash = "kanban" }
+    else target.searchParams.set("view", "groups")
+    location.replace(safeIngressHref(target.pathname + target.search + target.hash, bridge.dataset.ingressPrefix ?? ""))
+  })
+</script>

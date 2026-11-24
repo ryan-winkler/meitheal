@@ -41,16 +41,54 @@ resolve_max_old_space_mb() {
   printf '128\n'
 }
 
+resolve_v8_pool_size() {
+  if is_uint "${MEITHEAL_V8_POOL_SIZE:-}" && [ "${MEITHEAL_V8_POOL_SIZE}" -ge 1 ]; then
+    printf '%s\n' "${MEITHEAL_V8_POOL_SIZE}"
+    return 0
+  fi
+
+  _cpu_v2=""
+  if [ -n "${MEITHEAL_CGROUP_V2_CPU_MAX_FILE:-}" ]; then
+    _cpu_v2="${MEITHEAL_CGROUP_V2_CPU_MAX_FILE}"
+  elif [ -z "${MEITHEAL_CGROUP_V2_MAX_FILE:-}" ]; then
+    _cpu_v2="/sys/fs/cgroup/cpu.max"
+  fi
+
+  if [ -n "${_cpu_v2}" ] && [ -r "${_cpu_v2}" ]; then
+    _quota=""
+    _period=""
+    read -r _quota _period _ < "${_cpu_v2}" 2>/dev/null || true
+    if is_uint "${_quota}" && is_uint "${_period}" && [ "${_quota}" -gt 0 ] && [ "${_period}" -gt 0 ] &&
+      [ "${_quota}" -lt 1099511627776 ] && [ "${_period}" -lt 1099511627776 ] &&
+      [ $(( _quota * 2 )) -le $(( _period * 3 )) ]; then
+      printf '1\n'
+      return 0
+    fi
+  fi
+
+  printf '\n'
+}
+
 apply_resolved_node_options() {
   _resolved_mb="$(resolve_max_old_space_mb)"
   case " ${NODE_OPTIONS:-} " in
     *" --max-old-space-size="*)
-      export NODE_OPTIONS
       ;;
     *)
-      export NODE_OPTIONS="${NODE_OPTIONS:+${NODE_OPTIONS} }--max-old-space-size=${_resolved_mb}"
+      NODE_OPTIONS="${NODE_OPTIONS:+${NODE_OPTIONS} }--max-old-space-size=${_resolved_mb}"
       ;;
   esac
+  _pool_size="$(resolve_v8_pool_size)"
+  if [ -n "${_pool_size}" ]; then
+    case " ${NODE_OPTIONS:-} " in
+      *" --v8-pool-size="*|*" --v8_pool_size="*|*" --v8-pool_size="*|*" --v8_pool-size="*|*" --v8-pool-size "*|*" --v8_pool_size "*|*" --v8-pool_size "*|*" --v8_pool-size "*)
+        ;;
+      *)
+        NODE_OPTIONS="${NODE_OPTIONS:+${NODE_OPTIONS} }--v8-pool-size=${_pool_size}"
+        ;;
+    esac
+  fi
+  export NODE_OPTIONS
 }
 
 if [ "${MEITHEAL_SOURCE_LIB_ONLY:-0}" = "1" ]; then
@@ -58,7 +96,7 @@ if [ "${MEITHEAL_SOURCE_LIB_ONLY:-0}" = "1" ]; then
 fi
 
 if [ -z "${MEITHEAL_VERSION:-}" ]; then
-  export MEITHEAL_VERSION="0.0.2"
+  export MEITHEAL_VERSION="0.0.3"
 fi
 export NODE_ENV="production"
 STARTUP_TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
@@ -68,8 +106,16 @@ export MEITHEAL_LOG_CATEGORIES="$(bashio::config 'log_categories | join(",")')"
 export MEITHEAL_LOG_LEVEL="$(bashio::config 'log_level')"
 export MEITHEAL_LOG_REDACTION="$(bashio::config 'log_redaction')"
 export MEITHEAL_AUDIT_ENABLED="$(bashio::config 'audit_enabled')"
-export LOKI_URL="$(bashio::config 'loki_url')"
-export MEITHEAL_LICENSE_KEY="$(bashio::config 'license_key' '')"
+if bashio::config.has_value 'loki_url'; then
+  export LOKI_URL="$(bashio::config 'loki_url')"
+else
+  export LOKI_URL=""
+fi
+if bashio::config.has_value 'license_key'; then
+  export MEITHEAL_LICENSE_KEY="$(bashio::config 'license_key')"
+else
+  export MEITHEAL_LICENSE_KEY=""
+fi
 
 # Transfer App files in fresh and restored Supervisor volumes before dropping
 # privileges. Retry any remaining entries on the next start after a failure.
@@ -91,7 +137,8 @@ if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
   # We cache the full JSON response here and reuse it for:
   #   1. Ingress path discovery
   #   2. Addon hostname for integration discovery
-  ADDON_SELF_INFO=$(curl -fsS -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+  ADDON_SELF_INFO=$(curl -fsS --connect-timeout 2 --max-time 5 \
+    -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
     http://supervisor/addons/self/info 2>/dev/null || true)
 
   # ── Discover ingress path ──
@@ -141,37 +188,91 @@ export PORT="${PORT:-3000}"
 apply_resolved_node_options
 HEALTHCHECK_URL="http://127.0.0.1:${PORT}/api/health"
 
+child_pid=""
+launching_child=0
+shutdown_signal=""
+
+signal_child() {
+  [ -n "${child_pid}" ] || return 1
+  # Protection mode can deny root's cross-UID signals. s6-setuidgid
+  # replaces the launcher's child with a process under the meitheal UID.
+  kill "-$1" "${child_pid}" 2>/dev/null ||
+    s6-setuidgid meitheal kill "-$1" "${child_pid}" 2>/dev/null
+}
+
+wait_for_child() {
+  local result=0
+  wait "${child_pid}" || result=$?
+  child_pid=""
+  return "${result}"
+}
+
+stop_child() {
+  trap '' SIGTERM SIGINT
+  if signal_child TERM; then
+    local forced=false
+    for _ in 1 2 3 4 5; do
+      signal_child 0 || break
+      sleep 1
+    done
+    if signal_child 0 && signal_child KILL; then forced=true; fi
+    wait_for_child || true
+    echo "{\"event\":\"addon.stopped\",\"forced\":${forced},\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
+  elif [ -n "${child_pid}" ]; then
+    wait_for_child || true
+  fi
+}
+
+request_shutdown() {
+  if [ "${launching_child}" -eq 1 ]; then
+    shutdown_signal=$1
+    return
+  fi
+  trap '' SIGTERM SIGINT
+  echo "{\"event\":\"addon.stopping\",\"signal\":\"$1\",\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
+  exit 0
+}
+
+start_child() {
+  launching_child=1
+  s6-setuidgid meitheal "$@" &
+  child_pid=$!
+  launching_child=0
+  if [ -n "${shutdown_signal}" ]; then request_shutdown "${shutdown_signal}"; fi
+}
+
+trap stop_child EXIT
+trap 'request_shutdown SIGTERM' SIGTERM
+trap 'request_shutdown SIGINT' SIGINT
+
 if [ -f /opt/meitheal/apps/web/package.json ]; then
-  (
-    cd /opt/meitheal/apps/web
-    export HOME=/data
-    s6-setuidgid meitheal node scripts/migrate.mjs || {
-      exit_code=$?
-      echo "Database migration failed: 'node scripts/migrate.mjs' exited with ${exit_code}" >&2
-      exit "${exit_code}"
-    }
-    export MEITHEAL_STARTUP_BACKUP_HANDLED=1
-    if [ ! -f dist/server/entry.mjs ]; then
-      echo "Missing Astro server entry at dist/server/entry.mjs"
-      exit 1
-    fi
-    echo "{\"event\":\"web.starting\",\"host\":\"${HOST}\",\"port\":\"${PORT}\",\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
-    # Use ingress-safe wrapper to normalize double slashes from HA Supervisor
-    # before they reach Astro's routing layer (prevents 301 redirect loop).
-    if [ -f scripts/serve.mjs ]; then
-      exec s6-setuidgid meitheal node scripts/serve.mjs
-    else
-      exec s6-setuidgid meitheal node dist/server/entry.mjs
-    fi
-  ) &
-  WEB_PID=$!
+  cd /opt/meitheal/apps/web
+  export HOME=/data
+  start_child node scripts/migrate.mjs
+  wait_for_child || {
+    exit_code=$?
+    echo "Database migration failed: 'node scripts/migrate.mjs' exited with ${exit_code}" >&2
+    exit "${exit_code}"
+  }
+  export MEITHEAL_STARTUP_BACKUP_HANDLED=1
+  if [ ! -f dist/server/entry.mjs ]; then
+    echo "Missing Astro server entry at dist/server/entry.mjs"
+    exit 1
+  fi
+  echo "{\"event\":\"web.starting\",\"host\":\"${HOST}\",\"port\":\"${PORT}\",\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
+  # Normalize double slashes from HA Supervisor before routing the request.
+  if [ -f scripts/serve.mjs ]; then
+    start_child node scripts/serve.mjs
+  else
+    start_child node dist/server/entry.mjs
+  fi
 
   for attempt in $(seq 1 45); do
-    if ! kill -0 "${WEB_PID}" 2>/dev/null; then
-      echo "Meitheal web process (${WEB_PID}) exited prematurely during startup (attempt ${attempt})" >&2
+    if ! signal_child 0; then
+      echo "Meitheal web process (${child_pid}) exited prematurely during startup (attempt ${attempt})" >&2
       exit 1
     fi
-    if curl -fsS "${HEALTHCHECK_URL}" >/dev/null 2>&1; then
+    if curl -fsS --max-time 2 "${HEALTHCHECK_URL}" >/dev/null 2>&1 && signal_child 0; then
       echo "{\"event\":\"healthcheck.passed\",\"attempt\":${attempt},\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
       break
     fi
@@ -195,7 +296,7 @@ if [ -f /opt/meitheal/apps/web/package.json ]; then
     DISCOVERY_PAYLOAD="{\"service\":\"meitheal\",\"config\":{\"host\":\"${ADDON_HOSTNAME:-local-meitheal}\",\"port\":${PORT}}}"
     DISC_SUCCESS=false
     for disc_attempt in 1 2 3; do
-      DISC_RESULT=$(curl -fsS -X POST \
+      DISC_RESULT=$(curl -fsS --max-time 2 -X POST \
         -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
         -H "Content-Type: application/json" \
         -d "${DISCOVERY_PAYLOAD}" \
@@ -207,7 +308,8 @@ if [ -f /opt/meitheal/apps/web/package.json ]; then
         break
       fi
       echo "{\"event\":\"discovery.registration.retry\",\"attempt\":${disc_attempt},\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}" >&2
-      sleep 5
+      sleep 5 &
+      wait "$!"
     done
     if [ "${DISC_SUCCESS}" != "true" ]; then
       echo "{\"event\":\"discovery.registration.failed\",\"attempts\":3,\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}" >&2
@@ -221,30 +323,5 @@ if [ -f /opt/meitheal/meitheal-hub/rootfs/etc/alloy/config.river ]; then
   echo "Alloy config present at /opt/meitheal/meitheal-hub/rootfs/etc/alloy/config.river"
 fi
 
-# ── Graceful shutdown ──
-# HA Supervisor sends SIGTERM on addon stop/restart. Trap it to
-# gracefully terminate the Node process and allow in-flight requests
-# to complete (up to 10s timeout).
-graceful_shutdown() {
-  echo "{\"event\":\"addon.stopping\",\"signal\":\"$1\",\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
-  if [ -n "${WEB_PID:-}" ] && kill -0 "${WEB_PID}" 2>/dev/null; then
-    kill -TERM "${WEB_PID}" 2>/dev/null || true
-    # Wait up to 10s for graceful exit
-    for _ in $(seq 1 10); do
-      if ! kill -0 "${WEB_PID}" 2>/dev/null; then
-        echo "{\"event\":\"addon.stopped\",\"graceful\":true,\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
-        exit 0
-      fi
-      sleep 1
-    done
-    # Force kill after 10s
-    kill -9 "${WEB_PID}" 2>/dev/null || true
-    echo "{\"event\":\"addon.stopped\",\"graceful\":false,\"reason\":\"force_kill_after_10s\",\"time\":\"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\"}"
-  fi
-  exit 0
-}
-
-trap 'graceful_shutdown SIGTERM' SIGTERM
-trap 'graceful_shutdown SIGINT' SIGINT
-
-wait -n
+[ -n "${child_pid}" ] || exit 1
+wait_for_child

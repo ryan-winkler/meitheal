@@ -1,3 +1,4 @@
+import { withBoardScope } from "@lib/board-http"
 /**
  * Reminders API — Phase 31
  *
@@ -11,11 +12,11 @@ import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/s
 import { SettingsRepository } from "@domains/tasks/persistence/settings-repository"
 import { logApiError } from "../../lib/api-logger"
 
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async (context, scope) => {
   try {
     await ensureSchema()
     const repo = new SettingsRepository(getPersistenceClient())
-    const { reminders, checked_at } = await repo.getPendingReminders()
+    const { reminders, checked_at } = await repo.getPendingReminders(scope)
 
     return new Response(
       JSON.stringify({ reminders, checked_at }),
@@ -27,12 +28,12 @@ export const GET: APIRoute = async () => {
       { status: 500, headers: { "Content-Type": "application/json" } },
     )
   }
-}
+})
 
 /**
  * POST: Dismiss a reminder by clearing its reminder_at field.
  */
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = withBoardScope({ resource: "task", action: "edit" }, async ({ request }, scope) => {
   try {
     await ensureSchema()
     const repo = new SettingsRepository(getPersistenceClient())
@@ -72,7 +73,7 @@ export const POST: APIRoute = async ({ request }) => {
         ? Number(snooze_minutes)
         : 60
       const snoozeTime = new Date(Date.now() + minutes * 60 * 1000).toISOString()
-      await repo.snoozeReminder(task_id, snoozeTime)
+      await repo.snoozeReminder(scope, task_id, snoozeTime)
       return new Response(
         JSON.stringify({ snoozed_until: snoozeTime, minutes }),
         { status: 200, headers: { "Content-Type": "application/json" } },
@@ -80,7 +81,7 @@ export const POST: APIRoute = async ({ request }) => {
     }
 
     // Default: dismiss
-    await repo.dismissReminder(task_id)
+    await repo.dismissReminder(scope, task_id)
 
     return new Response(JSON.stringify({ dismissed: true }), {
       status: 200,
@@ -93,4 +94,4 @@ export const POST: APIRoute = async ({ request }) => {
       { status: 500, headers: { "Content-Type": "application/json" } },
     )
   }
-}
+})

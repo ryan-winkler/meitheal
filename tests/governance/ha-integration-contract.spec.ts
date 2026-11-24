@@ -230,7 +230,7 @@ test("both Core CI profiles build this checkout before required App/native proto
     step =>
       step.uses === "pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115" &&
       /^pnpm\/action-setup@[0-9a-f]{40}$/.test(step.uses ?? "") &&
-      step.with?.version === "12.18.0",
+      step.with?.version === "12.22.0",
   )
   const node = core.steps.findIndex(
     step =>
@@ -242,7 +242,7 @@ test("both Core CI profiles build this checkout before required App/native proto
   const build = core.steps.findIndex(step => step.run?.trim() === "pnpm --filter @meitheal/web build")
   const uvSetup = core.steps.findIndex(
     step =>
-      step.uses === "astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2" &&
+      step.uses === "astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d" &&
       /^astral-sh\/setup-uv@[0-9a-f]{40}$/.test(step.uses ?? "") &&
       step.with?.version === "0.13.6" &&
       step.with?.["enable-cache"] === true,

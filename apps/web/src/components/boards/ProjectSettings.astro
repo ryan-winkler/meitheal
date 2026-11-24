@@ -1,0 +1,61 @@
+---
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
+import type { readNamedBoardPlanning } from "@domains/tasks/persistence/named-board-planning-repository"
+import { organizationLabelsFor } from "@lib/organization-labels"
+import Icon from "../ui/Icon.astro"
+import RetirePlanningForm from "./RetirePlanningForm.astro"
+
+type Planning = NonNullable<Awaited<ReturnType<typeof readNamedBoardPlanning>>>
+interface Props {
+  project: Planning["projects"][number]
+  goals: Planning["linkableGoals"]
+  selected?: boolean
+  canManage: boolean
+}
+const { project, goals, selected, canManage } = Astro.props
+const label = await organizationLabelsFor(Astro)
+---
+
+{canManage && <details id={selected ? "project-settings" : undefined} class="board-disclosure">
+  <summary class="board-disclosure__summary">
+    <Icon name="pencil" size={14} sprite />
+    <span>Edit {label("project")}</span>
+    <Icon name="chevron-down" size={14} class="board-disclosure__chevron" sprite />
+  </summary>
+  <div class="board-disclosure__body">
+    <form data-board-form="planning" class="board-form">
+      <input type="hidden" name="action" value="project-edit" />
+      <input type="hidden" name="id" value={project.id} />
+      <label>Name <input name="title" value={project.title} maxlength="150" required /></label>
+      <label>Details <textarea name="description" rows="2" maxlength="10000">{project.description}</textarea></label>
+      <p role="status" data-board-feedback class="board-feedback"></p>
+      <button type="submit" class="btn btn-secondary btn-sm">Save Project</button>
+    </form>
+    {available("goals") && <form data-board-form="planning" class="board-form">
+      <input type="hidden" name="action" value="project-goal" />
+      <input type="hidden" name="id" value={project.id} />
+      <label>Goal <select name="goalId">
+        <option value="">No Goal</option>
+        {goals
+          .map(goal => <option value={goal.id} selected={goal.id === project.goalId}>{goal.title}</option>)}
+      </select></label>
+      <p role="status" data-board-feedback class="board-feedback"></p>
+      <button type="submit" class="btn btn-secondary btn-sm">Save Goal link</button>
+    </form>}
+    <RetirePlanningForm entity="project" id={project.id} />
+  </div>
+</details>}
+{canManage ? <form data-board-form="planning" class="board-form board-status-form">
+  <input type="hidden" name="action" value="project-status" />
+  <input type="hidden" name="id" value={project.id} />
+  <label class="board-status-label" for={`project-status-${project.id}`}>Project status</label>
+  <div class="board-inline-control">
+    <select id={`project-status-${project.id}`} name="status">
+      <option value="active" selected={project.status === "active"}>Active</option>
+      <option value="completed" selected={project.status === "completed"}>Completed</option>
+      <option value="archived" selected={project.status === "archived"}>Archived</option>
+    </select>
+    <button type="submit" class="btn btn-secondary btn-sm">Save status</button>
+  </div>
+  <p role="status" data-board-feedback class="board-feedback"></p>
+</form> : <p class="board-note">{project.status}</p>}

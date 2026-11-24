@@ -8,21 +8,70 @@
  * Handles completion animation and full-stack-clear celebration.
  */
 
+import { createSpriteIconElement } from "../../generated/icon-registry"
 import type { ListenerManager } from "../managed-listeners"
 import { taskApi } from "../task-api-client"
 import { showToast } from "../toast"
 import { onTaskCompleted } from "../gamification-hook"
+import { isDoneStatus } from "../status-config"
 import { openTaskDetailHandoff } from "../task-detail-handoff"
+import { lockTodayTaskStatus, syncTodayTaskStatus } from "../today-list"
 
 export function setupFocusStack(
   container: HTMLElement,
   lm: ListenerManager,
-): void {
-  const stack = container.querySelector("#section-focus-stack") as HTMLElement | null
-  if (!stack) return
+) {
+  const stack = container.querySelector<HTMLElement>("#section-focus-stack")
+  if (!stack) return () => {}
+  const header = stack.querySelector<HTMLElement>(".focus-stack__header")
+  const count = header?.querySelector(".focus-stack__subtitle")
+  const cards = [...stack.querySelectorAll<HTMLElement>(".focus-card[data-id]")]
+  const completionTimers = new Map<HTMLElement, number>()
 
-  const totalCards = stack.querySelectorAll(".focus-card").length
-  let completedCards = 0
+  function renderStack() {
+    const remaining = cards.filter(card => !card.hidden && !card.inert).length
+    if (count) count.textContent = `${remaining} to focus on`
+
+    const allHidden = cards.every(card => card.hidden)
+    header?.toggleAttribute("hidden", remaining === 0)
+    const announcement = stack!.querySelector(".focus-stack--cleared")
+    if (!allHidden) {
+      announcement?.remove()
+      return
+    }
+    if (announcement) return
+    const cleared = document.createElement("div")
+    cleared.className = "focus-stack--cleared"
+    cleared.setAttribute("role", "status")
+    cleared.append(createSpriteIconElement("confetti", { size: 32 }))
+    const message = document.createElement("div")
+    message.className = "focus-stack__cleared-msg"
+    message.textContent = "Focus Stack cleared!"
+    const detail = document.createElement("div")
+    detail.className = "focus-stack__cleared-sub"
+    detail.textContent = "Great focus session — take a breath"
+    cleared.append(message, detail)
+    stack!.append(cleared)
+    void import("@lib/celebrations").then(({ celebrateFocusStackClear }) => {
+      if (!lm.disposed && cleared.isConnected) celebrateFocusStackClear()
+    })
+  }
+  function settleCard(card: HTMLElement, done: boolean) {
+    clearTimeout(completionTimers.get(card))
+    completionTimers.delete(card)
+    card.hidden = done
+    card.inert = false
+    card.classList.remove("focus-card--completing")
+    renderStack()
+  }
+
+  lm.on(container, "meitheal:today-status-committed", event => {
+    const { id } = (event as CustomEvent<{ id: string }>).detail
+    const card = cards.find(item => item.dataset.id === id)
+    if (!card || !isDoneStatus(card.dataset.status ?? "")) return
+    if (completionTimers.has(card)) renderStack()
+    else settleCard(card, true)
+  })
 
   // ── Complete button handler ──
   lm.on(stack, "click", async (e: Event) => {
@@ -33,57 +82,27 @@ export function setupFocusStack(
     if (completeBtn) {
       e.stopPropagation()
       const id = completeBtn.dataset.id
-      if (!id) return
+      const card = completeBtn.closest<HTMLElement>(".focus-card")
+      if (!id || !card || card.hidden || card.inert) return
 
-      completeBtn.disabled = true
-      const card = completeBtn.closest(".focus-card") as HTMLElement
-
+      const unlock = lockTodayTaskStatus(container, id)
+      if (!unlock) return
       try {
         const completed = await taskApi.updateTask(id, { status: "complete" })
+        if (lm.disposed) return
         showToast("common.task_completed")
         onTaskCompleted(completed)
 
-        // Animate card out
-        card?.classList.add("focus-card--completing")
-        completedCards++
-
-        // Also mark in main task list if visible
-        const mainCheckbox = container.querySelector(
-          `.tli__checkbox[data-id="${id}"]`
-        ) as HTMLInputElement | null
-        if (mainCheckbox) {
-          mainCheckbox.checked = true
-          mainCheckbox.closest(".tli")?.classList.add("tli--done")
+        if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+          card.classList.add("focus-card--completing")
+          card.inert = true
+          completionTimers.set(card, lm.onTimeout(() => settleCard(card, true), 350))
         }
-
-        setTimeout(() => {
-          card?.remove()
-
-          // All cleared → celebration!
-          if (completedCards >= totalCards) {
-            import("@lib/celebrations").then(({ celebrateFocusStackClear }) => {
-              celebrateFocusStackClear()
-            })
-            // Replace stack content with cleared message
-            const cleared = document.createElement("div")
-            cleared.className = "focus-stack--cleared"
-            const emoji = document.createElement("div")
-            emoji.style.fontSize = "32px"
-            emoji.textContent = "🎉"
-            const msg = document.createElement("div")
-            msg.className = "focus-stack__cleared-msg"
-            msg.textContent = "Focus Stack cleared!"
-            const sub = document.createElement("div")
-            sub.className = "focus-stack__cleared-sub"
-            sub.textContent = "Great focus session — take a breath"
-            cleared.append(emoji, msg, sub)
-            stack.textContent = ""
-            stack.appendChild(cleared)
-          }
-        }, 350)
+        syncTodayTaskStatus(container, id, "complete")
       } catch {
-        completeBtn.disabled = false
         showToast("common.failed_update", "error")
+      } finally {
+        unlock()
       }
       return
     }
@@ -97,4 +116,18 @@ export function setupFocusStack(
       }
     }
   })
+
+  return (id: string, row?: HTMLElement) => {
+    const card = cards.find(item => item.dataset.id === id)
+    if (!card) return
+    if (row) {
+      const overdue = row.dataset.overdue === "true"
+      card.classList.toggle("focus-card--overdue", overdue)
+      card.querySelector(".focus-card__due")?.replaceChildren(
+        createSpriteIconElement(overdue ? "alert-triangle" : "calendar-event", { size: 12 }),
+        row.dataset.focusDueLabel!,
+      )
+    }
+    settleCard(card, !row)
+  }
 }

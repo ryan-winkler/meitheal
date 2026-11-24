@@ -1,12 +1,12 @@
+import { PRIORITY_OVERLAY_SELECTOR } from "@lib/dialog-overlay"
 import { containTabFocus, createFocusTrap } from "@lib/focus-trap"
 import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 
 export function hasPriorityOverlay(): boolean {
   return Boolean(
-    document.querySelector(
-      'dialog[open], #meitheal-confirm-overlay, #meitheal-prompt-overlay, #ask-ha-overlay.active, #ask-ha-overlay:not(.modal-overlay):not(.hidden), [role="dialog"][aria-modal="true"].active:not(#shortcut-modal)',
-    ) ||
-    (typeof HTMLElement.prototype.showPopover === "function" && document.querySelector("[popover]:popover-open")),
+    document.querySelector(PRIORITY_OVERLAY_SELECTOR) ||
+    (typeof HTMLElement.prototype.showPopover === "function" &&
+      document.querySelector("[popover]:popover-open:not(#toast-container)")),
   )
 }
 
@@ -64,7 +64,25 @@ export function initShortcutModal(signal: AbortSignal) {
     if (isActive()) handleKeyDown(event)
   }, { signal })
   document.addEventListener("keydown", event => {
-    if (!isActive() || (event.target instanceof Node && overlay.contains(event.target))) return
+    if (!isActive()) return
+    if (event.target instanceof Element && overlay.contains(event.target)) return
+    const inToast =
+      (event.target instanceof Element && Boolean(event.target.closest("#toast-container"))) ||
+      Boolean(document.activeElement?.closest("#toast-container"))
+    if (inToast) {
+      const plainActivation =
+        !event.ctrlKey && !event.metaKey && !event.altKey &&
+        (event.key === "Escape" || event.key === "Enter" || event.key === " ")
+      if (plainActivation) return
+      if (event.key === "Tab") {
+        containTabFocus(overlay, event)
+        event.stopPropagation()
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      return
+    }
     handleKeyDown(event)
     containTabFocus(overlay, event)
     event.preventDefault()

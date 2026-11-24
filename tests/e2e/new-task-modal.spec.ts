@@ -50,6 +50,7 @@ test.describe("New Task Modal", () => {
       const saved = page.waitForResponse(response => new URL(response.url()).pathname === "/api/settings"
         && response.request().method() === "PUT" && response.request().postDataJSON()?.key === "theme")
       await page.locator("#theme-select").selectOption(theme)
+      await page.locator("#appearance-save-btn").click()
       expect((await saved).ok()).toBe(true)
       await page.goto("/today")
       await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
@@ -93,7 +94,7 @@ test.describe("New Task Modal", () => {
     await page.keyboard.press("Enter")
     const overlay = page.locator("#new-task-overlay")
     const first = overlay.locator("#close-new-task-modal")
-    const last = overlay.locator("#submit-new-task-btn")
+    const last = overlay.locator("#submit-new-task-another")
     await expect(overlay.locator("#new-task-title-input")).toBeFocused()
     await last.focus()
     await page.keyboard.press("Tab")
@@ -143,12 +144,13 @@ test.describe("New Task Modal", () => {
 
     const payloads: string[] = []
     let createdId: string | undefined
+    let createdKey: string | undefined
     await page.route("**/api/tasks", async route => {
       if (route.request().method() !== "POST") return route.continue()
       payloads.push(route.request().postDataJSON().checklists)
-      if (payloads.length === 1) return route.fulfill({ status: 503, body: "Fixture save failure" })
+      if (payloads.length === 1) return route.fulfill({ status: 422, body: "Fixture save failure" })
       const response = await route.fetch()
-      if (response.status() === 201) createdId = (await response.json()).id
+      if (response.status() === 201) ({ id: createdId, ticket_key: createdKey } = await response.json())
       return route.fulfill({ response })
     })
 
@@ -156,7 +158,7 @@ test.describe("New Task Modal", () => {
     const creationResponse = (status: number) => page.waitForResponse(response =>
       new URL(response.url()).pathname === "/api/tasks" && response.request().method() === "POST" && response.status() === status,
     )
-    await Promise.all([creationResponse(503), submit.click()])
+    await Promise.all([creationResponse(422), submit.click()])
     await expect(submit).toBeEnabled()
     await expect(draft).toHaveValue("Last")
     await Promise.all([creationResponse(201), submit.click()])
@@ -171,7 +173,7 @@ test.describe("New Task Modal", () => {
     expect(createdId).toEqual(expect.any(String))
     const detailName = "Task detail: Checklist creation fixture"
     await expect(page.getByRole("dialog", { name: detailName })).toBeVisible()
-    expect(new URL(page.url()).pathname).toBe("/tickets/" + encodeURIComponent(createdId!))
+    expect(new URL(page.url()).pathname).toBe("/tickets/" + createdKey)
     const id = encodeURIComponent(createdId!)
     const taskPath = "/api/tasks/" + id
     const getChecklist = async () => {
@@ -206,7 +208,7 @@ test.describe("Recovered ticket form", () => {
 
   test("labeled grouped controls keep goals available without assignees and fit desktop and mobile", async ({ page }) => {
     await page.route("**/api/users", route => route.fulfill({ json: { users: [] } }))
-    await page.route("**/api/goals", route => route.fulfill({ json: { goals: [{ id: "form-goal", title: "Prepare household supplies" }] } }))
+    await page.route(url => url.pathname === "/api/goals", route => route.fulfill({ json: { goals: [{ id: "form-goal", title: "Prepare household supplies" }] } }))
     await page.goto("/today")
     await page.getByRole("button", { name: "New Task", exact: true }).click()
     await page.addStyleTag({ content: "astro-dev-toolbar { display: none !important; }" })
@@ -259,7 +261,9 @@ test.describe("Recovered ticket form", () => {
       await route.fulfill({ status: 503, body: "Unavailable" })
     })
     await modal.getByRole("button", { name: "Create Checklist", exact: true }).press("Enter")
-    await expect(modal.getByRole("alert")).toContainText("Your entries are still here")
+    await expect(modal.getByRole("alert")).toContainText("We couldn’t confirm the save.")
+    await expect(modal.getByRole("button", { name: "Create Checklist", exact: true })).toBeDisabled()
+    await expect(modal.locator("#nt-check-save")).toBeFocused()
     await expect(title).toHaveValue("Prepare household supplies")
     expect(sent).toMatchObject({ goal_id: "form-goal", priority: 2, recurrence_rule: "FREQ=WEEKLY", due_date: expectedDue })
     expect(sent).not.toHaveProperty("is_routine")

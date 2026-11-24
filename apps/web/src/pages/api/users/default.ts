@@ -1,3 +1,4 @@
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { UserRepository } from "@domains/tasks/persistence/user-repository"
@@ -7,9 +8,9 @@ import { UserRepository } from "@domains/tasks/persistence/user-repository"
  * GET  /api/users/default — Get current default assignee
  * PUT  /api/users/default — Set default assignee { user_id } (null to clear)
  */
-export const GET: APIRoute = async () => {
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async (_context, scope) => {
   await ensureSchema()
-  const repo = new UserRepository(getPersistenceClient())
+  const repo = new UserRepository(getPersistenceClient(), scope)
   const value = await repo.getDefaultAssigneeSetting()
 
   return new Response(JSON.stringify({ default_assignee: value }), {
@@ -19,11 +20,11 @@ export const GET: APIRoute = async () => {
       "cache-control": "private, no-store",
     },
   })
-}
+})
 
-export const PUT: APIRoute = async ({ request }) => {
+export const PUT: APIRoute = withBoardScope({ resource: "board", action: "manage" }, async ({ request }, scope) => {
   await ensureSchema()
-  const repo = new UserRepository(getPersistenceClient())
+  const repo = new UserRepository(getPersistenceClient(), scope)
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
   const userId = body.user_id
 
@@ -57,4 +58,4 @@ export const PUT: APIRoute = async ({ request }) => {
   return new Response(JSON.stringify({ default_assignee: userId }), {
     status: 200, headers: { "content-type": "application/json" },
   })
-}
+})

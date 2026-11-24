@@ -1,4 +1,6 @@
+import { isWorkIntegrationSetting } from "@domains/tasks/work-integration-settings"
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
 
 export interface SettingsStore {
   load(): Promise<Record<string, unknown>>
@@ -8,6 +10,12 @@ export interface SettingsStore {
 
 let cachedSettings: Record<string, unknown> | null = null
 let pendingLoad: Promise<Record<string, unknown>> | null = null
+
+export function settingsWriteHeaders(key: string): HeadersInit {
+  const headers = { "content-type": "application/json" }
+  const board = isWorkIntegrationSetting(key) ? currentTaskApiContext() : null
+  return board ? taskApiHeaders(board, headers) : headers
+}
 
 async function fetchAllSettings(): Promise<Record<string, unknown>> {
   const response = await fetch("/api/settings", { cache: "no-store", signal: pageLifecycle.signal })
@@ -37,7 +45,7 @@ export function createSettingsStore(): SettingsStore {
       const response = await fetch("/api/settings", {
         signal: pageLifecycle.signal,
         method: "PUT",
-        headers: { "content-type": "application/json" },
+        headers: settingsWriteHeaders(key),
         body: JSON.stringify({ key, value, name }),
       })
 

@@ -1,18 +1,22 @@
 import { expect, test, type Page } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { deferred, shouldSkipBrowserSpecs } from "./_helpers"
 
 test.skip(shouldSkipBrowserSpecs(), "Requires a disposable App server")
 test.use({ serviceWorkers: "block" })
 
 let taskId: string
+let taskHeaders: Record<string, string>
 const snapshot = (url: URL) => url.pathname.endsWith("/api/settings") &&
   url.searchParams.get("key") === "ai-provider" && url.searchParams.get("handoff") === "1"
 const settings = (value: string | null, canUseAssist: boolean, url?: string) => ({ key: "ai-provider", value, canUseAssist, url })
 const row = (page: Page) => page.locator(`#section-today .tli[data-id="${taskId}"]`)
 const askToday = (page: Page) => row(page).getByRole("button", { name: "Ask AI" })
 
-test.beforeEach(async ({ request }) => {
-  const response = await request.post("/api/tasks", { data: {
+test.beforeEach(async ({ request, baseURL }) => {
+  taskId = ""
+  taskHeaders = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+  const response = await request.post("/api/tasks", { headers: taskHeaders, data: {
     title: "Today provider privacy fixture", description: "Keep this task with the selected provider",
     due_date: new Date().toISOString().slice(0, 10),
   } })
@@ -21,7 +25,7 @@ test.beforeEach(async ({ request }) => {
 })
 
 test.afterEach(async ({ request }) => {
-  expect((await request.delete(`/api/tasks/${taskId}`, { data: {} })).status()).toBe(204)
+  if (taskId) expect((await request.delete(`/api/tasks/${taskId}`, { headers: taskHeaders, data: {} })).status()).toBe(204)
 })
 
 test("saved HA-only choice overrides stale browser preferences and observes Assist authority", async ({ page, context }) => {
@@ -179,7 +183,7 @@ test("a delayed handoff takes priority over open shortcut help and returns focus
 })
 
 test("a newer Today handoff aborts the older request and releases both buttons", async ({ page, request }) => {
-  const response = await request.post("/api/tasks", { data: {
+  const response = await request.post("/api/tasks", { headers: taskHeaders, data: {
     title: "Second AI handoff fixture", due_date: new Date().toISOString().slice(0, 10),
   } })
   expect(response.status()).toBe(201)
@@ -216,7 +220,7 @@ test("a newer Today handoff aborts the older request and releases both buttons",
     await expect(second).not.toHaveAttribute("aria-busy", "true")
   } finally {
     release()
-    expect((await request.delete(`/api/tasks/${secondId}`, { data: {} })).status()).toBe(204)
+    expect((await request.delete(`/api/tasks/${secondId}`, { headers: taskHeaders, data: {} })).status()).toBe(204)
   }
 })
 

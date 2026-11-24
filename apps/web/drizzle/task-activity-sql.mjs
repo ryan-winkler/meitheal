@@ -13,9 +13,12 @@ export const validInactivityRevisionSql = "length(revision) = 32 AND length(CAST
 const validatedDays = `CASE WHEN ${validInactivityRevisionSql} THEN days ELSE 0 END`
 const defaultDays = `(SELECT ${validatedDays} FROM task_inactivity_policy WHERE scope = 'default')`
 
-export function inactivityDaysSql(simulate = false, area = "tasks.area_id") {
-  const areaDays = `(SELECT ${validatedDays} FROM task_inactivity_policy WHERE area_id = ${area})`
-  const base = simulate ? `CASE WHEN input.area_id IS NULL THEN COALESCE(input.proposed, ${defaultDays}) ELSE ${defaultDays} END` : defaultDays
+export function inactivityDaysSql(simulate = false, area = "tasks.area_id", board = null, policyTable = "task_inactivity_policy") {
+  if (!["task_inactivity_policy","scoped_policy"].includes(policyTable)) throw new Error("Source-owned inactivity policy relation required")
+  const baseDefault = policyTable === "task_inactivity_policy" ? defaultDays : `(SELECT ${validatedDays} FROM scoped_policy WHERE scope = 'default')`
+  const scopedDefault = board === null ? baseDefault : `(SELECT ${validatedDays} FROM ${policyTable} WHERE scope = 'default' AND board_id = ${board})`
+  const areaDays = `(SELECT ${validatedDays} FROM ${policyTable} WHERE area_id = ${area}${board === null ? "" : ` AND board_id = ${board}`})`
+  const base = simulate ? `CASE WHEN input.area_id IS NULL THEN COALESCE(input.proposed, ${scopedDefault}) ELSE ${scopedDefault} END` : scopedDefault
   const override = simulate ? `CASE WHEN input.area_id IS NOT NULL THEN COALESCE(input.proposed, ${areaDays}) ELSE ${areaDays} END` : areaDays
   return `COALESCE(NULLIF((${override}), -1), (${base}), 0)`
 }

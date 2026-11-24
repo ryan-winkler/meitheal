@@ -10,7 +10,7 @@ The required test job builds Meitheal, installs the Chromium version pinned by P
 
 The task runtime opens the shared libSQL client without loading the Drizzle adapter. Persistence specs that use `getDb()` load Drizzle on the first typed query. If a typed-query spec fails while HTTP routes stay healthy, verify the test installation includes `drizzle-orm` before investigating the database.
 
-Use Node 22 and pnpm 12.18.0. This pnpm version includes the 10.x security fixes for dependency installation and workspace configuration. [pnpm security advisories](https://github.com/pnpm/pnpm/security/advisories).
+Use Node 22 and pnpm 12.22.0. This pnpm version includes the 10.x security fixes for dependency installation and workspace configuration. [pnpm security advisories](https://github.com/pnpm/pnpm/security/advisories).
 
 From the repository root, run:
 
@@ -25,7 +25,7 @@ pnpm --filter @meitheal/tests exec playwright install chromium
 )
 ```
 
-The GitHub-hosted Linux image supplies browser system libraries. The job installs the locked Playwright Chromium and headless shell without updating host packages. Full Chromium runs the browser history restoration case. The test job has a 35-minute deadline for the full suite. The build-entrypoint spec resolves the runner's npm before isolating its command path so a tool-cache installation works with the same guarded entrypoint. The full suite uses ports 4611 and 4612 by default. Use `MEITHEAL_TEST_PORT` to choose the start of a different unused pair. Playwright refuses to reuse an existing server. A healthy fixture serves `/api/health` and reports standalone mode. [GitHub runner images](https://github.com/actions/runner-images) · [Playwright CI](https://playwright.dev/docs/ci)
+The GitHub-hosted Linux image supplies browser system libraries. The job installs the locked Playwright Chromium and headless shell without updating host packages. Full Chromium runs the browser history restoration case. The test job has a 45-minute deadline for setup, type checks, the build and the full suite. The build-entrypoint spec resolves the runner's npm before isolating its command path so a tool-cache installation works with the same guarded entrypoint. The full suite uses ports 4611 and 4612 by default. Use `MEITHEAL_TEST_PORT` to choose the start of a different unused pair. Playwright refuses to reuse an existing server. A healthy fixture serves `/api/health` and reports standalone mode. [GitHub runner images](https://github.com/actions/runner-images) · [Playwright CI](https://playwright.dev/docs/ci)
 
 To reproduce one browser spec, set `MEITHEAL_TEST_BROWSER=1` and pass its path to `pnpm --filter @meitheal/tests test`. For focused tests that need no server, omit that variable. Tests requiring a server skip in that local mode unless an external base URL is provided. Use external URLs only for a disposable instance because some specs create or delete data. The full CI runner always sets fixture mode.
 
@@ -37,9 +37,9 @@ The security header tests check that the deprecated browser XSS filter stays off
 
 Treat a failed assertion as a product or test-contract finding. Inspect the failing request and fixture state before changing the expectation. A CI fixture covers standalone behavior. Supervisor, ingress, and Home Assistant acceptance still use the project's dedicated verification environments.
 
-<!-- coderabbit-ai-generated:v1 -->
+## Temporary Picomatch advisory handling
 
-<!-- coderabbit-ai-generated-section:v1:1143f82af125b69f37f941558f7a5a2438270f6a4ff4c1a2ccefe86e52283eee -->
+Through November 23, 2026, the security audit can accept GHSA-fc5q-39xc-vjpf for build tooling when `pnpm -r why --prod picomatch --json` returns an empty array. It records the exception in the disposable CI checkout, then runs `pnpm audit` for all remaining advisories. Failed dependency queries, invalid JSON and registry errors fail the job. A production Picomatch dependency or November 24 restores the complete audit. The finding remains open until an upstream fix is adopted. See [the decision](../decisions/0023-temporary-build-only-picomatch-audit.md).
 
 Set `MEITHEAL_TEST_PORT` to an unused unprivileged port when running the disposable browser fixture alongside another local test run. The default is 4611.
 
@@ -49,5 +49,3 @@ Search keeps one existing status region while loading, failing and recovering; R
 
 Framework backup imports retain legacy scoring payloads for round trips; new framework edits still validate bounds, options and supported formulas. AI handoff tests mock the atomic `handoff=1` policy snapshot, including Assist authority and the saved URL. Regional setting writes, imports and resets invalidate the process-local SSR cache for the next page request; changes from other processes retain the existing 60-second refresh bound.
 
-
-<!-- /coderabbit-ai-generated:v1 -->

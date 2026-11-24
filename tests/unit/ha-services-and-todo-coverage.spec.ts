@@ -1,4 +1,9 @@
-import { execFileSync } from "node:child_process"
+import { integrationFixture, integrationRoute } from "../helpers/ordinary-integration-fixture"
+import { ordinaryTask } from "../helpers/ordinary-sync-fixture"
+import { fixturePrincipal } from "../helpers/current-board-scope"
+import { TaskRepository, readTaskDeletionReceipt, resolveIntegrationScope } from "../../apps/web/src/domains/tasks"
+import { NamedBoardRepository } from "../../apps/web/src/domains/tasks/persistence/named-board-repository"
+import { execFileSync } from "../helpers/isolated-process"
 import dns from "node:dns"
 import { mkdtempSync, rmSync } from "node:fs"
 import { createServer } from "node:http"
@@ -106,7 +111,14 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
     res.writeHead(404).end()
   })
 
-  const wss = new WebSocketServer({ server: httpServer })
+  let acceptConnections = true
+  const coreUsers = [
+    { id: "ha-user-1", name: "Ryan", is_owner: true, is_active: true, system_generated: false },
+    { id: "ha-user-2", name: "System", is_owner: false, is_active: false, system_generated: true },
+  ]
+  let rosterResult: unknown = coreUsers
+  let waitForRoster = false
+  const wss = new WebSocketServer({ server: httpServer, verifyClient: () => acceptConnections })
   wss.on("connection", (socket: { send(v: string): void; on(e: string, cb: (raw: Buffer) => void): void }) => {
     sockets.add(socket)
     const send = (payload: unknown) => socket.send(JSON.stringify(payload))
@@ -120,6 +132,7 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
         service?: string
         target?: { entity_id?: string }
         entity_id?: string
+        service_data?: Record<string, unknown>
       }
       if (msg.type === "auth") {
         send({ type: "auth_ok", ha_version: "2026.11.1" })
@@ -143,14 +156,12 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
       }
 
       if (msg.type === "config/auth/list") {
+        if (waitForRoster) return
         send({
           id: msg.id,
           type: "result",
           success: true,
-          result: [
-            { id: "ha-user-1", name: "Ryan", is_owner: true, is_active: true },
-            { id: "ha-user-2", name: "System", is_owner: false, is_active: false },
-          ],
+          result: rosterResult,
         })
         return
       }
@@ -197,6 +208,11 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
         return
       }
 
+      if (msg.type === "call_service" && msg.domain === "todo" && msg.service === "add_item") {
+        const data = msg.service_data ?? {}
+        todoItems.push({ uid: `fixture-added-${todoItems.length}`, summary: String(data.item), status: "needs_action", description: String(data.description ?? ""), due: String(data.due_date ?? "") })
+      }
+
       if (msg.type === "call_service" && msg.domain === "todo" && msg.service === "get_items") {
         const entityId = msg.target?.entity_id ?? "todo.household"
         send({ id: msg.id, type: "result", success: true, result: { response: { [entityId]: { items: todoItems } } } })
@@ -239,7 +255,7 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
   process.env.HA_BASE_URL = baseUrl
   process.env.HA_TOKEN = "unit-ha-long-lived-token"
 
-  const store = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const store = await import("../helpers/persistence-fixture")
   await store.ensureSchema()
   const client = store.getPersistenceClient()
   const haConn = await import("../../apps/web/src/domains/ha/ha-connection")
@@ -323,47 +339,117 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
     await haServices.callHAService("persistent_notification", "create", { message: "Ping" })
     expect(recordedCommands).toContain("call_service:persistent_notification.create")
 
-    // 3. HA users standalone paths
+    // 3. Verify roster recovery before the previous success TTL expires.
     haUsers.invalidateUserCache()
-    const users = await haUsers.listHAUsers()
-    expect(Array.isArray(users)).toBe(true)
-    await haUsers.getHAUserById("ha-user-1")
+    const initialDirectory = await haUsers.listHAUserDirectory()
+    expect(initialDirectory.verified).toBe(true)
+    expect(initialDirectory.users.map(user => user.id)).toEqual(["ha-user-1"])
+    expect(await haUsers.getHAUserById("ha-user-1")).toEqual(initialDirectory.users[0])
     expect(await haUsers.isCurrentActiveHAUser("ha-user-1", { fresh: true })).toBe(false)
     expect(await haUsers.getCurrentHAUserRoster("ha-user-1")).toBeUndefined()
 
+    const nowBeforeStall = Date.now
+    const { IdentityRepository } = await import("../../apps/web/src/domains/tasks/persistence/identity-repository")
+    const { GET: getAssignees } = await import("../../apps/web/src/pages/api/users/index")
+    await new IdentityRepository(client).createCustomUser("custom-roster-test", "Local assignee", "#6366f1")
+    waitForRoster = true
+    try {
+      Date.now = () => nowBeforeStall() + 61_000
+      const start = performance.now()
+      const [directory, response] = await Promise.all([
+        haUsers.listHAUserDirectory(),
+        integrationRoute(getAssignees, "/api/users?board_id=household", undefined, "GET"),
+      ])
+      expect(directory).toEqual({ users: initialDirectory.users, verified: false })
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({
+        ha_roster_verified: false,
+        users: [
+          expect.objectContaining({ id: "ha_ha-user-1", source: "home_assistant" }),
+          expect.objectContaining({ id: "custom-roster-test", source: "custom" }),
+        ],
+      })
+      expect(performance.now() - start).toBeLessThan(5_000)
+      expect(haConn.getHAConnectionStatus().connected).toBe(true)
+    } finally {
+      Date.now = nowBeforeStall
+      waitForRoster = false
+    }
+    expect(await haUsers.listHAUserDirectory()).toEqual(initialDirectory)
+
+    haConn.closeHAConnection()
+    rosterResult = [{ id: "ha-user-1", name: "Ryan", system_generated: false }]
+    expect(await haUsers.listHAUserDirectory()).toEqual({ users: initialDirectory.users, verified: false })
+    rosterResult = []
+    expect(await haUsers.listHAUserDirectory()).toEqual({ users: [], verified: true })
+    haConn.closeHAConnection()
+    rosterResult = coreUsers
+    expect(await haUsers.listHAUserDirectory()).toEqual(initialDirectory)
+
+    const savedToken = process.env.HA_TOKEN
+    haConn.closeHAConnection()
+    delete process.env.HA_TOKEN
+    expect(await haUsers.listHAUserDirectory()).toEqual({ users: [], verified: false })
+    process.env.HA_TOKEN = savedToken
+    expect(await haUsers.listHAUserDirectory()).toEqual(initialDirectory)
+
+    haConn.closeHAConnection()
+    acceptConnections = false
+    expect(await haUsers.listHAUserDirectory()).toEqual({ users: initialDirectory.users, verified: false })
+    expect(haConn.getHAConnectionStatus().connected).toBe(false)
+    acceptConnections = true
+    expect(await haUsers.listHAUserDirectory()).toEqual(initialDirectory)
+    expect((await haConn.getHAConnection())?.connected).toBe(true)
+
+    // A new credential cannot fall back to the disconnected source's names.
+    process.env.HA_TOKEN = "unit-ha-rotated-token"
+    acceptConnections = false
+    expect(await haUsers.listHAUserDirectory()).toEqual({ users: [], verified: false })
+    acceptConnections = true
+    expect(await haUsers.listHAUserDirectory()).toEqual(initialDirectory)
+
     // 4. Todo bridge start, inbound sync, outbound push/remove, stop
+    const todo = await integrationFixture({ integration: "todo", sourceId: "todo.household", purpose: "todo.sync" })
     await todoBridge.startTodoSync({
+      bindingId: todo.binding.id, generation: todo.binding.generation,
       entityId: "todo.household",
       syncEnabled: true,
       writeBack: true,
       syncDirection: "bidirectional",
     })
     expect(todoBridge.getActiveTodoSyncConfigs().length).toBeGreaterThanOrEqual(1)
-    expect(todoBridge.getTodoSyncStatus("todo.household")).toBeTruthy()
-    const syncRes = await todoBridge.syncTodoFromHA("todo.household")
+    expect(todoBridge.getTodoSyncStatus(todo.binding.id)).toBeTruthy()
+    const syncRes = await todoBridge.syncTodoFromHA(todo.binding.id)
     expect(syncRes.errors).toBe(0)
 
     const now = Date.now()
-    await client.execute({
-      sql: `INSERT INTO tasks (id, title, description, status, priority, labels, task_type, area_id,
-            ticket_number, framework_payload, calendar_sync_state, idempotency_key, request_id, created_at, updated_at)
-            VALUES (?, ?, ?, 'pending', 2, '[]', 'task', 'default', 99, '{}', 'pending', 'idem-todo-out', 'req-todo-out', ?, ?)`,
-      args: ["todo-outbound-1", "Test loft hatch", "Check insulation", now, now],
-    })
+    const outbound = await ordinaryTask(todo.scope, "Test loft hatch", "idem-todo-out")
+    const taskId = outbound.task.id
+    const repository = new TaskRepository(client, todo.scope)
+    expect(await repository.updateTask(taskId, { description: "Check insulation", due_date: "2026-11-24" })).toMatchObject({ ok: true })
     expect(await todoBridge.pushTaskToTodoList(
-      "todo-outbound-1",
+      taskId,
       "Test loft hatch",
       "pending",
       "todo.household",
       "2026-11-24",
       "Check insulation",
       [],
+      todo.context,
     )).toBe(true)
-    await todoBridge.removeTaskFromTodoList("todo-outbound-1")
+    const todoDeleteContext = await resolveIntegrationScope(client, todo.binding.id, todo.binding.generation, { resource: "task", action: "read" }, todo.scope, { resource: "task", action: "delete" })
+    if (!todoDeleteContext.ok) throw new Error("Current approved Todo deletion required")
+    const deletion = await repository.deleteWorkCommand(taskId)
+    if (!deletion.ok) throw new Error("Actual committed deletion required")
+    const receipt = await readTaskDeletionReceipt(client, todo.scope, deletion.eventId, taskId)
+    if (!receipt) throw new Error("Current owned deletion receipt required")
+    expect(await todoBridge.removeTaskFromTodoList(taskId, todoDeleteContext.value, receipt)).toBe(1)
     todoBridge.stopTodoSync()
 
     // 4b. Calendar bridge start, inbound sync, outbound push/remove, stop
-    calendarBridge.startCalendarSync({
+    const calendar = await integrationFixture({ integration: "calendar", sourceId: "calendar.family", purpose: "calendar.sync" })
+    await calendarBridge.startCalendarSync({
+      bindingId: calendar.binding.id, generation: calendar.binding.generation,
       entityId: "calendar.family",
       syncEnabled: true,
       syncMode: "bidirectional",
@@ -372,17 +458,19 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
     })
     expect(calendarBridge.getCalendarSyncConfigs().length).toBeGreaterThanOrEqual(1)
     expect(calendarBridge.getCalendarSyncConfig()?.entityId).toBe("calendar.family")
-    expect(calendarBridge.getCalendarSyncStatus().entities.length).toBeGreaterThanOrEqual(1)
-    await calendarBridge.syncFromHA("calendar.family")
-    await calendarBridge.pushTaskToCalendar(
-      "todo-outbound-1",
-      "Test loft hatch",
-      "2026-11-24",
-      "Check insulation",
-      "calendar.family",
-      { status: "pending", priority: 2, ticketKey: "MTH-99" },
-    )
-    await calendarBridge.removeTaskCalendarEvent("todo-outbound-1")
+    expect((await calendarBridge.getCalendarSyncStatus(calendar.scope)).entities.length).toBeGreaterThanOrEqual(1)
+    await calendarBridge.syncFromHA(calendar.binding.id)
+    const calendarTask = await ordinaryTask(calendar.scope, "Test loft hatch", "idem-calendar-out")
+    const calendarRepo = new TaskRepository(client, calendar.scope)
+    expect(await calendarRepo.updateTask(calendarTask.task.id, { due_date: "2026-11-24", description: "Check insulation" })).toMatchObject({ ok: true })
+    await calendarBridge.pushTaskToCalendar(calendar.context, calendarTask.task.id, "Test loft hatch", "2026-11-24", "Check insulation", { status: "pending", priority: 2, ticketKey: calendarTask.task.ticket_key ?? undefined })
+    const calendarDeleteContext = await resolveIntegrationScope(client, calendar.binding.id, calendar.binding.generation, { resource: "task", action: "read" }, calendar.scope, { resource: "task", action: "delete" })
+    if (!calendarDeleteContext.ok) throw new Error("Current approved Calendar deletion required")
+    const calendarDeleted = await calendarRepo.deleteWorkCommand(calendarTask.task.id)
+    if (!calendarDeleted.ok) throw new Error("Actual committed Calendar task deletion required")
+    const calendarReceipt = await readTaskDeletionReceipt(client, calendar.scope, calendarDeleted.eventId, calendarTask.task.id)
+    if (!calendarReceipt) throw new Error("Owned Calendar deletion receipt required")
+    await calendarBridge.removeTaskCalendarEvent(calendarDeleteContext.value, calendarReceipt)
     calendarBridge.stopCalendarSync()
 
     // 5. ha-startup initialization end-to-end with persisted settings (Todo, Grocy, Webhooks)
@@ -403,37 +491,40 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
         args: [k, v, now],
       })
     }
+    const otherBoard = await new NamedBoardRepository(client).create(fixturePrincipal(), "Other Grocy Board")
+    if (otherBoard.status !== "committed") throw new Error("Could not create the second Grocy Board")
+    const grocyDestination = { integration: "grocy", sourceId: "configured-grocy", purpose: "grocy.sync" }
+    await integrationFixture(grocyDestination)
+    const other = await integrationFixture({ ...grocyDestination, boardId: otherBoard.result.id })
+    const grocy = await integrationFixture(grocyDestination)
     await haStartup.initHAIntegrations()
-    await grocyBridge.syncFromGrocy()
-    expect(grocyBridge.getGrocySyncStatus().active).toBe(true)
-    expect(grocyBridge.getActiveGrocySyncConfig()?.intervalMs).toBe(0)
+    await grocyBridge.syncFromGrocy(grocy.binding.id)
+    expect((await grocyBridge.getGrocySyncStatus(grocy.scope)).active).toBe(true)
+    expect(grocyBridge.getActiveGrocySyncConfig(grocy.binding.id)?.intervalMs).toBe(0)
     expect(recordedCommands.length).toBeGreaterThan(0)
 
     // Bounded startup retry when a legacy Supervisor ingress URL is temporarily unresolvable on boot,
-    // and disabling Grocy sync cancels any pending retry so sync stays off even if URL becomes valid.
+    // and disabling the destination prevents startup from activating it when the URL becomes valid.
     grocyBridge.stopGrocySync()
     await client.execute({
       sql: "UPDATE settings SET value = ?, updated_at = ? WHERE key = 'grocy_url'",
       args: [JSON.stringify("http://supervisor/api/hassio_ingress/tok_retry"), now],
     })
-    await haStartup.autoStartGrocySync(0, 20)
-    expect(grocyBridge.getGrocySyncStatus().active).toBe(false)
+    await haStartup.autoStartGrocySync(0, 150)
+    expect((await grocyBridge.getGrocySyncStatus(grocy.scope)).active).toBe(false)
+    const { POST: postGrocySync } = await import("../../apps/web/src/pages/api/grocy/sync")
+    const disableRes = await integrationRoute(postGrocySync, "/api/grocy/sync?board_id=household", { action: "disable", bindingId: grocy.binding.id, generation: grocy.binding.generation })
+    expect(disableRes.status).toBe(200)
     await client.execute({
       sql: "UPDATE settings SET value = ?, updated_at = ? WHERE key = 'grocy_url'",
       args: [JSON.stringify(`http://grocy.local:${port}`), now],
     })
-    const { POST: postGrocySync } = await import("../../apps/web/src/pages/api/grocy/sync")
-    const disableRes = await postGrocySync({
-      request: new Request("http://localhost/api/grocy/sync", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "disable" }),
-      }),
-    } as unknown as Parameters<typeof postGrocySync>[0])
-    expect(disableRes.status).toBe(200)
-    await new Promise<void>((resolve) => setTimeout(resolve, 45))
-    expect(grocyBridge.getGrocySyncStatus().active).toBe(false)
-    haStartup.clearGrocyStartupRetry()
+    await expect.poll(() => grocyBridge.getActiveGrocySyncConfig(other.binding.id)?.generation).toBe(other.binding.generation)
+    expect((await grocyBridge.getGrocySyncStatus(grocy.scope)).active).toBe(false)
+    const enableRes = await integrationRoute(postGrocySync, "/api/grocy/sync?board_id=household", { action: "enable", bindingId: grocy.binding.id, generation: grocy.binding.generation, interval_ms: 0 })
+    expect(enableRes.status).toBe(200)
+    expect((await grocyBridge.getGrocySyncStatus(grocy.scope)).active).toBe(true)
+    grocyBridge.stopGrocySync()
 
     // A temporary lookup failure also has a recovery path when sync stays enabled.
     await client.batch([
@@ -447,12 +538,12 @@ test("HA connection, services, users, todo-bridge, and ha-startup work against l
       },
     ])
     await haStartup.autoStartGrocySync(0, 50)
-    expect(grocyBridge.getGrocySyncStatus().active).toBe(false)
+    expect((await grocyBridge.getGrocySyncStatus(grocy.scope)).active).toBe(false)
     await client.execute({
       sql: "UPDATE settings SET value = ? WHERE key = 'grocy_url'",
       args: [JSON.stringify(`http://grocy.local:${port}`)],
     })
-    await expect.poll(() => grocyBridge.getGrocySyncStatus().active).toBe(true)
+    await expect.poll(async () => (await grocyBridge.getGrocySyncStatus(grocy.scope)).active).toBe(true)
   } finally {
     haStartup.clearGrocyStartupRetry()
     grocyBridge.stopGrocySync()

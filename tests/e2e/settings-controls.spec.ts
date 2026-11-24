@@ -71,7 +71,7 @@ test.describe("Settings Controls", () => {
     await openSettings(page, "#workflow-settings")
     let reads = 0
     let writes = 0
-    await page.route("**/api/settings", async (route) => {
+    await page.route("**/api/custom-fields", async (route) => {
       if (route.request().method() === "GET") reads += 1
       if (route.request().method() === "PUT") writes += 1
       await route.fulfill({ status: 503, json: {} })

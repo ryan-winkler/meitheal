@@ -13,6 +13,7 @@ interface PillarDetail {
   weight: number
   principles: Principle[]
   linkedGoalCount: number
+  personal?: boolean
   opener?: HTMLElement
   showPrincipleForm?: boolean
 }
@@ -204,7 +205,7 @@ pageLifecycle.onPageLoad(signal => {
     if (!pillar || busy || document.getElementById("meitheal-confirm-overlay")) return
     const deleting = pillar
     const confirmed = await confirmDialog({
-      message: `Remove "${deleting.name}" from active pillars?`,
+      message: deleting.personal ? "Remove this Personal Pillar from active Pillars?" : `Remove "${deleting.name}" from active pillars?`,
       variant: "danger",
       confirmText: "Remove pillar",
       signal,
@@ -212,7 +213,9 @@ pageLifecycle.onPageLoad(signal => {
     if (!confirmed || pillar !== deleting) return
     busy = true
     try {
-      const response = await fetch(`/api/pillars/${encodeURIComponent(deleting.id)}`, { method: "DELETE", signal })
+      const response = await fetch(`/api/pillars/${encodeURIComponent(deleting.id)}`, {
+        method: "DELETE", headers: { "Content-Type": "application/json" }, signal,
+      })
       if (!response.ok) throw new Error("Pillar removal failed")
       window.location.reload()
     } catch {

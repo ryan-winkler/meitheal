@@ -10,7 +10,6 @@
  * @domain ha
  * @bounded-context integration
  */
-import { createHash } from "node:crypto"
 import {
   createConnection,
   createLongLivedTokenAuth,
@@ -23,16 +22,17 @@ import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observa
 
 // Polyfill WebSocket for Node.js server-side usage
 import WebSocket, { type ClientOptions } from "ws";
+import { localReaderCacheToken } from "../../../scripts/database-client.mjs";
 import { supervisorFetch } from "../../lib/supervisor-fetch";
-import { resolveHAConfiguration, type HAConfiguration } from "./ha-configuration"
+import { fingerprintHAConfiguration, resolveHAConfiguration, type HAConfiguration } from "./ha-configuration"
 import { initEntitySubscription, resetEntityConnection } from "./ha-entities"
 (globalThis as Record<string, unknown>).WebSocket = WebSocket;
 const CORE_PROXY = "http://supervisor/core"
 
 /** Open an isolated socket to Core with caller-specific transport limits. */
-export function openHACoreSocket(token: string, options: ClientOptions): WebSocket {
+export function openHACoreSocket(token: string, options: ClientOptions, baseUrl = CORE_PROXY): WebSocket {
   const Socket = globalThis.WebSocket as unknown as typeof WebSocket
-  return new Socket(createLongLivedTokenAuth(CORE_PROXY, token).wsUrl, options)
+  return new Socket(createLongLivedTokenAuth(baseUrl, token).wsUrl, options)
 }
 
 const logger = createLogger({
@@ -50,15 +50,52 @@ const SYS_REQ = "ha-system"; // sentinel request_id for background operations
 
 let connection: Connection | null = null;
 let configurationFingerprint: string | null = null
+const haSettingsSnapshotCache = new WeakMap<
+  object,
+  { generation: string; settingsRevision: number; settings: Record<string, unknown> }
+>()
+let storeModulePromise: Promise<typeof import("../tasks/persistence/store")> | null = null
+let settingsModulePromise: Promise<typeof import("../tasks/persistence/settings-repository")> | null = null
 
-export async function getHAConfiguration(): Promise<HAConfiguration | null> {
+export async function getHAConfiguration({ requireComplete = false } = {}): Promise<HAConfiguration | null> {
   if (process.env.SUPERVISOR_TOKEN) return resolveHAConfiguration(process.env)
-  const { ensureSchema, getPersistenceClient } = await import("../tasks/persistence/store")
-  const { SettingsRepository } = await import("../tasks/persistence/settings-repository")
+  storeModulePromise ??= import("../tasks/persistence/store")
+  settingsModulePromise ??= import("../tasks/persistence/settings-repository")
+  const [{ ensureSchema, getPersistenceClient }, { getSettingsRevision, SettingsRepository }] =
+    await Promise.all([storeModulePromise, settingsModulePromise])
   await ensureSchema()
-  const repo = new SettingsRepository(getPersistenceClient())
-  await repo.ensureSettingsTable()
-  return resolveHAConfiguration(process.env, await repo.getByKeys(["ha_url", "ha_token"]))
+  const client = getPersistenceClient()
+  const state = localReaderCacheToken(client)
+  const settingsRevision = getSettingsRevision()
+  let settings: Record<string, unknown> | undefined
+  if (state) {
+    const cached = haSettingsSnapshotCache.get(state.owner)
+    if (cached && cached.generation === state.token && cached.settingsRevision === settingsRevision) {
+      settings = cached.settings
+    }
+  }
+  if (!settings) {
+    const repo = new SettingsRepository(client)
+    settings = await repo.getByKeys(["ha_url", "ha_token"])
+    const currentGeneration = state ? localReaderCacheToken(client)?.token : undefined
+    if (
+      state &&
+      currentGeneration === state.token &&
+      getSettingsRevision() === settingsRevision
+    ) {
+      haSettingsSnapshotCache.set(state.owner, {
+        generation: currentGeneration,
+        settingsRevision,
+        settings: Object.freeze(settings),
+      })
+    }
+  }
+  const configuration = resolveHAConfiguration(process.env, settings)
+  if (!configuration && requireComplete && [settings.ha_url, settings.ha_token, process.env.HA_BASE_URL, process.env.HA_TOKEN]
+    .some(value => typeof value === "string" && value.trim())) {
+    throw new Error("Home Assistant requires both a URL and a token")
+  }
+  return configuration
 }
 
 const ALLOWED_HA_REST_PATH_RE = /^\/api\/[a-zA-Z0-9._%-]+(?:\/[a-zA-Z0-9._%-]+)*$/
@@ -170,7 +207,7 @@ export async function getHAConnection(): Promise<Connection | null> {
     closeHAConnection()
     return null
   }
-  const fingerprint = config ? createHash("sha256").update(JSON.stringify(config)).digest("hex") : null
+  const fingerprint = config ? fingerprintHAConfiguration(config) : null
   if ((connection && configurationFingerprint !== fingerprint) ||
     (connecting && connectingFingerprint !== fingerprint)) {
     closeHAConnection()
@@ -212,7 +249,7 @@ export async function getHAConnection(): Promise<Connection | null> {
     const auth = createLongLivedTokenAuth(config.baseUrl, config.token);
     candidate = await createConnection({ auth });
     const currentConfig = await getHAConfiguration()
-    const currentFingerprint = currentConfig ? createHash("sha256").update(JSON.stringify(currentConfig)).digest("hex") : null
+    const currentFingerprint = currentConfig ? fingerprintHAConfiguration(currentConfig) : null
     if (attemptGeneration !== connectionGeneration || currentFingerprint !== fingerprint) {
       candidate.close()
       candidate = null
@@ -269,45 +306,19 @@ export async function getHAConnection(): Promise<Connection | null> {
       })
     }
 
-    // Phase 52: Subscribe to actionable notifications from Companion Apps
+    // Only the current trusted Core subscription can supply a notification actor.
     subscribeEvent((event: unknown) => {
-      const ev = event as { data?: { action?: string } };
-      const action: string | undefined = ev?.data?.action;
-      if (action && action.startsWith("MEITHEAL_TASK_DONE_")) {
-        const taskId = action.replace("MEITHEAL_TASK_DONE_", "");
-        // F14: Validate taskId format (UUID or hex) before using in fetch
-        if (!taskId || taskId.length > 64 || !/^[a-zA-Z0-9_-]+$/.test(taskId)) {
-          logger.log("warn", {
-            event: "ha.notification.action_invalid", domain: "ha", component: "ha-connection",
-            request_id: SYS_REQ, message: `Rejected invalid taskId from notification action: ${taskId.slice(0, 20)}`,
-          });
-          return;
-        }
-        logger.log("info", {
-          event: "ha.notification.action", domain: "ha", component: "ha-connection",
-          request_id: SYS_REQ, message: `Received actionable notification to mark task done: ${taskId}`,
-        });
-
-        // Dispatch to internal API
-        fetch(`http://127.0.0.1:${process.env.PORT || 3000}/api/tasks/${encodeURIComponent(taskId)}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: "complete" })
-        }).then(response => {
-          void response.body?.cancel().catch(() => {})
-          if (!response.ok) {
-            const retryAfter = response.headers.get("retry-after")
-            const retry = retryAfter ? ` (Retry-After: ${retryAfter})` : ""
-            throw new Error(`Task completion returned HTTP ${response.status}${retry}`)
-          }
-        }).catch((err: unknown) => {
-          logger.log("error", {
-            event: "ha.notification.action_failed", domain: "ha", component: "ha-connection",
-            request_id: SYS_REQ, message: `Failed to execute task done action from HA event: ${String(err)}`,
-          });
-        });
-      }
-    }, "mobile_app_notification_action");
+      const current = () => connection === establishedConnection && connectionGeneration === attemptGeneration && establishedConnection.connected
+      if (!current()) return
+      void import("../../lib/task-notification-action").then(({ handleTaskNotificationAction }) =>
+        handleTaskNotificationAction(event, current),
+      ).catch(() => {
+        logger.log("warn", {
+          event: "ha.notification.action_failed", domain: "ha", component: "ha-connection",
+          request_id: SYS_REQ, message: "A notification action could not be verified",
+        })
+      })
+    }, "mobile_app_notification_action")
 
     // Phase 62b: Subscribe to component-fired meitheal events
     // The custom component fires these on hass.bus with source='component'.
@@ -424,6 +435,10 @@ function stopHeartbeat(): void {
     retired.interval = null
     retired.timeout = null
   }
+}
+
+export function matchesCurrentHAConnection(fingerprint: string, expected?: Connection): boolean {
+  return connection?.connected === true && configurationFingerprint === fingerprint && (!expected || connection === expected)
 }
 
 export function getHAConnectionStatus() {

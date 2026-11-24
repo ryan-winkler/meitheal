@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 async function addUser(request: APIRequestContext, name: string): Promise<string> {
@@ -56,7 +57,9 @@ test.describe("Settings users", () => {
       page.locator("#save-default-assignee").click(),
     ])
     expect(saved.status()).toBe(200)
-    expect(await saved.json()).toEqual({ default_assignee: original })
+    const persisted = await request.get("/api/users/default")
+    expect(persisted.status()).toBe(200)
+    expect(await persisted.json()).toEqual({ default_assignee: original })
 
     const [deleted] = await Promise.all([
       page.waitForResponse(response => response.request().method() === "DELETE" && new URL(response.url()).pathname === "/api/users/custom"),
@@ -88,7 +91,8 @@ test.describe("Settings users", () => {
 
   test("keeps custom users and default assignee available when the merged read fails", async ({ page, request }) => {
     const user = await addUser(request, "Fallback settings user")
-    const saved = await request.put("/api/users/default", { data: { user_id: user } })
+    const headers = await currentBoardWriteHeaders(request, "household", {})
+    const saved = await request.put("/api/users/default", { headers, data: { user_id: user } })
     expect(saved.ok()).toBe(true)
     const calls = userRequests(page)
     await page.route("**/api/users", route => route.fulfill({ status: 503, json: {} }))

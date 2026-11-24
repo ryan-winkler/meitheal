@@ -1,22 +1,24 @@
-import { fork } from "node:child_process"
+import { fork } from "../helpers/isolated-process"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
-import { expect, test } from "@playwright/test"
+import { expect, test, type APIRequestContext } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 
 const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
 const fixture = fileURLToPath(new URL("../scripts/feedback-ingress-fixture.mjs", import.meta.url))
 
-test("task promotion is shared, typed, and independent of the stored manual order", async ({ request, browser }) => {
+test("task promotion is shared, typed, and independent of the stored manual order", async ({ request, browser, playwright }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the built App and the ingress fixture")
   test.slow()
 
   const work = await mkdtemp(join(tmpdir(), "meitheal-prominence-"))
   const file = join(work, "meitheal.db")
-  const db = new DatabaseSync(file)
+  let native!: APIRequestContext
+  let db!: DatabaseSync
   let child: ReturnType<typeof fork> | undefined
   const browserSessions = []
 
@@ -40,14 +42,18 @@ test("task promotion is shared, typed, and independent of the stored manual orde
     ])
     const origin = `http://127.0.0.1:${info.port}`
     const ingress = origin + info.configuredPath
+    const ready = await request.get(ingress + "/api/health", { headers: { origin } })
+    expect(ready.status(), await ready.text()).toBe(200)
+    db = new DatabaseSync(file)
     const session = (role: string) => ({
       cookie: `feedback-fixture=${role}`, origin, "sec-fetch-site": "same-origin",
     })
-    const member = session("member")
-    const admin = session("admin")
+    const member = await currentBoardWriteHeaders(request, "household", session("member"), ingress)
+    const admin = await currentBoardWriteHeaders(request, "household", session("admin"), ingress)
+    native = await playwright.request.newContext({ extraHTTPHeaders: {} })
     const create = async (title: string) => {
       const result = await request.post(ingress + "/api/tasks", {
-        headers: member, data: { title, priority: 4, is_favorite: true },
+        headers: member, data: { title, priority: 4 },
       })
       expect(result.status()).toBe(201)
       return String((await result.json()).id)
@@ -67,7 +73,7 @@ test("task promotion is shared, typed, and independent of the stored manual orde
 
     const initial = await read()
     expect(initial.status()).toBe(200)
-    expect(await initial.json()).toMatchObject({ is_promoted: false, is_favorite: 1, priority: 4 })
+    expect(await initial.json()).toMatchObject({ is_promoted: false, priority: 4 })
     for (const invalid of [0, 1, "true", null, []]) {
       const rejected = await patch(invalid)
       expect(rejected.status()).toBe(400)
@@ -79,10 +85,10 @@ test("task promotion is shared, typed, and independent of the stored manual orde
       headers: admin, data: { name: "Read-only fixture", scopes: ["tasks:read"] },
     })
     expect(issued.status()).toBe(201)
-    const reader = { authorization: `Bearer ${(await issued.json()).token}` }
-    const forbidden = await request.patch(origin + taskPath, { headers: reader, data: { is_promoted: true } })
+    const reader = { authorization: `Bearer ${(await issued.json()).token}`, "x-meitheal-board-id": "household" }
+    const forbidden = await native.patch(origin + taskPath, { headers: reader, data: { is_promoted: true } })
     expect(forbidden.status()).toBe(403)
-    const unauthenticated = await request.patch(origin + taskPath, {
+    const unauthenticated = await native.patch(origin + taskPath, {
       headers: { "x-remote-user-id": "fixture-admin", "x-remote-user-groups": "system-admin" },
       data: { is_promoted: true },
     })
@@ -90,9 +96,9 @@ test("task promotion is shared, typed, and independent of the stored manual orde
 
     const promoted = await patch(true)
     expect(promoted.status()).toBe(200)
-    expect(await promoted.json()).toMatchObject({ is_promoted: true, is_favorite: 1, priority: 4 })
+    expect(await promoted.json()).toMatchObject({ is_promoted: true, priority: 4 })
     expect(await (await read()).json()).toMatchObject({ is_promoted: true })
-    expect(await (await request.get(origin + taskPath, { headers: reader })).json()).toMatchObject({ is_promoted: true })
+    expect(await (await native.get(origin + taskPath, { headers: reader })).json()).toMatchObject({ is_promoted: true })
     expect(positions()).toEqual(underlying)
 
     const moveBefore = (task_id: string, anchor_id: string) => request.post(reorderPath, {
@@ -105,7 +111,7 @@ test("task promotion is shared, typed, and independent of the stored manual orde
 
     const demoted = await patch(false)
     expect(demoted.status()).toBe(200)
-    expect(await demoted.json()).toMatchObject({ is_promoted: false, is_favorite: 1, priority: 4 })
+    expect(await demoted.json()).toMatchObject({ is_promoted: false, priority: 4 })
     expect(positions().map(row => row.id)).toEqual([third, first, second])
 
     const insert = db.prepare(`INSERT INTO tasks (id, title, status, kanban_position, idempotency_key, request_id, created_at, updated_at)
@@ -142,16 +148,24 @@ test("task promotion is shared, typed, and independent of the stored manual orde
     await expect(lane.locator("[data-kanban-range]")).toHaveText("1–25 of 29")
     await expect(target.getByRole("link", { name: /Paging card 25.*Promoted/ })).toBeVisible()
 
-    const filter = page.getByRole("button", { name: "Promoted only" })
+    const filter = page.getByRole("button", { name: "Promoted cards only" })
+    await expect(filter).toHaveAttribute("title", "Show only cards promoted to the top of their lane.")
     await filter.press("Enter")
     await expect(filter).toHaveAttribute("aria-pressed", "true")
     await expect(page).toHaveURL(/promoted=1/)
     await expect(cards).toHaveCount(1)
+    await expect(page.getByText("Showing only cards promoted to the top of their lane.")).toBeVisible()
     await expect(lane).toHaveAttribute("data-total", "29")
 
     const otherPage = await adminBrowser.newPage()
+    await otherPage.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
     await otherPage.goto(page.url())
     await expect(otherPage.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
+    const narrowFilter = otherPage.getByRole("button", { name: "Promoted cards only" })
+    await expect(narrowFilter).toHaveAttribute("aria-pressed", "true")
+    await expect(narrowFilter).toHaveCSS("min-block-size", "44px")
+    // The active Promoted filter uses the amber promotion color.
+    await expect(narrowFilter).toHaveCSS("border-top-color", "rgba(245, 159, 0, 0.55)")
     const otherLane = otherPage.locator('.kanban-column[data-status="pending"]')
     await expect(otherLane.locator(".kanban-card")).toHaveCount(1)
     await otherLane.getByRole("button", { name: "Task actions for Paging card 25" }).click()
@@ -164,17 +178,19 @@ test("task promotion is shared, typed, and independent of the stored manual orde
     await expect(cards).toHaveCount(0)
     await page.getByRole("button", { name: "Clear all active filters" }).press("Enter")
     await expect(filter).toHaveAttribute("aria-pressed", "false")
+    await expect(page.locator("[data-kanban-promoted-note]")).toBeHidden()
     await expect(cards.first()).toHaveAttribute("data-id", third)
     await lane.getByRole("link", { name: "Next" }).press("Enter")
     await expect(cards.last()).toHaveAttribute("data-id", targetId)
   } finally {
+    await native?.dispose()
     await Promise.allSettled(browserSessions.map(context => context.close()))
     if (child && child.exitCode === null) {
       const exited = once(child, "exit")
       child.kill("SIGTERM")
       await exited
     }
-    db.close()
+    db?.close()
     await rm(work, { recursive: true, force: true })
   }
 })

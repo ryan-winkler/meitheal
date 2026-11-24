@@ -10,8 +10,20 @@
  * @kcs Token auth is opt-in. System functions without any tokens.
  */
 import { hashToken, type AgentScope, type AgentTokenRecord } from "@meitheal/domain-auth"
-import { ensureAgentTokenSchema, getAgentTokenByHash, updateAgentTokenLastUsed } from "@domains/auth"
-import { ensureDatabaseSchemaSupported, ensureSchema, getPersistenceClient, TaskRepository, UserRepository } from "@domains/tasks"
+import {
+  ensureAgentTokenSchema,
+  getAgentTokenByHash,
+  updateAgentTokenLastUsed
+} from "@domains/auth"
+import {
+  ensureSchema,
+  getPersistenceClient,
+  IdentityRepository,
+  BoardAccessService,
+  validateTaskOperation
+} from "@domains/tasks"
+import { registerVerifiedPrincipal } from "@domains/tasks/board-scope"
+import { normalizeTaskLocatorKey } from "./board-request-context"
 import { apiError, apiProblem } from "./api-response"
 
 export interface ResolvedAgent {
@@ -26,8 +38,8 @@ export interface ResolvedAgent {
 export function isAssignedWriteOnly(agentToken?: ResolvedAgent | null): boolean {
   return Boolean(
     agentToken &&
-    agentToken.scopes.includes("tasks:write:assigned") &&
-    !agentToken.scopes.includes("tasks:write"),
+      agentToken.scopes.includes("tasks:write:assigned") &&
+      !agentToken.scopes.includes("tasks:write")
   )
 }
 
@@ -45,7 +57,7 @@ export async function requireAssignedTaskWriteAccess(
   agentToken: ResolvedAgent | undefined,
   findTask: (taskId: string) => Promise<{ assigned_to?: string | null } | null>,
   taskIds: string[],
-  errorMessage: string,
+  errorMessage: string
 ): Promise<Response | null> {
   if (!isAssignedWriteOnly(agentToken)) return null
   if (!agentToken?.assigneeId) {
@@ -67,17 +79,20 @@ export async function resolveAgentAuth(request: Request): Promise<ResolvedAgent 
   if (!header || !/^Bearer\s+mth_/i.test(header)) return null
 
   const plaintext = /^Bearer\s+(mth_[a-f0-9]{64})$/i.exec(header)?.[1]
-  const unauthorized = () => apiProblem({
-    status: 401,
-    detail: "Use a valid, active Meitheal agent token.",
-    extraHeaders: { "WWW-Authenticate": "Bearer error=\"invalid_token\"", "Cache-Control": "no-store" },
-  })
+  const unauthorized = () =>
+    apiProblem({
+      status: 401,
+      detail: "Use a valid, active Meitheal agent token.",
+      extraHeaders: {
+        "WWW-Authenticate": 'Bearer error="invalid_token"',
+        "Cache-Control": "no-store"
+      }
+    })
   if (!plaintext) throw unauthorized()
 
   let record: AgentTokenRecord | null
   try {
-    const schemaCheck = ensureDatabaseSchemaSupported()
-    if (schemaCheck) await schemaCheck
+    await ensureSchema()
     schemaReady ??= ensureAgentTokenSchema()
     await schemaReady
     record = await getAgentTokenByHash(hashToken(plaintext))
@@ -86,11 +101,13 @@ export async function resolveAgentAuth(request: Request): Promise<ResolvedAgent 
     throw apiProblem({
       status: 503,
       detail: "Agent credentials are temporarily unavailable.",
-      extraHeaders: { "cache-control": "private, no-store" },
+      extraHeaders: { "cache-control": "private, no-store" }
     })
   }
 
-  const active = record && !record.revoked &&
+  const active =
+    record &&
+    !record.revoked &&
     (record.expiresAt === null || Date.parse(record.expiresAt) > Date.now())
   if (!record || !active) throw unauthorized()
 
@@ -103,13 +120,15 @@ export async function resolveAgentAuth(request: Request): Promise<ResolvedAgent 
   if (assigneeId) {
     try {
       await ensureSchema()
-      const assignee = await new UserRepository(getPersistenceClient()).getCustomUser(assigneeId)
+      const assignee = await new IdentityRepository(getPersistenceClient()).getCustomUser(
+        assigneeId
+      )
       if (assignee?.kind !== "agent") assigneeId = null
     } catch {
       throw apiProblem({
         status: 503,
         detail: "Agent assignee verification is temporarily unavailable.",
-        extraHeaders: { "cache-control": "private, no-store" },
+        extraHeaders: { "cache-control": "private, no-store" }
       })
     }
   }
@@ -121,33 +140,71 @@ export async function resolveAgentAuth(request: Request): Promise<ResolvedAgent 
  * Enforce the assigned-only write grant: the task must exist and be assigned to
  * the assignee this token acts as. Returns a problem response to send, or null.
  */
-export async function checkAssignedTask(taskIdOrKey: string, agent: ResolvedAgent): Promise<Response | null> {
-  const denied = (detail: string) => apiProblem({
-    status: 403,
-    detail,
-    type: "https://meitheal.local/problems/task-not-assigned",
-    extraHeaders: { "Cache-Control": "no-store" },
-  })
+export async function checkAssignedTask(
+  taskIdOrKey: string,
+  agent: ResolvedAgent
+): Promise<Response | null> {
+  const denied = (detail: string) =>
+    apiProblem({
+      status: 403,
+      detail,
+      type: "https://meitheal.local/problems/task-not-assigned",
+      extraHeaders: { "Cache-Control": "no-store" }
+    })
   if (!agent.assigneeId) return denied("This token is not linked to an agent assignee.")
 
-  let assignedTo: unknown
+  const unavailable = () =>
+    apiProblem({
+      status: 404,
+      detail: "Task not found.",
+      extraHeaders: { "Cache-Control": "private, no-store" }
+    })
   try {
     await ensureSchema()
     // Resolve the task exactly as the task routes do, so both agree on which task is named.
     const client = getPersistenceClient()
-    const resolved = await new TaskRepository(client).resolveTaskId(taskIdOrKey)
-    const result = resolved
-      ? await client.execute({ sql: "SELECT assigned_to FROM tasks WHERE id = ?", args: [resolved.id] })
-      : { rows: [] }
-    // Let the route answer for a missing task so it reports the usual 404.
-    if (result.rows.length === 0) return null
-    assignedTo = result.rows[0]!.assigned_to
+    const {
+      rows: [located]
+    } = await client.execute({
+      sql: `SELECT task.id, COALESCE(task.task_board_id, legacy.id) AS board_id FROM tasks AS task
+        LEFT JOIN task_boards AS legacy ON legacy.storage_encoding = 'legacy_null_v1'
+        WHERE task.id = ? OR task.ticket_ref = ? OR (task.task_board_id IS NULL AND legacy.ticket_prefix || '-' || task.ticket_number = ?)`,
+      args: [
+        taskIdOrKey,
+        normalizeTaskLocatorKey(taskIdOrKey),
+        normalizeTaskLocatorKey(taskIdOrKey)
+      ]
+    })
+    if (!located) return null
+    const principal = registerVerifiedPrincipal(
+      { kind: "agent", id: agent.tokenId, tokenId: agent.tokenId },
+      {
+        expiresAt: Date.now() + 5_000,
+        administrator: false,
+        tokenScopes: agent.scopes,
+        assignedTo: agent.assigneeId
+      }
+    )
+    const authorization = await new BoardAccessService(client).resolve(
+      principal,
+      String(located.board_id),
+      { resource: "task", action: "edit" }
+    )
+    if (!authorization.ok) return unavailable()
+    return (await validateTaskOperation(
+      client,
+      authorization.scope,
+      String(located.id),
+      { resource: "task", action: "edit" },
+      agent.assigneeId
+    ))
+      ? null
+      : unavailable()
   } catch {
     return apiProblem({
       status: 503,
       detail: "Task assignment could not be checked. Try again.",
-      extraHeaders: { "Cache-Control": "no-store" },
+      extraHeaders: { "Cache-Control": "no-store" }
     })
   }
-  return assignedTo === agent.assigneeId ? null : denied("This token may only change tasks assigned to its agent.")
 }

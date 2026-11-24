@@ -16,7 +16,9 @@ const { activeLabels = [], id = "label-filter-bar", view = "" } = Astro.props
 </details>
 
 <script>
+  import { CALENDAR_FILTER_STATE_EVENT } from "@lib/calendar-task-filter"
   import { loadTableFilterState } from "@lib/filter-state"
+  import type { KanbanFilters } from "@lib/kanban-query"
   import { pageLifecycle } from "@lib/page-lifecycle"
 
   type Label = { title: string; hex_color?: string }
@@ -95,19 +97,26 @@ const { activeLabels = [], id = "label-filter-bar", view = "" } = Astro.props
         const button = (event.target as Element).closest<HTMLButtonElement>("button")
         if (!button) return
         const name = button.dataset.label
+        const previous = new Set(active)
         if (button === clear) active.clear()
         else if (name && !active.delete(name)) active.add(name)
-        render()
-        document.dispatchEvent(new CustomEvent("meitheal:label-filter", {
+        const accepted = document.dispatchEvent(new CustomEvent("meitheal:label-filter", {
+          cancelable: view === "calendar",
           detail: { labels: [...active], view },
         }))
+        if (!accepted) active = previous
+        render()
       }, { signal })
-      if (view === "table") {
-        document.addEventListener("meitheal:table-labels-reset", () => {
+      if (view === "table" || view === "calendar") {
+        document.addEventListener(view === "table" ? "meitheal:table-labels-reset" : "meitheal:calendar-filters-reset", () => {
           active = new Set()
           render()
         }, { signal })
       }
+      if (view === "calendar") document.addEventListener(CALENDAR_FILTER_STATE_EVENT, event => {
+        active = new Set((event as CustomEvent<KanbanFilters>).detail.labels)
+        render()
+      }, { signal })
       render()
     })
   })

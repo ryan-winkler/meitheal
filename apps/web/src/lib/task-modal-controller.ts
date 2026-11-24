@@ -1,28 +1,31 @@
+import { currentTaskApiContext, taskApiHeaders } from "./task-api"
+import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordVersion } from "./task-api-client"
+import { formatTicketDisplay } from "./task-editor-fields"
+import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-description-editor"
+import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         import { askAIForTask } from "@domains/ai/ai-context-service";
         import { createClientLogger } from "@lib/client-logger";
         import { copyToClipboard } from "@lib/clipboard"
         import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
         import {
-          buildTaskPermalink, getLegacyTaskId, type SearchDetailDismissal, type SearchDetailHandoff,
+          buildTaskPermalink, findKanbanDetailFocus, getLegacyTaskId, type SearchDetailDismissal, type SearchDetailHandoff,
         } from "@lib/task-detail-handoff"
         import { buildIngressPagePath } from "@lib/page-shell-links"
-        import { taskDetailPath, ticketIdFromPath, taskBackgroundUrl } from "@lib/task-page-url"
+        import { restoreTaskBackgroundUrl, sameTaskLocator, taskDetailPath, ticketIdFromPath, taskBackgroundUrl } from "@lib/task-page-url"
+        import { formatTicketKey, parseTicketKey } from "@lib/ticket-key"
 
         const log = createClientLogger("tasks", "detail-modal");
         import { saveAttachment } from "@domains/offline/offline-store";
         import { confirmDialog } from "@lib/confirm-dialog";
         import { pageLifecycle } from "@lib/page-lifecycle";
-        import { marked } from "marked";
-        import { sanitizeClient } from "@lib/sanitize-client";
         import { onTaskCompleted } from "@lib/gamification-hook";
-        import { renderTypeIconSvg } from "@lib/type-icon-config";
-        import { escapeHtml } from "@lib/safe-html";
+        import { createSpriteIconElement } from "../generated/icon-registry";
+        import { createTypeIconElement } from "@lib/type-icon-config";
         import { showToast } from "@lib/toast"
         import { loadComments, loadAttachments } from "@lib/controllers/modal-comments-attachments";
         import { initLabelsAndSubtasks } from "@lib/controllers/modal-labels-subtasks";
         import { initCustomFields } from "@lib/controllers/modal-custom-fields";
         import { initRelatedLinks } from "@lib/controllers/modal-related-links";
-        import { initCommandPalette } from "@lib/controllers/modal-command-palette";
         import { pendingChecklistSave, showTaskChecklist } from "@lib/controllers/modal-checklist"
         import { notifyInactivityTaskChanged } from "@lib/inactivity-client"
         import { isActiveParticipantProblem } from "@lib/task-participant-problem"
@@ -35,16 +38,22 @@
         import { resolveDescriptionTaskReferences } from "@lib/task-references"
         import { saveNavigationState } from "@lib/ingress-state-persistence"
         import { hasPriorityOverlay } from "@lib/layout-shortcuts-controller"
+        import { lockTaskStatusWrite, taskApi, type AssigneeDirectory } from "@lib/task-api-client"
+        import { initTaskDetailLayoutEditor, initTicketSectionOrder } from "@lib/task-detail-layout-controller"
+        import { browserUuid } from "@lib/browser-uuid"
+        import { assigneeFallback } from "@lib/task-assignee-display"
+        import { isDoneStatus, normalizeStatus } from "@lib/status-config"
+        import { byId, domEl, qs, setAttr } from "@lib/dom-helpers";
 
         // Use lifecycle signal for all global listeners in this module
         pageLifecycle.onPageLoad(() => {
           const __signal = pageLifecycle.signal;
 
           // === Task Detail Panel ===
-          const tdOverlay = document.getElementById(
+          const tdOverlay = byId(
             "task-detail-overlay",
           ) as HTMLDivElement;
-        if (!tdOverlay || tdOverlay.dataset.detailController === "ready") return
+        if (!tdOverlay || tdOverlay.dataset.namedBoard || tdOverlay.dataset.detailController === "ready") return
         tdOverlay.dataset.detailController = "ready"
         let pinnedSession: {
           reconcile: () => void; dirty: boolean; pending: number; queued?: () => void
@@ -56,21 +65,213 @@
           pending: number
           queued?: () => void
         } | undefined
+        let boardWithheld = false
+        let boardRevoked = false
+        document.addEventListener("meitheal:board-hidden", () => {
+          boardWithheld = true
+          tdOverlay.hidden = true
+          tdOverlay.inert = true
+          _modalAbortController?.abort()
+          closeTaskReferences()
+        }, { signal: __signal })
+        document.addEventListener("meitheal:board-revoked", event => {
+          const boardId = (event as CustomEvent<{ boardId?: string }>).detail?.boardId
+          if (boardId && boardId !== currentTaskApiContext()?.boardId) return
+          boardRevoked = true
+          boardWithheld = true
+          _modalAbortController?.abort()
+          detailGeneration++
+          descriptionRenderSequence++
+          searchSession?.lifetime.abort()
+          searchSession?.handoff.onDismiss("history")
+          searchSession = undefined
+          pinnedSession = undefined
+          currentTaskId = null
+          currentTaskVersion = null
+          currentTaskActions.clear()
+          currentTicketKey = null
+          sessionTicketId = null
+          currentCommentTarget = null
+          taskLoaded = false
+          resumeLoadedTask = undefined
+          pendingDescriptionSave = undefined
+          queuedDescriptionTransition = undefined
+          hasChecklistTextDraft = undefined
+          taskSaveQueues.clear()
+          pendingAreaWrites.clear()
+          commentAttempt = undefined
+          _descOriginalValue = ""
+          _settingsFields = []
+          _previouslyFocused = null
+          if (_descSavedTimer !== null) clearTimeout(_descSavedTimer)
+          clearTimeout(parentSearchTimer)
+          cancelCustomFieldSaves?.()
+          closeTaskReferences()
+          deferral.opening(false)
+          pins.opening()
+          for (const field of tdOverlay.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("input, textarea, select")) field.value = ""
+          tdOverlay.hidden = true
+          tdOverlay.inert = true
+          tdOverlay.classList.remove("active", "closing")
+          delete tdOverlay.dataset.openTaskId
+          tdOverlay.replaceChildren()
+          tdOverlay.remove()
+          document.body.style.overflow = ""
+          document.body.classList.remove("has-docked-inspector")
+        }, { signal: __signal })
+        document.addEventListener("meitheal:board-verified", () => {
+          if (boardRevoked) return
+          boardWithheld = false
+          // A new confirmation after unchanged verification gets a fresh lifetime;
+          // the cancelled confirmation and its original request remain aborted.
+          if (currentTaskId && taskLoaded && _modalAbortController?.signal.aborted) {
+            _modalAbortController = new AbortController()
+            resumeLoadedTask?.()
+          }
+          tdOverlay.hidden = false
+          tdOverlay.inert = false
+        }, { signal: __signal })
         let detailGeneration = 0
+        let cancelCustomFieldSaves: (() => void) | null = null
+        let currentTaskKind = "standard_action"
+        const KIND_BADGE_LABELS: Record<string, string> = {
+          calendar_event: "Event",
+          shopping_item: "Shopping",
+          routine_instance: "Routine",
+          checklist: "Checklist",
+          quick_capture: "Quick Capture",
+        }
+        function formatEventInputValue(raw: string, allDay: boolean): string {
+          if (!raw) return ""
+          if (allDay) return raw.slice(0, 10)
+          if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return `${raw}T09:00`
+          const d = new Date(raw)
+          if (Number.isNaN(d.getTime())) return raw.slice(0, 16)
+          return new Date(d.valueOf() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+        }
+        function parseEventInputForSave(val: string, allDay: boolean): string | null {
+          if (!val) return null
+          if (allDay) return val.slice(0, 10)
+          const d = new Date(val)
+          return Number.isNaN(d.getTime()) ? val : d.toISOString()
+        }
+        function syncEventInputsType(allDay: boolean): void {
+          const startInput = byId("td-start-date") as HTMLInputElement | null
+          const endInput = byId("td-end-date") as HTMLInputElement | null
+          const prevStart = startInput?.value ?? ""
+          const prevEnd = endInput?.value ?? ""
+          const sameAllDay = !allDay && /^\d{4}-\d{2}-\d{2}$/.test(prevStart) && prevEnd === prevStart
+          for (const inputEl of [startInput, endInput]) {
+            if (!inputEl) continue
+            const prev = inputEl.value
+            inputEl.type = allDay ? "date" : "datetime-local"
+            if (!allDay) inputEl.step = "any"
+            if (sameAllDay) {
+              inputEl.value = inputEl === endInput ? `${prevStart}T10:00` : `${prevStart}T09:00`
+            } else if (prev) {
+              inputEl.value = formatEventInputValue(prev, allDay)
+            }
+          }
+        }
         const deferral = initModalDeferral(tdOverlay, __signal)
         const pins = initModalTaskPin(tdOverlay, __signal, () => { if (pinnedSession) pinnedSession.dirty = true })
         const closeTaskReferences = initModalTaskReferences(tdOverlay, __signal)
-        const tdClose = document.getElementById("td-close")
-        const tdPanel = document.getElementById("task-detail-panel")
-        const tdHeading = document.getElementById("td-task-heading")
-        const tdActions = document.getElementById("td-task-actions")
-        const tdError = document.getElementById("td-load-error")
-        const copyFallback = document.getElementById("td-copy-link-fallback")
+        const tdClose = byId("td-close")
+        const tdPanel = byId("task-detail-panel")
+        const tdResizeHandle = byId("td-resize-handle")
+        const SIDEBAR_WIDTH_KEY = "meitheal:task-sidebar-width:v1"
+        const DEFAULT_SIDEBAR_WIDTH = 420
+        const MIN_SIDEBAR_WIDTH = 360
+        const maxSidebarWidth = () => Math.max(MIN_SIDEBAR_WIDTH, Math.min(840, window.innerWidth - MIN_SIDEBAR_WIDTH))
+        const clampSidebarWidth = (w: number) => Math.max(MIN_SIDEBAR_WIDTH, Math.min(maxSidebarWidth(), Math.round(w)))
+        const applySidebarWidth = (width: number, persist: boolean) => {
+          const clamped = clampSidebarWidth(width)
+          document.documentElement.style.setProperty("--task-inspector-width", `${clamped}px`)
+          if (tdResizeHandle) {
+            setAttr(tdResizeHandle, "aria-valuemax", String(maxSidebarWidth()))
+            setAttr(tdResizeHandle, "aria-valuenow", String(clamped))
+          }
+          if (persist) {
+            try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(clamped)) } catch { /* ignore storage errors */ }
+          }
+          return clamped
+        }
+        const readStoredSidebarWidth = (): number | null => {
+          try {
+            const raw = Number.parseInt(localStorage.getItem(SIDEBAR_WIDTH_KEY) ?? "", 10)
+            return Number.isFinite(raw) && raw >= MIN_SIDEBAR_WIDTH ? raw : null
+          } catch { return null }
+        }
+        if (tdResizeHandle) {
+          let dragStartX = 0
+          let dragStartWidth = DEFAULT_SIDEBAR_WIDTH
+          let activeWidth = readStoredSidebarWidth() ?? DEFAULT_SIDEBAR_WIDTH
+          if (readStoredSidebarWidth() !== null) applySidebarWidth(activeWidth, false)
+          tdResizeHandle.addEventListener("pointerdown", (e) => {
+            if (!document.body.classList.contains("has-docked-inspector")) return
+            dragStartX = e.clientX
+            dragStartWidth = tdOverlay.getBoundingClientRect().width || DEFAULT_SIDEBAR_WIDTH
+            activeWidth = dragStartWidth
+            setAttr(tdResizeHandle, "data-resizing", "")
+            tdResizeHandle.setPointerCapture?.(e.pointerId)
+            e.preventDefault()
+          }, { signal: __signal })
+          tdResizeHandle.addEventListener("pointermove", (e) => {
+            if (!tdResizeHandle.hasAttribute("data-resizing")) return
+            activeWidth = applySidebarWidth(dragStartWidth + (dragStartX - e.clientX), false)
+          }, { signal: __signal })
+          const finishDrag = () => {
+            if (!tdResizeHandle.hasAttribute("data-resizing")) return
+            tdResizeHandle.removeAttribute("data-resizing")
+            applySidebarWidth(activeWidth, true)
+          }
+          tdResizeHandle.addEventListener("pointerup", finishDrag, { signal: __signal })
+          tdResizeHandle.addEventListener("pointercancel", finishDrag, { signal: __signal })
+          tdResizeHandle.addEventListener("dblclick", () => {
+            activeWidth = DEFAULT_SIDEBAR_WIDTH
+            document.documentElement.style.removeProperty("--task-inspector-width")
+            setAttr(tdResizeHandle, "aria-valuenow", String(DEFAULT_SIDEBAR_WIDTH))
+            try { localStorage.removeItem(SIDEBAR_WIDTH_KEY) } catch { /* ignore */ }
+          }, { signal: __signal })
+          tdResizeHandle.addEventListener("keydown", (e) => {
+            if (!document.body.classList.contains("has-docked-inspector")) return
+            const step = e.shiftKey ? 64 : 24
+            const cur = tdOverlay.getBoundingClientRect().width || readStoredSidebarWidth() || DEFAULT_SIDEBAR_WIDTH
+            if (e.key === "ArrowLeft") { e.preventDefault(); activeWidth = applySidebarWidth(cur + step, true) }
+            else if (e.key === "ArrowRight") { e.preventDefault(); activeWidth = applySidebarWidth(cur - step, true) }
+            else if (e.key === "Home") { e.preventDefault(); activeWidth = applySidebarWidth(MIN_SIDEBAR_WIDTH, true) }
+            else if (e.key === "End") { e.preventDefault(); activeWidth = applySidebarWidth(maxSidebarWidth(), true) }
+          }, { signal: __signal })
+          window.addEventListener("resize", () => {
+            const stored = readStoredSidebarWidth()
+            if (stored !== null) applySidebarWidth(stored, false)
+          }, { signal: __signal })
+        }
+        const tdHeading = byId("td-task-heading")
+        const tdActions = byId("td-task-actions")
+        const tdTitleInput = qs<HTMLTextAreaElement>(tdPanel, "#td-title")
+        const statusSelect = document.querySelector<HTMLSelectElement>("#td-status")
+        const doneButton = document.querySelector<HTMLButtonElement>("#td-toggle-done")
+        const deleteButton = document.querySelector<HTMLButtonElement>("#td-delete")
+        const promoteButton = document.querySelector<HTMLButtonElement>("#td-toggle-promote")
+        const tdError = byId("td-load-error")
+        const copyFallback = byId("td-copy-link-fallback")
         const copyValue = document.querySelector<HTMLInputElement>("#td-copy-link-value")
         const commentInput = document.querySelector<HTMLTextAreaElement>("#td-comment-input")
         const commentButton = document.querySelector<HTMLButtonElement>("#td-comment-submit")
-        const commentError = document.getElementById("td-comment-error")
+        const commentError = byId("td-comment-error")
         let currentTaskId: string | null = null;
+        let currentTaskVersion: number | null = null
+        const currentTaskActions = new Set<string>()
+        let taskSaveConflict = false
+        const taskSaveQueues = new Map<string, Promise<void>>()
+        let sessionTicketId: string | null = null
+        let currentTicketKey: string | null = null
+        let pendingDescriptionSave: Promise<boolean> | undefined
+        let hasChecklistTextDraft: ((() => boolean) & { getRaw?: () => string }) | undefined
+        let flushPendingCustomFieldsSave: (() => Promise<void>) | undefined
+        let checklistAbortController: AbortController | null = null
+        let queuedDescriptionTransition: (() => void) | undefined
         let currentCommentTarget: string | null = null
         let commentsReady: Promise<void> = Promise.resolve()
         let _modalAbortController: AbortController | null = null;
@@ -90,29 +291,112 @@
           options?: string[];
         }> = [];
         const RICE_KEYS = ["Reach", "Impact", "Confidence", "Effort"];
-        const drawerSession = crypto.randomUUID?.() ?? Array.from(crypto.getRandomValues(new Uint8Array(16)),
-          byte => byte.toString(16).padStart(2, "0")).join("")
+        const drawerSession = browserUuid()
+        let drawerEntry = 0
         tdOverlay.dataset.ticketHistorySession = drawerSession
 
         const dockMedia = window.matchMedia("(min-width: 1440px)")
+        const scroller = byId("td-loaded-content")
+        const sections = byId("td-sections")!
+        const updateSectionOrder = initTicketSectionOrder(sections, __signal)
+        const focusToggle = document.querySelector<HTMLButtonElement>("#td-toggle-focus")
+        const layoutToggle = document.querySelector<HTMLButtonElement>("#td-toggle-layout")
+        const layoutPanel = byId("td-layout-panel")
+        const loadedActions = qs<HTMLElement>(tdOverlay, "[data-td-loaded-actions]")
+        let layoutEditorMounted = false
+        let layoutScrollTop = 0
+        let focusMode = false
+        let taskLoaded = false
+        let resumeLoadedTask: (() => void) | undefined
+
         function setInspectorAriaLabel(label: string) {
-          tdOverlay.setAttribute("aria-label", label)
-          tdPanel?.setAttribute("aria-label", label)
+          setAttr(tdOverlay, "aria-label", label)
+          setAttr(tdPanel, "aria-label", label)
         }
+
         function syncInspectorDockMode() {
           const isOpen = tdOverlay.classList.contains("active") && !tdOverlay.classList.contains("closing")
-          const docked = isOpen && window.innerWidth >= 1440
+          const docked = isOpen && !focusMode && dockMedia.matches
           document.body.classList.toggle("has-docked-inspector", docked)
-          tdPanel?.setAttribute("role", docked ? "region" : "dialog")
-          tdPanel?.setAttribute("aria-modal", docked ? "false" : "true")
+          tdOverlay.toggleAttribute("data-focus-mode", focusMode)
+          setAttr(tdPanel, "role", docked ? "region" : "dialog")
+          if (docked) tdPanel?.removeAttribute("aria-modal")
+          else setAttr(tdPanel, "aria-modal", "true")
           document.body.style.overflow = isOpen && !docked ? "hidden" : ""
+          if (loadedActions) loadedActions.hidden = !taskLoaded && !focusMode
+          if (layoutToggle) layoutToggle.hidden = !taskLoaded
+          syncTaskActionControls()
+          const label = focusToggle?.querySelector("span")
+          if (label && focusToggle) {
+            label.textContent = (focusMode ? focusToggle.dataset.exitLabel : focusToggle.dataset.enterLabel) ?? ""
+          }
         }
+
+        function resizeTitle(): void {
+          if (!tdTitleInput?.getClientRects().length) return
+          tdTitleInput.style.height = "auto"
+          tdTitleInput.style.height = `${tdTitleInput.scrollHeight + 2}px`
+        }
+
+        function setFocusMode(expanded: boolean): void {
+          const viewport = scroller?.getBoundingClientRect()
+          const isVisible = (element: Element) => {
+            const rect = element.getBoundingClientRect()
+            return viewport && rect.height > 0 && rect.bottom > viewport.top && rect.top < viewport.bottom
+          }
+          const active = document.activeElement
+          const anchor = active && scroller?.contains(active) && isVisible(active) ? active :
+            [...sections.children].find(isVisible)
+          const offset = anchor && viewport ? anchor.getBoundingClientRect().top - viewport.top : 0
+          focusMode = expanded
+          setAttr(tdOverlay, "data-focus-used", "")
+          syncInspectorDockMode()
+          resizeTitle()
+          if (scroller && anchor) {
+            const rect = anchor.getBoundingClientRect()
+            const view = scroller.getBoundingClientRect()
+            const margin = Math.min(32, rect.height, view.height)
+            const usableOffset = Math.max(margin - rect.height, Math.min(offset, view.height - margin))
+            scroller.scrollTop += rect.top - view.top - usableOffset
+          }
+          if (!tdPanel?.contains(document.activeElement)) focusToggle?.focus({ preventScroll: true })
+        }
+
+        // A pointer toggle can be used mid-edit without blurring the active input.
+        focusToggle?.addEventListener("mousedown", event => {
+          const active = document.activeElement
+          if (event.button === 0 && scroller?.contains(active) && active?.matches("input, textarea, [contenteditable]")) {
+            event.preventDefault()
+          }
+        }, { signal: __signal })
+        focusToggle?.addEventListener("click", () => setFocusMode(!focusMode), { signal: __signal })
+
+        function setLayoutPanel(open: boolean): void {
+          if (!layoutPanel || !layoutToggle || !scroller) return
+          if (open) {
+            layoutScrollTop = scroller.scrollTop
+            const editor = qs<HTMLElement>(layoutPanel, "[data-task-layout-editor]")
+            if (editor && !layoutEditorMounted) {
+              initTaskDetailLayoutEditor(editor, __signal)
+              layoutEditorMounted = true
+            }
+          }
+          const wasFocused = layoutPanel.contains(document.activeElement)
+          layoutPanel.hidden = !open
+          setAttr(layoutToggle, "aria-expanded", String(open))
+          scroller.scrollTop = open ? 0 : layoutScrollTop
+          if (!open && wasFocused) layoutToggle.focus({ preventScroll: true })
+        }
+
+        layoutToggle?.addEventListener("click", () => setLayoutPanel(Boolean(layoutPanel?.hidden)), { signal: __signal })
         dockMedia.addEventListener("change", syncInspectorDockMode, { signal: __signal })
-        window.addEventListener("resize", syncInspectorDockMode, { passive: true, signal: __signal })
+        window.addEventListener("resize", resizeTitle, { passive: true, signal: __signal })
         __signal.addEventListener("abort", () => {
           document.body.classList.remove("has-docked-inspector")
-          tdPanel?.setAttribute("role", "dialog")
-          tdPanel?.setAttribute("aria-modal", "true")
+          tdOverlay.removeAttribute("data-focus-mode")
+          tdOverlay.removeAttribute("data-focus-used")
+          setAttr(tdPanel, "role", "dialog")
+          setAttr(tdPanel, "aria-modal", "true")
         }, { once: true })
 
         function beginScopedWrite() {
@@ -152,7 +436,8 @@
           const url = new URL(window.location.href)
           const ticket = ticketIdFromPath(url.pathname, window.__ingress_path)
           if (taskId) {
-            const target = new URL(buildIngressPagePath(taskDetailPath(taskId)), url.origin)
+            const locator = currentTicketKey !== null && sameTaskLocator(taskId, currentTaskId, currentTicketKey) ? currentTicketKey : taskId
+            const target = new URL(buildIngressPagePath(taskDetailPath(locator)), url.origin)
             if (commentTarget !== null) target.searchParams.set("comment", commentTarget)
             if (target.href === url.href) return
             if (ticket !== null) {
@@ -160,15 +445,17 @@
               saveNavigationState()
               return
             }
-            const legacy = url.searchParams.has("open") || getLegacyTaskId(url.hash) !== null
+            const legacy = url.searchParams.has("open") || url.searchParams.has("ticket") || getLegacyTaskId(url.hash) !== null
             url.searchParams.delete("open")
+            url.searchParams.delete("ticket")
             url.searchParams.delete("comment")
             if (getLegacyTaskId(url.hash) !== null) url.hash = ""
             const state = { ...history.state, ticketDrawer: { returnTo: url.href, session: drawerSession, pushed: !legacy && !replace } }
             if (legacy || replace) history.replaceState(state, "", target)
             else {
-              history.replaceState({ ...history.state, ticketBackground: drawerSession }, "")
-              history.pushState(state, "", target)
+              const ticketBackground = `${drawerSession}-${++drawerEntry}`
+              history.replaceState({ ...history.state, ticketBackground }, "")
+              history.pushState({ ...state, ticketBackground }, "", target)
             }
             saveNavigationState()
           } else if (ticket !== null) {
@@ -177,7 +464,64 @@
               history.replaceState(history.state, "", taskBackgroundUrl(url))
               saveNavigationState()
             }
+          } else if (url.searchParams.has("open") || url.searchParams.has("ticket") || getLegacyTaskId(url.hash) !== null) {
+            url.searchParams.delete("open")
+            url.searchParams.delete("ticket")
+            url.searchParams.delete("comment")
+            if (getLegacyTaskId(url.hash) !== null) url.hash = ""
+            history.replaceState(history.state, "", url)
+            saveNavigationState()
           }
+        }
+
+        const pendingAreaWrites = new Map<string, Promise<string | null>>()
+        let changedAreaTask: string | null = null
+
+        function reconcileAreaGrouping() {
+          if (!changedAreaTask || __signal.aborted) return
+          changedAreaTask = null
+          document.dispatchEvent(new CustomEvent("kanban:detail-changed", { detail: "area" }))
+        }
+
+        let epicGroupingDirty = false
+        function reconcileEpicGrouping() {
+          if (!epicGroupingDirty || __signal.aborted) return
+          epicGroupingDirty = false
+          document.dispatchEvent(new Event("meitheal:task-hierarchy-changed"))
+        }
+
+        function waitForDescriptionWrite(next: () => void): boolean {
+          if (!descEditContainer?.classList.contains("hidden")) descEditor?.flushToTextarea()
+          const dirty = currentTaskId && !descEditContainer?.classList.contains("hidden") &&
+            tdDescription.value !== _descOriginalValue
+          if (!pendingDescriptionSave && !dirty) return false
+          if (dirty && _isPopulating) {
+            queuedDescriptionTransition = next
+            return true
+          }
+          const generation = detailGeneration
+          const write = pendingDescriptionSave ?? exitDescEdit(true)
+          void write.then(saved => {
+            if (saved && !__signal.aborted && generation === detailGeneration) next()
+          })
+          return true
+        }
+
+        function waitForChecklistTextWrite(next: () => void): boolean {
+          if (!currentTaskId) return false
+          const active = document.activeElement
+          if (active instanceof HTMLTextAreaElement && active.closest("#td-checklists")) active.blur()
+          if (!hasChecklistTextDraft?.()) return false
+          const write = pendingChecklistSave(currentTaskId)
+          if (!write) {
+            byId("td-checklist-recover")?.focus()
+            return true
+          }
+          const generation = detailGeneration
+          void write.then(saved => {
+            if (saved && !__signal.aborted && !boardWithheld && generation === detailGeneration) next()
+          })
+          return true
         }
 
         function closeTD(reason: SearchDetailDismissal = "dismiss", updateLocation = true) {
@@ -185,16 +529,32 @@
           const immediate = reason === "history" && Boolean(search)
           if (!tdOverlay?.classList.contains("active") || (!immediate && tdOverlay.classList.contains("closing"))) return
           if (!immediate && waitForDetailWrites(() => closeTD(reason, updateLocation))) return
+          if (waitForDescriptionWrite(() => closeTD(reason, updateLocation))) return
+          if (!immediate && waitForChecklistTextWrite(() => closeTD(reason, updateLocation))) return
+          void flushPendingCustomFieldsSave?.()
           const closing = ++detailGeneration
+          const previousCard = _previouslyFocused?.closest<HTMLElement>(".kanban-card")
+          const previousDay = _previouslyFocused?.closest<HTMLElement>(".cal-cell")?.dataset.date
+          const previousCompletion = _previouslyFocused instanceof HTMLAnchorElement &&
+            _previouslyFocused.hasAttribute("data-today-completion") ? _previouslyFocused.dataset.taskDetailLink : undefined
           closeTaskReferences()
           search?.lifetime.abort()
           deferral.opening(false)
           pins.opening()
           // Abort any in-flight fetches
           if (_modalAbortController) { _modalAbortController.abort(); _modalAbortController = null; }
+          cancelCustomFieldSaves?.()
           currentTaskId = null;
-          currentCommentTarget = null
+          hasChecklistTextDraft = undefined
           delete tdOverlay.dataset.openTaskId
+          document.dispatchEvent(new CustomEvent("meitheal:ha-location-task"))
+          sessionTicketId = null
+          currentTicketKey = null
+          pendingDescriptionSave = undefined
+          queuedDescriptionTransition = undefined
+          taskLoaded = false
+          resumeLoadedTask = undefined
+          currentCommentTarget = null
           if (updateLocation) setTaskLocation(null)
 
           const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -202,17 +562,25 @@
           const finishClose = () => {
             if (closing !== detailGeneration || currentTaskId !== null || !tdOverlay.classList.contains("active")) return
             tdOverlay.classList.remove("active", "closing");
+            focusMode = false
+            tdOverlay.removeAttribute("data-focus-used")
+            if (layoutPanel && !layoutPanel.hidden) setLayoutPanel(false)
             syncInspectorDockMode();
-            // D1: Collapse sidebar on close (reset for next open)
-            _sidebarProps?.classList.remove("td-sidebar-expanded");
-            _sidebarToggle?.setAttribute("aria-expanded", "false");
-            _sidebarChevron?.classList.remove("td-chevron-open");
             // P3-4: Restore focus to the element that triggered the panel
-            if (!search && _previouslyFocused instanceof HTMLElement &&
-                _previouslyFocused !== document.body && _previouslyFocused.isConnected) {
-              _previouslyFocused.focus()
+            const kanban = byId("kanban-board")
+            const origin = _previouslyFocused?.isConnected ? _previouslyFocused
+              : _previouslyFocused?.id ? byId(_previouslyFocused.id)
+              : previousCard && kanban && _previouslyFocused ? findKanbanDetailFocus(kanban, _previouslyFocused)
+              : previousDay ? document.querySelector<HTMLElement>(`.cal-cell[data-date="${CSS.escape(previousDay)}"]`) ??
+                document.querySelector<HTMLElement>("#calendar-shell .cal-today-btn")
+              : previousCompletion ? Array.from(document.querySelectorAll<HTMLElement>(
+                `.today-section__list a[data-task-detail-link="${CSS.escape(previousCompletion)}"]`,
+              )).find(link => !link.closest("[hidden], [inert], .filtered-out")) : null
+            if (!search && origin instanceof HTMLElement && origin !== document.body &&
+                !origin.closest("[hidden], [inert], .filtered-out")) {
+              origin.focus()
             } else if (!search) {
-              document.querySelector<HTMLElement>('[data-view-tab][aria-current="page"], #triage-heading, #deferred-heading, #pinned-heading')?.focus()
+              document.querySelector<HTMLElement>('[data-view-tab][aria-current="page"], #triage-heading, #deferred-heading, #pinned-heading, #today-filter-status')?.focus()
             }
             _previouslyFocused = null
             const closed = pinnedSession
@@ -222,15 +590,17 @@
             if (closed && (closed.dirty || deferralChanged)) closed.reconcile()
             if (search?.dirty && !search.pending && !deferralChanged) deferral.reconcileSearch()
             search?.handoff.onDismiss(reason)
+            reconcileAreaGrouping()
+            reconcileEpicGrouping()
           };
 
-          if (reducedMotion || immediate || document.body.classList.contains("has-docked-inspector")) {
+          if (reducedMotion || immediate || focusMode || document.body.classList.contains("has-docked-inspector")) {
             finishClose();
             return;
           }
 
           tdOverlay.classList.add("closing");
-          const panel = document.getElementById("task-detail-panel");
+          const panel = byId("task-detail-panel");
           if (panel) {
             const onEnd = () => { panel.removeEventListener("animationend", onEnd); finishClose(); };
             panel.addEventListener("animationend", onEnd, { once: true, signal: __signal });
@@ -241,58 +611,151 @@
           }
         }
 
-        // F10: Mobile sidebar disclosure toggle
-        const _sidebarToggle = document.getElementById("td-sidebar-toggle");
-        const _sidebarProps = document.getElementById("td-sidebar-props");
-        const _sidebarChevron = document.getElementById("td-sidebar-chevron");
-        _sidebarToggle?.addEventListener("click", () => {
-          const expanded = _sidebarProps?.classList.toggle("td-sidebar-expanded") ?? false;
-          _sidebarToggle.setAttribute("aria-expanded", String(expanded));
-          _sidebarChevron?.classList.toggle("td-chevron-open", expanded);
-        }, { signal: __signal });
+        function statusAllowed(next: string): boolean {
+          const previous = statusSelect?.dataset.savedStatus ?? "pending"
+          const laneStatus = qs<HTMLOptionElement>(statusSelect, `option[value="${CSS.escape(next)}"]`)?.dataset.statusMeaning ?? next
+          return currentTaskActions.has("edit") &&
+            (!(isDoneStatus(laneStatus) || isDoneStatus(previous)) || currentTaskActions.has("complete")) &&
+            (normalizeStatus(laneStatus) !== "archived" || currentTaskActions.has("delete"))
+        }
+
+        function syncTaskActionControls() {
+          const editable = taskLoaded && !_isPopulating && currentTaskActions.has("edit")
+          if (tdTitleInput) tdTitleInput.readOnly = !editable
+          if (promoteButton) promoteButton.disabled = !taskLoaded || !currentTaskActions.has("edit")
+          if (statusSelect) {
+            statusSelect.disabled = !editable
+            for (const option of statusSelect.options) option.disabled = !statusAllowed(option.value)
+          }
+          if (doneButton) {
+            doneButton.hidden = !taskLoaded || !currentTaskActions.has("complete")
+            doneButton.disabled = !editable || !currentTaskActions.has("complete")
+          }
+          if (deleteButton) {
+            deleteButton.hidden = !taskLoaded || !currentTaskActions.has("delete")
+            deleteButton.disabled = _isPopulating || deleteButton.hidden
+          }
+        }
+
+        function setStatusBusy(busy: boolean) {
+          for (const control of [statusSelect, doneButton]) {
+            if (busy) setAttr(control, "aria-disabled", "true")
+            else control?.removeAttribute("aria-disabled")
+          }
+        }
+
+        function renderSavedStatus(status: string) {
+          if (statusSelect) {
+            statusSelect.value = status
+            statusSelect.dataset.savedStatus = status
+          }
+          if (doneButton) doneButton.textContent = isDoneStatus(status) ? "Mark as Undone" : "Mark as Done"
+          syncTaskActionControls()
+        }
+
+        document.addEventListener("meitheal:today-status-committed", event => {
+          const { id, status } = (event as CustomEvent<{ id: string; status: string }>).detail
+          if (currentTaskId === id) renderSavedStatus(status)
+        }, { signal: __signal })
 
         async function openTaskDetail(taskId: string, commentTarget: string | null = null, search?: SearchDetailHandoff, updateLocation = true) {
+          if (boardWithheld) return
           if (!tdOverlay?.isConnected || __signal.aborted) return
           const newSession = !tdOverlay.classList.contains("active")
           if (search && !newSession) {
             search.onDismiss("history")
             return
           }
+          const requestedTicket = parseTicketKey(taskId)
+          const sameTicket = !newSession && sameTaskLocator(taskId, sessionTicketId ?? currentTaskId, currentTicketKey)
+          if (!sameTicket && waitForDescriptionWrite(() => {
+            void openTaskDetail(taskId, commentTarget, search, updateLocation)
+          })) return
+          if (sameTicket && pendingDescriptionSave) {
+            const generation = detailGeneration
+            await pendingDescriptionSave
+            if (__signal.aborted || generation !== detailGeneration) return
+            return openTaskDetail(taskId, commentTarget, search, updateLocation)
+          }
           if (waitForDetailWrites(() => { void openTaskDetail(taskId, commentTarget, search, updateLocation) })) return
+          if (waitForChecklistTextWrite(() => { void openTaskDetail(taskId, commentTarget, search, updateLocation) })) return
+          void flushPendingCustomFieldsSave?.()
           if (search) searchSession = { handoff: search, lifetime: new AbortController(), dirty: false, pending: 0 }
           detailGeneration++
+          const loadedGeneration = detailGeneration
+          resumeLoadedTask = undefined
           closeTaskReferences()
           deferral.opening(newSession)
           pins.opening()
           // P3-4: Store focus origin for restore on close
           if (newSession) _previouslyFocused = search ? null : document.activeElement
-          currentTaskId = taskId;
+          delete tdOverlay.dataset.openTaskId
+          document.dispatchEvent(new CustomEvent("meitheal:ha-location-task"))
+          currentTaskId = taskId
+          hasChecklistTextDraft = undefined
+          currentTaskVersion = null
+          currentTaskActions.clear()
+          if (!sameTicket) {
+            sessionTicketId = null
+            currentTicketKey = null
+            pendingDescriptionSave = undefined
+          }
+          taskLoaded = false
           currentCommentTarget = commentTarget
           tdOverlay.dataset.openTaskId = taskId
           if (updateLocation) setTaskLocation(taskId, false, commentTarget)
           if (_modalAbortController) _modalAbortController.abort();
           _modalAbortController = new AbortController();
           const modalSignal = _modalAbortController.signal
-          document.getElementById("td-ai-response")?.remove()
+          byId("td-ai-response")?.remove()
           _isPopulating = true;
+          syncTaskActionControls()
+          statusSelect?.removeAttribute("data-saved-status")
+          setStatusBusy(false)
+          const areaField = document.querySelector<HTMLSelectElement>("#td-area")
+          const ticketKey = formatTicketKey(requestedTicket)
+          const areaWriteAtOpen = pendingAreaWrites.get(taskId) ?? (ticketKey ? pendingAreaWrites.get(ticketKey) : undefined)
+          let areaFieldReady = false
+          if (areaField) {
+            areaField.disabled = true
+            areaField.replaceChildren()
+          }
           const projectField = document.querySelector<HTMLSelectElement>("#td-project")
           let projectFieldReady = false
           if (projectField) projectField.disabled = true
+          const assignSelect = document.querySelector<HTMLSelectElement>("#td-assigned-to")
+          let assigneeReady = false
+          if (assignSelect) assignSelect.disabled = true
+          if (!sameTicket) {
+            focusMode = false
+            tdOverlay.removeAttribute("data-focus-used")
+            if (layoutPanel && !layoutPanel.hidden) setLayoutPanel(false)
+            for (const section of sections.querySelectorAll<HTMLDetailsElement>(":scope > details")) {
+              section.open = section.dataset.layoutItem !== "activity"
+            }
+            updateSectionOrder()
+            if (scroller) scroller.scrollTop = 0
+          }
+          if (commentTarget !== null) {
+            const comments = qs<HTMLDetailsElement>(sections, "#td-section-comments")
+            if (comments) comments.open = true
+          }
           tdOverlay.classList.remove("closing")
           tdOverlay.classList.add("active");
           syncInspectorDockMode();
           tdClose?.focus()
+          reconcileAreaGrouping()
           // Set dynamic aria-label for screen readers
           setInspectorAriaLabel(`Task detail: loading...`);
           // Show skeleton, hide loaded content
-          const tdSkeleton = document.getElementById("td-skeleton");
-          const tdLoaded = document.getElementById("td-loaded-content");
+          const tdSkeleton = byId("td-skeleton");
+          const tdLoaded = byId("td-loaded-content");
            if (tdSkeleton) tdSkeleton.style.display = "";
            if (tdLoaded) tdLoaded.classList.add("hidden");
            tdHeading?.classList.add("invisible")
-           tdActions?.setAttribute("hidden", "")
-           tdError?.setAttribute("hidden", "")
-           copyFallback?.setAttribute("hidden", "")
+           setAttr(tdActions, "hidden", "")
+           setAttr(tdError, "hidden", "")
+           setAttr(copyFallback, "hidden", "")
 
           function showTaskError(unavailable: boolean) {
             currentTaskId = null
@@ -305,13 +768,6 @@
             }
           }
 
-           // D1: Auto-expand sidebar on mobile so properties are visible immediately
-           if (window.matchMedia("(max-width: 767px)").matches) {
-             _sidebarProps?.classList.add("td-sidebar-expanded");
-             _sidebarToggle?.setAttribute("aria-expanded", "true");
-             _sidebarChevron?.classList.toggle("td-chevron-open", true);
-           }
-
           try {
             if (!taskId.trim() || taskId === "." || taskId === "..") {
               showTaskError(true)
@@ -322,9 +778,13 @@
               await pendingChecklist
               if (modalSignal.aborted) return
             }
+            if (areaWriteAtOpen) {
+              await areaWriteAtOpen
+              if (modalSignal.aborted) return
+            }
             const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, { // nosemgrep
               signal: modalSignal,
-              ...(pendingChecklist ? { cache: "no-store" } : {}),
+              ...(pendingChecklist || areaWriteAtOpen ? { cache: "no-store" } : {}),
             })
             if (modalSignal.aborted) return
             if (!res.ok) {
@@ -333,32 +793,72 @@
             }
             const t = (await res.json()) as Record<string, unknown>
             if (modalSignal.aborted) return
-            const requestedTicket = /^MTH-(\d+)$/i.exec(taskId)
-            if (!t.id || (requestedTicket && Number(requestedTicket[1]) !== Number(t.ticket_number))) {
+            if (!t.id || (requestedTicket !== null && requestedTicket !== Number(t.ticket_number))) {
               showTaskError(false)
               return
             }
+            if (Array.isArray(t.actions)) {
+              for (const action of t.actions) {
+                if (action === "edit" || action === "complete" || action === "delete") currentTaskActions.add(action)
+              }
+            }
             taskId = String(t.id)
             currentTaskId = taskId
+            tdOverlay.dataset.openTaskId = taskId
+            currentTaskVersion = taskRecordVersion(t)
+            taskSaveConflict = false
+            byId("td-write-conflict")?.remove()
+            document.dispatchEvent(new CustomEvent("meitheal:ha-location-task", { detail: taskId }))
+            sessionTicketId = taskId
+            currentTicketKey = typeof t.ticket_key === "string" ? t.ticket_key : null
             setTaskLocation(taskId, true, commentTarget)
 
             // Start independent inspector reads together. Each field keeps its own fallback.
             const requestOptions = { signal: modalSignal }
             const lanes = fetch("/api/lanes", requestOptions)
             const backlogModeSetting = fetch("/api/settings?key=backlog_mode", requestOptions)
-            const areas = fetch("/api/areas", requestOptions)
+            const areas = areaField ? fetch("/api/areas", requestOptions) : null
             const projectRead = projectField ? fetch("/api/projects", requestOptions) : null
             const pillars = fetch("/api/pillars", requestOptions)
-            const assignSelect = document.querySelector<HTMLSelectElement>("#td-assigned-to")
-            const users = assignSelect ? fetch("/api/users", requestOptions) : null
+            if (assignSelect) {
+              const assigned = String(t.assigned_to ?? "")
+              assignSelect.replaceChildren(new Option("Unassigned", ""))
+              if (assigned) assignSelect.add(new Option("Loading assignee…", assigned, true, true))
+              const renderAssignees = (directory: AssigneeDirectory | null) => {
+                if (modalSignal.aborted || currentTaskId !== taskId) return
+                const options = [new Option(directory ? "Unassigned" : "Could not load assignees", "")]
+                for (const user of directory?.users ?? []) {
+                  const name = user.display_name || user.name || user.id
+                  options.push(new Option(name + (user.kind === "agent" ? " (AI agent)" : ""), user.id))
+                }
+                if (assigned && !options.some(option => option.value === assigned)) {
+                  options.push(new Option(assigneeFallback(assigned, directory), assigned))
+                }
+                assignSelect.replaceChildren(...options)
+                assignSelect.value = assigned
+                assigneeReady = directory !== null
+                assignSelect.disabled = _isPopulating || !assigneeReady
+              }
+              void taskApi.listUserDirectory(modalSignal).then(renderAssignees).catch(() => renderAssignees(null))
+            }
             const settings = fetch("/api/settings", requestOptions)
+            const cfContext = currentTaskApiContext()
+            const cfRead = fetch("/api/custom-fields", {
+              cache: "no-store",
+              signal: modalSignal,
+              ...(cfContext ? { headers: taskApiHeaders(cfContext) } : {}),
+            }).catch(() => null)
+            const childrenRead = !Array.isArray(t.subtasks) && byId("td-link-children")
+              ? fetch(`/api/tasks?parent_id=${encodeURIComponent(taskId)}`, requestOptions) // nosemgrep
+              : null
+            const commentsFetch = fetch(`/api/tasks/${encodeURIComponent(taskId)}/comments`, { // nosemgrep
+              signal: modalSignal,
+              cache: "no-store",
+            })
             // Observe rejections immediately. Field handlers consume the original promises in order.
-            void Promise.allSettled([lanes, backlogModeSetting, areas, projectRead, pillars, users, settings])
+            void Promise.allSettled([lanes, backlogModeSetting, areas, projectRead, pillars, settings, cfRead, childrenRead, commentsFetch])
 
             // Populate status dropdown from lanes API
-            const statusSelect = document.getElementById(
-              "td-status",
-            ) as HTMLSelectElement | null;
             try {
               const [lanesRes, modeRes] = await Promise.all([lanes, backlogModeSetting])
               let backlogMode = "visible";
@@ -382,8 +882,11 @@
                 statusSelect.replaceChildren();
                 for (const lane of lanes) {
                   // Add the main key as an option
-                  const opt = document.createElement("option");
+                  const opt = domEl("option");
                   opt.value = lane.key;
+                  if (Array.isArray(lane.includes) && lane.includes.some((status: unknown) => typeof status === "string" && isDoneStatus(status))) {
+                    opt.dataset.statusMeaning = "complete"
+                  }
                   opt.textContent = lane.label;
                   statusSelect.appendChild(opt);
                 }
@@ -394,12 +897,12 @@
 
             if (modalSignal.aborted) return
 
-            const parentEl = document.getElementById(
+            const parentEl = byId(
               "td-parent",
             ) as HTMLAnchorElement | null;
             if (parentEl && t.parent_id) {
               parentEl.textContent = `↑ ${t.parent_ticket_key ?? t.parent_title ?? t.parent_id}`;
-              parentEl.href = buildTaskPermalink(String(t.parent_id))
+              parentEl.href = buildTaskPermalink({ id: String(t.parent_id), ticket_key: t.parent_ticket_key })
               parentEl.classList.remove("hidden");
               parentEl.classList.add("flex");
               parentEl.onclick = (e) => {
@@ -412,9 +915,10 @@
             }
 
             // Linked Tickets — parent display
-            const linkParentDisplay = document.getElementById(
+            const linkParentDisplay = byId(
               "td-link-parent-display",
             ) as HTMLElement;
+            let unlinkParentButton: HTMLButtonElement | undefined
             if (linkParentDisplay) {
               if (t.parent_id) {
                 const parentTitle = String(
@@ -422,25 +926,25 @@
                     t.parent_title ??
                     String(t.parent_id).slice(0, 8),
                 );
-                const parentLink = document.createElement("a");
+                const parentLink = domEl("a");
                 parentLink.href = "#";
                 parentLink.className = "text-xs text-accent hover:underline td-parent-link";
                 parentLink.dataset.id = String(t.parent_id);
                 parentLink.textContent = parentTitle;
-                const unlinkBtn = document.createElement("button");
+                const unlinkBtn = domEl("button");
+                unlinkParentButton = unlinkBtn
+                unlinkBtn.disabled = true
                 unlinkBtn.type = "button";
                 unlinkBtn.className = "text-xs text-danger hover:text-red-400 ml-1 td-unlink-parent";
                 unlinkBtn.title = "Remove parent";
                 unlinkBtn.textContent = "✕";
                 linkParentDisplay.replaceChildren(parentLink, document.createTextNode(" "), unlinkBtn);
-                linkParentDisplay
-                  .querySelector(".td-parent-link")
+                qs(linkParentDisplay, ".td-parent-link")
                   ?.addEventListener("click", (e) => {
                     e.preventDefault();
                     openTaskDetail(String(t.parent_id));
-                  });
-                linkParentDisplay
-                  .querySelector(".td-unlink-parent")
+                  }, { signal: modalSignal });
+                qs(linkParentDisplay, ".td-unlink-parent")
                   ?.addEventListener("click", async () => {
                     const unlinkTaskId = currentTaskId
                     const confirmed = await confirmDialog({
@@ -454,55 +958,83 @@
                     }
                   }, { signal: modalSignal });
               } else {
-                linkParentDisplay.innerHTML =
-                  '<span class="text-xs text-text-muted italic">None</span>';
+                const none = domEl("span", "text-xs text-text-muted italic", "None")
+                linkParentDisplay.replaceChildren(none)
               }
             }
 
-            // --- Offline Attachments - Document Preview & Kanban Card Cover (Phase 23) ---
-            (async function renderThumbnails() {
-              // Restore thumbnail logic later if needed
-            })();
-
             // Linked Tickets — children
-            const childrenDiv = document.getElementById(
+            const childrenDiv = byId(
               "td-link-children",
             ) as HTMLElement;
             if (childrenDiv) {
               childrenDiv.replaceChildren();
               // Progress bar elements
-              const progressWrap = document.getElementById("td-subtask-progress");
-              const progressLabel = document.getElementById("td-subtask-progress-label");
-              const progressBar = document.getElementById("td-subtask-progress-bar");
+              const progressWrap = byId("td-subtask-progress");
+              const progressLabel = byId("td-subtask-progress-label");
+              const progressBar = byId("td-subtask-progress-bar");
               try {
-                const childRes = await fetch( // nosemgrep
-                  `${window.__ingress_path || ""}/api/tasks?parent_id=${taskId}`, // nosemgrep
-                  requestOptions,
-                );
-                if (modalSignal.aborted) return
-                if (childRes.ok) {
-                  const childData = await childRes.json()
+                let children: Array<Record<string, unknown>> | null = Array.isArray(t.subtasks)
+                  ? (t.subtasks as Array<Record<string, unknown>>)
+                  : null;
+                if (!children && childrenRead) {
+                  const childRes = await childrenRead
                   if (modalSignal.aborted) return
-                  const children = childData.tasks ?? [];
+                  if (childRes.ok) {
+                    const childData = await childRes.json()
+                    if (modalSignal.aborted) return
+                    children = (childData.tasks ?? []) as Array<Record<string, unknown>>;
+                  }
+                }
+                if (children) {
                   if (children.length === 0) {
-                    childrenDiv.innerHTML = `<span class="text-xs text-text-muted italic">No children</span>`;
+                    const empty = domEl("span", "text-xs text-text-muted italic", "No child items")
+                    childrenDiv.replaceChildren(empty)
                     if (progressWrap) progressWrap.classList.add("hidden");
                   } else {
                     let doneCount = 0;
                     children.forEach((c: Record<string, unknown>) => {
-                      const isDone = c.status === "complete";
+                      const isDone = isDoneStatus(String(c.status ?? ""));
                       if (isDone) doneCount++;
-                      const chip = document.createElement("a");
+                      const row = domEl("div", "flex items-center justify-between gap-2 text-xs")
+                      const chip = domEl("a");
                       chip.href = "#";
-                      chip.className = `text-xs block flex items-center gap-1 ${isDone ? "text-text-muted line-through" : "text-accent hover:underline"}`;
-                      const typeIcon = c.task_type === "epic" ? "🎯" : c.task_type === "story" ? "📖" : "";
-                      const statusIcon = isDone ? "✓" : "⏳";
-                      chip.textContent = `${statusIcon} ${typeIcon}${typeIcon ? " " : ""}↳ ${c.ticket_key ? c.ticket_key + " " : ""}${String(c.title ?? c.id).slice(0, 50)}`;
+                      chip.className = `flex items-center gap-1.5 min-w-0 truncate ${isDone ? "text-text-muted line-through" : "text-accent hover:underline"}`;
+                      const iconSpan = domEl("span", "shrink-0 inline-flex items-center gap-1")
+                      iconSpan.append(
+                        createSpriteIconElement(isDone ? "check" : "clock", { size: 12 }),
+                        createTypeIconElement(String(c.task_type ?? "task"), 14, typeof c.task_kind === "string" ? c.task_kind : undefined),
+                      );
+                      const label = domEl("span", "truncate", formatTicketDisplay(c.ticket_key, String(c.title ?? c.id).slice(0, 60), c.id))
+                      chip.append(iconSpan, label);
                       chip.addEventListener("click", (e) => {
                         e.preventDefault();
                         openTaskDetail(String(c.id));
-                      });
-                      childrenDiv.appendChild(chip);
+                      }, { signal: modalSignal });
+
+                      const detachBtn = domEl("button");
+                      detachBtn.type = "button";
+                      detachBtn.className = "text-text-muted hover:text-danger px-1 shrink-0";
+                      detachBtn.title = "Detach from parent";
+                      setAttr(detachBtn, "aria-label", `Detach child item ${String(c.title ?? c.id)}`);
+                      detachBtn.textContent = "✕";
+                      detachBtn.addEventListener("click", async () => {
+                        if (detachBtn.disabled || currentTaskId !== taskId) return;
+                        const ver = taskRecordVersion(c);
+                        detachBtn.disabled = true;
+                        const res = await saveVersionedTask(String(c.id), { parent_id: null }, ver, undefined, modalSignal);
+                        if (modalSignal.aborted) return;
+                        if (res.ok) {
+                          document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "child-detached" } }));
+                          openTaskDetail(taskId);
+                        } else {
+                          detachBtn.disabled = false;
+                          showToast(res.message ?? "Could not detach child item", "error");
+                        }
+                      }, { signal: modalSignal });
+
+                      row.append(chip, detachBtn);
+                      childrenDiv.appendChild(row);
                     });
                     // Update progress bar (SUB-03)
                     if (progressWrap && progressLabel && progressBar) {
@@ -519,88 +1051,71 @@
                 }
               } catch {
                 if (modalSignal.aborted) return
-                childrenDiv.innerHTML = `<span class="text-xs text-text-muted italic">—</span>`;
+                const dash = domEl("span", "text-xs text-text-muted italic", "—")
+                childrenDiv.replaceChildren(dash)
                 if (progressWrap) progressWrap.classList.add("hidden");
               }
             }
 
-            // Activity Log (ADR-0011) — lazy-loaded on expand
-            const activityDiv = document.getElementById(
-              "td-activity",
-            ) as HTMLElement;
-            const activityDetails = activityDiv?.closest("details");
-            if (activityDetails && activityDiv) {
-              activityDiv.replaceChildren();
+            // Activity remains lazy and belongs to this open ticket's lifetime.
+            const activityDiv = byId("td-activity")
+            const activityStatus = byId("td-activity-status")
+            const activityRetry = byId("td-activity-retry")
+            const activityDetails = activityDiv?.closest("details")
+            if (activityDetails && activityDiv && activityStatus && activityRetry) {
+              activityDiv.replaceChildren()
+              activityStatus.textContent = ""
+              activityRetry.hidden = true
+              let activityState: "idle" | "loading" | "loaded" | "failed" = "idle"
               const loadActivity = async () => {
+                if (modalSignal.aborted || activityState === "loading" || activityState === "loaded") return
+                activityState = "loading"
+                activityStatus.textContent = activityStatus.dataset.loading ?? ""
+                activityRetry.hidden = true
                 try {
-                  const actRes = await fetch( // nosemgrep
+                  const response = await fetch( // nosemgrep
                     `/api/tasks/${encodeURIComponent(taskId)}/activity`, // nosemgrep
-                    { signal: __signal, cache: "no-store" },
-                  );
-                  const cacheDirectives = actRes.headers.get("cache-control")?.toLowerCase().split(",")
-                  if (!actRes.ok || !cacheDirectives?.some(value => value.trim() === "no-store")) return
-                  const actData = await actRes.json();
-                  const entries = Array.isArray(actData)
-                    ? actData
-                    : (actData.activity ?? []);
-                  if (!Array.isArray(entries) || entries.length === 0) {
-                    activityDiv.innerHTML = `<span class="text-text-muted italic">No activity yet</span>`;
-                    return;
+                    { signal: modalSignal, cache: "no-store" },
+                  )
+                  const directives = response.headers.get("cache-control")?.toLowerCase().split(",")
+                  if (!response.ok || !directives?.some(value => value.trim() === "no-store")) {
+                    throw new Error("Invalid activity response")
                   }
-                  activityDiv.replaceChildren();
+                  const data = await response.json()
+                  if (modalSignal.aborted) return
+                  const entries = Array.isArray(data) ? data : data?.activity
+                  if (!Array.isArray(entries)) throw new Error("Invalid activity data")
+                  activityState = "loaded"
+                  activityStatus.textContent = entries.length ? "" : (activityStatus.dataset.empty ?? "")
                   for (const e of entries.slice(0, 50)) {
                     const ago = new Date(Number(e.created_at)).toLocaleString();
-                    const row = document.createElement("div");
-                    row.className =
-                      "flex gap-2 items-baseline py-1 border-b border-border/30";
-                    const agoSpan = document.createElement("span");
-                    agoSpan.className = "text-text-muted shrink-0";
-                    agoSpan.textContent = ago;
-                    const fieldSpan = document.createElement("span");
-                    fieldSpan.className = "font-medium text-text-primary";
-                    fieldSpan.textContent = String(e.field ?? "");
-                    const arrowSpan = document.createElement("span");
-                    arrowSpan.className = "text-text-muted";
-                    arrowSpan.textContent = "→";
-                    const valSpan = document.createElement("span");
-                    valSpan.className = "text-accent truncate";
-                    valSpan.textContent = String(e.new_value ?? "—").slice(0, 60);
+                    const row = domEl("div", "flex gap-2 items-baseline py-1 border-b border-border/30")
+                    const agoSpan = domEl("span", "text-text-muted shrink-0", ago)
+                    const fieldSpan = domEl("span", "font-medium text-text-primary", String(e.field ?? ""))
+                    const arrowSpan = domEl("span", "text-text-muted", "→")
+                    const valSpan = domEl("span", "text-accent truncate", String(e.new_value ?? "—").slice(0, 60))
                     row.append(agoSpan, fieldSpan, arrowSpan, valSpan);
                     activityDiv.appendChild(row);
                   }
                 } catch {
-                  activityDiv.innerHTML = `<span class="text-text-muted italic">—</span>`;
+                  if (modalSignal.aborted) return
+                  activityState = "failed"
+                  activityStatus.textContent = activityStatus.dataset.failed ?? ""
+                  activityRetry.hidden = false
                 }
-              };
-              // Lazy load: only fetch when expanded
-              activityDetails.addEventListener(
-                "toggle",
-                () => {
-                  if (activityDetails.open) loadActivity();
-                },
-                { once: true },
-              );
+              }
+              activityDetails.addEventListener("toggle", () => {
+                if (activityDetails.open) void loadActivity()
+              }, { signal: modalSignal })
+              activityRetry.addEventListener("click", () => void loadActivity(), { signal: modalSignal })
+              if (activityDetails.open) void loadActivity()
             }
 
             // Load related links (Jira-style issue linking)
             if (typeof loadRelatedLinks === "function")
               loadRelatedLinks(taskId);
 
-            // ID — hidden, accessible via tooltip
-            const tdAnchor = document.getElementById("td-ticket-anchor");
-            if (tdAnchor) {
-              tdAnchor.textContent = t.ticket_key
-                ? String(t.ticket_key)
-                : (String(t.id).split("-")[0] ?? "");
-              tdAnchor.onclick = async () => {
-                navigator.clipboard.writeText(
-                  t.ticket_key ? String(t.ticket_key) : String(t.id),
-                );
-                const { showToast } = await import("@lib/toast");
-                showToast("common.id_copied", "success");
-              };
-            }
-            const tdIdEl = document.getElementById(
+            const tdIdEl = byId(
               "td-id",
             ) as HTMLElement | null;
             if (tdIdEl) {
@@ -611,30 +1126,36 @@
               tdIdEl.classList.remove("hidden");
             }
 
-            // Render type icon (shared config from @lib/type-icon-config)
-            const typeIconEl = document.getElementById("td-type-icon") as HTMLElement | null;
+            // Render type icon & kind badge (shared config from @lib/type-icon-config)
+            const taskKind = String(t.task_kind || "standard_action").toLowerCase();
+            currentTaskKind = taskKind;
+            const typeIconEl = byId("td-type-icon") as HTMLElement | null;
             if (typeIconEl) {
               const tt = String(t.task_type || "task").toLowerCase();
-              const iconDoc = new DOMParser().parseFromString(renderTypeIconSvg(tt, 16), "text/html");
-              typeIconEl.replaceChildren(...Array.from(iconDoc.body.childNodes));
-              typeIconEl.title = tt.charAt(0).toUpperCase() + tt.slice(1);
+              typeIconEl.replaceChildren(createTypeIconElement(tt, 16, taskKind));
+              typeIconEl.title = KIND_BADGE_LABELS[taskKind] ?? (tt.charAt(0).toUpperCase() + tt.slice(1));
+            }
+            const kindBadgeEl = byId("td-task-kind-badge") as HTMLElement | null;
+            if (kindBadgeEl) {
+              const label = KIND_BADGE_LABELS[taskKind] ?? "";
+              kindBadgeEl.textContent = label;
+              kindBadgeEl.classList.toggle("hidden", !label);
+            }
+            const kindSelectEl = byId("td-task-kind") as HTMLSelectElement | null;
+            if (kindSelectEl) {
+              const routineOpt = qs<HTMLOptionElement>(kindSelectEl, 'option[value="routine_instance"]');
+              const isRoutineTask = Number(t.routine_occurrence) === 1 || taskKind === "routine_instance";
+              if (routineOpt) routineOpt.hidden = !isRoutineTask;
+              kindSelectEl.value = taskKind;
+              kindSelectEl.disabled = isRoutineTask;
             }
 
-            const titleEl = document.getElementById("td-title") as HTMLTextAreaElement;
-            if (titleEl) {
-              titleEl.value = String(t.title ?? "");
-              // Trigger auto-resize inline
-              titleEl.style.height = "auto";
-              // Brief timeout to ensure DOM layout is updated before scrollHeight is read
-              setTimeout(() => {
-                titleEl.style.height = titleEl.scrollHeight + "px";
-              }, 10);
-            }
+            const initialTitle = String(t.title ?? "")
             // Update aria-label with actual task title for screen readers
             setInspectorAriaLabel(`Task detail: ${String(t.title ?? "Untitled")}`);
 
             // Priority dot color
-            const priorityDot = document.getElementById(
+            const priorityDot = byId(
               "td-priority-dot",
             ) as HTMLElement;
             const priorityColors: Record<string, string> = {
@@ -651,51 +1172,49 @@
             }
 
             // If the task's status isn't in the dropdown, add it as an option
-            const taskStatus = String(t.status ?? "pending");
+            const taskStatus = statusSelect?.dataset.savedStatus ?? String(t.status ?? "pending");
             if (
               statusSelect &&
-              !statusSelect.querySelector(`option[value="${taskStatus}"]`)
+              !qs(statusSelect, `option[value="${CSS.escape(taskStatus)}"]`)
             ) {
-              const opt = document.createElement("option");
+              const opt = domEl("option");
               opt.value = taskStatus;
               opt.textContent = taskStatus;
               statusSelect.appendChild(opt);
             }
-            if (statusSelect) statusSelect.value = taskStatus;
-            const tdDesc = document.getElementById(
-              "td-description",
-            ) as HTMLTextAreaElement;
-            tdDesc.value = String(t.description ?? "");
-
-            // Switch to preview mode automatically when opening a task that has a description
-            if (t.description) {
-              // Render markdown preview (save=false prevents re-saving)
-              try {
-                renderTaskDescription(String(t.description))
-              } catch (e) { log.warn("markdown-preview error", e) }
-              descEditContainer?.classList.add("hidden");
-              descPreviewContainer?.classList.remove("hidden");
-            } else {
-              enterDescEdit();
+            renderSavedStatus(taskStatus)
+            const description = String(t.description ?? "")
+            if (!descEditContainer?.classList.contains("hidden")) descEditor?.flushToTextarea()
+            const keepDescriptionDraft = sameTicket && !descEditContainer?.classList.contains("hidden") &&
+              tdDescription.value !== _descOriginalValue
+            setDescriptionSaving(false)
+            if (descSaveBtn) descSaveBtn.disabled = true
+            if (descSavedIndicator) descSavedIndicator.style.display = "none"
+            _descOriginalValue = description
+            if (!keepDescriptionDraft) {
+              tdDescription.value = description
+              descEditor?.syncFromTextarea()
+              descEditContainer?.classList.add("hidden")
+              descView?.classList.remove("hidden")
             }
 
             (
-              document.getElementById("td-priority") as HTMLSelectElement
+              byId("td-priority") as HTMLSelectElement
             ).value = String(t.priority ?? 3);
 
             // Eisenhower dimensions
-            const urgencyEl = document.getElementById("td-urgency") as HTMLSelectElement | null;
+            const urgencyEl = byId("td-urgency") as HTMLSelectElement | null;
             if (urgencyEl) urgencyEl.value = String(t.urgency ?? 0);
-            const importanceEl = document.getElementById("td-importance") as HTMLSelectElement | null;
+            const importanceEl = byId("td-importance") as HTMLSelectElement | null;
             if (importanceEl) importanceEl.value = String(t.importance ?? 0);
             const progress = Number(t.progress ?? 0);
-            (document.getElementById("td-progress") as HTMLInputElement).value =
+            (byId("td-progress") as HTMLInputElement).value =
               String(progress);
-            const progValEl = document.getElementById("td-progress-value");
+            const progValEl = byId("td-progress-value");
             if (progValEl) progValEl.textContent = `${progress}%`;
 
             // Progress bar fill
-            const progressBarFill = document.getElementById(
+            const progressBarFill = byId(
               "td-progress-bar-fill",
             ) as HTMLElement;
             if (progressBarFill) {
@@ -705,8 +1224,8 @@
             }
 
             // Due date display with relative time
-            const dueRow = document.getElementById("td-due-row") as HTMLElement;
-            const dueDisplay = document.getElementById(
+            const dueRow = byId("td-due-row") as HTMLElement;
+            const dueDisplay = byId(
               "td-due-display",
             ) as HTMLElement;
             const dueVal = String(t.due_date ?? "");
@@ -739,9 +1258,9 @@
               }
               dueDisplay.style.color =
                 diffDays < 0
-                  ? "var(--danger)"
+                  ? "var(--danger-text, var(--danger))"
                   : diffDays <= 3
-                    ? "var(--warning)"
+                    ? "var(--warning-text, var(--warning))"
                     : "var(--text-muted)";
               dueRow.classList.remove("hidden");
             } else if (dueRow) {
@@ -752,44 +1271,52 @@
               const raw = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()
               return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : "#69e3b2"
             })()
-            ;(document.getElementById("td-color") as HTMLInputElement).value =
+            ;(byId("td-color") as HTMLInputElement).value =
               String(t.color ?? fallbackAccentHex);
-            (document.getElementById("td-due-date") as HTMLInputElement).value =
-              String(t.due_date ?? "");
-            (
-              document.getElementById("td-start-date") as HTMLInputElement
-            ).value = String(t.start_date ?? "");
-            (document.getElementById("td-end-date") as HTMLInputElement).value =
-              String(t.end_date ?? "");
-            (
-              document.getElementById("td-time-tracked") as HTMLInputElement
-            ).value = String(t.time_tracked ?? 0);
-            // Populate board dropdown
-            const areaSelect = document.getElementById(
-              "td-area",
-            ) as HTMLSelectElement;
-            const currentAreaId = String(t.area_id ?? "default");
-            try {
-              const boardRes = await areas
-              if (modalSignal.aborted) return
-              if (boardRes.ok) {
-                const areaData = await boardRes.json()
+            const dueInput = byId("td-due-date") as HTMLInputElement
+            dueInput.value = String(t.due_date ?? "")
+            dueInput.disabled = Number(t.routine_occurrence) === 1
+            byId("td-routine-date-hint")?.toggleAttribute("hidden", !dueInput.disabled)
+            const startRaw = String(t.start_date ?? "");
+            const endRaw = String(t.end_date ?? "");
+            const isEventSchedule = taskKind === "calendar_event" || Boolean(startRaw) || Boolean(endRaw);
+            const eventScheduleEl = byId("td-event-schedule");
+            eventScheduleEl?.classList.toggle("hidden", !isEventSchedule);
+            const allDayEl = byId("td-event-all-day") as HTMLInputElement | null;
+            const isAllDay = Boolean((startRaw && !startRaw.includes("T")) || (endRaw && !endRaw.includes("T")));
+            if (allDayEl) allDayEl.checked = isAllDay;
+            syncEventInputsType(isAllDay);
+            const startInput = byId("td-start-date") as HTMLInputElement;
+            startInput.value = formatEventInputValue(startRaw, isAllDay);
+            const endInput = byId("td-end-date") as HTMLInputElement;
+            endInput.value = formatEventInputValue(endRaw, isAllDay);
+            setAttr(byId("td-event-date-error"), "hidden", "");
+            const trackedInput = byId("td-time-tracked") as HTMLInputElement
+            trackedInput.value = String(t.time_tracked ?? 0)
+            if (areaField && areas) {
+              const savedArea = String(t.area_id ?? "")
+              try {
+                const response = await areas
+                if (!response.ok) throw new Error("Groups unavailable")
+                const { areas: choices } = await response.json() as { areas: { id: string; name: string }[] }
                 if (modalSignal.aborted) return
-                const boards = areaData.areas ?? [];
-                areaSelect.replaceChildren();
-                boards.forEach(
-                  (b: { id: string; name: string; icon: string }) => {
-                    const opt = document.createElement("option");
-                    opt.value = b.id;
-                    opt.textContent = b.name;
-                    areaSelect.appendChild(opt);
-                  },
-                );
-                areaSelect.value = currentAreaId;
+                if (!Array.isArray(choices) || choices.some(area => typeof area?.id !== "string" || !area.id || typeof area.name !== "string")) {
+                  throw new Error("Invalid Groups")
+                }
+                areaField.replaceChildren(new Option("Without an Area", ""), ...choices.map(({ id, name }) => new Option(name, id)))
+                if (savedArea && !choices.some(area => area.id === savedArea)) {
+                  const label = window.mI18n?.get("task_detail.unavailable_group_selection") ?? "Saved selection unavailable"
+                  const unavailable = new Option(label, savedArea)
+                  unavailable.disabled = true
+                  areaField.add(unavailable)
+                }
+                areaFieldReady = true
+              } catch {
+                if (modalSignal.aborted) return
+                areaField.replaceChildren(new Option(window.mI18n?.get("task_detail.group_options_load_failed") ?? "Options could not load", savedArea))
               }
-            } catch {
-              if (modalSignal.aborted) return
-              areaSelect.replaceChildren(new Option(currentAreaId, currentAreaId));
+              areaField.value = savedArea
+              areaField.dataset.savedArea = savedArea
             }
             if (projectField && projectRead) {
               const savedProject = String(t.project_id ?? "")
@@ -819,20 +1346,20 @@
             }
 
             // Populate pillar dropdown
-            const pillarSelect = document.getElementById(
+            const pillarSelect = byId(
               "td-pillar",
             ) as HTMLSelectElement;
             const currentPillarId = String(t.pillar_id ?? "");
             try {
               const pilRes = await pillars
               if (modalSignal.aborted) return
-              if (pilRes.ok) {
+              if (pilRes.ok && pillarSelect) {
                 const pilData = await pilRes.json()
                 if (modalSignal.aborted) return
                 const pillars = pilData.pillars ?? pilData ?? [];
                 pillarSelect.replaceChildren(new Option("No pillar", ""));
                 (pillars as Array<{ id: string; name: string; icon?: string }>).forEach((p) => {
-                  const opt = document.createElement("option");
+                  const opt = domEl("option");
                   opt.value = p.id;
                   opt.textContent = p.name;
                   pillarSelect.appendChild(opt);
@@ -841,105 +1368,63 @@
               }
             } catch {
               if (modalSignal.aborted) return
-              pillarSelect.replaceChildren(new Option(currentPillarId, currentPillarId));
+              pillarSelect?.replaceChildren(new Option(currentPillarId, currentPillarId));
             }
 
             // Populate principle dropdown
-            const principleSelect = document.getElementById(
+            const principleSelect = byId(
               "td-principle",
-            ) as HTMLSelectElement;
-            const currentPrincipleId = String(t.principle_id ?? "");
-            try {
-              if (currentPillarId && currentPillarId !== "null" && currentPillarId !== "undefined") {
-                const prinRes = await fetch( // nosemgrep
-                  (window.__ingress_path || "") + `/api/pillars/${currentPillarId}/principles`, // nosemgrep
-                  requestOptions,
-                );
-                if (modalSignal.aborted) return
-                if (prinRes.ok) {
-                  const prinData = await prinRes.json()
-                  if (modalSignal.aborted) return
-                  const principles = prinData.principles ?? prinData ?? [];
-                  principleSelect.replaceChildren(new Option("No principle", ""));
-                  (principles as Array<{ id: string; description: string }>).forEach((p) => {
-                    const opt = document.createElement("option");
-                    opt.value = p.id;
-                    opt.textContent = `${p.description.substring(0, 30)}${p.description.length > 30 ? '...' : ''}`;
-                    principleSelect.appendChild(opt);
-                  });
-                  principleSelect.value = currentPrincipleId;
-                }
-              } else {
-                 principleSelect.replaceChildren(new Option("No principle", ""));
-              }
-            } catch {
-              if (modalSignal.aborted) return
-              principleSelect.replaceChildren(new Option(currentPrincipleId, currentPrincipleId));
-            }
+            ) as HTMLSelectElement | null
+            await loadPillarPrinciplesOptions(principleSelect, currentPillarId, {
+              signal: modalSignal,
+              selectedId: String(t.principle_id ?? ""),
+            })
             // Phase 20: Agile hierarchy type
-            (
-              document.getElementById("td-task-type") as HTMLSelectElement
-            ).value = String(t.task_type ?? "task");
+            const tdTaskTypeEl = byId("td-task-type") as HTMLSelectElement | null;
+            if (tdTaskTypeEl) {
+              const ttVal = String(t.task_type ?? "task");
+              tdTaskTypeEl.value = ttVal;
+              tdTaskTypeEl.dataset.savedTaskType = ttVal;
+            }
 
             // Phase 1 (REC-04): Set recurrence select to current value
-            const recurrenceSelect = document.getElementById("td-recurrence") as HTMLSelectElement | null;
+            const recurrenceSelect = byId("td-recurrence") as HTMLSelectElement | null;
             if (recurrenceSelect) {
               recurrenceSelect.value = String(t.recurrence_rule ?? "");
-              const descEl = document.getElementById("td-recurrence-desc");
+              const descEl = byId("td-recurrence-desc");
               if (descEl) {
                 descEl.textContent = t.recurrence_rule
-                  ? `🔁 ${recurrenceSelect.selectedOptions[0]?.textContent ?? ""}`
+                  ? (recurrenceSelect.selectedOptions[0]?.textContent ?? "")
                   : "";
               }
             }
 
-            // Assigned To — populate from /api/users
-            if (assignSelect && users) {
-              try {
-                const usersRes = await users
-                if (modalSignal.aborted) return
-                if (usersRes.ok) {
-                  const usersData = await usersRes.json()
-                  if (modalSignal.aborted) return
-                  const users = usersData.users ?? [];
-                  assignSelect.innerHTML =
-                    '<option value="">Unassigned</option>';
-                  for (const u of users) {
-                    const opt = document.createElement("option");
-                    opt.value = u.id;
-                    opt.textContent = (u.display_name ?? u.name ?? u.id) + (u.kind === "agent" ? " (AI agent)" : "");
-                    assignSelect.appendChild(opt);
-                  }
-                }
-              } catch {
-                if (modalSignal.aborted) return
-                /* keep default unassigned option */
-              }
-              assignSelect.value = String(t.assigned_to ?? "");
+            const isPromoted = Boolean(t.is_promoted);
+            if (promoteButton) {
+              setAttr(promoteButton, "aria-pressed", String(isPromoted));
+              const promoteLabel = isPromoted
+                ? (window.mI18n?.get("kanban.demote_card") ?? "Remove promotion")
+                : (window.mI18n?.get("kanban.promote_card") ?? "Promote to top");
+              promoteButton.title = promoteLabel;
+              setAttr(promoteButton, "aria-label", promoteLabel);
             }
 
-            const isFav = Number(t.is_favorite ?? 0);
-            const favBtn = document.getElementById("td-fav-btn");
-            if (favBtn)
-              favBtn.textContent = isFav
-                ? "★ Favorited"
-                : "⭐ Add to Favorites";
-            const isDone = String(t.status) === "complete";
-            const tdToggleDone = document.getElementById("td-toggle-done");
-            if (tdToggleDone)
-              tdToggleDone.textContent = isDone
-                ? "↩ Mark as Undone"
-                : "✓ Mark as Done";
-
-            // Load settings-defined custom fields
+            // Load board-scoped custom fields (falling back to settings on household)
             _settingsFields = [];
             let allSettings: Record<string, unknown> = {};
             try {
-              const settingsRes = await settings
+              const [settingsRes, cfRes] = await Promise.all([settings, cfRead])
+              if (cfRes?.ok) {
+                const cfData = await cfRes.json().catch(() => null) as { fields?: unknown } | null
+                if (modalSignal.aborted || currentTaskId !== taskId) return
+                if (Array.isArray(cfData?.fields)) {
+                  _settingsFields = cfData.fields as Array<{ name: string; type: string; options?: string[] }>
+                }
+              }
               if (settingsRes.ok) {
                 allSettings = await settingsRes.json();
                 if (modalSignal.aborted || currentTaskId !== taskId) return
-                if (allSettings?.custom_fields) {
+                if (_settingsFields.length === 0 && allSettings?.custom_fields && (!cfContext || cfContext.boardId === "household")) {
                   try {
                     const parsed = JSON.parse(
                       allSettings.custom_fields as string,
@@ -970,7 +1455,7 @@
             }
 
             // Labels (interactive chips)
-            const labelsDiv = document.getElementById(
+            const labelsDiv = byId(
               "td-labels",
             ) as HTMLElement;
             labelsDiv.replaceChildren();
@@ -988,28 +1473,13 @@
               /* skip */
             }
 
-            // Custom fields (interactive rows)
-            const cfDiv = document.getElementById(
-              "td-custom-fields",
-            ) as HTMLElement;
-            cfDiv.replaceChildren();
+            // Custom fields (interactive primitive rows; structured keys preserved in controller)
             const renderedKeys = new Set<string>();
-            try {
-              const cf = JSON.parse(String(t.custom_fields ?? "{}")) as Record<
-                string,
-                string
-              >;
-              for (const [k, v] of Object.entries(cf)) {
-                if (v !== null && v !== undefined) {
-                  const sfDef = _settingsFields.find(
-                    (sf: { name: string }) => sf.name === k,
-                  );
-                  addCFRow(k, String(v), sfDef?.type || "text", sfDef?.options);
-                  renderedKeys.add(k);
-                }
-              }
-            } catch {
-              /* skip */
+            cfApi.loadTaskCustomFields(taskId, t.custom_fields, renderedKeys, _settingsFields);
+            const eventLocationEl = byId("td-event-location") as HTMLInputElement | null;
+            if (eventLocationEl) {
+              const savedLoc = cfApi.getStructuredField("location");
+              eventLocationEl.value = typeof savedLoc === "string" ? savedLoc : "";
             }
 
             // Pre-populate settings-defined fields that aren't already on this task
@@ -1020,6 +1490,7 @@
                   sf.type === "checkbox" ? "false" : "",
                   sf.type || "text",
                   sf.options,
+                  true,
                 );
                 renderedKeys.add(sf.name);
               }
@@ -1031,59 +1502,73 @@
             const created = t.created_at
               ? new Date(Number(t.created_at)).toLocaleDateString()
               : "";
+            const tdCreated = byId("td-created");
+            if (tdCreated)
+              tdCreated.textContent = created ? `Created ${created}` : "";
             const updated = t.updated_at
-              ? new Date(Number(t.updated_at)).toLocaleDateString()
+              ? new Date(Number(t.updated_at)).toLocaleString()
               : "";
-            const tdUpdated = document.getElementById("td-updated");
+            const tdUpdated = byId("td-updated");
             if (tdUpdated)
-              tdUpdated.textContent =
-                "Last updated " +
-                new Date(Number(t.updated_at)).toLocaleString();
-            showTaskChecklist(taskId, t.checklists, modalSignal, typeof t.ticket_key === "string" ? t.ticket_key : undefined)
-            const taskReactions = document.getElementById("td-task-reactions")
+              tdUpdated.textContent = updated ? `Last updated ${updated}` : "";
+            mountTaskChecklist(taskId, t.checklists, modalSignal, typeof t.ticket_key === "string" ? t.ticket_key : undefined);
+            const taskReactions = byId("td-task-reactions");
             if (taskReactions) {
               taskReactions.replaceChildren()
               mountReactions(taskReactions, `/api/tasks/${encodeURIComponent(taskId)}/reactions`, modalSignal, taskId)
             }
-
-            // Load comments for the current task.
-            document.getElementById("td-comments")?.replaceChildren()
-            document.getElementById("td-comment-link-status")?.replaceChildren()
-            commentError?.setAttribute("hidden", "")
-            if (commentButton) commentButton.disabled = false
-            if (commentInput && commentInput.dataset.taskId !== taskId) {
-              commentInput.value = ""
-              commentInput.dataset.taskId = taskId
-            }
-            commentsReady = loadComments(taskId, modalSignal, commentTarget)
 
             // Load attachments (Phase 23)
             loadAttachments(taskId);
             // Delay resetting _isPopulating so blur/change events that
             // fire asynchronously during focus transitions don't trigger
             // spurious save notifications
-            // Hide skeleton, show loaded content
+            // Hide skeleton, show loaded content before hydrating #td-title or focusing linked comments
             if (modalSignal.aborted) return
             if (tdSkeleton) tdSkeleton.style.display = "none";
             tdHeading?.classList.remove("invisible")
             tdActions?.removeAttribute("hidden")
-            if (tdLoaded) {
-              tdLoaded.classList.remove("hidden");
-              const titleEl = document.getElementById("td-title") as HTMLTextAreaElement;
-              if (titleEl) {
-                titleEl.style.height = "auto";
-                setTimeout(() => {
-                  titleEl.style.height = titleEl.scrollHeight + "px";
-                }, 10);
-              }
+            taskLoaded = true
+            syncInspectorDockMode()
+            tdLoaded?.classList.remove("hidden")
+            if (tdTitleInput) {
+              tdTitleInput.value = initialTitle
+              tdTitleInput.dataset.savedTitle = initialTitle
             }
-            setTimeout(() => {
-              if (modalSignal.aborted) return
+            if (!keepDescriptionDraft) {
+              void renderTaskDescription(description)
+              if (!description) enterDescEdit(false)
+            }
+            resizeTitle()
+
+            // Load comments for the current task after the loaded container is visible so link focus works reliably.
+            byId("td-comments")?.replaceChildren()
+            byId("td-comment-link-status")?.replaceChildren()
+            setAttr(commentError, "hidden", "")
+            if (commentButton) commentButton.disabled = false
+            if (commentInput && commentInput.dataset.taskId !== taskId) {
+              commentInput.value = ""
+              commentInput.dataset.taskId = taskId
+            }
+            commentsReady = loadComments({ id: taskId, ticket_key: currentTicketKey }, modalSignal, commentTarget, undefined, commentsFetch)
+            const finishLoadedTask = () => {
+              const liveSignal = _modalAbortController?.signal
+              if (!liveSignal || liveSignal.aborted || currentTaskId !== taskId || detailGeneration !== loadedGeneration) return
               _isPopulating = false
+              if (descSaveBtn && !pendingDescriptionSave) descSaveBtn.disabled = false
+              syncTaskActionControls()
+              if (areaField) areaField.disabled = !areaFieldReady
+              if (unlinkParentButton) unlinkParentButton.disabled = false
               if (projectField) projectField.disabled = !projectFieldReady
-              deferral.loaded(taskId, typeof t.project_id === "string" ? t.project_id : null, t.deferred_at != null, modalSignal, Boolean(searchSession))
-              pins.loaded(taskId, modalSignal)
-            }, 100)
+              if (assignSelect) assignSelect.disabled = !assigneeReady
+              deferral.loaded(taskId, typeof t.project_id === "string" ? t.project_id : null, t.deferred_at != null, liveSignal, Boolean(searchSession))
+              pins.loaded(taskId, liveSignal)
+              const transition = queuedDescriptionTransition
+              queuedDescriptionTransition = undefined
+              transition?.()
+            }
+            resumeLoadedTask = finishLoadedTask
+            setTimeout(finishLoadedTask, 100)
           } catch (e) {
             if (modalSignal.aborted) return
             log.error("Failed to load task detail", e);
@@ -1093,100 +1578,249 @@
 
 
 
-        async function saveTaskField(field: string, value: unknown, updatedAt?: number): Promise<boolean> {
-          if (!currentTaskId || _isPopulating) return false
+        function showTaskWriteConflict() {
+          if (byId("td-write-conflict")) return
+          const notice = domEl("div")
+          notice.id = "td-write-conflict"
+          notice.className = "alert alert-warning"
+          setAttr(notice, "role", "alert")
+          notice.append("This task changed or its save could not be confirmed. Your input is kept here. Reload the saved task before making further changes. ")
+          const refresh = domEl("button")
+          refresh.type = "button"
+          refresh.className = "btn btn-ghost"
+          refresh.textContent = "Reload saved task"
+          refresh.addEventListener("click", () => { if (currentTaskId) void openTaskDetail(currentTaskId) }, { signal: __signal })
+          notice.append(refresh)
+          byId("td-loaded-content")?.prepend(notice)
+        }
+
+        function queueTaskWrite<T>(taskId: string, write: () => T | Promise<T>): Promise<T> {
+          const queued = (taskSaveQueues.get(taskId) ?? Promise.resolve()).then(write)
+          const release = () => {
+            if (taskSaveQueues.get(taskId) === drained) taskSaveQueues.delete(taskId)
+          }
+          const drained = queued.then(release, release)
+          taskSaveQueues.set(taskId, drained)
+          return queued
+        }
+
+        function saveTaskChecklist(taskId: string, send: (version: number | null) => Promise<Response>) {
+          const generation = detailGeneration
+          const context = currentTaskApiContext()
+          const stillCurrent = () => generation === detailGeneration && currentTaskId === taskId &&
+            !boardWithheld && currentTaskActions.has("edit") && sameTaskApiContext(context, currentTaskApiContext())
+          return queueTaskWrite(taskId, async () => {
+            if (!stillCurrent()) throw new Error("Task access changed")
+            const version = currentTaskVersion
+            const response = await send(version)
+            if (version === null || !stillCurrent() || (!response.ok && response.status !== 409)) return response
+            const saved = await response.clone().json().catch(() => null)
+            if (!stillCurrent()) return response
+            // Preserve independent checklist edits without silently adopting an external change to other fields.
+            if (response.status === 409 && saved?.errorCode === "TASK_VERSION_CONFLICT") return send(null)
+            if (response.ok && saved?.id === taskId) currentTaskVersion = taskRecordVersion(saved) ?? version
+            return response
+          })
+        }
+
+        function mountTaskChecklist(taskId: string, rawChecklist: unknown, parentSignal: AbortSignal, ticketKey?: string): void {
+          checklistAbortController?.abort()
+          const controller = new AbortController()
+          checklistAbortController = controller
+          parentSignal.addEventListener("abort", () => controller.abort(), { once: true })
+          const storedShopping = cfApi.getStructuredField("items")
+          hasChecklistTextDraft = showTaskChecklist(
+            taskId,
+            rawChecklist,
+            controller.signal,
+            send => saveTaskChecklist(taskId, send),
+            ticketKey,
+            {
+              taskKind: currentTaskKind,
+              shoppingItems: Array.isArray(storedShopping) ? storedShopping : undefined,
+              onShoppingItemsChange: items => {
+                cfApi.setStructuredField("items", items, true)
+              },
+              buildShoppingCustomFields: items => {
+                cfApi.setStructuredField("items", items, false)
+                return cfApi.getMergedJson()
+              },
+            },
+          )
+        }
+
+        function saveTaskField(field: string, value: unknown, updatedAt?: number): Promise<boolean> {
+          return saveTaskFields({ [field]: value }, updatedAt)
+        }
+
+        function saveTaskFields(patch: Record<string, unknown>, updatedAt?: number): Promise<boolean> {
+          if (!currentTaskId || _isPopulating || boardWithheld || !currentTaskActions.has("edit")) return Promise.resolve(false)
+          const generation = detailGeneration
+          return queueTaskWrite(currentTaskId, () => generation === detailGeneration ? saveTaskPatchNow(patch, updatedAt) : false)
+        }
+
+        async function saveTaskPatchNow(patch: Record<string, unknown>, updatedAt?: number): Promise<boolean> {
+          const primaryField = Object.keys(patch)[0] ?? ""
+          if (!currentTaskId || _isPopulating || boardWithheld || !currentTaskActions.has("edit") || (Object.hasOwn(patch, "status") && !statusAllowed(String(patch.status)))) return false
+          if (taskSaveConflict) { showTaskWriteConflict(); return false }
           const generation = detailGeneration
           const taskId = currentTaskId
           const search = searchSession
-          const completeDeferralWrite = deferral.nativeWrite(field, value)
-          const scopedWrite = search || ["title", "status", "project_id", "framework_payload"].includes(field) ? beginScopedWrite() : undefined
+          const primaryValue = patch[primaryField]
+          const completeDeferralWrite = deferral.nativeWrite(primaryField, primaryValue)
+          const scopedWrite = search || Object.keys(patch).some(field => ["title", "status", "area_id", "project_id", "framework_payload"].includes(field)) ? beginScopedWrite() : undefined
           let saved = false
           try {
-            const response = await fetch(`/api/tasks/${taskId}`, {
-              method: "PUT",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ [field]: value, ...(updatedAt === undefined ? {} : { updated_at: updatedAt }) }),
-              ...(scopedWrite ? { signal: scopedWrite.signal } : {}),
-            })
-            saved = response.ok
-            if (saved) {
-              notifyInactivityTaskChanged(field === "status" ? undefined : taskId)
-              if (field === "status" && value === "complete" && (!search || generation === detailGeneration)) {
-                onTaskCompleted(await response.json())
-              }
-              return !search || generation === detailGeneration
+            const result = await saveVersionedTask(taskId, patch, updatedAt ?? currentTaskVersion, undefined,
+              scopedWrite?.signal ?? AbortSignal.timeout(7_000))
+            saved = result.ok
+            if (result.ok && generation === detailGeneration) currentTaskVersion = result.version
+            if (!result.ok && generation === detailGeneration && (result.errorCode === "conflict" || result.errorCode === "unconfirmed")) {
+              taskSaveConflict = true
+              showTaskWriteConflict()
             }
-            log.warn(`Failed to save ${field}:`, response.status)
+            if (saved) {
+              if (Object.hasOwn(patch, "area_id")) {
+                changedAreaTask = taskId
+                if (!tdOverlay.classList.contains("active") ||
+                    (tdOverlay.dataset.openTaskId && generation !== detailGeneration)) {
+                  reconcileAreaGrouping()
+                }
+              } else if (Object.hasOwn(patch, "parent_id") || Object.hasOwn(patch, "task_type") || Object.hasOwn(patch, "title")) {
+                epicGroupingDirty = true
+                if (Object.hasOwn(patch, "task_type")) {
+                  const sel = byId("td-task-type") as HTMLSelectElement | null
+                  if (sel) sel.dataset.savedTaskType = String(patch.task_type)
+                  const typeIconEl = byId("td-type-icon")
+                  if (typeIconEl) {
+                    const tt = String(patch.task_type || "task").toLowerCase()
+                    typeIconEl.replaceChildren(createTypeIconElement(tt, 16, currentTaskKind))
+                    typeIconEl.title = KIND_BADGE_LABELS[currentTaskKind] ?? (tt.charAt(0).toUpperCase() + tt.slice(1))
+                  }
+                }
+                if (!tdOverlay.classList.contains("active")) reconcileEpicGrouping()
+              }
+              notifyInactivityTaskChanged(Object.hasOwn(patch, "status") ? undefined : taskId)
+              if (Object.hasOwn(patch, "status")) {
+                const task = result.ok ? result.task : {}
+                document.dispatchEvent(new CustomEvent("meitheal:task-status-saved", { detail: { id: taskId, status: task.status, deferred: task.deferred_at != null } }))
+                if (isDoneStatus(String(patch.status)) && (!search || generation === detailGeneration)) onTaskCompleted(task)
+              }
+              return Object.hasOwn(patch, "area_id") || !search || generation === detailGeneration
+            }
+            if (!result.ok) {
+              log.warn(`Failed to save ${primaryField}:`, result.status)
+              if (primaryField === "task_type") {
+                const sel = byId("td-task-type") as HTMLSelectElement | null
+                if (sel && sel.dataset.savedTaskType) sel.value = sel.dataset.savedTaskType
+              }
+              if (result.message && result.errorCode !== "conflict" && result.errorCode !== "unconfirmed") {
+                const sessionBound = search || primaryField === "description"
+                if (!sessionBound || generation === detailGeneration) showToast(result.message, "error")
+                return false
+              }
+            }
           } catch (err) {
-            log.warn(`Network error saving ${field}:`, err)
+            log.warn(`Network error saving ${primaryField}:`, err)
           } finally {
             completeDeferralWrite(saved)
             scopedWrite?.finish()
           }
-          if (search && generation !== detailGeneration) return false
-          const { showToast } = await import("@lib/toast")
-          if (!search || generation === detailGeneration) showToast("common.failed_update", "error")
+          const sessionBound = search || primaryField === "description"
+          if (sessionBound && generation !== detailGeneration) return false
+          if (!sessionBound || generation === detailGeneration) showToast("common.failed_update", "error")
           return false
         }
 
-        async function saveTD(field: string, value: unknown): Promise<void> {
-          await saveTaskField(field, value)
-        }
-
         // F11: Description Edit/Preview UX (simplified)
-        const descEditContainer = document.getElementById("td-desc-edit-container");
-        const descPreviewContainer = document.getElementById("td-desc-preview-container");
-        const descPreview = document.getElementById("td-desc-preview");
-        const tdDescription = document.getElementById("td-description") as HTMLTextAreaElement;
-        const descEditBtnHover = document.getElementById("td-desc-edit-btn-hover");
-        const descSaveBtn = document.getElementById("td-desc-save-btn");
-        const descCancelBtn = document.getElementById("td-desc-cancel-btn");
-        const descSavedIndicator = document.getElementById("td-desc-saved");
+        const descEditContainer = byId("td-desc-edit-container");
+        const descPreviewContainer = byId("td-desc-preview-container");
+        const descView = descPreviewContainer?.closest(".td-description-view")
+        const descPreview = byId("td-desc-preview");
+        const tdDescription = byId("td-description") as HTMLTextAreaElement;
+        const descEditBtnHover = byId("td-desc-edit-btn-hover");
+        const descSaveBtn = document.querySelector<HTMLButtonElement>("#td-desc-save-btn")
+        const descCancelBtn = document.querySelector<HTMLButtonElement>("#td-desc-cancel-btn")
+        const descSavedIndicator = byId("td-desc-saved");
 
         let _descOriginalValue = "";
         let _descSavedTimer: number | null = null;
+        let descriptionRenderSequence = 0
+        const descEditor = enhanceDescriptionEditor(tdDescription, {
+          signal: __signal,
+          afterPreviewRender: resolveDescriptionTaskReferences,
+        })
 
-        function renderTaskDescription(markdown: string) {
-          if (!descPreview) return
-          const sanitized = sanitizeClient(String(marked.parse(markdown || "*No description provided.*")))
-          const parsedDoc = new DOMParser().parseFromString(sanitized, "text/html")
-          descPreview.replaceChildren(...Array.from(parsedDoc.body.childNodes))
-          resolveDescriptionTaskReferences(descPreview)
+        async function renderTaskDescription(markdown: string): Promise<void> {
+          if (!descPreview || __signal.aborted) return
+          const generation = detailGeneration
+          const sequence = ++descriptionRenderSequence
+          try {
+            await renderMarkdownPreviewInto(descPreview, markdown, {
+              afterRender: resolveDescriptionTaskReferences,
+              shouldApply: () =>
+                !__signal.aborted &&
+                generation === detailGeneration &&
+                sequence === descriptionRenderSequence &&
+                descPreview.isConnected,
+            })
+          } catch (error) {
+            log.warn("Could not render task description Markdown", error)
+          }
         }
 
-        function enterDescEdit() {
+        function enterDescEdit(focus = true) {
           _descOriginalValue = tdDescription?.value ?? "";
           descEditContainer?.classList.remove("hidden");
-          descPreviewContainer?.classList.add("hidden");
-          tdDescription?.focus();
+          descView?.classList.add("hidden");
+          const shouldFocus = focus && !scroller?.classList.contains("hidden");
+          void descEditor?.setMode("markdown", shouldFocus);
+          if (shouldFocus) tdDescription?.focus();
         }
 
-        function exitDescEdit(save: boolean) {
+        function setDescriptionSaving(saving: boolean): void {
+          tdDescription.readOnly = saving
+          setAttr(descEditContainer, "aria-busy", String(saving))
+          if (descCancelBtn) descCancelBtn.disabled = saving
+          if (descSaveBtn) {
+            descSaveBtn.disabled = saving
+            descSaveBtn.textContent = (saving ? descSaveBtn.dataset.saving : descSaveBtn.dataset.save) ?? ""
+          }
+        }
+
+        async function exitDescEdit(save: boolean): Promise<boolean> {
+          if (!tdDescription || descSaveBtn?.disabled) return false
           closeTaskReferences()
-          descEditContainer?.classList.add("hidden");
-          descPreviewContainer?.classList.remove("hidden");
-          if (!save && tdDescription) {
-            tdDescription.value = _descOriginalValue;
-          }
-          if (save && descPreview && tdDescription) {
-            const rawMarkdown = tdDescription.value;
-            try {
-              renderTaskDescription(rawMarkdown)
-            } catch (e: any) {
-              log.error("Markdown render error", e);
-              const errDiv = document.createElement("div");
-              errDiv.className = "text-red-500";
-              errDiv.textContent = `Error rendering markdown: ${String(e?.message ?? e)}`;
-              descPreview.replaceChildren(errDiv);
+          if (save) {
+            descEditor?.flushToTextarea()
+            const generation = detailGeneration
+            const raw = tdDescription.value
+            setDescriptionSaving(true)
+            const write = saveTaskField("description", raw)
+            pendingDescriptionSave = write
+            const saved = await write
+            if (pendingDescriptionSave === write) pendingDescriptionSave = undefined
+            if (__signal.aborted || generation !== detailGeneration) return false
+            setDescriptionSaving(false)
+            if (!saved) {
+              tdDescription.focus()
+              return false
             }
-            saveTD("description", rawMarkdown);
-            // Show "✓ Saved" indicator (T4: guarded with timeout tracking)
+            _descOriginalValue = raw
+            void renderTaskDescription(raw)
             if (descSavedIndicator) {
-              descSavedIndicator.style.display = "";
-              if (_descSavedTimer) clearTimeout(_descSavedTimer);
-              _descSavedTimer = window.setTimeout(() => { descSavedIndicator.style.display = "none"; _descSavedTimer = null; }, 1500);
+              descSavedIndicator.style.display = ""
+              if (_descSavedTimer) clearTimeout(_descSavedTimer)
+              _descSavedTimer = window.setTimeout(() => { descSavedIndicator.style.display = "none"; _descSavedTimer = null }, 1500)
             }
+          } else {
+            tdDescription.value = _descOriginalValue
+            descEditor?.syncFromTextarea()
           }
+          descEditContainer?.classList.add("hidden")
+          descView?.classList.remove("hidden")
+          descEditBtnHover?.focus({ preventScroll: true })
+          return true
         }
 
         descEditBtnHover?.addEventListener("click", () => enterDescEdit(), { signal: __signal });
@@ -1207,28 +1841,31 @@
         }, { signal: __signal });
 
         // Auto-save on change
-        const tdTitleInput = document.getElementById("td-title") as HTMLTextAreaElement;
         if (tdTitleInput) {
-          tdTitleInput.addEventListener("blur", (e) =>
-            saveTD("title", (e.target as HTMLTextAreaElement).value),
-          { signal: __signal });
-          tdTitleInput.addEventListener("input", function() {
-            this.style.height = "auto";
-            this.style.height = this.scrollHeight + "px";
+          tdTitleInput.addEventListener("blur", async (e) => {
+            const inputEl = e.target as HTMLTextAreaElement
+            const next = inputEl.value.trim()
+            const savedTitle = inputEl.dataset.savedTitle ?? ""
+            if (!next) {
+              inputEl.value = savedTitle
+              resizeTitle()
+              return
+            }
+            if (next === savedTitle) return
+            if (await saveTaskField("title", next)) {
+              inputEl.dataset.savedTitle = next
+            }
           }, { signal: __signal });
+          tdTitleInput.addEventListener("input", resizeTitle, { signal: __signal })
         }
-        // Duplicate title blur listener removed — already handled above at line 1066
-        document
-          .getElementById("td-description")
-          ?.addEventListener("blur", (e) =>
-            saveTD("description", (e.target as HTMLTextAreaElement).value),
-          { signal: __signal });
+
 
         // Phase 23: Image attachments upload
-        document
-          .getElementById("td-attachment-input")
+        byId("td-attachment-input")
           ?.addEventListener("change", async (e) => {
-            if (!currentTaskId) return;
+            const targetTaskId = currentTaskId;
+            const openGen = detailGeneration;
+            if (!targetTaskId) return;
             const input = e.target as HTMLInputElement;
             const file = input.files?.[0];
             if (!file) return;
@@ -1240,16 +1877,17 @@
               try {
                 await saveAttachment({
                   id: crypto.randomUUID(),
-                  taskId: currentTaskId!,
+                  taskId: targetTaskId,
                   filename: file.name,
                   mimeType: file.type,
                   base64Data,
                   createdAt: new Date().toISOString(),
                 });
-                loadAttachments(currentTaskId!);
+                if (!__signal.aborted && currentTaskId === targetTaskId && detailGeneration === openGen) {
+                  loadAttachments(targetTaskId);
+                }
               } catch (err) {
                 log.error("Failed to save attachment", err);
-                const { showToast } = await import("@lib/toast");
                 showToast(
                   "Failed to save attachment due to storage limits or error.",
                   "error",
@@ -1262,46 +1900,102 @@
             input.value = "";
           }, { signal: __signal });
 
-        document.getElementById("td-status")
-          ?.addEventListener("change", (e) => {
-            const newVal = (e.target as HTMLSelectElement).value;
-            saveTD("status", newVal);
-            const isDone = newVal === "complete";
-            const doneBtn = document.getElementById("td-toggle-done");
-            if (doneBtn)
-              doneBtn.textContent = isDone
-                ? "↩ Mark as Undone"
-                : "✓ Mark as Done";
-          }, { signal: __signal });
-        document
-          .getElementById("td-priority")
+        async function saveDetailStatus(next: string) {
+          const id = currentTaskId
+          if (!id || !statusSelect || statusSelect.disabled) return
+          const previous = statusSelect.dataset.savedStatus ?? statusSelect.value
+          if (!statusAllowed(next)) {
+            statusSelect.value = previous
+            return
+          }
+          const unlock = lockTaskStatusWrite(id)
+          if (!unlock) {
+            statusSelect.value = previous
+            showToast("A status change is still saving.")
+            return
+          }
+          const generation = detailGeneration
+          setStatusBusy(true)
+          try {
+            const saved = await saveTaskField("status", next)
+            if (generation === detailGeneration && (saved || !taskSaveConflict)) renderSavedStatus(saved ? next : previous)
+          } finally {
+            unlock()
+            if (generation === detailGeneration) setStatusBusy(false)
+          }
+        }
+
+        statusSelect?.addEventListener("change", () => void saveDetailStatus(statusSelect.value), { signal: __signal })
+        byId("td-priority")
           ?.addEventListener("change", (e) =>
-            saveTD("priority", Number((e.target as HTMLSelectElement).value)),
+            saveTaskField("priority", Number((e.target as HTMLSelectElement).value)),
           { signal: __signal });
         // Eisenhower urgency auto-save
-        document
-          .getElementById("td-urgency")
+        byId("td-urgency")
           ?.addEventListener("change", (e) =>
-            saveTD("urgency", Number((e.target as HTMLSelectElement).value)),
+            saveTaskField("urgency", Number((e.target as HTMLSelectElement).value)),
           { signal: __signal });
         // Eisenhower importance auto-save
-        document
-          .getElementById("td-importance")
+        byId("td-importance")
           ?.addEventListener("change", (e) =>
-            saveTD("importance", Number((e.target as HTMLSelectElement).value)),
+            saveTaskField("importance", Number((e.target as HTMLSelectElement).value)),
           { signal: __signal });
-        // Phase 20: task_type auto-save
-        document
-          .getElementById("td-task-type")
+        // Task kind + Event schedule auto-save
+        byId("td-task-kind")
           ?.addEventListener("change", (e) => {
-            saveTD("task_type", (e.target as HTMLSelectElement).value);
+            const prevKind = currentTaskKind
+            const nextKind = (e.target as HTMLSelectElement).value || "standard_action"
+            currentTaskKind = nextKind
+            const kindBadgeEl = byId("td-task-kind-badge")
+            if (kindBadgeEl) {
+              const label = KIND_BADGE_LABELS[nextKind] ?? ""
+              kindBadgeEl.textContent = label
+              kindBadgeEl.classList.toggle("hidden", !label)
+            }
+            const tt = (byId("td-task-type") as HTMLSelectElement | null)?.value || "task"
+            const typeIconEl = byId("td-type-icon")
+            if (typeIconEl) typeIconEl.replaceChildren(createTypeIconElement(tt, 16, nextKind))
+            const startVal = (byId("td-start-date") as HTMLInputElement | null)?.value ?? ""
+            const endVal = (byId("td-end-date") as HTMLInputElement | null)?.value ?? ""
+            byId("td-event-schedule")?.classList.toggle(
+              "hidden",
+              nextKind !== "calendar_event" && !startVal && !endVal,
+            )
+            saveTaskField("task_kind", nextKind)
+            if (currentTaskId && _modalAbortController && (prevKind === "shopping_item" || nextKind === "shopping_item")) {
+              mountTaskChecklist(currentTaskId, hasChecklistTextDraft?.getRaw?.() ?? "[]", _modalAbortController.signal, currentTicketKey ?? undefined)
+            }
           }, { signal: __signal });
-        // Phase 26: board change auto-save
-        document.getElementById("td-area")?.addEventListener("change", (e) => {
-          saveTD("area_id", (e.target as HTMLSelectElement).value);
-        }, { signal: __signal });
+        // Phase 20: task_type auto-save
+        byId("td-task-type")
+          ?.addEventListener("change", (e) => {
+            saveTaskField("task_type", (e.target as HTMLSelectElement).value);
+          }, { signal: __signal });
+        byId("td-area")?.addEventListener("change", async event => {
+          const select = event.currentTarget as HTMLSelectElement
+          const modalSignal = _modalAbortController?.signal
+          const taskId = currentTaskId
+          const areaId = select.value
+          const previous = select.dataset.savedArea
+          if (!taskId || !modalSignal || select.disabled || areaId === previous) return
+          const ticketKey = currentTicketKey
+          const hadFocus = document.activeElement === select
+          select.disabled = true
+          const write = saveTaskField("area_id", areaId || null).then(saved => saved ? areaId : null).finally(() => {
+            if (pendingAreaWrites.get(taskId) === write) pendingAreaWrites.delete(taskId)
+            if (ticketKey && pendingAreaWrites.get(ticketKey) === write) pendingAreaWrites.delete(ticketKey)
+          })
+          pendingAreaWrites.set(taskId, write)
+          if (ticketKey) pendingAreaWrites.set(ticketKey, write)
+          const savedArea = await write
+          if (modalSignal.aborted) return
+          if (savedArea !== null) select.dataset.savedArea = savedArea
+          else if (!taskSaveConflict) select.value = previous ?? ""
+          select.disabled = false
+          if (hadFocus && document.activeElement === document.body) select.focus({ preventScroll: true })
+        }, { signal: __signal })
         // Project change auto-save
-        document.getElementById("td-project")?.addEventListener("change", async (event) => {
+        byId("td-project")?.addEventListener("change", async (event) => {
           const select = event.currentTarget as HTMLSelectElement
           const modalSignal = _modalAbortController?.signal
           const projectId = select.value
@@ -1309,61 +2003,54 @@
           const saved = await saveTaskField("project_id", projectId || null)
           if (modalSignal?.aborted) return
           if (saved) select.dataset.savedProject = projectId
-          else select.value = select.dataset.savedProject ?? ""
+          else if (!taskSaveConflict) select.value = select.dataset.savedProject ?? ""
           select.disabled = false
         }, { signal: __signal })
 
         // Pillar change auto-save & dynamic Principle update
-        document.getElementById("td-pillar")?.addEventListener("change", async (e) => {
+        let pillarPrinciplesController: AbortController | null = null;
+        __signal.addEventListener("abort", () => pillarPrinciplesController?.abort(), { once: true });
+        byId("td-pillar")?.addEventListener("change", async (e) => {
           const pillarId = (e.target as HTMLSelectElement).value || null;
-          saveTD("pillar_id", pillarId);
-          // Auto-clear principle when pillar changes
-          saveTD("principle_id", null);
-          const principleSelect = document.getElementById("td-principle") as HTMLSelectElement | null;
+          const targetTaskId = currentTaskId;
+          const generation = detailGeneration;
+          pillarPrinciplesController?.abort();
+          const savePromise = saveTaskField("pillar_id", pillarId);
+          const principleSelect = byId("td-principle") as HTMLSelectElement | null;
           if (principleSelect) {
-            principleSelect.replaceChildren(new Option("No principle", ""));
-            if (pillarId) {
-              try {
-                const prinRes = await fetch(
-                  (window.__ingress_path || "") + `/api/pillars/${pillarId}/principles`,
-                );
-                if (prinRes.ok) {
-                  const prinData = await prinRes.json();
-                  const principles = prinData.principles || prinData || [];
-                  principles.forEach((p: any) => {
-                    const opt = document.createElement("option");
-                    opt.value = p.id;
-                    opt.textContent = `${p.description.substring(0, 30)}${p.description.length > 30 ? '...' : ''}`;
-                    principleSelect.appendChild(opt);
-                  });
-                }
-              } catch (e) { log.warn("principles-fetch error", e) }
-            }
+            const controller = new AbortController();
+            pillarPrinciplesController = controller;
+            await loadPillarPrinciplesOptions(principleSelect, pillarId, {
+              signal: AbortSignal.any([__signal, controller.signal]),
+              truncate: 33,
+              onError: (err) => log.warn("principles-fetch error", err),
+            });
+            if (__signal.aborted || controller.signal.aborted || currentTaskId !== targetTaskId || detailGeneration !== generation) return;
           }
+          await savePromise;
         }, { signal: __signal });
 
         // Principle change auto-save
-        document.getElementById("td-principle")?.addEventListener("change", (e) => {
-          saveTD("principle_id", (e.target as HTMLSelectElement).value || null);
+        byId("td-principle")?.addEventListener("change", (e) => {
+          saveTaskField("principle_id", (e.target as HTMLSelectElement).value || null);
         }, { signal: __signal });
         // Assigned To: auto-save on change + toast feedback (UX2)
-        document
-          .getElementById("td-assigned-to")
+        byId("td-assigned-to")
           ?.addEventListener("change", async (e) => {
-            const val = (e.target as HTMLSelectElement).value || null;
-            saveTD("assigned_to", val);
-            const sel = e.target as HTMLSelectElement;
+            const sel = e.target as HTMLSelectElement
+            if (sel.disabled || _isPopulating || !currentTaskId) return
+            const val = sel.value || null
+            saveTaskField("assigned_to", val)
             const label = val
               ? (sel.options[sel.selectedIndex]?.textContent ?? val)
               : "Unassigned";
-            const { showToast } = await import("@lib/toast");
             showToast(val ? `Assigned to ${label}` : "Unassigned");
           }, { signal: __signal });
         // UX2: Keyboard shortcut 'A' to focus assignee dropdown in detail panel
         document.addEventListener("keydown", (e) => {
-          const panel = document.getElementById("task-detail-panel");
+          const panel = byId("task-detail-panel");
           if (!panel || panel.style.display === "none") return;
-          if (!tdOverlay.classList.contains("active") || hasPriorityOverlay() || !document.getElementById("shortcut-modal")?.classList.contains("hidden")) return;
+          if (!tdOverlay.classList.contains("active") || hasPriorityOverlay() || !byId("shortcut-modal")?.classList.contains("hidden")) return;
           if (document.body.classList.contains("has-docked-inspector") && !panel.contains(document.activeElement)) return;
           if (e.key === "a" && !e.ctrlKey && !e.metaKey && !e.altKey && singleKeyShortcutsEnabled()) {
             const active = document.activeElement as HTMLElement;
@@ -1375,45 +2062,63 @@
             )
               return;
             e.preventDefault();
-            document.getElementById("td-assigned-to")?.focus();
+            const assignee = byId("td-assigned-to")
+            const disclosure = assignee?.closest("details")
+            if (disclosure) disclosure.open = true
+            assignee?.focus()
+
           }
         }, { signal: __signal });
-        document
-          .getElementById("td-progress")
+        byId("td-progress")
           ?.addEventListener("input", (e) => {
             const v = (e.target as HTMLInputElement).value;
-            const progEl = document.getElementById("td-progress-value");
+            const progEl = byId("td-progress-value");
             if (progEl) progEl.textContent = `${v}%`;
           }, { signal: __signal });
-        document
-          .getElementById("td-progress")
+        byId("td-progress")
           ?.addEventListener("change", (e) =>
-            saveTD("progress", Number((e.target as HTMLInputElement).value)),
+            saveTaskField("progress", Number((e.target as HTMLInputElement).value)),
           { signal: __signal });
-        document
-          .getElementById("td-color")
+        byId("td-color")
           ?.addEventListener("change", (e) =>
-            saveTD("color", (e.target as HTMLInputElement).value),
+            saveTaskField("color", (e.target as HTMLInputElement).value),
           { signal: __signal });
-        document
-          .getElementById("td-due-date")
+        byId("td-due-date")
           ?.addEventListener("change", (e) =>
-            saveTD("due_date", (e.target as HTMLInputElement).value || null),
+            saveTaskField("due_date", (e.target as HTMLInputElement).value || null),
           { signal: __signal });
-        document
-          .getElementById("td-start-date")
+        function saveEventWindow(): void {
+          const allDay = Boolean((byId("td-event-all-day") as HTMLInputElement | null)?.checked)
+          const startInput = byId("td-start-date") as HTMLInputElement | null
+          const endInput = byId("td-end-date") as HTMLInputElement | null
+          const errEl = byId("td-event-date-error")
+          const startIso = parseEventInputForSave(startInput?.value ?? "", allDay)
+          const endIso = parseEventInputForSave(endInput?.value ?? "", allDay)
+          const invalid = Boolean(
+            startIso && endIso && (allDay ? endIso < startIso : new Date(endIso) <= new Date(startIso)),
+          )
+          errEl?.toggleAttribute("hidden", !invalid)
+          if (invalid) return
+          void saveTaskFields({ start_date: startIso, end_date: endIso })
+        }
+        byId("td-event-all-day")
+          ?.addEventListener("change", (e) => {
+            const allDay = (e.target as HTMLInputElement).checked
+            syncEventInputsType(allDay)
+            saveEventWindow()
+          }, { signal: __signal });
+        byId("td-start-date")
+          ?.addEventListener("change", saveEventWindow, { signal: __signal });
+        byId("td-end-date")
+          ?.addEventListener("change", saveEventWindow, { signal: __signal });
+        byId("td-event-location")
+          ?.addEventListener("change", (e) => {
+            const loc = (e.target as HTMLInputElement).value.trim()
+            cfApi.setStructuredField("location", loc || undefined, true)
+          }, { signal: __signal });
+        byId("td-time-tracked")
           ?.addEventListener("change", (e) =>
-            saveTD("start_date", (e.target as HTMLInputElement).value || null),
-          { signal: __signal });
-        document
-          .getElementById("td-end-date")
-          ?.addEventListener("change", (e) =>
-            saveTD("end_date", (e.target as HTMLInputElement).value || null),
-          { signal: __signal });
-        document
-          .getElementById("td-time-tracked")
-          ?.addEventListener("change", (e) =>
-            saveTD(
+            saveTaskField(
               "time_tracked",
               Number((e.target as HTMLInputElement).value) || 0,
             ),
@@ -1421,7 +2126,7 @@
 
         // ───── Labels + Subtasks (extracted) ─────
         const labelsApi = initLabelsAndSubtasks({
-          saveTD,
+          saveTD: saveTaskField,
           getCurrentTaskId: () => currentTaskId,
           openTaskDetail,
           signal: __signal,
@@ -1431,19 +2136,23 @@
 
         // ───── Custom Fields (extracted) ─────
         const cfApi = initCustomFields({
-          saveTD,
+          saveTD: saveTaskField,
           getSettingsFields: () => _settingsFields,
+          getCurrentTaskId: () => currentTaskId,
           signal: __signal,
         })
+        cancelCustomFieldSaves = cfApi.cancelPendingSave
         const addCFRow = cfApi.addCFRow
+        flushPendingCustomFieldsSave = cfApi.flushPendingCustomFieldsSave
 
 
         // Parent search — debounced type-ahead
-        let parentSearchTimer: ReturnType<typeof setTimeout>;
-        const parentSearchInput = document.getElementById(
+        let parentSearchTimer: ReturnType<typeof setTimeout> | undefined;
+        __signal.addEventListener("abort", () => clearTimeout(parentSearchTimer), { once: true });
+        const parentSearchInput = byId(
           "td-link-parent-search",
         ) as HTMLInputElement | null;
-        const parentResultsDiv = document.getElementById(
+        const parentResultsDiv = byId(
           "td-link-parent-results",
         );
 
@@ -1456,36 +2165,29 @@
           }
           parentSearchTimer = setTimeout(async () => {
             try {
+              const ctx = currentTaskApiContext()
               const res = await fetch(
                 `/api/tasks?q=${encodeURIComponent(q)}&limit=10`,
+                ctx ? { headers: taskApiHeaders(ctx) } : undefined,
               );
               if (!res.ok || !parentResultsDiv) return;
               const data = await res.json();
+              if (__signal.aborted || parentSearchInput.value.trim() !== q) return
               const tasks = (data.tasks ?? []).filter(
                 (t: Record<string, unknown>) => t.id !== currentTaskId,
               );
               if (tasks.length === 0) {
-                parentResultsDiv.innerHTML = `<div class="px-3 py-2 text-xs text-text-muted italic">No matches</div>`;
+                const empty = domEl("div", "px-3 py-2 text-xs text-text-muted italic", "No matches")
+                parentResultsDiv.replaceChildren(empty)
               } else {
                 parentResultsDiv.replaceChildren(
                   ...tasks.map((t: Record<string, unknown>) => {
-                    const typeIcon =
-                      t.task_type === "epic"
-                        ? "🎯"
-                        : t.task_type === "story"
-                          ? "📖"
-                          : "✅";
-                    const row = document.createElement("div");
-                    row.className = "td-parent-result px-3 py-2 text-sm cursor-pointer hover:bg-bg-hover flex items-center gap-2";
+                    const row = domEl("div", "td-parent-result px-3 py-2 text-sm cursor-pointer hover:bg-bg-hover flex items-center gap-2")
                     row.dataset.id = String(t.id ?? "");
-                    const iconSpan = document.createElement("span");
-                    iconSpan.textContent = typeIcon;
-                    const titleSpan = document.createElement("span");
-                    titleSpan.className = "truncate";
-                    titleSpan.textContent = String(t.title ?? "").slice(0, 60);
-                    const typeSpan = document.createElement("span");
-                    typeSpan.className = "text-xs text-text-muted ml-auto";
-                    typeSpan.textContent = String(t.task_type ?? "task");
+                    const iconSpan = domEl("span", "shrink-0 inline-flex")
+                    iconSpan.appendChild(createTypeIconElement(String(t.task_type ?? "task"), 14, typeof t.task_kind === "string" ? t.task_kind : undefined));
+                    const titleSpan = domEl("span", "truncate", formatTicketDisplay(t.ticket_key, String(t.title ?? "").slice(0, 60), t.id))
+                    const typeSpan = domEl("span", "text-xs text-text-muted ml-auto", String(t.task_type ?? "task"))
                     row.append(iconSpan, titleSpan, typeSpan);
                     return row;
                   }),
@@ -1498,11 +2200,10 @@
                       const newParentId = (el as HTMLElement).dataset.id;
                       if (newParentId) {
                         const modalSignal = _modalAbortController?.signal
-                        await saveTD("parent_id", newParentId);
-                        if (modalSignal?.aborted) return
+                        const ok = await saveTaskField("parent_id", newParentId);
+                        if (modalSignal?.aborted || !ok) return
                         parentSearchInput.value = "";
                         parentResultsDiv.style.display = "none";
-                        // Refresh the panel to show the new parent
                         openTaskDetail(currentTaskId!);
                       }
                     }, { signal: __signal });
@@ -1513,12 +2214,14 @@
               /* search failed silently */
             }
           }, 300);
-        });
+        }, { signal: __signal });
 
         parentSearchInput?.addEventListener("keydown", (e) => {
-          if (e.key === "Escape" && parentResultsDiv) {
-            parentResultsDiv.style.display = "none";
-            parentSearchInput.value = "";
+          if (e.key === "Escape" && parentResultsDiv?.style.display === "block") {
+            e.preventDefault()
+            clearTimeout(parentSearchTimer)
+            parentResultsDiv.style.display = "none"
+            parentSearchInput.value = ""
           }
         }, { signal: __signal });
 
@@ -1526,88 +2229,85 @@
         const relatedLinksApi = initRelatedLinks({
           getCurrentTaskId: () => currentTaskId,
           openTaskDetail,
-          saveTD,
+          saveTD: saveTaskField,
+          signal: __signal,
         })
         const loadRelatedLinks = relatedLinksApi.loadRelatedLinks
 
 
-        // Toggle done
-        document
-          .getElementById("td-toggle-done")
-          ?.addEventListener("click", () => {
-            const statusEl = document.getElementById(
-              "td-status",
-            ) as HTMLSelectElement;
-            const newStatus =
-              statusEl.value === "complete" ? "pending" : "complete";
-            statusEl.value = newStatus;
-            saveTD("status", newStatus);
-            const tdDoneBtn = document.getElementById("td-toggle-done");
-            if (tdDoneBtn)
-              tdDoneBtn.textContent =
-                newStatus === "complete"
-                  ? "↩ Mark as Undone"
-                  : "✓ Mark as Done";
-          }, { signal: __signal });
+        doneButton?.addEventListener("click", () => {
+          if (statusSelect) void saveDetailStatus(isDoneStatus(statusSelect.value) ? "pending" : "complete")
+        }, { signal: __signal })
 
-        // Toggle favorite
-        document
-          .getElementById("td-toggle-favorite")
-          ?.addEventListener("click", async () => {
-            if (!currentTaskId) return;
-            const search = searchSession
-            const generation = detailGeneration
-            const btn = document.getElementById(
-              "td-toggle-favorite",
-            ) as HTMLElement;
-            const isFav = btn.textContent?.startsWith("★");
-            await saveTD("is_favorite", isFav ? 0 : 1);
-            if (search && generation !== detailGeneration) return
-            btn.textContent = isFav ? "⭐ Add to Favorites" : "★ Favorited";
-          }, { signal: __signal });
+        // Toggle promoted (sash highlight & top of lane)
+        promoteButton?.addEventListener("click", async () => {
+          if (!currentTaskId || !taskLoaded || !promoteButton || promoteButton.disabled) return;
+          if (_isPopulating) resumeLoadedTask?.();
+          const search = searchSession
+          const generation = detailGeneration
+          const wasPromoted = promoteButton.getAttribute("aria-pressed") === "true";
+          const nextPromoted = !wasPromoted;
+          promoteButton.disabled = true;
+          setAttr(promoteButton, "aria-pressed", String(nextPromoted));
+          try {
+            const saved = await saveTaskField("is_promoted", nextPromoted);
+            if (search && generation !== detailGeneration) return;
+            if (saved === false) {
+              setAttr(promoteButton, "aria-pressed", String(wasPromoted));
+              return;
+            }
+            const promoteLabel = nextPromoted
+              ? (window.mI18n?.get("kanban.demote_card") ?? "Remove promotion")
+              : (window.mI18n?.get("kanban.promote_card") ?? "Promote to top");
+            promoteButton.title = promoteLabel;
+            setAttr(promoteButton, "aria-label", promoteLabel);
+            showToast(nextPromoted
+              ? (window.mI18n?.get("kanban.card_promoted") ?? "Promoted to the top of the lane")
+              : (window.mI18n?.get("kanban.card_demoted") ?? "Promotion removed"));
+            document.dispatchEvent(new CustomEvent("kanban:detail-changed", { detail: { id: currentTaskId } }));
+          } finally {
+            syncTaskActionControls()
+          }
+        }, { signal: __signal });
 
         // Duplicate task
-        document
-          .getElementById("td-duplicate")
+        byId("td-duplicate")
           ?.addEventListener("click", async () => {
-            if (!currentTaskId) return;
-            const search = searchSession
-            const generation = detailGeneration
-            const write = search ? beginScopedWrite() : undefined
-            const stale = () => search && generation !== detailGeneration
-            const toast = document.createElement("div");
-            toast.className = "toast";
+            const taskId = currentTaskId;
+            if (!taskId || boardWithheld || __signal.aborted) return;
+            const ctx = currentTaskApiContext();
+            const search = searchSession;
+            const generation = detailGeneration;
+            const write = search ? beginScopedWrite() : undefined;
+            const stale = () =>
+              __signal.aborted ||
+              boardWithheld ||
+              (search && generation !== detailGeneration) ||
+              !sameTaskApiContext(ctx, currentTaskApiContext());
             try {
               const res = await fetch(
-                `${window.__ingress_path || ""}/api/tasks/${currentTaskId}/duplicate`,
+                `/api/tasks/${encodeURIComponent(taskId)}/duplicate`,
                 {
                   method: "POST",
+                  ...(ctx ? { headers: taskApiHeaders(ctx) } : {}),
                   ...(write ? { signal: write.signal } : {}),
                 },
               );
-              if (stale()) return
+              if (stale()) return;
               if (!res.ok) {
-                toast.className = "toast error";
-                toast.textContent = "Failed to duplicate";
-                document.querySelector(".toast-container")?.appendChild(toast);
-                setTimeout(() => toast.remove(), 2500);
+                showToast("Failed to duplicate", "error");
                 return;
               }
               const data = await res.json();
-              if (stale()) return
-              toast.className = "toast success";
-              toast.textContent = `Duplicated → ${data.title}`;
-              document.querySelector(".toast-container")?.appendChild(toast);
-              setTimeout(() => toast.remove(), 2500);
-              if (!search?.queued) void openTaskDetail(data.id)
+              if (stale()) return;
+              showToast(`Duplicated → ${data.title}`, "success");
+              document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { id: data.id, action: "duplicate" } }));
+              if (!search?.queued) void openTaskDetail(data.id);
             } catch {
-              if (stale()) return
-              toast.className = "toast error";
-              toast.textContent = "Network error";
-              document.querySelector(".toast-container")?.appendChild(toast);
-              setTimeout(() => toast.remove(), 2500);
+              if (stale()) return;
+              showToast("common.network_error", "error");
             } finally {
-              write?.finish()
+              write?.finish();
             }
           }, { signal: __signal });
 
@@ -1616,10 +2316,10 @@
           const taskId = currentTaskId
           const signal = _modalAbortController?.signal
           if (!taskId || !signal || signal.aborted || askAi.getAttribute("aria-busy") === "true") return
-          askAi.setAttribute("aria-disabled", "true")
-          askAi.setAttribute("aria-busy", "true")
+          setAttr(askAi, "aria-disabled", "true")
+          setAttr(askAi, "aria-busy", "true")
           askAi.classList.add("opacity-60")
-          document.getElementById("td-ai-response")?.remove()
+          byId("td-ai-response")?.remove()
 
           function resetButton() {
             if (!askAi) return
@@ -1632,24 +2332,19 @@
             const result = await askAIForTask(taskId, signal)
             if (signal.aborted || currentTaskId !== taskId) return
             if (result.source === "ha-assist") {
-              const response = document.createElement("div")
+              const response = domEl("div")
               response.id = "td-ai-response"
               response.className = "mt-2 p-3 bg-accent/10 border border-accent/20 rounded-md text-xs text-text-secondary leading-relaxed"
-              const header = document.createElement("div")
-              header.className = "flex justify-between items-center mb-1.5"
-              const title = document.createElement("strong")
-              title.className = "text-accent text-[11px]"
-              title.textContent = "AI Response"
-              const dismiss = document.createElement("button")
+              const header = domEl("div", "flex justify-between items-center mb-1.5")
+              const title = domEl("strong", "text-accent text-[11px]", "AI Response")
+              const dismiss = domEl("button")
               dismiss.type = "button"
               dismiss.id = "td-ai-dismiss"
               dismiss.className = "text-text-muted hover:text-text-primary text-xs px-1"
-              dismiss.setAttribute("aria-label", "Dismiss AI response")
+              setAttr(dismiss, "aria-label", "Dismiss AI response")
               dismiss.textContent = "×"
               header.append(title, dismiss)
-              const body = document.createElement("div")
-              body.className = "whitespace-pre-wrap"
-              body.textContent = result.response
+              const body = domEl("div", "whitespace-pre-wrap", result.response)
               response.replaceChildren(header, body)
               askAi.parentElement?.after(response)
               dismiss.addEventListener("click", () => response.remove(), { signal })
@@ -1664,81 +2359,45 @@
           }
         }, { signal: __signal })
 
-        // Attach Image
-        document
-          .getElementById("td-attach-image")
-          ?.addEventListener("change", async (e) => {
-            if (!currentTaskId) return;
-            const input = e.target as HTMLInputElement;
-            const file = input.files?.[0];
-            if (!file) return;
-
-            // Convert to Base64
-            const reader = new FileReader();
-            reader.onload = async (evt) => {
-              const base64Data = evt.target?.result as string;
-              try {
-                await saveAttachment({
-                  id: crypto.randomUUID(),
-                  taskId: currentTaskId!,
-                  filename: file.name,
-                  mimeType: file.type,
-                  base64Data,
-                  createdAt: new Date().toISOString(),
-                });
-                loadAttachments(currentTaskId!);
-              } catch (err) {
-                log.error("Attachment failed", err);
-                const { showToast: toast } = await import("@lib/toast");
-                toast("Failed to save attachment.", "error");
-              } finally {
-                input.value = ""; // reset
-              }
-            };
-            reader.readAsDataURL(file);
-          });
-
         // Delete
-        document
-          .getElementById("td-delete")
+        byId("td-delete")
           ?.addEventListener("click", async () => {
             const taskId = currentTaskId
-            if (!taskId) return
+            if (!taskId || !currentTaskActions.has("delete") || boardWithheld || !_modalAbortController || _modalAbortController.signal.aborted) return
+            if (taskSaveConflict) { showTaskWriteConflict(); return }
+            const version = currentTaskVersion
+            const context = currentTaskApiContext()
             const search = searchSession
             const generation = detailGeneration
-            const stale = () => search && generation !== detailGeneration
+            const lifetime = _modalAbortController.signal
+            const confirmationSignal = AbortSignal.any([__signal, lifetime, ...(search ? [search.lifetime.signal] : [])])
+            const stale = () => generation !== detailGeneration || boardWithheld || confirmationSignal.aborted || !sameTaskApiContext(context, currentTaskApiContext())
             const ok = await confirmDialog({
               message: "This task will be permanently deleted.",
               variant: "danger",
               confirmText: "Delete Task",
               title: "Delete Task",
-              ...(search ? { signal: search.lifetime.signal } : {}),
+              signal: confirmationSignal,
             });
             if (!ok || stale() || taskId !== currentTaskId) return
             const scopedWrite = beginScopedWrite()
             try {
-              const res = await fetch(
-                `${window.__ingress_path || ""}/api/tasks/${taskId}`,
-                {
-                  method: "DELETE",
-                  ...(scopedWrite ? { signal: scopedWrite.signal } : {}),
-                },
-              );
+              const result = await deleteVersionedTask(taskId, version, context,
+                AbortSignal.any([confirmationSignal, ...(scopedWrite ? [scopedWrite.signal] : []), AbortSignal.timeout(7_000)]))
               if (stale()) return
-              // Treat 204 (deleted) and 404 (already gone) as success
-              if (res.ok || res.status === 404) {
+              if (result.ok) {
                 const deferred = deferral.removing(taskId)
+                hasChecklistTextDraft = undefined
                 closeTD("discard")
-                if (!deferred && !scopedWrite) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-deleted" } }));
-              } else if (search) {
-                const { showToast } = await import("@lib/toast")
-                if (!stale()) showToast("Couldn’t delete the task.", "error")
+                if (!deferred && !scopedWrite) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-deleted" } }))
+              } else {
+                taskSaveConflict = true
+                showTaskWriteConflict()
               }
             } catch {
               if (stale()) return
-              // Network error — still close and refresh to re-sync
-              closeTD("discard")
-              if (!scopedWrite) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "task-delete-fallback" } }));
+              taskSaveConflict = true
+              showTaskWriteConflict()
             } finally {
               scopedWrite?.finish()
             }
@@ -1747,6 +2406,7 @@
         let commentAttempt: { taskId: string, draft: string, key: string } | undefined
         commentButton?.addEventListener("click", async () => {
           const taskId = currentTaskId
+          const ticketKey = currentTicketKey
           const signal = _modalAbortController?.signal
           const initialComments = commentsReady
           const draft = commentInput?.value
@@ -1754,7 +2414,7 @@
 
           closeTaskReferences()
           commentButton.disabled = true
-          commentError?.setAttribute("hidden", "")
+          setAttr(commentError, "hidden", "")
           let participantDenied = false
           let mentionFailure: Awaited<ReturnType<typeof readCommentMentionProblem>>
           const mentionHeaders = commentMentionWriteHeaders(draft)
@@ -1786,7 +2446,7 @@
             commentAttempt = undefined
             const { id } = receipt
             await initialComments
-            if (!signal.aborted) await loadComments(taskId, signal, null, id)
+            if (!signal.aborted) await loadComments({ id: taskId, ticket_key: ticketKey }, signal, null, id)
           } catch {
             if (!signal.aborted && commentError) {
               commentError.textContent = (participantDenied ? commentError.dataset.participantRequired
@@ -1800,15 +2460,14 @@
           }
         }, { signal: __signal })
 
-        document.getElementById("td-copy-link")?.addEventListener("click", async () => {
+        byId("td-copy-link")?.addEventListener("click", async () => {
           if (!currentTaskId) return
           const taskId = currentTaskId
-          const link = buildTaskPermalink(taskId)
+          const link = buildTaskPermalink(currentTicketKey ?? taskId)
           const copied = await copyToClipboard(link)
           if (__signal.aborted || currentTaskId !== taskId) return
           if (copied) {
-            copyFallback?.setAttribute("hidden", "")
-            const { showToast } = await import("@lib/toast")
+            setAttr(copyFallback, "hidden", "")
             showToast("task_modal.link_copied", "success")
           } else if (copyFallback && copyValue) {
             copyFallback.removeAttribute("hidden")
@@ -1821,18 +2480,21 @@
         // Close
         tdClose?.addEventListener("click", () => closeTD(), { signal: __signal })
         tdOverlay?.addEventListener("click", (e) => {
-          if (e.target === tdOverlay && !document.body.classList.contains("has-docked-inspector")) closeTD("discard")
+          if (e.target === tdOverlay && !focusMode && !document.body.classList.contains("has-docked-inspector")) closeTD("discard")
         }, { signal: __signal });
 
         function checkTaskLocation(fromHistory = false) {
           if (waitForDetailWrites(() => checkTaskLocation(fromHistory))) return
-          if (fromHistory) saveNavigationState()
+          if (fromHistory) {
+            restoreTaskBackgroundUrl()
+            saveNavigationState()
+          }
           const url = new URL(window.location.href)
-          const taskId = ticketIdFromPath(url.pathname, window.__ingress_path) ?? getLegacyTaskId(url.hash) ?? url.searchParams.get("open")
+          const taskId = ticketIdFromPath(url.pathname, window.__ingress_path) ?? getLegacyTaskId(url.hash) ?? url.searchParams.get("open") ?? url.searchParams.get("ticket")
           const commentTarget = url.searchParams.get("comment")
           if (taskId === null) closeTD("discard", false)
           else if (tdOverlay.dataset.suppressUrlOpen !== "true" &&
-            (taskId !== currentTaskId || commentTarget !== currentCommentTarget || !tdOverlay.classList.contains("active"))) {
+            (!sameTaskLocator(taskId, currentTaskId, currentTicketKey) || commentTarget !== currentCommentTarget || !tdOverlay.classList.contains("active"))) {
             void openTaskDetail(taskId, commentTarget, undefined, false)
             if (fromHistory) {
               const generation = detailGeneration
@@ -1895,8 +2557,8 @@
             event.stopPropagation()
             // Clean up search dropdown if opened from search results
             if (taskEl.closest("#search-results")) {
-              const sr = document.getElementById("search-results");
-              const si = document.getElementById(
+              const sr = byId("search-results");
+              const si = byId(
                 "global-search",
               ) as HTMLInputElement;
               if (sr) sr.style.display = "none";
@@ -1916,7 +2578,12 @@
           signal: __signal,
         });
 
-        // === Command Palette (extracted) ===
-        initCommandPalette({ openTaskDetail, __signal })
+        // === Refresh open detail panel when checklist step converts to child task ===
+        document.addEventListener("meitheal:refresh-task-detail", (event) => {
+          const requestedId = (event as CustomEvent<{ taskId?: string }>).detail?.taskId
+          if (requestedId && requestedId === currentTaskId && tdOverlay.classList.contains("active")) {
+            void openTaskDetail(requestedId)
+          }
+        }, { signal: __signal })
         });
 

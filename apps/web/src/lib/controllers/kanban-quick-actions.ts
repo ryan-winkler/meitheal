@@ -5,9 +5,15 @@
  * @kcs Extracted from kanban-controller.ts for decomposition.
  *      Manages the shared popover system and all quick-action card buttons.
  */
+import { createSpriteIconElement } from "../../generated/icon-registry"
 import { createClientLogger } from "@lib/client-logger"
 import { notifyInactivityTaskChanged } from "@lib/inactivity-client"
+import { promptDialog } from "@lib/prompt-dialog"
 import { sanitizeCssColor } from "@lib/safe-html"
+import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
+import { taskApi } from "@lib/task-api-client"
+import { assigneeFallback } from "@lib/task-assignee-display"
+import { defaultChildTaskType, normalizeEditableTaskType } from "@lib/task-editor-fields"
 import { showToast } from "@lib/toast"
 import type { KanbanRefreshFocus } from "./kanban-page-controller"
 
@@ -65,19 +71,64 @@ export function initQuickActions(
   async function saveColor(button: HTMLButtonElement, taskId: string, color: string | null) {
     if (__signal.aborted || button.disabled) return
     close()
-    button.closest(".kanban-card")?.querySelector<HTMLElement>(".card-more-btn")?.focus({ preventScroll: true })
+    const card = button.closest<HTMLElement>(".kanban-card")
+    card?.querySelector<HTMLElement>(".card-more-btn")?.focus({ preventScroll: true })
+    const prevHasTaskColor = card?.hasAttribute("data-task-color") ?? false
+    const prevKnightColor = card?.style.getPropertyValue("--knight-task-color") ?? ""
+    const prevCardAccent = card?.style.getPropertyValue("--card-accent") ?? ""
+    const prevButtonColor = button.getAttribute("data-color")
+    const applyCardColor = (nextColor: string | null) => {
+      if (!card) return
+      if (nextColor) {
+        card.setAttribute("data-task-color", "")
+        card.style.setProperty("--knight-task-color", nextColor)
+        card.style.setProperty("--card-accent", nextColor)
+      } else {
+        card.removeAttribute("data-task-color")
+        card.style.removeProperty("--knight-task-color")
+        card.style.removeProperty("--card-accent")
+      }
+    }
+    const restoreCardColor = () => {
+      if (card) {
+        if (prevHasTaskColor) card.setAttribute("data-task-color", "")
+        else card.removeAttribute("data-task-color")
+        if (prevKnightColor) card.style.setProperty("--knight-task-color", prevKnightColor)
+        else card.style.removeProperty("--knight-task-color")
+        if (prevCardAccent) card.style.setProperty("--card-accent", prevCardAccent)
+        else card.style.removeProperty("--card-accent")
+      }
+      if (prevButtonColor === null) button.removeAttribute("data-color")
+      else button.setAttribute("data-color", prevButtonColor)
+    }
+    applyCardColor(color)
     button.disabled = true
     try {
-      const response = await fetch(buildTaskApiUrl(taskId), {
+      const ctx = currentTaskApiContext()
+      const response = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
         method: "PUT",
-        headers: { "content-type": "application/json" },
+        headers: ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" },
         body: JSON.stringify({ color }),
       })
+      if (response.status === 409) {
+        restoreCardColor()
+        if (!__signal.aborted) {
+          toast("Task was updated elsewhere. Refreshing board.", "warning")
+          await refreshBoard({ taskId })
+        }
+        return
+      }
       if (!response.ok) throw new Error("Color write rejected")
+      const saved = await response.json().catch(() => null) as { task_version?: unknown; updated_at?: unknown } | null
+      const nextVersion = Number(saved?.task_version ?? saved?.updated_at)
+      if (card && Number.isSafeInteger(nextVersion) && nextVersion >= 0) {
+        card.dataset.version = String(nextVersion)
+      }
       notifyInactivityTaskChanged(taskId)
       await refreshBoard({ taskId })
       toast(color ? "Color updated" : "Color cleared", "success")
     } catch {
+      restoreCardColor()
       if (!__signal.aborted) toast(color ? "Failed to set color" : "Failed to clear color", "error")
     } finally {
       button.disabled = false
@@ -120,8 +171,13 @@ export function initQuickActions(
       popover.style.top = `${Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - box.height - 8))}px`
     }
     requestAnimationFrame(position)
+    const resize = new ResizeObserver(position)
+    resize.observe(popover)
     window.addEventListener("scroll", position, { capture: true, passive: true, signal: __signal })
-    _scrollCleanup = () => window.removeEventListener("scroll", position, true)
+    _scrollCleanup = () => {
+      resize.disconnect()
+      window.removeEventListener("scroll", position, true)
+    }
 
     const focusAtOpen = document.activeElement
     requestAnimationFrame(() => {
@@ -144,7 +200,7 @@ export function initQuickActions(
     if (!activePopover) return
     if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(true); return }
     // Arrow key navigation within popover items (P1-1)
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    if ((e.key === "ArrowDown" || e.key === "ArrowUp") && activePopover.contains(document.activeElement)) {
       e.preventDefault()
       const items = [...activePopover.querySelectorAll("button.popover-item, button.color-swatch")]
       if (!items.length) return
@@ -173,35 +229,54 @@ export function initQuickActions(
       if (!parentId) return
 
       const card = btn.closest(".kanban-card") as HTMLElement | null
-      const areaId = card?.dataset.area || ""
+      const areaId = card?.dataset.area || null
+      const projectId = card?.dataset.areaId || null
+      const parentType = normalizeEditableTaskType(card?.dataset.taskType)
+      const parentTicketKey = card?.querySelector(".kanban-ticket-key")?.textContent?.trim() || null
+
+      if (window.openNewTaskModal) {
+        window.openNewTaskModal("standard_action", {
+          parent: { parentId, parentTitle, parentTicketKey, parentType, areaId, projectId },
+          priority: Number(parentPriority) || 3,
+        })
+        return
+      }
+
+      const title = await promptDialog({
+        title: "New child item",
+        message: `Create child item under ${parentTitle}:`,
+        placeholder: "Child item title...",
+        signal: __signal,
+      })
+      if (!title?.trim()) return
 
       btn.disabled = true
       btn.classList.add("btn-loading")
       try {
+        const ctx = currentTaskApiContext()
         const res = await fetch("/api/tasks", {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" },
           body: JSON.stringify({
-            title: `${parentTitle.slice(0, 80)} — Subtask`,
+            title: title.trim(),
             parent_id: parentId,
             status: "pending",
-            priority: Number(parentPriority),
-            area_id: areaId || undefined,
-            task_type: "task",
+            priority: Number(parentPriority) || 3,
+            ...(areaId ? { area_id: areaId } : {}),
+            ...(projectId ? { project_id: projectId } : {}),
+            task_type: defaultChildTaskType(parentType),
           }),
         })
         if (res.ok) {
-          _qa.toast("Child task created", "success")
-          // P1-6: Refresh to show new card
-          const scrollLeft = document.querySelector(".kanban-scroll-area")?.scrollLeft || 0
-          sessionStorage.setItem("meitheal-kanban-scroll", String(scrollLeft))
+          _qa.toast("Child item created", "success")
           document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-child-created" } }))
         } else {
-          _qa.toast("Failed to create child task", "error")
+          const err = await res.json().catch(() => null) as { error?: string; detail?: string } | null
+          _qa.toast(err?.error ?? err?.detail ?? "Failed to create child item", "error")
         }
       } catch (err) {
         log.warn("Add child failed", err)
-        _qa.toast("Failed to create child task", "error")
+        _qa.toast("Failed to create child item", "error")
       } finally {
         btn.disabled = false
         btn.classList.remove("btn-loading")
@@ -229,6 +304,9 @@ export function initQuickActions(
       const taskId = btn.dataset.id
       const currentAssigned = btn.dataset.assigned || ""
       if (!taskId) return
+      const taskUrl = buildTaskApiUrl(taskId)
+      const lane = btn.closest<HTMLElement>("#kanban-board")?.dataset.groupBy === "assigned"
+        ? btn.closest<HTMLElement>(".kanban-column")?.dataset.status : undefined
 
       // P1-5: Show popover immediately with loading skeleton
       const content = document.createElement("div")
@@ -241,89 +319,112 @@ export function initQuickActions(
       content.append(skel1, skel2)
       const popover = _qa.open(btn, content, "Assign User")
 
-      // Fetch users
-      let users: any[] = []
-      try {
-        const res = await fetch("/api/users")
-        if (res.ok) {
-          const data = await res.json()
-          users = data.users || []
-        }
-      } catch { /* fallback to empty */ }
+      let users: Awaited<ReturnType<typeof taskApi.listUserDirectory>>["users"] = []
 
-      // Replace skeleton with real content
-      if (activePopover !== popover) return
-      content.replaceChildren()
+      async function loadDirectory() {
+        const directory = await taskApi.listUserDirectory(__signal).catch(() => null)
+        if (activePopover !== popover || __signal.aborted) return
+        users = directory?.users ?? users
+        const focused = document.activeElement as HTMLElement | null
+        const restoreFocus = focused === btn || content.contains(focused)
+        const focusedAssignee = focused?.dataset.assigneeOption
+        content.replaceChildren()
 
-      // Unassign option
-      const unassignItem = document.createElement("button")
-      unassignItem.className = "popover-item" + (!currentAssigned ? " active" : "")
-      unassignItem.setAttribute("role", "menuitem")
-      unassignItem.textContent = "∅ Unassigned"
-      unassignItem.addEventListener("click", async () => {
-        // P3-4: Optimistic update
-        btn.dataset.assigned = ""
-        const card = btn.closest(".kanban-card")
-        if (card) (card as HTMLElement).dataset.assigned = ""
-        _qa.close()
-        try {
-          const res = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
-            method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ assigned_to: null }),
-          })
-          if (res.ok) {
-            _qa.toast("Unassigned", "success")
-            await refreshBoard()
-          } else { btn.dataset.assigned = currentAssigned; _qa.toast("Failed to unassign", "error") }
-        } catch { btn.dataset.assigned = currentAssigned; _qa.toast("Failed to unassign", "error") }
-      })
-      content.appendChild(unassignItem)
-
-      // User list with colored dots (P2-7)
-      users.forEach((user: any) => {
-        const userId = user.id || user.name
-        const item = document.createElement("button")
-        item.className = "popover-item" + (currentAssigned === userId ? " active" : "")
-        item.setAttribute("role", "menuitem")
-        // P2-7: Colored dot for user recognition
-        if (user.color) {
-          const dot = document.createElement("span")
-          dot.style.cssText = `display:inline-block;width:8px;height:8px;border-radius:50%;background:${sanitizeCssColor(user.color)};margin-right:6px;vertical-align:middle`
-          item.appendChild(dot)
-        } else {
-          item.appendChild(document.createTextNode("👤 "))
-        }
-        item.appendChild(document.createTextNode((user.name || user.id) + (user.kind === "agent" ? " (AI agent)" : "")))
-        item.addEventListener("click", async () => {
-          // P3-4: Optimistic update
-          btn.dataset.assigned = userId
-          const card = btn.closest(".kanban-card")
-          if (card) (card as HTMLElement).dataset.assigned = userId
-          _qa.close()
+        // Unassign option
+        const unassignItem = document.createElement("button")
+        unassignItem.className = "popover-item" + (!currentAssigned ? " active" : "")
+        unassignItem.setAttribute("role", "menuitem")
+        unassignItem.dataset.assigneeOption = ""
+        unassignItem.append(createSpriteIconElement("x", { size: 14 }), document.createTextNode(" Unassigned"))
+        unassignItem.addEventListener("click", async () => {
+          _qa.close(true)
           try {
-            const res = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
+            const res = await fetch(taskUrl, { // nosemgrep
               method: "PUT",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({ assigned_to: userId }),
+              body: JSON.stringify({ assigned_to: null }),
             })
             if (res.ok) {
-              _qa.toast(`Assigned to ${(user.name || userId).replace(/^(ha_|custom_)/, "")}`, "success")
-              await refreshBoard()
-            } else { btn.dataset.assigned = currentAssigned; _qa.toast("Failed to assign", "error") }
-          } catch { btn.dataset.assigned = currentAssigned; _qa.toast("Failed to assign", "error") }
+              _qa.toast("Unassigned", "success")
+              await refreshBoard({ taskId, lane })
+            } else { _qa.toast("Failed to unassign", "error") }
+          } catch { _qa.toast("Failed to unassign", "error") }
         })
-        content.appendChild(item)
-      })
+        content.appendChild(unassignItem)
 
-      if (!users.length) {
+        // User list with colored dots (P2-7)
+        users.forEach(user => {
+          const userId = user.id || user.name
+          const item = document.createElement("button")
+          item.className = "popover-item" + (currentAssigned === userId ? " active" : "")
+          item.setAttribute("role", "menuitem")
+          item.dataset.assigneeOption = userId
+          // P2-7: Colored dot for user recognition
+          if (user.color) {
+            const dot = document.createElement("span")
+            dot.style.cssText = `display:inline-block;width:8px;height:8px;border-radius:50%;background:${sanitizeCssColor(user.color)};margin-right:6px;vertical-align:middle`
+            item.appendChild(dot)
+          } else {
+            item.append(createSpriteIconElement("user", { size: 14 }), document.createTextNode(" "))
+          }
+          const name = user.display_name || user.name || user.id
+          item.appendChild(document.createTextNode(name + (user.kind === "agent" ? " (AI agent)" : "")))
+          item.addEventListener("click", async () => {
+            _qa.close(true)
+            try {
+              const res = await fetch(taskUrl, { // nosemgrep
+                method: "PUT",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ assigned_to: userId }),
+              })
+              if (res.ok) {
+                _qa.toast(`Assigned to ${name}`, "success")
+                await refreshBoard({ taskId, lane })
+              } else { _qa.toast("Failed to assign", "error") }
+            } catch { _qa.toast("Failed to assign", "error") }
+          })
+          content.appendChild(item)
+        })
+
+        const currentMissing = currentAssigned && !users.some(user => user.id === currentAssigned)
+        const rosterUnverified = (directory?.ha_roster_verified ?? directory?.ha_connected) === false
+        const directoryMessage = !directory ? "Could not load assignees"
+          : currentMissing ? assigneeFallback(currentAssigned, directory)
+          : rosterUnverified ? "Home Assistant assignees could not be verified"
+          : !users.length ? "No users configured" : ""
         const empty = document.createElement("div")
-        empty.className = "popover-item"
-        empty.style.color = "var(--text-muted)"
-        empty.style.fontStyle = "italic"
-        empty.textContent = "No users configured"
-        content.appendChild(empty)
+        if (directoryMessage) {
+          empty.className = "popover-item"
+          empty.style.color = "var(--text-muted)"
+          empty.setAttribute("role", "status")
+          empty.textContent = directoryMessage
+          content.appendChild(empty)
+        }
+        if (!directory || rosterUnverified) {
+          const retry = document.createElement("button")
+          retry.type = "button"
+          retry.className = "popover-item"
+          retry.dataset.assigneeRetry = ""
+          retry.textContent = "Retry"
+          retry.addEventListener("click", (event) => {
+            event.stopPropagation()
+            if (retry.getAttribute("aria-disabled") === "true") return
+            retry.setAttribute("aria-disabled", "true")
+            empty.textContent = "Checking assignees…"
+            void loadDirectory()
+          }, { signal: __signal })
+          content.appendChild(retry)
+        }
+        if (restoreFocus) {
+          const sameAssignee = [...content.querySelectorAll<HTMLElement>("[data-assignee-option]")]
+            .find(item => item.dataset.assigneeOption === focusedAssignee)
+          const first = sameAssignee ?? content.querySelector<HTMLElement>("[data-assignee-retry]") ??
+            content.querySelector<HTMLElement>(".active") ?? content.querySelector("button")
+          first?.focus({ preventScroll: true })
+        }
       }
+
+      await loadDirectory()
     }, { signal: __signal })
   })
 
@@ -360,15 +461,17 @@ export function initQuickActions(
 
         COLOR_SWATCHES.forEach(({ color, label }) => {
           const swatch = document.createElement("button")
+          swatch.type = "button"
           swatch.className = "color-swatch"
+          const isCurrentColor = Boolean(currentColor && currentColor.toLowerCase() === color.toLowerCase())
           // P1-2: Active color indicator
-          if (currentColor && currentColor.toLowerCase() === color.toLowerCase()) {
+          if (isCurrentColor) {
             swatch.classList.add("swatch-active")
           }
           swatch.style.background = color
           swatch.title = label
           swatch.setAttribute("role", "radio")
-          swatch.setAttribute("aria-checked", currentColor === color ? "true" : "false")
+          swatch.setAttribute("aria-checked", isCurrentColor ? "true" : "false")
           swatch.setAttribute("aria-label", `Set color: ${label}`)
           swatch.addEventListener("click", () => {
             void saveColor(btn, taskId, color)
@@ -378,10 +481,9 @@ export function initQuickActions(
 
         content.appendChild(grid)
 
-        // Clear color button
         const clearBtn = document.createElement("button")
         clearBtn.className = "popover-item clear-color-btn"
-        clearBtn.textContent = "✕ Clear color"
+        clearBtn.append(createSpriteIconElement("x", { size: 14, strokeWidth: 1.75 }), " Clear color")
         clearBtn.addEventListener("click", () => {
           void saveColor(btn, taskId, null)
         }, { signal: __signal })

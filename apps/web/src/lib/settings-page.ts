@@ -1,5 +1,6 @@
 import { requestNotificationPermission, showTaskNotification } from "@domains/offline/notifications"
 import { isPwaSupported } from "@domains/offline/sw-register"
+import { initTaskDetailLayoutEditor } from "@lib/task-detail-layout-controller"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { initSettingsFeedback } from "@lib/settings-feedback-controller"
 import { initSettingsController } from "@lib/settings-controller"
@@ -7,6 +8,8 @@ import { initSettingsShell } from "@lib/settings-shell-controller"
 import { initSettingsLabels } from "@lib/settings-labels-controller"
 import { initSettingsLabelCleanup } from "@lib/settings-label-cleanup-controller"
 import { initSettingsTaskNav } from "@lib/settings-task-nav-controller"
+import { initOrganizationLabels } from "@lib/settings-organization-labels"
+import { initSettingsHomeAssistantArea } from "@lib/settings-home-assistant-area"
 import { initSettingsWorkspace } from "@lib/settings-workspace-controller"
 
 function initPwaNotificationTest(): void {
@@ -19,6 +22,7 @@ function initPwaNotificationTest(): void {
   pageLifecycle.on(button, "click", async () => {
     if (button.getAttribute("aria-disabled") === "true") return
     button.setAttribute("aria-disabled", "true")
+    button.setAttribute("aria-busy", "true")
     result.textContent = copy.sending ?? ""
     try {
       const permission = isPwaSupported() ? await requestNotificationPermission() : "unsupported"
@@ -39,6 +43,7 @@ function initPwaNotificationTest(): void {
       if (!signal.aborted) result.textContent = copy.unavailable ?? ""
     } finally {
       button.removeAttribute("aria-disabled")
+      button.removeAttribute("aria-busy")
     }
   })
 }
@@ -58,6 +63,10 @@ function bootSettingsPage(): void {
   initSettingsLabelCleanup()
   initSettingsTaskNav(pageLifecycle.signal)
   initSettingsWorkspace(pageLifecycle.signal)
+  initOrganizationLabels(pageLifecycle.signal)
+  initSettingsHomeAssistantArea(pageLifecycle.signal)
+  const taskLayout = document.querySelector<HTMLElement>("#settings-task-detail-layout [data-task-layout-editor]")
+  if (taskLayout) initTaskDetailLayoutEditor(taskLayout, pageLifecycle.signal)
   initPwaNotificationTest()
 }
 

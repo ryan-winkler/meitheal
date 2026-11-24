@@ -1,0 +1,316 @@
+---
+import { boardScopeErrorResponse } from "@lib/board-http"
+import { organizationLabelsFor, newOrganizationLabel, organizationLocale } from "@lib/organization-labels"
+import { NAMED_BOARD_PRESETS } from "@domains/tasks"
+import { BoardIntakeRepository } from "@domains/tasks/persistence/board-intake-repository"
+import { getPersistenceClient } from "@domains/tasks/persistence/store"
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
+import Layout from "../../layouts/Layout.astro"
+import Icon from "../../components/ui/Icon.astro"
+import InlineHelper from "../../components/ui/InlineHelper.astro"
+import "../../styles/boards.css"
+import { assertBoardDirectoryCurrent, boardViewKey, readBoardDirectory } from "@lib/board-view"
+import { boardNavigationLinks } from "@lib/board-workspace"
+import { boardSessionProof, currentBoardContext } from "@lib/named-board-request"
+
+const label = await organizationLabelsFor(Astro)
+const newLabel = (name: Parameters<typeof label>[0], fallback?: string) => newOrganizationLabel(label(name, false, fallback), organizationLocale(Astro))
+const user = await currentBoardContext(Astro)
+const directory = user ? await readBoardDirectory(user.actor, Astro.request).catch(error => { const failure=boardScopeErrorResponse(error);if(failure)return failure;throw error }) : null
+if (directory instanceof Response) return directory
+const submissions = user ? await new BoardIntakeRepository(getPersistenceClient(), user.principal).findSubmissions(user.actor) : []
+const snapshot = user && directory ? boardViewKey(directory, user.actor.id) : undefined
+const boards = directory?.boards ?? []
+if (directory) { try { await assertBoardDirectoryCurrent(directory) } catch(error) { const failure=boardScopeErrorResponse(error);if(failure)return failure;throw error } }
+---
+<Layout title={label("board", true)} scopeGuard={false}>
+  <span slot="page-title">{label("board", true)}</span>
+  <div class="boards-workspace">
+    {!user && (
+      <div class="board-empty-card board-empty-card--notice" role="status">
+        <div class="board-empty-card__icon">
+          <Icon name="alert-triangle" size={28} sprite />
+        </div>
+        <h2>Board access unavailable</h2>
+        <p>Reload after opening your current Home Assistant session to view and manage your {label("board", true).toLowerCase()}.</p>
+      </div>
+    )}
+    <div data-board-directory={user && directory ? "" : undefined} data-board-verify="/api/boards" data-board-key={snapshot}
+      data-board-session={user ? boardSessionProof(user.actor.id) : undefined}>
+      <section class="named-boards board-directory" aria-labelledby="private-heading">
+        <header class="boards-heading">
+          <div class="boards-heading__intro">
+            <span class="boards-heading__eyebrow">
+              <Icon name="layout-kanban" size={15} sprite />
+              <span>Workspace Directory</span>
+            </span>
+            <h1 id="private-heading">{organizationLocale(Astro) === "ga" ? `Do ${label("board", true)}` : `Your ${label("board", true)}`}</h1>
+            <p>Organize each area of life in its own focused workspace with custom columns, ticket keys, areas, and permissions.</p>
+          </div>
+          {user && directory && available("organizer") && (
+            <details class="board-add">
+              <summary class="btn btn-primary board-add__trigger">
+                <Icon name="plus" size={16} sprite />
+                <span>{newLabel("board")}</span>
+              </summary>
+              <div class="board-create-card">
+                <div class="board-create-card__header">
+                  <Icon name="layout-kanban" size={18} sprite />
+                  <div>
+                    <h3>{newLabel("board")}</h3>
+                    <p>Start with a clean set of workflow lanes and a memorable ticket key.</p>
+                  </div>
+                </div>
+                <form data-board-form="create" class="board-form">
+                  <label>{label("board")} name
+                    <input name="name" required maxlength="100" autocomplete="off" placeholder="e.g. Household, Garden, Studio" />
+                  </label>
+                  <label>{label("board")} key
+                    <input
+                      name="ticketPrefix"
+                      minlength="2"
+                      maxlength="10"
+                      autocomplete="off"
+                      spellcheck="false"
+                      class="board-key-input"
+                      data-board-key-input
+                      placeholder="e.g. GRD"
+                    />
+                  </label>
+                  <p class="board-key-preview" data-board-key-preview>
+                    Tickets will be numbered <code>KEY-1</code> · 2–10 letters or numbers, auto-suggested from the name.
+                  </p>
+                  <label>{organizationLocale(Astro) === "ga" ? "Réamhshocrú sreafa oibre" : "Workflow preset"}
+                    <select name="preset">
+                      {Object.entries(NAMED_BOARD_PRESETS).map(([preset, lanes]) => (
+                        <option value={preset}>{lanes.join(" / ")}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <p role="status" data-board-feedback class="board-feedback"></p>
+                  <div class="board-form-actions">
+                    <button type="submit" class="btn btn-primary">
+                      <Icon name="plus" size={15} sprite />
+                      <span>{organizationLocale(Astro) === "en" ? `Create ${label("board")}` : newLabel("board")}</span>
+                    </button>
+                    <button type="button" class="btn btn-ghost" data-board-form-refresh hidden>
+                      <Icon name="refresh" size={15} sprite />
+                      <span>Refresh Boards</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </details>
+          )}
+        </header>
+
+        <InlineHelper helperId="meitheal-function-tour" title="New to Meitheal? Take the quick workspace tour" icon="sparkles" variant="info">
+          <div class="tour-prompt-body">
+            <p>Walk through quick capture, <strong>Boards &amp; custom ticket keys</strong>, universal search, and workspace views in under a minute. Press <kbd>?</kbd> anytime to restore this tour prompt if dismissed.</p>
+            <div class="tour-prompt-actions">
+              <button type="button" class="btn btn-primary btn-sm" data-tour-start>
+                <Icon name="rocket" size={14} sprite />
+                <span>Start interactive tour</span>
+              </button>
+            </div>
+          </div>
+        </InlineHelper>
+
+        {boards.length > 0 ? (
+          <div class="boards-list board-directory-grid">
+            {boards.map(board => {
+              const nav = boardNavigationLinks({ boardId: board.id })
+              const isArchived = board.state === "archived"
+              return (
+                <article class="board-tile board-directory-card" data-board-card={board.id}>
+                  <div class="board-card-head">
+                    <div class="board-card-identity">
+                      <span class:list={["board-icon-badge", { "board-icon-badge--archived": isArchived }]} aria-hidden="true">
+                        <Icon name="layout-kanban" size={18} sprite />
+                      </span>
+                      <div class="board-card-titles">
+                        <a class="board-name board-card-title-link" href={`/boards/${encodeURIComponent(board.id)}`}>{board.name}</a>
+                        <span class="board-card-meta">
+                          <code class="board-key-code" title={`Ticket prefix: ${board.ticketPrefix}-1`}>{board.ticketPrefix}</code>
+                          <span class:list={["board-role-badge", isArchived ? "board-role-badge--muted" : `board-role-badge--${board.role}`]}>
+                            {isArchived ? "Archived" : board.role}
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                    <form data-board-form="sidebar" data-board-id={board.id} class="board-preference">
+                      <input type="hidden" name="hidden" value={board.hidden ? "false" : "true"} />
+                      <button
+                        type="submit"
+                        class:list={["board-action-icon", { "is-hidden-in-sidebar": board.hidden }]}
+                        title={board.hidden ? "Show in sidebar" : "Hide from sidebar"}
+                        aria-label={board.hidden ? `Show ${board.name} in sidebar` : `Hide ${board.name} from sidebar`}
+                      >
+                        <Icon name={board.hidden ? "eye-off" : "eye"} size={16} sprite />
+                      </button>
+                      <span role="status" data-board-feedback class="sr-only"></span>
+                    </form>
+                  </div>
+
+                  <p class="board-card-summary">
+                    {isArchived
+                      ? "Read-only archive of completed and historical tasks."
+                      : board.hidden
+                        ? "Hidden from your sidebar navigation. Open anytime from here."
+                        : "Visible in your sidebar for quick switching between tasks and planning."}
+                  </p>
+
+                  <nav class="board-card-footer" aria-label={`${board.name} workspace`}>
+                    <a href={`/boards/${encodeURIComponent(board.id)}`} class="board-card-link board-card-link--primary">
+                      <Icon name="checkbox" size={15} sprite />
+                      <span>Open {label("task", true).toLowerCase()}</span>
+                    </a>
+                    {available("organizer") && (available("groups") || available("projects")) && (
+                      <a href={nav.planning} class="board-card-link">
+                        <Icon name="folder" size={15} sprite />
+                        <span>{label("group", true)} &amp; {label("project", true)}</span>
+                      </a>
+                    )}
+                    {board.role === "owner" && (
+                      <a href={`/boards/${encodeURIComponent(board.id)}?view=groups#settings`} class="board-card-link board-card-link--icon" title={`${board.name} settings`} aria-label={`${board.name} settings`}>
+                        <Icon name="settings" size={15} sprite />
+                        <span class="board-card-link__label">Settings</span>
+                      </a>
+                    )}
+                  </nav>
+                </article>
+              )
+            })}
+          </div>
+        ) : (
+          <div class="board-empty-card">
+            <div class="board-empty-card__icon">
+              <Icon name="layout-kanban" size={28} sprite />
+            </div>
+            <h2>Build your first shared workspace</h2>
+            <p>Create a {label("board")} to keep household projects, routines, and daily tasks neatly separated and easy to act on.</p>
+          </div>
+        )}
+      </section>
+
+      {user && directory && (
+        <>
+          {directory.deletedBoards.length > 0 && (
+            <section class="named-boards board-section-card" aria-labelledby="deleted-boards-heading">
+              <div class="board-section-header">
+                <Icon name="trash" size={18} sprite />
+                <div>
+                  <h2 id="deleted-boards-heading">Deleted Boards</h2>
+                  <p class="board-note-plain">Restore a Board to resume its saved tasks, routines, and intake destinations.</p>
+                </div>
+              </div>
+              <div class="boards-list board-deleted-list">
+                {directory.deletedBoards.map(board => (
+                  <article class="board-tile board-deleted-tile">
+                    <div class="board-deleted-tile__info">
+                      <Icon name="layout-kanban" size={16} sprite />
+                      <span class="board-name">{board.name}</span>
+                    </div>
+                    <form data-board-form="lifecycle" data-board-id={board.id} class="board-form board-form--inline">
+                      <input type="hidden" name="action" value="restore" />
+                      <input type="hidden" name="revision" value={board.revision} />
+                      <p role="status" data-board-feedback class="board-feedback"></p>
+                      <button type="submit" class="btn btn-primary btn-sm" aria-label={`Restore Board ${board.name}`}>
+                        <Icon name="refresh" size={14} sprite />
+                        <span>Restore Board</span>
+                      </button>
+                    </form>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {directory.destinations.length > 0 && (
+            <section class="named-boards board-section-card" aria-labelledby="send-heading">
+              <div class="board-section-header">
+                <Icon name="rocket" size={18} sprite />
+                <div>
+                  <h2 id="send-heading">Send a task</h2>
+                  <p class="board-note-plain">Drop a request directly into another Board's triage lane without needing full board access.</p>
+                </div>
+              </div>
+              <form data-board-form="send" class="board-form board-send">
+                <label>Destination
+                  <select name="destination" required>
+                    {directory.destinations.map(destination => (
+                      <option value={destination.id} data-recipient={destination.acceptsAssignment ? "true" : undefined}>{destination.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>Title
+                  <input name="title" required maxlength="500" autocomplete="off" placeholder="What needs to happen?" />
+                </label>
+                <label>Details
+                  <textarea name="description" maxlength="10000" rows="3" placeholder="Add helpful context or links (optional)"></textarea>
+                </label>
+                <label class="check" data-board-recipient>
+                  <input name="assign" type="checkbox" />
+                  <span>Assign to the recipient</span>
+                </label>
+                <p role="status" data-board-feedback class="board-feedback"></p>
+                <div class="board-form-actions">
+                  <button type="submit" class="btn btn-primary">
+                    <Icon name="rocket" size={15} sprite />
+                    <span>Send task</span>
+                  </button>
+                </div>
+              </form>
+            </section>
+          )}
+
+          {submissions.length > 0 && (
+            <details class="named-boards board-settings board-section-card board-disclosure">
+              <summary class="board-disclosure__summary board-section-summary">
+                <Icon name="inbox" size={18} sprite />
+                <span>Recent submissions ({submissions.length})</span>
+                <Icon name="chevron-down" size={16} class="board-disclosure__chevron" sprite />
+              </summary>
+              <ul class="board-submissions-list">
+                {submissions.map(submission => (
+                  <li class="board-submission-row">
+                    <span class="board-submission-title">{submission.title}</span>
+                    {submission.acknowledgement ? (
+                      <span class="board-submission-receipt">
+                        <Icon name="check" size={14} sprite />
+                        <span>Sent · Receipt <code>{submission.acknowledgement}</code></span>
+                      </span>
+                    ) : (
+                      <form data-board-form="retry-send" class="board-preference">
+                        <input type="hidden" name="resumeId" value={submission.id} />
+                        <button type="submit" class="btn btn-ghost btn-sm">
+                          <Icon name="refresh" size={14} sprite />
+                          <span>Retry sending</span>
+                        </button>
+                        <span role="status" data-board-feedback class="board-feedback"></span>
+                      </form>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </>
+      )}
+    </div>
+    <p hidden data-board-expired role="status" class="board-expired-banner">
+      <Icon name="info-circle" size={16} sprite />
+      <span>Your Board view changed.</span>
+      <button type="button" class="btn btn-ghost btn-sm" data-board-refresh>
+        <Icon name="refresh" size={14} sprite />
+        <span>Refresh Boards</span>
+      </button>
+    </p>
+  </div>
+</Layout>
+
+<script>
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  import { bindBoardPage } from "@lib/boards-page"
+  pageLifecycle.onPageLoad(bindBoardPage)
+</script>

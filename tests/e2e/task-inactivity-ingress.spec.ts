@@ -4,7 +4,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
-import { expect, test, type Browser, type Route } from "@playwright/test"
+import { expect, test, type Browser, type Request, type Route } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { launchPinBrowser, pinRequest, startCoreFixture } from "../scripts/task-pins-fixture"
 
 const noStore = "private, no-store"
@@ -69,6 +70,33 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
       if (route.endsWith(path) || response.status() >= 400) logs.push(`Browser HTTP ${response.status()} ${route}\n`)
     })
     const base = origin + prefix + "/inactivity"
+    await page.goto(origin + prefix + "/tasks?area=default#kanban")
+    const openBoardActions = async () => {
+      const toggle = page.getByRole("button", { name: "Board actions", exact: true })
+      if (await toggle.isVisible()) await toggle.click()
+    }
+    await openBoardActions()
+    await page.getByRole("link", { name: "Deferred", exact: true }).click()
+    const queue = page.locator("[data-deferred-root]")
+    const queueArea = queue.getByRole("combobox", { name: "Area", exact: true })
+    await expect(page).toHaveURL(origin + prefix + "/deferred?board_id=household&area=default")
+    await expect(queueArea).toHaveValue("default")
+    await expect(queue.locator("form")).toHaveAttribute("action", prefix + "/deferred")
+    await queueArea.selectOption({ label: "All areas" })
+    await queue.getByRole("button", { name: "Apply area" }).click()
+    await expect(page).toHaveURL(origin + prefix + "/deferred?area=")
+    await expect(queueArea).toHaveValue("")
+    await queue.getByRole("navigation", { name: "Task lifecycle views" }).getByRole("link", { name: "Back to Tasks" }).click()
+    await expect(page).toHaveURL(origin + prefix + "/tasks?area=#kanban")
+
+    await page.goto(origin + prefix + "/tasks?area=default#kanban")
+    await openBoardActions()
+    await page.getByRole("link", { name: "Inactivity", exact: true }).click()
+    await expect(page).toHaveURL(base + "?board_id=household&area=default")
+    await expect(page.getByRole("combobox", { name: "Area", exact: true })).toHaveValue("default")
+    await expect(page.getByRole("navigation", { name: "Task lifecycle views" }).getByRole("link", { name: "Back to Tasks" })).toHaveAttribute("href", origin + prefix + "/boards/household?area=default")
+    await page.getByRole("navigation", { name: "Task lifecycle views" }).getByRole("link", { name: "Back to Tasks" }).click()
+    await expect(page).toHaveURL(url => url.pathname === prefix + "/boards/household" && url.searchParams.get("area") === "default")
     await page.goto(base)
     const content = page.locator("[data-inactivity-content]")
     const rows = page.locator("[data-inactivity-rows]")
@@ -99,7 +127,7 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     })
     expect(cache).toBe(noStore)
     expect(shell.includes(marker)).toBe(false)
-    expect(shell.includes("browser-card")).toBe(false)
+    expect(shell).not.toContain('data-task-id="browser-card"')
     expect(shell.includes(title)).toBe(false)
 
     const before = await pinRequest(page, api, "POST", requestBody)
@@ -121,7 +149,7 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await expect(save).toBeEnabled()
     await expect(page.getByRole("heading", { name: "Preview" })).toBeFocused()
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320)
-    await expect(rows.getByRole("link", { name: "Details" })).toHaveAttribute("href", new RegExp(prefix + "/tasks\\?area=default&open=browser-card$"))
+    await expect(rows.getByRole("link", { name: "Details" })).toHaveAttribute("href", prefix + "/tickets/browser-card")
 
     const competingSave = {
       action: "save", areaId: null, days: 3, expectedRevision: null, expectedDefaultRevision: null,
@@ -164,7 +192,7 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await changed
     expect((await pinRequest(page, api, "POST", requestBody)).status).toBe(403)
     expect((await pinRequest(page, api, "POST", { action: "board", ids: ["browser-card"] })).status).toBe(403)
-    await page.getByLabel("Show").selectOption("ready")
+    await page.locator("[data-inactivity-filter]").selectOption("ready")
     await expect(status).toHaveText("Your browser account could not access this action.")
     await expect(content).toBeHidden()
     await expect(rows.locator("li")).toHaveCount(0)
@@ -176,8 +204,12 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await context.setOffline(true)
     await expect(content).toBeHidden()
     await expect(rows.locator("li")).toHaveCount(0)
-    await expect(days).toHaveValue("30")
+    const verification = page.getByRole("button", { name: "Retry verification" })
+    await expect(verification).toBeVisible()
+    await expect(days).toHaveCount(0)
     await context.setOffline(false)
+    await expect(verification).toBeHidden()
+    await expect(page.locator('input[name="days"]')).toHaveValue("30")
     await page.getByRole("button", { name: "Try again" }).click()
     await expect(rows.getByText(title, { exact: true })).toBeVisible()
     await rows.getByRole("link", { name: "Details" }).click()
@@ -193,10 +225,11 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
       expectedDefaultRevision: offScope.body.defaultPolicy.revision, areaGeneration: offScope.body.areaGeneration,
       expectedAreaCatalogRevision: null,
     })).status).toBe(200)
-    await page.evaluate(marker => {
-      localStorage.setItem("meitheal-selected-area", JSON.stringify({ areaId: marker, areaName: marker, areaIcon: "▦" }))
-      localStorage.setItem("meitheal-kanban-card-density", "compact")
-    }, marker)
+    await page.goto(origin + prefix + "/tasks?area=default")
+    await page.locator("#area-selector-trigger").click()
+    await page.locator(`#area-selector-dropdown [data-area-id="${marker}"]`).click()
+    await expect(page).toHaveURL(url => url.searchParams.get("area") === marker)
+    await page.evaluate(() => localStorage.setItem("meitheal-kanban-card-density", "compact"))
     let boardRequests = 0
     page.on("request", request => {
       if (new URL(request.url()).pathname === api && request.postDataJSON()?.action === "board") boardRequests++
@@ -222,7 +255,8 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await setMemberActive(true)
     for (const owner of ["admin", "admin", "member"]) {
       await setOwner(owner)
-      const added = await pinRequest(page, prefix + "/api/tasks/browser-card/comments", "POST", { content: "A verified household comment" })
+      const headers = await currentBoardWriteHeaders(page.request, "household", { origin }, origin + prefix)
+      const added = await pinRequest(page, prefix + "/api/tasks/browser-card/comments", "POST", { content: "A verified household comment" }, undefined, headers)
       expect(added.status).toBe(201)
       expect(added.body).not.toHaveProperty("inactivity_spike_human")
       expect(added.body).not.toHaveProperty("owner_key")
@@ -325,14 +359,20 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
       response.request().method() === "PUT" && response.ok())
     await modal.locator("#td-status").selectOption("complete")
     await completed
+    await expect(page.locator('.kanban-column[data-status="complete"] .kanban-card[data-id="browser-card"]')).toBeAttached()
     await expect(childCues).toHaveCount(0)
     await expect(blockedCues).toHaveText(["Ready to defer", "Stalled"])
     await expect(peerCues).toHaveText(["Ready to defer", "Stalled"])
     await expect(page.locator("html")).toHaveAttribute("data-fixture-board-document", "true")
+    const isPeerRefresh = (request: Request) => {
+      if (request.method() !== "POST" || new URL(request.url()).pathname !== api) return false
+      const body = request.postDataJSON()
+      return body?.action === "board" && body.ids?.length === 1 && body.ids[0] === "stall-peer"
+    }
     const holdDenial = new Promise<void>(resolve => { releaseDenial = resolve })
     let held = false
     const delayOneDenial = async (route: Route) => {
-      if (held) return route.continue()
+      if (!isPeerRefresh(route.request()) || held) return route.continue()
       held = true
       await holdDenial
       await route.fulfill({ status: 403, json: {} })
@@ -345,7 +385,7 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await invalidatePeer()
     await expect(peerCues).toHaveText(["Ready to defer", "Stalled"])
     const olderDenial = page.waitForResponse(response =>
-      new URL(response.url()).pathname === api && response.status() === 403)
+      isPeerRefresh(response.request()) && response.status() === 403, { timeout: 5_000 })
     releaseDenial!()
     await olderDenial
     await expect(peerCues).toHaveCount(0)
@@ -356,6 +396,7 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     let capturedSuccess = false
     let staleSuccessFinished = false
     const denyWithSuccessPending = async (route: Route) => {
+      if (!isPeerRefresh(route.request())) return route.continue()
       if (capturedSuccess) {
         await route.fulfill({ status: 403, json: {} })
         return
@@ -373,7 +414,7 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await invalidatePeer()
     await expect.poll(() => capturedSuccess).toBe(true)
     const denialBeforeSuccess = page.waitForResponse(response =>
-      new URL(response.url()).pathname === api && response.status() === 403)
+      isPeerRefresh(response.request()) && response.status() === 403, { timeout: 5_000 })
     await invalidatePeer()
     await denialBeforeSuccess
     await expect(peerCues).toHaveCount(0)
@@ -385,7 +426,7 @@ test("group admin previews and saves through HTTPS ingress, while revoked reader
     await expect(peerCues).toHaveText(["Ready to defer", "Stalled"])
     await setMemberActive(false)
     const rejected = page.waitForResponse(response =>
-      new URL(response.url()).pathname === api && response.status() === 403)
+      new URL(response.url()).pathname === api && response.status() === 403, { timeout: 5_000 })
     await page.evaluate(() => window.dispatchEvent(new Event("focus")))
     await rejected
     await expect(peerCues).toHaveCount(0)
@@ -486,6 +527,65 @@ test("a legacy GET-only worker can cache only the empty shell", async () => {
   }
 })
 
+test("Deferred keeps the named Board through Area filtering, Details and Back to Tasks", async () => {
+  const work = await mkdtemp(join(tmpdir(), "meitheal-deferred-board-"))
+  const child = startCoreFixture(work)
+  child.stdout?.resume()
+  child.stderr?.resume()
+  let browser: Browser | undefined
+  try {
+    const [fixture] = await once(child, "message", { signal: AbortSignal.timeout(10_000) })
+    const origin = `https://127.0.0.1:${fixture.port}`
+    const root = origin + fixture.configuredPath
+    browser = await launchPinBrowser(work)
+    const context = await browser.newContext({ ignoreHTTPSErrors: true, extraHTTPHeaders: {}, serviceWorkers: "block" })
+    await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
+    const householdProof = await currentBoardWriteHeaders(context.request, "household", { origin }, root)
+    const board = await context.request.post(root + "/api/boards", {
+      headers: householdProof, data: { name: "Deferred work Board" },
+    })
+    expect(board.status(), await board.text()).toBe(201)
+    const { id: boardId } = await board.json()
+    const headers = await currentBoardWriteHeaders(context.request, boardId, { origin }, root)
+    const area = await context.request.post(root + "/api/areas", { headers, data: { name: "Board workshop" } })
+    expect(area.status(), await area.text()).toBe(201)
+    const { id: areaId } = await area.json()
+    const task = await context.request.post(root + "/api/tasks", {
+      headers, data: { title: "Deferred workshop task", area_id: areaId, status: "pending" },
+    })
+    expect(task.status(), await task.text()).toBe(201)
+    const { id, task_version: version } = await task.json()
+    const deferred = await context.request.patch(root + "/api/tasks/" + id + "/deferral", {
+      headers, data: { deferred: true, updated_at: version, deferral_revision: null },
+    })
+    expect(deferred.status(), await deferred.text()).toBe(200)
+
+    const page = await context.newPage()
+    const queuePath = `/deferred?board_id=${boardId}`
+    await page.goto(root + queuePath)
+    await page.getByRole("combobox", { name: "Area", exact: true }).selectOption(areaId)
+    await page.getByRole("button", { name: "Apply area" }).click()
+    await expect(page).toHaveURL(root + queuePath + "&area=" + areaId)
+    const row = page.locator(`[data-deferred-card="${id}"]`)
+    await expect(row.getByRole("heading")).toHaveText("Deferred workshop task")
+    const details = row.getByRole("link", { name: "Details" })
+    await expect(details).toHaveAttribute("href", fixture.configuredPath + queuePath + "&area=" + areaId + "&open=" + id)
+    await details.click()
+    await expect(page.locator("#td-title")).toHaveValue("Deferred workshop task")
+    await page.getByRole("button", { name: "Close detail" }).click()
+    await page.getByRole("navigation", { name: "Task lifecycle views" }).getByRole("link", { name: "Back to Tasks" }).click()
+    await expect(page).toHaveURL(root + `/boards/${boardId}?area=${areaId}#kanban`)
+  } finally {
+    await browser?.close()
+    if (child.exitCode === null && child.signalCode === null) {
+      const closed = once(child, "exit", { signal: AbortSignal.timeout(3_000) })
+      child.kill("SIGKILL")
+      await closed
+    }
+    await rm(work, { recursive: true, force: true })
+  }
+})
+
 test("the current worker scrubs cached inactivity pages and API aliases", async () => {
   const work = await mkdtemp(join(tmpdir(), "meitheal-inactivity-worker-scrub-"))
   let child: ChildProcess | undefined
@@ -503,7 +603,7 @@ test("the current worker scrubs cached inactivity pages and API aliases", async 
       prefix + path,
       prefix + "/api/%2574ask-inactivity/",
     ]
-    const ordinary = prefix + "/api/ordinary-cache-fixture"
+    const ordinary = prefix + "/ordinary-cache-fixture.css"
     browser = await launchPinBrowser(work)
     const context = await browser.newContext({ extraHTTPHeaders: {} })
     await context.addCookies([{ name: "feedback-fixture", value: "member", url: origin }])
@@ -539,10 +639,17 @@ test("the current worker scrubs cached inactivity pages and API aliases", async 
 
     await context.setOffline(true)
     const offline = await page.evaluate(async ({ variants, ordinary }) => {
-      const read = (url: string) => fetch(url).then(response => response.text()).catch(() => null)
+      const read = async (url: string) => {
+        const response = await fetch(url)
+        return { status: response.status, cache: response.headers.get("cache-control"), text: await response.text() }
+      }
       return Promise.all([...variants, ordinary].map(read))
     }, { variants, ordinary })
-    expect(offline).toEqual([null, null, null, null, "Ordinary offline payload"])
+    for (const read of offline.slice(0, 4)) {
+      expect(read).toMatchObject({ status: 503, cache: noStore })
+      expect(read.text).not.toContain("Stale inactivity payload")
+    }
+    expect(offline[4]).toMatchObject({ status: 200, text: "Ordinary offline payload" })
   } finally {
     await browser?.close()
     if (child && child.exitCode === null && child.signalCode === null) {

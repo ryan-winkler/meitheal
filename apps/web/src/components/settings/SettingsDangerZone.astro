@@ -67,6 +67,9 @@ const backupsResetSection = SETTINGS_SECTIONS.find((section) => section.id === "
       </SettingsActionRow>
       <small class="settings-hint" style="display: block; margin-top: 6px;">
         {t(databaseDownloadToken ? "settings.export_hint_admin" : "settings.export_hint", locale)}
+        {databaseDownloadToken && (
+          <> Write-only <a href="#plugins-settings" data-settings-section-link class="callout-link">Plugin</a> secrets are automatically scrubbed from SQLite database exports.</>
+        )}
       </small>
     </div>
 

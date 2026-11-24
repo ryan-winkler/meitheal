@@ -55,35 +55,7 @@
 }
 
 .sidebar-footer {
-  @apply py-4 border-t border-border;
-}
-
-.board-switcher {
-  @apply px-5 py-3 border-t border-border;
-}
-
-.board-switcher-label {
-  @apply text-[10px] uppercase tracking-wide text-text-muted mb-1.5 font-semibold;
-}
-
-.board-select {
-  @apply bg-bg-input border border-border rounded-sm text-text-primary text-[13px] px-2 py-1.5 cursor-pointer w-[calc(100%-32px)];
-}
-
-.board-select option {
-  @apply bg-bg-card text-text-primary;
-}
-
-.board-select:focus {
-  @apply outline-none border-accent;
-}
-
-.board-add-btn {
-  @apply w-[26px] h-[26px] border border-dashed border-border rounded-full bg-transparent text-text-muted cursor-pointer text-base leading-none ml-1 align-middle transition-all;
-}
-
-.board-add-btn:hover {
-  @apply border-accent text-accent;
+  @apply pt-3 pb-0 border-t border-border;
 }
 
 /* --- Main content area --- */
@@ -130,9 +102,9 @@
     margin-left: 64px;
   }
 
-  /* Docked Task Inspector (>= 1440px): reserve 420px right workspace rail */
+  /* Docked Task Inspector (>= 1440px): reserve dynamic right workspace rail */
   body.has-docked-inspector .main-content {
-    margin-right: 420px;
+    margin-right: var(--task-inspector-width, 420px);
   }
 
   /* — Collapsed sidebar: center brand mark cleanly, hide wordmark/IPA — */
@@ -184,10 +156,7 @@
     border-right: none;
     background: rgb(var(--accent-rgb) / 0.15);
   }
-  /* Hide board switcher, hierarchy tree, streak badge, and footer text when collapsed */
-  body.sidebar-collapsed .board-switcher,
-  body.sidebar-collapsed .area-switcher,
-  body.sidebar-collapsed .hierarchy-tree,
+  /* Hide streak badge and footer text when collapsed */
   body.sidebar-collapsed .sidebar-footer a > span:not(.nav-icon),
   body.sidebar-collapsed .sidebar-footer .status-indicator,
   body.sidebar-collapsed .sidebar-gamification-wrapper {
@@ -244,9 +213,7 @@
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   }
 
-.page-header {
-  @apply flex items-center justify-between px-6 py-4 bg-bg-secondary/50 border-b border-border;
-}
+
 
   /* --- Stats / Dashboard ---
    * Restored from pre-split global.css (commit b0e2f1b^).
@@ -342,9 +309,7 @@
   .empty-state-actions .btn-primary {
     @apply shadow-sm;
   }
-.content-area {
-  @apply flex-1 p-6;
-}
+
 
 /* --- Topbar actions --- */
 .topbar-actions {
@@ -387,14 +352,7 @@
   @apply absolute top-full left-0 right-0 mt-1 bg-bg-card border border-border rounded-lg shadow-lg overflow-hidden z-50;
 }
 
-.search-item {
-  @apply flex flex-col gap-0.5 px-4 py-2.5 text-sm text-text-primary no-underline transition-colors;
-}
 
-/* HA Ingress compact mode — restored from pre-split global.css */
-body.ha-ingress .top-navigation .hamburger-btn {
-  display: none !important;
-}
 
 /* Priority indicator dot — uses background-color, not text color */
 .priority-dot {
@@ -411,11 +369,14 @@ body.ha-ingress .top-navigation .hamburger-btn {
 .nav-overflow__primary[data-nav-overflow-empty] {
   display: none !important;
 }
+#sidebar[data-sidebar-editing] .nav-overflow__primary[data-nav-overflow-empty] {
+  display: flex !important;
+}
 .nav-overflow__primary > * { flex: none; }
 .unified-bar__view-pills > .nav-overflow__primary {
   display: flex;
   align-items: center;
-  flex: 1 1 0;
+  flex: 0 1 auto;
   min-width: 0;
   gap: 2px;
   overflow-x: auto;
@@ -427,6 +388,9 @@ body.ha-ingress .top-navigation .hamburger-btn {
   min-width: 0;
   gap: 4px;
   overflow: visible;
+}
+.unified-bar__view-pills[data-nav-overflow-active] > .nav-overflow__primary {
+  overflow: hidden;
 }
 .nav-overflow__more { position: relative; flex: none; }
 .nav-overflow__toggle {
@@ -444,8 +408,15 @@ body.ha-ingress .top-navigation .hamburger-btn {
   cursor: pointer;
 }
 .nav-overflow__toggle::-webkit-details-marker { display: none; }
+.nav-overflow__toggle svg { transition: transform 160ms ease; }
+.nav-overflow__more[open] > .nav-overflow__toggle svg { transform: rotate(180deg); }
 .nav-overflow__toggle:hover,
 .nav-overflow__more[open] > .nav-overflow__toggle { background: var(--bg-hover); }
+.nav-overflow__more[data-nav-overflow-has-active] > .nav-overflow__toggle {
+  background: rgb(var(--accent-rgb) / 0.12);
+  color: var(--accent-text);
+  font-weight: 600;
+}
 .nav-overflow__toggle:focus-visible,
 .nav-overflow__menu a:focus-visible {
   outline: 2px solid var(--text-primary);
@@ -479,4 +450,9 @@ body.ha-ingress .top-navigation .hamburger-btn {
 @media (max-width: 768px), (pointer: coarse) {
   .nav-overflow__toggle,
   .nav-overflow__menu :is(.nav-link, .unified-bar__view-pill) { min-height: 44px; }
+}
+
+[data-hide-ask-ai] :is(#td-ask-ai, .card-ai-btn),
+[data-ai-assist-disabled] :is(#td-ask-ai, .card-ai-btn) {
+  display: none !important;
 }

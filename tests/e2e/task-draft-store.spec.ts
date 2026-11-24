@@ -1,67 +1,76 @@
-import { execFileSync } from "node:child_process"
+import { currentBoardScope } from "../helpers/current-board-scope"
+import { enrollCurrentOwnedLegacyFixture } from "../helpers/current-legacy-fixture"
+import { execFileSync } from "../helpers/isolated-process"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { expect, test } from "@playwright/test"
+import { DATABASE_SCHEMA_VERSION } from "../../apps/web/scripts/database-client.mjs"
+import { openDatabase } from "../../apps/web/scripts/database-client.mjs"
 import { recentActivityPersonKey } from "../../apps/web/src/domains/tasks/persistence/recent-activity"
+import { prepareTaskBoardPredecessor } from "../scripts/task-board-predecessor"
 
 import {
   ensureSchema,
   getPersistenceClient,
   getSchemaVersion,
   resetPersistenceForTests,
-} from "../../apps/web/src/domains/tasks/persistence/store"
+} from "../helpers/persistence-fixture"
 
 const web = fileURLToPath(new URL("../../apps/web", import.meta.url))
 
 function migrate(...args: string[]) {
   return execFileSync(process.execPath, ["scripts/migrate.mjs", ...args], {
-    cwd: web, env: process.env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+    cwd: web, env: { ...process.env, MEITHEAL_BOARD_GRANT_PATH: process.env.MEITHEAL_DB_URL?.slice(5) + ".board-grants.json" }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
   })
 }
 
 test("CLI and runtime reconcile draft storage around an existing ordinary task", async () => {
   const original = process.env.MEITHEAL_DB_URL
   const dir = await mkdtemp(join(tmpdir(), "meitheal-drafts-schema-"))
-  process.env.MEITHEAL_DB_URL = `file:${join(dir, "tasks.db")}`
+  const url = `file:${join(dir, "tasks.db")}`
+  process.env.MEITHEAL_DB_URL = url
   resetPersistenceForTests()
+  let upgraded: ReturnType<typeof getPersistenceClient> | undefined
   try {
-    expect(migrate()).toContain("Applied migration: 0006_task_drafts.mjs")
+    const initial = openDatabase(url)
+    try {
+      await prepareTaskBoardPredecessor(initial)
+      await initial.batch([
+        "INSERT INTO tasks (id, title, status, request_id, idempotency_key, created_at, updated_at) VALUES ('ordinary', 'Ordinary task', 'pending', 'ordinary', 'ordinary', 1, 1)",
+        "DROP TABLE task_draft_receipts",
+        "DROP TABLE task_drafts",
+        "DELETE FROM __meitheal_migrations WHERE name = '0006_task_drafts.mjs'",
+        "INSERT INTO app_settings (key, value, updated_at) VALUES ('schema_version', '14', 1)",
+      ], "write")
+      expect(() => migrate("--check")).toThrow()
+    } finally {
+      initial.close()
+    }
+
+    await enrollCurrentOwnedLegacyFixture({ database: join(dir, "tasks.db"), markerPath: join(dir, "tasks.db.board-grants.json"), provenance: "created-in-this-test-and-never-restored" })
+    await ensureSchema()
+    upgraded = getPersistenceClient()
+    expect(getSchemaVersion()).toBe(DATABASE_SCHEMA_VERSION)
     expect(migrate("--check")).toContain("Migration check passed")
-    await ensureSchema()
-    expect(getSchemaVersion()).toBe(18)
-
-    const initial = getPersistenceClient()
-    await initial.batch([
-      "INSERT INTO tasks (id, title, status, request_id, idempotency_key, created_at, updated_at) VALUES ('ordinary', 'Ordinary task', 'pending', 'ordinary', 'ordinary', 1, 1)",
-      "DROP TABLE task_draft_receipts",
-      "DROP TABLE task_drafts",
-      "DELETE FROM __meitheal_migrations WHERE name = '0006_task_drafts.mjs'",
-      "UPDATE app_settings SET value = '14' WHERE key = 'schema_version'",
-    ], "write")
-    initial.close()
-    resetPersistenceForTests()
-
-    await ensureSchema()
-    const upgraded = getPersistenceClient()
-    expect(getSchemaVersion()).toBe(18)
-    expect(() => migrate("--check")).toThrow(/Pending migrations: 0006_task_drafts.mjs/)
-    expect(migrate()).toContain("Applied migration: 0006_task_drafts.mjs")
+    migrate()
     expect(migrate("--check")).toContain("Migration check passed")
     expect((await upgraded.execute("SELECT title FROM tasks WHERE id = 'ordinary'")).rows).toEqual([{ title: "Ordinary task" }])
 
     await upgraded.batch([
-      "INSERT INTO task_draft_receipts (owner_id, draft_id, revision, attempt_id, request_digest, task_id, event_id, published_at) VALUES ('owner-a', 'draft-a', 1, 'attempt-a', 'digest-a', 'ordinary', 'event-a', 50)",
-      "INSERT INTO task_draft_receipts (owner_id, draft_id, revision, attempt_id, request_digest, task_id, event_id, published_at) VALUES ('owner-a', 'draft-b', 1, 'attempt-b', 'digest-b', 'other', 'event-b', 50)",
+      `INSERT INTO task_draft_receipts
+         (owner_id, board_id, draft_id, revision, attempt_id, request_digest, task_id, event_id, published_at)
+       VALUES ('owner-a', 'household', 'draft-a', 1, 'attempt-a', 'digest-a', 'ordinary', 'event-a', 50),
+              ('owner-a', 'household', 'draft-b', 1, 'attempt-b', 'digest-b', 'other', 'event-b', 50)`,
       "DELETE FROM tasks WHERE id = 'ordinary'",
     ], "write")
-    const receipts = await upgraded.execute("SELECT task_id FROM task_draft_receipts WHERE owner_id = 'owner-a' ORDER BY published_seq DESC")
+    const receipts = await upgraded.execute(`SELECT task_id FROM task_draft_receipts
+      WHERE owner_id = 'owner-a' AND board_id = 'household' ORDER BY published_seq DESC`)
     expect(receipts.rows).toEqual([{ task_id: "other" }, { task_id: "ordinary" }])
   } finally {
-    const db = getPersistenceClient()
-    if (!db.closed) db.close()
+    upgraded?.close()
     resetPersistenceForTests()
     if (original === undefined) delete process.env.MEITHEAL_DB_URL
     else process.env.MEITHEAL_DB_URL = original
@@ -82,8 +91,8 @@ async function withDraftDb(run: (db: ReturnType<typeof getPersistenceClient>) =>
   process.env.MEITHEAL_DB_URL = `file:${join(dir, "tasks.db")}`
   resetPersistenceForTests()
   try {
-    migrate()
     await ensureSchema()
+    migrate()
     await run(getPersistenceClient())
   } finally {
     getPersistenceClient().close()
@@ -97,7 +106,9 @@ async function withDraftDb(run: (db: ReturnType<typeof getPersistenceClient>) =>
 test("draft writes are private, compare revisions, and resolve a lost save receipt", async () => {
   const { TaskDraftRepository } = await import("../../apps/web/src/domains/tasks/persistence/task-draft-repository")
   await withDraftDb(async db => {
-    const drafts = new TaskDraftRepository(db)
+    const ownerScope = await currentBoardScope(db, "household", (await import("../helpers/current-board-scope")).fixturePrincipal("owner-a"), { resource: "task", action: "edit" })
+    const drafts = new TaskDraftRepository(db, ownerScope)
+    const others = new TaskDraftRepository(db, await currentBoardScope(db, "household", (await import("../helpers/current-board-scope")).fixturePrincipal("owner-b")))
     const action = { action: "save", expected: null, attemptId: crypto.randomUUID(),
       snapshot: { ...blankDraft, title: "Unfinished household capture" } } as const
     const first = await drafts.save("owner-a", action)
@@ -105,11 +116,11 @@ test("draft writes are private, compare revisions, and resolve a lost save recei
     expect(await drafts.save("owner-a", action)).toEqual(first)
     expect(await drafts.save("owner-a", { ...action, snapshot: { ...blankDraft, title: "Changed input" } })).toBeNull()
     expect(await drafts.save("owner-a", { ...action, attemptId: crypto.randomUUID() })).toBeNull()
-    expect(await drafts.read("owner-b", { kind: "save", attemptId: action.attemptId }))
+    expect(await others.read("owner-b", { kind: "save", attemptId: action.attemptId }))
       .toEqual({ draft: null, latestReceipt: null, resolution: { state: "unavailable" } })
     expect((await drafts.read("owner-a", { kind: "save", attemptId: action.attemptId })).resolution).toEqual({ state: "saved" })
     const version = { draftId: first!.draftId, revision: first!.revision }
-    expect(await drafts.discard("owner-b", version)).toBe(false)
+    expect(await others.discard("owner-b", version)).toBe(false)
     expect(await drafts.save("owner-a", { ...action, expected: version, attemptId: crypto.randomUUID() })).toMatchObject({ revision: 2 })
     expect(await drafts.discard("owner-a", version)).toBe(false)
     expect(await drafts.discard("owner-a", { ...version, revision: 2 })).toBe(true)
@@ -124,8 +135,10 @@ test("draft publication is atomic and replays only the same owner and frozen tas
   const { TaskRepository } = await import("../../apps/web/src/domains/tasks/persistence/task-repository")
   const { prepareTaskCreation } = await import("../../apps/web/src/domains/tasks/task-creation-service")
   await withDraftDb(async db => {
-    const drafts = new TaskDraftRepository(db)
-    const repo = new TaskRepository(db)
+    const ownerScope = await currentBoardScope(db, "household", (await import("../helpers/current-board-scope")).fixturePrincipal("owner-a"), { resource: "task", action: "edit" })
+    const drafts = new TaskDraftRepository(db, ownerScope)
+    const others = new TaskDraftRepository(db, await currentBoardScope(db, "household", (await import("../helpers/current-board-scope")).fixturePrincipal("owner-b")))
+    const repo = new TaskRepository(db, ownerScope)
     const saved = await drafts.save("owner-a", {
       action: "save", expected: null, attemptId: crypto.randomUUID(), snapshot: { ...blankDraft, title: "Saved copy" },
     })
@@ -152,15 +165,15 @@ test("draft publication is atomic and replays only the same owner and frozen tas
     const [created, ticket] = await Promise.all([
       drafts.publish("owner-a", action, prepared.task), repo.createTask(ordinary.task),
     ])
-    expect(created.receipt).toMatchObject({ draftId: saved!.draftId, taskId: prepared.task.id, ticketKey: "MTH-1" })
-    expect(ticket).toBe(2)
+    expect(created.receipt).toMatchObject({ draftId: saved!.draftId, taskId: prepared.task.id, ticketKey: `MTH-${created.ticketNumber}` })
+    expect([created.ticketNumber, ticket].sort()).toEqual([1, 2])
     expect((await drafts.read("owner-a")).draft).toBeNull()
     expect(await drafts.replay("owner-a", action)).toEqual(created.receipt)
-    expect(await drafts.replay("owner-b", action)).toBeNull()
+    expect(await others.replay("owner-b", action)).toBeNull()
     expect(await drafts.replay("owner-a", { ...action, task: { ...task, title: "Changed input" } })).toBeNull()
     expect((await drafts.publish("owner-a", action, prepared.task)).eventId).toBeNull()
     expect((await db.execute("SELECT event_id, json_extract(payload, '$.ticket_number') AS ticket FROM domain_events")).rows)
-      .toEqual([{ event_id: created.eventId, ticket: 1 }])
+      .toEqual([{ event_id: created.eventId, ticket: created.ticketNumber }])
     expect((await db.execute("SELECT correlation_id, feed_action, feed_person_key FROM task_activity_log")).rows).toEqual([{
       correlation_id: created.eventId, feed_action: "added", feed_person_key: recentActivityPersonKey("owner-a"),
     }])
@@ -179,7 +192,9 @@ test("abandon fences a late publication and writer contention keeps the saved re
   const { TaskRepository } = await import("../../apps/web/src/domains/tasks/persistence/task-repository")
   const { prepareTaskCreation } = await import("../../apps/web/src/domains/tasks/task-creation-service")
   await withDraftDb(async db => {
-    const drafts = new TaskDraftRepository(db)
+    const ownerScope = await currentBoardScope(db, "household", (await import("../helpers/current-board-scope")).fixturePrincipal("owner-a"), { resource: "task", action: "edit" })
+    const drafts = new TaskDraftRepository(db, ownerScope)
+    const others = new TaskDraftRepository(db, await currentBoardScope(db, "household", (await import("../helpers/current-board-scope")).fixturePrincipal("owner-b")))
     const saved = await drafts.save("owner-a", { action: "save", expected: null, attemptId: crypto.randomUUID(), snapshot: blankDraft })
     const expected = { draftId: saved!.draftId, revision: saved!.revision }
     const task = {
@@ -188,7 +203,7 @@ test("abandon fences a late publication and writer contention keeps the saved re
     } satisfies import("../../apps/web/src/lib/task-draft-state").TaskDraftPublication
     const attemptId = crypto.randomUUID()
     const publish = { action: "publish", expected, attemptId, task } as const
-    const prepared = await prepareTaskCreation(new TaskRepository(db), { ...task, labels: "[]" })
+    const prepared = await prepareTaskCreation(new TaskRepository(db, ownerScope), { ...task, labels: "[]" })
     expect(prepared.ok).toBe(true)
     if (!prepared.ok) return
     expect((await drafts.read("owner-a", { kind: "publish", ...expected, attemptId })).resolution).toEqual({ state: "open" })

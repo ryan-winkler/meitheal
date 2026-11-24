@@ -2,7 +2,8 @@ import type { SearchResultItem } from "@domains/search"
 import { fetchOnlineSearch, searchWorkerReady, searchWorkerScope } from "@lib/online-search-client"
 import { commentMentionContextHeader, commentMentionToken } from "@lib/comment-mentions"
 import { fetchCommentPrivate } from "@lib/comment-mention-client"
-import { buildTaskPath } from "@lib/task-detail-handoff"
+import { taskDetailPath } from "@lib/task-page-url"
+import { domEl, qs, setAttr } from "@lib/dom-helpers"
 
 const limit = 5
 
@@ -18,13 +19,13 @@ function referenceAtCaret(input: HTMLTextAreaElement) {
 }
 
 function ticketLabel(item: SearchResultItem): string {
-  return item.subtitle?.match(/^MTH-[0-9]+(?= · )/)?.[0] ?? "Task"
+  return item.subtitle?.match(/^[A-Z0-9]+-[0-9]+(?= · |$)/)?.[0] ?? "Task"
 }
 
 export function initModalTaskReferences(overlay: HTMLElement, signal: AbortSignal): () => void {
-  const picker = overlay.querySelector<HTMLElement>("#td-task-reference-picker")
-  const status = picker?.querySelector<HTMLElement>('[role="status"]')
-  const list = picker?.querySelector<HTMLElement>('[role="listbox"]')
+  const picker = qs<HTMLElement>(overlay, "#td-task-reference-picker")
+  const status = qs<HTMLElement>(picker, '[role="status"]')
+  const list = qs<HTMLElement>(picker, '[role="listbox"]')
   const home = picker?.parentElement
   if (!picker || !status || !list || !home) return () => {}
 
@@ -68,10 +69,10 @@ export function initModalTaskReferences(overlay: HTMLElement, signal: AbortSigna
     timer = window.setTimeout(async () => {
       if (!isCurrent(state)) return
       input.after(picker)
-      input.setAttribute("aria-controls", list.id)
+      setAttr(input, "aria-controls", list.id)
       picker.hidden = false
       const person = token.kind === "person"
-      list.setAttribute("aria-label", (person ? picker.dataset.personResults : picker.dataset.taskResults) ?? "")
+      setAttr(list, "aria-label", (person ? picker.dataset.personResults : picker.dataset.taskResults) ?? "")
       status.textContent = (person ? picker.dataset.personLoading : picker.dataset.loading) ?? ""
       picker.scrollIntoView({ block: "nearest" })
       try {
@@ -109,22 +110,19 @@ export function initModalTaskReferences(overlay: HTMLElement, signal: AbortSigna
             .map(item => {
               const label = ticketLabel(item)
               return { title: item.title, detail: label === "Task" ? picker.dataset.taskLabel ?? "" : label,
-                replacement: `[${label}](${buildTaskPath(item.taskId!)})` }
+                replacement: `[${label}](${taskDetailPath(item.taskId!)})` }
             })
         }
         list.replaceChildren(...results.map((item, index) => {
-          const option = document.createElement("li")
+          const option = domEl("li")
           option.id = `${list.id}-${index}`
           option.dataset.index = String(index)
-          option.setAttribute("role", "option")
-          option.setAttribute("aria-selected", "false")
+          setAttr(option, "role", "option")
+          setAttr(option, "aria-selected", "false")
           option.className = "flex min-h-11 cursor-pointer select-none items-center gap-2 rounded px-3 py-2 hover:bg-bg-hover aria-selected:outline-2 aria-selected:-outline-offset-2 aria-selected:outline-accent"
-          const title = document.createElement("span")
-          title.className = "line-clamp-2 min-w-0 flex-1 wrap-anywhere"
+          const title = domEl("span", "line-clamp-2 min-w-0 flex-1 wrap-anywhere")
           title.textContent = item.title
-          const ticket = document.createElement("span")
-          ticket.className = "shrink-0 text-xs text-text-secondary"
-          ticket.textContent = item.detail
+          const ticket = domEl("span", "shrink-0 text-xs text-text-secondary", item.detail)
           option.append(title)
           if (item.detail) option.append(ticket)
           return option
@@ -174,11 +172,11 @@ export function initModalTaskReferences(overlay: HTMLElement, signal: AbortSigna
       event.preventDefault()
       if (event.key === "Enter") return insert(selected)
       const next = event.key === "ArrowDown" ? selected + 1 : selected < 0 ? results.length - 1 : selected - 1
-      list.children[selected]?.setAttribute("aria-selected", "false")
+      setAttr(list.children[selected], "aria-selected", "false")
       selected = (next + results.length) % results.length
       const option = list.children[selected]!
-      option.setAttribute("aria-selected", "true")
-      input.setAttribute("aria-activedescendant", option.id)
+      setAttr(option, "aria-selected", "true")
+      setAttr(input, "aria-activedescendant", option.id)
       option.scrollIntoView({ block: "nearest" })
     } else if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown", "Enter"].includes(event.key)) {
       close()

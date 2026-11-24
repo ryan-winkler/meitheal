@@ -1,7 +1,7 @@
 name: "Meitheal Canary"
 version: "309575d"
 slug: "meitheal_canary"
-description: "0.0.2 Canary preview of Meitheal. Builds can be unstable and can lose data. Use the Stable app for everyday tasks."
+description: "0.0.4 Canary preview of Meitheal. Builds can be unstable and can lose data. Use the Stable app for everyday tasks."
 url: "https://meitheal.io"
 github: "ryan-winkler/meitheal-ha-addon"
 docs_url: "https://github.com/ryan-winkler/meitheal-ha-addon/tree/main/meitheal-hub-canary/DOCS.md"
@@ -30,6 +30,7 @@ backup: cold
 backup_exclude:
   - "*.log"
   - "*.tmp"
+  - "meitheal-board-grants-pending"
 stage: experimental
 options:
   log_level: info
@@ -54,5 +55,5 @@ schema:
     - str
   log_redaction: bool
   audit_enabled: bool
-  loki_url: str
+  loki_url: "str?"
   license_key: "str?"

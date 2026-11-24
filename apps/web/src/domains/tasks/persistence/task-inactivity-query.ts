@@ -1,8 +1,15 @@
-import { activeStatuses, inactivityDaysSql, openStatuses } from "../../../../drizzle/task-activity-sql.mjs"
+import type { BoardScope } from "../board-scope"
+import { scopedTaskRead } from "./board-work-query"
+import { sql, sourceSql } from "./sql-fragment"
+import {
+  activeStatuses,
+  inactivityDaysSql as compileInactivityDaysSql,
+  openStatuses
+} from "../../../../drizzle/task-activity-sql.mjs"
 import { openTaskDependenciesSql } from "./task-dependencies"
 import { taskTimestampMs } from "./task-timestamp"
 
-export { inactivityDaysSql, validInactivityRevisionSql } from "../../../../drizzle/task-activity-sql.mjs"
+export { validInactivityRevisionSql } from "../../../../drizzle/task-activity-sql.mjs"
 
 export const inactivityPageSize = 25
 export const inactivityDayMs = 86_400_000
@@ -20,15 +27,25 @@ const touched = `CASE WHEN typeof(tasks.inactivity_touched_at) = 'integer'
 export const inactivityClockSql = `MAX(${created}, ${updated}, ${touched}, COALESCE(${lastComment}, 0))`
 
 const protectedFields = [
-  "due_date", "reminder_at", "start_date", "end_date", "time_block_start", "time_block_end",
-  "recurrence_rule", "routine_template_id", "spawned_for_date", "source_template_id",
+  "due_date",
+  "reminder_at",
+  "start_date",
+  "end_date",
+  "time_block_start",
+  "time_block_end",
+  "recurrence_rule",
+  "routine_template_id",
+  "spawned_for_date",
+  "source_template_id"
 ]
-const unscheduled = protectedFields.map(field => `NULLIF(trim(tasks.${field}, char(9,10,11,12,13,32)), '') IS NULL`).join(" AND ")
+const unscheduled = protectedFields
+  .map((field) => `NULLIF(trim(tasks.${field}, char(9,10,11,12,13,32)), '') IS NULL`)
+  .join(" AND ")
 
 export const inactivityOpenTaskSql = `tasks.deferred_at IS NULL
   AND lower(tasks.status) IN (${openStatuses})
   AND ${created} > 0 AND ${updated} > 0
-  AND EXISTS (SELECT 1 FROM areas WHERE areas.id = tasks.area_id)`
+  AND (tasks.area_id IS NULL OR EXISTS (SELECT 1 FROM scoped_areas AS areas WHERE areas.id = tasks.area_id AND areas.retired_at IS NULL))`
 
 export const inactivityProtectionSql = `tasks.task_kind IS NOT 'routine_instance'
   AND (lower(tasks.status) NOT IN (${activeStatuses})
@@ -47,12 +64,20 @@ export function inactivityStallSinceSql(now: string) {
     THEN MAX(spike_at, last_activity) + ${inactivityStallMs} END`
 }
 
-/** Read the current policy and clock again inside the same audited write batch. */
-export function inactivityWriteGuard(now: number) {
+/** Runtime readers always use the explicitly Board-filtered policy relation. */
+export function inactivityDaysSql(simulate = false, area = "tasks.area_id") {
+  return compileInactivityDaysSql(simulate, area, null, "scoped_policy")
+}
+
+/** Current policy/clock and exact scoped task eligibility, reevaluated inside the writer. */
+export function inactivityWriteGuard(scope: BoardScope, now: number) {
   const days = inactivityDaysSql()
-  return {
-    sql: `${inactivityTaskSql} AND (${days}) BETWEEN 1 AND 365
-      AND ${inactivityClockSql} + (${days}) * ${inactivityDayMs} <= ?`,
-    args: [now],
-  }
+  return sql`id IN (${scopedTaskRead(
+    scope,
+    sql`scoped_policy AS (SELECT * FROM task_inactivity_policy WHERE board_id=${scope.boardId})
+    SELECT tasks.id FROM scoped_tasks AS tasks WHERE ${sourceSql(inactivityTaskSql)} AND (${sourceSql(days)}) BETWEEN 1 AND 365
+      AND ${sourceSql(inactivityClockSql)} + (${sourceSql(days)}) * ${inactivityDayMs} <= ${now}`,
+    "with",
+    "minimal"
+  )})`
 }

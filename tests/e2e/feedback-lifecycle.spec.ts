@@ -13,7 +13,7 @@ const test = base.extend<{ feedbackPage: Page }>({
     const child = devUrl ? null : startCoreFixture(work, true)
     child?.stdout?.resume()
     child?.stderr?.resume()
-    const context = await browser.newContext({ extraHTTPHeaders: {} })
+    const context = await browser.newContext({ extraHTTPHeaders: {}, serviceWorkers: "block" })
     try {
       let url = devUrl
       if (child) {

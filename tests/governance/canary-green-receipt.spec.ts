@@ -12,8 +12,8 @@ const version = revision.slice(0, 12)
 const arm = `sha256:${"a".repeat(64)}`
 const amd = `sha256:${"b".repeat(64)}`
 const digest = `sha256:${"c".repeat(64)}`
-const profile = "green-2000-task-v2"
-const hash = "d060f566d2ab6c8a90537b21f049cc1215b97ea9328e23e428b56aa1246fa50b"
+const profile = "green-2000-task-v3"
+const hash = "afc84c625a4bf1df6a1a41c15780a49340884bb2bce1b0dd39f52ab3da6ec6c0"
 const parentHash = "60b394f364c7f43a0038c0fb4376abd1a435a1760cf2bcd7ca29404e12ea6869"
 const clock = "driver_clock,v1,uptime_start_cs=1000000,uptime_end_cs=1030850,user_start_usec=5000000,system_start_usec=7000000,user_end_usec=16000000,system_end_usec=19000000"
 const driverCgroup = "driver_cgroup_receipt,v1,workload_status=0,receipt_status=0,memory.max=83886080,memory.swap.max=0,memory.swap.current=0,cpu.max=100000 100000,max=0,oom=0,oom_kill=0,oom_group_kill=0"
@@ -86,32 +86,45 @@ const target = args.at(-1)
 const option = name => args[args.indexOf(name) + 1]
 const arch = target.includes("-aarch64:") || target === process.env.FIXTURE_ARM.slice(7) ? "aarch64" : "amd64"
 const id = arch === "aarch64" ? process.env.FIXTURE_ARM : process.env.FIXTURE_AMD
-const digest = process.env.FIXTURE_DIGEST
-appendFileSync(process.env.FIXTURE_TRACE, command + "\\n")
+const digest = arch === "amd64" && process.env.FIXTURE_AMD_DIGEST || process.env.FIXTURE_DIGEST
+const existing = process.env.FIXTURE_EXISTING_ID || (arch === "aarch64" && process.env.FIXTURE_EXISTING_ARM_ONLY ? id : "")
+const event = command === "push" && process.env.FIXTURE_TRACE_ARCH ? command + ":" + arch : command
+appendFileSync(process.env.FIXTURE_TRACE, event + "\\n")
 if (command === "image" && args.includes("--format")) {
-  console.log(target.replace(/:[^:]+$/, "") + "@" + (process.env.FIXTURE_PUBLIC_DIGEST || digest))
+  const amdPublicDigest = arch === "amd64" && store.endsWith("/public/storage") && process.env.FIXTURE_AMD_PUBLIC_DIGEST
+  console.log(target.replace(/:[^:]+$/, "") + "@" + (amdPublicDigest || process.env.FIXTURE_PUBLIC_DIGEST || digest))
 } else if (command === "image") {
   console.log(JSON.stringify([{ Os: "linux", Architecture: arch === "aarch64" ? "arm64" : "amd64", Id: id,
     Config: { Labels: { "org.opencontainers.image.licenses": "LicenseRef-Proprietary", "org.opencontainers.image.revision": arch === "aarch64" && process.env.FIXTURE_ARM_REVISION || revision,
       "io.hass.version": revision.slice(0, 12), "io.hass.arch": arch, "io.hass.type": "addon" } } }]))
 } else if (command === "run") {
-  if (!args.includes("--pull=never") || option("--network") !== "none") process.exit(98)
+  if (!args.includes("--pull=never") || option("--network") !== "none" || option("--cap-drop") !== "KILL") process.exit(98)
   console.log("fixture-container")
+} else if (command === "stop") {
+  if (target !== "fixture-container" || option("--time") !== "20") process.exit(98)
+} else if (command === "inspect") {
+  if (target !== "fixture-container" || option("--format") !== "{{.State.Status}} {{.State.ExitCode}}") process.exit(98)
+  console.log("exited 0")
+} else if (command === "logs") {
+  if (target !== "fixture-container" || !args.includes("--since")) process.exit(98)
+  console.log('{"event":"addon.stopping","signal":"SIGTERM"}')
+  console.log('{"event":"addon.stopped","forced":false}')
 } else if (command === "login") {
   if (readFileSync(0, "utf8").trim() !== "fixture-token") process.exit(98)
   writeFileSync(option("--authfile"), '{"auths":{"fixture":{}}}')
 } else if (command === "manifest") {
   if (!store.endsWith("/publisher/storage")) process.exit(98)
-  if (process.env.FIXTURE_EXISTING_ID) process.exit(0)
+  if (existing) process.exit(0)
   console.error("fixture: " + (process.env.FIXTURE_MANIFEST_ERROR || "manifest unknown"))
   process.exit(1)
 } else if (command === "push") {
   if (option("--format") !== "v2s2") process.exit(98)
+  if (arch === "amd64" && process.env.FIXTURE_FAIL_AMD_PUSH) process.exit(73)
   writeFileSync(option("--digestfile"), digest + "\\n")
 } else if (command === "pull") {
   if (store.endsWith("/publisher/storage")) {
-    if (!process.env.FIXTURE_EXISTING_ID || !args.includes("--quiet")) process.exit(98)
-    console.log(process.env.FIXTURE_EXISTING_ID.slice(7))
+    if (!existing || !args.includes("--quiet")) process.exit(98)
+    console.log(existing.slice(7))
   } else if (!store.endsWith("/public/storage") || option("--policy") !== "always" || !args.includes("--tls-verify=true") ||
     readFileSync(option("--authfile"), "utf8").trim() !== '{"auths":{}}' ||
     process.env.DOCKER_CONFIG !== process.env.XDG_CONFIG_HOME) process.exit(98)
@@ -180,6 +193,10 @@ function stage(harness: Harness) {
   return ["stage", digest, amd, digest, arm, harness.app, harness.receipt]
 }
 
+function promote(harness: Harness) {
+  return ["promote", amd, arm, "fixture-publisher", harness.app, harness.receipt]
+}
+
 test("missing and malformed Green receipts fail before any registry action", ({ harness }) => {
   const args = publish("aarch64", arm, harness.receipt)
   expect(harness.run(args.slice(0, -1)).stderr).toContain("Usage:")
@@ -187,6 +204,7 @@ test("missing and malformed Green receipts fail before any registry action", ({ 
   writeFileSync(harness.receipt, '{"checks":{"idle below 128 MiB":true}}')
   expect(harness.run(args).stderr).toContain("Green receipt rejected")
   expect(harness.run(stage(harness)).stderr).toContain("Green receipt rejected")
+  expect(harness.run(promote(harness)).stderr).toContain("Green receipt rejected")
   expect(readFileSync(harness.trace, "utf8")).toBe("")
 })
 
@@ -318,7 +336,7 @@ test("a passing receipt permits both publications and stage only after anonymous
     const result = harness.run(publish(arch, id, harness.receipt))
     expect(result.status, result.stderr).toBe(0)
     expect(result.stdout).toContain(`digest=${digest}`)
-    expect(readFileSync(harness.trace, "utf8")).toContain("login\nmanifest\ndev\npush\npull\nimage\nimage\n")
+    expect(readFileSync(harness.trace, "utf8")).toContain("login\ndev\nmanifest\ndev\npush\npull\nimage\nimage\n")
   }
   const badDigest = harness.run(stage(harness), { FIXTURE_PUBLIC_DIGEST: amd })
   expect(badDigest.stderr).toContain("Unexpected published digest")
@@ -326,7 +344,38 @@ test("a passing receipt permits both publications and stage only after anonymous
   const result = harness.run(stage(harness))
   expect(result.status, result.stderr).toBe(0)
   expect(readFileSync(join(harness.app, "meitheal-hub-canary/config.yaml"), "utf8")).toContain(`version: "${version}"`)
-  expect(readFileSync(harness.trace, "utf8")).toBe("dev\nmain\npull\nimage\nimage\npull\nimage\nimage\ndev\n")
+  expect(readFileSync(harness.trace, "utf8")).toBe("dev\nmain\npull\nimage\nimage\npull\nimage\nimage\ndev\nmain\n")
+})
+
+test("promotion stages only after both architectures pass anonymous readback and can retry an interrupted pair", ({ harness }) => {
+  const args = promote(harness)
+  const canary = join(harness.app, "meitheal-hub-canary/config.yaml")
+  const amdDigest = `sha256:${"e".repeat(64)}`
+  const env = { FIXTURE_TRACE_ARCH: "1", FIXTURE_AMD_DIGEST: amdDigest }
+  const registryWrites = () => readFileSync(harness.trace, "utf8").split("\n").filter(event => /^(login|push)/.test(event))
+
+  const armAnonymousFailure = harness.run(args, { ...env, FIXTURE_PUBLIC_DIGEST: amd })
+  expect(armAnonymousFailure.status).toBe(1)
+  expect(armAnonymousFailure.stderr).toMatch(/Unexpected published digest for .*\/meitheal-canary-aarch64:/)
+  expect(registryWrites()).toEqual(["login", "push:aarch64"])
+  expect(existsSync(canary)).toBe(false)
+
+  const amdAnonymousFailure = harness.run(args, { ...env, FIXTURE_AMD_PUBLIC_DIGEST: digest })
+  expect(amdAnonymousFailure.status).toBe(1)
+  expect(amdAnonymousFailure.stderr).toMatch(/Unexpected published digest for .*\/meitheal-canary-amd64:/)
+  expect(registryWrites()).toEqual(["login", "push:aarch64", "push:amd64"])
+  expect(existsSync(canary)).toBe(false)
+
+  const interrupted = harness.run(args, { ...env, FIXTURE_FAIL_AMD_PUSH: "1" })
+  expect(interrupted.status).toBe(73)
+  expect(registryWrites()).toEqual(["login", "push:aarch64", "push:amd64"])
+  expect(existsSync(canary)).toBe(false)
+
+  const retry = harness.run(args, { ...env, FIXTURE_EXISTING_ARM_ONLY: "1" })
+  expect(retry.status, retry.stderr).toBe(0)
+  expect(registryWrites()).toEqual(["login", "push:amd64"])
+  expect(retry.stdout).toContain(`amd64: ${amdDigest} (${amd})\naarch64: ${digest} (${arm})`)
+  expect(readFileSync(canary, "utf8")).toContain(`version: "${version}"`)
 })
 
 test("a passing receipt cannot overwrite an existing tag", ({ harness }) => {
@@ -338,7 +387,7 @@ test("a passing receipt cannot overwrite an existing tag", ({ harness }) => {
   const same = harness.run(args, { FIXTURE_EXISTING_ID: arm })
   expect(same.status, same.stderr).toBe(0)
   expect(same.stdout).toContain(`digest=${digest}`)
-  expect(readFileSync(harness.trace, "utf8")).toContain("login\nmanifest\npull\nimage\npull\nimage\nimage\n")
+  expect(readFileSync(harness.trace, "utf8")).toContain("login\ndev\nmanifest\npull\nimage\npull\nimage\nimage\n")
   expect(readFileSync(harness.trace, "utf8")).not.toContain("push\n")
 })
 
@@ -346,7 +395,7 @@ test("first publication accepts a missing package and rejects registry failures"
   const args = publish("aarch64", arm, harness.receipt)
   const missing = harness.run(args, { FIXTURE_MANIFEST_ERROR: "name unknown" })
   expect(missing.status, missing.stderr).toBe(0)
-  expect(readFileSync(harness.trace, "utf8")).toContain("login\nmanifest\ndev\npush\npull\n")
+  expect(readFileSync(harness.trace, "utf8")).toContain("login\ndev\nmanifest\ndev\npush\npull\n")
 
   for (const error of ["unauthorized", "denied", "too many requests", "service unavailable"]) {
     const failed = harness.run(args, { FIXTURE_MANIFEST_ERROR: error })
@@ -363,7 +412,7 @@ test("the versioned profile pins the public workload and parent bytes", ({ harne
   for (const raw of [
     passingReceipt().replace(`benchmark_profile=${profile}\n`, ""),
     passingReceipt().replace(profile, "green-2000-task-v1"),
-    passingReceipt().replace(profile, "green-2000-task-v3"),
+    passingReceipt().replace(profile, "green-2000-task-v2"),
     passingReceipt().replace(`benchmark_profile=${profile}`, `benchmark_profile=${profile}\nbenchmark_profile=${profile}`),
     passingReceipt().replaceAll(hash, "0".repeat(64)),
     passingReceipt().replaceAll(parentHash, "0".repeat(64)),
@@ -375,7 +424,7 @@ test("the versioned profile pins the public workload and parent bytes", ({ harne
   }
 })
 
-test("legacy receipts and missing or altered driver telemetry cannot qualify under v2", ({ harness }) => {
+test("legacy receipts and missing or altered driver telemetry cannot qualify under the current profile", ({ harness }) => {
   const variants = [
     passingReceipt().replaceAll(hash, "042901c8a19a12c1619348d12c199447992037955ef9070e67853cb9f7921549")
       .replace(`benchmark_profile=${profile}\n`, "").replace(clock, "").replace(driverCgroup, ""),
@@ -440,7 +489,7 @@ test("driver-only checks validate timing/cgroup evidence and cannot replace a re
   expect(withAuthority.status).not.toBe(0)
 })
 
-test("v2 retains the fixed seed, ordered complete cycles, helper and App resource limits", ({ harness }) => {
+test("the current profile retains the fixed seed, ordered cycles, helper and App limits", ({ harness }) => {
   const firstRoutes = "http,today,200,0.020000\nhttp,list,200,0.020000"
   for (const raw of [
     passingReceipt().replace('{"synthetic_tasks":2000}', '{"synthetic_tasks":1999}'),

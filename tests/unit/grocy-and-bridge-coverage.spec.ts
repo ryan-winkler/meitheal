@@ -1,10 +1,16 @@
-import { execFileSync } from "node:child_process"
+import { integrationFixture } from "../helpers/ordinary-integration-fixture"
+import { currentBoardScope } from "../helpers/current-board-scope"
+import { createGrocyClient } from "../../apps/web/src/lib/grocy-client"
+import { resolveIntegrationScope } from "../../apps/web/src/domains/tasks/board-automation"
+import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
+import { execFileSync } from "../helpers/isolated-process"
 import { mkdtempSync, rmSync } from "node:fs"
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { expect, test } from "@playwright/test"
+import { nextHouseholdTicketNumberSql } from "../../apps/web/drizzle/migrations/task-board-tickets.mjs"
 import { GrocyAdapter } from "../../packages/integration-core/src/grocy-adapter"
 
 const prevDbUrl = process.env.MEITHEAL_DB_URL
@@ -23,10 +29,10 @@ test("GrocyAdapter, GrocyBridge sync/push, webhook dispatcher, outbound sync, an
   const webDir = path.resolve(process.cwd(), "../apps/web")
   execFileSync(process.execPath, ["scripts/migrate.mjs"], {
     cwd: webDir,
-    env: { ...process.env, MEITHEAL_DB_URL: dbUrl },
+    env: { ...process.env, MEITHEAL_DB_URL: dbUrl }
   })
 
-  const store = await import("../../apps/web/src/domains/tasks/persistence/store")
+  const store = await import("../helpers/persistence-fixture")
   await store.ensureSchema()
   const client = store.getPersistenceClient()
 
@@ -50,103 +56,119 @@ test("GrocyAdapter, GrocyBridge sync/push, webhook dispatcher, outbound sync, an
       }
 
       if (urlPath === "/api/system/info") {
-        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
-          grocy_version_info: { Version: "4.2.0", ReleaseDate: "2026-01-01" },
-          php_version: "8.3",
-          sqlite_version: "3.45",
-          os: "Linux",
-          client: "test",
-        }))
+        res.writeHead(200, { "content-type": "application/json" }).end(
+          JSON.stringify({
+            grocy_version_info: { Version: "4.2.0", ReleaseDate: "2026-01-01" },
+            php_version: "8.3",
+            sqlite_version: "3.45",
+            os: "Linux",
+            client: "test"
+          })
+        )
         return
       }
 
       if (urlPath === "/api/objects/products") {
-        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify([
-          { id: 1, name: "Milk" },
-          { id: 2, name: "Bread" },
-        ]))
+        res.writeHead(200, { "content-type": "application/json" }).end(
+          JSON.stringify([
+            { id: 1, name: "Milk" },
+            { id: 2, name: "Bread" }
+          ])
+        )
         return
       }
 
       if (urlPath === "/api/objects/task_categories") {
-        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify([
-          { id: 10, name: "Kitchen" },
-        ]))
+        res
+          .writeHead(200, { "content-type": "application/json" })
+          .end(JSON.stringify([{ id: 10, name: "Kitchen" }]))
         return
       }
 
       if (urlPath === "/api/chores") {
-        const chores = round === 1
-          ? [
-              {
-                chore_id: 101,
-                chore_name: "Clean coffee machine",
-                next_estimated_execution_time: "2026-11-20 09:00:00",
-                period_type: "weekly",
-                period_interval: 1,
-                is_overdue: true,
-                track_date_only: true,
-              },
-              {
-                chore_id: 102,
-                chore_name: "Stale chore",
-                period_type: "daily",
-                period_interval: 1,
-              },
-            ]
-          : [
-              {
-                chore_id: 101,
-                chore_name: "Deep clean coffee machine",
-                next_estimated_execution_time: "2026-11-21 09:00:00",
-                period_type: "weekly",
-                period_interval: 1,
-                is_overdue: false,
-                track_date_only: false,
-              },
-            ]
+        const chores =
+          round === 1
+            ? [
+                {
+                  chore_id: 101,
+                  chore_name: "Clean coffee machine",
+                  next_estimated_execution_time: "2026-11-20 09:00:00",
+                  period_type: "weekly",
+                  period_interval: 1,
+                  is_overdue: true,
+                  track_date_only: true
+                },
+                {
+                  chore_id: 102,
+                  chore_name: "Stale chore",
+                  period_type: "daily",
+                  period_interval: 1
+                }
+              ]
+            : [
+                {
+                  chore_id: 101,
+                  chore_name: "Deep clean coffee machine",
+                  next_estimated_execution_time: "2026-11-21 09:00:00",
+                  period_type: "weekly",
+                  period_interval: 1,
+                  is_overdue: false,
+                  track_date_only: false
+                }
+              ]
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(chores))
         return
       }
 
       if (urlPath === "/api/tasks") {
-        const tasks = round === 1
-          ? [
-              {
-                id: 201,
-                name: "Buy coffee beans",
-                description: "Medium roast",
-                due_date: "2026-11-20",
-                done: 0,
-                category_id: 10,
-              },
-            ]
-          : [
-              {
-                id: 201,
-                name: "Buy coffee beans",
-                description: "Whole bean espresso roast",
-                due_date: "2026-11-22",
-                done: 1,
-                category_id: 10,
-              },
-            ]
+        const tasks =
+          round === 1
+            ? [
+                {
+                  id: 201,
+                  name: "Buy coffee beans",
+                  description: "Medium roast",
+                  due_date: "2026-11-20",
+                  done: 0,
+                  category_id: 10
+                }
+              ]
+            : [
+                {
+                  id: 201,
+                  name: "Buy coffee beans",
+                  description: "Whole bean espresso roast",
+                  due_date: "2026-11-22",
+                  done: 1,
+                  category_id: 10
+                }
+              ]
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(tasks))
         return
       }
 
       if (urlPath === "/api/objects/shopping_list") {
-        const list = round === 1
-          ? [{ id: 1, product_id: 1, amount: 2, note: "Full fat", shopping_list_id: 1 }]
-          : []
+        const list =
+          round === 1
+            ? [{ id: 1, product_id: 1, amount: 2, note: "Full fat", shopping_list_id: 1 }]
+            : []
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(list))
         return
       }
 
       if (urlPath === "/api/stock") {
-        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify([
-          { product_id: 1, amount: 3, best_before_date: "2026-12-01", product: { name: "Milk" } },
-        ]))
+        res
+          .writeHead(200, { "content-type": "application/json" })
+          .end(
+            JSON.stringify([
+              {
+                product_id: 1,
+                amount: 3,
+                best_before_date: "2026-12-01",
+                product: { name: "Milk" }
+              }
+            ])
+          )
         return
       }
 
@@ -155,13 +177,19 @@ test("GrocyAdapter, GrocyBridge sync/push, webhook dispatcher, outbound sync, an
         return
       }
 
-      if (urlPath === "/api/tasks/201/complete" || urlPath === "/api/stock/shoppinglist/clear" || urlPath === "/api/stock/shoppinglist/add-product") {
+      if (
+        urlPath === "/api/tasks/201/complete" ||
+        urlPath === "/api/stock/shoppinglist/clear" ||
+        urlPath === "/api/stock/shoppinglist/add-product"
+      ) {
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true }))
         return
       }
 
       if (urlPath === "/api/objects/tasks") {
-        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ created_object_id: 301 }))
+        res
+          .writeHead(200, { "content-type": "application/json" })
+          .end(JSON.stringify({ created_object_id: 301 }))
         return
       }
 
@@ -172,33 +200,68 @@ test("GrocyAdapter, GrocyBridge sync/push, webhook dispatcher, outbound sync, an
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()))
   const { port } = server.address() as AddressInfo
   const serverUrl = `http://127.0.0.1:${port}`
+  const profileUrl = "http://grocy-coverage.example"
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = ((input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input))
+    if (url.origin === profileUrl) {
+      url.hostname = "127.0.0.1"
+      url.port = String(port)
+    }
+    return originalFetch(url, init)
+  }) as typeof fetch
 
   try {
     // 1. Direct GrocyAdapter calls
-    const adapter = new GrocyAdapter({ baseUrl: serverUrl, apiKey: "test-grocy-key", timeoutMs: 2_000 })
+    const adapter = new GrocyAdapter({
+      baseUrl: serverUrl,
+      apiKey: "test-grocy-key",
+      timeoutMs: 2_000
+    })
     const sysInfo = await adapter.getSystemInfo()
     expect(sysInfo.ok).toBe(true)
     if (sysInfo.ok) expect(sysInfo.data.grocyVersionInfo.Version).toBe("4.2.0")
 
     const stock = await adapter.checkStock(["milk"])
     expect(stock.ok).toBe(true)
-    const addedShopping = await adapter.addToShoppingList([{ productId: 1, amount: 1, shoppingListId: 1 }])
+    const addedShopping = await adapter.addToShoppingList([
+      { productId: 1, amount: 1, shoppingListId: 1 }
+    ])
     expect(addedShopping.ok).toBe(true)
-    const createdTask = await adapter.createTask("Direct Task", { description: "Adapter test", dueDate: "2026-11-30" })
+    const createdTask = await adapter.createTask("Direct Task", {
+      description: "Adapter test",
+      dueDate: "2026-11-30"
+    })
     expect(createdTask.ok).toBe(true)
 
     // 2. GrocyBridge lifecycle + Round 1 sync
     const bridge = await import("../../apps/web/src/domains/grocy/grocy-bridge")
-    bridge.startGrocySync({
-      syncEnabled: true,
-      syncMode: "bidirectional",
-      intervalMs: 600_000,
-    }, adapter)
+    await client.execute({
+      sql: "INSERT INTO settings(key,value) VALUES('grocy_url',?),('grocy_api_key',?)",
+      args: [JSON.stringify(profileUrl), JSON.stringify("test-grocy-key")]
+    })
+    const fixture = await integrationFixture({
+      integration: "grocy",
+      sourceId: "configured-grocy",
+      purpose: "grocy.sync"
+    })
+    const factoryAdapter = await createGrocyClient()
+    if (!factoryAdapter) throw new Error("Actual configured Grocy factory required")
+    await bridge.startGrocySync(
+      {
+        bindingId: fixture.binding.id,
+        generation: fixture.binding.generation,
+        syncEnabled: true,
+        syncMode: "bidirectional",
+        intervalMs: 600_000
+      },
+      factoryAdapter
+    )
 
-    expect(bridge.getGrocySyncStatus().active).toBe(true)
-    expect(bridge.getActiveGrocySyncConfig()?.syncMode).toBe("bidirectional")
+    expect((await bridge.getGrocySyncStatus()).active).toBe(true)
+    expect(bridge.getActiveGrocySyncConfig(fixture.binding.id)?.syncMode).toBe("bidirectional")
 
-    const round1Result = await bridge.syncFromGrocy()
+    const round1Result = await bridge.syncFromGrocy(fixture.binding.id)
     expect(round1Result.errors).toBe(0)
     expect(round1Result.chores).toBeGreaterThanOrEqual(2)
     expect(round1Result.tasks).toBeGreaterThanOrEqual(1)
@@ -206,8 +269,8 @@ test("GrocyAdapter, GrocyBridge sync/push, webhook dispatcher, outbound sync, an
 
     // Look up synced tasks to exercise outbound completion push for chore, task, and shopping list
     const syncedRows = await client.execute({
-      sql: "SELECT id, title, idempotency_key, custom_fields FROM tasks WHERE idempotency_key LIKE 'grocy-%'",
-      args: [],
+      sql: "SELECT id, title, idempotency_key, custom_fields FROM tasks WHERE source='automation' AND created_by=?",
+      args: [fixture.binding.id]
     })
     expect(syncedRows.rows.length).toBeGreaterThanOrEqual(3)
 
@@ -219,18 +282,37 @@ test("GrocyAdapter, GrocyBridge sync/push, webhook dispatcher, outbound sync, an
       const title = String(r.title ?? "")
       const idem = String(r.idempotency_key ?? "")
       const cf = String(r.custom_fields ?? "{}")
-      if (title.includes("Clean coffee machine") || idem.includes("chore-101") || cf.includes("101")) choreTaskId = String(r.id)
-      if (title.includes("Buy coffee beans") || idem.includes("task-201") || cf.includes("201")) grocyTaskId = String(r.id)
-      if (title.includes("Shopping") || idem.includes("shopping") || cf.includes("shopping")) shoppingTaskId = String(r.id)
+      if (
+        title.includes("Clean coffee machine") ||
+        idem.includes("chore-101") ||
+        cf.includes("101")
+      )
+        choreTaskId = String(r.id)
+      if (title.includes("Buy coffee beans") || idem.includes("task-201") || cf.includes("201"))
+        grocyTaskId = String(r.id)
+      if (title.includes("Shopping") || idem.includes("shopping") || cf.includes("shopping"))
+        shoppingTaskId = String(r.id)
     }
 
     expect(choreTaskId).toBeTruthy()
     expect(grocyTaskId).toBeTruthy()
     expect(shoppingTaskId).toBeTruthy()
 
-    expect(await bridge.pushCompletionToGrocy(choreTaskId!)).toBe(true)
-    expect(await bridge.pushCompletionToGrocy(grocyTaskId!)).toBe(true)
-    expect(await bridge.pushCompletionToGrocy(shoppingTaskId!)).toBe(true)
+    const ownerRepo = new TaskRepository(client, fixture.scope)
+    for (const id of [choreTaskId!, grocyTaskId!, shoppingTaskId!])
+      expect((await ownerRepo.updateTask(id, { status: "complete" })).ok).toBe(true)
+    const completion = await resolveIntegrationScope(
+      client,
+      fixture.binding.id,
+      fixture.binding.generation,
+      { resource: "task", action: "read" },
+      fixture.scope,
+      { resource: "task", action: "complete" }
+    )
+    if (!completion.ok) throw new Error("Current completion receiver required")
+    expect(await bridge.pushCompletionToGrocy(choreTaskId!, completion.value)).toBe(true)
+    expect(await bridge.pushCompletionToGrocy(grocyTaskId!, completion.value)).toBe(true)
+    expect(await bridge.pushCompletionToGrocy(shoppingTaskId!, completion.value)).toBe(true)
 
     expect(apiHits).toContain("POST /api/chores/101/execute")
     expect(apiHits).toContain("POST /api/tasks/201/complete")
@@ -242,13 +324,18 @@ test("GrocyAdapter, GrocyBridge sync/push, webhook dispatcher, outbound sync, an
       sql: `INSERT INTO tasks (id, title, status, priority, labels, task_type, area_id,
             framework_payload, calendar_sync_state, idempotency_key, request_id, created_at, updated_at)
             VALUES (?, ?, 'pending', 2, '[]', 'task', 'default', '{}', 'pending', 'idem-local-new-1', 'req-local-new-1', ?, ?)`,
-      args: ["local-new-1", "Order filters", now, now],
+      args: ["local-new-1", "Order filters", now, now]
     })
-    expect(await bridge.pushNewTaskToGrocy("local-new-1", "Order filters", { description: "HEPA", dueDate: "2026-11-25" })).toBe(true)
+    expect(
+      await bridge.pushNewTaskToGrocy(fixture.context, "local-new-1", "Order filters", {
+        description: "HEPA",
+        dueDate: "2026-11-25"
+      })
+    ).toBe(true)
 
     // Round 2 sync (update existing + stale archival + completed task status override)
     round = 2
-    const round2Result = await bridge.syncFromGrocy()
+    const round2Result = await bridge.syncFromGrocy(fixture.binding.id)
     expect(round2Result.errors).toBe(0)
 
     // 3. Outbound Sync + Webhook Dispatcher
@@ -256,45 +343,88 @@ test("GrocyAdapter, GrocyBridge sync/push, webhook dispatcher, outbound sync, an
     const outbound = await import("../../apps/web/src/lib/sync-outbound")
 
     const settingPairs: Array<[string, string]> = [
-      ["webhook_endpoint", JSON.stringify(`${serverUrl}/webhook`)],
+      ["webhook_endpoint", JSON.stringify(`${profileUrl}/webhook`)],
       ["webhook_secret", JSON.stringify("unit-webhook-secret")],
-      ["n8n_webhook_url", JSON.stringify(`${serverUrl}/n8n-webhook`)],
-      ["n8n_events", JSON.stringify(["task.created", "task.completed"])],
+      ["n8n_webhook_url", JSON.stringify(`${profileUrl}/n8n-webhook`)],
+      ["n8n_events", JSON.stringify(["task.created", "task.completed"])]
     ]
     for (const [k, v] of settingPairs) {
       await client.execute({
         sql: "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-        args: [k, v, now],
+        args: [k, v, now]
       })
     }
 
+    await integrationFixture({
+      integration: "webhook",
+      sourceId: "generic-webhook",
+      purpose: "webhook.delivery"
+    })
+    await integrationFixture({
+      integration: "webhook",
+      sourceId: "n8n-webhook",
+      purpose: "webhook.delivery"
+    })
+    const currentScope = await currentBoardScope(client)
     dispatcher.resetWebhookCacheForTests()
-    const authHeaders = await dispatcher.taskEventAuthorityHeaders(["task.created", "task.completed"])
+    const authHeaders = await dispatcher.taskEventAuthorityHeaders(
+      ["task.created", "task.completed"],
+      currentScope
+    )
     expect(typeof authHeaders).toBe("object")
 
-    await dispatcher.dispatchTaskEvent("task.created", {
-      id: "local-new-1",
-      title: "Webhook Task",
-      status: "pending",
-      labels: [],
-    }, "req-wh-1")
+    await dispatcher.dispatchTaskEvent(
+      "task.created",
+      {
+        id: "local-new-1",
+        title: "Webhook Task",
+        status: "pending",
+        labels: []
+      },
+      "req-wh-1",
+      undefined,
+      undefined,
+      undefined,
+      currentScope
+    )
     await expect.poll(() => webhookDeliveries.length, { timeout: 3_000 }).toBeGreaterThanOrEqual(2)
-    await expect.poll(async () => {
-      const deliveryRow = await client.execute({
-        sql: "SELECT value FROM settings WHERE key = 'n8n_last_delivery'",
-        args: [],
-      })
-      return deliveryRow.rows.length
-    }, { timeout: 3_000 }).toBe(1)
+    await expect
+      .poll(
+        async () => {
+          const deliveryRow = await client.execute({
+            sql: "SELECT value FROM settings WHERE key = 'n8n_last_delivery'",
+            args: []
+          })
+          return deliveryRow.rows.length
+        },
+        { timeout: 3_000 }
+      )
+      .toBe(1)
 
-    await outbound.pushToActiveSyncs("task.updated", { id: "skip-1", title: "Skip", status: "pending", labels: ["no-sync"] })
-    await outbound.pushToActiveSyncs("task.deleted", { id: "del-1", title: "Del", status: "pending", labels: [] })
-    await outbound.pushToActiveSyncs("task.created", { id: "local-new-1", title: "Outbound Create", status: "pending", labels: [] })
-    await outbound.pushToActiveSyncs("task.completed", { id: "local-new-1", title: "Outbound Done", status: "complete", labels: [] })
+    await outbound.pushToActiveSyncs(
+      "task.updated",
+      { id: "skip-1", title: "Skip", status: "pending", labels: ["no-sync"] },
+      currentScope
+    )
+    await outbound.pushToActiveSyncs(
+      "task.deleted",
+      { id: "del-1", title: "Del", status: "pending", labels: [] },
+      currentScope
+    )
+    await outbound.pushToActiveSyncs(
+      "task.created",
+      { id: "local-new-1", title: "Outbound Create", status: "pending", labels: [] },
+      currentScope
+    )
+    await outbound.pushToActiveSyncs(
+      "task.completed",
+      { id: "local-new-1", title: "Outbound Done", status: "complete", labels: [] },
+      currentScope
+    )
     await new Promise((resolve) => setTimeout(resolve, 150))
 
     bridge.stopGrocySync()
-    expect(bridge.getGrocySyncStatus().active).toBe(false)
+    expect((await bridge.getGrocySyncStatus()).active).toBe(false)
 
     // 4. Due-date reminders
     const reminders = await import("../../apps/web/src/domains/notifications/due-date-reminders")
@@ -307,25 +437,33 @@ test("GrocyAdapter, GrocyBridge sync/push, webhook dispatcher, outbound sync, an
           due_date_reminders: true,
           reminder_window_minutes: 60,
           channels: { sidebar: true, mobile_push: true },
-          mobile_targets: ["notify.mobile_app_phone"],
+          mobile_targets: ["notify.mobile_app_phone"]
         }),
-        now,
-      ],
+        now
+      ]
     })
     await client.execute({
       sql: "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-      args: ["calendar_entity", JSON.stringify("calendar.family"), now],
+      args: ["calendar_entity", JSON.stringify("calendar.family"), now]
     })
     await client.execute({
       sql: `INSERT INTO tasks (id, title, status, priority, due_date, labels, task_type, area_id,
             ticket_number, framework_payload, calendar_sync_state, idempotency_key, request_id, created_at, updated_at)
-            VALUES (?, ?, 'pending', 1, ?, '[]', 'task', 'default', 77, '{}', 'pending', 'idem-due-77', 'req-due-77', ?, ?)`,
-      args: ["due-soon-77", "Check boiler pressure", new Date(now + 20 * 60_000).toISOString(), now, now],
+            VALUES (?, ?, 'pending', 1, ?, '[]', 'task', 'default', ${nextHouseholdTicketNumberSql}, '{}', 'pending', 'idem-due-77', 'req-due-77', ?, ?)`,
+      args: [
+        "due-soon-77",
+        "Check boiler pressure",
+        new Date(now + 20 * 60_000).toISOString(),
+        now,
+        now
+      ]
     })
     reminders.invalidateSettingsCache()
     await reminders.checkDueDates(now)
     await reminders.checkDueDates(now)
   } finally {
+    globalThis.fetch = originalFetch
+    server.closeAllConnections()
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
 })

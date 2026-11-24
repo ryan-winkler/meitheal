@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Yesterday Carryover</title>
+  <style>
+    body { margin: 0; padding: 14px; font-family: var(--font-sans, system-ui, sans-serif); background: var(--bg-primary, #101210); color: var(--text-primary, #f3f7f4); }
+    h2 { margin: 0 0 6px; font-size: 1rem; }
+    p { margin: 0 0 12px; color: var(--text-secondary, #a3b2aa); font-size: 0.85rem; line-height: 1.45; }
+    .list { display: grid; gap: 8px; }
+    .item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px; border-radius: 8px; background: var(--bg-card, #171c19); border: 1px solid var(--border, #28332c); }
+    .title { font-size: 0.88rem; font-weight: 600; }
+    .meta { font-size: 0.75rem; color: var(--text-secondary, #a3b2aa); }
+    button { min-height: 34px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border, #28332c); background: var(--accent, #22c55e); color: #052e16; font-weight: 600; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h2>Yesterday Carryover</h2>
+  <p>Overdue or unscheduled tasks you can pull into Today with one click.</p>
+  <div id="list" class="list">Loading...</div>
+  <script>
+    async function render() {
+      const box = document.getElementById("list")
+      const res = await window.MeithealUI.send({ type: "load" })
+      box.textContent = ""
+      if (!res || !res.items || res.items.length === 0) {
+        const empty = document.createElement("p")
+        empty.textContent = "All caught up. No overdue tasks to carry over."
+        box.append(empty)
+        return
+      }
+      for (const item of res.items) {
+        const row = document.createElement("div")
+        row.className = "item"
+        const left = document.createElement("div")
+        const title = document.createElement("div")
+        title.className = "title"
+        title.textContent = item.title
+        const meta = document.createElement("div")
+        meta.className = "meta"
+        meta.textContent = item.dueDate ? "Due " + String(item.dueDate).slice(0, 10) : "Unscheduled"
+        left.append(title, meta)
+        const btn = document.createElement("button")
+        btn.type = "button"
+        btn.textContent = "Move to Today"
+        btn.addEventListener("click", async () => {
+          btn.disabled = true
+          await window.MeithealUI.send({ type: "pull_today", taskId: item.id })
+          await render()
+        })
+        row.append(left, btn)
+        box.append(row)
+      }
+    }
+    render()
+  </script>
+</body>
+</html>

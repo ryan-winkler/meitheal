@@ -1,5 +1,6 @@
 """Tests for the Home Assistant MCP endpoint view, JSON-RPC handler, and assignee resolution."""
 
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -10,6 +11,7 @@ from homeassistant.const import CONF_HOST, CONF_PORT, CONF_SSL
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, Unauthorized
 from homeassistant.helpers.update_coordinator import UpdateFailed
+from homeassistant.util import dt as dt_util
 
 try:
     from pytest_homeassistant.common import MockConfigEntry
@@ -23,7 +25,7 @@ except ModuleNotFoundError as error:
     )
 
 from custom_components.meitheal.api import build_origin_headers
-from custom_components.meitheal.const import CONF_API_TOKEN, DOMAIN
+from custom_components.meitheal.const import CONF_API_TOKEN, CONF_BOARD_ID, DOMAIN
 from custom_components.meitheal.coordinator import (
     MeithealCoordinator,
     MeithealCoordinatorData,
@@ -41,8 +43,15 @@ def _mock_coordinator(hass: HomeAssistant, async_request: AsyncMock | None = Non
     api = SimpleNamespace(
         async_request=async_request or AsyncMock(),
         origin="https://tasks.example.test",
+        board_id="work", cache_key="work-credential-fixture", configured=True,
     )
-    return MeithealCoordinator(hass, api)  # type: ignore[arg-type]
+    coordinator = MeithealCoordinator(hass, api)  # type: ignore[arg-type]
+    coordinator._async_board_metadata = AsyncMock(return_value={"sharedEntityDelivery": True})
+    coordinator._shared_entity_delivery = True
+    async def current_data():
+        return coordinator.data if coordinator.data is not None else MeithealCoordinatorData([])
+    coordinator.async_data_for_context = AsyncMock(side_effect=current_data)
+    return coordinator
 
 
 async def test_mcp_notifications_return_none(hass: HomeAssistant) -> None:
@@ -332,6 +341,7 @@ async def test_mcp_tool_argument_validation(hass: HomeAssistant) -> None:
         assert expected_error in res["result"]["content"][0]["text"], name
 
     coordinator.data = None
+    coordinator.async_data_for_context.side_effect = HomeAssistantError("No task data available")
     no_data = await handle_mcp_request(
         coordinator,
         {
@@ -487,13 +497,15 @@ async def test_service_call_from_automation_context_sends_origin_headers(
     """Service calls invoked inside an automation context attribute the automation name and edit target."""
     origin = "https://tasks.example.test"
     token = "mth_" + "d" * 64
+    aioclient_mock.get(f"{origin}/api/agent-context", json={"boards": [{"id": "work", "name": "Work", "sharedEntityDelivery": True}], "enrollmentBoardId": "work"})
     aioclient_mock.get(f"{origin}/api/tasks", json={"tasks": []})
     aioclient_mock.get(f"{origin}/api/gamification", status=403)
     aioclient_mock.post(f"{origin}/api/tasks", json={"id": "auto-task-1"})
 
     entry = MockConfigEntry(
         domain=DOMAIN,
-        data={CONF_HOST: "tasks.example.test", CONF_PORT: 443, CONF_SSL: True, CONF_API_TOKEN: token},
+        data={CONF_HOST: "tasks.example.test", CONF_PORT: 443, CONF_SSL: True, CONF_API_TOKEN: token, CONF_BOARD_ID: "work"},
+        version=2,
     )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -622,3 +634,275 @@ async def test_mcp_create_complete_batch_and_boundary_errors(hass: HomeAssistant
     response = await MeithealMcpView().post(bad_json_request)  # type: ignore[arg-type]
     assert response.status == 400
     assert json.loads(response.body or b"{}")["error"]["code"] == -32700
+
+
+async def test_mcp_routines_events_and_shopping_parity(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exercise listRoutines, completeRoutine, calendar_event queries, and shopping_item custom fields."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from homeassistant.util import dt as dt_util
+
+    coordinator = _mock_coordinator(hass)
+    fixed_now = datetime(2026, 6, 15, 9, 0, tzinfo=ZoneInfo("Europe/Dublin"))
+    monkeypatch.setattr(dt_util, "now", lambda: fixed_now)
+
+    coordinator.async_list_routines = AsyncMock(  # type: ignore[method-assign]
+        return_value=[{"id": "hab-1", "name": "Water plants", "cadence": "daily", "currentStreak": 2}]
+    )
+    coordinator.async_complete_routine = AsyncMock(  # type: ignore[method-assign]
+        return_value={"taskId": "occ-1", "completed": True, "alreadyExisted": False, "newlyCompleted": True}
+    )
+    coordinator.async_create_task = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    coordinator.data = MeithealCoordinatorData(
+        [
+            MeithealTask(
+                {
+                    "id": "evt-1",
+                    "title": "Dentist appointment",
+                    "status": "pending",
+                    "priority": 2,
+                    "task_kind": "calendar_event",
+                    "start_date": "2026-06-15T14:00:00+01:00",
+                    "end_date": "2026-06-15T15:00:00+01:00",
+                }
+            ),
+            MeithealTask(
+                {
+                    "id": "shop-1",
+                    "title": "Weekend groceries",
+                    "status": "pending",
+                    "priority": 3,
+                    "task_kind": "shopping_item",
+                    "checklists": '[{"text":"Apples","done":false}]',
+                    "custom_fields": '{"items":[{"name":"Apples","qty":"6","category":"produce"}]}',
+                }
+            ),
+        ]
+    )
+
+    import json
+
+    routines = await handle_mcp_request(
+        coordinator,
+        {"jsonrpc": "2.0", "id": 40, "method": "tools/call", "params": {"name": "listRoutines", "arguments": {}}},
+    )
+    assert routines is not None and routines["result"]["isError"] is False
+    assert json.loads(routines["result"]["content"][0]["text"])["count"] == 1
+
+    completed = await handle_mcp_request(
+        coordinator,
+        {
+            "jsonrpc": "2.0",
+            "id": 41,
+            "method": "tools/call",
+            "params": {"name": "completeRoutine", "arguments": {"template_id": "hab-1"}},
+        },
+    )
+    assert completed is not None and completed["result"]["isError"] is False
+    assert json.loads(completed["result"]["content"][0]["text"])["completed"] is True
+
+    cal = await handle_mcp_request(
+        coordinator,
+        {"jsonrpc": "2.0", "id": 42, "method": "tools/call", "params": {"name": "getCalendarEvents", "arguments": {"days_ahead": 7}}},
+    )
+    assert cal is not None and cal["result"]["isError"] is False
+    cal_payload = json.loads(cal["result"]["content"][0]["text"])
+    assert cal_payload["count"] == 1
+    assert cal_payload["events"][0]["title"] == "Dentist appointment"
+    assert cal_payload["events"][0]["task_kind"] == "calendar_event"
+
+    today = await handle_mcp_request(
+        coordinator,
+        {"jsonrpc": "2.0", "id": 43, "method": "tools/call", "params": {"name": "getTodaysTasks", "arguments": {}}},
+    )
+    assert today is not None and today["result"]["isError"] is False
+    assert json.loads(today["result"]["content"][0]["text"])["count"] == 1
+
+    detail = await handle_mcp_request(
+        coordinator,
+        {"jsonrpc": "2.0", "id": 44, "method": "tools/call", "params": {"name": "getTask", "arguments": {"id": "shop-1"}}},
+    )
+    assert detail is not None and detail["result"]["isError"] is False
+    shop_detail = json.loads(detail["result"]["content"][0]["text"])
+    assert shop_detail["task_kind"] == "shopping_item"
+    assert shop_detail["custom_fields"]["items"][0]["category"] == "produce"
+
+    bad_shop = await handle_mcp_request(
+        coordinator,
+        {
+            "jsonrpc": "2.0",
+            "id": 45,
+            "method": "tools/call",
+            "params": {
+                "name": "createTask",
+                "arguments": {
+                    "title": "Groceries",
+                    "task_kind": "shopping_item",
+                    "custom_fields": {"items": [{"name": "Eggs", "category": "unknown"}]},
+                },
+            },
+        },
+    )
+    assert bad_shop is not None and bad_shop["result"]["isError"] is True
+    assert "shopping item category must be one of" in bad_shop["result"]["content"][0]["text"]
+
+    created_evt = await handle_mcp_request(
+        coordinator,
+        {
+            "jsonrpc": "2.0",
+            "id": 46,
+            "method": "tools/call",
+            "params": {
+                "name": "createTask",
+                "arguments": {
+                    "title": "Vet visit",
+                    "task_kind": "calendar_event",
+                    "start_date": "2026-06-20T10:00:00+01:00",
+                    "end_date": "2026-06-20T11:00:00+01:00",
+                },
+            },
+        },
+    )
+    assert created_evt is not None and created_evt["result"]["isError"] is False
+    coordinator.async_create_task.assert_awaited_with(
+        title="Vet visit",
+        description=None,
+        priority=None,
+        due_date=None,
+        assigned_to=None,
+        task_kind="calendar_event",
+        start_date="2026-06-20T10:00:00+01:00",
+        end_date="2026-06-20T11:00:00+01:00",
+        origin_kind="mcp",
+        origin_name="Home Assistant MCP",
+        origin_target=None,
+    )
+
+
+async def test_mcp_shopping_qty_multiday_events_and_nullable_bounds(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify shopping qty types, routine_instance rejection on create, nullable update bounds, and multi-day events."""
+    coordinator = _mock_coordinator(hass)
+    coordinator.async_create_task = AsyncMock(return_value={"id": "c-1"})  # type: ignore[method-assign]
+    coordinator.async_update_task = AsyncMock(return_value={"id": "u-1"})  # type: ignore[method-assign]
+
+    now = datetime(2026, 11, 23, 12, 0, tzinfo=UTC)
+    monkeypatch.setattr(dt_util, "now", lambda: now)
+    yesterday = (now.date() - timedelta(days=1)).isoformat()
+    tomorrow = (now.date() + timedelta(days=1)).isoformat()
+    today = now.date().isoformat()
+    coordinator.data = MeithealCoordinatorData(
+        [
+            MeithealTask(
+                {
+                    "id": "ev-multi",
+                    "title": "Family Retreat",
+                    "status": "pending",
+                    "task_kind": "calendar_event",
+                    "start_date": yesterday,
+                    "end_date": tomorrow,
+                }
+            ),
+            MeithealTask(
+                {
+                    "id": "ev-tz",
+                    "title": "Afternoon Call",
+                    "status": "pending",
+                    "task_kind": "calendar_event",
+                    "start_date": f"{today}T14:00:00Z",
+                }
+            ),
+            MeithealTask(
+                {
+                    "id": "ev-earlier-offset",
+                    "title": "Offset Meeting",
+                    "status": "pending",
+                    "task_kind": "calendar_event",
+                    "start_date": f"{today}T15:30:00+02:00",
+                }
+            ),
+            MeithealTask(
+                {
+                    "id": "ev-archived",
+                    "title": "Archived Event",
+                    "status": "archived",
+                    "task_kind": "calendar_event",
+                    "start_date": today,
+                }
+            ),
+        ]
+    )
+
+    shop_ok = await handle_mcp_request(
+        coordinator,
+        {
+            "jsonrpc": "2.0",
+            "id": 20,
+            "method": "tools/call",
+            "params": {
+                "name": "createTask",
+                "arguments": {
+                    "title": "Weekly Groceries",
+                    "task_kind": "shopping_item",
+                    "custom_fields": {
+                        "items": [
+                            {"name": "Eggs", "qty": 12, "category": "dairy"},
+                            {"name": "Milk", "qty": "2L", "category": "dairy"},
+                        ]
+                    },
+                },
+            },
+        },
+    )
+    assert shop_ok is not None and shop_ok["result"]["isError"] is False
+
+    for bad_args in (
+        {"title": "Bool qty", "custom_fields": {"items": [{"name": "Eggs", "qty": True}]}},
+        {"title": "Zero qty", "custom_fields": {"items": [{"name": "Eggs", "qty": 0}]}},
+        {"title": "Bad kind", "task_kind": "routine_instance"},
+    ):
+        bad_res = await handle_mcp_request(
+            coordinator,
+            {"jsonrpc": "2.0", "id": 21, "method": "tools/call", "params": {"name": "createTask", "arguments": bad_args}},
+        )
+        assert bad_res is not None and bad_res["result"]["isError"] is True
+
+    cleared = await handle_mcp_request(
+        coordinator,
+        {
+            "jsonrpc": "2.0",
+            "id": 22,
+            "method": "tools/call",
+            "params": {
+                "name": "updateTask",
+                "arguments": {"id": "ev-multi", "start_date": None, "end_date": None},
+            },
+        },
+    )
+    assert cleared is not None and cleared["result"]["isError"] is False
+    coordinator.async_update_task.assert_awaited_with(
+        "ev-multi",
+        {"start_date": None, "end_date": None},
+        origin_kind="mcp",
+        origin_name="Home Assistant MCP",
+        origin_target=None,
+    )
+
+    cal_res = await handle_mcp_request(
+        coordinator,
+        {"jsonrpc": "2.0", "id": 23, "method": "tools/call", "params": {"name": "getCalendarEvents", "arguments": {"days_ahead": 3}}},
+    )
+    import json
+
+    cal_payload = json.loads(cal_res["result"]["content"][0]["text"])  # type: ignore[index]
+    assert [e["id"] for e in cal_payload["events"]] == ["ev-multi", "ev-earlier-offset", "ev-tz"]
+
+    upcoming_res = await handle_mcp_request(
+        coordinator,
+        {"jsonrpc": "2.0", "id": 24, "method": "tools/call", "params": {"name": "getUpcoming", "arguments": {"days_ahead": 3}}},
+    )
+    upcoming_payload = json.loads(upcoming_res["result"]["content"][0]["text"])  # type: ignore[index]
+    assert [i["id"] for i in upcoming_payload["items"]] == ["ev-multi", "ev-earlier-offset", "ev-tz"]

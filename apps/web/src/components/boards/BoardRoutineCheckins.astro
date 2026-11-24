@@ -1,0 +1,23 @@
+---
+import { organizationLabelsFor } from "@lib/organization-labels"
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
+import { boardSessionProof } from "@lib/named-board-request"
+import { scopeBoardAccess, type BoardScope } from "@domains/tasks/board-scope"
+import type { BoardPagePlacement } from "@lib/board-page-placement"
+const { scope, placement = {}, contextName } = Astro.props as { scope: BoardScope; placement?: BoardPagePlacement; contextName?: string }
+const label = ["ha_user", "local_operator"].includes(scope.principal.kind) && available("routines") ? await organizationLabelsFor(Astro) : null
+const query = new URLSearchParams({ board_id: scope.boardId })
+if (placement.projectId) query.set("project_id", placement.projectId)
+else if (placement.areaId) query.set("area_id", placement.areaId)
+---
+{label && <section class="card" data-board-routine-checkins data-board-id={scope.boardId} data-routine-query={query.toString()} data-board-session={boardSessionProof(scope.principal.id)} hidden aria-labelledby="board-routine-checkins-heading">
+  <div class="card-header"><h3 id="board-routine-checkins-heading" class="card-title">{label("routine", true)} in {contextName ?? scopeBoardAccess(scope).name}</h3></div>
+  <ul class="list-group list-group-flush" data-board-routine-list></ul>
+  <p class="card-body" data-board-routine-more hidden>Showing 100 routines. <a href={`/habits?${query}`}>Open this Routine library</a> to see the rest.</p>
+  <p class="card-body" role="status" data-board-routine-feedback></p>
+</section>}
+<script>
+  import { pageLifecycle } from "@lib/page-lifecycle"
+  import { setupBoardRoutineCheckins } from "@lib/controllers/board-routine-checkins"
+  pageLifecycle.onPageLoad(signal => setupBoardRoutineCheckins(signal))
+</script>

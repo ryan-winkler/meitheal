@@ -1,5 +1,5 @@
 name: "Meitheal"
-version: "0.0.2"
+version: "0.0.3"
 slug: "meitheal"
 description: "Household tasks, routines and projects in Home Assistant. Your data stays on your own hardware."
 url: "https://meitheal.io"
@@ -30,6 +30,7 @@ backup: cold
 backup_exclude:
   - "*.log"
   - "*.tmp"
+  - "meitheal-board-grants-pending"
 stage: stable
 options:
   log_level: info
@@ -54,5 +55,5 @@ schema:
     - str
   log_redaction: bool
   audit_enabled: bool
-  loki_url: str
+  loki_url: "str?"
   license_key: "str?"

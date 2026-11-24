@@ -1,11 +1,12 @@
+import { currentBoardScope } from "../helpers/current-board-scope"
 import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { pathToFileURL } from "node:url"
 import { expect, test as base, type APIRequestContext } from "@playwright/test"
-import { openDatabase } from "../../apps/web/scripts/database-client.mjs"
+import { openDatabaseForStartup } from "../../apps/web/scripts/database-client.mjs"
 import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
 import { startCoreFixture } from "../scripts/task-pins-fixture"
 
@@ -29,7 +30,19 @@ const test = base.extend<{ completion: CompletionFixture; timeZone: string }>({
     try {
       const [info] = await once(child, "message", { signal: AbortSignal.timeout(10000) })
       const origin = `http://127.0.0.1:${info.port}`
-      api = await playwright.request.newContext({ baseURL: origin, extraHTTPHeaders: { cookie: "feedback-fixture=admin", origin } })
+      const auth = { cookie: "feedback-fixture=admin", origin }
+      const bootstrap = await playwright.request.newContext({ baseURL: origin, extraHTTPHeaders: auth })
+      try {
+        const boards = await bootstrap.get(info.configuredPath + "/api/boards")
+        expect(boards.ok()).toBe(true)
+        const session = boards.headers()["x-meitheal-board-session"]
+        if (!session) throw new Error("Board session was not issued to the fixture owner")
+        api = await playwright.request.newContext({ baseURL: origin, extraHTTPHeaders: {
+          ...auth, "x-meitheal-board-id": "household", "x-meitheal-board-session": session,
+        } })
+      } finally {
+        await bootstrap.dispose()
+      }
       const databaseFile = join(work, "pins.db")
       db = new DatabaseSync(databaseFile)
       process.env.TZ = timeZone
@@ -77,6 +90,8 @@ test("canonical transitions award once across concurrent and repeated writes and
   expect(recorded.totalCompleted).toBe(initial.totalCompleted + 1)
   expect(recorded.totalPoints).toBe(initial.totalPoints + 50)
   const another = await createTask(completion, "Optional stats failure")
+  // Bound DDL acquisition in this test; the shared fixture keeps lock tests at timeout zero.
+  db.exec("PRAGMA busy_timeout = 5000")
   db.exec("CREATE TRIGGER reject_completion_stats BEFORE INSERT ON gamification_stats BEGIN SELECT RAISE(ABORT, 'fixture failure'); END")
   const saved = await api.put(path(`/api/tasks/${another.id}`), { data: { status: "complete" } })
   expect(saved.status()).toBe(200)
@@ -135,10 +150,13 @@ test("a failed recurrence insert rolls back guarded completion and an identical 
   const addedStep = { id: "recurrence-added-step", text: "File the receipt", done: false }
   const checklists = JSON.stringify([firstStep])
   const completedChecklists = JSON.stringify([{ ...firstStep, done: true }, { ...addedStep, done: true }])
+  const user = await api.post(path("/api/users/custom"), { data: { name: "Recurrence fixture owner", kind: "human" } })
+  expect(user.status()).toBe(201)
+  const { id: assigneeId } = await user.json()
   const task = await createTask(completion, title, {
     area_id: areaId,
     project_id: projectId,
-    assigned_to: "recurrence_fixture_owner",
+    assigned_to: assigneeId,
     due_date: friday,
     recurrence_rule: weekdayRule,
     checklists,
@@ -158,6 +176,8 @@ test("a failed recurrence insert rolls back guarded completion and an identical 
     expected_checklists: checklists,
   }
 
+  // Bound DDL acquisition in this test; the shared fixture keeps lock tests at timeout zero.
+  db.exec("PRAGMA busy_timeout = 5000")
   db.exec(`CREATE TRIGGER reject_recurrence_successor BEFORE INSERT ON tasks
     WHEN NEW.title = 'Recurring completion with synthetic insert failure' AND NEW.due_date = '2031-02-17'
     BEGIN SELECT RAISE(ABORT, 'fixture rejected next occurrence'); END`)
@@ -205,7 +225,7 @@ test("a failed recurrence insert rolls back guarded completion and an identical 
     due_date: monday,
     project_id: projectId,
     area_id: areaId,
-    assigned_to: "recurrence_fixture_owner",
+    assigned_to: assigneeId,
     recurrence_rule: weekdayRule,
     checklists: JSON.stringify([firstStep, addedStep]),
   })
@@ -254,10 +274,11 @@ test("a busy writer returns a retryable problem without consuming the task versi
 test("completion retries acquisition after a competing writer releases its lock", async ({ completion }) => {
   const { db, databaseFile } = completion
   const task = await createTask(completion, "Recurring completion after a writer lock", { due_date: friday, recurrence_rule: weekdayRule })
-  const client = openDatabase(pathToFileURL(databaseFile).href)
+  const client = await openDatabaseForStartup(pathToFileURL(databaseFile).href, { markerPath: join(dirname(databaseFile), "meitheal-board-grants.json") })
+  const scope = await currentBoardScope(client)
   db.exec("BEGIN IMMEDIATE")
   try {
-    const repo = new TaskRepository(client)
+    const repo = new TaskRepository(client, scope)
     const completionWrite = repo.updateTask(task.id, { status: "complete" }, { version: { updatedAt: task.updated_at } })
     db.exec("ROLLBACK")
     const result = await completionWrite
@@ -276,9 +297,9 @@ test("completion retries acquisition after a competing writer releases its lock"
 test("native recurrence completion leaves the writer available for another task edit", async ({ completion }) => {
   const task = await createTask(completion, "Recurring completion beside a normal edit", { due_date: friday, recurrence_rule: weekdayRule })
   const other = await createTask(completion, "Independent task edit")
-  const client = openDatabase(pathToFileURL(completion.databaseFile).href)
+  const client = await openDatabaseForStartup(pathToFileURL(completion.databaseFile).href, { markerPath: join(dirname(completion.databaseFile), "meitheal-board-grants.json") })
   try {
-    const repo = new TaskRepository(client)
+    const repo = new TaskRepository(client, await currentBoardScope(client))
     const [completed, updated] = await Promise.all([
       repo.updateTask(task.id, { status: "complete" }),
       repo.updateTask(other.id, { title: "Independent task edited" }),

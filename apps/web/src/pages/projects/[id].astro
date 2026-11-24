@@ -1,33 +1,49 @@
 ---
+import BoardWorkspaceNav from "../../components/boards/BoardWorkspaceNav.astro"
+import { scopeBoardAccess, type BoardScope } from "@domains/tasks/board-scope"
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+
+import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
+import { organizationLabelsFor } from "@lib/organization-labels"
 /**
  * Project Detail — shows project metadata + tabbed sections for Tasks, Fields, Settings.
  * Uses hash-based sub-menu tabs matching the parent page shell pattern.
  * @page /projects/[id]
  * @phase 15 — Wave 4.5
  */
+import LegacyBoardBridge from "../../components/boards/LegacyBoardBridge.astro"
 import Layout from "../../layouts/Layout.astro";
-import StatusBadge from "../../components/ui/StatusBadge.astro";
-import BotBadge from "../../components/ui/BotBadge.astro";
-import LabelBadges from "../../components/ui/LabelBadges.astro";
+import { logApiError } from "../../lib/api-logger"
+import Icon from "../../components/ui/Icon.astro"
 import { t } from "../../i18n/translations";
 import type { Locale } from "../../lib/locale";
-import { formatRegionalDate } from "../../lib/date";
-import { formatTicketKey } from "../../lib/ticket-key";
 import {
   ensureSchema,
   getPersistenceClient,
 } from "@domains/tasks/persistence/store";
-import { HierarchyRepository, type GoalRow } from "@domains/tasks/persistence/hierarchy-repository"
+import { HierarchyRepository, type AreaRow, type GoalRow } from "@domains/tasks/persistence/hierarchy-repository"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository";
-import { PRIORITY_ICONS, PRIORITY_COLORS } from "../../lib/priority-config";
-import { STATUS_LABELS } from "../../lib/status-config";
+import { PRIORITY_COLORS } from "../../lib/priority-config";
+import { boardWorkspaceHref } from "@lib/board-workspace"
+import { taskDetailPath } from "@lib/task-page-url"
+import { isClosedStatus, STATUS_LABELS } from "../../lib/status-config";
+import { mapEntityEmojiToTabler } from "../../lib/tabler-svg"
+import { isIconName, type IconName } from "../../generated/icon-registry"
+const workspaceProjectId = Astro.props.workspaceProjectId as string | undefined
+const admittedScope = Astro.props.workScope as BoardScope | undefined
+const workScopeResult = admittedScope ? { ok: true as const, scope: admittedScope }
+  : await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId, record: { resource: "project", id: workspaceProjectId ?? Astro.params.id! } })
+if (!workScopeResult.ok && !workspaceProjectId) return boardScopeResponse(workScopeResult.errorCode)
+const workScope = workScopeResult.ok ? workScopeResult.scope : null
+let unavailable = !workScope
+
 
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
 const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
-const projectId = Astro.params.id;
-const projectsPath = `${Astro.locals.ingressPath || ""}/projects`
-if (!projectId) {
+const projectId = workspaceProjectId ?? Astro.params.id ?? "";
+const projectsPath = `${Astro.locals.ingressPath || ""}/planning#spaces`
+if (!projectId && !workspaceProjectId) {
   return Astro.redirect(projectsPath);
 }
 
@@ -36,88 +52,137 @@ let goal: Record<string, unknown> | null = null;
 let area: Record<string, unknown> | null = null;
 let tasks: Record<string, unknown>[] = [];
 let goals: GoalRow[] = []
+let areas: AreaRow[] = []
 
 try {
+  if (!workScope || !projectId) throw new Error("Work unavailable")
   await ensureSchema();
   const client = getPersistenceClient();
-  const repo = new HierarchyRepository(client);
-  const taskRepo = new TaskRepository(client);
+  const repo = new HierarchyRepository(client, workScope);
+  const taskRepo = new TaskRepository(client, workScope);
 
   project = await repo.findProjectById(projectId) as Record<string, unknown> | null;
 
   if (!project) {
-    return Astro.redirect(projectsPath);
+    if (!workspaceProjectId) return Astro.redirect(projectsPath)
+    throw new Error("Work unavailable")
   }
 
-  if (project.goal_id) {
+  if (project.goal_id && available("goals")) {
     goal = await repo.findGoalById(project.goal_id as string) as Record<string, unknown> | null;
-    if (goal?.area_id) {
-      area = await repo.findAreaById(goal.area_id as string) as Record<string, unknown> | null;
-    }
+  }
+  const areaId = project.area_id ?? goal?.area_id
+  if (typeof areaId === "string" && available("groups")) {
+    area = await repo.findAreaById(areaId) as Record<string, unknown> | null
   }
 
   tasks = await taskRepo.findByProjectId(projectId);
-  goals = await repo.findAllGoals({});
-} catch {
-  return Astro.redirect(projectsPath);
+  goals = available("goals") ? await repo.findAllGoals({}) : [];
+  areas = available("groups") ? await repo.findAllAreas() : []
+} catch (error) {
+  logApiError("projects", "Could not load Project details", error)
+  unavailable = true
+  if (!workspaceProjectId) return new Response("Could not load this Project. Reload to try again.", {
+    status: 503, headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "private, no-store" },
+  })
 }
 
 const projTitle = String(project?.title ?? "Project");
 const projDesc = project?.description ? String(project.description) : null;
 const projIcon = String(project?.icon ?? "📋");
+const mappedIcon = mapEntityEmojiToTabler(projIcon)
+const projectIconName = mappedIcon && isIconName(mappedIcon) ? mappedIcon : null
 const projColor = String(project?.color ?? "#146C4E");
 const projStatus = String(project?.status ?? "active");
+const openTasks = workspaceProjectId ? tasks.filter(task => !isClosedStatus(String(task.status))) : []
+const nextAction = openTasks.find(task => !task.blocked_by && task.status !== "stalled")
+const fromArea = workspaceProjectId && area && Astro.url.searchParams.get("from") === area.id ? String(area.id) : undefined
+const settingsTab = workspaceProjectId ? "project-settings" : "settings"
+
 
 const completedCount = tasks.filter((t) => String(t.status) === "complete").length;
 const progress = tasks.length > 0 ? Math.round((completedCount / tasks.length) * 100) : 0;
 
 const { timezone, dateFormat } = Astro.locals;
 
-const tabs = [
-  { id: "overview", label: "Overview", icon: "📊" },
-  { id: "tasks", label: "Tasks", icon: "✅" },
-  { id: "fields", label: "Fields", icon: "🏷️" },
-  { id: "settings", label: "Settings", icon: "⚙️" },
-];
+const organization = await organizationLabelsFor(Astro)
+const tasksHref = boardWorkspaceHref((workScope?.boardId ?? ""), { project: projectId, fromArea })
+const tasksPath = `${Astro.locals.ingressPath || ""}${tasksHref}#kanban`
+const tabs: { id: string; label: string; icon: IconName }[] = [
+  { id: "overview", label: "Overview", icon: "chart-bar" },
+  { id: "fields", label: "Fields", icon: "tag" },
+  { id: settingsTab, label: "Settings", icon: "settings" },
+]
 ---
 
-<Layout title={`Meitheal — ${projTitle}`}>
-  <span slot="page-title">
-    <span style={`color: ${projColor}; margin-right: 6px;`}>{projIcon}</span>
-    {projTitle}
+{(!workScope || !project || unavailable) ? <p role="status">This Project is unavailable. Reload to try again.</p> : !workspaceProjectId ? <LegacyBoardBridge href={boardWorkspaceHref((workScope?.boardId ?? ""), { project: projectId })} kind="project"
+  fragments={{ overview: "overview", tasks: "tasks", settings: "project-settings", fields: "fields" }} /> : <Layout title={`Meitheal — ${projTitle}`}>
+  <span slot="page-title" class="inline-flex max-w-full items-center gap-1.5 align-middle">
+    <span class="shrink-0" aria-hidden="true" style={`color: ${projColor}`}>
+      {projectIconName ? <Icon name={projectIconName} size={18} sprite /> : projIcon}
+    </span>
+    <span class="truncate">{projTitle}</span>
   </span>
   <div slot="actions" class="flex gap-2">
-    <a href="/projects" class="btn btn-ghost">← Projects</a>
-    <button type="button" class="btn btn-primary" id="add-task-to-project-btn">
-      + Add Task
-    </button>
+    <a href={workspaceProjectId ? boardWorkspaceHref((workScope?.boardId ?? ""), fromArea ? { area: fromArea } : {}) : "/projects"} class="btn btn-ghost">
+      <Icon name="arrow-down" size={16} class="rotate-90 shrink-0" sprite />
+      {workspaceProjectId ? (fromArea ? String(area?.name) : scopeBoardAccess(workScope).name) : "Projects"}
+    </a>
+    <a href={tasksHref + "&capture=1#kanban"} class="btn btn-primary" id="add-task-to-project-btn">
+      <Icon name="plus" size={16} class="shrink-0" sprite />
+      Add Task
+    </a>
   </div>
 
   {/* Sub-menu tab bar */}
-  <nav class="project-tabs" role="tablist" aria-label="Project sections">
+  <BoardWorkspaceNav boardId={(workScope?.boardId ?? "")} boardName={scopeBoardAccess(workScope).name} project={{ id: String(project.id), name: String(project.title) }} active="planning" />
+  <nav class="project-tabs" aria-label="Project sections">
+    <a href={tasksHref + "#kanban"} class="project-tab" data-astro-reload>
+      <Icon name="checkbox" size={14} class="shrink-0" sprite />
+      <span>{organization("task", true)}</span>
+    </a>
+    <div class="project-panel-tabs" role="tablist" aria-label="Project sections">
     {tabs.map((tab) => (
       <a
         href={`#${tab.id}`}
         class={`project-tab ${tab.id === "overview" ? "active" : ""}`}
         role="tab"
+        id={`project-tab-${tab.id}`}
+        aria-controls={`section-${tab.id}`}
         data-tab={tab.id}
+        data-astro-reload
         aria-selected={tab.id === "overview" ? "true" : "false"}
       >
-        <span class="tab-icon">{tab.icon}</span>
-        {tab.label}
+        <Icon name={tab.icon} size={14} class="shrink-0" sprite />
+        <span>{tab.label}</span>
       </a>
     ))}
+    </div>
   </nav>
 
   {/* ── Overview Section ── */}
-  <section id="section-overview" class="project-section active" data-section="overview">
+  <section id="section-overview" class="project-section active" data-section="overview" role="tabpanel" aria-labelledby="project-tab-overview">
     {/* Breadcrumb */}
     <nav class="project-breadcrumb" aria-label="Project breadcrumb">
-      <a href="/projects">Projects</a>
-      {area && <><span class="bc-sep">›</span><a href={`/areas/${String(area.id)}`}>{String(area.name)}</a></>}
-      {goal && <><span class="bc-sep">›</span><span>🎯 {String(goal.title)}</span></>}
-      <span class="bc-sep">›</span>
-      <span class="bc-current">{projIcon} {projTitle}</span>
+      <a href={workspaceProjectId ? boardWorkspaceHref((workScope?.boardId ?? "")) : "/projects"}>{"Board"}</a>
+      {area && <>
+        <Icon name="chevron-down" size={12} class="bc-sep -rotate-90 shrink-0" sprite />
+        <a href={workspaceProjectId ? boardWorkspaceHref((workScope?.boardId ?? ""), { area: String(area.id) }) : `/areas/${String(area.id)}`}>{String(area.name)}</a>
+      </>}
+      {goal && <>
+        <Icon name="chevron-down" size={12} class="bc-sep -rotate-90 shrink-0" sprite />
+        <a class="inline-flex items-center gap-1" href={`/progress?board_id=${encodeURIComponent((workScope?.boardId ?? ""))}&project_id=${encodeURIComponent(projectId)}#goals`}>
+          <Icon name="target" size={12} class="shrink-0" sprite />
+          {String(goal.title)}
+        </a>
+      </>}
+      <Icon name="chevron-down" size={12} class="bc-sep -rotate-90 shrink-0" sprite />
+      <span class="bc-current inline-flex min-w-0 items-center gap-1">
+        <span class="shrink-0" aria-hidden="true">
+          {projectIconName ? <Icon name={projectIconName} size={12} sprite /> : projIcon}
+        </span>
+        <span class="truncate">{projTitle}</span>
+      </span>
     </nav>
 
     {/* Project header card */}
@@ -125,6 +190,10 @@ const tabs = [
       <div class="project-header-top">
         <div class="project-header-info">
           <span class={`project-status-badge status-${projStatus}`}>{projStatus}</span>
+          {workspaceProjectId && <p>{openTasks.length} open · {nextAction
+            ? <a href={taskDetailPath({ id: String(nextAction.id), ticket_key: nextAction.ticket_key })}>Next action: {String(nextAction.title)}</a>
+            : "No next action"}</p>}
+
           {projDesc && <p class="project-desc">{projDesc}</p>}
         </div>
         <div class="project-header-stats">
@@ -148,87 +217,14 @@ const tabs = [
     </div>
   </section>
 
-  {/* ── Tasks Section ── */}
-  <section id="section-tasks" class="project-section" data-section="tasks">
-    <div class="section-header">
-      <h2 class="section-title">Tasks</h2>
-      <span class="text-sm text-text-muted">{tasks.length} total</span>
-    </div>
-
-    {/* Inline task creation form */}
-    <div class="task-create-form" id="task-create-inline" style="display:none">
-      <input
-        type="text"
-        id="task-create-input"
-        class="task-create-input"
-        placeholder="Task title…"
-        maxlength="200"
-        autocomplete="off"
-        aria-label="New task title"
-      />
-      <div class="task-create-actions">
-        <button type="button" id="task-create-submit" class="btn btn-primary btn-sm">Add</button>
-        <button type="button" id="task-create-cancel" class="btn btn-ghost btn-sm">Cancel</button>
-      </div>
-    </div>
-
-    {tasks.length === 0 ? (
-      <div class="project-tasks-empty">
-        <p>No tasks in this project yet. Add one to get started.</p>
-      </div>
-    ) : (
-      <div class="project-task-list">
-        {tasks.map((task) => {
-          const p = Number(task.priority ?? 3);
-          const status = String(task.status ?? "pending");
-          const isDone = status === "complete";
-          const ticketKey = task.ticket_number ? formatTicketKey(Number(task.ticket_number)) : null;
-
-          return (
-            <div
-              class={`project-task-item ${isDone ? "task-done" : ""}`}
-              data-id={String(task.id)}
-              data-task-id={String(task.id)}
-              role="button"
-              tabindex="0"
-            >
-              <div class="task-item-left">
-                <span
-                  class="priority-dot"
-                  style={`background: ${PRIORITY_COLORS[p] ?? "#6b7280"}`}
-                  title={`Priority ${p}`}
-                />
-                {ticketKey && <span class="task-ticket-key">{ticketKey}</span>}
-                <span class={`task-title-text ${isDone ? "done" : ""}`}>{String(task.title)}</span>
-                {task.deferred_at != null && <span class="task-ticket-key">{t("deferral.title", locale)}</span>}
-                <BotBadge owner={String(task.owner ?? "")} handoffState={String(task.handoff_state ?? "")} />
-              </div>
-              <div class="task-item-right">
-                {task.labels && String(task.labels) !== "[]" && (
-                  <LabelBadges labels={String(task.labels)} compact max={2} />
-                )}
-                <StatusBadge status={status} />
-                {task.due_date && (
-                  <span class="task-due-date">
-                    {formatRegionalDate(String(task.due_date), { format: dateFormat, timezone })}
-                  </span>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    )}
-  </section>
-
   {/* ── Fields Section ── */}
-  <section id="section-fields" class="project-section" data-section="fields">
+  <section id="section-fields" class="project-section" data-section="fields" role="tabpanel" aria-labelledby="project-tab-fields">
     <div class="section-header">
       <h2 class="section-title">Custom Fields</h2>
     </div>
 
     <div class="fields-placeholder">
-      <div class="fields-placeholder-icon">🏷️</div>
+      <Icon name="tag" size={40} class="mx-auto mb-3" sprite />
       <h3 class="fields-placeholder-title">Custom Fields</h3>
       <p class="fields-placeholder-desc">
         Project-specific custom field configuration is unavailable. You can add supported custom field values when creating a task.
@@ -237,9 +233,9 @@ const tabs = [
   </section>
 
   {/* ── Settings Section ── */}
-  <section id="section-settings" class="project-section" data-section="settings">
+  <section id={`section-${settingsTab}`} class="project-section" data-section={settingsTab} role="tabpanel" aria-labelledby={`project-tab-${settingsTab}`}>
     <div class="section-header">
-      <h2 class="section-title">Project Settings</h2>
+      <h2 class="section-title">{organization("project")} Settings</h2>
     </div>
 
     <div class="settings-card">
@@ -270,7 +266,16 @@ const tabs = [
           <option value="archived" selected={projStatus === "archived"}>Archived</option>
         </select>
       </div>
-      <div class="form-group">
+      {available("groups") && <div class="form-group">
+        <label for="edit-proj-area">{organization("group")}</label>
+        <select id="edit-proj-area" class="form-select">
+          <option value="">{`Use the Goal’s ${organization("group")}, if set`}</option>
+          {areas.map(option => (
+            <option value={option.id} selected={project?.area_id === option.id}>{option.name}</option>
+          ))}
+        </select>
+      </div>}
+      {available("goals") && <div class="form-group">
         <label for="edit-proj-goal">Goal</label>
         <select id="edit-proj-goal" class="form-select">
           <option value="">No goal</option>
@@ -279,11 +284,11 @@ const tabs = [
               value={String(g.id)}
               selected={String(project?.goal_id ?? "") === g.id}
             >
-              🎯 {String(g.title)}
+              {String(g.title)}
             </option>
           ))}
         </select>
-      </div>
+      </div>}
       <div class="settings-actions">
         <button type="button" class="btn btn-primary" id="save-proj-btn">Save Changes</button>
       </div>
@@ -295,15 +300,7 @@ const tabs = [
       <button type="button" class="btn btn-danger" id="delete-proj-btn">Delete Project</button>
     </div>
   </section>
-
-  <div
-    id="toast-container"
-    class="toast-container"
-    aria-live="polite"
-    role="status"
-    data-no-scroll-lock="true"
-  ></div>
-</Layout>
+</Layout>}
 
 <style>
   @reference "../../styles/global.css";
@@ -314,10 +311,9 @@ const tabs = [
     gap: 2px;
     border-bottom: 1px solid var(--border);
     margin-bottom: 1.5rem;
-    overflow-x: auto;
-    scrollbar-width: none;
+    flex-wrap: wrap;
   }
-  .project-tabs::-webkit-scrollbar { display: none; }
+  .project-panel-tabs { display: contents; }
 
   .project-tab {
     display: flex;
@@ -329,15 +325,18 @@ const tabs = [
     color: var(--text-muted);
     text-decoration: none;
     border-bottom: 2px solid transparent;
-    white-space: nowrap;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 44px;
+    overflow-wrap: anywhere;
     transition: color 150ms, border-color 150ms;
   }
+  .project-tab > span { min-width: 0; }
   .project-tab:hover { color: var(--text-primary); }
   .project-tab.active {
     color: var(--accent);
     border-bottom-color: var(--accent);
   }
-  .tab-icon { font-size: 0.875rem; }
 
   /* Sections */
   .project-section { display: none; }
@@ -436,46 +435,6 @@ const tabs = [
     transition: width 300ms ease;
   }
 
-  /* Task list */
-  .project-tasks-empty {
-    padding: 2rem;
-    text-align: center;
-    color: var(--text-muted);
-    font-size: 0.875rem;
-  }
-  .project-task-list { display: flex; flex-direction: column; }
-  .project-task-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.75rem 1.25rem;
-    border-bottom: 1px solid rgb(var(--border-rgb) / 0.3);
-    cursor: pointer;
-    transition: background 150ms;
-    gap: 0.75rem;
-    background: var(--bg-card);
-  }
-  .project-task-item:first-child { border-radius: var(--radius-md) var(--radius-md) 0 0; }
-  .project-task-item:last-child { border-bottom: none; border-radius: 0 0 var(--radius-md) var(--radius-md); }
-  .project-task-item:only-child { border-radius: var(--radius-md); }
-  .project-task-item:hover { background: var(--bg-hover); }
-
-  .task-item-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
-  .priority-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-  .task-ticket-key { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
-  .task-title-text {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .task-title-text.done { text-decoration: line-through; opacity: 0.7; }
-
-  .task-item-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-  .task-due-date { font-size: 11px; color: var(--text-muted); }
-
   /* Fields placeholder */
   .fields-placeholder {
     text-align: center;
@@ -484,7 +443,6 @@ const tabs = [
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
   }
-  .fields-placeholder-icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
   .fields-placeholder-title {
     margin: 0 0 0.5rem;
     font-size: 1.125rem;
@@ -498,12 +456,6 @@ const tabs = [
     max-width: 480px;
     margin-inline: auto;
     line-height: 1.5;
-  }
-  .fields-placeholder-coming {
-    margin: 0;
-    font-size: 0.8125rem;
-    color: var(--text-muted);
-    font-style: italic;
   }
 
   /* Settings */
@@ -595,55 +547,20 @@ const tabs = [
   }
   .btn-danger:hover { opacity: 0.9; }
 
-  /* Task create form */
-  .task-create-form {
-    display: none;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1.25rem;
-    border-bottom: 1px solid var(--border);
-    background: rgb(var(--accent-rgb) / 0.03);
-    border-radius: var(--radius-md);
-    margin-bottom: 0.75rem;
-    animation: task-form-in 200ms ease;
-  }
-  @keyframes task-form-in {
-    from { opacity: 0; transform: translateY(-4px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  .task-create-input {
-    flex: 1;
-    padding: 0.375rem 0.625rem;
-    font-size: 0.875rem;
-    background: var(--bg-primary);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    color: var(--text-primary);
-    outline: none;
-    transition: border-color 150ms;
-  }
-  .task-create-input:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px rgb(var(--accent-rgb) / 0.15);
-  }
-  .task-create-input::placeholder { color: var(--text-muted); }
-  .task-create-actions { display: flex; gap: 0.375rem; flex-shrink: 0; }
-  .btn-sm { padding: 0.375rem 0.75rem; font-size: 0.8125rem; }
-
   @media (max-width: 640px) {
     .project-header-top { flex-direction: column; }
     .project-header-stats { justify-content: space-around; }
-    .task-item-right { display: none; }
   }
 </style>
 
-<script define:vars={{ projectId, projectsPath }}>
+<script define:vars={{ projectId, projectsPath, tasksPath }}>
   // --- Tab switching ---
-  const projTabEls = Array.from(document.querySelectorAll(".project-tab"));
+  const projTabEls = Array.from(document.querySelectorAll('.project-tab[role="tab"]'));
   const projSectionEls = Array.from(document.querySelectorAll(".project-section"));
 
   function switchTab(hash) {
     const tabId = hash.replace("#", "") || "overview";
+    if (tabId === "tasks") { location.replace(tasksPath); return }
     projTabEls.forEach((t) => {
       const isActive = t.dataset.tab === tabId;
       t.classList.toggle("active", isActive);
@@ -657,81 +574,11 @@ const tabs = [
   if (window.location.hash) switchTab(window.location.hash);
   window.addEventListener("hashchange", () => switchTab(window.location.hash));
 
-  // --- Inline task creation ---
-  const addBtn = document.getElementById("add-task-to-project-btn");
-  const createForm = document.getElementById("task-create-inline");
-  const createInput = document.getElementById("task-create-input");
-  const submitBtn = document.getElementById("task-create-submit");
-  const cancelBtn = document.getElementById("task-create-cancel");
-  let taskFormVisible = false;
-
-  function showTaskForm() {
-    // Auto switch to tasks tab
-    if (window.location.hash !== "#tasks") window.location.hash = "tasks";
-    createForm.style.display = "flex";
-    taskFormVisible = true;
-    requestAnimationFrame(() => createInput?.focus());
-  }
-
-  function hideTaskForm() {
-    createForm.style.display = "none";
-    createInput.value = "";
-    taskFormVisible = false;
-  }
-
-  function submitTask() {
-    const title = createInput?.value?.trim();
-    if (!title) {
-      createInput?.focus();
-      return;
-    }
-
-    submitBtn.disabled = true;
-    submitBtn.textContent = "Adding…";
-
-    fetch("/api/tasks", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        title,
-        project_id: projectId,
-      }),
-    })
-      .then((r) => {
-        if (r.ok) {
-          window.location.reload();
-        } else {
-          throw new Error("Failed");
-        }
-      })
-      .catch(() => {
-        submitBtn.disabled = false;
-        submitBtn.textContent = "Add";
-        createInput?.focus();
-      });
-  }
-
-  addBtn?.addEventListener("click", () => taskFormVisible ? hideTaskForm() : showTaskForm());
-  submitBtn?.addEventListener("click", submitTask);
-  cancelBtn?.addEventListener("click", hideTaskForm);
-  createInput?.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") submitTask();
-    if (e.key === "Escape") hideTaskForm();
-  });
-
-  // Click task to open edit modal
-  document.querySelectorAll(".project-task-item").forEach((item) => {
-    item.addEventListener("click", () => {
-      const taskId = item.dataset.id;
-      if (taskId) {
-        document.dispatchEvent(
-          new CustomEvent("meitheal:open-task", { detail: { taskId } })
-        );
-      }
-    });
-  });
-
   // --- Settings: Save ---
+  const goalSelect = document.getElementById("edit-proj-goal")
+  const areaSelect = document.getElementById("edit-proj-area")
+  const initialGoal = goalSelect?.value
+  const initialArea = areaSelect?.value
   const saveProjectBtn = document.getElementById("save-proj-btn");
   saveProjectBtn?.addEventListener("click", async () => {
     const titleInput = document.getElementById("edit-proj-title");
@@ -739,7 +586,6 @@ const tabs = [
     const iconInput = document.getElementById("edit-proj-icon");
     const colorInput = document.getElementById("edit-proj-color");
     const statusSelect = document.getElementById("edit-proj-status");
-    const goalSelect = document.getElementById("edit-proj-goal");
 
     const title = titleInput?.value?.trim();
     if (!title) {
@@ -760,7 +606,8 @@ const tabs = [
           icon: iconInput?.value?.trim() || "📋",
           color: colorInput?.value || "#146C4E",
           status: statusSelect?.value || "active",
-          goal_id: goalSelect?.value || null,
+          ...(goalSelect?.value !== initialGoal ? { goal_id: goalSelect?.value || null } : {}),
+          ...(areaSelect?.value !== initialArea ? { area_id: areaSelect?.value || null } : {}),
         }),
       });
 
@@ -773,6 +620,7 @@ const tabs = [
         saveProjectBtn.disabled = false;
       }
     } catch {
+      window.showToast?.("Could not save the Project. Your changes are still here. Try again.", "error")
       saveProjectBtn.textContent = "Save Changes";
       saveProjectBtn.disabled = false;
     }
@@ -788,7 +636,7 @@ const tabs = [
     deleteProjectBtn.textContent = "Deleting…";
 
     try {
-      const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE" });
+      const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE", headers: { "content-type": "application/json" } });
       if (res.ok) {
         window.location.href = projectsPath;
       } else {
@@ -798,6 +646,7 @@ const tabs = [
         deleteProjectBtn.disabled = false;
       }
     } catch {
+      window.showToast?.("Could not delete the Project. Try again.", "error")
       deleteProjectBtn.textContent = "Delete Project";
       deleteProjectBtn.disabled = false;
     }

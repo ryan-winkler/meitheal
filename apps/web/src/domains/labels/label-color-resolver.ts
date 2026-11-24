@@ -9,7 +9,6 @@
  * that work in both light and dark themes.
  */
 
-import { getLabelColorMap } from "./label-store"
 import { labelNameKey } from "./label-name"
 
 /**
@@ -51,41 +50,17 @@ function hashToIndex(str: string): number {
   return Math.abs(hash) % PALETTE.length
 }
 
-/** Cached color map — refreshed per request in Astro SSR (MPA). */
-let cachedMap: Map<string, string> | null = null
-let cacheTimestamp = 0
-const CACHE_TTL_MS = 30_000 // 30s — enough for MPA page renders
-
-async function getColorMap(): Promise<Map<string, string>> {
-  const now = Date.now()
-  if (cachedMap && now - cacheTimestamp < CACHE_TTL_MS) {
-    return cachedMap
-  }
-  try {
-    cachedMap = await getLabelColorMap()
-    cacheTimestamp = now
-  } catch {
-    // First-boot: Vikunja compat schema may not exist yet
-    cachedMap = new Map()
-    cacheTimestamp = now
-  }
-  return cachedMap
-}
-
-/** Reset cache (for tests). */
-export function resetColorCache(): void {
-  cachedMap = null
-  cacheTimestamp = 0
-}
+/** Compatibility hook: colors are now supplied per request, so there is no shared cache. */
+export function resetColorCache(): void {}
 
 /**
  * Resolve a label name to its hex color.
  * Checks Vikunja compat store first, falls back to hash-based palette.
  */
 export async function resolveLabelColor(
-  labelName: string
+  labelName: string,
+  map: ReadonlyMap<string, string>,
 ): Promise<string> {
-  const map = await getColorMap()
   const key = labelNameKey(labelName)
   const stored = map.get(key)
   if (stored) return stored
@@ -97,9 +72,10 @@ export async function resolveLabelColor(
  * Returns "default" if no variant matches.
  */
 export async function resolveLabelVariant(
-  labelName: string
+  labelName: string,
+  map: ReadonlyMap<string, string>,
 ): Promise<string> {
-  const color = await resolveLabelColor(labelName)
+  const color = await resolveLabelColor(labelName, map)
   return COLOR_TO_VARIANT[color] ?? "default"
 }
 
@@ -109,9 +85,9 @@ export async function resolveLabelVariant(
  * because it loads the color map once.
  */
 export async function resolveAllLabelColors(
-  labelNames: string[]
+  labelNames: string[],
+  map: ReadonlyMap<string, string>,
 ): Promise<Array<{ name: string; color: string; variant: string }>> {
-  const map = await getColorMap()
   return labelNames.map((name) => {
     const key = labelNameKey(name)
     const stored = map.get(key)

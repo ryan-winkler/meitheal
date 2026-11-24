@@ -2,7 +2,7 @@
 /**
  * generate-icons.mjs — Build-time typed Tabler 1.75px outline icon extractor
  *
- * Extracts inner SVG geometry for Meitheal's curated 64-icon Tabler outline
+ * Extracts inner SVG geometry for Meitheal's curated Tabler outline
  * catalog (plus legacy Icon.astro name aliases), strips invisible 24x24
  * bounding paths, verifies zero nested <svg> tags, and writes deterministic
  * TypeScript to apps/web/src/generated/icon-registry.ts.
@@ -43,8 +43,7 @@ export const LEGACY_ICON_ALIASES = {
 }
 
 /**
- * Exact 64 canonical Tabler outline icons (32 backing existing Icon.astro names
- * + 32 UI chrome and task-type icons).
+ * Canonical Tabler outline icons backing existing Icon.astro names and UI chrome.
  */
 export const CANONICAL_TABLER_ICONS = [
   // 32 icons backing existing Icon.astro names
@@ -113,6 +112,44 @@ export const CANONICAL_TABLER_ICONS = [
   "calculator",
   "mug",
   "confetti",
+  "grip-vertical",
+  "heart",
+  "arrow-up",
+  "arrow-down",
+  "arrows-maximize",
+  "arrows-minimize",
+  "eye",
+  "eye-off",
+  "dots-vertical",
+  "help",
+  "copy",
+  "external-link",
+  // WYSIWYG / Markdown editor toolbar icons
+  "arrow-back-up",
+  "arrow-forward-up",
+  "bold",
+  "italic",
+  "strikethrough",
+  "code",
+  "list",
+  "list-numbers",
+  "indent-decrease",
+  "indent-increase",
+  "blockquote",
+  "braces",
+  "clear-formatting",
+  // Routines, events & shopping icons
+  "calendar-due",
+  "map-pin",
+  "shopping-bag",
+  "droplet",
+  "moon",
+  "walk",
+  "pill",
+  "coffee",
+  "wash",
+  "apple",
+  "snowflake",
 ]
 
 /**
@@ -123,39 +160,67 @@ export const CANONICAL_TABLER_ICONS = [
 export const CLIENT_DYNAMIC_TABLER_ICONS = [
   "adjustments-horizontal",
   "alert-triangle",
+  "apple",
+  "arrow-back-up",
+  "arrow-down",
+  "arrow-forward-up",
+  "arrow-up",
   "arrows-left-right",
   "bell",
+  "blockquote",
+  "bold",
   "bolt",
   "book",
+  "braces",
   "bug",
   "calendar",
+  "calendar-due",
   "calendar-event",
   "chart-bar",
   "check",
   "checkbox",
   "chevron-down",
+  "clear-formatting",
   "clipboard-list",
   "clock",
+  "code",
+  "coffee",
+  "device-mobile",
+  "dots-vertical",
+  "droplet",
+  "eye",
+  "eye-off",
   "file-text",
   "flame",
   "folder",
+  "grip-vertical",
   "hash",
+  "heart",
   "home",
   "inbox",
+  "indent-decrease",
+  "indent-increase",
   "info-circle",
+  "italic",
   "layout-dashboard",
   "layout-grid",
   "layout-kanban",
   "layout-sidebar-left-collapse",
   "link",
+  "list",
   "list-check",
+  "list-numbers",
+  "map-pin",
   "menu-2",
   "message-chatbot",
   "message-circle",
+  "moon",
   "mug",
+  "package",
   "palette",
   "paperclip",
   "pencil",
+  "pill",
   "pin",
   "plug",
   "plus",
@@ -164,9 +229,12 @@ export const CLIENT_DYNAMIC_TABLER_ICONS = [
   "rocket",
   "search",
   "settings",
+  "shopping-bag",
   "shopping-cart",
+  "snowflake",
   "sparkles",
   "star",
+  "strikethrough",
   "sun",
   "table",
   "tag",
@@ -174,6 +242,8 @@ export const CLIENT_DYNAMIC_TABLER_ICONS = [
   "trash",
   "trophy",
   "user",
+  "walk",
+  "wash",
   "x",
 ]
 
@@ -311,8 +381,8 @@ function extractInnerSvg(rawSvg, iconFile) {
 }
 
 export function generateIconRegistrySource() {
-  if (CANONICAL_TABLER_ICONS.length !== 64 || new Set(CANONICAL_TABLER_ICONS).size !== 64) {
-    throw new Error(`[generate-icons] Expected 64 unique canonical Tabler icons, got ${CANONICAL_TABLER_ICONS.length}`)
+  if (CANONICAL_TABLER_ICONS.length !== new Set(CANONICAL_TABLER_ICONS).size) {
+    throw new Error("[generate-icons] Duplicate canonical Tabler icons")
   }
 
   const outlineDir = resolveTablerOutlineDir()
@@ -461,5 +531,5 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const output = generateIconRegistrySource()
   mkdirSync(dirname(OUTPUT_PATH), { recursive: true })
   writeFileSync(OUTPUT_PATH, output, "utf-8")
-  console.log(`[generate-icons] Wrote 64 canonical icons (+ ${Object.keys(LEGACY_ICON_ALIASES).length} legacy aliases) to ${OUTPUT_PATH}`)
+  console.log(`[generate-icons] Wrote ${CANONICAL_TABLER_ICONS.length} canonical icons (+ ${Object.keys(LEGACY_ICON_ALIASES).length} legacy aliases) to ${OUTPUT_PATH}`)
 }

@@ -1,8 +1,10 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { shouldSkipBrowserSpecs } from "./_helpers";
 
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs");
+test.use({ serviceWorkers: "block" });
 
 for (const theme of ["light", "dark"]) {
   test(`dashboard accessibility in ${theme} theme`, async ({ page }) => {
@@ -25,7 +27,7 @@ for (const theme of ["light", "dark"]) {
 
   test(`completed dashboard cards remain readable in ${theme} theme`, async ({ page, request, baseURL }) => {
     test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the disposable Meitheal fixture")
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const created = await request.post("/api/tasks", {
       headers, data: { title: "Checked the air filter", status: "complete" },
     })
@@ -71,11 +73,12 @@ test("Settings navigation and fields have valid semantics at mobile width", asyn
   await page.goto("/settings#navigation-settings")
 
   await expect(page.locator("#settings-directory")).toBeHidden()
+  await page.locator("#nav-sidebar-menu-section > summary").click()
+  await expect(page.getByRole("button", { name: "Hide · Dashboard", exact: true })).toBeVisible()
   await page.getByRole("button", { name: "Sections", exact: true }).click()
   const navSection = page.locator('[data-settings-nav="navigation-settings"]')
   await expect(navSection).toBeVisible()
   await expect(navSection).toHaveAttribute("aria-current", "location")
-  await expect(page.getByRole("checkbox", { name: "Show Dashboard in sidebar" })).toBeVisible()
   await page.getByRole("link", { name: "Tasks & Boards", exact: true }).click()
   await expect(page.getByRole("combobox", { name: "Sprint field type" })).toBeVisible()
 

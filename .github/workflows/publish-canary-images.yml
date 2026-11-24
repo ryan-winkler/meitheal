@@ -38,3 +38,12 @@ jobs:
           ARCHITECTURE: ${{ matrix.architecture }}
           CHANNEL: canary
         run: bash scripts/build-app-release-image.sh build-only
+      - name: Report Canary release status
+        env:
+          ARCHITECTURE: ${{ matrix.architecture }}
+        run: |
+          {
+            printf '### Canary smoke passed (%s)\n\n' "$ARCHITECTURE"
+            printf 'Revision `%s` was built and tested on this runner. Registry publication and App Store promotion on this run: **none**.\n\n' "$GITHUB_SHA"
+            printf 'The release host needs a passing physical Green receipt for this revision. Follow the [Canary release runbook](https://github.com/%s/blob/%s/docs/kcs/releasing.md#qualify-and-promote-a-canary-from-a-release-host).\n' "$GITHUB_REPOSITORY" "$GITHUB_SHA"
+          } >> "$GITHUB_STEP_SUMMARY"

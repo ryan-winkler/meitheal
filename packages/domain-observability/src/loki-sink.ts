@@ -20,32 +20,50 @@ const BATCH_SIZE = 50
 const MAX_LINE_BYTES = 16_384
 const FLUSH_MS = 250
 const TIMEOUT_MS = 1_000
+const INITIAL_BACKOFF_MS = 2_000
+const MAX_BACKOFF_MS = 60_000
 let configured: string | undefined
 let destination: string | null = null
 let timer: ReturnType<typeof setTimeout> | undefined
 let sending = false
-let lastWarning = 0
+let lastWarning = -Infinity
+let configEpoch = 0
+let consecutiveFailures = 0
+let nextAttemptAt = 0
+
+/** Return exponential backoff in milliseconds (2s to 60s) for consecutive delivery failures. */
+export function computeLokiBackoffMs(failures: number): number {
+  const count = Math.floor(failures)
+  if (!Number.isFinite(count) || count <= 0) return 0
+  return Math.min(MAX_BACKOFF_MS, INITIAL_BACKOFF_MS * 2 ** Math.min(count - 1, 10))
+}
 
 function warn(): void {
-  if (Date.now() - lastWarning < 60_000) return
-  lastWarning = Date.now()
+  const now = performance.now()
+  if (now - lastWarning < 60_000) return
+  lastWarning = now
   // Do not recurse through the logger or expose URLs, responses or credentials.
   process.stderr.write('{"level":"warn","event":"logging.loki.delivery_failed","message":"Optional Loki forwarding failed or dropped logs; redacted stdout remains available"}\n')
 }
 
 function schedule(): void {
   if (timer || sending || !queue.length) return
+  const delay = consecutiveFailures > 0
+    ? Math.min(MAX_BACKOFF_MS, Math.max(FLUSH_MS, nextAttemptAt - performance.now()))
+    : FLUSH_MS
   timer = setTimeout(() => {
     timer = undefined
     void flush()
-  }, FLUSH_MS)
+  }, delay)
   timer.unref()
 }
 
 async function flush(): Promise<void> {
   if (!destination || sending) return
   const endpoint = destination
+  const epoch = configEpoch
   const entries = queue.splice(0, BATCH_SIZE)
+  if (!entries.length) return
   const streams = new Map<string, { stream: LokiStreamLabels; values: string[][] }>()
   for (const entry of entries) {
     const key = JSON.stringify([entry.service, entry.env, entry.level, entry.domain])
@@ -73,8 +91,23 @@ async function flush(): Promise<void> {
       redirect: "error",
     })
     await response.body?.cancel()
-    if (!response.ok) warn()
-  } catch { warn() } finally {
+    if (epoch === configEpoch) {
+      if (response.ok) {
+        consecutiveFailures = 0
+        nextAttemptAt = 0
+      } else {
+        consecutiveFailures += 1
+        nextAttemptAt = performance.now() + computeLokiBackoffMs(consecutiveFailures)
+        warn()
+      }
+    }
+  } catch {
+    if (epoch === configEpoch) {
+      consecutiveFailures += 1
+      nextAttemptAt = performance.now() + computeLokiBackoffMs(consecutiveFailures)
+      warn()
+    }
+  } finally {
     sending = false
     schedule()
   }
@@ -92,8 +125,15 @@ export function enqueueLokiLog(
   const option = process.env.LOKI_URL?.trim() ?? ""
   if (option !== configured) {
     configured = option
+    configEpoch += 1
     destination = null
     queue.length = 0
+    consecutiveFailures = 0
+    nextAttemptAt = 0
+    if (timer) {
+      clearTimeout(timer)
+      timer = undefined
+    }
     if (option) {
       try {
         const url = new URL(option)

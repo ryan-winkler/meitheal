@@ -1,5 +1,8 @@
+import { boardScopeErrorResponse } from "@lib/board-http"
+import { withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import {
+  PomodoroTaskUnavailableError,
   getTimerState,
   startFocus,
   skipToBreak,
@@ -20,25 +23,27 @@ import { apiJson, apiError } from "../../lib/api-response"
  * @bounded-context pomodoro
  */
 
-export const GET: APIRoute = async ({ url }) => {
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async ({ url }, scope) => {
   try {
     const includeHistory = url.searchParams.get("history") === "true"
-    const state = getTimerState()
-    const today = await getTodayStats()
+    const state = await getTimerState(scope)
+    const today = await getTodayStats(scope)
 
     const result: Record<string, unknown> = { state, today }
 
     if (includeHistory) {
-      result.history = await getSessionHistory()
+      result.history = await getSessionHistory(scope)
     }
 
     return apiJson(result)
   } catch (err) {
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
     return apiError("Failed to get pomodoro state")
   }
-}
+})
 
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = withBoardScope({ resource: "task", action: "edit" }, async ({ request }, scope) => {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
     const action = String(body.action || "")
@@ -47,16 +52,16 @@ export const POST: APIRoute = async ({ request }) => {
 
     switch (action) {
       case "start":
-        state = await startFocus(body.taskId ? String(body.taskId) : null)
+        state = await startFocus(scope, body.taskId ? String(body.taskId) : null)
         break
       case "skip_to_break":
-        state = await skipToBreak()
+        state = await skipToBreak(scope)
         break
       case "skip_break":
-        state = await skipBreak()
+        state = await skipBreak(scope)
         break
       case "cancel":
-        state = await cancelSession()
+        state = await cancelSession(scope)
         break
       default:
         return apiError("Invalid action. Use: start, skip_to_break, skip_break, cancel", 400)
@@ -64,6 +69,9 @@ export const POST: APIRoute = async ({ request }) => {
 
     return apiJson({ state })
   } catch (err) {
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
+    if (err instanceof PomodoroTaskUnavailableError) return apiError("Task unavailable", 404)
     return apiError("Failed to execute pomodoro action")
   }
-}
+})

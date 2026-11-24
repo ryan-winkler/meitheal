@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test"
-import { calendarDaysFromToday, calendarToday, formatRegionalDate } from "../../apps/web/src/lib/date"
+import { calendarDaysFromToday, calendarToday, formatDayHeading } from "../../apps/web/src/lib/date"
+import { formatRegionalDate } from "../../apps/web/src/lib/regional-date"
 
 function shiftDay(day: string, days: number) {
   const date = new Date(day + "T00:00:00Z")
@@ -19,6 +20,21 @@ test("date-only due dates count whole calendar days in the user's timezone", () 
   expect(calendarDaysFromToday("not-a-date", "Europe/Dublin", now)).toBeNull()
   expect(calendarDaysFromToday("2031-03-08T10:00:00Z", "Europe/Dublin", now)).toBe(-1)
   expect(calendarDaysFromToday("2031-03-09T06:00:00Z", "America/Los_Angeles", now)).toBe(0)
+})
+
+test("Today headings follow changes to language, timezone and date", () => {
+  const now = new Date("2031-03-09T07:30:00Z")
+  const later = new Date("2031-03-10T07:30:00Z")
+  for (const [locale, timeZone, date] of [
+    ["en-IE", "Europe/Dublin", now],
+    ["ga-IE", "Europe/Dublin", now],
+    ["ga-IE", "America/Los_Angeles", now],
+    ["ga-IE", "America/Los_Angeles", later],
+  ] as const) {
+    expect(formatDayHeading(date, locale, timeZone)).toBe(new Intl.DateTimeFormat(locale, {
+      weekday: "long", day: "numeric", month: "long", timeZone,
+    }).format(date))
+  }
 })
 
 test("date-only due dates keep their day in absolute formats west of UTC", () => {

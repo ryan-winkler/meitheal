@@ -6,17 +6,6 @@
  * Does NOT own: base component styles — only responsive overrides of them
  * ============================================= */
 
-/* ===== Settings tab-pane CSS fallback =====
- * Prevents all tab panes from showing simultaneously if JS hasn't initialised
- * (race condition on slow mobile connections / HA companion app WebView).
- * JS still manages .active class — this CSS ensures the default hidden state. */
-.tab-pane {
-  display: none;
-}
-.tab-pane.active {
-  display: block;
-}
-
 /* Mobile breakpoint */
 /* ===== Responsive ===== */
 @media (max-width: 768px) {
@@ -55,6 +44,11 @@
       box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
   }
 
+  /* Retain an active navigation/editor focus until the resize handoff opens the drawer. */
+  .sidebar:focus-within {
+    visibility: visible;
+  }
+
   .main-content {
     width: 100%;
   }
@@ -86,23 +80,6 @@
     min-height: 22px;
   }
 
-  /* Mobile: task detail title input — proper mobile sizing */
-  #td-title {
-    font-size: 1.25rem !important;
-    padding: 6px 8px !important;
-  }
-
-  /* Mobile: task detail header — allow close button to wrap */
-  #task-detail-panel .flex.items-center.justify-between {
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  /* Mobile: task detail header — don't push close button off-screen */
-  #task-detail-panel .flex.items-center.gap-4.w-full {
-    margin-right: 0 !important;
-  }
-
   /* Mobile: stack stats grid 2x2 */
   .stats-grid {
     grid-template-columns: repeat(2, 1fr) !important;
@@ -116,7 +93,6 @@
                 }
 
                 /* Mobile: constrain content area */
-                .content-area,
                 .content,
                 main {
                   max-width: 100vw;
@@ -170,18 +146,6 @@
     margin-left: auto;
   }
 
-  .task-delete,
-  .task-duplicate,
-  .task-ask-ai {
-    display: none !important;
-  }
-
-  .task-item:active .task-delete,
-  .task-item:active .task-duplicate,
-  .task-item:active .task-ask-ai {
-    display: inline-flex !important;
-  }
-
     /* Mobile: compact search input */
     .search-input {
     font-size: 13px;
@@ -231,22 +195,6 @@
   overscroll-behavior: contain;
 }
 
-/* Mobile: search items — bigger touch targets */
-.search-item {
-  min-height: 48px;
-  padding: 12px 16px !important;
-}
-
-/* Mobile: settings tabs scroll hint */
-.settings-tabs {
-  gap: 16px;
-  padding-bottom: 2px;
-  margin-left: -12px;
-  margin-right: -12px;
-  padding-left: 12px;
-  padding-right: 12px;
-}
-
 /* Mobile: stat-card compact */
 .stat-card {
   padding: 10px 12px !important;
@@ -273,11 +221,6 @@
   display: none !important;
 }
 
-/* Mobile: hide top task-view-tabs when bottom tab bar provides the same navigation */
-.task-view-tabs {
-  display: none !important;
-}
-
   /* Mobile: safe-area-inset padding for iOS notch / dynamic island */
   .topbar {
     padding-top: max(8px, env(safe-area-inset-top)) !important;
@@ -295,10 +238,43 @@
     padding-bottom: max(72px, calc(var(--mobile-tab-bar-height) + env(safe-area-inset-bottom))) !important;
   }
 
-  /* Raise toast notifications above the mobile tab bar */
-  .fixed.bottom-4 {
-    bottom: calc(60px + env(safe-area-inset-bottom, 0px)) !important;
+  /* Mobile: keep toasts cleanly above the mobile tab bar and any bottom-right FAB */
+  .toast-container {
+    align-items: stretch;
+    inset-inline-start: calc(12px + env(safe-area-inset-left, 0px));
+    inset-inline-end: calc(12px + env(safe-area-inset-right, 0px));
+    width: auto;
+    max-width: none;
+    bottom: calc(var(--floating-action-bottom) + var(--toast-fab-clearance, 0px));
   }
+
+  .toast {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    touch-action: none;
+  }
+}
+
+.toast-container:is([data-dock-top="true"], [data-keyboard-open="true"]) {
+  bottom: auto;
+  top: calc(max(var(--toast-vv-top, 0px), env(safe-area-inset-top, 0px)) + 12px);
+  max-height: calc(
+    var(--toast-vv-max-h, calc(100dvh - 24px)) -
+    max(0px, env(safe-area-inset-top, 0px) - var(--toast-vv-top, 0px))
+  );
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  pointer-events: auto;
+  flex-direction: column;
+}
+
+.toast-container:is([data-dock-top="true"], [data-keyboard-open="true"]) .toast {
+  touch-action: none;
+}
+
+.toast-container[data-scrollable="true"] .toast {
+  touch-action: pan-y;
 }
 
 /* ===== PRA-16: Mobile Bottom Tab Bar ===== */
@@ -372,26 +348,21 @@
 
   /* Hide non-content elements */
   .sidebar,
-  .sidebar-overlay,
   .header-bar,
   .filter-bar,
-  .filter-summary-bar,
   .bulk-bar,
   .task-actions,
   .task-action-btn,
-  .task-fav-btn,
   .btn,
   .toast-container,
   .shortcut-modal-overlay,
-  .task-view-tabs,
   nav,
   footer {
     display: none !important;
   }
 
   /* Full width content */
-  .main-content,
-  .content-area {
+  .main-content {
     margin: 0 !important;
     padding: 0 !important;
     max-width: 100% !important;
@@ -525,37 +496,13 @@
     border: 1px solid ButtonText;
   }
 
-  .task-fav-btn.is-fav {
-    color: Highlight;
-  }
-
   .overdue-tag {
     background: Mark;
     color: MarkText;
   }
 
-  .task-progress-fill {
-    background: Highlight;
-  }
-
   /* P3: Expanded high-contrast coverage */
-  .kanban-card {
-    border: 1px solid ButtonText;
-  }
-
-  .kanban-column {
-    border: 1px solid ButtonText;
-  }
-
-  .card-action-btn,
-  .btn,
-  button {
-    border: 1px solid ButtonText;
-  }
-
-  input,
-  select,
-  textarea {
+  :is(.kanban-card, .kanban-column, .card-action-btn, .btn, button, input, select, textarea) {
     border: 1px solid ButtonText;
   }
 
@@ -564,14 +511,22 @@
     outline: 2px solid Highlight;
   }
 
-  .modal-inner,
   .lane-mgmt-inner {
     border: 2px solid ButtonText;
   }
 
   .badge,
   .kanban-count {
-    border: 1px solid ButtonText;
+    border: 2px solid CanvasText;
+  }
+
+  .toast {
+    border: 1px solid CanvasText;
+    border-inline-start-width: 4px;
+  }
+
+  .toast.error {
+    border-inline-start-color: Highlight;
   }
 }
 

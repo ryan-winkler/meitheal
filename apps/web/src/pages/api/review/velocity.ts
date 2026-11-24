@@ -1,3 +1,4 @@
+import { withBoardScope } from "@lib/board-http"
 /**
  * GET /api/review/velocity — Velocity sparkline data
  *
@@ -29,12 +30,12 @@ import { getTasksForView } from "../../../lib/task-queries"
 import { calendarDayFromInput, calendarToday, resolveTimezone, shiftCalendarDay } from "../../../lib/date"
 import { apiLogger, logApiError } from "../../../lib/api-logger"
 
-export const GET: APIRoute = async ({ url, locals }) => {
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async ({ url, locals }, scope) => {
   try {
     const daysParam = url.searchParams.get("days")
     const days = Math.min(Math.max(Math.trunc(Number(daysParam) || 30), 1), 90)
     const timezone = resolveTimezone(locals.timezone)
-    const { tasks } = await getTasksForView({ timezone })
+    const { tasks } = await getTasksForView({ timezone }, scope)
     const todayStr = calendarToday(timezone)
     const startStr = shiftCalendarDay(todayStr, 1 - days)
 
@@ -109,4 +110,4 @@ export const GET: APIRoute = async ({ url, locals }) => {
       headers: { "Content-Type": "application/json" },
     })
   }
-}
+})

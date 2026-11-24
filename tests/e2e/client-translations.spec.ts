@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { runInNewContext } from "node:vm"
 import { expect, test } from "@playwright/test"
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import en from "../../apps/web/src/i18n/en.json" with { type: "json" }
 import ga from "../../apps/web/src/i18n/ga.json" with { type: "json" }
 import { t as clientTranslate, getClientLocale } from "../../apps/web/src/i18n/client"
@@ -50,11 +51,10 @@ for (const locale of ["en", "ga"] as const) {
   })
 }
 
-test("missing Irish strings use English and script payloads cannot close their element", () => {
-  const missing = keys(en).filter(key => !key.startsWith("en.") && !key.startsWith("ga."))
-    .find(key => t(key, "en") === t(key, "ga") && !keys(ga).includes(key))!
-  expect(missing).toBeTruthy()
-  expect(client("ga").get(missing)).toBe(t(missing, "en"))
+test("the Irish catalog covers every English string and script payloads cannot close their element", () => {
+  // Every English string has an Irish translation; unknown keys still fall back to the key.
+  const irish = new Set(keys(ga))
+  expect(keys(en).filter(key => !key.startsWith("en.") && !key.startsWith("ga.") && !irish.has(key))).toEqual([])
   for (const payload of [...Object.values(clientTranslationJson), ...Object.values(alternateClientTranslationJson)]) {
     expect(payload).not.toContain("<")
   }
@@ -131,8 +131,8 @@ test.describe("browser catalog and YAML import", () => {
   })
 
   test("modal pin messages follow another tab's stored locale", async ({ page, context, request, baseURL }) => {
-    const origin = new URL(baseURL!).origin
-    const task = await request.post("/api/tasks", { headers: { origin }, data: { title: "Locale pin fixture" } })
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+    const task = await request.post("/api/tasks", { headers, data: { title: "Locale pin fixture" } })
     expect(task.status()).toBe(201)
     const { id } = await task.json()
     try {
@@ -153,7 +153,7 @@ test.describe("browser catalog and YAML import", () => {
       await expect(page.locator("#td-pin-status")).toHaveText(t("pins.account", "en"))
       await other.close()
     } finally {
-      expect((await request.delete(`/api/tasks/${id}`, { headers: { origin }, data: {} })).status()).toBe(204)
+      expect((await request.delete(`/api/tasks/${id}`, { headers, data: {} })).status()).toBe(204)
     }
   })
 

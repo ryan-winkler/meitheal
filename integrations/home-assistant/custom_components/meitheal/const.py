@@ -11,6 +11,7 @@ PLATFORMS = [Platform.TODO, Platform.SENSOR, Platform.BINARY_SENSOR]
 DEFAULT_HOST = "local-meitheal"
 DEFAULT_PORT = 3000
 CONF_API_TOKEN = "api_token"  # nosec B105
+CONF_BOARD_ID = "board_id"
 
 # Polling interval for DataUpdateCoordinator
 SCAN_INTERVAL = timedelta(seconds=30)

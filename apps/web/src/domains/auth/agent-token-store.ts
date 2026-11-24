@@ -8,7 +8,13 @@
  * @bounded-context agent-authorization
  * @kcs Token plaintext is never stored. Only SHA-256 hashes are persisted.
  */
-import { getPersistenceClient } from "@domains/tasks"
+import {
+  getPersistenceClient,
+  createBoardAgentCredential,
+  removeAgentBoardGrants,
+  type BoardScope,
+} from "@domains/tasks"
+import type { Client } from "@libsql/client"
 import type { AgentTokenRecord, AgentScope } from "@meitheal/domain-auth"
 
 // ── Schema Bootstrap ─────────────────────────────────────────────────────────
@@ -34,20 +40,22 @@ export async function ensureAgentTokenSchema(): Promise<void> {
       last_used_at TEXT,
       revoked INTEGER NOT NULL DEFAULT 0
     )`,
-    args: [],
+    args: []
   })
   await db.execute({
     sql: `CREATE INDEX IF NOT EXISTS idx_agent_tokens_hash ON agent_tokens(token_hash)`,
-    args: [],
+    args: []
   })
   // Links a token to the assignee it acts as, so "my tasks" comes from the credential.
   const columns = await db.execute("PRAGMA table_info(agent_tokens)")
-  if (!columns.rows.some(row => row.name === "assignee_id")) {
-    await db.execute("ALTER TABLE agent_tokens ADD COLUMN assignee_id TEXT").catch(async error => {
-      // A concurrent bootstrap may have added the column first.
-      const retry = await db.execute("PRAGMA table_info(agent_tokens)")
-      if (!retry.rows.some(row => row.name === "assignee_id")) throw error
-    })
+  if (!columns.rows.some((row) => row.name === "assignee_id")) {
+    await db
+      .execute("ALTER TABLE agent_tokens ADD COLUMN assignee_id TEXT")
+      .catch(async (error) => {
+        // A concurrent bootstrap may have added the column first.
+        const retry = await db.execute("PRAGMA table_info(agent_tokens)")
+        if (!retry.rows.some((row) => row.name === "assignee_id")) throw error
+      })
   }
 }
 
@@ -67,26 +75,14 @@ interface CreateTokenInput {
  * Insert a new agent token record.
  * The caller is responsible for generating the token and hashing it.
  */
-export async function createAgentToken(input: CreateTokenInput): Promise<AgentTokenRecord> {
+export async function createAgentToken(
+  input: CreateTokenInput,
+  scope?: BoardScope
+): Promise<AgentTokenRecord & { accessPending?: boolean }> {
   const db = getPersistenceClient()
   const now = new Date().toISOString()
 
-  await db.execute({
-    sql: `INSERT INTO agent_tokens (id, name, token_hash, token_prefix, scopes, assignee_id, created_at, expires_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    args: [
-      input.id,
-      input.name,
-      input.tokenHash,
-      input.tokenPrefix,
-      JSON.stringify(input.scopes),
-      input.assigneeId ?? null,
-      now,
-      input.expiresAt ?? null,
-    ],
-  })
-
-  return {
+  const record: AgentTokenRecord = {
     id: input.id,
     name: input.name,
     tokenHash: input.tokenHash,
@@ -96,7 +92,42 @@ export async function createAgentToken(input: CreateTokenInput): Promise<AgentTo
     createdAt: now,
     expiresAt: input.expiresAt ?? null,
     lastUsedAt: null,
-    revoked: false,
+    revoked: false
+  }
+  const persist = async (writer: Pick<Client, "execute">) => {
+    await writer.execute({
+      sql: `INSERT INTO agent_tokens (id, name, token_hash, token_prefix, scopes, assignee_id, created_at, expires_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        input.id,
+        input.name,
+        input.tokenHash,
+        input.tokenPrefix,
+        JSON.stringify(input.scopes),
+        input.assigneeId ?? null,
+        now,
+        input.expiresAt ?? null
+      ]
+    })
+
+    return record
+  }
+  if (!scope) return persist(db)
+  const result = await createBoardAgentCredential(
+    db,
+    scope,
+    {
+      tokenId: input.id,
+      scopes: input.scopes,
+      assigneeId: input.assigneeId ?? null
+    },
+    persist
+  )
+  if (result.status === "locked")
+    throw Object.assign(new Error("Current Board authority is unavailable"), { status: 503 })
+  return {
+    ...result.result,
+    ...(result.status === "committed-locked" ? { accessPending: true } : {})
   }
 }
 
@@ -108,7 +139,7 @@ export async function listAgentTokens(includeRevoked = false): Promise<AgentToke
     sql: `SELECT id, name, token_hash, token_prefix, scopes, assignee_id, created_at, expires_at, last_used_at, revoked
           FROM agent_tokens ${whereClause}
           ORDER BY created_at DESC`,
-    args: [],
+    args: []
   })
 
   return result.rows.map(rowToRecord)
@@ -121,7 +152,7 @@ export async function getAgentTokenByHash(tokenHash: string): Promise<AgentToken
     sql: `SELECT id, name, token_hash, token_prefix, scopes, assignee_id, created_at, expires_at, last_used_at, revoked
           FROM agent_tokens
           WHERE token_hash = ?`,
-    args: [tokenHash],
+    args: [tokenHash]
   })
 
   if (result.rows.length === 0) return null
@@ -135,7 +166,7 @@ export async function getAgentTokenById(id: string): Promise<AgentTokenRecord | 
     sql: `SELECT id, name, token_hash, token_prefix, scopes, assignee_id, created_at, expires_at, last_used_at, revoked
           FROM agent_tokens
           WHERE id = ?`,
-    args: [id],
+    args: [id]
   })
 
   if (result.rows.length === 0) return null
@@ -147,25 +178,29 @@ export async function revokeAgentToken(id: string): Promise<boolean> {
   const db = getPersistenceClient()
   const result = await db.execute({
     sql: `UPDATE agent_tokens SET revoked = 1 WHERE id = ?`,
-    args: [id],
+    args: [id]
   })
   return (result.rowsAffected ?? 0) > 0
 }
 
-/** Hard-delete a token */
+/** Hard-delete a token and clean up its Board access grants */
 export async function deleteAgentToken(id: string): Promise<boolean> {
   const db = getPersistenceClient()
   const result = await db.execute({
     sql: `DELETE FROM agent_tokens WHERE id = ?`,
-    args: [id],
+    args: [id]
   })
-  return (result.rowsAffected ?? 0) > 0
+  const deleted = (result.rowsAffected ?? 0) > 0
+  if (deleted) {
+    await removeAgentBoardGrants(db, id).catch(() => undefined)
+  }
+  return deleted
 }
 
 /** Update token name and/or scopes */
 export async function updateAgentToken(
   id: string,
-  updates: { name?: string; scopes?: AgentScope[]; assigneeId?: string | null },
+  updates: { name?: string; scopes?: AgentScope[]; assigneeId?: string | null }
 ): Promise<boolean> {
   const db = getPersistenceClient()
   const setClauses: string[] = []
@@ -189,7 +224,7 @@ export async function updateAgentToken(
   args.push(id)
   const result = await db.execute({
     sql: `UPDATE agent_tokens SET ${setClauses.join(", ")} WHERE id = ?`,
-    args,
+    args
   })
   return (result.rowsAffected ?? 0) > 0
 }
@@ -199,7 +234,7 @@ export async function updateAgentTokenLastUsed(id: string): Promise<void> {
   const db = getPersistenceClient()
   await db.execute({
     sql: `UPDATE agent_tokens SET last_used_at = ? WHERE id = ?`,
-    args: [new Date().toISOString(), id],
+    args: [new Date().toISOString(), id]
   })
 }
 
@@ -210,7 +245,9 @@ function rowToRecord(row: Record<string, unknown>): AgentTokenRecord {
   try {
     const parsed = JSON.parse(String(row.scopes ?? "[]"))
     if (Array.isArray(parsed)) scopes = parsed
-  } catch { /* default to empty */ }
+  } catch {
+    /* default to empty */
+  }
 
   return {
     id: String(row.id),
@@ -222,6 +259,6 @@ function rowToRecord(row: Record<string, unknown>): AgentTokenRecord {
     createdAt: String(row.created_at),
     expiresAt: row.expires_at ? String(row.expires_at) : null,
     lastUsedAt: row.last_used_at ? String(row.last_used_at) : null,
-    revoked: Boolean(row.revoked),
+    revoked: Boolean(row.revoked)
   }
 }

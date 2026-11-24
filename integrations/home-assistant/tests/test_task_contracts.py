@@ -38,7 +38,7 @@ from custom_components.meitheal.api import (
     MeithealConnectionError,
     MeithealResponseError,
 )
-from custom_components.meitheal.const import CONF_API_TOKEN, DOMAIN
+from custom_components.meitheal.const import CONF_API_TOKEN, CONF_BOARD_ID, DOMAIN
 from custom_components.meitheal.coordinator import (
     MeithealCoordinator,
     MeithealCoordinatorData,
@@ -57,12 +57,16 @@ STATS = {"stats": {"currentStreak": 4, "totalPoints": 60, "todayCompleted": 2}}
 
 
 def task(id, **fields):
-    return {"id": id, "title": id, "status": "pending", **fields}
+    return {"id": id, "title": id, "status": "pending", "board_id": "work", **fields}
 
 
 @pytest.fixture
 def coordinator(hass):
-    return MeithealCoordinator(hass, SimpleNamespace(async_request=AsyncMock(), origin="https://tasks.example.test"))
+    coordinator = MeithealCoordinator(hass, SimpleNamespace(async_request=AsyncMock(), origin="https://tasks.example.test", board_id="work", cache_key="work-credential-fixture", configured=True))
+    coordinator._async_board_metadata = AsyncMock(return_value={"sharedEntityDelivery": True})
+    coordinator._shared_entity_delivery = True
+    coordinator.async_data_for_context = AsyncMock(side_effect=lambda: coordinator.data if coordinator.data is not None else MeithealCoordinatorData([]))
+    return coordinator
 
 
 async def test_all_pages_and_native_metadata(coordinator):
@@ -287,19 +291,21 @@ def test_runtime_schemas_metadata_and_auth_translations_agree():
     assert "api_token" in strings["config"]["step"]["reauth_confirm"]["data"]
 
 
-async def test_real_intent_dispatch_never_deletes_an_ambiguous_title(coordinator, hass, hass_owner_user):
+async def test_real_intent_dispatch_never_deletes_an_ambiguous_title(coordinator, hass, hass_owner_user, native_human_transport):
     from custom_components.meitheal import intents
     from homeassistant.core import Context
     from homeassistant.helpers import intent
 
     coordinator.data = MeithealCoordinatorData([MeithealTask(task("a", title="Milk")), MeithealTask(task("b", title="Milk"))])
+    coordinator.api = native_human_transport.api
+    coordinator._cache_key = coordinator.api.cache_key
     intents.async_register_intents(hass)
     with patch.object(intents, "_get_coordinator", return_value=coordinator):
         result = await intent.async_handle(hass, "conversation", intents.INTENT_DELETE_TASK,
             {"item": {"value": "milk"}}, context=Context(user_id=hass_owner_user.id))
     assert "Multiple" in result.speech["plain"]["speech"]
     assert "Deleted" not in result.speech["plain"]["speech"]
-    coordinator.api.async_request.assert_not_awaited()
+    assert native_human_transport.supervisor.ingress.create_session.await_count == 1
 
 
 @pytest.mark.parametrize("labels", ["{", "{}", '["Home", {}, 27]', None])
@@ -594,7 +600,8 @@ async def test_setup_service_errors_and_optional_bootstrap_warnings(hass):
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="Meitheal",
-        data={CONF_HOST: "tasks.example.test", CONF_PORT: 443, CONF_SSL: True, CONF_API_TOKEN: "mth_" + "a" * 64},
+        version=2,
+        data={CONF_HOST: "tasks.example.test", CONF_PORT: 443, CONF_SSL: True, CONF_API_TOKEN: "mth_" + "a" * 64, CONF_BOARD_ID: "work"},
     )
     entry.add_to_hass(hass)
 
@@ -621,3 +628,104 @@ async def test_setup_service_errors_and_optional_bootstrap_warnings(hass):
         await hass.services.async_call(DOMAIN, "sync_todo", {}, blocking=True)
     with pytest.raises(HomeAssistantError):
         await hass.services.async_call(DOMAIN, "complete_task_by_tag", {"tag_id": "tag-1"}, blocking=True)
+
+
+async def test_events_shopping_overdue_clock_and_routines_contracts(coordinator, monkeypatch):
+    """Verify event schedules, 8-category shopping fields, local overdue comparison, and routine API calls."""
+    now = datetime(2026, 6, 15, 23, 30, tzinfo=ZoneInfo("America/New_York"))
+    monkeypatch.setattr(dt_util, "now", lambda: now)
+
+    due_today = MeithealTask(task("today-date", due_date="2026-06-15"))
+    overdue_yesterday = MeithealTask(task("yesterday-date", due_date="2026-06-14"))
+    event_today = MeithealTask(
+        task(
+            "evt-today",
+            task_kind="calendar_event",
+            start_date="2026-06-16T03:45:00Z",
+            end_date="2026-06-16T04:00:00Z",
+        )
+    )
+    event_past = MeithealTask(
+        task(
+            "evt-past",
+            task_kind="calendar_event",
+            start_date="2026-06-15T18:00:00-04:00",
+        )
+    )
+    shop = MeithealTask(
+        task(
+            "shop-1",
+            task_kind="shopping_item",
+            checklists='[{"text":"Broccoli","done":false}]',
+            custom_fields='{"items":[{"name":"Broccoli","qty":"1 head","category":"produce"}],"grocy_id":9}',
+        )
+    )
+
+    assert due_today.is_due_on(now) is True
+    assert due_today.is_overdue is False
+    assert overdue_yesterday.is_overdue is True
+    assert event_today.effective_scheduled_date == "2026-06-16T03:45:00Z"
+    assert event_today.is_due_on(now) is True
+    assert event_today.is_overdue is False
+    assert event_past.is_overdue is True
+    assert shop.checklists == [{"text": "Broccoli", "done": False}]
+    assert shop.custom_fields["grocy_id"] == 9
+    assert shop.custom_fields["items"][0]["category"] == "produce"
+
+    coordinator.async_request_refresh = AsyncMock()
+    coordinator.api.async_request.return_value = {
+        "habits": [{"id": "hab-1", "name": "Stretch", "cadence": "daily"}]
+    }
+    routines = await coordinator.async_list_routines(area_id="default", project_id="proj-1")
+    assert routines == [{"id": "hab-1", "name": "Stretch", "cadence": "daily"}]
+    coordinator.api.async_request.assert_awaited_with(
+        "GET", "/api/habits", params={"area_id": "default", "project_id": "proj-1"}, read_json=True
+    )
+
+    coordinator.api.async_request.return_value = {
+        "taskId": "occ-42", "completed": True, "alreadyExisted": False, "newlyCompleted": True
+    }
+    completion = await coordinator.async_complete_routine("hab-1")
+    assert completion["taskId"] == "occ-42"
+    assert completion["completed"] is True
+    coordinator.async_request_refresh.assert_awaited_once()
+
+
+def test_multiday_calendar_event_coverage_overdue_and_closed_statuses(monkeypatch):
+    """Ongoing multi-day events stay due without becoming overdue and closed statuses stay inactive."""
+    now = datetime(2026, 11, 23, 14, 0, tzinfo=ZoneInfo("Europe/Dublin"))
+    monkeypatch.setattr(dt_util, "now", lambda: now)
+
+    ongoing = MeithealTask(
+        task(
+            "ev-ongoing",
+            task_kind="calendar_event",
+            start_date="2026-11-22",
+            end_date="2026-11-25",
+        )
+    )
+    assert ongoing.is_due_on(now) is True
+    assert ongoing.is_overdue is False
+
+    synced_ended = MeithealTask(
+        task(
+            "ev-synced-ended",
+            task_kind="calendar_event",
+            calendar_sync_state="synced",
+            start_date="2026-11-21",
+            end_date="2026-11-23",
+        )
+    )
+    assert synced_ended.is_due_on(now) is False
+    assert synced_ended.is_overdue is True
+
+    summary = MeithealCoordinatorData(
+        [
+            ongoing,
+            MeithealTask(task("t-archived", status="archived", due_date="2026-11-23")),
+            MeithealTask(task("t-cancelled", status="cancelled", due_date="2026-11-20")),
+        ]
+    )
+    assert summary.active_count == 1
+    assert summary.overdue_count == 0
+    assert [t.id for t in summary.due_today_tasks] == ["ev-ongoing"]

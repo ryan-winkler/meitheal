@@ -1,3 +1,4 @@
+import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { expect, test } from "@playwright/test"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
@@ -6,7 +7,8 @@ test.use({ serviceWorkers: "block" })
 
 for (const action of ["review", "complete-q4", "triage"] as const) {
   test(`repeated page loads keep one ${action} task mutation`, async ({ page, request, baseURL }) => {
-    const created = await request.post("/api/tasks", { data: {
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+    const created = await request.post("/api/tasks", { headers, data: {
       title: `Eisenhower lifecycle ${action}`,
       urgency: action === "triage" ? 0 : 1, importance: action === "triage" ? 0 : 1,
     } })
@@ -60,14 +62,15 @@ for (const action of ["review", "complete-q4", "triage"] as const) {
       await expect.poll(async () => (await (await request.get(taskPath)).json()).status).toBe("complete")
       expect(statusWrites).toEqual(["complete"])
     } finally {
-      const removed = await request.delete(taskPath, { headers: { origin: new URL(baseURL!).origin }, data: {} })
+      const removed = await request.delete(taskPath, { headers, data: {} })
       expect(removed.status()).toBe(204)
     }
   })
 }
 
 test("aborted page ownership retires actions and review listeners before the next setup", async ({ page, request, baseURL }) => {
-  const created = await request.post("/api/tasks", { data: {
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+  const created = await request.post("/api/tasks", { headers, data: {
     title: "Eisenhower lifecycle navigation", urgency: 1, importance: 1,
   } })
   expect(created.status(), await created.text()).toBe(201)
@@ -101,7 +104,7 @@ test("aborted page ownership retires actions and review listeners before the nex
     await expect(page.locator(`.tli[data-id="${task.id}"]`)).toHaveCount(0)
     expect(statusWrites).toEqual(["complete"])
   } finally {
-    const removed = await request.delete(taskPath, { headers: { origin: new URL(baseURL!).origin }, data: {} })
+    const removed = await request.delete(taskPath, { headers, data: {} })
     expect(removed.status()).toBe(204)
   }
 })
@@ -111,7 +114,8 @@ for (const [action, otherAction, status] of [
   ["defer-q4", "complete-q4", "backlog"],
 ] as const) {
   test(`Q4 ${status} keeps unconfirmed tasks visible and retries only those tasks`, async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+    const initialStatus = status === "backlog" ? "active" : "pending"
     const ids: string[] = []
     const writes: Array<{ id: string; status: string }> = []
     let reject = true
@@ -119,7 +123,7 @@ for (const [action, otherAction, status] of [
     try {
       for (const result of ["accepted", "rejected"]) {
         const response = await request.post("/api/tasks", { headers, data: {
-          title: `Q4 ${status} ${result}`, urgency: 1, importance: 1,
+          title: `Q4 ${status} ${result}`, urgency: 1, importance: 1, status: initialStatus,
         } })
         expect(response.status(), await response.text()).toBe(201)
         ids.push((await response.json()).id)
@@ -133,6 +137,7 @@ for (const [action, otherAction, status] of [
         if (reject && id === rejected) return route.fulfill({ status: 503, json: { error: "Write rejected" } })
         return route.continue()
       })
+      if (status === "backlog") await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
       await page.goto("/eisenhower")
       await expect(page.locator("[data-quadrant-tabs-ready]")).toBeAttached()
       const quadrant = page.locator('[data-quadrant="not-now"]')
@@ -146,12 +151,15 @@ for (const [action, otherAction, status] of [
           await expect(row).toHaveCount(0)
         } else {
           await expect(row).toHaveAttribute("data-status", "backlog")
+          await expect(row).not.toHaveAttribute("data-work-active", "")
+          await expect(row).not.toHaveCSS("background-color", "rgb(89, 53, 65)")
           await expect(row.locator(".status-badge")).toHaveAttribute("data-badge-status", "backlog")
           await expect(row.locator(".status-badge")).toHaveText("Backlog")
         }
       }
       await expect(acceptedRow).toBeVisible()
       await expect(rejectedRow).toBeVisible()
+      if (status === "backlog") await expect(acceptedRow).toHaveCSS("background-color", "rgb(89, 53, 65)")
       await button.focus()
       await page.keyboard.press("Enter")
       await expect.poll(() => Boolean(release)).toBe(true)
@@ -162,14 +170,14 @@ for (const [action, otherAction, status] of [
       release?.()
 
       await expectChanged(acceptedRow)
-      await expect(rejectedRow).toHaveAttribute("data-status", "pending")
+      await expect(rejectedRow).toHaveAttribute("data-status", initialStatus)
       const mixedCount = status === "complete" ? "1" : "2"
       await expect(quadrant.locator(".quadrant__count")).toHaveText(mixedCount)
       await expect(tabCount).toHaveText(mixedCount)
       await expect(page.getByText("Saved changes for 1 of 2 tasks. Check the remaining tasks before retrying.")).toBeVisible()
       await expect(button).toBeFocused()
       expect(await (await request.get(`/api/tasks/${accepted}`)).json()).toMatchObject({ status })
-      expect(await (await request.get(`/api/tasks/${rejected}`)).json()).toMatchObject({ status: "pending" })
+      expect(await (await request.get(`/api/tasks/${rejected}`)).json()).toMatchObject({ status: initialStatus })
       expect(writes.map(write => write.id).sort()).toEqual([...ids].sort())
       expect(writes.every(write => write.status === status)).toBe(true)
 
@@ -200,10 +208,18 @@ for (const [action, quadrantName, urgency, importance, field, value] of [
   ["assign-q3", "delegate", 5, 1, "assigned_to", "Eisenhower fixture assignee"],
 ] as const) {
   test(`${action} distinguishes a failed batch from a mixed result`, async ({ page, request, baseURL }) => {
-    const headers = { origin: new URL(baseURL!).origin }
+    test.skip(action === "assign-q3" && process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable custom assignee")
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
     const ids: string[] = []
     let rejectAll = true
+    let assigneeId: string | undefined
     try {
+      if (action === "assign-q3") {
+        const response = await request.post("/api/users/custom", { data: { name: value } })
+        expect(response.status(), await response.text()).toBe(201)
+        assigneeId = (await response.json()).id
+        expect(assigneeId).toMatch(/^custom_/)
+      }
       for (const result of ["accepted", "rejected"]) {
         const response = await request.post("/api/tasks", { headers, data: {
           title: `${action} ${result}`, urgency, importance,
@@ -239,12 +255,16 @@ for (const [action, quadrantName, urgency, importance, field, value] of [
       await expect(page.getByText("Saved changes for 1 of 2 tasks. Check the remaining tasks before retrying.")).toBeVisible()
       await expect(quadrant.locator(`.tli[data-id="${accepted}"]`)).toBeVisible()
       await expect(quadrant.locator(`.tli[data-id="${rejected}"]`)).toBeVisible()
-      expect(await (await request.get(`/api/tasks/${accepted}`)).json()).toMatchObject({ [field]: value })
+      expect(await (await request.get(`/api/tasks/${accepted}`)).json()).toMatchObject({ [field]: assigneeId ?? value })
       expect(await (await request.get(`/api/tasks/${rejected}`)).json()).toMatchObject({ [field]: null })
     } finally {
       for (const id of ids) {
         const removed = await request.delete(`/api/tasks/${id}`, { headers, data: {} })
         expect(removed.status()).toBe(204)
+      }
+      if (assigneeId) {
+        const removed = await request.delete("/api/users/custom", { headers, params: { id: assigneeId }, data: {} })
+        expect(removed.status(), await removed.text()).toBe(200)
       }
     }
   })

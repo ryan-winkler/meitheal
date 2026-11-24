@@ -17,3 +17,5 @@ The Irish calendar abbreviations use the Gregorian calendar data for Irish in Un
 The earlier compatibility API and alternate runtime are separately maintained in the private historical source under their existing terms. This release contains neither implementation. Earlier license grants continue to apply to copies already received under those grants.
 
 Selected outline glyphs in apps/web/src/components/ui/Icon.astro are from Tabler Icons (MIT), copyright (c) 2020-2026 Paweł Kuna. The pinned source and full license are retained in apps/web/public/licenses/tabler-icons.txt.
+
+Setup and Dashboard customization use selected styles and the modal from Tabler Core 1.7.5 (MIT). The source and license are retained in apps/web/public/licenses/tabler-core.txt. The WYSIWYG editor uses HugeRTE (MIT) staged from @tabler/core with its license preserved in apps/web/public/vendor/hugerte/license.txt.

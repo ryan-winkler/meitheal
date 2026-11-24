@@ -1,64 +1,88 @@
 ---
+import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
+import { boardWorkspaceHref } from "@lib/board-workspace"
 import Layout from "../layouts/Layout.astro"
+import Icon from "../components/ui/Icon.astro"
+import TaskLifecycleNav from "../components/tasks/TaskLifecycleNav.astro"
 import { t } from "../i18n/translations"
+import "../styles/work-queue.css"
 
 const locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
 const text = (key: string) => t(`inactivity.${key}`, locale)
+const scoped = await resolveBoardPageScope(Astro)
+if (!scoped.ok) return boardScopeResponse(scoped.errorCode)
+const area = Astro.url.searchParams.get("area") ?? ""
+const boardHref = boardWorkspaceHref(scoped.scope.boardId, area ? { area } : {})
 ---
 
-<Layout title={text("title")} hideSearchHub hideGlobalSearch privatePageShell suppressTaskUrlOpen>
-  <section data-inactivity-page data-locale={locale} data-timezone={Astro.locals.timezone} aria-labelledby="inactivity-heading">
-    <header>
-      <a href="/tasks" data-inactivity-back data-astro-prefetch="false">{text("back")}</a>
-      <h1 id="inactivity-heading">{text("title")}</h1>
+<Layout title={text("title")} hideSearchHub hideGlobalSearch suppressTaskUrlOpen>
+  <section class="work-queue" data-inactivity-page data-locale={locale} data-timezone={Astro.locals.timezone} aria-labelledby="inactivity-heading">
+    <TaskLifecycleNav active="inactivity" {boardHref} boardId={scoped.scope.boardId} {area} {locale} />
+    <header class="work-queue-header">
+      <h1 id="inactivity-heading"><Icon name="alert-triangle" size={24} />{text("title")}</h1>
       <p>{text("description")}</p>
     </header>
-    <p data-inactivity-status role="status" aria-atomic="true">{text("loading")}</p>
-    <button type="button" class="btn btn-outline" data-inactivity-retry hidden>{text("retry")}</button>
+    <div class="work-queue-controls">
+      <p data-inactivity-status role="status" aria-atomic="true">{text("loading")}</p>
+      <button type="button" class="btn btn-outline btn-sm" data-inactivity-retry hidden>
+        <Icon name="refresh" size={16} sprite /> {text("retry")}
+      </button>
+    </div>
+    <div class="work-queue-skeleton" data-inactivity-skeleton aria-hidden="true">
+      <div class="work-queue-skeleton__line w-1/3"></div>
+      <div class="work-queue-skeleton__card"></div>
+      <div class="work-queue-skeleton__card"></div>
+    </div>
     <div data-inactivity-content hidden>
-      <div class="inactivity-controls">
-        <label>
-          {text("area")}
-          <select data-inactivity-area><option value="">{text("all_areas")}</option></select>
-        </label>
-        <label>
-          {text("show")}
-          <select data-inactivity-filter>
-            <option value="all">{text("all")}</option>
-            <option value="ready">{text("ready")}</option>
-            <option value="upcoming">{text("upcoming")}</option>
-            <option value="stalled">{text("stalled")}</option>
-          </select>
-        </label>
-      </div>
-      <p data-inactivity-policy></p>
-      <p data-inactivity-readonly hidden>{text("admin")}</p>
-      <form data-inactivity-edit hidden>
-        <div class="inactivity-controls">
+      <div class="work-queue-panel">
+        <div class="work-queue-controls">
           <label>
-            {text("rule")}
-            <select name="mode" data-inactivity-mode>
+            <span class="form-label">{text("area")}</span>
+            <select class="form-select" data-inactivity-area><option value="">{text("all_areas")}</option></select>
+          </label>
+          <label>
+            <span class="form-label">{text("show")}</span>
+            <select class="form-select" data-inactivity-filter>
+              <option value="all">{text("all")}</option>
+              <option value="ready">{text("ready")}</option>
+              <option value="upcoming">{text("upcoming")}</option>
+              <option value="stalled">{text("stalled")}</option>
+            </select>
+          </label>
+        </div>
+        <p class="work-queue-subtle" data-inactivity-policy></p>
+        <p class="work-queue-subtle" data-inactivity-readonly hidden>{text("admin")}</p>
+      </div>
+      <form class="work-queue-panel" data-inactivity-edit hidden>
+        <div class="work-queue-controls">
+          <label>
+            <span class="form-label">{text("rule")}</span>
+            <select class="form-select" name="mode" data-inactivity-mode>
               <option value="inherit">{text("inherit")}</option>
               <option value="off">{text("off")}</option>
               <option value="interval">{text("custom")}</option>
             </select>
           </label>
           <label data-inactivity-interval hidden>
-            {text("days")}
-            <input name="days" type="number" min="1" max="365" step="1" value="30" disabled required />
+            <span class="form-label">{text("days")}</span>
+            <input class="form-input" name="days" type="number" min="1" max="365" step="1" value="30" disabled required />
           </label>
         </div>
-        <p>{text("notice")}</p>
-        <div class="inactivity-controls">
-          <button type="submit" class="btn btn-outline" data-inactivity-preview>{text("preview")}</button>
-          <button type="button" class="btn btn-primary" data-inactivity-save disabled>{text("save")}</button>
+        <p class="work-queue-subtle">{text("notice")}</p>
+        <div class="work-queue-controls">
+          <button type="submit" class="btn btn-outline" data-inactivity-preview>
+            <Icon name="search" size={18} /> {text("preview")}
+          </button>
+          <button type="button" class="btn btn-primary" data-inactivity-save disabled>
+            <Icon name="check" size={18} /> {text("save")}
+          </button>
         </div>
       </form>
-      <section class="inactivity-results" aria-labelledby="inactivity-review">
+      <section class="inactivity-results" aria-labelledby="inactivity-review" data-inactivity-results>
         <h2 id="inactivity-review" tabindex="-1">{text("review")}</h2>
-        <p data-inactivity-empty hidden></p>
-        <ul data-inactivity-rows class="inactivity-rows"></ul>
-        <nav class="inactivity-controls" aria-label={t("deferral.pagination", locale)} data-inactivity-pages hidden>
+        <p class="work-queue-empty" data-inactivity-empty hidden></p>
+        <ul data-inactivity-rows class="work-queue-list"></ul>
+        <nav class="work-queue-controls" aria-label={t("deferral.pagination", locale)} data-inactivity-pages hidden>
           <span data-inactivity-range></span>
           <button type="button" class="btn btn-outline" data-inactivity-previous>{t("triage.previous", locale)}</button>
           <button type="button" class="btn btn-outline" data-inactivity-next>{t("triage.next", locale)}</button>
@@ -73,23 +97,7 @@ const text = (key: string) => t(`inactivity.${key}`, locale)
 </script>
 
 <style>
-  [data-inactivity-page] {
-    max-width: 66rem;
-    margin-inline: auto;
-    padding: clamp(1rem, 3vw, 2.5rem);
-  }
-  header { margin-bottom: 1.5rem; }
-  header h1 { margin-block: .5rem; }
-  .inactivity-controls { display: flex; flex-wrap: wrap; gap: .75rem; align-items: end; }
-  label { display: grid; gap: .35rem; min-inline-size: 0; }
-  select, input { max-inline-size: 100%; min-block-size: 2.75rem; }
-  .inactivity-controls > label { max-inline-size: 100%; }
-  input { inline-size: 8rem; }
-  form { margin-block: 1rem; padding: 1rem; border: 1px solid var(--border); border-radius: var(--radius-md); }
+  input { inline-size: 9rem; }
   .inactivity-results { margin-block: 1.25rem; }
-  .inactivity-rows { display: grid; gap: .75rem; list-style: none; padding: 0; }
-  .inactivity-rows :global(li) { padding-block: .75rem; border-bottom: 1px solid var(--border); }
-  .inactivity-rows :global(h3) { overflow-wrap: anywhere; margin-block: 0 .3rem; }
-  .inactivity-rows :global(p) { color: var(--text-secondary); margin-block: 0 .65rem; }
-  [hidden] { display: none; }
+  .inactivity-results h2 { margin-block: 0 .75rem; font-size: 1.125rem; }
 </style>

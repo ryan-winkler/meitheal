@@ -13,13 +13,13 @@
 import { expect, test } from "@playwright/test"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
-const helperSelector = "[data-helper-id='spaces-explainer']"
+const helperSelector = "[data-helper-id='pillars-explainer']"
 
 test.describe("Helper System", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
 
   test.beforeEach(async ({ page }) => {
-    await page.goto("/planning#spaces")
+    await page.goto("/progress#pillars")
   })
 
   test("helper renders with collapse toggle and dismiss button", async ({ page }) => {
@@ -118,6 +118,6 @@ test.describe("Helper System", () => {
   test("helper has correct role and aria-label", async ({ page }) => {
     const helper = page.locator(helperSelector)
     await expect(helper).toHaveAttribute("role", "note")
-    await expect(helper).toHaveAttribute("aria-label", "Areas & Projects")
+    await expect(helper).toHaveAttribute("aria-label", "What are Pillars?")
   })
 })

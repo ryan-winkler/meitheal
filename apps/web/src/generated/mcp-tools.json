@@ -34,6 +34,18 @@
             "type": "string",
             "description": "project_id parameter"
           },
+          "task_kind": {
+            "type": "string",
+            "enum": [
+              "standard_action",
+              "shopping_item",
+              "checklist",
+              "routine_instance",
+              "calendar_event",
+              "quick_capture"
+            ],
+            "description": "Filter tasks by behavioral kind."
+          },
           "assigned_to": {
             "type": "string",
             "description": "assigned_to parameter"
@@ -45,11 +57,32 @@
           "due_date": {
             "type": "string",
             "format": "date",
-            "description": "Match the household calendar day (date-only, floating datetime, or zoned ISO timestamp in the configured household timezone). Invalid dates return 400."
+            "description": "Match the household calendar day (YYYY-MM-DD in the configured household timezone). Invalid dates return 400."
+          },
+          "task_type": {
+            "type": "string",
+            "enum": [
+              "epic",
+              "story",
+              "task"
+            ],
+            "description": "Filter by work item type"
           },
           "parent_id": {
             "type": "string",
             "description": "Get subtasks of a parent"
+          },
+          "q": {
+            "type": "string",
+            "description": "Substring search across title and description"
+          },
+          "label": {
+            "type": "string",
+            "description": "Filter by attached label name"
+          },
+          "home_assistant_area_id": {
+            "type": "string",
+            "description": "Filter by permitted Home Assistant Area ID"
           },
           "sort": {
             "type": "string",
@@ -60,7 +93,8 @@
               "status",
               "priority",
               "due_date",
-              "kanban_position"
+              "kanban_position",
+              "table_position"
             ],
             "description": "Equal values use task ID ascending; null values sort last."
           },
@@ -70,8 +104,7 @@
               "asc",
               "desc"
             ],
-            "default": "desc",
-            "description": "order parameter"
+            "description": "Sort direction. Defaults to asc for priority, due_date, title, status, kanban_position, and table_position; desc for created_at and updated_at."
           },
           "limit": {
             "type": "integer",
@@ -90,15 +123,32 @@
     },
     {
       "name": "getTodayTaskCounts",
-      "description": "Returns counts over the full task database using the Today page rules. No task rows are returned.",
+      "description": "Returns counts over the full task database using the Today page rules. The optional completed=1 parameter also returns up to 20 completed task summaries for the household day.",
       "inputSchema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "completed": {
+            "type": "string",
+            "enum": [
+              "1"
+            ],
+            "description": "completed parameter"
+          },
+          "expected_day": {
+            "type": "string",
+            "format": "date",
+            "description": "Household day shown by the caller. A rollover returns 409."
+          },
+          "expected_timezone": {
+            "type": "string",
+            "description": "Household timezone shown by the caller. A timezone change returns 409."
+          }
+        }
       }
     },
     {
       "name": "createTask",
-      "description": "Create a task with optional calendar sync, assignment, and framework payload. Authenticated callers can retry an identical request with the Idempotency-Key header. Use this when a user or agent wants to capture a new action item.",
+      "description": "Compatibility capture envelope over the canonical scoped task command. Calendar timestamps create an Event task; outbound calendar work follows approved Board source bindings. The events array contains no synchronous integration receipts. Retry an identical request with Idempotency-Key; successful replays retain HTTP 201 and idempotency-key-status: cached.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -110,11 +160,225 @@
             "type": "string",
             "maxLength": 10000
           },
+          "status": {
+            "type": "string",
+            "description": "Initial status (e.g. backlog, pending, active, complete)"
+          },
+          "priority": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 5,
+            "description": "Priority 1-5 (1=urgent, 3=normal, 5=lowest); rounded and clamped to 1..5."
+          },
+          "due_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Due date (YYYY-MM-DD or ISO timestamp)"
+          },
+          "start_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Start date or ISO timestamp"
+          },
+          "end_date": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "End date or ISO timestamp"
+          },
+          "progress": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "color": {
+            "type": "string",
+            "nullable": true
+          },
+          "task_type": {
+            "type": "string",
+            "enum": [
+              "epic",
+              "story",
+              "task"
+            ]
+          },
+          "task_kind": {
+            "type": "string",
+            "enum": [
+              "standard_action",
+              "shopping_item",
+              "checklist",
+              "calendar_event",
+              "quick_capture"
+            ],
+            "description": "Behavioral kind — determines UI rendering and lifecycle rules"
+          },
+          "parent_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "area_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "project_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "recurrence_rule": {
+            "type": "string",
+            "nullable": true
+          },
+          "urgency": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "importance": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "effort_minutes": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 480
+          },
+          "effort_type": {
+            "type": "string",
+            "enum": [
+              "deep",
+              "shallow",
+              "admin"
+            ],
+            "nullable": true
+          },
+          "blocked_by": {
+            "type": "string",
+            "nullable": true
+          },
+          "is_promoted": {
+            "type": "boolean",
+            "description": "Pin the new task to the top of its Kanban lane with a promoted ribbon sash."
+          },
           "assigned_to": {
             "type": "string",
             "maxLength": 255,
             "nullable": true,
             "description": "Must start with 'ha_' or 'custom_'"
+          },
+          "labels": {
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              {
+                "type": "string",
+                "description": "JSON-encoded array of label names"
+              }
+            ],
+            "description": "Label names, as an array or as a JSON-encoded array."
+          },
+          "checklists": {
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "text"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "done": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              {
+                "type": "string",
+                "description": "JSON-encoded checklist array"
+              }
+            ]
+          },
+          "custom_fields": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "name"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "Item name"
+                        },
+                        "qty": {
+                          "oneOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number",
+                              "exclusiveMinimum": 0
+                            }
+                          ],
+                          "description": "Optional quantity label (e.g. '2L', '1 bunch') or positive number"
+                        },
+                        "category": {
+                          "type": "string",
+                          "enum": [
+                            "produce",
+                            "dairy",
+                            "meat",
+                            "pantry",
+                            "frozen",
+                            "beverages",
+                            "household",
+                            "other"
+                          ],
+                          "description": "Aisle category"
+                        },
+                        "checked": {
+                          "type": "boolean",
+                          "description": "Whether the item has been picked up"
+                        }
+                      }
+                    },
+                    "description": "Structured shopping items (with optional qty, category, checked) for shopping_item tasks"
+                  }
+                }
+              },
+              {
+                "type": "string",
+                "description": "JSON-encoded custom fields object"
+              }
+            ]
           },
           "frameworkPayload": {
             "type": "object"
@@ -123,7 +387,9 @@
             "type": "object",
             "properties": {
               "entityId": {
-                "type": "string"
+                "type": "string",
+                "deprecated": true,
+                "description": "Does not retarget a provider. Configure an approved Board integration source."
               },
               "startDateTime": {
                 "type": "string",
@@ -134,10 +400,14 @@
                 "format": "date-time"
               },
               "durationMinutes": {
-                "type": "integer"
+                "type": "integer",
+                "deprecated": true,
+                "description": "Use an explicit endDateTime for Event task dates."
               },
               "timezone": {
-                "type": "string"
+                "type": "string",
+                "deprecated": true,
+                "description": "Provide offsets in the Event timestamps; the approved integration owns its timezone."
               }
             },
             "additionalProperties": false
@@ -150,7 +420,7 @@
     },
     {
       "name": "completeTaskByNfcTag",
-      "description": "Complete the uniquely assigned incomplete task for an NFC tag",
+      "description": "Uses the selected Board's current completion permission. A caller without Task read permission receives only {ok:true}, including retries, without the Task identity or state. Readable callers retain the detailed completion or already-complete response.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -261,7 +531,30 @@
             "type": "boolean",
             "description": "Show the task above regular cards in its Kanban lane."
           },
+          "task_kind": {
+            "type": "string",
+            "enum": [
+              "standard_action",
+              "shopping_item",
+              "checklist",
+              "routine_instance",
+              "calendar_event",
+              "quick_capture"
+            ]
+          },
           "due_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "start_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "end_date": {
             "type": [
               "string",
               "null"
@@ -286,7 +579,175 @@
             ]
           },
           "area_id": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "goal_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "task_type": {
+            "type": "string",
+            "enum": [
+              "epic",
+              "story",
+              "task"
+            ]
+          },
+          "framework_payload": {
+            "type": "string",
+            "description": "JSON-encoded object string"
+          },
+          "custom_fields": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "name"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "Item name"
+                        },
+                        "qty": {
+                          "oneOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number",
+                              "exclusiveMinimum": 0
+                            }
+                          ],
+                          "description": "Optional quantity label (e.g. '2L', '1 bunch') or positive number"
+                        },
+                        "category": {
+                          "type": "string",
+                          "enum": [
+                            "produce",
+                            "dairy",
+                            "meat",
+                            "pantry",
+                            "frozen",
+                            "beverages",
+                            "household",
+                            "other"
+                          ],
+                          "description": "Aisle category"
+                        },
+                        "checked": {
+                          "type": "boolean",
+                          "description": "Whether the item has been picked up"
+                        }
+                      }
+                    },
+                    "description": "Structured shopping items for shopping_item tasks"
+                  }
+                }
+              },
+              {
+                "type": "string",
+                "description": "JSON-encoded custom fields object"
+              }
+            ]
+          },
+          "progress": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "time_tracked": {
+            "type": "number",
+            "minimum": 0
+          },
+          "nfc_tag_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recurrence_rule": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recurrence_anchor": {
+            "type": "string",
+            "enum": [
+              "due_date",
+              "completion_date"
+            ]
+          },
+          "time_block_start": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "time_block_end": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "urgency": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "importance": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "eisenhower_override": {
+            "type": "boolean"
+          },
+          "effort_minutes": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 1,
+            "maximum": 480
+          },
+          "effort_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "deep",
+              "shallow",
+              "admin",
+              null
+            ]
+          },
+          "blocked_by": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "labels": {
             "oneOf": [
@@ -353,10 +814,20 @@
     },
     {
       "name": "clearCompletedTasks",
-      "description": "Moves all tasks with status 'complete' to 'archived'. Use this in daily/weekly cleanup automations.",
+      "description": "Moves every eligible Complete task to the archived status, including tasks outside the Today preview. Returns the number changed.",
       "inputSchema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "expected_day": {
+            "type": "string",
+            "format": "date",
+            "description": "Household day the caller reviewed. A rollover returns 409 without changing any tasks."
+          },
+          "expected_timezone": {
+            "type": "string",
+            "description": "Household timezone the caller reviewed. A timezone change returns 409 without changing any tasks."
+          }
+        }
       }
     },
     {
@@ -421,6 +892,14 @@
             "items": {
               "type": "string"
             }
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "kanban",
+              "table"
+            ],
+            "description": "Rank column to update for ordered_ids (defaults to kanban)"
           },
           "task_id": {
             "type": "string"
@@ -875,7 +1354,7 @@
     },
     {
       "name": "searchTasks",
-      "description": "Search tasks by query text, status, priority, or assignee. Returns a clean list of matching tasks.",
+      "description": "Search tasks by query text, status, priority, task_kind, or assignee. Returns a clean list of matching tasks.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -926,6 +1405,18 @@
             "type": "integer",
             "description": "priority parameter"
           },
+          "task_kind": {
+            "type": "string",
+            "enum": [
+              "standard_action",
+              "shopping_item",
+              "checklist",
+              "routine_instance",
+              "calendar_event",
+              "quick_capture"
+            ],
+            "description": "Filter tasks by behavioral kind."
+          },
           "task_fields": {
             "type": "string",
             "description": "Comma-separated: id,title,description,labels,custom_fields,comments"
@@ -939,7 +1430,7 @@
     },
     {
       "name": "listAreas",
-      "description": "Areas are the top-level organizational containers (WHERE things happen). Every goal and project belongs to an area.",
+      "description": "Areas organize work by responsibility. Goals and projects can be linked to an area.",
       "inputSchema": {
         "type": "object",
         "properties": {}
@@ -1047,10 +1538,36 @@
     },
     {
       "name": "listGoals",
-      "description": "Goals define WHAT you want to achieve. They belong to areas and can have metric tracking (percentage, count, boolean).",
+      "description": "List goals across all Areas, or filter by association. An Area can include shared goals with progress based on Projects the viewer can read.",
       "inputSchema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "area_id": {
+            "type": "string",
+            "description": "Goals linked to this Area directly or through one of its projects."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "The goal linked to this project."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "completed",
+              "archived",
+              "shared"
+            ],
+            "description": "status parameter"
+          },
+          "projection": {
+            "type": "string",
+            "enum": [
+              "household"
+            ],
+            "description": "Select Household Goals for the legacy task editor."
+          }
+        }
       }
     },
     {
@@ -1197,7 +1714,7 @@
           },
           "area_id": {
             "type": "string",
-            "description": "area_id parameter"
+            "description": "Use the project's explicit Area, then its linked goal's Area when no explicit Area is set."
           },
           "status": {
             "type": "string",
@@ -1353,42 +1870,68 @@
     },
     {
       "name": "listPillars",
-      "description": "Pillars are the WHY layer — permanent motivational anchors representing who the user wants to be. Soft limit of 5-6 pillars.",
+      "description": "Returns Household Pillars by default. Personal Pillars are opt-in for the verified current Home Assistant user.",
       "inputSchema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "include_inactive": {
+            "type": "boolean",
+            "description": "include_inactive parameter"
+          },
+          "include_personal": {
+            "type": "boolean",
+            "description": "include_personal parameter"
+          }
+        }
       }
     },
     {
       "name": "createPillar",
-      "description": "Create a pillar",
+      "description": "Create a Pillar",
       "inputSchema": {
         "type": "object",
         "properties": {
-          "id": {
-            "type": "string"
-          },
           "name": {
-            "type": "string"
-          },
-          "identity_statement": {
             "type": "string",
-            "nullable": true
+            "maxLength": 100
+          },
+          "manifesto": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "icon": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ]
           },
-          "color": {
-            "type": "string",
-            "nullable": true
+          "colorHex": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
-          "sort_order": {
-            "type": "integer"
+          "weight": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "household",
+              "personal"
+            ],
+            "default": "household"
+          },
+          "audienceProof": {
+            "type": "string",
+            "description": "Required for Personal creation. Issued to the current Home Assistant user in the Progress form."
           }
         },
         "required": [
-          "id",
           "name"
         ]
       }
@@ -1411,35 +1954,44 @@
     },
     {
       "name": "updatePillar",
-      "description": "Update a pillar",
+      "description": "Its audience and owner are immutable.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "description": "id parameter"
           },
           "name": {
-            "type": "string"
-          },
-          "identity_statement": {
             "type": "string",
-            "nullable": true
+            "maxLength": 100
+          },
+          "manifesto": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "icon": {
-            "type": "string",
-            "nullable": true
+            "type": "string"
           },
-          "color": {
-            "type": "string",
-            "nullable": true
+          "colorHex": {
+            "type": "string"
           },
-          "sort_order": {
-            "type": "integer"
+          "weight": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "position": {
+            "type": "number"
+          },
+          "isActive": {
+            "type": "boolean"
           }
         },
         "required": [
-          "id",
-          "name"
+          "id"
         ]
       }
     },
@@ -1568,34 +2120,110 @@
     },
     {
       "name": "listHabits",
-      "description": "Returns habit templates with current streak data, schedule, and completion history.",
+      "description": "List routine templates and streaks",
       "inputSchema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "area_id": {
+            "type": "string",
+            "description": "List Routines in an existing Area, or use default for unassigned Routines."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Filter Routines by Project ID."
+          }
+        }
       }
     },
     {
       "name": "createHabit",
-      "description": "Create a habit template",
+      "description": "Create with a name and optional area_id or project_id. Send templateId for complete, update, or delete.",
       "inputSchema": {
         "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "updateHabit",
-      "description": "Send { complete: true } to record today's completion. Send other fields to update the template.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "deleteHabit",
-      "description": "Delete a habit",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "create",
+              "complete",
+              "update",
+              "delete"
+            ],
+            "default": "create"
+          },
+          "templateId": {
+            "type": "string"
+          },
+          "habitId": {
+            "type": "string",
+            "description": "Legacy template identifier for complete and delete."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "area_id": {
+            "type": "string",
+            "description": "Area for new work. Use default for unassigned work."
+          },
+          "project_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Project for new work."
+          },
+          "cadence": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "weekly"
+            ]
+          },
+          "frequency": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "weekly"
+            ],
+            "description": "Legacy alias for cadence."
+          },
+          "icon": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 5,
+            "description": "Default priority 1-5 (clamped by server)."
+          },
+          "checklists": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                },
+                "done": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "templateJson": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Template fields to update, including area_id and project_id."
+          }
+        }
       }
     },
     {
@@ -1656,54 +2284,6 @@
         },
         "required": [
           "key"
-        ]
-      }
-    },
-    {
-      "name": "listLanes",
-      "description": "List kanban board lanes",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "createLane",
-      "description": "Create a kanban lane",
-      "inputSchema": {
-        "type": "object",
-        "properties": {}
-      }
-    },
-    {
-      "name": "updateLane",
-      "description": "Update a kanban lane",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "id parameter"
-          }
-        },
-        "required": [
-          "id"
-        ]
-      }
-    },
-    {
-      "name": "deleteLane",
-      "description": "Delete a kanban lane",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "description": "id parameter"
-          }
-        },
-        "required": [
-          "id"
         ]
       }
     },
@@ -1788,7 +2368,7 @@
     },
     {
       "name": "listUsers",
-      "description": "Returns users from Home Assistant integration combined with any custom-defined users.",
+      "description": "Returns Home Assistant and custom users. ha_roster_verified indicates whether the Home Assistant roster is verified and can distinguish an absent user from an unavailable roster.",
       "inputSchema": {
         "type": "object",
         "properties": {}
@@ -1975,6 +2555,295 @@
       }
     },
     {
+      "name": "getWebserverSettings",
+      "description": "Requires an administrator session. Returns normalized webserver configuration (ports single/list/range, internal/external/Home Assistant URLs, bind interface, TLS status with private key redacted), live MCP server endpoint with Home Assistant deep-link, security posture notices, and Home Assistant Supervisor services/network snapshot.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "updateWebserverSettings",
+      "description": "Requires an administrator session. Validates single port, comma list, or port range (max 32 ports), HTTP/HTTPS domains, bind IP, and TLS material. Persists settings and optionally synchronizes Home Assistant Supervisor add-on options.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "serverName": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "internalUrl": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "externalUrl": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "homeAssistantUrl": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "portsSpec": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              }
+            ]
+          },
+          "bindAddress": {
+            "type": "string"
+          },
+          "tlsEnabled": {
+            "type": "boolean"
+          },
+          "sslCertificate": {
+            "type": "string"
+          },
+          "sslPrivateKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "syncHaOptions": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "verifyWebserverSettings",
+      "description": "Requires an administrator session. Runs deterministic port, domain, bind interface, TLS pairing, MCP endpoint, and Home Assistant Supervisor checks without mutating persisted settings.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "listPlugins",
+      "description": "Returns the full plugin catalog, fleetHealth summary, per-plugin EGM health reports, and Safe Mode state for administrators, or enabled runtime bundles (without secrets) when ?runtime=1 is requested by an active browser session.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "runtime": {
+            "type": "string",
+            "enum": [
+              "1"
+            ],
+            "description": "Return active runtime bundles only."
+          }
+        }
+      }
+    },
+    {
+      "name": "managePlugins",
+      "description": "Administrator only. Supports multipart ZIP upload, JSON install_bundle (AI builder), set_safe_mode, and remove_all_uploaded with full size, zip-bomb, Zip Slip, manifest, SVG, and dataSharing validation.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "getPlugin",
+      "description": "Get details for one plugin",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "updatePlugin",
+      "description": "Enable, disable, approve updated permissions, or save plugin configuration",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "uninstallPlugin",
+      "description": "Uninstall an uploaded plugin and delete its storage and secrets",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "readPluginStorage",
+      "description": "Read isolated key-value storage for an active plugin",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          },
+          "key": {
+            "type": "string",
+            "description": "key parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "writePluginStorage",
+      "description": "Write isolated key-value storage for an active plugin (256 KB quota)",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "deletePluginStorage",
+      "description": "Delete one key from a plugin's isolated storage",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          },
+          "key": {
+            "type": "string",
+            "description": "key parameter"
+          }
+        },
+        "required": [
+          "id",
+          "key"
+        ]
+      }
+    },
+    {
+      "name": "listPluginSecrets",
+      "description": "List configured write-only secret keys (values are never returned)",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "setPluginSecret",
+      "description": "Save or rotate a write-only plugin secret",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "deletePluginSecret",
+      "description": "Remove a write-only plugin secret",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          },
+          "key": {
+            "type": "string",
+            "description": "key parameter"
+          }
+        },
+        "required": [
+          "id",
+          "key"
+        ]
+      }
+    },
+    {
+      "name": "proxyPluginHttp",
+      "description": "Enforces allowedHosts, HTTPS policy, DNS/private-IP CIDR blocking, redirect blocking, and server-side {{secret:key}} header substitution.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "name": "runPluginConnector",
+      "description": "Test or idempotently sync an external connector plugin",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id parameter"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
       "name": "getHAConnection",
       "description": "Get HA WebSocket connection status",
       "inputSchema": {
@@ -1987,7 +2856,15 @@
       "description": "List HA calendar entities",
       "inputSchema": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "configured": {
+            "type": "integer",
+            "enum": [
+              1
+            ],
+            "description": "Return only configured calendar entity IDs in the entities array."
+          }
+        }
       }
     },
     {
@@ -2000,7 +2877,7 @@
     },
     {
       "name": "getHAServices",
-      "description": "List HA services",
+      "description": "Returns Home Assistant Core services, Supervisor Services registry entries, and (for administrators) Meitheal webserver add-on options.",
       "inputSchema": {
         "type": "object",
         "properties": {}
@@ -2020,18 +2897,6 @@
       "inputSchema": {
         "type": "object",
         "properties": {}
-      }
-    },
-    {
-      "name": "sendHAAssist",
-      "description": "Send a message to HA Assist",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "text": {
-            "type": "string"
-          }
-        }
       }
     },
     {
@@ -2167,23 +3032,6 @@
         },
         "required": [
           "url"
-        ]
-      }
-    },
-    {
-      "name": "getA2ATask",
-      "description": "Requires a token with a2a:execute, search:read, and tasks:read, plus A2A-Version: 1.0.",
-      "inputSchema": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "maxLength": 128,
-            "description": "Task UUID or ticket key (e.g., MTH-42)"
-          }
-        },
-        "required": [
-          "id"
         ]
       }
     },
@@ -2338,10 +3186,15 @@
         "deferred",
         "area_id",
         "project_id",
+        "task_kind",
         "assigned_to",
         "priority",
         "due_date",
+        "task_type",
         "parent_id",
+        "q",
+        "label",
+        "home_assistant_area_id",
         "sort",
         "order",
         "limit",
@@ -2353,7 +3206,11 @@
       "path": "/api/tasks/today-counts",
       "hasBody": false,
       "pathParams": [],
-      "queryParams": []
+      "queryParams": [
+        "completed",
+        "expected_day",
+        "expected_timezone"
+      ]
     },
     "createTask": {
       "method": "POST",
@@ -2410,7 +3267,10 @@
       "path": "/api/tasks/clear-completed",
       "hasBody": true,
       "pathParams": [],
-      "queryParams": []
+      "queryParams": [
+        "expected_day",
+        "expected_timezone"
+      ]
     },
     "previewDeleteCompletedTasks": {
       "method": "GET",
@@ -2647,6 +3507,7 @@
         "status",
         "assigned_to",
         "priority",
+        "task_kind",
         "task_fields"
       ]
     },
@@ -2696,7 +3557,12 @@
       "path": "/api/goals",
       "hasBody": false,
       "pathParams": [],
-      "queryParams": []
+      "queryParams": [
+        "area_id",
+        "project_id",
+        "status",
+        "projection"
+      ]
     },
     "createGoal": {
       "method": "POST",
@@ -2784,7 +3650,10 @@
       "path": "/api/pillars",
       "hasBody": false,
       "pathParams": [],
-      "queryParams": []
+      "queryParams": [
+        "include_inactive",
+        "include_personal"
+      ]
     },
     "createPillar": {
       "method": "POST",
@@ -2803,7 +3672,7 @@
       "queryParams": []
     },
     "updatePillar": {
-      "method": "PUT",
+      "method": "PATCH",
       "path": "/api/pillars/{id}",
       "hasBody": true,
       "pathParams": [
@@ -2875,26 +3744,15 @@
       "path": "/api/habits",
       "hasBody": false,
       "pathParams": [],
-      "queryParams": []
+      "queryParams": [
+        "area_id",
+        "project_id"
+      ]
     },
     "createHabit": {
       "method": "POST",
       "path": "/api/habits",
       "hasBody": true,
-      "pathParams": [],
-      "queryParams": []
-    },
-    "updateHabit": {
-      "method": "PUT",
-      "path": "/api/habits",
-      "hasBody": true,
-      "pathParams": [],
-      "queryParams": []
-    },
-    "deleteHabit": {
-      "method": "DELETE",
-      "path": "/api/habits",
-      "hasBody": false,
       "pathParams": [],
       "queryParams": []
     },
@@ -2913,38 +3771,6 @@
       "path": "/api/settings",
       "hasBody": true,
       "pathParams": [],
-      "queryParams": []
-    },
-    "listLanes": {
-      "method": "GET",
-      "path": "/api/lanes",
-      "hasBody": false,
-      "pathParams": [],
-      "queryParams": []
-    },
-    "createLane": {
-      "method": "POST",
-      "path": "/api/lanes",
-      "hasBody": true,
-      "pathParams": [],
-      "queryParams": []
-    },
-    "updateLane": {
-      "method": "PUT",
-      "path": "/api/lanes/{id}",
-      "hasBody": true,
-      "pathParams": [
-        "id"
-      ],
-      "queryParams": []
-    },
-    "deleteLane": {
-      "method": "DELETE",
-      "path": "/api/lanes/{id}",
-      "hasBody": false,
-      "pathParams": [
-        "id"
-      ],
       "queryParams": []
     },
     "listSavedFilters": {
@@ -3126,6 +3952,148 @@
       "pathParams": [],
       "queryParams": []
     },
+    "getWebserverSettings": {
+      "method": "GET",
+      "path": "/api/webserver",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "updateWebserverSettings": {
+      "method": "PUT",
+      "path": "/api/webserver",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "verifyWebserverSettings": {
+      "method": "POST",
+      "path": "/api/webserver/verify",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "listPlugins": {
+      "method": "GET",
+      "path": "/api/plugins",
+      "hasBody": false,
+      "pathParams": [],
+      "queryParams": [
+        "runtime"
+      ]
+    },
+    "managePlugins": {
+      "method": "POST",
+      "path": "/api/plugins",
+      "hasBody": true,
+      "pathParams": [],
+      "queryParams": []
+    },
+    "getPlugin": {
+      "method": "GET",
+      "path": "/api/plugins/{id}",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "updatePlugin": {
+      "method": "PATCH",
+      "path": "/api/plugins/{id}",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "uninstallPlugin": {
+      "method": "DELETE",
+      "path": "/api/plugins/{id}",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "readPluginStorage": {
+      "method": "GET",
+      "path": "/api/plugins/{id}/storage",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": [
+        "key"
+      ]
+    },
+    "writePluginStorage": {
+      "method": "PUT",
+      "path": "/api/plugins/{id}/storage",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "deletePluginStorage": {
+      "method": "DELETE",
+      "path": "/api/plugins/{id}/storage",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": [
+        "key"
+      ]
+    },
+    "listPluginSecrets": {
+      "method": "GET",
+      "path": "/api/plugins/{id}/secrets",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "setPluginSecret": {
+      "method": "PUT",
+      "path": "/api/plugins/{id}/secrets",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "deletePluginSecret": {
+      "method": "DELETE",
+      "path": "/api/plugins/{id}/secrets",
+      "hasBody": false,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": [
+        "key"
+      ]
+    },
+    "proxyPluginHttp": {
+      "method": "POST",
+      "path": "/api/plugins/{id}/http",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
+    "runPluginConnector": {
+      "method": "POST",
+      "path": "/api/plugins/{id}/connector",
+      "hasBody": true,
+      "pathParams": [
+        "id"
+      ],
+      "queryParams": []
+    },
     "getHAConnection": {
       "method": "GET",
       "path": "/api/ha/connection",
@@ -3138,7 +4106,9 @@
       "path": "/api/ha/calendars",
       "hasBody": false,
       "pathParams": [],
-      "queryParams": []
+      "queryParams": [
+        "configured"
+      ]
     },
     "getHAEvents": {
       "method": "GET",
@@ -3165,13 +4135,6 @@
       "method": "GET",
       "path": "/api/ha/agents",
       "hasBody": false,
-      "pathParams": [],
-      "queryParams": []
-    },
-    "sendHAAssist": {
-      "method": "POST",
-      "path": "/api/ha/assist",
-      "hasBody": true,
       "pathParams": [],
       "queryParams": []
     },
@@ -3285,15 +4248,6 @@
       "path": "/api/unfurl",
       "hasBody": true,
       "pathParams": [],
-      "queryParams": []
-    },
-    "getA2ATask": {
-      "method": "GET",
-      "path": "/api/a2a/tasks/{id}",
-      "hasBody": false,
-      "pathParams": [
-        "id"
-      ],
       "queryParams": []
     },
     "createAgentToken": {

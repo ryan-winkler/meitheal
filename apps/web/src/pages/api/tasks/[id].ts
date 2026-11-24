@@ -1,26 +1,46 @@
+import { scopePermits, type BoardScope } from "@domains/tasks/board-scope"
+import { taskHttpProjection, taskDetailHttpProjection } from "@lib/task-http-projection"
+import { readCurrentHARole } from "@domains/ha/current-admin"
+import { boardScopeErrorResponse, withBoardScope } from "@lib/board-http"
+import { organizationPlacementAvailable } from "@lib/organization-placement-access"
 import type { APIRoute } from "astro"
 import type { InValue } from "@libsql/client"
-import { VALID_TASK_TYPES } from "@meitheal/domain-tasks"
+import { isValidTaskKind, normalizeShoppingItems, parseScheduleDateInput, validateScheduleWindow, VALID_TASK_KINDS, VALID_TASK_TYPES } from "@meitheal/domain-tasks"
 import type { TaskType } from "@meitheal/domain-tasks"
 import {
+  getEntityPillarId,
+  getPillarById,
+  getPrinciplesForPillar,
+  setEntityPillar,
+} from "@domains/pillars"
+import {
+  BoardOperationError,
+  parseRRule,
   ensureSchema,
   getPersistenceClient,
   hasBoardSelection,
   rejectBoardSelectionInJson,
+  taskActionHints,
+  taskChecklistsJson,
+  taskJsonObject,
   taskLabelsJson,
   TaskRepository,
   unavailableBoardResponse,
   UserRepository,
 } from "@domains/tasks"
+import { frameworkPayloadObject } from "../../../lib/rice-lens"
 import { formatTicketKey } from "../../../lib/ticket-key"
 import { dispatchTaskEvent, taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
 import { logApiError } from "../../../lib/api-logger"
 import { apiError } from "../../../lib/api-response"
+import { sanitizeMarkdownInput } from "../../../lib/sanitize"
 import { checkAssignedTask, isAssignedWriteOnly, restrictedAssigneeId } from "../../../lib/agent-token-guard"
 import { db503Response, isDbUnavailable } from "../../../lib/db-fallback"
 import { resolveRecentActivityActor } from "../../../lib/recent-activity-actor"
 import { STATUS, normalizeStatus, isDoneStatus } from "../../../lib/status-config"
-import { sendTaskNotification } from "@domains/notifications"
+import { stripHtml } from "../../../lib/strip-html"
+import { sendTaskNotification, notificationOperationAllowed } from "@domains/notifications"
+import { localReaderCacheToken } from "../../../../scripts/database-client.mjs"
 import { agentActivityActor } from "../../../lib/agent-activity-actor"
 
 
@@ -38,44 +58,93 @@ function taskVersionConflict(serverVersion: number, clientVersion: number): Resp
   })
 }
 
-export const GET: APIRoute = async ({ params, url }) => {
+export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }, async ({ params, url, request }, scope) => {
   await ensureSchema()
-  const repo = new TaskRepository(getPersistenceClient())
+  const repo = new TaskRepository(getPersistenceClient(), scope)
   const headers = {
     "content-type": "application/json",
     ...(url.searchParams.has("deferralRead") ? { "cache-control": "no-store" } : {}),
   }
 
-  const resolved = await repo.resolveTaskId(params.id!)
-  if (!resolved) {
+  const detailResult = await repo.findDetailWithSubtasks(params.id!)
+  if (!detailResult) {
     return new Response(JSON.stringify({ error: "Task not found" }), {
       status: 404,
       headers,
     })
   }
-
-  const row = await repo.findById(resolved.id)
-  if (!row) {
-    return new Response(JSON.stringify({ error: "Task not found" }), {
-      status: 404,
-      headers,
-    })
-  }
+  const { task: row, subtasks, hasPillar } = detailResult
 
   // Derive human-readable ticket keys
   const ticketNum = row.ticket_number != null ? Number(row.ticket_number) : null
   const parentTicketNum = row.parent_ticket_number != null ? Number(row.parent_ticket_number) : null
+  const detail = taskDetailHttpProjection(row, scope.boardId, scope.principal.kind === "ha_user" && await readCurrentHARole(scope.principal.id, request.signal) === "admin")
+  const pillarId = hasPillar ? await readOptionalTaskPillarId(scope, String(row.id ?? params.id!)) : null
+  const fp = parseFrameworkPayload(row.framework_payload)
+  const principleId = pillarId && typeof fp.principle_id === "string" && fp.principle_id ? fp.principle_id : null
+  const visibleParent = detail.parent_id != null
+  const parentTicketKey = visibleParent
+    ? (typeof row.parent_ticket_ref === "string" && row.parent_ticket_ref
+        ? row.parent_ticket_ref
+        : formatTicketKey(parentTicketNum))
+    : null
   const enriched = {
-    ...row,
+    ...detail,
+    pillar_id: pillarId,
+    principle_id: principleId,
+    actions: taskActionHints(scope, row),
     is_promoted: Boolean(row.is_promoted),
-    ticket_key: formatTicketKey(ticketNum),
-    parent_ticket_key: formatTicketKey(parentTicketNum),
+    ticket_key: row.ticket_key ?? row.ticket_ref ?? formatTicketKey(ticketNum),
+    parent_ticket_key: parentTicketKey,
+    parent_title: visibleParent ? (row.parent_title ?? null) : null,
+    parent_task_type: visibleParent ? (row.parent_task_type ?? null) : null,
+    subtasks,
   }
 
   return new Response(JSON.stringify(enriched), {
     status: 200,
     headers,
   })
+})
+
+function parseFrameworkPayload(raw: unknown): Record<string, unknown> {
+  if (typeof raw !== "string" || !raw.trim()) return {}
+  try {
+    return frameworkPayloadObject(JSON.parse(raw))
+  } catch {
+    return {}
+  }
+}
+
+const pillarsPresenceCache = new WeakMap<object, { generation: string; hasPillars: boolean }>()
+
+async function hasAnyPillarsRow(): Promise<boolean> {
+  const client = getPersistenceClient()
+  const state = localReaderCacheToken(client)
+  if (!state) return true
+  const cached = pillarsPresenceCache.get(state.owner)
+  if (cached && cached.generation === state.token) return cached.hasPillars
+  try {
+    const result = await client.execute("SELECT 1 FROM pillars LIMIT 1")
+    const hasPillars = result.rows.length > 0
+    const currentGeneration = localReaderCacheToken(client)?.token
+    if (currentGeneration === state.token) {
+      pillarsPresenceCache.set(state.owner, { generation: currentGeneration, hasPillars })
+    }
+    return hasPillars
+  } catch {
+    return true
+  }
+}
+
+async function readOptionalTaskPillarId(scope: BoardScope, taskId: string): Promise<string | null> {
+  if (!scopePermits(scope, { resource: "pillar", action: "read" }) || !await hasAnyPillarsRow()) return null
+  try {
+    return await getEntityPillarId(scope, "tasks", taskId)
+  } catch (err) {
+    if (err instanceof BoardOperationError && (err.errorCode === "denied" || err.errorCode === "unavailable")) return null
+    throw err
+  }
 }
 
 function normalizeReassignedTarget(value: unknown): string | null | undefined {
@@ -114,6 +183,7 @@ async function replayedAgentReassignment(
   taskId: string,
   body: Record<string, unknown>,
   expectedActor: string | undefined,
+  boardId: string,
 ): Promise<Response | null> {
   if (!agentToken?.assigneeId) return null
   const requestId = typeof body.request_id === "string" ? body.request_id.trim().slice(0, 128) : ""
@@ -122,47 +192,11 @@ async function replayedAgentReassignment(
   if (requested === undefined) return null
   const fields = Object.keys(body).filter((key) => key !== "updated_at" && key !== "request_id")
   if (fields.length !== 1 || fields[0] !== "assigned_to") return null
-  const row = await repo.findById(taskId)
-  if (!row || (row.assigned_to ?? null) !== requested) return null
-
-  const receiptKey = `${agentToken.tokenId}:${agentToken.assigneeId}:${taskId}:${requestId}`
-  const { receipt, ownedByOtherToken, lastReassignment } = await repo.findReassignmentReplayState(
-    taskId, receiptKey, requestId,
-  )
-
-  // The receipt commits with the hand-off itself, so when present it is the
-  // sole authority for this token and never falls back to activity heuristics.
-  let matched = false
-  if (receipt) {
-    const stale = Boolean(
-      lastReassignment && lastReassignment.created_at > receipt.updated_at && lastReassignment.correlation_id !== requestId,
-    )
-    if (receipt.status === "completed" && !stale) {
-      const destination = parseReceiptAssignee(receipt.response_payload)
-      matched = destination === undefined
-        ? !lastReassignment || loggedTarget(lastReassignment.new_value) === requested
-        : destination === requested
-    }
-  } else if (!ownedByOtherToken) {
-    matched = Boolean(
-      lastReassignment &&
-      lastReassignment.actor_type === "agent" &&
-      expectedActor === lastReassignment.actor &&
-      lastReassignment.old_value === agentToken.assigneeId &&
-      loggedTarget(lastReassignment.new_value) === requested &&
-      lastReassignment.correlation_id === requestId,
-    )
-  }
-  if (!matched) return null
-  const ticketNum = row.ticket_number != null ? Number(row.ticket_number) : null
-  const ticketKey = formatTicketKey(ticketNum)
-  if (!agentToken.scopes.includes("tasks:read")) {
-    return Response.json({ id: row.id, ticket_key: ticketKey, assigned_to: row.assigned_to ?? null })
-  }
-  return Response.json({ ...row, is_promoted: Boolean(row.is_promoted), ticket_key: ticketKey })
+  const receipt = await repo.findReassignmentReceipt(taskId, requestId, requested)
+  return receipt ? Response.json(receipt) : null
 }
 
-export const PUT: APIRoute = async ({ params, request, locals }) => {
+export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }, async ({ params, request, locals }, scope) => {
   let rawBody: unknown
   try {
     const rawText = await request.text()
@@ -174,6 +208,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     return apiError("Request body must be a JSON object", 400)
   }
   const body = rawBody as Record<string, unknown>
+  if (!organizationPlacementAvailable(body)) return apiError("This organizing feature is unavailable.", 404)
   if (hasBoardSelection(body)) return unavailableBoardResponse()
   let clientVersion: number | undefined
   if (body.updated_at !== undefined) {
@@ -183,11 +218,23 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     clientVersion = body.updated_at
   }
   await ensureSchema()
-  const repo = new TaskRepository(getPersistenceClient())
+  const repo = new TaskRepository(getPersistenceClient(), scope)
 
-  // Resolve task ID (supports UUID and MTH-N format)
-  const resolved = await repo.resolveTaskId(params.id!)
+  // The committed receipt can confirm this actor's own exact handoff after assignment moved away.
+  // It grants no row read and is checked before the normal assigned edit locator.
+  if (isAssignedWriteOnly(locals.agentToken)) {
+    const replay = await replayedAgentReassignment(repo, locals.agentToken, params.id!, body, agentActivityActor(locals)?.actor, scope.boardId)
+    if (replay) return replay
+  }
+  // Resolve the actual task under current edit and assignment authority.
+  const resolved = await repo.resolveTaskId(params.id!, "edit")
   if (!resolved) {
+    // Another request can commit the same handoff between the first receipt
+    // check and this assigned locator. Confirm only that exact committed intent.
+    if (isAssignedWriteOnly(locals.agentToken)) {
+      const replay = await replayedAgentReassignment(repo, locals.agentToken, params.id!, body, agentActivityActor(locals)?.actor, scope.boardId)
+      if (replay) return replay
+    }
     return new Response(JSON.stringify({ error: "Task not found" }), {
       status: 404,
       headers: { "content-type": "application/json" },
@@ -196,10 +243,32 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
 
   const resolvedId = resolved.id
   const agentToken = locals.agentToken
-  const canReadTask = !agentToken || agentToken.scopes.includes("tasks:read")
+  const canReadTask = scopePermits(scope, { resource: "task", action: "read" })
   const expectedActor = agentActivityActor(locals)?.actor
   const denied = isAssignedWriteOnly(agentToken) ? await checkAssignedTask(resolvedId, agentToken!) : null
-  if (denied) return (await replayedAgentReassignment(repo, agentToken, resolvedId, body, expectedActor)) ?? denied
+  if (denied) return (await replayedAgentReassignment(repo, agentToken, resolvedId, body, expectedActor, scope.boardId)) ?? denied
+  let currentTaskForEdit: Awaited<ReturnType<typeof repo.findTaskForCommand>> = null
+  if (body.due_date !== undefined || body.task_kind !== undefined) {
+    if (resolved.routine_occurrence === 1 &&
+      ((body.due_date !== undefined && body.due_date !== resolved.due_date) ||
+        (body.task_kind !== undefined && body.task_kind !== "routine_instance"))) {
+      return apiError("A generated Routine task keeps its original date and type. Complete its existing occurrence.", 409)
+    }
+  }
+
+  if (body.action === "file") {
+    const { areaId, projectId, version } = body
+    if (typeof version !== "number" || !Number.isSafeInteger(version) || version < 0 ||
+        (areaId != null && typeof areaId !== "string") || (projectId != null && typeof projectId !== "string")) {
+      return apiError("Choose a valid Board placement and task version.", 400)
+    }
+    if (agentToken) return apiError("Board filing requires a person’s session.", 403)
+    const change = await repo.fileHouseholdTask(resolvedId, version, {
+      ...(areaId !== undefined ? { areaId } : {}), ...(projectId !== undefined ? { projectId } : {}),
+    })
+    return change.ok ? Response.json(scopePermits(scope, { resource: "task", action: "read" }) ? taskHttpProjection(change.task, scope.boardId) : { id: change.task.id })
+      : apiError(change.stale ? "Refresh the task before filing it." : "Board placement unavailable", change.stale ? 409 : 404)
+  }
 
   if (body.expected_status !== undefined && (
     body.expected_status !== STATUS.BACKLOG || clientVersion === undefined ||
@@ -222,26 +291,23 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   const sanitized: Record<string, InValue> = {}
   if ("nfc_tag_id" in body) sanitized.nfc_tag_id = typeof body.nfc_tag_id === "string" ? body.nfc_tag_id.trim() : null
 
-  if (typeof body.title === "string" || typeof body.description === "string") {
-    const { sanitize } = await import("../../../lib/sanitize")
-    if (typeof body.title === "string") {
-      const t = sanitize(body.title.trim())
-      if (!t) {
-        return new Response(JSON.stringify({ error: "title cannot be empty" }), {
-          status: 400, headers: { "content-type": "application/json" },
-        })
-      }
-      if (t.length > 500) {
-        return new Response(JSON.stringify({ error: "title must be 500 characters or less" }), {
-          status: 400, headers: { "content-type": "application/json" },
-        })
-      }
-      sanitized.title = t
+  if (typeof body.title === "string") {
+    const t = stripHtml(body.title.trim()).trim()
+    if (!t) {
+      return new Response(JSON.stringify({ error: "title cannot be empty" }), {
+        status: 400, headers: { "content-type": "application/json" },
+      })
     }
-    if (typeof body.description === "string") {
-      if (body.description.length > 10000) return apiError("description must be 10000 characters or less", 400)
-      sanitized.description = sanitize(body.description)
+    if (t.length > 500) {
+      return new Response(JSON.stringify({ error: "title must be 500 characters or less" }), {
+        status: 400, headers: { "content-type": "application/json" },
+      })
     }
+    sanitized.title = t
+  }
+  if (typeof body.description === "string") {
+    if (body.description.length > 10000) return apiError("description must be 10000 characters or less", 400)
+    sanitized.description = body.description ? sanitizeMarkdownInput(body.description) : ""
   }
   if (typeof body.status === "string") {
     const st = body.status.trim().toLowerCase().replace(/[^a-z0-9_]/g, "")
@@ -252,11 +318,14 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     }
     sanitized.status = normalizeStatus(st)
   }
-  if (typeof body.priority === "number") {
+  if (body.priority !== undefined) {
+    if (typeof body.priority !== "number" || !Number.isFinite(body.priority)) {
+      return apiError("priority must be a finite number between 1 and 5", 400)
+    }
     sanitized.priority = Math.min(5, Math.max(1, Math.round(body.priority)))
   }
   if (body.due_date !== undefined) {
-    sanitized.due_date = typeof body.due_date === "string" ? body.due_date : null
+    sanitized.due_date = typeof body.due_date === "string" && body.due_date.trim() ? body.due_date.trim() : null
   }
   if (body.labels !== undefined) {
     const labels = taskLabelsJson(body.labels)
@@ -266,30 +335,22 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     sanitized.labels = labels
   }
   if (body.framework_payload !== undefined) {
-    if (typeof body.framework_payload !== "string") {
-      return new Response(JSON.stringify({ error: "framework_payload must be a JSON string" }), { status: 400, headers: { "content-type": "application/json" } })
+    const fpRes = taskJsonObject(body.framework_payload, "framework_payload")
+    if (!fpRes.ok) {
+      return new Response(JSON.stringify({ error: fpRes.error }), { status: 400, headers: { "content-type": "application/json" } })
     }
-    try {
-      const parsed = JSON.parse(body.framework_payload)
-      if (typeof parsed !== "object" || Array.isArray(parsed) || parsed === null) throw new Error()
-      sanitized.framework_payload = body.framework_payload
-    } catch {
-      return new Response(JSON.stringify({ error: "framework_payload must be a valid JSON object string" }), { status: 400, headers: { "content-type": "application/json" } })
-    }
+    sanitized.framework_payload = fpRes.json
   }
+  let updatedCustomFieldsObj: Record<string, unknown> | null = null
   if (body.custom_fields !== undefined) {
-    if (typeof body.custom_fields !== "string") {
-      return new Response(JSON.stringify({ error: "custom_fields must be a JSON string" }), { status: 400, headers: { "content-type": "application/json" } })
+    const cfRes = taskJsonObject(body.custom_fields, "custom_fields")
+    if (!cfRes.ok) {
+      return new Response(JSON.stringify({ error: cfRes.error }), { status: 400, headers: { "content-type": "application/json" } })
     }
-    try {
-      const parsed = JSON.parse(body.custom_fields)
-      if (typeof parsed !== "object" || Array.isArray(parsed) || parsed === null) throw new Error()
-      sanitized.custom_fields = body.custom_fields
-    } catch {
-      return new Response(JSON.stringify({ error: "custom_fields must be a valid JSON object string" }), { status: 400, headers: { "content-type": "application/json" } })
-    }
+    sanitized.custom_fields = cfRes.json
+    updatedCustomFieldsObj = cfRes.obj
   }
-  if (typeof body.area_id === "string") {
+  if (typeof body.area_id === "string" || body.area_id === null) {
     sanitized.area_id = body.area_id
   }
   if (body.project_id !== undefined) {
@@ -299,60 +360,86 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     sanitized.project_id = body.project_id
   }
   if (body.start_date !== undefined) {
-    sanitized.start_date = typeof body.start_date === "string" ? body.start_date : null
+    const parsedStart = parseScheduleDateInput(body.start_date, "start_date")
+    if (!parsedStart.ok) return apiError(parsedStart.error, 400)
+    sanitized.start_date = parsedStart.value
   }
   if (body.end_date !== undefined) {
-    sanitized.end_date = typeof body.end_date === "string" ? body.end_date : null
+    const parsedEnd = parseScheduleDateInput(body.end_date, "end_date")
+    if (!parsedEnd.ok) return apiError(parsedEnd.error, 400)
+    sanitized.end_date = parsedEnd.value
   }
-  if (typeof body.progress === "number") {
+  if (sanitized.start_date !== undefined || sanitized.end_date !== undefined) {
+    if (sanitized.start_date === undefined || sanitized.end_date === undefined) {
+      currentTaskForEdit ??= await repo.findTaskForCommand(resolvedId, "edit")
+    }
+    const nextStart = sanitized.start_date !== undefined ? (sanitized.start_date as string | null) : (currentTaskForEdit?.start_date ?? null)
+    const nextEnd = sanitized.end_date !== undefined ? (sanitized.end_date as string | null) : (currentTaskForEdit?.end_date ?? null)
+    const scheduleError = validateScheduleWindow(nextStart, nextEnd)
+    if (scheduleError) return apiError(scheduleError, 400)
+  }
+  if (body.progress !== undefined) {
+    if (typeof body.progress !== "number" || !Number.isFinite(body.progress)) {
+      return apiError("progress must be a finite number", 400)
+    }
     sanitized.progress = Math.min(100, Math.max(0, Math.round(body.progress)))
   }
   if (body.color !== undefined) {
     sanitized.color = typeof body.color === "string" && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(body.color) ? body.color : null
   }
   if (body.is_favorite !== undefined) {
-    sanitized.is_favorite = body.is_favorite ? 1 : 0
+    return apiError("is_favorite has been retired; use is_promoted instead.", 400)
   }
   if (body.is_promoted !== undefined) {
     if (typeof body.is_promoted !== "boolean") return apiError("is_promoted must be a boolean", 400)
     sanitized.is_promoted = body.is_promoted ? 1 : 0
   }
-  if (typeof body.parent_id === "string" || body.parent_id === null) {
-    sanitized.parent_id = body.parent_id
+  if (body.parent_id !== undefined) {
+    if (body.parent_id !== null && typeof body.parent_id !== "string") {
+      return apiError("parent_id must be a task ID string or null", 400)
+    }
+    sanitized.parent_id = typeof body.parent_id === "string" && body.parent_id.trim() ? body.parent_id.trim() : null
   }
-  // Phase 1: Epic→Story→Task nesting validation on parent_id change
-  if (sanitized.parent_id !== undefined && sanitized.parent_id !== null) {
-    const parentType = await repo.getParentTaskType(String(sanitized.parent_id))
-    if (parentType === null) {
-      return new Response(JSON.stringify({ error: "Parent task not found" }), {
-        status: 400, headers: { "content-type": "application/json" },
-      })
+  if (body.time_tracked !== undefined) {
+    if (typeof body.time_tracked !== "number" || !Number.isFinite(body.time_tracked)) {
+      return apiError("time_tracked must be a finite number", 400)
     }
-    // Determine child type: use sanitized.task_type if changing, else fetch current
-    let childType = typeof sanitized.task_type === "string" ? sanitized.task_type : null
-    if (!childType) {
-      const current = await repo.findById(resolvedId)
-      childType = String(current?.task_type ?? "task")
-    }
-    if (parentType === "task" && (childType === "epic" || childType === "story")) {
-      return new Response(JSON.stringify({
-        error: `Cannot nest ${childType} under a task — tasks can only contain other tasks`,
-      }), { status: 400, headers: { "content-type": "application/json" } })
-    }
-    if (parentType === "story" && childType === "epic") {
-      return new Response(JSON.stringify({
-        error: "Cannot nest an epic under a story — stories can only contain tasks",
-      }), { status: 400, headers: { "content-type": "application/json" } })
-    }
-  }
-  if (typeof body.time_tracked === "number") {
     sanitized.time_tracked = Math.max(0, Math.round(body.time_tracked))
   }
-  if (typeof body.task_type === "string") {
-    const tt = body.task_type.trim().toLowerCase()
-    if (VALID_TASK_TYPES.includes(tt as TaskType)) {
-      sanitized.task_type = tt
+  if (body.task_type !== undefined) {
+    if (typeof body.task_type !== "string") {
+      return apiError("task_type must be epic, story, or task", 400)
     }
+    const tt = body.task_type.trim().toLowerCase()
+    if (!VALID_TASK_TYPES.includes(tt as TaskType)) {
+      return apiError("task_type must be epic, story, or task", 400)
+    }
+    sanitized.task_type = tt
+  }
+  if (body.task_kind !== undefined) {
+    if (typeof body.task_kind !== "string") {
+      return apiError(`task_kind must be one of: ${VALID_TASK_KINDS.join(", ")}`, 400)
+    }
+    const tk = body.task_kind.trim().toLowerCase()
+    if (!isValidTaskKind(tk)) {
+      return apiError(`Invalid task_kind "${body.task_kind}". Valid values: ${VALID_TASK_KINDS.join(", ")}`, 400)
+    }
+    currentTaskForEdit ??= await repo.findTaskForCommand(resolvedId, "edit")
+    if (tk === "routine_instance" && currentTaskForEdit?.task_kind !== "routine_instance") {
+      return apiError("Only scheduled Routines can create routine_instance tasks.", 409)
+    }
+    sanitized.task_kind = tk
+  }
+  let effectiveKind = typeof sanitized.task_kind === "string" ? sanitized.task_kind : currentTaskForEdit?.task_kind
+  if (!effectiveKind && updatedCustomFieldsObj && Array.isArray(updatedCustomFieldsObj.items)) {
+    currentTaskForEdit ??= await repo.findTaskForCommand(resolvedId, "edit")
+    effectiveKind = currentTaskForEdit?.task_kind
+  }
+  if ((effectiveKind ?? "standard_action") === "shopping_item" && updatedCustomFieldsObj && Array.isArray(updatedCustomFieldsObj.items)) {
+    sanitized.custom_fields = JSON.stringify({
+      ...updatedCustomFieldsObj,
+      items: normalizeShoppingItems(updatedCustomFieldsObj.items),
+    })
   }
   if (body.assigned_to !== undefined) {
     const nextAssignee = normalizeReassignedTarget(body.assigned_to)
@@ -361,23 +448,8 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     }
     sanitized.assigned_to = nextAssignee
   }
-  if (body.owner !== undefined && typeof body.owner === "string" && !isAssignedWriteOnly(agentToken)) {
-    sanitized.owner = body.owner.slice(0, 100)
-  } else if (sanitized.assigned_to !== undefined) {
-    if (sanitized.assigned_to === null) {
-      sanitized.owner = "human"
-    } else if (typeof sanitized.assigned_to === "string" && sanitized.assigned_to.startsWith("custom_")) {
-      const userRepo = new UserRepository(getPersistenceClient())
-      const customUser = await userRepo.getCustomUser(sanitized.assigned_to)
-      if (customUser?.kind === "agent") {
-        sanitized.owner = `bot:${customUser.name}`
-      } else {
-        sanitized.owner = "human"
-      }
-    } else {
-      sanitized.owner = "human"
-    }
-  }
+  if (body.owner !== undefined) return apiError("Change the assignee or use the task handoff actions to change ownership.", 400)
+
   // Guard the same raw checklist returned by GET. Legacy clients may omit the guard.
   const expectedChecklists = body.expected_checklists
   if (expectedChecklists !== undefined &&
@@ -385,21 +457,18 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     return apiError("expected_checklists requires the prior checklist string or null and a replacement checklist", 400)
   }
   if (body.checklists !== undefined) {
-    if (typeof body.checklists !== "string") {
-      return new Response(JSON.stringify({ error: "checklists must be a JSON string array" }), { status: 400, headers: { "content-type": "application/json" } })
+    const clRes = taskChecklistsJson(body.checklists, true)
+    if (!clRes.ok) {
+      return new Response(JSON.stringify({ error: clRes.error }), { status: 400, headers: { "content-type": "application/json" } })
     }
-    try {
-      const parsed = JSON.parse(body.checklists)
-      if (!Array.isArray(parsed)) throw new Error()
-      for (const item of parsed) {
-        if (typeof item !== "object" || item === null) throw new Error()
-        if (typeof item.text !== "string") throw new Error()
-        if (typeof item.done !== "boolean") throw new Error()
-      }
-      sanitized.checklists = body.checklists
-    } catch {
-      return new Response(JSON.stringify({ error: "checklists must be a valid JSON array of {text, done} objects" }), { status: 400, headers: { "content-type": "application/json" } })
-    }
+    sanitized.checklists = clRes.json
+  }
+
+  if (body.recurrence_rule !== undefined) {
+    if (body.recurrence_rule !== null && typeof body.recurrence_rule !== "string") return apiError("recurrence_rule must be a recurrence rule string or null", 400)
+    const rule = typeof body.recurrence_rule === "string" ? body.recurrence_rule.trim() : ""
+    if (rule && (rule.length > 200 || !parseRRule(rule))) return apiError("recurrence_rule must be a supported recurrence rule", 400)
+    sanitized.recurrence_rule = rule || null
   }
 
   // Phase 6: Recurrence anchor (due_date or completion_date)
@@ -419,10 +488,16 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   }
 
   // Phase 06: Eisenhower urgency/importance (0-5 integer)
-  if (typeof body.urgency === "number") {
+  if (body.urgency !== undefined) {
+    if (typeof body.urgency !== "number" || !Number.isFinite(body.urgency)) {
+      return apiError("urgency must be a finite number", 400)
+    }
     sanitized.urgency = Math.min(5, Math.max(0, Math.round(body.urgency)))
   }
-  if (typeof body.importance === "number") {
+  if (body.importance !== undefined) {
+    if (typeof body.importance !== "number" || !Number.isFinite(body.importance)) {
+      return apiError("importance must be a finite number", 400)
+    }
     sanitized.importance = Math.min(5, Math.max(0, Math.round(body.importance)))
   }
   if (body.eisenhower_override !== undefined) {
@@ -433,8 +508,10 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   if (body.effort_minutes !== undefined) {
     if (body.effort_minutes === null) {
       sanitized.effort_minutes = null
-    } else if (typeof body.effort_minutes === "number") {
+    } else if (typeof body.effort_minutes === "number" && Number.isFinite(body.effort_minutes)) {
       sanitized.effort_minutes = Math.min(480, Math.max(1, Math.round(body.effort_minutes)))
+    } else {
+      return apiError("effort_minutes must be a finite number or null", 400)
     }
   }
   if (body.effort_type !== undefined) {
@@ -452,6 +529,67 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
       ? body.blocked_by.trim().slice(0, 500) : null
   }
 
+  const hasPillarUpdate = body.pillar_id !== undefined
+  let nextPillarId: string | null = null
+  if (hasPillarUpdate) {
+    if (body.pillar_id !== null && typeof body.pillar_id !== "string") {
+      return apiError("pillar_id must be a string or null", 400)
+    }
+    nextPillarId = typeof body.pillar_id === "string" && body.pillar_id.trim() ? body.pillar_id.trim() : null
+    if (nextPillarId && nextPillarId.length > 128) {
+      return apiError("pillar_id must be 128 characters or less", 400)
+    }
+  }
+  const hasPrincipleUpdate = body.principle_id !== undefined
+  let nextPrincipleId: string | null = null
+  if (hasPrincipleUpdate) {
+    if (body.principle_id !== null && typeof body.principle_id !== "string") {
+      return apiError("principle_id must be a string or null", 400)
+    }
+    nextPrincipleId = typeof body.principle_id === "string" && body.principle_id.trim() ? body.principle_id.trim() : null
+    if (nextPrincipleId && nextPrincipleId.length > 128) {
+      return apiError("principle_id must be 128 characters or less", 400)
+    }
+  }
+
+  if (hasPillarUpdate || hasPrincipleUpdate) {
+    try {
+      if (hasPillarUpdate && !scopePermits(scope, { resource: "pillar", action: "edit" })) {
+        return apiError("Pillar editing is not permitted", 403)
+      }
+      if (hasPillarUpdate && nextPillarId) {
+        const pillar = await getPillarById(scope, nextPillarId)
+        if (!pillar) return apiError("Invalid pillar_id", 400)
+      }
+      const existingRow = typeof sanitized.framework_payload === "string" ? null : await repo.findById(resolvedId)
+      const fp = typeof sanitized.framework_payload === "string"
+        ? parseFrameworkPayload(sanitized.framework_payload)
+        : parseFrameworkPayload(existingRow?.framework_payload)
+      const currentPillarId = await readOptionalTaskPillarId(scope, resolvedId)
+      const effectivePillarId = hasPillarUpdate ? nextPillarId : currentPillarId
+
+      if (hasPrincipleUpdate) {
+        if (nextPrincipleId) {
+          if (!effectivePillarId) return apiError("Select a pillar before setting a principle", 400)
+          const principles = await getPrinciplesForPillar(scope, effectivePillarId)
+          if (!principles.some(p => p.id === nextPrincipleId)) {
+            return apiError("Invalid principle_id", 400)
+          }
+          fp.principle_id = nextPrincipleId
+        } else {
+          delete fp.principle_id
+        }
+      } else if (hasPillarUpdate && (nextPillarId === null || nextPillarId !== currentPillarId)) {
+        delete fp.principle_id
+      }
+      sanitized.framework_payload = JSON.stringify(fp)
+    } catch (err) {
+      const scopeFailure = boardScopeErrorResponse(err)
+      if (scopeFailure) return scopeFailure
+      throw err
+    }
+  }
+
   if (Object.keys(sanitized).length === 0) {
     return new Response(JSON.stringify({ error: "No fields to update" }), {
       status: 400,
@@ -459,8 +597,11 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     })
   }
 
-  // Fetch old values for activity log diffing
-  const oldTask = await repo.getFieldsForDiff(resolvedId)
+  // The writer records activity from its own snapshot. Only priority and
+  // assignment notifications need old fields from this request.
+  const oldTask = sanitized.priority === 1 || sanitized.assigned_to !== undefined
+    ? await repo.getFieldsForDiff(resolvedId)
+    : null
 
   // Perform the update via repository
   const version = clientVersion === undefined ? undefined : {
@@ -482,6 +623,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   try {
     update = await repo.updateTask(resolvedId, sanitized, {
       activity: resolveRecentActivityActor(locals, request),
+      ...(requestId ? { activityRequestId: requestId } : {}),
       ...(version ? { version } : {}),
       ...(expectedChecklists !== undefined ? { expectedChecklists } : {}),
       ...(expectedAssignedTo !== undefined ? { expectedAssignedTo } : {}),
@@ -489,6 +631,15 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
       ...(locals.writeAbortSignal ? { signal: locals.writeAbortSignal } : {}),
     })
   } catch (err) {
+    if ((err as { name?: string } | null)?.name === "AbortError") throw err
+    // A queued writer can lose the old assignment after the identical request
+    // commits. Its durable receipt is the only permitted acknowledgement.
+    if (isAssignedWriteOnly(agentToken)) {
+      const replay = await replayedAgentReassignment(repo, agentToken, resolvedId, body, expectedActor, scope.boardId)
+      if (replay) return replay
+    }
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
     if (!completionIntent) throw err
     if ((err as { name?: string } | null)?.name === "AbortError") throw err
     const code = err && typeof err === "object" && "code" in err ? err.code : undefined
@@ -500,8 +651,14 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   }
   if (!update.ok) {
     if (update.errorCode === "assignee_mismatch") {
-      return (await replayedAgentReassignment(repo, agentToken, resolvedId, body, expectedActor)) ??
+      return (await replayedAgentReassignment(repo, agentToken, resolvedId, body, expectedActor, scope.boardId)) ??
         apiError("Agent can only update tasks assigned to it", 403)
+    }
+    if (update.errorCode === "hierarchy_invalid") {
+      return Response.json({ error: update.message, detail: update.message, errorCode: "hierarchy_invalid" }, { status: 400 })
+    }
+    if (update.errorCode === "hierarchy_conflict") {
+      return Response.json({ error: update.message, detail: update.message, errorCode: "hierarchy_conflict" }, { status: 409 })
     }
     if (update.errorCode === "conflict") {
       return taskVersionConflict(update.updatedAt, clientVersion!)
@@ -532,56 +689,56 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
         headers: { "content-type": "application/json" },
       })
     }
+    if (isAssignedWriteOnly(agentToken)) {
+      const replay = await replayedAgentReassignment(repo, agentToken, resolvedId, body, expectedActor, scope.boardId)
+      if (replay) return replay
+    }
     return typeof sanitized.project_id === "string"
       ? apiError("Task or destination project is no longer available", 409)
       : apiError("Task not found", 404)
   }
   const updatedRow = update.task
-  const newlyCompleted = completionIntent && !isDoneStatus(update.previousStatus ?? "")
-
-  // Record activity log entries for each changed field
-  if (oldTask) {
-    const changes: Array<{ field: string; oldValue: string | null; newValue: string }> = []
-    for (const [field, newVal] of Object.entries(sanitized)) {
-      const oldVal = oldTask[field]
-      const normalizedNew = newVal == null ? "" : String(newVal)
-      const normalizedOld = oldVal == null ? "" : String(oldVal)
-      if (normalizedNew !== normalizedOld) {
-        changes.push({ field, oldValue: oldVal != null ? String(oldVal) : null, newValue: normalizedNew })
-      }
-    }
-    if (changes.length > 0) {
-      const automation = request.headers.has("X-Automation-Source") ? locals.automationSource : null
-      const activityActor = agentActivityActor(locals) ??
-        { actor: automation ? `ha:${automation}` : "user", actor_type: (automation ? "ha" : "user") as "ha" | "user" }
-      const commitTimestamp = Number(updatedRow.updated_at)
-      await repo.logActivity(resolvedId, changes, {
-        ...activityActor,
-        ...(requestId ? { correlation_id: requestId } : {}),
-        ...(Number.isSafeInteger(commitTimestamp) ? { createdAt: commitTimestamp } : {}),
-      }).catch(() => { })
+  if (hasPillarUpdate) {
+    try {
+      const linked = await setEntityPillar(scope, "tasks", resolvedId, nextPillarId)
+      if (!linked && nextPillarId !== null) return apiError("Invalid pillar_id", 400)
+    } catch (err) {
+      const scopeFailure = boardScopeErrorResponse(err)
+      if (scopeFailure) return scopeFailure
+      throw err
     }
   }
+  const newlyCompleted = completionIntent && !isDoneStatus(update.previousStatus ?? "")
+
+  // The common writer commits recent activity and field history with the task mutation.
 
   const updTicketNum = updatedRow.ticket_number != null ? Number(updatedRow.ticket_number) : null
+  const finalPillarId = hasPillarUpdate ? nextPillarId : await readOptionalTaskPillarId(scope, resolvedId)
+  const finalFp = parseFrameworkPayload(updatedRow.framework_payload)
+  const finalPrincipleId = finalPillarId && typeof finalFp.principle_id === "string" && finalFp.principle_id
+    ? finalFp.principle_id
+    : null
   const taskPayload: Record<string, unknown> = {
-    ...updatedRow,
+    ...taskHttpProjection(updatedRow, scope.boardId),
+    pillar_id: finalPillarId,
+    principle_id: finalPrincipleId,
     is_promoted: Boolean(updatedRow.is_promoted),
-    ticket_key: formatTicketKey(updTicketNum),
+    ticket_key: updatedRow.ticket_key ?? updatedRow.ticket_ref ?? formatTicketKey(updTicketNum),
   }
 
   const authority = await taskEventAuthorityHeaders([
     "task.updated",
     // The App also owns the decision not to re-emit an acknowledged completion.
     ...(completionIntent ? ["task.completed"] : []),
-  ])
-  dispatchTaskEvent("task.updated", taskPayload, requestId || undefined, undefined, undefined, authority).catch(() => {})
+  ], scope)
+  dispatchTaskEvent("task.updated", taskPayload, requestId || undefined, undefined, update.assignmentEventId, authority, scope).catch(() => {})
 
   // Notification preference guard
   const notifPrefs = await repo.getNotificationPreferences()
 
-  // F4/F5: Load callHAService once for all notification helpers
-  const haServicesImport = import("@domains/ha")
+  // Lazy-load @domains/ha only when an enabled notification channel dispatches
+  let haServicesPromise: Promise<typeof import("@domains/ha")> | null = null
+  const getHAServices = () => (haServicesPromise ??= import("@domains/ha"))
 
   // Helper: dispatch notification to configured channels
   interface DispatchOpts { isUrgent?: boolean; badgeCount?: number }
@@ -591,14 +748,14 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
   ) {
     return sendTaskNotification(notifPrefs, {
       title, message, notificationId: notifId, ingress,
-      ...(taskId ? { taskId } : {}), ...opts,
-    })
+      ...(taskId ? { taskId } : {}), ...(typeof updatedRow.task_version === "number" ? { taskVersion: updatedRow.task_version } : {}), ...opts,
+    }, scope, { resource: "task", action: "edit" })
   }
 
   // Helper: dismiss mobile notifications
   async function dismissMobileNotification(notifTag: string) {
     if (!notifPrefs.channels.mobile_push || notifPrefs.mobileTargets.length === 0) return
-    const { callHAService } = await haServicesImport
+    const { callHAService } = await getHAServices()
     for (const target of notifPrefs.mobileTargets) {
       const [domain, ...rest] = target.split(".")
       const service = rest.join(".")
@@ -606,40 +763,40 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
         callHAService(domain, service, {
           message: "clear_notification",
           data: { tag: notifTag },
-        }).catch(() => {})
+        }, undefined, { operationAllowed: () => notificationOperationAllowed(scope, target, { resource: "task", action: "edit" }, resolvedId, undefined, updatedRow.task_version) }).catch(() => {})
       }
     }
   }
 
   // Phase 52: Notification if bumped to Urgent (P1)
   if (notifPrefs.enabled && sanitized.priority === 1 && oldTask?.priority !== 1) {
-    import("@domains/ha").then(async ({ getIngressEntry }) => {
-      const ingress = await getIngressEntry()
+    import("@lib/ha-app-link").then(async ({ homeAssistantWorkLink }) => {
+      const ingress = await homeAssistantWorkLink(scope.boardId, resolvedId)
       const titleStr = typeof sanitized.title === "string" ? sanitized.title : String(oldTask?.title ?? "Task")
       const ticketKey = taskPayload.ticket_key ?? "Task"
-      const link = ingress ? `\n\n[Open ${ticketKey} in Meitheal →](${ingress}/kanban)` : ""
-      const badge = await repo.getOpenTaskCount()
+      const link = ingress ? `\n\n[Open ${ticketKey} in Meitheal →](${ingress})` : ""
+      const badge = await repo.getOpenTaskCount().catch(() => undefined)
       dispatchNotification(
         `🚨 Escalated to Urgent: ${titleStr}`,
         `${ticketKey} has been escalated to P1 — Urgent.${link}`,
         `meitheal_urgent_${resolvedId}`,
         ingress,
         resolvedId,
-        { isUrgent: true, badgeCount: badge },
+        { isUrgent: true, ...(badge === undefined ? {} : { badgeCount: badge }) },
       ).catch(() => {})
     }).catch(() => {})
   }
 
   // Assignment-change notification (respects per-user prefs)
-  if (notifPrefs.enabled && sanitized.assigned_to !== undefined && (sanitized.assigned_to || null) !== (oldTask?.assigned_to || null)) {
+  if (notifPrefs.enabled && !update.assignmentEventId && sanitized.assigned_to !== undefined && (sanitized.assigned_to || null) !== (oldTask?.assigned_to || null)) {
     const assignee = typeof sanitized.assigned_to === "string" ? sanitized.assigned_to : null
     const handedBackByAgent = Boolean(agentToken?.assigneeId) && oldTask?.assigned_to === agentToken?.assigneeId
     if (assignee && !notifPrefs.disabledUsers.has(assignee)) {
-      import("@domains/ha").then(async ({ getIngressEntry }) => {
-        const ingress = await getIngressEntry()
+      import("@lib/ha-app-link").then(async ({ homeAssistantWorkLink }) => {
+        const ingress = await homeAssistantWorkLink(scope.boardId, resolvedId)
         const titleStr = typeof sanitized.title === "string" ? sanitized.title : String(oldTask?.title ?? "Task")
         const ticketKey = taskPayload.ticket_key ?? "A task"
-        const link = ingress ? `\n\n[Open ${ticketKey} in Meitheal →](${ingress}/kanban)` : ""
+        const link = ingress ? `\n\n[Open ${ticketKey} in Meitheal →](${ingress})` : ""
         let displayName = assignee.replace(/^(ha_|custom_)/, "")
         try {
           if (assignee.startsWith("ha_")) {
@@ -652,7 +809,7 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
             if (name) displayName = name
           }
         } catch { /* fallback to stripped ID */ }
-        const badge = await repo.getOpenTaskCount()
+        const badge = await repo.getOpenTaskCount().catch(() => undefined)
         // "Handed back" only when the agent gives up a task it held; otherwise it is an ordinary assignment.
         const agentName = handedBackByAgent ? agentActivityActor(locals)?.actor : undefined
         dispatchNotification(
@@ -663,17 +820,17 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
           `meitheal_assigned_${resolvedId}`,
           ingress,
           resolvedId,
-          { badgeCount: badge },
+          { ...(badge === undefined ? {} : { badgeCount: badge }) },
         ).catch(() => {})
       }).catch(() => {})
     } else if (!assignee && handedBackByAgent && agentActivityActor(locals)) {
       // An agent gave the task up without naming anyone, so someone has to pick it up.
       const agentName = agentActivityActor(locals)!.actor
-      import("@domains/ha").then(async ({ getIngressEntry }) => {
-        const ingress = await getIngressEntry()
+      import("@lib/ha-app-link").then(async ({ homeAssistantWorkLink }) => {
+        const ingress = await homeAssistantWorkLink(scope.boardId, resolvedId)
         const titleStr = typeof sanitized.title === "string" ? sanitized.title : String(oldTask?.title ?? "Task")
         const ticketKey = taskPayload.ticket_key ?? "A task"
-        const link = ingress ? `\n\n[Open ${ticketKey} in Meitheal →](${ingress}/kanban)` : ""
+        const link = ingress ? `\n\n[Open ${ticketKey} in Meitheal →](${ingress})` : ""
         dispatchNotification(
           `↩️ Handed back by ${agentName}: ${titleStr}`,
           `${agentName} handed ${ticketKey} back. It is now unassigned.${link}`,
@@ -691,24 +848,27 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
     dismissMobileNotification(`meitheal_assigned_${resolvedId}`)
     dismissMobileNotification(`meitheal_due_${resolvedId}`)
     if (notifPrefs.channels.sidebar !== false) {
-      haServicesImport.then(({ callHAService }) => {
-        callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_urgent_${resolvedId}` }).catch(() => {})
-        callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_assigned_${resolvedId}` }).catch(() => {})
-        callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_due_${resolvedId}` }).catch(() => {})
+      getHAServices().then(async ({ callHAService, getHAConfiguration }) => {
+        if (!await getHAConfiguration()) return
+        callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_urgent_${resolvedId}` }, undefined, { operationAllowed: () => notificationOperationAllowed(scope, "persistent_notification.dismiss", { resource: "task", action: "edit" }, resolvedId, undefined, updatedRow.task_version) }).catch(() => {})
+        callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_assigned_${resolvedId}` }, undefined, { operationAllowed: () => notificationOperationAllowed(scope, "persistent_notification.dismiss", { resource: "task", action: "edit" }, resolvedId, undefined, updatedRow.task_version) }).catch(() => {})
+        callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_due_${resolvedId}` }, undefined, { operationAllowed: () => notificationOperationAllowed(scope, "persistent_notification.dismiss", { resource: "task", action: "edit" }, resolvedId, undefined, updatedRow.task_version) }).catch(() => {})
       }).catch(() => {})
     }
   }
 
   if (newlyCompleted) {
-    dispatchTaskEvent("task.completed", { ...taskPayload, completed_at: new Date().toISOString() }, requestId || undefined, undefined, undefined, authority).catch(() => {})
+    dispatchTaskEvent("task.completed", { ...taskPayload, completed_at: new Date().toISOString() }, requestId || undefined, undefined, undefined, authority, scope).catch(() => {})
     try {
-      const { isFeatureEnabled } = await import("../../../lib/feature-flags")
-      if (await isFeatureEnabled("gamification")) {
-        const { recordTaskCompletion, getXpForPriority, checkAchievements, getLevel } = await import("@domains/gamification")
+      const { getFeatureFlags } = await import("../../../lib/feature-flags")
+      const flags = await getFeatureFlags()
+      if (flags.gamification !== false) {
+        const { completeTaskGamification, getXpForPriority, getLevel } = await import("@domains/gamification")
         const xp = getXpForPriority(Number(updatedRow.priority ?? 3))
-        const stats = await recordTaskCompletion(xp)
-        const achievements = await checkAchievements(stats)
-        taskPayload.gamification = { stats, xp, newAchievements: achievements.newlyUnlocked, level: getLevel(stats.totalPoints), confetti: await isFeatureEnabled("confetti") }
+        const { stats, achievements } = await completeTaskGamification(scope, xp)
+        if (stats && achievements) {
+          taskPayload.gamification = { stats, xp, newAchievements: achievements.newlyUnlocked, level: getLevel(stats.totalPoints), confetti: Boolean(flags.confetti) }
+        }
       }
     } catch {
       // The task write succeeded. Optional statistics must not invent a failed mutation.
@@ -720,14 +880,14 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
         id, title, status: STATUS.PENDING,
         due_date: dueDate, recurrence_rule: rule,
         ticket_key: formatTicketKey(ticketNumber),
-      }).catch(() => {})
+      }, undefined, undefined, undefined, undefined, scope).catch(() => {})
     }
 
     // Phase 6: Cascade completion — complete all subtasks when parent is completed
     try {
       const childIds = await repo.cascadeCompleteIds(resolvedId, expectedAssignedTo)
       for (const childId of childIds) {
-        dispatchTaskEvent("task.updated", { id: childId, status: STATUS.COMPLETE }).catch(() => {})
+        dispatchTaskEvent("task.updated", { id: childId, status: STATUS.COMPLETE }, undefined, undefined, undefined, undefined, scope).catch(() => {})
       }
     } catch (err) {
       logApiError("cascade-complete", "Failed to cascade-complete subtasks", err)
@@ -750,40 +910,24 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
       ...authority,
     },
   })
-}
+})
 
-export const DELETE: APIRoute = async ({ params, request, locals }) => {
-  const boardSelection = await rejectBoardSelectionInJson(request)
+export const DELETE: APIRoute = withBoardScope({ resource: "task", action: "delete" }, async ({ params, request, locals }, scope) => {
+  const boardSelection = await rejectBoardSelectionInJson(request.clone())
   if (boardSelection) return boardSelection
   await ensureSchema()
-  const repo = new TaskRepository(getPersistenceClient())
+  const repo = new TaskRepository(getPersistenceClient(), scope)
 
-  const resolved = await repo.resolveTaskId(params.id!)
-  if (!resolved) {
-    return new Response(JSON.stringify({ error: "Task not found" }), {
-      status: 404,
-      headers: { "content-type": "application/json" },
-    })
-  }
-
-  const resolvedId = resolved.id
-  await repo.deleteTask(resolvedId, locals.writeAbortSignal ? { signal: locals.writeAbortSignal } : undefined)
-
-  const authority = await taskEventAuthorityHeaders(["task.deleted"])
-  dispatchTaskEvent("task.deleted", { id: resolvedId }, undefined, undefined, undefined, authority).catch(() => {})
-
-  // Clean up any associated calendar events (fire-and-forget)
-  import("../../../domains/calendar/calendar-bridge").then(({ removeTaskCalendarEvent }) => {
-    removeTaskCalendarEvent(resolvedId).catch(() => {})
-  }).catch(() => {})
-
-  // Clean up any associated HA todo items (fire-and-forget)
-  import("../../../domains/todo/todo-bridge").then(({ removeTaskFromTodoList }) => {
-    removeTaskFromTodoList(resolvedId).catch(() => {})
-  }).catch(() => {})
+  const body: unknown = await request.clone().json().catch(() => null)
+  const version = body && typeof body === "object" && "version" in body ? body.version : undefined
+  if (version !== undefined && (typeof version !== "number" || !Number.isSafeInteger(version) || version < 0)) return apiError("Use a current task version.", 400)
+  const outcome = await repo.deleteWorkCommand(params.id!, { ...(typeof version === "number" ? { version } : {}), ...(locals.writeAbortSignal ? { signal: locals.writeAbortSignal } : {}) })
+  if (!outcome.ok) return apiError("This task could not be deleted.", outcome.errorCode === "unavailable" ? 404 : 409)
+  const authority = await taskEventAuthorityHeaders(["task.deleted"], scope)
+  dispatchTaskEvent("task.deleted", { id: outcome.id }, undefined, undefined, outcome.eventId, authority, scope).catch(() => {})
 
   return new Response(null, { status: 204, headers: authority })
-}
+})
 
 /** PATCH is an alias for PUT — some client-side callers use PATCH for partial updates */
 export const PATCH = PUT

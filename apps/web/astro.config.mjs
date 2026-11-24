@@ -1,8 +1,9 @@
 import { defineConfig, passthroughImageService } from "astro/config";
 import node from "@astrojs/node";
 import tailwindcss from "@tailwindcss/vite";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { minify } from "terser";
 
 // ── Single source of truth for version ──────────────────────────────
 // Read from meitheal-hub/config.yaml at build time. This value is
@@ -35,6 +36,7 @@ export default defineConfig({
   output: "server",
   trailingSlash: "never",
   adapter: node({ mode: "standalone" }),
+  devToolbar: { enabled: false },
   image: { service: passthroughImageService() },
   integrations: [{
     name: "compact-server-output",
@@ -46,10 +48,51 @@ export default defineConfig({
         })
       },
     },
+  }, {
+    name: "compact-client-assets",
+    hooks: {
+      "astro:build:done": async ({ dir }) => {
+        const worker = new URL("sw.js", dir)
+        const { code } = await minify(readFileSync(worker, "utf8"), {
+          compress: { passes: 3, toplevel: true },
+          mangle: { toplevel: true },
+          format: { comments: "some" },
+        })
+        if (code) writeFileSync(worker, code)
+        const astroDir = new URL("_astro/", dir)
+        const jsFiles = readdirSync(astroDir).filter((name) => name.endsWith(".js"))
+        await Promise.all(jsFiles.map(async (name) => {
+          const target = new URL(name, astroDir)
+          const source = readFileSync(target, "utf8")
+          const result = await minify(source, {
+            module: true,
+            compress: { passes: 3 },
+            mangle: true,
+            format: { comments: false },
+          })
+          if (result.code && result.code.length < source.length) {
+            writeFileSync(target, result.code)
+          }
+        }))
+      },
+    },
   }],
   compressHTML: true,
+  // Class scoping matches attribute scoping specificity (0,1,0) while shrinking
+  // scoped CSS selectors (~22 KB) and SSR HTML payloads with faster class lookup.
+  scopedStyleStrategy: "class",
   prefetch: true,
+  security: {
+    checkOrigin: false,
+  },
   vite: {
+    build: {
+      cssMinify: "lightningcss",
+    },
+    server: {
+      allowedHosts: true,
+      hmr: false,
+    },
     experimental: {
       renderBuiltUrl(_filename, { hostType, type }) {
         // Dynamic preloads must resolve from the script URL inside HA ingress.
@@ -85,9 +128,7 @@ export default defineConfig({
     optimizeDeps: {
       // Pre-bundle dependencies that Vite discovers at runtime, preventing
       // "optimized dependencies changed. reloading" mid-session (causes 504 errors).
-      include: [
-        "marked",
-      ],
+      include: ["dompurify", "date-fns-tz", "sortablejs"],
     },
   },
 });

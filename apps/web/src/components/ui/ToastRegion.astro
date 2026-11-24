@@ -1,0 +1,30 @@
+---
+/**
+ * ToastRegion — Single root notification region mounted in Layout.astro.
+ *
+ * Persists across Astro ClientRouter transitions (`transition:persist`) and is
+ * dynamically promoted with `popover="manual"` when visible (and removed when empty)
+ * by `@lib/toast`. `aria-label` is attached only while visible so an empty container
+ * never creates an empty region landmark. Both `hasPriorityOverlay()` and `_modal.css`
+ * exclude `#toast-container` (`:not(#toast-container)`) so non-modal toasts never
+ * block keyboard shortcuts or hide `#shortcut-modal`. Individual `.toast` nodes own
+ * their ARIA role (`alert` or `status`) so assistive tech never encounters nested
+ * live regions.
+ */
+import { t } from "@lib/i18n"
+import type { Locale } from "../../lib/locale"
+
+interface Props {
+  locale: Locale
+}
+
+const { locale } = Astro.props
+---
+
+<section
+  id="toast-container"
+  class="toast-container"
+  data-region-label={t("toast.region_label", locale)}
+  transition:persist="toast-container"
+>
+</section>

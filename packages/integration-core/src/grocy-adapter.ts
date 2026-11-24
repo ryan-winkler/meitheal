@@ -15,7 +15,7 @@
  * @bounded-context grocy
  */
 
-import { fetchOutbound, OutboundUrlError } from "./outbound-fetch"
+import { fetchOutbound, OutboundOperationUnavailableError, OutboundUrlError } from "./outbound-fetch"
 
 // --- Types: Core ---
 
@@ -23,6 +23,8 @@ export interface GrocyAdapterConfig {
   baseUrl: string
   apiKey: string
   timeoutMs?: number | undefined
+  /** The application revalidates its current destination at the actual provider dispatch. */
+  operationAllowed?: (() => Promise<boolean>) | undefined
   /** "manual" reports a redirect status without following it; defaults to "error". */
   redirect?: "error" | "manual" | undefined
 }
@@ -491,12 +493,22 @@ export class GrocyAdapter {
   private readonly apiKey: string
   private readonly timeoutMs: number
   private readonly redirect: "error" | "manual"
+  private readonly operationAllowed: (() => Promise<boolean>) | undefined
 
   constructor(config: GrocyAdapterConfig) {
     this.baseUrl = config.baseUrl.replace(/\/$/, "")
     this.apiKey = config.apiKey
     this.timeoutMs = config.timeoutMs ?? 8_000
     this.redirect = config.redirect ?? "error"
+    this.operationAllowed = config.operationAllowed
+  }
+
+  /** Retain credentials and URL policy while narrowing an adapter to a running sync scope. */
+  withOperationAllowed(operationAllowed: () => Promise<boolean>): GrocyAdapter {
+    return new GrocyAdapter({
+      baseUrl: this.baseUrl, apiKey: this.apiKey, timeoutMs: this.timeoutMs, redirect: this.redirect,
+      operationAllowed: async () => (!this.operationAllowed || await this.operationAllowed()) && await operationAllowed(),
+    })
   }
 
   // ═══════ System ═══════
@@ -837,6 +849,7 @@ export class GrocyAdapter {
         allowPrivate: true,
         redirect: this.redirect,
         signal: controller.signal,
+        operationAllowed: this.operationAllowed,
         headers: {
           "GROCY-API-KEY": this.apiKey,
           "content-type": "application/json",
@@ -865,9 +878,13 @@ export class GrocyAdapter {
         }
       }
 
+      if (this.operationAllowed && !await this.operationAllowed()) throw new OutboundOperationUnavailableError()
       const data = transform ? transform(raw) : (raw as T)
       return { ok: true, data }
     } catch (error) {
+      if (error instanceof OutboundOperationUnavailableError) {
+        return { ok: false, errorCode: "service_unavailable", retryable: false, message: error.message }
+      }
       if (error instanceof Error && error.name === "AbortError") {
         return {
           ok: false,

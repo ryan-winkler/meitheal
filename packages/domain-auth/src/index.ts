@@ -113,12 +113,17 @@ export function verifyLicenseKeyWithPublicKey(
       return { valid: false, reason: "invalid_issuer", plan: "none" }
     }
 
-    // Check expiry
-    if (payload.exp) {
-      const now = Math.floor(Date.now() / 1000)
-      if (now > payload.exp) {
-        return { valid: false, reason: "expired", plan: "none" }
-      }
+    const now = Math.floor(Date.now() / 1000)
+    if ((payload.nbf !== undefined && !Number.isFinite(payload.nbf)) ||
+        (payload.exp !== undefined && !Number.isFinite(payload.exp)) ||
+        (payload.sub !== undefined && typeof payload.sub !== "string")) {
+      return { valid: false, reason: "invalid_format", plan: "none" }
+    }
+    if (payload.nbf !== undefined && now < payload.nbf) {
+      return { valid: false, reason: "not_yet_valid", plan: "none" }
+    }
+    if (payload.exp !== undefined && now >= payload.exp) {
+      return { valid: false, reason: "expired", plan: "none" }
     }
 
     // Validate plan
@@ -128,7 +133,7 @@ export function verifyLicenseKeyWithPublicKey(
     return {
       valid: true,
       plan,
-      email: payload.sub || "unknown",
+      email: payload.sub ?? "unknown",
       expiresAt: payload.exp ? new Date(payload.exp * 1000).toISOString() : null,
       issuedAt: payload.iat ? new Date(payload.iat * 1000).toISOString() : new Date().toISOString()
     }

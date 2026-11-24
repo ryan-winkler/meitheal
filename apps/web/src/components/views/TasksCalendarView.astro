@@ -1,283 +1,504 @@
 ---
+import type { BoardScope } from "@domains/tasks/board-scope"
+const scope: BoardScope = Astro.props.scope
 
-import SignalBar from "../layout/SignalBar.astro";
+import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import { TaskRepository, type CalendarDayInfo } from "@domains/tasks/persistence/task-repository"
+import { createCalendarTaskFilter } from "../../lib/calendar-task-filter"
 import {
-  ensureSchema,
-  getPersistenceClient,
-} from "@domains/tasks/persistence/store";
-import { TaskRepository } from "@domains/tasks/persistence/task-repository";
-import { STATUS } from "../../lib/status-config";
-import { CALENDAR_SECTIONS } from "../../lib/calendar-registry";
-import { calendarToday } from "../../lib/date";
+  buildYearMonths,
+  daysInUtcMonth,
+  isColumnWeekend,
+  normalizeWeekStart,
+  resolveCalendarViewState,
+  weekStartIndex,
+  type CalendarNavTarget,
+  type CalendarViewMode,
+} from "../../lib/calendar-view-range"
+import { calendarOccurrenceStartKey, calendarToday, householdDayRanges } from "../../lib/date"
+import { sanitizeCssColor } from "../../lib/safe-html"
+import { taskViewUrl } from "../../lib/task-view-route"
+import SignalBar from "../layout/SignalBar.astro"
+import FilterToolbar from "../ui/FilterToolbar.astro"
+import Icon from "../ui/Icon.astro"
 
-const { weekStart = "monday", timezone = "Europe/Dublin" } = Astro.locals;
-const tz = timezone || "Europe/Dublin";
-const todayStr = calendarToday(tz);
-const [todayYear, todayMonth] = todayStr.split("-").map(Number);
+const { weekStart = "monday", timezone = "Europe/Dublin" } = Astro.locals
+const tz = timezone || "Europe/Dublin"
+const todayStr = calendarToday(tz)
+const normalizedWeekStart = normalizeWeekStart(weekStart)
 
-// Get current month from query param or default to today in household timezone
-const url = new URL(Astro.request.url);
-const yearParam = url.searchParams.get("year");
-const monthParam = url.searchParams.get("month");
+const url = new URL(Astro.request.url)
+const cal = resolveCalendarViewState({
+  viewParam: url.searchParams.get("calView"),
+  dateParam: url.searchParams.get("date"),
+  yearParam: url.searchParams.get("year"),
+  monthParam: url.searchParams.get("month"),
+  todayStr,
+  weekStart: normalizedWeekStart,
+})
 
-const parsedYear = yearParam ? parseInt(yearParam, 10) : NaN;
-const parsedMonth = monthParam ? parseInt(monthParam, 10) : NaN;
-const year = Number.isInteger(parsedYear) ? parsedYear : todayYear!;
-const month = Number.isInteger(parsedMonth) && parsedMonth >= 0 && parsedMonth <= 11 ? parsedMonth : (todayMonth! - 1); // 0-indexed
+function calendarHref(targetSpec?: Partial<CalendarNavTarget>) {
+  const target = taskViewUrl(url, "calendar")
+  target.pathname = `/boards/${encodeURIComponent(scope.boardId)}`
+  target.searchParams.delete("calendarRefresh")
+  target.searchParams.delete("open")
+  target.searchParams.delete("comment")
 
-const firstDay = new Date(Date.UTC(year, month, 1));
-const lastDay = new Date(Date.UTC(year, month + 1, 0));
+  const nextView = targetSpec?.view ?? cal.view
+  if (nextView === "month") target.searchParams.delete("calView")
+  else target.searchParams.set("calView", nextView)
 
-let startDayOfWeek = firstDay.getUTCDay(); // 0=Sun
-let weekLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-let isWeekendFn: (dow: number) => boolean = (dow: number) =>
-  dow === 0 || dow === 6;
-
-if (weekStart === "monday") {
-  startDayOfWeek = (startDayOfWeek + 6) % 7;
-  weekLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  isWeekendFn = (dow: number) => dow === 5 || dow === 6;
-} else if (weekStart === "saturday") {
-  startDayOfWeek = (startDayOfWeek + 1) % 7;
-  weekLabels = ["Sat", "Sun", "Mon", "Tue", "Wed", "Thu", "Fri"];
-  isWeekendFn = (dow: number) => dow === 0 || dow === 1;
-}
-
-const daysInMonth = lastDay.getUTCDate();
-
-const monthName = firstDay.toLocaleDateString("en-US", {
-  month: "long",
-  year: "numeric",
-  timeZone: "UTC",
-});
-
-// Prev/next month links
-const prevMonth = month === 0 ? 11 : month - 1;
-const prevYear = month === 0 ? year - 1 : year;
-const nextMonth = month === 11 ? 0 : month + 1;
-const nextYear = month === 11 ? year + 1 : year;
-
-// Query task counts per day for this month
-const tasksByDay: Record<
-  string,
-  { count: number; colors: string[]; haEvents: number }
-> = {};
-let monthTotal = 0;
-let monthHAEvents = 0;
-
-try {
-  await ensureSchema();
-  const repo = new TaskRepository(getPersistenceClient());
-  const monthStart = `${year}-${String(month + 1).padStart(2, "0")}-01`;
-  const monthEnd = `${year}-${String(month + 1).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
-
-  const calendarData = await repo.getCalendarTaskCounts(monthStart, monthEnd, tz);
-  for (const [dateStr, info] of Object.entries(calendarData)) {
-    tasksByDay[dateStr] = {
-      count: info.count,
-      colors: info.colors,
-      haEvents: 0,
-    };
-    monthTotal += info.count;
-  }
-
-  // Also query HA-synced event counts per day
-  const haData = await repo.getCalendarHAEventCounts(monthStart, monthEnd, tz);
-  for (const [dateStr, count] of Object.entries(haData)) {
-    monthHAEvents += count;
-    if (tasksByDay[dateStr]) {
-      tasksByDay[dateStr].haEvents = count;
+  if (targetSpec?.year === undefined && targetSpec?.month === undefined && targetSpec?.date === undefined) {
+    target.searchParams.delete("year")
+    target.searchParams.delete("month")
+    target.searchParams.delete("date")
+  } else {
+    if (targetSpec.year !== undefined) target.searchParams.set("year", String(targetSpec.year))
+    if (targetSpec.month !== undefined) target.searchParams.set("month", String(targetSpec.month))
+    if (nextView === "day" || nextView === "week") {
+      if (targetSpec.date) target.searchParams.set("date", targetSpec.date)
     } else {
-      tasksByDay[dateStr] = { count, colors: [], haEvents: count };
-      monthTotal += count;
+      target.searchParams.delete("date")
     }
   }
-} catch {
-  /* DB not available */
+  return target.pathname + target.search + target.hash
 }
 
-// Build calendar grid (6 rows × 7 cols)
-interface CalDay {
-  day: number;
-  dateStr: string;
-  isCurrentMonth: boolean;
-  isToday: boolean;
-  isWeekend: boolean;
-  taskCount: number;
-  haEventLabel: string | undefined;
-  colors: string[];
-}
+const filter = createCalendarTaskFilter(url.searchParams, tz)
+let calendarAvailable = true
+if (url.searchParams.has("calendarRefresh")) Astro.response.headers.set("Cache-Control", "no-store")
 
-const grid: CalDay[][] = [];
-let currentDay = 1 - startDayOfWeek;
+const tasksByDay: Record<string, Pick<CalendarDayInfo, "count" | "colors" | "haEvents" | "scheduledEvents">> = {}
+let rangeTotal = 0
+let rangeHAEvents = 0
 
-for (let week = 0; week < 6; week++) {
-  const row: CalDay[] = [];
-  for (let dow = 0; dow < 7; dow++) {
-    const d = currentDay;
-    const isCurrentMonth = d >= 1 && d <= daysInMonth;
-    const dateStr = isCurrentMonth
-      ? `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`
-      : "";
-    const dayData = tasksByDay[dateStr];
-    const haEventCount = dayData?.haEvents ?? 0;
+try {
+  await ensureSchema()
+  const repo = new TaskRepository(getPersistenceClient(), scope)
 
-    row.push({
-      day: d,
-      dateStr,
-      isCurrentMonth,
-      isToday: dateStr === todayStr,
-      isWeekend: isWeekendFn(dow),
-      taskCount: dayData?.count ?? 0,
-      haEventLabel: haEventCount > 0
-        ? `${haEventCount} calendar event${haEventCount === 1 ? "" : "s"}`
-        : undefined,
-      colors: dayData?.colors ?? [],
-    });
-    currentDay++;
+  const calendarData = await repo.getCalendarTaskCounts(cal.rangeStart, cal.rangeEnd, tz, {
+    matches: filter.matches,
+    includeCompleted: filter.includeCompletedInCounts,
+  })
+  for (const [dateStr, info] of Object.entries(calendarData)) {
+    tasksByDay[dateStr] = info
+    rangeTotal += info.count
   }
-  // Skip empty trailing weeks
-  if (row.every((d) => !d.isCurrentMonth) && week > 0) break;
-  grid.push(row);
+
+  const haData = filter.showConnectedEvents ? await repo.getLinkedCalendarEvents(cal.rangeStart, cal.rangeEnd, tz) : {}
+  const syncedOccurrences = new Set<string>()
+  for (const [dateStr, events] of Object.entries(haData)) {
+    if (!events?.length) continue
+    for (const event of events) syncedOccurrences.add(event.id + "/" + calendarOccurrenceStartKey(event.start, tz))
+    if (tasksByDay[dateStr]) {
+      tasksByDay[dateStr].haEvents = events.length
+    } else {
+      tasksByDay[dateStr] = { count: 0, colors: [], haEvents: events.length, scheduledEvents: 0 }
+    }
+  }
+  rangeHAEvents = syncedOccurrences.size
+} catch {
+  calendarAvailable = false
+  Astro.response.headers.set("Cache-Control", "no-store")
 }
 
-const scheduledDayCount = Object.keys(tasksByDay).length
-const itemWord = monthTotal === 1 ? "item" : "items"
+// Month grid (only built when in month view)
+interface CalDay {
+  day: number
+  dateStr: string
+  isCurrentMonth: boolean
+  isToday: boolean
+  isWeekend: boolean
+  taskCount: number
+  calendarEventCount: number
+  colors: string[]
+}
+
+const monthPrefix = `${String(cal.year).padStart(4, "0")}-${String(cal.month + 1).padStart(2, "0")}`
+const monthGrid: CalDay[][] = []
+if (cal.view === "month") {
+  const firstDow = new Date(Date.UTC(cal.year, cal.month, 1)).getUTCDay()
+  const startDayOfWeek = (firstDow - weekStartIndex(normalizedWeekStart) + 7) % 7
+  const totalDays = daysInUtcMonth(cal.year, cal.month)
+  let currentDay = 1 - startDayOfWeek
+
+  for (let week = 0; week < 6; week++) {
+    const row: CalDay[] = []
+    for (let dow = 0; dow < 7; dow++) {
+      const d = currentDay
+      const isCurrentMonth = d >= 1 && d <= totalDays
+      const dateStr = isCurrentMonth ? `${monthPrefix}-${String(d).padStart(2, "0")}` : ""
+      const dayData = tasksByDay[dateStr]
+      const scheduledEvents = dayData?.scheduledEvents ?? 0
+      const calendarEventCount = scheduledEvents + (dayData?.haEvents ?? 0)
+      row.push({
+        day: d,
+        dateStr,
+        isCurrentMonth,
+        isToday: dateStr === todayStr,
+        isWeekend: isColumnWeekend(dow, normalizedWeekStart),
+        taskCount: (dayData?.count ?? 0) - scheduledEvents,
+        calendarEventCount,
+        colors: dayData?.colors ?? [],
+      })
+      currentDay++
+    }
+    if (row.every(d => !d.isCurrentMonth) && week > 0) break
+    monthGrid.push(row)
+  }
+}
+
+const yearMonths = cal.view === "year" ? buildYearMonths(cal.year, todayStr, normalizedWeekStart) : []
+
+const scheduledDayCount = Object.values(tasksByDay).filter(day => day.count > 0).length
+const itemWord = rangeTotal === 1 ? "item" : "items"
 const dayWord = scheduledDayCount === 1 ? "day" : "days"
-const haEventWord = monthHAEvents === 1 ? "HA event" : "HA events"
-const calendarSignal =
-  monthTotal === 0
-    ? "No tasks or connected events on this month yet"
-    : `${monthTotal} ${itemWord} tracked across ${scheduledDayCount} ${dayWord}`
+const haEventWord = rangeHAEvents === 1 ? "synced event" : "synced events"
+const periodLabel = cal.view === "day" ? "day" : cal.view === "week" ? "week" : cal.view === "year" ? "year" : "month"
+const agendaNote = filter.matches && !Object.values(tasksByDay).some(day => day.count)
+  ? `No tasks match these filters this ${periodLabel}.`
+  : cal.view === "day"
+    ? "Use D, W, M, or Y to switch views quickly."
+    : cal.view === "year"
+      ? "Select any month or day to zoom in."
+      : "Open a day to see its full agenda."
+
+const viewModes: Array<{ id: CalendarViewMode; label: string; key: string }> = [
+  { id: "day", label: "Day", key: "D" },
+  { id: "week", label: "Week", key: "W" },
+  { id: "month", label: "Month", key: "M" },
+  { id: "year", label: "Year", key: "Y" },
+]
+const dayViewData = tasksByDay[cal.anchorDate]
+const dayViewRanges = cal.view === "day" && filter.showConnectedEvents ? householdDayRanges(cal.anchorDate, tz) : undefined
 ---
 
 <div id="tasks-view-calendar" class="tasks-view-container" data-task-view="calendar">
 
   <div id="calendar-shell" class="page-shell" data-timezone={tz}>
-    <!-- Signal bar -->
-    <SignalBar>
-      <span id="calendar-signal-summary">
-        <strong>{monthTotal}</strong> {itemWord} across <strong>{scheduledDayCount}</strong> {dayWord} · <strong>{monthHAEvents}</strong> {haEventWord}
-      </span>
-    </SignalBar>
+    <div class="card calendar-filter-island">
+      <FilterToolbar view="calendar" showSearch showGroupBy={false} showSortBy={false} />
+    </div>
+    <div class="calendar-refresh-status" data-calendar-status role="status" hidden={calendarAvailable}>
+      {!calendarAvailable && "Calendar data could not load."}
+    </div>
+    <button class="btn btn-outline" type="button" data-calendar-retry hidden={calendarAvailable}>Retry calendar</button>
+    <div
+      class="calendar-month"
+      data-calendar-month
+      data-calendar-mode={cal.view}
+      data-calendar-anchor={cal.anchorDate}
+      data-calendar-available={String(calendarAvailable)}
+      data-calendar-events={String(filter.showConnectedEvents)}
+    >
+      {calendarAvailable && <SignalBar>
+        <span id="calendar-signal-summary">
+          <strong>{rangeTotal}</strong> {itemWord} across <strong>{scheduledDayCount}</strong> {dayWord}
+          {filter.showConnectedEvents && <> · <strong>{rangeHAEvents}</strong> {haEventWord}</>}
+        </span>
+      </SignalBar>}
 
-      <div class="calendar-controls">
-        <a
-          href={`/calendar?year=${prevYear}&month=${prevMonth}`}
-          class="cal-nav-btn"
-          aria-label="Previous month"
-        >
-          <span>←</span>
-        </a>
-        <a
-          href={`/calendar?year=${nextYear}&month=${nextMonth}`}
-          class="cal-nav-btn"
-          aria-label="Next month"
-        >
-          <span>→</span>
-        </a>
-        <a href="/calendar" class="cal-today-btn">Today</a>
-        <span class="cal-task-summary"
-          >{monthTotal} {itemWord} this month{
-            monthHAEvents > 0 && (
-              <>
-                {" "}({monthHAEvents}{" "}
-                <svg class="inline-block align-text-bottom" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12" /><path d="M16 3v4" /><path d="M8 3v4" /><path d="M4 11h16" /></svg>)
-              </>
-            )
-          }</span
-        >
-      </div>
-
-      <div class="calendar-grid">
-        {
-          weekLabels.map((d, i) => (
-            <div class={`cal-header ${isWeekendFn(i) ? "cal-header-weekend" : ""}`}>
-              {d}
+      <section class="card calendar-card" aria-labelledby="calendar-month-heading">
+        <div class="card-header calendar-controls">
+          <div class="calendar-heading-group">
+            <h2 class="card-title" id="calendar-month-heading">{cal.heading}</h2>
+          </div>
+          <div class="calendar-toolbar-actions">
+            <nav class="btn-group cal-view-switcher" aria-label="Calendar view range">
+              {viewModes.map(mode => (
+                <a
+                  href={calendarHref({ view: mode.id, year: cal.year, month: cal.month, date: cal.anchorDate })}
+                  class={`btn cal-view-btn${cal.view === mode.id ? " is-active" : ""}`}
+                  data-calendar-nav={`view-${mode.id}`}
+                  data-calendar-shortcut={mode.key.toLowerCase()}
+                  aria-current={cal.view === mode.id ? "page" : undefined}
+                  title={`${mode.label} view (${mode.key})`}
+                >
+                  <span>{mode.label}</span>
+                  <kbd class="cal-view-kbd" aria-hidden="true">{mode.key}</kbd>
+                </a>
+              ))}
+            </nav>
+            <div class="btn-list calendar-navigation" aria-label={`Change ${periodLabel}`}>
+              <a href={calendarHref({ view: cal.view })} class="btn cal-today-btn" data-calendar-nav="today" title="Jump to today (T)">Today</a>
+              <div class="btn-group">
+                <a href={calendarHref(cal.prev)} class="btn cal-nav-btn" data-calendar-nav="previous" aria-label={`Previous ${periodLabel}`}>
+                  <Icon name="chevron-down" class="cal-prev-icon" size={16} />
+                </a>
+                <a href={calendarHref(cal.next)} class="btn cal-nav-btn" data-calendar-nav="next" aria-label={`Next ${periodLabel}`}>
+                  <Icon name="chevron-down" class="cal-next-icon" size={16} />
+                </a>
+              </div>
             </div>
-          ))
-        }
-        {
-          grid.flat().map((cell) => (
-            <div
-              class={`cal-cell ${cell.isToday ? "cal-today" : ""} ${!cell.isCurrentMonth ? "cal-other" : ""} ${cell.isWeekend && cell.isCurrentMonth ? "cal-weekend" : ""} ${cell.taskCount > 0 ? "cal-has-tasks" : ""}`}
-              data-date={cell.dateStr}
-              role={cell.isCurrentMonth ? "button" : undefined}
-              tabindex={cell.isCurrentMonth ? "0" : undefined}
-              aria-current={cell.isToday ? "date" : undefined}
-            >
-              {cell.isCurrentMonth && (
-                <div>
-                  <span
-                    class={`cal-day-num ${cell.isToday ? "cal-day-today" : ""}`}
-                  >
-                    {cell.day}<span class="sr-only">{` ${monthName}`}</span>
-                  </span>
-                  {cell.taskCount > 0 && (
+          </div>
+        </div>
+
+        {/* ───────── DAY VIEW ───────── */}
+        {cal.view === "day" && (
+          <div
+            class="cal-day-view"
+            data-cal-day-view={cal.anchorDate}
+            data-day-ranges={dayViewRanges?.length === 1 ? undefined : JSON.stringify(dayViewRanges)}
+          >
+            <div class="cal-day-view__bar">
+              <div class="cal-day-view__summary">
+                <span class={`cal-day-view__pill${cal.anchorDate === todayStr ? " is-today" : ""}`}>
+                  <Icon name="calendar" size={14} />
+                  <span>{cal.anchorDate === todayStr ? "Today" : cal.shortHeading}</span>
+                </span>
+                <span class="cal-day-view__count">
+                  {dayViewData?.count ?? 0} scheduled {(dayViewData?.count ?? 0) === 1 ? "item" : "items"}
+                </span>
+              </div>
+              <div class="cal-day-view__actions">
+                <button type="button" class="btn btn-outline" data-day-view-add="event" data-date={cal.anchorDate}>
+                  <Icon name="calendar-event" size={15} />
+                  <span>Add Event</span>
+                </button>
+                <button type="button" class="btn btn-primary" data-day-view-add="task" data-date={cal.anchorDate}>
+                  <Icon name="plus" size={15} />
+                  <span>Add Task</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="cal-day-view__columns">
+              <section class="cal-day-view__panel" aria-labelledby="cal-day-tasks-heading">
+                <h3 id="cal-day-tasks-heading" class="day-drawer-section-title flex items-center gap-1.5">
+                  <Icon name="clipboard-list" size={14} />
+                  <span>Scheduled Tasks &amp; Local Events</span>
+                </h3>
+                <div id="cal-day-view-tasks" class="day-drawer-list" aria-busy="true">
+                  <div class="cal-skeleton-row" aria-hidden="true"></div>
+                  <div class="cal-skeleton-row" aria-hidden="true"></div>
+                  <div class="cal-skeleton-row cal-skeleton-row--short" aria-hidden="true"></div>
+                </div>
+                <div id="cal-day-view-task-status" class="day-drawer-read-status" role="status"></div>
+              </section>
+
+              {filter.showConnectedEvents && (
+                <section class="cal-day-view__panel" aria-labelledby="cal-day-events-heading">
+                  <h3 id="cal-day-events-heading" class="day-drawer-section-title flex items-center gap-1.5">
+                    <Icon name="calendar-event" size={14} />
+                    <span>Connected Calendar Events</span>
+                  </h3>
+                  <div id="cal-day-view-events" class="day-drawer-list" aria-busy="true">
+                    <div class="cal-skeleton-row" aria-hidden="true"></div>
+                    <div class="cal-skeleton-row cal-skeleton-row--short" aria-hidden="true"></div>
+                  </div>
+                  <div id="cal-day-view-event-status" class="day-drawer-read-status" role="status"></div>
+                </section>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ───────── WEEK VIEW ───────── */}
+        {cal.view === "week" && (
+          <div class="cal-week-grid">
+            {cal.weekDays.map((dayInfo) => {
+              const dayData = tasksByDay[dayInfo.dateStr]
+              const scheduledEvents = dayData?.scheduledEvents ?? 0
+              const taskCount = (dayData?.count ?? 0) - scheduledEvents
+              const calendarEventCount = scheduledEvents + (dayData?.haEvents ?? 0)
+              const colors = dayData?.colors ?? []
+              const ranges = filter.showConnectedEvents ? householdDayRanges(dayInfo.dateStr, tz) : undefined
+              return (
+                <div
+                  id={`calendar-day-${dayInfo.dateStr}`}
+                  class={`cal-cell cal-week-cell${dayInfo.isToday ? " cal-today" : ""}${dayInfo.isWeekend ? " cal-weekend" : ""}${taskCount > 0 ? " cal-has-tasks" : ""}`}
+                  data-date={dayInfo.dateStr}
+                  data-day-ranges={ranges?.length === 1 ? undefined : JSON.stringify(ranges)}
+                  role="button"
+                  tabindex="0"
+                  aria-current={dayInfo.isToday ? "date" : undefined}
+                >
+                  <div class="cal-week-cell__head">
+                    <span class="cal-week-cell__dow">{dayInfo.weekdayShort}</span>
+                    <a
+                      href={calendarHref({ view: "day", year: dayInfo.year, month: dayInfo.month, date: dayInfo.dateStr })}
+                      class={`cal-day-num cal-week-day-link${dayInfo.isToday ? " cal-day-today" : ""}`}
+                      data-calendar-nav={`day-${dayInfo.dateStr}`}
+                      title={`Open ${dayInfo.weekdayShort} ${dayInfo.monthShort} ${dayInfo.day} in Day view`}
+                    >
+                      {dayInfo.day}
+                    </a>
+                  </div>
+                  {(taskCount > 0 || calendarEventCount > 0) ? (
                     <div class="cal-task-indicator">
-                      <span class="cal-task-badge">
-                        {cell.taskCount}<span class="sr-only">{cell.taskCount === 1 ? " task" : " tasks"}</span>
-                      </span>
-                      {cell.haEventLabel && (
-                        <span class="cal-ha-badge" title={cell.haEventLabel}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12" /><path d="M16 3v4" /><path d="M8 3v4" /><path d="M4 11h16" /></svg>
-                          <span class="sr-only">{cell.haEventLabel}</span>
+                      {taskCount > 0 && (
+                        <span class="cal-task-badge">
+                          {taskCount}<span class="sr-only">{taskCount === 1 ? " task" : " tasks"}</span>
                         </span>
                       )}
-                      {cell.colors.length > 0 && (
+                      {calendarEventCount > 0 && (
+                        <span class="cal-event-badge">
+                          <Icon name="calendar-event" size={12} />
+                          <span>{calendarEventCount}<span class="sr-only">{calendarEventCount === 1 ? " calendar event" : " calendar events"}</span></span>
+                        </span>
+                      )}
+                      {colors.length > 0 && (
                         <div class="cal-color-dots">
-                          {cell.colors.map((c) => (
-                            <span
-                              class="cal-color-dot"
-                              style={`background: ${c || "var(--accent)"};`}
-                            />
+                          {colors.map((c) => (
+                            <span class="cal-color-dot" style={`background: ${sanitizeCssColor(c)};`} />
                           ))}
                         </div>
                       )}
                     </div>
+                  ) : (
+                    <p class="cal-week-empty-hint">Open</p>
                   )}
-                  <div class="cal-inline-events" data-inline-date={cell.dateStr}></div>
+                  {filter.showConnectedEvents && <div class="cal-inline-events" data-inline-date={dayInfo.dateStr}></div>}
                 </div>
-              )}
-            </div>
-          ))
-        }
-      </div>
+              )
+            })}
+          </div>
+        )}
 
-    <!-- Agenda hint card -->
-    <div class="card calendar-shell__agenda-card">
-      Click any active day in the month grid to inspect calendar events and due tasks.
+        {/* ───────── MONTH VIEW ───────── */}
+        {cal.view === "month" && (
+          <div class="calendar-grid">
+            {cal.weekLabels.map((d, i) => (
+              <div class={`cal-header ${isColumnWeekend(i, normalizedWeekStart) ? "cal-header-weekend" : ""}`}>
+                {d}
+              </div>
+            ))}
+            {monthGrid.flat().map((cell) => {
+              const ranges = cell.isCurrentMonth && filter.showConnectedEvents ? householdDayRanges(cell.dateStr, tz) : undefined
+              return (
+                <div
+                  id={cell.isCurrentMonth ? `calendar-day-${cell.dateStr}` : undefined}
+                  class={`cal-cell ${cell.isToday ? "cal-today" : ""} ${!cell.isCurrentMonth ? "cal-other" : ""} ${cell.isWeekend && cell.isCurrentMonth ? "cal-weekend" : ""} ${cell.taskCount > 0 ? "cal-has-tasks" : ""}`}
+                  data-date={cell.dateStr}
+                  data-day-ranges={ranges?.length === 1 ? undefined : JSON.stringify(ranges)}
+                  role={cell.isCurrentMonth ? "button" : undefined}
+                  tabindex={cell.isCurrentMonth ? "0" : undefined}
+                  aria-current={cell.isToday ? "date" : undefined}
+                >
+                  {cell.isCurrentMonth && (
+                    <div>
+                      <span class={`cal-day-num ${cell.isToday ? "cal-day-today" : ""}`}>
+                        {cell.day}<span class="sr-only">{` ${cal.heading}`}</span>
+                      </span>
+                      {(cell.taskCount > 0 || cell.calendarEventCount > 0) && (
+                        <div class="cal-task-indicator">
+                          {cell.taskCount > 0 && (
+                            <span class="cal-task-badge">
+                              {cell.taskCount}<span class="sr-only">{cell.taskCount === 1 ? " task" : " tasks"}</span>
+                            </span>
+                          )}
+                          {cell.calendarEventCount > 0 && (
+                            <span class="cal-event-badge">
+                              <Icon name="calendar-event" size={12} />
+                              <span>{cell.calendarEventCount}<span class="sr-only">{cell.calendarEventCount === 1 ? " calendar event" : " calendar events"}</span></span>
+                            </span>
+                          )}
+                          {cell.colors.length > 0 && (
+                            <div class="cal-color-dots">
+                              {cell.colors.map((c) => (
+                                <span class="cal-color-dot" style={`background: ${sanitizeCssColor(c)};`} />
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {filter.showConnectedEvents && <div class="cal-inline-events" data-inline-date={cell.dateStr}></div>}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* ───────── YEAR VIEW ───────── */}
+        {cal.view === "year" && (
+          <div class="cal-year-grid">
+            {yearMonths.map((ym) => {
+              const monthTaskTotal = ym.cells.reduce((sum, c) => sum + (c.isCurrentMonth ? (tasksByDay[c.dateStr]?.count ?? 0) : 0), 0)
+              return (
+                <section class="cal-year-month" aria-label={`${ym.label} ${ym.year}`}>
+                  <div class="cal-year-month__head">
+                    <a
+                      href={calendarHref({ view: "month", year: ym.year, month: ym.month })}
+                      class="cal-year-month__title"
+                      data-calendar-nav={`month-${ym.year}-${ym.month}`}
+                    >
+                      {ym.label}
+                    </a>
+                    {monthTaskTotal > 0 && (
+                      <span class="cal-year-month__count" title={`${monthTaskTotal} scheduled ${monthTaskTotal === 1 ? "item" : "items"}`}>
+                        {monthTaskTotal}
+                      </span>
+                    )}
+                  </div>
+                  <div class="cal-year-month__grid">
+                    {cal.weekLabels.map((dow) => (
+                      <span class="cal-year-dow" aria-hidden="true">{dow.slice(0, 1)}</span>
+                    ))}
+                    {ym.cells.map((cell) => {
+                      if (!cell.isCurrentMonth) return <span class="cal-year-day cal-year-day--empty" aria-hidden="true"></span>
+                      const info = tasksByDay[cell.dateStr]
+                      const total = (info?.count ?? 0) + (info?.haEvents ?? 0)
+                      const busyLevel = total >= 4 ? "high" : total >= 2 ? "med" : total >= 1 ? "low" : ""
+                      return (
+                        <a
+                          href={calendarHref({ view: "day", year: ym.year, month: ym.month, date: cell.dateStr })}
+                          class={`cal-year-day${cell.isToday ? " cal-year-day--today" : ""}${busyLevel ? ` cal-year-day--${busyLevel}` : ""}`}
+                          data-calendar-nav={`day-${cell.dateStr}`}
+                          aria-current={cell.isToday ? "date" : undefined}
+                          title={total > 0 ? `${ym.shortLabel} ${cell.day}: ${total} scheduled` : `${ym.shortLabel} ${cell.day}`}
+                        >
+                          <span>{cell.day}</span>
+                          {total > 0 && <span class="cal-year-day__dot" aria-hidden="true"></span>}
+                        </a>
+                      )
+                    })}
+                  </div>
+                </section>
+              )
+            })}
+          </div>
+        )}
+
+        <p class="card-footer calendar-agenda-note">
+          {calendarAvailable ? agendaNote : "Calendar counts are temporarily unavailable."}
+        </p>
+      </section>
     </div>
 
     <div class="day-drawer" id="day-drawer" aria-hidden="true">
       <div class="day-drawer-backdrop" id="day-drawer-backdrop"></div>
-      <div class="day-drawer-panel">
+      <div class="day-drawer-panel" role="dialog" aria-modal="true" aria-labelledby="day-drawer-title">
         <div class="day-drawer-header">
           <h3 class="day-drawer-title" id="day-drawer-title"></h3>
-          <button class="day-drawer-close" id="day-drawer-close" aria-label="Close">✕</button>
+          <button type="button" class="btn btn-icon day-drawer-close" id="day-drawer-close" aria-label="Close"><Icon name="x" size={18} /></button>
         </div>
         <div class="day-drawer-content">
-          <div class="day-drawer-section">
+          <div class="day-drawer-section" data-calendar-events-section>
             <h4 class="day-drawer-section-title flex items-center gap-1.5">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12" /><path d="M16 3v4" /><path d="M8 3v4" /><path d="M4 11h16" /></svg>
-              Calendar Events
+              <Icon name="calendar-event" size={14} />
+              Connected Calendar Events
             </h4>
-            <div id="day-drawer-events" class="day-drawer-list">
-              <span class="day-drawer-empty">Loading...</span>
+            <div id="day-drawer-events">
+              <div id="day-drawer-event-items" class="day-drawer-list"></div>
+              <div id="day-drawer-event-status" class="day-drawer-read-status" role="status"></div>
             </div>
           </div>
           <div class="day-drawer-section">
             <h4 class="day-drawer-section-title flex items-center gap-1.5">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2" /><path d="M9 3m0 2a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2v0a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2z" /><path d="M9 12h6" /><path d="M9 16h6" /></svg>
-              Tasks Due
+              <Icon name="clipboard-list" size={14} />
+              Scheduled items
             </h4>
-            <div id="day-drawer-tasks" class="day-drawer-list">
-              <span class="day-drawer-empty">Loading...</span>
+            <div id="day-drawer-tasks">
+              <div id="day-drawer-task-items" class="day-drawer-list"></div>
+              <div id="day-drawer-task-status" class="day-drawer-read-status" role="status"></div>
             </div>
+            <button type="button" class="btn btn-outline day-drawer-more" id="day-drawer-more-tasks" hidden>Load more items</button>
           </div>
           <div class="day-drawer-actions">
-            <button class="btn btn-primary day-drawer-add" id="day-drawer-add-event">+ Add Event</button>
-            <button class="btn btn-ghost day-drawer-add" id="day-drawer-add-task">+ Add Task</button>
+            <button type="button" class="btn day-drawer-add" id="day-drawer-add-event"><Icon name="plus" size={14} /> Add Event</button>
+            <button type="button" class="btn btn-primary day-drawer-add" id="day-drawer-add-task"><Icon name="plus" size={14} /> Add Task</button>
           </div>
         </div>
       </div>
@@ -286,81 +507,408 @@ const calendarSignal =
 </div>
 
 <style>
-  /* Signal bar CSS now in SignalBar.astro */
-
-  /* Calendar-specific styles */
-
-  .calendar-shell__agenda-card {
-    padding: 18px;
+  #calendar-shell, .calendar-month {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+  }
+  .calendar-month {
+    position: relative;
+  }
+  .calendar-month[aria-busy="true"] .calendar-card {
+    opacity: 0.72;
+    transition: opacity 150ms ease;
+  }
+  .calendar-month[aria-busy="true"] .calendar-card::before {
+    content: "";
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline: 0;
+    height: 3px;
+    background: linear-gradient(90deg, transparent 0%, var(--accent) 50%, transparent 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.2s ease-in-out infinite;
+    z-index: 4;
+    pointer-events: none;
+  }
+  .calendar-filter-island {
+    position: relative;
+    overflow: visible;
+    z-index: 2;
+    margin-block-start: 12px;
+    padding: 10px 12px;
+  }
+  .calendar-refresh-status {
     color: var(--text-muted);
+    padding-inline: 4px;
+    font-size: 13px;
   }
-
-  .calendar-shell__sync-btn {
-    min-height: 40px;
-    padding: 0 14px;
-    border-radius: 10px;
-    border: 1px solid color-mix(in srgb, var(--info, #60a5fa) 35%, var(--border));
-    background: color-mix(in srgb, var(--info, #60a5fa) 10%, transparent);
-    color: var(--text-primary);
+  [data-calendar-retry]:not([hidden]) {
+    justify-self: start;
   }
-
+  [data-calendar-retry][aria-disabled="true"] {
+    opacity: .65;
+    cursor: wait;
+  }
+  .calendar-card {
+    position: relative;
+    overflow: hidden;
+    min-width: 0;
+  }
   .calendar-controls {
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 16px;
     flex-wrap: wrap;
+    gap: 10px 16px;
+    padding: 12px 16px;
   }
-  .cal-nav-btn {
+  .calendar-controls h2 {
+    font-size: 16px;
+    margin: 0;
+  }
+  .calendar-toolbar-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+  .cal-view-switcher {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
+  }
+  .cal-view-switcher > .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    padding: 5px 10px;
+    border-radius: 0;
+    margin-inline-start: -1px;
+    text-decoration: none;
+  }
+  .cal-view-switcher > .btn:first-child {
+    margin-inline-start: 0;
+    border-start-start-radius: var(--radius-sm, 6px);
+    border-end-start-radius: var(--radius-sm, 6px);
+  }
+  .cal-view-switcher > .btn:last-child {
+    border-start-end-radius: var(--radius-sm, 6px);
+    border-end-end-radius: var(--radius-sm, 6px);
+  }
+  .cal-view-btn.is-active {
+    background: color-mix(in srgb, var(--accent) 16%, var(--bg-card));
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    color: var(--accent-text, var(--accent));
+    font-weight: 600;
+    position: relative;
+    z-index: 1;
+  }
+  .cal-view-kbd {
+    font-family: inherit;
+    font-size: 10px;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: 4px;
+    border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+    opacity: 0.65;
+  }
+  .calendar-navigation, .calendar-navigation .btn-group {
+    display: inline-flex;
+    align-items: center;
+  }
+  .calendar-navigation { gap: 8px; }
+  .calendar-navigation .btn-group > .btn:first-child { border-start-end-radius: 0; border-end-end-radius: 0; }
+  .calendar-navigation .btn-group > .btn:last-child { border-start-start-radius: 0; border-end-start-radius: 0; }
+  .calendar-navigation .btn-group > .btn + .btn { margin-inline-start: -1px; }
+  .cal-nav-btn { min-width: 36px; }
+  .cal-nav-btn > :global(.cal-prev-icon) { transform: rotate(90deg); }
+  .cal-nav-btn > :global(.cal-next-icon) { transform: rotate(-90deg); }
+  .calendar-agenda-note {
+    margin: 0;
+    padding: 9px 16px;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+
+  /* ── Shimmer skeleton rows (Nielsen Visibility of System Status) ── */
+  :global(.cal-skeleton-row) {
+    height: 46px;
     border-radius: 8px;
-    background: var(--bg-card);
+    background: linear-gradient(
+      90deg,
+      var(--bg-secondary) 25%,
+      color-mix(in srgb, var(--bg-hover) 80%, var(--border)) 50%,
+      var(--bg-secondary) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.2s ease-in-out infinite;
+  }
+  :global(.cal-skeleton-row--short) {
+    width: 72%;
+  }
+
+  /* ── Day View ── */
+  .cal-day-view {
+    display: grid;
+    gap: 16px;
+    padding: 16px;
+    border-block: 1px solid var(--border);
+  }
+  .cal-day-view__bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .cal-day-view__summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .cal-day-view__pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    font-weight: 600;
+    background: var(--bg-secondary);
     border: 1px solid var(--border);
     color: var(--text-primary);
-    font-size: 16px;
-    text-decoration: none;
-    transition: background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s, transform 0.15s;
   }
-  .cal-nav-btn:hover {
-    background: var(--bg-hover);
-    border-color: var(--accent);
+  .cal-day-view__pill.is-today {
+    background: color-mix(in srgb, var(--accent) 16%, var(--bg-card));
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+    color: var(--accent-text, var(--accent));
   }
-  .cal-month-title {
-    margin: 0;
-    font-size: 18px;
+  .cal-day-view__count {
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .cal-day-view__actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .cal-day-view__columns {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+    gap: 16px;
+  }
+  .cal-day-view__panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--bg-secondary) 55%, var(--bg-card));
+    border: 1px solid var(--border);
+    min-height: 220px;
+  }
+  :global(.cal-empty-state) {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 6px;
+    padding: 28px 16px;
+    border-radius: 8px;
+    border: 1px dashed var(--border);
+    color: var(--text-secondary);
+    font-size: 13px;
+  }
+  :global(.cal-empty-state__title) {
     font-weight: 600;
     color: var(--text-primary);
   }
-  .cal-today-btn {
-    margin-left: auto;
-    font-size: 12px;
-    color: var(--accent-text);
-    text-decoration: none;
-    padding: 4px 10px;
-    border-radius: 6px;
-    background: var(--accent-bg, rgba(99, 102, 241, 0.1));
-    transition: background 0.15s;
-  }
-  .cal-today-btn:hover {
-    background: rgba(99, 102, 241, 0.2);
-  }
-  .cal-task-summary {
-    font-size: 12px;
-    color: var(--text-muted);
-  }
 
-  .calendar-grid {
+  /* ── Week View ── */
+  .cal-week-grid {
     display: grid;
-    grid-template-columns: repeat(7, 1fr);
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     gap: 1px;
     background: var(--border);
+    border-block: 1px solid var(--border);
+  }
+  .cal-week-cell {
+    min-height: 260px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .cal-week-cell__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 6px;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  }
+  .cal-week-cell__dow {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+  }
+  .cal-week-day-link {
+    text-decoration: none;
+  }
+  .cal-week-day-link:hover {
+    text-decoration: underline;
+  }
+  .cal-week-empty-hint {
+    margin: auto 0;
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-muted);
+    opacity: 0.55;
+  }
+
+  /* ── Year View ── */
+  .cal-year-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 14px;
+    padding: 16px;
+    border-block: 1px solid var(--border);
+    background: color-mix(in srgb, var(--bg-secondary) 35%, var(--bg-card));
+  }
+  .cal-year-month {
+    background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    overflow: hidden;
+    border-radius: 10px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .cal-year-month__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .cal-year-month__title {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-primary);
+    text-decoration: none;
+  }
+  .cal-year-month__title:hover {
+    color: var(--accent);
+    text-decoration: underline;
+  }
+  .cal-year-month__count {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--accent) 14%, var(--bg-secondary));
+    color: var(--accent-text, var(--accent));
+    font-variant-numeric: tabular-nums;
+  }
+  .cal-year-month__grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 2px;
+    text-align: center;
+  }
+  .cal-year-dow {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    padding-bottom: 2px;
+  }
+  .cal-year-day {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 26px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    color: var(--text-primary);
+    text-decoration: none;
+    transition: background-color 120ms ease, color 120ms ease;
+    font-variant-numeric: tabular-nums;
+  }
+  .cal-year-day--empty {
+    pointer-events: none;
+  }
+  .cal-year-day:hover,
+  .cal-year-day:focus-visible {
+    background: var(--bg-hover);
+    outline: none;
+  }
+  .cal-year-day:focus-visible {
+    outline: 2px solid var(--border-focus);
+    outline-offset: -1px;
+  }
+  .cal-year-day--low {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    font-weight: 600;
+  }
+  .cal-year-day--med {
+    background: color-mix(in srgb, var(--accent) 24%, transparent);
+    font-weight: 600;
+  }
+  .cal-year-day--high {
+    background: color-mix(in srgb, var(--accent) 38%, transparent);
+    font-weight: 700;
+  }
+  .cal-year-day--today {
+    background: var(--personal-accent, var(--palette-accent-hover)) !important;
+    color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f)) !important;
+    font-weight: 700;
+  }
+  .cal-year-day__dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.8;
+    margin-top: 1px;
+  }
+
+  /* ── Month View ── */
+  .calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border-block: 1px solid var(--border);
+  }
+
+  @media (pointer: coarse) {
+    .calendar-grid {
+      grid-template-columns: repeat(7, minmax(44px, 1fr));
+      overflow-x: auto;
+      touch-action: pan-x pan-y;
+    }
+    .cal-view-kbd { display: none; }
+  }
+  @media (max-width: 768px) {
+    .cal-week-grid {
+      grid-template-columns: 1fr;
+    }
+    .cal-week-cell {
+      min-height: 74px;
+    }
+    .cal-view-kbd { display: none; }
+  }
+  @media (pointer: coarse) and (max-width: 380px) {
+    .calendar-card {
+      max-width: none;
+      margin-inline: -10px;
+      padding-inline: 0;
+    }
   }
 
   .cal-header {
@@ -392,7 +940,7 @@ const calendarSignal =
     background: var(--bg-hover);
   }
   .cal-cell:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--border-focus);
     outline-offset: -2px;
     z-index: 1;
   }
@@ -424,6 +972,10 @@ const calendarSignal =
   }
 
   .cal-task-indicator {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 3px;
     margin-top: 4px;
   }
   .cal-task-badge {
@@ -448,17 +1000,27 @@ const calendarSignal =
     border-radius: 50%;
     box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
   }
-  .cal-ha-badge {
+  .cal-event-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    max-width: 100%;
+    color: var(--text-secondary);
     font-size: 10px;
-    margin-left: 2px;
-    cursor: help;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
   }
+  .cal-event-badge svg { flex-shrink: 0; }
 
   @media (max-width: 640px) {
+    .calendar-navigation .btn,
+    .cal-view-switcher > .btn { min-height: 40px; }
     .cal-cell {
       min-height: 48px;
       padding: 4px;
     }
+    .cal-header { padding-inline: 2px; }
     .cal-day-num {
       font-size: 11px;
     }
@@ -471,8 +1033,8 @@ const calendarSignal =
     flex-direction: column;
     gap: 1px;
   }
-  .cal-inline-event {
-    font-size: 9px;
+  :global(.cal-inline-event) {
+    font-size: 11px;
     color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
@@ -482,11 +1044,11 @@ const calendarSignal =
     background: var(--accent-bg, rgba(99, 102, 241, 0.08));
     line-height: 1.3;
   }
-  .cal-inline-event.cal-inline-ha {
-    background: rgba(56, 189, 248, 0.1);
-    color: var(--info, #38bdf8);
+  :global(.cal-inline-event.cal-inline-ha) {
+    background: var(--accent-bg);
+    color: var(--accent-text);
   }
-  .cal-inline-more {
+  :global(.cal-inline-more) {
     font-size: 9px;
     color: var(--text-muted);
     padding: 0 3px;
@@ -549,18 +1111,8 @@ const calendarSignal =
     color: var(--text-primary);
   }
   .day-drawer-close {
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    font-size: 18px;
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 6px;
-    transition: background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s, transform 0.15s;
-  }
-  .day-drawer-close:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
+    min-inline-size: 44px;
+    min-block-size: 44px;
   }
   .day-drawer-content {
     padding: 16px 20px;
@@ -582,7 +1134,7 @@ const calendarSignal =
     flex-direction: column;
     gap: 6px;
   }
-  .day-drawer-item {
+  :global(.day-drawer-item) {
     padding: 8px 12px;
     background: var(--bg-secondary);
     border-radius: 8px;
@@ -590,35 +1142,43 @@ const calendarSignal =
     align-items: center;
     gap: 10px;
     transition: background 0.15s;
+    border: 1px solid transparent;
+    text-align: start;
   }
-  .day-drawer-item:hover {
+  :global(button.day-drawer-item) { cursor: pointer; min-block-size: 44px; }
+  :global(.day-drawer-item:hover) {
     background: var(--bg-hover);
   }
-  .day-drawer-item-icon {
+  :global(.day-drawer-item-icon) {
     font-size: 16px;
     flex-shrink: 0;
   }
-  .day-drawer-item-content {
+  :global(.day-drawer-item-content) {
+    display: grid;
+    gap: 2px;
     flex: 1;
     min-width: 0;
   }
-  .day-drawer-item-title {
+  :global(.day-drawer-item-title) {
     font-size: 13px;
     font-weight: 500;
     color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
   }
-  .day-drawer-item-meta {
+  :global(.day-drawer-item-meta) {
     font-size: 11px;
     color: var(--text-muted);
   }
-  .day-drawer-empty {
-    font-size: 12px;
+  .day-drawer-read-status:not(:empty) {
+    padding-block: 8px 0;
     color: var(--text-muted);
-    font-style: italic;
-    padding: 8px 0;
+    font-size: 12px;
+    white-space: pre-line;
+  }
+  .day-drawer-more:not([hidden]) {
+    margin-block-start: 8px;
+    min-height: 44px;
+    white-space: normal;
   }
   .day-drawer-actions {
     display: flex;
@@ -631,14 +1191,17 @@ const calendarSignal =
     font-size: 12px;
   }
 
-  /* Responsive overrides for shell/hero classes are in _page-shell.css */
+  @media (prefers-reduced-motion: reduce) {
+    .day-drawer-backdrop, .day-drawer-panel, .calendar-month[aria-busy="true"] .calendar-card::before, :global(.cal-skeleton-row) {
+      transition: none;
+      animation: none;
+    }
+  }
 </style>
 
 <script>
   import { initCalendarPage } from "../../lib/calendar-controller"
   import { pageLifecycle } from "../../lib/page-lifecycle"
 
-  pageLifecycle.onPageLoad(() => {
-    initCalendarPage()
-  })
+  pageLifecycle.onPageLoad(initCalendarPage)
 </script>

@@ -1,3 +1,4 @@
+import { currentBoardScope } from "../helpers/current-board-scope"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -6,7 +7,7 @@ import {
   ensureSchema,
   getPersistenceClient,
   resetPersistenceForTests,
-} from "../../apps/web/src/domains/tasks/persistence/store"
+} from "../helpers/persistence-fixture"
 import { TaskRepository } from "../../apps/web/src/domains/tasks/persistence/task-repository"
 
 test("an intake decision uses the live version and status inside the write transaction", async () => {
@@ -14,21 +15,21 @@ test("an intake decision uses the live version and status inside the write trans
   const dbUrl = process.env.MEITHEAL_DB_URL
   process.env.MEITHEAL_DB_URL = `file:${join(dir, "tasks.db")}`
   resetPersistenceForTests()
-  const client = getPersistenceClient()
-  const repo = new TaskRepository(client)
   const clock = Date.now
   const now = Date.parse("2026-11-09T20:30:00.123Z")
 
-  async function add(id: string, version: number | string = now, parent: string | null = null) {
-    await client.execute({
-      sql: `INSERT INTO tasks (id, title, request_id, idempotency_key, status, created_at, updated_at, parent_id)
-            VALUES (?, ?, ?, ?, 'backlog', ?, ?, ?)`,
-      args: [id, id, id, id, now, version, parent],
-    })
-  }
-
   try {
     await ensureSchema()
+    const client = getPersistenceClient()
+    const repo = new TaskRepository(client, await currentBoardScope(client))
+    async function add(id: string, version: number | string = now, parent: string | null = null) {
+      await client.execute({
+        sql: `INSERT INTO tasks (id, title, request_id, idempotency_key, status, created_at, updated_at, parent_id)
+              VALUES (?, ?, ?, ?, 'backlog', ?, ?, ?)`,
+        args: [id, id, id, id, now, version, parent],
+      })
+    }
+
     Date.now = () => now
     const guard = { updatedAt: now, expectedStatus: "backlog" } as const
 
@@ -103,9 +104,7 @@ test("an intake decision uses the live version and status inside the write trans
       ok: false, errorCode: "conflict", updatedAt: now,
     })
     await expect(repo.updateTask("future", { title: "legacy future version" }, { version: { updatedAt: now + 100 } })).resolves.toMatchObject({ ok: true })
-    await expect(repo.updateTask("missing", { status: "pending" }, { version: guard })).resolves.toEqual({
-      ok: false, errorCode: "unavailable",
-    })
+    await expect(repo.updateTask("missing", { status: "pending" }, { version: guard })).rejects.toMatchObject({ errorCode: "unavailable" })
     await add("project")
     await expect(repo.updateTask("project", { project_id: "missing-project" }, { version: guard })).resolves.toEqual({
       ok: false, errorCode: "unavailable",

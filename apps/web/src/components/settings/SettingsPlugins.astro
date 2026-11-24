@@ -1,0 +1,537 @@
+---
+import Icon from "../ui/Icon.astro"
+import type { Locale } from "../../lib/locale"
+import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
+import SettingsSectionIntro from "./SettingsSectionIntro.astro"
+
+interface Props {
+  locale: Locale
+}
+const { locale: _locale } = Astro.props
+const pluginsSection = SETTINGS_SECTIONS.find((section) => section.id === "plugins-settings")!
+const PLUGIN_GUIDE_REPO_URL = "https://github.com/ryan-winkler/meitheal/blob/dev/docs/kcs/plugin-development.md"
+const AI_PROMPT_TEMPLATE = `Build a Meitheal plugin for: "__GOAL__". Return ONLY one JSON object: {"manifest":{"schemaVersion":1,"id":"kebab-slug","name":"Title","version":"1.0.0","type":"extension","description":"...","author":"Community","license":"AGPL-3.0-only","minMeithealVersion":"0.0.1","entry":"plugin.js","iFrame":"index.html","icon":"icon.svg","sidePanel":true,"permissions":["tasks:read","ui:header-button","ui:side-panel","ui:toast"],"hooks":[],"allowedHosts":[],"dataSharing":{"outbound":false,"destinations":[],"dataTypes":["tasks"],"summary":"Local only."}},"pluginJs":"...","indexHtml":"...","iconSvg":"<svg xmlns=\\"http://www.w3.org/2000/svg\\" width=\\"24\\" height=\\"24\\" viewBox=\\"0 0 24 24\\" fill=\\"none\\" stroke=\\"currentColor\\" stroke-width=\\"2\\">...</svg>"}. Rules: opaque sandbox (no cookies/DOM/fetch); MeithealPlugin.onInit/onMessage; MeithealUI.send; textContent only (no innerHTML); CSS vars --bg-primary,--bg-card,--text-primary,--border,--accent; {{secret:key}} headers.`
+const SUBMIT_TEMPLATE = '{"id":"slug","name":"Title","version":"1.0.0","author":"handle","repository":"https://github.com/you/repo","releaseZipUrl":"https://github.com/you/repo/releases/download/v1.0.0/slug-v1.0.0.zip","sha256":"<sha256>","permissions":["tasks:read","ui:header-button","ui:side-panel"],"outbound":false}'
+
+const REFERENCE_PLUGINS = [
+  {
+    id: "carryover-helper",
+    name: "Yesterday Carryover",
+    version: "1.0.0",
+    folder: "examples/plugins/yesterday-carryover",
+    description: "Review overdue and unscheduled tasks in a sandboxed side panel and pull them into Today.",
+    permissions: 5,
+  },
+  {
+    id: "focus-pulse",
+    name: "Focus Pulse",
+    version: "1.0.0",
+    folder: "examples/plugins/focus-pulse",
+    description: "Compact workload pulse and daily household intention stored in isolated plugin storage.",
+    permissions: 5,
+  },
+] as const
+---
+
+<section
+  id="plugins-settings"
+  class="settings-shell__section"
+  data-settings-shell-section
+  hidden
+>
+  <SettingsSectionIntro section={pluginsSection} />
+
+  <div class="card plg-toolbar">
+    <div class="plg-toolbar__row">
+      <div class="plg-title-row">
+        <label class="plg-safe-label" for="plugins-safe-mode">
+          <span class="toggle-switch">
+            <input id="plugins-safe-mode" type="checkbox" />
+            <span class="toggle-slider" aria-hidden="true"></span>
+          </span>
+          <span>Safe Mode (pause all plugins immediately)</span>
+        </label>
+        <button
+          type="button"
+          class="ws-help-btn"
+          data-plg-help="safeMode"
+          data-help-title="Safe Mode"
+          data-help-body="Pauses every running plugin and blocks outbound plugin network requests immediately.\nYour installed plugins, settings, and write-only secrets stay intact so you can inspect or disable a misbehaving plugin safely."
+          aria-label="Help for Safe Mode"
+        >
+          <Icon name="help" size={16} sprite={true} />
+        </button>
+      </div>
+
+      <div class="plg-toolbar__controls">
+        <span id="plugins-active-badge" class="plg-status" aria-live="polite">Loading...</span>
+        <button id="plugins-refresh-btn" type="button" class="btn btn-secondary btn-sm">
+          <Icon name="refresh" size={16} sprite={true} />
+          <span>Refresh</span>
+        </button>
+      </div>
+    </div>
+
+    <p class="plg-toolbar__nav">
+      Core household integrations stay in
+      <a href="#connections-settings" class="plg-link" data-settings-section-link>Connected Services</a>.
+      AI assistant protocols and scoped tokens live in
+      <a href="#ai-agents-settings" class="plg-link" data-settings-section-link>AI &amp; Agent Access</a>.
+    </p>
+  </div>
+
+  <div id="plugins-health-view" class="card plg-health">
+    <div class="plg-health__head">
+      <div>
+        <div class="plg-title-row">
+          <h3 class="plg-group__title">Plugin Health</h3>
+          <button
+            type="button"
+            class="ws-help-btn"
+            data-plg-help="health"
+            data-help-title="Plugin Health &amp; Security Compliance"
+            data-help-body="Monitors live operational state (Operational, Needs Configuration, Paused, Blocked, or Runtime Error) alongside five Elephant-Goldfish security checks.\nGoldfish checks verify opaque-origin sandbox isolation. Elephant checks verify explicit permission consent, outbound SSRF host allowlists, write-only secret handling, and archive SHA-256 integrity."
+            aria-label="Help for Plugin Health"
+          >
+            <Icon name="help" size={16} sprite={true} />
+          </button>
+        </div>
+        <p class="plg-sub">Live operational state and Elephant-Goldfish security compliance for active plugins.</p>
+      </div>
+      <label class="plg-health__toggle">
+        <input id="plugins-health-show-all" type="checkbox" />
+        <span>Show inactive</span>
+      </label>
+    </div>
+
+    <div id="plugins-health-summary" class="plg-health__summary" aria-live="polite"></div>
+    <div id="plugins-health-list" class="plg-health__list"></div>
+  </div>
+
+  <div class="plg-notice" role="note">
+    <Icon name="info-circle" size={18} sprite={true} />
+    <p>
+      Plugins execute inside opaque-origin sandboxed frames with zero cookie, direct network, or Home Assistant token access.
+      Uploaded ZIP packages are not externally reviewed — inspect permissions and data-sharing disclosures before enabling.
+    </p>
+  </div>
+
+  <div class="plg-group">
+    <div class="plg-title-row">
+      <h3 class="plg-group__title">External Connectors</h3>
+      <button
+        type="button"
+        class="ws-help-btn"
+        data-plg-help="connectors"
+        data-help-title="External Connectors"
+        data-help-body="Built-in issue provider connectors route all outbound calls through Meitheal's guarded HTTP gateway.\nAPI tokens are stored write-only and injected strictly server-side using {{secret:key}} headers so plugin code never reads raw credentials."
+        aria-label="Help for External Connectors"
+      >
+        <Icon name="help" size={16} sprite={true} />
+      </button>
+    </div>
+    <div id="plugins-connectors-grid" class="plg-grid"></div>
+  </div>
+
+  <div id="plugins-uploaded-section" class="plg-group">
+    <div class="plg-title-row">
+      <h3 class="plg-group__title">Installed Extensions &amp; Custom Plugins</h3>
+      <button
+        type="button"
+        class="ws-help-btn"
+        data-plg-help="installed"
+        data-help-title="Installed Extensions &amp; Custom Plugins"
+        data-help-body="Shows plugins you uploaded as ZIP archives or installed through the AI Prompt Builder.\nNew uploads install disabled by default so you can review declared permissions and hosts first. Upgrades requesting new permissions pause automatically until re-approved."
+        aria-label="Help for Installed Extensions &amp; Custom Plugins"
+      >
+        <Icon name="help" size={16} sprite={true} />
+      </button>
+    </div>
+    <p id="plugins-uploaded-empty" class="plg-empty">
+      No custom plugins installed yet. Upload a validated plugin ZIP below or create one with AI.
+    </p>
+    <div id="plugins-uploaded-grid" class="plg-grid"></div>
+  </div>
+
+  <div id="plugins-directory-section" class="card plg-directory">
+    <div class="plg-directory__head">
+      <div>
+        <div class="plg-title-row">
+          <h3 class="plg-group__title">Reference &amp; Community Plugins</h3>
+          <button
+            type="button"
+            class="ws-help-btn"
+            data-plg-help="reference"
+            data-help-title="Reference &amp; Community Plugins"
+            data-help-body="Reference apps live in the repository under examples/plugins/ as working developer templates and are not pre-installed.\nCopy a pack command to build a validated ZIP locally with node scripts/pack-plugin.mjs, then upload it in Install Plugin below."
+            aria-label="Help for Reference &amp; Community Plugins"
+          >
+            <Icon name="help" size={16} sprite={true} />
+          </button>
+        </div>
+        <p class="plg-sub">
+          Standalone reference apps live in the repository under <code>examples/plugins/</code> and are not pre-installed.
+          Package any reference folder into a ZIP to test or customize it.
+        </p>
+      </div>
+    </div>
+
+    <div class="plg-grid">
+      {REFERENCE_PLUGINS.map((refPlugin) => (
+        <article class="plg-ref-card">
+          <div class="plg-ref-card__top">
+            <div>
+              <h4 class="plg-ref-card__title">{refPlugin.name}</h4>
+              <div class="plg-ref-card__meta">
+                v{refPlugin.version} · Reference app · {refPlugin.permissions} local permissions
+              </div>
+            </div>
+            <span class="plg-badge" data-tone="inactive">
+              <span class="plg-dot" aria-hidden="true"></span>
+              <span>Reference</span>
+            </span>
+          </div>
+          <p class="plg-ref-card__desc">{refPlugin.description}</p>
+          <div class="plg-ref-card__foot">
+            <code class="plg-ref-card__path">{refPlugin.folder}</code>
+            <button
+              type="button"
+              class="btn btn-secondary btn-sm"
+              data-copy-cmd={`node scripts/pack-plugin.mjs ${refPlugin.folder}`}
+            >
+              <Icon name="copy" size={14} sprite={true} />
+              <span>Copy pack command</span>
+            </button>
+          </div>
+        </article>
+      ))}
+    </div>
+
+    <div class="plg-directory__footer">
+      <button id="plugins-get-listed-btn" type="button" class="plg-ghost-link">
+        <Icon name="plus" size={15} sprite={true} />
+        <span>Get your plugin to show up here</span>
+      </button>
+    </div>
+  </div>
+
+  <div id="plugins-install-card" class="card plg-install">
+    <div class="plg-title-row">
+      <h3 class="plg-install__title">Install Plugin</h3>
+      <button
+        type="button"
+        class="ws-help-btn"
+        data-plg-help="install"
+        data-help-title="Installing Plugins"
+        data-help-body="Upload a PKZIP archive (up to 2 MB) containing manifest.json, plugin.js, optional index.html, and icon.svg. Symlinks, path traversal, and executable extensions are rejected automatically.\nPrefer a guided workflow? Click Build one with AI to generate a validated JSON bundle using your own AI assistant."
+        aria-label="Help for Install Plugin"
+      >
+        <Icon name="help" size={16} sprite={true} />
+      </button>
+    </div>
+    <p class="plg-sub">Upload a validated plugin ZIP archive (up to 2 MB) to install it.</p>
+
+    <div class="plg-install__actions">
+      <label class="btn btn-primary settings-file-picker">
+        <span>Choose Plugin File</span>
+        <input id="plugins-zip-input" type="file" accept=".zip,application/zip" />
+      </label>
+      <button id="plugins-remove-all-btn" type="button" class="btn btn-secondary" disabled>
+        <Icon name="trash" size={16} sprite={true} />
+        <span>Remove all uploaded plugins</span>
+      </button>
+    </div>
+
+    <p class="plg-install__hint">
+      Want to build your own?
+      <a
+        id="plugins-repo-guide-link"
+        href={PLUGIN_GUIDE_REPO_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        class="plg-inline-link plg-inline-link--ext"
+      >
+        <span>Read the plugin guide (GitHub)</span>
+        <Icon name="external-link" size={14} sprite={true} />
+      </a>
+      <span aria-hidden="true">·</span>
+      <button id="plugins-guide-open-btn" type="button" class="plg-inline-link">Quick reference</button>
+    </p>
+
+    <div class="plg-install__actions">
+      <button id="plugins-ai-open-btn" type="button" class="btn btn-secondary">
+        <Icon name="sparkles" size={16} sprite={true} />
+        <span>Build one with AI</span>
+      </button>
+      <button
+        type="button"
+        class="ws-help-btn"
+        data-plg-help="aiBuilder"
+        data-help-title="Build a Plugin with AI"
+        data-help-body="Describe what you want, copy the generated Meitheal prompt into any AI assistant (ChatGPT, Claude, Gemini, or Ollama), and paste its JSON reply into Step 2.\nMeitheal previews every requested permission and outbound host before installing the bundle disabled for review."
+        aria-label="Help for Build one with AI"
+      >
+        <Icon name="help" size={16} sprite={true} />
+      </button>
+    </div>
+
+    <p id="plugins-upload-feedback" class="plg-feedback" role="status" hidden></p>
+  </div>
+
+  <dialog id="plugins-ai-dialog" class="plg-dialog" aria-labelledby="plugins-ai-title">
+    <div class="plg-dialog__panel">
+      <div class="plg-dialog__head">
+        <div class="plg-title-row">
+          <h3 id="plugins-ai-title" class="plg-dialog__title">Build your own plugin</h3>
+          <button
+            type="button"
+            class="ws-help-btn"
+            data-plg-help="aiBuilderDialog"
+            data-help-title="How the AI Prompt Builder Works"
+            data-help-body="Step 1 wraps your goal with Meitheal's strict sandbox rules (opaque iframe, MeithealPlugin/MeithealUI bridges, textContent-only DOM, and least-privilege manifest).\nStep 2 parses the AI's JSON answer (stripping markdown fences), shows permissions and outbound hosts, and installs it through the exact same validator as ZIP uploads."
+            aria-label="Help for Build your own plugin"
+          >
+            <Icon name="help" size={16} sprite={true} />
+          </button>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" data-close-dialog="plugins-ai-dialog" aria-label="Close dialog">
+          <Icon name="x" size={16} sprite={true} />
+        </button>
+      </div>
+
+      <div id="plugins-ai-step-1" class="plg-dialog__body">
+        <div class="plg-title-row">
+          <label for="plugins-ai-idea" class="plg-dialog__step">1. Describe your idea</label>
+          <button
+            type="button"
+            class="ws-help-btn"
+            data-plg-help="aiStep1"
+            data-help-title="Writing a Strong Plugin Prompt"
+            data-help-body="Mention three things for best results: (1) where the UI appears (header button or side panel), (2) what task data it reads or changes, and (3) whether it should stay local-only with zero external network calls.\nExample: 'Add a header button that opens a side panel listing tasks due this week with a one-click Move to Today button. Keep it local-only.'"
+            aria-label="Help for describing your plugin idea"
+          >
+            <Icon name="help" size={16} sprite={true} />
+          </button>
+        </div>
+        <textarea
+          id="plugins-ai-idea"
+          class="form-input plg-textarea"
+          rows="4"
+          maxlength="600"
+          placeholder="e.g. Add a header button that opens a side panel showing today's top 3 high-priority tasks"
+        ></textarea>
+
+        <div class="plg-dialog__callout" role="note">
+          <Icon name="info-circle" size={18} sprite={true} />
+          <p>
+            Plugins can read and change your task data based on declared permissions. Test new plugins on sample tasks and inspect permissions before enabling.
+          </p>
+        </div>
+
+        <div class="plg-dialog__foot">
+          <div class="plg-title-row">
+            <a
+              href={PLUGIN_GUIDE_REPO_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="plg-inline-link plg-inline-link--ext"
+            >
+              <span>Plugin guide</span>
+              <Icon name="external-link" size={13} sprite={true} />
+            </a>
+            <span aria-hidden="true">·</span>
+            <button type="button" id="plugins-ai-guide-btn" class="plg-inline-link">Quick reference</button>
+          </div>
+          <div class="plg-dialog__foot-actions">
+            <button type="button" id="plugins-ai-next-btn" class="btn btn-secondary btn-sm">Next: paste the answer</button>
+            <button type="button" id="plugins-ai-copy-btn" class="btn btn-primary btn-sm" data-prompt-template={AI_PROMPT_TEMPLATE}>
+              <Icon name="copy" size={15} sprite={true} />
+              <span>Copy prompt for your AI</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div id="plugins-ai-step-2" class="plg-dialog__body" hidden>
+        <div class="plg-title-row">
+          <label for="plugins-ai-json" class="plg-dialog__step">2. Paste the AI answer (JSON bundle)</label>
+          <button
+            type="button"
+            class="ws-help-btn"
+            data-plg-help="aiStep2"
+            data-help-title="Pasting the AI JSON Bundle"
+            data-help-body="Paste the full response from your AI — surrounding ```json code fences are stripped automatically.\nThe JSON object must include a valid schemaVersion 1 manifest object plus pluginJs (and optional indexHtml and iconSvg). Review the live permissions preview before clicking Install plugin."
+            aria-label="Help for pasting the AI JSON bundle"
+          >
+            <Icon name="help" size={16} sprite={true} />
+          </button>
+        </div>
+        <textarea
+          id="plugins-ai-json"
+          class="form-input plg-textarea plg-textarea--mono"
+          rows="7"
+          placeholder='{"manifest":{"schemaVersion":1,"id":"my-plugin",...},"pluginJs":"...","indexHtml":"...","iconSvg":"<svg ...>"}'
+        ></textarea>
+
+        <div id="plugins-ai-preview" class="plg-ai-preview" hidden></div>
+        <p id="plugins-ai-error" class="plg-feedback" data-tone="error" role="alert" hidden></p>
+
+        <div class="plg-dialog__foot">
+          <button type="button" id="plugins-ai-back-btn" class="btn btn-secondary btn-sm">Back</button>
+          <div class="plg-dialog__foot-actions">
+            <button type="button" id="plugins-ai-install-btn" class="btn btn-primary btn-sm" disabled>
+              <span>Install plugin</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="plugins-submit-dialog" class="plg-dialog" aria-labelledby="plugins-submit-title">
+    <div class="plg-dialog__panel">
+      <div class="plg-dialog__head">
+        <h3 id="plugins-submit-title" class="plg-dialog__title">Get your plugin listed</h3>
+        <button type="button" class="btn btn-secondary btn-sm" data-close-dialog="plugins-submit-dialog" aria-label="Close dialog">
+          <Icon name="x" size={16} sprite={true} />
+        </button>
+      </div>
+      <div class="plg-dialog__body">
+        <p class="plg-sub">
+          Publish your plugin in a public Git repository with a GitHub Release ZIP built by the Meitheal packager, then open a pull request adding your catalog entry.
+        </p>
+        <ol class="plg-checklist">
+          <li>Include <code>manifest.json</code> (schemaVersion 1), <code>plugin.js</code>, a 24×24 outline <code>icon.svg</code>, and optional <code>index.html</code>.</li>
+          <li>Package with <code>node scripts/pack-plugin.mjs &lt;plugin-dir&gt;</code> and verify zero errors on upload.</li>
+          <li>Confirm all 5 Elephant-Goldfish checks pass in <strong>Plugin Health</strong> (opaque sandbox, exact permissions, disclosed hosts, write-only secrets, valid SHA-256).</li>
+          <li>Follow <a href={`${PLUGIN_GUIDE_REPO_URL}#get-listed-in-the-app`} target="_blank" rel="noopener noreferrer" class="plg-inline-link">Get listed in the app</a> in <code>docs/kcs/plugin-development.md</code> to submit your manifest metadata and release ZIP SHA-256.</li>
+        </ol>
+        <div class="plg-dialog__foot">
+          <button type="button" id="plugins-copy-submit-btn" class="btn btn-secondary btn-sm" data-submit-template={SUBMIT_TEMPLATE}>
+            <Icon name="copy" size={15} sprite={true} />
+            <span>Copy submission template</span>
+          </button>
+          <button type="button" class="btn btn-primary btn-sm" data-close-dialog="plugins-submit-dialog">Done</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="plugins-guide-dialog" class="plg-dialog" aria-labelledby="plugins-guide-title">
+    <div class="plg-dialog__panel">
+      <div class="plg-dialog__head">
+        <h3 id="plugins-guide-title" class="plg-dialog__title">Meitheal Plugin Developer Guide</h3>
+        <button type="button" class="btn btn-secondary btn-sm" data-close-dialog="plugins-guide-dialog" aria-label="Close dialog">
+          <Icon name="x" size={16} sprite={true} />
+        </button>
+      </div>
+      <div class="plg-dialog__body">
+        <p class="plg-sub">
+          Full documentation lives in <code>docs/kcs/plugin-development.md</code> and working examples live in <code>examples/plugins/</code>.
+        </p>
+        <ul class="plg-checklist">
+          <li><strong>Sandbox:</strong> <code>plugin.js</code> and <code>index.html</code> run in opaque-origin iframes (<code>origin: null</code>, <code>connect-src 'none'</code>). Use <code>MeithealPlugin.onInit(api)</code> and <code>window.MeithealUI.send(msg)</code>.</li>
+          <li><strong>Least Privilege:</strong> Declare exact <code>permissions</code>, <code>allowedHosts</code>, and <code>dataSharing</code> in <code>manifest.json</code>.</li>
+          <li><strong>Write-Only Secrets:</strong> Reference tokens as <code>&#123;&#123;secret:key&#125;&#125;</code> inside <code>api.http.request</code> headers.</li>
+          <li><strong>Package CLI:</strong> Run <code>node scripts/pack-plugin.mjs examples/plugins/yesterday-carryover</code> to build an uploadable ZIP.</li>
+        </ul>
+        <div class="plg-dialog__foot">
+          <a
+            href={PLUGIN_GUIDE_REPO_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="plg-inline-link plg-inline-link--ext"
+          >
+            <span>Open full guide on GitHub</span>
+            <Icon name="external-link" size={14} sprite={true} />
+          </a>
+          <button type="button" class="btn btn-primary btn-sm" data-close-dialog="plugins-guide-dialog">Close</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+</section>
+
+<style is:inline>
+  .plg-toolbar,.plg-health,.plg-directory,.plg-install{padding:16px 18px;display:grid;gap:12px}
+  .plg-toolbar__row,.plg-health__head,.plg-directory__head,.plg-card__head,.plg-ref-card__top,.plg-dialog__head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px}
+  .plg-toolbar__controls,.plg-health-row__badges,.plg-card__health-line,.plg-chip-list,.plg-actions,.plg-install__actions,.plg-dialog__foot-actions,.plg-title-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .plg-toolbar__nav,.plg-details,.plg-connector-form,.plg-ref-card__foot,.plg-directory__footer,.plg-dialog__foot,.plg-checks{border-top:1px solid var(--border);padding-top:8px}
+  .plg-toolbar__nav{margin:0;color:var(--text-secondary);font-size:.85rem;line-height:1.45}
+  .plg-sub,.plg-install__hint,.plg-health-row__rem,.plg-ref-card__desc,.plg-card__desc,.plg-meta-text,.plg-meta-hosts{margin:0;color:var(--text-secondary);font-size:.86rem;line-height:1.45}
+  .plg-sub{margin-top:4px}
+  .plg-link,.plg-inline-link{color:var(--accent-text);text-decoration:underline;text-underline-offset:2px;font-weight:550;background:none;border:0;padding:0;font:inherit;cursor:pointer}
+  .plg-inline-link--ext{display:inline-flex;align-items:center;gap:4px}
+  .plg-ghost-link{display:inline-flex;align-items:center;gap:6px;color:var(--accent-text);background:none;border:0;padding:8px 12px;border-radius:8px;font-size:.875rem;font-weight:600;cursor:pointer}
+  .plg-ghost-link:hover{background:var(--bg-secondary)}
+  .plg-safe-label,.plg-health__toggle{display:inline-flex;align-items:center;gap:8px;font-size:.875rem;font-weight:550;cursor:pointer}
+  .plg-status{font-size:.84rem;font-weight:600;font-variant-numeric:tabular-nums;color:var(--text-secondary)}
+  .plg-status[data-state="ok"]{color:#22c55e}
+  .plg-status[data-state="warn"]{color:#f59e0b}
+  .plg-status[data-state="crit"]{color:#ef4444}
+  .plg-health__summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+  .plg-metric{padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-secondary);display:grid;gap:2px}
+  .plg-metric__lbl,.plg-meta-label{font-size:.75rem;font-weight:650;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.04em}
+  .plg-metric__lbl{display:inline-flex;align-items:center;gap:6px}
+  .plg-metric__val{font-size:1.25rem;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text-primary)}
+  .plg-health__list,.plg-group,.plg-details__body,.plg-connector-form,.plg-dialog__body{display:grid;gap:10px}
+  .plg-health-row{border:1px solid var(--border);border-left-width:3px;border-radius:8px;background:var(--bg-secondary);padding:12px 14px;display:grid;gap:8px}
+  .plg-health-row[data-tone="healthy"]{border-left-color:#16a34a}
+  .plg-health-row[data-tone="warning"]{border-left-color:#d97706}
+  .plg-health-row[data-tone="critical"]{border-left-color:#dc2626}
+  .plg-health-row__top,.plg-ref-card__foot,.plg-dialog__foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+  .plg-health-row__name{display:inline-flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+  .plg-checks{display:grid;gap:6px;margin-top:8px}
+  .plg-check{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:start;font-size:.82rem}
+  .plg-check__title{font-weight:600;color:var(--text-primary)}
+  .plg-check__cat{margin-left:6px;font-size:.72rem;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.04em}
+  .plg-check__detail{color:var(--text-secondary);line-height:1.4}
+  .plg-audit-toggle{cursor:pointer;font-size:.82rem;font-weight:600;color:var(--accent-text);width:fit-content}
+  .plg-badge{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:6px;font-size:.76rem;font-weight:650;font-variant-numeric:tabular-nums;border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary)}
+  .plg-badge[data-tone="healthy"]{border-color:rgba(22,163,74,.45);background:rgba(22,163,74,.12);color:#15803d}
+  .plg-badge[data-tone="warning"]{border-color:rgba(217,119,6,.5);background:rgba(217,119,6,.14);color:#b45309}
+  .plg-badge[data-tone="critical"]{border-color:rgba(220,38,38,.55);background:rgba(220,38,38,.14);color:#b91c1c}
+  [data-theme="dark"] .plg-badge[data-tone="healthy"]{color:#4ade80}
+  [data-theme="dark"] .plg-badge[data-tone="warning"]{color:#fbbf24}
+  [data-theme="dark"] .plg-badge[data-tone="critical"]{color:#f87171}
+  .plg-badge[data-tone="inactive"]{color:var(--text-secondary)}
+  .plg-dot{width:8px;height:8px;border-radius:999px;background:currentColor;flex:none}
+  .plg-notice,.plg-dialog__callout{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border:1px solid var(--border);border-radius:10px;background:var(--bg-secondary);color:var(--text-secondary);font-size:.86rem;line-height:1.45}
+  .plg-dialog__callout{border-color:rgba(59,130,246,.45);background:rgba(59,130,246,.1);color:var(--text-primary)}
+  .plg-dialog__callout>:first-child{color:#60a5fa}
+  .plg-notice>:first-child,.plg-dialog__callout>:first-child{flex:none;margin-top:2px}
+  .plg-notice p,.plg-dialog__callout p,.plg-alert--warn p{margin:0}
+  .plg-group__title,.plg-ref-card__title,.plg-card__title{margin:0;font-size:.96rem;font-weight:650;color:var(--text-primary)}
+  .plg-empty{margin:0;padding:14px;border:1px dashed var(--border);border-radius:10px;color:var(--text-secondary);font-size:.875rem}
+  .plg-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:12px;align-items:stretch}
+  .plg-card,.plg-ref-card{border:1px solid var(--border);border-radius:10px;background:var(--bg-card);padding:14px;display:grid;gap:10px;align-content:start}
+  .plg-ref-card{grid-template-rows:auto 1fr auto}
+  .plg-ref-card__meta,.plg-card__sub,.plg-help,.plg-ref-card__path{font-size:.78rem;color:var(--text-secondary)}
+  .plg-ref-card__path{word-break:break-all}
+  .plg-directory__footer{display:flex;justify-content:center}
+  .plg-card__id{display:flex;align-items:flex-start;gap:10px;min-width:0}
+  .plg-card__icon{width:34px;height:34px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;background:var(--bg-secondary);border:1px solid var(--border);color:var(--text-primary);flex:none}
+  .plg-card__icon svg{width:20px;height:20px}
+  .plg-card__meta{min-width:0}
+  .plg-details__summary{cursor:pointer;font-size:.875rem;font-weight:600;color:var(--text-primary);min-height:36px;display:flex;align-items:center;justify-content:space-between;list-style:none}
+  .plg-details__summary::-webkit-details-marker{display:none}
+  .plg-details__summary::after{content:"▾";color:var(--text-secondary);font-size:.9rem;transition:transform .15s ease}
+  .plg-details[open] .plg-details__summary::after{transform:rotate(180deg)}
+  .plg-details__body{margin-top:10px}
+  .plg-meta-block,.plg-field{display:grid;gap:5px}
+  .plg-chip{font-size:.75rem;padding:2px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-secondary);font-family:ui-monospace,monospace}
+  .plg-inline{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .plg-inline .form-input{flex:1 1 160px;min-width:0}
+  .plg-alert--warn{padding:10px;border:1px solid var(--warning,#f59e0b);border-radius:8px;display:grid;gap:8px;font-size:.85rem}
+  .plg-install__title,.plg-dialog__title{margin:0;font-size:1.06rem;font-weight:650}
+  .plg-feedback{margin:0;font-size:.875rem;color:var(--accent-text)}
+  .plg-feedback[data-tone="error"]{color:var(--danger,#ef4444)}
+  .plg-dialog{padding:0;border:1px solid var(--border);border-radius:12px;background:var(--bg-card);color:var(--text-primary);width:min(560px,calc(100vw - 24px));max-height:90vh}
+  .plg-dialog::backdrop{background:rgba(0,0,0,.62)}
+  .plg-dialog__panel{padding:18px;display:grid;gap:14px}
+  .plg-dialog__step{font-size:.92rem;font-weight:650;color:var(--text-primary)}
+  .plg-textarea{width:100%;resize:vertical;font-family:inherit;line-height:1.45}
+  .plg-textarea--mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.8rem}
+  .plg-ai-preview{padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-secondary);display:grid;gap:6px;font-size:.84rem}
+  .plg-checklist{margin:0;padding-left:18px;display:grid;gap:8px;font-size:.86rem;color:var(--text-secondary);line-height:1.45}
+</style>
