@@ -116,7 +116,9 @@ const handleInactivity: Parameters<typeof withBoardScope>[1] = async ({ locals, 
     })
     if (!preview.areaExists) return problem(404, "This Area no longer exists.")
     return Response.json({ ...preview, now, canSave: admin }, { headers })
-  } catch {
+  } catch (err) {
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
     return problem(503, "Could not load inactivity data. Try again.")
   }
  }

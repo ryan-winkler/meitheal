@@ -10,6 +10,7 @@ import { pageLifecycle } from "@lib/page-lifecycle"
 import { showToast } from "@lib/toast"
 import { PartialSettingsSave, saveSettings, showSettingsSaveError, log } from "@lib/settings-utils"
 import { settingsWriteHeaders } from "./settings-store"
+import { byId, domEl, qs, setAttr } from "@lib/dom-helpers"
 
 async function applySyncConfiguration(path: string, setting: string, payload: Record<string, unknown>): Promise<void> {
   try {
@@ -41,31 +42,24 @@ interface EntityCardOptions {
 }
 
 function createEntityToggleCard(opts: EntityCardOptions): HTMLDivElement {
-  const card = document.createElement("div")
+  const card = domEl("div")
   card.className = `cal-toggle-card${opts.checked ? " cal-toggle-card--active" : ""}`
   card.dataset.entity = opts.entityId
   card.style.cursor = "pointer"
 
-  const info = document.createElement("div")
-  info.className = "cal-toggle-card__info"
-  const nameEl = document.createElement("span")
-  nameEl.className = "cal-toggle-card__name"
-  nameEl.textContent = opts.name
-  const entityEl = document.createElement("span")
-  entityEl.className = "cal-toggle-card__entity"
-  entityEl.textContent = opts.entityId
+  const info = domEl("div", "cal-toggle-card__info")
+  const nameEl = domEl("span", "cal-toggle-card__name", opts.name)
+  const entityEl = domEl("span", "cal-toggle-card__entity", opts.entityId)
   info.append(nameEl, entityEl)
 
   if (opts.direction) {
-    const dirWrap = document.createElement("div")
-    dirWrap.className = "cal-toggle-card__direction"
+    const dirWrap = domEl("div", "cal-toggle-card__direction")
     if (opts.direction.hidden) dirWrap.style.display = "none"
-    const dirSelect = document.createElement("select")
-    dirSelect.className = "cal-direction-select"
+    const dirSelect = domEl("select", "cal-direction-select")
     dirSelect.dataset.entityDir = opts.entityId
-    dirSelect.setAttribute("aria-label", `Sync direction for ${opts.name}`)
+    setAttr(dirSelect, "aria-label", `Sync direction for ${opts.name}`)
     for (const [val, label] of CAL_SYNC_DIRECTIONS) {
-      const opt = document.createElement("option")
+      const opt = domEl("option")
       opt.value = val
       opt.textContent = label
       opt.selected = opts.direction.selected === val
@@ -75,20 +69,17 @@ function createEntityToggleCard(opts: EntityCardOptions): HTMLDivElement {
     info.appendChild(dirWrap)
   }
 
-  const stateEl = document.createElement("span")
-  stateEl.className = "cal-toggle-card__state"
-  stateEl.textContent = opts.stateLabel
+  const stateEl = domEl("span", "cal-toggle-card__state", opts.stateLabel)
   info.appendChild(stateEl)
 
-  const toggleLabel = document.createElement("label")
-  toggleLabel.className = "toggle-label"
-  const cb = document.createElement("input")
+  const toggleLabel = domEl("label", "toggle-label")
+  const cb = domEl("input")
   cb.type = "checkbox"
   cb.className = opts.toggleClass
   cb.checked = opts.checked
   cb.value = opts.entityId
-  cb.setAttribute("aria-label", `Sync ${opts.name}`)
-  const slider = document.createElement("span")
+  setAttr(cb, "aria-label", `Sync ${opts.name}`)
+  const slider = domEl("span")
   slider.className = "toggle-slider"
   toggleLabel.append(cb, slider)
 
@@ -98,12 +89,12 @@ function createEntityToggleCard(opts: EntityCardOptions): HTMLDivElement {
 
 export function initCalendarTodoSettings(): void {
   // ───── Calendar manual add ─────
-  const calManualBtn = document.getElementById("cal-add-manual")
+  const calManualBtn = byId("cal-add-manual")
   if (calManualBtn) {
     pageLifecycle.on(calManualBtn, "click", () => {
-    const input = document.getElementById("cal-entity-manual") as HTMLInputElement | null
-    const container = document.getElementById("cal-entities-container")
-    const entitiesList = document.getElementById("cal-entities-list")
+    const input = byId<HTMLInputElement>("cal-entity-manual")
+    const container = byId("cal-entities-container")
+    const entitiesList = byId("cal-entities-list")
     if (!input || !container) return
     const entityId = input.value.trim()
     if (!entityId || !entityId.startsWith("calendar.")) {
@@ -111,7 +102,7 @@ export function initCalendarTodoSettings(): void {
       setTimeout(() => { input.style.borderColor = "" }, 1500)
       return
     }
-    if (container.querySelector(`[data-entity="${CSS.escape(entityId)}"]`)) { input.value = ""; return }
+    if (qs(container, `[data-entity="${CSS.escape(entityId)}"]`)) { input.value = ""; return }
     if (entitiesList) entitiesList.style.display = "block"
     const card = createEntityToggleCard({
       entityId,
@@ -121,10 +112,10 @@ export function initCalendarTodoSettings(): void {
       toggleClass: "cal-entity-toggle",
       direction: { selected: "bidirectional" },
     })
-    const dirSelect = card.querySelector<HTMLSelectElement>(".cal-direction-select")
+    const dirSelect = qs<HTMLSelectElement>(card, ".cal-direction-select")
     dirSelect?.addEventListener("click", (e) => e.stopPropagation(), { signal: pageLifecycle.signal })
     dirSelect?.addEventListener("mousedown", (e) => e.stopPropagation(), { signal: pageLifecycle.signal })
-    const entityToggle = card.querySelector<HTMLInputElement>(".cal-entity-toggle")
+    const entityToggle = qs<HTMLInputElement>(card, ".cal-entity-toggle")
     entityToggle?.addEventListener("change", () => {
       card.classList.toggle("cal-toggle-card--active", entityToggle.checked)
       updateCalCountBadge()
@@ -138,7 +129,7 @@ export function initCalendarTodoSettings(): void {
       }
     }, { signal: pageLifecycle.signal })
     container.appendChild(card)
-    const emptyState = document.getElementById("cal-no-entities")
+    const emptyState = byId("cal-no-entities")
     if (emptyState) emptyState.style.display = "none"
     updateCalCountBadge()
     input.value = ""
@@ -146,13 +137,13 @@ export function initCalendarTodoSettings(): void {
   }
 
   // ───── CalDAV Test ─────
-  const caldavTestBtn = document.getElementById("caldav-test-btn") as HTMLButtonElement
+  const caldavTestBtn = byId("caldav-test-btn") as HTMLButtonElement
   if (caldavTestBtn) {
     pageLifecycle.on(caldavTestBtn, "click", withAsyncButton(caldavTestBtn, async () => {
-    const url = (document.getElementById("caldav-url") as HTMLInputElement).value
-    const username = (document.getElementById("caldav-username") as HTMLInputElement).value
-    const password = (document.getElementById("caldav-password") as HTMLInputElement).value
-    const resultEl = document.getElementById("caldav-test-result")
+    const url = (byId("caldav-url") as HTMLInputElement).value
+    const username = (byId("caldav-username") as HTMLInputElement).value
+    const password = (byId("caldav-password") as HTMLInputElement).value
+    const resultEl = byId("caldav-test-result")
     if (!url || !username || !password) {
       if (resultEl) { resultEl.textContent = "URL, username, and password required"; resultEl.style.color = "var(--color-error)" }
       return
@@ -175,7 +166,7 @@ export function initCalendarTodoSettings(): void {
     }, { loadingText: "Testing…" }))
   }
 
-  const saveCalBtn = document.getElementById("save-cal") as HTMLButtonElement
+  const saveCalBtn = byId("save-cal") as HTMLButtonElement
   if (saveCalBtn) {
     pageLifecycle.on(saveCalBtn, "click", withAsyncButton(saveCalBtn, async () => {
     const enabledEntities: string[] = []
@@ -185,13 +176,13 @@ export function initCalendarTodoSettings(): void {
       const entityId = sel.dataset.entityDir
       if (entityId && enabledEntities.includes(entityId)) syncModes[entityId] = sel.value
     })
-    const globalMode = (document.getElementById("cal-sync-direction") as HTMLSelectElement)?.value ?? "bidirectional"
-    const caldavUrl = (document.getElementById("caldav-url") as HTMLInputElement).value
-    const caldavUsername = (document.getElementById("caldav-username") as HTMLInputElement).value
-    const caldavPassword = (document.getElementById("caldav-password") as HTMLInputElement).value
-    const writeBack = (document.getElementById("cal-write-back") as HTMLInputElement)?.checked ?? false
-    const writeTicketDetails = (document.getElementById("cal-write-ticket-details") as HTMLInputElement)?.checked ?? true
-    const intervalMs = Number((document.getElementById("cal-sync-interval") as HTMLSelectElement)?.value ?? "300000")
+    const globalMode = (byId("cal-sync-direction") as HTMLSelectElement)?.value ?? "bidirectional"
+    const caldavUrl = (byId("caldav-url") as HTMLInputElement).value
+    const caldavUsername = (byId("caldav-username") as HTMLInputElement).value
+    const caldavPassword = (byId("caldav-password") as HTMLInputElement).value
+    const writeBack = (byId("cal-write-back") as HTMLInputElement)?.checked ?? false
+    const writeTicketDetails = (byId("cal-write-ticket-details") as HTMLInputElement)?.checked ?? true
+    const intervalMs = Number((byId("cal-sync-interval") as HTMLSelectElement)?.value ?? "300000")
     await saveSettings({
       calendar_entities: enabledEntities,
       calendar_entity: enabledEntities[0] ?? "",
@@ -211,7 +202,7 @@ export function initCalendarTodoSettings(): void {
     await applySyncConfiguration("/api/integrations/calendar/sync", "calendar_sync_enabled", enabledEntities.length > 0
       ? { action: "enable", entity_id: enabledEntities[0], entities: enabledEntities, write_back: writeBack, write_ticket_details: writeTicketDetails, interval_ms: intervalMs, sync_mode: globalMode, sync_modes: syncModes }
       : { action: "disable" })
-    const statusEl = document.getElementById("cal-status")
+    const statusEl = byId("cal-status")
     if (statusEl) {
       statusEl.textContent = enabledEntities.length > 0 ? `${enabledEntities.length} syncing` : "Disabled"
       statusEl.className = enabledEntities.length > 0 ? "badge badge-active" : "badge badge-pending"
@@ -222,10 +213,10 @@ export function initCalendarTodoSettings(): void {
   }
 
   // ───── Calendar Sync Now ─────
-  const testCalBtn = document.getElementById("test-cal") as HTMLButtonElement
+  const testCalBtn = byId("test-cal") as HTMLButtonElement
   if (testCalBtn) {
     pageLifecycle.on(testCalBtn, "click", withAsyncButton(testCalBtn, async () => {
-    const resultEl = document.getElementById("cal-sync-result")
+    const resultEl = byId("cal-sync-result")
     try {
       const res = await fetch("/api/integrations/calendar/sync", {
         method: "POST", headers: settingsWriteHeaders("calendar_sync_enabled"),
@@ -236,7 +227,7 @@ export function initCalendarTodoSettings(): void {
       if (resultEl) resultEl.textContent = data.message ?? "Sync triggered"
       showToast(data.ok ? (data.message ?? "Calendar sync triggered") : "Calendar sync failed", data.ok ? "success" : "error")
       if (data.ok) {
-        const lastSynced = document.getElementById("cal-last-synced")
+        const lastSynced = byId("cal-last-synced")
         if (lastSynced) {
           const evtCount = data.total ?? 0
           lastSynced.textContent = `Last synced: ${new Date().toLocaleTimeString()} — ${evtCount} event${evtCount !== 1 ? "s" : ""}`
@@ -252,7 +243,7 @@ export function initCalendarTodoSettings(): void {
   }
 
   // ───── Todo Enable/Disable All ─────
-  const todoEnableAllBtn = document.getElementById("todo-enable-all")
+  const todoEnableAllBtn = byId("todo-enable-all")
   if (todoEnableAllBtn) {
     pageLifecycle.on(todoEnableAllBtn, "click", () => {
     document.querySelectorAll<HTMLInputElement>("#todo-entities-container .todo-entity-toggle").forEach((cb) => {
@@ -261,7 +252,7 @@ export function initCalendarTodoSettings(): void {
     updateTodoCount()
     })
   }
-  const todoDisableAllBtn = document.getElementById("todo-disable-all")
+  const todoDisableAllBtn = byId("todo-disable-all")
   if (todoDisableAllBtn) {
     pageLifecycle.on(todoDisableAllBtn, "click", () => {
     document.querySelectorAll<HTMLInputElement>("#todo-entities-container .todo-entity-toggle").forEach((cb) => {
@@ -272,15 +263,15 @@ export function initCalendarTodoSettings(): void {
   }
 
   // ───── Todo manual add ─────
-  const todoManualBtn = document.getElementById("todo-add-manual")
+  const todoManualBtn = byId("todo-add-manual")
   if (todoManualBtn) {
     pageLifecycle.on(todoManualBtn, "click", () => {
-    const input = document.getElementById("todo-entity-manual") as HTMLInputElement
+    const input = byId("todo-entity-manual") as HTMLInputElement
     const entityId = input?.value?.trim()
     if (!entityId || !entityId.startsWith("todo.")) { showToast("Enter a valid entity ID (e.g. todo.shopping_list)", "error"); return }
-    const container = document.getElementById("todo-entities-container")
+    const container = byId("todo-entities-container")
     if (!container) return
-    if (container.querySelector(`[data-entity="${CSS.escape(entityId)}"]`)) { showToast("Entity already in the list", "error"); return }
+    if (qs(container, `[data-entity="${CSS.escape(entityId)}"]`)) { showToast("Entity already in the list", "error"); return }
     const card = createEntityToggleCard({
       entityId,
       name: entityId,
@@ -288,7 +279,7 @@ export function initCalendarTodoSettings(): void {
       checked: true,
       toggleClass: "todo-entity-toggle",
     })
-    const todoToggle = card.querySelector<HTMLInputElement>(".todo-entity-toggle")
+    const todoToggle = qs<HTMLInputElement>(card, ".todo-entity-toggle")
     todoToggle?.addEventListener("change", () => {
       card.classList.toggle("cal-toggle-card--active", todoToggle.checked)
       updateTodoCount()
@@ -301,7 +292,7 @@ export function initCalendarTodoSettings(): void {
       }
     }, { signal: pageLifecycle.signal })
     container.appendChild(card)
-    const noEntities = document.getElementById("todo-no-entities")
+    const noEntities = byId("todo-no-entities")
     if (noEntities) noEntities.style.display = "none"
     updateTodoCount()
     input.value = ""
@@ -309,21 +300,21 @@ export function initCalendarTodoSettings(): void {
   }
 
   // ───── Todo toggle label ─────
-  const todoEnabledCb = document.getElementById("todo-enabled")
+  const todoEnabledCb = byId("todo-enabled")
   if (todoEnabledCb) {
     pageLifecycle.on(todoEnabledCb, "change", () => {
     const cb = todoEnabledCb as HTMLInputElement
-    const label = document.getElementById("todo-enabled-label")
+    const label = byId("todo-enabled-label")
     if (label) label.textContent = cb.checked ? "On — syncing with HA" : "Off — sync disabled to save power"
     })
   }
 
-  const saveTodoBtn = document.getElementById("save-todo") as HTMLButtonElement
+  const saveTodoBtn = byId("save-todo") as HTMLButtonElement
   if (saveTodoBtn) {
     pageLifecycle.on(saveTodoBtn, "click", withAsyncButton(saveTodoBtn, async () => {
-    const enabled = (document.getElementById("todo-enabled") as HTMLInputElement).checked
+    const enabled = (byId("todo-enabled") as HTMLInputElement).checked
     const enabledEntities = Array.from(document.querySelectorAll<HTMLInputElement>("#todo-entities-container .todo-entity-toggle:checked")).map((cb) => cb.value)
-    const direction = (document.getElementById("todo-sync-direction") as HTMLSelectElement).value
+    const direction = (byId("todo-sync-direction") as HTMLSelectElement).value
     if (enabled && enabledEntities.length === 0) { showToast("Enable at least one todo list, or disable sync", "error"); return }
     await saveSettings({
       todo_entities: enabledEntities,
@@ -334,7 +325,7 @@ export function initCalendarTodoSettings(): void {
     await applySyncConfiguration("/api/todo/sync", "todo_sync_enabled", enabled && enabledEntities.length > 0
       ? { action: "enable", entity_id: enabledEntities[0], entities: enabledEntities, direction }
       : { action: "disable" })
-    const statusEl = document.getElementById("todo-status")
+    const statusEl = byId("todo-status")
     if (statusEl) {
       statusEl.textContent = enabled ? `${enabledEntities.length} syncing` : "Disabled"
       statusEl.className = enabled ? "badge badge-active" : "badge badge-pending"
@@ -343,10 +334,10 @@ export function initCalendarTodoSettings(): void {
     }, { loadingText: "Saving…", onError: showSettingsSaveError }))
   }
 
-  const syncTodoBtn = document.getElementById("sync-todo") as HTMLButtonElement
+  const syncTodoBtn = byId("sync-todo") as HTMLButtonElement
   if (syncTodoBtn) {
     pageLifecycle.on(syncTodoBtn, "click", withAsyncButton(syncTodoBtn, async () => {
-    const resultEl = document.getElementById("todo-sync-result")
+    const resultEl = byId("todo-sync-result")
     try {
       const enabledTodos = Array.from(document.querySelectorAll<HTMLInputElement>("#todo-entities-container .todo-entity-toggle:checked")).map((cb) => cb.value)
       const entity = enabledTodos[0] || undefined
@@ -361,7 +352,7 @@ export function initCalendarTodoSettings(): void {
       const isOk = data.ok && data.ha_connected !== false
       showToast(msg, isOk ? "success" : "error")
       if (data.ok) {
-        const lastSynced = document.getElementById("todo-last-synced")
+        const lastSynced = byId("todo-last-synced")
         if (lastSynced) lastSynced.textContent = `Last synced: ${new Date().toLocaleTimeString()}${data.synced ? ` — ${data.synced} item(s)` : ""}`
       }
     } catch {
@@ -375,7 +366,7 @@ export function initCalendarTodoSettings(): void {
 
 // ───── Shared helpers ─────
 function updateCalCountBadge() {
-  const badge = document.getElementById("cal-count-badge")
+  const badge = byId("cal-count-badge")
   const toggles = document.querySelectorAll<HTMLInputElement>(".cal-entity-toggle")
   const total = toggles.length
   const enabled = Array.from(toggles).filter((t) => t.checked).length
@@ -388,7 +379,7 @@ function updateCalCountBadge() {
 (window as unknown as Record<string, unknown>).__updateCalCount = updateCalCountBadge
 
 function updateTodoCount() {
-  const badge = document.getElementById("todo-count-badge")
+  const badge = byId("todo-count-badge")
   if (!badge) return
   const all = document.querySelectorAll<HTMLInputElement>("#todo-entities-container .todo-entity-toggle")
   const enabled = Array.from(all).filter((cb) => cb.checked).length
@@ -398,12 +389,12 @@ function updateTodoCount() {
 
 // ───── Calendar hydration (complete function) ─────
 async function hydrateCalendarStatus(s: Record<string, unknown>) {
-  const statusEl = document.getElementById("cal-status")
-  const autoInfo = document.getElementById("cal-auto-info")
-  const autoEntity = document.getElementById("cal-auto-entity")
-  const entitiesList = document.getElementById("cal-entities-list")
-  const entitiesContainer = document.getElementById("cal-entities-container")
-  const lastSynced = document.getElementById("cal-last-synced")
+  const statusEl = byId("cal-status")
+  const autoInfo = byId("cal-auto-info")
+  const autoEntity = byId("cal-auto-entity")
+  const entitiesList = byId("cal-entities-list")
+  const entitiesContainer = byId("cal-entities-container")
+  const lastSynced = byId("cal-last-synced")
 
   try {
     const res = await fetch("/api/integrations/calendar/status", { signal: pageLifecycle.signal })
@@ -449,7 +440,7 @@ async function hydrateCalendarStatus(s: Record<string, unknown>) {
       if (s.calendar_sync_modes) { try { const parsed = typeof s.calendar_sync_modes === "string" ? JSON.parse(s.calendar_sync_modes as string) : s.calendar_sync_modes; if (parsed && typeof parsed === "object") savedSyncModes = parsed as Record<string, string> } catch { /* invalid */ } }
       if (typeof s.calendar_sync_mode === "string") savedGlobalMode = s.calendar_sync_mode
 
-      const dirSelect = document.getElementById("cal-sync-direction") as HTMLSelectElement | null
+      const dirSelect = byId<HTMLSelectElement>("cal-sync-direction")
       if (dirSelect && savedGlobalMode) dirSelect.value = savedGlobalMode
 
       entitiesContainer.replaceChildren(
@@ -472,7 +463,7 @@ async function hydrateCalendarStatus(s: Record<string, unknown>) {
           const card = cb.closest(".cal-toggle-card")
           if (card) {
             card.classList.toggle("cal-toggle-card--active", cb.checked)
-            const dirDiv = card.querySelector<HTMLElement>(".cal-toggle-card__direction")
+            const dirDiv = qs<HTMLElement>(card, ".cal-toggle-card__direction")
             if (dirDiv) dirDiv.style.display = cb.checked ? "" : "none"
           }
           updateCalCountBadge()
@@ -486,36 +477,36 @@ async function hydrateCalendarStatus(s: Record<string, unknown>) {
         card.addEventListener("click", (e) => {
           const target = e.target as HTMLElement
           if (target.closest(".toggle-label") || target.closest(".cal-direction-select")) return
-          const cb = card.querySelector<HTMLInputElement>(".cal-entity-toggle")
+          const cb = qs<HTMLInputElement>(card, ".cal-entity-toggle")
           if (cb) { cb.checked = !cb.checked; cb.dispatchEvent(new Event("change", { bubbles: true })) }
         })
         card.style.cursor = "pointer"
       })
 
       // Enable/Disable All
-      document.getElementById("cal-enable-all")?.addEventListener("click", () => {
+      byId("cal-enable-all")?.addEventListener("click", () => {
         entitiesContainer.querySelectorAll<HTMLInputElement>(".cal-entity-toggle").forEach((cb) => {
           cb.checked = true
           const card = cb.closest(".cal-toggle-card")
           card?.classList.add("cal-toggle-card--active")
-          const dirDiv = card?.querySelector<HTMLElement>(".cal-toggle-card__direction")
+          const dirDiv = qs<HTMLElement>(card, ".cal-toggle-card__direction")
           if (dirDiv) dirDiv.style.display = ""
         })
         updateCalCountBadge()
       })
-      document.getElementById("cal-disable-all")?.addEventListener("click", () => {
+      byId("cal-disable-all")?.addEventListener("click", () => {
         entitiesContainer.querySelectorAll<HTMLInputElement>(".cal-entity-toggle").forEach((cb) => {
           cb.checked = false
           const card = cb.closest(".cal-toggle-card")
           card?.classList.remove("cal-toggle-card--active")
-          const dirDiv = card?.querySelector<HTMLElement>(".cal-toggle-card__direction")
+          const dirDiv = qs<HTMLElement>(card, ".cal-toggle-card__direction")
           if (dirDiv) dirDiv.style.display = "none"
         })
         updateCalCountBadge()
       })
 
       // Global direction cascade
-      const globalDirSel = document.getElementById("cal-sync-direction") as HTMLSelectElement | null
+      const globalDirSel = byId<HTMLSelectElement>("cal-sync-direction")
       if (globalDirSel) {
         let previousGlobal = globalDirSel.value
         globalDirSel.addEventListener("change", () => {
@@ -528,14 +519,14 @@ async function hydrateCalendarStatus(s: Record<string, unknown>) {
       }
 
       if (savedEntities.length === 0 && calendars.length === 1) {
-        const firstToggle = entitiesContainer.querySelector<HTMLInputElement>(".cal-entity-toggle")
+        const firstToggle = qs<HTMLInputElement>(entitiesContainer, ".cal-entity-toggle")
         if (firstToggle) { firstToggle.checked = true; firstToggle.closest(".cal-toggle-card")?.classList.add("cal-toggle-card--active") }
       }
       updateCalCountBadge()
     } else {
       if (entitiesList) {
         entitiesList.style.display = "block"
-        const emptyState = document.getElementById("cal-no-entities")
+        const emptyState = byId("cal-no-entities")
         if (emptyState) emptyState.style.display = "flex"
       }
     }
@@ -546,14 +537,14 @@ async function hydrateCalendarStatus(s: Record<string, unknown>) {
 
 // ───── Todo hydration ─────
 async function hydrateTodoStatus(settings: Record<string, unknown>) {
-  const statusEl = document.getElementById("todo-status")
-  const autoInfo = document.getElementById("todo-auto-info")
-  const autoEntities = document.getElementById("todo-auto-entities")
-  const entitiesList = document.getElementById("todo-entities-list")
-  const entitiesContainer = document.getElementById("todo-entities-container")
-  const noEntities = document.getElementById("todo-no-entities")
-  const enabledCb = document.getElementById("todo-enabled") as HTMLInputElement | null
-  const enabledLabel = document.getElementById("todo-enabled-label")
+  const statusEl = byId("todo-status")
+  const autoInfo = byId("todo-auto-info")
+  const autoEntities = byId("todo-auto-entities")
+  const entitiesList = byId("todo-entities-list")
+  const entitiesContainer = byId("todo-entities-container")
+  const noEntities = byId("todo-no-entities")
+  const enabledCb = byId<HTMLInputElement>("todo-enabled")
+  const enabledLabel = byId("todo-enabled-label")
 
   try {
     const res = await fetch("/api/todo", { signal: pageLifecycle.signal })
@@ -571,8 +562,8 @@ async function hydrateTodoStatus(settings: Record<string, unknown>) {
       autoInfo.style.display = "block"
       const nodes: Node[] = []
       entities.forEach((e, idx) => {
-        if (idx > 0) nodes.push(document.createElement("br"))
-        const code = document.createElement("code")
+        if (idx > 0) nodes.push(domEl("br"))
+        const code = domEl("code")
         code.style.fontFamily = "'JetBrains Mono', monospace"
         code.style.fontSize = "11px"
         code.textContent = e.entity_id
@@ -607,7 +598,7 @@ async function hydrateTodoStatus(settings: Record<string, unknown>) {
         entitiesContainer.querySelectorAll<HTMLElement>(".cal-toggle-card").forEach((card) => {
           card.addEventListener("click", (e) => {
             if ((e.target as HTMLElement).closest(".toggle-label")) return
-            const cb = card.querySelector<HTMLInputElement>(".todo-entity-toggle")
+            const cb = qs<HTMLInputElement>(card, ".todo-entity-toggle")
             if (cb) { cb.checked = !cb.checked; cb.dispatchEvent(new Event("change", { bubbles: true })) }
           })
         })
@@ -633,49 +624,49 @@ async function hydrateTodoStatus(settings: Record<string, unknown>) {
 export function restoreCalendarTodoSettings(s: Record<string, unknown>): void {
   // CalDAV credentials
   if (s.caldav_url) {
-    (document.getElementById("caldav-url") as HTMLInputElement).value = String(s.caldav_url)
+    (byId("caldav-url") as HTMLInputElement).value = String(s.caldav_url)
     ;(async () => {
       try {
         const credRes = await fetch("/api/integrations/calendar/caldav-credentials", { signal: pageLifecycle.signal })
         if (credRes.ok) {
           const credData = await credRes.json()
           if (credData.configured) {
-            const indicator = document.getElementById("caldav-active-indicator")
+            const indicator = byId("caldav-active-indicator")
             if (indicator) indicator.style.display = "block"
-            if (credData.username) (document.getElementById("caldav-username") as HTMLInputElement).value = credData.username
+            if (credData.username) (byId("caldav-username") as HTMLInputElement).value = credData.username
           }
         }
       } catch { /* optional */ }
     })()
   }
   if (s.calendar_write_back) {
-    const wb = document.getElementById("cal-write-back") as HTMLInputElement | null
+    const wb = byId<HTMLInputElement>("cal-write-back")
     if (wb) wb.checked = s.calendar_write_back === true || s.calendar_write_back === "true"
   }
-  const wtd = document.getElementById("cal-write-ticket-details") as HTMLInputElement | null
+  const wtd = byId<HTMLInputElement>("cal-write-ticket-details")
   if (wtd) {
     wtd.checked = s.calendar_write_ticket_details === undefined
       ? true
       : s.calendar_write_ticket_details !== false && s.calendar_write_ticket_details !== "false"
   }
   if (s.calendar_sync_interval_ms) {
-    const intervalSel = document.getElementById("cal-sync-interval") as HTMLSelectElement | null
+    const intervalSel = byId<HTMLSelectElement>("cal-sync-interval")
     if (intervalSel) intervalSel.value = String(s.calendar_sync_interval_ms)
   }
 
   // Todo entity restore
   if (s.todo_entity) {
-    const todoSelect = document.getElementById("todo-entity") as HTMLSelectElement | null
-    const todoManual = document.getElementById("todo-entity-manual") as HTMLInputElement | null
+    const todoSelect = byId<HTMLSelectElement>("todo-entity")
+    const todoManual = byId<HTMLInputElement>("todo-entity-manual")
     if (todoSelect) todoSelect.value = String(s.todo_entity)
     if (todoManual) todoManual.value = String(s.todo_entity)
   }
-  if (s.todo_sync_direction) (document.getElementById("todo-sync-direction") as HTMLSelectElement).value = String(s.todo_sync_direction)
+  if (s.todo_sync_direction) (byId("todo-sync-direction") as HTMLSelectElement).value = String(s.todo_sync_direction)
   if (s.todo_sync_enabled === true || s.todo_sync_enabled === "true") {
-    (document.getElementById("todo-enabled") as HTMLInputElement).checked = true
-    const label = document.getElementById("todo-enabled-label")
+    (byId("todo-enabled") as HTMLInputElement).checked = true
+    const label = byId("todo-enabled-label")
     if (label) label.textContent = "On — syncing with HA"
-    const el = document.getElementById("todo-status")
+    const el = byId("todo-status")
     if (el) { el.textContent = "Active"; el.className = "badge badge-active" }
     window.expandIntegrationCard?.("integration-todo-body")
   }

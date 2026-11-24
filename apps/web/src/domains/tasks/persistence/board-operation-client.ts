@@ -87,12 +87,22 @@ export function boardOperationClient(client: Client, scope: BoardScope, operatio
       if (verifyOnSnapshot && error instanceof ContinuityLockedError) await check(db)
       throw error
     }
+    // A private file-backed writer excludes other SQLite writers and keeps its
+    // data private until a fresh check of all effects on the actual commit.
+    // Token and provider policy still revalidate on each use.
+    const privateWriter = mode === "write" && holdResult &&
+      (scope.principal.kind === "ha_user" || scope.principal.kind === "local_operator") && isFencedLocalWriter(tx)
     const requiredIntents = [...operations]
     const requiredChecks: Array<() => Promise<void>> = []
     const requireIntent = async (intent: WorkOperation) => {
+      const alreadyRequired = requiredIntents.some(item => item.resource === intent.resource && item.action === intent.action)
+      if (privateWriter && alreadyRequired && isFencedLocalWriter(tx)) {
+        if (!actorStillCurrent()) throw new BoardOperationError("stale")
+        return
+      }
       const allowed = await validateBoardScope(scope, tx, intent)
       if (!allowed.ok) throw new BoardOperationError(allowed.errorCode)
-      if (!requiredIntents.some(item => item.resource === intent.resource && item.action === intent.action)) requiredIntents.push(intent)
+      if (!alreadyRequired) requiredIntents.push(intent)
     }
     try {
       if (verifyOnSnapshot && !isFencedReadSnapshot(tx)) await check(db)
@@ -107,11 +117,6 @@ export function boardOperationClient(client: Client, scope: BoardScope, operatio
     // Its own guard still checks snapshot and live continuity at each operation.
     const reuseSnapshotAuthority = mode === "read" && isFencedReadSnapshot(tx)
     const withholdUntilCommit = reuseSnapshotAuthority && holdResult
-    // A private file-backed writer excludes other SQLite writers and keeps its
-    // data private until a fresh check of all effects on the actual commit.
-    // Token and provider policy still revalidate on each use.
-    const privateWriter = mode === "write" && holdResult &&
-      (scope.principal.kind === "ha_user" || scope.principal.kind === "local_operator") && isFencedLocalWriter(tx)
     async function checkSnapshot(requested: readonly WorkOperation[] = operations) {
       if (!reuseSnapshotAuthority && !(privateWriter && isFencedLocalWriter(tx))) return check(tx, requested)
       if (!actorStillCurrent()) {

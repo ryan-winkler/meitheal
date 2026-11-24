@@ -20,78 +20,9 @@
     font-size: 13px;
     position: relative;
   }
-  .stree--board { padding: 0; border: 0; border-radius: 0; background: transparent; margin: 0; font-size: inherit; }
-  .stree--board > details > .stree__header { padding: 0; min-height: 0; gap: 0.25rem; }
-  .stree--board > details > .stree__header .nav-link { flex: 1; min-width: 0; }
-  .stree--board #project-nav-content { padding-inline-start: 1rem; }
-  .stree--board .stree__group-chevron { width: 28px; height: 28px; border: 0; background: transparent; }
   .stree :is(a[href], button, summary, input),
   .stree__dropdown :is(a[href], button, input),
   .stree__popover :is(a[href], button, input) { scroll-margin: 2px; }
-
-  /* Sidebar, Boards or More owns scrolling for the complete hierarchy. */
-  .stree__list {
-    position: relative;
-    overflow: visible;
-    max-height: none;
-  }
-
-  /* ── Header — P2-11: compact & refined ── */
-  .stree__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 4px;
-    padding-inline-end: calc(var(--stree-manage-size) + 6px);
-    min-height: max(var(--stree-header-height), var(--stree-manage-size));
-    cursor: pointer;
-    list-style: none;
-  }
-  .stree__header::-webkit-details-marker { display: none; }
-  .stree__group-heading { display: flex; align-items: center; gap: 6px; min-width: 0; }
-  .stree__group-chevron {
-    color: var(--text-secondary);
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border-radius: 5px;
-    border: 1px solid rgb(var(--border-rgb) / 0.5);
-    background: rgb(var(--bg-primary-rgb) / 0.4);
-    transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1), border-color 150ms ease, color 150ms ease;
-  }
-  .stree__header:hover .stree__group-chevron {
-    border-color: rgb(var(--accent-rgb) / 0.55);
-    color: var(--text-primary);
-  }
-  #sidebar-areas-group:not([open]) .stree__group-chevron { transform: rotate(-90deg); }
-  .stree__label {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 0.6rem;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    font-weight: 600;
-    color: var(--text-secondary);
-  }
-
-  /* ── Section labels ── */
-  .stree__section-label {
-    font-size: 10px;
-    color: var(--text-muted);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 2px 4px;
-  }
-
-  /* ── Area block ── */
-  .stree__area { position: relative; }
-
   /* ── Area row — P1-7: unified padding, P1-8: stronger hover ── */
   .stree__area-row {
     display: flex;
@@ -379,25 +310,6 @@
     display: block;
   }
 
-  /* ── T5: Pin help badge ── */
-  .stree__pinned-header { display: flex; align-items: center; gap: 4px; }
-  .stree__pin-help {
-    font-size: 9px;
-    width: 14px;
-    height: 14px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    background: rgb(var(--border-rgb) / 0.15);
-    color: var(--text-muted);
-    opacity: 0.4;
-    cursor: help;
-    transition: opacity 150ms;
-    flex-shrink: 0;
-  }
-  .stree__pin-help:hover { opacity: 0.8; }
-
   /* ── T1: Inline editable input ── */
   .stree__inline-input {
     background: rgb(var(--border-rgb) / 0.12);
@@ -449,21 +361,6 @@
     border-color: var(--accent);
     color: var(--accent-text);
     background: rgb(var(--accent-rgb) / 0.04);
-  }
-  .stree__new-area-icon {
-    font-size: 13px;
-    font-weight: 300;
-    width: 18px;
-    height: 18px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 4px;
-    background: rgb(var(--border-rgb) / 0.1);
-    transition: background 200ms;
-  }
-  .stree__new-area:hover .stree__new-area-icon {
-    background: rgb(var(--accent-rgb) / 0.1);
   }
 
   /* ── Shared dropdown (body-level) ── */
@@ -624,7 +521,6 @@
   .stree__popover-save:active { transform: scale(0.97); }
 
   /* ── P2-13: Custom focus rings ── */
-  .stree__header:focus-visible,
   .stree__area-toggle:focus-visible,
   .stree__project-link:focus-visible,
   .stree__action-btn:focus-visible,
@@ -644,7 +540,6 @@
       --stree-actions-expanded-width: none;
     }
 
-    .stree__header,
     .stree__area-toggle,
     .stree__project-link {
       min-height: 44px;

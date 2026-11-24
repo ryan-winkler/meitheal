@@ -160,6 +160,22 @@ export async function dispatchTaskEvent(eventType: string, input: Record<string,
   requestId: string | undefined, traceId: string | undefined, eventId: string | undefined,
   responseAuthority: Record<string, string> | undefined, scope: BoardScope) {
   try {
+    const isSyncEvent = ["task.created", "task.updated", "task.completed", "task.deleted"].includes(eventType)
+    const destinations = isSyncEvent ? await readWorkDestinations(getPersistenceClient()) : null
+    const hasActiveSync = Boolean(destinations?.bindings.some(binding =>
+      binding.enabled
+      && binding.destination.boardId === scope.boardId
+      && (binding.purpose === "todo.sync" || binding.purpose === "calendar.sync" || binding.purpose === "grocy.sync")
+    ))
+    const haEventType = HA_EVENT_MAP[eventType];
+    const hasHaBus = Boolean(haEventType && process.env.SUPERVISOR_TOKEN);
+    const earlyWebhookSettings = !hasHaBus && !hasActiveSync && eventType !== "task.deleted" && !eventId
+      ? await getCurrentWebhookSettings()
+      : null;
+    if (earlyWebhookSettings && !earlyWebhookSettings.webhook_endpoint && !earlyWebhookSettings.n8n_webhook_url) {
+      return;
+    }
+
     const assignment = eventType === "task.updated" && typeof eventId === "string" && typeof input.id === "string"
       ? await readTaskAssignmentReceipt(getPersistenceClient(), scope, eventId, input.id) : null
     const originatingOperation: WorkOperation = assignment ? { resource: "task", action: "assign" } : eventOperation(eventType)
@@ -185,7 +201,6 @@ export async function dispatchTaskEvent(eventType: string, input: Record<string,
     // ── 1. HA Event Bus (Addon mode — Node-RED/n8n auto) ──
     // Fire meitheal_task_* events on the HA event bus so Node-RED/n8n
     // can trigger on them via the HA WebSocket integration.
-    const haEventType = HA_EVENT_MAP[eventType];
     if (haEventType && process.env.SUPERVISOR_TOKEN) {
       const authority = assignment ? { [HA_EVENT_AUTHORITY_HEADER]: haEventType } : responseAuthority ?? await taskEventAuthorityHeaders([eventType], scope);
       if (authority[HA_EVENT_AUTHORITY_HEADER]?.split(",").includes(haEventType)) {
@@ -221,7 +236,7 @@ export async function dispatchTaskEvent(eventType: string, input: Record<string,
 
     // ── 2. HTTP Webhooks (Standalone mode) ──
     // P2.1: Cache webhook settings with TTL to avoid DB reads on every event
-    const webhookSettings = await getCurrentWebhookSettings();
+    const webhookSettings = earlyWebhookSettings ?? await getCurrentWebhookSettings();
 
     const subscribers: WebhookSubscriberConfig[] = [];
 
@@ -319,19 +334,11 @@ export async function dispatchTaskEvent(eventType: string, input: Record<string,
     // ── 3. Outbound Sync (Todo + Calendar push) ──
     // Push task mutations to active sync targets (fire-and-forget).
     // Handles loop prevention and no-sync labels internally.
-    if (["task.created", "task.updated", "task.completed", "task.deleted"].includes(eventType)) {
-      const destinations = await readWorkDestinations(getPersistenceClient())
-      const hasActiveSync = destinations?.bindings.some(binding =>
-        binding.enabled
-        && binding.destination.boardId === scope.boardId
-        && (binding.purpose === "todo.sync" || binding.purpose === "calendar.sync" || binding.purpose === "grocy.sync")
-      )
-      if (hasActiveSync) {
-        import("./sync-outbound").then(async ({ pushToActiveSyncs }) => {
-          if (!await originAllowed()) return
-          pushToActiveSyncs(eventType, payload, scope, deletion ?? undefined).catch(() => {});
-        }).catch(() => {});
-      }
+    if (hasActiveSync) {
+      import("./sync-outbound").then(async ({ pushToActiveSyncs }) => {
+        if (!await originAllowed()) return
+        pushToActiveSyncs(eventType, payload, scope, deletion ?? undefined).catch(() => {});
+      }).catch(() => {});
     }
   } catch (err) {
     logger.log("error", {

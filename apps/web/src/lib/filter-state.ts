@@ -137,8 +137,9 @@ export function readTaskAreaParam(params: URLSearchParams): string | null {
 
 const TABLE_DATE_KEYS = ["createdFrom", "createdThrough"] as const
 const TABLE_KEYS = [...ALL_KEYS, "task_type", "label", "area_id", "board", "lane", ...TABLE_DATE_KEYS] as const
-const SORT_COLUMNS = ["key", "title", "type", "status", "priority", "due_date", "rice"]
+const SORT_COLUMNS = ["key", "title", "type", "status", "priority", "due_date", "rice", "manual"]
 const LEGACY_SORTS = new Map([
+  ["manual", "manual-asc"],
   ["due_asc", "due_date-asc"],
   ["due_desc", "due_date-desc"],
   ["priority_desc", "priority-asc"],

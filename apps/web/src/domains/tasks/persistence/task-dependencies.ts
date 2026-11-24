@@ -13,5 +13,5 @@ export function openTaskDependenciesSql(task: "?" | "tasks.id") {
 }
 
 export function openTaskDependencies(scope: BoardScope, id: string) {
-  return scopedTaskRead(scope, sourceSql(openTaskDependenciesSql("?"), [id, id]))
+  return scopedTaskRead(scope, sourceSql(openTaskDependenciesSql("?"), [id, id]), "select", "minimal")
 }

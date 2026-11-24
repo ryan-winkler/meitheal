@@ -390,6 +390,25 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
       </button>
     </div>
 
+    <div class="sidebar-edit-moves" data-sidebar-edit-moves hidden>
+      <button
+        type="button"
+        data-sidebar-step="-1"
+        aria-label={t("sidebar.reorder_up", locale)}
+        title={t("sidebar.reorder_up", locale)}
+      >
+        <Icon name="chevron-down" size={16} class="rotate-180" />
+      </button>
+      <button
+        type="button"
+        data-sidebar-step="1"
+        aria-label={t("sidebar.reorder_down", locale)}
+        title={t("sidebar.reorder_down", locale)}
+      >
+        <Icon name="chevron-down" size={16} />
+      </button>
+    </div>
+
     <div class="sidebar-edit-quick-actions">
       <button
         type="button"
@@ -559,20 +578,6 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
 
   .sidebar-main { display: contents; }
 
-  .sidebar .sidebar-compact-areas {
-    display: none;
-  }
-
-  @media (min-width: 769px) {
-    :global(body.sidebar-collapsed) .sidebar .sidebar-compact-areas {
-      display: flex;
-    }
-
-    :global(body.sidebar-collapsed) #sidebar-hierarchy-panel :global(#project-nav) {
-      display: none;
-    }
-  }
-
   .sidebar-scroll {
     flex: 1;
     overflow-y: auto;
@@ -725,7 +730,6 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
 <style is:inline>
   .sidebar-board-children { list-style: none; margin: 0; padding-inline-start: 0.75rem; }
   .sidebar-board-children[hidden] { display: none !important; }
-  .sidebar-household { margin-inline-start: 0; }
   body.sidebar-collapsed .sidebar-board-children { display: none; }
   .sidebar-board-children [data-named-board-shortcut] a { display: block; padding: 0.3rem 0.5rem; overflow-wrap: anywhere; }
   .sidebar-board-children .sidebar-board-row { display: flex; align-items: center; gap: 2px; }
@@ -736,7 +740,6 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
   .sidebar-board-children .sidebar-board-toggle[aria-expanded="true"] { transform: rotate(90deg); }
   .sidebar-board-children [data-board-groups], .sidebar-board-children [data-board-projects] { list-style: none; padding-left: 1rem; }
   .sidebar-board-children [data-board-group-notice] { padding-inline-start: 1rem; margin: 0; }
-  .sidebar-household[hidden] { display: none; }
 
   [data-appearance-nav-tone]:not([data-appearance-nav-tone="match"]) #sidebar .sidebar-board-children.stree {
     background: rgba(15, 23, 42, 0.24);

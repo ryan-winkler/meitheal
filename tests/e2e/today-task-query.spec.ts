@@ -44,7 +44,7 @@ for (const [timezone, midnight] of [
       for (const [id, due] of [["date-only", today], ["timed", timedDue], ["tomorrow", tomorrow]] as const) {
         await client.execute({
           sql: `INSERT INTO tasks
-            (id, title, idempotency_key, request_id, status, due_date, is_favorite, created_at, updated_at)
+            (id, title, idempotency_key, request_id, status, due_date, is_promoted, created_at, updated_at)
             VALUES (?, ?, ?, ?, 'pending', ?, 1, 1, 1)`,
           args: [id, id, id, id, due],
         })
@@ -101,16 +101,16 @@ test("Today reads full queue counts without materializing hidden rows", async ()
     async function addTask(id: string, options: {
       status?: string
       due?: string
-      favorite?: number
+      promoted?: number
       payload?: string
       updated?: string | number
     } = {}) {
       await client.execute({
         sql: `INSERT INTO tasks
-          (id, title, idempotency_key, request_id, created_at, updated_at, status, due_date, is_favorite, framework_payload)
+          (id, title, idempotency_key, request_id, created_at, updated_at, status, due_date, is_promoted, framework_payload)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         args: [id, id, id, id, now, options.updated ?? now, options.status ?? "pending",
-          options.due ?? null, options.favorite ?? 0, options.payload ?? "{}"],
+          options.due ?? null, options.promoted ?? 0, options.payload ?? "{}"],
       })
     }
 
@@ -132,9 +132,9 @@ test("Today reads full queue counts without materializing hidden rows", async ()
       tasks: [],
     })
 
-    await addTask("pinned", { favorite: 1 })
+    await addTask("pinned", { promoted: 1 })
     await addTask("legacy-due", { due: "11/08/2026" })
-    const payload = JSON.stringify({ reach: "0x10", impact: 2, confidence: true, effort: 1 })
+    const payload = JSON.stringify({ reach: 16, impact: 2, confidence: 100, effort: 1, confidence_unit: "percent" })
     await addTask("rice-first", { payload })
     await addTask("rice-second", { payload })
     await addTask("archived", { status: "archived" })
@@ -144,7 +144,7 @@ test("Today reads full queue counts without materializing hidden rows", async ()
     await client.batch([
       "INSERT INTO task_boards (id, name, visibility, ticket_prefix, created_at, updated_at) VALUES ('work', 'Work', 'restricted', 'WORKABCD', 1, 1)",
       "INSERT INTO kanban_lanes (id, key, label, board_id, created_at, updated_at) VALUES ('work-pending', 'pending', 'Pending', 'work', 1, 1)",
-      { sql: `INSERT INTO tasks (id, title, status, area_id, task_board_id, board_column_id, ticket_ref, is_favorite,
+      { sql: `INSERT INTO tasks (id, title, status, area_id, task_board_id, board_column_id, ticket_ref, is_promoted,
           idempotency_key, request_id, created_at, updated_at)
         VALUES ('private-work', 'Private Work ticket', 'pending', '__meitheal_no_area__',
           'work', 'work-pending', 'WORKABCD-1', 1, 'work-key', 'work-req', ?, ?)`, args: [now, now] },
@@ -177,7 +177,7 @@ test("Today reads full queue counts without materializing hidden rows", async ()
             FROM fixtures`,
       args: [now, now],
     })
-    await addTask("pinned-overdue", { favorite: 1, due: "2026-11-08" })
+    await addTask("pinned-overdue", { promoted: 1, due: "2026-11-08" })
     await expect(getTodayTaskCounts(new Date(now), undefined, false, scope)).resolves.toEqual({
       dueToday: 0, completedToday: 3, carriedForward: 121, remaining: 123, completionPercent: 2,
     })

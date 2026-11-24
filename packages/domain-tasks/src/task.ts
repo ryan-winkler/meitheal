@@ -50,7 +50,6 @@ export interface TaskResponse {
   end_date: string | null;
   progress: number;
   color: string | null;
-  is_favorite: number;
   /** @deprecated Use task_kind instead */
   task_type: TaskType;
   task_kind: TaskKind;

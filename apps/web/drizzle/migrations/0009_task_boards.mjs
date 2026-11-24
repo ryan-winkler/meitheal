@@ -1,6 +1,7 @@
 import { assertBoardStorageWriter, assertNoInboundReferences, matchesSql, moveBoardStorageTables, normalizeSql, tableDefinitions } from "./board-storage-schema.mjs"
 import { storageEncodingColumn } from "./0016_ordinary_boards.mjs"
 import { customBoardKeyObjects, CUSTOM_BOARD_KEYS_SCHEMA_VERSION } from "./0017_custom_board_keys.mjs"
+import { TASK_EXPERIENCE_SCHEMA_VERSION } from "./0018_task_experience.mjs"
 
 const laneColumns = {
   id: "TEXT PRIMARY KEY",
@@ -175,10 +176,11 @@ export async function validateTaskBoardStorage(db, allowedObjects = []) {
   const { rows: [version] } = await db.execute("SELECT value FROM app_settings WHERE key = 'schema_version'")
   const ordinary = Number(version?.value) >= 26
   const customKeys = Number(version?.value) >= CUSTOM_BOARD_KEYS_SCHEMA_VERSION
+  const taskExperience = Number(version?.value) >= TASK_EXPERIENCE_SCHEMA_VERSION
   const objects = {
     task_boards: ordinary ? boardTableSql.replace(/\)\s*$/, `, ${storageEncodingColumn})`) : boardTableSql,
     board_members: memberTableSql,
-    kanban_lanes: scopedLaneSql,
+    kanban_lanes: taskExperience ? scopedLaneSql.replace(/\bUNIQUE\s*\(/, "color TEXT, UNIQUE (") : scopedLaneSql,
     ...scopedObjects,
     ...(customKeys ? { task_boards_identity_guard: customBoardKeyObjects.task_boards_identity_guard } : {}),
   }

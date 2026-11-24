@@ -23,7 +23,7 @@ export {
   getProgressToNextLevel,
   getXpToNextLevel,
   checkAchievements,
-  recordTaskCompletionWithAchievements,
+  completeTaskGamification,
   getAllAchievements,
   getYearlyHeatmapData,
   ensureAchievementSchema,
@@ -32,4 +32,5 @@ export {
   type Achievement,
   type UnlockedAchievement,
   type AchievementCheckResult,
+  type TaskCompletionGamificationResult,
 } from "./achievement-engine"

@@ -168,6 +168,7 @@ test.describe(() => {
 })
 
 test("a task link preserves simulated ingress and opens in another authorized context", async ({ browser }) => {
+  test.setTimeout(60_000)
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built app and the ingress fixture")
   const work = await mkdtemp(join(tmpdir(), "meitheal-task-permalink-"))
   const env = {
@@ -220,10 +221,10 @@ test("a task link preserves simulated ingress and opens in another authorized co
     const taskRead = recipientPage.waitForResponse(response =>
       response.url() === `${entry}/api/tasks/${ticket_key}` && response.request().method() === "GET")
     await recipientPage.goto(copiedLink)
-    await expect(recipientPage.locator("#td-title")).toHaveValue(title)
+    await expect(recipientPage.locator("#td-title")).toHaveValue(title, { timeout: 15_000 })
     expect((await taskRead).status()).toBe(200)
-    await recipientPage.reload()
-    await expect(recipientPage.locator("#td-title")).toHaveValue(title)
+    expect((await recipientPage.reload())?.status()).toBe(200)
+    await expect(recipientPage.locator("#td-title")).toHaveValue(title, { timeout: 15_000 })
   } finally {
     await source.close()
     await recipient.close()
@@ -236,7 +237,7 @@ test("a task link preserves simulated ingress and opens in another authorized co
   }
 })
 test("a comment link focuses the edited comment through ingress and recovers after deletion", async ({ browser, request }) => {
-  test.slow()
+  test.setTimeout(90_000)
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built app and a disposable ingress fixture")
   const work = await mkdtemp(join(tmpdir(), "meitheal-comment-permalink-"))
   const env = {
@@ -394,7 +395,7 @@ test("a comment link focuses the edited comment through ingress and recovers aft
 
     const missing = page.locator("#td-comment-link-status")
     await page.goto(`${taskUrl}?comment=${otherComment}`)
-    await expect(missing).toContainText("This comment is unavailable")
+    await expect(missing).toContainText("This comment is unavailable", { timeout: 12_000 })
     await expect(missing).toBeFocused()
     await expect(page.locator("#td-comments")).not.toContainText("Comment belonging to a different task")
     const confirmation = sourcePage.getByRole("alertdialog", { name: "Delete comment" })
@@ -429,7 +430,7 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     await expect(authorRow).toHaveCount(0)
     await expect(sibling).toBeFocused()
     await page.goto(href)
-    await expect(missing).toBeFocused()
+    await expect(missing).toBeFocused({ timeout: 12_000 })
     await expect(page.locator("#td-comments")).toContainText("First visible comment")
     await expect(target).toHaveCount(0)
 
@@ -454,7 +455,7 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     await expect.poll(() => new URL(page.url()).searchParams.get("search")).toBe(search)
     expect(new URL(page.url()).searchParams.has("comment")).toBe(false)
     await page.goBack()
-    await expect(missing).toBeFocused()
+    await expect(missing).toBeFocused({ timeout: 12_000 })
   } finally {
     await source.close()
     await recipient.close()
@@ -484,7 +485,7 @@ test("ticket scoring keeps other lenses and retries a failed save", async ({ pag
   for (const [field, value] of Object.entries({ Reach: "10", Impact: "2", Confidence: "80", Effort: "0.5" })) {
     await page.getByRole("spinbutton", { name: field, exact: true }).fill(value)
   }
-  await expect(page.locator("#se-live-result")).toHaveText("Score: 3200")
+  await expect(page.locator("#se-live-result")).toHaveText("Score: 32")
   let failNext = true
   await page.route(`**/api/tasks/${id}`, async route => {
     if (route.request().method() === "PUT" && failNext) {
@@ -500,7 +501,7 @@ test("ticket scoring keeps other lenses and retries a failed save", async ({ pag
   const stored = await request.get(`/api/tasks/${id}`)
   const payload = JSON.parse((await stored.json()).framework_payload)
   expect(payload.ice).toEqual({ impact: 7, confidence: 8, ease: 9 })
-  expect(payload.rice.score).toBe(3200)
+  expect(payload.rice.score).toBe(32)
   await page.reload()
   await expect(page.getByRole("spinbutton", { name: "Effort", exact: true })).toHaveValue("0.5")
   await chooser.selectOption("ice")

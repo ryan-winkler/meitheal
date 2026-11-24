@@ -23,7 +23,7 @@ test("Knight Rider keeps the completed Today state and saved theme truthful", as
   await expect(page.locator("#new-task-title-input")).toBeFocused()
 
   const create = await request.post("/api/tasks", { headers: boardHeaders, data: {
-    title: "Put the spare valves away", due_date: shiftCalendarDay(calendarToday(), -1), is_favorite: 1,
+    title: "Put the spare valves away", due_date: shiftCalendarDay(calendarToday(), -1), is_promoted: true,
   } })
   expect(create.status()).toBe(201)
   const { id } = await create.json()

@@ -11,7 +11,10 @@ import { initKeyboardAndSearch } from "@lib/controllers/kanban-keyboard";
 import { initKanbanGrouping } from "@lib/controllers/kanban-grouping";
 import type { KanbanRefreshFocus } from "@lib/controllers/kanban-page-controller"
 import { isDoneStatus } from "@lib/status-config"
+import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
+import { askAIForTask } from "@domains/ai/ai-context-service"
+import { confirmDialog } from "@lib/confirm-dialog"
 import { showToast } from "@lib/toast"
 
 const log = createClientLogger("kanban");
@@ -105,14 +108,16 @@ export function initKanbanArea(
 
       const restoreFocus = card.contains(document.activeElement)
       const wasDone = isDoneStatus(card.dataset.status ?? "")
+
       pendingMoves.set(card, lane)
       card.setAttribute("aria-busy", "true")
       syncMoveStatus(lane)
       let saved = false
       try {
+        const ctx = currentTaskApiContext()
         const res = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
           method: "PUT",
-          headers: { "content-type": "application/json" },
+          headers: ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" },
           body: JSON.stringify({ status, task_type: typeChanged ? newType : undefined }),
         })
         saved = res.ok
@@ -249,16 +254,20 @@ export function initKanbanArea(
         const position = getReorderPosition(targetList, card, drag)
         if (!id || !position?.anchor.dataset.id) return
 
+        const prevSibling = card.nextElementSibling
         pendingMoves.set(card, col)
+        targetList.insertBefore(card, position.before ? position.anchor : position.anchor.nextElementSibling)
         try {
+          const ctx = currentTaskApiContext()
           const res = await fetch("/api/tasks/reorder", {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            headers: ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" },
             body: JSON.stringify({ task_id: id, anchor_id: position.anchor.dataset.id, lane: col.dataset.status, before: position.before }),
           })
           if (!res.ok) throw new Error("Reorder rejected")
           if (!__signal.aborted) await refreshBoard()
         } catch {
+          if (card.parentElement === targetList) targetList.insertBefore(card, prevSibling)
           if (!__signal.aborted) showToast(window.mI18n?.get("kanban.reorder_failed") ?? "Couldn’t save the card order. Try again.", "error")
         } finally {
           pendingMoves.delete(card)
@@ -299,16 +308,37 @@ export function initKanbanArea(
         return
       }
 
-      const aiBtn = target.closest<HTMLElement>(".card-ai-btn")
+      const aiBtn = target.closest<HTMLButtonElement>(".card-ai-btn")
       if (aiBtn) {
         event.stopPropagation()
-        const title = aiBtn.dataset.title ?? ""
-        const desc = aiBtn.dataset.desc ?? ""
-        const status = aiBtn.dataset.status ?? "pending"
-        const priority = aiBtn.dataset.priority ?? "3"
-        const prompt = `I have a task:\n\nTitle: ${title}\nStatus: ${status}\nPriority: ${priority}/5\n${desc ? `Description: ${desc}` : ""}\n\nCan you help me break this down, suggest next steps, estimate effort, or identify blockers?`
-        const opened = window.open(`https://chatgpt.com/?q=${encodeURIComponent(prompt)}`, "_blank", "noopener,noreferrer")
-        if (opened) opened.opener = null
+        const id = aiBtn.dataset.id ?? aiBtn.closest<HTMLElement>(".kanban-card")?.dataset.id
+        if (!id || aiBtn.getAttribute("aria-busy") === "true" || __signal.aborted) return
+        aiBtn.setAttribute("aria-busy", "true")
+        aiBtn.disabled = true
+        try {
+          const result = await askAIForTask(id, __signal)
+          if (__signal.aborted) return
+          if (result.source === "ha-assist") {
+            await confirmDialog({
+              title: "AI Assistant",
+              message: result.response,
+              confirmText: "Done",
+              cancelText: "Close",
+              copyPrompt: {
+                text: result.response,
+                label: "Copy response",
+                success: "Copied",
+                failure: "Copy failed",
+              },
+              signal: __signal,
+            })
+          }
+        } catch {
+          if (!__signal.aborted) showToast("settings.ai_handoff_context_failed", "error")
+        } finally {
+          aiBtn.removeAttribute("aria-busy")
+          aiBtn.disabled = false
+        }
         return
       }
 
@@ -316,37 +346,32 @@ export function initKanbanArea(
       if (dupBtn) {
         event.stopPropagation()
         const id = dupBtn.dataset.id
-        if (!id || dupBtn.disabled) return
+        if (!id || dupBtn.disabled || __signal.aborted) return
+        dupBtn.disabled = true
+        dupBtn.classList.add("btn-loading")
         try {
-          dupBtn.disabled = true
-          dupBtn.classList.add("btn-loading")
-          const res = await fetch(buildTaskApiUrl(id)) // nosemgrep
-          if (!res.ok) {
-            dupBtn.disabled = false
-            dupBtn.classList.remove("btn-loading")
+          const ctx = currentTaskApiContext()
+          const dupRes = await fetch(`/api/tasks/${encodeURIComponent(id)}/duplicate`, {
+            method: "POST",
+            ...(ctx ? { headers: taskApiHeaders(ctx) } : {}),
+            signal: __signal,
+          })
+          if (__signal.aborted) return
+          if (!dupRes.ok) {
+            showToast("Failed to duplicate", "error")
             return
           }
-          const task = await res.json()
-          const dupRes = await fetch("/api/tasks", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              title: `${task.title} (Copy)`,
-              description: task.description ?? "",
-              priority: task.priority ?? 3,
-              status: "pending",
-              due_date: task.due_date ?? null,
-              labels: task.labels ?? "[]",
-              framework_payload: task.framework_payload ?? "{}",
-            }),
-          })
-          if (dupRes.ok) document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { action: "kanban-duplicate" } }))
-          else {
-            dupBtn.disabled = false
-            dupBtn.classList.remove("btn-loading")
-          }
+          const dupData = await dupRes.json().catch(() => null) as { id?: string; title?: string } | null
+          showToast(dupData?.title ? `Duplicated → ${dupData.title}` : "Task duplicated", "success")
+          document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", {
+            detail: { id: dupData?.id, action: "kanban-duplicate" },
+          }))
         } catch (err) {
-          log.warn("Duplicate task failed", err)
+          if (!__signal.aborted) {
+            log.warn("Duplicate task failed", err)
+            showToast("Failed to duplicate", "error")
+          }
+        } finally {
           dupBtn.disabled = false
           dupBtn.classList.remove("btn-loading")
         }
@@ -365,6 +390,7 @@ export function initKanbanArea(
 
     // O(1) delegated inline title double-click edit
     board.addEventListener("dblclick", (e) => {
+      if (board.closest<HTMLElement>("[data-task-workspace]")?.dataset.canEdit === "false") return
       const titleSpan = (e.target instanceof Element ? e.target : null)?.closest<HTMLElement>(".kanban-title-text")
       if (!titleSpan || titleSpan.contentEditable === "true") return
       e.stopPropagation()
@@ -401,12 +427,28 @@ export function initKanbanArea(
 
         card?.setAttribute("data-title-saving", "")
         try {
+          const ctx = currentTaskApiContext()
+          const version = Number(card?.dataset.version)
           const res = await fetch(buildTaskApiUrl(taskId!), { // nosemgrep
             method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ title: newTitle }),
+            headers: ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" },
+            body: JSON.stringify({
+              title: newTitle,
+              ...(Number.isSafeInteger(version) && version >= 0 ? { updated_at: version } : {}),
+            }),
           })
+          if (res.status === 409) {
+            titleSpan!.textContent = originalText
+            showToast("Task was updated elsewhere. Refreshing board.", "warning")
+            if (!__signal.aborted) await refreshBoard()
+            return
+          }
           if (!res.ok) throw new Error("save failed")
+          const saved = await res.json().catch(() => null) as { task_version?: unknown; updated_at?: unknown } | null
+          const nextVersion = Number(saved?.task_version ?? saved?.updated_at)
+          if (card && Number.isSafeInteger(nextVersion) && nextVersion >= 0) {
+            card.dataset.version = String(nextVersion)
+          }
           if (!__signal.aborted) await refreshBoard()
         } catch {
           titleSpan!.textContent = originalText

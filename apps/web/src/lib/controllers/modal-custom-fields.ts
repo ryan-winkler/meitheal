@@ -6,18 +6,23 @@
  *      Manages custom field rows, categorised dropdown, field type rendering,
  *      and debounced save. Depends on saveTD + settingsFields from parent.
  */
+import { byId, domEl, qs, setAttr } from "@lib/dom-helpers"
 
 export interface CustomFieldsDeps {
-  saveTD: (field: string, value: unknown) => Promise<void>
+  saveTD: (field: string, value: unknown) => Promise<unknown>
   getSettingsFields: () => Array<{ name: string; type: string; options?: string[] }>
   getCurrentTaskId?: () => string | null
   signal?: AbortSignal
 }
 
 const STRUCTURED_CF_KEYS = new Set(["items", "quantity", "category", "location", "fields"])
+const RICE_CF_KEYS = new Set(["Reach", "Impact", "Confidence", "Effort"])
 const isRetainedCustomFieldKey = (key: string) =>
   STRUCTURED_CF_KEYS.has(key) || key.startsWith("grocy_") || key.startsWith("external_")
 
+/**
+ * Initialise custom fields panel with CRUD and categorised dropdown.
+ */
 export function initCustomFields({ saveTD, getSettingsFields, getCurrentTaskId, signal }: CustomFieldsDeps) {
   const opts = signal ? { signal } : undefined
   let activeTaskId: string | null = null
@@ -34,14 +39,18 @@ export function initCustomFields({ saveTD, getSettingsFields, getCurrentTaskId, 
     }
   }
 
+  function getCustomFieldsContainer(): HTMLElement | null {
+    return byId("td-custom-fields")
+  }
+
   function getCFFromUI(): Record<string, string> {
     const result: Record<string, string> = {}
-    document.querySelectorAll<HTMLElement>(".td-cf-row").forEach((row) => {
+    getCustomFieldsContainer()?.querySelectorAll<HTMLElement>(".td-cf-row").forEach((row) => {
       if (row.dataset.cfPristine === "1") return
-      const key = (row.querySelector(".td-cf-key") as HTMLInputElement)?.value.trim()
+      const key = (qs(row, ".td-cf-key") as HTMLInputElement)?.value.trim()
       if (!key) return
-      const cbInput = row.querySelector("input[type=checkbox].td-cf-val") as HTMLInputElement | null
-      const otherInput = row.querySelector("select.td-cf-val, input:not([type=checkbox]).td-cf-val") as HTMLInputElement | HTMLSelectElement | null
+      const cbInput = qs(row, "input[type=checkbox].td-cf-val") as HTMLInputElement | null
+      const otherInput = qs(row, "select.td-cf-val, input:not([type=checkbox]).td-cf-val") as HTMLInputElement | HTMLSelectElement | null
       result[key] = cbInput ? (cbInput.checked ? "true" : "false") : (otherInput?.value.trim() ?? "")
     })
     return result
@@ -50,23 +59,40 @@ export function initCustomFields({ saveTD, getSettingsFields, getCurrentTaskId, 
   const buildMergedPayload = () => ({ ...retainedStructuredFields, ...getCFFromUI() })
   const getMergedJson = () => JSON.stringify(buildMergedPayload())
   let _saveCFTimer: ReturnType<typeof setTimeout> | null = null
+  let cfDirty = false
 
   function cancelPendingSave(): void {
     if (_saveCFTimer) {
       clearTimeout(_saveCFTimer)
       _saveCFTimer = null
     }
+    cfDirty = false
   }
 
   signal?.addEventListener("abort", cancelPendingSave, { once: true })
 
-  function saveCF() {
-    cancelPendingSave()
+  async function flushPendingCustomFieldsSave(): Promise<void> {
+    if (_saveCFTimer) {
+      clearTimeout(_saveCFTimer)
+      _saveCFTimer = null
+    }
+    if (!cfDirty || signal?.aborted) return
+    cfDirty = false
+    await saveTD("custom_fields", getMergedJson())
+  }
+
+  function saveCF(immediate = false) {
+    cfDirty = true
+    if (immediate) {
+      void flushPendingCustomFieldsSave()
+      return
+    }
+    if (_saveCFTimer) clearTimeout(_saveCFTimer)
     const scheduledTaskId = getCurrentTaskId?.() ?? activeTaskId
     _saveCFTimer = setTimeout(() => {
       _saveCFTimer = null
       if (!signal?.aborted && (getCurrentTaskId?.() ?? activeTaskId) === scheduledTaskId) {
-        void saveTD("custom_fields", getMergedJson())
+        void flushPendingCustomFieldsSave()
       }
     }, 400)
   }
@@ -80,15 +106,16 @@ export function initCustomFields({ saveTD, getSettingsFields, getCurrentTaskId, 
     cancelPendingSave()
     activeTaskId = taskId
     retainedStructuredFields = {}
-    document.getElementById("td-custom-fields")?.replaceChildren()
+    getCustomFieldsContainer()?.replaceChildren()
     for (const [k, v] of Object.entries(parseRawCustomFields(rawCustomFields))) {
-      if (v === null || v === undefined) continue
+      if (v === null || v === undefined || RICE_CF_KEYS.has(k)) continue
       renderedKeys.add(k)
       if (typeof v === "object" || isRetainedCustomFieldKey(k)) {
         retainedStructuredFields[k] = v
       } else {
-        const sfDef = settingsFields.find((sf) => sf.name === k)
+        const sfDef = settingsFields.find((sf) => sf.name.toLowerCase() === k.toLowerCase())
         addCFRow(k, String(v), sfDef?.type || "text", sfDef?.options)
+        if (sfDef) renderedKeys.add(sfDef.name)
       }
     }
   }
@@ -113,10 +140,8 @@ export function initCustomFields({ saveTD, getSettingsFields, getCurrentTaskId, 
     options?: string[],
     pristine = false,
   ) {
-    const cfDiv = document.getElementById(
-      "td-custom-fields",
-    ) as HTMLElement
-    const row = document.createElement("div")
+    const cfDiv = getCustomFieldsContainer() as HTMLElement
+    const row = domEl("div")
     row.className = "td-cf-row"
     if (pristine) row.dataset.cfPristine = "1"
     row.style.cssText = "display:flex;gap:6px;align-items:center;"
@@ -127,17 +152,14 @@ export function initCustomFields({ saveTD, getSettingsFields, getCurrentTaskId, 
     if (fieldType === "checkbox") {
       const isChecked =
         value === "true" || value === "1" || value === "yes"
-      const label = document.createElement("label")
-      label.className = "td-cf-val-wrap"
+      const label = domEl("label", "td-cf-val-wrap")
       label.style.cssText = "flex:1;display:flex;align-items:center;gap:8px;cursor:pointer;"
-      const cb = document.createElement("input")
+      const cb = domEl("input")
       cb.type = "checkbox"
       cb.className = "form-checkbox td-cf-val h-5 w-5 accent-accent rounded"
       cb.style.cursor = "pointer"
       cb.checked = isChecked
-      const span = document.createElement("span")
-      span.className = "text-xs text-text-muted"
-      span.textContent = isChecked ? "Yes" : "No"
+      const span = domEl("span", "text-xs text-text-muted", isChecked ? "Yes" : "No")
       label.append(cb, span)
       valueEl = label
       bindSave = () => cb.addEventListener("change", () => {
@@ -146,8 +168,7 @@ export function initCustomFields({ saveTD, getSettingsFields, getCurrentTaskId, 
         saveCF()
       }, opts)
     } else if (fieldType === "select" && options && options.length > 0) {
-      const select = document.createElement("select")
-      select.className = "form-input td-cf-val text-sm py-1"
+      const select = domEl("select", "form-input td-cf-val text-sm py-1")
       select.style.flex = "1"
       select.append(
         new Option("Select…", "", !value, !value),
@@ -160,7 +181,7 @@ export function initCustomFields({ saveTD, getSettingsFields, getCurrentTaskId, 
         select.addEventListener("input", markDirty, opts)
       }
     } else {
-      const input = document.createElement("input")
+      const input = domEl("input")
       input.type = fieldType === "number" || fieldType === "date" || fieldType === "url" ? fieldType : "text"
       input.className = "form-input td-cf-val text-sm py-1"
       input.style.flex = "1"
@@ -175,7 +196,7 @@ export function initCustomFields({ saveTD, getSettingsFields, getCurrentTaskId, 
       }
     }
 
-    const keyInput = document.createElement("input")
+    const keyInput = domEl("input")
     keyInput.type = "text"
     keyInput.className = "form-input td-cf-key text-sm py-1"
     keyInput.placeholder = "Field name"
@@ -183,7 +204,7 @@ export function initCustomFields({ saveTD, getSettingsFields, getCurrentTaskId, 
     keyInput.style.cssText = "flex:1;opacity:0.7;"
     keyInput.readOnly = true
 
-    const removeBtn = document.createElement("button")
+    const removeBtn = domEl("button")
     removeBtn.type = "button"
     removeBtn.className = "td-cf-remove"
     removeBtn.style.cssText = "color:var(--danger);font-size:16px;cursor:pointer;background:none;border:none;padding:0 4px;"
@@ -193,17 +214,13 @@ export function initCustomFields({ saveTD, getSettingsFields, getCurrentTaskId, 
     bindSave()
     removeBtn.addEventListener("click", () => {
       row.remove()
-      saveCF()
+      saveCF(true)
     }, opts)
     cfDiv.appendChild(row)
   }
 
   // Categorized field groups for the dropdown
   const fieldCategories: { label: string; fields: string[] }[] = [
-    {
-      label: "RICE Framework",
-      fields: ["Reach", "Impact", "Confidence", "Effort"],
-    },
     {
       label: "Agile & Planning",
       fields: [
@@ -270,11 +287,11 @@ export function initCustomFields({ saveTD, getSettingsFields, getCurrentTaskId, 
     return result
   }
 
-  const dropdownEl = () => document.getElementById("td-add-cf-dropdown")
-  const searchEl = () => document.getElementById("td-add-cf-search") as HTMLInputElement | null
+  const dropdownEl = () => byId("td-add-cf-dropdown")
+  const searchEl = () => byId<HTMLInputElement>("td-add-cf-search")
   const addFieldByName = (fieldName: string) => {
     if (isRetainedCustomFieldKey(fieldName) || Object.hasOwn(retainedStructuredFields, fieldName)) return
-    const sfDef = getSettingsFields().find((sf) => sf.name === fieldName)
+    const sfDef = getSettingsFields().find((sf) => sf.name.toLowerCase() === fieldName.toLowerCase())
     addCFRow(fieldName, sfDef?.type === "checkbox" ? "false" : "", sfDef?.type || "text", sfDef?.options)
     const dd = dropdownEl()
     if (dd) dd.style.display = "none"
@@ -282,13 +299,33 @@ export function initCustomFields({ saveTD, getSettingsFields, getCurrentTaskId, 
     if (s) s.value = ""
   }
 
-  document.getElementById("td-add-cf-options")?.addEventListener("click", (e) => {
+  const optionsEl = byId("td-add-cf-options")
+  optionsEl?.addEventListener("click", (e) => {
     const opt = (e.target as Element)?.closest<HTMLElement>(".td-cf-option")
     if (opt?.dataset.field) addFieldByName(opt.dataset.field)
   }, opts)
+  optionsEl?.addEventListener("keydown", (e) => {
+    const opt = (e.target as Element)?.closest<HTMLButtonElement>(".td-cf-option")
+    if (!opt) return
+    const btns = Array.from(optionsEl.querySelectorAll<HTMLButtonElement>(".td-cf-option"))
+    const idx = btns.indexOf(opt)
+    if (e.key === "ArrowDown") {
+      e.preventDefault()
+      btns[(idx + 1) % btns.length]?.focus()
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault()
+      btns[(idx - 1 + btns.length) % btns.length]?.focus()
+    } else if (e.key === "Escape") {
+      e.preventDefault()
+      const dd = dropdownEl()
+      if (dd) dd.style.display = "none"
+      byId("td-add-cf")?.focus()
+    }
+  }, opts)
 
   function renderFieldDropdown(filter = "") {
-    const optionsDiv = document.getElementById("td-add-cf-options")!
+    const optionsDiv = byId("td-add-cf-options")!
+    setAttr(optionsDiv, "role", "listbox")
     const lowerFilter = filter.toLowerCase()
     const categories = getAvailableFields()
     const settingsFields = getSettingsFields()
@@ -304,30 +341,28 @@ export function initCustomFields({ saveTD, getSettingsFields, getCurrentTaskId, 
     for (const cat of categories) {
       const filtered = cat.fields.filter((f) => f.toLowerCase().includes(lowerFilter))
       if (filtered.length === 0) continue
-      const header = document.createElement("div")
-      header.className = "px-3 py-1 text-[10px] text-text-muted uppercase tracking-wide font-semibold border-t border-border first:border-t-0"
-      header.textContent = cat.label
+      const header = domEl("div", "px-3 py-1 text-[10px] text-text-muted uppercase tracking-wide font-semibold border-t border-border first:border-t-0", cat.label)
       nodes.push(header)
       for (const f of filtered) {
-        const sfDef = settingsFields.find((sf) => sf.name === f)
-        const opt = document.createElement("div")
-        opt.className = "td-cf-option px-3 py-1.5 text-sm cursor-pointer hover:bg-bg-hover"
+        const sfDef = settingsFields.find((sf) => sf.name.toLowerCase() === f.toLowerCase())
+        const opt = domEl("button")
+        opt.type = "button"
+        opt.className = "td-cf-option w-full text-left px-3 py-1.5 text-sm cursor-pointer hover:bg-bg-hover border-0 bg-transparent"
+        setAttr(opt, "role", "option")
         opt.dataset.field = f
         opt.textContent = `${f} (${typeBadge[sfDef?.type || "text"] || "Aa"})`
         nodes.push(opt)
       }
     }
     if (nodes.length === 0) {
-      const empty = document.createElement("div")
-      empty.className = "px-3 py-1.5 text-xs text-text-muted italic"
-      empty.textContent = "Type a custom name and press Enter"
+      const empty = domEl("div", "px-3 py-1.5 text-xs text-text-muted italic", "Type a custom name and press Enter")
       optionsDiv.replaceChildren(empty)
     } else {
       optionsDiv.replaceChildren(...nodes)
     }
   }
 
-  document.getElementById("td-add-cf")?.addEventListener("click", (e) => {
+  byId("td-add-cf")?.addEventListener("click", (e) => {
     e.stopPropagation()
     const dd = dropdownEl()!
     const isVisible = dd.style.display !== "none"
@@ -338,14 +373,12 @@ export function initCustomFields({ saveTD, getSettingsFields, getCurrentTaskId, 
     }
   }, opts)
 
-  document
-    .getElementById("td-add-cf-search")
+  byId("td-add-cf-search")
     ?.addEventListener("input", (e) => {
       renderFieldDropdown((e.target as HTMLInputElement).value)
     }, opts)
 
-  document
-    .getElementById("td-add-cf-search")
+  byId("td-add-cf-search")
     ?.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault()
@@ -356,7 +389,7 @@ export function initCustomFields({ saveTD, getSettingsFields, getCurrentTaskId, 
       if (e.key === "Escape" && dd?.style.display === "block") {
         e.preventDefault()
         dd.style.display = "none"
-        document.getElementById("td-add-cf")?.focus()
+        byId("td-add-cf")?.focus()
       }
     }, opts)
 
@@ -366,7 +399,7 @@ export function initCustomFields({ saveTD, getSettingsFields, getCurrentTaskId, 
       !(e.target as Element)?.closest("#td-add-cf-dropdown") &&
       !(e.target as Element)?.closest("#td-add-cf")
     ) {
-      const dd = document.getElementById("td-add-cf-dropdown")
+      const dd = byId("td-add-cf-dropdown")
       if (dd) dd.style.display = "none"
     }
     // Also close parent search results
@@ -374,7 +407,7 @@ export function initCustomFields({ saveTD, getSettingsFields, getCurrentTaskId, 
       !(e.target as Element)?.closest("#td-link-parent-search") &&
       !(e.target as Element)?.closest("#td-link-parent-results")
     ) {
-      const pr = document.getElementById("td-link-parent-results")
+      const pr = byId("td-link-parent-results")
       if (pr) pr.style.display = "none"
     }
   }, opts)
@@ -386,5 +419,6 @@ export function initCustomFields({ saveTD, getSettingsFields, getCurrentTaskId, 
     getStructuredField,
     getMergedJson,
     cancelPendingSave,
+    flushPendingCustomFieldsSave,
   }
 }

@@ -24,8 +24,10 @@ const expectedSchema = {
     "deferral_revision",
     "inactivity_touched_at", "last_activity_spike_at",
     "source",
-    "created_by"
+    "created_by",
+    "table_position"
   ],
+  archived_task_favorites: ["task_id", "task_board_id", "archived_at"],
   domain_events: ["event_id", "event_type", "task_id", "request_id", "idempotency_key", "payload", "created_at"],
   integration_attempts: [
     "attempt_id",

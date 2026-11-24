@@ -4,7 +4,6 @@
         import { confirmDialog } from "@lib/confirm-dialog";
         import { findModalTrapTarget } from "@lib/dialog-overlay"
         import { promptDialog } from "@lib/prompt-dialog";
-        import { attemptStaleChunkReload, isStaleChunkError } from "@lib/chunk-recovery"
         import { createClientLogger, registerGlobalLogger } from "@lib/client-logger";
         import { containTabFocus } from "@lib/focus-trap"
         import { applyAppearancePreferences, bindAppearanceNavigation, readAppearancePreferences } from "@lib/appearance-preferences"
@@ -40,6 +39,7 @@
 
         // Expose for is:inline scripts (kanban)
         window.confirmDialog = confirmDialog;
+        window.promptDialog = promptDialog;
         // Connection status check — singleton interval (P0-4: prevent accumulation)
         async function checkHealth() {
           const indicator = document.getElementById("connection-status");
@@ -75,20 +75,7 @@
         }
         window.__healthIntervalId = setInterval(checkHealth, 30000);
 
-        // Global error resilience — catch unhandled errors to prevent blank-page crashes
-        // (These are global/permanent — intentionally NOT lifecycle-managed)
-        window.addEventListener("error", (e) => {
-          // ResizeObserver loop errors are benign browser noise — suppress them
-          if (e.message?.includes("ResizeObserver loop")) return;
-          log.error("Unhandled error", e.error ?? e.message);
-        });
-        window.addEventListener("unhandledrejection", (e) => {
-          if (isStaleChunkError(e.reason)) {
-            e.preventDefault()
-            if (attemptStaleChunkReload(window.sessionStorage, Date.now(), () => window.location.reload())) return
-          }
-          log.error("Unhandled promise rejection", e.reason);
-        });
+        // Global error/rejection handling lives in global-error-handler.ts.
 
         // ============================================================
         // P0-2/P0-3/P0-5: Lifecycle-managed page initialization
@@ -182,35 +169,22 @@
             }
             return tasks.pathname + tasks.search + tasks.hash
           }
-          const openTasks = (view?: TaskView) => {
-            const href = taskDestination(view)
-            if (!href) return
+          const navigateTo = (href: string) => {
             syncIngressDestination(href)
             window.location.assign(safeIngressHref(href))
           }
+          const openTasks = (view?: TaskView) => navigateTo(taskDestination(view))
+          const openBoardLink = (key: "dashboard" | "today" | "upcoming") => () => {
+            const context = navigationContext()
+            navigateTo(context ? boardNavigationLinks(context)[key] : "/boards")
+          }
 
           const SHORTCUT_NAV = {
-            dashboard: () => {
-              const context = navigationContext()
-              const destination = context ? boardNavigationLinks(context).dashboard : "/boards"
-              syncIngressDestination(destination)
-              window.location.assign(safeIngressHref(destination))
-            },
-            tasks: () => openTasks(),
+            dashboard: openBoardLink("dashboard"),
             kanban: () => openTasks("kanban"),
             table: () => openTasks("table"),
-            today: () => {
-              const context = navigationContext()
-              const destination = context ? boardNavigationLinks(context).today : "/boards"
-              syncIngressDestination(destination)
-              window.location.assign(safeIngressHref(destination))
-            },
-            upcoming: () => {
-              const context = navigationContext()
-              const destination = context ? boardNavigationLinks(context).upcoming : "/boards"
-              syncIngressDestination(destination)
-              window.location.assign(safeIngressHref(destination))
-            },
+            today: openBoardLink("today"),
+            upcoming: openBoardLink("upcoming"),
             calendar: () => openTasks("calendar"),
           } as const
 
@@ -222,7 +196,7 @@
               modalFn()
               return
             }
-            SHORTCUT_NAV.tasks()
+            openTasks()
           }
           function openNewTaskAction() {
             const trigger = document.activeElement
@@ -351,51 +325,28 @@
                 SHORTCUT_NAV.table()
                 return
               }
-              if (matchesShortcutEvent(e, shortcuts.goDashboard, singleEnabled)) {
-                e.preventDefault()
-                SHORTCUT_NAV.dashboard()
-                return
-              }
-              if (matchesShortcutEvent(e, shortcuts.goToday, singleEnabled)) {
-                e.preventDefault()
-                SHORTCUT_NAV.today()
-                return
-              }
-              if (matchesShortcutEvent(e, shortcuts.goUpcoming, singleEnabled)) {
-                e.preventDefault()
-                SHORTCUT_NAV.upcoming()
-                return
-              }
-              if (matchesShortcutEvent(e, shortcuts.goCalendar, singleEnabled)) {
-                e.preventDefault()
-                SHORTCUT_NAV.calendar()
-                return
+              for (const [action, go] of [
+                [shortcuts.goDashboard, SHORTCUT_NAV.dashboard],
+                [shortcuts.goToday, SHORTCUT_NAV.today],
+                [shortcuts.goUpcoming, SHORTCUT_NAV.upcoming],
+                [shortcuts.goCalendar, SHORTCUT_NAV.calendar],
+              ] as const) {
+                if (matchesShortcutEvent(e, action, singleEnabled)) {
+                  e.preventDefault()
+                  go()
+                  return
+                }
               }
 
               // Phase 20 (ADHD Optimization): T/S/E shortcuts for detail panel task_type
               // Only active when task detail is modal OR focus resides inside the docked panel
               if (!e.ctrlKey && !e.metaKey && !e.altKey && singleEnabled && (modalTaskDetailOpen || (taskDetailOpen && document.getElementById("task-detail-panel")?.contains(document.activeElement)))) {
-                const tdTag = (e.target as HTMLElement)?.tagName;
-                const tdIsEditing =
-                  ["INPUT", "TEXTAREA", "SELECT"].includes(tdTag) ||
-                  (e.target as HTMLElement)?.contentEditable === "true";
-
-                if (!tdIsEditing) {
-                  const typeSelect = document.getElementById(
-                    "td-task-type",
-                  ) as HTMLSelectElement | null;
-                  if (typeSelect) {
-                    let newType = null;
-                    if (e.key.toLowerCase() === "t") newType = "task";
-                    if (e.key.toLowerCase() === "s") newType = "story";
-                    if (e.key.toLowerCase() === "e") newType = "epic";
-
-                    if (newType && typeSelect.value !== newType) {
-                      e.preventDefault();
-                      typeSelect.value = newType;
-                      typeSelect.dispatchEvent(new Event("change"));
-                    }
-                  }
+                const typeSelect = document.getElementById("td-task-type") as HTMLSelectElement | null
+                const newType = ({ t: "task", s: "story", e: "epic" } as Record<string, string | undefined>)[e.key.toLowerCase()]
+                if (typeSelect && newType && typeSelect.value !== newType) {
+                  e.preventDefault()
+                  typeSelect.value = newType
+                  typeSelect.dispatchEvent(new Event("change"))
                 }
               }
             },
@@ -417,132 +368,6 @@
             }, { signal })
           }
 
-          // Area switcher
-          (async function initAreaSwitcher() {
-            const select = document.getElementById(
-              "area-select",
-            ) as HTMLSelectElement | null;
-            const addBtn = document.getElementById("add-area-btn");
-            if (!select) return;
-
-            // Load boards from API
-            try {
-              const res = await fetch(
-                (window.__ingress_path || "") + "/api/areas",
-              );
-              if (res.ok) {
-                const data = await res.json();
-                const boards = data.areas ?? [];
-                select.replaceChildren();
-                // "All Areas" option first
-                const allOpt = document.createElement("option");
-                allOpt.value = "all";
-                allOpt.textContent = "All Areas"
-                select.appendChild(allOpt);
-                boards.forEach(
-                  (b: { id: string; name: string; icon: string }) => {
-                    const opt = document.createElement("option");
-                    opt.value = b.id;
-                    opt.textContent = b.name
-                    select.appendChild(opt);
-                  },
-                );
-              }
-            } catch {
-              /* fallback to default option */
-            }
-
-            // Restore active board from localStorage
-            const saved =
-              localStorage.getItem("meitheal_active_area") ?? "all";
-            if (select.querySelector(`option[value="${saved}"]`)) {
-              select.value = saved;
-            }
-
-            // Expose active board globally for page scripts
-            window.__activeArea = select.value;
-
-            // Apply board filter to visible items
-            function isDoneStatus(s: string) {
-              return s === "complete" || s === "cancelled";
-            }
-
-            // strategic lens payload integration
-            function applyAreaFilter() {
-              const area = select!.value;
-              window.__activeArea = area;
-              // Filter task items (tasks page)
-              document
-                .querySelectorAll(".task-item[data-area]")
-                .forEach((el) => {
-                  const item = el as HTMLElement;
-                  item.style.display =
-                    area === "all" || item.dataset.area === area
-                      ? ""
-                      : "none";
-                });
-              // Filter kanban cards
-              document
-                .querySelectorAll(".kanban-card[data-area]")
-                .forEach((el) => {
-                  const card = el as HTMLElement;
-                  card.style.display =
-                    area === "all" || card.dataset.area === area
-                      ? ""
-                      : "none";
-                });
-              // Filter table rows
-              document
-                .querySelectorAll("#task-table tbody tr[data-area]")
-                .forEach((el) => {
-                  const row = el as HTMLElement;
-                  row.style.display =
-                    area === "all" || row.dataset.area === area
-                      ? ""
-                      : "none";
-                });
-            }
-
-            // Apply on load
-            applyAreaFilter();
-
-            // Switch board → save + filter
-            select.addEventListener(
-              "change",
-              () => {
-                localStorage.setItem("meitheal_active_area", select.value);
-                applyAreaFilter();
-              },
-              { signal },
-            );
-
-            // Add new board
-            addBtn?.addEventListener(
-              "click",
-              async () => {
-                const title = await promptDialog({ title: "Create Area", placeholder: "Area name", required: true });
-                if (!title) return;
-                try {
-                  const res = await fetch(
-                    (window.__ingress_path || "") + "/api/areas",
-                    {
-                      method: "POST",
-                      headers: { "content-type": "application/json" },
-                      body: JSON.stringify({ name: title.trim() }),
-                    },
-                  );
-                  if (res.ok) {
-                    const area = await res.json();
-                    localStorage.setItem("meitheal_active_area", area.id);
-                    window.location.reload();
-                  }
-                } catch {
-                  /* ignore */
-                }
-              },
-              { signal },
-            );
-          })();
         }); // end pageLifecycle.onPageLoad
 
         // Phase 13: Universal event listeners — reload page when tasks or navigation change.

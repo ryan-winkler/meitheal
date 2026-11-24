@@ -1,30 +1,27 @@
 import { captureAttempt } from "@lib/task-capture-attempt"
 import { taskHttpProjection } from "@lib/task-http-projection"
 import { scopePermits } from "@domains/tasks/board-scope"
-import { withBoardScope } from "@lib/board-http"
+import { boardScopeErrorResponse, withBoardScope } from "@lib/board-http"
+import { setEntityPillar } from "@domains/pillars"
+import { isOrganizationFeatureAvailable as availableFeature } from "@lib/organization-request-context"
 import { organizationPlacementAvailable } from "@lib/organization-placement-access"
-import { readHomeAssistantAreaPolicyRevision, setTaskHomeAssistantArea } from "@domains/tasks/persistence/home-assistant-task-area"
 import { readHomeAssistantAreaFilter, resolveHomeAssistantAreaSelection } from "@lib/home-assistant-area-access"
-import { HierarchyRepository } from "@domains/tasks/persistence/hierarchy-repository"
 import { parseBoardPlacement } from "@lib/board-workspace"
 import type { APIRoute } from "astro"
 import type { ResultSet } from "@libsql/client"
 import { deriveEisenhowerQuadrant, isValidTaskKind, VALID_TASK_KINDS, VALID_TASK_TYPES, type TaskType } from "@meitheal/domain-tasks"
 import { normalizeLabelTitle } from "@domains/labels"
 import {
+  defaultTaskSortOrder,
   dispatchTaskCreation,
   ensureSchema,
   getPersistenceClient,
   hasBoardSelection,
   prepareTaskCreation,
   rejectBoardSelectionInJson,
-  taskAddedActivity,
   taskCreationPayload,
-  taskInsertStatement,
   TaskRepository,
-  unavailableBoardResponse,
 } from "@domains/tasks"
-import { runWriteTransaction } from "../../../../scripts/database-client.mjs"
 import { formatTicketKey } from "../../../lib/ticket-key"
 import { logApiError } from "../../../lib/api-logger"
 import { isDbUnavailable, db503Response } from "../../../lib/db-fallback"
@@ -53,7 +50,12 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
     return receipt ? Response.json(receipt) : apiError("Capture receipt unavailable.", 404)
   }
   const sort = url.searchParams.get("sort") ?? "created_at"
-  const order = url.searchParams.get("order") === "asc" ? "ASC" as const : "DESC" as const
+  const rawOrder = url.searchParams.get("order")?.toLowerCase()
+  const order = rawOrder === "asc"
+    ? "ASC" as const
+    : rawOrder === "desc"
+      ? "DESC" as const
+      : defaultTaskSortOrder(sort)
   const limit = Math.min(500, Math.max(1, Number(url.searchParams.get("limit")) || 100))
   const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0)
 
@@ -68,8 +70,11 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
     taskKind = normalizedKind
   }
 
+  if (url.searchParams.has("favorite")) {
+    return apiError("is_favorite has been retired; use is_promoted instead.", 400)
+  }
+
   const findOpts: Parameters<typeof repo.findAll>[0] = {
-    favorite: url.searchParams.get("favorite") === "1",
     sort,
     order,
     limit,
@@ -153,7 +158,6 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
       end_date: r.end_date ?? null,
       progress: Number(r.progress ?? 0),
       color: r.color ?? null,
-      is_favorite: Number(r.is_favorite ?? 0),
       is_promoted: Boolean(r.is_promoted),
       task_type: r.task_type ?? "task",
       summary: r.summary,
@@ -167,6 +171,7 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
       routine_occurrence: r.routine_occurrence,
       assigned_to: r.assigned_to ?? null,
       kanban_position: r.kanban_position != null ? Number(r.kanban_position) : null,
+      table_position: r.table_position != null ? Number(r.table_position) : null,
       task_kind: r.task_kind ?? "standard_action",
       handoff_state: r.handoff_state,
       time_block_start: r.time_block_start,
@@ -210,63 +215,115 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
 })
 
 export const POST: APIRoute = withBoardScope({ resource: "task", action: "create" }, async (context, scope) => {
-  const { request, locals } = context
-  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
-  if (!body || typeof body !== "object" || Array.isArray(body)) return apiError("Send a task object.", 400)
-  if (!organizationPlacementAvailable(body)) return apiError("This organizing feature is unavailable.", 404)
-  if (hasBoardSelection(body)) return apiError("Select the Board using the request context.", 400)
-  const attempt = captureAttempt(request, scope)
-  if (!attempt.ok) return apiError(attempt.error, 400)
-  const clientKey = request.headers.get("Idempotency-Key")
-  if (clientKey !== null && (!clientKey.trim() || clientKey.length > 255)) return apiError("Use a valid Idempotency-Key.", 400)
-  const repo = new TaskRepository(getPersistenceClient(), scope)
-  const placement = parseBoardPlacement(body.placement)
-  if (body.placement !== undefined && (!placement || body.project_id !== undefined || body.area_id !== undefined)) {
-    return apiError("Choose valid Area and Project placement.", 400)
+  try {
+    await ensureSchema()
+    const { request, locals } = context
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+    if (!body || typeof body !== "object" || Array.isArray(body)) return apiError("Send a task object.", 400)
+    if (!organizationPlacementAvailable(body)) return apiError("This organizing feature is unavailable.", 404)
+    if (hasBoardSelection(body)) return apiError("Select the Board using the request context.", 400)
+    const attempt = captureAttempt(request, scope)
+    if (!attempt.ok) return apiError(attempt.error, 400)
+    const clientKey = request.headers.get("Idempotency-Key")
+    if (clientKey !== null && (!clientKey.trim() || clientKey.length > 255)) return apiError("Use a valid Idempotency-Key.", 400)
+    const repo = new TaskRepository(getPersistenceClient(), scope)
+    const placement = parseBoardPlacement(body.placement)
+    if (body.placement !== undefined && (!placement || body.project_id !== undefined || body.area_id !== undefined)) {
+      return apiError("Choose valid Area and Project placement.", 400)
+    }
+    const homeLocation = await resolveHomeAssistantAreaSelection(context, body.home_assistant_area_id)
+    if (!homeLocation.ok) return apiError(homeLocation.detail, homeLocation.status)
+    const effectiveSource = locals.agentToken ? "agent"
+      : (request.headers.has("X-Automation-Source") ? locals.automationSource : "user")
+    const effectiveCreatedBy = locals.agentToken ? locals.agentToken.tokenName : scope.principal.id
+
+    const requestedPillarId = typeof body.pillar_id === "string" && body.pillar_id.trim() ? body.pillar_id.trim() : null
+    const requestedPrincipleId = typeof body.principle_id === "string" && body.principle_id.trim() && availableFeature("principles")
+      ? body.principle_id.trim()
+      : null
+    let frameworkPayload = body.framework_payload
+    if (requestedPrincipleId) {
+      let existingFramework: Record<string, unknown> = {}
+      if (typeof frameworkPayload === "string" && frameworkPayload.trim()) {
+        try {
+          const parsed = JSON.parse(frameworkPayload) as unknown
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) existingFramework = parsed as Record<string, unknown>
+        } catch {
+          return apiError("framework_payload must be a valid JSON object string", 400)
+        }
+      }
+      frameworkPayload = JSON.stringify({ ...existingFramework, principle_id: requestedPrincipleId })
+    }
+
+    const prepared = await prepareTaskCreation(repo, {
+      ...body,
+      ...(frameworkPayload !== undefined ? { framework_payload: frameworkPayload } : {}),
+      ...(placement ? { area_id: placement.areaId, project_id: placement.projectId } : {}),
+      source: effectiveSource, created_by: effectiveCreatedBy,
+    })
+    if (!prepared.ok) {
+      if (prepared.errorCode === "hierarchy_invalid") {
+        return Response.json({ error: prepared.error, detail: prepared.error, errorCode: "hierarchy_invalid" }, { status: 400 })
+      }
+      return apiError(prepared.error, 400)
+    }
+    let newLabels: string[] | undefined
+    if (body.new_labels !== undefined) {
+      if (locals.agentToken) return apiError("Creating labels with a task requires a browser session.", 403)
+      const labels: unknown = body.new_labels
+      const selected: string[] = JSON.parse(prepared.task.labels)
+      if (!Array.isArray(labels) || labels.length > 32 || !labels.every(
+        name => typeof name === "string" && name && normalizeLabelTitle(name) === name && selected.includes(name),
+      )) return apiError("Provide the new labels selected for this task.", 400)
+      newLabels = [...new Set<string>(labels)]
+    }
+    const result = await repo.createWorkCommand(prepared.task, {
+      ...(attempt.digest ? { captureAttemptDigest: attempt.digest } : {}),
+      ...(clientKey ? { clientIdempotencyKey: clientKey } : {}),
+      activityActor: resolveRecentActivityActor(locals, request),
+      ...(typeof body.laneId === "string" ? { laneId: body.laneId, deriveStatusFromLane: body.status === undefined } : {}),
+      ...(newLabels ? { newLabels } : {}),
+      ...(homeLocation.selection ? { homeLocation: homeLocation.selection } : {}),
+      ...(locals.writeAbortSignal ? { signal: locals.writeAbortSignal } : {}),
+    })
+    if (!result.ok) {
+      if (result.errorCode === "hierarchy_invalid") {
+        return Response.json({
+          error: result.message ?? "Invalid task hierarchy.",
+          detail: result.message ?? "Invalid task hierarchy.",
+          errorCode: result.errorCode,
+        }, { status: 400 })
+      }
+      const status = ["capture_conflict", "conflict", "legacy_key_owner_unverified"].includes(result.errorCode) ? 409
+        : result.errorCode === "unavailable" ? 404 : result.errorCode === "denied" ? 403 : 400
+      return Response.json({ error: result.errorCode === "capture_conflict" ? "Capture already submitted. Check its receipt before retrying."
+        : "This task could not be created.", errorCode: result.errorCode }, { status })
+    }
+    let linkedPillarId: string | null = null
+    if (!result.replayed && requestedPillarId && availableFeature("pillars")) {
+      const linked = await setEntityPillar(scope, "tasks", String(result.task.id), requestedPillarId).catch(() => false)
+      if (linked) linkedPillarId = requestedPillarId
+    }
+    const basePayload = taskHttpProjection(result.task, scope.boardId)
+    const payload = {
+      ...basePayload,
+      ...(linkedPillarId ? { pillar_id: linkedPillarId } : {}),
+      ...(requestedPrincipleId ? { principle_id: requestedPrincipleId } : {}),
+    }
+    const authority = await taskEventAuthorityHeaders(["task.created"], scope)
+    if (!result.replayed) dispatchTaskCreation(payload as ReturnType<typeof taskCreationPayload>, typeof body.request_id === "string" ? body.request_id : undefined, undefined, authority, scope)
+    return Response.json(scopePermits(scope, { resource: "task", action: "read" }) ? payload
+      : { id: String(result.task.id), ticket_key: basePayload.ticket_key }, { status: 201, headers: {
+        ...authority, ...(clientKey ? { "idempotency-key-status": result.replayed ? "cached" : "processed" } : {}),
+      } })
+  } catch (err) {
+    if ((err as Error)?.name === "AbortError") throw err
+    const scoped = boardScopeErrorResponse(err)
+    if (scoped) return scoped
+    if (isDbUnavailable(err)) return db503Response("tasks-post", err)
+    logApiError("tasks-post", "POST failed", err)
+    return apiError("Failed to create task", 500)
   }
-  const homeLocation = await resolveHomeAssistantAreaSelection(context, body.home_assistant_area_id)
-  if (!homeLocation.ok) return apiError(homeLocation.detail, homeLocation.status)
-  const effectiveSource = locals.agentToken ? "agent"
-    : (request.headers.has("X-Automation-Source") ? locals.automationSource : "user")
-  const effectiveCreatedBy = locals.agentToken ? locals.agentToken.tokenName : scope.principal.id
-  const prepared = await prepareTaskCreation(repo, {
-    ...body,
-    ...(placement ? { area_id: placement.areaId, project_id: placement.projectId } : {}),
-    source: effectiveSource, created_by: effectiveCreatedBy,
-  })
-  if (!prepared.ok) return apiError(prepared.error, 400)
-  let newLabels: string[] | undefined
-  if (body.new_labels !== undefined) {
-    if (locals.agentToken) return apiError("Creating labels with a task requires a browser session.", 403)
-    const labels: unknown = body.new_labels
-    const selected: string[] = JSON.parse(prepared.task.labels)
-    if (!Array.isArray(labels) || labels.length > 32 || !labels.every(
-      name => typeof name === "string" && name && normalizeLabelTitle(name) === name && selected.includes(name),
-    )) return apiError("Provide the new labels selected for this task.", 400)
-    newLabels = [...new Set<string>(labels)]
-  }
-  const result = await repo.createWorkCommand(prepared.task, {
-    ...(attempt.digest ? { captureAttemptDigest: attempt.digest } : {}),
-    ...(clientKey ? { clientIdempotencyKey: clientKey } : {}),
-    activityActor: resolveRecentActivityActor(locals, request),
-    ...(typeof body.laneId === "string" ? { laneId: body.laneId, deriveStatusFromLane: body.status === undefined } : {}),
-    ...(newLabels ? { newLabels } : {}),
-    ...(homeLocation.selection ? { homeLocation: homeLocation.selection } : {}),
-    ...(locals.writeAbortSignal ? { signal: locals.writeAbortSignal } : {}),
-  })
-  if (!result.ok) {
-    const status = ["capture_conflict", "conflict", "legacy_key_owner_unverified"].includes(result.errorCode) ? 409
-      : result.errorCode === "unavailable" ? 404 : result.errorCode === "denied" ? 403 : 400
-    return Response.json({ error: result.errorCode === "capture_conflict" ? "Capture already submitted. Check its receipt before retrying."
-      : "This task could not be created.", errorCode: result.errorCode }, { status })
-  }
-  const payload = taskHttpProjection(result.task, scope.boardId)
-  const authority = await taskEventAuthorityHeaders(["task.created"], scope)
-  if (!result.replayed) dispatchTaskCreation(payload as ReturnType<typeof taskCreationPayload>, typeof body.request_id === "string" ? body.request_id : undefined, undefined, authority, scope)
-  return Response.json(scopePermits(scope, { resource: "task", action: "read" }) ? payload
-    : { id: String(result.task.id), ticket_key: payload.ticket_key }, { status: 201, headers: {
-      ...authority, ...(clientKey ? { "idempotency-key-status": result.replayed ? "cached" : "processed" } : {}),
-    } })
 })
 
 export const DELETE: APIRoute = withBoardScope({ resource: "task", action: "delete" }, async ({ request, url }, scope) => {

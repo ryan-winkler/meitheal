@@ -78,6 +78,28 @@ const canManageAi = canManageSystemSettings(Astro.request, Astro.locals)
               aria-live="polite"
               style="font-size: 12px; color: var(--text-muted);"></span>
           </div>
+          <div class="form-group" style="padding-top: 12px; border-top: 1px solid var(--border); display: grid; gap: 10px;">
+            <div class="settings-row--simple">
+              <label class="toggle-label">
+                <input type="checkbox" id="toggle-hide-ask-ai" aria-labelledby="toggle-hide-ask-ai-label" />
+                <span class="toggle-slider"></span>
+              </label>
+              <div>
+                <strong id="toggle-hide-ask-ai-label" class="settings-text-sm">{t("settings.hide_ask_ai_title", locale)}</strong>
+                <div class="settings-caption">{t("settings.hide_ask_ai_desc", locale)}</div>
+              </div>
+            </div>
+            <div class="settings-row--simple">
+              <label class="toggle-label">
+                <input type="checkbox" id="toggle-disable-ai-assist" aria-labelledby="toggle-disable-ai-assist-label" disabled={!canManageAi} />
+                <span class="toggle-slider"></span>
+              </label>
+              <div>
+                <strong id="toggle-disable-ai-assist-label" class="settings-text-sm">{t("settings.disable_ai_assist_title", locale)}</strong>
+                <div class="settings-caption">{t("settings.disable_ai_assist_desc", locale)}</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

@@ -4,6 +4,7 @@ import { restoreCustomFramework } from "@domains/strategy/custom-framework-repos
 import { saveOverrides } from "@domains/strategy/framework-repository"
 import { parseRuleInput, RuleInputError } from "@domains/strategy/rule-input"
 import { replaceRules } from "@domains/strategy/rule-repository"
+import { isPrivateWorkSetting } from "@domains/tasks/integration-destinations"
 import {
   ensureSchema,
   getPersistenceClient,
@@ -12,12 +13,14 @@ import {
   sameWorkIntegrationSetting
 } from "@domains/tasks"
 import {
+  sanitizeLegacyFrameworkOverrides,
   validateFrameworkConfig,
   validateFrameworkOverrides,
   type FrameworkConfig,
   type FrameworkOverrides,
   type TaskRule
 } from "@meitheal/domain-strategy"
+import { normalizeCustomFieldDefs } from "../../../lib/custom-field-defs"
 import { validateGrocyBaseUrl } from "@meitheal/integration-core"
 import { logApiError, logApiWarn } from "../../../lib/api-logger"
 import { readWithinLimit } from "../../../lib/bounded-body"
@@ -203,14 +206,15 @@ export const POST: APIRoute = async ({ request, locals }) => {
           const { getBuiltInFramework } = await import("@domains/strategy/framework-catalog")
           const base = await getBuiltInFramework(frameworkId)
           if (!base) return invalid("Framework override requires a known built-in framework ID")
+          const cleanedOverrides = sanitizeLegacyFrameworkOverrides(entry.overrides)
           const errors = validateFrameworkOverrides(
-            entry.overrides,
+            cleanedOverrides,
             base.fields.map((field) => field.key),
             { preserveLegacyFormula: true }
           )
           if (errors) return invalid(errors.join(". "))
           seen.add(frameworkId)
-          frameworks.push({ frameworkId, overrides: entry.overrides as FrameworkOverrides })
+          frameworks.push({ frameworkId, overrides: cleanedOverrides as FrameworkOverrides })
         }
       }
       if (isV2 && payload.customFrameworks !== undefined) {
@@ -252,7 +256,7 @@ export const POST: APIRoute = async ({ request, locals }) => {
       if (value === undefined) {
         continue
       }
-      if (key === "ai-custom-url-approved" || isSecretSetting(key)) continue
+      if (key === "ai-custom-url-approved" || isSecretSetting(key) || isPrivateWorkSetting(key)) continue
       if (!ALLOWED_KEYS.has(key)) {
         logApiWarn("import-settings", `Rejected unknown key: ${key}`)
         continue
@@ -269,6 +273,9 @@ export const POST: APIRoute = async ({ request, locals }) => {
         }
       }
       if (key === "theme" && !isThemeMode(decoded)) decoded = "dark"
+      if (key === "custom_fields") {
+        decoded = normalizeCustomFieldDefs(decoded)
+      }
       if (key === "grocy_url" && decoded !== null && decoded !== "") {
         if (typeof decoded !== "string") {
           return invalid("Invalid grocy_url: must be a string")

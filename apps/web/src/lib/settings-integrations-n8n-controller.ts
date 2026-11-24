@@ -9,16 +9,16 @@
 import { withAsyncButton } from "@lib/async-button"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
-import { saveSettings, showSettingsSaveError, log } from "@lib/settings-utils"
+import { saveSettings, showSettingsSaveError } from "@lib/settings-utils"
+import { byId, domEl, setAttr } from "@lib/dom-helpers"
 
 function showN8nMode(mode: "auto" | "standalone"): void {
   for (const option of ["auto", "standalone"] as const) {
     const selected = option === mode
-    const button = document.getElementById(`n8n-mode-${option}`)
-    const content = document.getElementById(`n8n-${option}-content`)
-    button?.setAttribute("aria-pressed", String(selected))
+    const button = byId(`n8n-mode-${option}`)
+    const content = byId(`n8n-${option}-content`)
+    setAttr(button, "aria-pressed", String(selected))
     button?.classList.toggle("mode-tab--active", selected)
     if (content) content.style.display = selected ? "" : "none"
   }
@@ -26,7 +26,7 @@ function showN8nMode(mode: "auto" | "standalone"): void {
 
 export function initN8nSettings(): void {
   for (const mode of ["auto", "standalone"] as const) {
-    const button = document.getElementById(`n8n-mode-${mode}`)
+    const button = byId(`n8n-mode-${mode}`)
     if (!button) continue
     pageLifecycle.on(button, "click", () => {
       showN8nMode(mode)
@@ -35,10 +35,10 @@ export function initN8nSettings(): void {
   }
 
   // ───── n8n Save (HA Addon / Auto mode) ─────
-  const saveN8nBtn = document.getElementById("save-n8n") as HTMLButtonElement
+  const saveN8nBtn = byId("save-n8n") as HTMLButtonElement
   if (saveN8nBtn) {
     pageLifecycle.on(saveN8nBtn, "click", withAsyncButton(saveN8nBtn, async () => {
-    const webhookUrl = (document.getElementById("n8n-webhook-url") as HTMLInputElement)?.value || ""
+    const webhookUrl = (byId("n8n-webhook-url") as HTMLInputElement)?.value || ""
     const events: string[] = []
     document.querySelectorAll(".n8n-event:checked").forEach((cb) => {
       events.push((cb as HTMLInputElement).value)
@@ -48,19 +48,19 @@ export function initN8nSettings(): void {
       ...(webhookUrl ? { n8n_webhook_url: webhookUrl } : {}),
       n8n_events: events,
     })
-    const statusEl = document.getElementById("n8n-status")
+    const statusEl = byId("n8n-status")
     if (statusEl) { statusEl.textContent = "Configured"; statusEl.className = "badge badge-active" }
     showToast("settings.n8n_saved")
     }, { loadingText: "Saving…", onError: showSettingsSaveError }))
   }
 
   // ───── Test Event Bus ─────
-  const testEventBtn = document.getElementById("test-event-bus")
+  const testEventBtn = byId("test-event-bus")
   if (testEventBtn) {
     pageLifecycle.on(testEventBtn, "click", async () => {
-    const btn = document.getElementById("test-event-bus") as HTMLButtonElement
-    const resultDiv = document.getElementById("test-event-result")
-    const msgSpan = document.getElementById("test-event-message")
+    const btn = byId("test-event-bus") as HTMLButtonElement
+    const resultDiv = byId("test-event-result")
+    const msgSpan = byId("test-event-message")
     if (!btn) return
     btn.textContent = "🔌 Sending..."
     btn.disabled = true
@@ -95,7 +95,7 @@ export function initN8nSettings(): void {
   function updateEventCount(selectorClass: string, countId: string) {
     const total = document.querySelectorAll(`.${selectorClass}`).length
     const checked = document.querySelectorAll(`.${selectorClass}:checked`).length
-    const el = document.getElementById(countId)
+    const el = byId(countId)
     if (el) el.textContent = `${checked} of ${total} events enabled`
   }
   document.querySelectorAll(".n8n-event").forEach((cb) => {
@@ -108,10 +108,10 @@ export function initN8nSettings(): void {
   updateEventCount("n8n-event-standalone", "n8n-event-count-standalone")
 
   // ───── Copy Node-RED flows ─────
-  const copyNodeRedBtn = document.getElementById("copy-nodered-flows")
+  const copyNodeRedBtn = byId("copy-nodered-flows")
   if (copyNodeRedBtn) {
     pageLifecycle.on(copyNodeRedBtn, "click", async () => {
-    const btn = document.getElementById("copy-nodered-flows") as HTMLButtonElement
+    const btn = byId("copy-nodered-flows") as HTMLButtonElement
     if (!btn) return
     try {
       const res = await fetch("/api/integrations/nodered/flows", { signal: pageLifecycle.signal })
@@ -130,13 +130,13 @@ export function initN8nSettings(): void {
   }
 
   // ───── Deploy Node-RED flows ─────
-  const deployNodeRedBtn = document.getElementById("deploy-nodered-flows")
+  const deployNodeRedBtn = byId("deploy-nodered-flows")
   if (deployNodeRedBtn) {
     pageLifecycle.on(deployNodeRedBtn, "click", async () => {
-    const btn = document.getElementById("deploy-nodered-flows") as HTMLButtonElement
-    const resultDiv = document.getElementById("nodered-deploy-result")
-    const msgSpan = document.getElementById("nodered-deploy-message")
-    const badge = document.getElementById("nodered-deploy-badge")
+    const btn = byId("deploy-nodered-flows") as HTMLButtonElement
+    const resultDiv = byId("nodered-deploy-result")
+    const msgSpan = byId("nodered-deploy-message")
+    const badge = byId("nodered-deploy-badge")
     if (!btn) return
     if (badge && badge.classList.contains("badge-success")) {
       const confirmed = await confirmDialog({ message: "This will replace existing Meitheal flows in Node-RED. Continue?", variant: "warning", confirmText: "Replace" })
@@ -176,12 +176,12 @@ export function initN8nSettings(): void {
   initNodeRedDeployStatus()
 
   // ───── n8n Standalone Save ─────
-  const saveStandaloneBtn = document.getElementById("save-n8n-standalone") as HTMLButtonElement
+  const saveStandaloneBtn = byId("save-n8n-standalone") as HTMLButtonElement
   if (saveStandaloneBtn) {
     pageLifecycle.on(saveStandaloneBtn, "click", withAsyncButton(saveStandaloneBtn, async () => {
-    const webhookUrl = (document.getElementById("n8n-webhook-url") as HTMLInputElement).value
-    const apiKey = (document.getElementById("n8n-api-key") as HTMLInputElement).value
-    const secret = (document.getElementById("n8n-secret") as HTMLInputElement).value
+    const webhookUrl = (byId("n8n-webhook-url") as HTMLInputElement).value
+    const apiKey = (byId("n8n-api-key") as HTMLInputElement).value
+    const secret = (byId("n8n-secret") as HTMLInputElement).value
     if (!webhookUrl) { showToast("settings.n8n_required", "error"); return }
     const events: string[] = []
     document.querySelectorAll(".n8n-event-standalone:checked").forEach((cb) => {
@@ -194,19 +194,19 @@ export function initN8nSettings(): void {
       ...(secret && secret !== "••••••••" ? { n8n_signing_secret: secret } : {}),
       n8n_events: events,
     })
-    const statusEl = document.getElementById("n8n-status")
+    const statusEl = byId("n8n-status")
     if (statusEl) { statusEl.textContent = "Configured"; statusEl.className = "badge badge-active" }
     showToast("settings.n8n_saved")
     }, { loadingText: "Saving…", onError: showSettingsSaveError }))
   }
 
   // ───── Test Webhook (Standalone) ─────
-  const testWebhookStandaloneBtn = document.getElementById("test-webhook-standalone")
+  const testWebhookStandaloneBtn = byId("test-webhook-standalone")
   if (testWebhookStandaloneBtn) {
     pageLifecycle.on(testWebhookStandaloneBtn, "click", async () => {
-    const btn = document.getElementById("test-webhook-standalone") as HTMLButtonElement
-    const resultDiv = document.getElementById("test-webhook-result")
-    const msgSpan = document.getElementById("test-webhook-message")
+    const btn = byId("test-webhook-standalone") as HTMLButtonElement
+    const resultDiv = byId("test-webhook-result")
+    const msgSpan = byId("test-webhook-message")
     if (!btn) return
     btn.textContent = "🔌 Sending..."
     btn.disabled = true
@@ -226,11 +226,11 @@ export function initN8nSettings(): void {
         }
       }
       // Live-update the last delivery indicator
-      const lastDeliveryEl = document.getElementById("n8n-last-delivery")
+      const lastDeliveryEl = byId("n8n-last-delivery")
       if (lastDeliveryEl) {
         const timeStr = data.timestamp ? new Date(data.timestamp).toLocaleString() : "Just now"
-        const statusSpan = document.createElement("span")
-        const metaSpan = document.createElement("span")
+        const statusSpan = domEl("span")
+        const metaSpan = domEl("span")
         metaSpan.style.fontSize = "11px"
         metaSpan.style.color = "var(--text-muted)"
         if (data.success) {
@@ -242,7 +242,7 @@ export function initN8nSettings(): void {
           statusSpan.textContent = `❌ Failed (${String(data.status_code || data.error || "Error")})`
           metaSpan.textContent = timeStr
         }
-        lastDeliveryEl.replaceChildren(statusSpan, document.createElement("br"), metaSpan)
+        lastDeliveryEl.replaceChildren(statusSpan, domEl("br"), metaSpan)
       }
     } catch (err) {
       if (resultDiv && msgSpan) {
@@ -257,16 +257,15 @@ export function initN8nSettings(): void {
   }
 
   // ───── n8n Diagnostics ─────
-  async function initN8nDiagnostics(_forceRefresh: boolean = false) {
-    const healthDetail = document.getElementById("n8n-health-detail")
-    const workflowsList = document.getElementById("n8n-workflows-list")
-    const urlInput = (document.getElementById("n8n-webhook-url") as HTMLInputElement)?.value
+  async function initN8nDiagnostics() {
+    const healthDetail = byId("n8n-health-detail")
+    const workflowsList = byId("n8n-workflows-list")
+    const urlInput = (byId("n8n-webhook-url") as HTMLInputElement)?.value
     if (!urlInput) return
     if (healthDetail) healthDetail.textContent = "Checking..."
     if (workflowsList) {
-      const box = document.createElement("div")
-      box.className = "cal-empty-state"
-      const txt = document.createElement("span")
+      const box = domEl("div", "cal-empty-state")
+      const txt = domEl("span")
       txt.textContent = "Fetching workflows…"
       box.appendChild(txt)
       workflowsList.replaceChildren(box)
@@ -275,7 +274,7 @@ export function initN8nSettings(): void {
       const res = await fetch("/api/integrations/n8n/health", { signal: pageLifecycle.signal })
       const data = await res.json()
       if (healthDetail) {
-        const span = document.createElement("span")
+        const span = domEl("span")
         if (data.status === "connected") {
           span.style.color = "var(--success)"
           span.style.fontWeight = "600"
@@ -294,7 +293,7 @@ export function initN8nSettings(): void {
       }
     } catch {
       if (healthDetail) {
-        const span = document.createElement("span")
+        const span = domEl("span")
         span.style.color = "var(--error)"
         span.textContent = "Failed to check"
         healthDetail.replaceChildren(span)
@@ -305,12 +304,10 @@ export function initN8nSettings(): void {
       const data = await res.json()
       if (workflowsList) {
         const setEmptyState = (icon: string, text: string) => {
-          const empty = document.createElement("div")
+          const empty = domEl("div")
           empty.className = "cal-empty-state"
-          const iconEl = document.createElement("span")
-          iconEl.className = "cal-empty-icon"
-          iconEl.textContent = icon
-          const msgEl = document.createElement("span")
+          const iconEl = domEl("span", "cal-empty-icon", icon)
+          const msgEl = domEl("span")
           msgEl.textContent = text
           empty.append(iconEl, msgEl)
           workflowsList.replaceChildren(empty)
@@ -321,22 +318,19 @@ export function initN8nSettings(): void {
           } else {
             workflowsList.replaceChildren()
             data.workflows.forEach((wf: { id: string; name: string; active: boolean }) => {
-              const el = document.createElement("div")
-              el.className = "cal-entity-card"
-              const info = document.createElement("div")
-              info.className = "cal-entity-card__info"
+              const el = domEl("div", "cal-entity-card")
+              const info = domEl("div", "cal-entity-card__info")
               info.style.flex = "1"
-              const strong = document.createElement("strong")
+              const strong = domEl("strong")
               strong.textContent = wf.name
-              const idDiv = document.createElement("div")
+              const idDiv = domEl("div")
               idDiv.style.fontSize = "11px"
               idDiv.style.color = "var(--text-muted)"
               idDiv.style.marginTop = "2px"
               idDiv.textContent = `ID: ${wf.id}`
               info.append(strong, idDiv)
-              const toggle = document.createElement("div")
-              toggle.className = "cal-entity-card__toggle"
-              const badge = document.createElement("span")
+              const toggle = domEl("div", "cal-entity-card__toggle")
+              const badge = domEl("span")
               badge.className = `badge ${wf.active ? "badge-active" : "badge-disabled"}`
               badge.textContent = wf.active ? "Active" : "Inactive"
               toggle.appendChild(badge)
@@ -354,12 +348,10 @@ export function initN8nSettings(): void {
       }
     } catch {
       if (workflowsList) {
-        const empty = document.createElement("div")
+        const empty = domEl("div")
         empty.className = "cal-empty-state"
-        const iconEl = document.createElement("span")
-        iconEl.className = "cal-empty-icon"
-        iconEl.textContent = "❌"
-        const msgEl = document.createElement("span")
+        const iconEl = domEl("span", "cal-empty-icon", "❌")
+        const msgEl = domEl("span")
         msgEl.textContent = "Network error fetching workflows."
         empty.append(iconEl, msgEl)
         workflowsList.replaceChildren(empty)
@@ -370,20 +362,20 @@ export function initN8nSettings(): void {
   // Expose for restore flow
   window.__initN8nDiagnostics = initN8nDiagnostics
 
-  const refreshStandalone = document.getElementById("refresh-n8n-standalone")
-  if (refreshStandalone) pageLifecycle.on(refreshStandalone, "click", () => initN8nDiagnostics(true))
-  const refreshStatus = document.getElementById("refresh-n8n-status")
-  if (refreshStatus) pageLifecycle.on(refreshStatus, "click", () => initN8nDiagnostics(true))
-  const refreshWorkflows = document.getElementById("refresh-n8n-workflows")
-  if (refreshWorkflows) pageLifecycle.on(refreshWorkflows, "click", () => initN8nDiagnostics(true))
+  const refreshStandalone = byId("refresh-n8n-standalone")
+  if (refreshStandalone) pageLifecycle.on(refreshStandalone, "click", () => initN8nDiagnostics())
+  const refreshStatus = byId("refresh-n8n-status")
+  if (refreshStatus) pageLifecycle.on(refreshStatus, "click", () => initN8nDiagnostics())
+  const refreshWorkflows = byId("refresh-n8n-workflows")
+  if (refreshWorkflows) pageLifecycle.on(refreshWorkflows, "click", () => initN8nDiagnostics())
 
   // ───── HA Bus Status ─────
   async function initHABusStatus() {
-    const busStatusEl = document.getElementById("n8n-ha-bus-status")
-    const haVersionEl = document.getElementById("n8n-ha-version")
+    const busStatusEl = byId("n8n-ha-bus-status")
+    const haVersionEl = byId("n8n-ha-version")
     if (!busStatusEl) return
     const setBusStatus = (text: string, color: string, bold = false) => {
-      const span = document.createElement("span")
+      const span = domEl("span")
       span.style.color = color
       if (bold) span.style.fontWeight = "600"
       span.textContent = text
@@ -409,9 +401,9 @@ export function initN8nSettings(): void {
 }
 
 async function initNodeRedDeployStatus() {
-  const statusDiv = document.getElementById("nodered-deploy-status")
-  const badge = document.getElementById("nodered-deploy-badge")
-  const openLink = document.getElementById("nodered-open-link") as HTMLAnchorElement | null
+  const statusDiv = byId("nodered-deploy-status")
+  const badge = byId("nodered-deploy-badge")
+  const openLink = byId<HTMLAnchorElement>("nodered-open-link")
   if (!statusDiv || !badge) return
   statusDiv.style.display = "flex"
   statusDiv.style.alignItems = "center"
@@ -423,7 +415,7 @@ async function initNodeRedDeployStatus() {
     if (!data.available) {
       badge.textContent = "N/A (standalone)"
       badge.className = "badge badge-disabled"
-      const deployBtn = document.getElementById("deploy-nodered-flows")
+      const deployBtn = byId("deploy-nodered-flows")
       if (deployBtn) deployBtn.style.display = "none"
       return
     }
@@ -438,8 +430,8 @@ async function initNodeRedDeployStatus() {
 export function restoreN8nSettings(s: Record<string, unknown>): void {
   // n8n webhook URL
   if (s.n8n_webhook_url) {
-    (document.getElementById("n8n-webhook-url") as HTMLInputElement).value = String(s.n8n_webhook_url)
-    const el = document.getElementById("n8n-status")
+    (byId("n8n-webhook-url") as HTMLInputElement).value = String(s.n8n_webhook_url)
+    const el = byId("n8n-status")
     if (el) { el.textContent = "Configured"; el.className = "badge badge-active" }
     window.expandIntegrationCard?.("integration-n8n-body")
   }
@@ -451,18 +443,18 @@ export function restoreN8nSettings(s: Record<string, unknown>): void {
       (cb as HTMLInputElement).checked = (s.n8n_events as string[]).includes((cb as HTMLInputElement).value)
     })
   }
-  if (s.n8n_api_key) (document.getElementById("n8n-api-key") as HTMLInputElement).value = String(s.n8n_api_key)
-  if (s.n8n_signing_secret) (document.getElementById("n8n-secret") as HTMLInputElement).value = String(s.n8n_signing_secret)
+  if (s.n8n_api_key) (byId("n8n-api-key") as HTMLInputElement).value = String(s.n8n_api_key)
+  if (s.n8n_signing_secret) (byId("n8n-secret") as HTMLInputElement).value = String(s.n8n_signing_secret)
 
   // Last delivery
   if (s.n8n_last_delivery) {
-    const lastDeliveryEl = document.getElementById("n8n-last-delivery")
+    const lastDeliveryEl = byId("n8n-last-delivery")
     if (lastDeliveryEl) {
       try {
         const res = typeof s.n8n_last_delivery === "string" ? JSON.parse(s.n8n_last_delivery) : s.n8n_last_delivery
         const timeStr = res.timestamp ? new Date(res.timestamp).toLocaleString() : "Unknown"
-        const statusSpan = document.createElement("span")
-        const timeSpan = document.createElement("span")
+        const statusSpan = domEl("span")
+        const timeSpan = domEl("span")
         timeSpan.style.fontSize = "11px"
         timeSpan.style.color = "var(--text-muted)"
         timeSpan.textContent = timeStr
@@ -473,7 +465,7 @@ export function restoreN8nSettings(s: Record<string, unknown>): void {
           statusSpan.style.color = "var(--error)"
           statusSpan.textContent = `❌ Failed (${String(res.status || "Error")})`
         }
-        lastDeliveryEl.replaceChildren(statusSpan, document.createElement("br"), timeSpan)
+        lastDeliveryEl.replaceChildren(statusSpan, domEl("br"), timeSpan)
       } catch { lastDeliveryEl.textContent = "Parse error" }
     }
   }

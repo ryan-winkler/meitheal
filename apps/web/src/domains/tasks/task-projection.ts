@@ -2,9 +2,9 @@
 export const TASK_PUBLIC_FIELDS = [
   "id", "title", "description", "status", "priority", "framework_payload", "calendar_sync_state",
   "created_at", "updated_at", "task_version", "deferred_at", "due_date", "labels", "parent_id", "time_tracked",
-  "custom_fields", "start_date", "end_date", "progress", "color", "is_favorite", "is_promoted", "task_type",
+  "custom_fields", "start_date", "end_date", "progress", "color", "is_promoted", "task_type",
   "summary", "recurrence_rule", "recurrence_anchor", "rotation_mode", "nfc_tag_id", "checklists", "reminder_at",
-  "source_template_id", "routine_occurrence", "assigned_to", "kanban_position", "task_kind", "handoff_state",
+  "source_template_id", "routine_occurrence", "assigned_to", "kanban_position", "table_position", "task_kind", "handoff_state",
   "time_block_start", "time_block_end", "urgency", "importance", "eisenhower_override", "effort_minutes",
   "effort_type", "blocked_by", "area_id", "project_id", "goal_id", "ticket_number", "source", "created_by",
   "board_id", "ticket_key",
@@ -25,6 +25,7 @@ function isStandardPersistenceRow(row: Record<string, unknown>): boolean {
     && Object.hasOwn(row, "time_block_end")
     && Object.hasOwn(row, "blocked_by")
     && Object.hasOwn(row, "ticket_number")
+    && Object.hasOwn(row, "table_position")
   )
 }
 
@@ -51,7 +52,6 @@ export function projectPublicTaskFields(row: Record<string, unknown>): Record<st
       end_date: row.end_date,
       progress: row.progress,
       color: row.color,
-      is_favorite: row.is_favorite,
       is_promoted: row.is_promoted,
       task_type: row.task_type,
       summary: row.summary,
@@ -65,6 +65,7 @@ export function projectPublicTaskFields(row: Record<string, unknown>): Record<st
       routine_occurrence: row.routine_occurrence,
       assigned_to: row.assigned_to,
       kanban_position: row.kanban_position,
+      table_position: row.table_position,
       task_kind: row.task_kind,
       handoff_state: row.handoff_state,
       time_block_start: row.time_block_start,

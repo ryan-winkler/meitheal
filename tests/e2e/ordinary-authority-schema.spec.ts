@@ -31,6 +31,7 @@ import {
 } from "../../apps/web/drizzle/migrations/0016_ordinary_boards.mjs"
 import { resolveIntakeSubmissionScope } from "../../apps/web/src/domains/tasks/intake-scope"
 import { CUSTOM_BOARD_KEYS_MIGRATION } from "../../apps/web/drizzle/migrations/0017_custom_board_keys.mjs"
+import { TASK_EXPERIENCE_MIGRATION } from "../../apps/web/drizzle/migrations/0018_task_experience.mjs"
 
 let directory: string
 let db: Awaited<ReturnType<typeof openDatabaseForStartup>>
@@ -231,7 +232,7 @@ test("an independently current schema25 upgrade converts policy and journals the
   const result = await initialize()
   expect(result.state).toBe("ready")
   expect(result.revision).not.toBe(oldRevision)
-  expect(result.applied).toEqual(["0016_ordinary_boards.mjs", CUSTOM_BOARD_KEYS_MIGRATION])
+  expect(result.applied).toEqual(["0016_ordinary_boards.mjs", CUSTOM_BOARD_KEYS_MIGRATION, TASK_EXPERIENCE_MIGRATION])
   await validateStartupTaskSchema(db)
 })
 

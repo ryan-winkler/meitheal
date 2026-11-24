@@ -8,6 +8,7 @@ const sidebarProfileCache = new WeakMap<
   { token: string; value: { rawSidebarConfig: unknown; rawUserProfile: unknown; cacheKey: string } }
 >()
 const taskDetailLayoutCache = new WeakMap<object, { token: string; value: string | null }>()
+const aiAssistDisabledCache = new WeakMap<object, { generation: string; value: boolean }>()
 
 /** Read work_installation_id while the local database snapshot is unchanged. */
 export async function readCachedWorkInstallationId(
@@ -94,6 +95,34 @@ export async function readCachedTaskDetailLayout(
   const value = typeof decoded === "string" && decoded.trim() ? decoded : null
   if (state && localReaderCacheToken(db)?.token === state.token) {
     taskDetailLayoutCache.set(state.owner, { token: state.token, value })
+  }
+  return value
+}
+
+/** Read ai_assist_disabled while the local database snapshot is unchanged. */
+export async function readCachedAiAssistDisabled(
+  db: Pick<Client, "execute">,
+): Promise<boolean> {
+  const state = localReaderCacheToken(db)
+  if (state) {
+    const cached = aiAssistDisabledCache.get(state.owner)
+    if (cached && cached.generation === state.token) return cached.value
+  }
+  const {
+    rows: [row],
+  } = await db.execute("SELECT value FROM settings WHERE key = 'ai_assist_disabled'")
+  let decoded: unknown = row?.value
+  if (typeof decoded === "string") {
+    try {
+      decoded = JSON.parse(decoded)
+    } catch {
+      /* keep raw string when unquoted */
+    }
+  }
+  const value = decoded === true || decoded === "true"
+  const currentGeneration = state ? localReaderCacheToken(db)?.token : undefined
+  if (state && currentGeneration === state.token) {
+    aiAssistDisabledCache.set(state.owner, { generation: currentGeneration, value })
   }
   return value
 }

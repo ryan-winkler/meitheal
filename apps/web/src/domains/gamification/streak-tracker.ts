@@ -128,6 +128,18 @@ export function parseStatsRows(rows: ReadonlyArray<Record<string, unknown>>): Ga
   }
 }
 
+export async function readStatsFromRunner(
+  runner: Pick<import("@libsql/client").Client, "execute">,
+  scope: BoardScope,
+  now = new Date(),
+  timezone = "UTC",
+): Promise<GamificationStats> {
+  const today = statsDayKey(now, 0, timezone)
+  const yesterday = statsDayKey(now, -1, timezone)
+  const agg = await runner.execute(statsQuery(scope, today, yesterday))
+  return parseStatsRows(agg.rows as ReadonlyArray<Record<string, unknown>>)
+}
+
 /**
  * Record a task completion. Increments today's count and updates streak.
  * @param points - XP points to award (default: 0, Phase 5 adds weighted points)

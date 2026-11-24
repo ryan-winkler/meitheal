@@ -23,7 +23,10 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
 
   try {
     await ensureSchema()
-    const comment = await new TaskRepository(getPersistenceClient(), scope).getComment(params.id!, id)
+    const repo = new TaskRepository(getPersistenceClient(), scope)
+    const resolved = await repo.resolveTaskId(params.id!, "read")
+    if (!resolved) return apiError("Comment not found", 404)
+    const comment = await repo.getComment(resolved.id, id)
     if (!comment) return apiError("Comment not found", 404)
     const content = String(comment.content)
     if (locals.behindIngress && !locals.agentToken && hasCommentMentionSelector(content) &&
@@ -31,7 +34,9 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
       return commentJson({ ...comment, content: redactCommentMentionSelectors(content) })
     }
     return commentJson(comment)
-  } catch {
+  } catch (err) {
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
     return commentFailure("get", "Failed to load comment")
   }
 })
@@ -73,7 +78,9 @@ export const PATCH: APIRoute = withBoardScope({ resource: "task", action: "edit"
     )
     if (edited.state === "assignee_mismatch") return apiError("Agent can only comment on tasks assigned to it", 403)
     return edited.state === "ok" ? commentJson(edited.comment) : apiError("Comment not found", 404)
-  } catch {
+  } catch (err) {
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
     return commentFailure("patch", "Failed to update comment")
   }
 })
@@ -97,7 +104,9 @@ export const DELETE: APIRoute = withBoardScope({ resource: "task", action: "edit
     if (!resolved) return apiError("Comment not found", 404)
     const deleted = await repo.deleteComment(resolved.id, id, owner)
     return deleted ? new Response(null, { status: 204 }) : apiError("Comment not found", 404)
-  } catch {
+  } catch (err) {
+    const scopeFailure = boardScopeErrorResponse(err)
+    if (scopeFailure) return scopeFailure
     return commentFailure("delete", "Failed to delete comment")
   }
 })

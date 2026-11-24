@@ -13,6 +13,7 @@ import { loadFilterState } from "./filter-state"
 import { isDoneStatus as isComplete, normalizeStatus } from "./status-config"
 import { replaceTaskBackgroundUrl, taskBackgroundUrl } from "./task-page-url"
 import type { HouseholdProjectLabel } from "./household-project-grouping"
+import { createSpriteIconElement } from "../generated/icon-registry"
 /**
  * Timeline/GANTT Controller — native SVG GANTT renderer.
  * @domain Task Visualization
@@ -179,64 +180,6 @@ const ZOOM_CONFIGS: Record<ZoomLevel, ZoomConfig> = {
 
 // ── Utility Helpers ────────────────────────────────────────────────────────
 
-let activeDropdownController: AbortController | null = null
-
-function createDropdown(
-  triggerBtn: HTMLElement,
-  align: "left" | "right",
-  buildMenu: (menu: HTMLElement, closeCb: () => void) => void
-) {
-  // Clear any existing menu to prevent listeners leaking
-  if (activeDropdownController) {
-    activeDropdownController.abort()
-    activeDropdownController = null
-  }
-  const existing = document.querySelector(".gantt-col-menu")
-  if (existing) {
-    const isSameTrigger = existing.getAttribute("data-gantt-trigger") === triggerBtn.dataset.ganttTriggerId
-    existing.remove()
-    if (isSameTrigger) return // Toggle off
-  }
-
-  // Assign a trigger ID so toggle-off detection works with body-appended menus
-  if (!triggerBtn.dataset.ganttTriggerId) {
-    triggerBtn.dataset.ganttTriggerId = String(Date.now())
-  }
-
-  const rect = triggerBtn.getBoundingClientRect()
-  const menu = document.createElement("div")
-  menu.className = "gantt-col-menu"
-  menu.setAttribute("data-gantt-trigger", triggerBtn.dataset.ganttTriggerId)
-  menu.style.cssText = `
-    position:fixed;top:${rect.bottom + 4}px;
-    ${align === "right" ? `right:${window.innerWidth - rect.right}px` : `left:${rect.left}px`};
-    background:var(--bg-card);border:1px solid var(--border);border-radius:6px;
-    padding:4px 0;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:9999;min-width:140px;
-  `
-
-  activeDropdownController = new AbortController()
-
-  const closeMenu = () => {
-    if (activeDropdownController) {
-      activeDropdownController.abort()
-      activeDropdownController = null
-    }
-    menu.remove()
-  }
-
-  buildMenu(menu, closeMenu)
-
-  // Close on outside click
-  const onBodyClick = (ev: MouseEvent) => {
-    if (!menu.contains(ev.target as Node) && !triggerBtn.contains(ev.target as Node)) {
-      closeMenu()
-    }
-  }
-  setTimeout(() => document.addEventListener("click", onBodyClick, { signal: activeDropdownController!.signal }), 0)
-  
-  document.body.appendChild(menu)
-}
-
 function daysBetween(a: Date, b: Date): number {
   const ms = b.getTime() - a.getTime()
   return Math.round(ms / (1000 * 60 * 60 * 24))
@@ -264,11 +207,6 @@ function alignToUnit(d: Date, zoom: ZoomLevel): Date {
     s.setDate(1)
   }
   return s
-}
-
-function isWeekend(d: Date): boolean {
-  const day = d.getDay()
-  return day === 0 || day === 6
 }
 
 function parseDate(s: string): Date {
@@ -2403,19 +2341,7 @@ function renderGantt(
   const fab = document.createElement("button")
   fab.className = "gantt-today-fab"
   fab.title = "Scroll to today (T)"
-  const fabSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
-  fabSvg.setAttribute("width", "16")
-  fabSvg.setAttribute("height", "16")
-  fabSvg.setAttribute("viewBox", "0 0 16 16")
-  fabSvg.setAttribute("fill", "none")
-  const c1 = document.createElementNS("http://www.w3.org/2000/svg", "circle")
-  c1.setAttribute("cx", "8"); c1.setAttribute("cy", "8"); c1.setAttribute("r", "7")
-  c1.setAttribute("stroke", "currentColor"); c1.setAttribute("stroke-width", "1.5")
-  const c2 = document.createElementNS("http://www.w3.org/2000/svg", "circle")
-  c2.setAttribute("cx", "8"); c2.setAttribute("cy", "8"); c2.setAttribute("r", "2.5")
-  c2.setAttribute("fill", "currentColor")
-  fabSvg.appendChild(c1); fabSvg.appendChild(c2)
-  fab.appendChild(fabSvg)
+  fab.appendChild(createSpriteIconElement("target", { size: 16 }))
   fab.style.cssText = `
     position:absolute;bottom:16px;right:16px;z-index:20;
     width:36px;height:36px;border-radius:50%;border:1px solid var(--border);
@@ -3001,18 +2927,7 @@ export function initTimelineController(signal: AbortSignal) {
   /** Update the zoom dropdown label and active state */
   function updateZoomLabel(z: ZoomLevel) {
     if (zoomLabel) {
-      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
-      svg.setAttribute("width", "10")
-      svg.setAttribute("height", "6")
-      svg.setAttribute("viewBox", "0 0 10 6")
-      svg.setAttribute("fill", "none")
-      const path = document.createElementNS("http://www.w3.org/2000/svg", "path")
-      path.setAttribute("d", "M1 1l4 4 4-4")
-      path.setAttribute("stroke", "currentColor")
-      path.setAttribute("stroke-width", "1.5")
-      path.setAttribute("stroke-linecap", "round")
-      svg.appendChild(path)
-      zoomLabel.replaceChildren(document.createTextNode(`${z} `), svg)
+      zoomLabel.replaceChildren(document.createTextNode(`${z} `), createSpriteIconElement("chevron-down", { size: 12 }))
     }
     // Update active option styling
     document.querySelectorAll(".timeline-zoom-option").forEach((btn) => {

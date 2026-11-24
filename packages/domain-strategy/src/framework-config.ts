@@ -38,6 +38,7 @@ export interface FrameworkField {
   weight: number
   min?: number | undefined
   max?: number | undefined
+  step?: number | undefined
   options?: FrameworkFieldOption[] | undefined
   helpText: string
 }
@@ -91,6 +92,25 @@ export interface FrameworkOverrideRecord {
   overrides: FrameworkOverrides
   createdAt: string
   updatedAt: string
+}
+
+/** Strip retired field bounds (`fields.*.min`) from legacy override payloads before validation. */
+export function sanitizeLegacyFrameworkOverrides(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value
+  const record = value as Record<string, unknown>
+  if (!record.fields || typeof record.fields !== "object" || Array.isArray(record.fields)) return value
+  let changed = false
+  const cleanedFields: Record<string, unknown> = {}
+  for (const [key, entry] of Object.entries(record.fields as Record<string, unknown>)) {
+    if (entry && typeof entry === "object" && !Array.isArray(entry) && Object.hasOwn(entry, "min")) {
+      const { min: _dropped, ...rest } = entry as Record<string, unknown>
+      cleanedFields[key] = rest
+      changed = true
+    } else {
+      cleanedFields[key] = entry
+    }
+  }
+  return changed ? { ...record, fields: cleanedFields } : value
 }
 
 /** Validate the JSON override contract before persistence or merging. */
@@ -148,6 +168,7 @@ export function parseFrameworkConfig(id: string, raw: Record<string, unknown>): 
         weight: Number(f.weight ?? 1),
         min: f.min !== undefined ? Number(f.min) : undefined,
         max: f.max !== undefined ? Number(f.max) : undefined,
+        step: f.step !== undefined ? Number(f.step) : undefined,
         options: Array.isArray(f.options)
           ? (f.options as Record<string, unknown>[]).map((o) => ({
               value: o.value as string | number,
@@ -325,6 +346,7 @@ export function frameworkConfigToRaw(config: FrameworkConfig): Record<string, un
       weight: f.weight,
       min: f.min,
       max: f.max,
+      ...(f.step !== undefined ? { step: f.step } : {}),
       options: f.options,
       help_text: f.helpText,
     })),

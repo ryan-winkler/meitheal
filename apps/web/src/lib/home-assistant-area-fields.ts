@@ -157,6 +157,13 @@ export function initHomeAssistantAreaFields(signal: AbortSignal) {
       void load()
     }
     observer.observe(field)
+    if (followsTaskDetail && !field.dataset.haAreaEndpoint) {
+      const openId = document.getElementById("task-detail-overlay")?.dataset.openTaskId
+      if (openId) {
+        field.dataset.haAreaEndpoint = `/api/tasks/${encodeURIComponent(openId)}/home-assistant-area`
+        void load()
+      }
+    }
 
     retry.addEventListener("click", () => {
       loaded = undefined

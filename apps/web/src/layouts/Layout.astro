@@ -9,7 +9,7 @@ import { boardScopeAuthorityKey, retainBoardResponseScope } from "@lib/board-vie
 import { boardSessionProof, currentBoardContext } from "@lib/named-board-request"
 import { taskViewUrl } from "../lib/task-view-route"
 import { boardNavigationLinks, readBoardNavigationContext } from "../lib/board-workspace"
-import { readCachedSidebarAndProfile, readCachedTaskDetailLayout, readCachedWorkInstallationId } from "../lib/shell-settings-cache"
+import { readCachedAiAssistDisabled, readCachedSidebarAndProfile, readCachedTaskDetailLayout, readCachedWorkInstallationId } from "../lib/shell-settings-cache"
 import { isOrganizationFeatureAvailable, organizationNeedsVerification } from "../lib/organization-request-context"
 import { readRequestOrganizationLabels, renderedLabelsProof } from "@lib/organization-labels"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
@@ -52,6 +52,9 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
 // Feature flags — read from settings DB (SSR)
 const featureFlags = await getFeatureFlags();
+const aiAssistDisabled = await Promise.resolve()
+  .then(() => readCachedAiAssistDisabled(getPersistenceClient()))
+  .catch(() => false);
 const hasActivePlugins = await getPluginService().hasActivePlugins().catch(() => false);
 const organizationState = await readRequestOrganizationLabels(Astro)
 const organizationUser = verifiedIngressUser(Astro.locals)
@@ -225,7 +228,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
 ---
 
 <!doctype html>
-<html lang={locale} dir="ltr" data-workspace-scope={workspaceScope} data-custom-theme-admin={canManageSystemSettings(Astro.request, Astro.locals) ? "" : undefined} data-plugins-active={hasActivePlugins ? "1" : undefined}>
+<html lang={locale} dir="ltr" data-workspace-scope={workspaceScope} data-custom-theme-admin={canManageSystemSettings(Astro.request, Astro.locals) ? "" : undefined} data-plugins-active={hasActivePlugins ? "1" : undefined} data-ai-assist-disabled={aiAssistDisabled ? "" : undefined}>
   <head>
     {boardContext && <><meta name="meitheal-work-board" content={boardContext.boardId} /><meta name="meitheal-work-session" content={boardContext.session} /><meta name="meitheal-work-actor" content={boardContext.actorKey} /><meta name="meitheal-work-board-name" content={boardContext.boardName} />{layoutTaskCreate !== undefined && <meta name="meitheal-task-create" content={String(layoutTaskCreate)} />}{layoutTaskActions && <meta name="meitheal-task-actions" content={JSON.stringify(layoutTaskActions)} />}</>}
     <CachedHtmlSlot cacheKey={headCacheKey} asBytes={true}>
@@ -484,6 +487,13 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
           }
           var accent = stored("meitheal-accent-color");
           window.__meithealApplyAccent(root, accent);
+          var sidebarW = Number.parseInt(stored("meitheal:task-sidebar-width:v1") || "", 10);
+          if (Number.isFinite(sidebarW) && sidebarW >= 360) {
+            var maxW = Math.max(360, Math.min(840, innerWidth - 360));
+            root.style.setProperty("--task-inspector-width", Math.min(maxW, sidebarW) + "px");
+          }
+          if (stored("meitheal:hide-ask-ai:v1") === "1") root.setAttribute("data-hide-ask-ai", "");
+          else root.removeAttribute("data-hide-ask-ai");
           var match = window.__meithealReadHATheme(stored(HA_THEME_MATCH_KEY) === "1", Boolean(window.__ingress_path));
           window.__meithealApplyHATheme(root, match, accent, window.__meithealApplyAccent);
           if (match.state === "active") {

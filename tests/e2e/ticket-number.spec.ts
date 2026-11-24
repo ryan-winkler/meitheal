@@ -49,7 +49,7 @@ async function createTask(db: Database, id: string) {
     id, title: id, description: "", status: "pending", priority: 3, due_date: null,
     labels: '["fixture"]', framework_payload: "{}", parent_id: null, area_id: null,
     custom_fields: "{}", start_date: null, end_date: null, progress: 0, color: null,
-    is_favorite: 0, task_type: "task", assigned_to: null,
+    task_type: "task", assigned_to: null,
   })
 }
 

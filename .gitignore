@@ -13,6 +13,7 @@ test-results
 .DS_Store
 apps/web/.astro
 apps/web/.data
+/apps/web/public/vendor/hugerte/
 .dev.vars
 .data/
 

@@ -19,6 +19,7 @@ import FrameworkBadge from "../ui/FrameworkBadge.astro"
 import LabelBadges from "../ui/LabelBadges.astro"
 import TaskTypeIcon from "../ui/TaskTypeIcon.astro"
 import { taskSurface } from "../../lib/task-surface"
+import { formatCardCustomFieldValue } from "../../lib/custom-field-defs"
 import { effectiveTaskScheduledDate } from "@meitheal/domain-tasks"
 import { calendarDayFromInput } from "../../lib/date"
 import { formatTicketKey } from "../../lib/ticket-key"
@@ -77,14 +78,14 @@ if (task.checklists === null) {
   }
 }
 
-// Custom fields (filter structured objects such as shopping items)
+// Custom fields
 const scheduledDate = effectiveTaskScheduledDate(task)
 const scheduledDisplayDay = scheduledDate
   ? (calendarDayFromInput(scheduledDate, Astro.locals.timezone || "Europe/Dublin") ?? scheduledDate.split("T")[0])
   : null
-const customEntries = Object.entries(task.custom_fields).filter(
-  ([, v]) => v !== "" && v !== null && v !== undefined && typeof v !== "object"
-)
+const customEntries = Object.entries(task.custom_fields)
+  .map(([k, v]) => [k, formatCardCustomFieldValue(v)] as const)
+  .filter((entry): entry is readonly [string, string] => entry[1] !== null)
 ---
 
 <div
@@ -101,7 +102,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
   data-rice={task.rice !== null ? String(task.rice) : ""}
   data-area={task.area_id}
   data-overdue={task.is_overdue ? "true" : "false"}
-  data-favorite={task.is_favorite ? "true" : "false"}
+  data-promoted={task.is_promoted ? "true" : "false"}
   data-title={task.title.toLowerCase()}
   data-search={searchText}
   data-due={scheduledDate ?? ""}
@@ -114,14 +115,14 @@ const customEntries = Object.entries(task.custom_fields).filter(
     <span class="tli__color" style={`background: ${task.color}`} />
   )}
 
-  {/* Favorite star */}
+  {/* Promoted star */}
   <button
     type="button"
-    class:list={["tli__fav", { "is-fav": task.is_favorite }]}
+    class:list={["tli__fav", { "is-fav": task.is_promoted }]}
     data-id={task.id}
-    aria-label="Favorite"
-    title={task.is_favorite ? "Remove from favorites" : "Add to favorites"}
-    aria-pressed={task.is_favorite}
+    aria-label={task.is_promoted ? "Remove promotion" : "Promote to top"}
+    title={task.is_promoted ? "Remove promotion" : "Promote to top"}
+    aria-pressed={task.is_promoted}
   >
     <Icon name="star" size={15} />
   </button>
@@ -225,6 +226,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
   {/* Focus Today button (for Suggested section) */}
   {showFocusToday && (
     <button
+      type="button"
       class="tli__focus-btn"
       data-id={task.id}
       title="Set due date to today"
@@ -238,6 +240,7 @@ const customEntries = Object.entries(task.custom_fields).filter(
   {/* Snooze button (for Today sections) */}
   {showSnooze && (
     <button
+      type="button"
       class="tli__snooze-btn"
       data-id={task.id}
       title="Snooze / Reschedule"

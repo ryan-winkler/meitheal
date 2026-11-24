@@ -386,6 +386,16 @@ export function normalizeSidebarConfig(
       sectionItems[targetSection]!.push(mapped)
       assigned.add(mapped)
     }
+    for (const sec of Object.values(sectionItems)) {
+      if (sec.at(-1) === "tasks") {
+        for (const viewKey of TASK_VIEW_ITEM_KEYS) {
+          if (validKeySet.has(viewKey) && !assigned.has(viewKey)) {
+            sec.push(viewKey)
+            assigned.add(viewKey)
+          }
+        }
+      }
+    }
   }
 
   const taskViewSet = new Set<string>(TASK_VIEW_ITEM_KEYS)

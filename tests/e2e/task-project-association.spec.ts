@@ -116,7 +116,6 @@ test("createTask persists project_id and findByProjectId returns it", async () =
     end_date: null,
     progress: 0,
     color: null,
-    is_favorite: 0,
     task_type: "task",
     assigned_to: null,
   })
@@ -150,7 +149,6 @@ test("createTask without project_id defaults to null", async () => {
     end_date: null,
     progress: 0,
     color: null,
-    is_favorite: 0,
     task_type: "task",
     assigned_to: null,
   })
