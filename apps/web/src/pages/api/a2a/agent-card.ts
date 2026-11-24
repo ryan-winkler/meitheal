@@ -13,6 +13,6 @@ export const GET: APIRoute = async ({ locals, request, url }) => {
   return Response.json(buildAgentCard({
     origin: getA2ALinkOrigin(request, url),
     basePath: locals.ingressPath ?? "",
-    version: process.env.MEITHEAL_VERSION || "0.0.1",
+    version: process.env.MEITHEAL_VERSION || "0.0.3",
   }), { headers: A2A_RESPONSE_HEADERS })
 }

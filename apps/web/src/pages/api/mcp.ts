@@ -762,7 +762,7 @@ export const POST: APIRoute = async context => {
     return new Response(null, { status: 202, headers: { "Cache-Control": "no-store" } })
   }
 
-  const serverInfo = { name: "meitheal", version: process.env.MEITHEAL_VERSION || "0.0.1" }
+  const serverInfo = { name: "meitheal", version: process.env.MEITHEAL_VERSION || "0.0.3" }
   const result = (value: Record<string, unknown>) => mcpJson({
     jsonrpc: "2.0",
     id: reqId,
