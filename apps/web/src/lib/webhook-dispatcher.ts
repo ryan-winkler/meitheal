@@ -160,9 +160,16 @@ export async function dispatchTaskEvent(eventType: string, input: Record<string,
   requestId: string | undefined, traceId: string | undefined, eventId: string | undefined,
   responseAuthority: Record<string, string> | undefined, scope: BoardScope) {
   try {
+    const isSyncEvent = ["task.created", "task.updated", "task.completed", "task.deleted"].includes(eventType)
+    const destinations = isSyncEvent ? await readWorkDestinations(getPersistenceClient()) : null
+    const hasActiveSync = Boolean(destinations?.bindings.some(binding =>
+      binding.enabled
+      && binding.destination.boardId === scope.boardId
+      && (binding.purpose === "todo.sync" || binding.purpose === "calendar.sync" || binding.purpose === "grocy.sync")
+    ))
     const haEventType = HA_EVENT_MAP[eventType];
     const hasHaBus = Boolean(haEventType && process.env.SUPERVISOR_TOKEN);
-    const earlyWebhookSettings = !hasHaBus && eventType !== "task.deleted" && !eventId
+    const earlyWebhookSettings = !hasHaBus && !hasActiveSync && eventType !== "task.deleted" && !eventId
       ? await getCurrentWebhookSettings()
       : null;
     if (earlyWebhookSettings && !earlyWebhookSettings.webhook_endpoint && !earlyWebhookSettings.n8n_webhook_url) {
@@ -230,7 +237,6 @@ export async function dispatchTaskEvent(eventType: string, input: Record<string,
     // ── 2. HTTP Webhooks (Standalone mode) ──
     // P2.1: Cache webhook settings with TTL to avoid DB reads on every event
     const webhookSettings = earlyWebhookSettings ?? await getCurrentWebhookSettings();
-    const profileFingerprint = JSON.stringify(webhookSettings)
 
     const subscribers: WebhookSubscriberConfig[] = [];
 
@@ -264,6 +270,7 @@ export async function dispatchTaskEvent(eventType: string, input: Record<string,
     }
 
     if (subscribers.length > 0) {
+      const profileFingerprint = JSON.stringify(webhookSettings)
       const event: DomainEvent = {
         eventId: eventId ?? crypto.randomUUID(),
         eventType,
@@ -327,10 +334,12 @@ export async function dispatchTaskEvent(eventType: string, input: Record<string,
     // ── 3. Outbound Sync (Todo + Calendar push) ──
     // Push task mutations to active sync targets (fire-and-forget).
     // Handles loop prevention and no-sync labels internally.
-    import("./sync-outbound").then(async ({ pushToActiveSyncs }) => {
-      if (!await originAllowed()) return
-      pushToActiveSyncs(eventType, payload, scope, deletion ?? undefined).catch(() => {});
-    }).catch(() => {});
+    if (hasActiveSync) {
+      import("./sync-outbound").then(async ({ pushToActiveSyncs }) => {
+        if (!await originAllowed()) return
+        pushToActiveSyncs(eventType, payload, scope, deletion ?? undefined).catch(() => {});
+      }).catch(() => {});
+    }
   } catch (err) {
     logger.log("error", {
       event: "integration.webhook.failed",

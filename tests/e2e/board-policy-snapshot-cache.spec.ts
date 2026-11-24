@@ -1,13 +1,15 @@
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { pathToFileURL } from "node:url"
 import { expect, test } from "@playwright/test"
 import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 import { openDatabase, registerReaderCacheSource } from "../../apps/web/scripts/database-client.mjs"
 import { ensureAgentTokenSchema } from "../../apps/web/src/domains/auth/agent-token-store"
 import { BoardAccessService } from "../../apps/web/src/domains/tasks/board-access-service"
-import { registerVerifiedPrincipal, validateBoardScope } from "../../apps/web/src/domains/tasks/board-scope"
+import { readWorkDestinations, WORK_DESTINATIONS_KEY } from "../../apps/web/src/domains/tasks/integration-destinations"
+import { registerVerifiedPrincipal, validateBoardOperations, validateBoardScope } from "../../apps/web/src/domains/tasks/board-scope"
 import { SettingsRepository } from "../../apps/web/src/domains/tasks/persistence/settings-repository"
 import { readCachedTaskDetailLayout } from "../../apps/web/src/lib/shell-settings-cache"
 import { taskDetailServerSettingKey } from "../../apps/web/src/lib/task-detail-layout"
@@ -270,4 +272,129 @@ test("BoardAccessService and validateBoardScope retry cleanly across unrelated m
     expect(revalidateIntercept.triggered()).toBe(true)
     expect(revalidated.ok).toBe(true)
   })
+})
+
+test("readWorkDestinations caches across unchanged snapshots and invalidates on same-connection or cross-connection updates", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-work-dest-cache-"))
+  const path = join(directory, "work-dest.db")
+  const original = process.env.MEITHEAL_DB_URL
+  process.env.MEITHEAL_DB_URL = `file:${path}`
+  resetPersistenceForTests()
+  let other: ReturnType<typeof openDatabase> | undefined
+  try {
+    await ensureSchema()
+    other = openDatabase(pathToFileURL(path).href)
+    const db = getPersistenceClient()
+    const repo = new SettingsRepository(db)
+    await repo.ensureSettingsTable()
+
+    const first = {
+      version: 1,
+      revision: "rev-1",
+      bindings: [
+        {
+          id: "bind-1",
+          generation: 1,
+          integration: "webhook",
+          sourceId: "src-1",
+          enabled: true,
+          destination: { boardId: "household" },
+          allowedOperations: [{ resource: "task", action: "read" }],
+          purpose: "webhook.dispatch",
+        },
+      ],
+    }
+    await repo.upsert(WORK_DESTINATIONS_KEY, JSON.stringify(first))
+    const cachedA = await readWorkDestinations(db)
+    const cachedB = await readWorkDestinations(db)
+    expect(cachedA).toBe(cachedB)
+    expect(cachedA?.revision).toBe("rev-1")
+
+    const second = { ...first, revision: "rev-2" }
+    await other.execute({
+      sql: "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+      args: [WORK_DESTINATIONS_KEY, JSON.stringify(second), Date.now()],
+    })
+    const updatedExternal = await readWorkDestinations(db)
+    expect(updatedExternal?.revision).toBe("rev-2")
+
+    await repo.deleteByKeys([WORK_DESTINATIONS_KEY])
+    expect(await readWorkDestinations(db)).toBeNull()
+  } finally {
+    other?.close()
+    resetPersistenceForTests()
+    if (original === undefined) delete process.env.MEITHEAL_DB_URL
+    else process.env.MEITHEAL_DB_URL = original
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+test("BoardAccessService rechecks the reader token even when both policy and feature reads hit cache", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meitheal-both-cache-hits-"))
+  const path = join(directory, "both-cache-hits.db")
+  const original = process.env.MEITHEAL_DB_URL
+  process.env.MEITHEAL_DB_URL = `file:${path}`
+  resetPersistenceForTests()
+  let otherRaw: DatabaseSync | undefined
+  try {
+    await ensureSchema()
+    otherRaw = new DatabaseSync(path)
+    const db = getPersistenceClient()
+    const member = registerVerifiedPrincipal(
+      { kind: "ha_user", id: "member" },
+      { administrator: false, expiresAt: Date.now() + 60_000 },
+    )
+    const access = await new BoardAccessService(db).resolve(member, "household", { resource: "task", action: "read" })
+    if (!access.ok) throw new Error(access.errorCode)
+    const scope = access.scope
+
+    // Warm both policy and features snapshot cache entries for this principal.
+    expect(await validateBoardScope(scope, db, routines)).toMatchObject({ ok: true })
+
+    let executeCalls = 0
+    const countedDb = new Proxy(db, {
+      get(target, property) {
+        if (property === "execute") {
+          return (...args: unknown[]) => {
+            executeCalls += 1
+            return (target.execute as (...a: unknown[]) => unknown)(...args)
+          }
+        }
+        const value = Reflect.get(target, property)
+        return typeof value === "function" ? value.bind(target) : value
+      },
+    })
+    registerReaderCacheSource(countedDb, db)
+
+    let mutated = false
+    let sqlCallsBeforeCheck = -1
+    const baseOps = [routines] as const
+    const proxiedOps = new Proxy(baseOps, {
+      get(target, property) {
+        if (property === "every") {
+          if (!mutated) {
+            mutated = true
+            sqlCallsBeforeCheck = executeCalls
+            otherRaw!.prepare(
+              "INSERT INTO organization_access_policies(scope,scope_id,board_id,audience,selected_users,revision) VALUES ('feature','routines','','selected',?,1)",
+            ).run(JSON.stringify(["nobody"]))
+          }
+          return Array.prototype.every.bind(target)
+        }
+        const value = Reflect.get(target, property)
+        return typeof value === "function" ? value.bind(target) : value
+      },
+    })
+
+    const result = await validateBoardOperations(scope, countedDb, proxiedOps)
+    expect(mutated).toBe(true)
+    expect(sqlCallsBeforeCheck).toBe(0)
+    expect(result).toEqual({ ok: false, errorCode: "denied" })
+  } finally {
+    otherRaw?.close()
+    resetPersistenceForTests()
+    if (original === undefined) delete process.env.MEITHEAL_DB_URL
+    else process.env.MEITHEAL_DB_URL = original
+    await rm(directory, { recursive: true, force: true })
+  }
 })

@@ -40,6 +40,7 @@ import { resolveRecentActivityActor } from "../../../lib/recent-activity-actor"
 import { STATUS, normalizeStatus, isDoneStatus } from "../../../lib/status-config"
 import { stripHtml } from "../../../lib/strip-html"
 import { sendTaskNotification, notificationOperationAllowed } from "@domains/notifications"
+import { localReaderCacheToken } from "../../../../scripts/database-client.mjs"
 import { agentActivityActor } from "../../../lib/agent-activity-actor"
 
 
@@ -115,8 +116,29 @@ function parseFrameworkPayload(raw: unknown): Record<string, unknown> {
   }
 }
 
+const pillarsPresenceCache = new WeakMap<object, { generation: string; hasPillars: boolean }>()
+
+async function hasAnyPillarsRow(): Promise<boolean> {
+  const client = getPersistenceClient()
+  const state = localReaderCacheToken(client)
+  if (!state) return true
+  const cached = pillarsPresenceCache.get(state.owner)
+  if (cached && cached.generation === state.token) return cached.hasPillars
+  try {
+    const result = await client.execute("SELECT 1 FROM pillars LIMIT 1")
+    const hasPillars = result.rows.length > 0
+    const currentGeneration = localReaderCacheToken(client)?.token
+    if (currentGeneration === state.token) {
+      pillarsPresenceCache.set(state.owner, { generation: currentGeneration, hasPillars })
+    }
+    return hasPillars
+  } catch {
+    return true
+  }
+}
+
 async function readOptionalTaskPillarId(scope: BoardScope, taskId: string): Promise<string | null> {
-  if (!scopePermits(scope, { resource: "pillar", action: "read" })) return null
+  if (!scopePermits(scope, { resource: "pillar", action: "read" }) || !await hasAnyPillarsRow()) return null
   try {
     return await getEntityPillarId(scope, "tasks", taskId)
   } catch (err) {
@@ -826,7 +848,8 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     dismissMobileNotification(`meitheal_assigned_${resolvedId}`)
     dismissMobileNotification(`meitheal_due_${resolvedId}`)
     if (notifPrefs.channels.sidebar !== false) {
-      getHAServices().then(({ callHAService }) => {
+      getHAServices().then(async ({ callHAService, getHAConfiguration }) => {
+        if (!await getHAConfiguration()) return
         callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_urgent_${resolvedId}` }, undefined, { operationAllowed: () => notificationOperationAllowed(scope, "persistent_notification.dismiss", { resource: "task", action: "edit" }, resolvedId, undefined, updatedRow.task_version) }).catch(() => {})
         callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_assigned_${resolvedId}` }, undefined, { operationAllowed: () => notificationOperationAllowed(scope, "persistent_notification.dismiss", { resource: "task", action: "edit" }, resolvedId, undefined, updatedRow.task_version) }).catch(() => {})
         callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_due_${resolvedId}` }, undefined, { operationAllowed: () => notificationOperationAllowed(scope, "persistent_notification.dismiss", { resource: "task", action: "edit" }, resolvedId, undefined, updatedRow.task_version) }).catch(() => {})
@@ -837,17 +860,14 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
   if (newlyCompleted) {
     dispatchTaskEvent("task.completed", { ...taskPayload, completed_at: new Date().toISOString() }, requestId || undefined, undefined, undefined, authority, scope).catch(() => {})
     try {
-      const { isFeatureEnabled } = await import("../../../lib/feature-flags")
-      const [gamificationEnabled, confettiEnabled] = await Promise.all([
-        isFeatureEnabled("gamification"),
-        isFeatureEnabled("confetti"),
-      ])
-      if (gamificationEnabled) {
+      const { getFeatureFlags } = await import("../../../lib/feature-flags")
+      const flags = await getFeatureFlags()
+      if (flags.gamification !== false) {
         const { completeTaskGamification, getXpForPriority, getLevel } = await import("@domains/gamification")
         const xp = getXpForPriority(Number(updatedRow.priority ?? 3))
         const { stats, achievements } = await completeTaskGamification(scope, xp)
         if (stats && achievements) {
-          taskPayload.gamification = { stats, xp, newAchievements: achievements.newlyUnlocked, level: getLevel(stats.totalPoints), confetti: confettiEnabled }
+          taskPayload.gamification = { stats, xp, newAchievements: achievements.newlyUnlocked, level: getLevel(stats.totalPoints), confetti: Boolean(flags.confetti) }
         }
       }
     } catch {

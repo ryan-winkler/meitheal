@@ -22,6 +22,7 @@ import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observa
 
 // Polyfill WebSocket for Node.js server-side usage
 import WebSocket, { type ClientOptions } from "ws";
+import { localReaderCacheToken } from "../../../scripts/database-client.mjs";
 import { supervisorFetch } from "../../lib/supervisor-fetch";
 import { fingerprintHAConfiguration, resolveHAConfiguration, type HAConfiguration } from "./ha-configuration"
 import { initEntitySubscription, resetEntityConnection } from "./ha-entities"
@@ -49,14 +50,46 @@ const SYS_REQ = "ha-system"; // sentinel request_id for background operations
 
 let connection: Connection | null = null;
 let configurationFingerprint: string | null = null
+const haSettingsSnapshotCache = new WeakMap<
+  object,
+  { generation: string; settingsRevision: number; settings: Record<string, unknown> }
+>()
+let storeModulePromise: Promise<typeof import("../tasks/persistence/store")> | null = null
+let settingsModulePromise: Promise<typeof import("../tasks/persistence/settings-repository")> | null = null
 
 export async function getHAConfiguration({ requireComplete = false } = {}): Promise<HAConfiguration | null> {
   if (process.env.SUPERVISOR_TOKEN) return resolveHAConfiguration(process.env)
-  const { ensureSchema, getPersistenceClient } = await import("../tasks/persistence/store")
-  const { SettingsRepository } = await import("../tasks/persistence/settings-repository")
+  storeModulePromise ??= import("../tasks/persistence/store")
+  settingsModulePromise ??= import("../tasks/persistence/settings-repository")
+  const [{ ensureSchema, getPersistenceClient }, { getSettingsRevision, SettingsRepository }] =
+    await Promise.all([storeModulePromise, settingsModulePromise])
   await ensureSchema()
-  const repo = new SettingsRepository(getPersistenceClient())
-  const settings = await repo.getByKeys(["ha_url", "ha_token"])
+  const client = getPersistenceClient()
+  const state = localReaderCacheToken(client)
+  const settingsRevision = getSettingsRevision()
+  let settings: Record<string, unknown> | undefined
+  if (state) {
+    const cached = haSettingsSnapshotCache.get(state.owner)
+    if (cached && cached.generation === state.token && cached.settingsRevision === settingsRevision) {
+      settings = cached.settings
+    }
+  }
+  if (!settings) {
+    const repo = new SettingsRepository(client)
+    settings = await repo.getByKeys(["ha_url", "ha_token"])
+    const currentGeneration = state ? localReaderCacheToken(client)?.token : undefined
+    if (
+      state &&
+      currentGeneration === state.token &&
+      getSettingsRevision() === settingsRevision
+    ) {
+      haSettingsSnapshotCache.set(state.owner, {
+        generation: currentGeneration,
+        settingsRevision,
+        settings: Object.freeze(settings),
+      })
+    }
+  }
   const configuration = resolveHAConfiguration(process.env, settings)
   if (!configuration && requireComplete && [settings.ha_url, settings.ha_token, process.env.HA_BASE_URL, process.env.HA_TOKEN]
     .some(value => typeof value === "string" && value.trim())) {

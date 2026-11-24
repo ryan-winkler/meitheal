@@ -44,16 +44,54 @@ resolve_max_old_space_mb() {
   printf '128\n'
 }
 
+resolve_v8_pool_size() {
+  if is_uint "${MEITHEAL_V8_POOL_SIZE:-}" && [ "${MEITHEAL_V8_POOL_SIZE}" -ge 1 ]; then
+    printf '%s\n' "${MEITHEAL_V8_POOL_SIZE}"
+    return 0
+  fi
+
+  _cpu_v2=""
+  if [ -n "${MEITHEAL_CGROUP_V2_CPU_MAX_FILE:-}" ]; then
+    _cpu_v2="${MEITHEAL_CGROUP_V2_CPU_MAX_FILE}"
+  elif [ -z "${MEITHEAL_CGROUP_V2_MAX_FILE:-}" ]; then
+    _cpu_v2="/sys/fs/cgroup/cpu.max"
+  fi
+
+  if [ -n "${_cpu_v2}" ] && [ -r "${_cpu_v2}" ]; then
+    _quota=""
+    _period=""
+    read -r _quota _period _ < "${_cpu_v2}" 2>/dev/null || true
+    if is_uint "${_quota}" && is_uint "${_period}" && [ "${_quota}" -gt 0 ] && [ "${_period}" -gt 0 ] &&
+      [ "${_quota}" -lt 1099511627776 ] && [ "${_period}" -lt 1099511627776 ] &&
+      [ $(( _quota * 2 )) -le $(( _period * 3 )) ]; then
+      printf '1\n'
+      return 0
+    fi
+  fi
+
+  printf '\n'
+}
+
 apply_resolved_node_options() {
   _resolved_mb="$(resolve_max_old_space_mb)"
   case " ${NODE_OPTIONS:-} " in
     *" --max-old-space-size="*)
-      export NODE_OPTIONS
       ;;
     *)
-      export NODE_OPTIONS="${NODE_OPTIONS:+${NODE_OPTIONS} }--max-old-space-size=${_resolved_mb}"
+      NODE_OPTIONS="${NODE_OPTIONS:+${NODE_OPTIONS} }--max-old-space-size=${_resolved_mb}"
       ;;
   esac
+  _pool_size="$(resolve_v8_pool_size)"
+  if [ -n "${_pool_size}" ]; then
+    case " ${NODE_OPTIONS:-} " in
+      *" --v8-pool-size="*|*" --v8_pool_size="*|*" --v8-pool_size="*|*" --v8_pool-size="*|*" --v8-pool-size "*|*" --v8_pool_size "*|*" --v8-pool_size "*|*" --v8_pool-size "*)
+        ;;
+      *)
+        NODE_OPTIONS="${NODE_OPTIONS:+${NODE_OPTIONS} }--v8-pool-size=${_pool_size}"
+        ;;
+    esac
+  fi
+  export NODE_OPTIONS
 }
 
 if [ "${MEITHEAL_SOURCE_LIB_ONLY:-0}" = "1" ]; then

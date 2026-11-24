@@ -616,6 +616,56 @@ test("A7: resolve_max_old_space_mb computes dynamic V8 heap ceilings across cgro
         expect(lines[0]).toBe(c.expected)
         expect(lines[1]).toBe(`--enable-source-maps --max-old-space-size=${c.expected}`)
       }
+
+      const cpuMax = join(work, "cpu.max")
+      const cpuCases: Array<{ cpu: string; initialOpts: string; expectedOpts: string }> = [
+        {
+          cpu: "100000 100000\n",
+          initialOpts: "--enable-source-maps",
+          expectedOpts: "--enable-source-maps --max-old-space-size=105 --v8-pool-size=1",
+        },
+        {
+          cpu: "200000 100000\n",
+          initialOpts: "--enable-source-maps",
+          expectedOpts: "--enable-source-maps --max-old-space-size=105",
+        },
+        {
+          cpu: "max 100000\n",
+          initialOpts: "--enable-source-maps",
+          expectedOpts: "--enable-source-maps --max-old-space-size=105",
+        },
+        {
+          cpu: "100000 100000\n",
+          initialOpts: "--enable-source-maps --v8-pool-size=2",
+          expectedOpts: "--enable-source-maps --v8-pool-size=2 --max-old-space-size=105",
+        },
+        {
+          cpu: "100000 100000\n",
+          initialOpts: "--enable-source-maps --v8_pool_size=2",
+          expectedOpts: "--enable-source-maps --v8_pool_size=2 --max-old-space-size=105",
+        },
+      ]
+      await writeFile(cgV2, "201326592\n")
+      await writeFile(cgV1, "9223372036854771712\n")
+      for (const c of cpuCases) {
+        await writeFile(cpuMax, c.cpu)
+        const { stdout } = await execFileAsync("sh", [
+          "-c",
+          `. "$1"; apply_resolved_node_options; printf '%s\n' "$NODE_OPTIONS"`,
+          "sh",
+          scriptPath,
+        ], {
+          env: {
+            PATH: process.env.PATH ?? "",
+            MEITHEAL_SOURCE_LIB_ONLY: "1",
+            MEITHEAL_CGROUP_V2_MAX_FILE: cgV2,
+            MEITHEAL_CGROUP_V1_LIMIT_FILE: cgV1,
+            MEITHEAL_CGROUP_V2_CPU_MAX_FILE: cpuMax,
+            NODE_OPTIONS: c.initialOpts,
+          },
+        })
+        expect(stdout.trim()).toBe(c.expectedOpts)
+      }
     }
   } finally {
     await rm(work, { recursive: true, force: true })

@@ -1,32 +1,32 @@
 ---
-import { getCachedHtmlSlot, setCachedHtmlSlot } from "../../lib/cached-html-slot-store"
+import { getCachedHtmlSlot, setCachedHtmlSlot, type CachedHtmlByteChunk } from "../../lib/cached-html-slot-store"
 
 interface Props {
   cacheKey?: string | null | undefined
+  asBytes?: boolean | undefined
 }
 
-const { cacheKey } = Astro.props
-let htmlOutput: string
+const { cacheKey, asBytes = false } = Astro.props
+let htmlOutput: string | undefined
+let byteChunkOutput: CachedHtmlByteChunk | undefined
 
 if (cacheKey) {
-  const existing = getCachedHtmlSlot(cacheKey)
-  if (existing) {
-    if (existing.icons.length > 0) {
-      const target = (Astro.locals.usedIcons ??= new Set())
-      for (const icon of existing.icons) target.add(icon)
-    }
-    htmlOutput = existing.html
-  } else {
+  let entry = getCachedHtmlSlot(cacheKey)
+  if (!entry) {
     const rendered = String((await Astro.slots.render("default")) ?? "")
-    const entry = setCachedHtmlSlot(cacheKey, rendered)
-    if (entry.icons.length > 0) {
-      const target = (Astro.locals.usedIcons ??= new Set())
-      for (const icon of entry.icons) target.add(icon)
-    }
-    htmlOutput = rendered
+    entry = setCachedHtmlSlot(cacheKey, rendered)
+  }
+  if (entry.icons.length > 0) {
+    const target = (Astro.locals.usedIcons ??= new Set())
+    for (const icon of entry.icons) target.add(icon)
+  }
+  if (asBytes) {
+    byteChunkOutput = entry.byteChunk
+  } else {
+    htmlOutput = entry.html
   }
 } else {
   htmlOutput = String((await Astro.slots.render("default")) ?? "")
 }
 ---
-<Fragment set:html={htmlOutput} />
+{byteChunkOutput ? byteChunkOutput : <Fragment set:html={htmlOutput} />}

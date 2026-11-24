@@ -1,5 +1,8 @@
 import type { Client } from "@libsql/client"
+import { localReaderCacheToken } from "../../../scripts/database-client.mjs"
 import type { WorkOperation } from "./board-scope"
+import { currentBoardGrantRevision } from "./persistence/board-grant-fence"
+import { ContinuityLockedError, isGuardedContinuityClient } from "./persistence/continuity-client"
 
 export const WORK_DESTINATIONS_KEY = "work-destinations"
 
@@ -78,10 +81,26 @@ export function parseWorkDestinations(value: unknown): WorkDestinations | null {
   return Object.freeze({ version: 1, revision: candidate.revision, bindings: Object.freeze(bindings) })
 }
 
+const workDestinationsCache = new WeakMap<object, { token: string; value: WorkDestinations | null }>()
+
 /** Internal metadata discovery only. This result supplies no work-reading authority. */
 export async function readWorkDestinations(db: Pick<Client, "execute">): Promise<WorkDestinations | null> {
+  const state = localReaderCacheToken(db)
+  if (state) {
+    const cached = workDestinationsCache.get(state.owner)
+    if (cached && cached.token === state.token) {
+      if (isGuardedContinuityClient(db as object) && !(await currentBoardGrantRevision(db as Client))) {
+        throw new ContinuityLockedError()
+      }
+      return cached.value
+    }
+  }
   const { rows: [row] } = await db.execute({ sql: "SELECT value FROM settings WHERE key = ?", args: [WORK_DESTINATIONS_KEY] })
-  return row ? parseWorkDestinations(row.value) : null
+  const value = row ? parseWorkDestinations(row.value) : null
+  if (state && localReaderCacheToken(db)?.token === state.token) {
+    workDestinationsCache.set(state.owner, { token: state.token, value })
+  }
+  return value
 }
 
 export function bindingAllows(binding: WorkBinding, operation: WorkOperation): boolean {

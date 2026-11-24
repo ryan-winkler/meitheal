@@ -124,13 +124,10 @@ export async function searchMeithealCatalog(
 
   const canDirectory =
     scope.principal.kind === "ha_user" || scope.principal.kind === "local_operator"
-  let accessibleBoardsPromise: Promise<Awaited<ReturnType<BoardRepository["findDirectory"]>>> | null = null
+  let accessibleBoardsPromise: Promise<Awaited<ReturnType<BoardRepository["findDirectory"]>>> | undefined
   const getAccessibleBoards = () => {
-    if (!accessibleBoardsPromise) {
-      accessibleBoardsPromise = canDirectory
-        ? new BoardRepository(client).findDirectory(scope.principal)
-        : Promise.resolve([])
-    }
+    if (!canDirectory) return Promise.resolve([])
+    accessibleBoardsPromise ??= new BoardRepository(client).findDirectory(scope.principal)
     return accessibleBoardsPromise
   }
 
@@ -153,7 +150,7 @@ export async function searchMeithealCatalog(
 
     // When the query matches another accessible Board's key (e.g. "GRD" or "GRD-1"),
     // search that Board with its own verified BoardScope so ticket-key lookup works globally.
-    if (options.query && taskItems.length < options.limit) {
+    if (options.query && canDirectory && taskItems.length < options.limit) {
       const normalizedQuery = options.query.trim().toUpperCase()
       const keyPrefix = /^([A-Z][A-Z0-9]{1,9})(?:-\d*)?$/.exec(normalizedQuery)?.[1]
       const accessibleBoards = keyPrefix ? await getAccessibleBoards() : []
@@ -201,7 +198,7 @@ export async function searchMeithealCatalog(
   }
 
   if (options.scope === "all" || options.scope === "views") {
-    const accessibleBoards = await getAccessibleBoards()
+    const accessibleBoards = canDirectory ? await getAccessibleBoards() : []
     if (accessibleBoards.length > 0) {
       const needle = options.query.trim().toLowerCase()
       const boardItems: SearchResultItem[] = accessibleBoards

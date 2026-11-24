@@ -95,7 +95,7 @@ async function readDailyProgress(scope: BoardScope, now: Date, timezone = "UTC")
 
 export async function ensureGamificationSchema(): Promise<void> { await ensureSchema() }
 
-function statsQuery(scope: BoardScope, today: string, yesterday: string) {
+export function statsQuery(scope: BoardScope, today: string, yesterday: string) {
   return gamificationRead(scope, {
     sql: `SELECT
             COALESCE(MAX(CASE WHEN date = ? THEN completed_count END), 0) AS today_completed,
@@ -109,7 +109,7 @@ function statsQuery(scope: BoardScope, today: string, yesterday: string) {
   })
 }
 
-function parseStatsRows(rows: ReadonlyArray<Record<string, unknown>>): GamificationStats {
+export function parseStatsRows(rows: ReadonlyArray<Record<string, unknown>>): GamificationStats {
   const row = rows[0] ?? {}
   const todayCompleted = row.today_streak != null ? Number(row.today_completed ?? 0) : 0
   const currentStreak = row.today_streak != null
@@ -140,16 +140,12 @@ export async function readStatsFromRunner(
   return parseStatsRows(agg.rows as ReadonlyArray<Record<string, unknown>>)
 }
 
-/**
- * Record a task completion. Increments today's count and updates streak.
- * @param points - XP points to award (default: 0, Phase 5 adds weighted points)
- */
-export async function recordTaskCompletion(
+export async function prepareCompletionStatsWrite(
   scope: BoardScope,
   points = 0,
   now = new Date(),
   timezone = "UTC",
-): Promise<GamificationStats | null> {
+) {
   await ensureGamificationSchema()
   const base = getPersistenceClient()
   const client = await gamificationClient(scope, true)
@@ -172,8 +168,26 @@ export async function recordTaskCompletion(
     await client.execute(insertStatement)
     throw new BoardOperationError("unavailable")
   }
-  const [, agg] = await client.batch([insertStatement, statsQuery(scope, today, yesterday)], "write")
-  if (!await canReadBoardAggregate(base, scope)) throw new BoardOperationError("unavailable")
+  return { base, client, today, yesterday, insertStatement }
+}
+
+/**
+ * Record a task completion. Increments today's count and updates streak.
+ * @param points - XP points to award (default: 0, Phase 5 adds weighted points)
+ */
+export async function recordTaskCompletion(
+  scope: BoardScope,
+  points = 0,
+  now = new Date(),
+  timezone = "UTC",
+): Promise<GamificationStats | null> {
+  const prepared = await prepareCompletionStatsWrite(scope, points, now, timezone)
+  if (!prepared) return null
+  const [, agg] = await prepared.client.batch(
+    [prepared.insertStatement, statsQuery(scope, prepared.today, prepared.yesterday)],
+    "write",
+  )
+  if (!await canReadBoardAggregate(prepared.base, scope)) throw new BoardOperationError("unavailable")
   return parseStatsRows((agg?.rows ?? []) as ReadonlyArray<Record<string, unknown>>)
 }
 

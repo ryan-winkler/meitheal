@@ -1,7 +1,7 @@
 ---
 import { readBoardPagePlacement } from "@lib/board-page-placement"
 import { createHash } from "node:crypto"
-import { getPersistenceClient, SettingsRepository, scopeBoardAccess, scopePermits, taskActionHints } from "@domains/tasks"
+import { getPersistenceClient, scopeBoardAccess, scopePermits, taskActionHints } from "@domains/tasks"
 import { getPluginService } from "@domains/plugins"
 import type { BoardScope } from "@domains/tasks"
 import { resolveBoardRequestScope, verifiedBoardRequestPrincipal } from "@lib/board-request-context"
@@ -9,7 +9,7 @@ import { boardScopeAuthorityKey, retainBoardResponseScope } from "@lib/board-vie
 import { boardSessionProof, currentBoardContext } from "@lib/named-board-request"
 import { taskViewUrl } from "../lib/task-view-route"
 import { boardNavigationLinks, readBoardNavigationContext } from "../lib/board-workspace"
-import { readCachedSidebarAndProfile, readCachedTaskDetailLayout, readCachedWorkInstallationId } from "../lib/shell-settings-cache"
+import { readCachedAiAssistDisabled, readCachedSidebarAndProfile, readCachedTaskDetailLayout, readCachedWorkInstallationId } from "../lib/shell-settings-cache"
 import { isOrganizationFeatureAvailable, organizationNeedsVerification } from "../lib/organization-request-context"
 import { readRequestOrganizationLabels, renderedLabelsProof } from "@lib/organization-labels"
 import { verifiedIngressUser } from "@lib/verified-ingress-user"
@@ -52,8 +52,9 @@ const locale: Locale = cookieLocale === "ga" ? "ga" : "en";
 
 // Feature flags — read from settings DB (SSR)
 const featureFlags = await getFeatureFlags();
-const aiAssistFlags = await new SettingsRepository(getPersistenceClient()).getByKeys(["ai_assist_disabled"]).catch(() => ({} as Record<string, unknown>));
-const aiAssistDisabled = aiAssistFlags.ai_assist_disabled === true || aiAssistFlags.ai_assist_disabled === "true";
+const aiAssistDisabled = await Promise.resolve()
+  .then(() => readCachedAiAssistDisabled(getPersistenceClient()))
+  .catch(() => false);
 const hasActivePlugins = await getPluginService().hasActivePlugins().catch(() => false);
 const organizationState = await readRequestOrganizationLabels(Astro)
 const organizationUser = verifiedIngressUser(Astro.locals)
@@ -230,7 +231,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
 <html lang={locale} dir="ltr" data-workspace-scope={workspaceScope} data-custom-theme-admin={canManageSystemSettings(Astro.request, Astro.locals) ? "" : undefined} data-plugins-active={hasActivePlugins ? "1" : undefined} data-ai-assist-disabled={aiAssistDisabled ? "" : undefined}>
   <head>
     {boardContext && <><meta name="meitheal-work-board" content={boardContext.boardId} /><meta name="meitheal-work-session" content={boardContext.session} /><meta name="meitheal-work-actor" content={boardContext.actorKey} /><meta name="meitheal-work-board-name" content={boardContext.boardName} />{layoutTaskCreate !== undefined && <meta name="meitheal-task-create" content={String(layoutTaskCreate)} />}{layoutTaskActions && <meta name="meitheal-task-actions" content={JSON.stringify(layoutTaskActions)} />}</>}
-    <CachedHtmlSlot cacheKey={headCacheKey}>
+    <CachedHtmlSlot cacheKey={headCacheKey} asBytes={true}>
     <!-- Scroll-lock guard: prevent external tools from locking body scroll (P0) -->
     <script is:inline>
       (function () {
@@ -742,7 +743,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     >
     <PwaInstallBanner locale={locale} />
     {!privatePageShell && <div class="layout-navigation" transition:persist="sidebar">
-      <CachedHtmlSlot cacheKey={sidebarCacheKey}><Sidebar locale={locale} workNavigation={workNavigation} /></CachedHtmlSlot>
+      <CachedHtmlSlot cacheKey={sidebarCacheKey} asBytes={true}><Sidebar locale={locale} workNavigation={workNavigation} /></CachedHtmlSlot>
     </div>}
 
     <div class="main-content" style={privatePageShell ? "margin-inline-start: 0" : undefined}>
@@ -777,6 +778,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
     </div>
 
     <!-- PRA-16: Mobile bottom tab bar — thumb-zone navigation for HA Companion App -->
+    <CachedHtmlSlot cacheKey={`mobile-tabs-v1:${mobileLinks?.dashboard ?? ""}:${mobileLinks?.today ?? ""}:${mobileTaskHref}:${mobileCalendarHref}`} asBytes={true}>
     <nav class="mobile-tab-bar" id="mobile-tab-bar" aria-label="Mobile navigation">
       <a href={mobileLinks?.dashboard ?? "/?view=dashboard"} class="mobile-tab-bar__item" data-page="dashboard">
         <span class="mobile-tab-bar__icon" aria-hidden="true"><Icon name="home" size={20} sprite={true} /></span>
@@ -857,6 +859,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
         window.__meithealUpdateMobileTabBar();
       })();
     </script>
+    </CachedHtmlSlot>
 
     <!-- Unified Toast & Growler Region (single root mount) -->
     <ToastRegion locale={locale} />
@@ -905,7 +908,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       }
     </script>
 
-    <CachedHtmlSlot cacheKey={bottomChromeCacheKey}>{!privatePageShell && <>
+    <CachedHtmlSlot cacheKey={bottomChromeCacheKey} asBytes={true}>{!privatePageShell && <>
       {!suppressHouseholdTaskModals && <>
         <NewTaskModal />
         <QuickAddDialog locale={locale} />
@@ -932,7 +935,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
       window.__featureFlags = JSON.parse(featureFlagsJson);
     </script>
     <!-- Keyboard Shortcuts Modal (must be outside task-detail-overlay for visibility) -->
-    <CachedHtmlSlot cacheKey={`shortcut-v1:${locale}`}><div id="shortcut-modal" class="shortcut-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="shortcut-modal-title">
+    <CachedHtmlSlot cacheKey={`shortcut-v1:${locale}`} asBytes={true}><div id="shortcut-modal" class="shortcut-modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="shortcut-modal-title">
       <div class="shortcut-modal-content">
         <div class="shortcut-modal-header">
           <h3 id="shortcut-modal-title"><Icon name="keyboard" size={18} sprite={true} />{t("settings.shortcut_modal_title", locale)}</h3>

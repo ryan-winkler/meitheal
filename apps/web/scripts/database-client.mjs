@@ -38,8 +38,15 @@ const dataVersionStatements = new WeakMap()
 const schemaVersionStatements = new WeakMap()
 /** @type {WeakMap<DatabaseSync, import("node:sqlite").StatementSync>} */
 const externalVersionStatements = new WeakMap()
+/** @type {WeakMap<DatabaseSync, import("node:sqlite").StatementSync>} */
+const passiveCheckpointStatements = new WeakMap()
 /** @type {WeakMap<DatabaseSync, Map<string, import("node:sqlite").StatementSync>>} */
 const preparedStatements = new WeakMap()
+const WAL_AUTOCHECKPOINT_PAGES = 4_000
+const IDLE_WAL_CHECKPOINT_COMMITS = 6
+const IDLE_WAL_CHECKPOINT_DELAY_MS = 80
+const WAL_AUTOCHECKPOINT_NAME_RE = /wal_autocheckpoint/i
+const WAL_AUTOCHECKPOINT_ASSIGN_RE = /^\s*PRAGMA\s+(?:(?:[A-Za-z0-9_]+|"(?:[^"]|"")+"|'(?:[^']|'')+'|`(?:[^`]|``)+`|\[[^\]]+\])\s*\.\s*)?(?:wal_autocheckpoint|"wal_autocheckpoint"|'wal_autocheckpoint'|`wal_autocheckpoint`|\[wal_autocheckpoint\])\s*(?:=|\()/i
 // The App issues a few hundred distinct statements. Compiling the large scoped
 // projections dominates repeated reads on low-power hosts; their compiled
 // programs cost a few kilobytes each.
@@ -54,15 +61,16 @@ function leadingKeyword(sql) {
 // Only side-effect-free statements are cached, so one can safely run again.
 const nonSelectTokens = /\b(?:INSERT|UPDATE|DELETE|CREATE|ALTER|DROP|PRAGMA|ATTACH|DETACH|VACUUM|REINDEX|BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)\b|\bREPLACE\s+INTO\b/i
 /** Strip SQL literals and comments in a single linear pass so CTE DML detection is ReDoS-free.
- * @param {string} sql @returns {string}
+ * @param {string} sql @param {boolean} [keepQuotedTokens] @returns {string}
  */
-function stripSqlCommentsAndLiterals(sql) {
+function stripSqlCommentsAndLiterals(sql, keepQuotedTokens = false) {
   let out = ""
   let i = 0
   while (i < sql.length) {
     const ch = sql.charCodeAt(i)
     const next = i + 1 < sql.length ? sql.charCodeAt(i + 1) : 0
     if (ch === 39 || ch === 34 || ch === 96) {
+      const tokenStart = i
       i += 1
       while (i < sql.length) {
         if (sql.charCodeAt(i) === ch) {
@@ -75,12 +83,13 @@ function stripSqlCommentsAndLiterals(sql) {
         }
         i += 1
       }
-      out += " "
+      out += keepQuotedTokens ? sql.slice(tokenStart, i).replaceAll(";", " ") : " "
     } else if (ch === 91) {
+      const tokenStart = i
       i += 1
       while (i < sql.length && sql.charCodeAt(i) !== 93) i += 1
       if (i < sql.length) i += 1
-      out += " "
+      out += keepQuotedTokens ? sql.slice(tokenStart, i).replaceAll(";", " ") : " "
     } else if (ch === 45 && next === 45) {
       const nl = sql.indexOf("\n", i + 2)
       i = nl === -1 ? sql.length : nl + 1
@@ -554,6 +563,17 @@ function readSchemaVersion(db) {
 }
 
 /** @param {DatabaseSync} db */
+function runPassiveWalCheckpoint(db) {
+  let statement = passiveCheckpointStatements.get(db)
+  if (!statement) {
+    statement = db.prepare("PRAGMA wal_checkpoint(PASSIVE)")
+    statement.setReturnArrays(true)
+    passiveCheckpointStatements.set(db, statement)
+  }
+  return /** @type {unknown[] | undefined} */ (statement.get())
+}
+
+/** @param {DatabaseSync} db */
 function getTotalChanges(db) {
   let stmt = totalChangesStatements.get(db)
   if (!stmt) {
@@ -691,14 +711,16 @@ function execute(db, input, args = [], fileReadSnapshot = false) {
   }
 }
 
-/** @param {DatabaseSync} db @param {Array<InStatement | [string, InArgs?]>} statements @param {boolean} [fileReadSnapshot] */
-function executeBatch(db, statements, fileReadSnapshot = false) {
+/** @param {DatabaseSync} db @param {Array<InStatement | [string, InArgs?]>} statements @param {boolean} [fileReadSnapshot] @param {(statement: InStatement | [string, InArgs?]) => void} [onStatementSucceeded] */
+function executeBatch(db, statements, fileReadSnapshot = false, onStatementSucceeded) {
   return statements.map((statement, index) => {
     try {
       if (!db.isTransaction) throw new LibsqlError("The transaction is closed", "TRANSACTION_CLOSED")
-      return sqliteOperation(() => Array.isArray(statement)
+      const out = sqliteOperation(() => Array.isArray(statement)
         ? execute(db, statement[0], statement[1], fileReadSnapshot)
         : execute(db, statement, undefined, fileReadSnapshot))
+      onStatementSucceeded?.(statement)
+      return out
     } catch (error) {
       if (!(error instanceof LibsqlError)) throw error
       throw new LibsqlBatchError(error.message, index, error.code, error.extendedCode, error.rawCode,
@@ -857,8 +879,28 @@ export async function executeWriteWithRetry(client, statementOrBatch, options) {
 
 /** @param {InStatement} statement */
 function isLikelyWriteStatement(statement) {
-  const sql = (typeof statement === "string" ? statement : statement.sql).trimStart()
+  const raw = typeof statement === "string" ? statement : statement.sql
+  if (isSideEffectFreeQuery(raw)) return false
+  const sql = stripSqlCommentsAndLiterals(raw).trimStart()
   return /^(?:INSERT|UPDATE|DELETE|REPLACE|CREATE|ALTER|DROP|VACUUM|REINDEX|ANALYZE|ATTACH|DETACH)\b/i.test(sql)
+    || (/^WITH\b/i.test(sql) && /\b(?:INSERT|UPDATE|DELETE|REPLACE)\b/i.test(sql))
+}
+
+/** @param {string} sql */
+function hasLikelyWriteSql(sql) {
+  for (const segment of stripSqlCommentsAndLiterals(sql).split(";")) {
+    if (isLikelyWriteStatement(segment)) return true
+  }
+  return false
+}
+
+/** @param {string} sql */
+function hasWalAutocheckpointAssignment(sql) {
+  if (!WAL_AUTOCHECKPOINT_NAME_RE.test(sql)) return false
+  for (const segment of stripSqlCommentsAndLiterals(sql, true).split(";")) {
+    if (WAL_AUTOCHECKPOINT_ASSIGN_RE.test(segment)) return true
+  }
+  return false
 }
 
 let verifiedSQLite = false
@@ -901,6 +943,11 @@ function needsJournalRecovery(error) {
 /** @param {string} path @param {boolean} memory @param {boolean} readOnly @param {boolean} [inspectBoard] @returns {Client} */
 function openLocal(path, memory, readOnly, inspectBoard = false) {
   verifySQLite()
+  // Initialize WAL autocheckpoint state before openMain/configureConnection runs.
+  let walAutocheckpointPages = WAL_AUTOCHECKPOINT_PAGES
+  let pendingCommitsSinceCheckpoint = 0
+  /** @type {ReturnType<typeof globalThis.setTimeout> | undefined} */
+  let walCheckpointTimer = undefined
   // Deliberately do not wait inside SQLite; write retries happen asynchronously on the JS event loop.
   const connectRaw = (inspectOnly = readOnly) => sqliteOperation(() => new DatabaseSync(path, { timeout: 0, readOnly: inspectOnly }))
   /** @param {DatabaseSync} db @param {boolean} inspectOnly @param {boolean} secondary */
@@ -910,9 +957,9 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       if (inspectOnly) {
         db.exec("PRAGMA cache_size = -512;")
       } else if (secondary) {
-        db.exec("PRAGMA synchronous = FULL; PRAGMA cache_size = -512;")
+        db.exec(`PRAGMA synchronous = FULL; PRAGMA cache_size = -512;${memory ? "" : ` PRAGMA wal_autocheckpoint = ${walAutocheckpointPages};`}`)
       } else {
-        db.exec("PRAGMA synchronous = FULL; PRAGMA cache_size = -2000;")
+        db.exec(`PRAGMA synchronous = FULL; PRAGMA cache_size = -2000;${memory ? "" : ` PRAGMA wal_autocheckpoint = ${walAutocheckpointPages};`}`)
       }
       return db
     } catch (err) {
@@ -1057,15 +1104,69 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
   const sharedCacheOwner = {}
   let nonTaskWriteEpoch = 0
   let mainHasLocalState = false
+  /** @param {DatabaseSync} db */
+  function reconcileWalAutocheckpoint(db) {
+    if (memory || readOnly) return
+    let effective = walAutocheckpointPages
+    try {
+      const row = db.prepare("PRAGMA wal_autocheckpoint").get()
+      const raw = row && typeof row === "object" ? Object.values(row)[0] : undefined
+      const parsed = Number(raw)
+      if (Number.isSafeInteger(parsed)) effective = parsed
+    } catch {
+      return
+    }
+    walAutocheckpointPages = effective
+    if (walAutocheckpointPages <= 0) {
+      clearWalCheckpointTimer()
+      pendingCommitsSinceCheckpoint = 0
+    }
+    if (idleWriteHandle && !writeSlotLeased) closeIdleWriteHandle()
+  }
+
+  function clearWalCheckpointTimer() {
+    if (walCheckpointTimer !== undefined) {
+      globalThis.clearTimeout(walCheckpointTimer)
+      walCheckpointTimer = undefined
+    }
+  }
+
+  function scheduleIdleWalCheckpoint() {
+    clearWalCheckpointTimer()
+    if (closed || memory || readOnly || walAutocheckpointPages <= 0) return
+    walCheckpointTimer = globalThis.setTimeout(() => {
+      walCheckpointTimer = undefined
+      if (closed || memory || readOnly || walAutocheckpointPages <= 0) return
+      if (writeSlotLeased || transactions.size > 0 || readWaiters.length > 0) {
+        scheduleIdleWalCheckpoint()
+        return
+      }
+      const db = idleWriteHandle ?? main
+      if (db.isTransaction) return
+      pendingCommitsSinceCheckpoint = 0
+      try {
+        runPassiveWalCheckpoint(db)
+      } catch {
+        // Retry on later commits if an external connection held the checkpoint lock.
+      }
+    }, IDLE_WAL_CHECKPOINT_DELAY_MS)
+    walCheckpointTimer.unref?.()
+  }
+
+  function recordCommittedWrite() {
+    if (memory || readOnly || closed || walAutocheckpointPages <= 0) return
+    pendingCommitsSinceCheckpoint += 1
+    if (pendingCommitsSinceCheckpoint < IDLE_WAL_CHECKPOINT_COMMITS) return
+    scheduleIdleWalCheckpoint()
+  }
+
   /** @param {Array<InStatement | [string, InArgs?]>} statements */
   function markMainLocalStateFromBatch(statements) {
-    if (mainHasLocalState) return
     for (const statement of statements) {
       const text = Array.isArray(statement) ? statement[0] : statement
       const sql = typeof text === "string" ? text : text.sql
-      if (!isSideEffectFreeQuery(sql) && mayCreateMainLocalState(sql)) {
+      if (!mainHasLocalState && !isSideEffectFreeQuery(sql) && mayCreateMainLocalState(sql)) {
         mainHasLocalState = true
-        return
       }
     }
   }
@@ -1221,20 +1322,32 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
         return isSideEffectFreeQuery(sql) || isPureTaskOrStatsWrite(sql)
       })
     if (canUseWriteSlot) {
-      return onWriteSlot((db, inspectSql) => {
+      const results = onWriteSlot((db, inspectSql) => {
         for (const statement of statements) {
           const text = Array.isArray(statement) ? statement[0] : statement
           inspectSql(typeof text === "string" ? text : text.sql)
         }
         begin(db, "write")
         onAcquired?.()
-        const results = executeBatch(db, statements)
+        const out = executeBatch(db, statements)
         db.exec("COMMIT")
         onAcquired?.()
-        return results
+        return out
       })
+      recordCommittedWrite()
+      return results
     }
-    return onMain(db => {
+    const touchesWalAutocheckpoint =
+      !memory &&
+      !readOnly &&
+      statements.some(statement => {
+        const text = Array.isArray(statement) ? statement[0] : statement
+        return hasWalAutocheckpointAssignment(typeof text === "string" ? text : text.sql)
+      })
+    const countsCommittedWrite =
+      mode === "write" ||
+      (!migration && mode !== "read" && statements.some(statement => isLikelyWriteStatement(Array.isArray(statement) ? statement[0] : statement)))
+    const results = onMain(db => {
       if (mode === "write" || migration) nonTaskWriteEpoch += 1
       markMainLocalStateFromBatch(statements)
       if (migration) db.exec("PRAGMA foreign_keys=OFF")
@@ -1243,10 +1356,10 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
       try {
         begin(db, mode)
         if (mode === "write") onAcquired?.()
-        const results = executeBatch(db, statements)
+        const out = executeBatch(db, statements)
         db.exec("COMMIT")
         onAcquired?.()
-        return results
+        return out
       } finally {
         try {
           if (db.isTransaction) {
@@ -1254,11 +1367,17 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
             bumpHandleEpoch(db)
           }
         } finally {
-          if (migration) db.exec("PRAGMA foreign_keys=ON")
-          if (queryOnly) db.exec("PRAGMA query_only=OFF")
+          try {
+            if (migration) db.exec("PRAGMA foreign_keys=ON")
+            if (queryOnly) db.exec("PRAGMA query_only=OFF")
+          } finally {
+            if (touchesWalAutocheckpoint) reconcileWalAutocheckpoint(db)
+          }
         }
       }
     })
+    if (countsCommittedWrite) recordCommittedWrite()
+    return results
   }
 
   /**
@@ -1271,13 +1390,20 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     if (!signal && isSideEffectFreeQuery(sql)) {
       return onMain(db => execute(db, statement, args))
     }
+    const touchesWalAutocheckpoint = !memory && !readOnly && hasWalAutocheckpointAssignment(sql)
     return retryBusyOperation(
       () => onMain(db => {
         if (!isSideEffectFreeQuery(sql)) {
           nonTaskWriteEpoch += 1
           if (!mainHasLocalState && mayCreateMainLocalState(sql)) mainHasLocalState = true
         }
-        return execute(db, statement, args)
+        try {
+          const out = execute(db, statement, args)
+          if (isLikelyWriteStatement(statement) && !db.isTransaction) recordCommittedWrite()
+          return out
+        } finally {
+          if (touchesWalAutocheckpoint) reconcileWalAutocheckpoint(db)
+        }
       }),
       () => false,
       signal,
@@ -1437,6 +1563,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     // statement may end or restart it, and a writer's own changes alter it.
     let generation = 0
     let snapshotPinned = mode === "write"
+    let hasCommittedWriteCandidate = mode === "write"
     /** @type {object | undefined} */
     let cachedTxOwner = undefined
     /** @type {string | undefined} */
@@ -1513,6 +1640,9 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
         try {
           const out = sqliteOperation(() => execute(db, statement, args, useReadPool))
           snapshotPinned = true
+          if (!hasCommittedWriteCandidate && mode !== "read" && isLikelyWriteStatement(statement)) {
+            hasCommittedWriteCandidate = true
+          }
           return out
         } finally { advance(statement) }
       },
@@ -1526,7 +1656,17 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
         }
         for (const statement of statements) advance(statement)
         try {
-          const out = executeBatch(db, statements, useReadPool)
+          const out = executeBatch(db, statements, useReadPool, statement => {
+            snapshotPinned = true
+            if (
+              !hasCommittedWriteCandidate &&
+              mode !== "read" &&
+              db.isTransaction &&
+              isLikelyWriteStatement(Array.isArray(statement) ? statement[0] : statement)
+            ) {
+              hasCommittedWriteCandidate = true
+            }
+          })
           snapshotPinned = true
           return out
         } finally { for (const statement of statements) advance(statement) }
@@ -1544,17 +1684,37 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
         cachedTxOwner = undefined
         cachedTxToken = undefined
         cachedGrantRev = undefined
-        try { sqliteOperation(() => db.exec(sql)) } finally { generation += 1; bumpHandleEpoch(db); cachedTxOwner = undefined; cachedTxToken = undefined; cachedGrantRev = undefined }
+        const trackCandidate = !memory && !readOnly && !hasCommittedWriteCandidate && mode !== "read"
+        const beforeChanges = trackCandidate ? getTotalChanges(db) : undefined
+        const beforeSchema = trackCandidate ? readSchemaVersion(db) : undefined
+        try {
+          sqliteOperation(() => db.exec(sql))
+          if (trackCandidate && db.isTransaction && hasLikelyWriteSql(sql)) {
+            hasCommittedWriteCandidate = true
+          }
+        } catch (error) {
+          if (
+            trackCandidate &&
+            db.isTransaction &&
+            (getTotalChanges(db) !== beforeChanges || readSchemaVersion(db) !== beforeSchema)
+          ) {
+            hasCommittedWriteCandidate = true
+          }
+          throw error
+        } finally { generation += 1; bumpHandleEpoch(db); cachedTxOwner = undefined; cachedTxToken = undefined; cachedGrantRev = undefined }
       },
       async commit() {
         assertActive()
+        let committed = false
         sqliteOperation(() => {
           try {
             db.exec("COMMIT")
+            committed = true
           } finally {
             settle()
           }
         })
+        if (committed && hasCommittedWriteCandidate) recordCommittedWrite()
       },
       async rollback() {
         if (active) sqliteOperation(settle)
@@ -1625,6 +1785,7 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     if (closed) return
     closed = true
     clientGeneration += 1
+    clearWalCheckpointTimer()
     for (const waiter of readWaiters.splice(0)) {
       globalThis.clearTimeout(waiter.timer)
       waiter.reject(new LibsqlError("The client is closed", "CLIENT_CLOSED"))
@@ -1650,7 +1811,57 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     get closed() { return closed },
     /** @param {InStatement} statement @param {InArgs} [args] */
     async execute(statement, args) { return executeStatementWithRetry(statement, args, undefined) },
-    async executeMultiple(sql) { onMain(db => { mainHasLocalState = true; bumpHandleEpoch(db); nonTaskWriteEpoch += 1; try { db.exec(sql) } finally { bumpHandleEpoch(db); nonTaskWriteEpoch += 1 } }) },
+    async executeMultiple(sql) {
+      if (memory || readOnly) {
+        onMain(db => {
+          mainHasLocalState = true
+          bumpHandleEpoch(db)
+          nonTaskWriteEpoch += 1
+          try {
+            db.exec(sql)
+          } finally {
+            bumpHandleEpoch(db)
+            nonTaskWriteEpoch += 1
+          }
+        })
+        return
+      }
+      const touchesWalAutocheckpoint = hasWalAutocheckpointAssignment(sql)
+      onMain(db => {
+        mainHasLocalState = true
+        bumpHandleEpoch(db)
+        nonTaskWriteEpoch += 1
+        /** @type {DatabaseSync | null} */
+        let ownedObserver = null
+        const observer = (!writeSlotLeased && idleWriteHandle)
+          || (!readSlotLeased && idleReadHandle)
+          || (!readSlotLeased
+            ? (idleReadHandle = connect(true, true), armReadIdleEviction(), idleReadHandle)
+            : (ownedObserver = connectRaw(true)))
+        /** @type {string | undefined} */
+        let beforeExternal = undefined
+        try {
+          beforeExternal = readExternalVersion(observer)
+          db.exec(sql)
+        } finally {
+          try {
+            if (db.isTransaction) {
+              db.exec("ROLLBACK")
+            }
+            if (beforeExternal !== undefined && readExternalVersion(observer) !== beforeExternal) {
+              recordCommittedWrite()
+            }
+            if (touchesWalAutocheckpoint) {
+              reconcileWalAutocheckpoint(db)
+            }
+          } finally {
+            ownedObserver?.close()
+            bumpHandleEpoch(db)
+            nonTaskWriteEpoch += 1
+          }
+        }
+      })
+    },
     /** @param {Array<InStatement | [string, InArgs?]>} statements @param {TransactionMode} [mode] */
     async batch(statements, mode = "deferred") {
       if (mode === "write") return batchWriteWithRetry(statements, undefined)
@@ -1667,6 +1878,8 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
     reconnect() {
       close()
       mainHasLocalState = false
+      walAutocheckpointPages = WAL_AUTOCHECKPOINT_PAGES
+      pendingCommitsSinceCheckpoint = 0
       nonTaskWriteEpoch += 1
       cachedMainGrantToken = undefined
       cachedMainGrantRev = undefined
@@ -1679,26 +1892,30 @@ function openLocal(path, memory, readOnly, inspectBoard = false) {
   /** @type {unknown} */
   let cachedMainGrantRev = undefined
   localWriters.set(client, {
-    run: steps => onMain(db => {
-      nonTaskWriteEpoch += 1
-      begin(db, "write")
-      const program = steps()
-      let state = program.next()
-      while (!state.done) {
-        markMainLocalStateFromBatch(state.value)
-        let batchResult
-        try {
-          batchResult = executeBatch(db, state.value)
-        } catch (stepError) {
-          state = program.throw(stepError)
-          continue
+    run: steps => {
+      const value = onMain(db => {
+        nonTaskWriteEpoch += 1
+        begin(db, "write")
+        const program = steps()
+        let state = program.next()
+        while (!state.done) {
+          markMainLocalStateFromBatch(state.value)
+          let batchResult
+          try {
+            batchResult = executeBatch(db, state.value)
+          } catch (stepError) {
+            state = program.throw(stepError)
+            continue
+          }
+          state = program.next(batchResult)
         }
-        state = program.next(batchResult)
-      }
-      db.exec("COMMIT")
-      nonTaskWriteEpoch += 1
-      return state.value
-    }),
+        db.exec("COMMIT")
+        nonTaskWriteEpoch += 1
+        return state.value
+      })
+      recordCommittedWrite()
+      return value
+    },
     start: () => transaction("write", true),
   })
   localExecutors.set(client, {
