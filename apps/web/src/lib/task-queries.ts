@@ -512,28 +512,37 @@ export async function getTodayTaskRows(
       ),
       totals AS (
         SELECT COALESCE(SUM(is_completed_today), 0) AS completed_today,
-               COALESCE(SUM(is_open_unscheduled), 0) AS open_unscheduled,
-               (SELECT json_group_array(json_object('id', id, 'title', title, 'ticket_key', ticket_ref))
-                FROM (
-                  SELECT id, title, ticket_ref FROM classified
-                  WHERE is_completed_today = 1
-                  ORDER BY CASE WHEN typeof(updated_at) = 'text' AND updated_at NOT LIKE '%T%' AND updated_at NOT LIKE '%:%'
-                    THEN ? ELSE ${taskTimestampMs("updated_at")} END DESC, task_rowid DESC
-                  LIMIT 20
-                )) AS completed_json
+               COALESCE(SUM(is_open_unscheduled), 0) AS open_unscheduled
         FROM classified
+      ),
+      completed_row AS (
+        SELECT 1 AS anchor,
+               json_group_array(json_object('id', id, 'title', title, 'ticket_key', ticket_ref)) AS completed_json
+        FROM (
+          SELECT id, title, ticket_ref FROM classified
+          WHERE is_completed_today = 1
+          ORDER BY CASE WHEN typeof(updated_at) = 'text' AND updated_at NOT LIKE '%T%' AND updated_at NOT LIKE '%:%'
+            THEN ? ELSE ${taskTimestampMs("updated_at")} END DESC, task_rowid DESC
+          LIMIT 20
+        )
       ),
       open_candidates AS (
         SELECT id FROM classified WHERE is_open_candidate = 1
+      ),
+      open_rows AS (
+        SELECT ROW_NUMBER() OVER (ORDER BY created_at DESC, rowid DESC) AS _rn,
+               ${TASK_VIEW_COLUMNS}
+        FROM (
+          SELECT scoped_tasks.*
+          FROM open_candidates
+          JOIN scoped_tasks ON scoped_tasks.id = open_candidates.id
+        )
       )
-      SELECT ${TASK_VIEW_COLUMNS}, completed_today, open_unscheduled, completed_json
+      SELECT open_rows.*, totals.completed_today, totals.open_unscheduled, completed_row.completed_json
       FROM totals
-      LEFT JOIN (
-        SELECT scoped_tasks.*
-        FROM open_candidates
-        JOIN scoped_tasks ON scoped_tasks.id = open_candidates.id
-      ) AS tasks ON 1 = 1
-      ORDER BY tasks.created_at DESC, tasks.rowid DESC
+      LEFT JOIN open_rows ON 1 = 1
+      LEFT JOIN completed_row ON COALESCE(open_rows._rn, 1) = completed_row.anchor
+      ORDER BY open_rows._rn ASC
     `,
     args: [...completionFilter.args, includeUnscheduled ? 1 : 0, ...context.args, completionFilter.firstInstant],
   }
