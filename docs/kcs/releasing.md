@@ -50,7 +50,11 @@ The [Stable workflow](../../.github/workflows/publish-addon-images.yml) builds a
 
 After merging the reviewed promotion into `release`, merge that exact commit into `main` with a merge commit so the ancestry check can follow it. If the automatic Stable run started first and failed its source check, rerun that same job with `gh run rerun RUN_ID --repo ryan-winkler/meitheal` once the release commit is reachable from `main`.
 
-For stable, a fresh runner with an empty Docker configuration pulls both versioned images from GHCR and compares their digests with the build job outputs. It uses the App repository credential to commit the manifest, docs and assets with both digests in the commit message. Stable promotion rejects a version lower than the advertised version.
+For Stable, a fresh runner pulls both versioned images anonymously from GHCR and checks their digests against the build outputs. When `ADDON_REPO_TOKEN` is set, the workflow commits the manifest, docs, and assets to the App repository with both digests in the commit message. Stable promotion rejects a version lower than the advertised version.
+
+If the workflow summary requests manual App Store publication, confirm both architecture jobs and the anonymous image check succeeded. Record the release commit and both image digests. Verify each image with `gh attestation verify oci://IMAGE@DIGEST --repo ryan-winkler/meitheal --signer-workflow ryan-winkler/meitheal/.github/workflows/build-app-image.yml --source-digest RELEASE_COMMIT`. Check out that release commit in a clean directory and run `node scripts/app-release.mjs stage stable VERSION APP_CHECKOUT` against a clean App repository `main` checkout. Review the Stable files, verify source and destination refs, and push the catalog commit with the release commit and both digests.
+
+The App Store previously served Canary `fec6e08e09f3` under the Stable slug `meitheal`. Stable `0.0.2` replaced that temporary entry with the Stable image family after verification. Back up the installed App before upgrading from a temporary entry.
 
 The [Canary workflow](../../.github/workflows/publish-canary-images.yml) runs the same build and smoke test on both native architectures. It uses local image tags and has no package permissions or App repository credential. The Actions job summary records the tested revision and links to the release-host procedure for hardware qualification and publication.
 
