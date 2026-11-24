@@ -100,8 +100,16 @@ function stage(channel, config, version, destination) {
   checkDestination(manifestPath)
   checkDestination(join(directory, "translations"), true)
   if (channel === "stable" && existsSync(manifestPath)) {
-    const current = versionOf(readFileSync(manifestPath, "utf8"))
-    if (!stableVersion.test(current) || compareVersions(version, current) < 0) fail("Stable version would move backwards")
+    const currentManifest = readFileSync(manifestPath, "utf8")
+    const current = versionOf(currentManifest)
+    // The Store temporarily served one verified Canary image under the Stable slug.
+    const replacesTemporaryStoreEntry = version === "0.0.2" && current === "fec6e08e09f3" &&
+      /^slug: "meitheal"$/m.test(currentManifest) &&
+      /^stage: experimental$/m.test(currentManifest) &&
+      currentManifest.match(/^image: .+$/gm)?.join() === `image: "${channels.canary.image}"`
+    if (!replacesTemporaryStoreEntry && (!stableVersion.test(current) || compareVersions(version, current) < 0)) {
+      fail("Stable version would move backwards")
+    }
   }
 
   mkdirSync(join(directory, "translations"), { recursive: true })
