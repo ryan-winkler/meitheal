@@ -4,7 +4,7 @@ import { pageLifecycle } from "./page-lifecycle"
 import { ensureTablerStyles } from "./tabler-styles"
 
 const openModals = new WeakMap<HTMLElement, Modal>()
-const BODY_FOCUS_SEL = ".modal-body :is(input:not([type=hidden]),textarea,select,button):not([disabled])"
+const FOCUS_SEL = ".modal-body :is(input:not([type=hidden]),textarea,select,button):not([disabled])"
 
 export async function openTablerModal(dialog: HTMLElement, trigger?: HTMLElement): Promise<void> {
   const signal = pageLifecycle.signal
@@ -26,7 +26,7 @@ export async function openTablerModal(dialog: HTMLElement, trigger?: HTMLElement
   const focusInitial = () => {
     if (!signal.aborted && dialog.classList.contains("show")) {
       const target = dialog.querySelector<HTMLElement>("[data-tabler-initial-focus]:not([disabled])")
-        ?? dialog.querySelector<HTMLElement>(BODY_FOCUS_SEL)
+        ?? dialog.querySelector<HTMLElement>(FOCUS_SEL)
         ?? dialog
       target.focus({ preventScroll: true })
     }
@@ -65,6 +65,7 @@ export async function openTablerModal(dialog: HTMLElement, trigger?: HTMLElement
   } else {
     notifyOverlayChange("opened")
     focusInitial()
+    queueMicrotask(focusInitial)
     requestAnimationFrame(focusInitial)
   }
 }

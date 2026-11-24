@@ -8,7 +8,7 @@ import { prepareTaskCreation } from "../task-creation-service"
 import { requireBoardScope, scopeBoardAccess, scopePermits, validateBoardScope, type BoardScope } from "../board-scope"
 import { boardOperationClient, boardReadTransactionClient, BoardOperationError } from "./board-operation-client"
 import { HierarchyRepository } from "./hierarchy-repository"
-import { TemplateRepository } from "./template-repository"
+import { ROUTINE_NEWLY_COMPLETED, TemplateRepository } from "./template-repository"
 import { TaskRepository, type TaskRow } from "./task-repository"
 import { readNamedBoardPlanning, namedRoutinePeriod } from "./named-board-planning-repository"
 import { editTaskHomeAssistantArea, findTaskHomeAssistantArea, readHomeAssistantAreaPolicyRevision } from "./home-assistant-task-area"
@@ -51,14 +51,20 @@ export class NamedBoardTaskRepository {
     }
   }
 
-  async routineLibrary(actor: BoardActor, placement?: TaskReadPlacement) {
+  async routineLibrary(actor: BoardActor, placement?: TaskReadPlacement, timezone = "UTC") {
     if (!this.matches(actor)) return []
-    const routines = await new TemplateRepository(this.db, this.scope).getRoutinesWithStats(placement?.areaId ?? undefined, placement?.projectId ?? undefined)
+    const routines = await new TemplateRepository(this.db, this.scope).getRoutinesWithStats(
+      placement?.areaId ?? undefined,
+      placement?.projectId ?? undefined,
+      timezone,
+    )
     const board = scopeBoardAccess(this.scope)
+    const now = new Date()
     return routines.map(routine => {
       return { id: routine.id, name: routine.name, cadence: routine.cadence,
-      period: namedRoutinePeriod(routine.cadence), boardId: board.id, boardName: board.name,
-      complete: routine.todayCompleted, canComplete: routine.projectActive && scopePermits(this.scope, { resource: "task", action: "complete" }) && scopePermits(this.scope, { resource: "task", action: "create" }) }
+      period: namedRoutinePeriod(routine.cadence, now, timezone), boardId: board.id, boardName: board.name,
+      complete: routine.todayCompleted, todayTaskId: routine.todayTaskId, currentStreak: routine.currentStreak, projectActive: routine.projectActive,
+      canComplete: routine.projectActive && scopePermits(this.scope, { resource: "task", action: "complete" }) && scopePermits(this.scope, { resource: "task", action: "create" }) }
     })
   }
 
@@ -95,7 +101,7 @@ export class NamedBoardTaskRepository {
         sql`SELECT id, label, enabled FROM board_intakes WHERE board_id = ${boardId} ORDER BY label COLLATE NOCASE, id`,
         sql`SELECT principal_id FROM board_access_grants WHERE board_id = ${boardId} AND principal_type = 'agent' ORDER BY principal_id`,
       ]) : []
-      const planning = !selection || selection.planning ? await readNamedBoardPlanning(reader, this.scope) : null
+      const planning = !selection || selection.planning ? await readNamedBoardPlanning(reader, this.scope, _kanban?.timezone ?? "UTC") : null
       const summary = project ? { count: (await repo.findAll({ projectId: project.id, deferred: false, limit: 1 })).total,
         next: rows.tasks.find(row => !isClosedStatus(row.status) && !row.blocked_by) ? { id: rows.tasks.find(row => !isClosedStatus(row.status) && !row.blocked_by)!.id,
           title: rows.tasks.find(row => !isClosedStatus(row.status) && !row.blocked_by)!.title } : null } : null
@@ -173,15 +179,22 @@ export class NamedBoardTaskRepository {
     return this.outcome(async () => { const result = await this.repo().fileTask(id, version, { ...(areaId === undefined ? {} : { areaId }), ...(projectId === undefined ? {} : { projectId }) });
       return result.ok ? { ok: true, value: { version: Number(result.task.task_version ?? result.task.updated_at) } } : stale })
   }
-  async completeRoutine(actor: BoardActor, boardId: string, routineId: string, requestedPeriod?: string) {
+  async completeRoutine(actor: BoardActor, boardId: string, routineId: string, requestedPeriod?: string, timezone = "UTC") {
     if (!this.matches(actor, boardId)) return unavailable
     return this.outcome(async () => {
       const templates = new TemplateRepository(this.db, this.scope)
       const template = await templates.findById(routineId)
       if (!template) return unavailable
-      if (requestedPeriod && requestedPeriod !== namedRoutinePeriod(String(template.cadence ?? "daily"))) return stale
-      const result = await templates.completeRoutine(routineId, requestedPeriod)
-      return result?.completed ? { ok: true, value: { id: result.taskId } } : unavailable
+      if (requestedPeriod && requestedPeriod !== namedRoutinePeriod(String(template.cadence ?? "daily"), new Date(), timezone)) return stale
+      const result = await templates.completeRoutine(routineId, requestedPeriod, timezone)
+      if (!result?.completed) return unavailable
+      const value: { id: string } = { id: result.taskId }
+      Object.defineProperty(value, ROUTINE_NEWLY_COMPLETED, {
+        value: Boolean(result[ROUTINE_NEWLY_COMPLETED]),
+        enumerable: false,
+        configurable: true,
+      })
+      return { ok: true, value }
     })
   }
   async edit(actor: BoardActor, boardId: string, id: string, version: number, content: Partial<NamedTaskContent>) {

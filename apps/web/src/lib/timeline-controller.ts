@@ -657,8 +657,8 @@ function buildHierarchy(bars: GanttBar[], groupByKey: string = "none"): Hierarch
       else if (groupKey === "type") {
         const kind = bar.original.task_kind || bar.original.task_type || "standard_action"
         const kindLabels: Record<string, string> = {
-          standard_action: "Task", routine: "Routine", shopping_item: "Shopping",
-          calendar_event: "Event",
+          standard_action: "Task", routine: "Routine", routine_instance: "Routine", shopping_item: "Shopping",
+          calendar_event: "Event", checklist: "Checklist", quick_capture: "Quick Capture",
         }
         val = kindLabels[kind] || kind
       }
@@ -1886,7 +1886,15 @@ function renderGantt(
         }
         cell.style.color = "var(--text-muted)"
       } else if (fieldId === "task_kind") {
-        cell.textContent = bar.original.task_kind || bar.original.task_type || "—"
+        const kind = bar.original.task_kind || bar.original.task_type || ""
+        const kindLabels: Record<string, string> = {
+          standard_action: "Task", routine: "Routine", routine_instance: "Routine", shopping_item: "Shopping",
+          calendar_event: "Event", checklist: "Checklist", quick_capture: "Quick Capture",
+        }
+        cell.textContent = kindLabels[kind] || kind || "—"
+        if (kind === "calendar_event" && (bar.original.start_date || bar.original.end_date)) {
+          cell.title = `${bar.original.start_date || "—"} → ${bar.original.end_date || "—"}`
+        }
         cell.style.color = "var(--text-muted)"
       }
 

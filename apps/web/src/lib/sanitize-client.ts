@@ -21,8 +21,8 @@ const ALLOWED_TAGS = new Set([
 
 /** Attributes allowed per-tag. `*` applies to all tags. */
 const ALLOWED_ATTRS: Record<string, Set<string>> = {
-  a: new Set(["href", "name", "target", "rel"]),
-  "*": new Set(["class"]),
+  a: new Set(["href", "name", "rel", "target"]),
+  "*": new Set(["class", "id"]),
 }
 
 /** Allowed URL schemes for href/src. */
@@ -30,24 +30,17 @@ const ALLOWED_SCHEMES = new Set(["http:", "https:", "mailto:"])
 
 /** Dangerous URI schemes to block (case-insensitive). */
 const BLOCKED_SCHEMES = /^\s*(javascript|vbscript|data|blob):/i
-const SAFE_RELATIVE_URL = /^(?:#|\/(?!\/)|\.\.?\/)/
 
 function isAllowedUrl(value: string): boolean {
-  const trimmed = value.trim()
-  if (!trimmed || BLOCKED_SCHEMES.test(trimmed)) return false
-  if (SAFE_RELATIVE_URL.test(trimmed)) return true
+  // Block dangerous schemes first (case-insensitive to prevent bypass)
+  if (BLOCKED_SCHEMES.test(value)) return false
   try {
-    const url = new URL(trimmed, window.location.origin)
+    const url = new URL(value, window.location.origin)
     return ALLOWED_SCHEMES.has(url.protocol)
   } catch {
     return false
   }
 }
-
-/** Tags whose entire subtree must be discarded rather than unwrapped into visible text. */
-const DROP_SUBTREE_TAGS = new Set([
-  "script", "style", "iframe", "noscript", "template", "object", "embed", "svg", "math",
-])
 
 function sanitizeNode(node: Node): Node | null {
   if (node.nodeType === Node.TEXT_NODE) return node.cloneNode(true)
@@ -57,10 +50,8 @@ function sanitizeNode(node: Node): Node | null {
   const el = node as Element
   const tag = el.tagName.toLowerCase()
 
-  if (DROP_SUBTREE_TAGS.has(tag)) return null
-
   if (!ALLOWED_TAGS.has(tag)) {
-    // Strip unknown layout wrappers while keeping safe inner text/formatting
+    // Strip the tag but keep safe children
     const frag = document.createDocumentFragment()
     for (const child of Array.from(el.childNodes)) {
       const clean = sanitizeNode(child)

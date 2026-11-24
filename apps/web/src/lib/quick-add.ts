@@ -34,9 +34,23 @@ export function parseQuickTask(input: string): ParsedTask {
 }
 
 const CHECKLIST_LISTS = [
-  { pattern: /^shopping:\s*(.+)/i, title: "Shopping", label: "shopping" },
-  { pattern: /^errand:\s*(.+)/i, title: "Errands", label: "errands" },
+  { pattern: /^shopping:\s*(.+)/i, title: "Shopping", label: "shopping", taskKind: "shopping_item" as const },
+  { pattern: /^errand:\s*(.+)/i, title: "Errands", label: "errands", taskKind: "checklist" as const },
 ] as const
+
+function parseShoppingToken(raw: string): { name: string; qty: number } {
+  const leading = raw.match(/^(\d+)\s*[x×]\s+(.+)$/i)
+  if (leading) {
+    const qty = Math.min(999, Math.max(1, Number(leading[1])))
+    return { name: leading[2]!.trim(), qty }
+  }
+  const trailing = raw.match(/^(.+?)\s*(?:\((\d+)\)|[x×]\s*(\d+))$/i)
+  if (trailing) {
+    const qty = Math.min(999, Math.max(1, Number(trailing[2] ?? trailing[3])))
+    return { name: trailing[1]!.trim(), qty }
+  }
+  return { name: raw, qty: 1 }
+}
 
 /** Build the create payload for quick add text. defaultDueDate applies only when the text names no date. */
 export function quickAddPayload(text: string, defaultDueDate: string | null = null): { payload: TaskCreatePayload; parsed: ParsedTask } {
@@ -48,13 +62,27 @@ export function quickAddPayload(text: string, defaultDueDate: string | null = nu
   if (parsed.labels.length > 0) payload.labels = JSON.stringify(parsed.labels)
   if (parsed.assignee) payload.assigned_to = parsed.assignee
 
+  const cleanedSource = (parsed.title || text).trim()
   for (const list of CHECKLIST_LISTS) {
-    const match = text.trim().match(list.pattern)
+    const match = cleanedSource.match(list.pattern) ?? text.trim().match(list.pattern)
     if (!match) continue
-    const items = match[1]!.split(",").map(item => item.trim()).filter(Boolean)
+    const rawItems = match[1]!.split(",").map(item => item.trim()).filter(Boolean)
     payload.title = list.title
-    payload.labels = JSON.stringify([list.label])
-    payload.checklists = JSON.stringify(items.map(createChecklistItem))
+    payload.task_kind = list.taskKind
+    payload.labels = JSON.stringify([...new Set([...parsed.labels, list.label])])
+    if (list.taskKind === "shopping_item") {
+      const structured = rawItems.map(entry => {
+        const { name, qty } = parseShoppingToken(entry)
+        return { name, qty, category: "" }
+      })
+      payload.custom_fields = JSON.stringify({ items: structured })
+      payload.checklists = JSON.stringify(
+        structured.map(item => createChecklistItem(item.qty > 1 ? `${item.qty}× ${item.name}` : item.name)),
+      )
+    } else {
+      payload.checklists = JSON.stringify(rawItems.map(createChecklistItem))
+    }
+    break
   }
   return { payload, parsed }
 }

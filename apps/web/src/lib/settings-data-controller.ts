@@ -22,6 +22,7 @@ import {
 } from "@lib/custom-field-defs"
 import { flushRulesSave, withConfigurationMutation, withRulesReplacement } from "@lib/settings-rules-controller"
 import { downloadBlob, log } from "@lib/settings-utils"
+import { byId, domEl, qs, setAttr } from "@lib/dom-helpers"
 
 type CustomField = CustomFieldDef
 
@@ -43,43 +44,42 @@ function updateCustomFields(update: (fields: CustomField[]) => CustomField[]): P
 }
 
 function renderCustomFieldRows(fields: CustomField[]): void {
-  const list = document.getElementById("custom-fields-list")
+  const list = byId("custom-fields-list")
   if (!list) return
   list.querySelectorAll('[data-cf-saved-row="true"]').forEach(el => el.remove())
   for (const field of fields) {
-    const row = document.createElement("div")
+    const row = domEl("div")
     row.className = "custom-field-row"
     row.dataset.cfSavedRow = "true"
 
-    const nameInput = document.createElement("input")
+    const nameInput = domEl("input")
     nameInput.type = "text"
     nameInput.className = "form-input"
-    nameInput.setAttribute("aria-label", "Field name")
+    setAttr(nameInput, "aria-label", "Field name")
     nameInput.value = field.name
     nameInput.disabled = true
 
-    const typeSelect = document.createElement("select")
-    typeSelect.className = "form-select"
-    typeSelect.setAttribute("aria-label", `${field.name} field type`)
+    const typeSelect = domEl("select", "form-select")
+    setAttr(typeSelect, "aria-label", `${field.name} field type`)
     typeSelect.disabled = true
-    const opt = document.createElement("option")
+    const opt = domEl("option")
     opt.value = field.type
     opt.selected = true
     opt.textContent = field.type.charAt(0).toUpperCase() + field.type.slice(1)
     typeSelect.appendChild(opt)
 
-    const savedSpan = document.createElement("span")
+    const savedSpan = domEl("span")
     savedSpan.style.color = "var(--text-muted)"
     savedSpan.style.fontSize = "12px"
     savedSpan.textContent = "Saved"
 
-    const removeBtn = document.createElement("button")
+    const removeBtn = domEl("button")
     removeBtn.type = "button"
     removeBtn.className = "btn btn-ghost"
     removeBtn.style.padding = "4px 8px"
     removeBtn.style.color = "var(--danger)"
     removeBtn.title = "Remove field definition (data on existing tasks is preserved)"
-    removeBtn.setAttribute("aria-label", `Remove ${field.name}`)
+    setAttr(removeBtn, "aria-label", `Remove ${field.name}`)
     removeBtn.textContent = "×"
 
     row.append(nameInput, typeSelect, savedSpan, removeBtn)
@@ -100,7 +100,7 @@ function renderCustomFieldRows(fields: CustomField[]): void {
 
 export function initDataSettings(): void {
   // JSON export
-  const exportJsonBtn = document.getElementById("export-json-btn")
+  const exportJsonBtn = byId("export-json-btn")
   if (exportJsonBtn) {
     pageLifecycle.on(exportJsonBtn, "click", async (e) => {
     e.preventDefault()
@@ -114,11 +114,11 @@ export function initDataSettings(): void {
     })
   }
 
-  const exportSettings = document.getElementById("export-settings-btn")
+  const exportSettings = byId("export-settings-btn")
   if (exportSettings) pageLifecycle.on(exportSettings, "click", async event => {
     event.preventDefault()
     if (exportSettings.getAttribute("aria-busy") === "true") return
-    exportSettings.setAttribute("aria-busy", "true")
+    setAttr(exportSettings, "aria-busy", "true")
     const signal = pageLifecycle.signal
     try {
       await flushRulesSave()
@@ -134,7 +134,7 @@ export function initDataSettings(): void {
   })
 
   // Raw DB download with confirmation dialog
-  const exportDbBtn = document.getElementById("export-db-btn")
+  const exportDbBtn = byId("export-db-btn")
   const exportDbForm = document.querySelector<HTMLFormElement>("#export-db-form")
   if (exportDbBtn && exportDbForm) {
     pageLifecycle.on(exportDbBtn, "click", async () => {
@@ -151,7 +151,7 @@ export function initDataSettings(): void {
   }
 
   // Import Config Binding
-  const importInput = document.getElementById("import-settings-input") as HTMLInputElement
+  const importInput = byId("import-settings-input") as HTMLInputElement
   if (importInput) {
     pageLifecycle.on(importInput, "change", async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0]
@@ -192,7 +192,7 @@ export function initDataSettings(): void {
   }
 
   // Restore custom fields via board-scoped API, falling back to loaded settings payload
-  const cfList = document.getElementById("custom-fields-list")
+  const cfList = byId("custom-fields-list")
   if (cfList) {
     void fetchBoardCustomFields(pageLifecycle.signal)
       .then((fields) => {
@@ -202,43 +202,42 @@ export function initDataSettings(): void {
   }
 
   // Add custom field
-  const addFieldBtn = document.getElementById("add-custom-field")
+  const addFieldBtn = byId("add-custom-field")
   if (addFieldBtn) {
     pageLifecycle.on(addFieldBtn, "click", () => {
-    const list = document.getElementById("custom-fields-list")
+    const list = byId("custom-fields-list")
     if (!list) return
-    const row = document.createElement("div")
+    const row = domEl("div")
     row.className = "custom-field-row"
-    const nameInput = document.createElement("input")
+    const nameInput = domEl("input")
     nameInput.type = "text"
     nameInput.className = "form-input"
-    nameInput.setAttribute("aria-label", "Field name")
+    setAttr(nameInput, "aria-label", "Field name")
     nameInput.placeholder = "Field name"
 
-    const typeSelect = document.createElement("select")
-    typeSelect.className = "form-select cf-type-select"
-    typeSelect.setAttribute("aria-label", "Field type")
+    const typeSelect = domEl("select", "form-select cf-type-select")
+    setAttr(typeSelect, "aria-label", "Field type")
     for (const val of VALID_CUSTOM_FIELD_TYPES) {
       typeSelect.add(new Option(CUSTOM_FIELD_TYPE_LABELS[val as CustomFieldType] ?? val, val))
     }
 
-    const optionsInput = document.createElement("input")
+    const optionsInput = domEl("input")
     optionsInput.type = "text"
     optionsInput.className = "form-input cf-options-input"
-    optionsInput.setAttribute("aria-label", "Field options")
+    setAttr(optionsInput, "aria-label", "Field options")
     optionsInput.placeholder = "Options (comma-separated)"
     optionsInput.style.cssText = "display:none;flex:2;"
 
-    const saveBtnEl = document.createElement("button")
+    const saveBtnEl = domEl("button")
     saveBtnEl.type = "button"
     saveBtnEl.className = "btn btn-primary custom-field-save"
     saveBtnEl.style.cssText = "padding:4px 12px;font-size:12px;"
     saveBtnEl.textContent = "Save"
 
-    const discardBtn = document.createElement("button")
+    const discardBtn = domEl("button")
     discardBtn.type = "button"
     discardBtn.className = "btn btn-ghost"
-    discardBtn.setAttribute("aria-label", "Discard new field")
+    setAttr(discardBtn, "aria-label", "Discard new field")
     discardBtn.style.cssText = "padding:4px 8px;color:var(--danger);"
     discardBtn.textContent = "×"
     pageLifecycle.on(discardBtn, "click", () => row.remove())
@@ -252,13 +251,13 @@ export function initDataSettings(): void {
 
     nameInput.focus()
 
-    const saveButton = row.querySelector<HTMLButtonElement>(".custom-field-save")
+    const saveButton = qs<HTMLButtonElement>(row, ".custom-field-save")
     if (!saveButton) return
     pageLifecycle.on(saveButton, "click", async () => {
       if (saveButton.disabled) return
       const nameInput = row.querySelector("input") as HTMLInputElement
-      const typeSelect = row.querySelector(".cf-type-select") as HTMLSelectElement
-      const optionsInput = row.querySelector(".cf-options-input") as HTMLInputElement
+      const typeSelect = qs(row, ".cf-type-select") as HTMLSelectElement
+      const optionsInput = qs(row, ".cf-options-input") as HTMLInputElement
       const name = nameInput?.value?.trim()
       const type = typeSelect?.value || "text"
       if (!name) {
@@ -282,7 +281,7 @@ export function initDataSettings(): void {
         nameInput.disabled = true
         typeSelect.disabled = true
         if (optionsInput) optionsInput.disabled = true
-        const saveBtn = row.querySelector(".custom-field-save") as HTMLButtonElement
+        const saveBtn = qs(row, ".custom-field-save") as HTMLButtonElement
         if (saveBtn) {
           saveBtn.textContent = "✓ Saved"
           saveBtn.disabled = true
@@ -302,8 +301,8 @@ export function initDataSettings(): void {
 /** Restore data/export-related settings from loaded settings object */
 export function restoreDataSettings(settings: Record<string, unknown>): void {
   try {
-    const list = document.getElementById("custom-fields-list")
-    if (list && settings.custom_fields && list.querySelector('[data-cf-saved-row="true"]') === null) {
+    const list = byId("custom-fields-list")
+    if (list && settings.custom_fields && qs(list, '[data-cf-saved-row="true"]') === null) {
       const fields = normalizeCustomFieldDefs(settings.custom_fields)
       if (fields.length > 0) renderCustomFieldRows(fields)
     }

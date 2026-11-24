@@ -1991,16 +1991,32 @@ async function pushCurrentTaskToCalendar(context: IntegrationScope, taskId: stri
   }
   if (!(await operationAllowed()) || (await isImportedCalendarTask(taskId, context))) return false
   const task = await repo.findById(taskId)
-  if (!task || typeof task.due_date !== "string") return false
-  const dueDate = task.due_date,
+  const scheduledStart = task
+    ? (task.task_kind === "calendar_event"
+      ? (typeof task.start_date === "string" && task.start_date.trim() ? task.start_date.trim() : task.due_date)
+      : task.due_date)
+    : null
+  if (!task || typeof scheduledStart !== "string" || !scheduledStart.trim()) return false
+  const dueDate = scheduledStart.trim(),
     title = task.title
-  let start = dueDate,
-    end: string
-  if (DATE_ONLY_PATTERN.test(dueDate)) end = shiftCalendarDay(dueDate, 1)
-  else {
-    const instant = Date.parse(dueDate)
-    if (!Number.isFinite(instant)) return false
-    end = new Date(instant + 3600000).toISOString()
+  const start = dueDate
+  let end: string
+  const explicitEnd = task.task_kind === "calendar_event" && typeof task.end_date === "string" && task.end_date.trim()
+    ? task.end_date.trim()
+    : null
+  if (DATE_ONLY_PATTERN.test(dueDate)) {
+    if (explicitEnd && DATE_ONLY_PATTERN.test(explicitEnd) && explicitEnd > dueDate) {
+      end = explicitEnd
+    } else {
+      end = shiftCalendarDay(dueDate, 1)
+    }
+  } else {
+    const startInstant = Date.parse(dueDate)
+    if (!Number.isFinite(startInstant)) return false
+    const endInstant = explicitEnd ? Date.parse(explicitEnd) : NaN
+    end = Number.isFinite(endInstant) && endInstant > startInstant
+      ? explicitEnd!
+      : new Date(startInstant + 3600000).toISOString()
   }
   const array = (value: unknown): unknown[] => {
     try {
@@ -2052,9 +2068,10 @@ async function pushCurrentTaskToCalendar(context: IntegrationScope, taskId: stri
   expectedTaskVersion = snapshot.taskVersion
   if (!(await operationAllowed())) return false
   if (waited && !snapshot.confirmation) {
+    const reminderMs = Date.parse(dueDate)
     const reminder = await mod.getPersistenceClient().execute({
       sql: "SELECT 1 FROM calendar_reminder_deliveries WHERE task_id=? AND entity_id=? AND due_ms=?",
-      args: [taskId, config.entityId, Date.parse(task.due_date)],
+      args: [taskId, config.entityId, Number.isFinite(reminderMs) ? reminderMs : 0],
     })
     if (reminder.rows.length) return false
   }

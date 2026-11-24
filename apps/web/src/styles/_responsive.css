@@ -502,23 +502,7 @@
   }
 
   /* P3: Expanded high-contrast coverage */
-  .kanban-card {
-    border: 1px solid ButtonText;
-  }
-
-  .kanban-column {
-    border: 1px solid ButtonText;
-  }
-
-  .card-action-btn,
-  .btn,
-  button {
-    border: 1px solid ButtonText;
-  }
-
-  input,
-  select,
-  textarea {
+  :is(.kanban-card, .kanban-column, .card-action-btn, .btn, button, input, select, textarea) {
     border: 1px solid ButtonText;
   }
 

@@ -4,25 +4,21 @@ import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { deferred, shouldSkipBrowserSpecs } from "./_helpers"
 import { saveAppearance } from "../helpers/appearance-settings"
 
-async function openLookAndFeel(page: import("@playwright/test").Page): Promise<void> {
-  await page.goto("/settings#look-and-feel-settings")
-  await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "")
-  await expect(page.locator('[data-settings-nav="look-and-feel-settings"]').first()).toHaveAttribute(
-    "aria-current",
-    "location",
-  )
-}
-
 test.describe("Appearance preferences", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
   test.use({ serviceWorkers: "block" })
 
   test.beforeEach(async ({ page }) => {
-    await page.addInitScript(() => localStorage.setItem("meitheal-theme", localStorage.getItem("meitheal-theme") || "dark"))
-  })
+    await page.addInitScript(() => localStorage.setItem("meitheal-theme", localStorage.getItem("meitheal-theme") || "dark"));
+    await page.goto("/settings#look-and-feel-settings");
+    await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "");
+    await expect(page.locator('[data-settings-nav="look-and-feel-settings"]').first()).toHaveAttribute(
+      "aria-current",
+      "location",
+    );
+  });
 
   test("all ten appearance categories apply, persist and reset without changing the theme", async ({ page }) => {
-    await openLookAndFeel(page)
     await page.locator("#theme-select").selectOption("dark")
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark")
     await page.setViewportSize({ width: 1600, height: 1000 })
@@ -31,6 +27,7 @@ test.describe("Appearance preferences", () => {
       localStorage.setItem("meitheal_sidebar_collapsed", "true")
       localStorage.setItem("meitheal_project_nav_group_collapsed", "false")
     })
+    await page.goto("/settings#look-and-feel-settings")
     await page.reload()
     // One Look and Feel form holds the theme and every appearance category.
     const visualForm = page.locator("#appearance-preferences-form")
@@ -94,12 +91,12 @@ test.describe("Appearance preferences", () => {
   })
 
   test("sidebar modes preserve remembered state and expand for keyboard focus", async ({ page }) => {
-    await openLookAndFeel(page)
     await page.setViewportSize({ width: 1440, height: 900 })
     await page.evaluate(() => {
       localStorage.setItem("meitheal_sidebar_collapsed", "false")
       localStorage.setItem("meitheal-appearance", JSON.stringify({ sidebar: "folded" }))
     })
+    await page.goto("/settings#look-and-feel-settings")
     await page.reload()
     const sidebar = page.locator("#sidebar")
     const body = page.locator("body")
@@ -133,8 +130,8 @@ test.describe("Appearance preferences", () => {
   })
 
   test("neutral palette follows Light and Auto while fluid width and sticky headers remain effective", async ({ page }) => {
-    await openLookAndFeel(page)
     await page.setViewportSize({ width: 2000, height: 1000 })
+    await page.goto("/settings#look-and-feel-settings")
     const visualForm = page.locator("#appearance-preferences-form")
     await visualForm.locator('[name="base"]').selectOption("stone")
     await visualForm.locator('[name="width"]').selectOption("fluid")
@@ -156,7 +153,6 @@ test.describe("Appearance preferences", () => {
   })
 
   test("a pending save commits its submitted choices and leaves later edits in preview", async ({ page }) => {
-    await openLookAndFeel(page)
     const root = page.locator("html")
     const theme = page.locator("#theme-select")
     const form = page.locator("#appearance-preferences-form")
@@ -198,10 +194,10 @@ test.describe("Appearance preferences", () => {
   })
 
   test("appearance preserves other saved preferences and keeps the draft if storage rejects it", async ({ page }) => {
-    await openLookAndFeel(page)
     await page.evaluate(() => localStorage.setItem("meitheal-appearance", JSON.stringify({
       font: "invalid", radius: "9", navigation: "navbar", futurePreference: "retained",
     })))
+    await page.goto("/settings#look-and-feel-settings")
     await page.reload()
     const root = page.locator("html")
     const form = page.locator("#appearance-preferences-form")
@@ -244,6 +240,7 @@ test.describe("Appearance preferences", () => {
   })
 
   test("expanded Boards and Areas survive More, wide navbar and phone drawer handoffs", async ({ page, request, baseURL }) => {
+    test.slow()
     const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin }, "", true)
     const areaResponse = await request.post("/api/areas", { headers, data: { name: "Resize Area" } })
     expect(areaResponse.status()).toBe(201)

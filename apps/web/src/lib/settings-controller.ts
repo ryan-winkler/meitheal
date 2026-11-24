@@ -37,23 +37,24 @@ import { initWebserverSettings } from "@lib/settings-webserver-controller"
 import { initPluginsSettings } from "@lib/settings-plugins-controller"
 import { initSettingsHelp } from "@lib/settings-help-controller"
 import { initShortcutsSettings, restoreShortcutsSettings } from "@lib/settings-shortcuts-controller"
+import { byId, qs, setAttr } from "@lib/dom-helpers"
 
 const log = createClientLogger("settings")
 
 export function initSettingsController(): void {
   function setIntegrationCardExpanded(header: HTMLButtonElement, expanded: boolean): void {
     const bodyId = header.getAttribute("aria-controls")
-    const body = bodyId ? document.getElementById(bodyId) : null
+    const body = bodyId ? byId(bodyId) : null
     if (!body) return
 
     if (!expanded && body.contains(document.activeElement)) header.focus()
     body.inert = !expanded
-    header.setAttribute("aria-expanded", String(expanded))
+    setAttr(header, "aria-expanded", String(expanded))
   }
 
   window.expandIntegrationCard = (bodyId: string) => {
-    const card = document.getElementById(bodyId)?.closest(".integration-card")
-    const header = card?.querySelector<HTMLButtonElement>(".integration-card__header")
+    const card = byId(bodyId)?.closest(".integration-card")
+    const header = qs<HTMLButtonElement>(card, ".integration-card__header")
     if (header) setIntegrationCardExpanded(header, true)
   }
 
@@ -79,11 +80,11 @@ export function initSettingsController(): void {
   initSettingsHelp()
   initShortcutsSettings()
 
-  const status = document.getElementById("settings-load-status")
-  const loading = document.getElementById("settings-loading")
-  const error = document.getElementById("settings-load-error")
-  const retry = document.getElementById("settings-load-retry")
-  const panels = document.getElementById("settings-panels")
+  const status = byId("settings-load-status")
+  const loading = byId("settings-loading")
+  const error = byId("settings-load-error")
+  const retry = byId("settings-load-retry")
+  const panels = byId("settings-panels")
   if (!status || !loading || !error || !retry || !panels) return
 
   async function load(): Promise<void> {

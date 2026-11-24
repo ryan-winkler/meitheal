@@ -45,7 +45,7 @@ import { compareTodayRows, matchesTodayFilters, lockTodayTaskStatus, syncTodayTa
 import { setupUnscheduledSection } from "./controllers/today-unscheduled"
 
 // ── Extracted controller modules ──────────────────────────────────────────
-import { setupHabitsSection, saveTaskAsHabit as _saveTaskAsHabit } from "./controllers/today-habits"
+import { setupHabitsSection } from "./controllers/today-habits"
 import { setupEveningReview } from "./controllers/today-evening-review"
 import { setupCalendarEvents } from "./controllers/today-calendar-events"
 import { setupBatchUI } from "./controllers/today-batch-actions"
@@ -73,9 +73,6 @@ const WIP_LIMIT = 6
 let lm = createListenerManager()
 
 // Re-export for external consumers
-export async function saveTaskAsHabit(taskId: string, container: HTMLElement) {
-  return _saveTaskAsHabit(taskId, container, lm)
-}
 export async function handleRecurrencePostComplete(taskId: string) {
   return _handleRecurrencePostComplete(taskId, lm)
 }
@@ -98,7 +95,7 @@ export function initTodayPage(options?: Partial<TodayControllerOptions>) {
 
   initPageShellNavigation({
     barId: "today-bar",
-    shellId: "today-shell",
+    shellId: "page-shell",
     sectionSelector: "[data-today-section]",
     sectionIds: TODAY_SECTIONS.map((section) => section.id),
     defaultSectionId: "today-overview",

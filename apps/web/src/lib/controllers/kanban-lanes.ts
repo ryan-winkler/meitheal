@@ -9,10 +9,12 @@ import { createClientLogger } from "@lib/client-logger"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { promptDialog } from "@lib/prompt-dialog"
+import { safeFetch } from "@lib/safe-fetch"
 import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
 import { showToast } from "@lib/toast"
 
 const log = createClientLogger("kanban-lanes")
+const LANE_API_PATH_RE = /^\/api\/lanes(?:\/[A-Za-z0-9._-]+)?$/
 
 interface LanePanelLane {
   id: string
@@ -76,8 +78,13 @@ export function initLaneManagementPanel(): void {
     eventAction: string,
     opts: { refreshList?: boolean; onSuccess?: () => void } = {},
   ): Promise<boolean> {
+    if (!LANE_API_PATH_RE.test(url)) {
+      log.warn("Blocked unexpected lane API path", { url })
+      notify(failMessage, "error")
+      return false
+    }
     try {
-      const res = await fetch(url, { method, headers: laneHeaders(true), body: JSON.stringify(body) })
+      const res = await safeFetch(url, { method, headers: laneHeaders(true), body: JSON.stringify(body) })
       if (!res.ok) {
         const err = await res.json().catch(() => null) as { error?: string } | null
         notify(err?.error ?? failMessage, "error")

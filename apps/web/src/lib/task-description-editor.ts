@@ -1,4 +1,5 @@
 import { createSpriteIconElement, type IconName } from "../generated/icon-registry"
+import { domEl, qs, setAttr } from "@lib/dom-helpers"
 
 /** Shared accessible Markdown / Visual (HugeRTE) / Preview description editor enhancer. */
 
@@ -44,6 +45,8 @@ const HUGERTE_PLUGINS = "advlist autolink lists link code codesample table"
 const HUGERTE_TOOLBAR =
   "undo redo | blocks | bold italic strikethrough backcolor | bullist numlist outdent indent | blockquote link code codesample table | removeformat"
 
+let nextEditorInstanceId = 0
+
 let hugeRteLoadPromise: Promise<HugeRteGlobal | null> | null = null
 
 const getHugeRteBaseUrl = () =>
@@ -85,7 +88,7 @@ function loadHugeRte(): Promise<HugeRteGlobal | null> {
       existing.addEventListener("error", () => { hugeRteLoadPromise = null; resolve(null) }, { once: true })
       return
     }
-    const s = document.createElement("script")
+    const s = domEl("script")
     s.src = scriptUrl
     s.async = true
     s.dataset.hugerteSrc = scriptUrl
@@ -104,10 +107,8 @@ export async function renderMarkdownPreviewInto(
   const { afterRender, shouldApply } = options
   if (!md.trim()) {
     if (shouldApply && !shouldApply()) return false
-    const p = document.createElement("p")
-    const empty = document.createElement("em")
-    empty.className = "text-text-muted"
-    empty.textContent = "No description provided."
+    const p = domEl("p")
+    const empty = domEl("em", "text-text-muted", "No description provided.")
     p.append(empty)
     target.replaceChildren(p)
     return true
@@ -138,7 +139,7 @@ function serializeInlineCode(raw: string): string {
 function serializeTable(table: HTMLTableElement, depth: number): string {
   const rows = Array.from(table.querySelectorAll("tr")).map(tr =>
     Array.from(tr.querySelectorAll("th, td")).map(cell =>
-      serializeChildren(cell, depth).replace(/\s*\n+\s*/g, " ").replace(/\|/g, "\\|").trim(),
+      serializeChildren(cell, depth).replace(/\\/g, "\\\\").replace(/\s*\n+\s*/g, " ").replace(/\|/g, "\\|").trim(),
     ),
   )
   if (!rows[0]?.length) return ""
@@ -170,7 +171,7 @@ function serializeListElement(listEl: HTMLElement, depth: number): string {
   const indent = "  ".repeat(depth)
   const items = Array.from(listEl.children).filter(c => c.tagName.toLowerCase() === "li").map((node, idx) => {
     const li = node as HTMLLIElement
-    const check = li.querySelector(":scope > .md-check")
+    const check = qs(li, ":scope > .md-check")
     const { inline, nested } = serializeListItemChildren(li, depth)
     let prefix = ol ? `${idx + 1}.` : "-"
     let text = inline
@@ -352,31 +353,30 @@ export function enhanceDescriptionEditor(
     ],
   ]
 
-  const frame = document.createElement("div")
+  const frame = domEl("div")
   frame.className = "md-editor-frame"
-  const header = document.createElement("div")
+  const header = domEl("div")
   header.className = "md-editor-header"
-  const toolbar = document.createElement("div")
+  const toolbar = domEl("div")
   toolbar.className = "md-editor-toolbar"
-  toolbar.setAttribute("role", "toolbar")
-  toolbar.setAttribute("aria-label", "Formatting tools")
+  setAttr(toolbar, "role", "toolbar")
+  setAttr(toolbar, "aria-label", "Formatting tools")
 
   toolbarGroups.forEach((group, gi) => {
     if (gi > 0) {
-      const sep = document.createElement("span")
+      const sep = domEl("span")
       sep.className = "md-toolbar-sep"
-      sep.setAttribute("aria-hidden", "true")
+      setAttr(sep, "aria-hidden", "true")
       toolbar.appendChild(sep)
     }
-    const gEl = document.createElement("div")
-    gEl.className = "md-toolbar-group"
+    const gEl = domEl("div", "md-toolbar-group")
     for (const [id, label, icon, run] of group) {
-      const btn = document.createElement("button")
+      const btn = domEl("button")
       btn.type = "button"
       btn.className = "md-tool-btn"
       btn.dataset.mdAction = id
       btn.title = label
-      btn.setAttribute("aria-label", label)
+      setAttr(btn, "aria-label", label)
       btn.appendChild(createSpriteIconElement(icon, { size: 16 }))
       btn.addEventListener("click", () => { if (currentMode !== "markdown") void setMode("markdown"); run(field) }, { signal })
       gEl.appendChild(btn)
@@ -384,57 +384,55 @@ export function enhanceDescriptionEditor(
     toolbar.appendChild(gEl)
   })
 
-  const visualStatusHint = document.createElement("span")
-  visualStatusHint.className = "md-editor-mode-label"
+  const visualStatusHint = domEl("span", "md-editor-mode-label")
   visualStatusHint.hidden = true
 
-  const modesWrap = document.createElement("div")
-  modesWrap.className = "md-editor-modes"
-  modesWrap.setAttribute("role", "tablist")
-  modesWrap.setAttribute("aria-label", "Description editor mode")
+  const modesWrap = domEl("div", "md-editor-modes")
+  setAttr(modesWrap, "role", "tablist")
+  setAttr(modesWrap, "aria-label", "Description editor mode")
 
-  const baseId = field.id || `md-editor-${Math.random().toString(36).slice(2, 8)}`
+  const baseId = field.id || `md-editor-${++nextEditorInstanceId}`
   const modes: readonly DescriptionEditorMode[] = ["visual", "markdown", "preview"]
   const panelIds: Record<DescriptionEditorMode, string> = {
     visual: `${baseId}-panel-visual`, markdown: `${baseId}-panel-markdown`, preview: `${baseId}-panel-preview`,
   }
 
-  const visual = document.createElement("div")
+  const visual = domEl("div")
   visual.id = panelIds.visual
   visual.className = "md-visual-surface"
-  visual.setAttribute("role", "tabpanel")
+  setAttr(visual, "role", "tabpanel")
   visual.hidden = true
-  visual.setAttribute("aria-label", field.getAttribute("aria-label") || "Visual description editor")
+  setAttr(visual, "aria-label", field.getAttribute("aria-label") || "Visual description editor")
 
-  const preview = document.createElement("div")
+  const preview = domEl("div")
   preview.id = panelIds.preview
   preview.className = "prose md-preview-surface wrap-break-word"
-  preview.setAttribute("role", "tabpanel")
+  setAttr(preview, "role", "tabpanel")
   preview.hidden = true
 
   const modeButtons = new Map<DescriptionEditorMode, HTMLButtonElement>()
   for (const [m, text] of [["visual", "Visual"], ["markdown", "Markdown"], ["preview", "Preview"]] as const) {
-    const btn = document.createElement("button")
+    const btn = domEl("button")
     btn.type = "button"
     btn.id = `${baseId}-tab-${m}`
     btn.role = "tab"
     btn.className = "md-mode-btn"
     btn.dataset.mdMode = m
     btn.textContent = text
-    btn.setAttribute("aria-controls", m === "markdown" ? field.id || panelIds.markdown : panelIds[m])
-    btn.setAttribute("aria-selected", String(m === "markdown"))
+    setAttr(btn, "aria-controls", m === "markdown" ? field.id || panelIds.markdown : panelIds[m])
+    setAttr(btn, "aria-selected", String(m === "markdown"))
     btn.classList.toggle("active", m === "markdown")
     btn.tabIndex = m === "markdown" ? 0 : -1
     modeButtons.set(m, btn)
     modesWrap.appendChild(btn)
   }
-  visual.setAttribute("aria-labelledby", modeButtons.get("visual")!.id)
-  preview.setAttribute("aria-labelledby", modeButtons.get("preview")!.id)
+  setAttr(visual, "aria-labelledby", modeButtons.get("visual")!.id)
+  setAttr(preview, "aria-labelledby", modeButtons.get("preview")!.id)
   header.append(toolbar, visualStatusHint, modesWrap)
 
-  const notice = document.createElement("p")
+  const notice = domEl("p")
   notice.className = "md-editor-notice"
-  notice.setAttribute("role", "status")
+  setAttr(notice, "role", "status")
   notice.hidden = true
 
   field.parentElement!.insertBefore(frame, field)
@@ -478,10 +476,9 @@ export function enhanceDescriptionEditor(
 
   async function renderFallbackEditable(md: string, readonly: boolean, seq: number): Promise<void> {
     if (signal.aborted || seq !== renderSeq) return
-    const surface = document.createElement("div")
-    surface.className = "md-visual-fallback prose"
+    const surface = domEl("div", "md-visual-fallback prose")
     surface.contentEditable = readonly ? "false" : "true"
-    surface.setAttribute("aria-label", field.getAttribute("aria-label") || "Visual description editor")
+    setAttr(surface, "aria-label", field.getAttribute("aria-label") || "Visual description editor")
     visual.replaceChildren(surface)
     fallbackEditable = surface
 
@@ -500,7 +497,7 @@ export function enhanceDescriptionEditor(
         const range = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null
         const pasted = await sanitizePastedHtml(html, e.clipboardData?.getData("text/plain") ?? "")
         if (!pasted || signal.aborted) return
-        if (pasted.doc.body.querySelector("table, pre") || hasLossyStructure(pasted.md)) {
+        if (qs(pasted.doc.body, "table, pre") || hasLossyStructure(pasted.md)) {
           const s = field.selectionStart ?? field.value.length, end = field.selectionEnd ?? field.value.length
           field.setRangeText(pasted.md, s, end, "end")
           field.dispatchEvent(new Event("input", { bubbles: true }))
@@ -521,7 +518,7 @@ export function enhanceDescriptionEditor(
       }, { signal })
     }
 
-    if (!md.trim()) { surface.replaceChildren(document.createElement("p")); return }
+    if (!md.trim()) { surface.replaceChildren(domEl("p")); return }
     await renderMarkdownPreviewInto(surface, md, { shouldApply: () => !signal.aborted && seq === renderSeq })
   }
 
@@ -541,7 +538,7 @@ export function enhanceDescriptionEditor(
     const initialHtml = md.trim() ? sanitizeClient(renderMarkdownToHtml(md)) : ""
     if (!hugeRte) { await renderFallbackEditable(md, false, seq); return }
 
-    const target = document.createElement("textarea")
+    const target = domEl("textarea")
     target.className = "md-hugerte-target"
     target.value = initialHtml
     visual.replaceChildren(target)
@@ -582,9 +579,7 @@ export function enhanceDescriptionEditor(
   async function renderPreview(md: string, seq: number): Promise<void> {
     if (signal.aborted || seq !== renderSeq) return
     if (!md.trim()) {
-      const empty = document.createElement("em")
-      empty.className = "text-text-muted"
-      empty.textContent = "Nothing to preview."
+      const empty = domEl("em", "text-text-muted", "Nothing to preview.")
       preview.replaceChildren(empty)
       return
     }
@@ -598,7 +593,7 @@ export function enhanceDescriptionEditor(
     visualDirty = false
     for (const [m, btn] of modeButtons) {
       const sel = m === nextMode
-      btn.setAttribute("aria-selected", String(sel))
+      setAttr(btn, "aria-selected", String(sel))
       btn.tabIndex = sel ? 0 : -1
       btn.classList.toggle("active", sel)
     }

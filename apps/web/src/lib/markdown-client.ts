@@ -17,15 +17,32 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;")
 }
 
+function trimBareUrlPunctuation(url: string): { cleaned: string; trailing: string } {
+  let end = url.length
+  while (end > 0) {
+    const ch = url[end - 1]
+    if (ch === "." || ch === "," || ch === "!" || ch === "?" || ch === ":") {
+      end -= 1
+      continue
+    }
+    if (ch === ";" && !/&(?:amp|lt|gt|quot);$/i.test(url.slice(0, end))) {
+      end -= 1
+      continue
+    }
+    break
+  }
+  return { cleaned: url.slice(0, end), trailing: url.slice(end) }
+}
+
 function renderInline(raw: string): string {
   const codeSpans: string[] = []
-  const linkTokens: string[] = []
+  const links: string[] = []
   let text = escapeHtml(raw.replace(/\u0000/g, "")).replace(/`([^`]+)`/g, (_m, code: string) => {
     const idx = codeSpans.push(`<code>${code}</code>`) - 1
     return `\u0000C${idx}\u0000`
   })
   const stashLink = (anchorHtml: string) => {
-    const idx = linkTokens.push(anchorHtml) - 1
+    const idx = links.push(anchorHtml) - 1
     return `\u0000L${idx}\u0000`
   }
 
@@ -46,8 +63,7 @@ function renderInline(raw: string): string {
 
   // Bare http(s) URLs not already inside an anchor tag
   text = text.replace(/(^|[\s(>])(https?:\/\/[^\s<)]+)/g, (_m, prefix: string, url: string) => {
-    const cleaned = url.replace(/[.,!?;:]+$/, "")
-    const trailing = url.slice(cleaned.length)
+    const { cleaned, trailing } = trimBareUrlPunctuation(url)
     return `${prefix}${stashLink(`<a href="${cleaned}" target="_blank" rel="noopener noreferrer">${cleaned}</a>`)}${trailing}`
   })
 
@@ -60,7 +76,7 @@ function renderInline(raw: string): string {
     .replace(/(^|[^\w_])_([^_\n]+)_(?!_)/g, "$1<em>$2</em>")
 
   return text
-    .replace(/\u0000L(\d+)\u0000/g, (_m, idx: string) => linkTokens[Number(idx)] ?? "")
+    .replace(/\u0000L(\d+)\u0000/g, (_m, idx: string) => links[Number(idx)] ?? "")
     .replace(/\u0000C(\d+)\u0000/g, (_m, idx: string) => codeSpans[Number(idx)] ?? "")
 }
 
@@ -68,13 +84,41 @@ function splitTableCells(line: string): string[] {
   return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(cell => cell.trim())
 }
 
-function isTableSeparator(line: string): boolean {
-  const trimmed = line.trim()
-  if (!trimmed.includes("|") && !trimmed.includes("-")) return false
-  return /^\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?$/.test(trimmed)
+function isTableSeparatorCell(cell: string): boolean {
+  let s = cell.trim()
+  if (s.startsWith(":")) s = s.slice(1)
+  if (s.endsWith(":")) s = s.slice(0, -1)
+  if (s.length < 3) return false
+  for (let i = 0; i < s.length; i += 1) {
+    if (s[i] !== "-") return false
+  }
+  return true
 }
 
-export function renderMarkdownToHtml(markdown: string): string {
+function isTableSeparator(line: string): boolean {
+  let s = line.trim()
+  if (!s.includes("|") || !s.includes("-")) return false
+  if (s.startsWith("|")) s = s.slice(1)
+  if (s.endsWith("|")) s = s.slice(0, -1)
+  const cells = s.split("|")
+  if (cells.length < 2) return false
+  return cells.every(isTableSeparatorCell)
+}
+
+function isHorizontalRule(line: string): boolean {
+  let count = 0
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i]
+    if (ch === " " || ch === "\t" || ch === "\r") continue
+    if (ch === "-" || ch === "*" || ch === "_") count += 1
+    else return false
+  }
+  return count >= 3
+}
+
+const MAX_BLOCKQUOTE_DEPTH = 16
+
+export function renderMarkdownToHtml(markdown: string, quoteDepth = 0): string {
   const normalized = markdown.replace(/\r\n?/g, "\n")
   const lines = normalized.split("\n")
   const blocks: string[] = []
@@ -113,7 +157,7 @@ export function renderMarkdownToHtml(markdown: string): string {
     }
 
     // Horizontal rule
-    if (/^\s*(?:[-*_]\s*){3,}$/.test(line)) {
+    if (isHorizontalRule(line)) {
       blocks.push("<hr>")
       i += 1
       continue
@@ -126,7 +170,10 @@ export function renderMarkdownToHtml(markdown: string): string {
         quoteLines.push((lines[i] ?? "").replace(/^\s*>\s?/, ""))
         i += 1
       }
-      blocks.push(`<blockquote>${renderMarkdownToHtml(quoteLines.join("\n"))}</blockquote>`)
+      const inner = quoteDepth < MAX_BLOCKQUOTE_DEPTH
+        ? renderMarkdownToHtml(quoteLines.join("\n"), quoteDepth + 1)
+        : `<p>${quoteLines.map(renderInline).join("<br>")}</p>`
+      blocks.push(`<blockquote>${inner}</blockquote>`)
       continue
     }
 
@@ -190,7 +237,7 @@ export function renderMarkdownToHtml(markdown: string): string {
           /^\s*>\s?/.test(cur) ||
           /^\s*[-*+]\s+/.test(cur) ||
           /^\s*\d+[.)]\s+/.test(cur) ||
-          /^\s*(?:[-*_]\s*){3,}$/.test(cur)
+          isHorizontalRule(cur)
         )
       ) {
         break

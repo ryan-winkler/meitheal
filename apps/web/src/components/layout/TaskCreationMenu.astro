@@ -366,10 +366,9 @@ const { id, variant, enabled = true } = Astro.props
           window.openNewTaskModal?.(kind)
         }
       }, { signal })
-      const split = trigger.parentElement
-      split?.addEventListener("focusout", event => {
+      root.addEventListener("focusout", event => {
         const next = event.relatedTarget
-        if (!options.hidden && next instanceof Node && !split.contains(next)) close()
+        if (!options.hidden && next instanceof Node && !options.contains(next) && next !== trigger) close()
       }, { signal })
       root.addEventListener("keydown", event => {
         if (event.key !== "Escape" || options.hidden) return

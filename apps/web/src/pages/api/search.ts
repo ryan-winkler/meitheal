@@ -1,6 +1,7 @@
 import { boardScopeErrorResponse, withBoardScope } from "@lib/board-http"
 import type { APIRoute } from "astro"
 import { ensureSchema, scopePermits } from "@domains/tasks"
+import { isValidTaskKind, VALID_TASK_KINDS } from "@meitheal/domain-tasks"
 import {
   searchMeithealCatalog,
   type SearchQueryOptions,
@@ -79,11 +80,20 @@ export const GET: APIRoute = withBoardScope(
       }
       const status = url.searchParams.get("status")?.trim()
       const assignedTo = url.searchParams.get("assigned_to")?.trim()
+      const rawTaskKind = url.searchParams.get("task_kind")?.trim().toLowerCase() ?? ""
+      if (rawTaskKind && !isValidTaskKind(rawTaskKind)) {
+        return apiProblem({
+          status: 400,
+          detail: `task_kind must be one of: ${VALID_TASK_KINDS.join(", ")}`,
+          invalidParams: [{ name: "query.task_kind", reason: "Provide a supported task_kind value." }]
+        })
+      }
       const parsedPriority =
         priority == null ? undefined : Math.min(5, Math.max(1, Number(priority) || 0)) || undefined
 
       if (status) options.status = status
       if (assignedTo) options.assignedTo = assignedTo
+      if (rawTaskKind) options.taskKind = rawTaskKind
       if (parsedPriority != null) options.priority = parsedPriority
 
       const organization = scopePermits(scope, { resource: "task", action: "read" })

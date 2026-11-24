@@ -1,6 +1,7 @@
 ---
 
 import { taskRecordVersion } from "../../lib/task-api-client"
+import { effectiveTaskScheduledDate } from "@meitheal/domain-tasks"
 import SignalBar from "../layout/SignalBar.astro";
 import EmptyState from "../ui/EmptyState.astro";
 import Icon from "../ui/Icon.astro"
@@ -227,6 +228,7 @@ const priorityClasses: Record<number, string> = {
             </thead>
             <tbody>
               {rows.map(({ task, depth, parentId, hasChildren, parentOutsidePage, workflowColumnId, epicGroup }) => {
+                const scheduledDate = effectiveTaskScheduledDate(task);
                 const cfEntries = Object.entries(task.custom_fields)
                   .map(([k, v]) => [k, formatCardCustomFieldValue(v)] as const)
                   .filter((entry): entry is readonly [string, string] => entry[1] !== null);
@@ -240,7 +242,7 @@ const priorityClasses: Record<number, string> = {
                     data-area={task.area_id}
                     data-project-id={task.project_id ?? ""}
                     data-status={task.status}
-                    data-due-date={task.due_date ?? ""}
+                    data-due-date={scheduledDate ?? ""}
                     data-priority={String(task.priority)}
                     data-assigned={String(task.assigned_to ?? "")}
                     data-labels={JSON.stringify(task.labels ?? [])}
@@ -328,7 +330,7 @@ const priorityClasses: Record<number, string> = {
                       )}
                     </td>
                     <td class="col-type cell-center">
-                      <TaskTypeIcon type={task.task_type} role="img" />
+                      <TaskTypeIcon type={task.task_type} kind={task.task_kind} role="img" />
                     </td>
                     <td class="col-status">
                       <select
@@ -398,8 +400,8 @@ const priorityClasses: Record<number, string> = {
                     <td
                       class={`col-due-date text-sm td-due ${task.is_overdue ? "overdue-date" : ""}`}
                     >
-                      {task.due_date
-                        ? formatRegionalDate(task.due_date, {
+                      {scheduledDate
+                        ? formatRegionalDate(scheduledDate, {
                             format: dateFormat,
                             timezone,
                           })

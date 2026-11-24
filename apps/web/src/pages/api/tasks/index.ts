@@ -8,7 +8,8 @@ import { organizationPlacementAvailable } from "@lib/organization-placement-acce
 import { readHomeAssistantAreaFilter, resolveHomeAssistantAreaSelection } from "@lib/home-assistant-area-access"
 import { parseBoardPlacement } from "@lib/board-workspace"
 import type { APIRoute } from "astro"
-import { deriveEisenhowerQuadrant, VALID_TASK_TYPES, type TaskType } from "@meitheal/domain-tasks"
+import type { ResultSet } from "@libsql/client"
+import { deriveEisenhowerQuadrant, isValidTaskKind, VALID_TASK_KINDS, VALID_TASK_TYPES, type TaskType } from "@meitheal/domain-tasks"
 import { normalizeLabelTitle } from "@domains/labels"
 import {
   defaultTaskSortOrder,
@@ -57,6 +58,15 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
   const offset = Math.max(0, Number(url.searchParams.get("offset")) || 0)
 
   const taskType = url.searchParams.get("task_type")
+  const rawTaskKind = url.searchParams.get("task_kind")
+  let taskKind: string | null = null
+  if (rawTaskKind !== null && rawTaskKind !== "") {
+    const normalizedKind = rawTaskKind.trim().toLowerCase()
+    if (!isValidTaskKind(normalizedKind)) {
+      return apiError(`task_kind must be one of: ${VALID_TASK_KINDS.join(", ")}`, 400)
+    }
+    taskKind = normalizedKind
+  }
 
   if (url.searchParams.has("favorite")) {
     return apiError("is_favorite has been retired; use is_promoted instead.", 400)
@@ -95,6 +105,7 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
   const projectId = url.searchParams.get("project_id")
   if (projectId) findOpts.projectId = projectId
   if (taskType && VALID_TASK_TYPES.includes(taskType as TaskType)) findOpts.taskType = taskType
+  if (taskKind) findOpts.taskKind = taskKind
   const parentId = url.searchParams.get("parent_id")
   if (parentId) findOpts.parentId = parentId
   const search = url.searchParams.get("q")
@@ -220,7 +231,12 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "create
       ...(placement ? { area_id: placement.areaId, project_id: placement.projectId } : {}),
       source: effectiveSource, created_by: effectiveCreatedBy,
     })
-    if (!prepared.ok) return apiError(prepared.error, 400)
+    if (!prepared.ok) {
+      if (prepared.errorCode === "hierarchy_invalid") {
+        return Response.json({ error: prepared.error, detail: prepared.error, errorCode: "hierarchy_invalid" }, { status: 400 })
+      }
+      return apiError(prepared.error, 400)
+    }
     let newLabels: string[] | undefined
     if (body.new_labels !== undefined) {
       if (locals.agentToken) return apiError("Creating labels with a task requires a browser session.", 403)
@@ -242,7 +258,11 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "create
     })
     if (!result.ok) {
       if (result.errorCode === "hierarchy_invalid") {
-        return Response.json({ error: result.message ?? "Invalid task hierarchy.", errorCode: result.errorCode }, { status: 400 })
+        return Response.json({
+          error: result.message ?? "Invalid task hierarchy.",
+          detail: result.message ?? "Invalid task hierarchy.",
+          errorCode: result.errorCode,
+        }, { status: 400 })
       }
       const status = ["capture_conflict", "conflict", "legacy_key_owner_unverified"].includes(result.errorCode) ? 409
         : result.errorCode === "unavailable" ? 404 : result.errorCode === "denied" ? 403 : 400

@@ -225,11 +225,12 @@ export async function completeTaskGamification(
   scope: BoardScope,
   points = 0,
   now = new Date(),
+  timezone = "UTC",
 ): Promise<TaskCompletionGamificationResult> {
   await ensureAchievementSchema()
   const client = await gamificationClient(scope, true)
-  const today = statsDayKey(now)
-  const yesterday = statsDayKey(now, -1)
+  const today = statsDayKey(now, 0, timezone)
+  const yesterday = statsDayKey(now, -1, timezone)
   const canRead = scopePermits(scope, { resource: "task", action: "read" })
   const tx = await client.transaction("write")
   try {
@@ -246,7 +247,7 @@ export async function completeTaskGamification(
       await tx.commit()
       return { stats: null, achievements: null }
     }
-    const stats = await readStatsFromRunner(tx, scope, now)
+    const stats = await readStatsFromRunner(tx, scope, now, timezone)
     const achievements = await unlockEligibleAchievementsInTx(tx, scope, computeEligibleAchievements(stats))
     await tx.commit()
     return { stats, achievements }

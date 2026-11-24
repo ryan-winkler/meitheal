@@ -1,5 +1,6 @@
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { applySidebarOrder, sidebarOrderChanged, SIDEBAR_ORDER_STORAGE_KEY } from "@lib/sidebar-order"
+import { SIDEBAR_PERSONAL_STORAGE_KEY } from "@domains/navigation/sidebar-menu"
 import { SIDEBAR_FOCUS_REVEAL_EVENT } from "@lib/mobile-sidebar-controller"
 import { computeNavOverflow, type NavOverflowItem } from "@domains/navigation/nav-overflow"
 
@@ -70,11 +71,16 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     return element.getClientRects().length > 0 && getComputedStyle(element).visibility === "visible"
   }
   const primaryLinks = () => links.filter(link => !menu.contains(link))
-  const menuLinks = () => more.open && !more.hidden ? links.filter(link => menu.contains(link) && canFocus(link)) : []
+  const menuLinks = () => {
+    if (!more.open || more.hidden) return []
+    refreshLinks()
+    return links.filter(link => menu.contains(link) && canFocus(link))
+  }
   function syncTabStops() {
     // Keep primary Tab stops and skip visibility checks while More is closed.
     const menuHasItems = menu.childElementCount > 0
     const menuOpen = more.open && !more.hidden
+    if (menuOpen) refreshLinks()
     const overflow: HTMLElement[] = []
     for (const link of links) {
       if (!menuHasItems || !menu.contains(link)) resetTab(link)
@@ -88,15 +94,21 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
       ?? eligible.find(currentItem) ?? eligible[0]
     for (const link of overflow) setTab(link, link === selected ? "0" : "-1")
   }
-  function restoreItems() {
+  function restoreItems(focused: HTMLElement | null) {
     for (const source of sources) {
       const { primary } = source
       source.items = source.items.filter(item => root.contains(item))
       primary.removeAttribute("data-nav-overflow-empty")
-      const alreadyRestored = menu.childElementCount === 0
-        && source.items.every(item => item.parentElement === primary)
-      if (!alreadyRestored) {
-        for (const item of source.items) primary.append(item)
+      let changed = false
+      for (let i = 0; i < source.items.length; i += 1) {
+        const item = source.items[i]!
+        if (primary.children[i] !== item) {
+          primary.insertBefore(item, primary.children[i] ?? null)
+          changed = true
+        }
+      }
+      if (changed && focused && primary.contains(focused) && document.activeElement !== focused) {
+        focused.focus({ preventScroll: true })
       }
     }
   }
@@ -136,7 +148,7 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     const editingSidebar = Boolean(root.closest("#sidebar")?.hasAttribute("data-sidebar-editing"))
     const enabled = !editingSidebar && getComputedStyle(root).getPropertyValue("--nav-overflow-enabled").trim() === "1" && root.clientWidth > 0
     root.setAttribute("data-nav-overflow-reflowing", "")
-    restoreItems()
+    restoreItems(portalOwner ? null : focused)
     if (sidebarOrderPending) {
       applySidebarOrder(root)
       sidebarOrderPending = false
@@ -199,7 +211,12 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
       if (packed.showMore) {
         for (const id of packed.overflowIds) {
           const item = itemById.get(id)
-          if (item) menu.append(item)
+          if (item && item.parentElement !== menu) {
+            menu.append(item)
+            if (!portalOwner && focused && item.contains(focused) && document.activeElement !== focused) {
+              focused.focus({ preventScroll: true })
+            }
+          }
         }
       }
     }
@@ -298,10 +315,10 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     const keys = inMenu ? ["ArrowDown", "ArrowUp", "Home", "End"] : ["ArrowRight", "ArrowLeft", "Home", "End"]
     if (!keys.includes(event.key) || !root.hasAttribute("data-nav-overflow-active")) return
     const candidates = inMenu ? menuLinks() : [...primaryLinks().filter(canFocus), ...(!more.hidden ? [toggle] : [])]
-    const areaToggle = inMenu && target.matches(".stree__area-toggle") && canFocus(target)
-    if (!candidates.includes(target) && !areaToggle) return
+    const menuToggle = inMenu && target !== toggle && target.matches("button, summary") && canFocus(target)
+    if (!candidates.includes(target) && !menuToggle) return
     event.preventDefault()
-    if (areaToggle && ["ArrowDown", "ArrowUp"].includes(event.key)) {
+    if (menuToggle && ["ArrowDown", "ArrowUp"].includes(event.key)) {
       const following = candidates.findIndex(candidate => Boolean(target.compareDocumentPosition(candidate) & Node.DOCUMENT_POSITION_FOLLOWING))
       const next = event.key === "ArrowDown" ? (following === -1 ? 0 : following)
         : (following === -1 ? candidates.length - 1 : (following - 1 + candidates.length) % candidates.length)
@@ -313,9 +330,11 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
       : (index + (["ArrowDown", "ArrowRight"].includes(event.key) ? 1 : -1) + candidates.length) % candidates.length
     focusDestination(candidates[next])
   }, { signal })
-  root.addEventListener("focusin", () => syncTabStops(), { signal })
+  root.addEventListener("focusin", () => {
+    if (!root.hasAttribute("data-nav-overflow-reflowing")) syncTabStops()
+  }, { signal })
   root.addEventListener("toggle", event => {
-    if (event.target !== more) syncTabStops()
+    if (event.target !== more && !root.hasAttribute("data-nav-overflow-reflowing")) syncTabStops()
   }, { capture: true, signal })
   more.addEventListener("toggle", () => {
     if (more.open) {
@@ -354,7 +373,7 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     schedule()
   }, { signal })
   if (sidebar) window.addEventListener("storage", event => {
-    if (event.key === SIDEBAR_ORDER_STORAGE_KEY || event.key === null) {
+    if (event.key === SIDEBAR_PERSONAL_STORAGE_KEY || event.key === SIDEBAR_ORDER_STORAGE_KEY || event.key === null) {
       sidebarOrderPending = true
       syncTaskNavDom()
     }
@@ -369,7 +388,7 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     appearance.disconnect()
     content.disconnect()
     cancelAnimationFrame(frame)
-    restoreItems()
+    restoreItems(null)
     refreshLinks()
     for (const link of links) resetTab(link)
     more.hidden = true

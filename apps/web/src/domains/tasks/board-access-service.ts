@@ -103,11 +103,35 @@ function includesOperation(value: unknown, operation: WorkOperation): boolean {
   )
 }
 
+function agentHasOperationSnapshot(operations: unknown, intent: WorkOperation): boolean {
+  if (includesOperation(operations, intent)) return true
+  if (intent.action === "search" && includesOperation(operations, { resource: "task", action: "read" })) return true
+  // Support legacy agent credentials minted before routine operations were snapshotted.
+  if (intent.resource === "routine") {
+    if (intent.action === "read") return includesOperation(operations, { resource: "task", action: "read" })
+    if (intent.action === "create") return includesOperation(operations, { resource: "task", action: "create" })
+    if (intent.action === "edit") {
+      return (
+        includesOperation(operations, { resource: "task", action: "create" }) &&
+        includesOperation(operations, { resource: "task", action: "edit" })
+      )
+    }
+    if (intent.action === "delete") return includesOperation(operations, { resource: "task", action: "delete" })
+  }
+  return false
+}
+
 function tokenAllows(scopes: readonly string[], operation: WorkOperation): boolean {
   if (operation.resource === "board")
     return operation.action === "read" && scopes.includes("tasks:read")
   if (operation.resource === "project")
     return scopes.includes(`projects:${operation.action === "read" ? "read" : "write"}`)
+  if (operation.resource === "routine") {
+    if (operation.action === "read") return scopes.includes("tasks:read")
+    if (operation.action === "create" || operation.action === "edit") return scopes.includes("tasks:write")
+    if (operation.action === "delete") return scopes.includes("tasks:delete")
+    return false
+  }
   // Existing token vocabulary intentionally does not expose arbitrary planning,
   // policy or Pillar commands just because a token has a Board grant.
   if (operation.resource !== "task") return false
@@ -419,7 +443,14 @@ export class BoardAccessService {
       if (intent.action === "search" && intent.resource !== "task") return false
       if (
         principal.kind === "agent" &&
-        intent.resource === "task" &&
+        intent.resource === "routine" &&
+        intent.action !== "read" &&
+        assignedTo !== undefined
+      )
+        return false
+      if (
+        principal.kind === "agent" &&
+        intent.resource !== "board" &&
         !["read", "search"].includes(intent.action) &&
         assignedTo === null
       )
@@ -451,12 +482,7 @@ export class BoardAccessService {
         return false
       if (
         principal.kind === "agent" &&
-        (!tokenAllows(tokenScopes!, intent) ||
-          !(
-            includesOperation(limits?.operations, intent) ||
-            (intent.action === "search" &&
-              includesOperation(limits?.operations, { resource: "task", action: "read" }))
-          ))
+        (!tokenAllows(tokenScopes!, intent) || !agentHasOperationSnapshot(limits?.operations, intent))
       )
         return false
       if (
@@ -470,7 +496,12 @@ export class BoardAccessService {
     if (!operations.every(allowed) || row.audience_allowed !== 1 || !principalProof(principal))
       return { ok: false, errorCode: "denied" }
     if (existingScope) {
-      const taskWrite = operations.some(item => item.resource === "task" && item.action !== "read" && item.action !== "search")
+      const taskWrite = operations.some(
+        (item) =>
+          (item.resource === "task" || item.resource === "routine") &&
+          item.action !== "read" &&
+          item.action !== "search"
+      )
       if (Number(row.revision) !== existingScope.boardRevision ||
         (taskWrite && assignedTo !== scopeAssignedTo(existingScope)) ||
         serviceBindingFingerprint !== scopeServiceBindingFingerprint(existingScope)) {

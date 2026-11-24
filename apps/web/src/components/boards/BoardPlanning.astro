@@ -216,10 +216,10 @@ const ownedAreaIds = new Set(planning.areas.map(area => area.id))
                 <input type="hidden" name="action" value="routine" />
                 <input type="hidden" name="id" value={routine.id} />
                 <input type="hidden" name="areaId" value={area.id} />
-                <input type="hidden" name="cadence" value={routine.cadence} />
                 {routine.projectId && <input type="hidden" name="projectId" value={routine.projectId} />}
                 <label>Title <input name="title" value={routine.name} maxlength="150" required /></label>
                 <label>Details <textarea name="description" rows="2" maxlength="10000">{routine.description}</textarea></label>
+                <label>Frequency <select name="cadence"><option value="daily" selected={routine.cadence === "daily"}>Daily</option><option value="weekly" selected={routine.cadence === "weekly"}>Weekly</option></select></label>
                 <p role="status" data-board-feedback class="board-feedback"></p>
                 <button type="submit" class="btn btn-secondary btn-sm">Save Routine</button>
               </form>

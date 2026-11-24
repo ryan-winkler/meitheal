@@ -8,15 +8,26 @@ import {
 
 interface Props {
   type: string | null | undefined
+  kind?: string | null | undefined
   size?: number | undefined
   class?: string | undefined
   role?: "img" | undefined
   icon?: string | null | undefined
 }
 
-const { type, size = 16, class: className = "", role, icon } = Astro.props
+const KIND_LABELS: Record<string, string> = {
+  calendar_event: "Event",
+  shopping_item: "Shopping",
+  routine_instance: "Routine",
+  checklist: "Checklist",
+  quick_capture: "Quick Capture",
+}
+
+const { type, kind, size = 16, class: className = "", role, icon } = Astro.props
 const typeStr = String(type || "task").toLowerCase()
-const config = getTypeIconConfig(type)
+const kindStr = typeof kind === "string" ? kind.toLowerCase() : ""
+const config = getTypeIconConfig(type, kind)
+const displayLabel = KIND_LABELS[kindStr] ?? (typeStr.charAt(0).toUpperCase() + typeStr.slice(1))
 
 const customRaw = typeof icon === "string" ? icon.trim() : ""
 const spriteIconName: CanonicalIconName | null = customRaw
@@ -34,8 +45,8 @@ if (spriteIconName) {
   class:list={["task-type-icon", className]}
   role={role}
   style={`color: ${config.color}; width: ${size}px; height: ${size}px; display: inline-flex; align-items: center; justify-content: center;`}
-  title={typeStr.charAt(0).toUpperCase() + typeStr.slice(1)}
-  aria-label={role === "img" ? `Task Type: ${typeStr}` : undefined}
+  title={displayLabel}
+  aria-label={role === "img" ? `Task Type: ${displayLabel}` : undefined}
   aria-hidden={role === "img" ? undefined : "true"}
 >
   {spriteIconName ? (

@@ -19,6 +19,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         import { confirmDialog } from "@lib/confirm-dialog";
         import { pageLifecycle } from "@lib/page-lifecycle";
         import { onTaskCompleted } from "@lib/gamification-hook";
+        import { createSpriteIconElement } from "../generated/icon-registry";
         import { createTypeIconElement } from "@lib/type-icon-config";
         import { showToast } from "@lib/toast"
         import { loadComments, loadAttachments } from "@lib/controllers/modal-comments-attachments";
@@ -42,13 +43,14 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         import { browserUuid } from "@lib/browser-uuid"
         import { assigneeFallback } from "@lib/task-assignee-display"
         import { isDoneStatus, normalizeStatus } from "@lib/status-config"
+        import { byId, domEl, qs, setAttr } from "@lib/dom-helpers";
 
         // Use lifecycle signal for all global listeners in this module
         pageLifecycle.onPageLoad(() => {
           const __signal = pageLifecycle.signal;
 
           // === Task Detail Panel ===
-          const tdOverlay = document.getElementById(
+          const tdOverlay = byId(
             "task-detail-overlay",
           ) as HTMLDivElement;
         if (!tdOverlay || tdOverlay.dataset.namedBoard || tdOverlay.dataset.detailController === "ready") return
@@ -103,6 +105,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           _previouslyFocused = null
           if (_descSavedTimer !== null) clearTimeout(_descSavedTimer)
           clearTimeout(parentSearchTimer)
+          cancelCustomFieldSaves?.()
           closeTaskReferences()
           deferral.opening(false)
           pins.opening()
@@ -129,12 +132,53 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           tdOverlay.inert = false
         }, { signal: __signal })
         let detailGeneration = 0
+        let cancelCustomFieldSaves: (() => void) | null = null
+        let currentTaskKind = "standard_action"
+        const KIND_BADGE_LABELS: Record<string, string> = {
+          calendar_event: "Event",
+          shopping_item: "Shopping",
+          routine_instance: "Routine",
+          checklist: "Checklist",
+          quick_capture: "Quick Capture",
+        }
+        function formatEventInputValue(raw: string, allDay: boolean): string {
+          if (!raw) return ""
+          if (allDay) return raw.slice(0, 10)
+          if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return `${raw}T09:00`
+          const d = new Date(raw)
+          if (Number.isNaN(d.getTime())) return raw.slice(0, 16)
+          return new Date(d.valueOf() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+        }
+        function parseEventInputForSave(val: string, allDay: boolean): string | null {
+          if (!val) return null
+          if (allDay) return val.slice(0, 10)
+          const d = new Date(val)
+          return Number.isNaN(d.getTime()) ? val : d.toISOString()
+        }
+        function syncEventInputsType(allDay: boolean): void {
+          const startInput = byId("td-start-date") as HTMLInputElement | null
+          const endInput = byId("td-end-date") as HTMLInputElement | null
+          const prevStart = startInput?.value ?? ""
+          const prevEnd = endInput?.value ?? ""
+          const sameAllDay = !allDay && /^\d{4}-\d{2}-\d{2}$/.test(prevStart) && prevEnd === prevStart
+          for (const inputEl of [startInput, endInput]) {
+            if (!inputEl) continue
+            const prev = inputEl.value
+            inputEl.type = allDay ? "date" : "datetime-local"
+            if (!allDay) inputEl.step = "any"
+            if (sameAllDay) {
+              inputEl.value = inputEl === endInput ? `${prevStart}T10:00` : `${prevStart}T09:00`
+            } else if (prev) {
+              inputEl.value = formatEventInputValue(prev, allDay)
+            }
+          }
+        }
         const deferral = initModalDeferral(tdOverlay, __signal)
         const pins = initModalTaskPin(tdOverlay, __signal, () => { if (pinnedSession) pinnedSession.dirty = true })
         const closeTaskReferences = initModalTaskReferences(tdOverlay, __signal)
-        const tdClose = document.getElementById("td-close")
-        const tdPanel = document.getElementById("task-detail-panel")
-        const tdResizeHandle = document.getElementById("td-resize-handle")
+        const tdClose = byId("td-close")
+        const tdPanel = byId("task-detail-panel")
+        const tdResizeHandle = byId("td-resize-handle")
         const SIDEBAR_WIDTH_KEY = "meitheal:task-sidebar-width:v1"
         const DEFAULT_SIDEBAR_WIDTH = 420
         const MIN_SIDEBAR_WIDTH = 360
@@ -144,8 +188,8 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           const clamped = clampSidebarWidth(width)
           document.documentElement.style.setProperty("--task-inspector-width", `${clamped}px`)
           if (tdResizeHandle) {
-            tdResizeHandle.setAttribute("aria-valuemax", String(maxSidebarWidth()))
-            tdResizeHandle.setAttribute("aria-valuenow", String(clamped))
+            setAttr(tdResizeHandle, "aria-valuemax", String(maxSidebarWidth()))
+            setAttr(tdResizeHandle, "aria-valuenow", String(clamped))
           }
           if (persist) {
             try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(clamped)) } catch { /* ignore storage errors */ }
@@ -168,7 +212,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             dragStartX = e.clientX
             dragStartWidth = tdOverlay.getBoundingClientRect().width || DEFAULT_SIDEBAR_WIDTH
             activeWidth = dragStartWidth
-            tdResizeHandle.setAttribute("data-resizing", "")
+            setAttr(tdResizeHandle, "data-resizing", "")
             tdResizeHandle.setPointerCapture?.(e.pointerId)
             e.preventDefault()
           }, { signal: __signal })
@@ -186,7 +230,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           tdResizeHandle.addEventListener("dblclick", () => {
             activeWidth = DEFAULT_SIDEBAR_WIDTH
             document.documentElement.style.removeProperty("--task-inspector-width")
-            tdResizeHandle.setAttribute("aria-valuenow", String(DEFAULT_SIDEBAR_WIDTH))
+            setAttr(tdResizeHandle, "aria-valuenow", String(DEFAULT_SIDEBAR_WIDTH))
             try { localStorage.removeItem(SIDEBAR_WIDTH_KEY) } catch { /* ignore */ }
           }, { signal: __signal })
           tdResizeHandle.addEventListener("keydown", (e) => {
@@ -203,19 +247,19 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             if (stored !== null) applySidebarWidth(stored, false)
           }, { signal: __signal })
         }
-        const tdHeading = document.getElementById("td-task-heading")
-        const tdActions = document.getElementById("td-task-actions")
-        const tdTitleInput = tdPanel?.querySelector<HTMLTextAreaElement>("#td-title")
+        const tdHeading = byId("td-task-heading")
+        const tdActions = byId("td-task-actions")
+        const tdTitleInput = qs<HTMLTextAreaElement>(tdPanel, "#td-title")
         const statusSelect = document.querySelector<HTMLSelectElement>("#td-status")
         const doneButton = document.querySelector<HTMLButtonElement>("#td-toggle-done")
         const deleteButton = document.querySelector<HTMLButtonElement>("#td-delete")
         const promoteButton = document.querySelector<HTMLButtonElement>("#td-toggle-promote")
-        const tdError = document.getElementById("td-load-error")
-        const copyFallback = document.getElementById("td-copy-link-fallback")
+        const tdError = byId("td-load-error")
+        const copyFallback = byId("td-copy-link-fallback")
         const copyValue = document.querySelector<HTMLInputElement>("#td-copy-link-value")
         const commentInput = document.querySelector<HTMLTextAreaElement>("#td-comment-input")
         const commentButton = document.querySelector<HTMLButtonElement>("#td-comment-submit")
-        const commentError = document.getElementById("td-comment-error")
+        const commentError = byId("td-comment-error")
         let currentTaskId: string | null = null;
         let currentTaskVersion: number | null = null
         const currentTaskActions = new Set<string>()
@@ -224,8 +268,9 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         let sessionTicketId: string | null = null
         let currentTicketKey: string | null = null
         let pendingDescriptionSave: Promise<boolean> | undefined
-        let hasChecklistTextDraft: (() => boolean) | undefined
+        let hasChecklistTextDraft: ((() => boolean) & { getRaw?: () => string }) | undefined
         let flushPendingCustomFieldsSave: (() => Promise<void>) | undefined
+        let checklistAbortController: AbortController | null = null
         let queuedDescriptionTransition: (() => void) | undefined
         let currentCommentTarget: string | null = null
         let commentsReady: Promise<void> = Promise.resolve()
@@ -251,13 +296,13 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         tdOverlay.dataset.ticketHistorySession = drawerSession
 
         const dockMedia = window.matchMedia("(min-width: 1440px)")
-        const scroller = document.getElementById("td-loaded-content")
-        const sections = document.getElementById("td-sections")!
+        const scroller = byId("td-loaded-content")
+        const sections = byId("td-sections")!
         const updateSectionOrder = initTicketSectionOrder(sections, __signal)
         const focusToggle = document.querySelector<HTMLButtonElement>("#td-toggle-focus")
         const layoutToggle = document.querySelector<HTMLButtonElement>("#td-toggle-layout")
-        const layoutPanel = document.getElementById("td-layout-panel")
-        const loadedActions = tdOverlay.querySelector<HTMLElement>("[data-td-loaded-actions]")
+        const layoutPanel = byId("td-layout-panel")
+        const loadedActions = qs<HTMLElement>(tdOverlay, "[data-td-loaded-actions]")
         let layoutEditorMounted = false
         let layoutScrollTop = 0
         let focusMode = false
@@ -265,8 +310,8 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         let resumeLoadedTask: (() => void) | undefined
 
         function setInspectorAriaLabel(label: string) {
-          tdOverlay.setAttribute("aria-label", label)
-          tdPanel?.setAttribute("aria-label", label)
+          setAttr(tdOverlay, "aria-label", label)
+          setAttr(tdPanel, "aria-label", label)
         }
 
         function syncInspectorDockMode() {
@@ -274,9 +319,9 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           const docked = isOpen && !focusMode && dockMedia.matches
           document.body.classList.toggle("has-docked-inspector", docked)
           tdOverlay.toggleAttribute("data-focus-mode", focusMode)
-          tdPanel?.setAttribute("role", docked ? "region" : "dialog")
+          setAttr(tdPanel, "role", docked ? "region" : "dialog")
           if (docked) tdPanel?.removeAttribute("aria-modal")
-          else tdPanel?.setAttribute("aria-modal", "true")
+          else setAttr(tdPanel, "aria-modal", "true")
           document.body.style.overflow = isOpen && !docked ? "hidden" : ""
           if (loadedActions) loadedActions.hidden = !taskLoaded && !focusMode
           if (layoutToggle) layoutToggle.hidden = !taskLoaded
@@ -304,7 +349,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             [...sections.children].find(isVisible)
           const offset = anchor && viewport ? anchor.getBoundingClientRect().top - viewport.top : 0
           focusMode = expanded
-          tdOverlay.setAttribute("data-focus-used", "")
+          setAttr(tdOverlay, "data-focus-used", "")
           syncInspectorDockMode()
           resizeTitle()
           if (scroller && anchor) {
@@ -330,7 +375,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           if (!layoutPanel || !layoutToggle || !scroller) return
           if (open) {
             layoutScrollTop = scroller.scrollTop
-            const editor = layoutPanel.querySelector<HTMLElement>("[data-task-layout-editor]")
+            const editor = qs<HTMLElement>(layoutPanel, "[data-task-layout-editor]")
             if (editor && !layoutEditorMounted) {
               initTaskDetailLayoutEditor(editor, __signal)
               layoutEditorMounted = true
@@ -338,7 +383,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           }
           const wasFocused = layoutPanel.contains(document.activeElement)
           layoutPanel.hidden = !open
-          layoutToggle.setAttribute("aria-expanded", String(open))
+          setAttr(layoutToggle, "aria-expanded", String(open))
           scroller.scrollTop = open ? 0 : layoutScrollTop
           if (!open && wasFocused) layoutToggle.focus({ preventScroll: true })
         }
@@ -350,8 +395,8 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           document.body.classList.remove("has-docked-inspector")
           tdOverlay.removeAttribute("data-focus-mode")
           tdOverlay.removeAttribute("data-focus-used")
-          tdPanel?.setAttribute("role", "dialog")
-          tdPanel?.setAttribute("aria-modal", "true")
+          setAttr(tdPanel, "role", "dialog")
+          setAttr(tdPanel, "aria-modal", "true")
         }, { once: true })
 
         function beginScopedWrite() {
@@ -469,7 +514,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           if (!hasChecklistTextDraft?.()) return false
           const write = pendingChecklistSave(currentTaskId)
           if (!write) {
-            document.getElementById("td-checklist-recover")?.focus()
+            byId("td-checklist-recover")?.focus()
             return true
           }
           const generation = detailGeneration
@@ -498,8 +543,10 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           pins.opening()
           // Abort any in-flight fetches
           if (_modalAbortController) { _modalAbortController.abort(); _modalAbortController = null; }
+          cancelCustomFieldSaves?.()
           currentTaskId = null;
           hasChecklistTextDraft = undefined
+          delete tdOverlay.dataset.openTaskId
           document.dispatchEvent(new CustomEvent("meitheal:ha-location-task"))
           sessionTicketId = null
           currentTicketKey = null
@@ -508,7 +555,6 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           taskLoaded = false
           resumeLoadedTask = undefined
           currentCommentTarget = null
-          delete tdOverlay.dataset.openTaskId
           if (updateLocation) setTaskLocation(null)
 
           const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -521,9 +567,9 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             if (layoutPanel && !layoutPanel.hidden) setLayoutPanel(false)
             syncInspectorDockMode();
             // P3-4: Restore focus to the element that triggered the panel
-            const kanban = document.getElementById("kanban-board")
+            const kanban = byId("kanban-board")
             const origin = _previouslyFocused?.isConnected ? _previouslyFocused
-              : _previouslyFocused?.id ? document.getElementById(_previouslyFocused.id)
+              : _previouslyFocused?.id ? byId(_previouslyFocused.id)
               : previousCard && kanban && _previouslyFocused ? findKanbanDetailFocus(kanban, _previouslyFocused)
               : previousDay ? document.querySelector<HTMLElement>(`.cal-cell[data-date="${CSS.escape(previousDay)}"]`) ??
                 document.querySelector<HTMLElement>("#calendar-shell .cal-today-btn")
@@ -554,7 +600,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           }
 
           tdOverlay.classList.add("closing");
-          const panel = document.getElementById("task-detail-panel");
+          const panel = byId("task-detail-panel");
           if (panel) {
             const onEnd = () => { panel.removeEventListener("animationend", onEnd); finishClose(); };
             panel.addEventListener("animationend", onEnd, { once: true, signal: __signal });
@@ -567,7 +613,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
 
         function statusAllowed(next: string): boolean {
           const previous = statusSelect?.dataset.savedStatus ?? "pending"
-          const laneStatus = statusSelect?.querySelector<HTMLOptionElement>(`option[value="${CSS.escape(next)}"]`)?.dataset.statusMeaning ?? next
+          const laneStatus = qs<HTMLOptionElement>(statusSelect, `option[value="${CSS.escape(next)}"]`)?.dataset.statusMeaning ?? next
           return currentTaskActions.has("edit") &&
             (!(isDoneStatus(laneStatus) || isDoneStatus(previous)) || currentTaskActions.has("complete")) &&
             (normalizeStatus(laneStatus) !== "archived" || currentTaskActions.has("delete"))
@@ -593,7 +639,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
 
         function setStatusBusy(busy: boolean) {
           for (const control of [statusSelect, doneButton]) {
-            if (busy) control?.setAttribute("aria-disabled", "true")
+            if (busy) setAttr(control, "aria-disabled", "true")
             else control?.removeAttribute("aria-disabled")
           }
         }
@@ -643,6 +689,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           pins.opening()
           // P3-4: Store focus origin for restore on close
           if (newSession) _previouslyFocused = search ? null : document.activeElement
+          delete tdOverlay.dataset.openTaskId
           document.dispatchEvent(new CustomEvent("meitheal:ha-location-task"))
           currentTaskId = taskId
           hasChecklistTextDraft = undefined
@@ -660,7 +707,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           if (_modalAbortController) _modalAbortController.abort();
           _modalAbortController = new AbortController();
           const modalSignal = _modalAbortController.signal
-          document.getElementById("td-ai-response")?.remove()
+          byId("td-ai-response")?.remove()
           _isPopulating = true;
           syncTaskActionControls()
           statusSelect?.removeAttribute("data-saved-status")
@@ -690,7 +737,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             if (scroller) scroller.scrollTop = 0
           }
           if (commentTarget !== null) {
-            const comments = sections.querySelector<HTMLDetailsElement>("#td-section-comments")
+            const comments = qs<HTMLDetailsElement>(sections, "#td-section-comments")
             if (comments) comments.open = true
           }
           tdOverlay.classList.remove("closing")
@@ -701,14 +748,14 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           // Set dynamic aria-label for screen readers
           setInspectorAriaLabel(`Task detail: loading...`);
           // Show skeleton, hide loaded content
-          const tdSkeleton = document.getElementById("td-skeleton");
-          const tdLoaded = document.getElementById("td-loaded-content");
+          const tdSkeleton = byId("td-skeleton");
+          const tdLoaded = byId("td-loaded-content");
            if (tdSkeleton) tdSkeleton.style.display = "";
            if (tdLoaded) tdLoaded.classList.add("hidden");
            tdHeading?.classList.add("invisible")
-           tdActions?.setAttribute("hidden", "")
-           tdError?.setAttribute("hidden", "")
-           copyFallback?.setAttribute("hidden", "")
+           setAttr(tdActions, "hidden", "")
+           setAttr(tdError, "hidden", "")
+           setAttr(copyFallback, "hidden", "")
 
           function showTaskError(unavailable: boolean) {
             currentTaskId = null
@@ -760,7 +807,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             tdOverlay.dataset.openTaskId = taskId
             currentTaskVersion = taskRecordVersion(t)
             taskSaveConflict = false
-            document.getElementById("td-write-conflict")?.remove()
+            byId("td-write-conflict")?.remove()
             document.dispatchEvent(new CustomEvent("meitheal:ha-location-task", { detail: taskId }))
             sessionTicketId = taskId
             currentTicketKey = typeof t.ticket_key === "string" ? t.ticket_key : null
@@ -822,7 +869,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                 statusSelect.replaceChildren();
                 for (const lane of lanes) {
                   // Add the main key as an option
-                  const opt = document.createElement("option");
+                  const opt = domEl("option");
                   opt.value = lane.key;
                   if (Array.isArray(lane.includes) && lane.includes.some((status: unknown) => typeof status === "string" && isDoneStatus(status))) {
                     opt.dataset.statusMeaning = "complete"
@@ -837,7 +884,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
 
             if (modalSignal.aborted) return
 
-            const parentEl = document.getElementById(
+            const parentEl = byId(
               "td-parent",
             ) as HTMLAnchorElement | null;
             if (parentEl && t.parent_id) {
@@ -855,7 +902,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             }
 
             // Linked Tickets — parent display
-            const linkParentDisplay = document.getElementById(
+            const linkParentDisplay = byId(
               "td-link-parent-display",
             ) as HTMLElement;
             let unlinkParentButton: HTMLButtonElement | undefined
@@ -866,12 +913,12 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                     t.parent_title ??
                     String(t.parent_id).slice(0, 8),
                 );
-                const parentLink = document.createElement("a");
+                const parentLink = domEl("a");
                 parentLink.href = "#";
                 parentLink.className = "text-xs text-accent hover:underline td-parent-link";
                 parentLink.dataset.id = String(t.parent_id);
                 parentLink.textContent = parentTitle;
-                const unlinkBtn = document.createElement("button");
+                const unlinkBtn = domEl("button");
                 unlinkParentButton = unlinkBtn
                 unlinkBtn.disabled = true
                 unlinkBtn.type = "button";
@@ -879,14 +926,12 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                 unlinkBtn.title = "Remove parent";
                 unlinkBtn.textContent = "✕";
                 linkParentDisplay.replaceChildren(parentLink, document.createTextNode(" "), unlinkBtn);
-                linkParentDisplay
-                  .querySelector(".td-parent-link")
+                qs(linkParentDisplay, ".td-parent-link")
                   ?.addEventListener("click", (e) => {
                     e.preventDefault();
                     openTaskDetail(String(t.parent_id));
                   }, { signal: modalSignal });
-                linkParentDisplay
-                  .querySelector(".td-unlink-parent")
+                qs(linkParentDisplay, ".td-unlink-parent")
                   ?.addEventListener("click", async () => {
                     const unlinkTaskId = currentTaskId
                     const confirmed = await confirmDialog({
@@ -900,23 +945,21 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                     }
                   }, { signal: modalSignal });
               } else {
-                const none = document.createElement("span")
-                none.className = "text-xs text-text-muted italic"
-                none.textContent = "None"
+                const none = domEl("span", "text-xs text-text-muted italic", "None")
                 linkParentDisplay.replaceChildren(none)
               }
             }
 
             // Linked Tickets — children
-            const childrenDiv = document.getElementById(
+            const childrenDiv = byId(
               "td-link-children",
             ) as HTMLElement;
             if (childrenDiv) {
               childrenDiv.replaceChildren();
               // Progress bar elements
-              const progressWrap = document.getElementById("td-subtask-progress");
-              const progressLabel = document.getElementById("td-subtask-progress-label");
-              const progressBar = document.getElementById("td-subtask-progress-bar");
+              const progressWrap = byId("td-subtask-progress");
+              const progressLabel = byId("td-subtask-progress-label");
+              const progressBar = byId("td-subtask-progress-bar");
               try {
                 let children: Array<Record<string, unknown>> | null = Array.isArray(t.subtasks)
                   ? (t.subtasks as Array<Record<string, unknown>>)
@@ -935,9 +978,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                 }
                 if (children) {
                   if (children.length === 0) {
-                    const empty = document.createElement("span")
-                    empty.className = "text-xs text-text-muted italic"
-                    empty.textContent = "No child items"
+                    const empty = domEl("span", "text-xs text-text-muted italic", "No child items")
                     childrenDiv.replaceChildren(empty)
                     if (progressWrap) progressWrap.classList.add("hidden");
                   } else {
@@ -945,28 +986,27 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                     children.forEach((c: Record<string, unknown>) => {
                       const isDone = isDoneStatus(String(c.status ?? ""));
                       if (isDone) doneCount++;
-                      const row = document.createElement("div");
-                      row.className = "flex items-center justify-between gap-2 text-xs";
-                      const chip = document.createElement("a");
+                      const row = domEl("div", "flex items-center justify-between gap-2 text-xs")
+                      const chip = domEl("a");
                       chip.href = "#";
                       chip.className = `flex items-center gap-1.5 min-w-0 truncate ${isDone ? "text-text-muted line-through" : "text-accent hover:underline"}`;
-                      const iconSpan = document.createElement("span");
-                      iconSpan.className = "shrink-0 inline-flex";
-                      iconSpan.appendChild(createTypeIconElement(String(c.task_type ?? "task"), 14));
-                      const label = document.createElement("span");
-                      label.className = "truncate";
-                      label.textContent = formatTicketDisplay(c.ticket_key, String(c.title ?? c.id).slice(0, 60), c.id);
+                      const iconSpan = domEl("span", "shrink-0 inline-flex items-center gap-1")
+                      iconSpan.append(
+                        createSpriteIconElement(isDone ? "check" : "clock", { size: 12 }),
+                        createTypeIconElement(String(c.task_type ?? "task"), 14, typeof c.task_kind === "string" ? c.task_kind : undefined),
+                      );
+                      const label = domEl("span", "truncate", formatTicketDisplay(c.ticket_key, String(c.title ?? c.id).slice(0, 60), c.id))
                       chip.append(iconSpan, label);
                       chip.addEventListener("click", (e) => {
                         e.preventDefault();
                         openTaskDetail(String(c.id));
                       }, { signal: modalSignal });
 
-                      const detachBtn = document.createElement("button");
+                      const detachBtn = domEl("button");
                       detachBtn.type = "button";
                       detachBtn.className = "text-text-muted hover:text-danger px-1 shrink-0";
                       detachBtn.title = "Detach from parent";
-                      detachBtn.setAttribute("aria-label", `Detach child item ${String(c.title ?? c.id)}`);
+                      setAttr(detachBtn, "aria-label", `Detach child item ${String(c.title ?? c.id)}`);
                       detachBtn.textContent = "✕";
                       detachBtn.addEventListener("click", async () => {
                         if (detachBtn.disabled || currentTaskId !== taskId) return;
@@ -1001,18 +1041,16 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                 }
               } catch {
                 if (modalSignal.aborted) return
-                const dash = document.createElement("span")
-                dash.className = "text-xs text-text-muted italic"
-                dash.textContent = "—"
+                const dash = domEl("span", "text-xs text-text-muted italic", "—")
                 childrenDiv.replaceChildren(dash)
                 if (progressWrap) progressWrap.classList.add("hidden");
               }
             }
 
             // Activity remains lazy and belongs to this open ticket's lifetime.
-            const activityDiv = document.getElementById("td-activity")
-            const activityStatus = document.getElementById("td-activity-status")
-            const activityRetry = document.getElementById("td-activity-retry")
+            const activityDiv = byId("td-activity")
+            const activityStatus = byId("td-activity-status")
+            const activityRetry = byId("td-activity-retry")
             const activityDetails = activityDiv?.closest("details")
             if (activityDetails && activityDiv && activityStatus && activityRetry) {
               activityDiv.replaceChildren()
@@ -1041,21 +1079,11 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                   activityStatus.textContent = entries.length ? "" : (activityStatus.dataset.empty ?? "")
                   for (const e of entries.slice(0, 50)) {
                     const ago = new Date(Number(e.created_at)).toLocaleString();
-                    const row = document.createElement("div");
-                    row.className =
-                      "flex gap-2 items-baseline py-1 border-b border-border/30";
-                    const agoSpan = document.createElement("span");
-                    agoSpan.className = "text-text-muted shrink-0";
-                    agoSpan.textContent = ago;
-                    const fieldSpan = document.createElement("span");
-                    fieldSpan.className = "font-medium text-text-primary";
-                    fieldSpan.textContent = String(e.field ?? "");
-                    const arrowSpan = document.createElement("span");
-                    arrowSpan.className = "text-text-muted";
-                    arrowSpan.textContent = "→";
-                    const valSpan = document.createElement("span");
-                    valSpan.className = "text-accent truncate";
-                    valSpan.textContent = String(e.new_value ?? "—").slice(0, 60);
+                    const row = domEl("div", "flex gap-2 items-baseline py-1 border-b border-border/30")
+                    const agoSpan = domEl("span", "text-text-muted shrink-0", ago)
+                    const fieldSpan = domEl("span", "font-medium text-text-primary", String(e.field ?? ""))
+                    const arrowSpan = domEl("span", "text-text-muted", "→")
+                    const valSpan = domEl("span", "text-accent truncate", String(e.new_value ?? "—").slice(0, 60))
                     row.append(agoSpan, fieldSpan, arrowSpan, valSpan);
                     activityDiv.appendChild(row);
                   }
@@ -1077,8 +1105,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             if (typeof loadRelatedLinks === "function")
               loadRelatedLinks(taskId);
 
-
-            const tdIdEl = document.getElementById(
+            const tdIdEl = byId(
               "td-id",
             ) as HTMLElement | null;
             if (tdIdEl) {
@@ -1089,12 +1116,28 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
               tdIdEl.classList.remove("hidden");
             }
 
-            // Render type icon (shared config from @lib/type-icon-config)
-            const typeIconEl = document.getElementById("td-type-icon") as HTMLElement | null;
+            // Render type icon & kind badge (shared config from @lib/type-icon-config)
+            const taskKind = String(t.task_kind || "standard_action").toLowerCase();
+            currentTaskKind = taskKind;
+            const typeIconEl = byId("td-type-icon") as HTMLElement | null;
             if (typeIconEl) {
               const tt = String(t.task_type || "task").toLowerCase();
-              typeIconEl.replaceChildren(createTypeIconElement(tt, 16));
-              typeIconEl.title = tt.charAt(0).toUpperCase() + tt.slice(1);
+              typeIconEl.replaceChildren(createTypeIconElement(tt, 16, taskKind));
+              typeIconEl.title = KIND_BADGE_LABELS[taskKind] ?? (tt.charAt(0).toUpperCase() + tt.slice(1));
+            }
+            const kindBadgeEl = byId("td-task-kind-badge") as HTMLElement | null;
+            if (kindBadgeEl) {
+              const label = KIND_BADGE_LABELS[taskKind] ?? "";
+              kindBadgeEl.textContent = label;
+              kindBadgeEl.classList.toggle("hidden", !label);
+            }
+            const kindSelectEl = byId("td-task-kind") as HTMLSelectElement | null;
+            if (kindSelectEl) {
+              const routineOpt = qs<HTMLOptionElement>(kindSelectEl, 'option[value="routine_instance"]');
+              const isRoutineTask = Number(t.routine_occurrence) === 1 || taskKind === "routine_instance";
+              if (routineOpt) routineOpt.hidden = !isRoutineTask;
+              kindSelectEl.value = taskKind;
+              kindSelectEl.disabled = isRoutineTask;
             }
 
             const initialTitle = String(t.title ?? "")
@@ -1106,7 +1149,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             setInspectorAriaLabel(`Task detail: ${String(t.title ?? "Untitled")}`);
 
             // Priority dot color
-            const priorityDot = document.getElementById(
+            const priorityDot = byId(
               "td-priority-dot",
             ) as HTMLElement;
             const priorityColors: Record<string, string> = {
@@ -1126,9 +1169,9 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             const taskStatus = statusSelect?.dataset.savedStatus ?? String(t.status ?? "pending");
             if (
               statusSelect &&
-              !statusSelect.querySelector(`option[value="${CSS.escape(taskStatus)}"]`)
+              !qs(statusSelect, `option[value="${CSS.escape(taskStatus)}"]`)
             ) {
-              const opt = document.createElement("option");
+              const opt = domEl("option");
               opt.value = taskStatus;
               opt.textContent = taskStatus;
               statusSelect.appendChild(opt);
@@ -1150,22 +1193,22 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             }
 
             (
-              document.getElementById("td-priority") as HTMLSelectElement
+              byId("td-priority") as HTMLSelectElement
             ).value = String(t.priority ?? 3);
 
             // Eisenhower dimensions
-            const urgencyEl = document.getElementById("td-urgency") as HTMLSelectElement | null;
+            const urgencyEl = byId("td-urgency") as HTMLSelectElement | null;
             if (urgencyEl) urgencyEl.value = String(t.urgency ?? 0);
-            const importanceEl = document.getElementById("td-importance") as HTMLSelectElement | null;
+            const importanceEl = byId("td-importance") as HTMLSelectElement | null;
             if (importanceEl) importanceEl.value = String(t.importance ?? 0);
             const progress = Number(t.progress ?? 0);
-            (document.getElementById("td-progress") as HTMLInputElement).value =
+            (byId("td-progress") as HTMLInputElement).value =
               String(progress);
-            const progValEl = document.getElementById("td-progress-value");
+            const progValEl = byId("td-progress-value");
             if (progValEl) progValEl.textContent = `${progress}%`;
 
             // Progress bar fill
-            const progressBarFill = document.getElementById(
+            const progressBarFill = byId(
               "td-progress-bar-fill",
             ) as HTMLElement;
             if (progressBarFill) {
@@ -1175,8 +1218,8 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             }
 
             // Due date display with relative time
-            const dueRow = document.getElementById("td-due-row") as HTMLElement;
-            const dueDisplay = document.getElementById(
+            const dueRow = byId("td-due-row") as HTMLElement;
+            const dueDisplay = byId(
               "td-due-display",
             ) as HTMLElement;
             const dueVal = String(t.due_date ?? "");
@@ -1222,17 +1265,27 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
               const raw = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()
               return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : "#69e3b2"
             })()
-            ;(document.getElementById("td-color") as HTMLInputElement).value =
+            ;(byId("td-color") as HTMLInputElement).value =
               String(t.color ?? fallbackAccentHex);
-            const dueInput = document.getElementById("td-due-date") as HTMLInputElement
+            const dueInput = byId("td-due-date") as HTMLInputElement
             dueInput.value = String(t.due_date ?? "")
             dueInput.disabled = Number(t.routine_occurrence) === 1
-            document.getElementById("td-routine-date-hint")?.toggleAttribute("hidden", !dueInput.disabled)
-            const startInput = document.getElementById("td-start-date") as HTMLInputElement
-            startInput.value = String(t.start_date ?? "")
-            const endInput = document.getElementById("td-end-date") as HTMLInputElement
-            endInput.value = String(t.end_date ?? "")
-            const trackedInput = document.getElementById("td-time-tracked") as HTMLInputElement
+            byId("td-routine-date-hint")?.toggleAttribute("hidden", !dueInput.disabled)
+            const startRaw = String(t.start_date ?? "");
+            const endRaw = String(t.end_date ?? "");
+            const isEventSchedule = taskKind === "calendar_event" || Boolean(startRaw) || Boolean(endRaw);
+            const eventScheduleEl = byId("td-event-schedule");
+            eventScheduleEl?.classList.toggle("hidden", !isEventSchedule);
+            const allDayEl = byId("td-event-all-day") as HTMLInputElement | null;
+            const isAllDay = Boolean((startRaw && !startRaw.includes("T")) || (endRaw && !endRaw.includes("T")));
+            if (allDayEl) allDayEl.checked = isAllDay;
+            syncEventInputsType(isAllDay);
+            const startInput = byId("td-start-date") as HTMLInputElement;
+            startInput.value = formatEventInputValue(startRaw, isAllDay);
+            const endInput = byId("td-end-date") as HTMLInputElement;
+            endInput.value = formatEventInputValue(endRaw, isAllDay);
+            setAttr(byId("td-event-date-error"), "hidden", "");
+            const trackedInput = byId("td-time-tracked") as HTMLInputElement
             trackedInput.value = String(t.time_tracked ?? 0)
             if (areaField && areas) {
               const savedArea = String(t.area_id ?? "")
@@ -1287,7 +1340,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             }
 
             // Populate pillar dropdown
-            const pillarSelect = document.getElementById(
+            const pillarSelect = byId(
               "td-pillar",
             ) as HTMLSelectElement;
             const currentPillarId = String(t.pillar_id ?? "");
@@ -1300,7 +1353,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                 const pillars = pilData.pillars ?? pilData ?? [];
                 pillarSelect.replaceChildren(new Option("No pillar", ""));
                 (pillars as Array<{ id: string; name: string; icon?: string }>).forEach((p) => {
-                  const opt = document.createElement("option");
+                  const opt = domEl("option");
                   opt.value = p.id;
                   opt.textContent = p.name;
                   pillarSelect.appendChild(opt);
@@ -1313,7 +1366,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             }
 
             // Populate principle dropdown
-            const principleSelect = document.getElementById(
+            const principleSelect = byId(
               "td-principle",
             ) as HTMLSelectElement | null
             await loadPillarPrinciplesOptions(principleSelect, currentPillarId, {
@@ -1321,7 +1374,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
               selectedId: String(t.principle_id ?? ""),
             })
             // Phase 20: Agile hierarchy type
-            const tdTaskTypeEl = document.getElementById("td-task-type") as HTMLSelectElement | null;
+            const tdTaskTypeEl = byId("td-task-type") as HTMLSelectElement | null;
             if (tdTaskTypeEl) {
               const ttVal = String(t.task_type ?? "task");
               tdTaskTypeEl.value = ttVal;
@@ -1329,10 +1382,10 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             }
 
             // Phase 1 (REC-04): Set recurrence select to current value
-            const recurrenceSelect = document.getElementById("td-recurrence") as HTMLSelectElement | null;
+            const recurrenceSelect = byId("td-recurrence") as HTMLSelectElement | null;
             if (recurrenceSelect) {
               recurrenceSelect.value = String(t.recurrence_rule ?? "");
-              const descEl = document.getElementById("td-recurrence-desc");
+              const descEl = byId("td-recurrence-desc");
               if (descEl) {
                 descEl.textContent = t.recurrence_rule
                   ? (recurrenceSelect.selectedOptions[0]?.textContent ?? "")
@@ -1342,12 +1395,12 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
 
             const isPromoted = Boolean(t.is_promoted);
             if (promoteButton) {
-              promoteButton.setAttribute("aria-pressed", String(isPromoted));
+              setAttr(promoteButton, "aria-pressed", String(isPromoted));
               const promoteLabel = isPromoted
                 ? (window.mI18n?.get("kanban.demote_card") ?? "Remove promotion")
                 : (window.mI18n?.get("kanban.promote_card") ?? "Promote to top");
               promoteButton.title = promoteLabel;
-              promoteButton.setAttribute("aria-label", promoteLabel);
+              setAttr(promoteButton, "aria-label", promoteLabel);
             }
 
             // Load board-scoped custom fields (falling back to settings on household)
@@ -1404,7 +1457,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             }
 
             // Labels (interactive chips)
-            const labelsDiv = document.getElementById(
+            const labelsDiv = byId(
               "td-labels",
             ) as HTMLElement;
             labelsDiv.replaceChildren();
@@ -1422,36 +1475,14 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
               /* skip */
             }
 
-            // Custom fields (interactive rows)
-            const cfDiv = document.getElementById(
-              "td-custom-fields",
-            ) as HTMLElement;
-            cfDiv.replaceChildren();
+            // Custom fields (interactive primitive rows; structured keys preserved in controller)
             const renderedKeys = new Set<string>();
-            const preservedCF: Record<string, unknown> = {};
-            try {
-              const cf = JSON.parse(String(t.custom_fields ?? "{}")) as Record<
-                string,
-                unknown
-              >;
-              for (const [k, v] of Object.entries(cf)) {
-                if (v === null || v === undefined) continue;
-                if (RICE_KEYS.includes(k)) continue;
-                if (typeof v === "object") {
-                  preservedCF[k] = v;
-                  continue;
-                }
-                const sfDef = _settingsFields.find(
-                  (sf: { name: string }) => sf.name.toLowerCase() === k.toLowerCase(),
-                );
-                addCFRow(k, String(v), sfDef?.type || "text", sfDef?.options);
-                renderedKeys.add(k);
-                if (sfDef) renderedKeys.add(sfDef.name);
-              }
-            } catch {
-              /* skip */
+            cfApi.loadTaskCustomFields(taskId, t.custom_fields, renderedKeys, _settingsFields);
+            const eventLocationEl = byId("td-event-location") as HTMLInputElement | null;
+            if (eventLocationEl) {
+              const savedLoc = cfApi.getStructuredField("location");
+              eventLocationEl.value = typeof savedLoc === "string" ? savedLoc : "";
             }
-            setPreservedCFEntries(preservedCF);
 
             // Pre-populate settings-defined fields that aren't already on this task
             for (const sf of _settingsFields) {
@@ -1461,6 +1492,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                   sf.type === "checkbox" ? "false" : "",
                   sf.type || "text",
                   sf.options,
+                  true,
                 );
                 renderedKeys.add(sf.name);
               }
@@ -1472,27 +1504,26 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             const created = t.created_at
               ? new Date(Number(t.created_at)).toLocaleDateString()
               : "";
-            const tdCreated = document.getElementById("td-created");
+            const tdCreated = byId("td-created");
             if (tdCreated)
               tdCreated.textContent = created ? `Created ${created}` : "";
             const updated = t.updated_at
               ? new Date(Number(t.updated_at)).toLocaleString()
               : "";
-            const tdUpdated = document.getElementById("td-updated");
+            const tdUpdated = byId("td-updated");
             if (tdUpdated)
               tdUpdated.textContent = updated ? `Last updated ${updated}` : "";
-            hasChecklistTextDraft = showTaskChecklist(taskId, t.checklists, modalSignal, send => saveTaskChecklist(taskId, send),
-              typeof t.ticket_key === "string" ? t.ticket_key : undefined)
-            const taskReactions = document.getElementById("td-task-reactions")
+            mountTaskChecklist(taskId, t.checklists, modalSignal, typeof t.ticket_key === "string" ? t.ticket_key : undefined);
+            const taskReactions = byId("td-task-reactions");
             if (taskReactions) {
               taskReactions.replaceChildren()
               mountReactions(taskReactions, `/api/tasks/${encodeURIComponent(taskId)}/reactions`, modalSignal, taskId)
             }
 
             // Load comments for the current task.
-            document.getElementById("td-comments")?.replaceChildren()
-            document.getElementById("td-comment-link-status")?.replaceChildren()
-            commentError?.setAttribute("hidden", "")
+            byId("td-comments")?.replaceChildren()
+            byId("td-comment-link-status")?.replaceChildren()
+            setAttr(commentError, "hidden", "")
             if (commentButton) commentButton.disabled = false
             if (commentInput && commentInput.dataset.taskId !== taskId) {
               commentInput.value = ""
@@ -1546,19 +1577,19 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
 
 
         function showTaskWriteConflict() {
-          if (document.getElementById("td-write-conflict")) return
-          const notice = document.createElement("div")
+          if (byId("td-write-conflict")) return
+          const notice = domEl("div")
           notice.id = "td-write-conflict"
           notice.className = "alert alert-warning"
-          notice.setAttribute("role", "alert")
+          setAttr(notice, "role", "alert")
           notice.append("This task changed or its save could not be confirmed. Your input is kept here. Reload the saved task before making further changes. ")
-          const refresh = document.createElement("button")
+          const refresh = domEl("button")
           refresh.type = "button"
           refresh.className = "btn btn-ghost"
           refresh.textContent = "Reload saved task"
           refresh.addEventListener("click", () => { if (currentTaskId) void openTaskDetail(currentTaskId) }, { signal: __signal })
           notice.append(refresh)
-          document.getElementById("td-loaded-content")?.prepend(notice)
+          byId("td-loaded-content")?.prepend(notice)
         }
 
         function queueTaskWrite<T>(taskId: string, write: () => T | Promise<T>): Promise<T> {
@@ -1590,23 +1621,55 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           })
         }
 
-        function saveTaskField(field: string, value: unknown, updatedAt?: number): Promise<boolean> {
-          if (!currentTaskId || _isPopulating || boardWithheld || !currentTaskActions.has("edit")) return Promise.resolve(false)
-          const generation = detailGeneration
-          return queueTaskWrite(currentTaskId, () => generation === detailGeneration ? saveTaskFieldNow(field, value, updatedAt) : false)
+        function mountTaskChecklist(taskId: string, rawChecklist: unknown, parentSignal: AbortSignal, ticketKey?: string): void {
+          checklistAbortController?.abort()
+          const controller = new AbortController()
+          checklistAbortController = controller
+          parentSignal.addEventListener("abort", () => controller.abort(), { once: true })
+          const storedShopping = cfApi.getStructuredField("items")
+          hasChecklistTextDraft = showTaskChecklist(
+            taskId,
+            rawChecklist,
+            controller.signal,
+            send => saveTaskChecklist(taskId, send),
+            ticketKey,
+            {
+              taskKind: currentTaskKind,
+              shoppingItems: Array.isArray(storedShopping) ? storedShopping : undefined,
+              onShoppingItemsChange: items => {
+                cfApi.setStructuredField("items", items, true)
+              },
+              buildShoppingCustomFields: items => {
+                cfApi.setStructuredField("items", items, false)
+                return cfApi.getMergedJson()
+              },
+            },
+          )
         }
 
-        async function saveTaskFieldNow(field: string, value: unknown, updatedAt?: number): Promise<boolean> {
-          if (!currentTaskId || _isPopulating || boardWithheld || !currentTaskActions.has("edit") || (field === "status" && !statusAllowed(String(value)))) return false
+        function saveTaskField(field: string, value: unknown, updatedAt?: number): Promise<boolean> {
+          return saveTaskFields({ [field]: value }, updatedAt)
+        }
+
+        function saveTaskFields(patch: Record<string, unknown>, updatedAt?: number): Promise<boolean> {
+          if (!currentTaskId || _isPopulating || boardWithheld || !currentTaskActions.has("edit")) return Promise.resolve(false)
+          const generation = detailGeneration
+          return queueTaskWrite(currentTaskId, () => generation === detailGeneration ? saveTaskPatchNow(patch, updatedAt) : false)
+        }
+
+        async function saveTaskPatchNow(patch: Record<string, unknown>, updatedAt?: number): Promise<boolean> {
+          const primaryField = Object.keys(patch)[0] ?? ""
+          if (!currentTaskId || _isPopulating || boardWithheld || !currentTaskActions.has("edit") || (Object.hasOwn(patch, "status") && !statusAllowed(String(patch.status)))) return false
           if (taskSaveConflict) { showTaskWriteConflict(); return false }
           const generation = detailGeneration
           const taskId = currentTaskId
           const search = searchSession
-          const completeDeferralWrite = deferral.nativeWrite(field, value)
-          const scopedWrite = search || ["title", "status", "area_id", "project_id", "framework_payload"].includes(field) ? beginScopedWrite() : undefined
+          const primaryValue = patch[primaryField]
+          const completeDeferralWrite = deferral.nativeWrite(primaryField, primaryValue)
+          const scopedWrite = search || Object.keys(patch).some(field => ["title", "status", "area_id", "project_id", "framework_payload"].includes(field)) ? beginScopedWrite() : undefined
           let saved = false
           try {
-            const result = await saveVersionedTask(taskId, { [field]: value }, updatedAt ?? currentTaskVersion, undefined,
+            const result = await saveVersionedTask(taskId, patch, updatedAt ?? currentTaskVersion, undefined,
               scopedWrite?.signal ?? AbortSignal.timeout(7_000))
             saved = result.ok
             if (result.ok && generation === detailGeneration) currentTaskVersion = result.version
@@ -1615,68 +1678,68 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
               showTaskWriteConflict()
             }
             if (saved) {
-              if (field === "area_id") {
+              if (Object.hasOwn(patch, "area_id")) {
                 changedAreaTask = taskId
                 if (!tdOverlay.classList.contains("active") ||
                     (tdOverlay.dataset.openTaskId && generation !== detailGeneration)) {
                   reconcileAreaGrouping()
                 }
-              } else if (field === "parent_id" || field === "task_type" || field === "title") {
+              } else if (Object.hasOwn(patch, "parent_id") || Object.hasOwn(patch, "task_type") || Object.hasOwn(patch, "title")) {
                 epicGroupingDirty = true
-                if (field === "task_type") {
-                  const sel = document.getElementById("td-task-type") as HTMLSelectElement | null
-                  if (sel) sel.dataset.savedTaskType = String(value)
-                  const typeIconEl = document.getElementById("td-type-icon")
+                if (Object.hasOwn(patch, "task_type")) {
+                  const sel = byId("td-task-type") as HTMLSelectElement | null
+                  if (sel) sel.dataset.savedTaskType = String(patch.task_type)
+                  const typeIconEl = byId("td-type-icon")
                   if (typeIconEl) {
-                    const tt = String(value || "task").toLowerCase()
-                    typeIconEl.replaceChildren(createTypeIconElement(tt, 16))
-                    typeIconEl.title = tt.charAt(0).toUpperCase() + tt.slice(1)
+                    const tt = String(patch.task_type || "task").toLowerCase()
+                    typeIconEl.replaceChildren(createTypeIconElement(tt, 16, currentTaskKind))
+                    typeIconEl.title = KIND_BADGE_LABELS[currentTaskKind] ?? (tt.charAt(0).toUpperCase() + tt.slice(1))
                   }
                 }
                 if (!tdOverlay.classList.contains("active")) reconcileEpicGrouping()
               }
-              notifyInactivityTaskChanged(field === "status" ? undefined : taskId)
-              if (field === "status") {
+              notifyInactivityTaskChanged(Object.hasOwn(patch, "status") ? undefined : taskId)
+              if (Object.hasOwn(patch, "status")) {
                 const task = result.ok ? result.task : {}
                 document.dispatchEvent(new CustomEvent("meitheal:task-status-saved", { detail: { id: taskId, status: task.status, deferred: task.deferred_at != null } }))
-                if (isDoneStatus(String(value)) && (!search || generation === detailGeneration)) onTaskCompleted(task)
+                if (isDoneStatus(String(patch.status)) && (!search || generation === detailGeneration)) onTaskCompleted(task)
               }
-              return field === "area_id" || !search || generation === detailGeneration
+              return Object.hasOwn(patch, "area_id") || !search || generation === detailGeneration
             }
             if (!result.ok) {
-              log.warn(`Failed to save ${field}:`, result.status)
-              if (field === "task_type") {
-                const sel = document.getElementById("td-task-type") as HTMLSelectElement | null
+              log.warn(`Failed to save ${primaryField}:`, result.status)
+              if (primaryField === "task_type") {
+                const sel = byId("td-task-type") as HTMLSelectElement | null
                 if (sel && sel.dataset.savedTaskType) sel.value = sel.dataset.savedTaskType
               }
               if (result.message && result.errorCode !== "conflict" && result.errorCode !== "unconfirmed") {
-                const sessionBound = search || field === "description"
+                const sessionBound = search || primaryField === "description"
                 if (!sessionBound || generation === detailGeneration) showToast(result.message, "error")
                 return false
               }
             }
           } catch (err) {
-            log.warn(`Network error saving ${field}:`, err)
+            log.warn(`Network error saving ${primaryField}:`, err)
           } finally {
             completeDeferralWrite(saved)
             scopedWrite?.finish()
           }
-          const sessionBound = search || field === "description"
+          const sessionBound = search || primaryField === "description"
           if (sessionBound && generation !== detailGeneration) return false
           if (!sessionBound || generation === detailGeneration) showToast("common.failed_update", "error")
           return false
         }
 
         // F11: Description Edit/Preview UX (simplified)
-        const descEditContainer = document.getElementById("td-desc-edit-container");
-        const descPreviewContainer = document.getElementById("td-desc-preview-container");
+        const descEditContainer = byId("td-desc-edit-container");
+        const descPreviewContainer = byId("td-desc-preview-container");
         const descView = descPreviewContainer?.closest(".td-description-view")
-        const descPreview = document.getElementById("td-desc-preview");
-        const tdDescription = document.getElementById("td-description") as HTMLTextAreaElement;
-        const descEditBtnHover = document.getElementById("td-desc-edit-btn-hover");
+        const descPreview = byId("td-desc-preview");
+        const tdDescription = byId("td-description") as HTMLTextAreaElement;
+        const descEditBtnHover = byId("td-desc-edit-btn-hover");
         const descSaveBtn = document.querySelector<HTMLButtonElement>("#td-desc-save-btn")
         const descCancelBtn = document.querySelector<HTMLButtonElement>("#td-desc-cancel-btn")
-        const descSavedIndicator = document.getElementById("td-desc-saved");
+        const descSavedIndicator = byId("td-desc-saved");
 
         let _descOriginalValue = "";
         let _descSavedTimer: number | null = null;
@@ -1715,7 +1778,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
 
         function setDescriptionSaving(saving: boolean): void {
           tdDescription.readOnly = saving
-          descEditContainer?.setAttribute("aria-busy", String(saving))
+          setAttr(descEditContainer, "aria-busy", String(saving))
           if (descCancelBtn) descCancelBtn.disabled = saving
           if (descSaveBtn) {
             descSaveBtn.disabled = saving
@@ -1796,8 +1859,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
 
 
         // Phase 23: Image attachments upload
-        document
-          .getElementById("td-attachment-input")
+        byId("td-attachment-input")
           ?.addEventListener("change", async (e) => {
             const targetTaskId = currentTaskId;
             const openGen = detailGeneration;
@@ -1862,30 +1924,52 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         }
 
         statusSelect?.addEventListener("change", () => void saveDetailStatus(statusSelect.value), { signal: __signal })
-        document
-          .getElementById("td-priority")
+        byId("td-priority")
           ?.addEventListener("change", (e) =>
             saveTaskField("priority", Number((e.target as HTMLSelectElement).value)),
           { signal: __signal });
         // Eisenhower urgency auto-save
-        document
-          .getElementById("td-urgency")
+        byId("td-urgency")
           ?.addEventListener("change", (e) =>
             saveTaskField("urgency", Number((e.target as HTMLSelectElement).value)),
           { signal: __signal });
         // Eisenhower importance auto-save
-        document
-          .getElementById("td-importance")
+        byId("td-importance")
           ?.addEventListener("change", (e) =>
             saveTaskField("importance", Number((e.target as HTMLSelectElement).value)),
           { signal: __signal });
+        // Task kind + Event schedule auto-save
+        byId("td-task-kind")
+          ?.addEventListener("change", (e) => {
+            const prevKind = currentTaskKind
+            const nextKind = (e.target as HTMLSelectElement).value || "standard_action"
+            currentTaskKind = nextKind
+            const kindBadgeEl = byId("td-task-kind-badge")
+            if (kindBadgeEl) {
+              const label = KIND_BADGE_LABELS[nextKind] ?? ""
+              kindBadgeEl.textContent = label
+              kindBadgeEl.classList.toggle("hidden", !label)
+            }
+            const tt = (byId("td-task-type") as HTMLSelectElement | null)?.value || "task"
+            const typeIconEl = byId("td-type-icon")
+            if (typeIconEl) typeIconEl.replaceChildren(createTypeIconElement(tt, 16, nextKind))
+            const startVal = (byId("td-start-date") as HTMLInputElement | null)?.value ?? ""
+            const endVal = (byId("td-end-date") as HTMLInputElement | null)?.value ?? ""
+            byId("td-event-schedule")?.classList.toggle(
+              "hidden",
+              nextKind !== "calendar_event" && !startVal && !endVal,
+            )
+            saveTaskField("task_kind", nextKind)
+            if (currentTaskId && _modalAbortController && (prevKind === "shopping_item" || nextKind === "shopping_item")) {
+              mountTaskChecklist(currentTaskId, hasChecklistTextDraft?.getRaw?.() ?? "[]", _modalAbortController.signal, currentTicketKey ?? undefined)
+            }
+          }, { signal: __signal });
         // Phase 20: task_type auto-save
-        document
-          .getElementById("td-task-type")
+        byId("td-task-type")
           ?.addEventListener("change", (e) => {
             saveTaskField("task_type", (e.target as HTMLSelectElement).value);
           }, { signal: __signal });
-        document.getElementById("td-area")?.addEventListener("change", async event => {
+        byId("td-area")?.addEventListener("change", async event => {
           const select = event.currentTarget as HTMLSelectElement
           const modalSignal = _modalAbortController?.signal
           const taskId = currentTaskId
@@ -1909,7 +1993,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           if (hadFocus && document.activeElement === document.body) select.focus({ preventScroll: true })
         }, { signal: __signal })
         // Project change auto-save
-        document.getElementById("td-project")?.addEventListener("change", async (event) => {
+        byId("td-project")?.addEventListener("change", async (event) => {
           const select = event.currentTarget as HTMLSelectElement
           const modalSignal = _modalAbortController?.signal
           const projectId = select.value
@@ -1924,13 +2008,13 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         // Pillar change auto-save & dynamic Principle update
         let pillarPrinciplesController: AbortController | null = null;
         __signal.addEventListener("abort", () => pillarPrinciplesController?.abort(), { once: true });
-        document.getElementById("td-pillar")?.addEventListener("change", async (e) => {
+        byId("td-pillar")?.addEventListener("change", async (e) => {
           const pillarId = (e.target as HTMLSelectElement).value || null;
           const targetTaskId = currentTaskId;
           const generation = detailGeneration;
           pillarPrinciplesController?.abort();
           const savePromise = saveTaskField("pillar_id", pillarId);
-          const principleSelect = document.getElementById("td-principle") as HTMLSelectElement | null;
+          const principleSelect = byId("td-principle") as HTMLSelectElement | null;
           if (principleSelect) {
             const controller = new AbortController();
             pillarPrinciplesController = controller;
@@ -1945,12 +2029,11 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         }, { signal: __signal });
 
         // Principle change auto-save
-        document.getElementById("td-principle")?.addEventListener("change", (e) => {
+        byId("td-principle")?.addEventListener("change", (e) => {
           saveTaskField("principle_id", (e.target as HTMLSelectElement).value || null);
         }, { signal: __signal });
         // Assigned To: auto-save on change + toast feedback (UX2)
-        document
-          .getElementById("td-assigned-to")
+        byId("td-assigned-to")
           ?.addEventListener("change", async (e) => {
             const sel = e.target as HTMLSelectElement
             if (sel.disabled || _isPopulating || !currentTaskId) return
@@ -1963,9 +2046,9 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           }, { signal: __signal });
         // UX2: Keyboard shortcut 'A' to focus assignee dropdown in detail panel
         document.addEventListener("keydown", (e) => {
-          const panel = document.getElementById("task-detail-panel");
+          const panel = byId("task-detail-panel");
           if (!panel || panel.style.display === "none") return;
-          if (!tdOverlay.classList.contains("active") || hasPriorityOverlay() || !document.getElementById("shortcut-modal")?.classList.contains("hidden")) return;
+          if (!tdOverlay.classList.contains("active") || hasPriorityOverlay() || !byId("shortcut-modal")?.classList.contains("hidden")) return;
           if (document.body.classList.contains("has-docked-inspector") && !panel.contains(document.activeElement)) return;
           if (e.key === "a" && !e.ctrlKey && !e.metaKey && !e.altKey && singleKeyShortcutsEnabled()) {
             const active = document.activeElement as HTMLElement;
@@ -1977,47 +2060,61 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             )
               return;
             e.preventDefault();
-            const assignee = document.getElementById("td-assigned-to")
+            const assignee = byId("td-assigned-to")
             const disclosure = assignee?.closest("details")
             if (disclosure) disclosure.open = true
             assignee?.focus()
 
           }
         }, { signal: __signal });
-        document
-          .getElementById("td-progress")
+        byId("td-progress")
           ?.addEventListener("input", (e) => {
             const v = (e.target as HTMLInputElement).value;
-            const progEl = document.getElementById("td-progress-value");
+            const progEl = byId("td-progress-value");
             if (progEl) progEl.textContent = `${v}%`;
           }, { signal: __signal });
-        document
-          .getElementById("td-progress")
+        byId("td-progress")
           ?.addEventListener("change", (e) =>
             saveTaskField("progress", Number((e.target as HTMLInputElement).value)),
           { signal: __signal });
-        document
-          .getElementById("td-color")
+        byId("td-color")
           ?.addEventListener("change", (e) =>
             saveTaskField("color", (e.target as HTMLInputElement).value),
           { signal: __signal });
-        document
-          .getElementById("td-due-date")
+        byId("td-due-date")
           ?.addEventListener("change", (e) =>
             saveTaskField("due_date", (e.target as HTMLInputElement).value || null),
           { signal: __signal });
-        document
-          .getElementById("td-start-date")
-          ?.addEventListener("change", (e) =>
-            saveTaskField("start_date", (e.target as HTMLInputElement).value || null),
-          { signal: __signal });
-        document
-          .getElementById("td-end-date")
-          ?.addEventListener("change", (e) =>
-            saveTaskField("end_date", (e.target as HTMLInputElement).value || null),
-          { signal: __signal });
-        document
-          .getElementById("td-time-tracked")
+        function saveEventWindow(): void {
+          const allDay = Boolean((byId("td-event-all-day") as HTMLInputElement | null)?.checked)
+          const startInput = byId("td-start-date") as HTMLInputElement | null
+          const endInput = byId("td-end-date") as HTMLInputElement | null
+          const errEl = byId("td-event-date-error")
+          const startIso = parseEventInputForSave(startInput?.value ?? "", allDay)
+          const endIso = parseEventInputForSave(endInput?.value ?? "", allDay)
+          const invalid = Boolean(
+            startIso && endIso && (allDay ? endIso < startIso : new Date(endIso) <= new Date(startIso)),
+          )
+          errEl?.toggleAttribute("hidden", !invalid)
+          if (invalid) return
+          void saveTaskFields({ start_date: startIso, end_date: endIso })
+        }
+        byId("td-event-all-day")
+          ?.addEventListener("change", (e) => {
+            const allDay = (e.target as HTMLInputElement).checked
+            syncEventInputsType(allDay)
+            saveEventWindow()
+          }, { signal: __signal });
+        byId("td-start-date")
+          ?.addEventListener("change", saveEventWindow, { signal: __signal });
+        byId("td-end-date")
+          ?.addEventListener("change", saveEventWindow, { signal: __signal });
+        byId("td-event-location")
+          ?.addEventListener("change", (e) => {
+            const loc = (e.target as HTMLInputElement).value.trim()
+            cfApi.setStructuredField("location", loc || undefined, true)
+          }, { signal: __signal });
+        byId("td-time-tracked")
           ?.addEventListener("change", (e) =>
             saveTaskField(
               "time_tracked",
@@ -2039,20 +2136,21 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         const cfApi = initCustomFields({
           saveTD: saveTaskField,
           getSettingsFields: () => _settingsFields,
+          getCurrentTaskId: () => currentTaskId,
           signal: __signal,
         })
+        cancelCustomFieldSaves = cfApi.cancelPendingSave
         const addCFRow = cfApi.addCFRow
-        const setPreservedCFEntries = cfApi.setPreservedEntries
         flushPendingCustomFieldsSave = cfApi.flushPendingCustomFieldsSave
 
 
         // Parent search — debounced type-ahead
         let parentSearchTimer: ReturnType<typeof setTimeout> | undefined;
         __signal.addEventListener("abort", () => clearTimeout(parentSearchTimer), { once: true });
-        const parentSearchInput = document.getElementById(
+        const parentSearchInput = byId(
           "td-link-parent-search",
         ) as HTMLInputElement | null;
-        const parentResultsDiv = document.getElementById(
+        const parentResultsDiv = byId(
           "td-link-parent-results",
         );
 
@@ -2077,25 +2175,17 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                 (t: Record<string, unknown>) => t.id !== currentTaskId,
               );
               if (tasks.length === 0) {
-                const empty = document.createElement("div")
-                empty.className = "px-3 py-2 text-xs text-text-muted italic"
-                empty.textContent = "No matches"
+                const empty = domEl("div", "px-3 py-2 text-xs text-text-muted italic", "No matches")
                 parentResultsDiv.replaceChildren(empty)
               } else {
                 parentResultsDiv.replaceChildren(
                   ...tasks.map((t: Record<string, unknown>) => {
-                    const row = document.createElement("div");
-                    row.className = "td-parent-result px-3 py-2 text-sm cursor-pointer hover:bg-bg-hover flex items-center gap-2";
+                    const row = domEl("div", "td-parent-result px-3 py-2 text-sm cursor-pointer hover:bg-bg-hover flex items-center gap-2")
                     row.dataset.id = String(t.id ?? "");
-                    const iconSpan = document.createElement("span");
-                    iconSpan.className = "shrink-0 inline-flex";
-                    iconSpan.appendChild(createTypeIconElement(String(t.task_type ?? "task"), 14));
-                    const titleSpan = document.createElement("span");
-                    titleSpan.className = "truncate";
-                    titleSpan.textContent = formatTicketDisplay(t.ticket_key, String(t.title ?? "").slice(0, 60), t.id);
-                    const typeSpan = document.createElement("span");
-                    typeSpan.className = "text-xs text-text-muted ml-auto";
-                    typeSpan.textContent = String(t.task_type ?? "task");
+                    const iconSpan = domEl("span", "shrink-0 inline-flex")
+                    iconSpan.appendChild(createTypeIconElement(String(t.task_type ?? "task"), 14, typeof t.task_kind === "string" ? t.task_kind : undefined));
+                    const titleSpan = domEl("span", "truncate", formatTicketDisplay(t.ticket_key, String(t.title ?? "").slice(0, 60), t.id))
+                    const typeSpan = domEl("span", "text-xs text-text-muted ml-auto", String(t.task_type ?? "task"))
                     row.append(iconSpan, titleSpan, typeSpan);
                     return row;
                   }),
@@ -2156,19 +2246,19 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           const wasPromoted = promoteButton.getAttribute("aria-pressed") === "true";
           const nextPromoted = !wasPromoted;
           promoteButton.disabled = true;
-          promoteButton.setAttribute("aria-pressed", String(nextPromoted));
+          setAttr(promoteButton, "aria-pressed", String(nextPromoted));
           try {
             const saved = await saveTaskField("is_promoted", nextPromoted);
             if (search && generation !== detailGeneration) return;
             if (saved === false) {
-              promoteButton.setAttribute("aria-pressed", String(wasPromoted));
+              setAttr(promoteButton, "aria-pressed", String(wasPromoted));
               return;
             }
             const promoteLabel = nextPromoted
               ? (window.mI18n?.get("kanban.demote_card") ?? "Remove promotion")
               : (window.mI18n?.get("kanban.promote_card") ?? "Promote to top");
             promoteButton.title = promoteLabel;
-            promoteButton.setAttribute("aria-label", promoteLabel);
+            setAttr(promoteButton, "aria-label", promoteLabel);
             showToast(nextPromoted
               ? (window.mI18n?.get("kanban.card_promoted") ?? "Promoted to the top of the lane")
               : (window.mI18n?.get("kanban.card_demoted") ?? "Promotion removed"));
@@ -2179,8 +2269,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         }, { signal: __signal });
 
         // Duplicate task
-        document
-          .getElementById("td-duplicate")
+        byId("td-duplicate")
           ?.addEventListener("click", async () => {
             const taskId = currentTaskId;
             if (!taskId || boardWithheld || __signal.aborted) return;
@@ -2225,10 +2314,10 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           const taskId = currentTaskId
           const signal = _modalAbortController?.signal
           if (!taskId || !signal || signal.aborted || askAi.getAttribute("aria-busy") === "true") return
-          askAi.setAttribute("aria-disabled", "true")
-          askAi.setAttribute("aria-busy", "true")
+          setAttr(askAi, "aria-disabled", "true")
+          setAttr(askAi, "aria-busy", "true")
           askAi.classList.add("opacity-60")
-          document.getElementById("td-ai-response")?.remove()
+          byId("td-ai-response")?.remove()
 
           function resetButton() {
             if (!askAi) return
@@ -2241,24 +2330,19 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             const result = await askAIForTask(taskId, signal)
             if (signal.aborted || currentTaskId !== taskId) return
             if (result.source === "ha-assist") {
-              const response = document.createElement("div")
+              const response = domEl("div")
               response.id = "td-ai-response"
               response.className = "mt-2 p-3 bg-accent/10 border border-accent/20 rounded-md text-xs text-text-secondary leading-relaxed"
-              const header = document.createElement("div")
-              header.className = "flex justify-between items-center mb-1.5"
-              const title = document.createElement("strong")
-              title.className = "text-accent text-[11px]"
-              title.textContent = "AI Response"
-              const dismiss = document.createElement("button")
+              const header = domEl("div", "flex justify-between items-center mb-1.5")
+              const title = domEl("strong", "text-accent text-[11px]", "AI Response")
+              const dismiss = domEl("button")
               dismiss.type = "button"
               dismiss.id = "td-ai-dismiss"
               dismiss.className = "text-text-muted hover:text-text-primary text-xs px-1"
-              dismiss.setAttribute("aria-label", "Dismiss AI response")
+              setAttr(dismiss, "aria-label", "Dismiss AI response")
               dismiss.textContent = "×"
               header.append(title, dismiss)
-              const body = document.createElement("div")
-              body.className = "whitespace-pre-wrap"
-              body.textContent = result.response
+              const body = domEl("div", "whitespace-pre-wrap", result.response)
               response.replaceChildren(header, body)
               askAi.parentElement?.after(response)
               dismiss.addEventListener("click", () => response.remove(), { signal })
@@ -2273,10 +2357,8 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           }
         }, { signal: __signal })
 
-
         // Delete
-        document
-          .getElementById("td-delete")
+        byId("td-delete")
           ?.addEventListener("click", async () => {
             const taskId = currentTaskId
             if (!taskId || !currentTaskActions.has("delete") || boardWithheld || !_modalAbortController || _modalAbortController.signal.aborted) return
@@ -2330,7 +2412,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
 
           closeTaskReferences()
           commentButton.disabled = true
-          commentError?.setAttribute("hidden", "")
+          setAttr(commentError, "hidden", "")
           let participantDenied = false
           let mentionFailure: Awaited<ReturnType<typeof readCommentMentionProblem>>
           const mentionHeaders = commentMentionWriteHeaders(draft)
@@ -2376,14 +2458,14 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           }
         }, { signal: __signal })
 
-        document.getElementById("td-copy-link")?.addEventListener("click", async () => {
+        byId("td-copy-link")?.addEventListener("click", async () => {
           if (!currentTaskId) return
           const taskId = currentTaskId
           const link = buildTaskPermalink(currentTicketKey ?? taskId)
           const copied = await copyToClipboard(link)
           if (__signal.aborted || currentTaskId !== taskId) return
           if (copied) {
-            copyFallback?.setAttribute("hidden", "")
+            setAttr(copyFallback, "hidden", "")
             showToast("task_modal.link_copied", "success")
           } else if (copyFallback && copyValue) {
             copyFallback.removeAttribute("hidden")
@@ -2473,8 +2555,8 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             event.stopPropagation()
             // Clean up search dropdown if opened from search results
             if (taskEl.closest("#search-results")) {
-              const sr = document.getElementById("search-results");
-              const si = document.getElementById(
+              const sr = byId("search-results");
+              const si = byId(
                 "global-search",
               ) as HTMLInputElement;
               if (sr) sr.style.display = "none";

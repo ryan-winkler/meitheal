@@ -7,9 +7,13 @@ import { withAsyncButton } from "@lib/async-button"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { safeIngressHref } from "@lib/ingress-navigation"
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { safeFetch } from "@lib/safe-fetch"
 import { byId, domEl as el, whenSectionVisible } from "@lib/settings-utils"
 import { createTablerSvgElement } from "@lib/tabler-svg"
 import { showToast } from "@lib/toast"
+import { qs, setAttr } from "@lib/dom-helpers"
+
+const SAFE_PATH_SEGMENT_RE = /^[A-Za-z0-9._-]+$/
 
 interface BoardGrant {
   id: string
@@ -130,7 +134,7 @@ export function initAgentTokensSettings(): void {
       const data = await res.json() as { users?: DirectoryUser[] }
       if (signal.aborted) return
       const current = assigneeSelect!.value
-      const createOpt = assigneeSelect!.querySelector<HTMLOptionElement>('option[value="__new__"]')
+      const createOpt = qs<HTMLOptionElement>(assigneeSelect!, 'option[value="__new__"]')
       assigneeSelect!.querySelectorAll("option[data-agent-option]").forEach(o => o.remove())
       agentNames.clear()
       for (const u of data.users ?? []) {
@@ -218,7 +222,7 @@ export function initAgentTokensSettings(): void {
       }
       showToast(hard ? "Token deleted" : "Token revoked", "success")
       await loadTokens()
-      const next = hard ? createBtn : listEl!.querySelector<HTMLButtonElement>(`[data-delete="${CSS.escape(id)}"]`)
+      const next = hard ? createBtn : qs<HTMLButtonElement>(listEl!, `[data-delete="${CSS.escape(id)}"]`)
       ;(next ?? createBtn)?.focus()
     } catch {
       if (!signal.aborted) showToast(hard ? "Failed to delete token" : "Failed to revoke token", "error")
@@ -226,8 +230,12 @@ export function initAgentTokensSettings(): void {
   }
 
   async function updateBoardAccess(boardId: string, tokenId: string, enabled: boolean) {
+    if (!SAFE_PATH_SEGMENT_RE.test(boardId)) {
+      showToast("Could not update Board access", "error")
+      return
+    }
     try {
-      const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}`, {
+      const res = await safeFetch(`/api/boards/${encodeURIComponent(boardId)}`, {
         method: "PATCH",
         headers: boardHeaders(boardId),
         body: JSON.stringify({ action: "agent", tokenId, enabled }),
@@ -312,7 +320,7 @@ export function initAgentTokensSettings(): void {
             rm.dataset.boardRemove = b.id
             rm.dataset.boardToken = token.id
             rm.title = `Remove ${b.name} access`
-            rm.setAttribute("aria-label", `Remove ${b.name} access for ${token.name}`)
+            setAttr(rm, "aria-label", `Remove ${b.name} access for ${token.name}`)
             rm.append(createTablerSvgElement("x", 11))
             chip.append(rm)
           }
@@ -324,7 +332,7 @@ export function initAgentTokensSettings(): void {
       if (addable.length > 0) {
         const addSel = el("select", "agent-tokens__board-add")
         addSel.dataset.boardAddToken = token.id
-        addSel.setAttribute("aria-label", `Grant Board access for ${token.name}`)
+        setAttr(addSel, "aria-label", `Grant Board access for ${token.name}`)
         addSel.add(new Option("+ Grant Board…", ""))
         for (const b of addable) addSel.add(new Option(b.ticketPrefix ? `${b.ticketPrefix} · ${b.name}` : b.name, b.id))
         boardsBar.append(addSel)
@@ -338,7 +346,7 @@ export function initAgentTokensSettings(): void {
         revokeBtn.type = "button"
         revokeBtn.dataset.revoke = token.id
         revokeBtn.title = "Revoke"
-        revokeBtn.setAttribute("aria-label", `Revoke token ${token.name}`)
+        setAttr(revokeBtn, "aria-label", `Revoke token ${token.name}`)
         revokeBtn.append(createTablerSvgElement("x", 14))
         actions.append(revokeBtn)
       }
@@ -346,7 +354,7 @@ export function initAgentTokensSettings(): void {
       deleteBtn.type = "button"
       deleteBtn.dataset.delete = token.id
       deleteBtn.title = "Delete permanently"
-      deleteBtn.setAttribute("aria-label", `Delete token ${token.name} permanently`)
+      setAttr(deleteBtn, "aria-label", `Delete token ${token.name} permanently`)
       deleteBtn.append(createTablerSvgElement("trash", 14))
       actions.append(deleteBtn)
 
@@ -468,7 +476,7 @@ export function initAgentTokensSettings(): void {
     const scopes = Array.from(document.querySelectorAll<HTMLInputElement>('[name="agent-token-scopes"]:checked')).map(cb => cb.value)
     if (scopes.length === 0) {
       showToast("Select at least one scope", "error")
-      formEl.querySelector<HTMLInputElement>('[name="agent-token-scopes"]')?.focus()
+      qs<HTMLInputElement>(formEl, '[name="agent-token-scopes"]')?.focus()
       return
     }
     const creatingNew = assigneeSelect.value === "__new__"
@@ -513,7 +521,7 @@ export function initAgentTokensSettings(): void {
         agentNames.set(created.id, created.name)
         const opt = new Option(created.name, created.id)
         opt.dataset.agentOption = "1"
-        assigneeSelect.insertBefore(opt, assigneeSelect.querySelector('option[value="__new__"]'))
+        assigneeSelect.insertBefore(opt, qs(assigneeSelect, 'option[value="__new__"]'))
         assigneeSelect.value = created.id
         toggleNewAssignee()
         assigneeId = created.id

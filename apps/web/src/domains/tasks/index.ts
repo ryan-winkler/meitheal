@@ -8,7 +8,7 @@ export {
 } from "./agent-board-authority"
 export { resolveHAAssignmentProof, type AssignmentProof } from "./assignment-proof"
 export { listSharedGoals } from "./persistence/shared-goal-repository"
-export { TemplateRepository } from "./persistence/template-repository"
+export { ROUTINE_NEWLY_COMPLETED, TemplateRepository } from "./persistence/template-repository"
 export {
   isVerifiedPrincipalCurrent, boardPlanningOwnership, boardTaskOwnership, boardOwnerInsertExpression,
   guardWorkPersistence, sql, sourceSql, joinSql, type SqlFragment,
@@ -89,7 +89,9 @@ export { customUserKind, UserRepository, type CustomUserKind } from "./persisten
 export {
   dispatchTaskCreation,
   prepareTaskCreation,
+  taskChecklistsJson,
   taskCreationPayload,
+  taskJsonObject,
   taskLabelsJson,
 } from "./task-creation-service"
 export { startInactivityScheduler } from "./task-inactivity-scheduler"

@@ -16,6 +16,7 @@ import { isActiveParticipantProblem } from "@lib/task-participant-problem"
 import { commentMentionWriteHeaders, readCommentMentionProblem } from "@lib/comment-mention-client"
 import { renderCommentTaskReferences } from "@lib/task-references"
 import { mountReactions } from "./modal-reactions"
+import { byId, domEl, qs, setAttr } from "@lib/dom-helpers"
 
 const log = createClientLogger("tasks", "comments-attachments")
 
@@ -25,18 +26,18 @@ function attachCommentManagement(
   const template = document.querySelector<HTMLTemplateElement>("#td-comment-management")
   if (!template) return
   const controls = template.content.cloneNode(true) as DocumentFragment
-  const actions = controls.querySelector<HTMLElement>("[data-comment-actions]")!
-  const edit = controls.querySelector<HTMLButtonElement>("[data-comment-edit]")!
-  const remove = controls.querySelector<HTMLButtonElement>("[data-comment-delete]")!
-  const form = controls.querySelector<HTMLFormElement>("form")!
+  const actions = qs<HTMLElement>(controls, "[data-comment-actions]")!
+  const edit = qs<HTMLButtonElement>(controls, "[data-comment-edit]")!
+  const remove = qs<HTMLButtonElement>(controls, "[data-comment-delete]")!
+  const form = qs<HTMLFormElement>(controls, "form")!
   const input = form.querySelector("textarea")!
-  const save = form.querySelector<HTMLButtonElement>('button[type="submit"]')!
-  const cancel = form.querySelector<HTMLButtonElement>("[data-comment-cancel]")!
-  const error = controls.querySelector<HTMLElement>('[role="alert"]')!
-  const hint = controls.querySelector<HTMLElement>("[data-reference-hint]")!
+  const save = qs<HTMLButtonElement>(form, 'button[type="submit"]')!
+  const cancel = qs<HTMLButtonElement>(form, "[data-comment-cancel]")!
+  const error = qs<HTMLElement>(controls, '[role="alert"]')!
+  const hint = qs<HTMLElement>(controls, "[data-reference-hint]")!
   error.id = `${wrapper.id}-error`
   hint.id = `${wrapper.id}-reference-hint`
-  input.setAttribute("aria-describedby", `${error.id} ${hint.id}`)
+  setAttr(input, "aria-describedby", `${error.id} ${hint.id}`)
   wrapper.append(controls)
 
   const isCurrent = () => !signal.aborted && wrapper.isConnected
@@ -121,7 +122,7 @@ function attachCommentManagement(
       if (!isCurrent()) return
       const next = wrapper.nextElementSibling ?? wrapper.previousElementSibling
       wrapper.remove()
-      const focusTarget = next instanceof HTMLElement ? next : document.getElementById("td-comment-input")
+      const focusTarget = next instanceof HTMLElement ? next : byId("td-comment-input")
       focusTarget?.focus()
     } catch {
       if (isCurrent()) {
@@ -143,11 +144,11 @@ export async function loadComments(
   task: { id: string, ticket_key: string | null }, signal: AbortSignal, commentTarget: string | null = null, postedCommentId?: number,
 ): Promise<void> {
   const taskId = task.id
-  const container = document.getElementById("td-comments")
-  const status = document.getElementById("td-comment-link-status")
+  const container = byId("td-comments")
+  const status = byId("td-comment-link-status")
   if (!container) return
   const taskLabel = container.dataset.taskLabel ?? "Task"
-  if (postedCommentId !== undefined && document.getElementById(`td-comment-${postedCommentId}`)) return
+  if (postedCommentId !== undefined && byId(`td-comment-${postedCommentId}`)) return
   const url = `/api/tasks/${encodeURIComponent(taskId)}/comments`
 
   function showLinkStatus(message: string | undefined) {
@@ -175,14 +176,12 @@ export async function loadComments(
     let linkedComment: HTMLElement | undefined
     for (const c of data.comments || []) {
       if (postedCommentId !== undefined && c.id !== postedCommentId) continue
-      const wrapper = document.createElement("article")
-      wrapper.className = "bg-bg-card rounded-md p-3 border border-border focus:outline-2 focus:outline-accent"
+      const wrapper = domEl("article", "bg-bg-card rounded-md p-3 border border-border focus:outline-2 focus:outline-accent")
 
-      const meta = document.createElement("div")
-      meta.className = "flex flex-wrap justify-between gap-1 text-xs text-text-muted mb-1"
-      const authorSpan = document.createElement("span")
+      const meta = domEl("div", "flex flex-wrap justify-between gap-1 text-xs text-text-muted mb-1")
+      const authorSpan = domEl("span")
       authorSpan.textContent = c.author
-      const dateLink = document.createElement("a")
+      const dateLink = domEl("a")
       const timestamp = new Date(c.created_at).toLocaleString()
       dateLink.textContent = timestamp
       dateLink.href = buildTaskPermalink(task, c.id)
@@ -190,19 +189,18 @@ export async function loadComments(
       const linkLabel = container.dataset.linkLabel
       if (linkLabel) {
         dateLink.title = linkLabel
-        dateLink.setAttribute("aria-label", `${linkLabel}, ${c.author}, ${timestamp}`)
+        setAttr(dateLink, "aria-label", `${linkLabel}, ${c.author}, ${timestamp}`)
       }
       meta.append(authorSpan, dateLink)
 
-      const body = document.createElement("div")
-      body.className = "text-sm text-text-primary whitespace-pre-wrap break-words"
+      const body = domEl("div", "text-sm text-text-primary whitespace-pre-wrap break-words")
       renderCommentTaskReferences(body, c.content, taskLabel)
 
       wrapper.id = `td-comment-${c.id}`
       wrapper.tabIndex = -1
       body.id = `td-comment-body-${c.id}`
-      wrapper.setAttribute("aria-label", `${c.author}, ${timestamp}`)
-      wrapper.setAttribute("aria-describedby", body.id)
+      setAttr(wrapper, "aria-label", `${c.author}, ${timestamp}`)
+      setAttr(wrapper, "aria-describedby", body.id)
       wrapper.append(meta, body)
       if (c.can_manage === true) attachCommentManagement(wrapper, body, c.content, taskLabel, taskId, `${url}/${c.id}`, signal)
       mountReactions(wrapper, `${url}/${c.id}/reactions`, signal)
@@ -222,7 +220,7 @@ let attachmentsLoadSeq = 0
  * Load and render image attachment thumbnails for a task.
  */
 export async function loadAttachments(taskId: string): Promise<void> {
-  const container = document.getElementById(
+  const container = byId(
     "td-attachments",
   ) as HTMLElement
   if (!container) return
@@ -234,9 +232,7 @@ export async function loadAttachments(taskId: string): Promise<void> {
     const attachments = await getAttachmentsByTaskId(taskId)
     if (seq !== attachmentsLoadSeq || container.dataset.activeTaskId !== taskId || !container.isConnected) return
     if (attachments.length === 0) {
-      const emptyLabel = document.createElement("span")
-      emptyLabel.className = "text-[10px] text-text-muted italic"
-      emptyLabel.textContent = "No attachments."
+      const emptyLabel = domEl("span", "text-[10px] text-text-muted italic", "No attachments.")
       container.appendChild(emptyLabel)
       return
     }
@@ -249,29 +245,25 @@ export async function loadAttachments(taskId: string): Promise<void> {
         : null
       if (!safeSrc) return
 
-      const thumb = document.createElement("div")
-      thumb.className =
-        "relative group cursor-pointer border border-border rounded-md overflow-hidden hover:border-accent transition-colors focus-visible:outline-2 focus-visible:outline-accent"
+      const thumb = domEl("div", "relative group cursor-pointer border border-border rounded-md overflow-hidden hover:border-accent transition-colors focus-visible:outline-2 focus-visible:outline-accent")
       thumb.style.width = "64px"
       thumb.style.height = "64px"
       thumb.tabIndex = 0
-      thumb.setAttribute("role", "button")
-      thumb.setAttribute("aria-label", `Preview ${att.filename || "attachment"}`)
+      setAttr(thumb, "role", "button")
+      setAttr(thumb, "aria-label", `Preview ${att.filename || "attachment"}`)
 
-      const img = document.createElement("img")
+      const img = domEl("img")
       img.src = safeSrc
       img.alt = att.filename || "Attachment"
       img.className = "w-full h-full object-cover"
       img.title = att.filename
 
       // Delete overlay
-      const delOverlay = document.createElement("div")
-      delOverlay.className =
-        "absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-      const delBtn = document.createElement("button")
+      const delOverlay = domEl("div", "absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity")
+      const delBtn = domEl("button")
       delBtn.type = "button"
       delBtn.className = "text-white text-sm font-semibold hover:text-danger p-2"
-      delBtn.setAttribute("aria-label", `Delete ${att.filename || "attachment"}`)
+      setAttr(delBtn, "aria-label", `Delete ${att.filename || "attachment"}`)
       delBtn.textContent = "×"
       delBtn.onclick = async (e) => {
         e.stopPropagation()
@@ -290,17 +282,16 @@ export async function loadAttachments(taskId: string): Promise<void> {
 
       // Safe in-page lightbox dialog (no raw HTML blob or window.open)
       const openLightbox = () => {
-        const dialog = document.createElement("dialog")
-        dialog.className = "m-attachment-lightbox"
+        const dialog = domEl("dialog", "m-attachment-lightbox")
         dialog.style.cssText = "padding:0;border:none;background:transparent;max-width:92vw;max-height:92vh;overflow:visible;"
-        const fullImg = document.createElement("img")
+        const fullImg = domEl("img")
         fullImg.src = safeSrc
         fullImg.alt = att.filename || "Attachment preview"
         fullImg.style.cssText = "display:block;max-width:90vw;max-height:86vh;border-radius:8px;box-shadow:0 16px 48px rgba(0,0,0,0.6);"
-        const closeBtn = document.createElement("button")
+        const closeBtn = domEl("button")
         closeBtn.type = "button"
         closeBtn.textContent = "×"
-        closeBtn.setAttribute("aria-label", "Close attachment preview")
+        setAttr(closeBtn, "aria-label", "Close attachment preview")
         closeBtn.style.cssText = "position:absolute;top:-14px;right:-14px;width:32px;height:32px;border-radius:999px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-primary);font-size:18px;cursor:pointer;"
         const dismiss = () => { dialog.close(); dialog.remove() }
         closeBtn.addEventListener("click", dismiss)
@@ -325,9 +316,7 @@ export async function loadAttachments(taskId: string): Promise<void> {
     })
   } catch (e) {
     log.error("Failed to load attachments", e)
-    const errLabel = document.createElement("span")
-    errLabel.className = "text-xs text-danger"
-    errLabel.textContent = "Failed to load attachments"
+    const errLabel = domEl("span", "text-xs text-danger", "Failed to load attachments")
     container.appendChild(errLabel)
   }
 }

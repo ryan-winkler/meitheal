@@ -407,6 +407,21 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
 
   const personalInitial = readPersonalSidebarConfig(initialKeys)
   let config: SidebarMenuConfig = personalInitial ?? readServerConfig()
+  let hydratedLegacyTaskPins = false
+  if (!personalInitial) {
+    try {
+      const rawTaskNav = localStorage.getItem("meitheal-task-nav-prefs")
+      const parsedTaskNav = rawTaskNav ? JSON.parse(rawTaskNav) as { pinnedViews?: unknown } : null
+      if (Array.isArray(parsedTaskNav?.pinnedViews)) {
+        for (const view of parsedTaskNav.pinnedViews) {
+          if (typeof view === "string" && ["calendar", "kanban", "timeline", "table"].includes(view)) {
+            config = setItemVisible(config, `view-${view}`, true)
+            hydratedLegacyTaskPins = true
+          }
+        }
+      }
+    } catch { /* ignore invalid legacy prefs */ }
+  }
   let editing = false
   let selectedTarget: { kind: "item" | "section"; id: string } | null = null
 
@@ -602,12 +617,15 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
 
       const list = sectionEl.querySelector<HTMLElement>("[data-sidebar-section-list]")
       if (!list) continue
+      const overflowMenu = editing ? null : root!.querySelector("[data-nav-overflow-menu]")
       const keys = config.sectionItems[sectionId] ?? []
       let itemIdx = 0
       for (const key of keys) {
         const itemEl = itemEls.get(key)
         if (!itemEl) continue
-        if (!overflowMenu?.contains(itemEl)) {
+        if (overflowMenu?.contains(itemEl)) {
+          // Skip moving items currently housed inside More so child focus stays intact.
+        } else {
           if (list.children[itemIdx] !== itemEl) {
             list.insertBefore(itemEl, list.children[itemIdx] ?? null)
           }
@@ -770,7 +788,7 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
   } else {
     const hydrated = hydrateLegacyPinnedViews(config)
     config = hydrated.next
-    if (hydrated.changed) syncDomFromConfig()
+    if (hydratedLegacyTaskPins || hydrated.changed) syncDomFromConfig()
     else syncPersonalResetButton()
   }
 

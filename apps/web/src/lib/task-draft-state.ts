@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { VALID_TASK_KINDS } from "@meitheal/domain-tasks"
+import { SHOPPING_CATEGORIES, VALID_TASK_KINDS } from "@meitheal/domain-tasks"
 
 export const taskDraftBodyLimit = 64 * 1024
 
@@ -9,9 +9,9 @@ const controlDate = z.string().max(64)
 const label = z.string().min(1).max(100)
 const labels = z.array(label).max(32)
 const itemText = z.string().min(1).max(200)
-const itemQuantity = z.number().int().min(1).max(999)
+const itemQuantity = z.union([z.number().int().min(1).max(999), z.string().trim().min(1).max(32)])
 const priority = z.number().int().min(1).max(5)
-const category = z.enum(["", "produce", "dairy", "meat", "pantry", "frozen", "beverages", "household", "other"])
+const category = z.enum(["", ...SHOPPING_CATEGORIES])
 const taskKind = z.enum(VALID_TASK_KINDS)
 const field = z.discriminatedUnion("type", [
   z.strictObject({
@@ -26,7 +26,7 @@ const field = z.discriminatedUnion("type", [
 ])
 const fields = z.array(field).max(24)
 const checklistItems = z.array(z.strictObject({ id, text: itemText, done: z.boolean() })).max(64)
-const shoppingItems = z.array(z.strictObject({ name: itemText, qty: itemQuantity, category })).max(64)
+const shoppingItems = z.array(z.strictObject({ name: itemText, qty: itemQuantity, category, checked: z.boolean().optional() })).max(64)
 
 export const taskDraftVersion = z.strictObject({
   draftId: id,

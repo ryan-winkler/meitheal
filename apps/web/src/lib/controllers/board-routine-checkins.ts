@@ -122,7 +122,7 @@ export function setupBoardRoutineCheckins(signal: AbortSignal) {
       await refresh()
     }
   }, { signal })
-  const recheck = () => { clear(); void refresh() }
+  const recheck = () => { void refresh() }
   document.addEventListener("visibilitychange", recheck, { signal })
   window.addEventListener("focus", recheck, { signal })
   window.addEventListener("offline", clear, { signal })

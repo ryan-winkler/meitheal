@@ -38,10 +38,10 @@ Opening a section from the toolbar updates the URL hash, so you can reload or sh
 ### Create or edit a Household Routine
 
 1. Choose **New Routine** in the shell or in the Household library section.
-2. Set cadence, priority, description, and optional checklist items.
+2. Choose a `1.75px` Tabler sprite icon (legacy stored emoji values map automatically via `mapEntityEmojiToTabler()`), cadence (`daily` or `weekly`), priority, description, and optional checklist items.
 3. Save the habit to update the underlying routine template.
 
-Editing an existing habit now preserves description and priority instead of flattening them.
+Editing an existing routine preserves description and priority. Household Routine listings and check-ins use the configured household timezone (`GET /api/habits` with optional `area_id` and `project_id` filters, App MCP `listHabits`, Core MCP `listRoutines`, LLM `meitheal_list_routines`) and support check-in mutations (`POST /api/habits` with `action: "complete"`, App MCP `createHabit`, Core MCP `completeRoutine`, LLM `meitheal_complete_routine`).
 
 When Household is deleted, its library and shared creation controls are paused. Restore it from **Boards → Deleted Boards** to recover its saved Routines. Routines on active named Boards remain available in the check-in area.
 
@@ -51,7 +51,7 @@ When Household is deleted, its library and shared creation controls are paused. 
 
 Board owners create and edit these Routines under **Boards → Areas**. To bind a Routine to a Project, open that Project’s settings and create the Routine there. Its completed ticket retains the Area and Project. Closing or removing the Project prevents new occurrences. Retrying an already completed occurrence keeps its existing ticket, subject to current Board permissions.
 
-Named Board check-ins use a UTC day or a UTC week starting Monday. A generated ticket keeps that occurrence’s date. If a check-in cannot be confirmed, refresh the list before trying again. Reconnect through Home Assistant when the list disappears after an account or connection change.
+Household and named Board Routine check-ins and streaks follow your request or configured household timezone (with UTC fallback when no timezone is configured), using the current day or Monday-start week. A generated ticket keeps that occurrence’s date. If a check-in cannot be confirmed, refresh the list before trying again. Reconnect through Home Assistant when the list disappears after an account or connection change.
 
 The Routines feature must be available to your account. Administrators choose its audience under **Settings → Tasks & Boards → Organization features**. Personal names for Routine and Board come from **Navigation & Shortcuts → Labels**.
 
@@ -91,4 +91,4 @@ The disabled toolbar creation control offers refresh guidance when a read fails.
 
 ### Habits load but edits drop fields
 
-This should no longer happen after the shell rewrite. If description or priority disappear after saving, capture the `/api/habits` response and the browser console so the routine template payload can be inspected.
+If description or priority disappear after saving, capture the `/api/habits` response and browser console to inspect the routine template payload.

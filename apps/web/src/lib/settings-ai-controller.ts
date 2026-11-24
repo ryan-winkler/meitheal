@@ -17,6 +17,7 @@ import { saveSetting, saveSettings, showSettingsSaveError, whenSectionVisible } 
 import { showToast } from "@lib/toast"
 import { notifyWebMcpPreferenceChanged, refreshWebMcpPreference } from "@lib/webmcp-controller"
 import { getClientLocale, t } from "../i18n/client"
+import { byId, setAttr } from "@lib/dom-helpers"
 
 let discoveryProbe: AbortController | undefined
 let savedAiProvider: string | null = null
@@ -26,7 +27,7 @@ let aiHandoffEditable = false
 
 /** Count checked discovery documents, never saved preferences or token tools. */
 async function refreshProtocolDiscovery(): Promise<void> {
-  const badge = document.getElementById("agent-protocols-status")
+  const badge = byId("agent-protocols-status")
   if (!badge) return
   discoveryProbe?.abort()
   const controller = new AbortController()
@@ -36,12 +37,12 @@ async function refreshProtocolDiscovery(): Promise<void> {
   const probe = String(Number(badge.dataset.probe || 0) + 1)
   badge.dataset.probe = probe
   const current = () => !pageSignal.aborted && !controller.signal.aborted &&
-    document.getElementById("agent-protocols-status") === badge && badge.dataset.probe === probe
+    byId("agent-protocols-status") === badge && badge.dataset.probe === probe
   badge.textContent = badge.dataset.checking ?? ""
   badge.className = "badge badge-pending"
   let available = 0
   await Promise.all((["a2a", "mcp"] as const).map(async protocol => {
-    const status = document.getElementById(`agent-${protocol}-runtime-status`)
+    const status = byId(`agent-${protocol}-runtime-status`)
     const link = document.querySelector<HTMLAnchorElement>(`[data-protocol-link="${protocol}"]`)
     if (!status || !link) return
     link.hidden = true
@@ -81,7 +82,7 @@ async function refreshProtocolDiscovery(): Promise<void> {
 }
 
 function renderAgentBadge(select: HTMLSelectElement, label?: string) {
-  const badge = document.getElementById("ha-agent-status")
+  const badge = byId("ha-agent-status")
   if (badge) badge.textContent = label ?? select.selectedOptions[0]?.text ?? select.dataset.default ?? "Default"
 }
 
@@ -91,12 +92,12 @@ function initHaAgentSettings() {
 
   pageLifecycle.on(select, "change", () => {
     renderAgentBadge(select)
-    const status = document.getElementById("ha-agent-discovery-status")
+    const status = byId("ha-agent-discovery-status")
     if (status) status.textContent = select.selectedOptions[0]?.dataset.unavailable === "true"
       ? t("settings.ha_agent_selected_unavailable", getClientLocale())
       : t("settings.ha_agent_save_hint", getClientLocale())
   })
-  const refresh = document.getElementById("refresh-ha-agents")
+  const refresh = byId("refresh-ha-agents")
   if (refresh) pageLifecycle.on(refresh, "click", () => {
     if (refresh.getAttribute("aria-busy") !== "true") void restoreHaAgent(select.value)
   })
@@ -119,7 +120,7 @@ function initHaAgentSettings() {
   }, { loadingText: "Saving…", onError: showSettingsSaveError }))
 
   const test = document.querySelector<HTMLButtonElement>("#test-ha-agent")
-  const result = document.getElementById("ha-agent-test-result")
+  const result = byId("ha-agent-test-result")
   if (test && result) pageLifecycle.on(test, "click", withAsyncButton(test, async () => {
     const signal = pageLifecycle.signal
     result.textContent = test.dataset.textTesting ?? "Testing…"
@@ -157,12 +158,12 @@ async function restoreHaAgent(savedAgent: unknown) {
   }
   const version = ++agentDiscoveryVersion
   const signal = pageLifecycle.signal
-  const status = document.getElementById("ha-agent-discovery-status")
+  const status = byId("ha-agent-discovery-status")
   const refresh = document.querySelector<HTMLButtonElement>("#refresh-ha-agents")
   if (status) status.textContent = t("settings.ha_agent_loading", getClientLocale())
   if (refresh) {
-    refresh.setAttribute("aria-disabled", "true")
-    refresh.setAttribute("aria-busy", "true")
+    setAttr(refresh, "aria-disabled", "true")
+    setAttr(refresh, "aria-busy", "true")
   }
   try {
     const agents = await fetchHaAgents(signal)
@@ -183,8 +184,8 @@ async function restoreHaAgent(savedAgent: unknown) {
     if (status) status.textContent = t("settings.ha_agent_discovery_retry", getClientLocale(), { error: detail })
   } finally {
     if (!signal.aborted && version === agentDiscoveryVersion && refresh) {
-      refresh.setAttribute("aria-disabled", "false")
-      refresh.setAttribute("aria-busy", "false")
+      setAttr(refresh, "aria-disabled", "false")
+      setAttr(refresh, "aria-busy", "false")
     }
   }
 }
@@ -197,7 +198,7 @@ function fixProtocolLinks(): void {
 }
 
 function updateExtAiBadge(select: HTMLSelectElement | null): void {
-  const badge = document.getElementById("ext-ai-badge")
+  const badge = byId("ext-ai-badge")
   if (!badge) return
   badge.textContent = aiHandoffEditable ? select?.selectedOptions[0]?.textContent ?? "" : ""
   badge.hidden = !badge.textContent
@@ -245,7 +246,7 @@ export function initAISettings(): void {
   const aiProviderEl = document.querySelector<HTMLSelectElement>("#ai-provider")
   if (aiProviderEl) {
     pageLifecycle.on(aiProviderEl, "change", () => {
-      const group = document.getElementById("ai-custom-url-group")
+      const group = byId("ai-custom-url-group")
       if (group) {
         group.style.display = ["custom", "ollama"].includes(aiProviderEl.value) ? "" : "none"
       }
@@ -309,12 +310,12 @@ export function initAISettings(): void {
   }
 
   // Save agent protocols
-  const saveProtocolsBtn = document.getElementById("save-agent-protocols") as HTMLButtonElement | null
+  const saveProtocolsBtn = byId<HTMLButtonElement>("save-agent-protocols")
   if (saveProtocolsBtn) {
     pageLifecycle.on(saveProtocolsBtn, "click", withAsyncButton(saveProtocolsBtn, async () => {
-    const a2a = (document.getElementById("agent-a2a-enabled") as HTMLInputElement)?.checked ?? true
-    const webmcp = (document.getElementById("agent-webmcp-enabled") as HTMLInputElement)?.checked ?? false
-    const mcp = (document.getElementById("agent-mcp-enabled") as HTMLInputElement)?.checked ?? true
+    const a2a = (byId("agent-a2a-enabled") as HTMLInputElement)?.checked ?? true
+    const webmcp = (byId("agent-webmcp-enabled") as HTMLInputElement)?.checked ?? false
+    const mcp = (byId("agent-mcp-enabled") as HTMLInputElement)?.checked ?? true
 
     try {
       await saveSettings({
@@ -345,10 +346,10 @@ export function restoreAISettings(s: Record<string, unknown>): void {
     provider.disabled = !aiHandoffEditable
     provider.value = savedAiProvider ?? "chatgpt"
   }
-  const editor = document.getElementById("ai-provider-editor")
+  const editor = byId("ai-provider-editor")
   if (editor) editor.hidden = !aiHandoffEditable
   updateExtAiBadge(provider)
-  const group = document.getElementById("ai-custom-url-group")
+  const group = byId("ai-custom-url-group")
   if (group) group.style.display = savedAiProvider === "custom" || savedAiProvider === "ollama" ? "" : "none"
   savedAiUrl = typeof s["ai-custom-url"] === "string" ? s["ai-custom-url"] : null
   savedAiUrlShared = Boolean(savedAiUrl) && s["ai-custom-url-approved"] === savedAiUrl
@@ -364,7 +365,7 @@ export function restoreAISettings(s: Record<string, unknown>): void {
   }
   const save = document.querySelector<HTMLButtonElement>("#save-ai")
   if (save) save.disabled = !aiHandoffEditable
-  const unavailable = document.getElementById("ai-provider-unavailable")
+  const unavailable = byId("ai-provider-unavailable")
   if (unavailable) unavailable.hidden = aiHandoffEditable
 
   // Agent Protocols
@@ -374,13 +375,13 @@ export function restoreAISettings(s: Record<string, unknown>): void {
   refreshWebMcpPreference()
   const mcpEnabled = s["agent-protocols-mcp-enabled"]
   if (a2aEnabled !== undefined)
-    (document.getElementById("agent-a2a-enabled") as HTMLInputElement).checked =
+    (byId("agent-a2a-enabled") as HTMLInputElement).checked =
       a2aEnabled === true || a2aEnabled === "true"
   if (webmcpEnabled !== undefined)
-    (document.getElementById("agent-webmcp-enabled") as HTMLInputElement).checked =
+    (byId("agent-webmcp-enabled") as HTMLInputElement).checked =
       webmcpEnabled === true || webmcpEnabled === "true"
   if (mcpEnabled !== undefined)
-    (document.getElementById("agent-mcp-enabled") as HTMLInputElement).checked =
+    (byId("agent-mcp-enabled") as HTMLInputElement).checked =
       mcpEnabled === true || mcpEnabled === "true"
 
   const disableAiEl = document.querySelector<HTMLInputElement>("#toggle-disable-ai-assist")
@@ -390,7 +391,7 @@ export function restoreAISettings(s: Record<string, unknown>): void {
     document.documentElement.toggleAttribute("data-ai-assist-disabled", disabled)
   }
 
-  whenSectionVisible(document.getElementById("agent-protocols-status"), () => {
+  whenSectionVisible(byId("agent-protocols-status"), () => {
     void refreshProtocolDiscovery()
   })
 }

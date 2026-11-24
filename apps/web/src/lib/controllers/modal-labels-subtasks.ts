@@ -10,6 +10,7 @@
 import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
 import { defaultChildTaskType, normalizeEditableTaskType } from "@lib/task-editor-fields"
 import { showToast } from "@lib/toast"
+import { byId, domEl } from "@lib/dom-helpers"
 
 export interface LabelsSubtasksDeps {
   saveTD: (field: string, value: unknown) => Promise<unknown>
@@ -30,16 +31,15 @@ export function initLabelsAndSubtasks({ saveTD, getCurrentTaskId, openTaskDetail
   const opts = signal ? { signal } : {}
 
   function addLabelChip(label: string) {
-    const labelsDiv = document.getElementById("td-labels") as HTMLElement
-    const chip = document.createElement("span")
+    const labelsDiv = byId("td-labels") as HTMLElement
+    const chip = domEl("span")
     chip.className = "label-chip"
     chip.style.cssText =
       "cursor:pointer;display:inline-flex;align-items:center;gap:4px;"
     // Use textContent to prevent XSS from user-provided label values
     const labelText = document.createTextNode(label)
     chip.appendChild(labelText)
-    const removeBtn = document.createElement("span")
-    removeBtn.className = "td-label-remove"
+    const removeBtn = domEl("span", "td-label-remove")
     removeBtn.style.cssText = "font-size:14px;line-height:1;opacity:0.6;"
     removeBtn.textContent = "×"
     removeBtn.addEventListener("click", () => {
@@ -51,8 +51,7 @@ export function initLabelsAndSubtasks({ saveTD, getCurrentTaskId, openTaskDetail
     labelsDiv.appendChild(chip)
   }
 
-  document
-    .getElementById("td-label-input")
+  byId("td-label-input")
     ?.addEventListener("keydown", (e) => {
       if (e.key !== "Enter") return
       e.preventDefault()
@@ -69,23 +68,22 @@ export function initLabelsAndSubtasks({ saveTD, getCurrentTaskId, openTaskDetail
     }, opts)
 
   // Phase 1 (REC-04): Recurrence select → save on change
-  document
-    .getElementById("td-recurrence")
+  byId("td-recurrence")
     ?.addEventListener("change", (e) => {
       const val = (e.target as HTMLSelectElement).value || null
       saveTD("recurrence_rule", val)
-      const descEl = document.getElementById("td-recurrence-desc")
+      const descEl = byId("td-recurrence-desc")
       if (descEl) {
         descEl.textContent = val ? `🔁 ${(e.target as HTMLSelectElement).selectedOptions[0]?.textContent ?? ""}` : ""
       }
     }, opts)
 
   // Phase 1 (SUB-02): Add subtask inline form
-  const addSubBtn = document.getElementById("td-add-subtask-btn")
-  const addSubForm = document.getElementById("td-add-subtask-form")
-  const addSubInput = document.getElementById("td-add-subtask-input") as HTMLInputElement | null
-  const addSubSubmit = document.getElementById("td-add-subtask-submit")
-  const addSubCancel = document.getElementById("td-add-subtask-cancel")
+  const addSubBtn = byId("td-add-subtask-btn")
+  const addSubForm = byId("td-add-subtask-form")
+  const addSubInput = byId<HTMLInputElement>("td-add-subtask-input")
+  const addSubSubmit = byId("td-add-subtask-submit")
+  const addSubCancel = byId("td-add-subtask-cancel")
 
   if (addSubBtn && addSubForm && addSubInput && addSubSubmit && addSubCancel) {
     addSubBtn.addEventListener("click", () => {
@@ -107,9 +105,9 @@ export function initLabelsAndSubtasks({ saveTD, getCurrentTaskId, openTaskDetail
       if (!currentTaskId) return
       addSubInput.disabled = true
       try {
-        const parentAreaEl = document.getElementById("td-area") as HTMLSelectElement | null
-        const parentProjectEl = document.getElementById("td-project") as HTMLSelectElement | null
-        const parentTypeEl = document.getElementById("td-task-type") as HTMLSelectElement | null
+        const parentAreaEl = byId<HTMLSelectElement>("td-area")
+        const parentProjectEl = byId<HTMLSelectElement>("td-project")
+        const parentTypeEl = byId<HTMLSelectElement>("td-task-type")
         const childType = defaultChildTaskType(parentTypeEl?.value)
         const ctx = currentTaskApiContext()
         const areaId = parentAreaEl?.value || null
@@ -146,14 +144,14 @@ export function initLabelsAndSubtasks({ saveTD, getCurrentTaskId, openTaskDetail
       }
     }
     addSubSubmit.addEventListener("click", submitSubtask, opts)
-    document.getElementById("td-add-subtask-full-btn")?.addEventListener("click", () => {
+    byId("td-add-subtask-full-btn")?.addEventListener("click", () => {
       const currentTaskId = getCurrentTaskId()
       if (!currentTaskId || !window.openNewTaskModal) return
-      const titleInput = document.getElementById("td-title") as HTMLTextAreaElement | null
-      const idEl = document.getElementById("td-id")
-      const parentTypeEl = document.getElementById("td-task-type") as HTMLSelectElement | null
-      const parentAreaEl = document.getElementById("td-area") as HTMLSelectElement | null
-      const parentProjectEl = document.getElementById("td-project") as HTMLSelectElement | null
+      const titleInput = byId<HTMLTextAreaElement>("td-title")
+      const idEl = byId("td-id")
+      const parentTypeEl = byId<HTMLSelectElement>("td-task-type")
+      const parentAreaEl = byId<HTMLSelectElement>("td-area")
+      const parentProjectEl = byId<HTMLSelectElement>("td-project")
       const ticketText = idEl?.textContent?.trim() ?? ""
       window.openNewTaskModal("standard_action", {
         parent: {

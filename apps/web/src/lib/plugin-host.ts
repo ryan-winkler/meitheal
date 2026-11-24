@@ -11,6 +11,7 @@
  * RPC bridge that enforces declared manifest permissions.
  */
 import { pageLifecycle } from "@lib/page-lifecycle"
+import { safeFetch } from "@lib/safe-fetch"
 import { showToast } from "@lib/toast"
 
 export interface ClientPluginBundle {
@@ -82,8 +83,8 @@ const SANDBOX_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src '
 const RUNNER_CSP = "default-src 'none'; script-src 'unsafe-inline'; connect-src 'none'; form-action 'none'; base-uri 'none'"
 
 function escapeInlineScript(source: string): string {
-  // Prevent `</script>` or `<!--` sequences from closing the runner script block.
-  return source.replace(/<\//g, "<\\/").replace(/<!--/g, "<\\!--")
+  // Prevent `</script>` or `<!--` sequences from closing the runner script block without corrupting `/<\/div>/` regex literals.
+  return source.replace(/<\/(?=script)/gi, "<\\/").replace(/<!--/g, "<\\!--")
 }
 
 function buildRunnerSrcdoc(entryJs: string, token: string): string {
@@ -134,24 +135,42 @@ ${safeCode}
 </script></head><body></body></html>`
 }
 
+function safeInlineJson(value: unknown): string {
+  return JSON.stringify(value).split("<").join("\\u003c")
+}
+
 function buildSandboxedSrcdoc(rawHtml: string, token: string): string {
   const computed = getComputedStyle(document.documentElement)
-  const vars = THEME_TOKENS.map((name) => {
+  const themeMap: Record<string, string> = {}
+  for (const name of THEME_TOKENS) {
     const val = computed.getPropertyValue(name).trim()
-    return val ? `${name}:${val.replace(/[<>]/g, "")};` : ""
-  }).join("")
-
-  // Strip any plugin-supplied CSP meta tag before prepending the strict host CSP.
-  const cleanedHtml = rawHtml.replace(/<meta[^>]*http-equiv\s*=\s*["']?content-security-policy["']?[^>]*>/gi, "")
-  const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${SANDBOX_CSP}">`
-  const themeStyle = `<style>:root{${vars}}</style>`
-  const bridgeScript = `<script>(function(){const T=${JSON.stringify(token)};let n=1;const p=new Map();window.addEventListener("message",function(e){const d=e.data;if(!d||d.token!==T||d.kind!=="meitheal_ui_res")return;const r=p.get(d.id);if(!r)return;p.delete(d.id);d.ok?r.resolve(d.result):r.reject(new Error(d.error||"Plugin call failed"));});window.MeithealUI=Object.freeze({send:function(payload){return new Promise(function(resolve,reject){const id=n++;p.set(id,{resolve:resolve,reject:reject});window.parent.postMessage({token:T,kind:"meitheal_ui_req",id:id,payload:payload},"*");});}});})();</script>`
-  const injection = `${cspMeta}${themeStyle}${bridgeScript}`
-
-  if (/<head\b[^>]*>/i.test(cleanedHtml)) {
-    return cleanedHtml.replace(/<head\b[^>]*>/i, (match) => `${match}${injection}`)
+    if (val) themeMap[name] = val
   }
-  return `<!doctype html><html><head>${injection}</head><body>${cleanedHtml}</body></html>`
+
+  // Parse into an isolated DOM so plugin-supplied CSP <meta> tags can be removed without regexes.
+  const doc = new DOMParser().parseFromString(rawHtml, "text/html")
+  for (const meta of Array.from(doc.querySelectorAll("meta[http-equiv]"))) {
+    if (meta.getAttribute("http-equiv")?.trim().toLowerCase() === "content-security-policy") {
+      meta.remove()
+    }
+  }
+  const head = doc.head ?? doc.createElement("head")
+  if (!head.parentElement) doc.documentElement.prepend(head)
+
+  const cspMeta = doc.createElement("meta")
+  cspMeta.setAttribute("http-equiv", "Content-Security-Policy")
+  cspMeta.setAttribute("content", SANDBOX_CSP)
+
+  const bridgeScript = doc.createElement("script")
+  bridgeScript.textContent =
+    `(function(){const T=${safeInlineJson(token)};const V=${safeInlineJson(themeMap)};` +
+    `const r=document.documentElement;for(const[k,v]of Object.entries(V))r.style.setProperty(k,v);` +
+    `let n=1;const p=new Map();` +
+    `window.addEventListener("message",function(e){const d=e.data;if(!d||d.token!==T||d.kind!=="meitheal_ui_res")return;const q=p.get(d.id);if(!q)return;p.delete(d.id);d.ok?q.resolve(d.result):q.reject(new Error(d.error||"Plugin call failed"));});` +
+    `window.MeithealUI=Object.freeze({send:function(payload){return new Promise(function(resolve,reject){const id=n++;p.set(id,{resolve:resolve,reject:reject});window.parent.postMessage({token:T,kind:"meitheal_ui_req",id:id,payload:payload},"*");});}});})();`
+
+  head.prepend(cspMeta, bridgeScript)
+  return `<!DOCTYPE html>${doc.documentElement.outerHTML}`
 }
 
 function getBoardHeaders(): Record<string, string> {
@@ -168,7 +187,8 @@ function requirePerm(inst: ActivePluginInstance, perm: string): void {
 }
 
 async function fetchJson(url: string, init?: RequestInit): Promise<unknown> {
-  const res = await fetch(url, init)
+  if (!url.startsWith("/api/") || url.startsWith("//")) throw new Error("Invalid API path")
+  const res = await safeFetch(url, { ...init, signal: init?.signal ?? hostAbort?.signal })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return res.json()
 }
@@ -200,7 +220,9 @@ async function handleRunnerRpc(inst: ActivePluginInstance, method: string, args:
 
   if (method === "tasks.get") {
     requirePerm(inst, "tasks:read")
-    const res = await fetch(`/api/tasks/${encodeURIComponent(String(args[0] ?? ""))}`, { headers: getBoardHeaders() })
+    const rawId = String(args[0] ?? "").trim()
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(rawId)) throw new Error("Invalid task id")
+    const res = await safeFetch(`/api/tasks/${encodeURIComponent(rawId)}`, { headers: getBoardHeaders(), signal: hostAbort?.signal })
     if (res.status === 404) return null
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return res.json()
@@ -222,19 +244,19 @@ async function handleRunnerRpc(inst: ActivePluginInstance, method: string, args:
 
   if (method === "tasks.update" || method === "tasks.complete") {
     requirePerm(inst, "tasks:write")
-    const taskId = encodeURIComponent(String(args[0] ?? ""))
+    const rawId = String(args[0] ?? "").trim()
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(rawId)) throw new Error("Invalid task id")
+    const taskId = encodeURIComponent(rawId)
     const patch = method === "tasks.complete" ? { status: "complete" } : ((args[1] ?? {}) as Record<string, unknown>)
     const body: Record<string, unknown> = {}
     if (typeof patch.title === "string") body.title = patch.title.slice(0, 180)
     if (typeof patch.description === "string") body.description = patch.description.slice(0, 2000)
     if (typeof patch.status === "string") body.status = patch.status
-    if (patch.priority !== undefined) {
-      const priorityMap: Record<string, number> = { critical: 1, high: 2, medium: 3, low: 4, minimal: 5 }
-      const rawP = typeof patch.priority === "number" ? patch.priority
-        : typeof patch.priority === "string"
-          ? (priorityMap[patch.priority.trim().toLowerCase()] ?? Number(patch.priority))
-          : NaN
-      if (Number.isInteger(rawP) && rawP >= 1 && rawP <= 5) body.priority = rawP
+    if (typeof patch.priority === "number" && Number.isFinite(patch.priority)) {
+      body.priority = Math.min(5, Math.max(1, Math.round(patch.priority)))
+    } else if (typeof patch.priority === "string") {
+      const mappedPriority = ({ critical: 1, urgent: 1, high: 2, normal: 3, medium: 3, low: 4, minimal: 5, none: 5 } as Record<string, number>)[patch.priority.trim().toLowerCase()]
+      if (mappedPriority !== undefined) body.priority = mappedPriority
     }
     if (patch.dueDate !== undefined) body.due_date = patch.dueDate
     return fetchJson(`/api/tasks/${taskId}`, { method: "PATCH", headers: getBoardHeaders(), body: JSON.stringify(body) })
@@ -330,17 +352,18 @@ async function handleRunnerRpc(inst: ActivePluginInstance, method: string, args:
 
   if (method === "storage.remove") {
     requirePerm(inst, "storage:local")
-    const res = await fetch(`/api/plugins/${id}/storage?key=${encodeURIComponent(String(args[0] ?? ""))}`, { method: "DELETE" })
+    const res = await safeFetch(`/api/plugins/${id}/storage?key=${encodeURIComponent(String(args[0] ?? ""))}`, { method: "DELETE", signal: hostAbort?.signal })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return { ok: true }
   }
 
   if (method === "http.request") {
     requirePerm(inst, "http:outbound")
-    const res = await fetch(`/api/plugins/${id}/http`, {
+    const res = await safeFetch(`/api/plugins/${id}/http`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(args[0] ?? {}),
+      signal: hostAbort?.signal,
     })
     const body = await res.json().catch(() => ({}))
     if (!res.ok) throw new Error(String((body as Record<string, unknown>).detail ?? `HTTP ${res.status}`))
@@ -512,13 +535,12 @@ export async function bootPluginHost(): Promise<void> {
   bootInFlight = true
   try {
     teardownPluginHost()
-    const res = await fetch("/api/plugins?runtime=1")
+    hostAbort = new AbortController()
+    const signal = hostAbort.signal
+    const res = await safeFetch("/api/plugins?runtime=1", { signal })
     if (!res.ok) return
     const data = (await res.json()) as { safeMode?: boolean; bundles?: ClientPluginBundle[] }
     if (data.safeMode || !Array.isArray(data.bundles) || data.bundles.length === 0) return
-
-    hostAbort = new AbortController()
-    const signal = hostAbort.signal
 
     window.addEventListener(
       "message",
@@ -527,7 +549,7 @@ export async function bootPluginHost(): Promise<void> {
         if (!msg || typeof msg !== "object") return
 
         // 1. Messages from the visible side-panel iframe
-        if (activeIframeEl && event.source === activeIframeEl.contentWindow) {
+        if (activeIframeEl && event.source === activeIframeEl.contentWindow && event.origin === "null") {
           if (msg.token !== activeIframeToken || msg.kind !== "meitheal_ui_req" || !activePanelPluginId) return
           const inst = instances.get(activePanelPluginId)
           if (!inst?.runnerFrame) return
@@ -553,7 +575,7 @@ export async function bootPluginHost(): Promise<void> {
 
         // 2. Messages from hidden opaque-origin plugin runners
         for (const inst of instances.values()) {
-          if (!inst.runnerFrame || event.source !== inst.runnerFrame.contentWindow) continue
+          if (!inst.runnerFrame || event.source !== inst.runnerFrame.contentWindow || event.origin !== "null") continue
           if (msg.token !== inst.runnerToken) return
 
           if (msg.kind === "runner_ready") {

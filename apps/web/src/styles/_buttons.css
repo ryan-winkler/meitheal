@@ -191,6 +191,7 @@
     transition: none;
   }
 }
+
 /* Loading spinner for async ops */
 /* ===== Loading Spinner for Async Ops (Wave 7) ===== */
 @keyframes spin {

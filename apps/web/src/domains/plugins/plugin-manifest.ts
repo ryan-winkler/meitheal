@@ -8,6 +8,7 @@
  * @domain plugins
  * @bounded-context plugins
  */
+import { parseFragment, serialize, type DefaultTreeAdapterTypes } from "parse5"
 import {
   PLUGIN_HOOKS,
   PLUGIN_PERMISSIONS,
@@ -25,9 +26,38 @@ import {
 
 const PLUGIN_ID_RE = /^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$/
 const SEMVER_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/
-const HOSTNAME_RE = /^(?:\$userServer|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63})$/i
 const RELATIVE_FILE_RE = /^[a-zA-Z0-9._-][a-zA-Z0-9._/-]{0,120}$/
 const FIELD_KEY_RE = /^[a-zA-Z][a-zA-Z0-9_-]{0,47}$/
+
+function isAsciiLetter(code: number): boolean {
+  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122)
+}
+
+function isAsciiAlnum(code: number): boolean {
+  return isAsciiLetter(code) || (code >= 48 && code <= 57)
+}
+
+function isValidPluginHostname(host: string): boolean {
+  if (host.toLowerCase() === "$userserver") return true
+  if (host.length < 3 || host.length > 253) return false
+  const labels = host.split(".")
+  if (labels.length < 2) return false
+  const tld = labels[labels.length - 1]
+  if (!tld || tld.length < 2 || tld.length > 63) return false
+  for (let i = 0; i < tld.length; i += 1) {
+    if (!isAsciiLetter(tld.charCodeAt(i))) return false
+  }
+  for (let l = 0; l < labels.length - 1; l += 1) {
+    const label = labels[l]
+    if (!label || label.length < 1 || label.length > 63) return false
+    if (!isAsciiAlnum(label.charCodeAt(0)) || !isAsciiAlnum(label.charCodeAt(label.length - 1))) return false
+    for (let i = 1; i < label.length - 1; i += 1) {
+      const c = label.charCodeAt(i)
+      if (!isAsciiAlnum(c) && c !== 45) return false
+    }
+  }
+  return true
+}
 
 const PERMISSION_SET = new Set<string>(PLUGIN_PERMISSIONS)
 const HOOK_SET = new Set<string>(PLUGIN_HOOKS)
@@ -94,10 +124,10 @@ function validateDataSharing(
     }
     const host = readBoundedString(item, "host", 3, 253)
     const purpose = readBoundedString(item, "purpose", 4, 240)
-    if (!host || !HOSTNAME_RE.test(host) || !purpose) {
+    if (!host || !isValidPluginHostname(host) || !purpose) {
       return fail("INVALID_DATA_SHARING", "Each dataSharing destination requires a valid host and purpose.")
     }
-    const normalizedHost = host === "$userServer" ? "$userServer" : host.toLowerCase()
+    const normalizedHost = host.toLowerCase() === "$userserver" ? "$userServer" : host.toLowerCase()
     destinations.push({ host: normalizedHost, purpose })
     declaredHosts.add(normalizedHost)
   }
@@ -313,10 +343,10 @@ export function validatePluginManifest(raw: unknown): PluginResult<PluginManifes
       return fail("INVALID_HOST", "Each entry in allowedHosts must be a hostname string.")
     }
     const trimmed = rawHost.trim()
-    if (!HOSTNAME_RE.test(trimmed)) {
+    if (!isValidPluginHostname(trimmed)) {
       return fail("INVALID_HOST", `Invalid hostname "${trimmed}" in allowedHosts.`)
     }
-    const normalized = trimmed === "$userServer" ? "$userServer" : trimmed.toLowerCase()
+    const normalized = trimmed.toLowerCase() === "$userserver" ? "$userServer" : trimmed.toLowerCase()
     if (!seenHosts.has(normalized)) {
       seenHosts.add(normalized)
       allowedHosts.push(normalized)
@@ -361,9 +391,121 @@ export function validatePluginManifest(raw: unknown): PluginResult<PluginManifes
   }
 }
 
-const UNSAFE_SVG_TAG_RE = /<\s*(script|foreignObject|iframe|object|embed|style|animate|set|use|image|feImage|a)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>|<\s*(script|foreignObject|iframe|object|embed|style|animate|set|use|image|feImage|a)\b[^>]*\/?>/gi
-const UNSAFE_SVG_ATTR_RE = /\s(?:on[a-z0-9_-]+|(?:xlink:)?href)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi
-const UNSAFE_URI_RE = /(?:javascript|data)\s*:/i
+const ALLOWED_SVG_TAGS = new Set([
+  "svg",
+  "path",
+  "circle",
+  "rect",
+  "line",
+  "polyline",
+  "polygon",
+  "ellipse",
+  "g",
+  "title",
+  "defs",
+  "linearGradient",
+  "radialGradient",
+  "stop",
+  "clipPath",
+  "mask",
+])
+
+const ALLOWED_SVG_ATTRS = new Set([
+  "xmlns",
+  "viewBox",
+  "preserveAspectRatio",
+  "width",
+  "height",
+  "id",
+  "class",
+  "fill",
+  "fill-rule",
+  "fill-opacity",
+  "stroke",
+  "stroke-width",
+  "stroke-linecap",
+  "stroke-linejoin",
+  "stroke-dasharray",
+  "stroke-dashoffset",
+  "stroke-opacity",
+  "opacity",
+  "d",
+  "cx",
+  "cy",
+  "r",
+  "rx",
+  "ry",
+  "x",
+  "y",
+  "x1",
+  "y1",
+  "x2",
+  "y2",
+  "points",
+  "transform",
+  "clip-path",
+  "clip-rule",
+  "mask",
+  "gradientUnits",
+  "gradientTransform",
+  "offset",
+  "stop-color",
+  "stop-opacity",
+  "role",
+  "aria-hidden",
+  "aria-label",
+])
+
+type Parse5Node = DefaultTreeAdapterTypes.ChildNode
+type Parse5Element = DefaultTreeAdapterTypes.Element
+
+function isParse5Element(node: Parse5Node): node is Parse5Element {
+  return "tagName" in node
+}
+
+function containsUnsafeUriScheme(value: string): boolean {
+  let compacted = ""
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i)
+    if (code > 32 && code !== 127) compacted += value[i]
+  }
+  const lower = compacted.toLowerCase()
+  if (lower.includes("javascript:") || lower.includes("data:") || lower.includes("vbscript:")) {
+    return true
+  }
+  for (const match of lower.matchAll(/url\(([^)]*)/g)) {
+    const ref = match[1].replace(/^['"]|['"]$/g, "")
+    if (!ref.startsWith("#")) return true
+  }
+  return false
+}
+
+function subtreeHasUnsafeUri(node: Parse5Node): boolean {
+  if (!isParse5Element(node)) return false
+  for (const attr of node.attrs) {
+    if (containsUnsafeUriScheme(attr.value)) return true
+  }
+  return node.childNodes.some((child) => subtreeHasUnsafeUri(child))
+}
+
+function filterSvgSubtree(node: Parse5Node, parentTag: string): Parse5Node | null {
+  if (node.nodeName === "#comment") return null
+  if (node.nodeName === "#text") {
+    if (parentTag === "title") return node
+    return "value" in node && !node.value.trim() ? node : null
+  }
+  if (!isParse5Element(node)) return null
+  if (!ALLOWED_SVG_TAGS.has(node.tagName)) return null
+
+  node.attrs = node.attrs.filter((attr) => !attr.prefix && ALLOWED_SVG_ATTRS.has(attr.name))
+  const cleanChildren: Parse5Node[] = []
+  for (const child of node.childNodes) {
+    const filtered = filterSvgSubtree(child, node.tagName)
+    if (filtered) cleanChildren.push(filtered)
+  }
+  node.childNodes = cleanChildren
+  return node
+}
 
 /**
  * Sanitizes an uploaded SVG icon for safe inline rendering.
@@ -375,26 +517,27 @@ export function sanitizePluginIconSvg(rawSvg: string): PluginResult<string> {
     return fail("INVALID_ICON", "Plugin SVG icon must be non-empty and under 32 KB.")
   }
 
-  // Strip XML declaration and comments before inspecting root tag
-  const withoutProlog = trimmed
-    .replace(/^<\?xml[\s\S]*?\?>\s*/i, "")
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .trim()
-
-  if (!/^<svg\b/i.test(withoutProlog) || !/<\/svg>\s*$/i.test(withoutProlog)) {
+  const fragment = parseFragment(trimmed)
+  const significantRoots = fragment.childNodes.filter(
+    (node) => node.nodeName !== "#comment" && !(node.nodeName === "#text" && "value" in node && !node.value.trim()),
+  )
+  if (significantRoots.length !== 1 || !isParse5Element(significantRoots[0]) || significantRoots[0].tagName !== "svg") {
     return fail("INVALID_ICON", "Plugin icon.svg must contain a single <svg>...</svg> element.")
   }
 
-  if (UNSAFE_URI_RE.test(withoutProlog)) {
+  const root = significantRoots[0]
+  if (subtreeHasUnsafeUri(root)) {
     return fail("UNSAFE_ICON", "Plugin icon.svg must not contain javascript: or data: URLs.")
   }
 
-  const cleaned = withoutProlog
-    .replace(UNSAFE_SVG_TAG_RE, "")
-    .replace(UNSAFE_SVG_ATTR_RE, "")
-    .trim()
+  const cleanRoot = filterSvgSubtree(root, "")
+  if (!cleanRoot || !isParse5Element(cleanRoot) || cleanRoot.tagName !== "svg") {
+    return fail("UNSAFE_ICON", "Plugin icon.svg failed sanitization.")
+  }
 
-  if (!/^<svg\b/i.test(cleaned) || !/<\/svg>\s*$/i.test(cleaned)) {
+  fragment.childNodes = [cleanRoot]
+  const cleaned = serialize(fragment).trim()
+  if (!cleaned.startsWith("<svg") || !cleaned.endsWith("</svg>")) {
     return fail("UNSAFE_ICON", "Plugin icon.svg failed sanitization.")
   }
 

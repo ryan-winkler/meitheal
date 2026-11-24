@@ -181,7 +181,7 @@ test.describe("Native navigation overflow", () => {
       await expect(boardsToggle).toHaveAttribute("aria-expanded", "true")
       await expect(household).toBeVisible()
       await expect(toggle).toHaveAttribute("aria-expanded", "false")
-      await expect(toggle).toHaveAccessibleName(`${longLabel.slice(0, 64)} in Household`)
+      await expect(toggle).toHaveAccessibleName(`${longLabel} in Household`)
       await expect(householdAreas).toBeHidden()
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(770)
       await toggle.focus()

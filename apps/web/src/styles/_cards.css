@@ -47,9 +47,22 @@
   @apply bg-info/10 text-blue-400 border-info/20;
 }
 
-.badge-active {
+  .badge-backlog {
+    @apply bg-gray-500/10 text-gray-400 border-gray-500/20;
+  }
+.badge-active,
+.badge-in_progress {
   @apply bg-warning/10 text-amber-400 border-warning/30;
 }
+
+.badge-done,
+.badge-complete {
+  @apply bg-accent/10 text-accent border-accent/20;
+}
+
+  .badge-cancelled {
+    @apply bg-danger/10 text-red-400 border-danger/20;
+  }
 /* --- Filter bar --- */
 .filter-bar {
   @apply flex gap-3 items-center flex-wrap mb-4;
@@ -89,8 +102,8 @@
 .card:nth-child(5) {
   animation-delay: 0.2s;
 }
-/* Bento card hover actions */
-
+/* Bento card hover actions
+ * Restored from pre-split global.css */
 .bento-card-actions {
 position: absolute;
 top: 6px;

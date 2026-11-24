@@ -1,4 +1,5 @@
 import { isActiveParticipantProblem } from "@lib/task-participant-problem"
+import { domEl, qs, setAttr } from "@lib/dom-helpers"
 
 interface Reaction {
   id: number
@@ -25,12 +26,9 @@ export function mountReactions(host: HTMLElement, url: string, signal: AbortSign
   const template = document.querySelector<HTMLTemplateElement>("#td-reaction-controls")
   if (!template || signal.aborted) return
 
-  const panel = document.createElement("details")
-  panel.className = `${taskId === undefined ? "mt-2 " : ""}rounded-md border border-border px-3`
+  const panel = domEl("details", `${taskId === undefined ? "mt-2 " : ""}rounded-md border border-border px-3`)
   panel.dataset.reactionPanel = taskId === undefined ? "comment" : "task"
-  const summary = document.createElement("summary")
-  summary.className = "min-h-11 cursor-pointer py-3 text-sm font-medium text-text-primary focus-visible:outline-2 focus-visible:outline-accent"
-  summary.textContent = (taskId === undefined ? template.dataset.commentLabel : template.dataset.taskLabel) ?? ""
+  const summary = domEl("summary", "min-h-11 cursor-pointer py-3 text-sm font-medium text-text-primary focus-visible:outline-2 focus-visible:outline-accent", (taskId === undefined ? template.dataset.commentLabel : template.dataset.taskLabel) ?? "")
   panel.append(summary)
   host.append(panel)
 
@@ -48,15 +46,15 @@ function initReactionPanel(
 ): void {
   panel.append(template.content.cloneNode(true))
   const labels = template.dataset
-  const status = panel.querySelector<HTMLElement>("[data-reaction-status]")!
-  const error = panel.querySelector<HTMLElement>("[data-reaction-error]")!
-  const groupsBar = panel.querySelector<HTMLElement>("[data-reaction-groups]")
-  const list = panel.querySelector<HTMLUListElement>("[data-reaction-list]")!
-  const retry = panel.querySelector<HTMLButtonElement>("[data-reaction-retry]")!
-  const newest = panel.querySelector<HTMLButtonElement>("[data-reaction-newest]")!
-  const older = panel.querySelector<HTMLButtonElement>("[data-reaction-older]")!
-  const form = panel.querySelector<HTMLFormElement>("[data-reaction-form]")!
-  const input = form.querySelector<HTMLInputElement>("input")!
+  const status = qs<HTMLElement>(panel, "[data-reaction-status]")!
+  const error = qs<HTMLElement>(panel, "[data-reaction-error]")!
+  const groupsBar = qs<HTMLElement>(panel, "[data-reaction-groups]")
+  const list = qs<HTMLUListElement>(panel, "[data-reaction-list]")!
+  const retry = qs<HTMLButtonElement>(panel, "[data-reaction-retry]")!
+  const newest = qs<HTMLButtonElement>(panel, "[data-reaction-newest]")!
+  const older = qs<HTMLButtonElement>(panel, "[data-reaction-older]")!
+  const form = qs<HTMLFormElement>(panel, "[data-reaction-form]")!
+  const input = qs<HTMLInputElement>(form, "input")!
   let busy = false
   let pageCursor: string | null = null
   let retryCursor: string | null = null
@@ -66,27 +64,24 @@ function initReactionPanel(
 
   function setBusy(value: boolean): void {
     busy = value
-    list.setAttribute("aria-busy", String(value))
+    setAttr(list, "aria-busy", String(value))
     input.readOnly = value
   }
 
   function render(reaction: Reaction): HTMLLIElement {
-    const row = document.createElement("li")
-    row.className = "flex min-h-11 flex-wrap items-center gap-x-2 rounded-md bg-bg-input px-2 text-sm wrap-anywhere"
-    const content = document.createElement("bdi")
-    content.className = "font-medium text-text-primary"
+    const row = domEl("li", "flex min-h-11 flex-wrap items-center gap-x-2 rounded-md bg-bg-input px-2 text-sm wrap-anywhere")
+    const content = domEl("bdi", "font-medium text-text-primary")
     content.textContent = reaction.content
-    const author = document.createElement("bdi")
-    author.className = "text-text-secondary"
+    const author = domEl("bdi", "text-text-secondary")
     author.textContent = reaction.author
     row.append(content, author)
     if (reaction.can_manage) {
-      const remove = document.createElement("button")
+      const remove = domEl("button")
       remove.type = "button"
       remove.className = "btn btn-ghost ms-auto min-h-11"
       remove.dataset.reactionRemove = String(reaction.id)
       remove.textContent = labels.remove ?? ""
-      remove.setAttribute("aria-label", labels.removeDescription?.replace("{reaction}", () => reaction.content) ?? "")
+      setAttr(remove, "aria-label", labels.removeDescription?.replace("{reaction}", () => reaction.content) ?? "")
       row.append(remove)
     }
     return row
@@ -123,11 +118,11 @@ function initReactionPanel(
         const groups = Array.isArray(data.groups) ? data.groups : []
         groupsBar.hidden = groups.length === 0
         groupsBar.replaceChildren(...groups.map(group => {
-          const pill = document.createElement("button")
+          const pill = domEl("button")
           pill.type = "button"
           pill.className = "btn btn-sm border border-border rounded-full px-2.5 py-0.5 text-xs aria-pressed:border-accent aria-pressed:bg-accent/15 aria-pressed:text-accent"
           pill.dataset.reactionGroup = group.content
-          pill.setAttribute("aria-pressed", String(Boolean(group.reacted)))
+          setAttr(pill, "aria-pressed", String(Boolean(group.reacted)))
           pill.disabled = !data.can_react && !group.reacted
           if (group.my_reaction_id != null) pill.dataset.myReactionId = String(group.my_reaction_id)
           pill.textContent = `${group.content} (${group.count})`

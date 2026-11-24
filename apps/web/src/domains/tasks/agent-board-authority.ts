@@ -7,7 +7,11 @@ import { BoardOperationError } from "./persistence/board-operation-client"
 export function agentBoardOperations(scopes: readonly string[]): WorkOperation[] {
   const operations: WorkOperation[] = []
   if (scopes.includes("tasks:read"))
-    operations.push({ resource: "board", action: "read" }, { resource: "task", action: "read" })
+    operations.push(
+      { resource: "board", action: "read" },
+      { resource: "task", action: "read" },
+      { resource: "routine", action: "read" },
+    )
   if (scopes.includes("search:read") || scopes.includes("tasks:read"))
     operations.push({ resource: "task", action: "search" })
   if (scopes.includes("tasks:write")) {
@@ -15,7 +19,9 @@ export function agentBoardOperations(scopes: readonly string[]): WorkOperation[]
       ...(["create", "edit", "move", "assign", "complete", "reopen"] as const).map((action) => ({
         resource: "task" as const,
         action
-      }))
+      })),
+      { resource: "routine", action: "create" },
+      { resource: "routine", action: "edit" },
     )
   } else if (scopes.includes("tasks:write:assigned")) {
     operations.push(
@@ -25,7 +31,9 @@ export function agentBoardOperations(scopes: readonly string[]): WorkOperation[]
       }))
     )
   }
-  if (scopes.includes("tasks:delete")) operations.push({ resource: "task", action: "delete" })
+  if (scopes.includes("tasks:delete")) {
+    operations.push({ resource: "task", action: "delete" }, { resource: "routine", action: "delete" })
+  }
   if (scopes.includes("tasks:propose")) operations.push({ resource: "task", action: "propose" })
   if (scopes.includes("projects:read")) operations.push({ resource: "project", action: "read" })
   if (scopes.includes("projects:write"))

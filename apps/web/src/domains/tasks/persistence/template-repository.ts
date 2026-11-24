@@ -35,6 +35,7 @@ export interface RoutineTemplateRow {
 export type HabitTemplateRow = RoutineTemplateRow
 
 export interface RoutineWithStats extends RoutineTemplateRow {
+  boardId: string
   todayCompleted: boolean
   todayTaskId: string | null
   lastCompletedDate: string | null
@@ -67,6 +68,15 @@ type TemplatePatch = Partial<Omit<TemplateInput, "id" | "position" | "isHabit" |
   streak_freeze_limit?: number
 }
 
+export const ROUTINE_NEWLY_COMPLETED = Symbol("routineNewlyCompleted")
+
+export type RoutineCompletionOutcome = {
+  taskId: string
+  alreadyExisted: boolean
+  completed: boolean
+  [ROUTINE_NEWLY_COMPLETED]?: boolean
+}
+
 export { routinePeriod } from "../routine-period"
 
 function templateObject(value: string): Record<string, unknown> {
@@ -74,6 +84,13 @@ function templateObject(value: string): Record<string, unknown> {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
     throw new Error("Template must contain a JSON object")
   return parsed as Record<string, unknown>
+}
+
+function templateScopeError(
+  errorCode: "unavailable" | "continuity_locked",
+  message: string,
+): Error {
+  return Object.assign(new Error(message), { errorCode })
 }
 
 export class TemplateRepository {
@@ -152,17 +169,17 @@ export class TemplateRepository {
         sql`SELECT area_id FROM projects AS project WHERE id = ${projectId} AND ${ownedPlanning(this.scope, "project")} AND retired_at IS NULL`
       )
       if (!project || (areaId && project.area_id !== areaId))
-        throw new Error("Template Project is unavailable")
+        throw templateScopeError("unavailable", "Template Project is unavailable")
       if (!areaId && typeof project.area_id === "string") areaId = project.area_id
     }
     if (areaId) {
       const { rows } = await db.execute(
         sql`SELECT id FROM areas AS area WHERE id = ${areaId} AND ${ownedPlanning(this.scope, "area")} AND retired_at IS NULL`
       )
-      if (!rows.length) throw new Error("Template Area is unavailable")
+      if (!rows.length) throw templateScopeError("unavailable", "Template Area is unavailable")
     }
     if (!(await validateBoardPlacement(this.scope, db, { areaId, projectId })))
-      throw new Error("Template placement is unavailable")
+      throw templateScopeError("unavailable", "Template placement is unavailable")
     return { ...template, area_id: areaId, project_id: projectId }
   }
   async create(data: TemplateInput): Promise<boolean> {
@@ -202,6 +219,7 @@ export class TemplateRepository {
       let template = templateObject(data.templateJson ?? String(fresh.template_json))
       if (data.templatePatch !== undefined)
         template = { ...template, ...templateObject(data.templatePatch) }
+      if (typeof data.name === "string" && data.name.trim()) template.title = data.name.trim()
       if (data.areaId !== undefined) template.area_id = data.areaId
       if (data.projectId !== undefined) template.project_id = data.projectId
       template = await this.placement(tx, template)
@@ -242,7 +260,7 @@ export class TemplateRepository {
       )
       return changed.rowsAffected ? { next: true } : { unchanged: false }
     })
-    if (result.status === "locked") throw new Error("Current template authority is unavailable")
+    if (result.status === "locked") throw templateScopeError("continuity_locked", "Current template authority is unavailable")
   }
   async findRoutines(areaId?: string, projectId?: string): Promise<RoutineTemplateRow[]> {
     const filter = areaId
@@ -278,17 +296,42 @@ export class TemplateRepository {
   async findHabits() {
     return this.findRoutines()
   }
-  async getRoutinesWithStats(areaId?: string, projectId?: string): Promise<RoutineWithStats[]> {
+  async getRoutinesWithStats(areaId?: string, projectId?: string, timezone = "UTC"): Promise<RoutineWithStats[]> {
     const routines = await this.findRoutines(areaId, projectId)
+    if (routines.length === 0) return []
+    const routineIds = routines.map((r) => r.id)
+    const parsedBodies = new Map<string, Record<string, unknown>>()
+    const projectIds = new Set<string>()
+    for (const routine of routines) {
+      const body = templateObject(routine.template_json)
+      parsedBodies.set(routine.id, body)
+      if (typeof body.project_id === "string" && body.project_id) projectIds.add(body.project_id)
+    }
+    const batchQueries = [
+      scopedTaskRead(
+        this.scope,
+        sql`SELECT id,source_template_id,status,due_date FROM scoped_tasks WHERE source_template_id IN (SELECT value FROM json_each(${JSON.stringify(routineIds)})) ORDER BY due_date DESC,created_at DESC`
+      ),
+      ...(projectIds.size > 0
+        ? [
+            sql`SELECT id FROM projects AS project WHERE id IN (SELECT value FROM json_each(${JSON.stringify([...projectIds])})) AND ${ownedPlanning(this.scope, "project")} AND retired_at IS NULL AND status='active'`
+          ]
+        : [])
+    ]
+    const [taskRes, projectRes] = await this.db("read").batch(batchQueries, "read")
+    const tasksByRoutine = new Map<string, Array<Record<string, unknown>>>()
+    for (const row of taskRes?.rows ?? []) {
+      const tplId = String(row.source_template_id ?? "")
+      const list = tasksByRoutine.get(tplId) ?? []
+      list.push(row as Record<string, unknown>)
+      tasksByRoutine.set(tplId, list)
+    }
+    const activeProjectIds = new Set((projectRes?.rows ?? []).map((row) => String(row.id)))
+    const now = new Date()
     const result: RoutineWithStats[] = []
     for (const routine of routines) {
-      const period = routinePeriod(routine.cadence)
-      const { rows } = await this.db("read").execute(
-        scopedTaskRead(
-          this.scope,
-          sql`SELECT id,status,due_date FROM scoped_tasks WHERE source_template_id=${routine.id} ORDER BY due_date DESC,created_at DESC`
-        )
-      )
+      const period = routinePeriod(routine.cadence, now, timezone)
+      const rows = tasksByRoutine.get(routine.id) ?? []
       const today = rows.find((row) => row.due_date === period)
       const completed = rows.filter((row) => row.status === "complete")
       const dates = [
@@ -319,13 +362,12 @@ export class TemplateRepository {
         current++
         expected -= dayStep * 86400000
       }
-      const body = templateObject(routine.template_json)
-      // Routine eligibility needs only its referenced Project lifecycle, never
-      // the unrelated Project catalogue or its feature/CRUD capability.
-      const projectId = typeof body.project_id === "string" && body.project_id ? body.project_id : null
-      const projectActive = !projectId || (await this.db("read").execute(sql`SELECT id FROM projects AS project WHERE id=${projectId} AND ${ownedPlanning(this.scope, "project")} AND retired_at IS NULL AND status='active'`)).rows.length > 0
+      const body = parsedBodies.get(routine.id) ?? {}
+      const linkedProjectId = typeof body.project_id === "string" && body.project_id ? body.project_id : null
+      const projectActive = !linkedProjectId || activeProjectIds.has(linkedProjectId)
       result.push({
         ...routine,
+        boardId: this.scope.boardId,
         projectActive,
         todayCompleted: today?.status === "complete",
         todayTaskId: today ? String(today.id) : null,
@@ -340,10 +382,10 @@ export class TemplateRepository {
     }
     return result
   }
-  async getHabitsWithStats() {
-    return this.getRoutinesWithStats()
+  async getHabitsWithStats(areaId?: string, projectId?: string, timezone = "UTC") {
+    return this.getRoutinesWithStats(areaId, projectId, timezone)
   }
-  private async createTask(
+  private async createTaskWithOutcome(
     taskId: string,
     template: Record<string, unknown>,
     routine?: {
@@ -352,6 +394,7 @@ export class TemplateRepository {
       expectedTemplateJson: string
       expectedCadence: string
       complete?: boolean
+      timezone?: string
     },
     templateSnapshot?: { templateId: string; expectedTemplateJson: string }
   ) {
@@ -387,6 +430,13 @@ export class TemplateRepository {
         }
       }
     }
+    const rawChecklists = Array.isArray(template.checklists)
+      ? template.checklists.map((item) =>
+          item && typeof item === "object" && !Array.isArray(item)
+            ? { ...item, ...(routine?.complete ? { done: true } : {}) }
+            : item
+        )
+      : template.checklists
     const prepared = await prepareTaskCreation(
       repo,
       {
@@ -399,9 +449,9 @@ export class TemplateRepository {
             ? template.custom_fields
             : JSON.stringify(template.custom_fields ?? {}),
         checklists:
-          typeof template.checklists === "string"
-            ? template.checklists
-            : JSON.stringify(template.checklists ?? []),
+          typeof rawChecklists === "string"
+            ? rawChecklists
+            : JSON.stringify(rawChecklists ?? []),
         ...(routine ? { task_kind: "routine_instance", due_date: routine.period } : {})
       },
       { id: taskId }
@@ -416,11 +466,43 @@ export class TemplateRepository {
       if (result.errorCode === "conflict") throw new BoardOperationError("stale")
       throw new BoardOperationError(result.errorCode === "denied" ? "denied" : "unavailable")
     }
-    return {
+    const out: RoutineCompletionOutcome = {
       taskId: String(result.task.id),
       alreadyExisted: result.replayed,
-      completed: result.task.status === "complete"
+      completed: result.task.status === "complete",
     }
+    Object.defineProperty(out, ROUTINE_NEWLY_COMPLETED, {
+      value: result.newlyCompleted,
+      enumerable: false,
+      configurable: true,
+    })
+    return { ...out, newlyCompleted: result.newlyCompleted }
+  }
+  private async createTask(
+    taskId: string,
+    template: Record<string, unknown>,
+    routine?: {
+      templateId: string
+      period: string
+      expectedTemplateJson: string
+      expectedCadence: string
+      complete?: boolean
+      timezone?: string
+    },
+    templateSnapshot?: { templateId: string; expectedTemplateJson: string }
+  ): Promise<RoutineCompletionOutcome> {
+    const { newlyCompleted, ...legacyShape } = await this.createTaskWithOutcome(
+      taskId,
+      template,
+      routine,
+      templateSnapshot
+    )
+    Object.defineProperty(legacyShape, ROUTINE_NEWLY_COMPLETED, {
+      value: newlyCompleted,
+      enumerable: false,
+      configurable: true,
+    })
+    return legacyShape
   }
   async instantiateFromTemplate(
     taskId: string,
@@ -447,7 +529,7 @@ export class TemplateRepository {
         : undefined
     )
   }
-  async instantiateRoutineTask(templateId: string) {
+  async instantiateRoutineTask(templateId: string, timezone = "UTC") {
     const row = await this.findById(templateId)
     if (!row || !row.is_routine) throw new Error("Routine is unavailable")
     const body = templateObject(String(row.template_json))
@@ -456,12 +538,13 @@ export class TemplateRepository {
       body.checklists = body.checklists.map((item) => ({ ...item, done: false }))
     return this.createTask(randomUUID(), body, {
       templateId,
-      period: routinePeriod(String(row.cadence ?? "daily")),
+      period: routinePeriod(String(row.cadence ?? "daily"), new Date(), timezone),
       expectedTemplateJson: String(row.template_json),
-      expectedCadence: String(row.cadence ?? "daily")
+      expectedCadence: String(row.cadence ?? "daily"),
+      timezone
     })
   }
-  async completeRoutine(templateId: string, requestedPeriod?: string) {
+  async completeRoutine(templateId: string, requestedPeriod?: string, timezone = "UTC") {
     await this.db("read").execute(
       sql`SELECT id FROM task_templates AS template WHERE id=${templateId} AND ${ownedPlanning(this.scope, "template")} AND is_routine=1 AND retired_at IS NULL`
     )
@@ -471,10 +554,28 @@ export class TemplateRepository {
     body.title ??= row.name
     return this.createTask(randomUUID(), body, {
       templateId,
-      period: requestedPeriod ?? routinePeriod(String(row.cadence ?? "daily")),
+      period: requestedPeriod ?? routinePeriod(String(row.cadence ?? "daily"), new Date(), timezone),
       expectedTemplateJson: String(row.template_json),
       expectedCadence: String(row.cadence ?? "daily"),
-      complete: true
+      complete: true,
+      timezone
+    })
+  }
+  async completeRoutineWithOutcome(templateId: string, requestedPeriod?: string, timezone = "UTC") {
+    await this.db("read").execute(
+      sql`SELECT id FROM task_templates AS template WHERE id=${templateId} AND ${ownedPlanning(this.scope, "template")} AND is_routine=1 AND retired_at IS NULL`
+    )
+    const row = await this.findById(templateId)
+    if (!row || !row.is_routine) throw new Error("Routine is unavailable")
+    const body = templateObject(String(row.template_json))
+    body.title ??= row.name
+    return this.createTaskWithOutcome(randomUUID(), body, {
+      templateId,
+      period: requestedPeriod ?? routinePeriod(String(row.cadence ?? "daily"), new Date(), timezone),
+      expectedTemplateJson: String(row.template_json),
+      expectedCadence: String(row.cadence ?? "daily"),
+      complete: true,
+      timezone
     })
   }
   async instantiateHabitTask(templateId: string) {

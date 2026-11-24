@@ -7,7 +7,7 @@ import { fetchOnlineSearch, searchRegistration, searchWorkerReady, searchWorkerS
 import { singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
 import { matchesShortcutEvent, readResolvedShortcuts } from "@domains/navigation/keyboard-shortcuts"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { createTablerSvgElement, type TablerIconName } from "@lib/tabler-svg"
+import { createTablerSvgElement, mapEntityEmojiToTabler, type TablerIconName } from "@lib/tabler-svg"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
 import { EXACT_TASK_IDENTIFIER_SCORE } from "@lib/task-search-score"
 import type {
@@ -62,14 +62,25 @@ function itemMatchesQuery(item: SearchResultItem, query: string): boolean {
 function resolveSearchIconName(item: SearchResultItem): TablerIconName {
   if (item.id === "page-dashboard") return "dashboard"
   if (item.id === "page-today") return "today"
+  if (item.id === "page-upcoming") return "calendar-event"
   if (item.id === "page-calendar") return "calendar"
   if (item.id === "page-table") return "table"
   if (item.id === "page-tasks") return "kanban"
+  if (item.id === "page-routines") return "repeat"
   if (item.id === "page-settings") return "settings"
   if (item.id === "action-new-task") return "plus"
   switch (item.kind) {
-    case "task":
+    case "task": {
+      const taskKind = item.meta?.task_kind
+      if (taskKind === "calendar_event") return "calendar-event"
+      if (taskKind === "shopping_item") return "shopping-cart"
+      if (taskKind === "routine_instance") return "repeat"
+      if (taskKind === "checklist") return "list-check"
+      if (taskKind === "quick_capture") return "bolt"
       return "checkbox"
+    }
+    case "routine":
+      return (item.icon && mapEntityEmojiToTabler(item.icon)) || "repeat"
     case "board":
       return "kanban"
     case "area":

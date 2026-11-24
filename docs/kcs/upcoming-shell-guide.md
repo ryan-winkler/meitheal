@@ -24,7 +24,7 @@ The page still keeps direct completion, task-detail handoff, and grouped day acc
 ### Scan the next seven days
 
 1. Open `Upcoming`.
-2. Use **Today and tomorrow** for the first two local days or **Following five days** for the rest of the seven-day window.
+2. Use **Today and tomorrow** for the first two local days or **Following five days** for the rest of the seven-day window. Native Events (`calendar_event`) use their resolved schedule date (`start_date ?? due_date ?? end_date`), so events without a separate `due_date` still appear under the matching day.
 3. Use **Related views** to open Today or Calendar.
 
 If Upcoming tasks could not load, refresh before relying on the counts.

@@ -702,11 +702,15 @@ components:
           nullable: true
           description: Due date as YYYY-MM-DD calendar day or ISO timestamp
         start_date:
-          type: string
-          nullable: true
+          type:
+            - string
+            - "null"
+          description: Start date or ISO timestamp (primary schedule timestamp for calendar_event)
         end_date:
-          type: string
-          nullable: true
+          type:
+            - string
+            - "null"
+          description: End date or ISO timestamp
         progress:
           type: integer
           minimum: 0
@@ -817,9 +821,10 @@ components:
           nullable: true
           description: JSON-encoded strategic framework payload (RICE / dRICE)
         custom_fields:
-          type: string
-          nullable: true
-          description: JSON-encoded custom field values keyed by field name
+          type:
+            - string
+            - "null"
+          description: JSON-encoded custom fields object; shopping_item tasks store structured ShoppingListItem entries under items.
         checklists:
           type:
             - string
@@ -899,6 +904,37 @@ components:
         - title
         - status
       additionalProperties: false
+    ShoppingListItem:
+      type: object
+      required:
+        - name
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: Item name
+        qty:
+          oneOf:
+            - type: string
+            - type: number
+              exclusiveMinimum: 0
+          description: Optional quantity label (e.g. '2L', '1 bunch') or positive number
+        category:
+          type: string
+          enum:
+            - produce
+            - dairy
+            - meat
+            - pantry
+            - frozen
+            - beverages
+            - household
+            - other
+          description: Aisle category
+        checked:
+          type: boolean
+          description: Whether the item has been picked up
     Area:
       type: object
       properties:
@@ -2655,6 +2691,18 @@ paths:
           in: query
           schema:
             type: string
+        - name: task_kind
+          in: query
+          schema:
+            type: string
+            enum:
+              - standard_action
+              - shopping_item
+              - checklist
+              - routine_instance
+              - calendar_event
+              - quick_capture
+          description: Filter tasks by behavioral kind.
         - name: assigned_to
           in: query
           schema:
@@ -3049,20 +3097,25 @@ paths:
                   type: string
                   description: Initial status (e.g. backlog, pending, active, complete)
                 priority:
-                  type: integer
+                  type: number
                   minimum: 1
                   maximum: 5
-                  description: Priority 1-5 (1=Urgent, 5=Minimal)
+                  description: Priority 1-5 (1=urgent, 3=normal, 5=lowest); rounded and clamped to 1..5.
                 due_date:
-                  type: string
-                  nullable: true
-                  description: Due date (YYYY-MM-DD or ISO datetime)
+                  type:
+                    - string
+                    - "null"
+                  description: Due date (YYYY-MM-DD or ISO timestamp)
                 start_date:
-                  type: string
-                  nullable: true
+                  type:
+                    - string
+                    - "null"
+                  description: Start date or ISO timestamp
                 end_date:
-                  type: string
-                  nullable: true
+                  type:
+                    - string
+                    - "null"
+                  description: End date or ISO timestamp
                 progress:
                   type: integer
                   minimum: 0
@@ -3082,9 +3135,9 @@ paths:
                     - standard_action
                     - shopping_item
                     - checklist
-                    - routine_instance
                     - calendar_event
                     - quick_capture
+                  description: Behavioral kind — determines UI rendering and lifecycle rules
                 parent_id:
                   type: string
                   nullable: true
@@ -3094,18 +3147,6 @@ paths:
                 project_id:
                   type: string
                   nullable: true
-                labels:
-                  oneOf:
-                    - type: array
-                      items:
-                        type: string
-                    - type: string
-                custom_fields:
-                  type: string
-                  description: JSON-encoded object of custom field values
-                checklists:
-                  type: string
-                  description: JSON-encoded array of checklist items
                 recurrence_rule:
                   type: string
                   nullable: true
@@ -3140,6 +3181,43 @@ paths:
                   maxLength: 255
                   nullable: true
                   description: Must start with 'ha_' or 'custom_'
+                labels:
+                  oneOf:
+                    - type: array
+                      items:
+                        type: string
+                    - type: string
+                      description: JSON-encoded array of label names
+                  description: Label names, as an array or as a JSON-encoded array.
+                checklists:
+                  oneOf:
+                    - type: array
+                      items:
+                        type: object
+                        required:
+                          - text
+                        properties:
+                          id:
+                            type: string
+                          text:
+                            type: string
+                          done:
+                            type: boolean
+                        additionalProperties: false
+                    - type: string
+                      description: JSON-encoded checklist array
+                custom_fields:
+                  oneOf:
+                    - type: object
+                      additionalProperties: true
+                      properties:
+                        items:
+                          type: array
+                          items:
+                            $ref: "#/components/schemas/ShoppingListItem"
+                          description: Structured shopping items (with optional qty, category, checked) for shopping_item tasks
+                    - type: string
+                      description: JSON-encoded custom fields object
                 frameworkPayload:
                   type: object
                 calendar:
@@ -3463,7 +3541,24 @@ paths:
                 is_promoted:
                   type: boolean
                   description: Show the task above regular cards in its Kanban lane.
+                task_kind:
+                  type: string
+                  enum:
+                    - standard_action
+                    - shopping_item
+                    - checklist
+                    - routine_instance
+                    - calendar_event
+                    - quick_capture
                 due_date:
+                  type:
+                    - string
+                    - "null"
+                start_date:
+                  type:
+                    - string
+                    - "null"
+                end_date:
                   type:
                     - string
                     - "null"
@@ -3493,29 +3588,21 @@ paths:
                     - epic
                     - story
                     - task
-                task_kind:
-                  type: string
-                  enum:
-                    - standard_action
-                    - shopping_item
-                    - checklist
-                    - routine_instance
-                    - calendar_event
-                    - quick_capture
                 framework_payload:
                   type: string
                   description: JSON-encoded object string
                 custom_fields:
-                  type: string
-                  description: JSON-encoded object string
-                start_date:
-                  type:
-                    - string
-                    - "null"
-                end_date:
-                  type:
-                    - string
-                    - "null"
+                  oneOf:
+                    - type: object
+                      additionalProperties: true
+                      properties:
+                        items:
+                          type: array
+                          items:
+                            $ref: "#/components/schemas/ShoppingListItem"
+                          description: Structured shopping items for shopping_item tasks
+                    - type: string
+                      description: JSON-encoded custom fields object
                 progress:
                   type: number
                   minimum: 0
@@ -5648,6 +5735,18 @@ paths:
           in: query
           schema:
             type: integer
+        - name: task_kind
+          in: query
+          schema:
+            type: string
+            enum:
+              - standard_action
+              - shopping_item
+              - checklist
+              - routine_instance
+              - calendar_event
+              - quick_capture
+          description: Filter tasks by behavioral kind.
         - name: task_fields
           in: query
           schema:
@@ -7082,15 +7181,88 @@ paths:
           schema:
             type: string
           description: List Routines in an existing Area, or use default for unassigned Routines.
+        - name: project_id
+          in: query
+          schema:
+            type: string
+          description: Filter Routines by Project ID.
       responses:
         "200":
           description: Routines list
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - habits
+                properties:
+                  habits:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                        - id
+                        - name
+                        - cadence
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        icon:
+                          type: string
+                        cadence:
+                          type: string
+                          enum:
+                            - daily
+                            - weekly
+                        position:
+                          type: integer
+                        template_json:
+                          type: string
+                        boardId:
+                          type:
+                            - string
+                            - "null"
+                        projectActive:
+                          type: boolean
+                        todayCompleted:
+                          type: boolean
+                        todayTaskId:
+                          type:
+                            - string
+                            - "null"
+                        lastCompletedDate:
+                          type:
+                            - string
+                            - "null"
+                        currentStreak:
+                          type: integer
+                        longestStreak:
+                          type: integer
+                        totalCompletions:
+                          type: integer
+                        checklists:
+                          type: array
+                          items:
+                            type: object
+                            required:
+                              - text
+                              - done
+                            properties:
+                              text:
+                                type: string
+                              done:
+                                type: boolean
+                            additionalProperties: false
+                      additionalProperties: false
+                additionalProperties: false
     post:
       operationId: createHabit
       tags:
         - Habits
       summary: Manage a Routine
-      description: Create with a name and optional area_id. Send templateId for complete, update, or delete.
+      description: Create with a name and optional area_id or project_id. Send templateId for complete, update, or delete.
       requestBody:
         content:
           application/json:
@@ -7116,6 +7288,11 @@ paths:
                 area_id:
                   type: string
                   description: Area for new work. Use default for unassigned work.
+                project_id:
+                  type:
+                    - string
+                    - "null"
+                  description: Project for new work.
                 cadence:
                   type: string
                   enum:
@@ -7133,6 +7310,9 @@ paths:
                   type: string
                 priority:
                   type: number
+                  minimum: 1
+                  maximum: 5
+                  description: Default priority 1-5 (clamped by server).
                 checklists:
                   type: array
                   items:
@@ -7148,7 +7328,7 @@ paths:
                 templateJson:
                   type: object
                   additionalProperties: true
-                  description: Template fields to update, including area_id.
+                  description: Template fields to update, including area_id and project_id.
               additionalProperties: false
       responses:
         "200":

@@ -233,6 +233,14 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
     }
   }
 
+  function formatMoved(id: string, defaultLabel: string | undefined, position: number, total: number): string {
+    const label = draft.labels[id] ?? defaultLabel ?? id
+    return (root.dataset.moved ?? "")
+      .replace("{item}", label)
+      .replace("{position}", String(position))
+      .replace("{total}", String(total))
+  }
+
   function startInlineRename(item: HTMLElement): void {
     const id = item.dataset.layoutItem
     const labelEl = item.querySelector<HTMLElement>(":scope > .td-layout-editor__row > [data-layout-label]")
@@ -325,12 +333,7 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
     items.splice(index, 1)
     items.splice(index + (direction === "up" ? -1 : 1), 0, item)
     draft.orders[group] = items.map((row) => row.dataset.layoutItem ?? "")
-    const label = draft.labels[id] ?? item.dataset.defaultLabel ?? id
-    const msg = (root.dataset.moved ?? "")
-      .replace("{item}", label)
-      .replace("{position}", String(items.indexOf(item) + 1))
-      .replace("{total}", String(items.length))
-    commitDraft(msg)
+    commitDraft(formatMoved(id, item.dataset.defaultLabel, items.indexOf(item) + 1, items.length))
     button.scrollIntoView({ block: "nearest" })
   }, { signal })
 
@@ -346,20 +349,15 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
         ghostClass: "td-layout-editor__ghost",
         signal,
         onStart: () => { dragging = true },
-        onEnd: ({ item: movedItem, oldIndex, newIndex }) => {
+        onEnd: ({ item, oldIndex, newIndex }) => {
           dragging = false
           if (oldIndex === newIndex) { renderConfig(draft); return }
           const group = list.dataset.layoutOrder
           if (!group) return
-          const rows = layoutItems(list)
-          draft.orders[group] = rows.map((row) => row.dataset.layoutItem ?? "")
-          const id = movedItem.dataset.layoutItem ?? ""
-          const label = draft.labels[id] ?? movedItem.dataset.defaultLabel ?? id
-          const msg = (root.dataset.moved ?? "")
-            .replace("{item}", label)
-            .replace("{position}", String(rows.indexOf(movedItem) + 1))
-            .replace("{total}", String(rows.length))
-          commitDraft(msg)
+          const items = layoutItems(list)
+          draft.orders[group] = items.map((row) => row.dataset.layoutItem ?? "")
+          const id = item.dataset.layoutItem ?? ""
+          commitDraft(formatMoved(id, item.dataset.defaultLabel, items.indexOf(item) + 1, items.length))
         },
       })
     }
