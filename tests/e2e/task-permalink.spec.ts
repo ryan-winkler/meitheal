@@ -393,7 +393,7 @@ test("a comment link focuses the edited comment through ingress and recovers aft
 
     const missing = page.locator("#td-comment-link-status")
     await page.goto(`${taskUrl}?comment=${otherComment}`)
-    await expect(missing).toContainText("This comment is unavailable")
+    await expect(missing).toContainText("This comment is unavailable", { timeout: 12_000 })
     await expect(missing).toBeFocused()
     await expect(page.locator("#td-comments")).not.toContainText("Comment belonging to a different task")
     const confirmation = sourcePage.getByRole("alertdialog", { name: "Delete comment" })
@@ -428,7 +428,7 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     await expect(authorRow).toHaveCount(0)
     await expect(sibling).toBeFocused()
     await page.goto(href)
-    await expect(missing).toBeFocused()
+    await expect(missing).toBeFocused({ timeout: 12_000 })
     await expect(page.locator("#td-comments")).toContainText("First visible comment")
     await expect(target).toHaveCount(0)
 

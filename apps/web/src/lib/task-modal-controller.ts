@@ -842,8 +842,21 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
               void taskApi.listUserDirectory(modalSignal).then(renderAssignees).catch(() => renderAssignees(null))
             }
             const settings = fetch("/api/settings", requestOptions)
+            const cfContext = currentTaskApiContext()
+            const cfRead = fetch("/api/custom-fields", {
+              cache: "no-store",
+              signal: modalSignal,
+              ...(cfContext ? { headers: taskApiHeaders(cfContext) } : {}),
+            }).catch(() => null)
+            const childrenRead = !Array.isArray(t.subtasks) && byId("td-link-children")
+              ? fetch(`/api/tasks?parent_id=${encodeURIComponent(taskId)}`, requestOptions) // nosemgrep
+              : null
+            const commentsFetch = fetch(`/api/tasks/${encodeURIComponent(taskId)}/comments`, { // nosemgrep
+              signal: modalSignal,
+              cache: "no-store",
+            })
             // Observe rejections immediately. Field handlers consume the original promises in order.
-            void Promise.allSettled([lanes, backlogModeSetting, areas, projectRead, pillars, settings])
+            void Promise.allSettled([lanes, backlogModeSetting, areas, projectRead, pillars, settings, cfRead, childrenRead, commentsFetch])
 
             // Populate status dropdown from lanes API
             try {
@@ -964,11 +977,8 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                 let children: Array<Record<string, unknown>> | null = Array.isArray(t.subtasks)
                   ? (t.subtasks as Array<Record<string, unknown>>)
                   : null;
-                if (!children) {
-                  const childRes = await fetch( // nosemgrep
-                    `/api/tasks?parent_id=${encodeURIComponent(taskId)}`, // nosemgrep
-                    requestOptions,
-                  );
+                if (!children && childrenRead) {
+                  const childRes = await childrenRead
                   if (modalSignal.aborted) return
                   if (childRes.ok) {
                     const childData = await childRes.json()
@@ -1141,10 +1151,6 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             }
 
             const initialTitle = String(t.title ?? "")
-            if (tdTitleInput) {
-              tdTitleInput.value = initialTitle
-              tdTitleInput.dataset.savedTitle = initialTitle
-            }
             // Update aria-label with actual task title for screen readers
             setInspectorAriaLabel(`Task detail: ${String(t.title ?? "Untitled")}`);
 
@@ -1406,16 +1412,8 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             // Load board-scoped custom fields (falling back to settings on household)
             _settingsFields = [];
             let allSettings: Record<string, unknown> = {};
-            const cfContext = currentTaskApiContext();
             try {
-              const [settingsRes, cfRes] = await Promise.all([
-                settings,
-                fetch("/api/custom-fields", {
-                  cache: "no-store",
-                  signal: modalSignal,
-                  ...(cfContext ? { headers: taskApiHeaders(cfContext) } : {}),
-                }).catch(() => null),
-              ])
+              const [settingsRes, cfRes] = await Promise.all([settings, cfRead])
               if (cfRes?.ok) {
                 const cfData = await cfRes.json().catch(() => null) as { fields?: unknown } | null
                 if (modalSignal.aborted || currentTaskId !== taskId) return
@@ -1520,7 +1518,30 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
               mountReactions(taskReactions, `/api/tasks/${encodeURIComponent(taskId)}/reactions`, modalSignal, taskId)
             }
 
-            // Load comments for the current task.
+            // Load attachments (Phase 23)
+            loadAttachments(taskId);
+            // Delay resetting _isPopulating so blur/change events that
+            // fire asynchronously during focus transitions don't trigger
+            // spurious save notifications
+            // Hide skeleton, show loaded content before hydrating #td-title or focusing linked comments
+            if (modalSignal.aborted) return
+            if (tdSkeleton) tdSkeleton.style.display = "none";
+            tdHeading?.classList.remove("invisible")
+            tdActions?.removeAttribute("hidden")
+            taskLoaded = true
+            syncInspectorDockMode()
+            tdLoaded?.classList.remove("hidden")
+            if (tdTitleInput) {
+              tdTitleInput.value = initialTitle
+              tdTitleInput.dataset.savedTitle = initialTitle
+            }
+            if (!keepDescriptionDraft) {
+              void renderTaskDescription(description)
+              if (!description) enterDescEdit(false)
+            }
+            resizeTitle()
+
+            // Load comments for the current task after the loaded container is visible so link focus works reliably.
             byId("td-comments")?.replaceChildren()
             byId("td-comment-link-status")?.replaceChildren()
             setAttr(commentError, "hidden", "")
@@ -1529,26 +1550,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
               commentInput.value = ""
               commentInput.dataset.taskId = taskId
             }
-            commentsReady = loadComments({ id: taskId, ticket_key: currentTicketKey }, modalSignal, commentTarget)
-
-            // Load attachments (Phase 23)
-            loadAttachments(taskId);
-            // Delay resetting _isPopulating so blur/change events that
-            // fire asynchronously during focus transitions don't trigger
-            // spurious save notifications
-            // Hide skeleton, show loaded content
-            if (modalSignal.aborted) return
-            if (tdSkeleton) tdSkeleton.style.display = "none";
-            tdHeading?.classList.remove("invisible")
-            tdActions?.removeAttribute("hidden")
-            taskLoaded = true
-            syncInspectorDockMode()
-            tdLoaded?.classList.remove("hidden")
-            if (!keepDescriptionDraft) {
-              void renderTaskDescription(description)
-              if (!description) enterDescEdit(false)
-            }
-            resizeTitle()
+            commentsReady = loadComments({ id: taskId, ticket_key: currentTicketKey }, modalSignal, commentTarget, undefined, commentsFetch)
             const finishLoadedTask = () => {
               const liveSignal = _modalAbortController?.signal
               if (!liveSignal || liveSignal.aborted || currentTaskId !== taskId || detailGeneration !== loadedGeneration) return

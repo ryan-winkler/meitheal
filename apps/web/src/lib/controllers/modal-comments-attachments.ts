@@ -141,7 +141,7 @@ function attachCommentManagement(
  * Load and render comments for a task.
  */
 export async function loadComments(
-  task: { id: string, ticket_key: string | null }, signal: AbortSignal, commentTarget: string | null = null, postedCommentId?: number,
+  task: { id: string, ticket_key: string | null }, signal: AbortSignal, commentTarget: string | null = null, postedCommentId?: number, prefetched?: Promise<Response>,
 ): Promise<void> {
   const taskId = task.id
   const container = byId("td-comments")
@@ -158,7 +158,7 @@ export async function loadComments(
   }
 
   try {
-    const res = await fetch(url, { signal, cache: "no-store" }) // nosemgrep
+    const res = await (prefetched ?? fetch(url, { signal, cache: "no-store" })) // nosemgrep
     if (!res.ok) {
       showLinkStatus(status?.dataset.loadFailed)
       return
