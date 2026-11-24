@@ -23,6 +23,7 @@ import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observa
 // Polyfill WebSocket for Node.js server-side usage
 import WebSocket, { type ClientOptions } from "ws";
 import { supervisorFetch } from "../../lib/supervisor-fetch";
+import { localReaderCacheToken } from "../../../scripts/database-client.mjs"
 import { fingerprintHAConfiguration, resolveHAConfiguration, type HAConfiguration } from "./ha-configuration"
 import { initEntitySubscription, resetEntityConnection } from "./ha-entities"
 (globalThis as Record<string, unknown>).WebSocket = WebSocket;
@@ -49,14 +50,25 @@ const SYS_REQ = "ha-system"; // sentinel request_id for background operations
 
 let connection: Connection | null = null;
 let configurationFingerprint: string | null = null
+const haSettingsSnapshotCache = new WeakMap<object, { token: string; settings: Record<string, unknown> }>()
 
 export async function getHAConfiguration({ requireComplete = false } = {}): Promise<HAConfiguration | null> {
   if (process.env.SUPERVISOR_TOKEN) return resolveHAConfiguration(process.env)
   const { ensureSchema, getPersistenceClient } = await import("../tasks/persistence/store")
   const { SettingsRepository } = await import("../tasks/persistence/settings-repository")
   await ensureSchema()
-  const repo = new SettingsRepository(getPersistenceClient())
-  const settings = await repo.getByKeys(["ha_url", "ha_token"])
+  const db = getPersistenceClient()
+  const state = localReaderCacheToken(db)
+  const cached = state ? haSettingsSnapshotCache.get(state.owner) : undefined
+  let settings = cached && state && cached.token === state.token ? cached.settings : undefined
+  if (!settings) {
+    const repo = new SettingsRepository(db)
+    const loaded = await repo.getByKeys(["ha_url", "ha_token"])
+    settings = loaded
+    if (state && localReaderCacheToken(db)?.token === state.token) {
+      haSettingsSnapshotCache.set(state.owner, { token: state.token, settings: loaded })
+    }
+  }
   const configuration = resolveHAConfiguration(process.env, settings)
   if (!configuration && requireComplete && [settings.ha_url, settings.ha_token, process.env.HA_BASE_URL, process.env.HA_TOKEN]
     .some(value => typeof value === "string" && value.trim())) {

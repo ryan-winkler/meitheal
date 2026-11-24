@@ -2265,7 +2265,7 @@ export class TaskRepository {
     targetLaneId?: string,
     integrationContext?: IntegrationScope,
   ): Promise<
-    { ok: true; task: TaskRow; previousStatus?: string; successor?: RecurrenceSuccessor; assignmentEventId?: string }
+    { ok: true; task: TaskRow; previousStatus?: string; successor?: RecurrenceSuccessor; assignmentEventId?: string; hasOpenChildren?: boolean }
     | { ok: false; errorCode: "unavailable"; reason?: "routine-date" }
     | { ok: false; errorCode: "assignee_mismatch" }
     | { ok: false; errorCode: "checklist_conflict"; checklists: string | null }
@@ -2410,7 +2410,10 @@ export class TaskRepository {
             else yield [sql`INSERT INTO board_task_planning(task_id, area_id, project_id, goal_id) VALUES (${id}, ${area as InValue}, ${project as InValue}, ${goal as InValue})
               ON CONFLICT(task_id) DO UPDATE SET area_id = excluded.area_id, project_id = excluded.project_id, goal_id = excluded.goal_id`]
           }
-          const [projection] = yield [scopedTaskRead(repo.scope, sql`SELECT * FROM scoped_tasks AS tasks WHERE id = ${id}`)]
+          const openChildrenSql = completing
+            ? ", EXISTS (SELECT 1 FROM tasks AS child_probe WHERE child_probe.task_board_id IS tasks.task_board_id AND child_probe.parent_id = tasks.id AND child_probe.status != 'complete') AS _has_open_children"
+            : ""
+          const [projection] = yield [scopedTaskRead(repo.scope, sql`SELECT tasks.*${sourceSql(openChildrenSql)} FROM scoped_tasks AS tasks WHERE id = ${id}`)]
           if (!projection?.rows[0]) throw new BoardOperationError("unavailable")
           writeResults[writeIndex] = projection
         }
@@ -2621,11 +2624,22 @@ export class TaskRepository {
     }
     if (recurrence === "invalid") logApiWarn("recurrence-auto-create", "Invalid saved recurrence rule or date")
     const successor = recurrence === "invalid" ? undefined : recurrence
-    const row = results[writeIndex]?.rows[0]
-    if (row) return { ok: true, task: row as unknown as TaskRow,
-      ...(typeof fields.status === "string" ? { previousStatus } : {}),
-      ...(successor ? { successor } : {}),
-      ...(assignmentEventId ? { assignmentEventId } : {}),
+    const row = results[writeIndex]?.rows[0] as Record<string, unknown> | undefined
+    if (row) {
+      const hasOpenChildren = completing ? Number(row._has_open_children ?? 0) !== 0 : undefined
+      let taskRow = row
+      if (completing) {
+        taskRow = { ...row }
+        delete taskRow._has_open_children
+      }
+      return {
+        ok: true,
+        task: taskRow as unknown as TaskRow,
+        ...(typeof fields.status === "string" ? { previousStatus } : {}),
+        ...(successor ? { successor } : {}),
+        ...(assignmentEventId ? { assignmentEventId } : {}),
+        ...(hasOpenChildren !== undefined ? { hasOpenChildren } : {}),
+      }
     }
 
     if (assigneeIndex >= 0 && results[assigneeIndex]?.rows.length) {

@@ -496,26 +496,37 @@ export async function getTodayTaskRows(
   const completionFilter = todayCompletionFilter(today, resolvedTimezone)
   const tasksQuery = {
     sql: `
-      totals AS (
-        SELECT COUNT(*) FILTER (WHERE ${completionFilter.sql}) AS completed_today,
-               COUNT(*) FILTER (
-                 WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND (${SCHEDULED_DATE_SQL} IS NULL OR ${SCHEDULED_DATE_SQL} = '')
-               ) AS open_unscheduled
+      classified AS MATERIALIZED (
+        SELECT tasks.id, tasks.rowid AS task_rowid, tasks.updated_at, tasks.title, tasks.ticket_ref,
+               (${completionFilter.sql}) AS is_completed_today,
+               (status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL
+                 AND (${SCHEDULED_DATE_SQL} IS NULL OR ${SCHEDULED_DATE_SQL} = '')) AS is_open_unscheduled,
+               (status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL
+                 AND (
+                   ? = 1
+                   OR (${SCHEDULED_DATE_SQL} IS NOT NULL AND ${SCHEDULED_DATE_SQL} <> '')
+                   OR is_promoted NOT IN (0, '')
+                   OR framework_payload NOT IN ('{}', '')
+                 )) AS is_open_candidate
         FROM scoped_task_records AS tasks WHERE ${context.sql}
       ),
-      open_candidates AS MATERIALIZED (
-        SELECT tasks.id
-        FROM scoped_task_records AS tasks
-        WHERE ${context.sql}
-          AND status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL
-          AND (
-            ? = 1
-            OR (${SCHEDULED_DATE_SQL} IS NOT NULL AND ${SCHEDULED_DATE_SQL} <> '')
-            OR is_promoted NOT IN (0, '')
-            OR framework_payload NOT IN ('{}', '')
-          )
+      totals AS (
+        SELECT COALESCE(SUM(is_completed_today), 0) AS completed_today,
+               COALESCE(SUM(is_open_unscheduled), 0) AS open_unscheduled,
+               (SELECT json_group_array(json_object('id', id, 'title', title, 'ticket_key', ticket_ref))
+                FROM (
+                  SELECT id, title, ticket_ref FROM classified
+                  WHERE is_completed_today = 1
+                  ORDER BY CASE WHEN typeof(updated_at) = 'text' AND updated_at NOT LIKE '%T%' AND updated_at NOT LIKE '%:%'
+                    THEN ? ELSE ${taskTimestampMs("updated_at")} END DESC, task_rowid DESC
+                  LIMIT 20
+                )) AS completed_json
+        FROM classified
+      ),
+      open_candidates AS (
+        SELECT id FROM classified WHERE is_open_candidate = 1
       )
-      SELECT ${TASK_VIEW_COLUMNS}, completed_today, open_unscheduled
+      SELECT ${TASK_VIEW_COLUMNS}, completed_today, open_unscheduled, completed_json
       FROM totals
       LEFT JOIN (
         SELECT scoped_tasks.*
@@ -524,14 +535,22 @@ export async function getTodayTaskRows(
       ) AS tasks ON 1 = 1
       ORDER BY tasks.created_at DESC, tasks.rowid DESC
     `,
-    args: [...completionFilter.args, ...context.args, ...context.args, includeUnscheduled ? 1 : 0],
+    args: [...completionFilter.args, includeUnscheduled ? 1 : 0, ...context.args, completionFilter.firstInstant],
   }
   const overview = tagTodayRead(scopedTaskRead(scope, sourceSql(tasksQuery.sql, tasksQuery.args), "with"), "rows")
-  const [taskResult, completed] = await client.batch([overview, completedTodayQuery(scope, completionFilter, placement)], "read")
+  const taskResult = await client.execute(overview)
   const rows = taskResult?.rows ?? []
+  const rawCompletedJson = rows[0]?.completed_json
+  let completedRows: Row[] = []
+  if (typeof rawCompletedJson === "string" && rawCompletedJson.length > 2) {
+    try {
+      const parsed: unknown = JSON.parse(rawCompletedJson)
+      if (Array.isArray(parsed)) completedRows = parsed as Row[]
+    } catch { /* ignore malformed aggregate */ }
+  }
 
   return {
-    completedTasks: completedTodaySummaries(completed?.rows ?? []),
+    completedTasks: completedTodaySummaries(completedRows),
     completedTodayCount: Number(rows[0]?.completed_today ?? 0),
     openUnscheduledCount: Number(rows[0]?.open_unscheduled ?? 0),
     tasks: rows.filter(row => row.id !== null).map(row => toTaskViewItem(row as Record<string, unknown>, false, resolvedTimezone, now)),

@@ -44,6 +44,26 @@ resolve_max_old_space_mb() {
   printf '128\n'
 }
 
+resolve_v8_pool_size() {
+  if is_uint "${MEITHEAL_V8_POOL_SIZE:-}" && [ "${MEITHEAL_V8_POOL_SIZE}" -ge 1 ]; then
+    printf '%s\n' "${MEITHEAL_V8_POOL_SIZE}"
+    return 0
+  fi
+
+  _cpu_v2="${MEITHEAL_CGROUP_V2_CPU_MAX_FILE:-/sys/fs/cgroup/cpu.max}"
+  if [ -r "${_cpu_v2}" ]; then
+    _quota=""
+    _period=""
+    read -r _quota _period < "${_cpu_v2}" 2>/dev/null || true
+    if is_uint "${_quota}" && is_uint "${_period}" && [ "${_quota}" -gt 0 ] && [ "${_period}" -gt 0 ]; then
+      if [ $(( _quota * 2 )) -le $(( _period * 3 )) ]; then
+        printf '1\n'
+        return 0
+      fi
+    fi
+  fi
+}
+
 apply_resolved_node_options() {
   _resolved_mb="$(resolve_max_old_space_mb)"
   case " ${NODE_OPTIONS:-} " in
@@ -54,6 +74,17 @@ apply_resolved_node_options() {
       export NODE_OPTIONS="${NODE_OPTIONS:+${NODE_OPTIONS} }--max-old-space-size=${_resolved_mb}"
       ;;
   esac
+  _v8_pool="$(resolve_v8_pool_size)"
+  if [ -n "${_v8_pool}" ]; then
+    case " ${NODE_OPTIONS:-} " in
+      *" --v8-pool-size="*)
+        ;;
+      *)
+        NODE_OPTIONS="${NODE_OPTIONS} --v8-pool-size=${_v8_pool}"
+        export NODE_OPTIONS
+        ;;
+    esac
+  fi
 }
 
 if [ "${MEITHEAL_SOURCE_LIB_ONLY:-0}" = "1" ]; then

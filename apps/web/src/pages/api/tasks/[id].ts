@@ -691,7 +691,7 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
   // The common writer commits recent activity and field history with the task mutation.
 
   const updTicketNum = updatedRow.ticket_number != null ? Number(updatedRow.ticket_number) : null
-  const finalPillarId = hasPillarUpdate ? nextPillarId : await readOptionalTaskPillarId(scope, resolvedId)
+  const finalPillarId = hasPillarUpdate ? nextPillarId : (updatedRow.pillar_id ? await readOptionalTaskPillarId(scope, resolvedId) : null)
   const finalFp = parseFrameworkPayload(updatedRow.framework_payload)
   const finalPrincipleId = finalPillarId && typeof finalFp.principle_id === "string" && finalFp.principle_id
     ? finalFp.principle_id
@@ -826,7 +826,8 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     dismissMobileNotification(`meitheal_assigned_${resolvedId}`)
     dismissMobileNotification(`meitheal_due_${resolvedId}`)
     if (notifPrefs.channels.sidebar !== false) {
-      getHAServices().then(({ callHAService }) => {
+      getHAServices().then(async ({ getHAConnection, callHAService }) => {
+        if (!await getHAConnection()) return
         callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_urgent_${resolvedId}` }, undefined, { operationAllowed: () => notificationOperationAllowed(scope, "persistent_notification.dismiss", { resource: "task", action: "edit" }, resolvedId, undefined, updatedRow.task_version) }).catch(() => {})
         callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_assigned_${resolvedId}` }, undefined, { operationAllowed: () => notificationOperationAllowed(scope, "persistent_notification.dismiss", { resource: "task", action: "edit" }, resolvedId, undefined, updatedRow.task_version) }).catch(() => {})
         callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_due_${resolvedId}` }, undefined, { operationAllowed: () => notificationOperationAllowed(scope, "persistent_notification.dismiss", { resource: "task", action: "edit" }, resolvedId, undefined, updatedRow.task_version) }).catch(() => {})
@@ -864,13 +865,15 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     }
 
     // Phase 6: Cascade completion — complete all subtasks when parent is completed
-    try {
-      const childIds = await repo.cascadeCompleteIds(resolvedId, expectedAssignedTo)
-      for (const childId of childIds) {
-        dispatchTaskEvent("task.updated", { id: childId, status: STATUS.COMPLETE }, undefined, undefined, undefined, undefined, scope).catch(() => {})
+    if (update.hasOpenChildren !== false) {
+      try {
+        const childIds = await repo.cascadeCompleteIds(resolvedId, expectedAssignedTo)
+        for (const childId of childIds) {
+          dispatchTaskEvent("task.updated", { id: childId, status: STATUS.COMPLETE }, undefined, undefined, undefined, undefined, scope).catch(() => {})
+        }
+      } catch (err) {
+        logApiError("cascade-complete", "Failed to cascade-complete subtasks", err)
       }
-    } catch (err) {
-      logApiError("cascade-complete", "Failed to cascade-complete subtasks", err)
     }
   }
 

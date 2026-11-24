@@ -581,14 +581,17 @@ test("A7: resolve_max_old_space_mb computes dynamic V8 heap ceilings across cgro
   try {
     const cgV2 = join(work, "memory.max")
     const cgV1 = join(work, "memory.limit_in_bytes")
+    const cgCpuV2 = join(work, "cpu.max")
     const scripts = [
       join(repoRoot, "meitheal-hub/run.sh"),
       join(repoRoot, "meitheal-hub/run-local.sh"),
     ]
 
-    const cases: Array<{ v2?: string; envOverride?: string; expected: string }> = [
+    const cases: Array<{ v2?: string; cpuV2?: string; envOverride?: string; expected: string; expectedPool?: string }> = [
       { v2: "max\n", expected: "128" },
       { v2: "201326592\n", expected: "105" },
+      { v2: "201326592\n", cpuV2: "100000 100000\n", expected: "105", expectedPool: "1" },
+      { v2: "201326592\n", cpuV2: "200000 100000\n", expected: "105" },
       { v2: "268435456\n", expected: "140" },
       { v2: "536870912\n", expected: "160" },
       { v2: "268435456\n", envOverride: "192", expected: "192" },
@@ -598,6 +601,7 @@ test("A7: resolve_max_old_space_mb computes dynamic V8 heap ceilings across cgro
       for (const c of cases) {
         await writeFile(cgV2, c.v2 ?? "max\n")
         await writeFile(cgV1, "9223372036854771712\n")
+        await writeFile(cgCpuV2, c.cpuV2 ?? "max 100000\n")
         const { stdout } = await execFileAsync("sh", [
           "-c",
           `. "$1"; resolve_max_old_space_mb; NODE_OPTIONS="--enable-source-maps"; apply_resolved_node_options; printf '%s\n' "$NODE_OPTIONS"`,
@@ -609,12 +613,14 @@ test("A7: resolve_max_old_space_mb computes dynamic V8 heap ceilings across cgro
             MEITHEAL_SOURCE_LIB_ONLY: "1",
             MEITHEAL_CGROUP_V2_MAX_FILE: cgV2,
             MEITHEAL_CGROUP_V1_LIMIT_FILE: cgV1,
+            MEITHEAL_CGROUP_V2_CPU_MAX_FILE: cgCpuV2,
             ...(c.envOverride ? { MEITHEAL_MAX_OLD_SPACE_MB: c.envOverride } : {}),
           },
         })
         const lines = stdout.trim().split("\n")
         expect(lines[0]).toBe(c.expected)
-        expect(lines[1]).toBe(`--enable-source-maps --max-old-space-size=${c.expected}`)
+        const expectedPool = c.expectedPool ? ` --v8-pool-size=${c.expectedPool}` : ""
+        expect(lines[1]).toBe(`--enable-source-maps --max-old-space-size=${c.expected}${expectedPool}`)
       }
     }
   } finally {

@@ -7,6 +7,8 @@ import {
   type CanonicalIconName,
 } from "../../generated/icon-registry"
 
+const spriteSvgCache = new Map<string, string>()
+
 const locals = Astro.locals
 const lazySprites = {
   [Symbol.for("astro:html-string")]: true,
@@ -18,14 +20,23 @@ const lazySprites = {
       }
     }
     if (symbolSet.size === 0) return ""
-    const symbols = Array.from(symbolSet)
-      .sort()
+    const sortedNames = Array.from(symbolSet).sort()
+    const cacheKey = sortedNames.join(",")
+    const cached = spriteSvgCache.get(cacheKey)
+    if (cached !== undefined) return cached
+    const symbols = sortedNames
       .map(
         (name) =>
           `<symbol id="mt-icon-${name}" viewBox="0 0 24 24">${ICON_INNER_SVG[name]}</symbol>`,
       )
       .join("")
-    return `<svg id="mt-icon-sprite-defs" hidden aria-hidden="true" style="display:none" xmlns="http://www.w3.org/2000/svg"><defs>${symbols}</defs></svg>`
+    const html = `<svg id="mt-icon-sprite-defs" hidden aria-hidden="true" style="display:none" xmlns="http://www.w3.org/2000/svg"><defs>${symbols}</defs></svg>`
+    if (spriteSvgCache.size >= 64) {
+      const oldest = spriteSvgCache.keys().next().value
+      if (oldest !== undefined) spriteSvgCache.delete(oldest)
+    }
+    spriteSvgCache.set(cacheKey, html)
+    return html
   },
 } as unknown as string
 ---
