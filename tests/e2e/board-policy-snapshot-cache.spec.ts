@@ -124,8 +124,44 @@ test("readCachedTaskDetailLayout decodes JSON-encoded settings and invalidates o
   }
 })
 
-test("BoardAccessService rejects concurrent mid-resolution policy changes rather than returning cached rights", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "meitheal-concurrent-policy-"))
+type PersistenceClient = ReturnType<typeof getPersistenceClient>
+
+function interceptSqlOnce(
+  db: PersistenceClient,
+  pattern: RegExp,
+  onMatch: (target: PersistenceClient) => Promise<void>,
+): { client: PersistenceClient; triggered: () => boolean } {
+  let fired = false
+  const client = new Proxy(db, {
+    get(target, property) {
+      if (property === "execute") {
+        return async (stmt: string | { sql: string; args?: unknown[] }, args?: unknown) => {
+          const sqlText = typeof stmt === "string" ? stmt : stmt.sql
+          const out = await target.execute(stmt as never, args as never)
+          if (!fired && pattern.test(sqlText)) {
+            fired = true
+            await onMatch(target)
+          }
+          return out
+        }
+      }
+      const value = Reflect.get(target, property)
+      return typeof value === "function" ? value.bind(target) : value
+    },
+  })
+  registerReaderCacheSource(client, db)
+  return { client, triggered: () => fired }
+}
+
+async function withConcurrentAgentSetup(
+  prefix: string,
+  run: (ctx: {
+    db: PersistenceClient
+    other: ReturnType<typeof openDatabase>
+    agent: ReturnType<typeof registerVerifiedPrincipal>
+  }) => Promise<void>,
+): Promise<void> {
+  const directory = await mkdtemp(join(tmpdir(), prefix))
   const path = join(directory, "concurrent.db")
   const original = process.env.MEITHEAL_DB_URL
   process.env.MEITHEAL_DB_URL = `file:${path}`
@@ -140,11 +176,15 @@ test("BoardAccessService rejects concurrent mid-resolution policy changes rather
       { kind: "agent", id: "concurrent-agent", tokenId: "concurrent-agent" },
       { administrator: false, expiresAt: Date.now() + 60_000 },
     )
-    const allowedOps = [{ resource: "task", action: "read" }, { resource: "routine", action: "read" }]
+    const allowedOps = [
+      { resource: "task", action: "read" },
+      { resource: "task", action: "create" },
+      { resource: "routine", action: "read" },
+    ]
     await db.batch([
       {
         sql: "INSERT INTO agent_tokens(id,name,token_hash,token_prefix,scopes,assignee_id,created_at) VALUES (?,?,?,?,?,?,?)",
-        args: ["concurrent-agent", "Concurrent", "hash", "mth_concurre", JSON.stringify(["tasks:read"]), null, new Date().toISOString()],
+        args: ["concurrent-agent", "Concurrent", "hash", "mth_concurre", JSON.stringify(["tasks:read", "tasks:write"]), null, new Date().toISOString()],
       },
       {
         sql: "INSERT INTO board_access_grants(board_id,principal_type,principal_id,role,authority_limits) VALUES ('household','agent',?,'service',?)",
@@ -152,39 +192,7 @@ test("BoardAccessService rejects concurrent mid-resolution policy changes rather
       },
       "INSERT INTO organization_access_policies(scope,scope_id,board_id,audience,selected_users,revision) VALUES ('feature','routines','','everyone','[]',1)",
     ], "write")
-
-    const warm = await new BoardAccessService(db).resolve(agent, "household", routines)
-    expect(warm.ok).toBe(true)
-
-    let injected = false
-    const intercepted = new Proxy(db, {
-      get(target, property) {
-        if (property === "execute") {
-          return async (stmt: string | { sql: string; args?: unknown[] }, args?: unknown) => {
-            const sqlText = typeof stmt === "string" ? stmt : stmt.sql
-            const out = await target.execute(stmt as never, args as never)
-            if (!injected && /FROM agent_tokens\b/.test(sqlText)) {
-              injected = true
-              await other!.execute({
-                sql: "UPDATE organization_access_policies SET audience = 'selected', selected_users = ? WHERE scope = 'feature' AND scope_id = 'routines'",
-                args: [JSON.stringify(["nobody"])],
-              })
-            }
-            return out
-          }
-        }
-        const value = Reflect.get(target, property)
-        return typeof value === "function" ? value.bind(target) : value
-      },
-    })
-    registerReaderCacheSource(intercepted, db)
-
-    const raced = await new BoardAccessService(intercepted).resolve(agent, "household", routines)
-    expect(injected).toBe(true)
-    expect(raced.ok).toBe(false)
-
-    const retried = await new BoardAccessService(db).resolve(agent, "household", routines)
-    expect(retried).toEqual({ ok: false, errorCode: "denied" })
+    await run({ db, other, agent })
   } finally {
     other?.close()
     resetPersistenceForTests()
@@ -192,4 +200,74 @@ test("BoardAccessService rejects concurrent mid-resolution policy changes rather
     else process.env.MEITHEAL_DB_URL = original
     await rm(directory, { recursive: true, force: true })
   }
+}
+
+test("BoardAccessService rejects concurrent mid-resolution policy changes rather than returning cached rights", async () => {
+  await withConcurrentAgentSetup("meitheal-concurrent-policy-", async ({ db, other, agent }) => {
+    const warm = await new BoardAccessService(db).resolve(agent, "household", routines)
+    expect(warm.ok).toBe(true)
+
+    const { client, triggered } = interceptSqlOnce(db, /FROM agent_tokens\b/, async () => {
+      await other.execute({
+        sql: "UPDATE organization_access_policies SET audience = 'selected', selected_users = ? WHERE scope = 'feature' AND scope_id = 'routines'",
+        args: [JSON.stringify(["nobody"])],
+      })
+    })
+
+    const raced = await new BoardAccessService(client).resolve(agent, "household", routines)
+    expect(triggered()).toBe(true)
+    expect(raced.ok).toBe(false)
+
+    const retried = await new BoardAccessService(db).resolve(agent, "household", routines)
+    expect(retried).toEqual({ ok: false, errorCode: "denied" })
+  })
+})
+
+test("BoardAccessService re-reads and denies when grant authority limits narrow mid-select", async () => {
+  await withConcurrentAgentSetup("meitheal-grant-downgrade-", async ({ db, other, agent }) => {
+    const createTask = { resource: "task", action: "create" } as const
+    const warm = await new BoardAccessService(db).resolve(agent, "household", createTask)
+    expect(warm.ok).toBe(true)
+
+    const { client, triggered } = interceptSqlOnce(db, /FROM agent_tokens\b/, async () => {
+      await other.execute({
+        sql: "UPDATE board_access_grants SET authority_limits = ? WHERE board_id = 'household' AND principal_type = 'agent' AND principal_id = 'concurrent-agent'",
+        args: [JSON.stringify({ operations: [{ resource: "task", action: "read" }] })],
+      })
+    })
+
+    const raced = await new BoardAccessService(client).resolve(agent, "household", createTask)
+    expect(triggered()).toBe(true)
+    expect(raced).toEqual({ ok: false, errorCode: "denied" })
+  })
+})
+
+test("BoardAccessService and validateBoardScope retry cleanly across unrelated mid-select gamification writes", async () => {
+  await withConcurrentAgentSetup("meitheal-gamification-race-", async ({ db, agent }) => {
+    const warm = await new BoardAccessService(db).resolve(agent, "household", routines)
+    expect(warm.ok).toBe(true)
+
+    const resolveIntercept = interceptSqlOnce(db, /FROM agent_tokens\b/, async target => {
+      await target.execute({
+        sql: "INSERT OR REPLACE INTO gamification_stats(board_id,date,completed_count,streak_count,points) VALUES ('household','2026-11-24',1,1,30)",
+        args: [],
+      })
+    })
+
+    const resolved = await new BoardAccessService(resolveIntercept.client).resolve(agent, "household", routines)
+    expect(resolveIntercept.triggered()).toBe(true)
+    expect(resolved.ok).toBe(true)
+    if (!resolved.ok) throw new Error(resolved.errorCode)
+
+    const revalidateIntercept = interceptSqlOnce(db, /FROM agent_tokens\b/, async target => {
+      await target.execute({
+        sql: "INSERT OR REPLACE INTO gamification_stats(board_id,date,completed_count,streak_count,points) VALUES ('household','2026-11-24',2,1,60)",
+        args: [],
+      })
+    })
+
+    const revalidated = await validateBoardScope(resolved.scope, revalidateIntercept.client, routines)
+    expect(revalidateIntercept.triggered()).toBe(true)
+    expect(revalidated.ok).toBe(true)
+  })
 })

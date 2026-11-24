@@ -66,9 +66,10 @@ async function snapshotRead<T>(
   db: Pick<Client, "execute">,
   principal: VerifiedPrincipal,
   key: string,
-  read: () => Promise<T>
+  read: () => Promise<T>,
+  useCache = true
 ): Promise<T> {
-  if (!principalProof(principal)) return read()
+  if (!useCache || !principalProof(principal)) return read()
   const state = localReaderCacheToken(db)
   if (!state) return read()
   let values = snapshotReads.get(state.owner)
@@ -180,14 +181,15 @@ function audienceAllows(row: Record<string, unknown>, principal: VerifiedPrincip
 async function allowedFeatures(
   principal: VerifiedPrincipal,
   db: Pick<Client, "execute">,
-  features: readonly string[]
+  features: readonly string[],
+  useCache = true
 ): Promise<Set<string>> {
   if (!features.length) return new Set()
   const allowed = await snapshotRead(db, principal, `features:${features.join(",")}`, async () => {
     const { rows } = await db.execute(joinSql(features.map(feature => sql`SELECT ${feature} AS feature,
       ${featureAudienceAllowed(principal, feature)} AS allowed`), " UNION ALL "))
     return rows.filter(row => row.allowed === 1).map(row => String(row.feature))
-  })
+  }, useCache)
   return new Set(allowed)
 }
 
@@ -339,9 +341,28 @@ export class BoardAccessService {
     revision: string,
     existingScope?: BoardScope
   ): Promise<ScopeResult> {
+    // Retry on mid-resolution token drift so unrelated concurrent writes (such as
+    // gamification stats updates) trigger one fresh snapshot instead of a spurious error.
+    const first = await this.selectSnapshot(db, principal, boardId, operations, revision, existingScope, true)
+    if (first) return first
+    const second = await this.selectSnapshot(db, principal, boardId, operations, revision, existingScope, true)
+    if (second) return second
+    const fallback = await this.selectSnapshot(db, principal, boardId, operations, revision, existingScope, false)
+    return fallback ?? { ok: false, errorCode: "stale" }
+  }
+
+  private async selectSnapshot(
+    db: Pick<Client, "execute">,
+    principal: VerifiedPrincipal,
+    boardId: string,
+    operations: readonly WorkOperation[],
+    revision: string,
+    existingScope?: BoardScope,
+    useCache = true
+  ): Promise<ScopeResult | null> {
     const proof = principalProof(principal)
     if (!proof) return { ok: false, errorCode: "stale" }
-    const tokenState = localReaderCacheToken(db)
+    const tokenState = useCache ? localReaderCacheToken(db) : undefined
     const row = await snapshotRead(db, principal, `policy:${boardId}\0${revision}`, async () => {
       const {
         rows: [policy]
@@ -360,7 +381,7 @@ export class BoardAccessService {
           SELECT 1 FROM board_access_epoch WHERE singleton = 1 AND revision = ${revision}
         )`))
       return policy
-    })
+    }, useCache)
     if (!row) return { ok: false, errorCode: "unavailable" }
     let role = typeof row.role === "string" ? row.role : null
     if (!role && principal.kind === "ha_user" && row.visibility === "shared") {
@@ -484,7 +505,7 @@ export class BoardAccessService {
     const uniqueFeatures = !existingScope || requestedFeatures.length <= 1
       ? requestedFeatures
       : [...new Set(requestedFeatures)]
-    const rights = await allowedFeatures(principal, db, uniqueFeatures)
+    const rights = await allowedFeatures(principal, db, uniqueFeatures, useCache)
     const allowed = (intent: WorkOperation) => {
       if (intent.action === "search" && intent.resource !== "task") return false
       if (
@@ -542,7 +563,7 @@ export class BoardAccessService {
     if (!operations.every(allowed) || row.audience_allowed !== 1 || !principalProof(principal))
       return { ok: false, errorCode: "denied" }
     if (tokenState && localReaderCacheToken(db)?.token !== tokenState.token) {
-      return { ok: false, errorCode: "stale" }
+      return null
     }
     if (existingScope) {
       const taskWrite = operations.some(
@@ -606,12 +627,13 @@ export class BoardAccessService {
       }
     )
     if (proof.ingressPrincipal) {
-      const limit = await this.select(db, proof.ingressPrincipal, boardId, operations, revision)
+      const limit = await this.selectSnapshot(db, proof.ingressPrincipal, boardId, operations, revision, undefined, useCache)
+      if (!limit) return null
       if (!limit.ok) return limit
       const constrained = limitBoardScope(scope, limit.scope)
       if (!operations.every(operation => scopePermits(constrained, operation))) return { ok: false, errorCode: "denied" }
       if (tokenState && localReaderCacheToken(db)?.token !== tokenState.token) {
-        return { ok: false, errorCode: "stale" }
+        return null
       }
       return { ok: true, scope: constrained }
     }
