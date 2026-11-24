@@ -9,7 +9,14 @@ import { startCoreFixture } from "../scripts/task-pins-fixture"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 function localDateTimeInDublin(offsetHours: number): string {
-  const target = new Date(Date.now() + offsetHours * 3_600_000)
+  const today = formatDublin(new Date()).slice(0, 10)
+  const value = formatDublin(new Date(Date.now() + offsetHours * 3_600_000))
+  // Near midnight keep the event on today's date so it still surfaces on Today; the
+  // later offset stays after the earlier one.
+  return value.slice(0, 10) === today ? value : `${today}T23:${offsetHours >= 3 ? "59" : "58"}`
+}
+
+function formatDublin(target: Date): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Dublin",
     year: "numeric",
