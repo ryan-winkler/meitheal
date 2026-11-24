@@ -42,8 +42,13 @@ export function getEffectiveTheme(stored = readStoredThemeMode(), followSystem =
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
 }
 
-export function setTheme(mode: ThemeMode): void {
+/** Stores the theme without applying it, for a page that is previewing another draft. */
+export function storeTheme(mode: ThemeMode): void {
   localStorage.setItem(STORAGE_KEY, mode)
+}
+
+export function setTheme(mode: ThemeMode): void {
+  storeTheme(mode)
   applyTheme()
 }
 

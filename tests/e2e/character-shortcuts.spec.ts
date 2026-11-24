@@ -41,8 +41,15 @@ test("the Settings preference persists and preserves search with a modifier or a
     await expect(settingsList.getByRole("heading", { name: heading, exact: true })).toBeVisible()
   }
   const editable = await settingsList.locator("[data-shortcut-field]").evaluateAll(fields =>
-    fields.map(field => field.getAttribute("data-shortcut-label")))
-  expect(editable).toEqual(expect.arrayContaining(["Search", "Command palette", "Dashboard", "Today view", "Calendar view"]))
+    fields.map(field => [field.getAttribute("data-shortcut-field"), field.getAttribute("data-shortcut-label")]))
+  expect(editable).toEqual([
+    ["search", "Search"], ["commandPalette", "Command palette"], ["newTask", "New task"],
+    ["toggleSidebar", "Toggle sidebar"], ["showHelp", "Show shortcuts"],
+    ["goDashboard", "Dashboard"], ["goToday", "Today view"], ["goUpcoming", "Upcoming view"],
+    ["goKanban", "Kanban view"], ["goTable", "Table view"], ["goCalendar", "Calendar view"],
+    ["taskView1", "Kanban view"], ["taskView2", "Table view"], ["taskView3", "Calendar view"],
+    ["taskView4", "Timeline view"],
+  ])
   await expect(settingsList).not.toContainText("List view")
   const enabled = preference(page)
   const search = page.locator("#settings-bar-search-launcher")

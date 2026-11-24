@@ -25,7 +25,7 @@ import { refreshHAThemeMatch, setHAThemePreview } from "@lib/ha-theme-bridge"
 import { HA_THEME_MATCH_KEY } from "@lib/ha-theme-palette"
 import { showToast } from "@lib/toast"
 import { isThemeMode } from "@lib/theme-mode"
-import { applyTheme, readAppearanceValue, readStoredThemeMode, setTheme } from "@lib/theme-watcher"
+import { applyTheme, readAppearanceValue, readStoredThemeMode, setTheme, storeTheme } from "@lib/theme-watcher"
 import { readWorkspacePreferences, saveWorkspacePreferences } from "@lib/workspace-preferences"
 import { attachShortcutTooltips } from "@lib/shortcut-tooltip"
 import { SINGLE_KEY_SHORTCUTS_STORAGE_KEY, setSingleKeyShortcuts, singleKeyShortcutsEnabled } from "@lib/single-key-shortcuts"
@@ -140,6 +140,18 @@ function bindAppearanceForm(form: HTMLFormElement): void {
 
   let committed = readCommitted()
   let draft = cloneAppearanceSnapshot(committed)
+  // A save that finished after its page closed updates what Discard returns to.
+  pageLifecycle.on(window, APPEARANCE_SAVED_EVENT, (event) => {
+    const saved = (event as CustomEvent<AppearanceDraftSnapshot>).detail
+    if (!saved) return
+    const hadDraft = isAppearanceDraftDirty(committed, draft)
+    committed = cloneAppearanceSnapshot(saved)
+    if (!hadDraft) {
+      draft = cloneAppearanceSnapshot(saved)
+      syncInputsFromSnapshot(committed)
+    }
+    updateDirtyUi()
+  })
   let saving = false
 
   const syncMatchHaStatus = (): void => {
@@ -259,8 +271,9 @@ function bindAppearanceForm(form: HTMLFormElement): void {
 
     syncCommittedTheme = (mode: string) => {
       // Importing or removing custom CSS commits the theme immediately, so an
-      // unsaved Custom choice follows it; other unsaved choices stay drafts.
-      const follow = !isAppearanceDraftDirty(committed, draft) || draft.theme === "custom"
+      // unsaved Custom choice, or an unchanged theme, follows it; another
+      // unsaved theme choice stays a draft.
+      const follow = draft.theme === committed.theme || draft.theme === "custom"
       committed.theme = mode
       if (follow) {
         draft.theme = mode
@@ -402,6 +415,9 @@ function bindAppearanceForm(form: HTMLFormElement): void {
     event.preventDefault()
     if (saving) return
     const submitted = cloneAppearanceSnapshot(draft)
+    // Navigation aborts this signal and restores the committed preview; a save
+    // that finishes afterwards must not re-apply the abandoned draft.
+    const lifecycleSignal = pageLifecycle.signal
     saving = true
     for (const btn of saveBtns) {
       btn.disabled = true
@@ -418,7 +434,9 @@ function bindAppearanceForm(form: HTMLFormElement): void {
         if (isThemeMode(submitted.theme)) {
           await saveSetting("theme", submitted.theme)
           await clearSetupTheme()
-          setTheme(submitted.theme)
+          // After navigation, a page previewing its own draft keeps that preview.
+          if (lifecycleSignal.aborted && document.querySelector('form[data-dirty="true"]')) storeTheme(submitted.theme)
+          else setTheme(submitted.theme)
         }
       }
 
@@ -439,6 +457,22 @@ function bindAppearanceForm(form: HTMLFormElement): void {
       } catch { /* A valid save replaces malformed stored preferences. */ }
       localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify({ ...previous, ...nextStored }))
       committed = submitted
+      // After navigation the save is persisted. Show it on the next page unless that page is
+      // previewing its own unsaved draft.
+      if (lifecycleSignal.aborted) {
+        if (!document.querySelector('form[data-dirty="true"]')) {
+          applyAppearancePreferences(nextStored)
+          // Storage events do not reach the writing document, so refresh the HA palette here.
+          if (isLookAndFeel) {
+            setHAThemePreview()
+            refreshHAThemeMatch()
+            if (!matchesHaPalette()) applyPersonalAccent(root, submitted.accent ?? null)
+          }
+        }
+        // The next page's form adopts this save as its committed state, keeping any draft.
+        window.dispatchEvent(new CustomEvent(APPEARANCE_SAVED_EVENT, { detail: submitted }))
+        return
+      }
       if (isAppearanceDraftDirty(committed, draft)) {
         applySnapshotPreview(draft)
       } else {
@@ -453,7 +487,7 @@ function bindAppearanceForm(form: HTMLFormElement): void {
       updateDirtyUi()
       showToast("common.updated")
     } catch (error) {
-      if (isAppearanceDraftDirty(submitted, draft)) applySnapshotPreview(draft)
+      if (!lifecycleSignal.aborted && isAppearanceDraftDirty(submitted, draft)) applySnapshotPreview(draft)
       status.textContent = status.dataset.error ?? ""
       showSettingsSaveError(error)
     } finally {
@@ -473,6 +507,8 @@ function initAppearanceSettings(): void {
   document.querySelectorAll<HTMLFormElement>("[data-appearance-form]").forEach((form) => forms.add(form))
   forms.forEach((form) => bindAppearanceForm(form))
 }
+
+const APPEARANCE_SAVED_EVENT = "meitheal:appearance-saved-elsewhere"
 
 export function initThemeSettings(): void {
   const singleKeys = document.querySelector<HTMLInputElement>("#single-key-shortcuts")

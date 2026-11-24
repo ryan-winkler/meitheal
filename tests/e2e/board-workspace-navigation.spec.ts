@@ -223,11 +223,15 @@ test("Household is a peer Board and every scoped workspace destination retains t
   expect(new URL(page.url()).searchParams.get("project")).toBe(project.id)
   await main("tasks").click()
   await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
-  const inProjectView = (view: string) => page.waitForURL(url => url.pathname.endsWith("/boards/" + board.id) &&
+  // View shortcuts may switch in place or reload; poll the address instead of waiting for a load event.
+  const inProjectView = (view: string) => expect(page).toHaveURL(url => url.pathname.endsWith("/boards/" + board.id) &&
     url.searchParams.get("project") === project.id && (url.searchParams.get("view") === view || url.hash === "#" + view))
   await page.keyboard.press("c")
   await inProjectView("calendar")
-  await page.keyboard.press("t")
+  // Calendar is a full page load; its view shortcuts bind once the page has loaded.
+  await page.waitForLoadState("load")
+  // On Calendar, T jumps to today; the Tasks-page view key 2 opens Table.
+  await page.keyboard.press("2")
   await inProjectView("table")
   await page.keyboard.press("?")
   await expect(page.locator("#shortcut-modal")).toBeVisible()

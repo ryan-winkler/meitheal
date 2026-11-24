@@ -463,7 +463,7 @@ test.describe("Tasks Shell (Timeline/GANTT)", () => {
       await openDetails()
       await search.fill("heating system")
       await expect.poll(() => page.evaluate(() => new URL(history.state.ticketDrawer.returnTo).searchParams.get("search"))).toBe("heating system")
-      const pinned = page.locator('#sidebar [data-task-view-pinned-item="table"]').getByRole("link", { name: "Table" })
+      const pinned = page.locator('#sidebar [data-sidebar-group="view-table"]').getByRole("link", { name: "Table" })
       await pinned.click()
       await expect(page).toHaveURL(url => url.hash === "#table" && url.searchParams.get("search") === "heating system")
       await expect(page.locator("#table-shell").getByRole("textbox", { name: "Filter by text" })).toHaveValue("heating system")

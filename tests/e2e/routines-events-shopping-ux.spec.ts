@@ -8,8 +8,20 @@ import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { startCoreFixture } from "../scripts/task-pins-fixture"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
-function localDateTimeInDublin(offsetHours: number): string {
-  const target = new Date(Date.now() + offsetHours * 3_600_000)
+// Read the clock once. Near midnight keep both times on today's Dublin date so the event
+// still surfaces on Today, with the earlier time strictly before the later one.
+function eventTimesInDublin(): { earlier: string; later: string } {
+  const now = Date.now()
+  const today = formatDublin(new Date(now)).slice(0, 10)
+  const at = (hours: number) => formatDublin(new Date(now + hours * 3_600_000))
+  let earlier = at(1)
+  let later = at(3)
+  if (later.slice(0, 10) !== today) later = `${today}T23:59`
+  if (earlier.slice(0, 10) !== today || earlier >= later) earlier = `${today}T23:58`
+  return { earlier, later }
+}
+
+function formatDublin(target: Date): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Europe/Dublin",
     year: "numeric",
@@ -104,8 +116,7 @@ test.describe("Routines, Events, and Shopping UX", () => {
     await expect(page.locator("#new-task-kind")).toHaveValue("calendar_event")
     await page.locator("#new-task-title-input").fill(title)
 
-    const later = localDateTimeInDublin(3)
-    const earlier = localDateTimeInDublin(1)
+    const { earlier, later } = eventTimesInDublin()
     // Inverted range shows inline role/error feedback and blocks submit
     await page.locator("#nt-event-start").fill(later)
     await page.locator("#nt-event-end").fill(earlier)

@@ -307,6 +307,7 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
       event.preventDefault()
       if (more.open && ["Enter", " "].includes(event.key)) { closeMenu(true); return }
       more.open = true
+      refreshLinks()
       const overflow = menuLinks()
       focusDestination(event.key === "ArrowUp" ? overflow.at(-1) : overflow[0])
       return
@@ -314,6 +315,8 @@ export function initNavOverflow(root: HTMLElement, pageSignal: AbortSignal): voi
     const inMenu = menu.contains(target)
     const keys = inMenu ? ["ArrowDown", "ArrowUp", "Home", "End"] : ["ArrowRight", "ArrowLeft", "Home", "End"]
     if (!keys.includes(event.key) || !root.hasAttribute("data-nav-overflow-active")) return
+    // Board hierarchy links load lazily without a layout pass, so collect them on demand.
+    if (inMenu) refreshLinks()
     const candidates = inMenu ? menuLinks() : [...primaryLinks().filter(canFocus), ...(!more.hidden ? [toggle] : [])]
     const menuToggle = inMenu && target !== toggle && target.matches("button, summary") && canFocus(target)
     if (!candidates.includes(target) && !menuToggle) return
