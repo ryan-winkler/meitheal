@@ -1,4 +1,4 @@
-import { settingsAction } from "@lib/settings-utils"
+import { downloadBlob, settingsAction, whenSectionVisible } from "@lib/settings-utils"
 import { navigate } from "astro:transitions/client"
 /**
  * Settings Rules Controller
@@ -13,11 +13,11 @@ import { navigate } from "astro:transitions/client"
 import { frameworkImportBytesMax } from "@lib/framework-import-limit"
 import { confirmDialog } from "@lib/confirm-dialog"
 import { pageLifecycle } from "@lib/page-lifecycle"
-import { escapeHtml } from "@lib/safe-html"
 import { showToast } from "@lib/toast"
 import { exportFilename } from "@lib/export-filename"
 import { isFrameworkFieldOptions, validateFrameworkOverrides, type FrameworkConfig, type FrameworkOverrides } from "@meitheal/domain-strategy"
 import { initFrameworkWizard, openWizard } from "@lib/framework-wizard-controller"
+import { byId, domEl, qs, setAttr } from "@lib/dom-helpers"
 
 interface RuleApiResponse {
   ok: boolean
@@ -142,15 +142,7 @@ async function replaceRuleSet(rules: unknown[], replaceIds?: string[]): Promise<
 
 /** Download a JSON file in the browser */
 function downloadJson(data: unknown, label: string): void {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement("a")
-  a.href = url
-  a.download = exportFilename(label, "json")
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  URL.revokeObjectURL(url)
+  downloadBlob(JSON.stringify(data, null, 2), "application/json", exportFilename(label, "json"), true)
 }
 
 /**
@@ -228,7 +220,7 @@ function highlightActivePreset(): void {
   document.querySelectorAll<HTMLButtonElement>(".rules-preset-btn").forEach((btn) => {
     btn.classList.remove("is-active")
     // Update aria
-    btn.setAttribute("aria-pressed", "false")
+    setAttr(btn, "aria-pressed", "false")
   })
 
   // Simple heuristic: check if any preset matches the current checkbox state
@@ -254,7 +246,7 @@ function highlightActivePreset(): void {
       const btn = document.querySelector<HTMLButtonElement>(`.rules-preset-btn[data-preset="${presetId}"]`)
       if (btn) {
         btn.classList.add("is-active")
-        btn.setAttribute("aria-pressed", "true")
+        setAttr(btn, "aria-pressed", "true")
       }
     }
   }
@@ -283,7 +275,7 @@ const settingsCopy = (key: string, fallback: string) => window.mI18n?.get(key) |
 
 function renderFrameworkDraft(slider: HTMLInputElement): void {
   const draft = frameworkDrafts.get(draftKey(slider.dataset.framework!, slider.dataset.field!))
-  const status = slider.closest(".rules-fw-field")?.querySelector<HTMLElement>(".rules-fw-save-status")
+  const status = qs<HTMLElement>(slider.closest(".rules-fw-field"), ".rules-fw-save-status")
   if (!status) return
   status.replaceChildren()
   if (!draft) {
@@ -292,15 +284,15 @@ function renderFrameworkDraft(slider: HTMLInputElement): void {
     return
   }
   slider.value = String(draft.weight)
-  const display = slider.parentElement?.querySelector(".weight-display")
+  const display = qs(slider.parentElement, ".weight-display")
   if (display) display.textContent = `${draft.weight.toFixed(1)}×`
   slider.dataset.saveState = draft.pending ? "saving" : draft.failed ? "error" : "dirty"
-  if (draft.failed) slider.setAttribute("aria-invalid", "true")
+  if (draft.failed) setAttr(slider, "aria-invalid", "true")
   else slider.removeAttribute("aria-invalid")
   status.textContent = draft.pending ? settingsCopy("settings.framework_saving", "Saving…")
     : settingsCopy(draft.failed ? "settings.framework_save_failed" : "settings.framework_unsaved", "Framework changes are not saved.")
   if (draft.failed && !draft.pending) {
-    const retry = document.createElement("button")
+    const retry = domEl("button")
     retry.type = "button"
     retry.className = "btn btn-ghost btn-sm rules-fw-retry"
     retry.textContent = settingsCopy("settings.framework_retry", "Retry save")
@@ -421,7 +413,7 @@ export async function flushRulesSave(): Promise<void> {
 
 /** Save current UI state as rules to the API */
 async function performRulesSave(): Promise<void> {
-  if (!document.getElementById("rules-lenses-settings")) return
+  if (!byId("rules-lenses-settings")) return
   if (_isSaving) { _saveAgain = true; return }
   if (!rulesLoaded) { saveFailed = true; showToast("Rules have not loaded. Reload before saving.", "error"); return }
   _isSaving = true
@@ -531,8 +523,7 @@ async function loadFrameworkConfigs(): Promise<void> {
       if (!container) continue
 
       if (fw.fields.length === 0) {
-        const emptyP = document.createElement("p")
-        emptyP.className = "text-muted"
+        const emptyP = domEl("p", "text-muted")
         emptyP.style.fontSize = "12px"
         emptyP.style.margin = "4px 0"
         emptyP.textContent = "No configurable fields for this framework."
@@ -543,32 +534,28 @@ async function loadFrameworkConfigs(): Promise<void> {
       container.replaceChildren(
         ...fw.fields.map((field) => {
           const weight = frameworkDrafts.get(draftKey(fw.id, field.key))?.weight ?? field.weight
-          const wrapper = document.createElement("div")
-          wrapper.className = "rules-fw-field"
+          const wrapper = domEl("div", "rules-fw-field")
 
-          const header = document.createElement("div")
+          const header = domEl("div")
           header.className = "rules-fw-field-header"
-          const label = document.createElement("label")
+          const label = domEl("label")
           label.title = field.helpText
           label.textContent = field.label
           header.appendChild(label)
 
           if (isFrameworkFieldOptions(field.options)) {
-            const typeSpan = document.createElement("span")
-            typeSpan.className = "fw-field-type"
+            const typeSpan = domEl("span", "fw-field-type")
             typeSpan.title = field.helpText
             typeSpan.textContent = field.options.map((o) => String(o.label)).join(" · ")
             header.appendChild(typeSpan)
           } else if (Number.isFinite(field.min) && Number.isFinite(field.max)) {
-            const rangeSpan = document.createElement("span")
-            rangeSpan.className = "fw-field-range"
-            rangeSpan.textContent = `${field.min}–${field.max}`
+            const rangeSpan = domEl("span", "fw-field-range", `${field.min}–${field.max}`)
             header.appendChild(rangeSpan)
           }
 
-          const controls = document.createElement("div")
+          const controls = domEl("div")
           controls.className = "rules-fw-field-controls"
-          const slider = document.createElement("input")
+          const slider = domEl("input")
           slider.type = "range"
           slider.className = "form-input rules-fw-weight"
           slider.dataset.framework = fw.id
@@ -577,20 +564,15 @@ async function loadFrameworkConfigs(): Promise<void> {
           slider.max = "3"
           slider.step = "0.1"
           slider.value = String(Number.isFinite(weight) ? weight : 1)
-          slider.setAttribute("aria-label", `${field.label} weight`)
+          setAttr(slider, "aria-label", `${field.label} weight`)
 
-          const weightDisplay = document.createElement("span")
-          weightDisplay.className = "weight-display"
-          weightDisplay.textContent = `${field.weight.toFixed(1)}×`
+          const weightDisplay = domEl("span", "weight-display", `${field.weight.toFixed(1)}×`)
           controls.append(slider, weightDisplay)
 
-          const helpP = document.createElement("p")
-          helpP.className = "fw-field-help"
-          helpP.textContent = field.helpText
+          const helpP = domEl("p", "fw-field-help", field.helpText)
 
-          const statusDiv = document.createElement("div")
-          statusDiv.className = "rules-fw-save-status text-xs"
-          statusDiv.setAttribute("role", "status")
+          const statusDiv = domEl("div", "rules-fw-save-status text-xs")
+          setAttr(statusDiv, "role", "status")
 
           wrapper.append(header, controls, helpP, statusDiv)
           return wrapper
@@ -612,12 +594,11 @@ async function loadFrameworkConfigs(): Promise<void> {
   } catch (error) {
     if (generation !== frameworkLoadGeneration) return
     document.querySelectorAll<HTMLElement>(".rules-fw-config-fields").forEach((container) => {
-      const message = document.createElement("p")
-      message.className = "text-muted text-xs rules-fw-load-error"
-      message.setAttribute("role", "status")
+      const message = domEl("p", "text-muted text-xs rules-fw-load-error")
+      setAttr(message, "role", "status")
       message.textContent = "Framework settings could not load. Reload this page to retry."
       if ([...frameworkDrafts.values()].some(draft => draft.frameworkId === container.dataset.framework)) {
-        container.querySelector(".rules-fw-load-error")?.remove()
+        qs(container, ".rules-fw-load-error")?.remove()
         container.append(message)
       } else container.replaceChildren(message)
     })
@@ -674,9 +655,11 @@ export function initRulesSettings(): void {
       catch { showToast("settings.rules_save_failed", "error") }
     })()
   })
-  // Load current state
-  loadRulesIntoUI()
-  void loadFrameworkConfigs().catch(() => {})
+  // Load current state once Scoring & Rules becomes visible
+  whenSectionVisible(byId("rules-lenses-settings"), () => {
+    loadRulesIntoUI()
+    void loadFrameworkConfigs().catch(() => {})
+  })
 
   // Preset buttons
   document.querySelectorAll<HTMLButtonElement>(".rules-preset-btn").forEach((btn) => {
@@ -710,7 +693,7 @@ export function initRulesSettings(): void {
   })
 
   // Restore defaults
-  const restoreBtn = document.getElementById("rules-restore-defaults")
+  const restoreBtn = byId("rules-restore-defaults")
   if (restoreBtn) {
     pageLifecycle.on(restoreBtn, "click", settingsAction(async () => {
       const confirmed = await confirmDialog({
@@ -754,7 +737,7 @@ export function initRulesSettings(): void {
   })
 
   // Export rules (v3 format — includes custom framework definitions)
-  const exportBtn = document.getElementById("rules-export-btn")
+  const exportBtn = byId("rules-export-btn")
   if (exportBtn) {
     pageLifecycle.on(exportBtn, "click", settingsAction(async () => {
       try {
@@ -784,7 +767,7 @@ export function initRulesSettings(): void {
   }
 
   // Import rules
-  const importInput = document.getElementById("rules-import-input") as HTMLInputElement | null
+  const importInput = byId<HTMLInputElement>("rules-import-input")
   if (importInput) {
     pageLifecycle.on(importInput, "change", settingsAction(async () => {
       const file = importInput.files?.[0]
@@ -853,19 +836,19 @@ export function initRulesSettings(): void {
     showToast("settings.framework_created")
   }, withConfigurationMutation)
 
-  const createBtn = document.getElementById("fw-create-btn")
+  const createBtn = byId("fw-create-btn")
   if (createBtn) {
     pageLifecycle.on(createBtn, "click", () => openWizard())
   }
 
   // ── YAML Import Dialog ──
-  const yamlImportBtn = document.getElementById("fw-import-btn")
-  const yamlImportDialog = document.getElementById("fw-import-dialog") as HTMLDialogElement | null
-  const yamlImportClose = document.getElementById("fw-import-close")
-  const yamlImportCancel = document.getElementById("fw-import-cancel")
-  const yamlImportSubmit = document.getElementById("fw-import-submit")
-  const yamlImportTextarea = document.getElementById("fw-import-yaml") as HTMLTextAreaElement | null
-  const yamlImportErrors = document.getElementById("fw-import-errors")
+  const yamlImportBtn = byId("fw-import-btn")
+  const yamlImportDialog = byId<HTMLDialogElement>("fw-import-dialog")
+  const yamlImportClose = byId("fw-import-close")
+  const yamlImportCancel = byId("fw-import-cancel")
+  const yamlImportSubmit = byId("fw-import-submit")
+  const yamlImportTextarea = byId<HTMLTextAreaElement>("fw-import-yaml")
+  const yamlImportErrors = byId("fw-import-errors")
 
   if (yamlImportBtn && yamlImportDialog) {
     pageLifecycle.on(yamlImportBtn, "click", () => {

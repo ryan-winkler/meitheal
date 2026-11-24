@@ -149,23 +149,6 @@ const organization = await organizationLabelsFor(Astro)
     margin-top: 0.375rem;
   }
 
-  .pillar-detail-modal__weight-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--border);
-  }
-
-  .pillar-detail-modal__weight-dot--filled {
-    background: var(--pillar-accent, var(--accent));
-  }
-
-  .pillar-detail-modal__weight-label {
-    margin-left: 0.5rem;
-    font-size: 0.75rem;
-    color: var(--text-secondary);
-  }
-
   .pillar-detail-modal__actions {
     display: flex;
     gap: 0.375rem;
@@ -235,16 +218,6 @@ const organization = await organizationLabelsFor(Astro)
     font-size: 1rem;
     line-height: 1.6;
     color: var(--text-primary);
-    font-style: italic;
-  }
-
-  .pillar-detail-modal__manifesto-empty {
-    padding: 0.875rem;
-    border: 2px dashed var(--border);
-    border-radius: var(--radius-sm);
-    text-align: center;
-    color: var(--text-secondary);
-    font-size: 0.875rem;
     font-style: italic;
   }
 
@@ -354,15 +327,6 @@ const organization = await organizationLabelsFor(Astro)
     flex-direction: column;
     gap: 0.375rem;
   }
-
-  .pillar-detail-modal__goal-item {
-    padding: 0.5rem 0.625rem;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    font-size: 0.875rem;
-    color: var(--text-primary);
-  }
 </style>
 
 <!-- Separate global styles for dynamically rendered content (innerHTML from controller) -->
@@ -447,24 +411,5 @@ const organization = await organizationLabelsFor(Astro)
     border-radius: var(--radius-sm, 6px);
     text-align: center;
     list-style: none;
-  }
-
-  /* ── Weight dots (rendered by renderWeight()) ── */
-  #pillar-detail-weight .pillar-detail-modal__weight-dot {
-    display: inline-block;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--border);
-  }
-
-  #pillar-detail-weight .pillar-detail-modal__weight-dot--filled {
-    background: var(--pillar-accent, var(--accent));
-  }
-
-  #pillar-detail-weight .pillar-detail-modal__weight-label {
-    margin-left: 0.5rem;
-    font-size: 0.75rem;
-    color: var(--text-muted);
   }
 </style>

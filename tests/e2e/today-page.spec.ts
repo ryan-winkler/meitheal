@@ -61,24 +61,24 @@ test("Today refreshes full task counters after an external completion", async ({
   }
 })
 
-test("Today and Dashboard label shared favorites separately from personal pins", async ({ page, request, baseURL }) => {
+test("Today and Dashboard label promoted tasks separately from personal pins", async ({ page, request, baseURL }) => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
   const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin, "Content-Type": "application/json" })
-  const title = "Shared favorite fixture"
-  const created = await request.post("/api/tasks", { headers, data: { title, is_favorite: true } })
+  const title = "Shared promoted fixture"
+  const created = await request.post("/api/tasks", { headers, data: { title, is_promoted: true } })
   expect(created.status(), await created.text()).toBe(201)
   const { id } = await created.json()
 
   try {
     await page.goto("/today")
     const section = page.locator("#section-pinned")
-    await expect(section.getByRole("button", { name: /^Shared favorites \d+$/ })).toBeVisible()
-    await expect(section.locator(".today-section__title")).toContainText("Shared favorites")
-    await expect(section.locator(`.tli[data-id="${id}"]`)).toHaveAccessibleName(/in Shared favorites$/)
+    await expect(section.getByRole("button", { name: /^Promoted \d+$/ })).toBeVisible()
+    await expect(section.locator(".today-section__title")).toContainText("Promoted")
+    await expect(section.locator(`.tli[data-id="${id}"]`)).toHaveAccessibleName(/in Promoted$/)
 
     await page.goto("/")
-    const card = page.locator(".dashboard-card").filter({ has: page.getByText("Favorites", { exact: true }) })
-    await expect(card.locator(".card-subtitle")).toHaveText("1 favorite task")
+    const card = page.locator(".dashboard-card").filter({ has: page.getByText("Promoted", { exact: true }) })
+    await expect(card.locator(".card-subtitle")).toHaveText("1 promoted task")
     await expect(card.getByText(title, { exact: true })).toBeVisible()
   } finally {
     const removed = await request.delete(`/api/tasks/${id}`, { headers })

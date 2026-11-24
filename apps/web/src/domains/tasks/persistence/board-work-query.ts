@@ -97,9 +97,9 @@ const taskColumns = [
   "id", "endeavor_id", "title", "description", "status", "framework_payload", "calendar_sync_state",
   "idempotency_key", "request_id", "created_at", "updated_at", "deferred_at", "deferral_revision",
   "priority", "due_date", "labels", "parent_id", "time_tracked", "area_id", "custom_fields", "start_date",
-  "end_date", "progress", "color", "is_favorite", "is_promoted", "task_type", "summary", "recurrence_rule",
+  "end_date", "progress", "color", "is_promoted", "task_type", "summary", "recurrence_rule",
   "recurrence_anchor", "rotation_mode", "nfc_tag_id", "checklists", "reminder_at", "source_template_id",
-  "ticket_number", "assigned_to", "kanban_position", "task_kind", "project_id", "goal_id",
+  "ticket_number", "assigned_to", "kanban_position", "table_position", "task_kind", "project_id", "goal_id",
   "owner", "lock_holder", "lock_expires_at", "handoff_state", "proposal_json", "proposal_hash",
   "time_block_start", "time_block_end", "urgency", "importance", "eisenhower_override", "effort_minutes",
   "effort_type", "blocked_by", "inactivity_touched_at", "last_activity_spike_at", "routine_template_id", "spawned_for_date",
@@ -111,7 +111,7 @@ const searchTaskColumns = [
   "deferred_at", "updated_at", "assigned_to", "description", "labels", "custom_fields",
 ] as const
 
-type TaskReadProjection = "full" | "kanban-order" | "search" | "records"
+export type TaskReadProjection = "full" | "minimal" | "kanban-order" | "search" | "records"
 const MAX_PREFIX_CACHE = 128
 const readModelPrefixes = new Map<string, SqlFragment>()
 

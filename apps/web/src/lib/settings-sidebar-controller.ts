@@ -43,7 +43,9 @@ import {
   type SidebarSectionId,
 } from "@domains/navigation/sidebar-menu"
 import { withAsyncButton } from "@lib/async-button"
+import { browserUuid } from "@lib/browser-uuid"
 import { confirmDialog } from "@lib/confirm-dialog"
+import { mountInlineRename } from "@lib/inline-rename"
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { createTablerSvgElement, type TablerIconName } from "@lib/tabler-svg"
 import { showToast } from "@lib/toast"
@@ -55,7 +57,10 @@ import {
   SIDEBAR_ORDER_STORAGE_KEY,
   SIDEBAR_PERSONAL_CLEARED_EVENT,
   SIDEBAR_SERVER_UPDATED_EVENT,
+  bindSidebarHtmlDragReorder,
+  isSafeCustomHref,
 } from "@lib/sidebar-order"
+import { byId, domEl, qs, setAttr } from "@lib/dom-helpers"
 
 const SETTINGS_DEFAULT_KEYS = [
   "dashboard",
@@ -72,13 +77,7 @@ const SETTINGS_DEFAULT_KEYS = [
 ]
 
 function customLinkId(): string {
-  const id = crypto.randomUUID?.() ?? Array.from(crypto.getRandomValues(new Uint8Array(12)),
-    byte => byte.toString(16).padStart(2, "0")).join("")
-  return `custom-${id}`
-}
-
-function isSafeCustomHref(href: string): boolean {
-  return /^(\/(?!\/)|https?:\/\/)/i.test(href.trim())
+  return `custom-${browserUuid()}`
 }
 
 function cloneConfig(config: SidebarMenuConfig): SidebarMenuConfig {
@@ -99,40 +98,32 @@ export function initSidebarSettings(): void {
 export function restoreSidebarSettings(settings: Record<string, unknown>): void {
   try {
     const signal = pageLifecycle.signal
-    const editor = document.getElementById("sidebar-layout-editor")
-    const list = document.getElementById("sidebar-item-list")
-    const sectionTpl = editor?.querySelector<HTMLTemplateElement>("template[data-nav-section-template]")?.content.firstElementChild
-    const itemTpl = editor?.querySelector<HTMLTemplateElement>("template[data-nav-item-template]")?.content.firstElementChild
+    const editor = byId("sidebar-layout-editor")
+    const list = byId("sidebar-item-list")
+    const sectionTpl = qs<HTMLTemplateElement>(editor, "template[data-nav-section-template]")?.content.firstElementChild
+    const itemTpl = qs<HTMLTemplateElement>(editor, "template[data-nav-item-template]")?.content.firstElementChild
     if (!editor || !list || !sectionTpl || !itemTpl) return
 
-    const personalNotice = document.getElementById("sidebar-personal-notice")
-    const clearPersonalBtn = document.getElementById("sidebar-clear-personal-btn") as HTMLButtonElement | null
-    const dirtyBar = document.getElementById("sidebar-dirty-bar")
-    const saveBtn = document.getElementById("save-sidebar") as HTMLButtonElement | null
-    const discardBtn = document.getElementById("discard-sidebar") as HTMLButtonElement | null
-    const resetBtn = document.getElementById("reset-sidebar") as HTMLButtonElement | null
-    const addSectionBtn = document.getElementById("settings-add-section-toggle") as HTMLButtonElement | null
-    const addSectionForm = document.getElementById("settings-add-section-form") as HTMLFormElement | null
-    const addSectionCancel = document.getElementById("settings-add-section-cancel") as HTMLButtonElement | null
-    const addSectionError = document.getElementById("settings-add-section-error")
-    const addLinkBtn = document.getElementById("settings-add-link-toggle") as HTMLButtonElement | null
-    const addLinkForm = document.getElementById("settings-add-link-form") as HTMLFormElement | null
-    const addLinkCancel = document.getElementById("settings-add-link-cancel") as HTMLButtonElement | null
-    const addLinkError = document.getElementById("settings-add-link-error")
-    const addLinkSectionSelect = document.getElementById("settings-add-link-section") as HTMLSelectElement | null
+    const personalNotice = byId("sidebar-personal-notice")
+    const clearPersonalBtn = byId<HTMLButtonElement>("sidebar-clear-personal-btn")
+    const dirtyBar = byId("sidebar-dirty-bar")
+    const saveBtn = byId<HTMLButtonElement>("save-sidebar")
+    const discardBtn = byId<HTMLButtonElement>("discard-sidebar")
+    const resetBtn = byId<HTMLButtonElement>("reset-sidebar")
+    const addSectionBtn = byId<HTMLButtonElement>("settings-add-section-toggle")
+    const addSectionForm = byId<HTMLFormElement>("settings-add-section-form")
+    const addSectionCancel = byId<HTMLButtonElement>("settings-add-section-cancel")
+    const addSectionError = byId("settings-add-section-error")
+    const addLinkBtn = byId<HTMLButtonElement>("settings-add-link-toggle")
+    const addLinkForm = byId<HTMLFormElement>("settings-add-link-form")
+    const addLinkCancel = byId<HTMLButtonElement>("settings-add-link-cancel")
+    const addLinkError = byId("settings-add-link-error")
+    const addLinkSectionSelect = byId<HTMLSelectElement>("settings-add-link-section")
 
     serverCommitted = normalizeSidebarConfig(settings.sidebar_config, SETTINGS_DEFAULT_KEYS)
     draftConfig = cloneConfig(serverCommitted)
 
-    let dragKind: "section" | "item" | null = null
-    let dragId: string | null = null
-    let dropTarget: HTMLElement | null = null
     const openState = new Map<string, boolean>()
-
-    function clearDrop() {
-      dropTarget?.removeAttribute("data-nav-drop")
-      dropTarget = null
-    }
 
     function syncNotices() {
       if (personalNotice) personalNotice.hidden = !hasPersonalSidebarConfig()
@@ -144,7 +135,7 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
       const prev = addLinkSectionSelect.value
       addLinkSectionSelect.replaceChildren()
       for (const secId of draftConfig.sectionOrder) {
-        const opt = document.createElement("option")
+        const opt = domEl("option")
         opt.value = secId
         opt.textContent = draftConfig.sectionLabels[secId] || defaultSectionLabel(secId)
         addLinkSectionSelect.append(opt)
@@ -159,7 +150,7 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
       addLinkForm.querySelectorAll<HTMLButtonElement>("[data-settings-icon-choice]").forEach(btn => {
         const selected = btn.dataset.settingsIconChoice === "link"
         btn.classList.toggle("is-selected", selected)
-        btn.setAttribute("aria-pressed", String(selected))
+        setAttr(btn, "aria-pressed", String(selected))
       })
     }
 
@@ -167,7 +158,7 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
       if (!addSectionForm || !addSectionBtn) return
       if (open && addLinkForm && !addLinkForm.hidden) setLinkFormOpen(false)
       addSectionForm.hidden = !open
-      addSectionBtn.setAttribute("aria-expanded", String(open))
+      setAttr(addSectionBtn, "aria-expanded", String(open))
       if (addSectionError) { addSectionError.hidden = true; addSectionError.textContent = "" }
       if (open) (addSectionForm.elements.namedItem("sectionLabel") as HTMLInputElement | null)?.focus()
       else addSectionForm.reset()
@@ -177,7 +168,7 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
       if (!addLinkForm || !addLinkBtn) return
       if (open && addSectionForm && !addSectionForm.hidden) setSectionFormOpen(false)
       addLinkForm.hidden = !open
-      addLinkBtn.setAttribute("aria-expanded", String(open))
+      setAttr(addLinkBtn, "aria-expanded", String(open))
       if (addLinkError) { addLinkError.hidden = true; addLinkError.textContent = "" }
       if (open) {
         syncLinkSectionOptions()
@@ -194,41 +185,29 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
       defaultValue: string,
       onCommit: (value: string) => void,
     ) {
-      const labelEl = rowEl.querySelector<HTMLElement>(":scope > .td-layout-editor__row > [data-nav-label]")
+      const labelEl = qs<HTMLElement>(rowEl, ":scope > .td-layout-editor__row > [data-nav-label]")
       if (!labelEl || labelEl.querySelector("input")) return
-
-      const input = document.createElement("input")
-      input.type = "text"
-      input.className = "td-layout-editor__rename-input"
-      input.value = currentValue
-      input.placeholder = defaultValue
-      input.maxLength = 64
-      input.setAttribute("aria-label", `Rename ${defaultValue}`)
-
-      let settled = false
-      const finish = (save: boolean) => {
-        if (settled) return
-        settled = true
-        const cleaned = sanitizeLabel(input.value)
-        labelEl.replaceChildren(document.createTextNode(save && cleaned ? cleaned : currentValue))
-        if (save) onCommit(cleaned || defaultValue)
-      }
-
-      input.addEventListener("keydown", ev => {
-        if (ev.key === "Enter") { ev.preventDefault(); finish(true) }
-        else if (ev.key === "Escape") { ev.preventDefault(); finish(false) }
-      }, { signal })
-      input.addEventListener("blur", () => finish(true), { signal })
-      labelEl.replaceChildren(input)
-      input.focus()
-      input.select()
+      mountInlineRename({
+        labelEl,
+        value: currentValue,
+        placeholder: defaultValue,
+        maxLength: 64,
+        className: "td-layout-editor__rename-input",
+        signal,
+        onCommit: raw => {
+          const cleaned = sanitizeLabel(raw)
+          labelEl.replaceChildren(document.createTextNode(cleaned || currentValue))
+          onCommit(cleaned || defaultValue)
+        },
+        onCancel: () => labelEl.replaceChildren(document.createTextNode(currentValue)),
+      })
     }
 
     function renderTree() {
       // Remember which section disclosures are open/closed
       list!.querySelectorAll<HTMLElement>("[data-nav-section-row]").forEach(row => {
         const id = row.dataset.navSectionRow
-        const details = row.querySelector<HTMLDetailsElement>(":scope > details")
+        const details = qs<HTMLDetailsElement>(row, ":scope > details")
         if (id && details) openState.set(id, details.open)
       })
 
@@ -244,36 +223,36 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
         sectionRow.dataset.navSectionRow = sectionId
         sectionRow.classList.toggle("is-hidden", sectionHidden)
 
-        const labelEl = sectionRow.querySelector<HTMLElement>(":scope > .td-layout-editor__row > [data-nav-label]")!
+        const labelEl = qs<HTMLElement>(sectionRow, ":scope > .td-layout-editor__row > [data-nav-label]")!
         labelEl.textContent = secLabel
 
-        const visBtn = sectionRow.querySelector<HTMLButtonElement>("[data-nav-section-vis]")!
-        visBtn.setAttribute("aria-pressed", String(sectionHidden))
+        const visBtn = qs<HTMLButtonElement>(sectionRow, "[data-nav-section-vis]")!
+        setAttr(visBtn, "aria-pressed", String(sectionHidden))
         visBtn.title = `${sectionHidden ? "Show" : "Hide"} · ${secLabel}`
-        visBtn.setAttribute("aria-label", visBtn.title)
+        setAttr(visBtn, "aria-label", visBtn.title)
 
-        const upBtn = sectionRow.querySelector<HTMLButtonElement>('[data-nav-section-move="up"]')!
-        const downBtn = sectionRow.querySelector<HTMLButtonElement>('[data-nav-section-move="down"]')!
-        upBtn.setAttribute("aria-disabled", String(sectionIdx === 0))
-        downBtn.setAttribute("aria-disabled", String(sectionIdx === draftConfig.sectionOrder.length - 1))
+        const upBtn = qs<HTMLButtonElement>(sectionRow, '[data-nav-section-move="up"]')!
+        const downBtn = qs<HTMLButtonElement>(sectionRow, '[data-nav-section-move="down"]')!
+        setAttr(upBtn, "aria-disabled", String(sectionIdx === 0))
+        setAttr(downBtn, "aria-disabled", String(sectionIdx === draftConfig.sectionOrder.length - 1))
 
-        const delBtn = sectionRow.querySelector<HTMLButtonElement>("[data-nav-section-delete]")!
+        const delBtn = qs<HTMLButtonElement>(sectionRow, "[data-nav-section-delete]")!
         delBtn.hidden = !removable
 
-        const details = sectionRow.querySelector<HTMLDetailsElement>(":scope > details")!
+        const details = qs<HTMLDetailsElement>(sectionRow, ":scope > details")!
         details.open = openState.get(sectionId) ?? true
-        const fieldsTitle = details.querySelector<HTMLElement>("[data-nav-fields-title]")
+        const fieldsTitle = qs<HTMLElement>(details, "[data-nav-fields-title]")
         if (fieldsTitle) fieldsTitle.textContent = `Items · ${secLabel}`
 
-        const itemsList = details.querySelector<HTMLOListElement>("[data-nav-section-items]")!
+        const itemsList = qs<HTMLOListElement>(details, "[data-nav-section-items]")!
         itemsList.dataset.navSectionItems = sectionId
 
         const keys = draftConfig.sectionItems[sectionId] ?? []
         let visibleCount = 0
 
         if (keys.length === 0) {
-          const empty = document.createElement("li")
-          empty.setAttribute("data-nav-empty-drop", sectionId)
+          const empty = domEl("li")
+          setAttr(empty, "data-nav-empty-drop", sectionId)
           empty.textContent = "Drag items here or add a custom link to this section."
           itemsList.append(empty)
         } else {
@@ -291,35 +270,35 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
             itemRow.dataset.navItemSection = sectionId
             itemRow.classList.toggle("is-hidden", itemHidden)
 
-            const iconSlot = itemRow.querySelector<HTMLElement>("[data-nav-item-icon]")!
+            const iconSlot = qs<HTMLElement>(itemRow, "[data-nav-item-icon]")!
             iconSlot.replaceChildren(createTablerSvgElement(iconName, 16))
 
-            itemRow.querySelector<HTMLElement>("[data-nav-label]")!.textContent = displayLabel
+            qs<HTMLElement>(itemRow, "[data-nav-label]")!.textContent = displayLabel
 
-            const hrefEl = itemRow.querySelector<HTMLElement>("[data-nav-item-href]")!
+            const hrefEl = qs<HTMLElement>(itemRow, "[data-nav-item-href]")!
             if (customEntry?.href) {
               hrefEl.textContent = customEntry.href
               hrefEl.hidden = false
             }
 
-            const itemVisBtn = itemRow.querySelector<HTMLButtonElement>("[data-nav-item-vis]")!
-            itemVisBtn.setAttribute("aria-pressed", String(itemHidden))
+            const itemVisBtn = qs<HTMLButtonElement>(itemRow, "[data-nav-item-vis]")!
+            setAttr(itemVisBtn, "aria-pressed", String(itemHidden))
             itemVisBtn.title = `${itemHidden ? "Show" : "Hide"} · ${displayLabel}`
-            itemVisBtn.setAttribute("aria-label", itemVisBtn.title)
+            setAttr(itemVisBtn, "aria-label", itemVisBtn.title)
 
-            const itemUp = itemRow.querySelector<HTMLButtonElement>('[data-nav-item-move="up"]')!
-            const itemDown = itemRow.querySelector<HTMLButtonElement>('[data-nav-item-move="down"]')!
-            itemUp.setAttribute("aria-disabled", String(idx === 0))
-            itemDown.setAttribute("aria-disabled", String(idx === keys.length - 1))
+            const itemUp = qs<HTMLButtonElement>(itemRow, '[data-nav-item-move="up"]')!
+            const itemDown = qs<HTMLButtonElement>(itemRow, '[data-nav-item-move="down"]')!
+            setAttr(itemUp, "aria-disabled", String(idx === 0))
+            setAttr(itemDown, "aria-disabled", String(idx === keys.length - 1))
 
-            const itemDel = itemRow.querySelector<HTMLButtonElement>("[data-nav-item-delete]")!
+            const itemDel = qs<HTMLButtonElement>(itemRow, "[data-nav-item-delete]")!
             itemDel.hidden = !customEntry
 
             itemsList.append(itemRow)
           })
         }
 
-        const countEl = details.querySelector<HTMLElement>("[data-nav-fields-count]")
+        const countEl = qs<HTMLElement>(details, "[data-nav-fields-count]")
         if (countEl) countEl.textContent = `${visibleCount}/${keys.length} visible`
 
         frag.append(sectionRow)
@@ -395,107 +374,26 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
       }
     }, { signal })
 
-    // Native Drag-and-Drop for Sections & Cross-Section Items
-    list.addEventListener("dragstart", event => {
-      if (!event.dataTransfer) return
-      const target = event.target as Element | null
-      const itemHandle = target?.closest<HTMLElement>("[data-nav-item-drag]")
-      if (itemHandle) {
-        const key = itemHandle.closest<HTMLElement>("[data-nav-item-row]")?.dataset.navItemRow
-        if (!key) return
-        dragKind = "item"
-        dragId = key
-        event.dataTransfer.effectAllowed = "move"
-        event.dataTransfer.setData("text/plain", `item:${key}`)
-        return
-      }
-      const secHandle = target?.closest<HTMLElement>("[data-nav-section-drag]")
-      if (secHandle) {
-        const secId = secHandle.closest<HTMLElement>("[data-nav-section-row]")?.dataset.navSectionRow
-        if (!secId) return
-        dragKind = "section"
-        dragId = secId
-        event.dataTransfer.effectAllowed = "move"
-        event.dataTransfer.setData("text/plain", `section:${secId}`)
-      }
-    }, { signal })
-
-    list.addEventListener("dragover", event => {
-      if (!dragKind || !dragId) return
-      const target = event.target as Element | null
-      clearDrop()
-      if (!target) return
-
-      if (dragKind === "section") {
-        const secRow = target.closest<HTMLElement>("[data-nav-section-row]")
-        if (!secRow || secRow.dataset.navSectionRow === dragId) return
-        event.preventDefault()
-        const bounds = secRow.getBoundingClientRect()
-        dropTarget = secRow
-        secRow.setAttribute("data-nav-drop", event.clientY > bounds.top + bounds.height / 2 ? "after" : "before")
-        return
-      }
-
-      if (dragKind === "item") {
-        const itemRow = target.closest<HTMLElement>("[data-nav-item-row]")
-        if (itemRow && itemRow.dataset.navItemRow !== dragId) {
-          event.preventDefault()
-          const bounds = itemRow.getBoundingClientRect()
-          dropTarget = itemRow
-          itemRow.setAttribute("data-nav-drop", event.clientY > bounds.top + bounds.height / 2 ? "after" : "before")
-          return
-        }
-        const secRow = target.closest<HTMLElement>("[data-nav-section-row]")
-        if (secRow) {
-          event.preventDefault()
-          dropTarget = secRow
-          secRow.setAttribute("data-nav-drop", "into")
-        }
-      }
-    }, { signal })
-
-    list.addEventListener("drop", event => {
-      if (!dragKind || !dragId) return
-      const target = event.target as Element | null
-      const kind = dragKind
-      const id = dragId
-      dragKind = null
-      dragId = null
-      clearDrop()
-      if (!target) return
-
-      if (kind === "section") {
-        const secRow = target.closest<HTMLElement>("[data-nav-section-row]")
-        const targetId = secRow?.dataset.navSectionRow
-        if (secRow && targetId && targetId !== id) {
-          event.preventDefault()
-          const bounds = secRow.getBoundingClientRect()
-          draftConfig = reorderSections(draftConfig, id, targetId, event.clientY > bounds.top + bounds.height / 2)
-          renderTree()
-        }
-        return
-      }
-
-      const itemRow = target.closest<HTMLElement>("[data-nav-item-row]")
-      const targetKey = itemRow?.dataset.navItemRow
-      if (itemRow && targetKey && targetKey !== id) {
-        event.preventDefault()
-        const bounds = itemRow.getBoundingClientRect()
-        draftConfig = reorderItem(draftConfig, id, targetKey, event.clientY > bounds.top + bounds.height / 2)
+    bindSidebarHtmlDragReorder(list, signal, {
+      sectionRowAttr: "data-nav-section-row",
+      sectionGripAttr: "data-nav-section-drag",
+      itemRowAttr: "data-nav-item-row",
+      itemGripAttr: "data-nav-item-drag",
+      dropAttr: "data-nav-drop",
+      onSectionDrop: (dragId, targetId, after) => {
+        draftConfig = reorderSections(draftConfig, dragId, targetId, after)
         renderTree()
-        return
-      }
-
-      const secRow = target.closest<HTMLElement>("[data-nav-section-row]")
-      const targetSec = secRow?.dataset.navSectionRow
-      if (targetSec && isSidebarSectionId(targetSec)) {
-        event.preventDefault()
-        draftConfig = moveItemToSection(draftConfig, id, targetSec)
+      },
+      onItemDrop: (dragId, targetKey, after) => {
+        draftConfig = reorderItem(draftConfig, dragId, targetKey, after)
         renderTree()
-      }
-    }, { signal })
-
-    list.addEventListener("dragend", () => { dragKind = null; dragId = null; clearDrop() }, { signal })
+      },
+      onItemIntoSection: (dragId, targetSec) => {
+        if (!isSidebarSectionId(targetSec)) return
+        draftConfig = moveItemToSection(draftConfig, dragId, targetSec)
+        renderTree()
+      },
+    })
 
     // Add Section form
     addSectionBtn?.addEventListener("click", () => setSectionFormOpen(Boolean(addSectionForm?.hidden)), { signal })
@@ -528,7 +426,7 @@ export function restoreSidebarSettings(settings: Record<string, unknown>): void 
       addLinkForm.querySelectorAll<HTMLButtonElement>("[data-settings-icon-choice]").forEach(btn => {
         const selected = btn === choice
         btn.classList.toggle("is-selected", selected)
-        btn.setAttribute("aria-pressed", String(selected))
+        setAttr(btn, "aria-pressed", String(selected))
       })
     }, { signal })
 

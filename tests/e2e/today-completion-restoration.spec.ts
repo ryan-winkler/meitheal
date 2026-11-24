@@ -98,15 +98,15 @@ test("reopening from Completed today moves a rescheduled task out of its old lis
   }
 })
 
-test("reopening a due favorite keeps its original Focus Stack card", async ({ page, request }) => {
+test("reopening a due promoted task keeps its original Focus Stack card", async ({ page, request }) => {
   const headers = await currentBoardWriteHeaders(request, "household", {})
   await page.addInitScript(() => localStorage.setItem("meitheal-theme", "knight-rider"))
   await page.emulateMedia({ reducedMotion: "reduce" })
-  const title = "Review a favorite due today"
+  const title = "Review a promoted task due today"
   const today = calendarToday()
   const created = await request.post("/api/tasks", {
     headers,
-    data: { title, due_date: today, priority: 1, is_favorite: true },
+    data: { title, due_date: today, priority: 1, is_promoted: true },
   })
   expect(created.status()).toBe(201)
   const { id } = await created.json()
@@ -223,7 +223,7 @@ test("a failed Today refresh keeps the expanded Unscheduled rows", async ({ page
 for (const { name, sectionId, task } of [
   { name: "Carried Forward", sectionId: "section-carried", task: { due_date: shiftCalendarDay(calendarToday(), -1) } },
   { name: "Suggested", sectionId: "section-suggested", task: { due_date: shiftCalendarDay(calendarToday(), 1), priority: 1 } },
-  { name: "Shared favorites", sectionId: "section-pinned", task: { is_favorite: true } },
+  { name: "Promoted", sectionId: "section-pinned", task: { is_promoted: true } },
 ]) {
   test(`reopening from Completed today restores ${name} without a reload`, async ({ page, request }) => {
   const headers = await currentBoardWriteHeaders(request, "household", {})

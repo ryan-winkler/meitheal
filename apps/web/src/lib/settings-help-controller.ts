@@ -8,6 +8,7 @@
  */
 import { pageLifecycle } from "@lib/page-lifecycle"
 import { openTablerModal } from "@lib/tabler-modal"
+import { byId, domEl, qs } from "@lib/dom-helpers"
 
 interface HelpTopic {
   title: string
@@ -25,13 +26,13 @@ export interface SettingsHelpModalOptions {
 }
 
 export function openSettingsHelpModal(options: SettingsHelpModalOptions): void {
-  const modal = document.getElementById("settings-help-modal")
+  const modal = byId("settings-help-modal")
   if (!modal) return
 
-  const titleEl = document.getElementById("settings-help-modal-title")
-  const bodyEl = modal.querySelector<HTMLElement>("[data-help-body]")
-  const tipEl = modal.querySelector<HTMLElement>("[data-help-tip]")
-  const envEl = modal.querySelector<HTMLElement>("[data-help-env]")
+  const titleEl = byId("settings-help-modal-title")
+  const bodyEl = qs<HTMLElement>(modal, "[data-help-body]")
+  const tipEl = qs<HTMLElement>(modal, "[data-help-tip]")
+  const envEl = qs<HTMLElement>(modal, "[data-help-env]")
 
   if (titleEl) titleEl.textContent = options.title
 
@@ -40,7 +41,7 @@ export function openSettingsHelpModal(options: SettingsHelpModalOptions): void {
       ? [...options.paragraphs]
       : (options.body ?? "").split(/\\n|\n/).map((line) => line.trim()).filter(Boolean)
     bodyEl.replaceChildren(...lines.map((line) => {
-      const p = document.createElement("p")
+      const p = domEl("p")
       p.textContent = line
       return p
     }))
@@ -62,8 +63,8 @@ export function openSettingsHelpModal(options: SettingsHelpModalOptions): void {
 }
 
 export function initSettingsHelp(): void {
-  const shell = document.getElementById("settings-shell")
-  const dataEl = document.getElementById("settings-help-topics")
+  const shell = byId("settings-shell")
+  const dataEl = byId("settings-help-topics")
   if (!shell || !dataEl) return
 
   let topics: Record<string, HelpTopic> = {}

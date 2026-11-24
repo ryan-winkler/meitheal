@@ -104,7 +104,8 @@ export class TaskInactivityRepository {
     return scopedTaskRead(
       this.scope,
       sql`scoped_policy AS (SELECT * FROM task_inactivity_policy WHERE board_id=${this.scope.boardId})${sourceSql(continuation ? "," : "")} ${sourceSql(text, args)}`,
-      "with"
+      "with",
+      "minimal"
     )
   }
 

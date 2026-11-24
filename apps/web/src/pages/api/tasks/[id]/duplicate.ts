@@ -45,11 +45,34 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "create
         const newTitle = `${String(row.title)} (copy)`
         const newId = crypto.randomUUID()
 
+        const source = taskHttpProjection(row, scope.boardId)
         const prepared = await prepareTaskCreation(repo, {
-          ...taskHttpProjection(row, scope.boardId),
-          title: newTitle, status: "pending", assigned_to: null,
-          // Like favorites and progress, promotion belongs to the source card, not its copy.
-          is_favorite: 0, is_promoted: false, progress: 0,
+          title: newTitle,
+          description: source.description,
+          priority: source.priority,
+          status: "pending",
+          due_date: source.due_date,
+          labels: source.labels,
+          framework_payload: source.framework_payload,
+          task_type: source.task_type,
+          parent_id: source.parent_id,
+          area_id: source.area_id,
+          project_id: source.project_id,
+          goal_id: source.goal_id,
+          custom_fields: source.custom_fields,
+          start_date: source.start_date,
+          end_date: source.end_date,
+          progress: 0,
+          color: source.color,
+          is_promoted: false,
+          assigned_to: null,
+          checklists: typeof source.checklists === "string" ? source.checklists : "[]",
+          urgency: source.urgency,
+          importance: source.importance,
+          effort_minutes: source.effort_minutes,
+          effort_type: source.effort_type,
+          blocked_by: source.blocked_by,
+          recurrence_rule: source.recurrence_rule,
           // A copied occurrence is ordinary work, not a second completion of its source Routine.
           task_kind: row.task_kind === "routine_instance" ? "standard_action" : row.task_kind,
           source_template_id: null,

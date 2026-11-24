@@ -66,14 +66,12 @@ test("Task refreshes use compact ingress HTML and ignore a worker-cached respons
       wrongViewUrl.searchParams.set(marker === "boardRefresh" ? "tableRefresh" : "boardRefresh", "contract")
       const bothMarkersUrl = new URL(wrongViewUrl)
       bothMarkersUrl.searchParams.set(marker, "contract")
-      const [regular, unmarked, compact, wrongView, wrongHeader, bothMarkers] = await Promise.all([
-        context.request.get(pageUrl, { headers }),
-        context.request.get(refreshUrl.href),
-        context.request.get(refreshUrl.href, { headers }),
-        context.request.get(wrongViewUrl.href, { headers }),
-        context.request.get(refreshUrl.href, { headers: { [TASK_REFRESH_FRAGMENT_HEADER]: "0" } }),
-        context.request.get(bothMarkersUrl.href, { headers }),
-      ])
+      const regular = await context.request.get(pageUrl, { headers })
+      const unmarked = await context.request.get(refreshUrl.href)
+      const compact = await context.request.get(refreshUrl.href, { headers })
+      const wrongView = await context.request.get(wrongViewUrl.href, { headers })
+      const wrongHeader = await context.request.get(refreshUrl.href, { headers: { [TASK_REFRESH_FRAGMENT_HEADER]: "0" } })
+      const bothMarkers = await context.request.get(bothMarkersUrl.href, { headers })
       expect([regular.status(), unmarked.status(), compact.status(), wrongView.status(), wrongHeader.status(), bothMarkers.status()])
         .toEqual([200, 200, 200, 200, 200, 200])
       expect(await regular.text()).toContain('id="task-detail-overlay"')

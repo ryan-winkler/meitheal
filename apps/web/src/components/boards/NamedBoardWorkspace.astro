@@ -17,6 +17,9 @@ import { boardWorkspaceHref, readBoardWorkspaceSelection, readBoardPlanningSecti
 import { boardAuthorityKey, boardViewKey, readBoardView } from "@lib/board-view"
 import { boardSessionProof, currentBoardContext } from "@lib/named-board-request"
 import { ensureAgentTokenSchema, isAgentTokenActive, isAgentTokenExpired, listAgentTokens } from "@domains/auth"
+import { readBoardCustomFieldDefs } from "@domains/tasks/custom-fields"
+import { CUSTOM_FIELD_TYPE_LABELS, VALID_CUSTOM_FIELD_TYPES, type CustomFieldType } from "@lib/custom-field-defs"
+import { getPersistenceClient } from "@domains/tasks/persistence/store"
 import { canManageSystemSettings } from "@lib/settings-security"
 import { isFeatureEnabled } from "@lib/feature-flags"
 import { isDoneStatus } from "@lib/status-config"
@@ -80,6 +83,7 @@ const grantedAgentSet = new Set(view?.agents ?? [])
 const availableAgentTokens = canEnumerateSystemTokens
   ? boardAgentTokens.filter(t => isAgentTokenActive(t) && !grantedAgentSet.has(t.id))
   : []
+const boardCustomFields = policy ? await readBoardCustomFieldDefs(getPersistenceClient(), workScope).catch(() => []) : []
 ---
 {taskWorkspace ? <TaskWorkspace {boardId} {workScope} />
   : selection.projectId ? <ProjectWorkspace workspaceProjectId={selection.projectId} {boardId} {workScope} />
@@ -385,6 +389,40 @@ const availableAgentTokens = canEnumerateSystemTokens
               </section>
 
               <BoardIntegrationDestinations scope={workScope} session={boardSessionProof(user.actor.id)} people={view.members.map(member => ({ id: member.id, name: user.roster.get(member.id) ?? "Inactive user" }))} />
+
+              <section class="board-settings-card" id="board-custom-fields-settings" aria-labelledby="board-cf-heading">
+                <div class="board-settings-card__head">
+                  <Icon name="file-text" size={16} sprite />
+                  <h2 id="board-cf-heading">Board custom fields</h2>
+                </div>
+                <p class="board-note-plain">Custom fields configured here apply only to this Board (in addition to built-in sprint and story_points).</p>
+                <div class="board-custom-field-list" data-board-cf-list>
+                  {boardCustomFields.length === 0 ? (
+                    <p class="board-note-plain" data-board-cf-empty>No board-specific custom fields yet.</p>
+                  ) : boardCustomFields.map(field => (
+                    <form data-board-form="custom-field-remove" class="board-form board-form--inline" data-field-name={field.name}>
+                      <span><strong>{field.name}</strong> ({field.type})</span>
+                      <input type="hidden" name="name" value={field.name} />
+                      <button type="submit" class="btn btn-ghost btn-sm">Remove</button>
+                    </form>
+                  ))}
+                </div>
+                <form data-board-form="custom-field-add" class="board-form">
+                  <label>Field name <input name="name" maxlength="60" required autocomplete="off" placeholder="e.g. environment" /></label>
+                  <label>Type
+                    <select name="type">
+                      {[...VALID_CUSTOM_FIELD_TYPES].map((type) => (
+                        <option value={type}>{CUSTOM_FIELD_TYPE_LABELS[type as CustomFieldType] ?? type}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>Select options (comma-separated)
+                    <input name="options" maxlength="300" autocomplete="off" placeholder="Optional for Select fields" />
+                  </label>
+                  <p role="status" data-board-feedback class="board-feedback"></p>
+                  <button type="submit" class="btn btn-secondary btn-sm">Add board field</button>
+                </form>
+              </section>
 
               {!view.board.denyDeletion && (
                 <form data-board-form="lifecycle" class="board-form board-settings-card board-settings-card--danger">

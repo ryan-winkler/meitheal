@@ -32,70 +32,10 @@
   color: hsl(220 14% 35%);
 }
 
-.label-badge--blue {
-  background: hsl(217 91% 90%);
-  color: hsl(217 91% 30%);
-}
-
-.label-badge--green {
-  background: hsl(142 76% 88%);
-  color: hsl(142 76% 25%);
-}
-
-.label-badge--amber {
-  background: hsl(38 92% 88%);
-  color: hsl(38 92% 30%);
-}
-
-.label-badge--red {
-  background: hsl(0 72% 90%);
-  color: hsl(0 72% 30%);
-}
-
-.label-badge--purple {
-  background: hsl(270 76% 90%);
-  color: hsl(270 76% 30%);
-}
-
-.label-badge--teal {
-  background: hsl(175 77% 88%);
-  color: hsl(175 77% 25%);
-}
-
-.label-badge--pink {
-  background: hsl(330 81% 90%);
-  color: hsl(330 81% 30%);
-}
-
 /* Dark theme overrides */
 :is([data-theme="dark"], [data-theme="knight-rider"]) .label-badge--default {
   background: hsl(220 14% 22%);
   color: hsl(220 14% 78%);
-}
-
-:is([data-theme="dark"], [data-theme="knight-rider"]) .label-badge--blue {
-  background: hsl(217 60% 22%);
-  color: hsl(217 80% 78%);
-}
-
-:is([data-theme="dark"], [data-theme="knight-rider"]) .label-badge--green {
-  background: hsl(142 50% 18%);
-  color: hsl(142 70% 72%);
-}
-
-:is([data-theme="dark"], [data-theme="knight-rider"]) .label-badge--amber {
-  background: hsl(38 60% 20%);
-  color: hsl(38 80% 75%);
-}
-
-:is([data-theme="dark"], [data-theme="knight-rider"]) .label-badge--red {
-  background: hsl(0 50% 20%);
-  color: hsl(0 70% 75%);
-}
-
-:is([data-theme="dark"], [data-theme="knight-rider"]) .label-badge--purple {
-  background: hsl(270 50% 20%);
-  color: hsl(270 70% 78%);
 }
 
 :is([data-theme="dark"], [data-theme="knight-rider"]) .label-badge--teal {
@@ -192,8 +132,7 @@
   transition: background 0.1s ease;
 }
 
-.label-picker__option:hover,
-.label-picker__option--focused {
+.label-picker__option:hover {
   background: var(--bg-hover, var(--hover-bg, hsl(220 14% 96%)));
 }
 

@@ -2,9 +2,9 @@
 export const TASK_PUBLIC_FIELDS = [
   "id", "title", "description", "status", "priority", "framework_payload", "calendar_sync_state",
   "created_at", "updated_at", "task_version", "deferred_at", "due_date", "labels", "parent_id", "time_tracked",
-  "custom_fields", "start_date", "end_date", "progress", "color", "is_favorite", "is_promoted", "task_type",
+  "custom_fields", "start_date", "end_date", "progress", "color", "is_promoted", "task_type",
   "summary", "recurrence_rule", "recurrence_anchor", "rotation_mode", "nfc_tag_id", "checklists", "reminder_at",
-  "source_template_id", "routine_occurrence", "assigned_to", "kanban_position", "task_kind", "handoff_state",
+  "source_template_id", "routine_occurrence", "assigned_to", "kanban_position", "table_position", "task_kind", "handoff_state",
   "time_block_start", "time_block_end", "urgency", "importance", "eisenhower_override", "effort_minutes",
   "effort_type", "blocked_by", "area_id", "project_id", "goal_id", "ticket_number", "source", "created_by",
   "board_id", "ticket_key",

@@ -19,6 +19,7 @@ import { taskDetailPath } from "../../lib/task-page-url"
 import { taskDescriptionPreview } from "../../lib/task-description-preview"
 import type { TaskViewItem } from "../../lib/task-queries"
 import { CANONICAL_STATUSES, STATUS_CONFIG } from "../../lib/status-config";
+import { formatCardCustomFieldValue } from "../../lib/custom-field-defs";
 import { readTableFilterParams, tableNeedsWorkflowColumns } from "../../lib/filter-state"
 import { getTablePage, getTableWorkflowColumns, type TableWorkflowColumn } from "../../lib/table-page"
 
@@ -28,8 +29,22 @@ interface Props {
   tableReadFailed: boolean
   workflowColumns: TableWorkflowColumn[]
   workflowColumnsUnavailable: boolean
+  canEdit?: boolean
+  canCreate?: boolean
+  canComplete?: boolean
+  canDelete?: boolean
 }
-const { tasks, creationTimezone, tableReadFailed, workflowColumns, workflowColumnsUnavailable } = Astro.props
+const {
+  tasks,
+  creationTimezone,
+  tableReadFailed,
+  workflowColumns,
+  workflowColumnsUnavailable,
+  canEdit = true,
+  canCreate = true,
+  canComplete = true,
+  canDelete = true,
+} = Astro.props
 
 // i18n: resolve locale from cookie
 const cookieLocale = Astro.cookies.get("meitheal-locale")?.value;
@@ -88,6 +103,12 @@ const priorityClasses: Record<number, string> = {
     <div class="table-filter-bar">
       <FilterToolbar view="table" showSearch showGroupBy workflowColumns={displayedWorkflowColumns} {workflowColumnsUnavailable} />
       <div class="table-filter-actions">
+        <button
+          type="button"
+          id="table-manual-order-btn"
+          class="btn btn-outline btn-sm aria-pressed:border-accent aria-pressed:bg-accent/15 aria-pressed:text-accent"
+          aria-pressed={filters.sort === "manual-asc" ? "true" : "false"}
+        >Manual order</button>
         <SavedFilterPresets />
         <ColumnCustomizer />
       </div>
@@ -108,13 +129,14 @@ const priorityClasses: Record<number, string> = {
     <div id="table-empty" hidden={resultsUnavailable || tasks.length > 0}>
       <EmptyState
         title={t(hasTaskCriteria ? "table.no_filter_matches" : "table.no_tasks", locale)}
-        actionText={t(hasTaskCriteria ? "tasks.clear_filters" : "tasks.new_task", locale)}
-        actionEvent={hasTaskCriteria ? "meitheal:table-clear-filters" : "meitheal:new-task"}
+        actionText={hasTaskCriteria ? t("tasks.clear_filters", locale) : (canCreate ? t("tasks.new_task", locale) : undefined)}
+        actionEvent={hasTaskCriteria ? "meitheal:table-clear-filters" : (canCreate ? "meitheal:new-task" : undefined)}
       />
     </div>
 
     <div class="table-container" role="region" aria-label={t("table.title", locale)} tabindex="0" hidden={resultsUnavailable || tasks.length === 0}>
-          <table class="data-table" id="task-table" data-table-page={page} data-table-stats={JSON.stringify(stats)}>
+          <table class="data-table" id="task-table" data-table-page={page} data-table-stats={JSON.stringify(stats)}
+            data-can-create={String(canCreate)} data-can-edit={String(canEdit)} data-can-complete={String(canComplete)} data-can-delete={String(canDelete)}>
             <thead>
               <tr>
                 <th scope="col" class="col-checkbox">
@@ -122,6 +144,7 @@ const priorityClasses: Record<number, string> = {
                     type="checkbox"
                     id="select-all"
                     aria-label="Select all visible tasks on this page"
+                    disabled={!canEdit && !canDelete}
                   />
                 </th>
                 <th scope="col" class="sortable col-key" data-col="key">
@@ -206,9 +229,9 @@ const priorityClasses: Record<number, string> = {
             <tbody>
               {rows.map(({ task, depth, parentId, hasChildren, parentOutsidePage, workflowColumnId, epicGroup }) => {
                 const scheduledDate = effectiveTaskScheduledDate(task);
-                const cfEntries = Object.entries(task.custom_fields).filter(
-                  ([, v]) => v !== null && v !== undefined && v !== "" && typeof v !== "object",
-                );
+                const cfEntries = Object.entries(task.custom_fields)
+                  .map(([k, v]) => [k, formatCardCustomFieldValue(v)] as const)
+                  .filter((entry): entry is readonly [string, string] => entry[1] !== null);
                 const ticketKey = task.ticket_key ?? formatTicketKey(task.ticket_number ?? 0) ?? `#${task.id.slice(0, 8)}`
                 const description = taskDescriptionPreview(task.description)
                 return (
@@ -237,12 +260,24 @@ const priorityClasses: Record<number, string> = {
                     style={depth > 0 ? `--subtask-depth: ${depth}` : undefined}
                   >
                     <td class="col-checkbox">
-                      <input
-                        type="checkbox"
-                        class="row-check"
-                        data-id={task.id}
-                        aria-label={`Select task: ${task.title}`}
-                      />
+                      <div class="inline-flex items-center gap-1">
+                        {canEdit && (
+                          <button
+                            type="button"
+                            class="table-row-drag-handle btn-icon"
+                            data-id={task.id}
+                            aria-label={`Reorder row: ${task.title}`}
+                            title="Drag or press Alt+Up/Down to reorder"
+                          >⋮⋮</button>
+                        )}
+                        <input
+                          type="checkbox"
+                          class="row-check"
+                          data-id={task.id}
+                          aria-label={`Select task: ${task.title}`}
+                          disabled={!canEdit && !canDelete}
+                        />
+                      </div>
                     </td>
                     <td class="col-key">
                       <a
@@ -270,11 +305,11 @@ const priorityClasses: Record<number, string> = {
                           <span class="subtree-indent-marker">↳</span>
                         )}
                         <span
-                          class="editable-cell"
-                          contenteditable="true"
+                          class={canEdit ? "editable-cell" : "table-title-readonly"}
+                          contenteditable={canEdit ? "true" : undefined}
                           spellcheck="false"
-                          role="textbox"
-                          aria-label={t("table.col_title", locale)}
+                          role={canEdit ? "textbox" : undefined}
+                          aria-label={canEdit ? t("table.col_title", locale) : undefined}
                           data-field="title"
                           data-id={task.id}
                           data-original={task.title}
@@ -303,12 +338,14 @@ const priorityClasses: Record<number, string> = {
                         data-field="status"
                         data-id={task.id}
                         aria-label={`Status for ${task.title}`}
+                        disabled={!canEdit || (task.is_done && !canComplete)}
                       >
                         {!CANONICAL_STATUSES.includes(task.status) && <option value={task.status} selected>{task.status}</option>}
                         {STATUS_CONFIG.map((s) => (
                           <option
                             value={s.canonical}
                             selected={task.status === s.canonical}
+                            disabled={(s.canonical === "complete" && !canComplete) || (s.canonical === "archived" && !canDelete)}
                           >
                             {t(s.i18nKey as any, locale)}
                           </option>
@@ -321,6 +358,7 @@ const priorityClasses: Record<number, string> = {
                         data-field="priority"
                         data-id={task.id}
                         aria-label={`Priority for ${task.title}`}
+                        disabled={!canEdit}
                       >
                         <option
                           value="1"
@@ -414,15 +452,17 @@ const priorityClasses: Record<number, string> = {
                       <LabelBadges labels={task.labels as unknown as string} compact max={3} />
                     </td>
                     <td class="col-actions cell-center">
-                      <button
-                        type="button"
-                        class="task-action-btn danger delete-row"
-                        data-id={task.id}
-                        title={t("tasks.delete", locale)}
-                        aria-label={`Delete ${task.title}`}
-                      >
-                        <Icon name="trash" size={16} sprite />
-                      </button>
+                      {canDelete && (
+                        <button
+                          type="button"
+                          class="task-action-btn danger delete-row"
+                          data-id={task.id}
+                          title={t("tasks.delete", locale)}
+                          aria-label={`Delete ${task.title}`}
+                        >
+                          <Icon name="trash" size={16} sprite />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );
@@ -450,16 +490,19 @@ const priorityClasses: Record<number, string> = {
     </div>
   </div>
 
-  <div class="bulk-bar" id="bulk-bar">
+  <div class="bulk-bar" id="bulk-bar" hidden={!canEdit && !canDelete}>
     <span id="selected-count">0 selected</span>
     <span class="bulk-divider">|</span>
-    <select class="form-select bulk-select" id="bulk-status">
+    <select class="form-select bulk-select" id="bulk-status" disabled={!canEdit}>
       <option value="">{t("table.change_status", locale)}</option>
       {STATUS_CONFIG.map((s) => (
-        <option value={s.canonical}>{t(s.i18nKey as any, locale)}</option>
+        <option
+          value={s.canonical}
+          disabled={(s.canonical === "complete" && !canComplete) || (s.canonical === "archived" && !canDelete)}
+        >{t(s.i18nKey as any, locale)}</option>
       ))}
     </select>
-    <select class="form-select bulk-select" id="bulk-priority">
+    <select class="form-select bulk-select" id="bulk-priority" disabled={!canEdit}>
       <option value="">Priority</option>
       <option value="1">{t("priority.critical", locale)}</option>
       <option value="2">{t("priority.high", locale)}</option>
@@ -467,13 +510,15 @@ const priorityClasses: Record<number, string> = {
       <option value="4">{t("priority.low", locale)}</option>
       <option value="5">{t("priority.minimal", locale)}</option>
     </select>
-    <select class="form-select bulk-select" id="bulk-area">
+    <select class="form-select bulk-select" id="bulk-area" disabled={!canEdit}>
       <option value="">Area</option>
     </select>
     <button
       type="button"
       class="btn bulk-delete-btn"
-      id="bulk-delete"><Icon name="trash" size={16} /> {t("table.delete_selected", locale)}</button>
+      id="bulk-delete"
+      hidden={!canDelete}
+      disabled={!canDelete}><Icon name="trash" size={16} /> {t("table.delete_selected", locale)}</button>
     <button type="button" class="btn bulk-close-btn" id="bulk-close" aria-label="Close bulk actions">
       <Icon name="x" size={16} />
     </button>
@@ -556,11 +601,18 @@ const priorityClasses: Record<number, string> = {
 
 
   /* Subtask hierarchy styles (Phase 1: SUB-01) */
+  .col-title {
+    min-width: 16rem;
+  }
   .task-title-cell {
     display: flex;
     align-items: center;
     gap: 4px;
     position: relative;
+  }
+  .task-title-cell > .editable-cell {
+    flex: 1 1 auto;
+    min-width: 10rem;
   }
   .subtask-row .task-title-cell::before {
     content: '';
@@ -608,6 +660,25 @@ const priorityClasses: Record<number, string> = {
   .subtask-row {
     border-left: 2px solid var(--accent);
   }
+  .table-row-drag-handle {
+    cursor: grab;
+    min-width: 24px;
+    min-height: 24px;
+    padding: 0 2px;
+    font-size: 12px;
+    color: var(--text-muted);
+    background: transparent;
+    border: 0;
+    touch-action: none;
+    user-select: none;
+  }
+  .table-row-drag-handle:hover,
+  .table-row-drag-handle:focus-visible {
+    color: var(--text-primary);
+  }
+  .table-row.dragging {
+    opacity: 0.55;
+  }
 
   .filter-bar {
     display: flex;
@@ -615,14 +686,6 @@ const priorityClasses: Record<number, string> = {
     margin-bottom: 16px;
     flex-wrap: wrap;
     align-items: center;
-  }
-  .filter-search {
-    max-width: 200px;
-    flex: 1;
-    min-width: 150px;
-  }
-  .filter-select {
-    max-width: 150px;
   }
   .page-actions {
     display: flex;

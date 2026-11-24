@@ -10,6 +10,7 @@ const scoringFieldSchema = z.object({
   ui_type: z.enum(["slider", "select", "radio", "checkbox"]).optional(),
   min: z.number().optional(),
   max: z.number().optional(),
+  step: z.number().positive().optional(),
   weight: z.number().default(1),
   options: z.array(z.object({
     value: z.union([z.string(), z.number()]),

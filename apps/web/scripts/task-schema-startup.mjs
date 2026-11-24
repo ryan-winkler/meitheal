@@ -35,6 +35,7 @@ import {
 import { splitSqlStatements } from "./split-sql-statements.mjs"
 import { applyOrdinaryBoardMigration, readOrdinaryBoardMigrationState, ORDINARY_BOARD_MIGRATION } from "../drizzle/migrations/0016_ordinary_boards.mjs"
 import { applyCustomBoardKeysMigration, readCustomBoardKeysMigrationState, CUSTOM_BOARD_KEYS_MIGRATION } from "../drizzle/migrations/0017_custom_board_keys.mjs"
+import { applyTaskExperienceMigration, readTaskExperienceMigrationState, TASK_EXPERIENCE_MIGRATION } from "../drizzle/migrations/0018_task_experience.mjs"
 import { admitStartupBoardTransition } from "./board-grant-journal.mjs"
 
 /** @typedef {import("@libsql/client").Transaction} Transaction */
@@ -117,6 +118,7 @@ export async function validateStartupTaskSchema(tx, { allowPending = false } = {
   const lifecycleReady = await readBoardLifecycleMigrationState(tx)
   const ordinaryReady = await readOrdinaryBoardMigrationState(tx)
   const customKeysReady = ordinaryReady ? await readCustomBoardKeysMigrationState(tx) : false
+  const taskExperienceReady = customKeysReady ? await readTaskExperienceMigrationState(tx) : false
   if (!allowPending) {
     const pending = [
       !personalReady && PERSONAL_PILLAR_MIGRATION,
@@ -127,6 +129,7 @@ export async function validateStartupTaskSchema(tx, { allowPending = false } = {
       !lifecycleReady && BOARD_LIFECYCLE_MIGRATION,
       !ordinaryReady && ORDINARY_BOARD_MIGRATION,
       !customKeysReady && CUSTOM_BOARD_KEYS_MIGRATION,
+      !taskExperienceReady && TASK_EXPERIENCE_MIGRATION,
     ].filter(Boolean)
     if (pending.length) throw new Error(`Pending migrations: ${pending.join(", ")}`)
   }
@@ -203,6 +206,7 @@ export async function applyStartupBoardSchema(client, tx, prepareRuntime, { oper
   const applied = await applyStartupTaskSchema(tx, prepareRuntime)
   if (await readOrdinaryBoardMigrationState(tx)) {
     if (await applyCustomBoardKeysMigration(tx)) applied.push(CUSTOM_BOARD_KEYS_MIGRATION)
+    if (await applyTaskExperienceMigration(tx)) applied.push(TASK_EXPERIENCE_MIGRATION)
     // Do not acquire a nested writer while this startup writer is held.
     const { boardGrantStillCurrent, databaseRevision, getBoardGrantPath, publishCommittedMarker } = await import("./board-grant-journal.mjs")
     const revision = await databaseRevision(tx)
@@ -215,5 +219,6 @@ export async function applyStartupBoardSchema(client, tx, prepareRuntime, { oper
   await applyOrdinaryBoardMigration(tx, transition.admission)
   applied.push(ORDINARY_BOARD_MIGRATION)
   if (await applyCustomBoardKeysMigration(tx)) applied.push(CUSTOM_BOARD_KEYS_MIGRATION)
+  if (await applyTaskExperienceMigration(tx)) applied.push(TASK_EXPERIENCE_MIGRATION)
   return { applied, state: "ready", pending: [], revision: transition.revision }
 }

@@ -61,6 +61,13 @@ export const PLUGIN_PERMISSION_CATALOG: Record<PluginPermission, PluginPermissio
     agentScope: null,
     risk: "low",
   },
+  "ui:task-editor": {
+    permission: "ui:task-editor",
+    label: "Task editor extensions",
+    description: "Open the unified task editor or register custom inspector sections.",
+    agentScope: null,
+    risk: "low",
+  },
   "ui:toast": {
     permission: "ui:toast",
     label: "Notifications",

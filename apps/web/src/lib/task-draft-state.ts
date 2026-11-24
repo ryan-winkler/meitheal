@@ -34,10 +34,16 @@ export const taskDraftVersion = z.strictObject({
 })
 
 const placement = z.strictObject({ areaId: reference.nullable(), projectId: reference.nullable() })
+const taskType = z.enum(["epic", "story", "task"])
 
 export const taskDraftSnapshot = z.strictObject({
   version: z.literal(1),
   placement: placement.optional(),
+  taskType: taskType.optional(),
+  parentId: reference.nullable().optional(),
+  parentTitle: z.string().max(500).optional(),
+  parentType: taskType.optional(),
+  parentTicketKey: z.string().max(100).nullable().optional(),
   title: z.string().max(500),
   description: z.string().max(16384),
   taskKind,
@@ -50,6 +56,13 @@ export const taskDraftSnapshot = z.strictObject({
   goal: reference,
   recurrence: z.string().max(200),
   isRoutine: z.boolean(),
+  urgency: z.number().int().min(0).max(5).optional(),
+  importance: z.number().int().min(0).max(5).optional(),
+  progress: z.number().int().min(0).max(100).optional(),
+  color: z.string().max(16).optional(),
+  pillarId: reference.optional(),
+  principleId: reference.optional(),
+  boardCustomFields: z.record(z.string().max(60), z.string().max(1024)).optional(),
   checklist: z.strictObject({ items: checklistItems, input: z.string().max(12864) }),
   shopping: z.strictObject({ items: shoppingItems, input: z.string().max(200), quantity: z.string().max(8), category }),
   event: z.strictObject({
@@ -65,6 +78,8 @@ export const taskDraftSnapshot = z.strictObject({
 const publishDate = z.union([z.iso.date(), z.iso.datetime({ local: true, offset: true }).max(64)])
 export const taskDraftPublication = z.strictObject({
   placement: placement.optional(),
+  task_type: taskType.optional(),
+  parent_id: reference.nullable().optional(),
   title: z.string().min(1).max(500),
   description: z.string().max(16384),
   task_kind: taskKind,
@@ -73,23 +88,35 @@ export const taskDraftPublication = z.strictObject({
   labels,
   catalogLabels: labels,
   newLabels: labels,
-  due_date: publishDate.nullable(),
+  due_date: publishDate.nullable().optional(),
   assigned_to: reference.nullable(),
   goal_id: reference.nullable(),
   recurrence_rule: z.string().regex(/^[A-Z=;,0-9]{1,200}$/).optional(),
   checklists: checklistItems.optional(),
-  custom_fields: z.strictObject({
+  custom_fields: z.object({
     quantity: itemQuantity.optional(),
     category: category.optional(),
     items: shoppingItems.optional(),
     fields: fields.optional(),
-  }).optional(),
+  }).catchall(z.union([z.string().max(1024), z.number().finite(), z.boolean()]))
+    .refine(record => {
+      const keys = Object.keys(record)
+      return keys.length <= 16 && keys.every(key =>
+        key !== "__proto__" && key !== "constructor" && key !== "prototype" && key.length <= 60)
+    }).optional(),
   start_date: publishDate.optional(),
   end_date: publishDate.optional(),
   location: z.string().max(300).optional(),
   home_assistant_area_id: z.string().min(1).max(150).optional(),
   all_day: z.boolean().optional(),
   is_routine: z.boolean().optional(),
+  urgency: z.number().int().min(0).max(5).optional(),
+  importance: z.number().int().min(0).max(5).optional(),
+  progress: z.number().int().min(0).max(100).optional(),
+  color: z.string().regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/).nullable().optional(),
+  pillar_id: reference.nullable().optional(),
+  principle_id: reference.nullable().optional(),
+  framework_payload: z.string().max(4096).optional(),
 }).refine(task => task.catalogLabels.every(name => task.labels.includes(name) && !task.newLabels.includes(name))
   && task.newLabels.every(name => task.labels.includes(name)))
 

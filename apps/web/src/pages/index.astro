@@ -92,7 +92,7 @@ try {
   const repo = new TaskRepository(getPersistenceClient(), workScope)
   const [recentRead, favoritesRead, openRead, statsRead, overdueRead, areaRead] = await Promise.allSettled([
     repo.getRecentTasks(10, placement),
-    repo.getFavoriteTasks(5, placement),
+    repo.getPromotedTasks(5, placement),
     repo.getOpenTasks(15, placement),
     repo.getStatusCounts(placement),
     repo.getOverdueCount(calendarToday(dashboardTimeZone), dashboardTimeZone, placement),
@@ -304,13 +304,13 @@ function relativeTime(dueDate: string): string {
             <div class="card dashboard-card" id="dashboard-favorites" data-available={String(favoritesLoaded)} hidden={favorites.length === 0}>
               <div class="card-header">
                 <div>
-                  <div class="card-title">{t("dashboard.favorites", locale)}</div>
+                  <div class="card-title">{t("kanban.promoted", locale)}</div>
                   <div class="card-subtitle">
                     {favorites.length !== 1
-                      ? t("dashboard.favorite_tasks_plural", locale, {
+                      ? t("dashboard.promoted_tasks_plural", locale, {
                           count: String(favorites.length),
                         })
-                      : t("dashboard.favorite_tasks", locale, {
+                      : t("dashboard.promoted_tasks", locale, {
                           count: String(favorites.length),
                         })}
                   </div>
@@ -341,7 +341,7 @@ function relativeTime(dueDate: string): string {
                         {ticketNumber && (
                           <span class="dashboard-ticket-key">{ticketNumber}</span>
                         )}
-                        {String(favorite.title)}
+                        <span>{String(favorite.title)}</span>
                       </div>
                       <div class="dashboard-task-meta">
                         <span class={`task-badge badge-${String(favorite.status)}`}>

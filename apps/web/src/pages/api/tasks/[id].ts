@@ -1,4 +1,4 @@
-import { scopePermits } from "@domains/tasks/board-scope"
+import { scopePermits, type BoardScope } from "@domains/tasks/board-scope"
 import { taskHttpProjection, taskDetailHttpProjection } from "@lib/task-http-projection"
 import { readCurrentHARole } from "@domains/ha/current-admin"
 import { boardScopeErrorResponse, withBoardScope } from "@lib/board-http"
@@ -8,6 +8,13 @@ import type { InValue } from "@libsql/client"
 import { isValidTaskKind, normalizeShoppingItems, parseScheduleDateInput, validateScheduleWindow, VALID_TASK_KINDS, VALID_TASK_TYPES } from "@meitheal/domain-tasks"
 import type { TaskType } from "@meitheal/domain-tasks"
 import {
+  getEntityPillarId,
+  getPillarById,
+  getPrinciplesForPillar,
+  setEntityPillar,
+} from "@domains/pillars"
+import {
+  BoardOperationError,
   parseRRule,
   ensureSchema,
   getPersistenceClient,
@@ -21,14 +28,17 @@ import {
   unavailableBoardResponse,
   UserRepository,
 } from "@domains/tasks"
+import { frameworkPayloadObject } from "../../../lib/rice-lens"
 import { formatTicketKey } from "../../../lib/ticket-key"
 import { dispatchTaskEvent, taskEventAuthorityHeaders } from "../../../lib/webhook-dispatcher"
 import { logApiError } from "../../../lib/api-logger"
 import { apiError } from "../../../lib/api-response"
+import { sanitizeMarkdownInput } from "../../../lib/sanitize"
 import { checkAssignedTask, isAssignedWriteOnly, restrictedAssigneeId } from "../../../lib/agent-token-guard"
 import { db503Response, isDbUnavailable } from "../../../lib/db-fallback"
 import { resolveRecentActivityActor } from "../../../lib/recent-activity-actor"
 import { STATUS, normalizeStatus, isDoneStatus } from "../../../lib/status-config"
+import { stripHtml } from "../../../lib/strip-html"
 import { sendTaskNotification, notificationOperationAllowed } from "@domains/notifications"
 import { agentActivityActor } from "../../../lib/agent-activity-actor"
 
@@ -55,23 +65,39 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
     ...(url.searchParams.has("deferralRead") ? { "cache-control": "no-store" } : {}),
   }
 
-  const row = await repo.findById(params.id!)
-  if (!row) {
+  const detailResult = await repo.findDetailWithSubtasks(params.id!)
+  if (!detailResult) {
     return new Response(JSON.stringify({ error: "Task not found" }), {
       status: 404,
       headers,
     })
   }
+  const { task: row, subtasks } = detailResult
 
   // Derive human-readable ticket keys
   const ticketNum = row.ticket_number != null ? Number(row.ticket_number) : null
   const parentTicketNum = row.parent_ticket_number != null ? Number(row.parent_ticket_number) : null
+  const detail = taskDetailHttpProjection(row, scope.boardId, scope.principal.kind === "ha_user" && await readCurrentHARole(scope.principal.id, request.signal) === "admin")
+  const pillarId = await readOptionalTaskPillarId(scope, String(row.id ?? params.id!))
+  const fp = parseFrameworkPayload(row.framework_payload)
+  const principleId = pillarId && typeof fp.principle_id === "string" && fp.principle_id ? fp.principle_id : null
+  const visibleParent = detail.parent_id != null
+  const parentTicketKey = visibleParent
+    ? (typeof row.parent_ticket_ref === "string" && row.parent_ticket_ref
+        ? row.parent_ticket_ref
+        : formatTicketKey(parentTicketNum))
+    : null
   const enriched = {
-    ...taskDetailHttpProjection(row, scope.boardId, scope.principal.kind === "ha_user" && await readCurrentHARole(scope.principal.id, request.signal) === "admin"),
+    ...detail,
+    pillar_id: pillarId,
+    principle_id: principleId,
     actions: taskActionHints(scope, row),
     is_promoted: Boolean(row.is_promoted),
     ticket_key: row.ticket_key ?? row.ticket_ref ?? formatTicketKey(ticketNum),
-    parent_ticket_key: formatTicketKey(parentTicketNum),
+    parent_ticket_key: parentTicketKey,
+    parent_title: visibleParent ? (row.parent_title ?? null) : null,
+    parent_task_type: visibleParent ? (row.parent_task_type ?? null) : null,
+    subtasks,
   }
 
   return new Response(JSON.stringify(enriched), {
@@ -79,6 +105,25 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
     headers,
   })
 })
+
+function parseFrameworkPayload(raw: unknown): Record<string, unknown> {
+  if (typeof raw !== "string" || !raw.trim()) return {}
+  try {
+    return frameworkPayloadObject(JSON.parse(raw))
+  } catch {
+    return {}
+  }
+}
+
+async function readOptionalTaskPillarId(scope: BoardScope, taskId: string): Promise<string | null> {
+  if (!scopePermits(scope, { resource: "pillar", action: "read" })) return null
+  try {
+    return await getEntityPillarId(scope, "tasks", taskId)
+  } catch (err) {
+    if (err instanceof BoardOperationError && (err.errorCode === "denied" || err.errorCode === "unavailable")) return null
+    throw err
+  }
+}
 
 function normalizeReassignedTarget(value: unknown): string | null | undefined {
   if (value === null) return null
@@ -182,9 +227,8 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
   if (denied) return (await replayedAgentReassignment(repo, agentToken, resolvedId, body, expectedActor, scope.boardId)) ?? denied
   let currentTaskForEdit: Awaited<ReturnType<typeof repo.findTaskForCommand>> = null
   if (body.due_date !== undefined || body.task_kind !== undefined) {
-    currentTaskForEdit = await repo.findTaskForCommand(resolvedId, "edit")
-    if (currentTaskForEdit?.routine_occurrence === 1 &&
-      ((body.due_date !== undefined && body.due_date !== currentTaskForEdit.due_date) ||
+    if (resolved.routine_occurrence === 1 &&
+      ((body.due_date !== undefined && body.due_date !== resolved.due_date) ||
         (body.task_kind !== undefined && body.task_kind !== "routine_instance"))) {
       return apiError("A generated Routine task keeps its original date and type. Complete its existing occurrence.", 409)
     }
@@ -225,26 +269,23 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
   const sanitized: Record<string, InValue> = {}
   if ("nfc_tag_id" in body) sanitized.nfc_tag_id = typeof body.nfc_tag_id === "string" ? body.nfc_tag_id.trim() : null
 
-  if (typeof body.title === "string" || typeof body.description === "string") {
-    const { sanitize } = await import("../../../lib/sanitize")
-    if (typeof body.title === "string") {
-      const t = sanitize(body.title.trim())
-      if (!t) {
-        return new Response(JSON.stringify({ error: "title cannot be empty" }), {
-          status: 400, headers: { "content-type": "application/json" },
-        })
-      }
-      if (t.length > 500) {
-        return new Response(JSON.stringify({ error: "title must be 500 characters or less" }), {
-          status: 400, headers: { "content-type": "application/json" },
-        })
-      }
-      sanitized.title = t
+  if (typeof body.title === "string") {
+    const t = stripHtml(body.title.trim()).trim()
+    if (!t) {
+      return new Response(JSON.stringify({ error: "title cannot be empty" }), {
+        status: 400, headers: { "content-type": "application/json" },
+      })
     }
-    if (typeof body.description === "string") {
-      if (body.description.length > 10000) return apiError("description must be 10000 characters or less", 400)
-      sanitized.description = sanitize(body.description)
+    if (t.length > 500) {
+      return new Response(JSON.stringify({ error: "title must be 500 characters or less" }), {
+        status: 400, headers: { "content-type": "application/json" },
+      })
     }
+    sanitized.title = t
+  }
+  if (typeof body.description === "string") {
+    if (body.description.length > 10000) return apiError("description must be 10000 characters or less", 400)
+    sanitized.description = body.description ? sanitizeMarkdownInput(body.description) : ""
   }
   if (typeof body.status === "string") {
     const st = body.status.trim().toLowerCase().replace(/[^a-z0-9_]/g, "")
@@ -255,11 +296,14 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     }
     sanitized.status = normalizeStatus(st)
   }
-  if (typeof body.priority === "number") {
+  if (body.priority !== undefined) {
+    if (typeof body.priority !== "number" || !Number.isFinite(body.priority)) {
+      return apiError("priority must be a finite number between 1 and 5", 400)
+    }
     sanitized.priority = Math.min(5, Math.max(1, Math.round(body.priority)))
   }
   if (body.due_date !== undefined) {
-    sanitized.due_date = typeof body.due_date === "string" ? body.due_date : null
+    sanitized.due_date = typeof body.due_date === "string" && body.due_date.trim() ? body.due_date.trim() : null
   }
   if (body.labels !== undefined) {
     const labels = taskLabelsJson(body.labels)
@@ -312,55 +356,43 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     const scheduleError = validateScheduleWindow(nextStart, nextEnd)
     if (scheduleError) return apiError(scheduleError, 400)
   }
-  if (typeof body.progress === "number") {
+  if (body.progress !== undefined) {
+    if (typeof body.progress !== "number" || !Number.isFinite(body.progress)) {
+      return apiError("progress must be a finite number", 400)
+    }
     sanitized.progress = Math.min(100, Math.max(0, Math.round(body.progress)))
   }
   if (body.color !== undefined) {
     sanitized.color = typeof body.color === "string" && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(body.color) ? body.color : null
   }
   if (body.is_favorite !== undefined) {
-    sanitized.is_favorite = body.is_favorite ? 1 : 0
+    return apiError("is_favorite has been retired; use is_promoted instead.", 400)
   }
   if (body.is_promoted !== undefined) {
     if (typeof body.is_promoted !== "boolean") return apiError("is_promoted must be a boolean", 400)
     sanitized.is_promoted = body.is_promoted ? 1 : 0
   }
-  if (typeof body.parent_id === "string" || body.parent_id === null) {
-    sanitized.parent_id = body.parent_id
+  if (body.parent_id !== undefined) {
+    if (body.parent_id !== null && typeof body.parent_id !== "string") {
+      return apiError("parent_id must be a task ID string or null", 400)
+    }
+    sanitized.parent_id = typeof body.parent_id === "string" && body.parent_id.trim() ? body.parent_id.trim() : null
   }
-  // Phase 1: Epic→Story→Task nesting validation on parent_id change
-  if (sanitized.parent_id !== undefined && sanitized.parent_id !== null) {
-    const parentType = await repo.getParentTaskType(String(sanitized.parent_id))
-    if (parentType === null) {
-      return new Response(JSON.stringify({ error: "Parent task not found" }), {
-        status: 400, headers: { "content-type": "application/json" },
-      })
+  if (body.time_tracked !== undefined) {
+    if (typeof body.time_tracked !== "number" || !Number.isFinite(body.time_tracked)) {
+      return apiError("time_tracked must be a finite number", 400)
     }
-    // Determine child type: use sanitized.task_type if changing, else fetch current
-    let childType = typeof sanitized.task_type === "string" ? sanitized.task_type : null
-    if (!childType) {
-      const current = await repo.findTaskForCommand(resolvedId, "edit")
-      childType = String(current?.task_type ?? "task")
-    }
-    if (parentType === "task" && (childType === "epic" || childType === "story")) {
-      return new Response(JSON.stringify({
-        error: `Cannot nest ${childType} under a task — tasks can only contain other tasks`,
-      }), { status: 400, headers: { "content-type": "application/json" } })
-    }
-    if (parentType === "story" && childType === "epic") {
-      return new Response(JSON.stringify({
-        error: "Cannot nest an epic under a story — stories can only contain tasks",
-      }), { status: 400, headers: { "content-type": "application/json" } })
-    }
-  }
-  if (typeof body.time_tracked === "number") {
     sanitized.time_tracked = Math.max(0, Math.round(body.time_tracked))
   }
-  if (typeof body.task_type === "string") {
-    const tt = body.task_type.trim().toLowerCase()
-    if (VALID_TASK_TYPES.includes(tt as TaskType)) {
-      sanitized.task_type = tt
+  if (body.task_type !== undefined) {
+    if (typeof body.task_type !== "string") {
+      return apiError("task_type must be epic, story, or task", 400)
     }
+    const tt = body.task_type.trim().toLowerCase()
+    if (!VALID_TASK_TYPES.includes(tt as TaskType)) {
+      return apiError("task_type must be epic, story, or task", 400)
+    }
+    sanitized.task_type = tt
   }
   if (body.task_kind !== undefined) {
     if (typeof body.task_kind !== "string") {
@@ -434,10 +466,16 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
   }
 
   // Phase 06: Eisenhower urgency/importance (0-5 integer)
-  if (typeof body.urgency === "number") {
+  if (body.urgency !== undefined) {
+    if (typeof body.urgency !== "number" || !Number.isFinite(body.urgency)) {
+      return apiError("urgency must be a finite number", 400)
+    }
     sanitized.urgency = Math.min(5, Math.max(0, Math.round(body.urgency)))
   }
-  if (typeof body.importance === "number") {
+  if (body.importance !== undefined) {
+    if (typeof body.importance !== "number" || !Number.isFinite(body.importance)) {
+      return apiError("importance must be a finite number", 400)
+    }
     sanitized.importance = Math.min(5, Math.max(0, Math.round(body.importance)))
   }
   if (body.eisenhower_override !== undefined) {
@@ -448,8 +486,10 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
   if (body.effort_minutes !== undefined) {
     if (body.effort_minutes === null) {
       sanitized.effort_minutes = null
-    } else if (typeof body.effort_minutes === "number") {
+    } else if (typeof body.effort_minutes === "number" && Number.isFinite(body.effort_minutes)) {
       sanitized.effort_minutes = Math.min(480, Math.max(1, Math.round(body.effort_minutes)))
+    } else {
+      return apiError("effort_minutes must be a finite number or null", 400)
     }
   }
   if (body.effort_type !== undefined) {
@@ -465,6 +505,67 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
   if (body.blocked_by !== undefined) {
     sanitized.blocked_by = typeof body.blocked_by === "string" && body.blocked_by.trim().length > 0
       ? body.blocked_by.trim().slice(0, 500) : null
+  }
+
+  const hasPillarUpdate = body.pillar_id !== undefined
+  let nextPillarId: string | null = null
+  if (hasPillarUpdate) {
+    if (body.pillar_id !== null && typeof body.pillar_id !== "string") {
+      return apiError("pillar_id must be a string or null", 400)
+    }
+    nextPillarId = typeof body.pillar_id === "string" && body.pillar_id.trim() ? body.pillar_id.trim() : null
+    if (nextPillarId && nextPillarId.length > 128) {
+      return apiError("pillar_id must be 128 characters or less", 400)
+    }
+  }
+  const hasPrincipleUpdate = body.principle_id !== undefined
+  let nextPrincipleId: string | null = null
+  if (hasPrincipleUpdate) {
+    if (body.principle_id !== null && typeof body.principle_id !== "string") {
+      return apiError("principle_id must be a string or null", 400)
+    }
+    nextPrincipleId = typeof body.principle_id === "string" && body.principle_id.trim() ? body.principle_id.trim() : null
+    if (nextPrincipleId && nextPrincipleId.length > 128) {
+      return apiError("principle_id must be 128 characters or less", 400)
+    }
+  }
+
+  if (hasPillarUpdate || hasPrincipleUpdate) {
+    try {
+      if (hasPillarUpdate && !scopePermits(scope, { resource: "pillar", action: "edit" })) {
+        return apiError("Pillar editing is not permitted", 403)
+      }
+      if (hasPillarUpdate && nextPillarId) {
+        const pillar = await getPillarById(scope, nextPillarId)
+        if (!pillar) return apiError("Invalid pillar_id", 400)
+      }
+      const existingRow = typeof sanitized.framework_payload === "string" ? null : await repo.findById(resolvedId)
+      const fp = typeof sanitized.framework_payload === "string"
+        ? parseFrameworkPayload(sanitized.framework_payload)
+        : parseFrameworkPayload(existingRow?.framework_payload)
+      const currentPillarId = await readOptionalTaskPillarId(scope, resolvedId)
+      const effectivePillarId = hasPillarUpdate ? nextPillarId : currentPillarId
+
+      if (hasPrincipleUpdate) {
+        if (nextPrincipleId) {
+          if (!effectivePillarId) return apiError("Select a pillar before setting a principle", 400)
+          const principles = await getPrinciplesForPillar(scope, effectivePillarId)
+          if (!principles.some(p => p.id === nextPrincipleId)) {
+            return apiError("Invalid principle_id", 400)
+          }
+          fp.principle_id = nextPrincipleId
+        } else {
+          delete fp.principle_id
+        }
+      } else if (hasPillarUpdate && (nextPillarId === null || nextPillarId !== currentPillarId)) {
+        delete fp.principle_id
+      }
+      sanitized.framework_payload = JSON.stringify(fp)
+    } catch (err) {
+      const scopeFailure = boardScopeErrorResponse(err)
+      if (scopeFailure) return scopeFailure
+      throw err
+    }
   }
 
   if (Object.keys(sanitized).length === 0) {
@@ -531,6 +632,12 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
       return (await replayedAgentReassignment(repo, agentToken, resolvedId, body, expectedActor, scope.boardId)) ??
         apiError("Agent can only update tasks assigned to it", 403)
     }
+    if (update.errorCode === "hierarchy_invalid") {
+      return Response.json({ error: update.message, detail: update.message, errorCode: "hierarchy_invalid" }, { status: 400 })
+    }
+    if (update.errorCode === "hierarchy_conflict") {
+      return Response.json({ error: update.message, detail: update.message, errorCode: "hierarchy_conflict" }, { status: 409 })
+    }
     if (update.errorCode === "conflict") {
       return taskVersionConflict(update.updatedAt, clientVersion!)
     }
@@ -569,13 +676,30 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
       : apiError("Task not found", 404)
   }
   const updatedRow = update.task
+  if (hasPillarUpdate) {
+    try {
+      const linked = await setEntityPillar(scope, "tasks", resolvedId, nextPillarId)
+      if (!linked && nextPillarId !== null) return apiError("Invalid pillar_id", 400)
+    } catch (err) {
+      const scopeFailure = boardScopeErrorResponse(err)
+      if (scopeFailure) return scopeFailure
+      throw err
+    }
+  }
   const newlyCompleted = completionIntent && !isDoneStatus(update.previousStatus ?? "")
 
   // The common writer commits recent activity and field history with the task mutation.
 
   const updTicketNum = updatedRow.ticket_number != null ? Number(updatedRow.ticket_number) : null
+  const finalPillarId = hasPillarUpdate ? nextPillarId : await readOptionalTaskPillarId(scope, resolvedId)
+  const finalFp = parseFrameworkPayload(updatedRow.framework_payload)
+  const finalPrincipleId = finalPillarId && typeof finalFp.principle_id === "string" && finalFp.principle_id
+    ? finalFp.principle_id
+    : null
   const taskPayload: Record<string, unknown> = {
     ...taskHttpProjection(updatedRow, scope.boardId),
+    pillar_id: finalPillarId,
+    principle_id: finalPrincipleId,
     is_promoted: Boolean(updatedRow.is_promoted),
     ticket_key: updatedRow.ticket_key ?? updatedRow.ticket_ref ?? formatTicketKey(updTicketNum),
   }
@@ -590,8 +714,9 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
   // Notification preference guard
   const notifPrefs = await repo.getNotificationPreferences()
 
-  // F4/F5: Load callHAService once for all notification helpers
-  const haServicesImport = import("@domains/ha")
+  // Lazy-load @domains/ha only when an enabled notification channel dispatches
+  let haServicesPromise: Promise<typeof import("@domains/ha")> | null = null
+  const getHAServices = () => (haServicesPromise ??= import("@domains/ha"))
 
   // Helper: dispatch notification to configured channels
   interface DispatchOpts { isUrgent?: boolean; badgeCount?: number }
@@ -608,7 +733,7 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
   // Helper: dismiss mobile notifications
   async function dismissMobileNotification(notifTag: string) {
     if (!notifPrefs.channels.mobile_push || notifPrefs.mobileTargets.length === 0) return
-    const { callHAService } = await haServicesImport
+    const { callHAService } = await getHAServices()
     for (const target of notifPrefs.mobileTargets) {
       const [domain, ...rest] = target.split(".")
       const service = rest.join(".")
@@ -701,7 +826,7 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     dismissMobileNotification(`meitheal_assigned_${resolvedId}`)
     dismissMobileNotification(`meitheal_due_${resolvedId}`)
     if (notifPrefs.channels.sidebar !== false) {
-      haServicesImport.then(({ callHAService }) => {
+      getHAServices().then(({ callHAService }) => {
         callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_urgent_${resolvedId}` }, undefined, { operationAllowed: () => notificationOperationAllowed(scope, "persistent_notification.dismiss", { resource: "task", action: "edit" }, resolvedId, undefined, updatedRow.task_version) }).catch(() => {})
         callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_assigned_${resolvedId}` }, undefined, { operationAllowed: () => notificationOperationAllowed(scope, "persistent_notification.dismiss", { resource: "task", action: "edit" }, resolvedId, undefined, updatedRow.task_version) }).catch(() => {})
         callHAService("persistent_notification", "dismiss", { notification_id: `meitheal_due_${resolvedId}` }, undefined, { operationAllowed: () => notificationOperationAllowed(scope, "persistent_notification.dismiss", { resource: "task", action: "edit" }, resolvedId, undefined, updatedRow.task_version) }).catch(() => {})
@@ -718,11 +843,10 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
         isFeatureEnabled("confetti"),
       ])
       if (gamificationEnabled) {
-        const { recordTaskCompletion, getXpForPriority, checkAchievements, getLevel } = await import("@domains/gamification")
+        const { completeTaskGamification, getXpForPriority, getLevel } = await import("@domains/gamification")
         const xp = getXpForPriority(Number(updatedRow.priority ?? 3))
-        const stats = await recordTaskCompletion(scope, xp)
-        if (stats) {
-          const achievements = await checkAchievements(scope, stats)
+        const { stats, achievements } = await completeTaskGamification(scope, xp)
+        if (stats && achievements) {
           taskPayload.gamification = { stats, xp, newAchievements: achievements.newlyUnlocked, level: getLevel(stats.totalPoints), confetti: confettiEnabled }
         }
       }

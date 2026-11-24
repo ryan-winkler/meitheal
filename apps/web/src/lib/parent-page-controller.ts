@@ -13,8 +13,9 @@ import {
   initUnifiedBarNewTaskButton,
   initUnifiedBarSearchLauncher,
   initUnifiedBarTabOverflow,
+  initUnifiedBarTabsKeyboard,
   initUnifiedBarTitleSwitcher,
-  setUnifiedBarSwitcherActiveState,
+  syncUnifiedBarSectionState,
 } from "@lib/unified-bar-controller"
 
 // ─── Types ─────────────────────────────────────────────────────────
@@ -56,15 +57,7 @@ export function initParentPageController(config: ParentPageControllerConfig): vo
   }
 
   function updateActiveTab(sectionId: string): void {
-    // Update UnifiedBar tabs
-    shell!.querySelectorAll<HTMLElement>("[data-unified-bar-section]")
-      .forEach((tab) => {
-        const isActive = tab.dataset.unifiedBarSection === sectionId
-        tab.classList.toggle("is-active", isActive)
-        tab.setAttribute("aria-current", isActive ? "location" : "false")
-      })
-
-    setUnifiedBarSwitcherActiveState(config.barId, sectionId)
+    syncUnifiedBarSectionState(config.barId, sectionId, { root: shell! })
   }
 
   function activateSection(sectionId: string, updateHash = true): void {
@@ -107,53 +100,10 @@ export function initParentPageController(config: ParentPageControllerConfig): vo
     }
   }
 
-  // ─── Tab Keyboard Navigation ───────────────────────────────────
-
-  function initTabKeyboardNav(): void {
-    const tabContainer = document.getElementById(`${config.barId}-tabs`)
-    if (!tabContainer) return
-
-    pageLifecycle.on(tabContainer, "keydown", (event) => {
-      const e = event as KeyboardEvent
-      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return
-
-      const visibleTabs = Array.from(
-        tabContainer.querySelectorAll<HTMLElement>("[data-unified-bar-tab]:not([data-overflow-hidden])"),
-      )
-      const currentIndex = visibleTabs.findIndex((t) => t === document.activeElement)
-      if (currentIndex === -1) return
-
-      e.preventDefault()
-      const direction = e.key === "ArrowRight" ? 1 : -1
-      const nextIndex = (currentIndex + direction + visibleTabs.length) % visibleTabs.length
-      const nextTab = visibleTabs[nextIndex]
-      if (nextTab) {
-        nextTab.focus()
-        nextTab.click()
-      }
-    })
-  }
-
-  // ─── Back/Forward Navigation ────────────────────────────────────
-
-  function handlePopState(event: PopStateEvent): void {
-    // If the popstate event belongs to a different shell, ignore it
-    if (event.state?.shell && event.state.shell !== config.shellId) return
-
-    const sectionFromState = event.state?.section
-    if (sectionFromState && config.sectionIds.includes(sectionFromState)) {
-      activateSection(sectionFromState, false)
-      return
-    }
-
-    // Fallback: read from hash
-    syncFromHash()
-  }
-
   // ─── Init ──────────────────────────────────────────────────────
 
   initSectionLinks()
-  initTabKeyboardNav()
+  initUnifiedBarTabsKeyboard(config.barId)
 
   initUnifiedBarTitleSwitcher({
     barId: config.barId,
@@ -168,7 +118,15 @@ export function initParentPageController(config: ParentPageControllerConfig): vo
     fallbackMessage: "Task modal not ready — try again",
   })
 
-  pageLifecycle.on(window, "popstate", handlePopState as EventListener)
+  pageLifecycle.on(window, "popstate", ((event: PopStateEvent) => {
+    if (event.state?.shell && event.state.shell !== config.shellId) return
+    const sectionFromState = event.state?.section
+    if (sectionFromState && config.sectionIds.includes(sectionFromState)) {
+      activateSection(sectionFromState, false)
+      return
+    }
+    syncFromHash()
+  }) as EventListener)
 
   // Initial activation
   syncFromHash()

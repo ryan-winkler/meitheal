@@ -24,6 +24,52 @@ export function setUnifiedBarSwitcherActiveState(
   })
 }
 
+export function syncUnifiedBarSectionState(
+  barId: string,
+  sectionId: string | undefined,
+  opts: { root?: ParentNode; checkHidden?: boolean; manageTabindex?: boolean } = {},
+): void {
+  const root = opts.root ?? document
+  root.querySelectorAll<HTMLElement>("[data-unified-bar-section]").forEach((link) => {
+    const active = (!opts.checkHidden || !link.hidden) && link.dataset.unifiedBarSection === sectionId
+    link.classList.toggle("is-active", active)
+    if (link.matches('[role="tab"]')) {
+      link.setAttribute("aria-selected", String(active))
+    } else if (!opts.manageTabindex || link.matches("a[href]")) {
+      link.setAttribute("aria-current", active ? "location" : "false")
+    }
+    if (opts.manageTabindex) link.setAttribute("tabindex", active ? "0" : "-1")
+  })
+
+  setUnifiedBarSwitcherActiveState(barId, sectionId)
+}
+
+export function initUnifiedBarTabsKeyboard(barId: string): void {
+  const tabContainer = document.getElementById(`${barId}-tabs`)
+  if (!tabContainer) return
+
+  pageLifecycle.on(tabContainer, "keydown", (event) => {
+    const keyboardEvent = event as KeyboardEvent
+    if (keyboardEvent.key !== "ArrowLeft" && keyboardEvent.key !== "ArrowRight") return
+
+    const visibleTabs = Array.from(
+      tabContainer.querySelectorAll<HTMLElement>(
+        "[data-unified-bar-tab]:not([hidden], [data-overflow-hidden])",
+      ),
+    )
+    const currentIndex = visibleTabs.findIndex((tab) => tab === document.activeElement)
+    if (currentIndex === -1) return
+
+    keyboardEvent.preventDefault()
+    const direction = keyboardEvent.key === "ArrowRight" ? 1 : -1
+    const nextTab = visibleTabs[(currentIndex + direction + visibleTabs.length) % visibleTabs.length]
+    if (!nextTab) return
+
+    nextTab.focus()
+    nextTab.click()
+  })
+}
+
 export function initUnifiedBarTitleSwitcher({
   barId,
   onSelect,

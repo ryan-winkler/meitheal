@@ -10,13 +10,13 @@ test.describe("Native navigation overflow", () => {
     const headers = { origin: new URL(baseURL!).origin }
     const previous = (await (await request.get("/api/settings")).json()).sidebar_config
     expect((await request.put("/api/settings", { headers, data: { key: "sidebar_config", value: {
+      customItems: [{ id: "overflow-reference", label: "Long reference destination ".repeat(12), href: "https://example.com/reference", icon: "link" }],
       sectionItems: {
-        workspace: ["dashboard", "today", "upcoming", "tasks", "activity", "mentionInbox"],
+        workspace: ["dashboard", "today", "upcoming", "tasks"],
         planning: ["progress", "planning"],
         boards: ["boards"],
         system: ["settings", "overflow-reference"],
       },
-      customItems: [{ id: "overflow-reference", label: "Long reference destination ".repeat(12), href: "https://example.com/reference", icon: "link" }],
     } } })).ok()).toBe(true)
     const errors: string[] = []
     page.on("pageerror", error => errors.push(error.message))
@@ -106,7 +106,7 @@ test.describe("Native navigation overflow", () => {
       await expect(boardsToggle).toHaveAttribute("aria-expanded", "false")
       await reference.focus()
 
-      await row.evaluate(el => { el.style.maxWidth = "110px" })
+      await row.evaluate(el => { el.style.maxWidth = "200px" })
       await expect(more).toHaveAttribute("open", "")
       await expect(reference).toBeFocused()
       await reference.press("Escape")

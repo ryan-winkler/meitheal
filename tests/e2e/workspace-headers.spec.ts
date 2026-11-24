@@ -178,7 +178,7 @@ test("compact workspace headers preserve ingress navigation and distinguish unav
       withFixtureDb(db => db.exec("ALTER TABLE tasks RENAME COLUMN fixture_due_date TO due_date"))
     }
 
-    withFixtureDb(db => db.prepare("UPDATE tasks SET is_favorite = 1 WHERE id = ?").run(ids.get("active")!))
+    withFixtureDb(db => db.prepare("UPDATE tasks SET is_promoted = 1 WHERE id = ?").run(ids.get("active")!))
     const focus = await context.newPage()
     await focus.goto(app + "/#dashboard-open")
     await expect(focus.locator("#my-open-list").getByText("Active header fixture")).toBeVisible()
@@ -194,7 +194,7 @@ test("compact workspace headers preserve ingress navigation and distinguish unav
     const favorites = focus.locator("#dashboard-favorites")
     await expect(favorites.getByText("Active header fixture")).toBeVisible()
     withFixtureDb(db => {
-      db.prepare("UPDATE tasks SET is_favorite = 0 WHERE id = ?").run(ids.get("active")!)
+      db.prepare("UPDATE tasks SET is_promoted = 0 WHERE id = ?").run(ids.get("active")!)
       db.exec("ALTER TABLE tasks RENAME COLUMN assigned_to TO fixture_assigned_to")
     })
     try {

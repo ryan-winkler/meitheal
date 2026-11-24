@@ -37,7 +37,13 @@ export function taskPlacementJoin(scope: BoardScope, task = "tasks", placement =
 }
 
 /** Projection takes explicit source-owned columns so duplicate decoded names cannot shadow placement. */
-export function taskProjection(scope: BoardScope, columns: readonly string[], task = "tasks", placement = "placement"): SqlFragment {
+export function taskProjection(
+  scope: BoardScope,
+  columns: readonly string[],
+  task = "tasks",
+  placement = "placement",
+  ticketPrefixExpr?: SqlFragment,
+): SqlFragment {
   requireBoardScope(scope)
   const legacy = storageBoardId(scope) === null
   const fields = columns.map(column => {
@@ -45,6 +51,10 @@ export function taskProjection(scope: BoardScope, columns: readonly string[], ta
     if (["area_id", "project_id", "goal_id"].includes(column)) {
       const owner = legacy ? alias(task) : alias(placement)
       return sourceSql(legacy && column === "area_id" ? `NULLIF(${owner}.${column}, '__meitheal_no_area__') AS ${column}` : `${owner}.${column} AS ${column}`)
+    }
+    if (legacy && column === "ticket_ref" && ticketPrefixExpr) {
+      const table = alias(task)
+      return sql`CASE WHEN ${sourceSql(`${table}.ticket_number`)} IS NULL THEN NULL ELSE (${ticketPrefixExpr}) || '-' || ${sourceSql(`${table}.ticket_number`)} END AS ticket_ref`
     }
     return sql`${taskField(scope, column, task)} AS ${sourceSql(column)}`
   })
@@ -64,6 +74,8 @@ export function taskField(scope: BoardScope, column: string, task = "tasks"): Sq
     return sourceSql(`${table}.${column}`)
   }
   if (column === "area_id") return sourceSql(`NULLIF(${table}.area_id, '__meitheal_no_area__')`)
-  if (column === "ticket_ref") return sql`(SELECT ticket_prefix FROM task_boards WHERE id = ${scope.boardId}) || '-' || ${sourceSql(`${table}.ticket_number`)}`
+  if (column === "ticket_ref") {
+    return sql`CASE WHEN ${sourceSql(`${table}.ticket_number`)} IS NULL THEN NULL ELSE (SELECT ticket_prefix FROM task_boards WHERE id = ${scope.boardId}) || '-' || ${sourceSql(`${table}.ticket_number`)} END`
+  }
   return sourceSql(`${table}.${column}`)
 }

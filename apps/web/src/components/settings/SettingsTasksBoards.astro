@@ -3,6 +3,7 @@ import SettingsHomeAssistantArea from "./SettingsHomeAssistantArea.astro"
 import { t } from "../../i18n/translations"
 import type { Locale } from "../../lib/locale"
 import { SETTINGS_SECTIONS } from "../../lib/settings-registry"
+import { VALID_CUSTOM_FIELD_TYPES } from "../../lib/custom-field-defs"
 import TaskDetailLayoutEditor from "../tasks/TaskDetailLayoutEditor.astro"
 import SettingsActionRow from "./SettingsActionRow.astro"
 import SettingsLabels from "./SettingsLabels.astro"
@@ -162,11 +163,9 @@ const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "t
             disabled
           />
           <select class="form-select" aria-label={t("settings.custom_field_sprint_type", locale)} disabled>
-            <option value="text" selected>{t("settings.custom_field_type_text", locale)}</option>
-            <option value="number">{t("settings.custom_field_type_number", locale)}</option>
-            <option value="select">{t("settings.custom_field_type_select", locale)}</option>
-            <option value="date">{t("settings.custom_field_type_date", locale)}</option>
-            <option value="checkbox">{t("settings.custom_field_type_checkbox", locale)}</option>
+            {[...VALID_CUSTOM_FIELD_TYPES].map((type) => (
+              <option value={type} selected={type === "text"}>{t(`settings.custom_field_type_${type}` as any, locale)}</option>
+            ))}
           </select>
           <span class="settings-text-xs text-muted">{t("settings.built_in", locale)}</span>
         </div>
@@ -202,7 +201,7 @@ const tasksBoardsSection = SETTINGS_SECTIONS.find((section) => section.id === "t
   </div>
   <div id="settings-task-detail-layout" class="mt-6">
     <SettingsPanelCard title={t("task_layout.layout", locale)} subtitle={t("task_layout.settings_subtitle", locale)}>
-      <TaskDetailLayoutEditor locale={locale} scope="server" />
+      <TaskDetailLayoutEditor locale={locale} allowServerSave={true} />
     </SettingsPanelCard>
   </div>
 </section>

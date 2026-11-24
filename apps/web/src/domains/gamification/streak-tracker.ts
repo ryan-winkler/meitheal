@@ -62,7 +62,7 @@ export interface DailyRecord {
 }
 
 type DailyProgress = { currentStreak: number; points: number }
-function statsDayKey(now: Date, offset = 0, timezone = "UTC"): string {
+export function statsDayKey(now: Date, offset = 0, timezone = "UTC"): string {
   if (!timezone || timezone === "UTC") {
     if (offset === 0) return now.toISOString().slice(0, 10)
     const day = new Date(now)
@@ -126,6 +126,18 @@ function parseStatsRows(rows: ReadonlyArray<Record<string, unknown>>): Gamificat
     totalCompleted: Number(row.total_completed ?? 0),
     totalPoints: Number(row.total_points ?? 0),
   }
+}
+
+export async function readStatsFromRunner(
+  runner: Pick<import("@libsql/client").Client, "execute">,
+  scope: BoardScope,
+  now = new Date(),
+  timezone = "UTC",
+): Promise<GamificationStats> {
+  const today = statsDayKey(now, 0, timezone)
+  const yesterday = statsDayKey(now, -1, timezone)
+  const agg = await runner.execute(statsQuery(scope, today, yesterday))
+  return parseStatsRows(agg.rows as ReadonlyArray<Record<string, unknown>>)
 }
 
 /**

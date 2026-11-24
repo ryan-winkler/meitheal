@@ -103,16 +103,6 @@
   @apply flex gap-3 items-center flex-wrap px-4 py-3;
 }
 
-.table-filter-bar .filter-toolbar--table {
-  min-width: 0;
-  flex-wrap: wrap !important;
-}
-
-.filter-toolbar--table .filter-toolbar__type-toggles {
-  min-width: 0;
-  flex-wrap: wrap;
-}
-
 .row-check {
   @apply w-4 h-4 rounded border-2 border-border bg-transparent cursor-pointer appearance-none transition-all;
 }

@@ -26,7 +26,7 @@ test("Table keeps Area group names and bulk choices in sync with accepted rows",
     const retiredId = await createArea("Retired room")
     for (const [area_id, suffix] of [[areaId, "named"], [retiredId, "retired"], ["default", "default"]]) {
       // The scores are finite individually, but their sum overflows when both rows match.
-      const framework_payload = suffix === "default" ? {} : { rice: { reach: 1e308, impact: 1, confidence: 1, effort: 1 } }
+      const framework_payload = suffix === "default" ? {} : { rice: { reach: 1e308, impact: 1, confidence: 100, confidence_unit: "percent", effort: 1 } }
       const response = await request.post("/api/tasks", {
         headers, data: { title: `${term} ${suffix}`, area_id, framework_payload: JSON.stringify(framework_payload) },
       })

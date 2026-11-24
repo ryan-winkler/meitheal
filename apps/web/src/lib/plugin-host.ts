@@ -38,6 +38,7 @@ interface ActivePluginInstance {
 }
 
 const instances = new Map<string, ActivePluginInstance>()
+const inspectorSections = new Map<string, { pluginId: string; pluginName: string; id: string; title: string; body: string }>()
 let hostAbort: AbortController | null = null
 let activePanelPluginId: string | null = null
 let activeIframeToken = ""
@@ -103,6 +104,8 @@ function buildRunnerSrcdoc(entryJs: string, token: string): string {
     completeTask:(id)=>rpc("tasks.complete",[id]),
     getBoards:()=>rpc("boards.list",[]),
     registerHeaderButton:(c)=>{if(c&&typeof c.id==="string"&&typeof c.onClick==="function")btns.set(c.id,c.onClick);return rpc("ui.registerHeaderButton",[{id:c?.id||"btn",label:c?.label||"Plugin",icon:c?.icon||"package"}]);},
+    openCreateTask:(o)=>rpc("ui.openCreateTask",[o||{}]),
+    registerTaskInspectorSection:(c)=>rpc("ui.registerTaskInspectorSection",[c||{}]),
     openSidePanel:()=>rpc("ui.openSidePanel",[]),
     closeSidePanel:()=>rpc("ui.closeSidePanel",[]),
     showToast:(o)=>rpc("ui.showToast",[o]),
@@ -210,7 +213,7 @@ async function handleRunnerRpc(inst: ActivePluginInstance, method: string, args:
       id: String(t.id ?? ""),
       title: String(t.title ?? ""),
       status: String(t.status ?? "pending"),
-      priority: String(t.priority ?? "medium"),
+      priority: typeof t.priority === "number" && Number.isFinite(t.priority) ? t.priority : 3,
       dueDate: typeof t.due_date === "string" ? t.due_date : typeof t.dueDate === "string" ? t.dueDate : null,
     }))
   }
@@ -252,7 +255,7 @@ async function handleRunnerRpc(inst: ActivePluginInstance, method: string, args:
     if (typeof patch.priority === "number" && Number.isFinite(patch.priority)) {
       body.priority = Math.min(5, Math.max(1, Math.round(patch.priority)))
     } else if (typeof patch.priority === "string") {
-      const mappedPriority = ({ urgent: 1, high: 2, normal: 3, medium: 3, low: 4, minimal: 5, none: 5 } as Record<string, number>)[patch.priority.trim().toLowerCase()]
+      const mappedPriority = ({ critical: 1, urgent: 1, high: 2, normal: 3, medium: 3, low: 4, minimal: 5, none: 5 } as Record<string, number>)[patch.priority.trim().toLowerCase()]
       if (mappedPriority !== undefined) body.priority = mappedPriority
     }
     if (patch.dueDate !== undefined) body.due_date = patch.dueDate
@@ -279,6 +282,39 @@ async function handleRunnerRpc(inst: ActivePluginInstance, method: string, args:
   if (method === "ui.openSidePanel") {
     requirePerm(inst, "ui:side-panel")
     openPluginSidePanel(inst.bundle.id)
+    return { ok: true }
+  }
+
+  if (method === "ui.openCreateTask") {
+    if (!inst.bundle.permissions.includes("ui:task-editor") && !inst.bundle.permissions.includes("ui:side-panel")) {
+      throw new Error("PERMISSION_DENIED: ui:task-editor")
+    }
+    const opts = (args[0] ?? {}) as Record<string, unknown>
+    const rawPriority = typeof opts.priority === "number" ? opts.priority : Number(opts.priority)
+    const openOpts: Record<string, unknown> = {
+      ...(typeof opts.title === "string" ? { title: opts.title.slice(0, 500) } : {}),
+      ...(typeof opts.description === "string" ? { description: opts.description.slice(0, 2000) } : {}),
+      ...(Number.isInteger(rawPriority) && rawPriority >= 1 && rawPriority <= 5 ? { priority: rawPriority } : {}),
+    }
+    window.openNewTaskModal?.("standard_action", openOpts)
+    return { ok: true }
+  }
+
+  if (method === "ui.registerTaskInspectorSection") {
+    if (!inst.bundle.permissions.includes("ui:task-editor") && !inst.bundle.permissions.includes("ui:side-panel")) {
+      throw new Error("PERMISSION_DENIED: ui:task-editor")
+    }
+    const cfg = (args[0] ?? {}) as Record<string, unknown>
+    const secId = String(cfg.id ?? "section").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40) || "section"
+    const key = `${inst.bundle.id}:${secId}`
+    inspectorSections.set(key, {
+      pluginId: inst.bundle.id,
+      pluginName: inst.bundle.name.slice(0, 40),
+      id: secId,
+      title: String(cfg.title ?? inst.bundle.name).slice(0, 80),
+      body: String(cfg.body ?? "").slice(0, 500),
+    })
+    renderPluginInspectorSections()
     return { ok: true }
   }
 
@@ -428,8 +464,35 @@ export function openPluginSidePanel(pluginId: string): void {
   closeBtn.focus()
 }
 
+function renderPluginInspectorSections(): void {
+  const container = document.getElementById("td-sections")
+  if (!container) return
+  container.querySelectorAll("[data-plugin-inspector-section]").forEach(el => el.remove())
+  for (const [key, item] of inspectorSections) {
+    const section = document.createElement("section")
+    section.className = "td-field td-plugin-section"
+    section.dataset.pluginInspectorSection = key
+    const header = document.createElement("div")
+    header.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px"
+    const title = document.createElement("strong")
+    title.style.fontSize = "12px"
+    title.textContent = item.title
+    const badge = document.createElement("span")
+    badge.className = "badge"
+    badge.textContent = `Plugin · ${item.pluginName}`
+    header.append(title, badge)
+    const body = document.createElement("p")
+    body.className = "text-xs text-text-secondary"
+    body.textContent = item.body
+    section.append(header, body)
+    container.append(section)
+  }
+}
+
 export function teardownPluginHost(): void {
   closePluginSidePanel()
+  inspectorSections.clear()
+  document.querySelectorAll("[data-plugin-inspector-section]").forEach(el => el.remove())
   for (const inst of instances.values()) {
     inst.runnerFrame?.remove()
   }

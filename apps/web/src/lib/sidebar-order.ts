@@ -25,6 +25,7 @@ import {
   serializeSidebarConfig,
   setItemVisible,
   SIDEBAR_PERSONAL_STORAGE_KEY,
+  TASK_VIEW_ITEM_KEYS,
   toggleItemVisibility,
   toggleSectionVisibility,
   unpinCustomItem,
@@ -32,8 +33,12 @@ import {
   type SidebarMenuConfig,
   type SidebarSectionId,
 } from "@domains/navigation/sidebar-menu"
+import { browserUuid } from "@lib/browser-uuid"
+import { mountInlineRename } from "@lib/inline-rename"
 import { createTablerSvgElement, type TablerIconName } from "@lib/tabler-svg"
 import { safeIngressHref } from "@lib/ingress-navigation"
+import { readTaskNavPrefs, writeTaskNavPrefs } from "@lib/task-nav-types"
+import { parseTaskView, type TaskView } from "@lib/task-view-route"
 import { showToast } from "@lib/toast"
 
 export const SIDEBAR_ORDER_STORAGE_KEY = "meitheal-sidebar-order"
@@ -57,14 +62,12 @@ function isExternalHref(href: string): boolean {
   return /^https?:\/\//i.test(href)
 }
 
-function isSafeCustomHref(href: string): boolean {
+export function isSafeCustomHref(href: string): boolean {
   return /^(\/(?!\/)|https?:\/\/)/i.test(href.trim())
 }
 
 function generateCustomLinkId(): string {
-  const raw = crypto.randomUUID?.()
-    ?? Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, "0")).join("")
-  return `custom-${raw}`
+  return `custom-${browserUuid()}`
 }
 
 function buildActionBtn(
@@ -224,9 +227,162 @@ export function applySidebarOrder(root: HTMLElement): void {
   })
 }
 
+export interface SidebarHtmlDragReorderOptions {
+  isEnabled?: () => boolean
+  sectionRowAttr: string
+  sectionGripAttr: string
+  itemRowAttr: string
+  itemGripAttr: string
+  dropAttr: string
+  draggingAttr?: string
+  onSectionDrop: (dragId: string, targetId: string, after: boolean) => void
+  onItemDrop: (dragId: string, targetKey: string, after: boolean) => void
+  onItemIntoSection: (dragId: string, sectionId: string) => void
+}
+
+export function bindSidebarHtmlDragReorder(
+  root: HTMLElement,
+  signal: AbortSignal,
+  opts: SidebarHtmlDragReorderOptions,
+): () => void {
+  let dragKind: "section" | "item" | null = null
+  let dragId: string | null = null
+  let dropTarget: HTMLElement | null = null
+
+  function clearDrop() {
+    dropTarget?.removeAttribute(opts.dropAttr)
+    dropTarget = null
+  }
+
+  function stopDrag() {
+    if (dragId && opts.draggingAttr) {
+      root.querySelectorAll<HTMLElement>(`[${opts.draggingAttr}]`).forEach(el => {
+        el.removeAttribute(opts.draggingAttr!)
+      })
+    }
+    dragKind = null
+    dragId = null
+    clearDrop()
+  }
+
+  root.addEventListener("dragstart", event => {
+    if ((opts.isEnabled && !opts.isEnabled()) || !event.dataTransfer) return
+    const target = event.target instanceof Element ? event.target : null
+    if (!target) return
+
+    const itemGrip = target.closest<HTMLElement>(`[${opts.itemGripAttr}]`)
+    const itemId = itemGrip
+      ? itemGrip.getAttribute(opts.itemGripAttr) || itemGrip.closest<HTMLElement>(`[${opts.itemRowAttr}]`)?.getAttribute(opts.itemRowAttr) || ""
+      : ""
+    if (itemId) {
+      dragKind = "item"
+      dragId = itemId
+      if (opts.draggingAttr) {
+        root.querySelector<HTMLElement>(`[${opts.itemRowAttr}="${CSS.escape(dragId)}"]`)?.setAttribute(opts.draggingAttr, "true")
+      }
+      event.dataTransfer.effectAllowed = "move"
+      event.dataTransfer.setData("text/plain", `item:${dragId}`)
+      return
+    }
+
+    const secGrip = target.closest<HTMLElement>(`[${opts.sectionGripAttr}]`)
+    const secId = secGrip
+      ? secGrip.getAttribute(opts.sectionGripAttr) || secGrip.closest<HTMLElement>(`[${opts.sectionRowAttr}]`)?.getAttribute(opts.sectionRowAttr) || ""
+      : ""
+    if (secId) {
+      dragKind = "section"
+      dragId = secId
+      if (opts.draggingAttr) {
+        root.querySelector<HTMLElement>(`[${opts.sectionRowAttr}="${CSS.escape(dragId)}"]`)?.setAttribute(opts.draggingAttr, "true")
+      }
+      event.dataTransfer.effectAllowed = "move"
+      event.dataTransfer.setData("text/plain", `section:${dragId}`)
+    }
+  }, { signal })
+
+  root.addEventListener("dragover", event => {
+    if ((opts.isEnabled && !opts.isEnabled()) || !dragKind || !dragId) return
+    const target = event.target instanceof Element ? event.target : null
+    clearDrop()
+    if (!target) return
+
+    if (dragKind === "section") {
+      const secRow = target.closest<HTMLElement>(`[${opts.sectionRowAttr}]`)
+      const targetId = secRow?.getAttribute(opts.sectionRowAttr)
+      if (!secRow || !targetId || targetId === dragId) return
+      event.preventDefault()
+      const bounds = secRow.getBoundingClientRect()
+      dropTarget = secRow
+      secRow.setAttribute(opts.dropAttr, event.clientY > bounds.top + bounds.height / 2 ? "after" : "before")
+      return
+    }
+
+    const itemRow = target.closest<HTMLElement>(`[${opts.itemRowAttr}]`)
+    const targetKey = itemRow?.getAttribute(opts.itemRowAttr)
+    if (itemRow && targetKey && targetKey !== dragId) {
+      event.preventDefault()
+      const bounds = itemRow.getBoundingClientRect()
+      dropTarget = itemRow
+      itemRow.setAttribute(opts.dropAttr, event.clientY > bounds.top + bounds.height / 2 ? "after" : "before")
+      return
+    }
+
+    const secRow = target.closest<HTMLElement>(`[${opts.sectionRowAttr}]`)
+    if (secRow) {
+      event.preventDefault()
+      dropTarget = secRow
+      secRow.setAttribute(opts.dropAttr, "into")
+    }
+  }, { signal })
+
+  root.addEventListener("drop", event => {
+    if ((opts.isEnabled && !opts.isEnabled()) || !dragKind || !dragId) return
+    const target = event.target instanceof Element ? event.target : null
+    const kind = dragKind
+    const id = dragId
+    stopDrag()
+    if (!target) return
+
+    if (kind === "section") {
+      const secRow = target.closest<HTMLElement>(`[${opts.sectionRowAttr}]`)
+      const targetId = secRow?.getAttribute(opts.sectionRowAttr)
+      if (secRow && targetId && targetId !== id) {
+        event.preventDefault()
+        const bounds = secRow.getBoundingClientRect()
+        opts.onSectionDrop(id, targetId, event.clientY > bounds.top + bounds.height / 2)
+      }
+      return
+    }
+
+    const itemRow = target.closest<HTMLElement>(`[${opts.itemRowAttr}]`)
+    const targetKey = itemRow?.getAttribute(opts.itemRowAttr)
+    if (itemRow && targetKey && targetKey !== id) {
+      event.preventDefault()
+      const bounds = itemRow.getBoundingClientRect()
+      opts.onItemDrop(id, targetKey, event.clientY > bounds.top + bounds.height / 2)
+      return
+    }
+
+    const secRow = target.closest<HTMLElement>(`[${opts.sectionRowAttr}]`)
+    const targetSec = secRow?.getAttribute(opts.sectionRowAttr)
+    if (targetSec) {
+      event.preventDefault()
+      opts.onItemIntoSection(id, targetSec)
+    }
+  }, { signal })
+
+  root.addEventListener("dragend", stopDrag, { signal })
+  root.addEventListener("dragleave", event => {
+    if (!root.contains(event.relatedTarget as Node | null)) clearDrop()
+  }, { signal })
+
+  return stopDrag
+}
+
 export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): void {
   const root = sidebar.querySelector<HTMLElement>('[data-nav-overflow="sidebar"]')
   const leaveBar = sidebar.querySelector<HTMLElement>("[data-sidebar-leave-edit]")
+  const movesBar = sidebar.querySelector<HTMLElement>("[data-sidebar-edit-moves]")
   const leaveBtn = sidebar.querySelector<HTMLButtonElement>("[data-sidebar-leave-edit-btn]")
   const resetPersonalBtn = sidebar.querySelector<HTMLButtonElement>("[data-sidebar-reset-personal]")
   const addSectionTrigger = sidebar.querySelector<HTMLButtonElement>("[data-sidebar-add-section-trigger]")
@@ -267,9 +423,7 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     } catch { /* ignore invalid legacy prefs */ }
   }
   let editing = false
-  let dragKind: "section" | "item" | null = null
-  let dragId: string | null = null
-  let dropTarget: HTMLElement | null = null
+  let selectedTarget: { kind: "item" | "section"; id: string } | null = null
 
   function announce(message: string) {
     if (!status) return
@@ -279,21 +433,35 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     })
   }
 
-  function clearDropIndicator() {
-    dropTarget?.removeAttribute("data-sidebar-drop")
-    dropTarget = null
-  }
-
-  function stopDrag() {
-    if (dragId) {
-      root?.querySelectorAll<HTMLElement>("[data-sidebar-dragging]").forEach(el => {
-        el.removeAttribute("data-sidebar-dragging")
-      })
-    }
-    dragKind = null
-    dragId = null
-    clearDropIndicator()
-  }
+  const stopDrag = bindSidebarHtmlDragReorder(root, signal, {
+    isEnabled: () => editing,
+    sectionRowAttr: "data-sidebar-section",
+    sectionGripAttr: "data-sidebar-section-drag",
+    itemRowAttr: "data-sidebar-item-key",
+    itemGripAttr: "data-sidebar-item-drag",
+    dropAttr: "data-sidebar-drop",
+    draggingAttr: "data-sidebar-dragging",
+    onSectionDrop: (dragId, targetId, after) => {
+      if (!isSidebarSectionId(dragId) || !isSidebarSectionId(targetId)) return
+      commitPersonalConfig(
+        reorderSections(config, dragId, targetId, after),
+        `Reordered ${config.sectionLabels[dragId] || defaultSectionLabel(dragId)} section.`,
+      )
+    },
+    onItemDrop: (dragId, targetKey, after) => {
+      commitPersonalConfig(
+        reorderItem(config, dragId, targetKey, after),
+        `Moved ${config.itemLabels[dragId] || DEFAULT_SIDEBAR_ITEM_LABELS[dragId] || dragId}.`,
+      )
+    },
+    onItemIntoSection: (dragId, sectionId) => {
+      if (!isSidebarSectionId(sectionId)) return
+      commitPersonalConfig(
+        moveItemToSection(config, dragId, sectionId),
+        `Moved item into ${config.sectionLabels[sectionId] || defaultSectionLabel(sectionId)}.`,
+      )
+    },
+  })
 
   function syncPersonalResetButton() {
     if (resetPersonalBtn) resetPersonalBtn.hidden = !hasPersonalSidebarConfig()
@@ -379,6 +547,10 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
   function syncDomFromConfig() {
     const sectionsContainer = root!.querySelector<HTMLElement>("[data-sidebar-sections]")
     if (!sectionsContainer) return
+    const overflowMenu = root!.querySelector<HTMLElement>("[data-nav-overflow-menu]")
+    const previouslyFocused = document.activeElement instanceof HTMLElement && root!.contains(document.activeElement)
+      ? document.activeElement
+      : null
 
     const activeSectionSet = new Set(config.sectionOrder)
     const sectionEls = new Map<SidebarSectionId, HTMLElement>()
@@ -462,7 +634,7 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
 
         const itemHidden = isItemHidden(config, key)
         itemEl.toggleAttribute("data-sidebar-item-hidden", itemHidden)
-        const viewId = itemEl.dataset.taskViewItem
+        const viewId = key.startsWith("view-") ? parseTaskView(key.slice(5)) : null
         if (viewId) {
           if (itemHidden) itemEl.removeAttribute("data-task-view-pinned-item")
           else itemEl.setAttribute("data-task-view-pinned-item", viewId)
@@ -481,6 +653,11 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
           link.dataset.tooltip = itemLabel
           link.setAttribute("aria-label", `${itemLabel}${link.classList.contains("nav-link--external") ? " (opens in new tab)" : ""}`)
         }
+        const unpinBtn = viewId ? itemEl.querySelector<HTMLButtonElement>("[data-task-view-unpin]") : null
+        if (unpinBtn) {
+          unpinBtn.setAttribute("aria-label", `Unpin ${itemLabel} from navigation`)
+          unpinBtn.title = `Unpin ${itemLabel}`
+        }
 
         const itemToggle = itemEl.querySelector<HTMLButtonElement>(`[data-sidebar-item-toggle="${CSS.escape(key)}"]`)
         if (itemToggle) {
@@ -488,14 +665,6 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
           const actionLabel = itemHidden ? `Show ${itemLabel}` : `Hide ${itemLabel}`
           itemToggle.setAttribute("aria-label", actionLabel)
           itemToggle.title = actionLabel
-        }
-        if (viewId) {
-          const rowUnpin = itemEl.querySelector<HTMLButtonElement>(`[data-task-view-pin="${CSS.escape(viewId)}"]`)
-          if (rowUnpin) {
-            rowUnpin.setAttribute("aria-pressed", String(!itemHidden))
-            rowUnpin.setAttribute("aria-label", `Unpin ${itemLabel} from navigation`)
-            rowUnpin.title = `Unpin ${itemLabel}`
-          }
         }
       }
 
@@ -512,6 +681,9 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     syncAddLinkSectionOptions()
     syncPersonalResetButton()
 
+    if (previouslyFocused && previouslyFocused.isConnected && document.activeElement !== previouslyFocused) {
+      previouslyFocused.focus({ preventScroll: true })
+    }
     sidebar.dataset.sidebarConfig = JSON.stringify(serializeSidebarConfig(config))
     root!.dispatchEvent(new Event(sidebarOrderChanged))
   }
@@ -528,7 +700,7 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     }
   }
 
-  function setEditing(active: boolean, openAddLink = false) {
+  function setEditing(active: boolean, openAddLink = false, focusFirstHandle = false) {
     editing = active
     sidebar.toggleAttribute("data-sidebar-editing", active)
     sidebar.toggleAttribute("data-sidebar-reordering", active)
@@ -538,6 +710,8 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     }
     if (leaveBar) leaveBar.hidden = !active
     if (!active) {
+      selectedTarget = null
+      if (movesBar) movesBar.hidden = true
       setAddSectionOpen(false)
       setAddLinkOpen(false)
     }
@@ -547,6 +721,9 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     if (active) {
       syncAddLinkSectionOptions()
       if (openAddLink) setAddLinkOpen(true)
+      else if (focusFirstHandle) {
+        root!.querySelector<HTMLElement>("[data-sidebar-item-key]:not([data-sidebar-item-hidden]):not([hidden]) [data-sidebar-item-drag]")?.focus({ preventScroll: true })
+      }
       announce("Per-user navigation edit mode enabled.")
     } else {
       root!.querySelectorAll<HTMLInputElement>(".sidebar-inline-rename-input").forEach(input => input.blur())
@@ -564,61 +741,62 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
   ) {
     if (host.hasAttribute("data-inline-editing")) return
     host.setAttribute("data-inline-editing", "true")
-
-    const input = document.createElement("input")
-    input.type = "text"
-    input.className = "sidebar-inline-rename-input"
-    input.value = currentValue
-    input.placeholder = defaultValue
-    input.maxLength = 64
-    input.setAttribute("aria-label", `Rename ${defaultValue}`)
-
-    labelEl.hidden = true
-    labelEl.after(input)
-    input.focus()
-    input.select()
-
-    let finished = false
-    const finish = (commit: boolean) => {
-      if (finished) return
-      finished = true
-      const raw = input.value
-      input.remove()
-      labelEl.hidden = false
-      host.removeAttribute("data-inline-editing")
-      if (commit) {
-        const clean = sanitizeLabel(raw)
-        onCommit(clean || defaultValue)
-      }
-    }
-
-    input.addEventListener("keydown", event => {
-      event.stopPropagation()
-      if (event.key === "Enter") {
-        event.preventDefault()
-        finish(true)
-      } else if (event.key === "Escape") {
-        event.preventDefault()
-        finish(false)
-      }
-    }, { signal })
-
-    input.addEventListener("blur", () => finish(true), { signal })
-    input.addEventListener("click", event => event.stopPropagation(), { signal })
+    mountInlineRename({
+      labelEl,
+      value: currentValue,
+      placeholder: defaultValue,
+      maxLength: 64,
+      className: "sidebar-inline-rename-input",
+      signal,
+      stopClick: true,
+      hideLabel: true,
+      onCleanup: () => host.removeAttribute("data-inline-editing"),
+      onCommit: raw => onCommit(sanitizeLabel(raw) || defaultValue),
+    })
   }
 
-  // Hydrate personal override or legacy pinned task views on page load if present
-  if (personalInitial || hydratedLegacyTaskPins) {
+  function hydrateLegacyPinnedViews(base: SidebarMenuConfig): { next: SidebarMenuConfig; changed: boolean } {
+    const prefs = readTaskNavPrefs()
+    if (!prefs.pinnedViews.length) return { next: base, changed: false }
+    let next = base
+    let changed = false
+    for (const view of prefs.pinnedViews) {
+      const key = `view-${view}`
+      if (isItemHidden(next, key)) {
+        next = setItemVisible(next, key, true)
+        changed = true
+      }
+    }
+    return { next, changed }
+  }
+
+  function syncLegacyPinnedViews(cfg: SidebarMenuConfig): void {
+    const pinnedViews: TaskView[] = TASK_VIEW_ITEM_KEYS
+      .filter(k => !isItemHidden(cfg, k))
+      .map(k => k.slice(5) as TaskView)
+    const current = readTaskNavPrefs()
+    if (
+      current.pinnedViews.length === pinnedViews.length
+      && pinnedViews.every((v, i) => current.pinnedViews[i] === v)
+    ) return
+    writeTaskNavPrefs({ ...current, pinnedViews })
+  }
+
+  // Hydrate personal override or legacy meitheal-task-nav-prefs.pinnedViews on page load
+  if (personalInitial) {
     syncDomFromConfig()
   } else {
-    syncPersonalResetButton()
+    const hydrated = hydrateLegacyPinnedViews(config)
+    config = hydrated.next
+    if (hydratedLegacyTaskPins || hydrated.changed) syncDomFromConfig()
+    else syncPersonalResetButton()
   }
 
   // External triggers: Global utility "Edit menu", Settings "Customize my menu"
   window.addEventListener(SIDEBAR_EDIT_MODE_EVENT, event => {
     const detail = (event as CustomEvent<{ active?: boolean; openAddLink?: boolean }>).detail
     const next = typeof detail?.active === "boolean" ? detail.active : !editing
-    setEditing(next, Boolean(detail?.openAddLink))
+    setEditing(next, Boolean(detail?.openAddLink), next)
   }, { signal })
 
   // Sync when Settings updates server default or clears personal override
@@ -654,30 +832,15 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
   }, { signal })
 
   // Independently pin / unpin nested Task Views
-  root.addEventListener("click", event => {
-    if (editing) return
-    const target = event.target instanceof Element ? event.target : null
-    const pin = target?.closest<HTMLButtonElement>("[data-task-view-item] [data-task-view-pin]")
-    const view = pin?.dataset.taskViewPin
-    if (!view) return
-    event.preventDefault()
-    event.stopPropagation()
-    const submenu = root.querySelector<HTMLElement>("#tasks-nav-submenu")
-    const toggle = root.querySelector<HTMLButtonElement>("#tasks-submenu-toggle")
-    window.dispatchEvent(new CustomEvent(SIDEBAR_TOGGLE_VIEW_PIN_EVENT, { detail: { view } }))
-    if (submenu?.hidden && toggle) toggle.focus()
-  }, { signal })
-
   window.addEventListener(SIDEBAR_TOGGLE_VIEW_PIN_EVENT, event => {
     const view = (event as CustomEvent<{ view?: string }>).detail?.view
     if (!view) return
     const key = `view-${view}`
-    const wasRowPin = Boolean(document.activeElement?.closest("[data-task-view-item]"))
     const next = toggleItemVisibility(config, key)
     const nowPinned = !isItemHidden(next, key)
     const label = next.itemLabels[key] || DEFAULT_SIDEBAR_ITEM_LABELS[key] || view
     commitPersonalConfig(next, nowPinned ? `Pinned ${label} to navigation.` : `Unpinned ${label} from navigation.`)
-    if (!nowPinned && wasRowPin) root!.querySelector<HTMLButtonElement>("#tasks-submenu-toggle")?.focus()
+    syncLegacyPinnedViews(next)
     showToast(nowPinned ? `Pinned ${label} to navigation` : `Unpinned ${label} from navigation`, "success")
   }, { signal })
 
@@ -805,97 +968,98 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     setEditing(false)
   }, { signal })
 
-  // Edit mode actions (rename, hide/show, delete section, remove link)
-  root.addEventListener("click", event => {
+  const selectReorderTarget = (event: Event) => {
     if (!editing) return
     const target = event.target instanceof Element ? event.target : null
+    const itemGrip = target?.closest<HTMLElement>("[data-sidebar-item-drag]")
+    if (itemGrip?.dataset.sidebarItemDrag) {
+      selectedTarget = { kind: "item", id: itemGrip.dataset.sidebarItemDrag }
+      if (movesBar) movesBar.hidden = false
+      return
+    }
+    const sectionGrip = target?.closest<HTMLElement>("[data-sidebar-section-drag]")
+    if (sectionGrip?.dataset.sidebarSectionDrag) {
+      selectedTarget = { kind: "section", id: sectionGrip.dataset.sidebarSectionDrag }
+      if (movesBar) movesBar.hidden = false
+    }
+  }
+  root.addEventListener("focusin", selectReorderTarget, { signal })
+
+  movesBar?.addEventListener("click", event => {
+    if (!editing || !selectedTarget) return
+    const btn = (event.target instanceof Element ? event.target : null)?.closest<HTMLButtonElement>("[data-sidebar-step]")
+    const step = Number(btn?.dataset.sidebarStep)
+    if (step !== -1 && step !== 1) return
+    if (selectedTarget.kind === "section") {
+      if (!isSidebarSectionId(selectedTarget.id)) return
+      const next = moveSectionByStep(config, selectedTarget.id, step)
+      if (next !== config) {
+        commitPersonalConfig(next, `Moved ${config.sectionLabels[selectedTarget.id] || defaultSectionLabel(selectedTarget.id)} section.`)
+      }
+      return
+    }
+    const next = moveItemByStep(config, selectedTarget.id, step)
+    if (next !== config) {
+      const label = config.itemLabels[selectedTarget.id] || DEFAULT_SIDEBAR_ITEM_LABELS[selectedTarget.id] || selectedTarget.id
+      commitPersonalConfig(next, `Moved ${label}.`)
+    }
+  }, { signal })
+
+  // Edit mode actions (rename, hide/show, delete section, remove link)
+  const secLabel = (cfg: typeof config, id: SidebarSectionId) => cfg.sectionLabels[id] || defaultSectionLabel(id)
+  const itemLabel = (cfg: typeof config, key: string) =>
+    cfg.itemLabels[key] || cfg.customItems.find(c => c.id === key)?.label || DEFAULT_SIDEBAR_ITEM_LABELS[key] || key
+  root.addEventListener("click", event => {
+    if (!editing) return
+    selectReorderTarget(event)
+    const target = event.target instanceof Element ? event.target : null
     if (!target) return
-
-    const sectionRenameBtn = target.closest<HTMLButtonElement>("[data-sidebar-section-rename]")
-    if (sectionRenameBtn) {
+    const actionBtn = target.closest<HTMLButtonElement>(
+      "[data-sidebar-section-rename],[data-sidebar-section-toggle],[data-sidebar-section-delete],[data-sidebar-item-rename],[data-sidebar-item-toggle],[data-sidebar-item-remove]",
+    )
+    if (actionBtn) {
       event.preventDefault()
       event.stopPropagation()
-      const sectionId = sectionRenameBtn.dataset.sidebarSectionRename
-      if (!sectionId || !isSidebarSectionId(sectionId)) return
-      const sectionEl = root.querySelector<HTMLElement>(`[data-sidebar-section="${CSS.escape(sectionId)}"]`)
-      const labelEl = sectionEl?.querySelector<HTMLElement>(`[data-sidebar-section-label="${CSS.escape(sectionId)}"]`)
-      if (!sectionEl || !labelEl) return
-      const defaultVal = labelEl.dataset.defaultLabel || defaultSectionLabel(sectionId)
-      const currentVal = config.sectionLabels[sectionId] || defaultVal
-      startInlineRename(sectionEl, labelEl, currentVal, defaultVal, nextLabel => {
-        commitPersonalConfig(renameSection(config, sectionId, nextLabel), `Renamed section to ${nextLabel}.`)
-      })
-      return
-    }
-
-    const sectionToggleBtn = target.closest<HTMLButtonElement>("[data-sidebar-section-toggle]")
-    if (sectionToggleBtn) {
-      event.preventDefault()
-      event.stopPropagation()
-      const sectionId = sectionToggleBtn.dataset.sidebarSectionToggle
-      if (!sectionId || !isSidebarSectionId(sectionId)) return
-      const next = toggleSectionVisibility(config, sectionId)
-      const nowHidden = isSectionHidden(next, sectionId)
-      const label = next.sectionLabels[sectionId] || defaultSectionLabel(sectionId)
-      commitPersonalConfig(next, nowHidden ? `Hidden ${label} section.` : `Shown ${label} section.`)
-      return
-    }
-
-    const sectionDeleteBtn = target.closest<HTMLButtonElement>("[data-sidebar-section-delete]")
-    if (sectionDeleteBtn) {
-      event.preventDefault()
-      event.stopPropagation()
-      const sectionId = sectionDeleteBtn.dataset.sidebarSectionDelete
-      if (!sectionId || isBuiltinSidebarSectionId(sectionId)) return
-      const label = config.sectionLabels[sectionId] || defaultSectionLabel(sectionId)
-      const next = deleteSection(config, sectionId)
-      commitPersonalConfig(next, `Deleted ${label} section.`)
-      showToast(`Deleted "${label}" section`, "success")
-      return
-    }
-
-    const itemRenameBtn = target.closest<HTMLButtonElement>("[data-sidebar-item-rename]")
-    if (itemRenameBtn) {
-      event.preventDefault()
-      event.stopPropagation()
-      const key = itemRenameBtn.dataset.sidebarItemRename
-      if (!key) return
-      const itemEl = root.querySelector<HTMLElement>(`[data-sidebar-item-key="${CSS.escape(key)}"]`)
-      const labelEl = itemEl?.querySelector<HTMLElement>(`[data-sidebar-item-label="${CSS.escape(key)}"]`)
-      if (!itemEl || !labelEl) return
-      const defaultVal = labelEl.dataset.defaultLabel || DEFAULT_SIDEBAR_ITEM_LABELS[key] || key
-      const currentVal = config.itemLabels[key] || defaultVal
-      startInlineRename(itemEl, labelEl, currentVal, defaultVal, nextLabel => {
-        commitPersonalConfig(renameItem(config, key, nextLabel), `Renamed item to ${nextLabel}.`)
-      })
-      return
-    }
-
-    const itemToggleBtn = target.closest<HTMLButtonElement>("[data-sidebar-item-toggle]")
-    if (itemToggleBtn) {
-      event.preventDefault()
-      event.stopPropagation()
-      const key = itemToggleBtn.dataset.sidebarItemToggle
-      if (!key) return
-      const next = toggleItemVisibility(config, key)
-      const nowHidden = isItemHidden(next, key)
-      const customEntry = next.customItems.find(c => c.id === key)
-      const label = next.itemLabels[key] || customEntry?.label || DEFAULT_SIDEBAR_ITEM_LABELS[key] || key
-      commitPersonalConfig(next, nowHidden ? `Hidden ${label}.` : `Shown ${label}.`)
-      return
-    }
-
-    const itemRemoveBtn = target.closest<HTMLButtonElement>("[data-sidebar-item-remove]")
-    if (itemRemoveBtn) {
-      event.preventDefault()
-      event.stopPropagation()
-      const key = itemRemoveBtn.dataset.sidebarItemRemove
-      if (!key) return
-      const customEntry = config.customItems.find(c => c.id === key)
-      const label = config.itemLabels[key] || customEntry?.label || key
-      const next = unpinCustomItem(config, key)
-      commitPersonalConfig(next, `Removed ${label} from sidebar.`)
-      showToast(`Removed "${label}" from navigation`, "success")
+      const d = actionBtn.dataset
+      if (d.sidebarSectionRename && isSidebarSectionId(d.sidebarSectionRename)) {
+        const id = d.sidebarSectionRename
+        const secEl = root.querySelector<HTMLElement>(`[data-sidebar-section="${CSS.escape(id)}"]`)
+        const lblEl = secEl?.querySelector<HTMLElement>(`[data-sidebar-section-label="${CSS.escape(id)}"]`)
+        if (secEl && lblEl) {
+          const def = lblEl.dataset.defaultLabel || defaultSectionLabel(id)
+          startInlineRename(secEl, lblEl, config.sectionLabels[id] || def, def, nextLabel => {
+            commitPersonalConfig(renameSection(config, id, nextLabel), `Renamed section to ${nextLabel}.`)
+          })
+        }
+      } else if (d.sidebarSectionToggle && isSidebarSectionId(d.sidebarSectionToggle)) {
+        const next = toggleSectionVisibility(config, d.sidebarSectionToggle)
+        const label = secLabel(next, d.sidebarSectionToggle)
+        commitPersonalConfig(next, isSectionHidden(next, d.sidebarSectionToggle) ? `Hidden ${label} section.` : `Shown ${label} section.`)
+      } else if (d.sidebarSectionDelete && !isBuiltinSidebarSectionId(d.sidebarSectionDelete)) {
+        const label = secLabel(config, d.sidebarSectionDelete)
+        commitPersonalConfig(deleteSection(config, d.sidebarSectionDelete), `Deleted ${label} section.`)
+        showToast(`Deleted "${label}" section`, "success")
+      } else if (d.sidebarItemRename) {
+        const key = d.sidebarItemRename
+        const itemEl = root.querySelector<HTMLElement>(`[data-sidebar-item-key="${CSS.escape(key)}"]`)
+        const lblEl = itemEl?.querySelector<HTMLElement>(`[data-sidebar-item-label="${CSS.escape(key)}"]`)
+        if (itemEl && lblEl) {
+          const def = lblEl.dataset.defaultLabel || DEFAULT_SIDEBAR_ITEM_LABELS[key] || key
+          startInlineRename(itemEl, lblEl, config.itemLabels[key] || def, def, nextLabel => {
+            commitPersonalConfig(renameItem(config, key, nextLabel), `Renamed item to ${nextLabel}.`)
+          })
+        }
+      } else if (d.sidebarItemToggle) {
+        const key = d.sidebarItemToggle
+        const next = toggleItemVisibility(config, key)
+        const label = itemLabel(next, key)
+        commitPersonalConfig(next, isItemHidden(next, key) ? `Hidden ${label}.` : `Shown ${label}.`)
+      } else if (d.sidebarItemRemove) {
+        const key = d.sidebarItemRemove
+        const label = itemLabel(config, key)
+        commitPersonalConfig(unpinCustomItem(config, key), `Removed ${label} from sidebar.`)
+        showToast(`Removed "${label}" from navigation`, "success")
+      }
       return
     }
 
@@ -925,6 +1089,7 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
     if (event.key === "Escape") {
       event.preventDefault()
       setEditing(false)
+      document.getElementById("nav-utility-trigger")?.focus({ preventScroll: true })
       return
     }
 
@@ -957,123 +1122,6 @@ export function bindSidebarReorder(sidebar: HTMLElement, signal: AbortSignal): v
         }
       }
     }
-  }, { signal })
-
-  // Drag-and-drop for BOTH sections and items (including cross-section drops)
-  root.addEventListener("dragstart", event => {
-    if (!editing || !event.dataTransfer) return
-    const target = event.target instanceof Element ? event.target : null
-    if (!target) return
-
-    const sectionGrip = target.closest<HTMLElement>("[data-sidebar-section-drag]")
-    if (sectionGrip?.dataset.sidebarSectionDrag) {
-      dragKind = "section"
-      dragId = sectionGrip.dataset.sidebarSectionDrag
-      const sectionEl = root.querySelector<HTMLElement>(`[data-sidebar-section="${CSS.escape(dragId)}"]`)
-      sectionEl?.setAttribute("data-sidebar-dragging", "true")
-      event.dataTransfer.effectAllowed = "move"
-      event.dataTransfer.setData("text/plain", `section:${dragId}`)
-      return
-    }
-
-    const itemGrip = target.closest<HTMLElement>("[data-sidebar-item-drag]")
-    if (itemGrip?.dataset.sidebarItemDrag) {
-      dragKind = "item"
-      dragId = itemGrip.dataset.sidebarItemDrag
-      const itemEl = root.querySelector<HTMLElement>(`[data-sidebar-item-key="${CSS.escape(dragId)}"]`)
-      itemEl?.setAttribute("data-sidebar-dragging", "true")
-      event.dataTransfer.effectAllowed = "move"
-      event.dataTransfer.setData("text/plain", `item:${dragId}`)
-    }
-  }, { signal })
-
-  root.addEventListener("dragover", event => {
-    if (!editing || !dragKind || !dragId) return
-    const target = event.target instanceof Element ? event.target : null
-    clearDropIndicator()
-    if (!target) return
-
-    if (dragKind === "section") {
-      const sectionEl = target.closest<HTMLElement>("[data-sidebar-section]")
-      const targetId = sectionEl?.dataset.sidebarSection
-      if (!sectionEl || !targetId || targetId === dragId) return
-      event.preventDefault()
-      const bounds = sectionEl.getBoundingClientRect()
-      const after = event.clientY > bounds.top + bounds.height / 2
-      dropTarget = sectionEl
-      sectionEl.setAttribute("data-sidebar-drop", after ? "after" : "before")
-      return
-    }
-
-    if (dragKind === "item") {
-      const itemEl = target.closest<HTMLElement>("[data-sidebar-item-key]")
-      const targetKey = itemEl?.dataset.sidebarItemKey
-      if (itemEl && targetKey && targetKey !== dragId) {
-        event.preventDefault()
-        const bounds = itemEl.getBoundingClientRect()
-        const after = event.clientY > bounds.top + bounds.height / 2
-        dropTarget = itemEl
-        itemEl.setAttribute("data-sidebar-drop", after ? "after" : "before")
-        return
-      }
-      const sectionEl = target.closest<HTMLElement>("[data-sidebar-section]")
-      if (sectionEl) {
-        event.preventDefault()
-        dropTarget = sectionEl
-        sectionEl.setAttribute("data-sidebar-drop", "into")
-      }
-    }
-  }, { signal })
-
-  root.addEventListener("drop", event => {
-    if (!editing || !dragKind || !dragId) return
-    const target = event.target instanceof Element ? event.target : null
-    if (!target) {
-      stopDrag()
-      return
-    }
-
-    if (dragKind === "section" && isSidebarSectionId(dragId)) {
-      const sectionEl = target.closest<HTMLElement>("[data-sidebar-section]")
-      const targetId = sectionEl?.dataset.sidebarSection
-      if (sectionEl && targetId && isSidebarSectionId(targetId) && targetId !== dragId) {
-        event.preventDefault()
-        const bounds = sectionEl.getBoundingClientRect()
-        const after = event.clientY > bounds.top + bounds.height / 2
-        const next = reorderSections(config, dragId, targetId, after)
-        commitPersonalConfig(next, `Reordered ${config.sectionLabels[dragId] || defaultSectionLabel(dragId)} section.`)
-      }
-      stopDrag()
-      return
-    }
-
-    if (dragKind === "item") {
-      const itemEl = target.closest<HTMLElement>("[data-sidebar-item-key]")
-      const targetKey = itemEl?.dataset.sidebarItemKey
-      if (itemEl && targetKey && targetKey !== dragId) {
-        event.preventDefault()
-        const bounds = itemEl.getBoundingClientRect()
-        const after = event.clientY > bounds.top + bounds.height / 2
-        const next = reorderItem(config, dragId, targetKey, after)
-        commitPersonalConfig(next, `Moved ${config.itemLabels[dragId] || DEFAULT_SIDEBAR_ITEM_LABELS[dragId] || dragId}.`)
-        stopDrag()
-        return
-      }
-
-      const sectionEl = target.closest<HTMLElement>("[data-sidebar-section]")
-      const sectionId = sectionEl?.dataset.sidebarSection
-      if (sectionId && isSidebarSectionId(sectionId)) {
-        event.preventDefault()
-        const next = moveItemToSection(config, dragId, sectionId)
-        commitPersonalConfig(next, `Moved item into ${config.sectionLabels[sectionId] || defaultSectionLabel(sectionId)}.`)
-      }
-      stopDrag()
-    }
-  }, { signal })
-
-  root.addEventListener("dragend", stopDrag, { signal })
-  root.addEventListener("dragleave", event => {
-    if (!root.contains(event.relatedTarget as Node | null)) clearDropIndicator()
   }, { signal })
 
   const layoutObserver = new MutationObserver(() => {

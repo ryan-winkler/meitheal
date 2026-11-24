@@ -6,7 +6,13 @@ export interface RiceInput {
 }
 
 export function calculateRiceScore(input: RiceInput): number {
-  if (input.effort <= 0) {
+  if (
+    !Number.isFinite(input.reach) ||
+    !Number.isFinite(input.impact) ||
+    !Number.isFinite(input.confidence) ||
+    !Number.isFinite(input.effort) ||
+    input.effort <= 0
+  ) {
     return 0
   }
   return (input.reach * input.impact * (input.confidence / 100)) / input.effort

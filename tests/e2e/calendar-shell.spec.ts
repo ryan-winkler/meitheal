@@ -370,7 +370,7 @@ test.describe("Calendar Shell", () => {
       ] as const) {
         const response = await request.post("/api/tasks", { headers, data: {
           title, priority, status, task_kind, due_date: day,
-          ...(status === "pending" && { framework_payload: JSON.stringify({ rice: { reach: 10, impact: 5, confidence: 1, effort: 2 } }) }),
+          ...(status === "pending" && { framework_payload: JSON.stringify({ rice: { reach: 10, impact: 5, confidence: 100, confidence_unit: "percent", effort: 2 } }) }),
         } })
         expect(response.status(), await response.text()).toBe(201)
         createdIds.push((await response.json()).id)

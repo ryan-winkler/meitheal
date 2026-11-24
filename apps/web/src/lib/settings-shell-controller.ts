@@ -8,6 +8,7 @@ import {
 import { resolveSettingsSectionId, type SettingsSectionId } from "@lib/settings-section-ids"
 import { showToast } from "@lib/toast"
 import { initUnifiedBarSearchLauncher } from "@lib/unified-bar-controller"
+import { byId, qs, setAttr } from "@lib/dom-helpers"
 
 function buildCompanionNavigateHref(sectionId: SettingsSectionId): string {
   return buildCompanionNavigateUrl(buildIngressPagePath("/settings", sectionId))
@@ -32,12 +33,8 @@ function initCompanionLinks(): void {
       const sectionId = (container.dataset.companionXcallback ||
         "app-pwa-settings") as SettingsSectionId
       const xCallbackHref = buildCompanionXCallbackHref(sectionId)
-      const preview = container.querySelector<HTMLElement>(
-        "[data-companion-xcallback-preview]",
-      )
-      const copyButton = container.querySelector<HTMLButtonElement>(
-        "[data-companion-xcallback-button]",
-      )
+      const preview = qs<HTMLElement>(container, "[data-companion-xcallback-preview]")
+      const copyButton = qs<HTMLButtonElement>(container, "[data-companion-xcallback-button]")
 
       if (preview) preview.textContent = xCallbackHref
 
@@ -54,8 +51,8 @@ function initCompanionLinks(): void {
 }
 
 function initGoToTop(): void {
-  const button = document.getElementById("settings-go-top")
-  const marker = document.getElementById("settings-scroll-marker")
+  const button = byId("settings-go-top")
+  const marker = byId("settings-scroll-marker")
   if (!button || !marker) return
 
   const observer = new IntersectionObserver(([entry]) => {
@@ -71,10 +68,10 @@ function initGoToTop(): void {
 }
 
 export function initSettingsShell(): void {
-  const shell = document.getElementById("settings-shell")
-  const directory = document.getElementById("settings-directory")
-  const toggle = document.getElementById("settings-sections-toggle")
-  const panels = document.getElementById("settings-panels")
+  const shell = byId("settings-shell")
+  const directory = byId("settings-directory")
+  const toggle = byId("settings-sections-toggle")
+  const panels = byId("settings-panels")
   if (!shell || !directory || !toggle || !panels) return
 
   const narrow = window.matchMedia("(max-width: 860px)")
@@ -82,7 +79,7 @@ export function initSettingsShell(): void {
   const links = directory.querySelectorAll<HTMLAnchorElement>("[data-settings-nav]")
 
   function setDirectoryOpen(open: boolean): void {
-    toggle!.setAttribute("aria-expanded", String(open))
+    setAttr(toggle!, "aria-expanded", String(open))
     directory!.hidden = !open
     shell!.toggleAttribute("data-directory-collapsed", !open)
   }
@@ -98,9 +95,9 @@ export function initSettingsShell(): void {
     if (id === "main-content") return
 
     const aliasedId = id ? resolveSettingsSectionId(id) : undefined
-    const rawTarget = id ? document.getElementById(id) : null
+    const rawTarget = id ? byId(id) : null
     const section =
-      (aliasedId ? document.getElementById(aliasedId) : null) ??
+      (aliasedId ? byId(aliasedId) : null) ??
       rawTarget?.closest<HTMLElement>("[data-settings-shell-section]") ??
       null
     const sectionId = section?.id ?? "look-and-feel-settings"
@@ -113,7 +110,7 @@ export function initSettingsShell(): void {
     const target = isLegacyWrapper ? section : (rawTarget ?? section)
     sections.forEach((element) => { element.hidden = element.id !== sectionId })
     links.forEach((link) => {
-      if (link.dataset.settingsNav === sectionId) link.setAttribute("aria-current", "location")
+      if (link.dataset.settingsNav === sectionId) setAttr(link, "aria-current", "location")
       else link.removeAttribute("aria-current")
     })
     if (narrow.matches) setDirectoryOpen(false)
@@ -121,7 +118,7 @@ export function initSettingsShell(): void {
 
     // Reveal parent disclosures in outer-to-inner order before moving focus.
     const integration = target.closest(".integration-card")
-    const body = integration?.querySelector<HTMLElement>(".integration-card__body")
+    const body = qs<HTMLElement>(integration, ".integration-card__body")
     if (body) window.expandIntegrationCard?.(body.id)
     for (let node: HTMLElement | null = target; node && node !== section; node = node.parentElement) {
       if (node instanceof HTMLDetailsElement) node.open = true
@@ -130,15 +127,15 @@ export function initSettingsShell(): void {
       }
     }
     const destination = target === section
-      ? section.querySelector<HTMLElement>("h2")
+      ? qs<HTMLElement>(section, "h2")
       : integration === target
-        ? integration.querySelector<HTMLButtonElement>(".integration-card__header")
+        ? qs<HTMLButtonElement>(integration, ".integration-card__header")
         : target instanceof HTMLDetailsElement
-          ? target.querySelector<HTMLElement>(":scope > summary")
+          ? qs<HTMLElement>(target, ":scope > summary")
           : target
     const focusTarget = destination && !destination.matches(":disabled") && destination.getClientRects().length
       ? destination
-      : section?.querySelector<HTMLElement>("h2")
+      : qs<HTMLElement>(section, "h2")
     if (!focusTarget) return
 
     if (!focusTarget.matches("a[href], button, input, select, summary, textarea, [tabindex]")) {
@@ -166,13 +163,13 @@ export function initSettingsShell(): void {
   })
 
   function setSettingsCardOpen(card: HTMLElement, open: boolean): void {
-    const body = card.querySelector<HTMLElement>(":scope > [data-settings-card-body]")
-    const primaryToggle = card.querySelector<HTMLButtonElement>(":scope > .settings-panel-card__header .settings-panel-card__toggle")
+    const body = qs<HTMLElement>(card, ":scope > [data-settings-card-body]")
+    const primaryToggle = qs<HTMLButtonElement>(card, ":scope > .settings-panel-card__header .settings-panel-card__toggle")
     card.toggleAttribute("data-card-collapsed", !open)
     if (!open) card.dataset.cardCollapsed = "true"
     else delete card.dataset.cardCollapsed
     if (body) body.hidden = !open
-    if (primaryToggle) primaryToggle.setAttribute("aria-expanded", String(open))
+    if (primaryToggle) setAttr(primaryToggle, "aria-expanded", String(open))
   }
 
   pageLifecycle.on(shell, "click", (event) => {

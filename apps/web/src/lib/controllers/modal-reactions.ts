@@ -1,4 +1,5 @@
 import { isActiveParticipantProblem } from "@lib/task-participant-problem"
+import { domEl, qs, setAttr } from "@lib/dom-helpers"
 
 interface Reaction {
   id: number
@@ -7,8 +8,16 @@ interface Reaction {
   can_manage: boolean
 }
 
+interface ReactionGroup {
+  content: string
+  count: number
+  reacted: boolean
+  my_reaction_id: number | null
+}
+
 interface ReactionPage {
   reactions: Reaction[]
+  groups?: ReactionGroup[]
   next_cursor: string | null
   can_react: boolean
 }
@@ -17,12 +26,9 @@ export function mountReactions(host: HTMLElement, url: string, signal: AbortSign
   const template = document.querySelector<HTMLTemplateElement>("#td-reaction-controls")
   if (!template || signal.aborted) return
 
-  const panel = document.createElement("details")
-  panel.className = "mt-2 rounded-md border border-border px-3"
+  const panel = domEl("details", `${taskId === undefined ? "mt-2 " : ""}rounded-md border border-border px-3`)
   panel.dataset.reactionPanel = taskId === undefined ? "comment" : "task"
-  const summary = document.createElement("summary")
-  summary.className = "min-h-11 cursor-pointer py-3 text-sm font-medium text-text-primary focus-visible:outline-2 focus-visible:outline-accent"
-  summary.textContent = (taskId === undefined ? template.dataset.commentLabel : template.dataset.taskLabel) ?? ""
+  const summary = domEl("summary", "min-h-11 cursor-pointer py-3 text-sm font-medium text-text-primary focus-visible:outline-2 focus-visible:outline-accent", (taskId === undefined ? template.dataset.commentLabel : template.dataset.taskLabel) ?? "")
   panel.append(summary)
   host.append(panel)
 
@@ -40,14 +46,15 @@ function initReactionPanel(
 ): void {
   panel.append(template.content.cloneNode(true))
   const labels = template.dataset
-  const status = panel.querySelector<HTMLElement>("[data-reaction-status]")!
-  const error = panel.querySelector<HTMLElement>("[data-reaction-error]")!
-  const list = panel.querySelector<HTMLUListElement>("[data-reaction-list]")!
-  const retry = panel.querySelector<HTMLButtonElement>("[data-reaction-retry]")!
-  const newest = panel.querySelector<HTMLButtonElement>("[data-reaction-newest]")!
-  const older = panel.querySelector<HTMLButtonElement>("[data-reaction-older]")!
-  const form = panel.querySelector<HTMLFormElement>("[data-reaction-form]")!
-  const input = form.querySelector<HTMLInputElement>("input")!
+  const status = qs<HTMLElement>(panel, "[data-reaction-status]")!
+  const error = qs<HTMLElement>(panel, "[data-reaction-error]")!
+  const groupsBar = qs<HTMLElement>(panel, "[data-reaction-groups]")
+  const list = qs<HTMLUListElement>(panel, "[data-reaction-list]")!
+  const retry = qs<HTMLButtonElement>(panel, "[data-reaction-retry]")!
+  const newest = qs<HTMLButtonElement>(panel, "[data-reaction-newest]")!
+  const older = qs<HTMLButtonElement>(panel, "[data-reaction-older]")!
+  const form = qs<HTMLFormElement>(panel, "[data-reaction-form]")!
+  const input = qs<HTMLInputElement>(form, "input")!
   let busy = false
   let pageCursor: string | null = null
   let retryCursor: string | null = null
@@ -57,27 +64,24 @@ function initReactionPanel(
 
   function setBusy(value: boolean): void {
     busy = value
-    list.setAttribute("aria-busy", String(value))
+    setAttr(list, "aria-busy", String(value))
     input.readOnly = value
   }
 
   function render(reaction: Reaction): HTMLLIElement {
-    const row = document.createElement("li")
-    row.className = "flex min-h-11 flex-wrap items-center gap-x-2 rounded-md bg-bg-input px-2 text-sm wrap-anywhere"
-    const content = document.createElement("bdi")
-    content.className = "font-medium text-text-primary"
+    const row = domEl("li", "flex min-h-11 flex-wrap items-center gap-x-2 rounded-md bg-bg-input px-2 text-sm wrap-anywhere")
+    const content = domEl("bdi", "font-medium text-text-primary")
     content.textContent = reaction.content
-    const author = document.createElement("bdi")
-    author.className = "text-text-secondary"
+    const author = domEl("bdi", "text-text-secondary")
     author.textContent = reaction.author
     row.append(content, author)
     if (reaction.can_manage) {
-      const remove = document.createElement("button")
+      const remove = domEl("button")
       remove.type = "button"
       remove.className = "btn btn-ghost ms-auto min-h-11"
       remove.dataset.reactionRemove = String(reaction.id)
       remove.textContent = labels.remove ?? ""
-      remove.setAttribute("aria-label", labels.removeDescription?.replace("{reaction}", () => reaction.content) ?? "")
+      setAttr(remove, "aria-label", labels.removeDescription?.replace("{reaction}", () => reaction.content) ?? "")
       row.append(remove)
     }
     return row
@@ -110,6 +114,21 @@ function initReactionPanel(
       const data: ReactionPage = await response.json()
       if (!isCurrent()) return
       list.replaceChildren(...data.reactions.map(render))
+      if (groupsBar) {
+        const groups = Array.isArray(data.groups) ? data.groups : []
+        groupsBar.hidden = groups.length === 0
+        groupsBar.replaceChildren(...groups.map(group => {
+          const pill = domEl("button")
+          pill.type = "button"
+          pill.className = "btn btn-sm border border-border rounded-full px-2.5 py-0.5 text-xs aria-pressed:border-accent aria-pressed:bg-accent/15 aria-pressed:text-accent"
+          pill.dataset.reactionGroup = group.content
+          setAttr(pill, "aria-pressed", String(Boolean(group.reacted)))
+          pill.disabled = !data.can_react && !group.reacted
+          if (group.my_reaction_id != null) pill.dataset.myReactionId = String(group.my_reaction_id)
+          pill.textContent = `${group.content} (${group.count})`
+          return pill
+        }))
+      }
       pageCursor = cursor
       nextCursor = data.next_cursor
       form.hidden = !data.can_react
@@ -132,12 +151,12 @@ function initReactionPanel(
     }
   }
 
-  async function mutate(remove?: HTMLButtonElement): Promise<void> {
+  async function mutate(removeId?: string, presetContent?: string): Promise<void> {
     if (busy || !isCurrent()) return
-    const content = input.value.trim().normalize("NFC")
+    const content = (presetContent ?? input.value).trim().normalize("NFC")
     const length = [...content].length
     error.textContent = ""
-    if (!remove && (length === 0 || length > 16)) {
+    if (!removeId && (length === 0 || length > 16)) {
       error.textContent = labels.invalid ?? ""
       input.focus()
       return
@@ -146,16 +165,21 @@ function initReactionPanel(
     setBusy(true)
     status.textContent = labels.saving ?? ""
     try {
-      const response = await fetch(remove ? `${url}/${remove.dataset.reactionRemove}` : url, {
-        method: remove ? "DELETE" : "POST",
+      const safeRemoveId = removeId && /^[\w-]+$/.test(removeId) ? encodeURIComponent(removeId) : null
+      if (removeId && !safeRemoveId) {
+        error.textContent = labels.removeFailed ?? ""
+        return
+      }
+      const response = await fetch(safeRemoveId ? `${url}/${safeRemoveId}` : url, { // nosemgrep
+        method: safeRemoveId ? "DELETE" : "POST",
         signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
-        ...(remove ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify({ content }) }),
+        ...(safeRemoveId ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify({ content }) }),
       })
       const participantDenied = await isActiveParticipantProblem(response)
       if (!isCurrent()) return
       saved = response.ok
       if (participantDenied) error.textContent = labels.participantRequired ?? ""
-      else if (!remove && response.status === 400) error.textContent = labels.invalid ?? ""
+      else if (!removeId && response.status === 400) error.textContent = labels.invalid ?? ""
     } catch {
       // Keep the draft and the current page available for retry.
     } finally {
@@ -165,22 +189,31 @@ function initReactionPanel(
       }
     }
     if (!isCurrent()) return
-    if (!remove && panel.open && form.contains(document.activeElement)) input.focus()
+    if (!removeId && panel.open && form.contains(document.activeElement)) input.focus()
     if (!saved) {
-      if (!error.textContent) error.textContent = (remove ? labels.removeFailed : labels.saveFailed) ?? ""
+      if (!error.textContent) error.textContent = (removeId ? labels.removeFailed : labels.saveFailed) ?? ""
       return
     }
-    if (!remove) input.value = ""
+    if (!removeId && presetContent === undefined) input.value = ""
     if (taskId !== undefined) document.dispatchEvent(new CustomEvent("meitheal:task-reactions-changed", { detail: taskId }))
-    await load(null, remove ? labels.removed : labels.saved)
+    await load(null, removeId ? labels.removed : labels.saved)
   }
 
   retry.addEventListener("click", () => void load(retryCursor), { signal })
   newest.addEventListener("click", () => void load(null), { signal })
   older.addEventListener("click", () => { if (nextCursor) void load(nextCursor) }, { signal })
+  groupsBar?.addEventListener("click", event => {
+    const pill = (event.target as Element).closest<HTMLButtonElement>("[data-reaction-group]")
+    if (!pill || pill.disabled) return
+    if (pill.getAttribute("aria-pressed") === "true" && pill.dataset.myReactionId) {
+      void mutate(pill.dataset.myReactionId)
+    } else if (pill.dataset.reactionGroup) {
+      void mutate(undefined, pill.dataset.reactionGroup)
+    }
+  }, { signal })
   list.addEventListener("click", event => {
     const remove = (event.target as Element).closest<HTMLButtonElement>("[data-reaction-remove]")
-    if (remove) void mutate(remove)
+    if (remove?.dataset.reactionRemove) void mutate(remove.dataset.reactionRemove)
   }, { signal })
   form.addEventListener("click", event => {
     const emoji = (event.target as Element).closest<HTMLButtonElement>("[data-reaction-emoji]")

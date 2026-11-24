@@ -18,6 +18,7 @@ export const PLUGIN_PERMISSIONS = [
   "storage:local",
   "ui:header-button",
   "ui:side-panel",
+  "ui:task-editor",
   "ui:toast",
   "http:outbound",
   "secrets:use",

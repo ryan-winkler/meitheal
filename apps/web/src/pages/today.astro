@@ -55,6 +55,14 @@ const pagePlacement = await readBoardPagePlacement(workScope, Astro.url)
 if (!pagePlacement.ok) return boardScopeResponse(pagePlacement.errorCode)
 const placement = pagePlacement.placement
 const contextHref = (path: string) => boardContextHref({ boardId: workScope.boardId, area: pagePlacement.area?.id, project: pagePlacement.project?.id }, path)
+let todayBoardName = workScope.boardId === "household" ? "Household Board" : "Board"
+try {
+  const { rows: [boardRow] } = await getPersistenceClient().execute({
+    sql: "SELECT name FROM task_boards WHERE id = ?",
+    args: [workScope.boardId],
+  })
+  if (boardRow?.name) todayBoardName = String(boardRow.name)
+} catch { /* fallback to default label */ }
 
 
 let carriedForwardTasks: TaskViewItem[] = []
@@ -94,8 +102,8 @@ try {
 
   // Partition tasks into sections
   for (const task of tasks) {
-    // Shared favorites
-    if (task.is_favorite) {
+    // Promoted tasks
+    if (task.is_promoted) {
       pinnedTasks.push(task)
     }
 
@@ -215,6 +223,7 @@ const todayBarCacheKey = JSON.stringify([
   "today-bar-v1",
   locale === "ga-IE" ? "ga" : "en",
   todayIsoDate,
+  todayBoardName,
   orgLabelsKey,
 ])
 const todayFlowCacheKey = JSON.stringify([
@@ -247,7 +256,7 @@ const todayFlowCacheKey = JSON.stringify([
         class="unified-bar__new-task-btn today-shell__clear-btn"
         id="clear-completed-btn"
         data-today-archive={todayIsoDate}
-        title="Archive Complete Household Board tasks last updated today"
+        title={`Archive Complete ${todayBoardName} tasks last updated today`}
         aria-label="Archive completed"
       >
         <span class="unified-bar__new-task-label">Archive completed</span>
@@ -520,13 +529,13 @@ const todayFlowCacheKey = JSON.stringify([
           aria-controls="today-pinned-list" aria-expanded="true">
           <Icon name="chevron-down" size={14} class="today-section__icon" sprite={true} />
           <span class="today-section__title">
-            <Icon name="star" size={16} sprite={true} /> Shared favorites
+            <Icon name="star" size={16} sprite={true} /> Promoted
           </span>
           <span class="today-section__count" id="today-pinned-list-count">{pinnedTasks.length}</span>
         </button>
         <div class="today-section__list" id="today-pinned-list" data-today-task-list>
           {pinnedTasks.map(task => (
-            <TaskListItem task={task} showSnooze showActions focusDueLabel={focusCandidateIds.has(task.id) ? focusDueLabel(task) : undefined} section="Shared favorites" />
+            <TaskListItem task={task} showSnooze showActions focusDueLabel={focusCandidateIds.has(task.id) ? focusDueLabel(task) : undefined} section="Promoted" />
           ))}
         </div>
       </div>
@@ -1113,12 +1122,13 @@ const todayFlowCacheKey = JSON.stringify([
     text-align: left;
     background: none;
     border: none;
-    color: var(--text);
+    color: var(--text-primary);
     cursor: pointer;
     border-radius: var(--radius-sm, 4px);
     transition: background 0.15s;
   }
-  :global(.snooze-option:hover) {
+  :global(.snooze-option:hover),
+  :global(.snooze-option:focus-visible) {
     background: var(--bg-hover);
   }
 
@@ -1289,41 +1299,6 @@ const todayFlowCacheKey = JSON.stringify([
   :global(.habit-card__complete:disabled) {
     opacity: 0.7;
     cursor: default;
-  }
-
-  /* ── G28: Calendar Event Cards — polished ────────────── */
-  :global(.cal-event-card) {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--border);
-    transition: background 0.15s ease;
-  }
-  :global(.cal-event-card:hover) {
-    background: rgba(255, 255, 255, 0.02);
-  }
-  :global(.cal-event-card__time) {
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--accent);
-    min-width: 64px;
-    flex-shrink: 0;
-    font-variant-numeric: tabular-nums;
-  }
-  :global(.cal-event-card__summary) {
-    font-size: 13px;
-    color: var(--text);
-    flex: 1;
-    font-weight: 500;
-  }
-  :global(.cal-event-card__source) {
-    font-size: 10px;
-    color: var(--text-muted);
-    flex-shrink: 0;
-    background: rgba(255, 255, 255, 0.04);
-    padding: 2px 6px;
-    border-radius: 6px;
   }
 
   /* ── W2: Loading skeleton shimmer ────────────────────── */
@@ -1615,8 +1590,7 @@ const todayFlowCacheKey = JSON.stringify([
       animation: none !important;
     }
     :global(.habit-card),
-    :global(.habit-card__complete),
-    :global(.cal-event-card) {
+    :global(.habit-card__complete) {
       transition: none !important;
     }
   }
