@@ -86,13 +86,19 @@ export async function prepareGrantMarker(path, revision) {
   rejectSymlinkPath(directory)
   await mkdir(directory, { recursive: true, mode: 0o700 })
   if (!lstatSync(directory).isDirectory() || (lstatSync(directory).mode & 0o077) !== 0) throw new Error("Board pending journal must be a private directory")
-  const file = await open(pendingFile(path, revision), "wx", 0o600)
+  const target = pendingFile(path, revision)
+  const file = await open(target, "wx", 0o600)
   try {
-    await file.writeFile(JSON.stringify({ epoch: revision }))
-    await file.sync()
-  } finally { await file.close() }
-  await syncDirectory(directory)
-  await syncDirectory(dirname(path))
+    try {
+      await file.writeFile(JSON.stringify({ epoch: revision }))
+      await file.sync()
+    } finally { await file.close() }
+    await syncDirectory(directory)
+    await syncDirectory(dirname(path))
+  } catch (error) {
+    await rm(target, { force: true }).catch(() => {})
+    throw error
+  }
 }
 
 export async function publishCommittedMarker(path, revision) {
