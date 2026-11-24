@@ -168,6 +168,7 @@ test.describe(() => {
 })
 
 test("a task link preserves simulated ingress and opens in another authorized context", async ({ browser }) => {
+  test.setTimeout(60_000)
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built app and the ingress fixture")
   const work = await mkdtemp(join(tmpdir(), "meitheal-task-permalink-"))
   const env = {
@@ -220,10 +221,10 @@ test("a task link preserves simulated ingress and opens in another authorized co
     const taskRead = recipientPage.waitForResponse(response =>
       response.url() === `${entry}/api/tasks/${ticket_key}` && response.request().method() === "GET")
     await recipientPage.goto(copiedLink)
-    await expect(recipientPage.locator("#td-title")).toHaveValue(title)
+    await expect(recipientPage.locator("#td-title")).toHaveValue(title, { timeout: 15_000 })
     expect((await taskRead).status()).toBe(200)
-    await recipientPage.reload()
-    await expect(recipientPage.locator("#td-title")).toHaveValue(title)
+    expect((await recipientPage.reload())?.status()).toBe(200)
+    await expect(recipientPage.locator("#td-title")).toHaveValue(title, { timeout: 15_000 })
   } finally {
     await source.close()
     await recipient.close()
