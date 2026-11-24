@@ -72,13 +72,13 @@ export const GET: APIRoute = withBoardScope({ resource: "task", action: "read" }
       headers,
     })
   }
-  const { task: row, subtasks } = detailResult
+  const { task: row, subtasks, hasPillar } = detailResult
 
   // Derive human-readable ticket keys
   const ticketNum = row.ticket_number != null ? Number(row.ticket_number) : null
   const parentTicketNum = row.parent_ticket_number != null ? Number(row.parent_ticket_number) : null
   const detail = taskDetailHttpProjection(row, scope.boardId, scope.principal.kind === "ha_user" && await readCurrentHARole(scope.principal.id, request.signal) === "admin")
-  const pillarId = await readOptionalTaskPillarId(scope, String(row.id ?? params.id!))
+  const pillarId = hasPillar ? await readOptionalTaskPillarId(scope, String(row.id ?? params.id!)) : null
   const fp = parseFrameworkPayload(row.framework_payload)
   const principleId = pillarId && typeof fp.principle_id === "string" && fp.principle_id ? fp.principle_id : null
   const visibleParent = detail.parent_id != null
