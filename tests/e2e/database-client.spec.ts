@@ -820,6 +820,96 @@ test("writable file connections keep synchronous=FULL, set wal_autocheckpoint=40
     } finally {
       partialDisabledProbe.close()
     }
+
+    const readCopyCount = async (name: string) => {
+      const copyPath = join(directory, name)
+      await copyFile(dbPath, copyPath)
+      const probe = new DatabaseSync(copyPath, { readOnly: true })
+      try {
+        return Number((probe.prepare("SELECT COUNT(*) AS count FROM wal_probe").get() as { count?: unknown })?.count ?? 0)
+      } finally {
+        probe.close()
+      }
+    }
+
+    // Re-enable idle checkpoints, verify recovered deferred tx.batch and tx.executeMultiple partial writes count,
+    // and ensure rolled-back transactions remain excluded.
+    await client.execute("PRAGMA wal_autocheckpoint=4000")
+    const rolledBackBatchTx = await client.transaction("deferred")
+    await expect(rolledBackBatchTx.batch([
+      { sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [999, "r".repeat(512)] },
+      "SELECT * FROM missing_table",
+    ])).rejects.toThrow(/missing_table/)
+    await rolledBackBatchTx.rollback()
+
+    for (let i = 36; i <= 41; i += 1) {
+      const tx = await client.transaction("deferred")
+      await expect(tx.batch([
+        { sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "b".repeat(512)] },
+        "SELECT * FROM missing_table",
+      ])).rejects.toThrow(/missing_table/)
+      await tx.commit()
+    }
+    await expect.poll(() => readCopyCount("main-after-partial-batch-tx.db"), {
+      intervals: [40, 80, 120],
+      timeout: 2_000,
+    }).toBe(41)
+
+    for (let i = 42; i <= 47; i += 1) {
+      const tx = await client.transaction("deferred")
+      await expect(tx.executeMultiple(
+        `INSERT INTO wal_probe VALUES (${i}, '${"m".repeat(512)}'); SELECT * FROM missing_table;`,
+      )).rejects.toThrow(/missing_table/)
+      await tx.commit()
+    }
+    await expect.poll(() => readCopyCount("main-after-partial-exec-tx.db"), {
+      intervals: [40, 80, 120],
+      timeout: 2_000,
+    }).toBe(47)
+
+    // Rolled-back client.executeMultiple scripts must not increment checkpoint accounting or commit rows.
+    for (let i = 0; i < 6; i += 1) {
+      await expect(client.executeMultiple(
+        "BEGIN; INSERT INTO wal_probe VALUES (997, 'open'); SELECT * FROM missing_table;",
+      )).rejects.toThrow(/missing_table/)
+      await expect(client.executeMultiple(
+        "BEGIN; INSERT INTO wal_probe VALUES (998, 'rb'); ROLLBACK; SELECT * FROM missing_table;",
+      )).rejects.toThrow(/missing_table/)
+    }
+    for (let i = 48; i <= 52; i += 1) {
+      await client.batch([{ sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "w".repeat(512)] }], "write")
+    }
+    await sleepMs(160)
+    expect(await readCopyCount("main-after-rolledback-execmulti.db")).toBe(47)
+
+    // Autocommitted prefix inside a failing client.executeMultiple must count toward checkpointing.
+    await expect(client.executeMultiple(
+      `INSERT INTO wal_probe VALUES (53, '${"a".repeat(512)}'); SELECT * FROM missing_table;`,
+    )).rejects.toThrow(/missing_table/)
+    await expect.poll(() => readCopyCount("main-after-partial-autocommit-one.db"), {
+      intervals: [40, 80, 120],
+      timeout: 2_000,
+    }).toBe(53)
+
+    for (let i = 54; i <= 59; i += 1) {
+      await expect(client.executeMultiple(
+        `INSERT INTO wal_probe VALUES (${i}, '${"a".repeat(512)}'); SELECT * FROM missing_table;`,
+      )).rejects.toThrow(/missing_table/)
+    }
+    await expect.poll(() => readCopyCount("main-after-partial-autocommit-six.db"), {
+      intervals: [40, 80, 120],
+      timeout: 2_000,
+    }).toBe(59)
+
+    // Quoted schema qualifiers and PRAGMA names must also reconcile PRAGMA wal_autocheckpoint=0.
+    await expect(client.executeMultiple('PRAGMA /*c*/ "main"."wal_autocheckpoint" = 0; SELECT * FROM missing_table;'))
+      .rejects.toThrow(/missing_table/)
+    expect((await client.execute('PRAGMA "wal_autocheckpoint"')).rows[0]?.[0]).toBe(0)
+    for (let i = 60; i <= 67; i += 1) {
+      await client.batch([{ sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "q".repeat(512)] }], "write")
+    }
+    await sleepMs(180)
+    expect(await readCopyCount("main-after-quoted-pragma.db")).toBe(59)
   } finally {
     client.close()
     await rm(directory, { recursive: true, force: true })

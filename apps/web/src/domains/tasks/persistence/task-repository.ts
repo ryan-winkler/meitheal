@@ -56,7 +56,6 @@ import { openTaskDependencies } from "./task-dependencies"
 
 const notifPrefsCache = new WeakMap<object, { token: string; rawValue: string | null }>()
 const defaultAssigneeCache = new WeakMap<object, { token: string; byBoard: Map<string, string | null> }>()
-const commentsPresenceCache = new WeakMap<object, { token: string; hasComments: boolean }>()
 
 const taskHistoryPredicate = "(feed_action IS NULL OR field <> 'activity')"
 const openStatusPredicate = `lower(status) NOT IN (${CLOSED_TASK_STATUSES.map(() => "?").join(", ")})`
@@ -1554,19 +1553,6 @@ export class TaskRepository {
     return rows.map(row => ({ id: row.id, title: row.title, ticket_key: typeof row.ticket_ref === "string" ? row.ticket_ref : null }))
   }
 
-  private async hasAnyComments(): Promise<boolean> {
-    const state = localReaderCacheToken(this.client)
-    if (!state) return true
-    const cached = commentsPresenceCache.get(state.owner)
-    if (cached?.token === state.token) return cached.hasComments
-    const result = await this.client.execute("SELECT 1 FROM comments LIMIT 1")
-    const hasComments = result.rows.length > 0
-    if (localReaderCacheToken(this.client)?.token === state.token) {
-      commentsPresenceCache.set(state.owner, { token: state.token, hasComments })
-    }
-    return hasComments
-  }
-
   private async searchCatalogWithOperation(opts: TaskCatalogOptions, operation: "read" | "search"): Promise<TaskCatalogRow[]> {
     const query = (opts.query ?? "").trim().toLowerCase()
     const fields = new Set((opts.fields ?? ["id", "title", "description", "labels", "custom_fields", "comments"])
@@ -1612,7 +1598,7 @@ export class TaskRepository {
 
     const parsedTicket = this.ticketNumberForScope(query) ?? (/^[0-9]+$/.test(query) ? Number(query) : 0)
     const ticket = Number.isSafeInteger(parsedTicket) && parsedTicket > 0 ? parsedTicket : null
-    const hasCommentsField = fields.has("comments") && (await this.hasAnyComments())
+    const hasCommentsField = fields.has("comments")
     const selected = (field: string, sql: string) => fields.has(field) ? sql : "0"
     // INSTR treats percent, underscore and backslash literally. The needle and
     // the stored field keep their existing JavaScript/SQLite case behavior.
@@ -1730,6 +1716,9 @@ export class TaskRepository {
             ${hasCommentsField ? `comment_hits(task_id) AS MATERIALIZED (
               SELECT DISTINCT c.task_id FROM comments c CROSS JOIN needle
               WHERE ${position("c.content")} > 0
+            ),
+            has_comments(v) AS MATERIALIZED (
+              SELECT EXISTS(SELECT 1 FROM comment_hits)
             ),` : ""}
             hits AS MATERIALIZED (
               SELECT tasks.id, tasks.ticket_number, tasks.ticket_ref, tasks.title, tasks.status, tasks.priority, tasks.task_kind, tasks.deferred_at,
@@ -1744,7 +1733,7 @@ export class TaskRepository {
                 ${selected("description", `tasks.description IS NOT NULL AND tasks.description <> '' AND ${position("tasks.description")} > 0`)} AS description_hit,
                 ${selected("labels", `tasks.labels IS NOT NULL AND tasks.labels <> '' AND (tasks.labels <> '[]' OR instr('[]', needle.value) > 0) AND ${position("tasks.labels")} > 0`)} AS labels_hit,
                 ${selected("custom_fields", `tasks.custom_fields IS NOT NULL AND tasks.custom_fields <> '' AND (tasks.custom_fields <> '{}' OR instr('{}', needle.value) > 0) AND ${position("tasks.custom_fields")} > 0`)} AS custom_fields_hit,
-                ${hasCommentsField ? "tasks.id IN comment_hits" : "0"} AS comments_hit,
+                ${hasCommentsField ? "((SELECT v FROM has_comments) AND tasks.id IN comment_hits)" : "0"} AS comments_hit,
                 (tasks.status NOT IN ('complete', 'archived')) * 6 AS open_boost
               FROM scoped_task_records AS tasks CROSS JOIN needle ${where}
             ),

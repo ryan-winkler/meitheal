@@ -135,6 +135,19 @@ const TASK_VIEW_COLUMNS = `
   effort_minutes, effort_type, blocked_by
 `;
 
+const TODAY_OPEN_ROW_COLUMNS = `
+  scoped_tasks.rowid AS rowid, scoped_tasks.id, scoped_tasks.title, scoped_tasks.description, scoped_tasks.status,
+  scoped_tasks.priority, scoped_tasks.due_date, scoped_tasks.labels, scoped_tasks.framework_payload,
+  scoped_tasks.calendar_sync_state, scoped_tasks.area_id, scoped_tasks.project_id, scoped_tasks.public_area_id,
+  scoped_tasks.public_project_id, scoped_tasks.public_goal_id, scoped_tasks.custom_fields, scoped_tasks.start_date,
+  scoped_tasks.end_date, scoped_tasks.progress, scoped_tasks.table_position, scoped_tasks.color, scoped_tasks.is_promoted,
+  scoped_tasks.task_type, scoped_tasks.task_kind, scoped_tasks.parent_id, scoped_tasks.public_parent_id,
+  scoped_tasks.ticket_number, scoped_tasks.ticket_ref, scoped_tasks.assigned_to, scoped_tasks.checklists,
+  scoped_tasks.created_at, scoped_tasks.updated_at, scoped_tasks.deferred_at, scoped_tasks.urgency,
+  scoped_tasks.importance, scoped_tasks.eisenhower_override, scoped_tasks.effort_minutes, scoped_tasks.effort_type,
+  scoped_tasks.blocked_by
+`;
+
 /**
  * Load tasks with computed fields for any task view page.
  * Supports optional SQL pushdown predicates and `slim: true` checklist scalar projection
@@ -534,7 +547,7 @@ export async function getTodayTaskRows(
         WHERE open_state >= 1
       ),
       open_rows AS MATERIALIZED (
-        SELECT scoped_tasks.*
+        SELECT ${TODAY_OPEN_ROW_COLUMNS}
         FROM open_candidates
         CROSS JOIN scoped_tasks ON scoped_tasks.id = open_candidates.id
         ORDER BY scoped_tasks.created_at DESC, scoped_tasks.rowid DESC
