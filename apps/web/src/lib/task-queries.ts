@@ -525,14 +525,17 @@ export async function getTodayTaskRows(
         SELECT id
         FROM classified
         WHERE open_state >= 1
-      )
-      SELECT ${TASK_VIEW_COLUMNS}, completed_today, open_unscheduled, completed_today_json
-      FROM totals
-      LEFT JOIN (
+      ),
+      open_rows AS MATERIALIZED (
         SELECT scoped_tasks.*
         FROM open_candidates
         CROSS JOIN scoped_tasks ON scoped_tasks.id = open_candidates.id
-      ) AS tasks ON 1 = 1
+        ORDER BY scoped_tasks.created_at DESC, scoped_tasks.rowid DESC
+      )
+      SELECT ${TASK_VIEW_COLUMNS}, completed_today, open_unscheduled,
+             CASE WHEN tasks.id IS (SELECT id FROM open_rows LIMIT 1) THEN completed_today_json ELSE NULL END AS completed_today_json
+      FROM totals
+      LEFT JOIN open_rows AS tasks ON 1 = 1
       ORDER BY tasks.created_at DESC, tasks.rowid DESC
     `,
     args: [includeUnscheduled ? 1 : 0, ...completionFilter.args, ...context.args, completionFilter.firstInstant],

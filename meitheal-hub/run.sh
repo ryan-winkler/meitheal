@@ -81,7 +81,7 @@ apply_resolved_node_options() {
   _pool_size="$(resolve_v8_pool_size)"
   if [ -n "${_pool_size}" ]; then
     case " ${NODE_OPTIONS:-} " in
-      *" --v8-pool-size="*)
+      *" --v8-pool-size="*|*" --v8_pool_size="*|*" --v8-pool_size="*|*" --v8_pool-size="*|*" --v8-pool-size "*|*" --v8_pool_size "*|*" --v8-pool_size "*|*" --v8_pool-size "*)
         ;;
       *)
         NODE_OPTIONS="${NODE_OPTIONS:+${NODE_OPTIONS} }--v8-pool-size=${_pool_size}"

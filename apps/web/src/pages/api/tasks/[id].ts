@@ -744,15 +744,13 @@ export const PUT: APIRoute = withBoardScope({ resource: "task", action: "edit" }
     }
 
     // Phase 6: Cascade completion — complete all subtasks when parent is completed
-    if (update.hasOpenChildren !== false) {
-      try {
-        const childIds = await repo.cascadeCompleteIds(resolvedId, expectedAssignedTo)
-        for (const childId of childIds) {
-          dispatchTaskEvent("task.updated", { id: childId, status: STATUS.COMPLETE }, undefined, undefined, undefined, undefined, scope).catch(() => {})
-        }
-      } catch (err) {
-        logApiError("cascade-complete", "Failed to cascade-complete subtasks", err)
+    try {
+      const childIds = await repo.cascadeCompleteIds(resolvedId, expectedAssignedTo)
+      for (const childId of childIds) {
+        dispatchTaskEvent("task.updated", { id: childId, status: STATUS.COMPLETE }, undefined, undefined, undefined, undefined, scope).catch(() => {})
       }
+    } catch (err) {
+      logApiError("cascade-complete", "Failed to cascade-complete subtasks", err)
     }
   }
 

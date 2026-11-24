@@ -50,9 +50,9 @@ const SYS_REQ = "ha-system"; // sentinel request_id for background operations
 
 let connection: Connection | null = null;
 let configurationFingerprint: string | null = null
-const haConfigSettingsCache = new WeakMap<
+const haSettingsSnapshotCache = new WeakMap<
   object,
-  { token: string; settingsRevision: number; settings: Record<string, unknown> }
+  { generation: string; settingsRevision: number; settings: Record<string, unknown> }
 >()
 let storeModulePromise: Promise<typeof import("../tasks/persistence/store")> | null = null
 let settingsModulePromise: Promise<typeof import("../tasks/persistence/settings-repository")> | null = null
@@ -69,21 +69,22 @@ export async function getHAConfiguration({ requireComplete = false } = {}): Prom
   const settingsRevision = getSettingsRevision()
   let settings: Record<string, unknown> | undefined
   if (state) {
-    const cached = haConfigSettingsCache.get(state.owner)
-    if (cached && cached.token === state.token && cached.settingsRevision === settingsRevision) {
+    const cached = haSettingsSnapshotCache.get(state.owner)
+    if (cached && cached.generation === state.token && cached.settingsRevision === settingsRevision) {
       settings = cached.settings
     }
   }
   if (!settings) {
     const repo = new SettingsRepository(client)
     settings = await repo.getByKeys(["ha_url", "ha_token"])
+    const currentGeneration = state ? localReaderCacheToken(client)?.token : undefined
     if (
       state &&
-      localReaderCacheToken(client)?.token === state.token &&
+      currentGeneration === state.token &&
       getSettingsRevision() === settingsRevision
     ) {
-      haConfigSettingsCache.set(state.owner, {
-        token: state.token,
+      haSettingsSnapshotCache.set(state.owner, {
+        generation: currentGeneration,
         settingsRevision,
         settings: Object.freeze(settings),
       })

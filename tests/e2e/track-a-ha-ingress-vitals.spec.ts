@@ -639,6 +639,11 @@ test("A7: resolve_max_old_space_mb computes dynamic V8 heap ceilings across cgro
           initialOpts: "--enable-source-maps --v8-pool-size=2",
           expectedOpts: "--enable-source-maps --v8-pool-size=2 --max-old-space-size=105",
         },
+        {
+          cpu: "100000 100000\n",
+          initialOpts: "--enable-source-maps --v8_pool_size=2",
+          expectedOpts: "--enable-source-maps --v8_pool_size=2 --max-old-space-size=105",
+        },
       ]
       await writeFile(cgV2, "201326592\n")
       await writeFile(cgV1, "9223372036854771712\n")

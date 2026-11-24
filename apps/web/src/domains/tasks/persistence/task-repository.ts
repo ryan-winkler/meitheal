@@ -1647,7 +1647,7 @@ export class TaskRepository {
                 ${selected("description", `tasks.description IS NOT NULL AND tasks.description <> '' AND ${position("tasks.description")} > 0`)} AS description_hit,
                 ${selected("labels", `tasks.labels IS NOT NULL AND tasks.labels <> '' AND (tasks.labels <> '[]' OR instr('[]', needle.value) > 0) AND ${position("tasks.labels")} > 0`)} AS labels_hit,
                 ${selected("custom_fields", `tasks.custom_fields IS NOT NULL AND tasks.custom_fields <> '' AND (tasks.custom_fields <> '{}' OR instr('{}', needle.value) > 0) AND ${position("tasks.custom_fields")} > 0`)} AS custom_fields_hit,
-                ${selected("comments", "tasks.id IN comment_hits")} AS comments_hit,
+                ${hasCommentsField ? "tasks.id IN comment_hits" : "0"} AS comments_hit,
                 (tasks.status NOT IN ('complete', 'archived')) * 6 AS open_boost
               FROM scoped_task_records AS tasks CROSS JOIN needle ${where}
             ),
@@ -2185,7 +2185,7 @@ export class TaskRepository {
     targetLaneId?: string,
     integrationContext?: IntegrationScope,
   ): Promise<
-    { ok: true; task: TaskRow; previousStatus?: string; successor?: RecurrenceSuccessor; assignmentEventId?: string; hasOpenChildren?: boolean }
+    { ok: true; task: TaskRow; previousStatus?: string; successor?: RecurrenceSuccessor; assignmentEventId?: string }
     | { ok: false; errorCode: "unavailable"; reason?: "routine-date" }
     | { ok: false; errorCode: "assignee_mismatch" }
     | { ok: false; errorCode: "checklist_conflict"; checklists: string | null }
@@ -2299,7 +2299,6 @@ export class TaskRepository {
     let previousStatus: string
     let recurrence: RecurrenceOutcome
     let assignmentEventId: string | undefined
-    let hasOpenChildren: boolean | undefined
     {
       const repo = this
       const steps = function* (): Generator<
@@ -2329,19 +2328,9 @@ export class TaskRepository {
             else yield [sql`INSERT INTO board_task_planning(task_id, area_id, project_id, goal_id) VALUES (${id}, ${area as InValue}, ${project as InValue}, ${goal as InValue})
               ON CONFLICT(task_id) DO UPDATE SET area_id = excluded.area_id, project_id = excluded.project_id, goal_id = excluded.goal_id`]
           }
-          if (completing && !existingWriter) {
-            const [projection, openChildrenProbe] = yield [
-              scopedTaskRead(repo.scope, sql`SELECT * FROM scoped_tasks AS tasks WHERE id = ${id}`),
-              sql`SELECT 1 FROM tasks WHERE ${taskOwnedBy(repo.scope)} AND parent_id = ${id} AND status != ${STATUS.COMPLETE} LIMIT 1`,
-            ]
-            if (!projection?.rows[0]) throw new BoardOperationError("unavailable")
-            writeResults[writeIndex] = projection
-            hasOpenChildren = Boolean(openChildrenProbe?.rows.length)
-          } else {
-            const [projection] = yield [scopedTaskRead(repo.scope, sql`SELECT * FROM scoped_tasks AS tasks WHERE id = ${id}`)]
-            if (!projection?.rows[0]) throw new BoardOperationError("unavailable")
-            writeResults[writeIndex] = projection
-          }
+          const [projection] = yield [scopedTaskRead(repo.scope, sql`SELECT * FROM scoped_tasks AS tasks WHERE id = ${id}`)]
+          if (!projection?.rows[0]) throw new BoardOperationError("unavailable")
+          writeResults[writeIndex] = projection
         }
         return writeResults
       }
@@ -2479,7 +2468,6 @@ export class TaskRepository {
       ...(typeof fields.status === "string" ? { previousStatus } : {}),
       ...(successor ? { successor } : {}),
       ...(assignmentEventId ? { assignmentEventId } : {}),
-      ...(hasOpenChildren !== undefined ? { hasOpenChildren } : {}),
     }
 
     if (assigneeIndex >= 0 && results[assigneeIndex]?.rows.length) {

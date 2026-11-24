@@ -750,6 +750,76 @@ test("writable file connections keep synchronous=FULL, set wal_autocheckpoint=40
       disabledProbe.close()
     }
     expect(Number((await client.execute("SELECT COUNT(*) AS count FROM wal_probe")).rows[0]?.count ?? 0)).toBe(15)
+
+    // Unexecuted trailing PRAGMA in a failed batch must keep autocheckpoint enabled,
+    // and successful default deferred write batches + deferred transactions must trigger idle checkpoints.
+    await client.execute("PRAGMA wal_autocheckpoint=4000")
+    await expect(client.batch([
+      "INSERT INTO missing_table VALUES (1)",
+      "PRAGMA wal_autocheckpoint=0",
+    ], "write")).rejects.toThrow(/missing_table/)
+    expect((await client.execute("PRAGMA wal_autocheckpoint")).rows[0]?.[0]).toBe(4000)
+
+    for (let i = 1; i <= 6; i += 1) {
+      const roTx = await client.transaction("deferred")
+      await roTx.execute("SELECT COUNT(*) FROM wal_probe")
+      await roTx.commit()
+    }
+    await sleepMs(140)
+    const readDeferredCopy = join(directory, "main-after-deferred-reads.db")
+    await copyFile(dbPath, readDeferredCopy)
+    const readDeferredProbe = new DatabaseSync(readDeferredCopy, { readOnly: true })
+    try {
+      expect(Number((readDeferredProbe.prepare("SELECT COUNT(*) AS count FROM wal_probe").get() as { count?: unknown })?.count ?? 0)).toBe(7)
+    } finally {
+      readDeferredProbe.close()
+    }
+
+    for (let i = 16; i <= 21; i += 1) {
+      await client.batch([{ sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "d".repeat(512)] }])
+    }
+    await expect.poll(async () => {
+      const deferredBatchCopy = join(directory, "main-after-deferred-batch.db")
+      await copyFile(dbPath, deferredBatchCopy)
+      const probe = new DatabaseSync(deferredBatchCopy, { readOnly: true })
+      try {
+        return Number((probe.prepare("SELECT COUNT(*) AS count FROM wal_probe").get() as { count?: unknown })?.count ?? 0)
+      } finally {
+        probe.close()
+      }
+    }, { intervals: [40, 80, 120], timeout: 2_000 }).toBe(21)
+
+    for (let i = 22; i <= 27; i += 1) {
+      const tx = await client.transaction("deferred")
+      await tx.execute({ sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "t".repeat(512)] })
+      await tx.commit()
+    }
+    await expect.poll(async () => {
+      const deferredTxCopy = join(directory, "main-after-deferred-tx.db")
+      await copyFile(dbPath, deferredTxCopy)
+      const probe = new DatabaseSync(deferredTxCopy, { readOnly: true })
+      try {
+        return Number((probe.prepare("SELECT COUNT(*) AS count FROM wal_probe").get() as { count?: unknown })?.count ?? 0)
+      } finally {
+        probe.close()
+      }
+    }, { intervals: [40, 80, 120], timeout: 2_000 }).toBe(27)
+
+    // Partial failure in executeMultiple must still reconcile PRAGMA wal_autocheckpoint=0 executed before the error.
+    await expect(client.executeMultiple("PRAGMA wal_autocheckpoint=0; SELECT * FROM missing_table;")).rejects.toThrow(/missing_table/)
+    expect((await client.execute("PRAGMA wal_autocheckpoint")).rows[0]?.[0]).toBe(0)
+    for (let i = 28; i <= 35; i += 1) {
+      await client.batch([{ sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "z".repeat(512)] }], "write")
+    }
+    await sleepMs(180)
+    const partialDisabledCopy = join(directory, "main-after-partial-exec.db")
+    await copyFile(dbPath, partialDisabledCopy)
+    const partialDisabledProbe = new DatabaseSync(partialDisabledCopy, { readOnly: true })
+    try {
+      expect(Number((partialDisabledProbe.prepare("SELECT COUNT(*) AS count FROM wal_probe").get() as { count?: unknown })?.count ?? 0)).toBe(27)
+    } finally {
+      partialDisabledProbe.close()
+    }
   } finally {
     client.close()
     await rm(directory, { recursive: true, force: true })
