@@ -3,8 +3,8 @@ import { SHOPPING_CATEGORIES } from "@meitheal/domain-tasks"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import HomeAssistantAreaField from "./HomeAssistantAreaField.astro"
 import TaskDetailLayoutEditor from "./TaskDetailLayoutEditor.astro"
-import { ensureSchema, getPersistenceClient, SettingsRepository } from "@domains/tasks"
-import { taskDetailServerSettingKey } from "@lib/task-detail-layout"
+import { ensureSchema, getPersistenceClient } from "@domains/tasks"
+import { readCachedTaskDetailLayout } from "@lib/shell-settings-cache"
 import { newOrganizationLabel, organizationLabelsFor } from "@lib/organization-labels"
 import { verifiedBoardRequestPrincipal } from "@lib/board-request-context"
 import { t } from "../../i18n/translations";
@@ -20,9 +20,7 @@ let serverLayoutJson: string | null = null
 try {
   const client = getPersistenceClient()
   await ensureSchema()
-  const stored = await new SettingsRepository(client).getByKeys([taskDetailServerSettingKey])
-  const raw = stored[taskDetailServerSettingKey]
-  if (typeof raw === "string" && raw.trim()) serverLayoutJson = raw
+  serverLayoutJson = await readCachedTaskDetailLayout(client)
 } catch { /* fallback to built-in layout defaults */ }
 ---
 
@@ -56,10 +54,10 @@ try {
       <fieldset class="nt-group">
         <legend>{t("task_modal.type_label", locale)}</legend>
         <div class="nt-kind-grid" id="nt-kind-tabs">
-          <button type="button" class="nt-kind-pill active inline-flex items-center justify-center gap-1.5" data-kind="standard_action" aria-pressed="true"><Icon name="checkbox" size={15} /><span>{organization("task", false, t("task_modal.kind_task", locale))}</span></button>
-          <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="shopping_item" aria-pressed="false"><Icon name="shopping-cart" size={15} /><span>{t("task_modal.kind_shopping_list", locale)}</span></button>
-          <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="checklist" aria-pressed="false"><Icon name="list-check" size={15} /><span>{t("task_modal.kind_checklist", locale)}</span></button>
-          <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="calendar_event" aria-pressed="false"><Icon name="calendar-event" size={15} /><span>{t("task_modal.kind_event", locale)}</span></button>
+          <button type="button" class="nt-kind-pill active inline-flex items-center justify-center gap-1.5" data-kind="standard_action" aria-pressed="true"><Icon name="checkbox" size={15} sprite={true} /><span>{organization("task", false, t("task_modal.kind_task", locale))}</span></button>
+          <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="shopping_item" aria-pressed="false"><Icon name="shopping-cart" size={15} sprite={true} /><span>{t("task_modal.kind_shopping_list", locale)}</span></button>
+          <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="checklist" aria-pressed="false"><Icon name="list-check" size={15} sprite={true} /><span>{t("task_modal.kind_checklist", locale)}</span></button>
+          <button type="button" class="nt-kind-pill inline-flex items-center justify-center gap-1.5" data-kind="calendar_event" aria-pressed="false"><Icon name="calendar-event" size={15} sprite={true} /><span>{t("task_modal.kind_event", locale)}</span></button>
         </div>
       </fieldset>
       <div class="nt-field">
@@ -150,7 +148,7 @@ try {
               <input type="hidden" id="new-task-status" name="status" value="pending" />
               <div id="nt-status-pills" class="filter-toolbar__type-toggles" role="radiogroup" aria-label="Task status">
                 <button type="button" class="filter-toolbar__type-btn active" data-status="pending" role="radio" aria-checked="true">
-                  <span class="nt-status-pill-icon inline-flex items-center" aria-hidden="true"><Icon name="clock" size={14} /></span>
+                  <span class="nt-status-pill-icon inline-flex items-center" aria-hidden="true"><Icon name="clock" size={14} sprite={true} /></span>
                   <span>{t("task_modal.status_todo", locale)}</span>
                 </button>
               </div>

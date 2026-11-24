@@ -24,25 +24,25 @@ const { id, variant, enabled = true } = Astro.props
       aria-controls={`${id}-options`}
       title="Task types"
     >
-      <Icon name="chevron-down" size={14} />
+      <Icon name="chevron-down" size={14} sprite={true} />
     </button>
     <div id={`${id}-options`} class="task-creation__options" data-task-creation-options hidden>
       <ul class="task-creation__list">
         {TASK_NAV_TYPES.map(entry => (
           <li class="task-creation__item" data-task-nav-item={entry.id}>
             <button type="button" class="task-creation__action" data-create-task-kind={entry.kind}>
-              <Icon name={entry.icon} size={16} />
+              <Icon name={entry.icon} size={16} sprite={true} />
               <span>New {entry.label.toLowerCase()}</span>
             </button>
             <button type="button" class="task-creation__pin" aria-pressed="false" data-task-nav-pin={entry.id}
               aria-label={`Pin new ${entry.label.toLowerCase()}`} title={`Pin new ${entry.label.toLowerCase()}`}>
-              <Icon name="pin" size={15} />
+              <Icon name="pin" size={15} sprite={true} />
             </button>
           </li>
         ))}
       </ul>
       <a class="task-creation__action task-creation__settings" href="/settings#navigation-settings">
-        <Icon name="sliders" size={14} /> Choose visible types
+        <Icon name="sliders" size={14} sprite={true} /> Choose visible types
       </a>
     </div>
   </div>
@@ -51,13 +51,13 @@ const { id, variant, enabled = true } = Astro.props
       <li class="task-creation__item" data-task-nav-pinned-item={entry.id} hidden>
         <button type="button" class="task-creation__action" data-create-task-kind={entry.kind}
           aria-label={`New ${entry.label.toLowerCase()}`} title={`New ${entry.label.toLowerCase()}`} data-tooltip={`New ${entry.label.toLowerCase()}`}>
-          <Icon name={entry.icon} size={16} />
+          <Icon name={entry.icon} size={16} sprite={true} />
           <span>New {entry.label.toLowerCase()}</span>
         </button>
         {variant === "sidebar" && (
           <button type="button" class="task-creation__pin task-creation__unpin" data-task-nav-pin={entry.id}
             aria-label={`Unpin new ${entry.label.toLowerCase()}`} title={`Unpin new ${entry.label.toLowerCase()}`}>
-            <Icon name="x" size={14} />
+            <Icon name="x" size={14} sprite={true} />
           </button>
         )}
       </li>

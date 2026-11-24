@@ -1,98 +1,15 @@
 ---
 import "../../styles/sidebar-hierarchy-actions.css"
-import Icon from "../ui/Icon.astro"
-import { t } from "../../i18n/translations"
-import { EMOJI_CATEGORIES } from "../../lib/emoji-picker-data"
-import { COLOR_SWATCHES } from "../../lib/design-tokens"
+import { resolveCanonicalIconName } from "../../generated/icon-registry"
 import type { Locale } from "../../lib/locale"
-import type { IconName } from "../../generated/icon-registry"
+import {
+  buildHierarchyActionsHtml,
+  USED_HIERARCHY_ACTION_ICONS,
+} from "../../lib/sidebar-hierarchy-actions-html"
+
 const locale: Locale = Astro.cookies.get("meitheal-locale")?.value === "ga" ? "ga" : "en"
-const taskKinds: { kind: string; icon: IconName; labelKey: string }[] = [
- {kind:"standard_action",icon:"checkbox",labelKey:"sidebar.task_kind_standard_action"},
- {kind:"shopping_item",icon:"shopping-cart",labelKey:"sidebar.task_kind_shopping_item"},
- {kind:"checklist",icon:"list-check",labelKey:"sidebar.task_kind_checklist"},
- {kind:"calendar_event",icon:"calendar-event",labelKey:"sidebar.task_kind_calendar_event"},
- {kind:"quick_capture",icon:"bolt",labelKey:"sidebar.task_kind_quick_capture"},
-]
+const usedIcons = (Astro.locals.usedIcons ??= new Set())
+for (const name of USED_HIERARCHY_ACTION_ICONS) usedIcons.add(resolveCanonicalIconName(name))
+const html = buildHierarchyActionsHtml(locale)
 ---
-<template id="tmpl-area-menu">
-  <div class="stree__dropdown" id="area-menu-dropdown">
-    <a data-action="manage" class="stree__dropdown-item">
-      <span class="stree__dropdown-icon inline-flex items-center justify-center"><Icon name="settings" size={14} /></span><span>{t("sidebar.manage_space", locale)}</span>
-    </a>
-    <button type="button" data-action="rename" class="stree__dropdown-item">
-      <span class="stree__dropdown-icon inline-flex items-center justify-center"><Icon name="pencil" size={14} /></span><span>{t("sidebar.rename", locale)}</span>
-    </button>
-    <button type="button" data-action="color-icon" class="stree__dropdown-item">
-      <span class="stree__dropdown-icon inline-flex items-center justify-center"><Icon name="palette" size={14} /></span><span>{t("sidebar.color_icon", locale)}</span>
-    </button>
-    <hr class="stree__dropdown-divider" />
-    <button type="button" data-action="delete" class="stree__dropdown-item stree__dropdown-item--danger">
-      <span class="stree__dropdown-icon inline-flex items-center justify-center"><Icon name="trash" size={14} /></span><span>{t("sidebar.delete_area", locale)}</span>
-    </button>
-  </div>
-</template>
-
-<template id="tmpl-project-menu">
-  <div class="stree__dropdown" id="project-menu-dropdown">
-    <a data-action="manage" class="stree__dropdown-item">
-      <span class="stree__dropdown-icon inline-flex items-center justify-center"><Icon name="settings" size={14} /></span><span>{t("sidebar.manage_project", locale)}</span>
-    </a>
-    <button type="button" data-action="rename" class="stree__dropdown-item">
-      <span class="stree__dropdown-icon inline-flex items-center justify-center"><Icon name="pencil" size={14} /></span><span>{t("sidebar.rename", locale)}</span>
-    </button>
-    <button type="button" data-action="color-icon" class="stree__dropdown-item">
-      <span class="stree__dropdown-icon inline-flex items-center justify-center"><Icon name="palette" size={14} /></span><span>{t("sidebar.color_icon", locale)}</span>
-    </button>
-    <hr class="stree__dropdown-divider" />
-    <button type="button" data-action="delete" class="stree__dropdown-item stree__dropdown-item--danger">
-      <span class="stree__dropdown-icon inline-flex items-center justify-center"><Icon name="trash" size={14} /></span><span>{t("sidebar.delete_project", locale)}</span>
-    </button>
-  </div>
-</template>
-
-<template id="tmpl-task-kind">
-  <div class="stree__dropdown" id="task-kind-dropdown">
-    {taskKinds.map((tk) => (
-      <button type="button" data-task-kind={tk.kind} class="stree__dropdown-item">
-        <span class="stree__dropdown-icon inline-flex items-center justify-center"><Icon name={tk.icon} size={14} /></span>
-        <span>{t(tk.labelKey, locale)}</span>
-      </button>
-    ))}
-  </div>
-</template>
-
-<template id="tmpl-color-icon">
-  <div class="stree__popover" id="color-icon-popover">
-    <div class="stree__popover-section">
-      <label class="stree__popover-label">{t("sidebar.icon_label", locale)}</label>
-      <div class="stree__emoji-preview">
-        <span id="entity-icon-preview" class="stree__emoji-selected inline-flex items-center justify-center"><Icon name="clipboard-list" size={18} /></span>
-        <input type="hidden" id="entity-icon-input" value="📋" />
-      </div>
-      <div class="stree__emoji-tabs">
-        {EMOJI_CATEGORIES.map((cat, i) => (
-          <button type="button" class={`stree__emoji-tab ${i === 0 ? 'active' : ''}`} data-emoji-tab={i} title={cat.label}>{cat.emoji[0]}</button>
-        ))}
-      </div>
-      <div class="stree__emoji-grid" id="emoji-grid">
-        {EMOJI_CATEGORIES.map((cat, catIdx) => (
-          <div class={`stree__emoji-panel ${catIdx === 0 ? '' : 'hidden'}`} data-emoji-panel={catIdx}>
-            {cat.emoji.map((e) => (
-              <button type="button" class="stree__emoji-btn" data-emoji-value={e} title={e}>{e}</button>
-            ))}
-          </div>
-        ))}
-      </div>
-    </div>
-    <div class="stree__popover-section">
-      <label class="stree__popover-label">{t("sidebar.color_label", locale)}</label>
-      <div class="stree__swatches" id="color-swatches">
-        {COLOR_SWATCHES.map((c) => (
-          <button type="button" class="stree__swatch" data-swatch-color={c} style={`background: ${c}`} title={c}></button>
-        ))}
-      </div>
-    </div>
-    <button type="button" id="color-icon-save" class="stree__popover-save">{t("sidebar.save", locale)}</button>
-  </div>
-</template>
+<Fragment set:html={html} />

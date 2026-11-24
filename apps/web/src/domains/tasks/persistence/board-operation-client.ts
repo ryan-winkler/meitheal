@@ -1,8 +1,8 @@
 import type { Client, InArgs, InStatement, Transaction } from "@libsql/client"
-import { acquireWriteTransaction } from "../../../../scripts/database-client.mjs"
+import { acquireWriteTransaction, localReaderCacheToken, registerReaderCacheSource } from "../../../../scripts/database-client.mjs"
 import { principalProof, requireBoardScope, scopeAssignedTo, scopeLimits, validateBoardOperations, validateBoardScope, type BoardScope, type WorkOperation } from "../board-scope"
 import { boardGrantStillCurrent, currentBoardGrantRevision } from "./board-grant-fence"
-import { ContinuityLockedError, guardClientContinuity, isFencedLocalFileClient, isFencedLocalWriter, isFencedReadSnapshot } from "./continuity-client"
+import { ContinuityLockedError, executeFencedSingleRead, guardClientContinuity, isFencedLocalFileClient, isFencedLocalWriter, isFencedReadSnapshot } from "./continuity-client"
 import { validateBoardPlacement } from "../board-access-service"
 import { ownedPlanning, taskField, taskOwnedBy } from "./board-storage"
 import { sql, joinSql, sourceSql } from "./sql-fragment"
@@ -148,10 +148,32 @@ export function boardOperationClient(client: Client, scope: BoardScope, operatio
     })
     if (mode === "read") admittedReads.set(guarded, { scope, live: db, snapshot: tx })
     else if (mode === "write") admittedWriters.set(guarded, { scope, require: requireIntent, check: async validate => { await validate(); requiredChecks.push(validate) } })
+    registerReaderCacheSource(guarded, tx)
     return guarded
   }
 
   async function single<T>(run: (tx: Transaction) => Promise<T>, mode?: "read" | "write" | "deferred"): Promise<T> {
+    const effectiveMode = mode ?? (write ? "write" : "read")
+    if (!write && effectiveMode !== "read") throw new BoardOperationError("denied")
+    if (effectiveMode === "read" && actorStillCurrent()) {
+      const fast = executeFencedSingleRead(
+        db,
+        async (raw, revision) => {
+          if (!actorStillCurrent() || scope.authorityRevision !== revision) throw new BoardOperationError("stale")
+          await check(raw)
+          await checkTargets(raw)
+        },
+        run,
+        () => check(db),
+      )
+      if (fast) {
+        const result = await fast
+        await checkTargets(db)
+        await check(db)
+        if (!actorStillCurrent()) throw new BoardOperationError("stale")
+        return result
+      }
+    }
     const tx = await transaction(mode, true)
     try {
       const result = await run(tx)
@@ -179,6 +201,7 @@ export function boardOperationClient(client: Client, scope: BoardScope, operatio
     },
   })
   operationClients.set(guarded, { source, scope, operations, targets, intents, checks, beginPrivateWrite: () => transaction("write", true) })
+  registerReaderCacheSource(guarded, db)
   return guarded
 }
 
@@ -234,7 +257,8 @@ export function boardReadTransactionClient(tx: Transaction, scope: BoardScope): 
       return typeof value === "function" ? value.bind(target) : value
     },
   })
-  return new Proxy(borrowed as unknown as Client, {
+  registerReaderCacheSource(borrowed, admitted.snapshot)
+  const clientProxy = new Proxy(borrowed as unknown as Client, {
     get(target, property) {
       if (property === "transaction") return async (mode: "read" | "write" | "deferred" = "write") => {
         if (mode !== "read") throw new BoardOperationError("denied")
@@ -249,14 +273,33 @@ export function boardReadTransactionClient(tx: Transaction, scope: BoardScope): 
       return typeof value === "function" ? value.bind(target) : value
     },
   })
+  registerReaderCacheSource(clientProxy, borrowed)
+  return clientProxy
 }
+
+const aggregatePlacementCache = new WeakMap<object, { token: string, byBoard: Map<string, Array<{ scope: unknown, scope_id: unknown }>> }>()
 
 /** Historical Board totals cannot be safely split by a later hidden Area/Project. */
 export async function canReadBoardAggregate(client: Pick<Client, "execute">, scope: BoardScope): Promise<boolean> {
   const allowed = await validateBoardScope(scope, client, { resource: "task", action: "read" })
   if (!allowed.ok) return false
-  const { rows } = await client.execute(sql`SELECT scope, scope_id FROM organization_access_policies
-    WHERE board_id = ${scope.boardId} AND scope IN ('group', 'project')`)
+  const state = localReaderCacheToken(client)
+  let rows = state ? aggregatePlacementCache.get(state.owner)?.token === state.token
+    ? aggregatePlacementCache.get(state.owner)!.byBoard.get(scope.boardId)
+    : undefined : undefined
+  if (!rows) {
+    const queried = await client.execute(sql`SELECT scope, scope_id FROM organization_access_policies
+      WHERE board_id = ${scope.boardId} AND scope IN ('group', 'project')`)
+    rows = queried.rows.map(row => ({ scope: row.scope, scope_id: row.scope_id }))
+    if (state && localReaderCacheToken(client)?.token === state.token) {
+      let boardCache = aggregatePlacementCache.get(state.owner)
+      if (!boardCache || boardCache.token !== state.token) {
+        boardCache = { token: state.token, byBoard: new Map() }
+        aggregatePlacementCache.set(state.owner, boardCache)
+      }
+      boardCache.byBoard.set(scope.boardId, rows)
+    }
+  }
   for (const row of rows) {
     if (!await validateBoardPlacement(scope, client, row.scope === "group" ? { areaId: String(row.scope_id) } : { projectId: String(row.scope_id) })) return false
   }

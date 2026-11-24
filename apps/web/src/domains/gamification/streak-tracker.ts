@@ -1,4 +1,4 @@
-import { scopePermits, type BoardScope } from "@domains/tasks"
+import { BoardOperationError, canReadBoardAggregate, scopePermits, type BoardScope } from "@domains/tasks"
 import { calendarToday, shiftCalendarDay } from "../../lib/date"
 import { gamificationClient, gamificationRead } from "./scoped-gamification"
 /**
@@ -95,44 +95,8 @@ async function readDailyProgress(scope: BoardScope, now: Date, timezone = "UTC")
 
 export async function ensureGamificationSchema(): Promise<void> { await ensureSchema() }
 
-/**
- * Record a task completion. Increments today's count and updates streak.
- * @param points - XP points to award (default: 0, Phase 5 adds weighted points)
- */
-export async function recordTaskCompletion(
-  scope: BoardScope,
-  points = 0,
-  now = new Date(),
-  timezone = "UTC",
-): Promise<GamificationStats | null> {
-  await ensureGamificationSchema()
-  const client = await gamificationClient(scope, true)
-  const today = statsDayKey(now, 0, timezone)
-  const yesterday = statsDayKey(now, -1, timezone)
-  // Resolve the streak and increment today's totals in the same Board writer.
-  await client.execute({
-    sql: `INSERT INTO gamification_stats(board_id, date, completed_count, streak_count, points)
-          VALUES(?, ?, 1, 1 + MAX(0, COALESCE((SELECT streak_count FROM gamification_stats
-            WHERE board_id = ? AND date = ?), 0)), ?)
-          ON CONFLICT(board_id,date) DO UPDATE SET
-            completed_count = completed_count + 1,
-            points = points + excluded.points`,
-    args: [scope.boardId, today, scope.boardId, yesterday, points],
-  })
-
-  return scopePermits(scope, { resource: "task", action: "read" }) ? getStats(scope, now, timezone) : null
-}
-
-export async function readStatsFromRunner(
-  runner: Pick<import("@libsql/client").Client, "execute">,
-  scope: BoardScope,
-  now = new Date(),
-  timezone = "UTC",
-): Promise<GamificationStats> {
-  const today = statsDayKey(now, 0, timezone)
-  const yesterday = statsDayKey(now, -1, timezone)
-
-  const agg = await runner.execute(gamificationRead(scope, {
+function statsQuery(scope: BoardScope, today: string, yesterday: string) {
+  return gamificationRead(scope, {
     sql: `SELECT
             COALESCE(MAX(CASE WHEN date = ? THEN completed_count END), 0) AS today_completed,
             MAX(CASE WHEN date = ? THEN streak_count END) AS today_streak,
@@ -142,9 +106,11 @@ export async function readStatsFromRunner(
             COALESCE(SUM(points), 0) AS total_points
           FROM board_stats`,
     args: [today, today, yesterday],
-  }))
+  })
+}
 
-  const row = (agg.rows[0] ?? {}) as Record<string, unknown>
+function parseStatsRows(rows: ReadonlyArray<Record<string, unknown>>): GamificationStats {
+  const row = rows[0] ?? {}
   const todayCompleted = row.today_streak != null ? Number(row.today_completed ?? 0) : 0
   const currentStreak = row.today_streak != null
     ? Number(row.today_streak)
@@ -162,13 +128,66 @@ export async function readStatsFromRunner(
   }
 }
 
+export async function readStatsFromRunner(
+  runner: Pick<import("@libsql/client").Client, "execute">,
+  scope: BoardScope,
+  now = new Date(),
+  timezone = "UTC",
+): Promise<GamificationStats> {
+  const today = statsDayKey(now, 0, timezone)
+  const yesterday = statsDayKey(now, -1, timezone)
+  const agg = await runner.execute(statsQuery(scope, today, yesterday))
+  return parseStatsRows(agg.rows as ReadonlyArray<Record<string, unknown>>)
+}
+
+/**
+ * Record a task completion. Increments today's count and updates streak.
+ * @param points - XP points to award (default: 0, Phase 5 adds weighted points)
+ */
+export async function recordTaskCompletion(
+  scope: BoardScope,
+  points = 0,
+  now = new Date(),
+  timezone = "UTC",
+): Promise<GamificationStats | null> {
+  await ensureGamificationSchema()
+  const base = getPersistenceClient()
+  const client = await gamificationClient(scope, true)
+  const today = statsDayKey(now, 0, timezone)
+  const yesterday = statsDayKey(now, -1, timezone)
+  const insertStatement = {
+    sql: `INSERT INTO gamification_stats(board_id, date, completed_count, streak_count, points)
+          VALUES(?, ?, 1, 1 + MAX(0, COALESCE((SELECT streak_count FROM gamification_stats
+            WHERE board_id = ? AND date = ?), 0)), ?)
+          ON CONFLICT(board_id,date) DO UPDATE SET
+            completed_count = completed_count + 1,
+            points = points + excluded.points`,
+    args: [scope.boardId, today, scope.boardId, yesterday, points],
+  }
+  if (!scopePermits(scope, { resource: "task", action: "read" })) {
+    await client.execute(insertStatement)
+    return null
+  }
+  if (!await canReadBoardAggregate(base, scope)) {
+    await client.execute(insertStatement)
+    throw new BoardOperationError("unavailable")
+  }
+  const [, agg] = await client.batch([insertStatement, statsQuery(scope, today, yesterday)], "write")
+  if (!await canReadBoardAggregate(base, scope)) throw new BoardOperationError("unavailable")
+  return parseStatsRows((agg?.rows ?? []) as ReadonlyArray<Record<string, unknown>>)
+}
+
 /**
  * Get current gamification stats via a single aggregate query.
  */
 export async function getStats(scope: BoardScope, now = new Date(), timezone = "UTC"): Promise<GamificationStats> {
   await ensureGamificationSchema()
   const client = await gamificationClient(scope)
-  return readStatsFromRunner(client, scope, now, timezone)
+  const today = statsDayKey(now, 0, timezone)
+  const yesterday = statsDayKey(now, -1, timezone)
+
+  const agg = await client.execute(statsQuery(scope, today, yesterday))
+  return parseStatsRows(agg.rows as ReadonlyArray<Record<string, unknown>>)
 }
 
 /**

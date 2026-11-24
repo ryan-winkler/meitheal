@@ -9,8 +9,8 @@ import TaskDetailSection from "./TaskDetailSection.astro"
 import TaskDetailLayoutEditor from "./TaskDetailLayoutEditor.astro"
 import StrategicEvaluator from "./StrategicEvaluator.astro";
 import Icon from "../ui/Icon.astro";
-import { ensureSchema, getPersistenceClient, SettingsRepository } from "@domains/tasks"
-import { taskDetailServerSettingKey } from "@lib/task-detail-layout"
+import { ensureSchema, getPersistenceClient } from "@domains/tasks"
+import { readCachedTaskDetailLayout } from "@lib/shell-settings-cache"
 import { t } from "../../i18n/translations"
 
 interface Props { suppressUrlOpen?: boolean; namedBoard?: boolean }
@@ -23,9 +23,7 @@ let serverLayoutJson: string | null = null
 try {
   const client = getPersistenceClient()
   await ensureSchema()
-  const stored = await new SettingsRepository(client).getByKeys([taskDetailServerSettingKey])
-  const raw = stored[taskDetailServerSettingKey]
-  if (typeof raw === "string" && raw.trim()) serverLayoutJson = raw
+  serverLayoutJson = await readCachedTaskDetailLayout(client)
 } catch { /* fallback to built-in layout defaults */ }
 ---
     <!-- Task Detail Centered Panel -->
@@ -76,7 +74,7 @@ try {
           <div class="flex gap-1.5 items-center flex-none">
             <div id="td-task-actions" hidden class="flex gap-1.5 items-center">
               <button id="td-toggle-promote" type="button" aria-pressed="false" class="p-1.5 hover:bg-bg-hover hover:text-warning text-text-secondary rounded transition-colors aria-pressed:text-warning aria-pressed:bg-warning/15" title={t("kanban.promote_card", locale)} aria-label={t("kanban.promote_card", locale)}>
-                <Icon name="star" size={18} />
+                <Icon name="star" size={18} sprite={true} />
               </button>
               <button id="td-copy-link" type="button" class="p-1.5 hover:bg-bg-hover hover:text-text-primary text-text-secondary rounded transition-colors" title={t("task_modal.copy_link", locale)} aria-label={t("task_modal.copy_link", locale)}>
                 <Icon name="link" size={18} sprite={true} />
@@ -101,13 +99,13 @@ try {
             <div class="td-toolbar__view">
               <button id="td-toggle-focus" type="button" class="btn btn-secondary"
                 data-enter-label={t("task_layout.focus", locale)} data-exit-label={t("task_layout.exit_focus", locale)}>
-                <Icon name="arrows-maximize" size={16} class="td-focus-enter-icon" />
-                <Icon name="arrows-minimize" size={16} class="td-focus-exit-icon" />
+                <Icon name="arrows-maximize" size={16} class="td-focus-enter-icon" sprite={true} />
+                <Icon name="arrows-minimize" size={16} class="td-focus-exit-icon" sprite={true} />
                 <span>{t("task_layout.focus", locale)}</span>
               </button>
               <button id="td-toggle-layout" type="button" class="td-layout-icon-btn" aria-expanded="false"
                 aria-controls="td-layout-panel" aria-label={t("task_layout.layout", locale)} title={t("task_layout.layout", locale)}>
-                <Icon name="adjustments-horizontal" size={19} />
+                <Icon name="adjustments-horizontal" size={19} sprite={true} />
               </button>
             </div>
             <button id="td-toggle-done" type="button" class="btn btn-primary td-done-btn">Mark as Done</button>
@@ -145,7 +143,7 @@ try {
             <div class="td-task-actions flex flex-wrap items-center gap-2">
               <button id="td-pin-action" type="button" aria-pressed="false"
                 class="inline-flex items-center gap-2 min-h-11 rounded border border-border bg-bg-card px-3 text-sm font-medium text-text-primary hover:bg-bg-hover aria-pressed:border-accent aria-pressed:bg-accent/10 aria-pressed:text-accent" hidden>
-                <Icon name="pin" size={16} />
+                <Icon name="pin" size={16} sprite={true} />
                 <span>{t("pins.pin", locale)}</span>
               </button>
               <button id="td-pin-refresh" type="button" class="min-h-11 rounded border border-border bg-bg-card px-3 text-sm font-medium text-text-primary hover:bg-bg-hover" hidden>
@@ -182,7 +180,7 @@ try {
               <div class="td-description-view">
                 <div class="td-description-view__actions">
                   <button id="td-desc-edit-btn-hover" class="btn btn-secondary" type="button">
-                    <Icon name="pencil" size={15} />
+                    <Icon name="pencil" size={15} sprite={true} />
                     {t("task_layout.edit_description", locale)}
                   </button>
                   <span id="td-desc-saved" class="text-accent text-xs" style="display:none;" role="status">Saved</span>

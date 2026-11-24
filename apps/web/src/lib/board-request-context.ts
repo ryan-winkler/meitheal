@@ -1,6 +1,9 @@
 import { getIngressTransport } from "../../scripts/ingress-transport.mjs"
+import { localReaderCacheToken } from "../../scripts/database-client.mjs"
 import { readCurrentHARole } from "@domains/ha/current-admin"
 import { BoardAccessService } from "@domains/tasks/board-access-service"
+import { currentBoardGrantRevision } from "@domains/tasks/persistence/board-grant-fence"
+import { ContinuityLockedError } from "@domains/tasks/persistence/continuity-client"
 import {
   registerVerifiedPrincipal,
   principalProof,
@@ -27,6 +30,8 @@ type RequestScopeOptions = {
 }
 const ingressPrincipals = new WeakMap<Request, Map<boolean, Promise<VerifiedPrincipal | null>>>()
 const requestPrincipals = new WeakMap<Request, Map<boolean, Promise<VerifiedPrincipal | null>>>()
+const operatorIdentityCache = new WeakMap<object, { token: string; value: string | null }>()
+const captureDefaultCache = new WeakMap<object, { token: string; preferences: unknown; fallback: unknown }>()
 
 function validBrowserProof(request: Request, actorId: string): boolean {
   const presented = request.headers.get("x-meitheal-board-session")
@@ -125,16 +130,30 @@ async function loadPrincipal(
   const user = trustedIngressUser(locals)
   if (user) return verifiedBoardIngressPrincipal({ request, locals }, write)
   if (!process.env.SUPERVISOR_TOKEN && canManageSystemSettings(request, locals)) {
-    const {
-      rows: [identity]
-    } = await getPersistenceClient().execute({
-      sql: "SELECT value FROM app_settings WHERE key = 'local_operator_identity'",
-      args: []
-    })
-    if (typeof identity?.value !== "string" || !identity.value) return null
-    if (write && !validBrowserProof(request, identity.value)) return null
+    const db = getPersistenceClient()
+    const state = localReaderCacheToken(db)
+    let identityValue: string | null | undefined =
+      state && operatorIdentityCache.get(state.owner)?.token === state.token
+        ? operatorIdentityCache.get(state.owner)!.value
+        : undefined
+    if (identityValue !== undefined) {
+      if (!(await currentBoardGrantRevision(db))) throw new ContinuityLockedError()
+    } else {
+      const {
+        rows: [identity]
+      } = await db.execute({
+        sql: "SELECT value FROM app_settings WHERE key = 'local_operator_identity'",
+        args: []
+      })
+      identityValue = typeof identity?.value === "string" && identity.value ? identity.value : null
+      if (state && localReaderCacheToken(db)?.token === state.token) {
+        operatorIdentityCache.set(state.owner, { token: state.token, value: identityValue })
+      }
+    }
+    if (!identityValue) return null
+    if (write && !validBrowserProof(request, identityValue)) return null
     return registerVerifiedPrincipal(
-      { kind: "local_operator", id: identity.value },
+      { kind: "local_operator", id: identityValue },
       {
         expiresAt: Date.now() + 5_000,
         administrator: true
@@ -198,18 +217,31 @@ export function normalizeTaskLocatorKey(value: string): string | null {
 
 async function captureDefault(principal: VerifiedPrincipal): Promise<string | null> {
   const db = getPersistenceClient()
-  const { rows: [row] } = await db.execute(
-    `SELECT (SELECT value FROM settings WHERE key = 'capture-board-preferences') AS preferences,
-      (SELECT value FROM app_settings WHERE key = 'default_capture_board_id') AS fallback`
-  )
+  const state = localReaderCacheToken(db)
+  let row: { preferences: unknown; fallback: unknown } | undefined =
+    state && captureDefaultCache.get(state.owner)?.token === state.token
+      ? captureDefaultCache.get(state.owner)
+      : undefined
+  if (row) {
+    if (!(await currentBoardGrantRevision(db))) throw new ContinuityLockedError()
+  } else {
+    const { rows: [fetched] } = await db.execute(
+      `SELECT (SELECT value FROM settings WHERE key = 'capture-board-preferences') AS preferences,
+        (SELECT value FROM app_settings WHERE key = 'default_capture_board_id') AS fallback`
+    )
+    row = { preferences: fetched?.preferences ?? null, fallback: fetched?.fallback ?? null }
+    if (state && localReaderCacheToken(db)?.token === state.token) {
+      captureDefaultCache.set(state.owner, { token: state.token, ...row })
+    }
+  }
   try {
-    const preferences = row?.preferences == null ? null : JSON.parse(String(row.preferences))
+    const preferences = row.preferences == null ? null : JSON.parse(String(row.preferences))
     const preferred = preferences?.[`${principal.kind}:${principal.id}`]
     if (typeof preferred === "string" && preferred) return preferred
   } catch {
     /* An invalid preference does not choose a different Board. */ return null
   }
-  return typeof row?.fallback === "string" ? row.fallback : null
+  return typeof row.fallback === "string" ? row.fallback : null
 }
 
 export async function resolveBoardRequestScope(

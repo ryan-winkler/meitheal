@@ -154,7 +154,7 @@ const newTaskLabel = suppliedNewTaskLabel ?? newOrganizationLabel(taskLabel, loc
   <div class="unified-bar__inner">
     <button id="menu-toggle" class="menu-toggle unified-bar__menu" type="button" aria-controls="sidebar"
       aria-expanded="false" aria-label={t("topbar.toggle_menu", locale)} disabled>
-      <Icon name="menu" size={20} />
+      <Icon name="menu" size={20} sprite={true} />
     </button>
     <!-- Left: title dropdown trigger (shows all sections) -->
     <div class="unified-bar__switcher" id={`${barId}-switcher`}>
@@ -183,7 +183,7 @@ const newTaskLabel = suppliedNewTaskLabel ?? newOrganizationLabel(taskLabel, loc
             )
           }
           if (resolved) {
-            return <span class="unified-bar__title-icon inline-flex items-center" aria-hidden="true"><Icon name={resolved} size={18} /></span>
+            return <span class="unified-bar__title-icon inline-flex items-center" aria-hidden="true"><Icon name={resolved} size={18} sprite={true} /></span>
           }
           return titleIcon ? (
             <span class="unified-bar__title-icon-emoji" aria-hidden="true">{titleIcon}</span>
@@ -216,7 +216,7 @@ const newTaskLabel = suppliedNewTaskLabel ?? newOrganizationLabel(taskLabel, loc
                 </span>
               ) : tabIcon ? (
                 <span class="unified-bar__switcher-item-icon inline-flex items-center" aria-hidden="true">
-                  <Icon name={tabIcon} size={16} />
+                  <Icon name={tabIcon} size={16} sprite={true} />
                 </span>
               ) : tab.icon ? (
                 <span class="unified-bar__switcher-item-icon" aria-hidden="true">{tab.icon}</span>
@@ -256,7 +256,7 @@ const newTaskLabel = suppliedNewTaskLabel ?? newOrganizationLabel(taskLabel, loc
                 </span>
               ) : vtIcon ? (
                 <span class="unified-bar__view-pill-icon inline-flex items-center" aria-hidden="true">
-                  <Icon name={vtIcon} size={15} />
+                  <Icon name={vtIcon} size={15} sprite={true} />
                 </span>
               ) : vt.icon ? (
                 <span class="unified-bar__view-pill-icon" aria-hidden="true">{vt.icon}</span>
@@ -299,7 +299,7 @@ const newTaskLabel = suppliedNewTaskLabel ?? newOrganizationLabel(taskLabel, loc
               </span>
             ) : tabIcon ? (
               <span class="unified-bar__tab-icon inline-flex items-center" aria-hidden="true">
-                <Icon name={tabIcon} size={15} />
+                <Icon name={tabIcon} size={15} sprite={true} />
               </span>
             ) : tab.icon ? (
               <span class="unified-bar__tab-icon" aria-hidden="true">{tab.icon}</span>
@@ -323,7 +323,7 @@ const newTaskLabel = suppliedNewTaskLabel ?? newOrganizationLabel(taskLabel, loc
             title={newTaskLabel}
             aria-label={newTaskLabel}
           >
-            <Icon name="plus" class="unified-bar__new-task-icon" size={18} />
+            <Icon name="plus" class="unified-bar__new-task-icon" size={18} sprite={true} />
             <span class="unified-bar__new-task-label">{newTaskLabel}</span>
           </button>
         </TaskCreationMenu>
@@ -339,7 +339,7 @@ const newTaskLabel = suppliedNewTaskLabel ?? newOrganizationLabel(taskLabel, loc
           aria-label={searchPlaceholder}
           aria-keyshortcuts="/"
         >
-          <Icon name="search" class="unified-bar__search-icon" size={16} />
+          <Icon name="search" class="unified-bar__search-icon" size={16} sprite={true} />
           <span class="unified-bar__search-text">{searchPlaceholder}</span>
           <kbd class="unified-bar__search-kbd" aria-hidden="true">/</kbd>
         </button>
@@ -354,7 +354,7 @@ const newTaskLabel = suppliedNewTaskLabel ?? newOrganizationLabel(taskLabel, loc
           title={aiButtonLabel}
           aria-label={aiButtonLabel}
         >
-          <Icon name="sparkles" size={20} />
+          <Icon name="sparkles" size={20} sprite={true} />
         </button>
       )}
 

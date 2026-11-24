@@ -1,18 +1,33 @@
 ---
+import { ensureSchema, getPersistenceClient } from "@domains/tasks"
 import { organizationLabelsFor } from "@lib/organization-labels"
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
 import type { OrganizationFeature } from "@lib/organization-availability"
+import { readCachedTaskDetailLayout } from "@lib/shell-settings-cache"
 import Icon from "../ui/Icon.astro"
 import { taskDetailSections } from "@lib/task-detail-layout"
 import { t, type Locale } from "../../i18n/translations"
 
 interface Props {
   locale: Locale
-  scope?: "personal"
+  scope?: "server" | "personal"
   serverLayoutJson?: string | null
   allowServerSave?: boolean
 }
-const { locale, serverLayoutJson = null, allowServerSave = false } = Astro.props
+const {
+  locale,
+  scope = "personal",
+  serverLayoutJson: passedServerLayout,
+  allowServerSave = false,
+} = Astro.props
+let serverLayoutJson = passedServerLayout ?? null
+if (passedServerLayout === undefined && (scope === "server" || allowServerSave)) {
+  try {
+    const client = getPersistenceClient()
+    await ensureSchema()
+    serverLayoutJson = await readCachedTaskDetailLayout(client)
+  } catch { /* fallback to built-in layout defaults */ }
+}
 
 const organization = await organizationLabelsFor(Astro)
 const fieldFeatures: Partial<Record<string, OrganizationFeature>> = { area: "groups", project: "projects", pillar: "pillars", principle: "principles", "home-assistant-area": "home_assistant_area" }
@@ -31,7 +46,7 @@ const sections = taskDetailSections.map(section => ({
 }))
 ---
 <div class="td-layout-editor" data-task-layout-editor
-  data-layout-scope="personal"
+  data-layout-scope={scope}
   data-server-layout={serverLayoutJson ?? undefined}
   data-layout-sections={JSON.stringify(sections)}
   data-layout-fields-label={t("task_layout.fields", locale)}

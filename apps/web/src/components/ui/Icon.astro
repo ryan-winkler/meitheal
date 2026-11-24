@@ -10,6 +10,7 @@ import {
   resolveCanonicalIconName,
   type IconName,
 } from "../../generated/icon-registry"
+import { escapeHtml } from "../../lib/escape-html"
 
 export interface Props {
   name: IconName
@@ -31,26 +32,14 @@ const canonical = resolveCanonicalIconName(name)
 if (sprite) {
   ;(Astro.locals.usedIcons ??= new Set()).add(canonical)
 }
+
+const w = Number.isFinite(Number(size)) ? Number(size) : 20
+const sw = Number.isFinite(Number(strokeWidth)) ? Number(strokeWidth) : 1.75
+const clsAttr = className ? ` class="${escapeHtml(className)}"` : ""
+const inner = sprite
+  ? `<use href="#mt-icon-${escapeHtml(canonical)}"></use>`
+  : ICON_INNER_SVG[canonical]
+const svgHtml = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${w}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"${clsAttr} aria-hidden="true" role="img">${inner}</svg>`
 ---
 
-<svg
-  xmlns="http://www.w3.org/2000/svg"
-  width={size}
-  height={size}
-  viewBox="0 0 24 24"
-  fill="none"
-  stroke="currentColor"
-  stroke-width={strokeWidth}
-  stroke-linecap="round"
-  stroke-linejoin="round"
-  vector-effect="non-scaling-stroke"
-  class={className || undefined}
-  aria-hidden="true"
-  role="img"
->
-  {sprite ? (
-    <use href={"#mt-icon-" + canonical} />
-  ) : (
-    <Fragment set:html={ICON_INNER_SVG[canonical]} />
-  )}
-</svg>
+<Fragment set:html={svgHtml} />
