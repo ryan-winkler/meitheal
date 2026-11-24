@@ -205,7 +205,7 @@ export function bindSwipeDismiss(options: SwipeDismissOptions): void {
     }, { signal: dragSignal })
 
     element.addEventListener("lostpointercapture", (lost: PointerEvent) => {
-      if (lost.pointerId === activePointerId) abortDrag()
+      if (lost.target === element && lost.pointerId === activePointerId) abortDrag()
     }, { signal: dragSignal })
 
     signal?.addEventListener("abort", abortDrag, { once: true, signal: dragAc.signal })
