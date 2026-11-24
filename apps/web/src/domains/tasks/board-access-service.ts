@@ -401,8 +401,6 @@ export class BoardAccessService {
         )`))
       return policy
     }, useCache, tokenState)
-    let executedInterveningQuery =
-      !policyHit || principal.kind === "agent" || principal.kind === "service"
     if (!row) return { ok: false, errorCode: "unavailable" }
     let role = typeof row.role === "string" ? row.role : null
     if (!role && principal.kind === "ha_user" && row.visibility === "shared") {
@@ -526,14 +524,13 @@ export class BoardAccessService {
     const uniqueFeatures = !existingScope || requestedFeatures.length <= 1
       ? requestedFeatures
       : [...new Set(requestedFeatures)]
-    const { rights, hit: featuresHit } = await allowedFeaturesEntry(
+    const { rights } = await allowedFeaturesEntry(
       principal,
       db,
       uniqueFeatures,
       useCache,
-      !executedInterveningQuery ? tokenState : undefined
+      policyHit && principal.kind !== "agent" && principal.kind !== "service" ? tokenState : undefined
     )
-    if (!featuresHit) executedInterveningQuery = true
     const allowed = (intent: WorkOperation) => {
       if (intent.action === "search" && intent.resource !== "task") return false
       if (
@@ -590,7 +587,7 @@ export class BoardAccessService {
     }
     if (!operations.every(allowed) || row.audience_allowed !== 1 || !principalProof(principal))
       return { ok: false, errorCode: "denied" }
-    if (tokenState && executedInterveningQuery && localReaderCacheToken(db)?.token !== tokenState.token) {
+    if (tokenState && localReaderCacheToken(db)?.token !== tokenState.token) {
       return null
     }
     if (existingScope) {

@@ -880,6 +880,7 @@ export async function executeWriteWithRetry(client, statementOrBatch, options) {
 /** @param {InStatement} statement */
 function isLikelyWriteStatement(statement) {
   const raw = typeof statement === "string" ? statement : statement.sql
+  if (isSideEffectFreeQuery(raw)) return false
   const sql = stripSqlCommentsAndLiterals(raw).trimStart()
   return /^(?:INSERT|UPDATE|DELETE|REPLACE|CREATE|ALTER|DROP|VACUUM|REINDEX|ANALYZE|ATTACH|DETACH)\b/i.test(sql)
     || (/^WITH\b/i.test(sql) && /\b(?:INSERT|UPDATE|DELETE|REPLACE)\b/i.test(sql))

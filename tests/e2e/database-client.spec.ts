@@ -920,6 +920,9 @@ test("writable file connections keep synchronous=FULL, set wal_autocheckpoint=40
     for (let i = 65; i <= 69; i += 1) {
       await client.batch([{ sql: "INSERT INTO wal_probe VALUES (?, ?)", args: [i, "k".repeat(512)] }], "write")
     }
+    for (let i = 0; i < 6; i += 1) {
+      await client.batch(["WITH c AS (SELECT replace('a', 'a', 'b') AS v) SELECT v FROM c"])
+    }
     await sleepMs(160)
     expect(await readCopyCount("main-after-on-conflict-rollback.db")).toBe(64)
 
