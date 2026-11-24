@@ -69,7 +69,7 @@ function isExternal(href: string): boolean {
           aria-label={t("sidebar.reorder_section", locale, { label: section.label })}
           title={t("sidebar.reorder_section", locale, { label: section.label })}
         >
-          <Icon name="grip-vertical" size={14} />
+          <Icon name="grip-vertical" size={14} sprite={true} />
         </button>
         <span
           class="sidebar-section__title"
@@ -86,7 +86,7 @@ function isExternal(href: string): boolean {
             aria-label={t("sidebar.rename_section", locale, { label: section.label })}
             title={t("sidebar.rename_section", locale, { label: section.label })}
           >
-            <Icon name="pencil" size={14} />
+            <Icon name="pencil" size={14} sprite={true} />
           </button>
           <button
             type="button"
@@ -100,8 +100,8 @@ function isExternal(href: string): boolean {
               ? t("sidebar.show_section", locale, { label: section.label })
               : t("sidebar.hide_section", locale, { label: section.label })}
           >
-            <span class="sidebar-eye-visible"><Icon name="eye" size={14} /></span>
-            <span class="sidebar-eye-hidden"><Icon name="eye-off" size={14} /></span>
+            <span class="sidebar-eye-visible"><Icon name="eye" size={14} sprite={true} /></span>
+            <span class="sidebar-eye-hidden"><Icon name="eye-off" size={14} sprite={true} /></span>
           </button>
           {section.removable && (
             <button
@@ -111,7 +111,7 @@ function isExternal(href: string): boolean {
               aria-label={`Delete ${section.label} section`}
               title={`Delete ${section.label} section`}
             >
-              <Icon name="trash" size={14} />
+              <Icon name="trash" size={14} sprite={true} />
             </button>
           )}
         </div>
@@ -143,7 +143,7 @@ function isExternal(href: string): boolean {
                     aria-label={t("sidebar.reorder_item", locale, { label: item.label })}
                     title={t("sidebar.reorder_item", locale, { label: item.label })}
                   >
-                    <Icon name="grip-vertical" size={14} />
+                    <Icon name="grip-vertical" size={14} sprite={true} />
                   </button>
                   <a
                     href={item.href}
@@ -157,7 +157,7 @@ function isExternal(href: string): boolean {
                     aria-label={item.label}
                   >
                     <span class="nav-icon">
-                      <Icon name={item.icon as any} />
+                      <Icon name={item.icon as any} sprite={true} />
                     </span>
                     <span class="nav-label" data-sidebar-item-label={item.key} data-default-label={item.defaultLabel}>
                       {item.label}
@@ -172,7 +172,7 @@ function isExternal(href: string): boolean {
                     aria-label="Task views"
                     title="Task views"
                   >
-                    <Icon name="chevron-down" size={13} />
+                    <Icon name="chevron-down" size={13} sprite={true} />
                   </button>
                   <div class="sidebar-edit-actions">
                     <button
@@ -182,7 +182,7 @@ function isExternal(href: string): boolean {
                       aria-label={t("sidebar.rename_item", locale, { label: item.label })}
                       title={t("sidebar.rename_item", locale, { label: item.label })}
                     >
-                      <Icon name="pencil" size={14} />
+                      <Icon name="pencil" size={14} sprite={true} />
                     </button>
                     <button
                       type="button"
@@ -196,8 +196,8 @@ function isExternal(href: string): boolean {
                         ? t("sidebar.show_item", locale, { label: item.label })
                         : t("sidebar.hide_item", locale, { label: item.label })}
                     >
-                      <span class="sidebar-eye-visible"><Icon name="eye" size={14} /></span>
-                      <span class="sidebar-eye-hidden"><Icon name="eye-off" size={14} /></span>
+                      <span class="sidebar-eye-visible"><Icon name="eye" size={14} sprite={true} /></span>
+                      <span class="sidebar-eye-hidden"><Icon name="eye-off" size={14} sprite={true} /></span>
                     </button>
                   </div>
                 </div>
@@ -207,7 +207,7 @@ function isExternal(href: string): boolean {
                     return (
                       <li class="task-view-subitem">
                         <a href={view.href} class="nav-link task-view-sublink" data-task-view-link={view.id} data-astro-prefetch="false">
-                          <Icon name={view.icon} size={16} />
+                          <Icon name={view.icon} size={16} sprite={true} />
                           <span>{view.label}</span>
                         </a>
                         <button
@@ -218,7 +218,7 @@ function isExternal(href: string): boolean {
                           aria-label={`Pin ${view.label} to navigation`}
                           title={isPinned ? `Unpin ${view.label}` : `Pin ${view.label}`}
                         >
-                          <Icon name="pin" size={15} />
+                          <Icon name="pin" size={15} sprite={true} />
                         </button>
                       </li>
                     )
@@ -250,7 +250,7 @@ function isExternal(href: string): boolean {
                   aria-label={t("sidebar.reorder_item", locale, { label: item.label })}
                   title={t("sidebar.reorder_item", locale, { label: item.label })}
                 >
-                  <Icon name="grip-vertical" size={14} />
+                  <Icon name="grip-vertical" size={14} sprite={true} />
                 </button>
                 <a
                   href={item.href}
@@ -268,7 +268,7 @@ function isExternal(href: string): boolean {
                     : {})}
                 >
                   <span class="nav-icon">
-                    <Icon name={item.icon as any} />
+                    <Icon name={item.icon as any} sprite={true} />
                   </span>
                   <span class="nav-label" data-sidebar-item-label={item.key} data-default-label={item.defaultLabel}>
                     {item.label}
@@ -286,7 +286,7 @@ function isExternal(href: string): boolean {
                     aria-expanded="true"
                     aria-controls="sidebar-board-children"
                   >
-                    <Icon name="chevron-down" size={13} />
+                    <Icon name="chevron-down" size={13} sprite={true} />
                   </button>
                 )}
                 <div class="sidebar-edit-actions">
@@ -297,7 +297,7 @@ function isExternal(href: string): boolean {
                     aria-label={t("sidebar.rename_item", locale, { label: item.label })}
                     title={t("sidebar.rename_item", locale, { label: item.label })}
                   >
-                    <Icon name="pencil" size={14} />
+                    <Icon name="pencil" size={14} sprite={true} />
                   </button>
                   <button
                     type="button"
@@ -311,8 +311,8 @@ function isExternal(href: string): boolean {
                       ? t("sidebar.show_item", locale, { label: item.label })
                       : t("sidebar.hide_item", locale, { label: item.label })}
                   >
-                    <span class="sidebar-eye-visible"><Icon name="eye" size={14} /></span>
-                    <span class="sidebar-eye-hidden"><Icon name="eye-off" size={14} /></span>
+                    <span class="sidebar-eye-visible"><Icon name="eye" size={14} sprite={true} /></span>
+                    <span class="sidebar-eye-hidden"><Icon name="eye-off" size={14} sprite={true} /></span>
                   </button>
                   {item.removable && (
                     <button
@@ -322,7 +322,7 @@ function isExternal(href: string): boolean {
                       aria-label={`Remove ${item.label}`}
                       title={`Remove ${item.label}`}
                     >
-                      <Icon name="x" size={14} />
+                      <Icon name="x" size={14} sprite={true} />
                     </button>
                   )}
                 </div>
@@ -335,7 +335,7 @@ function isExternal(href: string): boolean {
                     aria-label={`Unpin ${item.label} from navigation`}
                     title={`Unpin ${item.label}`}
                   >
-                    <Icon name="pin" size={14} />
+                    <Icon name="pin" size={14} sprite={true} />
                   </button>
                 )}
               </div>

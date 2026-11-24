@@ -1,7 +1,7 @@
 import type { Client, InArgs, InStatement, Transaction } from "@libsql/client"
-import { acquireWriteTransaction, isLocalFileClient, isLocalFileWriter, isLocalReadSnapshot } from "../../../../scripts/database-client.mjs"
+import { acquireWriteTransaction, isLocalFileClient, isLocalFileWriter, isLocalReadSnapshot, isSideEffectFreeQuery, localReaderCacheToken, localSnapshotGeneration, registerReaderCacheSource } from "../../../../scripts/database-client.mjs"
 import { databaseRevision, getBoardGrantPath, readBoardGrantRevision } from "../../../../scripts/board-grant-journal.mjs"
-import { principalProof, registerFencedScopeReader, validateBoardOperations } from "../board-scope"
+import { principalProof, registerFencedScopeReader, scopeLimits, validateBoardOperations } from "../board-scope"
 import { boardGrantStillCurrent, currentBoardGrantRevision } from "./board-grant-fence"
 
 export class ContinuityLockedError extends Error {
@@ -18,6 +18,11 @@ const clientGuards = new WeakMap<Client, Client>()
 const guardSources = new WeakMap<object, Client>()
 const fencedReadSnapshots = new WeakSet<Transaction>()
 const fencedLocalWriters = new WeakMap<Transaction, Transaction>()
+const singleReadRunners = new WeakMap<Client, <T>(
+  authorizeSnapshot: (raw: Transaction, revision: string) => Promise<void>,
+  runOnSnapshot: (raw: Transaction) => Promise<T>,
+  onLockedBeforeAdmission: () => Promise<void>,
+) => Promise<T>>()
 
 export function isFencedReadSnapshot(transaction: Transaction): boolean {
   return fencedReadSnapshots.has(transaction)
@@ -31,6 +36,26 @@ export function isFencedLocalWriter(transaction: Transaction): boolean {
 export function isFencedLocalFileClient(guarded: Client): boolean {
   const raw = guardSources.get(guarded)
   return raw !== undefined && isLocalFileClient(raw)
+}
+
+export function executeFencedSingleRead<T>(
+  guarded: Client,
+  authorizeSnapshot: (raw: Transaction, revision: string) => Promise<void>,
+  runOnSnapshot: (raw: Transaction) => Promise<T>,
+  onLockedBeforeAdmission: () => Promise<void>,
+): Promise<T> | undefined {
+  if (!isFencedLocalFileClient(guarded)) return undefined
+  const runner = singleReadRunners.get(guarded)
+  return runner ? runner(authorizeSnapshot, runOnSnapshot, onLockedBeforeAdmission) : undefined
+}
+
+async function staleOrLockedError(live: Pick<Client, "execute">, marker: string): Promise<Error> {
+  const current = await databaseRevision(live)
+  if (current && await readBoardGrantRevision(marker) === current) {
+    const error = new Error("Current permissions changed. Retry the operation with current authority.")
+    return Object.assign(error, { status: 409, errorCode: "stale" })
+  }
+  return new ContinuityLockedError()
 }
 
 /** Only controlled journal writers and synthetic fixtures may bypass an actual guard.
@@ -69,6 +94,7 @@ export function guardClientContinuity(client: Client): Client {
     } catch (error) { settle(); throw error }
     const pinnedLocalRead = mode === "read" && isLocalReadSnapshot(raw)
     let pinnedEpochChecked = false
+    let verifiedWriterGen: string | undefined
     const check = async () => {
       // A read/deferred transaction can retain an old WAL snapshot after an
       // authority writer commits. Its old epoch plus an unpublished old marker
@@ -77,20 +103,26 @@ export function guardClientContinuity(client: Client): Client {
       // For an immutable local snapshot, compare its stored epoch before the
       // fresh live marker and epoch check.
       const immutableSnapshot = pinnedLocalRead && isLocalReadSnapshot(raw)
-      const snapshotCurrent = immutableSnapshot
-        ? (!raw.closed && pinnedEpochChecked) || await databaseRevision(raw) === revision
-        : await boardGrantStillCurrent(raw, revision!, marker)
+      let snapshotCurrent: boolean
+      if (immutableSnapshot) {
+        snapshotCurrent = (!raw.closed && pinnedEpochChecked) || await databaseRevision(raw) === revision
+        pinnedEpochChecked = snapshotCurrent
+      } else if (mode === "write" && isLocalFileWriter(raw) && !raw.closed) {
+        const markerOk = await readBoardGrantRevision(marker) === revision
+        const writerGen = markerOk ? localSnapshotGeneration(raw) : undefined
+        if (markerOk && writerGen !== undefined && verifiedWriterGen === writerGen) {
+          snapshotCurrent = true
+        } else {
+          snapshotCurrent = markerOk && await databaseRevision(raw) === revision
+          verifiedWriterGen = snapshotCurrent ? writerGen : undefined
+        }
+      } else {
+        snapshotCurrent = await boardGrantStillCurrent(raw, revision!, marker)
+      }
       // The initial SELECT pins an immutable SQLite snapshot. The live marker
       // and live database epoch still have to agree at every boundary.
-      pinnedEpochChecked = immutableSnapshot && snapshotCurrent
       if (snapshotCurrent && (live === raw || await boardGrantStillCurrent(live, revision!, marker))) return
-      const current = await databaseRevision(live)
-      if (current && await readBoardGrantRevision(marker) === current) {
-        const error = new Error("Current permissions changed. Retry the operation with current authority.")
-        Object.assign(error, { status: 409, errorCode: "stale" })
-        throw error
-      }
-      throw new ContinuityLockedError()
+      throw await staleOrLockedError(live, marker)
     }
     try { await check() } catch (error) { raw.close(); settle(); throw error }
     const guarded = new Proxy(raw, {
@@ -108,7 +140,12 @@ export function guardClientContinuity(client: Client): Client {
             // Discard the pinned proof if any can replace its transaction.
             let result: unknown
             try { result = await operation.apply(target, args) }
-            finally { if (property === "executeMultiple") pinnedEpochChecked = false }
+            finally {
+              if (property === "executeMultiple") {
+                pinnedEpochChecked = false
+                verifiedWriterGen = undefined
+              }
+            }
             await check()
             return result
           }
@@ -134,6 +171,7 @@ export function guardClientContinuity(client: Client): Client {
     })
     if (pinnedLocalRead) fencedReadSnapshots.add(guarded)
     if (isLocalFileWriter(raw)) fencedLocalWriters.set(guarded, raw)
+    registerReaderCacheSource(guarded, raw)
     return guarded
   }
 
@@ -152,7 +190,8 @@ export function guardClientContinuity(client: Client): Client {
       if (property === "transaction") return transaction
       if (property === "execute") return async (statement: InStatement, args?: InArgs) => {
         const normalized = typeof statement === "string" && args !== undefined ? { sql: statement, args } : statement
-        if (!/^\s*(SELECT|EXPLAIN)\b/i.test(typeof statement === "string" ? statement : statement.sql)) {
+        const rawSql = typeof statement === "string" ? statement : statement.sql
+        if (!isSideEffectFreeQuery(rawSql) && !/^\s*EXPLAIN\b/i.test(rawSql)) {
           return single(tx => tx.execute(normalized))
         }
         // One SQLite SELECT is already an atomic snapshot. Keep independent reads
@@ -173,14 +212,51 @@ export function guardClientContinuity(client: Client): Client {
   guardedClients.add(guarded)
   clientGuards.set(client, guarded)
   guardSources.set(guarded, client)
+  singleReadRunners.set(guarded, async (authorizeSnapshot, runOnSnapshot, onLockedBeforeAdmission) => {
+    let revision: string | null
+    let raw: Transaction
+    try {
+      revision = await currentBoardGrantRevision(client, marker)
+      if (!revision) throw new ContinuityLockedError()
+      raw = await (client.transaction as (mode?: "read" | "write" | "deferred") => Promise<Transaction>)("read")
+    } catch (error) {
+      if (error instanceof ContinuityLockedError) await onLockedBeforeAdmission()
+      throw error
+    }
+    try {
+      const snapshotCurrent = isLocalReadSnapshot(raw)
+        ? await databaseRevision(raw) === revision
+        : await boardGrantStillCurrent(raw, revision, marker)
+      if (!snapshotCurrent || !await boardGrantStillCurrent(client, revision, marker)) {
+        throw await staleOrLockedError(client, marker)
+      }
+      await authorizeSnapshot(raw, revision)
+      const result = await runOnSnapshot(raw)
+      await raw.commit()
+      if (!await boardGrantStillCurrent(client, revision, marker)) {
+        throw await staleOrLockedError(client, marker)
+      }
+      return result
+    } finally { raw.close() }
+  })
   registerFencedScopeReader(guarded, async (scope, operations) => {
+    const tokenBefore = localReaderCacheToken(client)?.token
     // BoardAccessService binds the initial authority read to the scoped epoch.
     const result = await validateBoardOperations(scope, client, operations)
     if (!result.ok) return result
+    if (
+      (scope.principal.kind === "ha_user" || scope.principal.kind === "local_operator") &&
+      scopeLimits(scope).length === 0 &&
+      tokenBefore !== undefined &&
+      localReaderCacheToken(client)?.token === tokenBefore
+    ) {
+      return principalProof(scope.principal) ? result : { ok: false, errorCode: "stale" }
+    }
     if (!await boardGrantStillCurrent(client, scope.authorityRevision, marker) || !principalProof(scope.principal)) {
       return { ok: false, errorCode: "stale" }
     }
     return result
   })
+  registerReaderCacheSource(guarded, client)
   return guarded
 }

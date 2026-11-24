@@ -20,6 +20,7 @@
 import { effectiveOrganizationFlags } from "./organization-request-context"
 import { getSettingsRevision, SettingsRepository } from "@domains/tasks/persistence/settings-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
+import { localReaderCacheToken } from "../../scripts/database-client.mjs"
 
 /** Feature definition with metadata for the settings UI */
 export interface FeatureDefinition {
@@ -91,8 +92,9 @@ export const FEATURE_DEFAULTS: Record<string, FeatureDefinition> = {
 /** Resolved feature flag state */
 export type FeatureFlags = Record<string, boolean>
 
-// Invalidate immediately on app settings writes and periodically reread the database.
+// Invalidate immediately on app settings writes and reread when the local snapshot advances.
 let cachedFlags: { flags: FeatureFlags; revision: number; expiresAt: number } | undefined
+const snapshotFlagsCache = new WeakMap<object, { token: string; revision: number; flags: FeatureFlags }>()
 const CACHE_TTL_MS = 1000
 
 /** Get all feature flags (server-side — reads from DB, cached per request) */
@@ -103,13 +105,21 @@ export async function getFeatureFlags(): Promise<FeatureFlags> {
 export async function getStoredFeatureFlags(): Promise<FeatureFlags> {
   const now = performance.now()
   const revision = getSettingsRevision()
-  if (cachedFlags?.revision === revision && now < cachedFlags.expiresAt) {
-    return cachedFlags.flags
-  }
 
   try {
     await ensureSchema()
-    const repo = new SettingsRepository(getPersistenceClient())
+    const client = getPersistenceClient()
+    const state = localReaderCacheToken(client)
+    if (state) {
+      const cached = snapshotFlagsCache.get(state.owner)
+      if (cached && cached.token === state.token && cached.revision === revision) {
+        return cached.flags
+      }
+    } else if (cachedFlags?.revision === revision && now < cachedFlags.expiresAt) {
+      return cachedFlags.flags
+    }
+
+    const repo = new SettingsRepository(client)
 
     const featureKeys = Object.keys(FEATURE_DEFAULTS).map((k) => `feature_${k}`)
     const stored = await repo.getByKeys(featureKeys)
@@ -123,7 +133,13 @@ export async function getStoredFeatureFlags(): Promise<FeatureFlags> {
         flags[name] = def.default
       }
     }
-    cachedFlags = { flags, revision, expiresAt: now + CACHE_TTL_MS }
+    if (state) {
+      if (localReaderCacheToken(client)?.token === state.token && getSettingsRevision() === revision) {
+        snapshotFlagsCache.set(state.owner, { token: state.token, revision, flags })
+      }
+    } else {
+      cachedFlags = { flags, revision, expiresAt: now + CACHE_TTL_MS }
+    }
     return flags
   } catch {
     // Fallback: all defaults (safe degradation)

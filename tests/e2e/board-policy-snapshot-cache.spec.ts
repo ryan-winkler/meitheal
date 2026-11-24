@@ -47,6 +47,31 @@ test("reused Board policy reads follow writes from other connections, own writes
     const outsiderAccess = await new BoardAccessService(db).resolve(outsider, "household", { resource: "task", action: "read" })
     if (!outsiderAccess.ok) throw new Error(outsiderAccess.errorCode)
     expect(await validateBoardScope(outsiderAccess.scope, db, routines)).toMatchObject({ ok: false })
+
+    // Pooled read and write transactions reuse unchanged snapshots and observe committed or rolled-back changes.
+    const readOne = await db.transaction("read")
+    try { expect(await validateBoardScope(scope, readOne, routines)).toMatchObject({ ok: true }) } finally { readOne.close() }
+    const writerOne = await db.transaction("write")
+    try {
+      expect(await validateBoardScope(scope, writerOne, routines)).toMatchObject({ ok: true })
+      await writerOne.execute({
+        sql: "UPDATE organization_access_policies SET selected_users = ? WHERE scope = 'feature' AND scope_id = 'routines'",
+        args: [JSON.stringify(["nobody"])],
+      })
+      expect(await validateBoardScope(scope, writerOne, routines)).toMatchObject({ ok: false })
+      await writerOne.rollback()
+    } finally { writerOne.close() }
+    const writerTwo = await db.transaction("write")
+    try {
+      expect(await validateBoardScope(scope, writerTwo, routines)).toMatchObject({ ok: true })
+      await writerTwo.rollback()
+    } finally { writerTwo.close() }
+    await other.execute({
+      sql: "UPDATE organization_access_policies SET selected_users = ? WHERE scope = 'feature' AND scope_id = 'routines'",
+      args: [JSON.stringify(["other-user"])],
+    })
+    const readTwo = await db.transaction("read")
+    try { expect(await validateBoardScope(scope, readTwo, routines)).toMatchObject({ ok: false }) } finally { readTwo.close() }
   } finally {
     other?.close()
     resetPersistenceForTests()

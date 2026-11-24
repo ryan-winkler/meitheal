@@ -2,6 +2,7 @@ import { principalProof, type VerifiedPrincipal } from "../board-scope"
 import { BoardOperationError } from "./board-operation-client"
 import { randomUUID } from "node:crypto"
 import type { Client } from "@libsql/client"
+import { localReaderCacheToken } from "../../../../scripts/database-client.mjs"
 import {
   boardGrantStillCurrent,
   changeBoardGrants,
@@ -60,6 +61,21 @@ export function organizationAudienceContains(
   return proposed !== null && [...proposed].every((user) => original.has(user))
 }
 
+const MAX_POLICY_CACHE = 64
+const policyCache = new WeakMap<
+  object,
+  Map<string, { token: string; policies: OrganizationPolicy[] }>
+>()
+
+function clonePolicies(items: readonly OrganizationPolicy[]): OrganizationPolicy[] {
+  return items.map((policy) => ({
+    scope: { ...policy.scope },
+    audience: policy.audience,
+    users: [...policy.users],
+    revision: policy.revision
+  }))
+}
+
 export class OrganizationAccessRepository {
   constructor(
     private readonly db: Client,
@@ -69,6 +85,14 @@ export class OrganizationAccessRepository {
   async policies(scope: OrganizationScope["scope"], boardId: string): Promise<ReadPolicies> {
     const revision = await currentBoardGrantRevision(this.db, this.marker)
     if (!revision) return { status: "locked" }
+    const state = localReaderCacheToken(this.db)
+    const cacheKey = JSON.stringify([scope, boardId, revision])
+    let entries = state ? policyCache.get(state.owner) : undefined
+    const known = state ? entries?.get(cacheKey) : undefined
+    if (known && state && known.token === state.token) {
+      if (!(await boardGrantStillCurrent(this.db, revision, this.marker))) return { status: "locked" }
+      return { status: "current", policies: clonePolicies(known.policies) }
+    }
     const tx = await this.db.transaction("read")
     try {
       const { rows } = await tx.execute({
@@ -85,6 +109,15 @@ export class OrganizationAccessRepository {
       }))
       if (!(await boardGrantStillCurrent(this.db, revision, this.marker)))
         return { status: "locked" }
+      if (state && localReaderCacheToken(this.db)?.token === state.token) {
+        if (!entries) policyCache.set(state.owner, (entries = new Map()))
+        if (entries.has(cacheKey)) entries.delete(cacheKey)
+        else if (entries.size >= MAX_POLICY_CACHE) {
+          const oldest = entries.keys().next().value
+          if (oldest !== undefined) entries.delete(oldest)
+        }
+        entries.set(cacheKey, { token: state.token, policies: clonePolicies(policies) })
+      }
       return { status: "current", policies }
     } finally {
       tx.close()

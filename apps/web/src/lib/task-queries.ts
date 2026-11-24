@@ -386,10 +386,10 @@ function toTaskViewItem(row: Record<string, unknown>, slim = false, timezone = "
 
 function completedTodayQuery(scope: BoardScope, filter: ReturnType<typeof todayCompletionFilter>, placement?: TaskReadPlacement) {
   const context = taskReadPlacement(placement)
-  const query = scopedTaskRead(scope, sourceSql(`SELECT id, title, ticket_ref AS ticket_key FROM scoped_tasks AS tasks WHERE ${filter.sql} AND ${context.sql}
+  const query = scopedTaskRead(scope, sourceSql(`SELECT id, title, ticket_ref AS ticket_key FROM scoped_task_records AS tasks WHERE ${filter.sql} AND ${context.sql}
           ORDER BY CASE WHEN typeof(updated_at) = 'text' AND updated_at NOT LIKE '%T%' AND updated_at NOT LIKE '%:%'
             THEN ? ELSE ${taskTimestampMs("updated_at")} END DESC, rowid DESC
-          LIMIT 20`, [...filter.args, ...context.args, filter.firstInstant]))
+          LIMIT 20`, [...filter.args, ...context.args, filter.firstInstant]), "select", placement?.areaId ? "full" : "records")
   return tagTodayRead(query, "completed")
 }
 
@@ -494,20 +494,28 @@ export async function getTodayTaskRows(
                COUNT(*) FILTER (
                  WHERE status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL AND (${SCHEDULED_DATE_SQL} IS NULL OR ${SCHEDULED_DATE_SQL} = '')
                ) AS open_unscheduled
-        FROM scoped_tasks AS tasks WHERE ${context.sql}
+        FROM scoped_task_records AS tasks WHERE ${context.sql}
+      ),
+      open_candidates AS MATERIALIZED (
+        SELECT tasks.id
+        FROM scoped_task_records AS tasks
+        WHERE ${context.sql}
+          AND status IS NOT 'complete' AND status IS NOT 'archived' AND deferred_at IS NULL
+          AND (
+            ? = 1
+            OR (${SCHEDULED_DATE_SQL} IS NOT NULL AND ${SCHEDULED_DATE_SQL} <> '')
+            OR is_favorite NOT IN (0, '')
+            OR framework_payload NOT IN ('{}', '')
+          )
       )
       SELECT ${TASK_VIEW_COLUMNS}, completed_today, open_unscheduled
       FROM totals
-      LEFT JOIN scoped_tasks AS tasks
-        ON ${context.sql} AND status IS NOT 'complete' AND status IS NOT 'archived'
-        AND deferred_at IS NULL
-        AND (
-          ? = 1
-          OR (${SCHEDULED_DATE_SQL} IS NOT NULL AND ${SCHEDULED_DATE_SQL} <> '')
-          OR is_favorite NOT IN (0, '')
-          OR framework_payload NOT IN ('{}', '')
-        )
-      ORDER BY created_at DESC, tasks.rowid DESC
+      LEFT JOIN (
+        SELECT scoped_tasks.*
+        FROM open_candidates
+        JOIN scoped_tasks ON scoped_tasks.id = open_candidates.id
+      ) AS tasks ON 1 = 1
+      ORDER BY tasks.created_at DESC, tasks.rowid DESC
     `,
     args: [...completionFilter.args, ...context.args, ...context.args, includeUnscheduled ? 1 : 0],
   }

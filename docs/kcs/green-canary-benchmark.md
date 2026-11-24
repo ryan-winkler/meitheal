@@ -16,6 +16,14 @@ Inside the `192 MiB` Green Canary cgroup cap, `resolve_max_old_space_mb()` in `m
 
 Before spending a Green run, compare App CPU per workload cycle against the predecessor on Kintsugi. Use the same Node.js major and SQLite version as the image. The Canary image runs Alpine Node.js 24 with system SQLite 3.53.4; check with `node -e 'console.log(process.version, new (require("node:sqlite").DatabaseSync)(":memory:").prepare("SELECT sqlite_version() AS v").get().v)'`. Other SQLite releases can plan the large scoped projections very differently, so a host default such as Node.js 26 can misstate route costs. Local CPU per cycle tracks the Green ratio, not the absolute Green figure.
 
+Each SQLite handle caches up to 256 compiled statements and tagged read projections. Cached statements include side-effect-free `SELECT` queries, `WITH ... SELECT` queries, and parameterized `INSERT`, `UPDATE`, or `DELETE` statements without `RETURNING *`.
+
+`onWriteSlot` runs synchronous write batches, task writes, and gamification writes on the pooled writer handle when it is idle. This keeps `PRAGMA data_version` synchronized between `main` and pooled read handles across pure task and statistics mutations.
+
+Cross-handle caches (`BoardAccessService`, `validateBoardPlacement`, `OrganizationAccessRepository`, `feature-flags`, `shell-settings-cache`, `plugin-repository`, and `webhook-dispatcher`) reuse snapshots under `sharedCacheOwner` while `localReaderCacheToken` stays unchanged. `localGrantRevisionReaders` memoizes `main` grant-revision lookups against that same token, and `executeFencedSingleRead` runs unmodified single reads directly inside fenced snapshots.
+
+Scoped queries reuse a bounded 128-entry LRU `readModelPrefixes` cache. `TaskRepository.findById` uses guarded scalar parent subqueries, and `TaskRepository.searchCatalog` ranks bounded `top_hits` results before joining full row fields. SSR shell layout chrome, static `/today` sections, and sprited Tabler `<use>` icons reuse process-local `CachedHtmlSlot` entries (maximum 64 entries).
+
 ## Fixed workload and helper
 
 The workload seeds exactly 2,000 synthetic tasks. Before sampling the timed routes, the driver obtains a current local operator session from the Board directory and uses it for Create and Complete on the fixture Board. The session proof stays inside the driver. The 105 ordered cycles cover Today, List, Search, Open, Create, Complete and Readback. They produce 735 measured responses and 105 sleeps of 2.5 seconds. `curl` waits for each complete response body, and the driver checks the task ID and completion state against the response file in `/dev/shm`.

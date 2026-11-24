@@ -1,0 +1,91 @@
+import type { Client } from "@libsql/client"
+import { localReaderCacheToken } from "../../scripts/database-client.mjs"
+import { taskDetailServerSettingKey } from "./task-detail-layout"
+
+const installationIdCache = new WeakMap<object, { token: string; value: string | undefined }>()
+const sidebarProfileCache = new WeakMap<
+  object,
+  { token: string; value: { rawSidebarConfig: unknown; rawUserProfile: unknown; cacheKey: string } }
+>()
+const taskDetailLayoutCache = new WeakMap<object, { token: string; value: string | null }>()
+
+/** Read work_installation_id while the local database snapshot is unchanged. */
+export async function readCachedWorkInstallationId(
+  db: Pick<Client, "execute">,
+): Promise<string | undefined> {
+  const state = localReaderCacheToken(db)
+  if (state) {
+    const cached = installationIdCache.get(state.owner)
+    if (cached && cached.token === state.token) return cached.value
+  }
+  const {
+    rows: [installation],
+  } = await db.execute({
+    sql: "SELECT value FROM app_settings WHERE key = 'work_installation_id'",
+    args: [],
+  })
+  const value = typeof installation?.value === "string" ? installation.value : undefined
+  if (state && localReaderCacheToken(db)?.token === state.token) {
+    installationIdCache.set(state.owner, { token: state.token, value })
+  }
+  return value
+}
+
+/** Read sidebar_config and user_profile while the local database snapshot is unchanged. */
+export async function readCachedSidebarAndProfile(
+  db: Pick<Client, "execute">,
+): Promise<{ rawSidebarConfig: unknown; rawUserProfile: unknown; cacheKey: string }> {
+  const state = localReaderCacheToken(db)
+  if (state) {
+    const cached = sidebarProfileCache.get(state.owner)
+    if (cached && cached.token === state.token) {
+      return {
+        rawSidebarConfig: cached.value.rawSidebarConfig,
+        rawUserProfile: cached.value.rawUserProfile,
+        cacheKey: cached.value.cacheKey,
+      }
+    }
+  }
+  const res = await db.execute(
+    "SELECT key, value FROM settings WHERE key IN ('sidebar_config', 'user_profile')",
+  )
+  let rawSidebarConfig: unknown = null
+  let rawUserProfile: unknown = null
+  for (const row of res.rows) {
+    const key = String(row.key ?? "")
+    if (key === "sidebar_config") rawSidebarConfig = row.value
+    if (key === "user_profile") rawUserProfile = row.value
+  }
+  const value = {
+    rawSidebarConfig,
+    rawUserProfile,
+    cacheKey: JSON.stringify([rawSidebarConfig, rawUserProfile]),
+  }
+  if (state && localReaderCacheToken(db)?.token === state.token) {
+    sidebarProfileCache.set(state.owner, { token: state.token, value })
+  }
+  return value
+}
+
+/** Read task_detail_layout_default while the local database snapshot is unchanged. */
+export async function readCachedTaskDetailLayout(
+  db: Pick<Client, "execute">,
+): Promise<string | null> {
+  const state = localReaderCacheToken(db)
+  if (state) {
+    const cached = taskDetailLayoutCache.get(state.owner)
+    if (cached && cached.token === state.token) return cached.value
+  }
+  const {
+    rows: [row],
+  } = await db.execute({
+    sql: "SELECT value FROM settings WHERE key = ?",
+    args: [taskDetailServerSettingKey],
+  })
+  const raw = row?.value
+  const value = typeof raw === "string" && raw.trim() ? raw : null
+  if (state && localReaderCacheToken(db)?.token === state.token) {
+    taskDetailLayoutCache.set(state.owner, { token: state.token, value })
+  }
+  return value
+}

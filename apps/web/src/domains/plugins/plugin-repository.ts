@@ -14,6 +14,7 @@
  * @bounded-context plugins
  */
 import { ensureSchema, getPersistenceClient } from "@domains/tasks"
+import { localReaderCacheToken } from "../../../scripts/database-client.mjs"
 import type {
   PluginFiles,
   PluginManifest,
@@ -28,6 +29,7 @@ export interface PluginDbClient {
 }
 
 export const PLUGIN_SAFE_MODE_SETTING_KEY = "plugin_safe_mode"
+const activePluginsCache = new WeakMap<object, { token: string; active: boolean }>()
 export const MAX_PLUGIN_STORAGE_BYTES = 256 * 1024 // 256 KB per plugin
 export const MAX_PLUGIN_STORAGE_KEYS = 100
 
@@ -223,14 +225,25 @@ export class PluginRepository {
   }
 
   async hasActivePlugins(): Promise<boolean> {
-    const safeMode = await this.getSafeMode()
-    if (safeMode) return false
     const db = await this.db()
-    const { rows } = await db.execute({
-      sql: "SELECT 1 FROM plugins WHERE enabled = 1 AND needs_reconsent = 0 LIMIT 1",
-      args: [],
-    })
-    return rows.length > 0
+    const state = localReaderCacheToken(db as never)
+    if (state) {
+      const cached = activePluginsCache.get(state.owner)
+      if (cached && cached.token === state.token) return cached.active
+    }
+    const safeMode = await this.getSafeMode()
+    const active = safeMode
+      ? false
+      : (
+          await db.execute({
+            sql: "SELECT 1 FROM plugins WHERE enabled = 1 AND needs_reconsent = 0 LIMIT 1",
+            args: [],
+          })
+        ).rows.length > 0
+    if (state && localReaderCacheToken(db as never)?.token === state.token) {
+      activePluginsCache.set(state.owner, { token: state.token, active })
+    }
+    return active
   }
 
   // ── Isolated Per-Plugin Storage ──

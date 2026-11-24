@@ -15,7 +15,7 @@ const Menu = list ? "ul" : "div"
 <details class="nav-overflow__more" data-nav-overflow-more hidden>
   <summary class="nav-overflow__toggle" aria-controls={id}>
     <span>{t("nav.more", locale)}</span>
-    <Icon name="chevron-down" size={14} />
+    <Icon name="chevron-down" size={14} sprite={true} />
   </summary>
   <Menu id={id} class="nav-overflow__menu" data-nav-overflow-menu
     role={list ? undefined : "group"} aria-label={t(list ? "nav.more" : "nav.more_views", locale)} />

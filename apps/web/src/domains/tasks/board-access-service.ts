@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto"
-import { ownedPlanning } from "./persistence/board-storage"
+import { ownedPlanning, storageBoardId } from "./persistence/board-storage"
 import { joinSql, sql } from "./persistence/sql-fragment"
 import { parseWorkDestinations } from "./integration-destinations"
 import { featureAudienceAllowed, organizationAudienceAllowed } from "./board-feature-policy"
 import type { Client } from "@libsql/client"
-import { localSnapshotGeneration, tagBoardPolicyRead } from "../../../scripts/database-client.mjs"
+import { localReaderCacheToken, tagBoardPolicyRead } from "../../../scripts/database-client.mjs"
 import { boardGrantStillCurrent, currentBoardGrantRevision } from "./persistence/board-grant-fence"
 import {
   principalProof,
@@ -50,7 +50,11 @@ const actions: WorkAction[] = [
   "restore"
 ]
 const management = new Set<WorkAction>(["manage", "retire", "restore"])
-const snapshotReads = new WeakMap<object, WeakMap<VerifiedPrincipal, Map<string, { generation: string; value: unknown }>>>()
+const ALL_GATED_FEATURES = ["organizer", "groups", "projects", "goals", "routines", "pillars"] as const
+const MAX_SNAPSHOT_ENTRIES = 256
+const snapshotReads = new WeakMap<object, Map<string, { generation: string; value: unknown }>>()
+type PlacementPolicySnapshot = { invalid: boolean; policies: Array<Record<string, unknown>> }
+const placementSnapshotCache = new WeakMap<object, { token: string; entries: Map<string, PlacementPolicySnapshot> }>()
 
 /**
  * Policy rows are a pure function of the principal and what one unchanged
@@ -62,20 +66,33 @@ async function snapshotRead<T>(
   db: Pick<Client, "execute">,
   principal: VerifiedPrincipal,
   key: string,
-  read: () => Promise<T>
+  read: () => Promise<T>,
+  initialState = localReaderCacheToken(db)
 ): Promise<T> {
-  const generation = localSnapshotGeneration(db)
-  if (generation === undefined) return read()
-  let byPrincipal = snapshotReads.get(db)
-  if (!byPrincipal) snapshotReads.set(db, (byPrincipal = new WeakMap()))
-  let values = byPrincipal.get(principal)
-  if (!values) byPrincipal.set(principal, (values = new Map()))
-  const known = values.get(key)
-  if (known?.generation === generation) return known.value as T
+  if (!principalProof(principal)) return read()
+  const state = initialState
+  if (!state) return read()
+  let values = snapshotReads.get(state.owner)
+  if (!values) snapshotReads.set(state.owner, (values = new Map()))
+  const cacheKey = `${principal.kind}\0${principal.id}\0${key}`
+  const known = values.get(cacheKey)
+  if (known?.generation === state.token) {
+    values.delete(cacheKey)
+    values.set(cacheKey, known)
+    return known.value as T
+  }
   const value = await read()
   // Keep a result only if nothing changed while it was being read.
-  if (localSnapshotGeneration(db) === generation) values.set(key, { generation, value })
-  else values.delete(key)
+  if (localReaderCacheToken(db)?.token === state.token) {
+    if (values.has(cacheKey)) values.delete(cacheKey)
+    else if (values.size >= MAX_SNAPSHOT_ENTRIES) {
+      const oldest = values.keys().next().value
+      if (oldest !== undefined) values.delete(oldest)
+    }
+    values.set(cacheKey, { generation: state.token, value })
+  } else {
+    values.delete(cacheKey)
+  }
   return value
 }
 
@@ -164,14 +181,15 @@ function audienceAllows(row: Record<string, unknown>, principal: VerifiedPrincip
 async function allowedFeatures(
   principal: VerifiedPrincipal,
   db: Pick<Client, "execute">,
-  features: readonly string[]
+  features: readonly string[],
+  initialState = localReaderCacheToken(db)
 ): Promise<Set<string>> {
   if (!features.length) return new Set()
-  const allowed = await snapshotRead(db, principal, `features:${JSON.stringify(features)}`, async () => {
+  const allowed = await snapshotRead(db, principal, `features:${features.join(",")}`, async () => {
     const { rows } = await db.execute(joinSql(features.map(feature => sql`SELECT ${feature} AS feature,
       ${featureAudienceAllowed(principal, feature)} AS allowed`), " UNION ALL "))
     return rows.filter(row => row.allowed === 1).map(row => String(row.feature))
-  })
+  }, initialState)
   return new Set(allowed)
 }
 
@@ -197,37 +215,63 @@ export async function validateBoardPlacement(
   placement: { areaId?: string | null; projectId?: string | null }
 ): Promise<boolean> {
   requireBoardScope(scope)
-  // Resolve a Project's actual Area under this same snapshot. A null direct Area
-  // must never bypass the audience of its Project's parent. Existing retired or
-  // dangling references remain historical data; create/move commands separately
-  // require current active parents before writing a new placement.
-  let effectiveArea = placement.areaId ?? null
-  if (placement.projectId) {
-    const {
-      rows: [project]
-    } = await db.execute(
-      sql`SELECT area_id, ${ownedPlanning(scope, "projects")} AS owned FROM projects WHERE id=${placement.projectId}`
-    )
-    if (project && !project.owned) return false
-    if (project && typeof project.area_id === "string") effectiveArea = project.area_id
+  const state = localReaderCacheToken(db)
+  const cacheKey = `${scope.boardId}\0${storageBoardId(scope) ?? ""}\0${placement.areaId ?? ""}\0${placement.projectId ?? ""}`
+  const existing = state ? placementSnapshotCache.get(state.owner) : undefined
+  let snapshot = existing && existing.token === state!.token ? existing.entries.get(cacheKey) : undefined
+  if (!snapshot) {
+    // Resolve a Project's actual Area under this same snapshot. A null direct Area
+    // must never bypass the audience of its Project's parent. Existing retired or
+    // dangling references remain historical data; create/move commands separately
+    // require current active parents before writing a new placement.
+    let effectiveArea = placement.areaId ?? null
+    let invalid = false
+    if (placement.projectId) {
+      const {
+        rows: [project]
+      } = await db.execute(
+        sql`SELECT area_id, ${ownedPlanning(scope, "projects")} AS owned FROM projects WHERE id=${placement.projectId}`
+      )
+      if (project && !project.owned) invalid = true
+      if (!invalid && project && typeof project.area_id === "string") effectiveArea = project.area_id
+    }
+    if (!invalid && effectiveArea) {
+      const {
+        rows: [area]
+      } = await db.execute(
+        sql`SELECT ${ownedPlanning(scope, "areas")} AS owned FROM areas WHERE id=${effectiveArea}`
+      )
+      if (area && !area.owned) invalid = true
+    }
+    let policies: Array<Record<string, unknown>> = []
+    if (!invalid) {
+      const result = await db.execute({
+        sql: `SELECT audience, selected_users FROM organization_access_policies WHERE board_id = ? AND
+          (scope = 'household' OR (scope = 'group' AND scope_id = ?) OR (scope = 'project' AND scope_id = ?))`,
+        args: [scope.boardId, effectiveArea ?? "", placement.projectId ?? ""]
+      })
+      policies = result.rows as Array<Record<string, unknown>>
+    }
+    snapshot = { invalid, policies }
+    if (state && localReaderCacheToken(db)?.token === state.token) {
+      let holder = placementSnapshotCache.get(state.owner)
+      if (!holder || holder.token !== state.token) {
+        holder = { token: state.token, entries: new Map() }
+        placementSnapshotCache.set(state.owner, holder)
+      }
+      if (holder.entries.has(cacheKey)) holder.entries.delete(cacheKey)
+      else if (holder.entries.size >= MAX_SNAPSHOT_ENTRIES) {
+        const oldest = holder.entries.keys().next().value
+        if (oldest !== undefined) holder.entries.delete(oldest)
+      }
+      holder.entries.set(cacheKey, snapshot)
+    }
   }
-  if (effectiveArea) {
-    const {
-      rows: [area]
-    } = await db.execute(
-      sql`SELECT ${ownedPlanning(scope, "areas")} AS owned FROM areas WHERE id=${effectiveArea}`
-    )
-    if (area && !area.owned) return false
-  }
-  const { rows: policies } = await db.execute({
-    sql: `SELECT audience, selected_users FROM organization_access_policies WHERE board_id = ? AND
-      (scope = 'household' OR (scope = 'group' AND scope_id = ?) OR (scope = 'project' AND scope_id = ?))`,
-    args: [scope.boardId, effectiveArea ?? "", placement.projectId ?? ""]
-  })
+  if (snapshot.invalid) return false
   return [scope, ...scopeLimits(scope)].every(
     (current) =>
       Boolean(principalProof(current.principal)) &&
-      policies.every((row) => audienceAllows(row, current.principal))
+      snapshot.policies.every((row) => audienceAllows(row, current.principal))
   )
 }
 
@@ -299,7 +343,8 @@ export class BoardAccessService {
   ): Promise<ScopeResult> {
     const proof = principalProof(principal)
     if (!proof) return { ok: false, errorCode: "stale" }
-    const row = await snapshotRead(db, principal, `policy:${JSON.stringify([boardId, revision])}`, async () => {
+    const tokenState = localReaderCacheToken(db)
+    const row = await snapshotRead(db, principal, `policy:${boardId}\0${revision}`, async () => {
       const {
         rows: [policy]
       } = await db.execute(tagBoardPolicyRead(sql`SELECT board.id, board.name, board.ticket_prefix, board.state, board.revision, board.visibility, board.storage_encoding,
@@ -317,7 +362,7 @@ export class BoardAccessService {
           SELECT 1 FROM board_access_epoch WHERE singleton = 1 AND revision = ${revision}
         )`))
       return policy
-    })
+    }, tokenState)
     if (!row) return { ok: false, errorCode: "unavailable" }
     let role = typeof row.role === "string" ? row.role : null
     if (!role && principal.kind === "ha_user" && row.visibility === "shared") {
@@ -436,9 +481,12 @@ export class BoardAccessService {
     // the complete UI capability catalogue. This avoids multiplying unrelated
     // feature queries at every SQL/commit boundary.
     const requestedFeatures = !existingScope
-      ? Object.values(features).flat()
+      ? ALL_GATED_FEATURES
       : operations.flatMap(operation => features[operation.resource] ?? [])
-    const rights = await allowedFeatures(principal, db, [...new Set(requestedFeatures)])
+    const uniqueFeatures = !existingScope || requestedFeatures.length <= 1
+      ? requestedFeatures
+      : [...new Set(requestedFeatures)]
+    const rights = await allowedFeatures(principal, db, uniqueFeatures, tokenState)
     const allowed = (intent: WorkOperation) => {
       if (intent.action === "search" && intent.resource !== "task") return false
       if (
