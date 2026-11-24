@@ -32,7 +32,6 @@ const ingressPrincipals = new WeakMap<Request, Map<boolean, Promise<VerifiedPrin
 const requestPrincipals = new WeakMap<Request, Map<boolean, Promise<VerifiedPrincipal | null>>>()
 const operatorIdentityCache = new WeakMap<object, { token: string; value: string | null }>()
 const captureDefaultCache = new WeakMap<object, { token: string; preferences: unknown; fallback: unknown }>()
-const REQUEST_PRINCIPAL_PROOF_TTL_MS = 30_000
 
 function validBrowserProof(request: Request, actorId: string): boolean {
   const presented = request.headers.get("x-meitheal-board-session")
@@ -74,13 +73,13 @@ async function loadIngressPrincipal(
 ): Promise<VerifiedPrincipal | null> {
   const user = trustedIngressUser(locals)
   if (!user || (write && !validBrowserProof(request, user.id))) return null
-  const roleDeadline = Date.now() + 5_000
+  const deadline = Date.now() + 5_000
   const role = await readCurrentHARole(user.id, request.signal)
-  if ((role !== "admin" && role !== "member") || roleDeadline <= Date.now()) return null
+  if ((role !== "admin" && role !== "member") || deadline <= Date.now()) return null
   return registerVerifiedPrincipal(
     { kind: "ha_user", id: user.id },
     {
-      expiresAt: Date.now() + REQUEST_PRINCIPAL_PROOF_TTL_MS,
+      expiresAt: deadline,
       administrator: role === "admin"
     }
   )
@@ -120,7 +119,7 @@ async function loadPrincipal(
     return registerVerifiedPrincipal(
       { kind: "agent", id: agent.tokenId, tokenId: agent.tokenId },
       {
-        expiresAt: Date.now() + REQUEST_PRINCIPAL_PROOF_TTL_MS,
+        expiresAt: Date.now() + 5_000,
         administrator: false,
         tokenScopes: agent.scopes,
         assignedTo: agent.assigneeId,
@@ -156,7 +155,7 @@ async function loadPrincipal(
     return registerVerifiedPrincipal(
       { kind: "local_operator", id: identityValue },
       {
-        expiresAt: Date.now() + REQUEST_PRINCIPAL_PROOF_TTL_MS,
+        expiresAt: Date.now() + 5_000,
         administrator: true
       }
     )
