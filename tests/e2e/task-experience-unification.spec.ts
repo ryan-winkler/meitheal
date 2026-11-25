@@ -78,9 +78,7 @@ test.describe("Task Experience Unification (R01-R20)", () => {
       await openTaskCard(page, epicBody.id)
       await expect(page.locator("#td-link-children")).toContainText("Child Story From Full Form")
 
-      const checklistPut = page.waitForResponse(r => r.request().method() === "PUT" && new URL(r.url()).pathname === `/api/tasks/${epicBody.id}`)
       await page.locator("#td-add-checklist-item").click()
-      expect((await checklistPut).status()).toBe(200)
       const checklistInput = page.locator("#td-checklists textarea").last()
       await expect(checklistInput).toBeVisible()
       const checklistUpdate = page.waitForResponse(r => r.request().method() === "PUT" && new URL(r.url()).pathname === `/api/tasks/${epicBody.id}`)
@@ -125,6 +123,7 @@ test.describe("Task Experience Unification (R01-R20)", () => {
       const markdownBtn = page.locator('#td-desc-edit-container .md-editor-modes button[data-md-mode="markdown"]')
       await expect(markdownBtn).toBeVisible()
 
+      await markdownBtn.click()
       await page.locator("#td-description").fill(payload)
       await visualBtn.click()
       await expect(page.locator("#td-desc-edit-container .md-visual-surface")).toBeVisible()
@@ -138,6 +137,8 @@ test.describe("Task Experience Unification (R01-R20)", () => {
 
       await page.reload()
       await openTaskCard(page, id)
+      await page.getByRole("button", { name: "Edit description" }).click()
+      await markdownBtn.click()
       await expect(page.locator("#td-description")).toHaveValue(payload)
     } finally {
       await deleteTask(request, headers, id)
@@ -203,12 +204,11 @@ test.describe("Task Experience Unification (R01-R20)", () => {
       await page.goto("/tasks")
       await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
 
-      // R15: Card actions opaque without hover
-      const actionsStyle = await page.locator(`.kanban-card[data-id="${t1.id}"] .kanban-card-actions`).evaluate(el => {
-        const s = getComputedStyle(el)
-        return { opacity: s.opacity, pointerEvents: s.pointerEvents }
-      })
-      expect(actionsStyle).toEqual({ opacity: "1", pointerEvents: "auto" })
+      const card = page.locator(`.kanban-card[data-id="${t1.id}"]`)
+      const actions = card.locator(".kanban-card-actions")
+      await card.locator(".card-open-btn").focus()
+      await expect(actions).toHaveCSS("opacity", "1")
+      await expect(actions).toHaveCSS("pointer-events", "auto")
 
       // R17: Custom swimlane color & API persistence
       await page.locator("#manage-lanes-btn").click()

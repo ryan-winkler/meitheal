@@ -50,6 +50,7 @@ test("a slow assignee directory leaves the ticket editable and ignores a superse
     await expect(assignee).toHaveValue(firstAssignee)
     await expect(page.locator("#td-status")).toBeEnabled()
     await page.getByRole("button", { name: "Edit description" }).click()
+    await page.getByRole("tab", { name: "Markdown", exact: true }).click()
     await page.locator("#td-description").fill(savedDescription)
     await page.locator("#td-desc-save-btn").click()
     await expect(page.locator("#td-desc-preview")).toHaveText(savedDescription)
