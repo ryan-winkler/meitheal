@@ -28,7 +28,7 @@ Choose **Group by → By Area** to group the current page of cards within each l
 
 The task key is part of the card button’s accessible name. When one quick action replaces another, only the current dialog accepts keyboard input.
 
-On desktop pointers, quick actions float in a frosted-glass bar at the bottom corner of the card when hovered or keyboard-focused so idle cards use their full height; on touch devices they remain directly tappable below the task details.
+Quick actions sit below card details. On desktop they appear on hover or keyboard focus, with space reserved so they do not cover the title or description. On touch devices they remain visible.
 
 Tab and Shift+Tab stay inside task detail while it loads and while you edit. Press Escape to close it and return to the card. When a confirmation is open, Escape dismisses the confirmation first.
 

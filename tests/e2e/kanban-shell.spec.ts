@@ -3,6 +3,7 @@ import { expect } from "@playwright/test"
 import { test } from "../helpers/stored-assignee-fixture"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 import { expectVisibleFocusRing } from "../helpers/focus-ring"
+import { moveCardToLane } from "../helpers/kanban-drag"
 
 test.describe("Tasks Shell (Kanban)", () => {
   test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
@@ -69,6 +70,7 @@ test.describe("Tasks Shell (Kanban)", () => {
       await card.locator(".card-open-btn").click()
       await expect(page.locator("#td-status")).toBeEnabled()
       await page.locator("#td-desc-preview-container").click()
+      await page.getByRole("tab", { name: "Markdown", exact: true }).click()
       await page.locator("#td-description").fill("Check **replacement controller**. Read [the manual](https://example.com/).")
       const saved = page.waitForResponse(response => response.request().method() === "PUT" && new URL(response.url()).pathname === `/api/tasks/${id}`)
       await page.locator("#td-desc-save-btn").click()
@@ -307,14 +309,14 @@ test.describe("Tasks Shell (Kanban)", () => {
   test("custom lane labels remain text in the management panel", async ({ page }) => {
     const label = 'Review " data-lane-injection="yes <img data-lane-injection>'
     await page.route("**/api/lanes", route => route.fulfill({
-      json: { lanes: [{ id: "fixture", label, builtIn: false, position: 1, wip_limit: 0 }] },
+      json: { lanes: [{ id: "fixture", key: "fixture", label, builtIn: false, position: 1, wip_limit: 0 }] },
     }))
 
     await page.locator("#manage-lanes-btn").click()
 
     const lane = page.locator('#lane-list .lane-item[data-id="fixture"]')
-    await expect(lane.locator(".lane-item-label")).toContainText(label)
-    await expect(lane.getByRole("button", { name: "Rename lane" })).toHaveAttribute("data-label", label)
+    await expect(lane.locator(".lane-visual-label")).toHaveText(label)
+    await expect(lane.getByRole("button", { name: `Rename ${label}`, exact: true })).toHaveAttribute("data-label", label)
     await expect(page.locator("#lane-list [data-lane-injection]")).toHaveCount(0)
   })
 
@@ -349,7 +351,7 @@ test.describe("Tasks Shell (Kanban)", () => {
 
   test("mobile keeps task sub-view pills reachable by touch", async ({ page }) => {
     await page.setViewportSize({ width: 430, height: 932 })
-    await page.goto("/tasks")
+    await page.goto("/tasks?view=kanban#kanban")
     await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
 
     const viewPills = page.locator(".unified-bar__view-pills")
@@ -541,9 +543,7 @@ test.describe("Kanban card workflows", () => {
       const saved = await request.get(taskUrl)
       expect((await saved.json()).status).toBe("active")
 
-      await card.dragTo(pending.locator(".kanban-column-header"), {
-        sourcePosition: { x: 100, y: 35 },
-      })
+      await moveCardToLane(page, card, pending)
       await expect(pending.locator(card)).toBeVisible()
       expect((await (await request.get(taskUrl)).json()).status).toBe("pending")
     } finally {
