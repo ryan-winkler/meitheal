@@ -102,7 +102,7 @@ function initHaAgentSettings() {
   })
   whenSectionVisible(select, () => {
     void restoreHaAgent(select.value)
-  })
+  }, true)
   const save = document.querySelector<HTMLButtonElement>("#save-ha-agent")
   if (save) pageLifecycle.on(save, "click", withAsyncButton(save, async () => {
     await saveSetting("ha-assist-agent", select.value)
@@ -143,7 +143,7 @@ async function restoreHaAgent(savedAgent: unknown) {
     select.add(new Option(selected, selected))
   }
   select.value = selected
-  if (select.disabled) {
+  if (select.disabled || select.closest("[data-settings-shell-section][hidden]")) {
     renderAgentBadge(select)
     return
   }

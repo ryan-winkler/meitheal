@@ -203,7 +203,8 @@ entries in this response. No provider list or language filter is applied. A
 configured integration without a loaded conversation agent is not runnable and
 will not appear until Home Assistant loads it.
 
-Both pickers refresh when opened and offer **Refresh agents**. Settings controls
+Both pickers refresh when opened and offer **Refresh agents**. Returning to
+**AI & Agent Access** refreshes discovery and keeps the selected agent. Settings controls
 become available after saved preferences load, even if initial agent discovery
 has already finished. Once the refresh button has keyboard focus, it keeps focus
 during discovery and ignores repeat activation. Refresh and discovery status use
