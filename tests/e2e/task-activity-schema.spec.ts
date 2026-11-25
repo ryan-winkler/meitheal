@@ -1,6 +1,7 @@
 import { BOARD_LIFECYCLE_MIGRATION } from "../../apps/web/drizzle/migrations/0015_board_lifecycle.mjs"
 import { ORDINARY_BOARD_MIGRATION } from "../../apps/web/drizzle/migrations/0016_ordinary_boards.mjs"
 import { CUSTOM_BOARD_KEYS_MIGRATION } from "../../apps/web/drizzle/migrations/0017_custom_board_keys.mjs"
+import { TASK_EXPERIENCE_MIGRATION } from "../../apps/web/drizzle/migrations/0018_task_experience.mjs"
 import { execFile } from "../helpers/isolated-process"
 import { createHash } from "node:crypto"
 import { mkdtemp, readFile, readdir, rm } from "node:fs/promises"
@@ -17,11 +18,12 @@ import { ORGANIZATION_ACCESS_MIGRATION } from "../../apps/web/drizzle/migrations
 import { ORGANIZATION_FEATURE_MIGRATION } from "../../apps/web/drizzle/migrations/0014_organization_features.mjs"
 import { TASK_BOARD_MIGRATION } from "../../apps/web/drizzle/migrations/task-board-upgrade.mjs"
 import { DATABASE_SCHEMA_VERSION, openDatabase } from "../../apps/web/scripts/database-client.mjs"
+import { readBoardGrantRevision } from "../../apps/web/scripts/board-grant-journal.mjs"
 import { ensureSchema, getPersistenceClient, resetPersistenceForTests } from "../helpers/persistence-fixture"
 import { enrollCurrentOwnedLegacyFixture } from "../helpers/current-legacy-fixture"
 import { prepareTaskBoardPredecessor } from "../scripts/task-board-predecessor"
 
-const upgradeMigrations = new Set<string>([TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION, ORGANIZATION_FEATURE_MIGRATION, BOARD_LIFECYCLE_MIGRATION, ORDINARY_BOARD_MIGRATION, CUSTOM_BOARD_KEYS_MIGRATION])
+const upgradeMigrations = new Set<string>([TASK_BOARD_MIGRATION, PERSONAL_PILLAR_MIGRATION, BOARD_ACCESS_MIGRATION, ORGANIZATION_LABEL_MIGRATION, ORGANIZATION_ACCESS_MIGRATION, ORGANIZATION_FEATURE_MIGRATION, BOARD_LIFECYCLE_MIGRATION, ORDINARY_BOARD_MIGRATION, CUSTOM_BOARD_KEYS_MIGRATION, TASK_EXPERIENCE_MIGRATION])
 
 const execFileAsync = promisify(execFile)
 const webRoot = fileURLToPath(new URL("../../apps/web", import.meta.url))
@@ -66,6 +68,11 @@ async function qualifyOwnedPredecessor(databasePath: string) {
   } finally {
     await rm(proof.custodyDirectory, { recursive: true, force: true })
   }
+}
+
+/** Hold the synthetic upgrade at its predecessor state for exact trigger comparisons. */
+function requireManualContinuity(database: DatabaseSync) {
+  database.exec("INSERT INTO app_settings (key, value, updated_at) VALUES ('continuity_auto_enroll_blocked', '1', 1)")
 }
 
 async function bootstrapRuntime(databasePath: string) {
@@ -224,7 +231,8 @@ test("startup preserves non-null imported Area generations accepted by the prede
     return rows
   })
   await migrate(databasePath)
-  await qualifyOwnedPredecessor(databasePath)
+  await migrate(databasePath, "--check")
+  expect(await readBoardGrantRevision(databasePath + ".board-grants.json")).toMatch(/^[a-f0-9-]{36}$/)
   await bootstrapRuntime(databasePath)
   expect(withDatabase(databasePath, readGenerations)).toEqual(before)
 })
@@ -369,6 +377,7 @@ test("CLI check detects a missing predecessor activity trigger and apply restore
   await seedPredecessor(databasePath)
   const { triggers, ledger } = withDatabase(databasePath, database => {
     const before = { triggers: readTriggers(database), ledger: readLedger(database) }
+    requireManualContinuity(database)
     database.exec("DROP TRIGGER tasks_stall_transition")
     return before
   })
@@ -417,7 +426,10 @@ test("a malformed stall column preserves predecessor activity state through both
     })
   }
 
-  withDatabase(databasePath, database => database.exec("ALTER TABLE comments DROP COLUMN inactivity_spike_human"))
+  withDatabase(databasePath, database => {
+    database.exec("ALTER TABLE comments DROP COLUMN inactivity_spike_human")
+    requireManualContinuity(database)
+  })
   await migrate(databasePath)
   withDatabase(databasePath, database => expect(readTriggers(database)).toEqual(triggers))
   await qualifyOwnedPredecessor(databasePath)
