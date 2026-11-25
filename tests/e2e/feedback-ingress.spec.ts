@@ -1041,7 +1041,7 @@ test("ingress Settings keeps readable palettes and resolves Auto from the panel 
       const light = theme === "light" || (theme === "auto" && location === panel)
       await expect.poll(() => body.evaluate(element =>
         getComputedStyle(element).getPropertyValue("--bg-secondary").trim().toLowerCase(),
-      )).toBe(light ? "#ecebe4" : "#171a18")
+      )).toBe(light ? "#e8f2ec" : "#171a18")
 
       const { violations } = await new AxeBuilder({ page }).withRules(["color-contrast"]).analyze()
       expect(violations.flatMap(violation => violation.nodes.map(node => node.target))).toEqual([])
@@ -1129,7 +1129,7 @@ test("ingress Auto updates with its parent and restores one observer across ifra
   await expect(content.locator("#settings-panels")).not.toHaveAttribute("inert", "")
   await expect(root).toHaveAttribute("data-theme", "auto")
   await expect(root).toHaveAttribute("data-ha-theme", "light")
-  await expect.poll(palette).toBe("#ecebe4")
+  await expect.poll(palette).toBe("#e8f2ec")
   await expect.poll(observerCounts).toEqual({ active: 1, registrations: 1 })
 
   await setParentBackground("#16202a")
@@ -1141,7 +1141,7 @@ test("ingress Auto updates with its parent and restores one observer across ifra
   await expect(root).toHaveAttribute("data-ha-theme", "light")
   await setParentBackground("#16202a")
   await expect(root).toHaveAttribute("data-ha-theme", "dark")
-  await expect.poll(palette).toBe("#ecebe4")
+  await expect.poll(palette).toBe("#e8f2ec")
   await selectedTheme.selectOption("auto")
   await expect(root).toHaveAttribute("data-theme", "auto")
   await expect.poll(palette).toBe("#171a18")
@@ -1287,7 +1287,7 @@ coreTest("ingress Auto follows Home Assistant when the cached theme is invalid",
   const background = () => root.evaluate(element => getComputedStyle(element).getPropertyValue("--bg-secondary").trim().toLowerCase())
   await expect(root).toHaveAttribute("data-theme", "auto")
   await expect(root).toHaveAttribute("data-ha-theme", "light")
-  await expect.poll(background).toBe("#ecebe4")
+  await expect.poll(background).toBe("#e8f2ec")
   await page.evaluate(() => document.documentElement.style.setProperty("--primary-background-color", "#16202a"))
   await expect(root).toHaveAttribute("data-ha-theme", "dark")
   await expect(root).toHaveAttribute("data-theme", "auto")

@@ -56,10 +56,11 @@ export function applyTheme(stored = readStoredThemeMode(), followSystem = readWo
   const matched = root.dataset.haMatch === "light" || root.dataset.haMatch === "dark"
   const theme = getEffectiveTheme(stored, followSystem)
   const resolvedDefault = theme === "dark" ? "knight-rider" : "light"
+  const inheritIngress = !followSystem && Boolean(window.__ingress_path)
   root.dataset.theme = !matched && isNamedThemeMode(stored)
     ? stored
     : !matched && stored === "auto"
-      ? resolvedDefault
+      ? inheritIngress ? "auto" : resolvedDefault
       : theme
   root.classList.toggle("dark", theme === "dark")
   root.classList.toggle("light", theme === "light")
@@ -68,7 +69,7 @@ export function applyTheme(stored = readStoredThemeMode(), followSystem = readWo
   const metaTheme = document.querySelector('meta[name="theme-color"]')
   if (metaTheme) {
     const color = matched ? getComputedStyle(root).getPropertyValue("--bg-primary").trim() : ""
-    const fallback = THEME_META_COLORS[root.dataset.theme || ""] || (theme === "dark" ? "#131314" : "#f5faf7")
+    const fallback = THEME_META_COLORS[root.dataset.theme === "auto" ? theme : root.dataset.theme || ""] || (theme === "dark" ? "#131314" : "#f5faf7")
     metaTheme.setAttribute("content", color || fallback)
   }
   window.dispatchEvent(new CustomEvent("meitheal:theme-changed", { detail: { theme } }))

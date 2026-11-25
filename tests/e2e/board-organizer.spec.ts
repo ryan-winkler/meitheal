@@ -230,12 +230,13 @@ test("Named Board disclosures follow the selected Area and current Home Assistan
     await page.goto(app + path + "?project=" + routineProject)
     const routines = page.getByRole("navigation", { name: "Board workspace" }).getByRole("link", { name: "Routines", exact: true })
     await routines.press("Enter")
-    await expect(page).toHaveURL(url => url.pathname.endsWith("/habits") && url.searchParams.get("project_id") === routineProject)
+    await expect(page).toHaveURL(url => url.pathname.endsWith("/progress") && url.hash === "#routines" &&
+      url.searchParams.get("board_id") === id && url.searchParams.get("project_id") === routineProject)
     await page.getByRole("button", { name: "New Routine", exact: true }).first().click()
     const editor = page.getByRole("dialog", { name: "New Routine" })
     await expect(editor.getByLabel("Project", { exact: false })).toHaveValue(routineProject)
     await editor.locator("#habit-name").fill("Clean workbench")
-    const routineCreated = page.waitForResponse(response => response.url().endsWith("/api/habits") &&
+    const routineCreated = page.waitForResponse(response => response.url().endsWith("/api/routines") &&
       response.request().method() === "POST", { timeout: 6_000 })
     await editor.locator("button[type=submit]").click()
     const routineSaved = await routineCreated

@@ -72,6 +72,7 @@ export function boardNavigationLinks(context: { boardId: string; area?: string |
   const progress = new URLSearchParams({ board_id: boardId })
   if (project) progress.set("project_id", project)
   else if (area) progress.set("area_id", area)
+  if (project && fromArea) progress.set("from", fromArea)
   return {
     dashboard: `/?${progress}`,
     today: `/today?${progress}`,

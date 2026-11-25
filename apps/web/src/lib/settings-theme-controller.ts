@@ -235,7 +235,11 @@ function bindAppearanceForm(form: HTMLFormElement): void {
         applyTheme(themePreview)
         showCustomThemeSection(snap.theme === "custom")
       }
-      const preview = { matchHaTheme: Boolean(snap.matchHaTheme), accent: snap.accent ?? null }
+      const preview = {
+        ...(themePreview ? { theme: themePreview } : {}),
+        matchHaTheme: Boolean(snap.matchHaTheme),
+        accent: snap.accent ?? null,
+      }
       setHAThemePreview(isAppearanceDraftDirty(committed, snap) ? preview : undefined)
       refreshHAThemeMatch(preview)
       // The bridge re-applies the saved theme when matching changes; keep the draft preview.

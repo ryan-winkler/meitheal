@@ -59,19 +59,19 @@ test.describe("Dashboard Shell", () => {
       await expect(page.locator(".dashboard-shell").getByText("Due today").first()).toBeVisible()
 
       const achievementsPath = "/progress?board_id=household#achievements"
-      const streakLink = page.locator(".gam-stat--link")
-      await expect(streakLink).toHaveAttribute("href", achievementsPath)
+      const streakLink = page.locator('.gam-stat--link[title^="Best streak:"]')
+      await expect(streakLink).toHaveAttribute("href", achievementsPath + "-streaks")
       await expect(streakLink).toHaveAttribute("title", /.+/)
 
       const badges = page.locator(".gam-achievement-badge")
       expect(await badges.count()).toBeGreaterThan(0)
       const firstBadge = badges.first()
-      await expect(firstBadge).toHaveAttribute("href", achievementsPath)
+      await expect(firstBadge).toHaveAttribute("href", achievementsPath + "-gallery")
       await expect(firstBadge).toHaveAttribute("title", /—/)
       await expect(firstBadge).toContainText(/\S/)
 
       await firstBadge.click()
-      await expect(page).toHaveURL(achievementsPath)
+      await expect(page).toHaveURL(achievementsPath + "-gallery")
       const achievementsSection = page.locator("#progress-section-achievements")
       await expect(achievementsSection).toBeVisible()
       const card = page.locator(".achievements-tab__achievement-card").first()

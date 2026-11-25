@@ -1,5 +1,6 @@
 ---
 import { readBoardPagePlacement } from "@lib/board-page-placement"
+import { boardWorkspaceHref } from "@lib/board-workspace"
 import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
 
 import { isOrganizationFeatureAvailable as available } from "@lib/organization-request-context"
@@ -105,16 +106,22 @@ try {
 
 const routinesEnabled = await isFeatureEnabled("habits")
 const showBoardBackLink = !personalProgress && Boolean(boardId)
+const boardHref = boardWorkspaceHref(boardId, {
+  area: boardProject ? undefined : boardArea?.id,
+  project: boardProject?.id,
+  fromArea: boardProject ? Astro.url.searchParams.get("from") ?? undefined : undefined,
+}, "kanban")
 ---
 
-<Layout title={`Meitheal — ${label("progress", false, t("nav.progress", locale))}`} hideSearchHub={true} hideGlobalSearch={true}>
+<Layout title={`Meitheal — ${label("progress", false, t("nav.progress", locale))}`} hideSearchHub={true} hideGlobalSearch={true}
+  workNavigation={{ scope: workScope, placement: pagePlacement }}>
   <BoardsStyles />
   {/* Suppress TopNavigation — ParentPageShell provides its own UnifiedBar */}
   <Fragment slot="custom-header" />
   <ParentPageShell pageId="progress">
     {showBoardBackLink && (
       <div class="progress-board-context">
-        <a href={`/boards/${encodeURIComponent(boardId)}`} class="progress-board-context__link">
+        <a href={boardHref} class="progress-board-context__link">
           <Icon name="layout-kanban" size={14} sprite />
           <span>Back to {boardName}</span>
           {boardArea && <span class="progress-board-context__sep">/ {boardArea.name}</span>}

@@ -249,6 +249,8 @@ test("Calendar reads configured sources as a household member and filters before
     await page.locator("#submit-new-task-btn").click()
     await expect(page.locator("#nt-date-error")).toBeVisible()
     await timedEnd.fill("")
+    await page.locator("#nt-split-toggle").click()
+    await page.locator('[data-after-create="open"]').click()
     const created = page.waitForResponse(response => response.request().method() === "POST" &&
       new URL(response.url()).pathname.endsWith("/api/tasks"))
     await page.locator("#submit-new-task-btn").click()

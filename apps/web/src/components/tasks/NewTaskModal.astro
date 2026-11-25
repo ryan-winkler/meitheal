@@ -764,8 +764,7 @@ try {
       splitBtnWrap?.classList.toggle("is-open", open)
     }
 
-    function syncAfterCreateControl() {
-      const pref = readWorkspacePreferences().afterTaskCreate === "open" ? "open" : "board"
+    function syncAfterCreateControl(pref = readWorkspacePreferences().afterTaskCreate ?? "board") {
       if (afterCreateSelect) afterCreateSelect.value = pref
       splitAfterRadios.forEach((btn) => {
         const checked = btn.dataset.afterCreate === pref
@@ -777,7 +776,7 @@ try {
     afterCreateSelect?.addEventListener("change", () => {
       const next = afterCreateSelect.value === "open" ? "open" : "board"
       void saveWorkspacePreferences({ afterTaskCreate: next })
-      syncAfterCreateControl()
+      syncAfterCreateControl(next)
     }, { signal })
     splitToggle?.addEventListener("click", (event) => {
       event.stopPropagation()
@@ -786,9 +785,8 @@ try {
     splitAfterRadios.forEach((btn) => {
       btn.addEventListener("click", () => {
         const next = btn.dataset.afterCreate === "open" ? "open" : "board"
-        if (afterCreateSelect) afterCreateSelect.value = next
         void saveWorkspacePreferences({ afterTaskCreate: next })
-        syncAfterCreateControl()
+        syncAfterCreateControl(next)
         setSplitMenuOpen(false)
       }, { signal })
     })
@@ -805,7 +803,7 @@ try {
         splitToggle?.focus()
       }
     }, { signal })
-    window.addEventListener("meitheal:workspace-preferences-change", syncAfterCreateControl, { signal })
+    window.addEventListener("meitheal:workspace-preferences-change", () => syncAfterCreateControl(), { signal })
 
     function createButtonLabel(kind = kindInput?.value) {
       const labels = submitBtn?.dataset

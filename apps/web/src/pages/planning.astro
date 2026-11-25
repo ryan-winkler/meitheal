@@ -1,6 +1,6 @@
 ---
 import { readBoardPagePlacement } from "@lib/board-page-placement"
-import { boardContextHref, boardNavigationLinks } from "@lib/board-workspace"
+import { boardContextHref, boardNavigationLinks, boardWorkspaceHref } from "@lib/board-workspace"
 import { resolveBoardPageScope, boardScopeResponse } from "@lib/board-http"
 import { currentBoardContext } from "@lib/named-board-request"
 import { readBoardDirectory } from "@lib/board-view"
@@ -82,10 +82,15 @@ const boardContext = {
   project: pagePlacement.project?.id,
 }
 const eisenhowerHref = boardContextHref(boardContext, "/eisenhower")
-const boardHref = `/boards/${encodeURIComponent(workScope.boardId)}`
+const boardHref = boardWorkspaceHref(workScope.boardId, {
+  area: boardContext.project ? undefined : boardContext.area,
+  project: boardContext.project,
+  fromArea: boardContext.project ? Astro.url.searchParams.get("from") ?? undefined : undefined,
+}, "kanban")
 ---
 
-<Layout title={`Meitheal — ${label("planning", false, t("nav.planning", locale))}`} hideSearchHub={true} hideGlobalSearch={true}>
+<Layout title={`Meitheal — ${label("planning", false, t("nav.planning", locale))}`} hideSearchHub={true} hideGlobalSearch={true}
+  workNavigation={{ scope: workScope, placement: pagePlacement }}>
   {/* Suppress TopNavigation — ParentPageShell provides its own UnifiedBar */}
   <Fragment slot="custom-header" />
   <ParentPageShell pageId="planning">

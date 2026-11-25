@@ -14,6 +14,8 @@ For a checklist, paste one item per line into **New items**. **Add Item** or Ent
 
 In an existing ticket's checklist, **Add Item** opens a blank draft. Type the item text and press Enter or leave the field to save it. An unused draft stays out of the stored checklist.
 
+Use the Create menu to choose what happens after saving. **Open task** takes effect on the current submission while the browser stores the preference for future forms.
+
 The creation form does not offer routine, agent, attachment, all-day, location or calendar-selection actions that the ticket creation service cannot save. Use **Habits** for routine templates. Add images from ticket details after creation.
 
 Where private drafts are available through Home Assistant, the **Draft** actions save and resume the capture separately from publication. Resuming a draft opens More options when it has saved goals, repeat settings, tags or custom fields. Checklist identities, pending writes and the existing one-time publication flow are preserved. Older private draft metadata remains in its snapshot without exposing unsupported creation controls. Resuming and saving keeps multiline titles, all supported priorities (1–5), saved custom recurrence rules, timed or date-only due values, and event seconds and milliseconds. Existing ISO offsets remain unchanged until you edit their date control.

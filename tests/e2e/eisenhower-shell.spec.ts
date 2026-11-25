@@ -149,7 +149,8 @@ test.describe("Eisenhower Shell", () => {
     await expect(flowSection).toBeVisible()
 
     const cards = flowSection.locator(".eisenhower__flow-card")
-    await expect(cards).toHaveCount(4)
+    await expect(cards).toHaveCount(5)
+    await expect(cards.filter({ hasText: "RICE" })).toHaveCount(1)
   })
 
   test("title switcher dropdown is discoverable", async ({ page }) => {

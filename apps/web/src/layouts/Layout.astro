@@ -538,7 +538,8 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
           }
           var theme = preferred === "auto" ? autoResolved : preferred || stored("meitheal-theme");
           var resolvedAttr = theme === "custom" ? "dark" : (!theme || theme === "auto" || !THEME_MODES.includes(theme)) ? autoResolved : theme;
-          root.dataset.theme = resolvedAttr;
+          var inheritsIngress = window.__ingress_path && !preferred && (!theme || theme === "auto" || !THEME_MODES.includes(theme));
+          root.dataset.theme = inheritsIngress ? "auto" : resolvedAttr;
           var isLight = LIGHT_THEME_MODES.includes(resolvedAttr);
           root.classList.toggle("light", isLight);
           root.classList.toggle("dark", !isLight);
@@ -1100,7 +1101,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
           <h3 id="shortcut-modal-title"><Icon name="keyboard" size={18} sprite={true} />{t("settings.shortcut_modal_title", locale)}</h3>
           <button id="shortcut-modal-close" type="button" class="btn-icon shortcut-modal-close" aria-label={t("settings.shortcut_modal_close", locale)}><Icon name="x" size={18} sprite={true} /></button>
         </div>
-        <div class="shortcut-modal-body">
+        <div class="shortcut-modal-body" role="group" aria-labelledby="shortcut-modal-title" tabindex="0">
           <KeyboardShortcutList locale={locale} variant="dialog" scopes={["global", "tasks"]} />
         </div>
         <div class="shortcut-modal-footer">

@@ -3,6 +3,7 @@
 
         import { confirmDialog } from "@lib/confirm-dialog";
         import { findModalTrapTarget } from "@lib/dialog-overlay"
+        import { promptDialog } from "@lib/prompt-dialog"
         import { createClientLogger, registerGlobalLogger } from "@lib/client-logger";
         import { containTabFocus } from "@lib/focus-trap"
         import { applyAppearancePreferences, bindAppearanceNavigation, readAppearancePreferences } from "@lib/appearance-preferences"
@@ -39,6 +40,7 @@
 
         // Expose for is:inline scripts (kanban)
         window.confirmDialog = confirmDialog;
+        window.promptDialog = promptDialog
         // Connection status check — singleton interval (P0-4: prevent accumulation)
         async function checkHealth() {
           const indicator = document.getElementById("connection-status");
