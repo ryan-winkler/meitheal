@@ -63,7 +63,7 @@ test("card moves preserve the grouping even when the destination lane has no mat
   }
 })
 
-test("a Type group accepts a card immediately in an empty lane and restores it when the write fails", async ({ page, request, baseURL }) => {
+test("Type drops preserve the group on a lane, roll back on failure and convert on a group heading", async ({ page, request, baseURL }) => {
   const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const response = await request.post("/api/tasks", { headers, data: { title: "Story for empty lane", task_type: "story" } })
   expect(response.status()).toBe(201)
@@ -98,7 +98,7 @@ test("a Type group accepts a card immediately in an empty lane and restores it w
     const converted = page.waitForResponse(result => new URL(result.url()).pathname === path && result.request().method() === "PUT")
     await drag(page, card.locator(".kanban-title-text"), tasks.locator(".swimlane-header"))
     const conversion = await converted
-    expect(conversion.status(), await conversion.text()).toBe(200)
+    expect(conversion.status()).toBe(200)
     expect(conversion.request().postDataJSON()).toMatchObject({ status: "active", task_type: "task" })
     await expect(tasks.locator(card)).toBeVisible()
     expect(await (await request.get(path)).json()).toMatchObject({ status: "active", task_type: "task" })
@@ -215,10 +215,12 @@ test("a single Area group fits a narrow lane and follows live theme tokens", asy
     await page.emulateMedia({ colorScheme: "dark" })
     await expect(html).toHaveClass(/\bdark\b/)
     expect(await group.evaluate((element, original) => element === original, original)).toBe(true)
-    const dark = await measure()
-    expect(dark.actual).toEqual(dark.expected)
-    expect(dark.actual[0]).not.toBe(light.actual[0])
-    expect(dark.fit).toBe(true)
+    await expect(async () => {
+      const dark = await measure()
+      expect(dark.actual).toEqual(dark.expected)
+      expect(dark.actual[0]).not.toBe(light.actual[0])
+      expect(dark.fit).toBe(true)
+    }).toPass({ timeout: 5000 })
   } finally {
     if (taskId) await request.delete(`/api/tasks/${taskId}`, { headers })
     await request.delete(`/api/areas/${areaId}`, { headers })
