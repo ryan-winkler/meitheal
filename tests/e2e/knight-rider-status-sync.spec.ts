@@ -38,6 +38,7 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
   let snapshotRefresh = false
   let boardReads = 0
   let releaseRefresh = () => {}
+  let releaseDashboardRefresh = () => {}
   let waitingRefresh: Promise<void> | undefined
   function holdNextRefresh(snapshot = false) {
     refreshHeld = false
@@ -79,13 +80,14 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
     await expect(dashboard).toHaveAttribute("data-work-active", "")
     await expect(openQueue).toBeVisible()
     await expect(favorite).toBeVisible()
-    const edit = dashboard.getByRole("button", { name: "Edit task" })
+    const edit = dashboard.getByRole("button", { name: `Edit task: ${title}`, exact: true })
+    await dashboard.hover()
     await edit.click()
     await expect(status).toHaveValue("active")
     await done.click()
     await expect(status).toHaveValue("complete")
     await expect(dashboard).not.toHaveAttribute("data-work-active", "")
-    await expect(dashboard.locator(".task-badge")).toHaveText("Done")
+    await expect(dashboard.locator(".kanban-work-status .status-badge")).toHaveText("Done")
     await expect(openQueue).toBeHidden()
     await expect(favorite).toHaveCount(0)
     await expect(page.locator("#my-open-empty")).toHaveText("No open tasks for this selection.")
@@ -97,12 +99,24 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
     await expect(openQueue).toBeVisible()
     await expect(favorite).toBeVisible()
     await expect(openQueue).toHaveAttribute("data-work-active", "")
+    const dashboardRefresh = (url: URL) => url.searchParams.has("dashboardQueueRefresh")
+    const heldDashboardRefresh = new Promise<void>(resolve => { releaseDashboardRefresh = resolve })
+    await page.route(dashboardRefresh, async route => {
+      await heldDashboardRefresh
+      await route.continue()
+    }, { times: 1 })
+    const dashboardRefreshStarted = page.waitForRequest(request => dashboardRefresh(new URL(request.url())))
     await done.click()
+    await dashboardRefreshStarted
     await expect(status).toHaveValue("complete")
     await expect(openQueue).toBeHidden()
     await close.click()
+    await expect(edit).toBeFocused()
+    releaseDashboardRefresh()
+    await expect(favorite).toHaveCount(0)
+    await expect(edit).toBeFocused()
 
-    await page.goto("/tasks#kanban")
+    await page.goto("/tasks?view=kanban#kanban")
     await expect(card).toHaveAttribute("data-status", "complete")
     await link.press("Enter")
     await expect(status).toHaveValue("complete")
@@ -176,7 +190,7 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
     await expect(card).toHaveAttribute("data-status", "complete")
     await expect(titleEdit).toHaveText("An unsent title edit")
 
-    await page.goto(`/tasks?status=active&open=${id}#kanban`)
+    await page.goto(`/tasks?view=kanban&status=active&open=${id}#kanban`)
     await expect(status).toHaveValue("complete")
     await expect(card).toHaveCount(0)
     await reopenTask()
@@ -199,6 +213,7 @@ test("Details completion clears Knight Rider active work on Dashboard and Board"
     await expect(page).toHaveURL(url => url.searchParams.get("status") === "active" && url.hash === "#kanban")
   } finally {
     releaseTitle()
+    releaseDashboardRefresh()
     releaseHeldRefresh()
     await request.delete(`/api/tasks/${otherId}`, { headers: boardHeaders, data: {} })
     await request.delete(`/api/tasks/${id}`, { headers: boardHeaders, data: {} })

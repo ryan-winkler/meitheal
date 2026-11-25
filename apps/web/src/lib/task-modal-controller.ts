@@ -565,10 +565,10 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             if (layoutPanel && !layoutPanel.hidden) setLayoutPanel(false)
             syncInspectorDockMode();
             // P3-4: Restore focus to the element that triggered the panel
-            const kanban = byId("kanban-board")
+            const cardScope = byId("kanban-board") ?? byId("task-list")
             const origin = _previouslyFocused?.isConnected ? _previouslyFocused
               : _previouslyFocused?.id ? byId(_previouslyFocused.id)
-              : previousCard && kanban && _previouslyFocused ? findKanbanDetailFocus(kanban, _previouslyFocused)
+              : previousCard && cardScope && _previouslyFocused ? findKanbanDetailFocus(cardScope, _previouslyFocused)
               : previousDay ? document.querySelector<HTMLElement>(`.cal-cell[data-date="${CSS.escape(previousDay)}"]`) ??
                 document.querySelector<HTMLElement>("#calendar-shell .cal-today-btn")
               : previousCompletion ? Array.from(document.querySelectorAll<HTMLElement>(

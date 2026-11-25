@@ -9,6 +9,7 @@ import { taskCapturePlacement } from "@lib/task-capture-placement"
 import { boardContextHref, readBoardNavigationContext } from "@lib/board-workspace"
 import { taskApi } from "@lib/task-api-client"
 import { hydrateTaskAssignees } from "@lib/task-assignee-display"
+import { findKanbanDetailFocus } from "@lib/task-detail-handoff"
 import { taskBackgroundUrl } from "@lib/task-page-url"
 import { showToast } from "@lib/toast"
 import { bindCardPreferencesSync } from "@lib/card-view-sync"
@@ -343,7 +344,10 @@ function initOpenTaskFilter(): (() => void) | undefined {
         const taskList = document.getElementById("task-list")
         const refreshedTasks = html.querySelector('#task-list[data-available="true"]')
         if (taskList && refreshedTasks) {
+          const active = document.activeElement
+          const previousControl = active && taskList.contains(active) ? active : null
           taskList.replaceChildren(...refreshedTasks.childNodes)
+          if (previousControl) findKanbanDetailFocus(taskList, previousControl)?.focus({ preventScroll: true })
           void hydrateTaskAssignees(taskList, signal)
           taskList.dispatchEvent(new Event("meitheal:dashboard-cards-updated"))
         }

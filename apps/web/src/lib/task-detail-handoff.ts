@@ -17,11 +17,10 @@ function matchingKanbanControl(scope: Element | null | undefined, previous: Elem
   return matches.length === 1 ? matches[0] ?? null : null
 }
 
-/** Find the equivalent control in a board that replaced the focused control's DOM. */
+/** Find the equivalent shared card or lane control after a workspace refresh. */
 export function findKanbanDetailFocus(board: ParentNode, previous: Element): HTMLElement | null {
   const laneId = previous.closest<HTMLElement>(".kanban-column")?.dataset.laneId
-  if (!laneId) return null
-  const lane = board.querySelector<HTMLElement>(`.kanban-column[data-lane-id="${CSS.escape(laneId)}"]`)
+  const lane = laneId ? board.querySelector<HTMLElement>(`.kanban-column[data-lane-id="${CSS.escape(laneId)}"]`) : null
   const fallback = lane?.querySelector<HTMLElement>(".kanban-column-header") ?? null
   const taskId = previous.closest<HTMLElement>(".kanban-card")?.dataset.id
   if (taskId) {

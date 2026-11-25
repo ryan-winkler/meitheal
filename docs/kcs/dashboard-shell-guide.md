@@ -178,7 +178,11 @@ when you open it. If the request fails, use **Retry** in Activity Log.
 Select **Focus mode** in a ticket to use the full app window. The same task and
 drafts stay open. **Exit Focus** or **Escape** returns to the docked inspector or
 centered dialog for the current window size. Use **Close detail** to go back to
-the page you opened the ticket from.
+the page you opened the ticket from. In **Recent Tasks**, focus returns to the
+card control you used to open Details, even after a saved status refreshes
+the card. To verify this with the keyboard, open a recent card with **Edit
+task**, change its status, then close Details and check that **Edit task** has
+focus again.
 
 Open **Task detail layout** from the ticket toolbar or from **Settings →
 Tasks & Boards**. Drag a section by its grip or move it using the arrows. Open
