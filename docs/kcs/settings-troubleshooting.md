@@ -10,6 +10,8 @@ description: "Find settings and diagnose navigation problems."
 
 The desktop directory and the horizontal row on narrow screens open the same ten sections. Swipe the row to see more section links. The selected section appears beside the desktop directory or below the row. Section links keep their hash when bookmarked or opened within Home Assistant. Browser Back and Forward return to previously opened sections. Older bookmarks for **Personal** (`#personal-settings`) open **Look & Feel**, and bookmarks for **General** (`#general-settings`) open **Navigation & Shortcuts**. Open **Language & Time** for language, timezone, date format and week start.
 
+The narrow row stays available after resizing or pressing Escape. Returning to a wide layout restores the desktop directory's previous open or closed state.
+
 Use **Search settings** or press `/` outside an input to open the Settings scope in the shared search. Use the arrow keys and Enter to open a result. A field result takes keyboard focus and opens any integration panel that contains it. Press Escape to close search.
 
 On a long Settings page, use **Scroll to top** to return to the header and keep the selected section.
