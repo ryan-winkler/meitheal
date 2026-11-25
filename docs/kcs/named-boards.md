@@ -10,7 +10,7 @@ A Board holds a body of work and the people allowed to use it. Household is an e
 
 Open **Boards** to choose or create a workspace. All your Boards appear together. Expand a Board in the sidebar for its Areas and Projects. **Hide from my sidebar** changes your shortcuts; it does not change membership or privacy. Reopen a hidden Board from the directory.
 
-An Area name opens the Area. Its adjacent **Projects** disclosure expands the Project list. On phones, selecting Rename or Delete from the action menu keeps the drawer open so you can edit, confirm or cancel in place. Use **All Areas** in the Board header to filter the current view. The picker stays within the viewport when the header wraps on a narrow screen. In the **Tasks** submenu, pin a view to add it to navigation. Each pinned view has one unpin button.
+An Area name opens the Area. Its adjacent **Projects** disclosure expands the Project list. On phones, selecting Rename or Delete keeps the drawer open so you can edit, confirm or cancel in place. Opening a pinned capture type also keeps the drawer open and closing the form returns focus to the same shortcut. Use **All Areas** in the Board header to filter the current view. The picker stays within the viewport when the header wraps on a narrow screen. In the **Tasks** submenu, pin a view to add it to navigation. Each pinned view has one unpin button.
 
 When creating a Board, you can choose workflow labels. Presets change labels on its four existing task statuses; they do not change task behavior, permissions or Routine completion. The choice applies to that Board for all members. [First-time setup](first-time-setup.md) controls personal preferences.
 

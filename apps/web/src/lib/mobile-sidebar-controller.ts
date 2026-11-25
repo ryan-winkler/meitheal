@@ -61,6 +61,7 @@ pageLifecycle.onPageLoad(signal => {
   document.addEventListener("click", event => {
     const target = event.target instanceof Element ? event.target : null
     if (!target || mobileMenu.contains(target) || event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+    if (target.closest('dialog, [aria-modal="true"]')) return
     const popup = target.closest<HTMLElement>("[data-sidebar-board-owner]")
     const fromPopup = popup !== null && isOwnedPopup(popup)
     if (sidebar.classList.contains("open") && !sidebar.contains(target) && !fromPopup) {

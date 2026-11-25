@@ -15,6 +15,7 @@ test("Knight Rider keeps the completed Today state and saved theme truthful", as
   await page.goto("/today#today-work")
   const main = page.locator("#page-shell")
   await expect(main).toHaveCSS("max-width", "960px")
+  await page.getByRole("button", { name: "Collapse sidebar (Ctrl+B)", exact: true }).click()
   await expect(page.locator("body")).toHaveClass(/sidebar-collapsed/)
   const empty = page.locator("#today-due-list .empty-state")
   await expect(empty.getByRole("heading")).toHaveText("Nothing due today")

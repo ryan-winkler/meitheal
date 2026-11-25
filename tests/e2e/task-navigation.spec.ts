@@ -261,6 +261,11 @@ test("pinned types fit narrow desktop top navigation and stay available in the m
   await expect(overlay).toBeHidden()
   await expect(checklist).toBeFocused()
   await expect(mobileSidebar).toHaveClass(/open/)
+  await checklist.click()
+  await overlay.locator("#cancel-new-task").click()
+  await expect(overlay).toBeHidden()
+  await expect(checklist).toBeFocused()
+  await expect(mobileSidebar).toHaveClass(/open/)
   await page.keyboard.press("Escape")
   await expect(mobileSidebar).not.toHaveClass(/open/)
   await expect(page.locator("#menu-toggle")).toHaveAttribute("aria-expanded", "false")
@@ -445,7 +450,8 @@ for (const theme of ["light", "dark", "knight-rider", "auto", "custom"] as const
       }, { theme, customCSS })
 
       await page.goto(calendarPath)
-      await expect(page.locator("html")).toHaveAttribute("data-theme", theme === "custom" ? "dark" : theme)
+      const resolvedTheme = theme === "custom" ? "dark" : theme === "auto" ? "light" : theme
+      await expect(page.locator("html")).toHaveAttribute("data-theme", resolvedTheme)
       if (theme === "custom") await expect(page.locator("html")).toHaveCSS("--bg-primary", "#161616")
       await expect(page.locator("#calendar-shell")).toHaveAttribute("data-calendar-ready", "true")
       await expect.poll(() => page.evaluate(() => localStorage.getItem("meitheal:tasks-last-view"))).toBe("calendar")
