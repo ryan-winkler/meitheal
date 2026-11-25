@@ -138,7 +138,7 @@ test.describe(() => {
       await expect(close).toBeFocused()
 
       detailResponse.resolve()
-      const first = detail.getByRole("button", { name: "Favorite" })
+      const first = detail.getByRole("button", { name: "Promote to top", exact: true })
       const last = detail.locator("#td-section-activity > summary")
       await expect(first).toBeVisible()
       // Promote stays disabled until Details finishes loading.
@@ -481,6 +481,10 @@ test("ticket scoring keeps other lenses and retries a failed save", async ({ pag
   })
   expect(created.status()).toBe(201)
   const { id, ticket_key } = await created.json()
+  const rule = await request.post("/api/rules", { data: {
+    name: "Ticket retry scoring", ruleType: "strategic-lens", taskTypes: ["task"], lensIds: ["rice", "ice"],
+  } })
+  expect(rule.status(), await rule.text()).toBe(201)
   await page.goto(`/tasks?open=${id}#kanban`)
   await expect(page).toHaveURL(`${origin}/tickets/${ticket_key}`)
   const chooser = page.getByLabel("Scoring framework", { exact: true })
@@ -507,6 +511,8 @@ test("ticket scoring keeps other lenses and retries a failed save", async ({ pag
   expect(payload.ice).toEqual({ impact: 7, confidence: 8, ease: 9 })
   expect(payload.rice.score).toBe(32)
   await page.reload()
+  await expect(chooser).toBeEnabled()
+  await chooser.selectOption("rice")
   await expect(page.getByRole("spinbutton", { name: "Effort", exact: true })).toHaveValue("0.5")
   await chooser.selectOption("ice")
   await expect(page.getByRole("spinbutton", { name: "Ease", exact: true })).toHaveValue("9")

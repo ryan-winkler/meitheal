@@ -133,7 +133,7 @@ export const TRIAGE_FRAMEWORKS: readonly TriageFrameworkDef[] = [
     fields: [
       { key: "reach", label: "Reach", hint: "How many people or cycles benefit (1–10)?", control: "range-number", min: 1, max: 10, step: 1, defaultValue: 5, minLabel: "Low (1)", maxLabel: "Wide (10)" },
       { key: "impact", label: "Impact", hint: "0.25 Minimal · 0.5 Low · 1 Medium · 2 High · 3 Massive", control: "range-number", min: 0.25, max: 3, step: 0.25, defaultValue: 1, minLabel: "0.25", maxLabel: "3.0" },
-      { key: "confidence", label: "Confidence", hint: "Confidence percentage in these estimates (50–100%)", control: "range-number", min: 50, max: 100, step: 5, defaultValue: 80, suffix: "%", minLabel: "50%", maxLabel: "100%" },
+      { key: "confidence", label: "Confidence", hint: "Confidence percentage in these estimates (0–100%)", control: "range-number", min: 0, max: 100, step: 1, defaultValue: 80, suffix: "%", minLabel: "0%", maxLabel: "100%" },
       { key: "effort", label: "Effort", hint: "Relative effort units (0.5–10)", control: "range-number", min: 0.5, max: 10, step: 0.5, defaultValue: 2, minLabel: "0.5", maxLabel: "10" },
     ],
   },

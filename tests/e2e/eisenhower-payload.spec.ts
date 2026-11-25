@@ -73,6 +73,33 @@ for (const failure of ["unavailable", "network", "invalid-json", "array", "scala
   })
 }
 
+test("RICE triage keeps declared low confidence and publishes zero to the scored Board group", async ({ page, request }) => {
+  const headers = await currentBoardWriteHeaders(request, "household", origin ? { origin } : {})
+  const rice = { reach: 4, impact: 2, effort: 1, confidence: 1, confidence_unit: "percent" }
+  const created = await request.post("/api/tasks", { headers, data: {
+    title: "RICE low confidence fixture", framework_payload: { rice, retained: scoring.retained },
+  } })
+  expect(created.status()).toBe(201)
+  const task = await created.json()
+  const path = `/api/tasks/${task.id}`
+  try {
+    await page.goto("/eisenhower")
+    await page.getByRole("button", { name: "Scoring Triage", exact: true }).click()
+    await page.locator("#st-framework-select").selectOption("rice")
+    await page.locator("#st-unscored-only").uncheck()
+    await expect(page.locator("#st-task-title")).toHaveText(task.title)
+    await expect(page.locator("#st-range-confidence")).toHaveValue("1")
+    await page.locator("#st-num-confidence").fill("0")
+    await expect(page.locator("#st-preview-badge")).toHaveText("RICE 0")
+    await page.locator("#st-save-btn").click()
+    await expect(page.locator("#scoring-triage-modal")).toBeHidden()
+    const saved = await (await request.get(path)).json()
+    expect(JSON.parse(saved.framework_payload)).toEqual({ rice: { ...rice, confidence: 0 }, retained: scoring.retained })
+    await page.goto("/tasks?area=&groupBy=rice#kanban")
+    await expect(page.locator(`[data-swimlane-type="low"] .kanban-card[data-id="${task.id}"]`)).toBeVisible()
+  } finally { await removeFixtureTask(request, path, headers) }
+})
+
 test("triage adds metadata when the task has no existing framework values", async ({ page, request }) => {
   const headers = await currentBoardWriteHeaders(request, "household", origin ? { origin } : {})
   const created = await request.post("/api/tasks", { headers, data: { title: `Empty framework ${randomUUID()}`, status: "pending", urgency: 0, importance: 0 } })

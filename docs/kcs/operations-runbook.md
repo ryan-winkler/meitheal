@@ -22,6 +22,8 @@ For repeated startup logging or delayed activation, check `ha.startup.skipped`, 
 
 Scoring Triage reads the task's existing framework values from the selected Board before saving. A failed or malformed read keeps the dialog and its inputs open so you can retry after the connection recovers. Null and empty objects are valid for an unscored task. Missing fields, arrays, scalar values and responses for another task reject the save. If someone edits the task while triage is open, reopen the dialog to review its latest score.
 
+RICE Triage accepts confidence from 0% to 100%. A complete set of estimates with 0% confidence has a score of zero and appears in Kanban's Low group.
+
 A review action saves its primary change first. The optional review timestamp does not block a successful action. If its metadata read fails, no timestamp update is sent. Deleted tasks receive no metadata update. Closing or replacing either wizard retires its pending metadata continuation.
 
 After building the App, run `MEITHEAL_TEST_BROWSER=1 pnpm --filter @meitheal/tests test e2e/eisenhower-payload.spec.ts` to verify failure, preservation and retry against disposable task data. Client changes also require the local Astro dev check.
