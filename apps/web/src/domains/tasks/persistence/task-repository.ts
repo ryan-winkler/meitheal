@@ -292,7 +292,7 @@ function toWallEpochMs(raw: string): number {
   return Date.parse(trimmed)
 }
 
-function shiftEventWindow(nextDay: string, sourceStart: string | null | undefined, sourceEnd: string | null | undefined): {
+function shiftEventWindow(nextOccurrence: string, sourceStart: string | null | undefined, sourceEnd: string | null | undefined): {
   start_date: string | null
   end_date: string | null
 } {
@@ -301,7 +301,8 @@ function shiftEventWindow(nextDay: string, sourceStart: string | null | undefine
   }
   const startTrimmed = sourceStart.trim()
   const match = startTrimmed.match(/^(\d{4}-\d{2}-\d{2})([T ].*)?$/)
-  const nextStart = match ? `${nextDay}${match[2] ?? ""}` : nextDay
+  const timedOccurrence = nextOccurrence.includes("T")
+  const nextStart = timedOccurrence ? nextOccurrence : `${nextOccurrence}${match?.[2] ?? ""}`
   if (typeof sourceEnd !== "string" || !sourceEnd.trim()) {
     return { start_date: nextStart, end_date: null }
   }
@@ -311,13 +312,16 @@ function shiftEventWindow(nextDay: string, sourceStart: string | null | undefine
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) {
     return { start_date: nextStart, end_date: null }
   }
-  if (/^\d{4}-\d{2}-\d{2}$/.test(startTrimmed) && /^\d{4}-\d{2}-\d{2}$/.test(endTrimmed)) {
+  if (!timedOccurrence && /^\d{4}-\d{2}-\d{2}$/.test(startTrimmed) && /^\d{4}-\d{2}-\d{2}$/.test(endTrimmed)) {
     const daySpan = Math.round((endMs - startMs) / 86_400_000)
-    return { start_date: nextStart, end_date: shiftCalendarDay(nextDay, daySpan) }
+    return { start_date: nextStart, end_date: shiftCalendarDay(nextOccurrence, daySpan) }
   }
   const durationMs = endMs - startMs
-  const nextStartMs = toWallEpochMs(nextStart)
+  const nextStartMs = timedOccurrence ? Date.parse(`${nextStart}Z`) : toWallEpochMs(nextStart)
   const shiftedIso = new Date(nextStartMs + durationMs).toISOString()
+  if (timedOccurrence) {
+    return { start_date: nextStart, end_date: shiftedIso.slice(0, shiftedIso.endsWith(":00.000Z") ? -8 : -1) }
+  }
   if (/(?:Z|[+-]\d{2}:\d{2})$/i.test(endTrimmed)) {
     return { start_date: nextStart, end_date: shiftedIso }
   }
@@ -2974,7 +2978,9 @@ export class TaskRepository {
     if (next === null) return
     if (!Number.isFinite(next.getTime())) return "invalid"
 
-    const dueDate = next.toISOString().split("T")[0]!
+    const iso = next.toISOString()
+    // RRULE clock values are local wall time, like a timed Routine occurrence.
+    const dueDate = parsed.byHour === undefined ? iso.split("T")[0]! : iso.slice(0, -8)
     const completionVersion = Number((await tx.execute(scopedTaskRead(this.scope, sql`SELECT ${sourceSql(taskTimestampMs("updated_at"))} AS version FROM scoped_tasks WHERE id = ${id}`))).rows[0]?.version)
     if (!Number.isSafeInteger(completionVersion)) throw new BoardOperationError("stale")
     const created = await this.createRecurrenceInWriter(tx, source, dueDate, rule, `recurrence:${id}:${completionVersion}:${dueDate}`, assignment)

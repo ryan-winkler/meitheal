@@ -114,6 +114,8 @@ for (const timeZone of ["America/Los_Angeles", "Pacific/Kiritimati"]) {
         { due: "2031-02-14T23:30:00-08:00", rule: `${weekdayRule};UNTIL=20310217`, next: monday },
         { due: "2031-02-14 00:30:00+14:00", rule: weekdayRule, next: monday },
         { due: "2031-02-14T18:00:00", rule: weekdayRule, next: monday },
+        { due: friday, rule: `${weekdayRule};BYHOUR=6;BYMINUTE=30`, next: `${monday}T06:30` },
+        { due: "2031-02-14T23:30:00-08:00", rule: `${weekdayRule};BYHOUR=0;BYMINUTE=0`, next: `${monday}T00:00` },
         { due: "2026-03-07t16:30:00-08:00", rule: "FREQ=DAILY;UNTIL=20260309", next: "2026-03-08" },
         { due: "2026-03-07\t16:30:00-08:00", rule: "FREQ=DAILY;UNTIL=20260309", next: "2026-03-08" },
         { due: "2026-03-08", rule: "FREQ=DAILY", next: "2026-03-09" },
@@ -122,7 +124,7 @@ for (const timeZone of ["America/Los_Angeles", "Pacific/Kiritimati"]) {
         { due: "2031-02-14Tinvalid", rule: weekdayRule, next: null },
       ]
       for (const { due, rule, next } of cases) {
-        const title = `Calendar recurrence fixture ${due}`
+        const title = `Calendar recurrence fixture ${due} ${rule}`
         const task = await createTask(completion, title, { due_date: due, recurrence_rule: rule })
         const response = await api.patch(path(`/api/tasks/${task.id}`), { data: { status: "complete" } })
         expect(response.status(), await response.text()).toBe(200)
@@ -135,6 +137,21 @@ for (const timeZone of ["America/Los_Angeles", "Pacific/Kiritimati"]) {
     })
   })
 }
+
+test("a recurring event keeps its duration at the rule's local start time", async ({ completion }) => {
+  const { api, db, path } = completion
+  const title = "Timed repeating event"
+  const task = await createTask(completion, title, {
+    task_kind: "calendar_event",
+    start_date: "2031-02-14T18:15:00-08:00",
+    end_date: "2031-02-14T19:00:00-08:00",
+    recurrence_rule: "FREQ=DAILY;BYHOUR=6;BYMINUTE=30",
+  })
+  const response = await api.patch(path(`/api/tasks/${task.id}`), { data: { status: "complete" } })
+  expect(response.status(), await response.text()).toBe(200)
+  expect(db.prepare("SELECT start_date, end_date, due_date FROM tasks WHERE title = ? AND status = 'pending'").get(title))
+    .toMatchObject({ start_date: "2031-02-15T06:30", end_date: "2031-02-15T07:15", due_date: null })
+})
 
 test("a failed recurrence insert rolls back guarded completion and an identical retry creates one successor", async ({ completion }) => {
   const { api, db, path } = completion
