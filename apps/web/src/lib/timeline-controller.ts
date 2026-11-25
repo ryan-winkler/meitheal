@@ -287,6 +287,10 @@ let extraPadAfterDays = 0
 let recentlySettledBarId: string | null = null
 let suppressBarClickUntil = 0
 let suppressAutoRefreshUntil = 0
+let redrawTimeline: (() => void) | undefined
+let timelineWriteEpoch = 0
+const canvasPans = new WeakMap<HTMLElement, { startX: number; lastX: number; moved: boolean }>()
+const activeTimelineWrites = new Set<string>()
 const pendingTimelineEdits = new Map<string, { task: TimelineTask; fields: Record<string, unknown>; context: TaskApiContext }>()
 
 function renderPendingTimelineEdits() {
@@ -318,21 +322,73 @@ function renderPendingTimelineEdits() {
   document.getElementById("gantt-chart")?.before(panel)
 }
 
-async function patchTask(task: TimelineTask, fields: Record<string, unknown>): Promise<boolean> {
+function timelineWriteBlocked(id: string): boolean {
+  return activeTimelineWrites.has(id) || pendingTimelineEdits.has(id)
+}
+
+async function patchTask(task: TimelineTask, fields: Record<string, unknown>, preview?: () => void): Promise<boolean> {
   const context = currentTaskApiContext()
-  if (!context || timelineSignal?.aborted || pendingTimelineEdits.has(task.id)) return false
-  const result = await saveVersionedTask(task.id, fields, taskRecordVersion({ ...task }), context, timelineSignal)
-  if (result.ok) {
-    Object.assign(task, result.task, { task_version: result.version })
-    return true
+  const signal = timelineSignal
+  if (!context || signal?.aborted || timelineWriteBlocked(task.id)) return false
+  activeTimelineWrites.add(task.id)
+  timelineWriteEpoch++
+  try {
+    const version = taskRecordVersion({ ...task })
+    preview?.()
+    const result = await saveVersionedTask(task.id, fields, version, context, signal)
+    if (result.ok) {
+      Object.assign(task, result.task, { task_version: result.version })
+      return true
+    }
+    if (sameTaskApiContext(context, currentTaskApiContext()) && !signal?.aborted
+      && (result.errorCode === "conflict" || result.errorCode === "unconfirmed")) {
+      pendingTimelineEdits.set(task.id, { task, fields: { ...fields }, context })
+      renderPendingTimelineEdits()
+    }
+    ganttLog.warn(`Task date update was not confirmed: ${result.status}`)
+    return false
+  } finally {
+    activeTimelineWrites.delete(task.id)
   }
-  if (sameTaskApiContext(context, currentTaskApiContext()) && !timelineSignal?.aborted
-    && (result.errorCode === "conflict" || result.errorCode === "unconfirmed")) {
-    pendingTimelineEdits.set(task.id, { task, fields: { ...fields }, context })
-    renderPendingTimelineEdits()
+}
+
+async function saveBarDates(
+  bar: GanttBar,
+  bars: GanttBar[],
+  edit: {
+    fields: Partial<Pick<TimelineTask, "start_date" | "end_date" | "due_date">>
+    start: Date
+    end: Date
+    success: string
+    error: string
+  },
+  redraw: () => void,
+) {
+  const signal = timelineSignal
+  const context = currentTaskApiContext()
+  const redrawCurrentView = redrawTimeline ?? redraw
+  const today = startOfDay(new Date())
+  let snapshot: ReturnType<typeof applyOptimisticBarDates> = null
+  const saved = await patchTask(bar.original, edit.fields, () => {
+    snapshot = applyOptimisticBarDates(bars, bar.id, edit.start, edit.end, today, bar, edit.fields)
+    recentlySettledBarId = bar.id
+    suppressAutoRefreshUntil = Date.now() + 1200
+    redraw()
+  })
+  if (!snapshot) return
+  if (saved) {
+    const accepted = mapTasks([bar.original]).dated[0]
+    if (accepted) {
+      const canonical = bars.find(item => item.id === bar.id)
+      if (canonical && canonical !== bar) Object.assign(canonical, accepted)
+      Object.assign(bar, accepted)
+    }
+  } else {
+    rollbackBarDates(bars, bar.id, snapshot, bar)
   }
-  ganttLog.warn(`Task date update was not confirmed: ${result.status}`)
-  return false
+  if (signal?.aborted || timelineWithheld || !sameTaskApiContext(context, currentTaskApiContext())) return
+  showToast(saved ? edit.success : edit.error, saved ? "success" : "error")
+  redrawCurrentView()
 }
 
 // ── Data Mapping ───────────────────────────────────────────────────────────
@@ -2147,18 +2203,11 @@ function renderGantt(
           bar.original.due_date,
           async (date) => {
             const iso = toISODate(date)
-            const nextStart = bar.start <= date ? bar.start : date
-            const snap = applyOptimisticBarDates(bars, bar.id, nextStart, date, startOfDay(new Date()), bar)
-            recentlySettledBarId = bar.id
-            suppressAutoRefreshUntil = Date.now() + 1200
-            renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey, onManualReorder)
-            const ok = await patchTask(bar.original, { due_date: iso, end_date: iso })
-            if (ok) showToast("Due date updated")
-            else {
-              if (snap) rollbackBarDates(bars, bar.id, snap, bar)
-              showToast("Failed to update due date", "error")
-              renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey, onManualReorder)
-            }
+            await saveBarDates(bar, bars, {
+              fields: { due_date: iso, end_date: iso },
+              start: bar.start <= date ? bar.start : date, end: date,
+              success: "Due date updated", error: "Failed to update due date",
+            }, () => renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey, onManualReorder))
           },
           async () => {
             const ok = await patchTask(bar.original, { due_date: null })
@@ -2175,18 +2224,10 @@ function renderGantt(
           bar.original.start_date,
           async (date) => {
             const iso = toISODate(date)
-            const nextEnd = bar.end >= date ? bar.end : date
-            const snap = applyOptimisticBarDates(bars, bar.id, date, nextEnd, startOfDay(new Date()), bar)
-            recentlySettledBarId = bar.id
-            suppressAutoRefreshUntil = Date.now() + 1200
-            renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey, onManualReorder)
-            const ok = await patchTask(bar.original, { start_date: iso })
-            if (ok) showToast("Start date updated")
-            else {
-              if (snap) rollbackBarDates(bars, bar.id, snap, bar)
-              showToast("Failed to update start date", "error")
-              renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey, onManualReorder)
-            }
+            await saveBarDates(bar, bars, {
+              fields: { start_date: iso }, start: date, end: bar.end >= date ? bar.end : date,
+              success: "Start date updated", error: "Failed to update start date",
+            }, () => renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey, onManualReorder))
           },
           async () => {
             const ok = await patchTask(bar.original, { start_date: null })
@@ -2216,6 +2257,7 @@ function renderGantt(
         "data-row-index": rowIndex,
         "data-bar-index": rowIndex,
         "aria-rowindex": rowIndex + 1,
+        ...(activeTimelineWrites.has(bar.id) ? { "aria-busy": "true" } : {}),
         tabindex: 0,
         role: "button",
         "aria-label": `Milestone: ${bar.name}${bar.isOverdue ? ", overdue" : ""}`,
@@ -2255,6 +2297,7 @@ function renderGantt(
       "data-row-index": rowIndex,
       "data-bar-index": rowIndex,
       "aria-rowindex": rowIndex + 1,
+      ...(activeTimelineWrites.has(bar.id) ? { "aria-busy": "true" } : {}),
       tabindex: 0,
       role: "button",
       "aria-label": `Task: ${bar.name}`,
@@ -2690,7 +2733,7 @@ function renderGantt(
     const maxScroll = Math.max(0, scrollWrapper.scrollWidth - scrollWrapper.clientWidth)
     const target = scrollWrapper.scrollLeft + deltaPx
     const expandDays = getEdgeExpansionDays(zoom)
-    if (target < 40) {
+    if (deltaPx < 0 && target < 40) {
       extraPadBeforeDays += expandDays
       renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey, onManualReorder)
       const nextWrapper = outerContainer.querySelector<HTMLElement>(".gantt-scroll-wrapper")
@@ -2699,7 +2742,7 @@ function renderGantt(
       }
       return
     }
-    if (target > maxScroll - 40) {
+    if (deltaPx > 0 && target > maxScroll - 40) {
       extraPadAfterDays += expandDays
       renderGantt(outerContainer, bars, zoom, _parentSignal, undatedTasks, groupByKey, onManualReorder)
       const nextWrapper = outerContainer.querySelector<HTMLElement>(".gantt-scroll-wrapper")
@@ -2723,39 +2766,39 @@ function renderGantt(
   }, { signal, passive: true })
 
   // Click-and-drag horizontal canvas panning on empty chart surface
-  let isCanvasPanning = false
-  let panStartX = 0
-  let panStartScrollLeft = 0
-  let panMoved = false
+  // Edge expansion replaces the scroll wrapper. Keep the gesture on the stable chart.
+  scrollWrapper.classList.toggle("is-panning", canvasPans.has(outerContainer))
   scrollWrapper.addEventListener("mousedown", (e) => {
     if (e.button !== 0) return
     const target = e.target as Element | null
     if (target?.closest(".gantt-bar, .gantt-milestone, .gantt-resize-handle, .gantt-schedule-row, button, a, input")) return
-    isCanvasPanning = true
-    panMoved = false
-    panStartX = e.clientX
-    panStartScrollLeft = scrollWrapper.scrollLeft
+    canvasPans.set(outerContainer, { startX: e.clientX, lastX: e.clientX, moved: false })
     scrollWrapper.classList.add("is-panning")
     e.preventDefault()
   }, { signal })
   document.addEventListener("mousemove", (e) => {
-    if (!isCanvasPanning) return
-    const dx = e.clientX - panStartX
-    if (Math.abs(dx) > 3) panMoved = true
-    scrollWrapper.scrollLeft = panStartScrollLeft - dx
+    const pan = canvasPans.get(outerContainer)
+    if (!pan) return
+    const delta = pan.lastX - e.clientX
+    pan.lastX = e.clientX
+    if (Math.abs(e.clientX - pan.startX) > 3) pan.moved = true
+    if (delta) panTimelineByPx(delta, false)
   }, { signal })
-  document.addEventListener("mouseup", () => {
-    if (!isCanvasPanning) return
-    isCanvasPanning = false
+  function endCanvasPan() {
+    const pan = canvasPans.get(outerContainer)
+    if (!pan) return
+    canvasPans.delete(outerContainer)
     scrollWrapper.classList.remove("is-panning")
-    if (panMoved) suppressBarClickUntil = Date.now() + 180
-  }, { signal })
+    if (pan.moved) suppressBarClickUntil = Date.now() + 180
+  }
+  document.addEventListener("mouseup", endCanvasPan, { signal })
+  window.addEventListener("blur", endCanvasPan, { signal })
 
   // Shift + vertical wheel pans timeline horizontally smoothly
   scrollWrapper.addEventListener("wheel", (e) => {
     if (e.shiftKey && Math.abs(e.deltaY) > 0 && Math.abs(e.deltaX) === 0) {
       e.preventDefault()
-      scrollWrapper.scrollLeft += e.deltaY
+      panTimelineByPx(e.deltaY, false)
     }
   }, { signal, passive: false })
 
@@ -3031,24 +3074,10 @@ function setupMilestoneDrag(
 
     const newDate = addDays(bar.start, daysDelta)
     const iso = toISODate(newDate)
-    const snapshot = applyOptimisticBarDates(allBars, bar.id, newDate, newDate, startOfDay(new Date()), bar)
-    recentlySettledBarId = bar.id
-    suppressAutoRefreshUntil = Date.now() + 1200
-    onComplete()
-
-    const ok = await patchTask(bar.original, {
-      start_date: iso,
-      end_date: iso,
-      due_date: iso,
-    })
-
-    if (ok) {
-      showToast("Milestone date updated")
-    } else {
-      if (snapshot) rollbackBarDates(allBars, bar.id, snapshot, bar)
-      showToast("Failed to update date", "error")
-      onComplete()
-    }
+    await saveBarDates(bar, allBars, {
+      fields: { start_date: iso, end_date: iso, due_date: iso }, start: newDate, end: newDate,
+      success: "Milestone date updated", error: "Failed to update date",
+    }, onComplete)
   }
 
   const attachActive = () => {
@@ -3062,7 +3091,7 @@ function setupMilestoneDrag(
   }
 
   milestoneGroup.addEventListener("mousedown", (e) => {
-    if (e.button !== 0) return
+    if (e.button !== 0 || timelineWriteBlocked(bar.id)) return
     isDragging = true
     onDragStateChange(true)
     dragOriginX = e.clientX
@@ -3073,7 +3102,7 @@ function setupMilestoneDrag(
   }, { signal })
 
   milestoneGroup.addEventListener("touchstart", (e) => {
-    if (e.touches.length !== 1) return
+    if (e.touches.length !== 1 || timelineWriteBlocked(bar.id)) return
     isDragging = true
     onDragStateChange(true)
     dragOriginX = e.touches[0]!.clientX
@@ -3138,24 +3167,11 @@ function setupBarDrag(
 
     const newStart = addDays(bar.start, daysDelta)
     const newEnd = addDays(bar.end, daysDelta)
-    const snapshot = applyOptimisticBarDates(allBars, bar.id, newStart, newEnd, startOfDay(new Date()), bar)
-    recentlySettledBarId = bar.id
-    suppressAutoRefreshUntil = Date.now() + 1200
-    onComplete()
-
-    const ok = await patchTask(bar.original, {
-      start_date: toISODate(newStart),
-      end_date: toISODate(newEnd),
-      due_date: toISODate(newEnd),
-    })
-
-    if (ok) {
-      showToast("Dates updated")
-    } else {
-      if (snapshot) rollbackBarDates(allBars, bar.id, snapshot, bar)
-      showToast("Failed to update dates", "error")
-      onComplete()
-    }
+    const newEndIso = toISODate(newEnd)
+    await saveBarDates(bar, allBars, {
+      fields: { start_date: toISODate(newStart), end_date: newEndIso, due_date: newEndIso }, start: newStart, end: newEnd,
+      success: "Dates updated", error: "Failed to update dates",
+    }, onComplete)
   }
 
   const attachActiveDragListeners = () => {
@@ -3171,7 +3187,7 @@ function setupBarDrag(
   barGroup.addEventListener("mousedown", (e) => {
     const target = e.target as SVGElement
     if (target.style.cursor === "ew-resize") return
-    if (e.button !== 0) return
+    if (e.button !== 0 || timelineWriteBlocked(bar.id)) return
     isDragging = true
     onDragStateChange(true)
     dragOriginX = e.clientX
@@ -3188,7 +3204,7 @@ function setupBarDrag(
   }, { signal })
 
   barGroup.addEventListener("touchstart", (e) => {
-    if (e.touches.length !== 1) return
+    if (e.touches.length !== 1 || timelineWriteBlocked(bar.id)) return
     const touch = e.touches[0]!
     isDragging = true
     onDragStateChange(true)
@@ -3292,18 +3308,10 @@ function setupResizeDrag(
         onComplete()
         return
       }
-      const snapshot = applyOptimisticBarDates(allBars, bar.id, newStart, bar.end, startOfDay(new Date()), bar)
-      recentlySettledBarId = bar.id
-      suppressAutoRefreshUntil = Date.now() + 1200
-      onComplete()
-
-      const ok = await patchTask(bar.original, { start_date: toISODate(newStart) })
-      if (ok) showToast("Start date updated")
-      else {
-        if (snapshot) rollbackBarDates(allBars, bar.id, snapshot, bar)
-        showToast("Failed to update start date", "error")
-        onComplete()
-      }
+      await saveBarDates(bar, allBars, {
+        fields: { start_date: toISODate(newStart) }, start: newStart, end: bar.end,
+        success: "Start date updated", error: "Failed to update start date",
+      }, onComplete)
     } else {
       const newEnd = addDays(bar.end, daysDelta)
       if (newEnd < bar.start) {
@@ -3311,18 +3319,11 @@ function setupResizeDrag(
         onComplete()
         return
       }
-      const snapshot = applyOptimisticBarDates(allBars, bar.id, bar.start, newEnd, startOfDay(new Date()), bar)
-      recentlySettledBarId = bar.id
-      suppressAutoRefreshUntil = Date.now() + 1200
-      onComplete()
-
-      const ok = await patchTask(bar.original, { end_date: toISODate(newEnd), due_date: toISODate(newEnd) })
-      if (ok) showToast("End date updated")
-      else {
-        if (snapshot) rollbackBarDates(allBars, bar.id, snapshot, bar)
-        showToast("Failed to update end date", "error")
-        onComplete()
-      }
+      const iso = toISODate(newEnd)
+      await saveBarDates(bar, allBars, {
+        fields: { end_date: iso, due_date: iso }, start: bar.start, end: newEnd,
+        success: "End date updated", error: "Failed to update end date",
+      }, onComplete)
     }
   }
 
@@ -3337,7 +3338,7 @@ function setupResizeDrag(
   }
 
   handle.addEventListener("mousedown", (e) => {
-    if (e.button !== 0) return
+    if (e.button !== 0 || timelineWriteBlocked(bar.id)) return
     isDragging = true
     onDragStateChange(true)
     dragOriginX = e.clientX
@@ -3349,7 +3350,7 @@ function setupResizeDrag(
   }, { signal })
 
   handle.addEventListener("touchstart", (e) => {
-    if (e.touches.length !== 1) return
+    if (e.touches.length !== 1 || timelineWriteBlocked(bar.id)) return
     isDragging = true
     onDragStateChange(true)
     dragOriginX = e.touches[0]!.clientX
@@ -3449,6 +3450,10 @@ export function initTimelineController(signal: AbortSignal) {
     newGroupField?: string,
     newGroupRawValue?: string | null,
   ): Promise<void> {
+    if (timelineWriteBlocked(movedTaskId)) {
+      doRender(currentZoom)
+      return
+    }
     const orderIndex = new Map(orderedTaskIds.map((id, idx) => [id, idx]))
     allBars.sort((a, b) => {
       const ia = orderIndex.get(a.id)
@@ -3564,6 +3569,11 @@ export function initTimelineController(signal: AbortSignal) {
   const savedZoom = localStorage.getItem(ZOOM_KEY) as ZoomLevel | null
   const validZooms: ZoomLevel[] = ["Day", "Week", "Month"]
   let currentZoom: ZoomLevel = savedZoom && validZooms.includes(savedZoom) ? savedZoom : "Week"
+  redrawTimeline = () => doRender(currentZoom)
+  signal.addEventListener("abort", () => {
+    if (timelineSignal === signal) redrawTimeline = undefined
+    canvasPans.delete(container)
+  }, { once: true })
 
   const sidebarToggle = document.querySelector<HTMLButtonElement>("#timeline-sidebar-toggle")
   const phoneViewport = window.matchMedia("(max-width: 640px)")
@@ -3693,7 +3703,8 @@ export function initTimelineController(signal: AbortSignal) {
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
 
   async function refreshTimelineFromApi(showFeedback = false): Promise<void> {
-    if (refreshInFlight || signal.aborted) return
+    if (refreshInFlight || signal.aborted || activeTimelineWrites.size) return
+    const writeEpoch = timelineWriteEpoch
     refreshInFlight = true
     refreshBtn?.classList.add("is-spinning")
     if (refreshBtn) refreshBtn.disabled = true
@@ -3707,6 +3718,7 @@ export function initTimelineController(signal: AbortSignal) {
       })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const payload = await res.json() as { tasks?: TimelineTask[] } | TimelineTask[]
+      if (signal.aborted || writeEpoch !== timelineWriteEpoch) return
       const rawList = Array.isArray(payload) ? payload : (Array.isArray(payload?.tasks) ? payload.tasks : [])
       const todayDate = startOfDay(new Date())
       const normalized: TimelineTask[] = rawList.map((row) => {
