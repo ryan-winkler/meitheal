@@ -321,9 +321,31 @@ test.describe("Due date capture compatibility", () => {
     page.on("request", request => { if (new URL(request.url()).pathname === "/api/tasks" && request.method() === "POST") creates++ })
     const trigger = modal.getByRole("group", { name: "Due Date", exact: true }).getByRole("textbox", { name: /^Due Date:/ })
     await expect(trigger).toBeVisible()
-    await trigger.press("ArrowDown")
     const picker = modal.locator(".nt-due-date-panel")
-    await expect(picker).toBeVisible()
+    const expectPickerToFitOnOpen = async (open: () => Promise<void>) => {
+      // Capture the mounted layout before any animation frame can correct it.
+      await modal.evaluate(dialog => {
+        const observer = new MutationObserver(() => {
+          const panel = dialog.querySelector(".nt-due-date-panel")
+          if (!panel) return
+          const { left, top, right, bottom } = panel.getBoundingClientRect()
+          panel.setAttribute("data-test-open-bounds", JSON.stringify({ left, top, right, bottom }))
+          observer.disconnect()
+        })
+        observer.observe(dialog, { childList: true })
+      })
+      await open()
+      await expect(picker).toBeVisible()
+      await expect(picker).toHaveAttribute("data-test-open-bounds", /.+/)
+      const { left, top, right, bottom } = JSON.parse((await picker.getAttribute("data-test-open-bounds"))!)
+      expect(left).toBeGreaterThanOrEqual(0)
+      expect(top).toBeGreaterThanOrEqual(0)
+      expect(right).toBeLessThanOrEqual(320)
+      expect(bottom).toBeLessThanOrEqual(740)
+    }
+
+    await expectPickerToFitOnOpen(() => trigger.press("ArrowDown"))
+    await expect(picker.getByRole("button").first()).toBeFocused()
     const pickerStyle = await picker.evaluate(el => {
       const cs = getComputedStyle(el)
       return {
@@ -337,15 +359,21 @@ test.describe("Due date capture compatibility", () => {
     expect(pickerStyle.backgroundColor).not.toBe("transparent")
     expect(pickerStyle.borderTopWidth).not.toBe("0px")
     expect(pickerStyle.boxShadow).not.toBe("none")
-    const bounds = await picker.boundingBox()
-    expect(bounds!.x).toBeGreaterThanOrEqual(0)
-    expect(bounds!.y).toBeGreaterThanOrEqual(0)
-    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320)
-    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(740)
     await page.keyboard.press("Escape")
     await expect(picker).toHaveCount(0)
     await expect(trigger).toBeFocused()
     await expect(stored).toHaveValue(due)
+
+    const calendar = modal.getByRole("button", { name: "Open date and time picker", exact: true })
+    await expectPickerToFitOnOpen(() => calendar.click())
+    await expect(calendar).toBeFocused()
+    await expect(calendar).toHaveAttribute("aria-expanded", "true")
+    await picker.getByRole("button").first().focus()
+    await page.keyboard.press("Escape")
+    await expect(picker).toHaveCount(0)
+    await expect(trigger).toBeFocused()
+    await expect(stored).toHaveValue(due)
+
     await modal.getByRole("button", { name: "Clear date", exact: true }).press("Enter")
     await expect(stored).toHaveValue("")
     await expect(modal).toBeVisible()

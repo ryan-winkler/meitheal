@@ -420,9 +420,8 @@ export class InlineDatePicker {
     if (!triggerRect) return
 
     const margin = 8
-    const panelRect = panel.getBoundingClientRect()
-    const panelWidth = panelRect.width || 420
-    const panelHeight = panelRect.height || 340
+    const panelWidth = panel.offsetWidth || 420
+    const panelHeight = panel.offsetHeight || 340
 
     const preferredLeft = triggerRect.left
     const maxLeft = Math.max(margin, window.innerWidth - panelWidth - margin)
@@ -437,11 +436,9 @@ export class InlineDatePicker {
     const maxTop = Math.max(margin, window.innerHeight - panelHeight - margin)
     const top = Math.max(margin, Math.min(preferredTop, maxTop))
 
-    panel.style.position = "fixed"
     panel.style.left = `${left}px`
     panel.style.top = `${top}px`
     panel.style.bottom = ""
-    panel.style.zIndex = "10000"
   }
 
   private openPanel(focusFirst = false) {
@@ -449,6 +446,9 @@ export class InlineDatePicker {
 
     const panel = document.createElement("div")
     panel.className = "idp-panel"
+    // Measure the floating panel after mounting it outside the host's flex layout.
+    panel.style.position = "fixed"
+    panel.style.zIndex = "10000"
     panel.setAttribute("role", "dialog")
     panel.setAttribute("aria-label", this.options.enableTime ? "Choose date and time" : "Choose date")
 
