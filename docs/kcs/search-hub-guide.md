@@ -51,7 +51,7 @@ Relevance puts an exact task ID or ticket such as `MTH-42` first in Tasks, follo
 
 Task search ranks a bounded set of results within the selected Board. Task lists without Area or Project filters select the page before resolving related records. Lists filtered by placement check the visible relation before paging.
 
-Open a result with Enter or a click. Close Details with its Close button or Escape to return to the query and selected result. Escape again returns focus to the search launcher. Use the Details permalink control when you want to share a task or return directly to it later.
+Open a result with Enter or a click. Close Details with its Close button or Escape to return to the query and selected result. Escape again returns focus to the search launcher. Use the Details permalink control when you want to share a task or return directly to it later. Browser Back and Forward restore the destination page and its open ticket, if any. This also preserves a Settings section and its ticket query through Home Assistant ingress.
 
 ## Home Assistant Parity
 

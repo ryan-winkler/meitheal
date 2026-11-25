@@ -680,7 +680,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           if (typeof status === "string") renderSavedStatus(status)
         }, { signal: __signal })
 
-        async function openTaskDetail(taskId: string, commentTarget: string | null = null, search?: SearchDetailHandoff, updateLocation = true) {
+        async function openTaskDetail(taskId: string, commentTarget: string | null = null, search?: SearchDetailHandoff, updateLocation: boolean | "resolve" = true) {
           if (boardWithheld) return
           if (!tdOverlay?.isConnected || __signal.aborted) return
           const newSession = !tdOverlay.classList.contains("active")
@@ -725,7 +725,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           taskLoaded = false
           currentCommentTarget = commentTarget
           tdOverlay.dataset.openTaskId = taskId
-          if (updateLocation) setTaskLocation(taskId, false, commentTarget)
+          if (updateLocation === true) setTaskLocation(taskId, false, commentTarget)
           if (_modalAbortController) _modalAbortController.abort();
           _modalAbortController = new AbortController();
           const modalSignal = _modalAbortController.signal
@@ -833,7 +833,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             document.dispatchEvent(new CustomEvent("meitheal:ha-location-task", { detail: taskId }))
             sessionTicketId = taskId
             currentTicketKey = typeof t.ticket_key === "string" ? t.ticket_key : null
-            setTaskLocation(taskId, true, commentTarget)
+            if (updateLocation) setTaskLocation(taskId, true, commentTarget)
 
             // Start independent inspector reads together. Each field keeps its own fallback.
             const requestOptions = { signal: modalSignal }
@@ -2625,7 +2625,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           if (taskId === null) closeTD("discard", false)
           else if (tdOverlay.dataset.suppressUrlOpen !== "true" &&
             (!sameTaskLocator(taskId, currentTaskId, currentTicketKey) || commentTarget !== currentCommentTarget || !tdOverlay.classList.contains("active"))) {
-            void openTaskDetail(taskId, commentTarget, undefined, false)
+            void openTaskDetail(taskId, commentTarget, undefined, fromHistory ? false : "resolve")
             if (fromHistory) {
               const generation = detailGeneration
               // The browser can restore a Settings anchor after popstate finishes.
