@@ -93,12 +93,11 @@ export function initParentPageController(config: ParentPageControllerConfig): vo
   // ─── Hash Sync ─────────────────────────────────────────────────
 
   function syncFromHash(): void {
-    const hash = window.location.hash.replace("#", "")
-    if (hash && config.sectionIds.includes(hash)) {
-      activateSection(hash, false)
-    } else {
-      activateSection(config.defaultSectionId, !hash)
-    }
+    const hash = window.location.hash.slice(1)
+    const section = document.getElementById(hash)?.closest(`[${sectionAttr}]`)
+    const anchorSectionId = section && shell!.contains(section) ? section.getAttribute(sectionAttr) : null
+    const sectionId = config.sectionIds.includes(hash) ? hash : anchorSectionId ?? config.defaultSectionId
+    activateSection(sectionId, !hash)
   }
 
   // ─── Init ──────────────────────────────────────────────────────
@@ -128,6 +127,7 @@ export function initParentPageController(config: ParentPageControllerConfig): vo
     }
     syncFromHash()
   }) as EventListener)
+  pageLifecycle.on(window, "hashchange", syncFromHash)
 
   // Initial activation
   syncFromHash()

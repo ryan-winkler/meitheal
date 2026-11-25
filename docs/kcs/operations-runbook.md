@@ -81,6 +81,7 @@ Use this after changing dashboard shell, search-launcher, or top-level navigatio
 
 4. Confirm the shell `New Task` button still opens the shared task modal and not a page-local implementation.
 5. Check the Dashboard heading and workload tiles at 320 px and on desktop. Active and Overdue show keyboard focus and open their corresponding task filters inside ingress.
+6. Follow a Dashboard achievement badge and the Best streak link. Confirm each retains its Board query and achievement fragment, opens the Achievements section, and moves focus to the gallery or streaks. Reload the destination and check that the bookmark still restores the target.
 
 ## Habits Shell Verification
 

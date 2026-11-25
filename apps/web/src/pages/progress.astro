@@ -240,27 +240,23 @@ const boardHref = boardWorkspaceHref(boardId, {
   import { pageLifecycle } from "@lib/page-lifecycle"
 
   pageLifecycle.onPageLoad((signal) => {
+    const section = document.getElementById("progress-section-achievements")
+    if (!section) return
+
     const focusAchievementsFromHash = () => {
       const hash = window.location.hash
       if (!/^#achievements(?:-|$)/.test(hash)) return
-      const section = document.getElementById("progress-section-achievements")
-      if (!section) return
-
-      // Ensure Achievements section is visible even before/alongside ParentPageShell sync
-      if (section.hasAttribute("hidden")) {
-        const achievementsTab = document.querySelector<HTMLElement>('[data-unified-bar-section="achievements"]')
-        achievementsTab?.click()
-        section.hidden = false
-        section.classList.add("is-active")
-      }
-
       const targetId = hash.slice(1)
-      const targetEl = targetId !== "achievements"
-        ? (document.getElementById(targetId) ?? section)
-        : section
+      const targetEl = targetId === "achievements" ? section : document.getElementById(targetId)
+      if (!targetEl || !section.contains(targetEl)) return
 
       const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
       requestAnimationFrame(() => {
+        if (signal.aborted || location.hash !== hash || section.hidden) return
+        if (targetEl !== section) {
+          targetEl.tabIndex = -1
+          targetEl.focus({ preventScroll: true })
+        }
         targetEl.scrollIntoView({
           behavior: prefersReducedMotion ? "auto" : "smooth",
           block: targetEl === section ? "start" : "center",
