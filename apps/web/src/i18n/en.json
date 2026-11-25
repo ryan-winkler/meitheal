@@ -294,6 +294,8 @@
     "delete_task": "Delete task",
     "move_to": "Move to",
     "moved_to": "Moved to {lane}",
+    "changed_type": "Changed type to {type}",
+    "changed_type_and_moved": "Changed type to {type} and moved to {lane}",
     "move_failed": "Couldn’t move the task. Try again.",
     "move_blocked": "Finish the blocking tasks before moving this one into progress.",
     "lane_full": "{lane} has reached its work-in-progress limit ({limit}).",

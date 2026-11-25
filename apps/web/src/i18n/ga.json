@@ -294,6 +294,8 @@
     "delete_task": "Scrios an tasc",
     "move_to": "Bog go",
     "moved_to": "Bogadh go {lane}",
+    "changed_type": "Athraíodh an cineál go {type}",
+    "changed_type_and_moved": "Athraíodh an cineál go {type} agus bogadh go {lane}",
     "move_failed": "Níorbh fhéidir an tasc a bhogadh. Bain triail eile as.",
     "move_blocked": "Críochnaigh na tascanna atá ag cur bac ar an tasc seo sula mbogann tú é ar aghaidh.",
     "lane_full": "Tá an teorainn oibre idir lámha ({limit}) sroichte ag {lane}.",

@@ -24,7 +24,7 @@ Choose **Group by → By Area** to group the current page of cards within each l
 
 - Select the card's task key, such as **MTH-42**, to open the full task. With a task key focused, use Up and Down within a lane, Left and Right between lanes, and Enter or Space to open. Press N to open quick capture in that lane.
 - Open **⋯** at the top of a card and pick a lane under **Move to**. This works with keyboard, mouse, or touch. Escape closes the actions and returns focus to the card. To reverse a move, choose the previous lane.
-- You can also drag the card. On touch, swipe to scroll the board, or hold the card body until it lifts, then drag it into the destination list. The card previews its destination while Meitheal saves. A rejected move returns it to its original lane.
+- You can also drag the card. On touch, swipe to scroll the board, or hold the card body until it lifts, then drag it into the destination list. The card previews its destination while Meitheal saves. A rejected move returns it to its original lane and group.
 
 The task key is part of the card button’s accessible name. When one quick action replaces another, only the current dialog accepts keyboard input.
 
@@ -79,7 +79,7 @@ Use a swimlane’s group heading to show or hide its cards with a click, Enter, 
 
 After a keyboard move from a card’s action menu, focus follows the card. If the destination group is collapsed, focus lands on its heading so you can expand it.
 
-On a grouped board, drag a card to another workflow lane or choose a destination from its action menu. It keeps its grouping value and appears under the matching heading. Dropping on an explicit type group also selects that task type. A group has a reorder grip when its lane has another visible group. Drag the grip to move the whole group within its lane or open the grip menu and choose an available direction. With the grip focused, **Alt+Up** and **Alt+Down** do the same. Group order is saved in this browser for each Board, grouping choice and workflow lane. The group surface uses your current theme, corner roundness, and panel style.
+On a grouped board, drag a card to a workflow lane heading or choose a lane from its action menu to keep the current grouping value. With **By Type**, drop the card on an Epic, Story, or Task group heading, its card area, or its **Add Task** row to change the task type. The confirmation names the new type and includes the destination lane when it changes. A group has a reorder grip when its lane has another visible group. Drag the grip to move the whole group within its lane or open the grip menu and choose an available direction. With the grip focused, **Alt+Up** and **Alt+Down** do the same. Group order is saved in this browser for each Board, grouping choice and workflow lane. The group surface uses your current theme, corner roundness, and panel style.
 
 Open **Group by** on Household or a named Board. **By Area** uses the task’s Area, including the Area inherited from its Project. **By Epic** groups an Epic card under its own name. Other cards use their nearest readable parent Epic, even outside the current filter or page. Cards without a readable Epic appear under **No Epic**. Epic headings sort by name and include the Board’s ticket key to distinguish matching names. Group counts reflect the current page of each lane. Close Details after changing a parent to see the card in its new group. Copy the Board URL to preserve the grouping. Switching between Kanban and Table preserves Epic grouping.
 

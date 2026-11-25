@@ -12,6 +12,7 @@ import { initKanbanGrouping, storeSwimlaneOrder } from "@lib/controllers/kanban-
 import { bumpKanbanMutationEpoch, type KanbanRefreshFocus } from "@lib/controllers/kanban-page-controller"
 import { isDoneStatus } from "@lib/status-config"
 import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
+import { sameTaskApiContext, taskRecordVersion } from "@lib/task-api-client"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
 import { askAIForTask } from "@domains/ai/ai-context-service"
 import { confirmDialog } from "@lib/confirm-dialog"
@@ -168,13 +169,14 @@ export function initKanbanArea(
       const typeGroup = dropGroup?.matches(".swimlane-group:not(.dynamic-group):not([hidden])") ? dropGroup : undefined
       const newType = typeGroup?.dataset.swimlaneType
       const typeChanged = Boolean(newType && newType !== card.dataset.taskType)
-      if (!taskId || !status || pendingMoves.has(card) || (source === lane && !typeChanged)) return
+      const laneChanged = source !== lane
+      if (!taskId || !status || pendingMoves.has(card) || (!laneChanged && !typeChanged)) return
 
       const laneName = lane.querySelector(".kanban-column-title")?.textContent?.trim() || status
       const limit = Number(lane.dataset.wipLimit) || 0
       const incoming = [...pendingMoves].filter(([movingCard, destination]) =>
         destination === lane && movingCard.closest(".kanban-column") !== lane).length
-      if (source !== lane && limit > 0 && Number(lane.dataset.total) + incoming >= limit) {
+      if (laneChanged && limit > 0 && Number(lane.dataset.total) + incoming >= limit) {
         if (alreadyPlaced) {
           const fromCards = alreadyPlaced.fromContainer.querySelectorAll<HTMLElement>(":scope > .kanban-card")
           const refNode = fromCards[alreadyPlaced.oldIndex] ?? null
@@ -193,6 +195,7 @@ export function initKanbanArea(
         : card.nextElementSibling
       const prevStatus = card.dataset.status ?? ""
       const prevType = card.dataset.taskType ?? ""
+      const previousVersion = typeChanged ? taskRecordVersion({ task_version: card.dataset.version }) : null
       const sourceGroup = prevParent?.closest<HTMLElement>(".swimlane-group")
       const placedGroup = alreadyPlaced?.toContainer.closest<HTMLElement>(".swimlane-group")
       const sameGroup = placedGroup?.dataset.swimlaneType === sourceGroup?.dataset.swimlaneType
@@ -206,9 +209,9 @@ export function initKanbanArea(
       if (targetContainer?.matches(".swimlane-cards")) mountCardList?.(targetContainer)
       updateGroup(prevParent)
       updateGroup(targetContainer)
-      card.dataset.status = status
+      if (laneChanged) card.dataset.status = status
       if (typeChanged && newType) card.dataset.taskType = newType
-      if (source !== lane) {
+      if (laneChanged) {
         adjustLaneCount(source, -1)
         adjustLaneCount(lane, 1)
       }
@@ -227,7 +230,7 @@ export function initKanbanArea(
           addedGroup.remove()
         }
         if (restoreFocus && card.isConnected) card.querySelector<HTMLElement>(".card-more-btn")?.focus({ preventScroll: true })
-        if (source !== lane) {
+        if (laneChanged) {
           adjustLaneCount(source, 1)
           adjustLaneCount(lane, -1)
         }
@@ -238,7 +241,11 @@ export function initKanbanArea(
         const res = await fetch(buildTaskApiUrl(taskId), { // nosemgrep
           method: "PUT",
           headers: ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" },
-          body: JSON.stringify({ status, task_type: typeChanged ? newType : undefined }),
+          body: JSON.stringify({
+            status: laneChanged ? status : undefined,
+            task_type: typeChanged ? newType : undefined,
+            updated_at: previousVersion ?? undefined,
+          }),
         })
         if (__signal.aborted) {
           if (res.ok) queueMoveRefresh()
@@ -246,7 +253,7 @@ export function initKanbanArea(
         }
         if (!res.ok) {
           rollbackMove()
-          const problem = res.status === 409 ? await res.json().catch(() => null) : null
+          const problem = typeChanged || res.status === 409 ? await res.json().catch(() => null) : null
           const message = problem?.blocked_by?.length
             ? window.mI18n?.get("kanban.move_blocked") ?? "Finish the blocking tasks before moving this one into progress."
             : problem?.error ?? window.mI18n?.get("kanban.move_failed") ?? "Couldn’t move the task. Try again."
@@ -254,20 +261,42 @@ export function initKanbanArea(
           return
         }
 
-        // The lane change is durable even if the separate order write is rejected.
+        const completedNow = laneChanged && !wasDone && isDoneStatus(status)
+        const savedTask: (Record<string, unknown> & TaskCompletionResponse) | null = typeChanged || completedNow
+          ? await res.json().catch(() => null) : null
+        if (__signal.aborted || !board.isConnected) {
+          queueMoveRefresh()
+          return
+        }
+        if (typeChanged && savedTask?.id === taskId && savedTask.task_type === newType &&
+          (!ctx || sameTaskApiContext(ctx, currentTaskApiContext()))) {
+          const version = taskRecordVersion(savedTask)
+          if (version !== null) {
+            card.dataset.version = String(version)
+            window.dispatchEvent(new CustomEvent("meitheal:task-type-changed", {
+              detail: { taskId, taskType: newType, version, previousVersion, status: savedTask.status },
+            }))
+          }
+        }
+
+        // The task update is durable even if the separate order write is rejected.
         const orderSaved = !targetContainer || await persistRelativeOrder(card, targetContainer, status).catch(() => false)
         queueMoveRefresh(restoreFocus && !__signal.aborted ? { taskId, lane: status } : undefined)
         if (__signal.aborted) return
-        if (orderSaved) {
+        if (typeChanged && newType) {
+          const typeLabel = typeGroup?.querySelector(".swimlane-label")?.textContent?.trim() || newType
+          const message = laneChanged
+            ? window.mI18n?.get("kanban.changed_type_and_moved") ?? "Changed type to {type} and moved to {lane}"
+            : window.mI18n?.get("kanban.changed_type") ?? "Changed type to {type}"
+          showToast(message.replace("{type}", () => typeLabel).replace("{lane}", () => laneName))
+        } else if (orderSaved) {
           const moved = window.mI18n?.get("kanban.moved_to") ?? "Moved to {lane}"
           showToast(moved.replace("{lane}", laneName))
-        } else {
+        }
+        if (!orderSaved) {
           showToast(window.mI18n?.get("kanban.reorder_failed") ?? "Couldn’t save the card order. Try again.", "warning")
         }
-        if (!wasDone && isDoneStatus(status)) {
-          const completed = await res.json().catch(() => null)
-          if (completed && !__signal.aborted) recordCompletion(card, restoreFocus, completed)
-        }
+        if (completedNow && savedTask) recordCompletion(card, restoreFocus, savedTask)
       } catch (error) {
         if (__signal.aborted) return
         rollbackMove()

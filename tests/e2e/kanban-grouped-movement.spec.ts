@@ -107,6 +107,118 @@ test("Type drops preserve the group on a lane, roll back on failure and convert 
   }
 })
 
+for (const [surface, selector] of [
+  ["heading", ".swimlane-header"],
+  ["empty list", ".swimlane-cards"],
+  ["Add Epic row", ".swimlane-add-btn"],
+] as const) {
+  for (const status of ["pending", "active"] as const) {
+    test(`Story changes to Epic on the ${surface} in the ${status} lane`, async ({ page, request, baseURL }) => {
+      const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+      const created = await request.post("/api/tasks", { headers, data: {
+        title: `Convert Story using ${surface} in ${status}`, status: "pending", task_type: "story",
+      } })
+      expect(created.status()).toBe(201)
+      const { id } = await created.json() as { id: string }
+      const path = `/api/tasks/${id}`
+      try {
+        await page.goto("/tasks?view=kanban&groupBy=type#kanban")
+        const board = page.locator("#kanban-board")
+        await expect(board).toHaveAttribute("data-sorting-ready", "true")
+        const cardSelector = `.kanban-card[data-id="${id}"]`
+        const card = board.locator(cardSelector)
+        const epic = board.locator(`.kanban-column[data-status="${status}"] .swimlane-group[data-swimlane-type="epic"]`)
+        await expect(epic.locator(".kanban-card")).toHaveCount(0)
+        await expect(card).toHaveAttribute("data-version", /^\d+$/)
+        const previousVersion = Number(await card.getAttribute("data-version"))
+        await page.evaluate(() => {
+          document.addEventListener("pointerup", event => {
+            const target = document.elementFromPoint(event.clientX, event.clientY)
+            const type = target?.closest<HTMLElement>(".swimlane-group")?.dataset.swimlaneType
+            const lane = target?.closest<HTMLElement>(".kanban-column")?.dataset.status
+            document.documentElement.dataset.typeDropContact = `${lane}/${type}`
+          }, { capture: true, once: true })
+          window.addEventListener("meitheal:task-type-changed", event => {
+            document.documentElement.dataset.typeChangeEvent = JSON.stringify((event as CustomEvent).detail)
+          }, { once: true })
+        })
+        const [response] = await Promise.all([
+          page.waitForResponse(response => new URL(response.url()).pathname === path && response.request().method() === "PUT", { timeout: 5000 }),
+          drag(page, card.locator(".kanban-title-text"), epic.locator(selector)),
+        ])
+        await expect(page.locator("html")).toHaveAttribute("data-type-drop-contact", `${status}/epic`)
+        expect(response.status()).toBe(200)
+        expect(response.request().postDataJSON()).toEqual(status === "active"
+          ? { status, task_type: "epic", updated_at: previousVersion } : { task_type: "epic", updated_at: previousVersion })
+        const feedback = status === "active" ? "Changed type to Epic and moved to In Progress" : "Changed type to Epic"
+        await expect(page.getByRole("status").filter({ hasText: feedback })).toBeVisible()
+        const saved = await (await request.get(path)).json()
+        expect(saved).toMatchObject({ status, task_type: "epic" })
+        const event = await page.locator("html").getAttribute("data-type-change-event")
+        expect(JSON.parse(event ?? "null")).toEqual({ taskId: id, taskType: "epic", version: saved.task_version, previousVersion, status })
+
+        await page.reload()
+        await expect(epic.locator(cardSelector)).toBeVisible()
+      } finally {
+        await request.delete(path, { headers })
+      }
+    })
+  }
+}
+
+for (const rejection of ["hierarchy", "version"] as const) {
+  test(`a ${rejection} conflict restores the original Type without a change event`, async ({ page, request, baseURL }) => {
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+    const ids: string[] = []
+    const create = async (data: { title: string; task_type: string; parent_id?: string }) => {
+      const response = await request.post("/api/tasks", { headers, data })
+      expect(response.status(), await response.text()).toBe(201)
+      const { id } = await response.json() as { id: string }
+      ids.unshift(id)
+      return id
+    }
+    try {
+      const parent = rejection === "hierarchy" ? await create({ title: "Parent Story", task_type: "story" }) : undefined
+      const originalType = parent ? "task" : "story"
+      const id = await create({ title: "Type conversion conflict", task_type: originalType, parent_id: parent })
+      const path = `/api/tasks/${id}`
+      await page.goto("/tasks?view=kanban&groupBy=type#kanban")
+      const board = page.locator("#kanban-board")
+      await expect(board).toHaveAttribute("data-sorting-ready", "true")
+      const lane = board.locator('.kanban-column[data-status="pending"]')
+      const cardSelector = `.kanban-card[data-id="${id}"]`
+      const card = lane.locator(cardSelector)
+      const epic = lane.locator('.swimlane-group[data-swimlane-type="epic"]')
+      await page.evaluate(() => {
+        window.addEventListener("meitheal:task-type-changed", () => {
+          document.documentElement.dataset.typeChangeEvent = "true"
+        }, { once: true })
+      })
+      if (rejection === "version") {
+        await page.route(`**${path}`, async route => {
+          const edit = await request.patch(path, { headers, data: { title: "Title saved concurrently" } })
+          expect(edit.status()).toBe(200)
+          await route.continue()
+        }, { times: 1 })
+      }
+      const [response] = await Promise.all([
+        page.waitForResponse(response => new URL(response.url()).pathname === path && response.request().method() === "PUT"),
+        drag(page, card.locator(".kanban-title-text"), epic.locator(".swimlane-header")),
+      ])
+      expect(response.status()).toBe(parent ? 400 : 409)
+      const problem = parent ? "Cannot nest epic under a story" : "task was modified since your last read"
+      await expect(page.getByRole("alert").filter({ hasText: problem })).toBeVisible()
+      await expect(lane.locator(`.swimlane-group[data-swimlane-type="${originalType}"]`).locator(cardSelector)).toBeVisible()
+      await expect(page.locator("html")).not.toHaveAttribute("data-type-change-event")
+      const saved = await (await request.get(path)).json()
+      expect(saved).toMatchObject(parent ? { task_type: originalType, parent_id: parent }
+        : { task_type: originalType, title: "Title saved concurrently" })
+    } finally {
+      for (const id of ids) await request.delete(`/api/tasks/${id}`, { headers })
+    }
+  })
+}
+
 test("groups reorder by grip, menu and keyboard and keep their order after reload", async ({ page, request, baseURL }) => {
   const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const ids = []
