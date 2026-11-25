@@ -1110,6 +1110,10 @@ body.kanban-dragging .kanban-cards {
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .kanban-card-actions {
+    transition: none;
+  }
+
   .kanban-promote-star[aria-pressed="true"] {
     animation: none;
   }

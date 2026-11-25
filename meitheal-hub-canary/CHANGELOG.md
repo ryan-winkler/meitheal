@@ -30,7 +30,7 @@ Continuous development snapshot built from `dev`.
 - **Mobile Task Detail Modal Scroll Trap & Comment Clipping**: Make `#task-detail-panel` a full-height `100dvh` flex sheet on mobile with a single `.td-scroller` container, hide desktop-only Focus Mode on mobile, and prevent `"Add a comment"` textarea vertical clipping.
 - **Recent Tasks Promote Star Overlap**: Fix overlap between Promote star/ribbon and Ask AI button by unifying Dashboard Recent Tasks onto `KanbanTaskCard`.
 - **Gantt Bar & Milestone Bounce-Back**: Persist horizontal drags, resizes, and inline date edits optimistically across canonical and hierarchy state with clean rollback on failure.
-- **Home Assistant Ingress Keepalive, Display Names & Board Verification**: Add a 15-minute same-origin ingress keepalive, extend route-restore retention to 4 hours, cache Home Assistant user display names locally, stop detaching verified Boards on `window.focus`/`online`, and auto-recover `409` work-access conflicts.
+- **Home Assistant Ingress Keepalive, Display Names & Board Verification**: Add a 15-minute same-origin ingress keepalive, extend route-restore retention to 4 hours, display names from verified Home Assistant ingress or the current roster, stop detaching verified Boards on `window.focus`/`online`, and auto-recover `409` work-access conflicts.
 - **Pre-0016 Upgrade Migrations & Calendar Sync Loops**: Allow legacy `tasks_stall_transition` triggers and `vikunja_labels_title_idx` during schema v28 upgrades, and stop bidirectional calendar sync from duplicating tickets.
 
 ### Security

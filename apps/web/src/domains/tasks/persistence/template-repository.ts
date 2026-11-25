@@ -417,7 +417,7 @@ export class TemplateRepository {
       const due = String(row.due_date ?? "")
       if (due) {
         const set = periodsByRoutine.get(tplId) ?? new Set<string>()
-        set.add(due)
+        set.add(due.slice(0, 10))
         periodsByRoutine.set(tplId, set)
       }
     }
@@ -430,7 +430,7 @@ export class TemplateRepository {
       if (linkedProjectId && !activeProjectIds.has(linkedProjectId)) continue
       const period = routinePeriod(routine.cadence, now, timezone)
       const existingPeriods = periodsByRoutine.get(routine.id)
-      if (existingPeriods?.has(period)) continue
+      if (existingPeriods?.has(period.slice(0, 10))) continue
       const totalExisting = countByRoutine.get(routine.id) ?? 0
       if (!isRoutineActiveForPeriod(routine.cadence, period, totalExisting)) continue
       const outcome = await this.instantiateRoutineTask(routine.id, timezone).catch(() => null)

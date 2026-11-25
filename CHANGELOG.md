@@ -36,7 +36,7 @@ Continuous validation release built from `dev`. Entries below use plain, scannab
 - **Mobile Task Detail Modal Scroll Trap & Comment Input Clipping**: Convert mobile `#task-detail-panel` to a full-height `100dvh` flex sheet with a single `.td-scroller` container so scrolling never gets stuck or loses half the page, hide desktop-only Focus Mode on mobile, and prevent vertical text clipping in `"Add a comment"`.
 - **Dashboard Recent Tasks Promote Star Overlap**: Eliminate overlap between the Promoted star/ribbon and Ask AI action button by adopting the canonical Kanban card layout with top-right ribbon and bottom quick-action bar.
 - **Gantt Drag Bounce-Back**: Persist moved and resized Gantt bars optimistically across canonical and hierarchy state with clean rollback on failure so bars stay in place without refreshing.
-- **Home Assistant Ingress Keepalive & Board Verification Banner**: Add a same-origin 15-minute ingress keepalive, cache Home Assistant user display names locally when Supervisor is unavailable, stop detaching verified Boards on window focus/online events, and auto-recover `409` work-access conflicts.
+- **Home Assistant Ingress Keepalive & Board Verification Banner**: Add a same-origin 15-minute ingress keepalive, display names from verified Home Assistant ingress or the current roster, stop detaching verified Boards on window focus/online events, and auto-recover `409` work-access conflicts.
 - **Pre-0016 Database Upgrades & Calendar Sync Loops**: Accept legacy `tasks_stall_transition` triggers and `vikunja_labels_title_idx` during schema upgrades, and prevent bidirectional Home Assistant calendar sync from duplicating tickets.
 
 ### Security

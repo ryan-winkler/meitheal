@@ -1892,8 +1892,10 @@ export class TaskRepository {
             String(current.cadence ?? "daily") !== occurrence.expectedCadence ||
             routinePeriod(String(current.cadence ?? "daily"), new Date(), periodTimezone) !== occurrence.period) throw new BoardOperationError("stale")
         })
+        const periodDay = occurrence.period.slice(0, 10)
         const { rows: [identity] } = await tx.execute(sql`SELECT id FROM tasks WHERE task_board_id IS ${storageBoardId(this.scope)}
-          AND source_template_id = ${occurrence.templateId} AND due_date = ${occurrence.period} ORDER BY created_at, id LIMIT 1`)
+          AND source_template_id = ${occurrence.templateId} AND due_date >= ${periodDay}
+          AND due_date < ${shiftCalendarDay(periodDay, 1)} ORDER BY created_at, id LIMIT 1`)
         const { rows: [existing] } = identity ? await tx.execute(scopedTaskRead(this.scope, sql`SELECT * FROM scoped_tasks AS tasks WHERE id = ${String(identity.id)}`)) : { rows: [] }
         if (identity && !existing) return { ok: false, errorCode: "unavailable" }
         if (existing) {

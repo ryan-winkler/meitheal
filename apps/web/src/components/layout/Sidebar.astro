@@ -37,7 +37,7 @@ import {
   serializeSidebarConfig,
 } from "@domains/navigation/sidebar-menu"
 import { normalizeUserProfile, type UserProfile } from "@domains/auth/user-profile"
-import { getCachedHAUserName, isRawHAUserId, resolveCachedHAUserDisplayName } from "@domains/ha"
+import { getCachedHAUserName } from "@domains/ha"
 
 const currentPath = Astro.url.pathname
 const workNavigation = Astro.props.workNavigation
@@ -263,16 +263,10 @@ const sidebarDefaultOrder = flattenSidebarOrder(sidebarMenuConfig)
 const serializedSidebarConfig = serializeSidebarConfig(sidebarMenuConfig)
 
 const hassUserId = Astro.locals.hassUserId
-const cachedHaIdentity = hassUserId ? await resolveCachedHAUserDisplayName(hassUserId).catch(() => null) : null
 const cachedHaRosterName = hassUserId ? getCachedHAUserName(hassUserId) : undefined
-const rawHaDisplayName = Astro.locals.hassDisplayName || cachedHaIdentity?.displayName || cachedHaRosterName || Astro.locals.hassUserName
-const haDisplayName = typeof rawHaDisplayName === "string" && rawHaDisplayName.trim() && !isRawHAUserId(rawHaDisplayName)
-  ? rawHaDisplayName.trim()
-  : undefined
-const rawHaUsername = Astro.locals.hassUserName || cachedHaIdentity?.username
-const haUsername = typeof rawHaUsername === "string" && rawHaUsername.trim() && !isRawHAUserId(rawHaUsername)
-  ? rawHaUsername.trim()
-  : undefined
+const withoutRawHaId = (name?: string) => name && !/^[0-9a-f]{32}$/i.test(name.trim()) ? name.trim() : undefined
+const haDisplayName = withoutRawHaId(Astro.locals.hassDisplayName || cachedHaRosterName || Astro.locals.hassUserName)
+const haUsername = withoutRawHaId(Astro.locals.hassUserName)
 const userProfile: UserProfile = normalizeUserProfile(rawUserProfile, {
   displayName: haDisplayName ?? "Household Member",
   username: haUsername ?? (haDisplayName ? haDisplayName.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 24) : "local"),

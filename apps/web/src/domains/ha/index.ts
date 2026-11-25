@@ -14,12 +14,4 @@ export { fireHAEvent, emitTaskCreated, emitTaskUpdated, emitTaskCompleted, emitT
 export type { MeithealEventType, MeithealTaskEventData, MeithealAreaEventData, MeithealCalendarEventData } from "./ha-events"
 export { readCurrentHARole, verifyCurrentHAAdministrator, verifyCurrentHAParticipant } from "./current-admin"
 export { getCachedHAUserName, getCurrentHAUserRoster, listHAUserDirectory, listHAUsers } from "./ha-users"
-export {
-  cacheTrustedIngressUser,
-  currentSupervisorFingerprint,
-  ensureHAUserCacheSchema,
-  getCachedHAUserDisplayNameSync,
-  isRawHAUserId,
-  resolveCachedHAUserDisplayName,
-} from "./ha-user-cache"
 export type { MeithealUser } from "./ha-users"

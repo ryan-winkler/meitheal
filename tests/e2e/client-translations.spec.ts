@@ -12,7 +12,8 @@ import type { Locale } from "../../apps/web/src/i18n/translations"
 
 const ts = createRequire(new URL("../../apps/web/package.json", import.meta.url))("typescript")
 const layout = readFileSync(new URL("../../apps/web/src/layouts/Layout.astro", import.meta.url), "utf8")
-const bootstrap = layout.slice(layout.indexOf("const dict = JSON.parse"), layout.indexOf("</script>", layout.indexOf("const dict = JSON.parse")))
+const bootstrapStart = layout.indexOf("let dict;")
+const bootstrap = layout.slice(bootstrapStart, layout.indexOf("</script>", bootstrapStart))
 
 function client(locale: Locale) {
   const window: { mI18n?: { get: (key: string, locale?: Locale) => string } } = {}

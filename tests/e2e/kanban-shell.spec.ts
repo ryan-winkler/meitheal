@@ -23,6 +23,33 @@ test.describe("Tasks Shell (Kanban)", () => {
     await expect(page).toHaveURL(/\/tasks#kanban$/)
   })
 
+  test("RICE grouping puts scored and unscored cards in their real swimlanes", async ({ page, request, baseURL }) => {
+    const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+    const ids: string[] = []
+    try {
+      for (const [group, rice] of [
+        ["high", { reach: 10, impact: 3, confidence: 100, effort: 1 }],
+        ["medium", { reach: 4, impact: 3, confidence: 100, effort: 1 }],
+        ["low", { reach: 2, impact: 2, confidence: 90, effort: 1 }],
+        ["none", null],
+      ] as const) {
+        const created = await request.post("/api/tasks", {
+          headers,
+          data: { title: `RICE fixture: ${group}`, status: "pending", ...(rice ? { framework_payload: { rice } } : {}) },
+        })
+        expect(created.status()).toBe(201)
+        const { id } = await created.json()
+        ids.push(id)
+      }
+      await page.goto("/tasks?area=&groupBy=rice#kanban")
+      for (const [index, group] of ["high", "medium", "low", "none"].entries()) {
+        await expect(page.locator(`[data-swimlane-type="${group}"] .kanban-card[data-id="${ids[index]}"]`)).toBeVisible()
+      }
+    } finally {
+      await Promise.all(ids.map(id => request.delete(`/api/tasks/${id}`, { headers })))
+    }
+  })
+
   test("search launcher opens SearchHub and Assist remains available", async ({ page }) => {
     await expect(page.locator("#ask-ha-btn")).toBeVisible()
     await page.locator("#kanban-bar-search-launcher").click()
@@ -405,7 +432,8 @@ test.describe("Tasks Shell (Kanban)", () => {
       const more = card.getByRole("button", { name: `Task actions for ${title}` })
       await expect(more).toBeFocused()
       await page.keyboard.press("Tab")
-      const promote = card.getByRole("button", { name: `Promote to top: ${title}` })
+      const promote = card.locator(".kanban-promote-star")
+      await expect(promote).toHaveAccessibleName(`Promote to top: ${title}`)
       await expect(promote).toBeFocused()
       await expect(actions).toHaveCSS("opacity", "1")
       await expect(actions).toHaveCSS("pointer-events", "auto")

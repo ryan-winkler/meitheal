@@ -345,9 +345,7 @@ function initOpenTaskFilter(): (() => void) | undefined {
         if (taskList && refreshedTasks) {
           taskList.replaceChildren(...refreshedTasks.childNodes)
           void hydrateTaskAssignees(taskList, signal)
-          void import("@lib/controllers/kanban-reaction-counts")
-            .then(({ initKanbanReactionCounts }) => initKanbanReactionCounts(taskList, signal))
-            .catch(() => {})
+          taskList.dispatchEvent(new Event("meitheal:dashboard-cards-updated"))
         }
         countsAvailable = true
         loadFailed = false
@@ -376,9 +374,17 @@ function initTaskDetailLaunchers(onTasksChanged?: () => void): void {
       import("@lib/controllers/kanban-reaction-counts"),
     ]).then(([quickMod, menuMod, reactionMod]) => {
       if (signal.aborted) return
-      quickMod.initQuickActions(buildTaskApiUrl, signal, refreshDashboardCards)
+      let actions = new AbortController()
+      const bindCardActions = () => {
+        actions.abort()
+        actions = new AbortController()
+        const cardSignal = AbortSignal.any([signal, actions.signal])
+        quickMod.initQuickActions(buildTaskApiUrl, cardSignal, refreshDashboardCards, taskList)
+        reactionMod.initKanbanReactionCounts(taskList, cardSignal)
+      }
+      taskList.addEventListener("meitheal:dashboard-cards-updated", bindCardActions, { signal })
+      bindCardActions()
       menuMod.initContextMenu(taskList, buildTaskApiUrl, async () => {}, refreshDashboardCards, signal)
-      reactionMod.initKanbanReactionCounts(taskList, signal)
     }).catch(() => {})
   }
 
