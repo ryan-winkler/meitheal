@@ -165,6 +165,13 @@ A browser with no saved theme uses Auto. Auto follows the Home Assistant theme
 inside ingress and the system appearance outside it. An explicit Light, Dark or
 Custom choice in Settings still takes priority.
 
+## Workspace tour
+
+Open the keyboard menu beside your profile and select **Interactive tour**.
+The tour explains the workspace controls available on the current page. Use
+**Skip tour**, Escape, or **Finish** to return to the same workspace. You can
+start the tour again from the keyboard menu.
+
 ## Task detail layout
 
 Description appears immediately after the title by default. Select a section

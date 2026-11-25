@@ -188,7 +188,7 @@ export function bindSidebarUserMenu(sidebar: HTMLElement, pageSignal: AbortSigna
       const actionBtn = target?.closest<HTMLButtonElement>("[data-utility-action]")
       if (!actionBtn) return
       const action = actionBtn.dataset.utilityAction
-      setUtilityOpen(false)
+      setUtilityOpen(false, action === "start-tour")
       if (action === "edit-menu") {
         window.dispatchEvent(new CustomEvent(SIDEBAR_EDIT_MODE_EVENT, { detail: { active: true } }))
       } else if (action === "add-link") {

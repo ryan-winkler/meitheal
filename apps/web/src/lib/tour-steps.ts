@@ -2,7 +2,7 @@
  * Tabler Function Tour — Pure step definitions and dismiss/restore state helpers.
  *
  * Follows the same dismissible & restorable model as InlineHelper (Pillars):
- * users can skip/dismiss anytime and restore via the ? shortcut or Sidebar Account menu.
+ * users can skip any step and replay from the sidebar keyboard menu.
  */
 
 export const TOUR_STORAGE_KEY = "meitheal-function-tour-state:v1"
@@ -56,14 +56,6 @@ export const CORE_TOUR_STEPS: readonly TourStep[] = [
     description:
       "Move cleanly between Kanban, Calendar, Timeline, and Table views — or star priority cards to promote them.",
     placement: "bottom",
-  },
-  {
-    id: "account-menu",
-    selector: "#sidebar-user-trigger",
-    title: "Customize your profile, menu & tour",
-    description:
-      "Open your account menu anytime to edit your profile, customize sidebar links, or replay this tour.",
-    placement: "right",
   },
 ]
 

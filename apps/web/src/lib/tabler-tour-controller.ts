@@ -1,4 +1,6 @@
+import { createSpriteIconElement } from "../generated/icon-registry"
 import { dismissHelper } from "./helper-system"
+import { showToast } from "./toast"
 import {
   CORE_TOUR_STEPS,
   TOUR_STORAGE_KEY,
@@ -13,13 +15,6 @@ let activeCleanup: (() => void) | null = null
 
 const save = (action: "dismiss" | "complete" | "restore") => {
   try { localStorage.setItem(TOUR_STORAGE_KEY, JSON.stringify(transitionTourState(action))) } catch { /* ignore */ }
-}
-
-const flash = (msg: string) => {
-  const n = Object.assign(document.createElement("div"), { className: "helper-restore-flash", textContent: msg })
-  n.setAttribute("role", "status")
-  document.body.appendChild(n)
-  setTimeout(() => n.remove(), 2800)
 }
 
 const hidePrompt = () => {
@@ -67,7 +62,10 @@ const mk = <K extends keyof HTMLElementTagNameMap>(tag: K, className: string, te
 export function startFunctionTour(): void {
   activeCleanup?.()
   const steps = filterReachableSteps(CORE_TOUR_STEPS, visibleTarget)
-  if (!steps.length) { flash("Open Dashboard or Boards to start the interactive tour"); return }
+  if (!steps.length) {
+    showToast("Open Dashboard or Boards to start the interactive tour", "info")
+    return
+  }
 
   const ctrl = new AbortController()
   const { signal } = ctrl
@@ -87,7 +85,8 @@ export function startFunctionTour(): void {
 
   const header = mk("div", "tabler-tour-header")
   const prog = mk("span", "tabler-tour-step")
-  const close = mk("button", "tabler-tour-close", "×")
+  const close = mk("button", "tabler-tour-close")
+  close.append(createSpriteIconElement("x", { size: 16 }))
   close.type = "button"
   close.setAttribute("aria-label", "Close tour")
   header.append(prog, close)
@@ -96,8 +95,6 @@ export function startFunctionTour(): void {
   title.id = "tabler-tour-title"
   const desc = mk("p", "tabler-tour-desc")
   desc.id = "tabler-tour-desc"
-  const hint = mk("p", "tabler-tour-hint", "Press ? or open your account menu anytime to replay.")
-
   const footer = mk("div", "tabler-tour-footer")
   const skip = mk("button", "btn btn-ghost btn-sm", "Skip tour")
   skip.type = "button"
@@ -108,7 +105,7 @@ export function startFunctionTour(): void {
   next.type = "button"
   nav.append(back, next)
   footer.append(skip, nav)
-  pop.append(header, title, desc, hint, footer)
+  pop.append(header, title, desc, footer)
   root.append(shield, spot, pop)
   document.body.appendChild(root)
 
@@ -117,21 +114,20 @@ export function startFunctionTour(): void {
     ctrl.abort()
     root.remove()
     if (activeCleanup === cleanup) activeCleanup = null
-    if (prevFocus?.isConnected) prevFocus.focus({ preventScroll: true })
+    if (prevFocus?.isConnected && prevFocus.getClientRects().length) prevFocus.focus({ preventScroll: true })
+    else document.getElementById("nav-utility-trigger")?.focus({ preventScroll: true })
   }
   const finish = (outcome: "dismiss" | "complete") => {
-    cleanup()
     save(outcome)
     hidePrompt()
-    flash(outcome === "complete"
-      ? "Tour complete — replay anytime from your account menu or press ?"
-      : "Tour dismissed — press ? or open your account menu to restore")
+    cleanup()
+    showToast(outcome === "complete" ? "Tour complete" : "Tour dismissed", "info")
   }
   const render = () => {
     index = clampTourIndex(index, steps.length)
     const cur = steps[index]
     if (!cur) { cleanup(); return }
-    cur.target.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" })
+    cur.target.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "nearest", inline: "nearest" })
     prog.textContent = `Step ${index + 1} of ${steps.length}`
     title.textContent = cur.step.title
     desc.textContent = cur.step.description
