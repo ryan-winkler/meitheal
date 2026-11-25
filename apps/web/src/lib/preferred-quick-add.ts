@@ -28,7 +28,7 @@ export async function openQuickAdd(trigger: HTMLElement | undefined, signal: Abo
   let availableUsers: QuickAddUserCandidate[] = []
   void fetchQuickAddUsers(active).then(users => {
     availableUsers = users
-    if (input.value.trim()) input.dispatchEvent(new Event("input"))
+    input.dispatchEvent(new Event("input"))
   })
   const remove = () => {
     controller.abort()
