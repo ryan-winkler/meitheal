@@ -52,17 +52,23 @@ pageLifecycle.onPageLoad(signal => {
   const revealFocusedSidebar = () => {
     if (innerWidth <= 768 && !sidebar.classList.contains("open") && sidebar.contains(document.activeElement)) openDrawer(false)
   }
+  const isOwnedPopup = (popup: HTMLElement) => {
+    const owner = document.getElementById(popup.dataset.sidebarBoardOwner ?? "")
+    return owner !== null && sidebar.contains(owner)
+  }
   window.addEventListener("resize", revealFocusedSidebar, { signal })
   sidebar.addEventListener(SIDEBAR_FOCUS_REVEAL_EVENT, revealFocusedSidebar, { signal })
   document.addEventListener("click", event => {
     const target = event.target instanceof Element ? event.target : null
     if (!target || mobileMenu.contains(target) || event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
-    if (sidebar.classList.contains("open") && !sidebar.contains(target)) {
+    const popup = target.closest<HTMLElement>("[data-sidebar-board-owner]")
+    const fromPopup = popup !== null && isOwnedPopup(popup)
+    if (sidebar.classList.contains("open") && !sidebar.contains(target) && !fromPopup) {
       closeDrawer(true)
       return
     }
-    const link = target.closest(".nav-link:not(.nav-link--external), .task-creation__settings")
-    if (link && sidebar.contains(target) && !sidebar.hasAttribute("data-sidebar-editing")) closeDrawer(false, !link.matches(".task-creation__settings"))
+    const link = fromPopup ? target.closest("a[href]") : target.closest(".nav-link:not(.nav-link--external), .task-creation__settings")
+    if (link && (sidebar.contains(target) || fromPopup) && !sidebar.hasAttribute("data-sidebar-editing")) closeDrawer(false, !link.matches(".task-creation__settings"))
   }, { signal })
   document.addEventListener("keydown", event => {
     if (!sidebar.classList.contains("open") || event.defaultPrevented || hasPriorityOverlay()
@@ -71,10 +77,8 @@ pageLifecycle.onPageLoad(signal => {
       event.preventDefault()
       closeDrawer(true)
     } else {
-      const popup = [...document.querySelectorAll<HTMLElement>("[data-sidebar-board-owner]")].find(element => {
-        const owner = document.getElementById(element.dataset.sidebarBoardOwner ?? "")
-        return !element.hidden && element.getClientRects().length > 0 && owner !== null && sidebar.contains(owner)
-      })
+      const popup = [...document.querySelectorAll<HTMLElement>("[data-sidebar-board-owner]")]
+        .find(element => !element.hidden && element.getClientRects().length > 0 && isOwnedPopup(element))
       containTabFocus(popup ?? sidebar, event)
     }
   }, { signal })

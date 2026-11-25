@@ -56,10 +56,18 @@ export function initAreaSelector(signal: AbortSignal): void {
   if (!trigger || !dropdown || !labelEl || !iconEl) return
   const allGroups = container.dataset.allGroupsLabel || "All Areas"
   const unavailableGroup = container.dataset.unavailableGroupLabel || "Area unavailable"
+  const placeDropdown = () => {
+    if (!dropdown.classList.contains("is-open")) return
+    dropdown.style.translate = ""
+    const { left, right } = dropdown.getBoundingClientRect()
+    const offset = Math.max(8 - left, 0) - Math.max(right - document.documentElement.clientWidth + 8, 0)
+    if (offset) dropdown.style.translate = `${offset}px`
+  }
   container.dataset.areaSelectorReady = "true"
   signal.addEventListener("abort", () => {
     delete container.dataset.areaSelectorReady
   }, { once: true })
+  window.addEventListener("resize", placeDropdown, { signal })
 
   // Restore saved area on init
   const params = new URLSearchParams(location.search)
@@ -217,6 +225,7 @@ export function initAreaSelector(signal: AbortSignal): void {
   function openDropdown(): void {
     trigger!.setAttribute("aria-expanded", "true")
     dropdown!.classList.add("is-open")
+    placeDropdown()
 
     // Focus the currently selected option
     const selected = dropdown!.querySelector<HTMLElement>(".is-selected")
@@ -254,6 +263,7 @@ export function initAreaSelector(signal: AbortSignal): void {
       opt.classList.toggle("is-selected", isMatch)
       opt.setAttribute("aria-selected", String(isMatch))
     })
+    placeDropdown()
 
     // Save to localStorage
     if (source !== "restore" || !table && [...options].some(option => option.dataset.areaId === areaId)) {

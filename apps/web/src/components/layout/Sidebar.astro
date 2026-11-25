@@ -760,14 +760,13 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
   .sidebar-board-children { list-style: none; margin: 0; padding-inline-start: 0.75rem; }
   .sidebar-board-children[hidden] { display: none !important; }
   body.sidebar-collapsed .sidebar-board-children { display: none; }
-  .sidebar-board-children [data-named-board-shortcut] a { display: block; padding: 0.3rem 0.5rem; overflow-wrap: anywhere; }
+  .sidebar-board-children .sidebar-board-row > a { display: block; padding: 0.3rem 0.5rem; overflow-wrap: anywhere; }
   .sidebar-board-children .sidebar-board-row { display: flex; align-items: center; gap: 2px; }
   .sidebar-board-children .sidebar-board-row .nav-link { flex: 1; min-width: 0; }
   .sidebar-board-children .sidebar-board-toggle { min-inline-size: 26px; inline-size: 26px; block-size: 26px; padding: 0; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--text-secondary); }
   .sidebar-board-children .sidebar-board-toggle:hover,
   .sidebar-board-children .sidebar-board-toggle:focus-visible { background: var(--bg-hover); color: var(--text-primary); }
   .sidebar-board-children .sidebar-board-toggle[aria-expanded="true"] { transform: rotate(90deg); }
-  .sidebar-board-children [data-board-groups], .sidebar-board-children [data-board-projects] { list-style: none; padding-left: 1rem; }
   .sidebar-board-children [data-board-group-notice] { padding-inline-start: 1rem; margin: 0; }
 
   [data-appearance-nav-tone]:not([data-appearance-nav-tone="match"]) #sidebar .sidebar-board-children.stree {

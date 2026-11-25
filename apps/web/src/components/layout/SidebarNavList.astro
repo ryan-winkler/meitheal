@@ -299,17 +299,6 @@ function isExternal(href: string): boolean {
                     <Icon name="pin" size={15} sprite={true} />
                   </button>
                 )}
-                {item.taskView && (
-                  <button
-                    type="button"
-                    class="task-view-pin task-view-item-unpin"
-                    data-task-view-unpin={item.taskView}
-                    aria-label={`Unpin ${item.label} from navigation`}
-                    title={`Unpin ${item.label}`}
-                  >
-                    <Icon name="pin" size={15} />
-                  </button>
-                )}
                 <div class="sidebar-edit-actions">
                   <button
                     type="button"
