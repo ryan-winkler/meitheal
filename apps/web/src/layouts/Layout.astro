@@ -429,6 +429,7 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
 
     <!-- Ingress state persistence: restore last route only on initial cold/standalone boot -->
     <!-- Runs pre-paint so the user never sees a flash of the wrong page -->
+    <style is:inline>html[data-workspace-restoring] body { display: none !important }</style>
     <script is:inline set:html={`window.__meithealReadPanelRoute = ${readIngressPanelRoute.toString()};`} />
     <script is:inline>
       (function () {
@@ -444,7 +445,14 @@ Astro.response.headers.set("X-Content-Type-Options", "nosniff");
               : pathname;
         if (current !== "/" || location.search || location.hash ||
           performance.getEntriesByType("navigation").some(entry => entry.type === "back_forward")) return;
-        if (window.__meithealReadPanelRoute()) return;
+        var panelRoute = window.__meithealReadPanelRoute();
+        if (panelRoute) {
+          if (panelRoute !== "/") {
+            document.documentElement.dataset.workspaceRestoring = "true";
+            window.location.replace(prefix + panelRoute);
+          }
+          return;
+        }
         var scope = document.documentElement.dataset.workspaceScope;
         if (!scope) return;
         var stateKey = "meitheal-navigation-state:" + scope;

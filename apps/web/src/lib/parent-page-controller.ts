@@ -29,8 +29,6 @@ export interface ParentPageControllerConfig {
   sectionIds: string[]
   /** Default section to activate when no hash is present */
   defaultSectionId: string
-  /** Data attribute used on section containers (e.g. "data-parent-section") */
-  sectionAttr?: string
 }
 
 // ─── Controller ────────────────────────────────────────────────────
@@ -42,16 +40,13 @@ export function initParentPageController(config: ParentPageControllerConfig): vo
 
   shell.dataset.parentPageBooted = "true"
 
-  const sectionAttr = config.sectionAttr ?? "data-parent-section"
-
   // ─── Section Visibility ────────────────────────────────────────
 
   function showSection(sectionId: string): void {
-    const sections = shell!.querySelectorAll<HTMLElement>(`[${sectionAttr}]`)
+    const sections = shell!.querySelectorAll<HTMLElement>("[data-parent-section]")
     sections.forEach((section) => {
-      const isTarget = section.getAttribute(sectionAttr) === sectionId
+      const isTarget = section.dataset.parentSection === sectionId
       section.hidden = !isTarget
-      section.classList.toggle("is-active", isTarget)
       section.setAttribute("aria-hidden", isTarget ? "false" : "true")
     })
   }
@@ -94,10 +89,10 @@ export function initParentPageController(config: ParentPageControllerConfig): vo
 
   function syncFromHash(): void {
     const hash = window.location.hash.slice(1)
-    const section = document.getElementById(hash)?.closest(`[${sectionAttr}]`)
-    const anchorSectionId = section && shell!.contains(section) ? section.getAttribute(sectionAttr) : null
+    const section = document.getElementById(hash)?.closest<HTMLElement>("[data-parent-section]")
+    const anchorSectionId = section && shell!.contains(section) ? section.dataset.parentSection : null
     const sectionId = config.sectionIds.includes(hash) ? hash : anchorSectionId ?? config.defaultSectionId
-    activateSection(sectionId, !hash)
+    activateSection(sectionId, false)
   }
 
   // ─── Init ──────────────────────────────────────────────────────

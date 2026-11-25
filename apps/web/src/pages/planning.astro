@@ -28,6 +28,8 @@ import PlanningRice from "../components/planning/PlanningRice.astro"
 import ScoringTriageModal from "../components/planning/ScoringTriageModal.astro"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { TaskRepository } from "@domains/tasks/persistence/task-repository"
+import { scopeBoardAccess } from "@domains/tasks/board-scope"
+import BoardPagePicker from "../components/layout/BoardPagePicker.astro"
 const workScopeResult = await resolveBoardPageScope(Astro, { boardId: Astro.props.boardId })
 if (!workScopeResult.ok) return boardScopeResponse(workScopeResult.errorCode)
 const workScope = workScopeResult.scope
@@ -95,11 +97,13 @@ const boardHref = boardWorkspaceHref(workScope.boardId, {
   <Fragment slot="custom-header" />
   <ParentPageShell pageId="planning">
     <div class="planning-context-bar">
-      <a class="planning-context-link" href={boardHref}>
-        <Icon name="layout-kanban" size={14} sprite />
-        <span>Back to {label("board", false)}</span>
-      </a>
+      <BoardPagePicker page="planning" boardId={workScope.boardId} boardName={scopeBoardAccess(workScope).name}
+        boardLabel={label("board", false)} boards={accessibleBoards} area={pagePlacement.area?.name} project={pagePlacement.project?.name} />
       <div class="planning-context-actions">
+        <a class="planning-context-link" href={boardHref}>
+          <Icon name="layout-kanban" size={14} sprite />
+          <span>Back to {label("board", false)}</span>
+        </a>
         <button type="button" class="planning-context-link planning-context-btn" data-open-scoring-triage="eisenhower">
           <Icon name="target" size={14} sprite />
           <span>Scoring Triage</span>
@@ -112,7 +116,7 @@ const boardHref = boardWorkspaceHref(workScope.boardId, {
     </div>
 
     {/* ─── Boards (Spaces) ─── */}
-    <section data-parent-section="spaces" id="planning-section-spaces">
+    <section data-parent-section="spaces" id="planning-section-spaces" hidden>
       <div class="planning-boards-wrap">
         <header class="planning-boards-header">
           <div class="planning-boards-header__copy">
@@ -202,7 +206,7 @@ const boardHref = boardWorkspaceHref(workScope.boardId, {
     </section>
 
     {/* ─── Eisenhower ─── */}
-    <section data-parent-section="eisenhower" id="planning-section-eisenhower" hidden>
+    <section data-parent-section="eisenhower" id="planning-section-eisenhower">
       <div class="planning-hub-wrap">
         <SectionHubCard
           href={eisenhowerHref}

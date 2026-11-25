@@ -22,7 +22,7 @@ Hierarchy controls use the current Board and record permissions. Before restrict
 
 ## Organize and connect work
 
-Planning and Progress keep the selected Board, Area, or Project. Use the Progress section controls to switch between Goals and Routines, and use the Back to Board link to return to the same selection in Kanban.
+Planning and Progress show the current Board and any selected Area or Project above the content. Open the Board name to switch to another Board you can access. The section stays open and filters from the previous Board clear. In Progress, choose **Personal & Household** to return to the view that includes your own Pillars. The **Back to Board** link opens Kanban with the current Board, Area, or Project.
 
 Use **Areas & Projects** to group related work. Group labels use only visible associations; unfiled or unavailable Area metadata uses the same neutral “No area” label. An Area can be Kitchen, Yard or any name you choose. A Project can associate with an Area. Organizing Areas and Home Assistant physical locations are separate fields: changing a physical location does not refile work or change its audience.
 
