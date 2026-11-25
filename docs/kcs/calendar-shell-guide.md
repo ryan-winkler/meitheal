@@ -21,6 +21,8 @@ A saved Calendar shortcut with all task kinds is marked current only when Calend
 3. Open any day in the displayed month to review matching due tasks and local Events that start that day. The number beside the calendar icon counts local Event starts and saved calendar occurrences for that day. The month totals each saved calendar occurrence once, even if it appears on several days. The day drawer lists saved and live events in its connected section using Meitheal’s household timezone. All-day events stay on their calendar dates. Household members can see the configured feed in Calendar. Administrators manage the sources in Settings. Tasks and local Events come from the Household Board. Open a named Board to see its tickets. Turn off **Events** in the type filters to hide local Events and connected event previews and counts.
 4. The month controls keep the active filters. Use **Clear All** to start over. Its accessible name is **Clear all active filters**.
 
+On phones, the month grid updates the inline agenda when you tap a date. On wider screens, the day drawer loads the agenda when you open a date.
+
 ### Open a day drawer and create follow-up work
 
 1. Select a day in the month grid using a pointer, Enter or Space. The drawer focuses **Close**. Press Escape to return to the selected day.

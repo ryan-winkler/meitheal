@@ -302,7 +302,7 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
   </button>
 
   <div class="sidebar-header flex items-center gap-2 pb-3 mb-0">
-    <div class="sidebar-brand-group flex flex-col flex-1 min-w-0">
+    <div class="sidebar-brand-group relative flex flex-col flex-1 min-w-0">
       <a
         href="/?view=dashboard"
         data-astro-prefetch="hover"
@@ -329,9 +329,9 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
         </svg>
         <span class="sidebar-brand-stack">
           <span class="sidebar-brand-text truncate">meitheal.</span>
-          <span class="sidebar-ipa" aria-hidden="true">/meh·hal/</span>
         </span>
       </a>
+      <span class="sidebar-ipa" aria-hidden="true">/meh·hal/</span>
     </div>
     <button
       type="button"
@@ -626,10 +626,8 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
   .sidebar-brand-stack {
     display: flex;
     flex-direction: column;
-    justify-content: center;
     min-width: 0;
     min-height: 36px;
-    gap: 2px;
   }
 
   .sidebar-brand-text {
@@ -638,6 +636,10 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
   }
 
   .sidebar-ipa {
+    position: absolute;
+    inset-inline-start: 34px;
+    inset-block-end: 0;
+    pointer-events: none;
     display: block;
     font-size: 10px;
     font-style: normal;
@@ -693,7 +695,7 @@ const areasVisible = !isItemHidden(sidebarMenuConfig, "areas") && !isStoredItemH
 
   :global(.sidebar .nav-link.active) {
     background: rgb(var(--accent-rgb) / 0.1);
-    color: var(--accent-text);
+    color: var(--text-primary);
   }
 
   :global(.sidebar .nav-link.active .nav-icon) {

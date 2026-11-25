@@ -46,8 +46,8 @@ test.describe("Irish calendar dates in the App", () => {
       const card = page.locator(`[data-habit-id="${habitId}"]`)
       await expect(card).toContainText("Gan chríochnú fós")
       const completed = page.waitForResponse(response =>
-        new URL(response.url()).pathname === "/api/habits" && response.request().method() === "POST")
-      await card.getByRole("button", { name: "Complete Irish habit fixture today" }).click()
+        new URL(response.url()).pathname === "/api/routines" && response.request().method() === "POST")
+      await card.getByRole("button", { name: "Complete Irish habit fixture", exact: true }).click()
       const completion = await completed
       expect(completion.status()).toBe(200)
       const occurrences = await request.get("/api/tasks?q=Irish+habit+fixture&status=done")

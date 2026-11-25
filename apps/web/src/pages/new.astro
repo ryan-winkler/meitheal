@@ -12,6 +12,7 @@
  */
 import Layout from "../layouts/Layout.astro"
 import Icon from "../components/ui/Icon.astro"
+import { boardScopeResponse } from "@lib/board-http"
 import { resolveBoardRequestScope } from "@lib/board-request-context"
 import { PWA_TASK_SHORTCUT_KINDS, resolvePwaTaskKind } from "@lib/pwa-manifest-builder"
 import { SHOPPING_CATEGORIES } from "@lib/pwa-capture-builder"
@@ -35,8 +36,10 @@ const initialNotes = [sharedText, sharedUrl && sharedTitle ? sharedUrl : ""].fil
 
 const scopeRes = await resolveBoardRequestScope(Astro, {
   operation: { resource: "task", action: "create" },
-}).catch(() => null)
-const defaultBoardId = scopeRes?.ok ? scopeRes.scope.boardId : ""
+  write: false,
+})
+if (!scopeRes.ok) return boardScopeResponse(scopeRes.errorCode)
+const defaultBoardId = scopeRes.scope.boardId
 
 const isShopping = activeSpec.kind === "shopping_item"
 const isChecklist = activeSpec.kind === "checklist"
@@ -46,6 +49,7 @@ const isChecklist = activeSpec.kind === "checklist"
   title={`${activeSpec.label} — Meitheal`}
   description={activeSpec.description}
   manifestHref={manifestHref}
+  workNavigation={{ scope: scopeRes.scope }}
 >
   <Fragment slot="page-title">
     <span class="new-pwa-page-title">

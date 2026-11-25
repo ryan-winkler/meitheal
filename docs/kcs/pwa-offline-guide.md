@@ -12,6 +12,8 @@ The existing IndexedDB engine can retain supported task edits and pending operat
 
 Open a task shortcut while connected to establish its Board context. If the connection drops while the form is open, task capture can save to that Board's outbox. Reconnect in the same context to replay the original attempt. Opening a shortcut from a closed app still requires a connection. The Routine shortcut opens the connected Routine editor.
 
+Home Assistant ingress can open a shortcut directly in the browser. The form establishes the current Board and account before submission and requires current write permission when it saves.
+
 ## Pending changes
 
 A pending operation keeps its original Board, actor, placement and retry identity. Reconnect using the same account and Board. Do not create another task just because the response was lost.

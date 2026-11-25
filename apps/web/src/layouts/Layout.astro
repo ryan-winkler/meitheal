@@ -110,7 +110,7 @@ const {
 export interface Props {
   workNavigation?: {
     scope: BoardScope
-    placement: Extract<Awaited<ReturnType<typeof readBoardPagePlacement>>, { ok: true }>
+    placement?: Extract<Awaited<ReturnType<typeof readBoardPagePlacement>>, { ok: true }>
     dailyStreak?: number
   }
   boardContext?: { boardId: string; session: string; boardName?: string; actorKey?: string };

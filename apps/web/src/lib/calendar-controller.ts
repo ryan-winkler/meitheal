@@ -294,7 +294,9 @@ export function initCalendarPage(signal: AbortSignal): void {
   }
 
   let mobileAgendaRequest: AbortController | undefined
+  const mobileViewport = window.matchMedia("(max-width: 768px)")
   function hydrateMobileAgenda(selectedDate?: string) {
+    if (!mobileViewport.matches) return
     const agendaHost = month.querySelector<HTMLElement>("#cal-mobile-agenda")
     if (!agendaHost) return
     const date = selectedDate || agendaHost.dataset.mobileAgendaDate || month.dataset.calendarAnchor
@@ -395,6 +397,11 @@ export function initCalendarPage(signal: AbortSignal): void {
       streamEl.replaceChildren()
     })
   }
+
+  mobileViewport.addEventListener("change", () => {
+    if (mobileViewport.matches) hydrateMobileAgenda()
+    else mobileAgendaRequest?.abort()
+  }, { signal })
 
   function previewEvents() {
     previewsRequest?.abort()
@@ -807,7 +814,7 @@ export function initCalendarPage(signal: AbortSignal): void {
       return
     }
     // On mobile Month view, tapping a mini-month cell updates the inline split-agenda directly!
-    if (window.innerWidth <= 768 && month.dataset.calendarMode === "month") {
+    if (mobileViewport.matches && month.dataset.calendarMode === "month") {
       const cell = target.closest<HTMLElement>(dayButton)
       const cellDate = cell?.dataset.date
       if (cellDate) {

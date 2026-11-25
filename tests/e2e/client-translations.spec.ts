@@ -19,6 +19,7 @@ function client(locale: Locale) {
   const window: { mI18n?: { get: (key: string, locale?: Locale) => string } } = {}
   runInNewContext(bootstrap, {
     window, locale, timezone: "UTC", weekStart: 1, dateFormat: "iso",
+    calendarPushPolicy: {}, calendarManualPushVisible: false,
     document: { getElementById: (id: string) => ({ textContent: id === "meitheal-client-translations"
       ? clientTranslationJson[locale] : alternateClientTranslationJson[locale] }) },
   })

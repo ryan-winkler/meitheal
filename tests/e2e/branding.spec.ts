@@ -30,12 +30,10 @@ test.describe("Branding — Typography", () => {
 })
 
 test.describe("Branding — Color Tokens (Dark)", () => {
-  // A first visit follows the system appearance, so name the dark palette these tokens belong to.
-  test.use({ colorScheme: "dark" })
-
   test("--bg-primary uses Evergreen Carbon (#101210) and --palette-on-accent uses #07140f", async ({
     page,
   }) => {
+    await page.addInitScript(() => localStorage.setItem("meitheal-theme", "dark"))
     await page.goto("/")
     const tokens = await page.evaluate(() => {
       const s = getComputedStyle(document.documentElement)
@@ -54,7 +52,7 @@ test.describe("Branding — Color Tokens (Dark)", () => {
 test.describe("Branding — Color Tokens (Light)", () => {
   test.use({ colorScheme: "light" })
 
-  test("Light mode uses Warm Paper (#f6f5f0), Forest Emerald (#146c4e), and white on-accent", async ({
+  test("Light mode uses its pale green background, emerald accent, and white on-accent", async ({
     page,
   }) => {
     await page.goto("/")
@@ -66,8 +64,8 @@ test.describe("Branding — Color Tokens (Light)", () => {
         onAccent: s.getPropertyValue("--palette-on-accent").trim().toLowerCase(),
       }
     })
-    expect(tokens.bgPrimary).toBe("#f6f5f0")
-    expect(tokens.accent).toBe("#146c4e")
+    expect(tokens.bgPrimary).toBe("#f5faf7")
+    expect(tokens.accent).toBe("#059669")
     expect(["#fff", "#ffffff"]).toContain(tokens.onAccent)
   })
 
@@ -96,6 +94,11 @@ test.describe("Branding — Logo & Static Assets", () => {
     await expect(logo).toBeVisible()
     await expect(page.locator(".sidebar-brand-text")).toHaveText("meitheal.")
     await expect(page.locator(".sidebar-ipa")).toHaveText("/meh·hal/")
+  })
+
+  test("the browser chrome follows the effective app theme", async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem("meitheal-theme", "dark"))
+    await page.goto("/")
     await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute("content", "#10231b")
   })
 

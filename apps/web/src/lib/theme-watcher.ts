@@ -92,10 +92,9 @@ export function applyCustomTheme(css: string | null): void {
   if (el.textContent !== css) el.textContent = css
 }
 
-export function initThemeWatcher(): void {
-  applyTheme()
+export function initThemeWatcher(signal: AbortSignal): void {
   const mq = window.matchMedia("(prefers-color-scheme: dark)")
   mq.addEventListener("change", () => {
     if (readStoredThemeMode() === "auto") applyTheme()
-  })
+  }, { signal })
 }

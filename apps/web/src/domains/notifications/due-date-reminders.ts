@@ -120,7 +120,7 @@ async function calendarReminder(context: IntegrationScope, task: Awaited<ReturnT
       typeof current.description === "string" ? current.description : null,
     )
   }
-  const covered = async () => {
+  const covered = async (currentReservation: string | null = null) => {
     const existingConf = await db.execute({
       sql: `SELECT confirmation_id FROM calendar_confirmations
             WHERE task_id = ?
@@ -138,8 +138,9 @@ async function calendarReminder(context: IntegrationScope, task: Awaited<ReturnT
     const existingDelivery = await db.execute({
       sql: `SELECT request_id FROM calendar_reminder_deliveries
             WHERE task_id = ? AND entity_id = ? AND due_ms = ?
+              AND (? IS NULL OR request_id != ? OR acknowledged != 0)
             LIMIT 1`,
-      args: [task.id, receiver.sourceId, task.due_ms],
+      args: [task.id, receiver.sourceId, task.due_ms, currentReservation, currentReservation],
     })
     if (existingDelivery.rows.length > 0) return true
     const current = await new TaskRepository(db, resolved.value.scope).findById(task.id).catch(() => null)
@@ -192,7 +193,7 @@ async function calendarReminder(context: IntegrationScope, task: Awaited<ReturnT
     })
     if (!reservation.rowsAffected) return false
     const created = await createCalendarEvent(receiver.sourceId, { summary, start: startIso, end: endIso, description },
-      { operationAllowed: async () => await operationAllowed() && !await covered() })
+      { operationAllowed: async () => await operationAllowed() && !await covered(reminderRequestId) })
     if (!created) {
       await db.execute({ sql: "DELETE FROM calendar_reminder_deliveries WHERE request_id=?", args: [reminderRequestId] })
       return false

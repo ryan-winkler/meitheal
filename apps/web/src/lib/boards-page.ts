@@ -209,7 +209,6 @@ export function bindBoardPage(signal: AbortSignal, host?: HTMLElement) {
     }
   }, { signal })
   window.addEventListener("focus", () => {
-    if (!placeholder.isConnected && !document.hidden && Date.now() - lastVerifiedAt < 1500) return
     void recheck(placeholder.isConnected)
   }, { signal })
   window.addEventListener("offline", () => { checking?.abort(); detach(holdsFocus(), "offline") }, { signal })
