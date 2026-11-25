@@ -652,7 +652,7 @@ try {
                   <p role="alert" class="text-xs text-danger [&:not(:empty)]:mt-2"></p>
                 </template>
                 <div class="td-chat-footer">
-                  <div class="td-chat-composer-wrap">
+                  <div class="td-chat-composer-wrap relative">
                     <div class="input-group input-group-flat td-chat-input-group">
                       <textarea id="td-comment-input" rows="1" class="form-control td-chat-textarea" aria-label={t("task_modal.comment_label", locale)} aria-describedby="td-comment-error td-comment-reference-hint" aria-autocomplete="list" data-task-reference data-comment-mention={mentionUser ? "" : undefined} maxlength="5000" placeholder={t("task_modal.comment_placeholder", locale)}></textarea>
                       <span class="input-group-text td-chat-input-addons">

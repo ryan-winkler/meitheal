@@ -69,6 +69,7 @@ test("task references preserve text editing and open the saved task through HTTP
     await expect(page.locator("#td-title")).toHaveValue("Reference source")
     await page.waitForFunction(() => navigator.serviceWorker.controller?.state === "activated")
     await page.locator("#td-desc-edit-btn-hover").click()
+    await page.getByRole("tab", { name: "Markdown", exact: true }).click()
     const description = page.getByRole("textbox", { name: "Description", exact: true })
     const list = page.getByRole("listbox", { name: "Tasks to link" })
     const option = list.getByRole("option", { name: /Reference target/ })
@@ -127,10 +128,10 @@ test("task references preserve text editing and open the saved task through HTTP
 
     const composer = page.getByRole("textbox", { name: "Comment", exact: true })
     await composer.fill("Confirm #" + target.ticket_key)
-    await option.tap()
+    await option.tap({ timeout: 5000 })
     await expect(composer).toBeFocused()
     await expect(composer).toHaveValue("Confirm " + storedLink)
-    await page.getByRole("button", { name: "Post Comment", exact: true }).click()
+    await page.getByRole("button", { name: "Send", exact: true }).click()
     const comment = page.locator("#td-comments article").first()
     await expect(comment.getByRole("link", { name: target.ticket_key })).toHaveAttribute("href", root + "/tickets/" + target.id)
 
@@ -203,7 +204,7 @@ test("the reference picker leaves ordinary text editable under an older service 
     expect(searches).toBe(0)
     const [posted] = await Promise.all([
       page.waitForResponse(response => response.request().method() === "POST" && new URL(response.url()).pathname === `${prefix}/api/tasks/${source.id}/comments`),
-      page.getByRole("button", { name: "Post Comment", exact: true }).click(),
+      page.getByRole("button", { name: "Send", exact: true }).click(),
     ])
     expect(posted.status()).toBe(201)
     await expect(page.locator("#td-comments article")).toContainText("A plain comment #1")

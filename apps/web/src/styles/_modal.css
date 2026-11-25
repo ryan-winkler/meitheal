@@ -2468,6 +2468,11 @@ body.has-docked-inspector #task-detail-panel {
   color: var(--danger);
 }
 
+[data-comment-editor] #td-task-reference-picker {
+  position: static;
+  margin: 0.25rem 0 0;
+}
+
 /* Converged Inline Reactions inside Chat & Comments */
 .td-reaction-bar {
   display: flex;
