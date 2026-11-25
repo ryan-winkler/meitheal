@@ -3,7 +3,7 @@ import {
   isMeithealOriginatedEvent,
   stripCalendarReminderWrappers,
 } from "@domains/calendar/calendar-event-identity"
-import { decodeCalendarSetting, ticketDetailsEnabled } from "@domains/calendar/calendar-policy"
+import { decodeCalendarSetting, hasCalendarSyncOptOut, ticketDetailsEnabled } from "@domains/calendar/calendar-policy"
 import { isClosedStatus } from "@lib/status-config"
 import { createLogger, defaultRedactionPatterns } from "@meitheal/domain-observability"
 import {
@@ -106,12 +106,13 @@ async function calendarReminder(context: IntegrationScope, task: Awaited<ReturnT
   // 1) tasks already imported from any calendar (1 invite = 1 ticket),
   // 2) tasks already synced/written-back to this calendar,
   // 3) tasks already reminded on this calendar for this due timestamp (even if receiver.id changed),
-  // 4) pre-existing Meitheal reminder/write-back artifacts.
+  // 4) pre-existing Meitheal reminder/write-back artifacts or tasks marked no-sync.
   const startIso = new Date(task.due_ms).toISOString()
   const endIso = new Date(task.due_ms + 15 * 60_000).toISOString()
   const reminderRequestId = `due-reminder-${receiver.id}-${task.id}-${task.due_ms}`
-  const isImportedOrOriginated = (current: { idempotency_key?: string | null; title?: string | null; description?: string | null } | null): boolean => {
+  const skipsCalendarExport = (current: Awaited<ReturnType<TaskRepository["findById"]>>): boolean => {
     if (!current) return false
+    if (hasCalendarSyncOptOut(current.labels)) return true
     if (typeof current.idempotency_key === "string" && /^(?:cal-sync-|caldav-sync-)/.test(current.idempotency_key)) {
       return true
     }
@@ -144,7 +145,7 @@ async function calendarReminder(context: IntegrationScope, task: Awaited<ReturnT
     })
     if (existingDelivery.rows.length > 0) return true
     const current = await new TaskRepository(db, resolved.value.scope).findById(task.id).catch(() => null)
-    return isImportedOrOriginated(current)
+    return skipsCalendarExport(current)
   }
   if (await covered()) return false
 
@@ -153,7 +154,7 @@ async function calendarReminder(context: IntegrationScope, task: Awaited<ReturnT
       !(await validateIntegrationScope(resolved.value, db, { resource: "task", action: "read" })).ok ||
       !await validateTaskOperation(db, context.scope, task.id, { resource: "task", action: "read" })) return false
     const current = await new TaskRepository(db, resolved.value.scope).findById(task.id).catch(() => null)
-    if (isImportedOrOriginated(current)) return false
+    if (skipsCalendarExport(current)) return false
     return Boolean(current && Number(current.task_version) === task.task_version && current.due_date === task.due_date &&
       current.deferred_at == null && !isClosedStatus(current.status))
   }

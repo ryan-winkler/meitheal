@@ -20,6 +20,7 @@ import {
   resolveIntegrationScope,
 } from "@domains/tasks"
 import {
+  hasCalendarSyncOptOut,
   isImportedCalendarTask,
   isMeithealOriginatedEvent,
   pushTaskToCalendar,
@@ -54,6 +55,9 @@ export const POST: APIRoute = withBoardScope(
       const task = await repo.findById(taskId)
       if (!task) {
         return apiError("Task not found on this Board.", 404)
+      }
+      if (hasCalendarSyncOptOut(task.labels)) {
+        return apiError("This task has the no-sync label. Remove the label to send it to a calendar.", 409)
       }
 
       const scheduledStart =

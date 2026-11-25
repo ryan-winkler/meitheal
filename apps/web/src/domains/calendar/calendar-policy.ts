@@ -8,3 +8,12 @@ export function ticketDetailsEnabled(raw?: string): boolean {
   const value = decodeCalendarSetting(raw)
   return value !== false && value !== "false"
 }
+
+export function hasCalendarSyncOptOut(labels: string): boolean {
+  try {
+    const values: unknown = JSON.parse(labels)
+    return Array.isArray(values) && values.includes("no-sync")
+  } catch {
+    return false
+  }
+}

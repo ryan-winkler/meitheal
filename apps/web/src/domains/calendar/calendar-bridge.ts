@@ -1,5 +1,5 @@
 import { serializeCalendarDelivery } from "./calendar-delivery"
-import { ticketDetailsEnabled } from "./calendar-policy"
+import { hasCalendarSyncOptOut, ticketDetailsEnabled } from "./calendar-policy"
 import { createHash } from "node:crypto"
 import { homeAssistantWorkLink } from "@lib/ha-app-link"
 import {
@@ -2029,12 +2029,9 @@ async function pushCurrentTaskToCalendar(context: IntegrationScope, taskId: stri
   }
   if (!(await operationAllowed()) || (await isImportedCalendarTask(taskId, context))) return false
   const task = await repo.findById(taskId)
-  const scheduledStart = task
-    ? (task.task_kind === "calendar_event"
-      ? (typeof task.start_date === "string" && task.start_date.trim() ? task.start_date.trim() : task.due_date)
-      : task.due_date)
-    : null
-  if (!task || typeof scheduledStart !== "string" || !scheduledStart.trim()) return false
+  if (!task || hasCalendarSyncOptOut(task.labels)) return false
+  const scheduledStart = task.task_kind === "calendar_event" ? task.start_date?.trim() || task.due_date : task.due_date
+  if (typeof scheduledStart !== "string" || !scheduledStart.trim()) return false
   if (
     isMeithealOriginatedEvent(
       task.title,
