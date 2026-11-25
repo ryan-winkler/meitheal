@@ -393,6 +393,10 @@ function baseTileSvg(shades: readonly string[]): string {
       title={t("settings.look_feel_theme_title", locale)}
       subtitle={t("settings.look_feel_theme_subtitle", locale)}
     >
+      <button slot="actions" type="reset" class="btn btn-ghost btn-sm" data-appearance-reset hidden>
+        <Icon name="refresh" size={14} sprite={true} />
+        <span>{t("settings.appearance_reset", locale)}</span>
+      </button>
       <div class="tabler-card-sections">
         <p id="appearance-scope" class="settings-hint m-0">{t("settings.appearance_scope", locale)}</p>
 
@@ -828,44 +832,22 @@ function baseTileSvg(shades: readonly string[]): string {
       </div>
     </SettingsPanelCard>
 
-    <!-- Sticky Live Unsaved Preview & Save/Reset Bar -->
-    <div id="appearance-dirty-bar" class="settings-dirty-bar settings-dirty-bar--sticky" data-appearance-dirty-bar role="status" aria-live="polite" hidden>
+    <div id="appearance-dirty-bar" class="settings-dirty-bar settings-dirty-bar--sticky" data-appearance-dirty-bar hidden>
       <span class="settings-dirty-bar__info">
         <span class="settings-dirty-bar__icon" aria-hidden="true">
           <Icon name="palette" size={16} sprite={true} />
         </span>
-        <span data-appearance-dirty-text>Unsaved appearance changes — previewing live.</span>
+        <span data-appearance-dirty-text role="status">Unsaved appearance changes</span>
       </span>
       <div class="settings-dirty-bar__actions">
-        <button
-          type="button"
-          class="btn btn-secondary btn-sm"
-          data-appearance-reset-layout
-          title="Reset accent, surface, density, and navigation overrides to match this theme cleanly"
-          hidden
-        >
-          <Icon name="refresh" size={14} sprite={true} />
-          <span>Reset layout &amp; defaults</span>
-        </button>
         <button type="button" class="btn btn-ghost btn-sm" data-appearance-discard>
           <span>{t("settings.appearance_discard", locale)}</span>
         </button>
-        <button type="submit" class="btn btn-primary btn-sm settings-dirty-bar__save" data-appearance-save>
+        <button type="submit" id="appearance-save-btn" class="btn btn-primary btn-sm settings-dirty-bar__save" data-appearance-save>
           <Icon name="check" size={14} sprite={true} />
           <span>{t("settings.appearance_save", locale)}</span>
         </button>
       </div>
-    </div>
-
-    <!-- Unified Save / Reset Footer -->
-    <div class="look-feel-footer">
-      <button type="reset" class="btn btn-secondary" data-appearance-reset>
-        {t("settings.appearance_reset", locale)}
-      </button>
-      <button type="submit" id="appearance-save-btn" class="btn btn-primary" data-appearance-save>
-        <Icon name="check" size={15} sprite={true} />
-        <span>{t("settings.appearance_save", locale)}</span>
-      </button>
     </div>
 
     <p
@@ -1110,7 +1092,6 @@ function baseTileSvg(shades: readonly string[]): string {
     flex: 0 0 96px;
   }
 
-  /* Sticky viewport-pinned Save/Reset attention bar */
   .settings-dirty-bar--sticky {
     position: sticky;
     bottom: 16px;
@@ -1125,15 +1106,10 @@ function baseTileSvg(shades: readonly string[]): string {
     border: 1.5px solid color-mix(in srgb, var(--accent) 55%, var(--border));
     background: color-mix(in srgb, var(--bg-card) 96%, var(--accent) 4%);
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28), 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
-    animation: appearanceBarEnter 220ms cubic-bezier(0.23, 1, 0.32, 1);
   }
 
   .settings-dirty-bar--sticky[hidden] {
     display: none;
-  }
-
-  .settings-dirty-bar--sticky.is-attention {
-    animation: appearanceBarPulse 520ms cubic-bezier(0.23, 1, 0.32, 1);
   }
 
   .settings-dirty-bar--sticky .settings-dirty-bar__info {
@@ -1163,39 +1139,6 @@ function baseTileSvg(shades: readonly string[]): string {
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
-  }
-
-  @keyframes appearanceBarEnter {
-    from {
-      opacity: 0;
-      transform: translateY(10px) scale(0.985);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
-  }
-
-  @keyframes appearanceBarPulse {
-    0% {
-      transform: scale(1);
-      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28), 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
-    }
-    45% {
-      transform: scale(1.012);
-      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.32), 0 0 0 6px color-mix(in srgb, var(--accent) 22%, transparent);
-    }
-    100% {
-      transform: scale(1);
-      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28), 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .settings-dirty-bar--sticky,
-    .settings-dirty-bar--sticky.is-attention {
-      animation: none;
-    }
   }
 
   /* ── Font Preview Card ── */
@@ -1280,18 +1223,6 @@ function baseTileSvg(shades: readonly string[]): string {
     padding: 0;
     background: transparent;
     cursor: pointer;
-  }
-
-  .look-feel-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    flex-wrap: wrap;
-    padding: 14px 20px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md, 10px);
-    background: var(--bg-card);
   }
 
   @media (prefers-reduced-motion: reduce) {

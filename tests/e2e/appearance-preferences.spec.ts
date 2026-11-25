@@ -35,6 +35,10 @@ test.describe("Appearance preferences", () => {
     // One Look and Feel form holds the theme and every appearance category.
     const visualForm = page.locator("#appearance-preferences-form")
     const save = page.locator("#appearance-save-btn")
+    const reset = visualForm.getByRole("button", { name: "Reset to defaults", exact: true })
+    await expect(visualForm.locator("[data-appearance-save]")).toHaveCount(1)
+    await expect(visualForm.locator("[data-appearance-reset]")).toHaveCount(1)
+    await expect(save).toBeHidden()
     await expect(visualForm.locator("select")).toHaveCount(1 + Object.keys(APPEARANCE_PREFERENCES).length)
     const visualChoices = {
       font: "comic", base: "mist", radius: "1.5",
@@ -83,8 +87,10 @@ test.describe("Appearance preferences", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(321)
     await expect(page.locator("body")).not.toHaveClass(/sidebar-collapsed/)
     // Reset previews every default, including the personal accent, until saved. The theme stays.
-    await page.getByRole("button", { name: "Reset to defaults" }).click()
+    await expect(reset).toBeVisible()
+    await reset.press("Enter")
     await expect(page.locator("html")).toHaveAttribute("data-appearance-font", "sans")
+    await expect(save).toBeFocused()
     await save.click()
     await expect(page.locator("#appearance-save-status")).toHaveText("Appearance saved on this device.")
     for (const name of Object.keys(choices)) await expect(visualForm.locator(`[name="${name}"]`)).toHaveValue(APPEARANCE_PREFERENCES[name as keyof typeof APPEARANCE_PREFERENCES].defaultValue)

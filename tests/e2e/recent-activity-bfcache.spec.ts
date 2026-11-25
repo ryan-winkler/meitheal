@@ -43,6 +43,7 @@ for (const revoked of [false, true]) {
         if (request.isNavigationRequest()) return route.fallback()
         const path = new URL(request.url()).pathname.slice(prefix.length)
         // App-wide warmups are unrelated to restoring and rechecking the activity document.
+        if (path === "/api/settings" && request.method() === "GET") return route.fulfill({ json: {} })
         if (["/api/pomodoro", "/api/task-pins"].includes(path) ||
             (request.resourceType() === "fetch" && ["/", "/boards", "/planning", "/progress", "/settings", "/tasks", "/today", "/upcoming"].includes(path))) {
           return route.fulfill({ status: 204 })
