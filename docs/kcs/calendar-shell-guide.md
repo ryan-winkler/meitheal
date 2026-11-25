@@ -23,6 +23,12 @@ A saved Calendar shortcut with all task kinds is marked current only when Calend
 
 On phones, the month grid updates the inline agenda when you tap a date. Open **Filters** to focus the text search, and press Escape inside the controls to return to the filter button. Its **Filters Active** label stays visible to assistive technology while filters apply. On wider screens, the day drawer loads the agenda when you open a date.
 
+### Plan a day on the schedule
+
+Day groups timed Tasks by due time and Events by start time using the Household timezone, including early and late hours. Items in the same hour stack in separate rows. Date-only items appear above the hourly schedule. Saved connected Events open their linked tasks. Live feed occurrences can be read in place. If one source is unavailable, the schedule shows available entries and identifies the failed source.
+
+Use **Add Task** or **Add Event** above the schedule. Both use the displayed date after you swipe or use the day controls. In the compact Month view, **Add Task** uses the date selected in the agenda.
+
 ### Open a day drawer and create follow-up work
 
 1. Select a day in the month grid using a pointer, Enter or Space. The drawer focuses **Close**. Press Escape to return to the selected day.

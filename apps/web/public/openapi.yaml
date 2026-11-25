@@ -2918,6 +2918,7 @@ paths:
                         - priority
                         - task_kind
                         - start_date
+                        - due_date
                         - deferred_at
                       properties:
                         id:
@@ -2933,6 +2934,10 @@ paths:
                             - string
                             - "null"
                         start_date:
+                          type:
+                            - string
+                            - "null"
+                        due_date:
                           type:
                             - string
                             - "null"

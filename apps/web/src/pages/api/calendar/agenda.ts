@@ -55,8 +55,8 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "read" 
     }
     if (links.status === "rejected") logApiError("calendar-agenda", "Could not load saved calendar links", links.reason)
     return Response.json({
-      tasks: work.status === "fulfilled" ? work.value.tasks.map(({ id, title, status, priority, task_kind, start_date, deferred_at }) => ({
-        id, title, status, priority: Number(priority ?? 3), task_kind, start_date, deferred_at,
+      tasks: work.status === "fulfilled" ? work.value.tasks.map(({ id, title, status, priority, task_kind, start_date, due_date, deferred_at }) => ({
+        id, title, status, priority: Number(priority ?? 3), task_kind, start_date, due_date, deferred_at,
       })) : null,
       total: work.status === "fulfilled" ? work.value.total : null,
       linkedEvents: links.status === "fulfilled" ? links.value : null,

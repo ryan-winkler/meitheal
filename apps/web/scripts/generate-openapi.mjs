@@ -1140,10 +1140,11 @@ const paths = {
         200: jsonContent({
           type: "object", required: ["tasks", "total", "linkedEvents"], properties: {
             tasks: { type: ["array", "null"], items: {
-              type: "object", required: ["id", "title", "status", "priority", "task_kind", "start_date", "deferred_at"],
+              type: "object", required: ["id", "title", "status", "priority", "task_kind", "start_date", "due_date", "deferred_at"],
               properties: {
                 id: { type: "string" }, title: { type: "string" }, status: { type: "string" }, priority: { type: "integer" },
-                task_kind: { type: ["string", "null"] }, start_date: { type: ["string", "null"] }, deferred_at: { type: ["integer", "null"] },
+                task_kind: { type: ["string", "null"] }, start_date: { type: ["string", "null"] },
+                due_date: { type: ["string", "null"] }, deferred_at: { type: ["integer", "null"] },
               },
             } },
             total: { type: ["integer", "null"], minimum: 0 },

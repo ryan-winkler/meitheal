@@ -30,6 +30,11 @@ interface LinkedCalendarEvent {
   providerSummary: string | null
 }
 
+interface DayScheduleItem {
+  time: string | null
+  row: HTMLElement
+}
+
 const log = createClientLogger("tasks", "calendar-shell")
 const loading = "Loading…"
 // Node's 16 KiB request-header limit also includes the request target and
@@ -101,19 +106,6 @@ export function initCalendarPage(signal: AbortSignal): void {
     })
   }
 
-  function createEmptyNotice(title: string, hint: string): HTMLElement {
-    const box = document.createElement("div")
-    box.className = "cal-empty-state"
-    box.append(createTablerSvgElement("calendar", 22))
-    const heading = document.createElement("span")
-    heading.className = "cal-empty-state__title"
-    heading.textContent = title
-    const sub = document.createElement("span")
-    sub.textContent = hint
-    box.append(heading, sub)
-    return box
-  }
-
   function hydrateDayView() {
     dayViewRequest?.abort()
     const dayHost = month.querySelector<HTMLElement>("[data-cal-day-view]")
@@ -122,175 +114,93 @@ export function initCalendarPage(signal: AbortSignal): void {
     const context = currentTaskApiContext()
     if (!context || !calendarContext || context.boardId !== calendarContext.boardId || context.actorKey !== calendarContext.actorKey) return
 
-    const tasksEl = dayHost.querySelector<HTMLElement>("#cal-day-view-tasks")
-    const taskStatusEl = dayHost.querySelector<HTMLElement>("#cal-day-view-task-status")
-    const eventsEl = dayHost.querySelector<HTMLElement>("#cal-day-view-events")
-    const eventStatusEl = dayHost.querySelector<HTMLElement>("#cal-day-view-event-status")
-    if (!tasksEl || !taskStatusEl) return
-
+    const schedule = dayHost.querySelector<HTMLElement>("[data-cal-hourly]")!
+    const allDay = schedule.querySelector<HTMLElement>("#cal-day-allday-strip")!
+    const grid = schedule.querySelector<HTMLElement>(".cal-hourly-grid-wrap")!
+    const hours = [...grid.querySelectorAll<HTMLElement>("[data-hour]")]
+    const workStatus = dayHost.querySelector<HTMLElement>("#cal-day-view-task-status")!
+    const eventsStatus = dayHost.querySelector<HTMLElement>("#cal-day-view-event-status")
     const req = new AbortController()
     dayViewRequest = req
     const linked = AbortSignal.any([signal, req.signal, AbortSignal.timeout(10_000)])
+    const current = () => dayViewRequest === req && !req.signal.aborted && !signal.aborted
     const filters = new URLSearchParams([...applied.searchParams].filter(([key]) => agendaFilterKeys.has(key))).toString()
-    const showEvents = month.dataset.calendarEvents === "true" && Boolean(eventsEl && eventStatusEl)
+    let tasks: DayScheduleItem[] = []
+    let saved: LinkedCalendarEvent[] | null | undefined
+    let live: Awaited<ReturnType<typeof loadCalendarRange>> | undefined
+    workStatus.textContent = loading
+    if (eventsStatus) eventsStatus.textContent = loading
 
-    tasksEl.setAttribute("aria-busy", "true")
-    tasksEl.replaceChildren(...createSkeletonRows(3))
-    taskStatusEl.textContent = ""
+    const now = formatTimeInZone(new Date(), timezone)
+    if (schedule.dataset.isToday === "true" && now) hours[Number(now.slice(0, 2))]?.classList.add("is-current-hour")
+    let initialTop = grid.scrollTop ? null : hours[6]?.offsetTop ?? 0
+    if (initialTop !== null) grid.scrollTop = initialTop
 
-    let liveEvents: Awaited<ReturnType<typeof loadCalendarRange>> | undefined
-    let persistedEvents: LinkedCalendarEvent[] | null | undefined
-
-    const renderHourlyDayTimeline = (
-      taskRows: HTMLElement[],
-      connected: Array<{ start: string; title: string; id?: string }>,
-    ) => {
-      const allDayEl = dayHost.querySelector<HTMLElement>("#cal-day-allday-strip")
-      const blocksEl = dayHost.querySelector<HTMLElement>("#cal-day-hourly-blocks")
-      const nowLineEl = dayHost.querySelector<HTMLElement>("#cal-day-now-line")
-      if (!allDayEl || !blocksEl) return
-
-      const palette = ["#0284c7", "#16a34a", "#ae3ec9", "#ea580c", "#0d9488"]
-      let colorIdx = 0
-      const pickColor = () => palette[colorIdx++ % palette.length]!
-
-      const allDayCards: HTMLElement[] = []
-      const timedBlocks: HTMLElement[] = []
-
-      const placeBlock = (title: string, timeText: string, taskId?: string, startIso?: string) => {
-        let hourFloat: number | null = null
-        if (startIso && startIso.includes("T")) {
-          const parsed = new Date(startIso)
-          if (!Number.isNaN(parsed.getTime())) {
-            hourFloat = parsed.getHours() + parsed.getMinutes() / 60
-          }
-        }
-        const btn = document.createElement(taskId ? "button" : "div")
-        btn.className = hourFloat !== null ? "cal-gcal-event cal-gcal-event--timed" : "cal-gcal-event"
-        if (btn instanceof HTMLButtonElement) btn.type = "button"
-        if (taskId) btn.dataset.taskId = taskId
-        btn.style.setProperty("--cal-ev-bg", pickColor())
-        const tEl = document.createElement("span")
-        tEl.className = "cal-gcal-event__title"
-        tEl.textContent = title
-        btn.append(tEl)
-        if (timeText) {
-          const mEl = document.createElement("span")
-          mEl.className = "cal-gcal-event__meta"
-          mEl.textContent = timeText
-          btn.append(mEl)
-        }
-        if (hourFloat !== null && hourFloat >= 6 && hourFloat <= 22.5) {
-          const topPx = Math.max(0, Math.round((hourFloat - 6) * 48))
-          btn.style.top = `${topPx}px`
-          btn.style.minHeight = "42px"
-          timedBlocks.push(btn)
-        } else {
-          allDayCards.push(btn)
-        }
+    function render() {
+      const active = schedule.contains(document.activeElement) ? document.activeElement as HTMLElement : null
+      const events: DayScheduleItem[] = []
+      const addEvent = (title: string, start: string, id?: string) => {
+        const { time, label } = connectedDayTiming(start, date!, timezone)
+        const row = agendaItem("calendar-event", title, label, id)
+        if (id) row.dataset.occurrenceKey = id + "/" + calendarOccurrenceStartKey(start, timezone)
+        events.push({ time, row })
       }
-
-      for (const row of taskRows) {
-        const title = row.querySelector(".day-drawer-item-title")?.textContent?.trim() || "Task"
-        const meta = row.querySelector(".day-drawer-item-meta")?.textContent?.trim() || ""
-        const tid = row.dataset.taskId
-        const dueIso = row.dataset.dueDate
-        placeBlock(title, meta, tid, dueIso)
+      if (eventsStatus) {
+        for (const event of saved ?? []) addEvent(event.title, event.start, event.id)
+        for (const event of distinctLiveCalendarEvents(live?.events ?? [], saved ?? [], timezone)) addEvent(event.summary, event.start)
+        eventsStatus.textContent = [
+          saved === null ? "Saved calendar links couldn’t load." : "",
+          live ? !live.available ? "Live Home Assistant calendars couldn’t refresh."
+            : live.partial ? "Some live Home Assistant calendars couldn’t refresh." : "" : loading,
+        ].filter(Boolean).join(" ")
       }
-      for (const ev of connected) {
-        placeBlock(ev.title, formatCalendarEventTime(ev.start, timezone) || "All day", ev.id, ev.start)
+      const buckets = hours.map(() => [] as HTMLElement[])
+      const untimed: HTMLElement[] = []
+      const items = [...tasks, ...events].sort((a, b) => (a.time ?? "").localeCompare(b.time ?? ""))
+      for (const { time, row } of items) {
+        if (!time) untimed.push(row)
+        else buckets[Number(time.slice(0, 2))]?.push(row)
       }
-
-      if (allDayCards.length) {
-        allDayEl.replaceChildren(...allDayCards)
-      } else {
-        const hint = document.createElement("span")
-        hint.style.cssText = "font-size:12px;color:var(--text-muted);"
-        hint.textContent = timedBlocks.length ? `${timedBlocks.length} scheduled` : "No all-day items"
-        allDayEl.replaceChildren(hint)
+      const startAtSchedule = initialTop !== null && grid.scrollTop === initialTop
+      allDay.replaceChildren(...untimed)
+      hours.forEach((hour, index) => hour.lastElementChild?.replaceChildren(...buckets[index]!))
+      const firstHour = buckets.findIndex(bucket => bucket.length)
+      if (firstHour >= 0) {
+        if (startAtSchedule) grid.scrollTop = hours[firstHour]?.offsetTop ?? 0
+        initialTop = null
       }
-      blocksEl.replaceChildren(...timedBlocks)
-
-      if (nowLineEl) {
-        const isTodayHost = dayHost.querySelector<HTMLElement>("[data-cal-hourly]")?.dataset.isToday === "true"
-        const now = new Date()
-        const curH = now.getHours() + now.getMinutes() / 60
-        if (isTodayHost && curH >= 6 && curH <= 22.5) {
-          nowLineEl.style.top = `${Math.round((curH - 6) * 48)}px`
-          nowLineEl.hidden = false
-        } else {
-          nowLineEl.hidden = true
-        }
+      if (active && document.activeElement === document.body) {
+        const replacement = active.isConnected ? active : items.find(({ row }) =>
+          row.dataset.occurrenceKey && row.dataset.occurrenceKey === active.dataset.occurrenceKey)?.row
+        replacement?.focus({ preventScroll: true })
       }
     }
 
-    let latestTaskRows: HTMLElement[] = []
-    let latestConnected: Array<{ start: string; title: string; id?: string }> = []
-
-    const renderDayEvents = () => {
-      if (!showEvents || !eventsEl || !eventStatusEl) return
-      if (liveEvents === undefined && persistedEvents === undefined) return
-      const rows: Array<{ start: string; row: HTMLElement; title: string; id?: string }> = (persistedEvents ?? []).map(event => ({
-        start: event.start,
-        title: event.title,
-        id: event.id,
-        row: agendaItem("calendar-event", event.title, formatCalendarEventTime(event.start, timezone) || "All day", event.id),
-      }))
-      for (const event of distinctLiveCalendarEvents(liveEvents?.events ?? [], persistedEvents ?? [], timezone)) {
-        rows.push({
-          start: event.start,
-          title: event.summary,
-          row: agendaItem("calendar-event", event.summary, formatCalendarEventTime(event.start, timezone) || "All day"),
-        })
-      }
-      rows.sort((a, b) => compareCalendarStarts(a.start, b.start, timezone))
-      latestConnected = rows.map(r => ({ start: r.start, title: r.title, id: r.id }))
-      renderHourlyDayTimeline(latestTaskRows, latestConnected)
-      eventsEl.removeAttribute("aria-busy")
-      if (rows.length) {
-        eventsEl.replaceChildren(...rows.map(item => item.row))
-        eventStatusEl.textContent = ""
-      } else if (liveEvents && persistedEvents !== undefined) {
-        eventsEl.replaceChildren(createEmptyNotice("No connected events", "Connected Home Assistant calendar events for this day appear here."))
-        eventStatusEl.textContent = ""
-      }
-    }
-
-    if (showEvents && eventsEl && eventStatusEl) {
-      eventsEl.setAttribute("aria-busy", "true")
-      eventsEl.replaceChildren(...createSkeletonRows(2))
+    if (eventsStatus) {
       const ranges = dayHost.dataset.dayRanges
       void loadCalendarRange(date, shiftCalendarDay(date, 1), timezone, 5, readCalendarSources, linked,
         ranges ? JSON.parse(ranges) : undefined).then(result => {
-        if (dayViewRequest !== req || linked.aborted) return
-        liveEvents = result
-        renderDayEvents()
+        if (!current()) return
+        live = result
+        render()
       }).catch(() => {
-        if (dayViewRequest !== req || linked.aborted) return
-        liveEvents = { events: [], available: false, partial: false }
-        renderDayEvents()
+        if (!current()) return
+        live = { events: [], available: false, partial: false }
+        render()
       })
     }
 
-    void loadDrawerTasks({ date, filters, offset: 0, limit: 100 }, timezone, linked, context).then(({ rows, linkedEvents }) => {
-      if (dayViewRequest !== req || linked.aborted) return
-      persistedEvents = linkedEvents ?? []
-      latestTaskRows = rows ?? []
-      renderDayEvents()
-      renderHourlyDayTimeline(latestTaskRows, latestConnected)
-      tasksEl.removeAttribute("aria-busy")
-      if (rows?.length) {
-        tasksEl.replaceChildren(...rows)
-        taskStatusEl.textContent = ""
-      } else {
-        tasksEl.replaceChildren(createEmptyNotice("Your day is clear", "Add a task or event above to plan this day."))
-        taskStatusEl.textContent = ""
-      }
+    void loadDrawerTasks({ date, filters, offset: 0, limit: 100 }, timezone, linked, context).then(({ items, linkedEvents }) => {
+      if (!current()) return
+      saved = linkedEvents
+      tasks = items ?? []
+      workStatus.textContent = !items ? "Couldn’t load this day’s agenda." : items.length ? "" : "No matching tasks or local events"
+      render()
     }).catch(() => {
-      if (dayViewRequest !== req || linked.aborted) return
-      tasksEl.removeAttribute("aria-busy")
-      tasksEl.replaceChildren()
-      taskStatusEl.textContent = "Couldn’t load this day’s agenda."
+      if (!current()) return
+      workStatus.textContent = "Couldn’t load this day’s agenda."
+      saved = null
+      render()
     })
   }
 
@@ -303,8 +213,6 @@ export function initCalendarPage(signal: AbortSignal): void {
     const date = selectedDate || agendaHost.dataset.mobileAgendaDate || month.dataset.calendarAnchor
     if (!date) return
     agendaHost.dataset.mobileAgendaDate = date
-    const fab = byId("cal-mobile-fab")
-    if (fab) fab.dataset.fabDate = date
 
     // Update date gutter ("8 Wed")
     const dt = new Date(`${date}T00:00:00Z`)
@@ -562,23 +470,13 @@ export function initCalendarPage(signal: AbortSignal): void {
       if (!showEvents || persisted === undefined && live === undefined) return
       const activeId = drawerEvents!.contains(document.activeElement)
         ? (document.activeElement as HTMLElement).dataset.occurrenceKey : undefined
-      const eventLabel = (start: string) => {
-        const time = formatCalendarEventTime(start, timezone)
-        if (!time) return "All day"
-        const day = calendarEventDay(start, timezone)
-        if (!day || day === date) return time
-        const startDate = new Date(day + "T00:00:00Z").toLocaleDateString("en-US", {
-          month: "short", day: "numeric", timeZone: "UTC",
-        })
-        return `Continues · Started ${startDate}, ${time}`
-      }
       const items = (persisted ?? []).map(event => {
-        const row = agendaItem("calendar-event", event.title, eventLabel(event.start), event.id)
+        const row = agendaItem("calendar-event", event.title, connectedDayTiming(event.start, date, timezone).label, event.id)
         row.dataset.occurrenceKey = event.id + "/" + calendarOccurrenceStartKey(event.start, timezone)
         return { start: event.start, row }
       })
       for (const event of distinctLiveCalendarEvents(live?.events ?? [], persisted ?? [], timezone)) {
-        items.push({ start: event.start, row: agendaItem("calendar-event", event.summary, eventLabel(event.start)) })
+        items.push({ start: event.start, row: agendaItem("calendar-event", event.summary, connectedDayTiming(event.start, date, timezone).label) })
       }
       items.sort((a, b) => compareCalendarStarts(a.start, b.start, timezone))
       drawerEvents!.replaceChildren(...items.map(item => item.row))
@@ -770,25 +668,17 @@ export function initCalendarPage(signal: AbortSignal): void {
       }
       return
     }
-    const mobileFab = target.closest<HTMLButtonElement>("#cal-mobile-fab")
-    if (mobileFab) {
-      const date = mobileFab.dataset.fabDate || month.dataset.calendarAnchor
-      if (date) window.__prefillTaskDate = date
-      if (window.openNewTaskModal) window.openNewTaskModal("standard_action")
-      else byId("kanban-bar-new-task")?.click()
-      return
-    }
     const dayAdd = target.closest<HTMLButtonElement>("[data-day-view-add]")
-    if (dayAdd) {
-      const date = dayAdd.dataset.date
+    if (dayAdd || target.closest("#cal-mobile-fab")) {
+      const date = dayAdd?.dataset.date ?? month.querySelector<HTMLElement>("#cal-mobile-agenda")?.dataset.mobileAgendaDate ?? month.dataset.calendarAnchor
       if (date) window.__prefillTaskDate = date
-      const kind: TaskKind = dayAdd.dataset.dayViewAdd === "event" ? "calendar_event" : "standard_action"
+      const kind: TaskKind = dayAdd?.dataset.dayViewAdd === "event" ? "calendar_event" : "standard_action"
       if (window.openNewTaskModal) window.openNewTaskModal(kind)
       else byId("kanban-bar-new-task")?.click()
       return
     }
     const gcalTaskId = target.closest<HTMLElement>(
-      "#cal-day-view-tasks [data-task-id], #cal-day-view-events [data-task-id], #cal-day-hourly-blocks [data-task-id], #cal-day-allday-strip [data-task-id], #cal-mobile-agenda-items [data-task-id]",
+      "[data-cal-hourly] [data-task-id], #cal-mobile-agenda-items [data-task-id]",
     )?.dataset.taskId
     if (gcalTaskId) {
       openTaskDetailHandoff(gcalTaskId)
@@ -1118,18 +1008,29 @@ async function loadDrawerTasks(
   if (signal.aborted || !sameTaskApiContext(context, currentTaskApiContext())) throw new Error("Calendar context changed")
   if (data.tasks !== null && !Array.isArray(data.tasks)) throw new Error("Invalid task list")
 
-  const rows = data.tasks?.map(task => {
+  const items = data.tasks?.map(task => {
     const status = String(task.status ?? "")
     const definition = getStatusDef(status)
     const deferred = task.deferred_at != null ? ` · ${window.mI18n?.get("deferral.title") ?? "Deferred"}` : ""
     const priority = task.priority ? ` · P${String(task.priority)}` : ""
     const isEvent = task.task_kind === "calendar_event"
-    const eventTime = isEvent && typeof task.start_date === "string" && formatTimeInZone(task.start_date, timezone)
-    const meta = isEvent && task.start_date ? `${eventTime || "All day"} · ${definition?.label ?? status}` : definition?.label ?? status
+    const start = isEvent ? task.start_date : task.due_date
+    const time = typeof start === "string" ? formatTimeInZone(start, timezone) : null
+    const label = definition?.label ?? status
+    const meta = isEvent || time ? `${time || "All day"} · ${label}` : label
     const icon = isEvent ? "calendar-event" : definition ? mapEntityEmojiToTabler(definition.icon) ?? "checkbox" : "checkbox"
-    return agendaItem(icon, String(task.title ?? "Untitled task"), `${meta}${priority}${deferred}`, String(task.id))
+    return { time, row: agendaItem(icon, String(task.title ?? "Untitled task"), `${meta}${priority}${deferred}`, String(task.id)) }
   })
-  return { rows, total: data.total ?? rows?.length ?? 0, linkedEvents: data.linkedEvents === undefined ? [] : data.linkedEvents }
+  return { items, rows: items?.map(({ row }) => row), total: data.total ?? items?.length ?? 0, linkedEvents: data.linkedEvents === undefined ? [] : data.linkedEvents }
+}
+
+function connectedDayTiming(start: string, date: string, timezone: string): { time: string | null; label: string } {
+  const time = formatCalendarEventTime(start, timezone)
+  if (!time) return { time: null, label: "All day" }
+  const day = calendarEventDay(start, timezone)
+  if (!day || day === date) return { time, label: time }
+  const startDate = new Date(day + "T00:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+  return { time: "00:00", label: `Continues · Started ${startDate}, ${time}` }
 }
 
 async function loadInlineEventPreviews(
