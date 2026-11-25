@@ -89,6 +89,8 @@ test("unfiled Projects ignore remembered Areas in every view and stay unfiled th
           } else await route.continue()
         })
       }
+      await page.locator("#nt-split-toggle").click()
+      await page.locator('[data-after-create="open"]').click()
       const modalSaved = page.waitForResponse(response => response.url().endsWith("/api/tasks") && response.request().method() === "POST")
       await page.locator("#submit-new-task-btn").click()
       expect((await modalSaved).status()).toBe(201)
