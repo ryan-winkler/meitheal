@@ -19,9 +19,26 @@ test("formula syntax errors are distinct from invalid estimates without changing
 })
 
 test.describe("Ticket scoring review regressions", () => {
-  test.skip(!process.env.E2E_BASE_URL, "Requires a disposable local Meitheal server")
+  test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a disposable local Meitheal server")
   test.use({ serviceWorkers: "block" })
   test.setTimeout(60_000)
+
+  let ruleId: string | undefined
+  test.beforeAll(async ({ request, baseURL }) => {
+    const origin = new URL(baseURL!).origin
+    const response = await request.post("/api/rules", { headers: { origin }, data: {
+      name: "Ticket scoring browser fixture", ruleType: "strategic-lens", taskTypes: ["task"],
+      lensIds: ["rice", "ice", "unsupported-score-test", "legacy-formula-type", "legacy-options"],
+    } })
+    expect(response.status(), await response.text()).toBe(201)
+    ruleId = (await response.json()).data.id
+  })
+
+  test.afterAll(async ({ request, baseURL }) => {
+    if (!ruleId) return
+    const response = await request.delete(`/api/rules/${ruleId}`, { headers: { origin: new URL(baseURL!).origin } })
+    expect(response.ok(), await response.text()).toBe(true)
+  })
 
   test("unsupported saved formulas show a formula error and untrusted bounds cannot create attributes", async ({ page, request, baseURL }) => {
     const origin = new URL(baseURL!).origin
@@ -79,7 +96,7 @@ test.describe("Ticket scoring review regressions", () => {
     const path = `/api/tasks/${id}`
     try {
       await page.goto(`/tickets/${id}`)
-      await expect(page.getByLabel("Scoring framework", { exact: true })).toBeEnabled()
+      await page.getByLabel("Scoring framework", { exact: true }).selectOption("rice")
       for (const [field, value] of Object.entries({ Reach: "10", Impact: "2", Confidence: "80", Effort: "0.5" })) {
         await page.getByRole("spinbutton", { name: field, exact: true }).fill(value)
       }
@@ -179,7 +196,7 @@ test.describe("Ticket scoring review regressions", () => {
     try {
       await page.goto(`/tickets/${id}`)
       const chooser = page.getByLabel("Scoring framework", { exact: true })
-      await expect(chooser).toBeEnabled()
+      await chooser.selectOption("rice")
       for (const [field, value] of Object.entries({ Reach: "10", Impact: "2", Confidence: "80", Effort: "0.5" })) {
         await page.getByRole("spinbutton", { name: field, exact: true }).fill(value)
       }
