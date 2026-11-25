@@ -13,6 +13,7 @@ import { scopeBoardAccess, scopePermits } from "@domains/tasks/board-scope"
 import { HierarchyRepository, type AreaRow, type ProjectRow } from "@domains/tasks/persistence/hierarchy-repository"
 import { ensureSchema, getPersistenceClient } from "@domains/tasks/persistence/store"
 import { newOrganizationLabel, organizationLabelsFor } from "@lib/organization-labels"
+import { readRoutineWorkspace } from "@lib/routine-workspace-data"
 import { isFeatureEnabled } from "../lib/feature-flags"
 import { HABITS_SECTIONS } from "../lib/habits-registry"
 import Layout from "../layouts/Layout.astro"
@@ -62,6 +63,10 @@ try {
 
 const organization = await organizationLabelsFor(Astro)
 const newRoutine = newOrganizationLabel(organization("routine"), locale)
+const initialRoutines = await readRoutineWorkspace(workScope, {
+  areaId: area?.id, projectId: project?.id, timezone: Astro.locals.timezone,
+}).catch(() => null)
+const canOpenCreate = boardActive && canCreateRoutine && initialRoutines !== null
 ---
 
 <Layout title={`${organization("routine", true)} — Meitheal`}>
@@ -85,9 +90,9 @@ const newRoutine = newOrganizationLabel(organization("routine"), locale)
       type="button"
       class="btn btn-ghost habits-shell__create-bar-btn"
       id="habits-bar-new-habit"
-      data-open-habit-modal={!boardActive || !canCreateRoutine ? undefined : "true"}
-      disabled={!boardActive || !canCreateRoutine}
-      title={boardActive ? newRoutine : "This Board is unavailable"}
+      data-open-habit-modal={canOpenCreate ? "true" : undefined}
+      disabled={!canOpenCreate}
+      title={!boardActive ? "This Board is unavailable" : initialRoutines === null ? "Refresh the page to retry loading Routines" : newRoutine}
       aria-label={newRoutine}
     >
       <Icon name="plus" size={18} class="unified-bar__new-task-icon" sprite />
@@ -109,6 +114,7 @@ const newRoutine = newOrganizationLabel(organization("routine"), locale)
     {project}
     {areas}
     {projects}
+    {initialRoutines}
     {openNew}
   />
 </Layout>
