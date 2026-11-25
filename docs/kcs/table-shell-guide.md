@@ -12,7 +12,7 @@ Table refreshes its rows, totals, pagination and Area catalog in place. Its refr
 
 Open **Tasks** and choose **Table**. Older `/table` bookmarks redirect to `/tasks?view=table#table` and retain their query parameters. The Tasks header contains Search Meitheal, Ask Home Assistant, and New Task.
 
-Scroll sideways within the table to reach more columns. With a keyboard, focus the **Table View** region and press the Left or Right Arrow key. The selection column stays in view, and Presets and Columns stay above the scroll area. Long titles wrap and can still be edited in full.
+Scroll sideways within the table to reach more columns. With a keyboard, focus the **Table View** region and press the Left or Right Arrow key. The selection column stays in view, and Presets and Columns stay above the scroll area. Long titles wrap and can still be edited in full. Custom Fields shows a shortened preview. Open the task to see the full value.
 
 ## Common Jobs
 
@@ -42,7 +42,7 @@ Group or sub-group by **Area** to see the names, icons, and colors of the Board'
 ### Edit a title or select a row
 
 1. Focus the row's **Title** field and edit the text. Press **Tab** or **Enter** to leave the field and save, or **Escape** to restore the last saved title.
-2. Select the row's checkbox. The bulk action bar shows how many rows are selected.
+2. Select individual row checkboxes, or use the checkbox in the column header to select all visible rows on the current page. The bulk action bar shows how many rows are selected.
 
 The type icon in each row has a text equivalent. Completed rows stay readable and use the status and strikethrough to indicate completion.
 
