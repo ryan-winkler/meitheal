@@ -655,6 +655,32 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           if (currentTaskId === id) renderSavedStatus(status)
         }, { signal: __signal })
 
+        function renderSavedType(taskType: string) {
+          const select = byId<HTMLSelectElement>("td-task-type")
+          if (select) {
+            select.value = taskType
+            select.dataset.savedTaskType = taskType
+          }
+          const icon = byId("td-type-icon")
+          if (icon) {
+            icon.replaceChildren(createTypeIconElement(taskType, 16, currentTaskKind))
+            icon.title = KIND_BADGE_LABELS[currentTaskKind] ?? (taskType.charAt(0).toUpperCase() + taskType.slice(1))
+          }
+        }
+
+        window.addEventListener("meitheal:task-type-changed", event => {
+          const { taskId, taskType, version, previousVersion, status } = (event as CustomEvent<{
+            taskId: string; taskType: string; version?: number | null; previousVersion?: number | null; status?: string
+          }>).detail ?? {}
+          if (!taskLoaded || boardWithheld || currentTaskId !== taskId ||
+              typeof version !== "number" || version < (currentTaskVersion ?? 0)) return
+
+          // Rebase local edits only when the card and the Inspector started from the same saved version.
+          if (currentTaskVersion === previousVersion) currentTaskVersion = version
+          renderSavedType(taskType)
+          if (typeof status === "string") renderSavedStatus(status)
+        }, { signal: __signal })
+
         async function openTaskDetail(taskId: string, commentTarget: string | null = null, search?: SearchDetailHandoff, updateLocation = true) {
           if (boardWithheld) return
           if (!tdOverlay?.isConnected || __signal.aborted) return
@@ -1138,12 +1164,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             currentTaskKind = taskKind;
             sections.dataset.taskKind = taskKind;
             updateSectionOrder();
-            const typeIconEl = byId("td-type-icon") as HTMLElement | null;
-            if (typeIconEl) {
-              const tt = String(t.task_type || "task").toLowerCase();
-              typeIconEl.replaceChildren(createTypeIconElement(tt, 16, taskKind));
-              typeIconEl.title = KIND_BADGE_LABELS[taskKind] ?? (tt.charAt(0).toUpperCase() + tt.slice(1));
-            }
+            renderSavedType(String(t.task_type || "task").toLowerCase())
             const kindBadgeEl = byId("td-task-kind-badge") as HTMLElement | null;
             if (kindBadgeEl) {
               const label = KIND_BADGE_LABELS[taskKind] ?? "";
@@ -1392,14 +1413,6 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
               signal: modalSignal,
               selectedId: String(t.principle_id ?? ""),
             })
-            // Phase 20: Agile hierarchy type
-            const tdTaskTypeEl = document.getElementById("td-task-type") as HTMLSelectElement | null;
-            if (tdTaskTypeEl) {
-              const ttVal = String(t.task_type ?? "task");
-              tdTaskTypeEl.value = ttVal;
-              tdTaskTypeEl.dataset.savedTaskType = ttVal;
-            }
-
             // Set recurrence select to current value with Google Calendar presets & custom RRULE support
             const recurrenceSelect = byId("td-recurrence") as HTMLSelectElement | null;
             if (recurrenceSelect) {
@@ -1572,8 +1585,10 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             taskLoaded = true
             syncInspectorDockMode()
             tdLoaded?.classList.remove("hidden")
-            if (!keepDescriptionDraft && !description) enterDescEdit(false)
-            else if (!keepDescriptionDraft) void renderTaskDescription(description)
+            if (!keepDescriptionDraft) {
+              void renderTaskDescription(description)
+              if (!description) enterDescEdit(false)
+            }
             resizeTitle()
             const finishLoadedTask = () => {
               const liveSignal = _modalAbortController?.signal
@@ -1772,16 +1787,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                 }
               } else if (Object.hasOwn(patch, "parent_id") || Object.hasOwn(patch, "task_type") || Object.hasOwn(patch, "title")) {
                 epicGroupingDirty = true
-                if (Object.hasOwn(patch, "task_type")) {
-                  const sel = document.getElementById("td-task-type") as HTMLSelectElement | null
-                  if (sel) sel.dataset.savedTaskType = String(patch.task_type)
-                  const typeIconEl = document.getElementById("td-type-icon")
-                  if (typeIconEl) {
-                    const tt = String(patch.task_type || "task").toLowerCase()
-                    typeIconEl.replaceChildren(createTypeIconElement(tt, 16, currentTaskKind))
-                    typeIconEl.title = tt.charAt(0).toUpperCase() + tt.slice(1)
-                  }
-                }
+                if (typeof patch.task_type === "string" && generation === detailGeneration) renderSavedType(patch.task_type)
                 if (!tdOverlay.classList.contains("active")) reconcileEpicGrouping()
               }
               notifyInactivityTaskChanged(Object.hasOwn(patch, "status") ? undefined : taskId)
@@ -1795,9 +1801,9 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             if (!result.ok) {
               if (generation === detailGeneration) setTicketSaveFeedback("idle")
               log.warn(`Failed to save ${primaryField}:`, result.status)
-              if (Object.hasOwn(patch, "task_type")) {
-                const sel = document.getElementById("td-task-type") as HTMLSelectElement | null
-                if (sel && sel.dataset.savedTaskType) sel.value = sel.dataset.savedTaskType
+              if (Object.hasOwn(patch, "task_type") && generation === detailGeneration) {
+                const savedType = byId("td-task-type")?.dataset.savedTaskType
+                if (savedType) renderSavedType(savedType)
               }
               if (result.message && result.errorCode !== "conflict" && result.errorCode !== "unconfirmed") {
                 const sessionBound = search || primaryField === "description"

@@ -172,17 +172,26 @@ heading to collapse or reopen that section. Use **Save** or **Cancel** in the
 Description editor. Closing the inspector or switching tickets saves your
 Description draft first. A failed save keeps the current ticket and draft
 available for retry.
+When you switch to a ticket with no description, **Cancel** returns to that
+ticket's empty preview.
+Dragging a card to another Type group updates the open Details after the board
+saves the change. Unsaved Description text stays in the editor.
 Activity Log starts closed and loads
 when you open it. If the request fails, use **Retry** in Activity Log.
 
-Select **Focus mode** in a ticket to use the full app window. The same task and
-drafts stay open. **Exit Focus** or **Escape** returns to the docked inspector or
-centered dialog for the current window size. Use **Close detail** to go back to
-the page you opened the ticket from. In **Recent Tasks**, focus returns to the
-card control you used to open Details, even after a saved status refreshes
-the card. To verify this with the keyboard, open a recent card with **Edit
+Select **Focus mode** on desktop to expand the ticket over the app window. The
+**Boxed** appearance keeps the ticket centered, and **Fluid** uses the full
+window width. Phones open Details as a full-height sheet. The same task and
+drafts stay open when the window resizes. **Exit Focus** or **Escape** returns
+to the docked inspector or centered dialog for the current window size. Use
+**Close detail** to go back to the page you opened the ticket from. In
+**Recent Tasks**, focus returns to the card control you used to open Details,
+even after a saved status refreshes the card. To verify this with the keyboard, open a recent card with **Edit
 task**, change its status, then close Details and check that **Edit task** has
 focus again.
+
+When testing new themes, check that the ticket ID stays readable in the toolbar
+in both Light and Dark.
 
 Open **Task detail layout** from the ticket toolbar or from **Settings →
 Tasks & Boards**. Drag a section by its grip or move it using the arrows. Open
