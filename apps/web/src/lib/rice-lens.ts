@@ -99,7 +99,8 @@ export function riceLensScore(inputs: Pick<BaseRiceInput, "reach" | "impact" | "
   ) {
     return null
   }
-  return roundFrameworkScore(calculateRiceScore(inputs))
+  const score = calculateRiceScore(inputs)
+  return Number.isFinite(score) ? roundFrameworkScore(score) : null
 }
 
 /** Format the canonical human-readable RICE formula breakdown string. */

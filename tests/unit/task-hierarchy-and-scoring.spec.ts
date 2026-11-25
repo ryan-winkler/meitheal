@@ -38,6 +38,10 @@ test("R14: percent-normalized RICE, D-RICE, and all 9 built-in frameworks evalua
   expect(riceLensScore({ reach: 10, impact: 3, confidence: 0, effort: 2 })).toBe(0)
   expect(riceLensScore({ reach: 10, impact: 3, confidence: 80, effort: 0 })).toBeNull()
   expect(roundFrameworkScore(1.505)).toBe(1.51)
+  expect(roundFrameworkScore(1e308)).toBe(1e308)
+  expect(roundFrameworkScore(-1e308)).toBe(-1e308)
+  expect(riceLensScore({ reach: 1e308, impact: 1, confidence: 100, effort: 1 })).toBe(1e308)
+  expect(riceLensScore({ reach: 1e308, impact: 2, confidence: 100, effort: 1 })).toBeNull()
 
   // Strict input parsing rejects booleans, hex, blank, and over-100 confidence
   expect(parseRiceInputs({ reach: "0x10", impact: 2, confidence: 80, effort: 1 })).toBeNull()
