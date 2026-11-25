@@ -8,6 +8,10 @@ description: "Understand the task table and its controls."
 
 Table refreshes its rows, totals, pagination and Area catalog in place. Its refresh sends `tableRefresh` and `X-Meitheal-Task-Fragment: 1` on the regular scoped page. The response skips the shared page shell, and direct navigation still receives the full page. Use the refresh retry control if a request fails.
 
+Moving a row to a different group saves the group before saving row order. If
+the order fails, Table keeps the saved group, displays a warning, and reloads
+rows and counts. Use **Retry** if that reload fails.
+
 ## Open the Table view
 
 Open **Tasks** and choose **Table**. Older `/table` bookmarks redirect to `/tasks?view=table#table` and retain their query parameters. The Tasks header contains Search Meitheal, Ask Home Assistant, and New Task.
