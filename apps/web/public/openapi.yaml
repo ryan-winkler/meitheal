@@ -352,8 +352,8 @@ components:
               category:
                 type: string
                 enum:
-                  - elephant
-                  - goldfish
+                  - configuration
+                  - execution
               status:
                 type: string
                 enum:
@@ -8545,9 +8545,8 @@ paths:
       tags:
         - Plugins
       summary: List built-in and uploaded plugins, fleet health, or active runtime bundles
-      description: Returns the full plugin catalog, fleetHealth summary, per-plugin EGM health reports, and Safe Mode state
-        for administrators, or enabled runtime bundles (without secrets) when ?runtime=1 is requested by an active
-        browser session.
+      description: Returns the plugin catalog, health reports, and Safe Mode state for administrators. Active browser sessions
+        can use ?runtime=1 to request enabled runtime bundles without secrets.
       parameters:
         - name: runtime
           in: query

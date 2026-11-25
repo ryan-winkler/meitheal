@@ -164,7 +164,7 @@ const schemas = {
           properties: {
             id: { type: "string" },
             label: { type: "string" },
-            category: { type: "string", enum: ["elephant", "goldfish"] },
+            category: { type: "string", enum: ["configuration", "execution"] },
             status: { type: "string", enum: ["pass", "warn", "fail"] },
             detail: { type: "string" },
           },
@@ -2788,7 +2788,7 @@ const paths = {
       operationId: "listPlugins",
       tags: ["Plugins"],
       summary: "List built-in and uploaded plugins, fleet health, or active runtime bundles",
-      description: "Returns the full plugin catalog, fleetHealth summary, per-plugin EGM health reports, and Safe Mode state for administrators, or enabled runtime bundles (without secrets) when ?runtime=1 is requested by an active browser session.",
+      description: "Returns the plugin catalog, health reports, and Safe Mode state for administrators. Active browser sessions can use ?runtime=1 to request enabled runtime bundles without secrets.",
       parameters: [
         { name: "runtime", in: "query", schema: { type: "string", enum: ["1"] }, description: "Return active runtime bundles only." },
       ],

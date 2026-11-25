@@ -2624,7 +2624,7 @@
     },
     {
       "name": "listPlugins",
-      "description": "Returns the full plugin catalog, fleetHealth summary, per-plugin EGM health reports, and Safe Mode state for administrators, or enabled runtime bundles (without secrets) when ?runtime=1 is requested by an active browser session.",
+      "description": "Returns the plugin catalog, health reports, and Safe Mode state for administrators. Active browser sessions can use ?runtime=1 to request enabled runtime bundles without secrets.",
       "inputSchema": {
         "type": "object",
         "properties": {

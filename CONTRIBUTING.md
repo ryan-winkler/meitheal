@@ -86,7 +86,7 @@ Coverage is reported to [Codecov](https://codecov.io/gh/ryan-winkler/meitheal) f
 
 ## Code review standard
 
-Every pull request is reviewed before it is merged. The maintainer reviews pull requests from contributors. When the project has more than one maintainer, a maintainer's own pull request is reviewed by a different maintainer; until then the maintainer reviews their own change against this list after the automated review finishes. Structured planning and iterative review-loop workflows — using [Elephant-Goldfish Model (EGM)](https://github.com/google/elephant-goldfish-model) (`egm-review-loop`: [skills/egm-review-loop](https://github.com/google/elephant-goldfish-model/tree/main/skills/egm-review-loop)), [GSD (Get Shit Done)](https://github.com/gsd-build/get-shit-done), and [gstack](https://github.com/garrytan/gstack) — alongside CodeRabbit, CodeQL, and Codacy support human review but do not replace it. Keep individual agent-run transcripts and non-ADR working decision logs outside Git under `.planning/`.
+Every pull request is reviewed before it is merged. The maintainer reviews pull requests from contributors. When the project has more than one maintainer, a maintainer's own pull request is reviewed by a different maintainer; until then the maintainer reviews their own change against this list after the automated review finishes. Iterative reviews, CodeRabbit, CodeQL, and Codacy support the maintainer's review. Keep individual agent-run transcripts and non-ADR working decision logs outside Git under `.planning/`.
 
 The reviewer checks that:
 

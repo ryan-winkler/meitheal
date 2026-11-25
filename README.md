@@ -224,7 +224,7 @@ Meitheal splits application source from Store manifests so low-memory Home Assis
 - [Contributing guide](CONTRIBUTING.md) · [Governance](GOVERNANCE.md) · [Roadmap](ROADMAP.md) · [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Get help](SUPPORT.md) · [Report a security problem privately](SECURITY.md)
 
-Meitheal combines human Product Management direction with structured AI-assisted engineering workflows, led by review-loop skills in the [Elephant-Goldfish Model (EGM)](https://github.com/google/elephant-goldfish-model) (including [`egm-review-loop`](https://github.com/google/elephant-goldfish-model/tree/main/skills/egm-review-loop)), [GSD (Get Shit Done)](https://github.com/gsd-build/get-shit-done), and [gstack](https://github.com/garrytan/gstack), paired with automated Playwright and Home Assistant pytest suites and continuous security scanning. Per-run agent logs stay outside Git, while durable architectural choices live in [ADRs](docs/decisions/index.md).
+Maintainers guide product development and review changes. Playwright tests, Home Assistant tests, and automated security scans support that review. Architectural decisions are recorded in the [ADRs](docs/decisions/index.md).
 
 ## Sponsors
 

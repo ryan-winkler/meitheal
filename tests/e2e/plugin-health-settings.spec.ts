@@ -38,6 +38,7 @@ test("disabled connectors are opt-in and their security disclosures retain keybo
   await page.goto("/settings#plugins-settings")
   expect((await catalog).ok()).toBe(true)
   const panel = page.getByRole("region", { name: "Plugin Health", exact: true })
+  await expect(page.locator("#plugins-settings")).not.toContainText(/Elephant|Goldfish|\bEGM\b/i)
   const showDisabled = panel.getByRole("checkbox", { name: "Show disabled plugins", exact: true })
   const rows = panel.locator("[data-plugin-health-id]")
   await expect(panel.getByText("No plugins are enabled.", { exact: true })).toBeVisible()

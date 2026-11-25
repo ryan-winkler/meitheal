@@ -55,7 +55,7 @@ export function evaluatePluginHealth(input: PluginHealthEvaluationInput): Plugin
   checks.push({
     id: "sandbox_isolation",
     label: "Execution Boundary",
-    category: "goldfish",
+    category: "execution",
     status: missingExecutable ? "fail" : "pass",
     detail: missingExecutable
       ? "A declared script or panel is missing, or the panel permission is absent."
@@ -67,7 +67,7 @@ export function evaluatePluginHealth(input: PluginHealthEvaluationInput): Plugin
   checks.push({
     id: "permission_consent",
     label: "Permissions & Re-Consent",
-    category: "elephant",
+    category: "configuration",
     status: record.needsReconsent || unknownPermissions ? "fail" : "pass",
     detail: record.needsReconsent
       ? "New permissions or outbound hosts need administrator approval before the plugin can be enabled."
@@ -87,7 +87,7 @@ export function evaluatePluginHealth(input: PluginHealthEvaluationInput): Plugin
   checks.push({
     id: "network_ssrf",
     label: "Outbound Configuration",
-    category: "goldfish",
+    category: "configuration",
     status: inconsistentOutbound ? "fail" : missingServer || missingAllowlist ? "warn" : "pass",
     detail: inconsistentOutbound
       ? "Allowed hosts require an outbound permission and a matching data-sharing disclosure."
@@ -110,7 +110,7 @@ export function evaluatePluginHealth(input: PluginHealthEvaluationInput): Plugin
   checks.push({
     id: "secret_hygiene",
     label: "Secret Configuration",
-    category: "elephant",
+    category: "configuration",
     status: invalidSecretConfiguration ? "fail" : missingSecrets.length > 0 ? "warn" : "pass",
     detail: invalidSecretConfiguration
       ? "Secret fields require a valid secret key and the secrets:use permission."
@@ -129,7 +129,7 @@ export function evaluatePluginHealth(input: PluginHealthEvaluationInput): Plugin
   checks.push({
     id: "provenance_integrity",
     label: "Package Digest",
-    category: "elephant",
+    category: "configuration",
     status: !validDigest ? "fail" : uploadedOutbound ? "warn" : "pass",
     detail: !validDigest
       ? "The recorded SHA-256 digest is missing or malformed."

@@ -216,12 +216,12 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
     statusLabel: "Plugins",
     summaryTitle: "Plugins",
     summaryDetail: "Sandboxed",
-    introTitle: "Extend Meitheal safely with sandboxed plugins and connectors",
+    introTitle: "Plugins and connectors",
     introDescription:
-      "Monitor live plugin health and Elephant-Goldfish compliance, enable external connectors, upload ZIP packages, or build a plugin with AI.",
-    featuredTasks: ["Plugin health & compliance", "External issue connectors", "Upload ZIP or build with AI"],
-    statusTargetId: "plugins-active-badge",
-    keywords: ["plugins", "plugin health", "extensions", "connectors", "zip", "github", "gitea", "issues", "safe mode", "sandbox", "compliance", "ai builder"],
+      "Check plugin status, set up issue connectors, or install a custom plugin.",
+    featuredTasks: ["Plugin health", "External issue connectors", "Install a plugin"],
+    statusTargetId: "plugins-health-summary",
+    keywords: ["plugins", "plugin health", "extensions", "connectors", "zip", "github", "gitea", "issues", "safe mode", "sandbox", "security", "ai builder"],
   },
   {
     id: "webserver-settings",

@@ -631,7 +631,7 @@ Follow the detail under any **Review** or **Failed** result. A disabled connecto
 You can create a custom plugin directly from **Settings -> Plugins -> Install Plugin -> Build one with AI**:
 
 1. **Step 1 — Describe your idea**: Enter what the plugin should do and select **Copy prompt for your AI**.
-2. Paste the copied prompt into your preferred AI assistant. The prompt instructs the assistant to output a single JSON bundle (`manifest`, `pluginJs`, optional `indexHtml`, optional `iconSvg`) that obeys Meitheal's opaque-origin sandbox and EGM rules.
+2. Paste the copied prompt into your preferred AI assistant. The prompt asks for a single JSON bundle (`manifest`, `pluginJs`, optional `indexHtml`, optional `iconSvg`) that works in the Meitheal sandbox.
 3. **Step 2 — Paste the answer**: Select **Next: paste the answer**, paste the JSON output, verify the live permission and data-sharing preview, and select **Install plugin**.
 4. Meitheal validates the bundle through the exact same ZIP, manifest, SVG sanitization, and re-consent pipeline as uploaded archives. New plugins always start disabled until you review and enable them.
 
@@ -663,7 +663,7 @@ Follow this process to list your community plugin in Meitheal's **Reference & Co
      "outbound": false
    }
    ```
-5. Maintainers review the manifest, `dataSharing` accuracy, SHA-256 digest, and EGM sandbox compliance before adding the listing.
+5. Maintainers review the manifest, data-sharing disclosure, SHA-256 digest, and sandbox requirements before adding the listing.
 
 ## 11. Troubleshooting
 
