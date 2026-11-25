@@ -373,7 +373,7 @@ const routinesBootstrap = serializeForScript({ routines: routinesList, habits: r
                         <span class="badge habit-card__meta-item habit-card__inactive">Paused project</span>
                       )}
                       {habit.todayTaskId && (
-                        <a class="badge habit-card__meta-item habit-card__task-link" href={taskDetailPath(habit.todayTaskId)}>
+                        <a class="badge habit-card__meta-item habit-card__task-link" href={taskDetailPath(habit.todayTaskId)} data-task-detail-link={habit.todayTaskId}>
                           <Icon name="external-link" size={12} sprite />
                           <span>View task</span>
                         </a>
@@ -956,6 +956,10 @@ const routinesBootstrap = serializeForScript({ routines: routinesList, habits: r
   @media (hover: none), (pointer: coarse), (max-width: 720px) {
     .habit-card__actions {
       opacity: 1;
+    }
+
+    .habit-card__task-link {
+      min-height: 44px;
     }
   }
 

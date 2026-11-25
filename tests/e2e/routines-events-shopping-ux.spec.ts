@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { expect, test, type APIRequestContext } from "@playwright/test"
 import { SHOPPING_CATEGORIES } from "../../packages/domain-tasks/src/index"
 import { currentBoardWriteHeaders } from "../helpers/current-board-http"
-import { startCoreFixture } from "../scripts/task-pins-fixture"
+import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
 // Read the clock once. Near midnight keep both times on today's Dublin date so the event
@@ -260,6 +260,66 @@ test.describe("Routines, Events, and Shopping UX", () => {
       await request.delete(`/api/tasks/${created.id}`, { headers, data: {} })
     }
   })
+})
+
+test("a new Routine opens its occurrence on the first tap inside Home Assistant", async () => {
+  test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires the built App and authenticated Core fixture")
+  const work = await mkdtemp(join(tmpdir(), "meitheal-routine-handoff-"))
+  const child = startCoreFixture(work)
+  child.stdout?.resume()
+  child.stderr?.resume()
+  let browser
+  try {
+    const [info] = await once(child, "message", { signal: AbortSignal.timeout(10_000) })
+    const origin = `https://127.0.0.1:${info.port}`
+    const prefix: string = info.configuredPath
+    const route = origin + prefix + "/progress?board_id=household#routines"
+    browser = await launchPinBrowser(work)
+    const context = await browser.newContext({
+      extraHTTPHeaders: {},
+      hasTouch: true,
+      reducedMotion: "reduce",
+      serviceWorkers: "block",
+      viewport: { width: 390, height: 844 },
+    })
+    await context.addCookies([{ name: "feedback-fixture", value: "admin", url: origin }])
+    const page = await context.newPage()
+    expect((await page.goto(route))?.status()).toBe(200)
+    const shell = page.locator('#habits-shell[data-habits-booted="true"]')
+    await shell.locator("[data-open-habit-modal]:visible").first().tap()
+    const title = "New Routine first tap"
+    await page.locator("#habit-name").fill(title)
+
+    const created = page.waitForResponse(response =>
+      new URL(response.url()).pathname === prefix + "/api/routines" && response.request().method() === "POST")
+    await page.locator('#habit-form button[type="submit"]').tap()
+    const saved = await created
+    expect(saved.status()).toBe(201)
+
+    const card = shell.locator("[data-habit-id]").filter({ hasText: title })
+    const link = card.getByRole("link", { name: "View task", exact: true })
+    await expect(link).toHaveAttribute("href", new RegExp(`^${prefix}/tickets/[^/]+$`))
+    const taskId = (await link.getAttribute("href"))!.split("/").at(-1)
+    expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+
+    const occurrence = page.waitForResponse(response => new URL(response.url()).pathname === prefix + "/api/tasks/" + taskId)
+    await link.tap()
+    expect((await occurrence).status()).toBe(200)
+    await expect(page.locator("#task-detail-overlay.active #td-title")).toHaveValue(title)
+    await expect(page).toHaveURL(url => url.pathname.startsWith(prefix + "/tickets/"))
+    await expect(card).toBeVisible()
+    await page.keyboard.press("Escape")
+    await expect(link).toBeFocused()
+    await expect(page).toHaveURL(route)
+  } finally {
+    await browser?.close()
+    if (child.exitCode === null && child.signalCode === null) {
+      const exited = once(child, "exit", { signal: AbortSignal.timeout(3_000) })
+      child.kill("SIGKILL")
+      await exited
+    }
+    await rm(work, { recursive: true, force: true })
+  }
 })
 
 test("App MCP exposes routines, events, and 8-category shopping contracts without $ref", async ({ playwright }) => {

@@ -25,6 +25,8 @@ The habits sections are:
 
 These anchors stay on the same route, which keeps them safe for Home Assistant ingress and companion webviews.
 
+After saving a Routine, select **View task** as soon as the generated occurrence appears on its card. The task detail opens over the Routine library in the same Home Assistant panel. Close the detail to return to the same card.
+
 ## Common Jobs
 
 ### Jump to a habits section quickly
