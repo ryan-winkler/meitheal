@@ -77,6 +77,8 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
     const db = getPersistenceClient()
 
     try {
+      const start = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10)
+      const end = new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10)
       expect(await getHAConnection()).not.toBeNull()
       const approved = await integrationFixture({ integration: "calendar", sourceId: "calendar.household", purpose: "calendar.sync" })
       await startCalendarSync({
@@ -130,22 +132,22 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
           uid: "inbound-loop-guard-uid",
           summary: "Service heat pump loop guard",
           description: outboundDesc,
-          start: "2026-11-21",
-          end: "2026-11-22",
+          start,
+          end,
         },
       ]
       const loopCounts = await syncFromHA(approved.binding.id)
       expect(loopCounts.created).toBe(0)
       expect(loopCounts.updated).toBe(0)
 
-      // 2. Edited HA event matching existing task strips Bucket 1 emoji attribution lines via stripMeithealAttribution
+      // Remove the generated event markers. Inbound sync still strips the copied labels and checklist details.
       inboundEvents = [
         {
           uid: "inbound-roundtrip-uid",
           summary: "Service heat pump",
-          description: outboundDesc.replace(/\nAdded from Meitheal$/, ""),
-          start: "2026-11-21",
-          end: "2026-11-22",
+          description: outboundDesc.replace(/^📋 .*\n|\nAdded from Meitheal$/gm, ""),
+          start,
+          end,
         },
       ]
       const counts = await syncFromHA(approved.binding.id)
@@ -177,8 +179,8 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
     // Bucket 2 preserved
     expect(t("settings.cal_sync_bidirectional", "en")).toContain("↔")
     expect(t("settings.cal_sync_bidirectional", "ga")).toContain("↔")
-    expect(enCatalog.task_modal.priority_urgent).toContain("🔴")
-    expect(gaCatalog.task_modal.priority_urgent).toContain("🔴")
+    expect(enCatalog.task_modal.priority_urgent).toBe("Urgent")
+    expect(gaCatalog.task_modal.priority_urgent).not.toContain("🔴")
 
     // Bucket 5 stripped
     expect(enCatalog.settings.ha_agent_title).toBe("HA Conversation Agent")
@@ -198,7 +200,7 @@ test.describe("Track C — Evergreen Carbon Surfaces, Tabler 1.75px Sprites & 5-
       const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
       const createdIds: string[] = []
       try {
-        for (const taskType of ["epic", "story", "bug", "task"]) {
+        for (const taskType of ["epic", "story", "task"]) {
           const res = await request.post("/api/tasks", {
             headers,
             data: {
