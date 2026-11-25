@@ -6,6 +6,7 @@
 import { createSpriteIconElement } from "../../generated/icon-registry"
 import { getGroupKey } from "../filter-state"
 import { CANONICAL_STATUSES, getStatusDef, normalizeStatus, STATUS } from "../status-config"
+import { renderIconOrCustomEmoji } from "../tabler-svg"
 
 const riceGroupOrder = ["high", "medium", "low", "none"]
 const riceGroupLabels: Record<string, string> = {
@@ -178,30 +179,27 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal, canE
   } else if (mode === "area" || mode === "priority" || mode === "epic" || mode === "status" || mode === "assigned" || mode === "project" || mode === "rice") {
     const byProject = mode === "project"
     const byAssignee = mode === "assigned"
-    const icons: Record<string, string> =
+    const priorityLabels: Record<string, string> =
       mode === "priority"
         ? {
-            "1": "🔴 P1 — Critical",
-            "2": "🟠 P2 — High",
-            "3": "🟡 P3 — Medium",
-            "4": "🟢 P4 — Low",
-            "5": "⚪ P5 — Minimal",
+            "1": "P1 — Critical",
+            "2": "P2 — High",
+            "3": "P3 — Medium",
+            "4": "P4 — Low",
+            "5": "P5 — Minimal",
           }
         : {}
     const areaLabel = (card: HTMLElement | undefined) => card?.dataset.areaName || board.dataset.noAreaLabel || "No area"
 
-    // O1: Hoist getComputedStyle outside column loop
-    const cs = getComputedStyle(document.documentElement)
     const colorMap: Record<string, string> = mode === "priority"
       ? {
-          "1": cs.getPropertyValue("--prio-critical").trim() || "#ef4444",
-          "2": cs.getPropertyValue("--prio-high").trim() || "#f97316",
-          "3": cs.getPropertyValue("--prio-medium").trim() || "#eab308",
-          "4": cs.getPropertyValue("--prio-low").trim() || "#22c55e",
-          "5": cs.getPropertyValue("--prio-none").trim() || "#64748b",
+          "1": "var(--prio-critical)",
+          "2": "var(--prio-high)",
+          "3": "var(--prio-medium)",
+          "4": "var(--prio-low)",
+          "5": "var(--prio-none)",
         }
       : {}
-    const defaultAccent = cs.getPropertyValue("--accent").trim() || "#146C4E"
 
     board.querySelectorAll(".kanban-column").forEach((col) => {
       const cardsContainer = col.querySelector(".kanban-cards")
@@ -249,7 +247,7 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal, canE
           const status = getStatusDef(key)
           return status ? window.mI18n?.get(status.i18nKey) ?? status.label : key
         }
-        return icons[key] || "🟡 P3 — Medium"
+        return priorityLabels[key] || "P3 — Medium"
       }
       const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
         if (mode === "priority") return Number(a) - Number(b)
@@ -265,9 +263,6 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal, canE
         group.className = "swimlane-group dynamic-group"
         group.dataset.swimlaneType = key
 
-        const accentColor = colorMap[key] || defaultAccent
-        group.style.borderTop = `3px solid ${accentColor}`
-
         const header = document.createElement("button")
         header.type = "button"
         header.className = "swimlane-header"
@@ -277,14 +272,19 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal, canE
         toggleSpan.setAttribute("aria-hidden", "true")
         toggleSpan.append(createSpriteIconElement("chevron-down", { size: 14 }))
 
-        // Color dot (matches static .swimlane-type-dot)
-        const dotSpan = document.createElement("span")
-        dotSpan.className = "swimlane-type-dot"
-        dotSpan.style.background = accentColor
+        const indicator = document.createElement("span")
+        indicator.setAttribute("aria-hidden", "true")
+        if (mode === "area") {
+          indicator.className = "swimlane-area-icon"
+          renderIconOrCustomEmoji(indicator, cards[0]?.dataset.areaIcon, "folder", 14)
+        } else {
+          indicator.className = "swimlane-type-dot"
+          if (colorMap[key]) indicator.style.backgroundColor = colorMap[key]
+        }
 
         const labelSpan = document.createElement("span")
         labelSpan.className = "swimlane-label"
-        labelSpan.textContent = mode === "area" ? `${cards[0]?.dataset.areaIcon || "📋"} ${label}` : label
+        labelSpan.textContent = label
         let heading = labelSpan
         if (byProject) {
           heading = document.createElement("span")
@@ -308,7 +308,7 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal, canE
         const countSpan = document.createElement("span")
         countSpan.className = "swimlane-count"
         countSpan.textContent = String(cards.length)
-        header.append(toggleSpan, dotSpan, heading, countSpan)
+        header.append(toggleSpan, indicator, heading, countSpan)
 
         const swimlaneCards = document.createElement("div")
         swimlaneCards.className = "swimlane-cards"

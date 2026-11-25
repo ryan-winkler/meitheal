@@ -41,10 +41,13 @@ test("card moves preserve the grouping even when the destination lane has no mat
     const card = page.locator(`.kanban-card[data-id="${id}"]`)
     const high = '.swimlane-group[data-swimlane-type="1"]'
     await expect(active.locator(high)).toHaveCount(0)
+    await expect(active.locator(".swimlane-grip:visible")).toHaveCount(0)
+    await expect(pending.locator(".swimlane-grip:visible")).toHaveCount(0)
     const moved = page.waitForResponse(response => new URL(response.url()).pathname === path && response.request().method() === "PUT")
     await drag(page, card.locator(".kanban-title-text"), active.locator(".kanban-column-header"))
     expect((await moved).status()).toBe(200)
     await expect(active.locator(high).locator(card)).toBeVisible()
+    await expect(active.locator(".swimlane-grip:visible")).toHaveCount(2)
     expect(await (await request.get(path)).json()).toMatchObject({ status: "active", priority: 1 })
 
     await page.reload()
@@ -90,6 +93,15 @@ test("a Type group accepts a card immediately in an empty lane and restores it w
     await expect(pending.locator(story).locator(card)).toBeVisible()
     await expect(active.locator(story).locator(".swimlane-count")).toHaveText("0")
     expect(await (await request.get(path)).json()).toMatchObject({ status: "pending", task_type: "story" })
+
+    const tasks = active.locator('.swimlane-group[data-swimlane-type="task"]')
+    const converted = page.waitForResponse(result => new URL(result.url()).pathname === path && result.request().method() === "PUT")
+    await drag(page, card.locator(".kanban-title-text"), tasks.locator(".swimlane-header"))
+    const conversion = await converted
+    expect(conversion.status(), await conversion.text()).toBe(200)
+    expect(conversion.request().postDataJSON()).toMatchObject({ status: "active", task_type: "task" })
+    await expect(tasks.locator(card)).toBeVisible()
+    expect(await (await request.get(path)).json()).toMatchObject({ status: "active", task_type: "task" })
   } finally {
     await request.delete(path, { headers })
   }
@@ -113,6 +125,15 @@ test("groups reorder by grip, menu and keyboard and keep their order after reloa
     const grip = (priority: number) => group(priority).locator(".swimlane-grip")
     const order = () => groups.evaluateAll(nodes => nodes.map(node => (node as HTMLElement).dataset.swimlaneType))
     await expect.poll(order).toEqual(["1", "2", "3"])
+    await expect(lane.locator(".swimlane-grip:visible")).toHaveCount(3)
+    await grip(1).click()
+    await expect(group(1).getByRole("button", { name: "Move up", exact: true })).toBeHidden()
+    await expect(group(1).getByRole("button", { name: "Move down", exact: true })).toBeVisible()
+    await grip(1).press("Escape")
+    await grip(3).click()
+    await expect(group(3).getByRole("button", { name: "Move up", exact: true })).toBeVisible()
+    await expect(group(3).getByRole("button", { name: "Move down", exact: true })).toBeHidden()
+    await grip(3).press("Escape")
     await grip(2).press("Alt+ArrowUp")
     await expect.poll(order).toEqual(["2", "1", "3"])
     await expect(grip(2)).toBeFocused()
@@ -127,5 +148,79 @@ test("groups reorder by grip, menu and keyboard and keep their order after reloa
     await expect(group(1).locator(`.kanban-card[data-id="${ids[0]}"]`)).toBeVisible()
   } finally {
     await Promise.all(ids.map(id => request.delete(`/api/tasks/${id}`, { headers })))
+  }
+})
+
+test("a single Area group fits a narrow lane and follows live theme tokens", async ({ page, request, baseURL }) => {
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+  const name = "Workshop tools and seasonal maintenance supplies for the garden"
+  const areaResponse = await request.post("/api/areas", { headers, data: { name, icon: "📁" } })
+  expect(areaResponse.status(), await areaResponse.text()).toBe(201)
+  const { id: areaId } = await areaResponse.json() as { id: string }
+  let taskId: string | undefined
+  try {
+    const response = await request.post("/api/tasks", { headers, data: { title: "Sort workshop shelves", area_id: areaId } })
+    expect(response.status(), await response.text()).toBe(201)
+    taskId = (await response.json()).id as string
+    await page.setViewportSize({ width: 320, height: 900 })
+    await page.emulateMedia({ colorScheme: "light" })
+    await page.goto("/tasks?view=kanban&groupBy=area#kanban")
+    const board = page.locator("#kanban-board")
+    await expect(board).toHaveAttribute("data-sorting-ready", "true")
+    const lane = board.locator('.kanban-column[data-status="pending"]')
+    const group = lane.locator(".swimlane-group:visible")
+    await expect(group).toHaveCount(1)
+    await expect(group.locator(".swimlane-label")).toHaveText(name)
+    await expect(group.locator(".swimlane-grip")).toBeHidden()
+    const header = group.locator(".swimlane-header")
+    await header.press("Enter")
+    await expect(header).toHaveAttribute("aria-expanded", "false")
+    await header.press("Enter")
+    await expect(header).toHaveAttribute("aria-expanded", "true")
+    const original = await group.elementHandle()
+
+    const measure = () => group.evaluate(element => {
+      const lane = element.closest(".kanban-column")!
+      const header = element.querySelector<HTMLElement>(".swimlane-header")!
+      const board = lane.closest<HTMLElement>("#kanban-board")!
+      const inside = (child: Element, parent: Element) => {
+        const content = child.getBoundingClientRect()
+        const bounds = parent.getBoundingClientRect()
+        return content.left >= bounds.left - 1 && content.right <= bounds.right + 1
+      }
+      const probe = element.ownerDocument.createElement("span")
+      probe.hidden = true
+      probe.style.backgroundColor = "var(--bg-secondary)"
+      probe.style.borderBottomColor = "var(--border)"
+      probe.style.borderBottomLeftRadius = "var(--radius-lg)"
+      element.append(probe)
+      const tokens = (target: Element) => {
+        const style = getComputedStyle(target)
+        return [style.backgroundColor, style.borderBottomColor, style.borderBottomLeftRadius]
+      }
+      const styles = { actual: tokens(element), expected: tokens(probe) }
+      probe.remove()
+      return {
+        ...styles,
+        fit: inside(element, lane) && inside(lane, board) && inside(header, element)
+          && inside(header.querySelector(".swimlane-count")!, header) && header.scrollWidth <= header.clientWidth + 1,
+      }
+    })
+    const html = page.locator("html")
+    await expect(html).toHaveClass(/\blight\b/)
+    const light = await measure()
+    expect(light.actual).toEqual(light.expected)
+    expect(light.fit).toBe(true)
+
+    await page.emulateMedia({ colorScheme: "dark" })
+    await expect(html).toHaveClass(/\bdark\b/)
+    expect(await group.evaluate((element, original) => element === original, original)).toBe(true)
+    const dark = await measure()
+    expect(dark.actual).toEqual(dark.expected)
+    expect(dark.actual[0]).not.toBe(light.actual[0])
+    expect(dark.fit).toBe(true)
+  } finally {
+    if (taskId) await request.delete(`/api/tasks/${taskId}`, { headers })
+    await request.delete(`/api/areas/${areaId}`, { headers })
   }
 })

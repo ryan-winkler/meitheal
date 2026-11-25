@@ -401,14 +401,15 @@ export function initKanbanArea(
               const release = (evt as Sortable.SortableEvent & { originalEvent?: MouseEvent | TouchEvent }).originalEvent
               const pointerTarget = groupMode === "none" ? null : targetUnderPointer(release)
               const pointerLane = pointerTarget?.closest<HTMLElement>(".kanban-column")
+              const pointerGroup = pointerTarget?.closest<HTMLElement>(".swimlane-group")
               const toGroup = toList.closest(".swimlane-group")
-              const missedGroup = toGroup && pointerTarget?.closest(".swimlane-group") !== toGroup
+              const missedGroup = toGroup && pointerGroup !== toGroup
               const cancelled = release?.type.endsWith("cancel") || (groupMode !== "none" && release && !pointerLane)
               if (cancelled || (pointerLane && (pointerLane !== targetLane || missedGroup))) {
                 // Drops on a lane heading or a lane without the matching group preserve the card's grouping.
                 const sourceCards = [...fromList.querySelectorAll<HTMLElement>(":scope > .kanban-card")].filter(candidate => candidate !== card)
                 fromList.insertBefore(card, sourceCards[oldIndex] ?? null)
-                if (!cancelled && pointerLane && pointerLane !== sourceLane) await moveTask(card, pointerLane)
+                if (!cancelled && pointerLane) await moveTask(card, pointerLane, pointerGroup ?? undefined)
                 return
               }
 

@@ -50,7 +50,11 @@ test("Kanban groups the current page by available Area names and reflects change
     const lane = page.locator('.kanban-column[data-status="pending"]')
     const groups = lane.locator(".dynamic-group")
     const groupNames = groups.locator(".swimlane-label")
-    await expect(groupNames).toHaveText(["📁 Alpha kitchen", "📋 Default", "📋 No area", "📁 Zulu workbench"])
+    await expect(groupNames).toHaveText(["Alpha kitchen", "Default", "No area", "Zulu workbench"])
+    for (const name of ["Alpha kitchen", "Zulu workbench"]) {
+      const header = groups.filter({ hasText: name }).locator(".swimlane-header")
+      await expect(header.locator('svg use[href="#mt-icon-folder"]')).toHaveCount(1)
+    }
     const unavailable = groups.filter({ hasText: "No area" })
     await expect(unavailable).toHaveCount(1)
     const unavailableCards = unavailable.locator(".kanban-card")
@@ -67,9 +71,9 @@ test("Kanban groups the current page by available Area names and reflects change
 
     await renameArea(zulu, "Aardvark workbench")
     await page.getByRole("textbox", { name: "Filter by text" }).fill(`${prefix} bench`)
-    await expect(groupNames).toHaveText(["📁 Aardvark workbench"])
+    await expect(groupNames).toHaveText(["Aardvark workbench"])
     await page.reload()
-    await expect(groupNames).toHaveText(["📁 Aardvark workbench"])
+    await expect(groupNames).toHaveText(["Aardvark workbench"])
   } finally {
     for (const id of taskIds) {
       const response = await request.delete(`/api/tasks/${id}`, { headers, data: {} })
