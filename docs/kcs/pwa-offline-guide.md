@@ -18,6 +18,10 @@ Home Assistant ingress can open a shortcut directly in the browser. The form est
 
 A pending operation keeps its original Board, actor, placement and retry identity. Reconnect using the same account and Board. Do not create another task just because the response was lost.
 
+If you close the app while a change is pending, reopen it while connected and
+return to the original account and Board. Replay runs in the open app after it
+verifies that context.
+
 Capture receipts require a connection. The App checks the original attempt at `GET /api/tasks?captureReceipt=1`; this is the only receipt lookup route. Receipt checks bypass HTTP and service-worker caches. An offline or denied check leaves the save unconfirmed. Retry the original check when connected.
 
 The service worker removes older cached work pages, APIs and receipts when it takes control. Another application's caches remain untouched. It does not turn a cached response into evidence of current permission.
