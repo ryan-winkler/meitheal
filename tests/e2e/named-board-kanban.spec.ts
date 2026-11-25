@@ -4,6 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, test } from "@playwright/test"
+import { moveCardToLane } from "../helpers/kanban-drag"
 import { launchPinBrowser, startCoreFixture } from "../scripts/task-pins-fixture"
 import { shouldSkipBrowserSpecs } from "./_helpers"
 
@@ -141,6 +142,8 @@ test("named Boards use the common Kanban with paged capture, version conflicts, 
     const capture = page.locator("#new-task-overlay")
     await expect(capture.locator("#new-task-title-input")).toBeFocused()
     await capture.locator("#new-task-title-input").fill("A new scoped capture")
+    await capture.locator("#nt-split-toggle").click()
+    await capture.locator('[data-after-create="open"]').click()
     const posted = page.waitForResponse(response => response.url() === captureUrl && response.request().method() === "POST")
     await capture.locator("#submit-new-task-btn").click()
     const createResponse = await posted
@@ -161,9 +164,9 @@ test("named Boards use the common Kanban with paged capture, version conflicts, 
       rejectMove = false
       return route.fulfill({ status: 409, json: { error: "Refresh the Board fixture" } })
     })
-    const drop = () => captureCard.dragTo(activeLane.locator(".kanban-column-header"), { sourcePosition: { x: 100, y: 35 } })
+    const drop = () => moveCardToLane(page, captureCard, activeLane)
     await drop()
-    await expect(page.getByText("Couldn’t move the task. Try again.", { exact: true })).toBeVisible()
+    await expect(page.getByText("Refresh the Board fixture", { exact: true })).toBeVisible()
     await expect(captureCard).toHaveAttribute("data-status", "pending")
     await drop()
     await expect(captureCard).toHaveAttribute("data-status", "active")
