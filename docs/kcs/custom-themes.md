@@ -1,5 +1,7 @@
 ---
-okf_version: "0.2"
+type: Guide
+title: Creating a Custom Theme
+description: Build a custom CSS theme and check contrast in Meitheal.
 ---
 
 # Creating a Custom Theme
