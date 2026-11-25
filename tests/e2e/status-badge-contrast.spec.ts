@@ -108,13 +108,16 @@ for (const theme of ["light", "dark"] as const) {
 
       await page.goto("/goals")
       await expect(page).toHaveURL(/\/progress#goals$/)
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
       const badge = `.goals-tab__card[data-goal-id="${goalId}"][data-goal-status="completed"] .goals-tab__status-badge`
       await expect(page.locator(badge)).toBeVisible()
       await checkContrast(page, [badge], `/goals ${theme}`)
 
       await page.goto("/gamification")
-      await expect(page.locator(".gam-achievement-card__date").first()).toBeVisible()
-      await checkContrast(page, [".gam-achievement-card__date"], `/gamification ${theme}`)
+      const unlockedDate = ".achievements-tab__achievement-date"
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme)
+      await expect(page.locator(unlockedDate).first()).toBeVisible()
+      await checkContrast(page, [unlockedDate], `/gamification ${theme}`)
     } finally {
       await request.delete(`/api/goals/${goalId}`, { headers })
       await request.delete(`/api/tasks/${taskId}`, { headers })
