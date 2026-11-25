@@ -656,7 +656,7 @@ body:has(.pomodoro-panel:not(.pomodoro-hidden)) .toast-container {
   .tabler-tour-spotlight { transition: none; }
 }
 @media (max-width: 640px) {
-  .tabler-tour-popover { left: 12px; right: 12px; bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px)); top: auto; width: auto; }
+  .tabler-tour-popover { inset: auto 12px calc(4.5rem + env(safe-area-inset-bottom)) 12px; width: auto; max-height: calc(100dvh - 4.5rem - 12px - env(safe-area-inset-bottom)); overflow: auto; }
 }
 
 /* Global Board Access Verification & Expired Banners (Tabler Alert Card) */

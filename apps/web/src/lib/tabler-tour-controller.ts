@@ -1,4 +1,5 @@
 import { createSpriteIconElement } from "../generated/icon-registry"
+import { containTabFocus } from "./focus-trap"
 import { dismissHelper } from "./helper-system"
 import { showToast } from "./toast"
 import {
@@ -78,7 +79,7 @@ export function startFunctionTour(): void {
 
   const pop = mk("section", "tabler-tour-popover")
   pop.setAttribute("role", "dialog")
-  pop.setAttribute("aria-modal", "false")
+  pop.setAttribute("aria-modal", "true")
   pop.setAttribute("aria-labelledby", "tabler-tour-title")
   pop.setAttribute("aria-describedby", "tabler-tour-desc")
 
@@ -143,13 +144,14 @@ export function startFunctionTour(): void {
   const sync = () => { const cur = steps[index]; if (cur?.target.isConnected) place(cur.target, cur.step, spot, pop) }
 
   for (const b of [close, skip, shield]) b.addEventListener("click", () => finish("dismiss"), { signal })
-  back.addEventListener("click", () => { index = clampTourIndex(index - 1, steps.length); render() }, { signal })
+  back.addEventListener("click", () => { index--; render() }, { signal })
   next.addEventListener("click", () => {
     if (index >= steps.length - 1) finish("complete")
-    else { index = clampTourIndex(index + 1, steps.length); render() }
+    else { index++; render() }
   }, { signal })
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish("dismiss") }
+    if (e.key === "Tab") containTabFocus(pop, e)
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish("dismiss") }
     else if (e.key === "ArrowRight") { e.preventDefault(); next.click() }
     else if (e.key === "ArrowLeft" && index > 0) { e.preventDefault(); back.click() }
   }, { signal })

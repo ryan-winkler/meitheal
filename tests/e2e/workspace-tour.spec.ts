@@ -18,6 +18,13 @@ for (const [path, finish] of [["/boards/household#kanban", false], ["/today", tr
     await openTour()
     const tour = page.locator("[data-tabler-tour-root]").getByRole("dialog")
     await expect(tour).toBeVisible()
+    await expect(tour).toHaveAttribute("aria-modal", "true")
+    const advance = tour.getByRole("button", { name: /^(Next|Finish)$/ })
+    await expect(advance).toBeFocused()
+    await page.keyboard.press("Tab")
+    await expect(tour.getByRole("button", { name: "Close tour" })).toBeFocused()
+    await page.keyboard.press("Shift+Tab")
+    await expect(advance).toBeFocused()
     if (finish) {
       for (let step = 0; step < 4; step++) {
         await expect(tour.getByRole("heading")).not.toContainText("profile")
