@@ -406,6 +406,13 @@ export const SETTINGS_FIELDS: SettingsFieldDescriptor[] = [
     keywords: ["notifications", "reminders", "mobile push", "due dates"],
   },
   {
+    id: "field-browser-notifications",
+    label: "Browser notification preferences",
+    anchorId: "user-notif-prefs-card",
+    sectionId: "people-notifications-settings",
+    keywords: ["notification sound", "chime", "toast", "duration", "desktop alerts", "swipe"],
+  },
+  {
     id: "field-rules-presets",
     label: "Quick Presets",
     anchorId: "rules-presets",

@@ -3,10 +3,10 @@
  */
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
-  NOTIFICATION_PREFS_CHANGE_EVENT,
   loadNotificationPreferences,
   playNotificationSound,
   saveNotificationPreferences,
+  type NotificationPreferences,
   type ToastDurationChoice,
 } from "./notification-preferences"
 import { pushToast } from "./toast"
@@ -40,44 +40,43 @@ export function initNotificationPrefsSettings(signal: AbortSignal): void {
 
   syncFromStorage()
 
+  const save = (patch: Partial<NotificationPreferences>) => {
+    const saved = saveNotificationPreferences(patch)
+    syncFromStorage()
+    announce(saved
+      ? window.mI18n?.get("settings.browser_notifications_saved") ?? "Notification preferences saved."
+      : window.mI18n?.get("settings.browser_notifications_save_failed") ?? "Could not save notification preferences in this browser.")
+    return saved
+  }
+
   toastsToggle?.addEventListener("change", () => {
-    saveNotificationPreferences({ toastsEnabled: toastsToggle.checked })
-    announce(toastsToggle.checked ? "In-app notifications enabled for this browser." : "Non-critical in-app toasts muted. Errors and Undo actions stay visible.")
+    save({ toastsEnabled: toastsToggle.checked })
   }, { signal })
 
   browserToggle?.addEventListener("change", () => {
-    saveNotificationPreferences({ browserNotificationsEnabled: browserToggle.checked })
-    announce(browserToggle.checked ? "Browser due-date reminders enabled." : "Browser due-date reminders muted on this device.")
+    save({ browserNotificationsEnabled: browserToggle.checked })
   }, { signal })
 
   durationSelect?.addEventListener("change", () => {
     const num = Number(durationSelect.value)
     const toastDurationMs: ToastDurationChoice =
       num === 0 || num === 3000 || num === 5000 || num === 8000 ? num : 5000
-    saveNotificationPreferences({ toastDurationMs })
-    announce(toastDurationMs === 0 ? "Notifications stay visible until dismissed." : `Toast display duration set to ${toastDurationMs / 1000} seconds.`)
+    save({ toastDurationMs })
   }, { signal })
 
   swipeToggle?.addEventListener("change", () => {
-    saveNotificationPreferences({ swipeToDismiss: swipeToggle.checked })
-    announce(swipeToggle.checked ? "Swipe-to-dismiss enabled." : "Swipe-to-dismiss disabled.")
+    save({ swipeToDismiss: swipeToggle.checked })
   }, { signal })
 
   soundToggle?.addEventListener("change", () => {
-    saveNotificationPreferences({ soundEnabled: soundToggle.checked })
-    if (soundToggle.checked) {
-      playNotificationSound("info")
-      announce("Notification sound enabled.")
-    } else {
-      announce("Notification sound muted.")
-    }
+    if (save({ soundEnabled: soundToggle.checked }) && soundToggle.checked) playNotificationSound("info")
   }, { signal })
 
   testBtn?.addEventListener("click", () => {
     const prefs = loadNotificationPreferences()
     pushToast({
       id: "user-notif-preview",
-      message: "Sample notification — your browser preferences are active.",
+      message: window.mI18n?.get("settings.browser_notifications_sample") ?? "Sample notification",
       type: "info",
       persistent: prefs.toastDurationMs === 0,
       dedupe: false,
@@ -85,16 +84,13 @@ export function initNotificationPrefsSettings(signal: AbortSignal): void {
         ? { label: "Dismiss", onClick: () => {} }
         : undefined,
     })
-    announce("Sent a sample notification.")
   }, { signal })
 
   resetBtn?.addEventListener("click", () => {
-    saveNotificationPreferences(DEFAULT_NOTIFICATION_PREFERENCES)
-    syncFromStorage()
-    announce("Restored default browser notification preferences.")
+    save(DEFAULT_NOTIFICATION_PREFERENCES)
   }, { signal })
 
-  window.addEventListener(NOTIFICATION_PREFS_CHANGE_EVENT, syncFromStorage, { signal })
+  window.addEventListener("storage", syncFromStorage, { signal })
   signal.addEventListener("abort", () => {
     delete card.dataset.bound
   }, { once: true })
