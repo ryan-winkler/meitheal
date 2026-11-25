@@ -138,6 +138,41 @@ test.describe("Appearance preferences", () => {
     await expect(body).not.toHaveClass(/sidebar-collapsed/)
   })
 
+  test("reset surface style keeps the font, accent, and navigation choices", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await openLookAndFeel(page)
+    const form = page.locator("#appearance-preferences-form")
+    const root = page.locator("html")
+    const save = form.getByRole("button", { name: "Save appearance", exact: true })
+    const resetSurface = form.getByRole("button", { name: "Reset surface style", exact: true })
+    for (const [name, value] of Object.entries({
+      font: "comic", base: "mist", radius: "1.5", width: "boxed",
+      header: "default", panelStyle: "floating", navStyle: "floating",
+    })) {
+      await form.locator(`[name="${name}"]`).selectOption(value)
+    }
+    await form.locator('.accent-swatch[data-color="#f59e0b"]').click()
+    await save.click()
+    await expect(save).toBeHidden()
+
+    await resetSurface.press("Enter")
+    await expect(resetSurface).toBeFocused()
+    await expect(root).toHaveAttribute("data-appearance-panel-style", "attached")
+    await form.getByRole("button", { name: "Discard", exact: true }).click()
+    await expect(root).toHaveAttribute("data-appearance-panel-style", "floating")
+
+    await resetSurface.press("Enter")
+    await save.click()
+    await expect(save).toBeHidden()
+    await page.reload()
+    for (const name of ["base", "radius", "width", "header", "panelStyle"] as const) {
+      await expect(form.locator(`[name="${name}"]`)).toHaveValue(APPEARANCE_PREFERENCES[name].defaultValue)
+    }
+    await expect(form.locator('[name="font"]')).toHaveValue("comic")
+    await expect(form.locator('[name="navStyle"]')).toHaveValue("floating")
+    await expect(form.locator("#accent-color-custom")).toHaveValue("#f59e0b")
+  })
+
   test("neutral palette follows Light and Auto while fluid width and sticky headers remain effective", async ({ page }) => {
     await openLookAndFeel(page)
     await page.setViewportSize({ width: 2000, height: 1000 })

@@ -104,6 +104,7 @@ function bindAppearanceForm(form: HTMLFormElement): void {
   const dirtyText = form.querySelector<HTMLElement>("[data-appearance-dirty-text]")
   const discardBtn = form.querySelector<HTMLButtonElement>("[data-appearance-discard]")
   const resetBtn = form.querySelector<HTMLButtonElement>("[data-appearance-reset]")
+  const resetSurfaceBtn = form.querySelector<HTMLButtonElement>("[data-appearance-reset-surface]")
   const saveBtns = Array.from(form.querySelectorAll<HTMLButtonElement>("[data-appearance-save]"))
   if (!status) return
 
@@ -404,6 +405,24 @@ function bindAppearanceForm(form: HTMLFormElement): void {
     })
   }
 
+  const previewReset = () => {
+    syncInputsFromSnapshot(draft)
+    applySnapshotPreview(draft)
+    updateDirtyUi()
+    status.textContent = isAppearanceDraftDirty(committed, draft)
+      ? (status.dataset.reset ?? "Defaults previewed — save to commit.")
+      : ""
+  }
+
+  if (resetSurfaceBtn) {
+    pageLifecycle.on(resetSurfaceBtn, "click", () => {
+      for (const name of ["base", "radius", "width", "header", "panelStyle"] as const) {
+        draft.appearance[name] = APPEARANCE_PREFERENCES[name].defaultValue
+      }
+      previewReset()
+    })
+  }
+
   // Reset previews defaults live so user sees them before committing
   pageLifecycle.on(form, "reset", (event) => {
     event.preventDefault()
@@ -412,12 +431,7 @@ function bindAppearanceForm(form: HTMLFormElement): void {
       draft.accent = null
       draft.matchHaTheme = false
     }
-    syncInputsFromSnapshot(draft)
-    applySnapshotPreview(draft)
-    updateDirtyUi()
-    status.textContent = isAppearanceDraftDirty(committed, draft)
-      ? (status.dataset.reset ?? "Defaults previewed — save to commit.")
-      : ""
+    previewReset()
   })
 
   // Discard reverts live preview back to committed snapshot

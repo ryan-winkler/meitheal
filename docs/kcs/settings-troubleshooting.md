@@ -8,9 +8,9 @@ description: "Find settings and diagnose navigation problems."
 
 ## Find and open settings
 
-The desktop directory and the **Sections** button on narrow screens open the same ten sections. The selected section appears beside the directory or below the header. Section links keep their hash when bookmarked or opened within Home Assistant. Browser Back and Forward return to previously opened sections. Older bookmarks for **Personal** (`#personal-settings`) open **Look & Feel**, and bookmarks for **General** (`#general-settings`) open **Navigation & Shortcuts**. Open **Language & Time** for language, timezone, date format and week start.
+The desktop directory and the horizontal row on narrow screens open the same ten sections. Swipe the row to see more section links. The selected section appears beside the desktop directory or below the row. Section links keep their hash when bookmarked or opened within Home Assistant. Browser Back and Forward return to previously opened sections. Older bookmarks for **Personal** (`#personal-settings`) open **Look & Feel**, and bookmarks for **General** (`#general-settings`) open **Navigation & Shortcuts**. Open **Language & Time** for language, timezone, date format and week start.
 
-Use **Search settings** or press `/` outside an input to open the Settings scope in the shared search. Use the arrow keys and Enter to open a result. A field result takes keyboard focus and opens any integration panel that contains it. Press Escape to close search or the section directory.
+Use **Search settings** or press `/` outside an input to open the Settings scope in the shared search. Use the arrow keys and Enter to open a result. A field result takes keyboard focus and opens any integration panel that contains it. Press Escape to close search.
 
 On a long Settings page, use **Scroll to top** to return to the header and keep the selected section.
 
@@ -50,7 +50,7 @@ After an audience is explicitly saved for Routines or Achievements, its correspo
 
 Before an audience is set, saving either legacy switch takes effect on the next request.
 
-The Boards organizer contains Groups and Projects. The previous `/planning#spaces` bookmark opens Boards when Planning is available to you. Personal display labels are configured under **Navigation & Shortcuts → Labels**. Existing tasks remain reachable through their Boards with the permissions you have there.
+The Boards organizer contains Groups and Projects. The `/planning#spaces` bookmark opens the Boards section when Planning is available to you. Choose **Manage Boards** there to open the full directory. Personal display labels are configured under **Navigation & Shortcuts → Labels**. Existing tasks remain reachable through their Boards with the permissions you have there.
 
 Feature audiences also apply to direct API and page links. Governed feature reads require a connection. Activating the service worker update removes older feature responses from its caches.
 
@@ -130,6 +130,7 @@ An accent chosen in **Look & Feel** stays in this browser. The keyboard focus co
 - Open **Look & Feel** to choose the theme, accent, typeface, neutral palette, corner roundness, content width, page headers, and panel style. Choices preview live; select **Save appearance** to apply them. The theme is a server-wide setting, so a saved theme change applies to everyone using this installation. The other appearance choices and the accent save in this browser only. A save captures the choices shown when you select **Save appearance**. If you reset or edit while the save is pending, those changes stay in preview until you save again.
 
 - **Look & Feel** also holds the navigation layout, navigation color, navigation edges, and sidebar behavior. The action bar appears during a preview with **Save appearance** and **Discard**. When appearance overrides are present, **Reset to defaults** under **Theme & Accent** previews the original layout, accent, and Home Assistant matching while keeping the selected theme. Save to apply the reset.
+- In **Typography & Surface Style**, select **Reset surface style** to preview the default theme base, corner roundness, content width, page headers, and panel style. Your font, theme, accent, and navigation choices stay as they are. Select **Save appearance** to keep the surface reset.
 
 Top navigation replaces the desktop sidebar with horizontal destination lists and one **More** disclosure for destinations that do not fit. Crowded Tasks view links use the same disclosure. The current destination stays visible when it fits. The links retain their URLs, so opening them in a new tab and Home Assistant ingress navigation continue to work. Use arrow keys or Home/End to move through the open disclosure; Escape closes it and returns focus to More. Resizing keeps the focused link reachable, including opening More if that link moves into it. The Areas disclosure opens its existing hierarchy; Escape closes it and returns focus to its summary. Phones retain their mobile navigation in either layout. Pinned Task shortcuts return when a desktop Top navigation layout switches to the mobile drawer. Floating navigation adds inset edges; floating panels affect task detail, search and the day drawer. **Fluid** removes the Settings reading-width limit; **Boxed** centers content within a reading width.
 
@@ -188,7 +189,7 @@ See `docs/kcs/task-lifecycle-glossary.md` for the full ubiquitous language refer
 ## HEART Acceptance Lens
 
 - Happiness. Status and save feedback appear beside the controls and after each action.
-- Engagement. All sections are reachable from the desktop directory or the narrow-screen Sections button.
+- Engagement. All sections are reachable from the desktop directory or the scrollable row on narrow screens.
 - Adoption. Companion and PWA actions should be discoverable in **App & Companion**.
 - Retention. theme and settings state should survive reloads and hash deep-links.
 - Task success. all cross-links should land on real section ids.

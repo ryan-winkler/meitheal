@@ -948,6 +948,7 @@
     "appearance_title": "Typography & Surface Style",
     "appearance_discard": "Discard",
     "appearance_reset": "Reset to defaults",
+    "appearance_reset_surface": "Reset surface style",
     "appearance_save": "Save appearance",
     "appearance_saved": "Appearance saved on this device.",
     "appearance_reset_staged": "Default choices selected. Save to apply them.",

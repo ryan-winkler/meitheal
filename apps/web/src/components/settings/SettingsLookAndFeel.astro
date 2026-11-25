@@ -687,6 +687,10 @@ function baseTileSvg(shades: readonly string[]): string {
       title={t("settings.appearance_title", locale)}
       subtitle="Self-hosted local typefaces, neutral theme base, corner roundness, content width, and panel surfaces."
     >
+      <button slot="actions" type="button" class="btn btn-ghost btn-sm" data-appearance-reset-surface>
+        <Icon name="refresh" size={14} sprite={true} />
+        <span>{t("settings.appearance_reset_surface", locale)}</span>
+      </button>
       <button
         slot="actions"
         type="button"
