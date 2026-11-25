@@ -1956,46 +1956,76 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         }
 
 
-        // Phase 23: Image attachments upload
-        document
-          .getElementById("td-attachment-input")
-          ?.addEventListener("change", async (e) => {
-            const targetTaskId = currentTaskId;
-            const openGen = detailGeneration;
-            if (!targetTaskId) return;
-            const input = e.target as HTMLInputElement;
-            const file = input.files?.[0];
-            if (!file) return;
+        const attachmentInput = byId<HTMLInputElement>("td-attachment-input")
+        let attachmentPicker: {
+          taskId: string
+          generation: number
+          context: NonNullable<ReturnType<typeof currentTaskApiContext>>
+          trigger: HTMLButtonElement
+        } | undefined
 
-            // Convert to Base64
-            const reader = new FileReader();
-            reader.onload = async (re) => {
-              const base64Data = String(re.target?.result);
-              try {
-                await saveAttachment({
-                  id: crypto.randomUUID(),
-                  taskId: targetTaskId,
-                  filename: file.name,
-                  mimeType: file.type,
-                  base64Data,
-                  createdAt: new Date().toISOString(),
-                });
-                if (!__signal.aborted && currentTaskId === targetTaskId && detailGeneration === openGen) {
-                  loadAttachments(targetTaskId);
-                }
-              } catch (err) {
-                log.error("Failed to save attachment", err);
-                showToast(
-                  "Failed to save attachment due to storage limits or error.",
-                  "error",
-                );
-              }
-            };
-            reader.readAsDataURL(file);
+        const attachmentIsCurrent = (picker: NonNullable<typeof attachmentPicker>) =>
+          !__signal.aborted && !boardWithheld && taskLoaded && picker.taskId === currentTaskId
+          && picker.generation === detailGeneration && sameTaskApiContext(picker.context, currentTaskApiContext())
 
-            // Reset input so the same file can be selected again
-            input.value = "";
-          }, { signal: __signal });
+        for (const id of ["td-add-attachment-btn", "td-chat-attach-btn"]) {
+          const trigger = byId<HTMLButtonElement>(id)
+          trigger?.addEventListener("click", () => {
+            const context = currentTaskApiContext()
+            if (!attachmentInput || !currentTaskId || !taskLoaded || boardWithheld || !context) return
+            attachmentPicker = { taskId: currentTaskId, generation: detailGeneration, context, trigger }
+            attachmentInput.click()
+          }, { signal: __signal })
+        }
+
+        function settleAttachmentPicker() {
+          const picker = attachmentPicker
+          attachmentPicker = undefined
+          if (!picker || !attachmentIsCurrent(picker)) return
+          picker.trigger.focus({ preventScroll: true })
+          return picker
+        }
+
+        attachmentInput?.addEventListener("cancel", settleAttachmentPicker, { signal: __signal })
+        attachmentInput?.addEventListener("change", async () => {
+          const file = attachmentInput.files?.[0]
+          attachmentInput.value = ""
+          const picker = settleAttachmentPicker()
+          if (!file || !picker) return
+          if (!attachmentInput.accept.split(",").includes(file.type)) {
+            showToast("Choose a PNG, JPEG, GIF, WebP, or AVIF image.", "error")
+            return
+          }
+          try {
+            const base64Data = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader()
+              reader.onload = () => resolve(String(reader.result))
+              reader.onerror = () => reject(reader.error)
+              reader.readAsDataURL(file)
+            })
+            if (!attachmentIsCurrent(picker)) return
+            const attachmentId = browserUuid()
+            await saveAttachment({
+              id: attachmentId, taskId: picker.taskId, filename: file.name,
+              mimeType: file.type, base64Data, createdAt: new Date().toISOString(),
+            })
+            if (!attachmentIsCurrent(picker)) return
+            await loadAttachments(picker.taskId)
+            if (!attachmentIsCurrent(picker)) return
+            const preview = document.querySelector<HTMLElement>(`[data-attachment-id="${attachmentId}"]`)
+            showToast("Image attached to task", "success", preview ? { action: {
+              label: "View image",
+              onClick: () => {
+                if (!attachmentIsCurrent(picker)) return
+                picker.trigger.focus({ preventScroll: true })
+                preview.click()
+              },
+            } } : undefined)
+          } catch (error) {
+            log.error("Failed to save attachment", error)
+            if (attachmentIsCurrent(picker)) showToast("Could not attach the image. Check browser storage and try again.", "error")
+          }
+        }, { signal: __signal })
 
         async function saveDetailStatus(next: string) {
           const id = currentTaskId

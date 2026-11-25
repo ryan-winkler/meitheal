@@ -373,7 +373,7 @@ export interface TaskAttachment {
 
 export async function saveAttachment(attachment: TaskAttachment): Promise<void> {
   const db = await getDb()
-  if (!db) return
+  if (!db) throw new Error("Browser storage is unavailable for attachments.")
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORES.taskAttachments, "readwrite")
     const store = tx.objectStore(STORES.taskAttachments)

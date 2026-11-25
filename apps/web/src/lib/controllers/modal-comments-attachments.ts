@@ -274,14 +274,6 @@ export async function loadAttachments(taskId: string): Promise<void> {
   try {
     const attachments = await getAttachmentsByTaskId(taskId)
     if (seq !== attachmentsLoadSeq || container.dataset.activeTaskId !== taskId || !container.isConnected) return
-    if (attachments.length === 0) {
-      const emptyLabel = document.createElement("span")
-      emptyLabel.className = "text-[10px] text-text-muted italic"
-      emptyLabel.textContent = "No attachments."
-      container.appendChild(emptyLabel)
-      return
-    }
-
     const SAFE_IMAGE_DATA_URL_RE = /^data:image\/(?:png|jpe?g|gif|webp|avif);base64,[A-Za-z0-9+/=]+$/i
 
     attachments.forEach((att) => {
@@ -296,6 +288,7 @@ export async function loadAttachments(taskId: string): Promise<void> {
       thumb.style.width = "64px"
       thumb.style.height = "64px"
       thumb.tabIndex = 0
+      thumb.dataset.attachmentId = att.id
       thumb.setAttribute("role", "button")
       thumb.setAttribute("aria-label", `Preview ${att.filename || "attachment"}`)
 
@@ -333,6 +326,7 @@ export async function loadAttachments(taskId: string): Promise<void> {
       const openLightbox = () => {
         const dialog = document.createElement("dialog")
         dialog.className = "m-attachment-lightbox"
+        dialog.setAttribute("aria-label", "Image preview")
         dialog.style.cssText = "padding:0;border:none;background:transparent;max-width:92vw;max-height:92vh;overflow:visible;"
         const fullImg = document.createElement("img")
         fullImg.src = safeSrc
@@ -364,6 +358,12 @@ export async function loadAttachments(taskId: string): Promise<void> {
       thumb.appendChild(delOverlay)
       container.appendChild(thumb)
     })
+    if (!container.childElementCount) {
+      const emptyLabel = document.createElement("span")
+      emptyLabel.className = "text-[10px] text-text-muted italic"
+      emptyLabel.textContent = attachments.length ? "There is no preview for the saved image format." : "No attachments."
+      container.appendChild(emptyLabel)
+    }
   } catch (e) {
     log.error("Failed to load attachments", e)
     const errLabel = document.createElement("span")
