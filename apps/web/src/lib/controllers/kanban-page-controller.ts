@@ -252,7 +252,7 @@ export function initKanbanPage(signal: AbortSignal): void {
       if (activeGroup && board.dataset.groupBy === grouping) {
         findGroupFocus(board, activeGroup)?.focus({ preventScroll: true })
       } else if ((shouldFocus || (laneMove && retainedControl)) &&
-        (retainedControl || (!dataOnly && (focus || active === retry)))) {
+        (retainedControl || focusMovedCard || (!dataOnly && (focus || active === retry)))) {
         const lane = focus?.lane ? board.querySelector<HTMLElement>(`.kanban-column[data-status="${CSS.escape(focus.lane)}"]`) : null
         const card = focus?.taskId ? (lane || board).querySelector<HTMLElement>(
           `.kanban-card[data-id="${CSS.escape(focus.taskId)}"] .card-more-btn`,
