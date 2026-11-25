@@ -158,6 +158,8 @@ export function showTaskChecklist(
   const loaded = parseChecklist(savedRaw)
   let saved = loaded ?? []
   let items = saved.slice()
+  const draftIds = new Set<string>()
+  const persistedItems = () => items.filter(item => !item.id || !draftIds.has(item.id) || item.text.trim())
   const isShopping = options?.taskKind === "shopping_item"
   let shoppingCategories: ShoppingCategoryOption[] = defaultShoppingCategories()
   const metaByItem = new WeakMap<Item, ShoppingMeta>()
@@ -221,7 +223,7 @@ export function showTaskChecklist(
   }
   reconcileShoppingMeta(items, options?.shoppingItems)
 
-  const buildShoppingItems = (): ModalShoppingItem[] => items.map(item => {
+  const buildShoppingItems = (): ModalShoppingItem[] => persistedItems().map(item => {
     const meta = getItemMeta(item) ?? { qty: 1, unit: "pcs", category: "" }
     return {
       name: item.text.trim() || "Item",
@@ -484,13 +486,11 @@ export function showTaskChecklist(
         if (event.key !== "Enter" || event.isComposing) return
         event.preventDefault()
         const currentText = text.value.trim()
+        if (!currentText && !items[index]?.text) return
         if (items[index] && currentText !== items[index]!.text) {
           updateItemAt(index, { text: currentText })
         }
-        const inserted = createChecklistItem("")
-        if (isShopping) setItemMeta(inserted, { qty: 1, unit: "pcs", category: "" })
-        items.splice(index + 1, 0, inserted)
-        render({ index: index + 1, selector: "textarea" })
+        insertDraft(index + 1)
         void save()
       }, { signal })
       promoteBtn.addEventListener("click", async () => {
@@ -536,8 +536,9 @@ export function showTaskChecklist(
         }
       }, { signal })
       delBtn.addEventListener("click", () => {
+        if (item.id) draftIds.delete(item.id)
         items.splice(index, 1)
-        render({ index: Math.min(index, items.length - 1), selector: "button" })
+        render({ index: Math.max(0, index - 1), selector: ".td-cl-del" })
         if (isShopping) emitShoppingChange()
         void save()
       }, { signal })
@@ -572,7 +573,7 @@ export function showTaskChecklist(
 
   function save() {
     if (problem || pendingChecklistSaves.has(taskId)) return
-    if (equal(saved, items)) {
+    if (equal(saved, persistedItems())) {
       textEditPending = false
       return
     }
@@ -590,8 +591,9 @@ export function showTaskChecklist(
   async function persist(): Promise<boolean> {
     let rebased = false
     try {
-      while (!equal(saved, items)) {
-        const pending = JSON.stringify(items)
+      let next = persistedItems()
+      while (!equal(saved, next)) {
+        const pending = JSON.stringify(next)
         const ctx = currentTaskApiContext()
         const payload: Record<string, unknown> = {
           checklists: pending,
@@ -610,6 +612,10 @@ export function showTaskChecklist(
           notifyInactivityTaskChanged(taskId)
           savedRaw = pending
           saved = JSON.parse(pending) as Item[]
+          for (const item of saved) {
+            if (item.id) draftIds.delete(item.id)
+          }
+          next = persistedItems()
           continue
         }
         const conflict = response.status === 409 ? await response.json() : null
@@ -651,6 +657,7 @@ export function showTaskChecklist(
         saved = latest
         reconcileShoppingMeta(merged)
         items = merged
+        next = persistedItems()
         const selector = typing ? "textarea" : active instanceof HTMLInputElement ? 'input[type="checkbox"]' : "button"
         render(row ? { index: focusedIndex, selector } : undefined)
         const restored = document.activeElement
@@ -669,13 +676,16 @@ export function showTaskChecklist(
     }
   }
 
-  add.addEventListener("click", () => {
+  function insertDraft(index: number, scrollIntoView = false) {
     const newItem = createChecklistItem("")
+    draftIds.add(newItem.id)
     if (isShopping) setItemMeta(newItem, { qty: 1, unit: "pcs", category: "" })
-    items.push(newItem)
-    render({ index: items.length - 1, selector: "textarea", scrollIntoView: true, highlight: true })
-    if (isShopping) emitShoppingChange()
-    void save()
+    items.splice(index, 0, newItem)
+    render({ index, selector: "textarea", scrollIntoView, highlight: scrollIntoView })
+  }
+
+  add.addEventListener("click", () => {
+    insertDraft(items.length, true)
   }, { signal })
   uncheckAll?.addEventListener("click", () => {
     if (!items.some(item => item.done)) return

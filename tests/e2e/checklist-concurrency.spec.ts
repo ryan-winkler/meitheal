@@ -81,8 +81,7 @@ test("a long checklist item wraps in a narrow detail panel and can be edited", a
   expect(created.status()).toBe(201)
   const { id } = await created.json()
   const taskPath = "/api/tasks/" + encodeURIComponent(id)
-  await page.goto("/tasks")
-  await page.getByRole("link", { name: /^Task: Narrow checklist,/ }).click()
+  await page.goto("/tasks?open=" + encodeURIComponent(id))
   const item = page.getByRole("textbox", { name: "Checklist item 1", exact: true })
   await expect(item).toBeVisible()
   await expect(item).toHaveValue(longText)
@@ -316,6 +315,9 @@ test("retry after a lost checklist write response keeps only one new step", asyn
   await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
   await page.getByRole("link", { name: /^Task: Checklist write response lost,/ }).click()
   await page.getByRole("button", { name: "Add Item" }).click()
+  const draft = page.getByRole("textbox", { name: "Checklist item 1", exact: true })
+  await draft.fill("Test the lock")
+  await draft.press("Enter")
   const retry = page.getByRole("button", { name: "Retry checklist save" })
   await expect(retry).toBeVisible()
   const getItems = async () => {
@@ -323,14 +325,14 @@ test("retry after a lost checklist write response keeps only one new step", asyn
     return JSON.parse((await task.json()).checklists)
   }
   const oneStep = await getItems()
-  expect(oneStep).toEqual([{ id: expect.any(String), text: "New Item", done: false }])
+  expect(oneStep).toEqual([{ id: expect.any(String), text: "Test the lock", done: false }])
   const retryResponse = page.waitForResponse(response =>
     new URL(response.url()).pathname === taskPath && response.request().method() === "PUT",
   )
   await retry.click()
   expect((await retryResponse).status()).toBe(409)
   await expect(page.locator("#td-checklist-recover")).toBeHidden()
-  await expect(page.getByRole("textbox", { name: "Checklist item 1", exact: true })).toHaveValue("New Item")
+  await expect(draft).toHaveValue("Test the lock")
   expect(await getItems()).toEqual(oneStep)
 })
 
@@ -390,14 +392,17 @@ test("a historical SQL NULL checklist can be edited and distinguished from an em
       await expect(detail).toBeVisible()
       const add = detail.getByRole("button", { name: "Add Item", exact: true })
       await expect(add).toBeVisible()
+      await add.click()
+      const step = detail.getByRole("textbox", { name: "Checklist item 1", exact: true })
+      await step.fill("New step")
       const [result] = await Promise.all([
         page.waitForResponse(response => response.url() === ingress + taskPath && response.request().method() === "PUT"),
-        add.click(),
+        step.press("Enter"),
       ])
       expect(result.request().postDataJSON()).toMatchObject({ expected_checklists: null })
       expect(result.status()).toBe(200)
       const newChecklist = (await read()).checklists
-      expect(JSON.parse(newChecklist)).toEqual([{ id: expect.any(String), text: "New Item", done: false }])
+      expect(JSON.parse(newChecklist)).toEqual([{ id: expect.any(String), text: "New step", done: false }])
       const staleNull = await request.put(url, {
         headers,
         data: { checklists: "[]", expected_checklists: null },
@@ -417,10 +422,10 @@ test("a historical SQL NULL checklist can be edited and distinguished from an em
   }
 })
 
-test("a checklist rebase preserves the selected new-item placeholder before typing", async ({ page, request }) => {
+test("a checklist rebase preserves focus and uncommitted text in a new draft", async ({ page, request }) => {
   test.skip(process.env.MEITHEAL_TEST_BROWSER !== "1", "Requires a built App and disposable browser fixture")
   const headers = await currentBoardWriteHeaders(request, "household", {})
-  const original = [{ id: "first", text: "First step", done: false }]
+  const original = [{ id: "first", text: "First step", done: false }, { id: "second", text: "Second step", done: false }]
   const created = await request.post("/api/tasks", {
     headers,
     data: { title: "Checklist selected replacement", checklists: JSON.stringify(original) },
@@ -441,33 +446,35 @@ test("a checklist rebase preserves the selected new-item placeholder before typi
   })
   try {
     await page.goto("/tasks?open=" + encodeURIComponent(id))
-    await expect(page.locator("#td-checklists textarea")).toHaveCount(1)
+    await expect(page.locator("#td-checklists textarea")).toHaveCount(2)
     expect((await request.put(path, {
     headers,
-      data: { checklists: JSON.stringify([{ ...original[0], done: true }]) },
+      data: { checklists: JSON.stringify([{ ...original[0], done: true }, original[1]]) },
     })).status()).toBe(200)
-    await page.getByRole("button", { name: "Add Item" }).click()
+    await page.getByRole("checkbox", { name: "Second step", exact: true }).check()
     await expect.poll(() => held).toBe(true)
+    await page.getByRole("button", { name: "Add Item" }).click()
     const text = page.locator("#td-checklists textarea").last()
+    const entered = "Keep this draft"
+    await page.keyboard.insertText(entered)
     const selection = () => text.evaluate(element => {
       const input = element as HTMLTextAreaElement
       return [input.selectionStart, input.selectionEnd]
     })
-    expect(await selection()).toEqual([0, "New Item".length])
     const previous = await text.elementHandle()
     release()
     await expect.poll(() => previous!.evaluate(element => element.isConnected)).toBe(false)
     await expect(text).toBeFocused()
-    expect(await selection()).toEqual([0, "New Item".length])
-    // Type into the preserved selection, rather than fill() selecting it again.
-    await page.keyboard.insertText("Keep this replacement")
+    await expect(text).toHaveValue(entered)
+    expect(await selection()).toEqual([entered.length, entered.length])
     await text.press("Enter")
     await expect.poll(async () => {
       const response = await request.get(path)
       return JSON.parse((await response.json()).checklists)
     }).toEqual([
       { ...original[0], done: true },
-      { id: expect.any(String), text: "Keep this replacement", done: false },
+      { ...original[1], done: true },
+      { id: expect.any(String), text: entered, done: false },
     ])
   } finally {
     release()

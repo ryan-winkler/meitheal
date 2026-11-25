@@ -252,7 +252,8 @@ const hourlySlots = Array.from({ length: 17 }, (_, i) => {
                 class="btn cal-nav-btn cal-mobile-filter-toggle"
                 aria-expanded="false"
                 aria-controls="cal-filter-island"
-                aria-label="Toggle calendar filters"
+                aria-label={filter.hasFilters ? "Filters Active" : "Filters"}
+                data-filters-active={String(filter.hasFilters)}
                 title="Filters"
               >
                 <Icon name="adjustments-horizontal" size={16} />
@@ -1504,7 +1505,12 @@ const hourlySlots = Array.from({ length: 17 }, (_, i) => {
       align-items: center;
       justify-content: center;
     }
-    .cal-mobile-filter-toggle[aria-expanded="true"] {
+    .calendar-navigation .cal-mobile-filter-toggle {
+      min-width: 44px;
+      min-height: 44px;
+    }
+    .cal-mobile-filter-toggle[aria-expanded="true"],
+    .cal-mobile-filter-toggle[data-filters-active="true"] {
       background: color-mix(in srgb, var(--accent) 16%, var(--bg-card));
       border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
       color: var(--accent-text, var(--accent));
@@ -1650,8 +1656,8 @@ const hourlySlots = Array.from({ length: 17 }, (_, i) => {
       font-weight: 500;
     }
     .cal-cell.cal-selected .cal-day-num {
-      background: var(--personal-accent, var(--accent));
-      color: var(--personal-accent-foreground, #ffffff);
+      background: var(--personal-accent, var(--palette-accent-hover));
+      color: var(--personal-accent-foreground, var(--palette-on-accent, #07140f));
       font-weight: 700;
     }
     .cal-cell .cal-task-badge,

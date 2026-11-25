@@ -45,6 +45,7 @@ export function initCalendarPage(signal: AbortSignal): void {
   const status = shell.querySelector<HTMLElement>("[data-calendar-status]")
   const retry = shell.querySelector<HTMLButtonElement>("[data-calendar-retry]")
   const ruleError = shell.querySelector<HTMLElement>("[data-calendar-rule-error]")
+  const filterIsland = byId("cal-filter-island")
   const drawer = byId("day-drawer")
   const closeButton = byId("day-drawer-close")
   const panel = drawer?.querySelector<HTMLElement>('[role="dialog"]')
@@ -462,6 +463,9 @@ export function initCalendarPage(signal: AbortSignal): void {
       const activeNavigation = active?.closest<HTMLElement>("[data-calendar-nav]")?.dataset.calendarNav
       month.replaceWith(nextMonth)
       month = nextMonth
+      month.querySelector("#cal-mobile-filter-toggle")?.setAttribute(
+        "aria-expanded", String(filterIsland?.classList.contains("is-mobile-open") ?? false),
+      )
 
       replaceTaskBackgroundUrl(url)
       const previousArea = readCalendarTaskFilters(applied.searchParams).area
@@ -728,19 +732,15 @@ export function initCalendarPage(signal: AbortSignal): void {
         else next.searchParams.set(key, value)
       }
       next.hash = destination.hash || next.hash
-      if (refreshRequest) {
-        location.assign(next.href)
-      } else {
-        void refresh(next)
-      }
+      void refresh(next)
       return
     }
     const filterToggle = target.closest<HTMLButtonElement>("#cal-mobile-filter-toggle")
     if (filterToggle) {
-      const filterIsland = byId("cal-filter-island")
       if (filterIsland) {
         const opened = filterIsland.classList.toggle("is-mobile-open")
         filterToggle.setAttribute("aria-expanded", String(opened))
+        if (opened) filterIsland.querySelector<HTMLElement>("#calendar-search")?.focus()
       }
       return
     }
@@ -835,6 +835,16 @@ export function initCalendarPage(signal: AbortSignal): void {
       } else {
         containTabFocus(panel, event)
       }
+      return
+    }
+    if (event.key === "Escape" && mobileViewport.matches &&
+        filterIsland?.classList.contains("is-mobile-open") &&
+        (filterIsland.contains(target) || target.closest("#cal-mobile-filter-toggle"))) {
+      event.preventDefault()
+      filterIsland.classList.remove("is-mobile-open")
+      const filterToggle = month.querySelector<HTMLButtonElement>("#cal-mobile-filter-toggle")
+      filterToggle?.setAttribute("aria-expanded", "false")
+      filterToggle?.focus()
       return
     }
     if ((event.key === "Enter" || event.key === " ") && target.matches(dayButton)) {

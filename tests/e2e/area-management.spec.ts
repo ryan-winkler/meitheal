@@ -250,17 +250,20 @@ test("Area Routines open the existing editor in context and keep the generated t
     await editor.locator("button[type=submit]").click()
     const response = await receipt
     expect(response.status()).toBe(201)
-    const spawnedTaskId = (await response.json()).taskId
-    expect(spawnedTaskId).toBeTruthy()
-    taskId = spawnedTaskId
     await expect(editor).toBeHidden()
+    const scheduled = await request.get(`/api/tasks?q=${encodeURIComponent(name)}`)
+    const scheduledTasks = (await scheduled.json()).tasks as Array<{ id: string; title: string; area_id: string }>
+    expect(scheduledTasks).toEqual([expect.objectContaining({ title: name, area_id: area })])
+    const spawnedTaskId = scheduledTasks[0]!.id
+    taskId = spawnedTaskId
     const scoped = await request.get(`/api/habits?area_id=${area}`)
     const routines = (await scoped.json()).habits as Array<{ id: string; name: string }>
     expect(routines.map(routine => routine.name)).toEqual([name])
     routineId = routines[0]?.id
     const defaultArea = await request.get("/api/habits?area_id=default")
     expect((await defaultArea.json()).habits.map((routine: { id: string }) => routine.id)).not.toContain(routineId)
-    await expect(page).toHaveURL(new RegExp(`/progress\\?board_id=household&area_id=${area}(?:&view=groups)?#routines$`))
+    await expect(page).toHaveURL(url => url.pathname === "/progress" && url.hash === "#routines" &&
+      url.searchParams.get("board_id") === "household" && url.searchParams.get("area_id") === area)
     await expect(page.locator("#progress-section-routines #habits-list").getByText(name, { exact: true })).toBeVisible()
 
     const destination = await request.post("/api/areas", { headers, data: { name: name + " destination" } })
