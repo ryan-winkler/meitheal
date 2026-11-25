@@ -18,7 +18,8 @@ import {
   type TriageFrameworkId,
   type TriageTaskRecord,
 } from "@lib/scoring-triage"
-import { taskApi } from "@lib/task-api-client"
+import { saveVersionedTask, sameTaskApiContext, taskRecordVersion } from "@lib/task-api-client"
+import { currentTaskApiContext, type TaskApiContext } from "@lib/task-api"
 import { showToast } from "@lib/toast"
 
 export interface OpenScoringTriageOptions {
@@ -37,6 +38,8 @@ interface CatalogOption {
 }
 
 let allTasks: TriageTaskRecord[] = []
+let queueContext: TaskApiContext | null = null
+let saveInProgress = false
 let queue: TriageTaskRecord[] = []
 let currentIndex = 0
 let savedCount = 0
@@ -66,6 +69,8 @@ function setSelectedRadio(name: string, value: string): void {
 }
 
 async function fetchCatalogsAndTasks(): Promise<void> {
+  const context = currentTaskApiContext()
+  queueContext = null
   const [tasksRes, projectsRes, areasRes] = await Promise.all([
     fetch("/api/tasks?deferred=0"),
     fetch("/api/projects").catch(() => null),
@@ -74,6 +79,8 @@ async function fetchCatalogsAndTasks(): Promise<void> {
 
   if (!tasksRes.ok) throw new Error("Failed to load tasks for triage")
   const tasksJson = await tasksRes.json()
+  if (!sameTaskApiContext(context, currentTaskApiContext())) throw new Error("Open triage again from the current Board.")
+  queueContext = context
   allTasks = Array.isArray(tasksJson) ? tasksJson : (tasksJson.tasks ?? [])
 
   epicsMap = new Map()
@@ -194,7 +201,7 @@ function updatePreviewUI(): void {
   if (box) box.dataset.tone = preview.tone
   if (badge) badge.textContent = preview.badgeText
   if (detail) detail.textContent = preview.detailText
-  if (saveBtn) saveBtn.disabled = !preview.canSave
+  if (saveBtn) saveBtn.disabled = saveInProgress || !preview.canSave
 }
 
 function renderFrameworkControls(): void {
@@ -406,13 +413,14 @@ function renderCurrentTask(): void {
 
 async function saveCurrentTask(): Promise<void> {
   const task = queue[currentIndex]
-  if (!task) return
+  if (!task || !queueContext || saveInProgress) return
 
   const preview = computeTriagePreview(currentFramework, currentValues)
   if (!preview.canSave) return
 
   const saveBtn = byId<HTMLButtonElement>("st-save-btn")
   if (saveBtn) saveBtn.disabled = true
+  saveInProgress = true
 
   try {
     const existingFp = parseTaskFrameworkPayload(task.framework_payload)
@@ -430,7 +438,12 @@ async function saveCurrentTask(): Promise<void> {
       interestTag: interestTag || undefined,
     })
 
-    await taskApi.updateTask(task.id, patch)
+    const saved = await saveVersionedTask(task.id, patch, taskRecordVersion({ ...task }), queueContext, modalAbort?.signal)
+    if (!saved.ok) {
+      showToast(saved.errorCode === "conflict" ? "This task changed. Reopen triage to review the latest score." : "common.failed_update", "error")
+      return
+    }
+    task.task_version = saved.version
     savedCount++
 
     // Keep local cache in sync so switching frameworks reflects saved scores immediately
@@ -440,9 +453,11 @@ async function saveCurrentTask(): Promise<void> {
     if (typeof patch.effort_type === "string") task.effort_type = patch.effort_type
     if (typeof patch.framework_payload === "string") task.framework_payload = patch.framework_payload
 
-    advanceQueue()
+    if (queue[currentIndex] === task) advanceQueue()
   } catch {
     showToast("common.failed_update", "error")
+  } finally {
+    saveInProgress = false
     updatePreviewUI()
   }
 }

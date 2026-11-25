@@ -67,7 +67,7 @@ interface NavItemDef {
 
 const taskViewBaseUrl = new URL(boardContext ? `/boards/${encodeURIComponent(boardContext.boardId)}` : "/tasks", Astro.url)
 const taskViewHref = (view: TaskView) => {
-  const url = taskViewUrl(taskViewBaseUrl, view, true)
+  const url = taskViewUrl(taskViewBaseUrl, view, true, Astro.request.headers.get("user-agent") ?? "")
   return url.pathname + url.search + url.hash
 }
 

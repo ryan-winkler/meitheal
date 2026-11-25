@@ -6,14 +6,6 @@
   src: url("@fontsource/comic-neue/files/comic-neue-latin-400-normal.woff2") format("woff2");
 }
 
-@font-face {
-  font-family: "Comic Neue";
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url("@fontsource/comic-neue/files/comic-neue-latin-700-normal.woff2") format("woff2");
-}
-
 :root[data-appearance-font="comic"] {
   --font-sans: "Comic Neue", "Comic Sans MS", cursive;
   --font-heading: var(--font-sans);

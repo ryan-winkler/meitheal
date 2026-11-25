@@ -10,6 +10,7 @@
  */
 
 import type { TriageFrameworkId, TriageTaskRecord } from "./scoring-triage"
+import { readRiceAssessment } from "./rice-lens"
 
 export interface StrategyRuleLike {
   enabled?: boolean
@@ -158,18 +159,9 @@ export function formatTaskFrameworkScore(
 
   switch (framework) {
     case "rice": {
-      const r = asNum(fp.reach)
-      const i = asNum(fp.impact)
-      const e = asNum(fp.effort)
-      if (r !== null && i !== null && e !== null) {
-        const rawC = asNum(fp.confidence) ?? 80
-        const c = rawC > 0 && rawC <= 1 ? rawC * 100 : rawC
-        const score = round2((Math.max(0.1, r) * Math.max(0.25, i) * (Math.max(1, c) / 100)) / Math.max(0.5, e))
-        const tone = score >= 8 ? "danger" : score >= 4 ? "warning" : score >= 2 ? "info" : "success"
-        return { framework, frameworkLabel, display: String(score), numeric: score, tone, scored: true }
-      }
-      if (typeof task.rice === "number" && Number.isFinite(task.rice)) {
-        const score = round2(task.rice)
+      const assessment = readRiceAssessment(fp)
+      const score = assessment.status === "scored" ? assessment.score : task.rice
+      if (typeof score === "number" && Number.isFinite(score) && assessment.status !== "legacy_ambiguous") {
         const tone = score >= 8 ? "danger" : score >= 4 ? "warning" : score >= 2 ? "info" : "success"
         return { framework, frameworkLabel, display: String(score), numeric: score, tone, scored: true }
       }

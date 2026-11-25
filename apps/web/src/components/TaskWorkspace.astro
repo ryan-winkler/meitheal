@@ -75,10 +75,11 @@ const canCreate = scopePermits(scope, { resource: "task", action: "create" })
 const canComplete = scopePermits(scope, { resource: "task", action: "complete" })
 const canDelete = scopePermits(scope, { resource: "task", action: "delete" })
 const explicitRequestedView = requestedTaskView(Astro.url.searchParams)
+const userAgent = Astro.request.headers.get("user-agent") ?? ""
 const renderedView = resolveDefaultTaskView(
   Astro.url.searchParams,
   Astro.url.hash,
-  Astro.request.headers.get("user-agent") ?? "",
+  userAgent,
 )
 const organization = await organizationLabelsFor(Astro)
 const heading = renderedView === "kanban" ? organization("task", true, t("kanban.title", locale))
@@ -272,7 +273,7 @@ const boardAreaQuery = `?${new URLSearchParams({ board_id: boardId, ...(kanbanFi
 const kanbanTaskCount = Array.from(kanbanPages?.values() ?? []).reduce((sum, lane) => sum + lane.matches, 0)
 
 function lanePageHref(key: string, page: number) {
-  const url = taskViewUrl(currentUrl, "kanban")
+  const url = taskViewUrl(currentUrl, "kanban", false, userAgent)
   setKanbanPage(url, key, page)
   return url.pathname + url.search + url.hash
 }
@@ -324,7 +325,7 @@ if (groupByProject) {
     barId="kanban-bar"
     slot="custom-header"
     viewTabs={TASK_VIEWS.map(view => {
-      const url = taskViewUrl(currentUrl, view, true)
+      const url = taskViewUrl(currentUrl, view, true, userAgent)
       return { id: view, href: url.pathname + url.search + url.hash, label: TASK_VIEW_LABELS[view], icon: TASK_VIEW_ICONS[view], active: view === renderedView }
     })}
   >

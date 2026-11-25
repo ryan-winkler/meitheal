@@ -7,6 +7,7 @@
  * @domain strategy / planning
  */
 
+import { formatRiceFormulaBreakdown, readRiceAssessment, riceLensScore } from "./rice-lens"
 import { normalizeStatus, OPEN_STATUSES } from "./status-config"
 
 export type TriageFrameworkId =
@@ -50,6 +51,8 @@ export interface TriageFrameworkDef {
 export interface TriageTaskRecord {
   id: string
   title: string
+  task_version?: number | string | null
+  updated_at?: number | string | null
   ticket_key?: string | null
   status?: string | null
   priority?: number | null
@@ -242,7 +245,7 @@ export function isTaskScoredForFramework(task: TriageTaskRecord, framework: Tria
     case "eisenhower":
       return (asFiniteNumber(task.urgency) ?? 0) > 0 || (asFiniteNumber(task.importance) ?? 0) > 0
     case "rice":
-      return asFiniteNumber(fp.reach) !== null && asFiniteNumber(fp.impact) !== null && asFiniteNumber(fp.effort) !== null
+      return readRiceAssessment(fp).status === "scored"
     case "drice":
       return asFiniteNumber(fp.reach) !== null && asFiniteNumber(fp.strategic_alignment) !== null
     case "ice":
@@ -259,6 +262,13 @@ export function isTaskScoredForFramework(task: TriageTaskRecord, framework: Tria
 export function extractInitialTriageValues(task: TriageTaskRecord, framework: TriageFrameworkId): Record<string, number> {
   const def = getTriageFrameworkDef(framework)
   const fp = parseTaskFrameworkPayload(task.framework_payload)
+  if (framework === "rice") {
+    const assessment = readRiceAssessment(fp)
+    if (assessment.status !== "unscored") {
+      const { reach, impact, confidence, effort } = assessment.inputs
+      return { reach, impact, effort, confidence: assessment.status === "legacy_ambiguous" ? assessment.suggestedPercent : confidence }
+    }
+  }
   const values: Record<string, number> = {}
   for (const field of def.fields) {
     if (framework === "eisenhower" && field.key === "urgency") {
@@ -303,13 +313,11 @@ export function computeTriagePreview(
       return { score: u + i, badgeText: "Not Now", detailText: "Low Urgency & Importance — defer or drop", tone: "muted", canSave: true }
     }
     case "rice": {
-      const reach = Math.max(0.1, values.reach ?? 5)
-      const impact = Math.max(0.25, values.impact ?? 1)
-      const confidence = Math.max(1, values.confidence ?? 80)
-      const effort = Math.max(0.5, values.effort ?? 2)
-      const score = round2((reach * impact * (confidence / 100)) / effort)
+      const inputs = { reach: values.reach ?? 5, impact: values.impact ?? 1, confidence: values.confidence ?? 80, effort: values.effort ?? 2 }
+      const score = riceLensScore(inputs)
+      if (score === null) return { score, badgeText: "Unscored", detailText: "Enter valid RICE inputs.", tone: "muted", canSave: false }
       const tone = score >= 8 ? "danger" : score >= 4 ? "warning" : score >= 2 ? "info" : "success"
-      return { score, badgeText: `RICE ${score}`, detailText: `(${reach} × ${impact} × ${confidence}%) ÷ ${effort}`, tone, canSave: true }
+      return { score, badgeText: `RICE ${score}`, detailText: formatRiceFormulaBreakdown(inputs), tone, canSave: true }
     }
     case "drice": {
       const reach = Math.max(0.1, values.reach ?? 5)
@@ -459,6 +467,16 @@ export function buildTriagePatchPayload(
     patch.urgency = Math.max(0, Math.min(5, Math.round(values.urgency ?? 0)))
     patch.importance = Math.max(0, Math.min(5, Math.round(values.importance ?? 0)))
     patch.eisenhower_override = false
+  } else if (framework === "rice") {
+    nextFp.rice = {
+      ...parseTaskFrameworkPayload(existingFrameworkPayload.rice),
+      reach: values.reach,
+      impact: values.impact,
+      confidence: values.confidence,
+      effort: values.effort,
+      confidence_unit: "percent",
+    }
+    fpDirty = true
   } else {
     const def = getTriageFrameworkDef(framework)
     for (const field of def.fields) {

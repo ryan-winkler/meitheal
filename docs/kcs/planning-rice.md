@@ -14,6 +14,8 @@ Tasks with older saved estimates keep their existing scores. Saving an edit stor
 
 If another session changes the task while the editor is open, choose **Reload score** and review the latest estimates before saving. If a request is interrupted, check the latest score before trying again.
 
+RICE triage saves the same percentage-based estimates used in Planning and the Kanban groups. If the task changed while triage was open, reopen triage to review the current score before saving again.
+
 ## Score a ticket with another framework
 
 Open a ticket and choose **Scoring framework**. Formula scoring supports field keys with numeric estimates, decimal constants, parentheses, unary signs, and `+`, `-`, `*`, `/`. An unchecked box counts as 0 and a checked box counts as 1. Invalid estimates, including division by zero, show an estimate error.

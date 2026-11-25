@@ -265,6 +265,8 @@ export class InlineDatePicker {
     const commitTyped = (fromEnter: boolean) => {
       const raw = textInput.value.trim()
       textInput.classList.remove("idp-text-input--invalid")
+      textInput.removeAttribute("aria-invalid")
+      textInput.setCustomValidity("")
       if (!raw) {
         if (this.options.value) {
           this.options.onClear()
@@ -284,18 +286,12 @@ export class InlineDatePicker {
         }
       } else {
         textInput.classList.add("idp-text-input--invalid")
-        if (!fromEnter) {
-          // Restore last valid value after brief visual feedback
-          setTimeout(() => {
-            if (this.textInput === textInput) {
-              textInput.classList.remove("idp-text-input--invalid")
-              textInput.value = this.formatDisplayValue(this.options.value)
-            }
-          }, 900)
-        }
+        textInput.setAttribute("aria-invalid", "true")
+        textInput.setCustomValidity("Enter a valid date or clear the field.")
       }
     }
 
+    textInput.addEventListener("input", () => textInput.setCustomValidity(""), listenerOpts(this.options.signal))
     textInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault()
@@ -310,7 +306,11 @@ export class InlineDatePicker {
       }
     }, listenerOpts(this.options.signal))
 
-    textInput.addEventListener("blur", () => {
+    textInput.addEventListener("blur", (event) => {
+      if (event.relatedTarget instanceof HTMLElement) {
+        if (!this.panel?.contains(event.relatedTarget) && this.textInput === textInput) commitTyped(false)
+        return
+      }
       // Do not clobber click into open popover
       setTimeout(() => {
         if (this.panel && this.panel.contains(document.activeElement)) return
