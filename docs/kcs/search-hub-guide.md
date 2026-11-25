@@ -49,6 +49,8 @@ Results display behavioral kind labels (`Event`, `Shopping list`, `Routine`, `Ch
 
 Relevance puts an exact task ID or ticket such as `MTH-42` first in Tasks, followed by exact and prefix title matches. The selected fields determine which results match and which snippets appear. A Comments-only result shows a matching comment. Percent signs and underscores match literally. Clear the query to see recent tasks.
 
+Task search ranks a bounded set of results within the selected Board. Task lists without Area or Project filters select the page before resolving related records. Lists filtered by placement check the visible relation before paging.
+
 Open a result with Enter or a click. Close Details with its Close button or Escape to return to the query and selected result. Escape again returns focus to the search launcher. Use the Details permalink control when you want to share a task or return directly to it later.
 
 ## Home Assistant Parity

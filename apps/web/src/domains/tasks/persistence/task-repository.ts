@@ -1540,13 +1540,22 @@ export class TaskRepository {
       }
     }
 
-    const selectSql = `SELECT ${projection} FROM scoped_tasks AS tasks${where} ${ordering} LIMIT ${limit} OFFSET ${offset}`
-    const countSql = `SELECT COUNT(*) as cnt FROM scoped_tasks AS tasks${where}`;
-    const countProjection = !opts.areaId && !opts.workspaceAreaId ? "minimal" : "full"
+    // Apply record-only filters and paging before computing public relations.
+    // Placement filters need those relations in the candidate projection.
+    const useRecordFilter = !opts.areaId && !opts.workspaceAreaId && !opts.projectId
+    const selectSql = useRecordFilter
+      ? `SELECT ${projection}
+         FROM (SELECT id FROM scoped_task_records AS tasks${where} ${ordering} LIMIT ${limit} OFFSET ${offset}) AS page_ids
+         CROSS JOIN scoped_tasks AS tasks
+         WHERE tasks.id = page_ids.id
+         ${ordering}`
+      : `SELECT ${projection} FROM scoped_tasks AS tasks${where} ${ordering} LIMIT ${limit} OFFSET ${offset}`
+    const countSource = useRecordFilter ? "scoped_task_records" : "scoped_tasks"
+    const countSql = `SELECT COUNT(*) AS cnt FROM ${countSource} AS tasks${where}`
 
     const [result, countResult] = await this.forOperation("read").batch([
       tagTaskProjectionRead(scopedTaskRead(this.scope, sourceSql(selectSql, args)), "task-list"),
-      tagTaskProjectionRead(scopedTaskRead(this.scope, sourceSql(countSql, args), "select", countProjection), "task-count"),
+      tagTaskProjectionRead(scopedTaskRead(this.scope, sourceSql(countSql, args), "select", useRecordFilter ? "records" : "full"), "task-count"),
     ], "read")
 
     const total = Number(countResult?.rows[0]?.cnt ?? 0)
@@ -1599,10 +1608,11 @@ export class TaskRepository {
     const projection = "tasks.id, tasks.ticket_number, tasks.ticket_ref, tasks.title, tasks.status, tasks.priority, tasks.task_kind, tasks.deferred_at"
     const updatedAt = taskTimestampMs("tasks.updated_at")
     if (!query) {
-      const result = await this.forOperation(operation).execute(scopedTaskRead(this.scope, sourceSql(`SELECT ${projection}, 0 AS score
-              FROM scoped_tasks AS tasks ${where}
+      const read = scopedTaskRead(this.scope, sourceSql(`SELECT ${projection}, 0 AS score
+              FROM scoped_task_records AS tasks ${where}
               ORDER BY ${updatedAt} DESC, tasks.priority ASC, tasks.id ASC
-              LIMIT ?`, [...args, limit]), "select", "minimal"))
+              LIMIT ?`, [...args, limit]), "select", "search")
+      const result = await this.forOperation(operation).execute(tagTaskProjectionRead(read, "task-search"))
       return result.rows as unknown as TaskCatalogRow[]
     }
 
@@ -1745,7 +1755,7 @@ export class TaskRepository {
                 ${selected("custom_fields", `tasks.custom_fields IS NOT NULL AND tasks.custom_fields <> '' AND (tasks.custom_fields <> '{}' OR instr('{}', needle.value) > 0) AND ${position("tasks.custom_fields")} > 0`)} AS custom_fields_hit,
                 ${hasCommentsField ? "((SELECT v FROM has_comments) AND tasks.id IN comment_hits)" : "0"} AS comments_hit,
                 (tasks.status NOT IN ('complete', 'archived')) * 6 AS open_boost
-              FROM scoped_tasks AS tasks CROSS JOIN needle ${where}
+              FROM scoped_task_records AS tasks CROSS JOIN needle ${where}
             ),
             page AS (
               SELECT hits.*,
@@ -1760,7 +1770,8 @@ export class TaskRepository {
               ORDER BY ${orderBy}updated_at_ms DESC, priority ASC, id ASC
               LIMIT ?
             )
-            SELECT ${projection}, page.score, page.id_hit, page.exact_id, page.title_at,
+            SELECT page.id, page.ticket_number, page.ticket_ref, page.title, page.status, page.priority, page.task_kind, page.deferred_at,
+              page.score, page.id_hit, page.exact_id, page.title_at,
               page.description_hit, page.labels_hit, page.custom_fields_hit, page.comments_hit, ${excerpt} AS excerpt
             FROM page CROSS JOIN needle
             ORDER BY ${orderBy}page.updated_at_ms DESC, page.priority ASC, page.id ASC`, [query, ticket, ...args, limit])
