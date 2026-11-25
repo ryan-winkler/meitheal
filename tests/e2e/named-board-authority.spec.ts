@@ -560,9 +560,10 @@ test("Project Routine check-ins retain placement, completion identity, and curre
   const area = (await tasks.view(owner, board))!.planning!.areas[0]!.id
   expect(await planning.save(owner.id, board, { action: "project", title: "House checks", description: "", areaId: area, goalId: null })).toBe(true)
   const project = (await tasks.view(owner, board))!.planning!.projects[0]!.id
-  await expect(planning.save(owner.id, board, {
+  expect(await planning.save(owner.id, board, {
     action: "routine", title: "Inspect filters", description: "", areaId: area, projectId: "foreign", cadence: "daily",
-  })).rejects.toThrow("Template Project is unavailable")
+  })).toBe(false)
+  expect((await tasks.view(owner, board))!.planning!.routines).toEqual([])
   expect(await planning.save(owner.id, board, {
     action: "routine", title: "Inspect filters", description: "", areaId: area, projectId: project, cadence: "daily",
   })).toBe(true)

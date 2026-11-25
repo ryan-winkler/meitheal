@@ -12,6 +12,8 @@ Choose **New Task**, then select **Task**, **Shopping**, **Checklist** or **Even
 
 For a checklist, paste one item per line into **New items**. **Add Item** or Enter adds the items to the list; Shift+Enter inserts another line. Each row has its own remove button. Shopping uses a quantity, category and item name. For an event, choose **Starts** and **Ends**; an end at or before the start keeps the form open with an explanation.
 
+Shopping Details keeps the item name separate from the quantity and unit shown on a checklist. Checking an item or changing its aisle keeps the saved name.
+
 In an existing ticket's checklist, **Add Item** opens a blank draft. Type the item text and press Enter or leave the field to save it. An unused draft stays out of the stored checklist.
 
 Use the Create menu to choose what happens after saving. **Open task** takes effect on the current submission while the browser stores the preference for future forms.

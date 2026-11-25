@@ -5,6 +5,7 @@ import {
   SHOPPING_UNITS,
   clampShoppingQty,
   defaultShoppingCategories,
+  formatShoppingItemSummary,
   loadShoppingCategories,
   normalizeShoppingUnit,
   type ShoppingCategoryOption,
@@ -17,7 +18,7 @@ import { createSpriteIconElement } from "../../generated/icon-registry"
 
 type Item = { id?: string; text: string; done: boolean }
 export type ModalShoppingItem = { name: string; qty: number | string; unit: string; category: string; checked: boolean }
-type ShoppingMeta = { qty: number; unit: string; category: string }
+type ShoppingMeta = { name?: string; qty: number; unit: string; category: string }
 
 function normalizeCategoryValue(raw: unknown): string {
   if (typeof raw !== "string") return ""
@@ -170,12 +171,21 @@ export function showTaskChecklist(
   }
   const getItemMeta = (item: Item): ShoppingMeta | undefined =>
     metaByItem.get(item) ?? (item.id ? metaById.get(item.id) : undefined)
+  const shoppingName = (item: Item): string =>
+    getItemMeta(item)?.name ?? item.text.replace(/^\d+\s*[×x]\s+/i, "").trim()
 
   const reconcileShoppingMeta = (targetItems: Item[], rawList?: ShoppingInputItem[] | null) => {
     if (!isShopping) return
     const entries = Array.isArray(rawList) ? rawList : []
     const used = new Set<number>()
     const matchedIndices = targetItems.map(() => -1)
+    const matchesText = (entry: ShoppingInputItem, value: string) => {
+      if (typeof entry.name !== "string") return false
+      return entry.name.trim().toLowerCase() === value ||
+        formatShoppingItemSummary({
+          name: entry.name, qty: clampShoppingQty(entry.qty ?? entry.quantity), unit: normalizeShoppingUnit(entry.unit),
+        }).toLowerCase() === value
+    }
     const prevByName = new Map<string, ShoppingMeta[]>()
     for (const prev of items) {
       const existing = getItemMeta(prev)
@@ -188,7 +198,7 @@ export function showTaskChecklist(
     targetItems.forEach((item, index) => {
       const nameKey = item.text.trim().toLowerCase()
       const sameIdx = entries[index]
-      if (sameIdx && !used.has(index) && String(sameIdx.name ?? "").trim().toLowerCase() === nameKey) {
+      if (sameIdx && !used.has(index) && matchesText(sameIdx, nameKey)) {
         used.add(index)
         matchedIndices[index] = index
       }
@@ -197,7 +207,7 @@ export function showTaskChecklist(
       if (matchedIndices[index]! >= 0) return
       const nameKey = item.text.trim().toLowerCase()
       const byName = entries.findIndex((entry, idx) =>
-        !used.has(idx) && String(entry.name ?? "").trim().toLowerCase() === nameKey,
+        !used.has(idx) && matchesText(entry, nameKey),
       )
       if (byName >= 0) {
         used.add(byName)
@@ -211,11 +221,13 @@ export function showTaskChecklist(
         matchedIndex = index
       }
       const nameKey = item.text.trim().toLowerCase()
-      const nextMeta: ShoppingMeta = matchedIndex >= 0
+      const entry = entries[matchedIndex]
+      const nextMeta: ShoppingMeta = entry
         ? {
-            qty: clampShoppingQty(entries[matchedIndex]!.qty ?? entries[matchedIndex]!.quantity),
-            unit: normalizeShoppingUnit(entries[matchedIndex]!.unit),
-            category: normalizeCategoryValue(entries[matchedIndex]!.category),
+            ...(typeof entry.name === "string" ? { name: entry.name.trim() } : {}),
+            qty: clampShoppingQty(entry.qty ?? entry.quantity),
+            unit: normalizeShoppingUnit(entry.unit),
+            category: normalizeCategoryValue(entry.category),
           }
         : getItemMeta(item) ?? prevByName.get(nameKey)?.shift() ?? { qty: 1, unit: "pcs", category: "" }
       setItemMeta(item, { ...nextMeta })
@@ -226,7 +238,7 @@ export function showTaskChecklist(
   const buildShoppingItems = (): ModalShoppingItem[] => persistedItems().map(item => {
     const meta = getItemMeta(item) ?? { qty: 1, unit: "pcs", category: "" }
     return {
-      name: item.text.trim() || "Item",
+      name: shoppingName(item) || "Item",
       qty: meta.qty,
       unit: meta.unit || "pcs",
       category: meta.category,
@@ -320,7 +332,7 @@ export function showTaskChecklist(
     if (!current) return null
     const nextItem = { ...current, ...patch }
     const meta = getItemMeta(current)
-    if (meta) setItemMeta(nextItem, meta)
+    if (meta) setItemMeta(nextItem, patch.text === undefined ? meta : { ...meta, name: patch.text })
     items[index] = nextItem
     return nextItem
   }
@@ -335,6 +347,7 @@ export function showTaskChecklist(
         : "Lightweight steps inside this task"
     }
     const rows = items.map((item, index) => {
+      const displayName = isShopping ? shoppingName(item) : item.text
       const row = document.createElement("div")
       row.className = isShopping
         ? `td-cl-row td-shop-row group${item.done ? " is-checked" : ""}`
@@ -344,19 +357,16 @@ export function showTaskChecklist(
       const dragHandle = document.createElement("button")
       dragHandle.type = "button"
       dragHandle.className = "td-cl-drag"
-      dragHandle.setAttribute("aria-label", `Drag to reorder ${item.text || `item ${index + 1}`}`)
+      dragHandle.setAttribute("aria-label", `Drag to reorder ${displayName || `item ${index + 1}`}`)
       dragHandle.title = "Drag to reorder"
       dragHandle.replaceChildren(createSpriteIconElement("grip-vertical", { size: 15 }))
 
       const checkbox = document.createElement("input")
       checkbox.type = "checkbox"
       checkbox.className = "form-check-input td-keep-check"
-      checkbox.setAttribute("aria-label", item.text || `Checklist item ${index + 1}`)
+      checkbox.setAttribute("aria-label", displayName || `Checklist item ${index + 1}`)
       checkbox.checked = Boolean(item.done)
 
-      const displayName = isShopping
-        ? item.text.replace(/^\d+\s*[×x]\s+/i, "").trim()
-        : item.text
       const editor = document.createElement("div")
       editor.className = "checklist-editor"
       const text = document.createElement("textarea")
@@ -395,12 +405,12 @@ export function showTaskChecklist(
         const stepper = document.createElement("div")
         stepper.className = "nt-qty-stepper nt-qty-stepper--sm"
         stepper.setAttribute("role", "group")
-        stepper.setAttribute("aria-label", `Quantity for ${item.text || `item ${index + 1}`}`)
+        stepper.setAttribute("aria-label", `Quantity for ${displayName || `item ${index + 1}`}`)
 
         const decBtn = document.createElement("button")
         decBtn.type = "button"
         decBtn.className = "nt-qty-btn"
-        decBtn.setAttribute("aria-label", `Decrease quantity for ${item.text || `item ${index + 1}`}`)
+        decBtn.setAttribute("aria-label", `Decrease quantity for ${displayName || `item ${index + 1}`}`)
         decBtn.replaceChildren(createSpriteIconElement("minus", { size: 12 }))
 
         const qtyInput = document.createElement("input")
@@ -411,12 +421,12 @@ export function showTaskChecklist(
         qtyInput.inputMode = "numeric"
         qtyInput.value = String(meta.qty)
         qtyInput.className = "nt-qty-input"
-        qtyInput.setAttribute("aria-label", `Quantity for ${item.text || `item ${index + 1}`}`)
+        qtyInput.setAttribute("aria-label", `Quantity for ${displayName || `item ${index + 1}`}`)
 
         const incBtn = document.createElement("button")
         incBtn.type = "button"
         incBtn.className = "nt-qty-btn"
-        incBtn.setAttribute("aria-label", `Increase quantity for ${item.text || `item ${index + 1}`}`)
+        incBtn.setAttribute("aria-label", `Increase quantity for ${displayName || `item ${index + 1}`}`)
         incBtn.replaceChildren(createSpriteIconElement("plus", { size: 12 }))
 
         const setQty = (val: number) => {
@@ -444,7 +454,7 @@ export function showTaskChecklist(
 
         const catSelect = document.createElement("select")
         catSelect.className = "form-select text-xs td-shop-cat"
-        catSelect.setAttribute("aria-label", `Category for ${item.text || `item ${index + 1}`}`)
+        catSelect.setAttribute("aria-label", `Category for ${displayName || `item ${index + 1}`}`)
         catSelect.append(new Option("Uncategorized", ""))
         for (const cat of shoppingCategories) {
           catSelect.append(new Option(cat.label, cat.slug))
@@ -475,7 +485,8 @@ export function showTaskChecklist(
       text.addEventListener("blur", () => {
         if (rendering || signal.aborted) return
         const next = text.value.trim()
-        if (!items[index] || next === items[index]!.text) return
+        const current = items[index]
+        if (!current || next === (isShopping ? shoppingName(current) : current.text)) return
         updateItemAt(index, { text: next })
         checkbox.setAttribute("aria-label", next || "Checklist item " + (index + 1))
         textEditPending = true
@@ -487,7 +498,8 @@ export function showTaskChecklist(
         event.preventDefault()
         const currentText = text.value.trim()
         if (!currentText && !items[index]?.text) return
-        if (items[index] && currentText !== items[index]!.text) {
+        const current = items[index]
+        if (current && currentText !== (isShopping ? shoppingName(current) : current.text)) {
           updateItemAt(index, { text: currentText })
         }
         insertDraft(index + 1)
