@@ -311,6 +311,7 @@ export const POST: APIRoute = withBoardScope({ resource: "task", action: "create
     const scoped = boardScopeErrorResponse(err)
     if (scoped) return scoped
     if (isDbUnavailable(err)) return db503Response("tasks-post", err)
+    if (err instanceof Error && err.name === "AbortError") throw err
     logApiError("tasks-post", "POST failed", err)
     return apiError("Failed to create task", 500)
   }
