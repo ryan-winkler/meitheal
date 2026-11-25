@@ -183,7 +183,7 @@ a.board-name:focus-visible { outline: 2px solid var(--accent); outline-offset: 2
   border-bottom: 2px solid transparent; margin-bottom: -1px; border-radius: var(--radius-sm) var(--radius-sm) 0 0;
 }
 .board-context-tabs > a:hover { background: var(--bg-hover); color: var(--text-primary); }
-.board-context-tabs > a[aria-current="page"] { font-weight: 600; color: var(--accent); border-bottom-color: var(--accent); }
+.board-context-tabs > a[aria-current="page"] { font-weight: 600; color: var(--accent-text); border-bottom-color: var(--accent); }
 .board-context-tabs__settings { margin-left: auto; }
 .board-settings [hidden], .board-settings[hidden] { display: none !important; }
 

@@ -148,7 +148,7 @@ test("short phone Color and Icon popovers fit and expose category focus and Save
   await page.addInitScript(() => {
     localStorage.setItem("meitheal-appearance", JSON.stringify({ navigation: "sidebar", sidebar: "expanded" }))
   })
-  await page.goto("/tasks")
+  await page.goto("/tasks?view=kanban#kanban")
   await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
   const drawer = page.locator("#menu-toggle")
   await drawer.click()
