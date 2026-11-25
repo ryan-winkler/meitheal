@@ -226,7 +226,7 @@ The packager reads `manifest.json`, rejects symbolic links and unsafe paths, pac
 2. Open **Settings -> Plugins** in Meitheal as an administrator.
 3. Select **Choose Plugin File** and upload the generated `.zip` file.
 4. Review the requested permissions and data-sharing summary inside **Details**.
-5. Enable the plugin switch and check **Plugin Health** to confirm green **Operational** and **Compliant (5/5)** status.
+5. Enable the plugin switch and open **Plugin Health**. Check its state and review the **Security checks**. Use the plugin to verify it works with your settings.
 
 ## 2a. Reference Plugins
 
@@ -610,25 +610,21 @@ Run through these checks before sharing a plugin archive:
 6. Toggle **Safe Mode** on and off to verify clean teardown with no duplicate buttons or errors.
 7. Verify that uninstalling the plugin removes its buttons, side panel, storage, and secrets cleanly.
 
-## 9a. Plugin Health and Elephant-Goldfish Compliance
+## 9a. Plugin Health
 
-Open **Settings -> Plugins -> Plugin Health** to inspect the operational state and security compliance of every active plugin.
+Open **Settings → Plugins → Plugin Health** to see whether a plugin is enabled, paused, needs setup or approval, or has reported an error in the current browser. Select **Show disabled plugins** to inspect a plugin before enabling it. Expand **Security checks** for the findings.
 
-Meitheal evaluates each plugin against five Elephant-Goldfish Model (EGM) checks:
+These checks use the saved manifest, settings, and package record. To confirm that a provider responds or a plugin works, use the plugin’s controls.
 
-| Check | EGM Axis | What Meitheal Verifies |
-| --- | --- | --- |
-| **Opaque-Origin Sandbox** | Goldfish (Stateless) | Execution stays inside opaque-origin frames (`origin: null`, `connect-src 'none'`) without `allow-same-origin`. |
-| **Permission & Re-Consent** | Elephant (Stateful) | Upgraded packages that add permissions or hosts stay blocked until an administrator approves them. |
-| **Outbound Network & SSRF** | Goldfish + Elephant | `allowedHosts` matches `dataSharing.destinations`, requires `http:outbound`, and requires admin approval for `$userServer`. |
-| **Write-Only Secret Hygiene** | Elephant (Stateful) | Required connector secrets are configured write-only in `plugin_secrets` and scrubbed from SQLite backups. |
-| **Package Integrity & Provenance** | Elephant (Stateful) | Valid 64-character SHA-256 package digest and explicit review warning on uploaded plugins that send outbound traffic. |
+| Check | What Meitheal reads |
+| --- | --- |
+| Execution boundary | Required script and panel files, the panel permission, and whether the plugin uses the host frame or a built-in server action. |
+| Permissions and approval | Supported permission names and pending approval for an upgrade. |
+| Outbound settings | Outbound permission, disclosed destinations, allowed hosts, and setup of a self-hosted server if required. |
+| Secrets | Whether the manifest can use secrets and whether required secrets are set. |
+| Package record | The saved SHA-256 format and whether the package was uploaded with outbound access. |
 
-Status badges use both color and text labels:
-
-- **Green (`Operational` / `Compliant (5/5)`)**: Active and passing all operational and EGM checks.
-- **Amber (`Paused (Safe Mode)` / `Needs Configuration` / `Review`)**: Active or enabled, but requires admin action or destination review.
-- **Red (`Blocked (Re-Consent)` / `Runtime Error` / `Non-Compliant`)**: Execution blocked or failed; follow the inline remediation message.
+Follow the detail under any **Review** or **Failed** result. A disabled connector can still need a server address or a credential.
 
 ## 10. Build One With AI
 
@@ -649,9 +645,9 @@ Follow this process to list your community plugin in Meitheal's **Reference & Co
    node scripts/pack-plugin.mjs ./path/to/your-plugin
    ```
    Attach the generated `.zip` file to a tagged GitHub Release and record the SHA-256 hash printed by the script.
-3. **Verify all 5 Plugin Health checks**:
+3. **Review the Plugin Health checks**:
    - Install the release ZIP in **Settings -> Plugins**.
-   - Confirm zero upload warnings, valid `dataSharing` disclosure, and green **Operational** status in **Plugin Health**.
+   - Resolve upload errors, check the `dataSharing` disclosure, and verify that the enabled plugin works.
    - Test in both dark and light themes and behind Home Assistant Ingress.
 4. **Open a pull request** against the Meitheal repository with your catalog metadata entry:
    ```json
@@ -678,7 +674,7 @@ Follow this process to list your community plugin in Meitheal's **Reference & Co
 | API call fails with `PERMISSION_DENIED` | The method requires a scope not listed in `permissions`. | Add the required permission to `manifest.json` and re-upload the archive. |
 | Gateway returns `403 HOST_BLOCKED` | Target URL is not in `allowedHosts` or resolves to a blocked private/internal IP. | Check `allowedHosts`. For self-hosted tools, use `"$userServer"` and approve the URL in plugin settings. |
 | External API returns `401 Unauthorized` | The secret key is missing or misspelled in `{{secret:key}}`. | Open **Settings -> Plugins -> Details -> Secrets** and save the token under the exact key name. |
-| Plugin Health shows red `Runtime Error` | `plugin.js` threw an unhandled exception during init or button click. | Inspect the error text in **Plugin Health**, fix `plugin.js`, re-pack, and re-upload. |
+| Plugin Health shows `Runtime Error` | The plugin runner reported an error in this browser session. | Inspect the error in **Plugin Health**, fix the plugin, then re-pack and upload it again. |
 | Workspace feels slow after installing a plugin | A plugin frame is polling too often or looping. | Enable **Safe Mode** in **Settings -> Plugins** to stop all plugins, then disable or remove the faulty plugin. |
 
 ## 12. Licensing

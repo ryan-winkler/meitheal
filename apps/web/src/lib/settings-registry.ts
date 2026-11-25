@@ -498,10 +498,10 @@ export const SETTINGS_FIELDS: SettingsFieldDescriptor[] = [
   },
   {
     id: "field-plugins-health",
-    label: "Plugin Health & Compliance",
+    label: "Plugin Health",
     anchorId: "plugins-health-view",
     sectionId: "plugins-settings",
-    keywords: ["plugin health", "health", "compliance", "security", "elephant", "goldfish", "audit", "status", "operational"],
+    keywords: ["plugin health", "health", "security", "checks", "status", "runtime", "permissions"],
   },
   {
     id: "field-plugins-connectors",
