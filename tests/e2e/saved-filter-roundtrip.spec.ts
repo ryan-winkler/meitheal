@@ -387,6 +387,7 @@ test("Table workflow columns and Unassigned combine and survive a shared preset 
     finishRefresh.resolve()
     await expectRows([ids[0]!])
     await panel.getByRole("button", { name: "Close panel" }).click()
+    await columns.press("Enter")
     const active = toolbar.getByRole("checkbox", { name: "In Progress", exact: true })
     await active.press("Space")
     await expectRows(ids.slice(0, 3))
@@ -452,6 +453,7 @@ test("Table workflow columns and Unassigned combine and survive a shared preset 
     await toolbar.getByRole("checkbox", { name: "Unassigned" }).press("Space")
     await expect(page).toHaveURL(url => !url.searchParams.has("user") &&
       JSON.stringify(url.searchParams.getAll("lane")) === JSON.stringify(requested))
+    await columns.press("Enter")
     await missing.last().press("Space")
     await expect(todo).toBeEnabled()
     await expect(toolbar.getByText("You can select up to 50 workflow columns.")).toBeHidden()
@@ -551,6 +553,7 @@ test("Table creation date drafts stay separate from applied filters and saved li
     await through.fill("2000-01-01")
     await apply.press("Enter")
     await expect(through).toBeFocused()
+    await expect(through).not.toHaveAttribute("aria-hidden", "true")
     await expect(through).toHaveAttribute("aria-invalid", "true")
     await expect(through).toHaveAccessibleDescription("The end date must be on or after the start date.")
     await expect(toolbar.getByRole("alert")).toContainText("The end date must be on or after the start date.")

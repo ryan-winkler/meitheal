@@ -58,7 +58,7 @@ Choose **Group by → Workflow column** to see Household tasks in the order of t
 
 Share the Table URL or save a preset to keep the grouping. If the catalog fails during an in-place refresh, **Retry** applies the requested grouping when the catalog returns. Previous results stay visible while you retry. Opening or reloading a workflow-grouped URL during an outage shows **Retry** until columns are available.
 
-Open **Created date** and enter either or both dates, then choose **Apply dates**. The range includes both selected days in the app's configured timezone. It combines with the other Table filters and starts at page one. Use **Clear dates** to remove the range while keeping the other filters. Escape discards a draft. A failed refresh leaves the previous rows and address in place, and **Retry** applies the requested dates again.
+Open **Created date** and enter either or both dates using your browser's date controls, then choose **Apply dates**. The range includes both selected days in the app's configured timezone. It combines with the other Table filters and starts at page one. If the end date is earlier than the start date, focus moves to the end date with the error. Use **Clear dates** to remove the range while keeping the other filters. Escape discards a draft. A failed refresh leaves the previous rows and address in place, and **Retry** applies the requested dates again.
 
 Table remembers primary or secondary Epic grouping on this browser when you return to Table without explicit filters. That presentation stays separate from the shared task filters used by other views. An explicit Table link or saved preset takes priority; choosing another grouping or clearing the filters replaces the remembered Epic presentation.
 
