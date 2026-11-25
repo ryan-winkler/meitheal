@@ -2679,7 +2679,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             return
           }
           if (event instanceof KeyboardEvent && event.key !== "Enter" && event.key !== " ") return
-          if (target.closest("button, a, input, select, textarea, .task-actions, .action-btn")) return
+          if (target.closest("button, a, input, label, select, textarea, .task-actions, .action-btn")) return
           if (target instanceof HTMLElement && target.isContentEditable) return
 
           const taskEl = target.closest<HTMLElement>(

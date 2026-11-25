@@ -176,6 +176,7 @@ Use this after changing the Upcoming shell or `upcoming-controller.ts`.
 3. Confirm the shell search launcher opens SearchHub and `#ask-ha-btn` is still present.
 4. Confirm the shell `New Task` button opens the shared task modal.
 5. Confirm clicking an Upcoming task opens the shared task detail surface without routing away from `/upcoming`.
+6. With a long title, check that the details link and its neighboring completion label have separate hit areas of at least 44 by 44 pixels. Click the edge of the completion label to verify it activates the checkbox while details remain closed.
 
 ## Calendar Shell Verification
 

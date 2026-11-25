@@ -129,7 +129,7 @@ test.describe("Upcoming Shell", () => {
         await route.fulfill({ status: 503, json: { error: "Fixture unavailable" } })
       })
       try {
-        await checkbox.click({ position: { x: 2, y: 2 } })
+        await checkbox.locator("..").click({ position: { x: 2, y: 2 } })
         await requestHeld.promise
         await expect(checkbox).toHaveAttribute("aria-disabled", "true")
         await page.keyboard.press("Space")
@@ -226,7 +226,7 @@ test.describe("Upcoming Shell", () => {
       const lastRow = list.locator(".task-item").last()
       const lastLink = lastRow.getByRole("link")
       const lastId = await lastLink.getAttribute("data-task-detail-link")
-      await lastRow.scrollIntoViewIfNeeded()
+      await lastLink.evaluate(element => element.scrollIntoView({ block: "center", behavior: "instant" }))
       await expect(lastLink).toBeInViewport({ ratio: 1 })
       expect(await lastLink.evaluate(element => {
         const { x, y, width, height } = element.getBoundingClientRect()
@@ -288,15 +288,18 @@ test.describe("Upcoming Shell", () => {
           expect(row.x + row.width).toBeLessThanOrEqual(width)
           const measureHitArea = (control: typeof link) => control.evaluate(element => {
             const { left, right, top, bottom, width, height } = element.getBoundingClientRect()
-            const cornersHitControl = [left + 2, right - 2].every(x =>
-              [top + 2, bottom - 2].every(y => element.contains(document.elementFromPoint(x, y))))
-            return { left, right, top, bottom, width, height, cornersHitControl }
+            const obstructedCorners = [left + 2, right - 2].flatMap(x =>
+              [top + 2, bottom - 2].flatMap(y => {
+                const hit = document.elementFromPoint(x, y)
+                return element.contains(hit) ? [] : [{ x, y, target: hit?.outerHTML.slice(0, 130) }]
+              }))
+            return { left, right, top, bottom, width, height, obstructedCorners }
           })
-          const hitAreas = await Promise.all([measureHitArea(link), measureHitArea(checkbox)])
+          const hitAreas = await Promise.all([measureHitArea(link), measureHitArea(checkbox.locator(".."))])
           for (const area of hitAreas) {
             expect(area.width).toBeGreaterThanOrEqual(44)
             expect(area.height).toBeGreaterThanOrEqual(44)
-            expect(area.cornersHitControl).toBe(true)
+            expect(area.obstructedCorners, `${width}px ${theme}`).toEqual([])
           }
           const [detailArea, completionArea] = hitAreas
           expect(Math.min(detailArea.right, completionArea.right) <= Math.max(detailArea.left, completionArea.left)

@@ -499,11 +499,10 @@ function dayLabelClass(day: DayGroup): string {
   .upcoming-completion {
     display: inline-grid;
     place-items: center;
-    min-width: 32px;
-    min-height: 32px;
+    min-width: 44px;
+    min-height: 44px;
     flex-shrink: 0;
     cursor: pointer;
-    margin: -4px;
   }
   .task-checkbox {
     width: 18px;
@@ -547,7 +546,8 @@ function dayLabelClass(day: DayGroup): string {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    min-width: 0;
+    min-width: 44px;
+    min-height: 44px;
     line-height: 1.35;
     color: var(--text-primary);
     text-decoration: none;
@@ -626,14 +626,12 @@ function dayLabelClass(day: DayGroup): string {
       padding: 10px 12px;
       gap: 8px;
     }
-    .upcoming-promote-btn,
-    .upcoming-completion {
-      min-width: 40px;
-      min-height: 40px;
-      margin: -4px -2px;
+    .upcoming-promote-btn {
+      min-width: 44px;
+      min-height: 44px;
     }
     .task-content {
-      flex: 1 1 calc(100% - 7.5rem);
+      flex: 1 1 12rem;
     }
     .task-detail-link__text {
       white-space: normal;
