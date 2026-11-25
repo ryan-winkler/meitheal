@@ -565,12 +565,12 @@ test("Table creation date drafts stay separate from applied filters and saved li
     await expect(from).toHaveValue("")
     await from.fill(day)
     await through.fill(day)
-    const sizes = await page.locator("[data-table-created-date]").evaluate(el => ({
+    const sizes = () => page.locator("[data-table-created-date]").evaluate(el => ({
       right: el.getBoundingClientRect().right,
       controls: Array.from(el.querySelectorAll("input, button")).map(control => control.getBoundingClientRect().height),
     }))
-    expect(sizes.right).toBeLessThanOrEqual(321)
-    expect(Math.min(...sizes.controls)).toBeGreaterThanOrEqual(44)
+    await expect.poll(async () => (await sizes()).right).toBeLessThanOrEqual(321)
+    await expect.poll(async () => Math.min(...(await sizes()).controls)).toBeGreaterThanOrEqual(44)
     await apply.press("Enter")
     await expect(page).toHaveURL(url => url.searchParams.get("createdFrom") === day && url.searchParams.get("createdThrough") === day)
     await expect(summary).toBeFocused()
