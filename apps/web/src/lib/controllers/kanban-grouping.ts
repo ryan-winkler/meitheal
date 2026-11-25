@@ -3,7 +3,16 @@
  * @domain kanban
  */
 
+import { getGroupKey } from "../filter-state"
 import { CANONICAL_STATUSES, getStatusDef, normalizeStatus, STATUS } from "../status-config"
+
+const riceGroupOrder = ["high", "medium", "low", "none"]
+const riceGroupLabels: Record<string, string> = {
+  high: "High (≥15)",
+  medium: "Medium (8–14)",
+  low: "Low (<8)",
+  none: "Needs a score",
+}
 
 function collapseKey(board: HTMLElement, group: HTMLElement): string {
   const column = group.closest<HTMLElement>(".kanban-column")
@@ -77,7 +86,7 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
           if (countEl) countEl.textContent = String(cards.length)
         })
     })
-  } else if (mode === "area" || mode === "priority" || mode === "epic" || mode === "status" || mode === "assigned" || mode === "project") {
+  } else if (mode === "area" || mode === "priority" || mode === "epic" || mode === "status" || mode === "assigned" || mode === "project" || mode === "rice") {
     const byProject = mode === "project"
     const byAssignee = mode === "assigned"
     const icons: Record<string, string> =
@@ -119,6 +128,7 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
         let val = mode === "status" ? normalizeStatus(value || STATUS.PENDING)
           : byAssignee || mode === "area" ? value ?? "" : value || (mode === "priority" ? "3" : mode === "epic" ? "epic:none" : "default")
         if (byProject) val = card.dataset.projectGroup || "unavailable-project"
+        if (mode === "rice") val = getGroupKey(card, "rice")
         if (byAssignee && card.dataset.assigneeKey) {
           try {
             const key: unknown = JSON.parse(card.dataset.assigneeKey)
@@ -142,6 +152,10 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
         if (byAssignee) return key ? window.mI18n?.get("tasks.assignee_loading") ?? "Loading assignee…"
           : window.mI18n?.get("tasks.unassigned") ?? "Unassigned"
         if (mode === "area") return areaLabel(card)
+        if (mode === "rice") {
+          const labelKey = key === "none" ? "planning_rice.unscored" : `tasks.rice_${key}`
+          return window.mI18n?.get(labelKey) ?? riceGroupLabels[key]
+        }
         if (mode === "status") {
           const status = getStatusDef(key)
           return status ? window.mI18n?.get(status.i18nKey) ?? status.label : key
@@ -150,6 +164,7 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal): voi
       }
       const sortedKeys = Array.from(groups.keys()).sort((a, b) => {
         if (mode === "priority") return Number(a) - Number(b)
+        if (mode === "rice") return riceGroupOrder.indexOf(a) - riceGroupOrder.indexOf(b)
         if (mode === "status") return statusRank(a) - statusRank(b) || a.localeCompare(b)
         if (byAssignee) return Number(!a) - Number(!b) || a.localeCompare(b)
         return groupLabel(a).localeCompare(groupLabel(b), document.documentElement.lang || undefined) || a.localeCompare(b)

@@ -1,5 +1,6 @@
 import type { Client } from "@libsql/client"
 import { localReaderCacheToken } from "../../scripts/database-client.mjs"
+import type { CalendarPushPolicySettings } from "./calendar-push-policy"
 import { taskDetailServerSettingKey } from "./task-detail-layout"
 
 const installationIdCache = new WeakMap<object, { token: string; value: string | undefined }>()
@@ -158,7 +159,7 @@ export async function readCachedAiAssistDisabled(
   return value
 }
 
-export interface CachedCalendarPushPolicy {
+export interface CachedCalendarPushPolicy extends CalendarPushPolicySettings {
   calendar_manual_push_enabled: boolean | string | null | undefined
   calendar_sync_enabled: boolean | string | null | undefined
   calendar_sync_mode: string | null | undefined

@@ -1648,10 +1648,12 @@ const aboutDocs = await readRepoAboutDocs()
           showToast(`Synced ${res.synced} offline ${res.synced === 1 ? "change" : "changes"}`, "success")
           document.dispatchEvent(new CustomEvent("meitheal:tasks-changed"))
         } else if (res.remaining > 0) {
-          showToast("Still offline — changes will sync automatically when connected.", "info")
+          showToast("Pending changes remain saved for the original Board.", "info")
         } else {
           showToast("Everything is already synced", "success")
         }
+      } catch {
+        showToast("Could not check the offline queue. Try again on the original Board.", "warning")
       } finally {
         syncBtn.disabled = false
       }

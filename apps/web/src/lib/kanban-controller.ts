@@ -133,22 +133,11 @@ export function initKanbanArea(
       const anchor = findAnchorForCard(container, card)
       const ctx = currentTaskApiContext()
       const headers = ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" }
-      if (anchor) {
-        const res = await fetch("/api/tasks/reorder", {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ task_id: taskId, anchor_id: anchor.anchorId, lane: laneStatus, before: anchor.before }),
-        })
-        return res.ok
-      }
-      const orderedIds = Array.from(container.querySelectorAll<HTMLElement>(":scope > .kanban-card[data-id]"))
-        .map((el) => el.dataset.id)
-        .filter((id): id is string => Boolean(id))
-      if (orderedIds.length < 2) return true
+      if (!anchor) return true
       const res = await fetch("/api/tasks/reorder", {
         method: "POST",
         headers,
-        body: JSON.stringify({ scope: "kanban", ordered_ids: orderedIds }),
+        body: JSON.stringify({ task_id: taskId, anchor_id: anchor.anchorId, lane: laneStatus, before: anchor.before }),
       })
       return res.ok
     }
@@ -242,14 +231,16 @@ export function initKanbanArea(
           return
         }
 
-        // Persist exact intra-lane placement inside destination lane after status change
-        if (targetContainer) {
-          await persistRelativeOrder(card, targetContainer, status).catch(() => {})
-        }
+        // The lane change is durable even if the separate order write is rejected.
+        const orderSaved = !targetContainer || await persistRelativeOrder(card, targetContainer, status).catch(() => false)
         if (__signal.aborted) return
-
-        const moved = window.mI18n?.get("kanban.moved_to") ?? "Moved to {lane}"
-        showToast(moved.replace("{lane}", laneName))
+        if (orderSaved) {
+          const moved = window.mI18n?.get("kanban.moved_to") ?? "Moved to {lane}"
+          showToast(moved.replace("{lane}", laneName))
+        } else {
+          document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { id: taskId } }))
+          showToast(window.mI18n?.get("kanban.reorder_failed") ?? "Couldn’t save the card order. Try again.", "warning")
+        }
         if (!wasDone && isDoneStatus(status)) {
           const completed = await res.json().catch(() => null)
           if (completed && !__signal.aborted) recordCompletion(card, restoreFocus, completed)
@@ -340,7 +331,12 @@ export function initKanbanArea(
               const related = evt.related as HTMLElement | null
               const targetCol = evt.to.closest<HTMLElement>(".kanban-column")
               setHoveredLane(targetCol)
+              if (pendingMoves.has(dragged)) return false
               if (related?.classList.contains("swimlane-group")) return false
+              const from = evt.from.closest<HTMLElement>(".dynamic-group")
+              const to = evt.to.closest<HTMLElement>(".dynamic-group")
+              if (evt.from !== evt.to && (from || to) &&
+                (!from || !to || from.dataset.swimlaneType !== to.dataset.swimlaneType || groupMode === "status")) return false
               if (evt.from === evt.to && related?.classList.contains("kanban-card")) {
                 // Keep promoted cards grouped above regular cards inside the same lane
                 if (dragged.dataset.promoted !== related.dataset.promoted) return false

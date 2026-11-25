@@ -521,7 +521,7 @@ try {
   import { CUSTOM_RECURRENCE_SENTINEL, enhanceRecurrenceSelect } from "@lib/recurrence-picker"
   import { readWorkspacePreferences, saveWorkspacePreferences } from "@lib/workspace-preferences"
   type SortableInstance = { destroy(): void }
-  type SortableFactory = (typeof import("sortablejs"))["default"]
+  type SortableFactory = typeof import("sortablejs")
   let sortableModulePromise: Promise<SortableFactory> | null = null
   function loadSortable(): Promise<SortableFactory> {
     if (!sortableModulePromise) {

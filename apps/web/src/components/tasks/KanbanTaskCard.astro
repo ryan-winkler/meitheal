@@ -138,6 +138,7 @@ try {
   data-title={title}
   data-desc={task.description ? String(task.description).slice(0, 200) : ""}
   data-priority={String(priority)}
+  data-rice={rice ?? ""}
   data-promoted={String(promoted)}
   data-status={status}
   data-deferral-version={task.task_version != null ? String(task.task_version) : undefined}

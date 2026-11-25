@@ -192,7 +192,7 @@ const routinesBootstrap = serializeForScript({ routines: routinesList, habits: r
   data-can-complete={String(canCompleteRoutine)}
   data-board-id={workScope.boardId}
   data-board-active={String(boardActive)}
-  data-open-new={openNew && !loadFailed && boardActive ? "true" : undefined}
+  data-open-new={openNew && !loadFailed && boardActive && canCreateRoutine ? "true" : undefined}
   data-embedded={embedded ? "true" : undefined}
 >
   {area && (

@@ -1,4 +1,5 @@
 import { serializeCalendarDelivery } from "./calendar-delivery"
+import { ticketDetailsEnabled } from "./calendar-policy"
 import { createHash } from "node:crypto"
 import { homeAssistantWorkLink } from "@lib/ha-app-link"
 import {
@@ -1983,7 +1984,9 @@ async function pushCurrentTaskToCalendar(context: IntegrationScope, taskId: stri
           syncEnabled: true,
           syncMode: "export" as CalendarSyncMode,
           writeBack: true,
-          writeTicketDetails: true,
+          writeTicketDetails: ticketDetailsEnabled(
+            (await repo.getSettings(["calendar_write_ticket_details"])).calendar_write_ticket_details,
+          ),
           syncIntervalMs: 0,
         }
       : undefined)

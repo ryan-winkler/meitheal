@@ -208,13 +208,14 @@ window.addEventListener("meitheal-sw-update", ((e: CustomEvent<SwUpdateEventDeta
 pageLifecycle.onPageLoad(() => {
   if (!globalSignal.aborted) {
     showUpdateToast()
-    syncOfflineBanner()
+    void flushOfflineOutbox().catch(() => {})
     bindSessionReconnectBanner()
   }
 })
 
 // ── Offline Connectivity Indicator & Outbox Replay ──
 let pendingOfflineCount = 0
+let offlineReplayFailed = false
 
 function syncOfflineBanner() {
   const banner = document.getElementById("meitheal-offline-banner")
@@ -225,13 +226,15 @@ function syncOfflineBanner() {
   if (textEl) {
     textEl.textContent = offline
       ? buildOfflineSyncSummary(pendingOfflineCount, 0)
-      : `Syncing ${pendingOfflineCount} pending offline ${pendingOfflineCount === 1 ? "change" : "changes"}…`
+      : offlineReplayFailed ? "Offline changes remain saved for review."
+        : `Syncing ${pendingOfflineCount} pending offline ${pendingOfflineCount === 1 ? "change" : "changes"}…`
   }
 }
 
 async function flushOfflineOutbox(notify = true) {
   const result = await replayOfflineMutations()
   pendingOfflineCount = result.remaining
+  offlineReplayFailed = result.failed > 0
   syncOfflineBanner()
   if (result.synced > 0) {
     if (notify) showToast(buildOfflineSyncSummary(0, result.synced), "success")
@@ -243,7 +246,7 @@ void countOfflineMutations().then((count) => {
   pendingOfflineCount = count
   syncOfflineBanner()
   if (count > 0 && typeof navigator !== "undefined" && navigator.onLine !== false) {
-    void flushOfflineOutbox(true)
+    void flushOfflineOutbox().catch(() => {})
   }
 }).catch(() => {})
 
@@ -257,7 +260,7 @@ window.addEventListener(OFFLINE_QUEUE_EVENT, ((e: CustomEvent<{ count?: number }
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("message", (event: MessageEvent) => {
     if (event.data?.type === "SYNC_TRIGGERED") {
-      void flushOfflineOutbox(true)
+      void flushOfflineOutbox().catch(() => {})
     }
   }, { signal: globalSignal })
 }
@@ -271,7 +274,7 @@ window.addEventListener("online", () => {
   syncOfflineBanner()
   announceStatus("Back online")
   void runIngressSessionKeepalive(true)
-  void flushOfflineOutbox(true)
+  void flushOfflineOutbox().catch(() => {})
 }, { signal: globalSignal })
 
 // ── HA Ingress Session Keepalive & Reconnect Recovery ──

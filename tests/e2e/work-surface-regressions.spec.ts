@@ -135,7 +135,7 @@ test("Home Assistant panel address follows embedded routes, bookmarks and Back",
     await page.goBack()
     await expect(app.locator("#today-overview")).toBeVisible()
     await expect.poll(() => new URL(page.url()).searchParams.get("meitheal")).toBe("/today")
-    await app.getByRole("link", { name: "Meitheal Home", exact: true }).click()
+    await app.getByRole("link", { name: "meitheal. Home", exact: true }).click()
     await expect(app.locator("#dashboard-shell")).toBeVisible()
     await expect.poll(() => new URL(page.url()).searchParams.get("meitheal")).toBe("/?view=dashboard")
   } finally { await context.close() }
