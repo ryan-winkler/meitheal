@@ -216,9 +216,11 @@ test("Board completion and deletion ceilings survive canonical and routine HTTP 
     const deletion = resource(`tasks/${task.id}`, "DELETE")
     deletion.params.id = task.id
     expect((await deleteTask(deletion)).status).toBe(403)
-    const rows = await getPersistenceClient().execute("SELECT status,source_template_id FROM tasks")
-    expect(rows.rows).toHaveLength(1)
-    expect(rows.rows[0]).toMatchObject({ status: "pending", source_template_id: null })
+    const rows = await getPersistenceClient().execute("SELECT id,status,source_template_id FROM tasks ORDER BY ticket_number")
+    expect(rows.rows).toEqual([
+      { id: task.id, status: "pending", source_template_id: null },
+      { id: routine.taskId, status: "pending", source_template_id: routine.id },
+    ])
   })
 })
 
