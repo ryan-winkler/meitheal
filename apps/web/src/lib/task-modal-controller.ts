@@ -1572,7 +1572,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             taskLoaded = true
             syncInspectorDockMode()
             tdLoaded?.classList.remove("hidden")
-            if (!keepDescriptionDraft && !description) enterDescEdit()
+            if (!keepDescriptionDraft && !description) enterDescEdit(false)
             else if (!keepDescriptionDraft) void renderTaskDescription(description)
             resizeTitle()
             const finishLoadedTask = () => {
@@ -1855,11 +1855,11 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           }
         }
 
-        function enterDescEdit() {
+        function enterDescEdit(focus = true) {
           _descOriginalValue = tdDescription?.value ?? "";
           descEditContainer?.classList.remove("hidden");
           descView?.classList.add("hidden");
-          void descEditor?.setMode("visual", !scroller?.classList.contains("hidden"));
+          void descEditor?.setMode("visual", focus && !scroller?.classList.contains("hidden"));
         }
 
         function setDescriptionSaving(saving: boolean): void {

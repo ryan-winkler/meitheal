@@ -381,6 +381,8 @@ Typing `#` in a task description or comment uses the authenticated, private `GET
 
 If posting fails in the task panel, the text remains in the composer. Retry on that task after resolving the reported problem. Check that the task still exists and use an authenticated Home Assistant session or a credential with task-write scope. Check `api.comments.post.failed` for storage failures.
 
+Open a task with an empty description and begin typing in Comments while Details loads. The description editor should keep focus in the comment composer, including while the people picker opens.
+
 ## Task history
 
 Task activity and timeline reads return `Cache-Control: private, no-store`. They require a connection because history can contain previous field values and comment text. Automation clients continue to use `tasks:read`. Activating the updated web app removes old history responses from Meitheal’s browser caches. Reconnect before reopening **Activity Log** in Details.

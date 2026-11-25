@@ -709,6 +709,7 @@ export function enhanceDescriptionEditor(
   }
 
   async function setMode(nextMode: DescriptionEditorMode, focus = true): Promise<void> {
+    const focusOrigin = document.activeElement
     if (currentMode === "visual" && nextMode !== "visual") { flushVisualToTextarea(); destroyVisualInstance() }
     const seq = ++renderSeq
     currentMode = nextMode
@@ -730,7 +731,12 @@ export function enhanceDescriptionEditor(
 
     if (nextMode === "visual") {
       await mountHugeRteVisual(field.value, seq)
-      if (!lossyLocked && focus && !signal.aborted && seq === renderSeq) activeHugeRte?.removed === false ? activeHugeRte.focus?.() : fallbackEditable?.focus()
+      const currentFocus = document.activeElement
+      if (!lossyLocked && focus && !signal.aborted && seq === renderSeq &&
+          (currentFocus === focusOrigin || (currentFocus === document.body && !focusOrigin?.isConnected))) {
+        if (activeHugeRte?.removed === false) activeHugeRte.focus?.()
+        else fallbackEditable?.focus()
+      }
     } else if (nextMode === "preview") {
       await renderPreview(field.value, seq)
     } else if (focus) field.focus()
