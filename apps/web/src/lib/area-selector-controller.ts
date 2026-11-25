@@ -56,6 +56,7 @@ export function initAreaSelector(signal: AbortSignal): void {
   if (!trigger || !dropdown || !labelEl || !iconEl) return
   const allGroups = container.dataset.allGroupsLabel || "All Areas"
   const unavailableGroup = container.dataset.unavailableGroupLabel || "Area unavailable"
+  const areaOptions = () => [...dropdown.querySelectorAll<HTMLButtonElement>("[data-area-id]")]
   const placeDropdown = () => {
     if (!dropdown.classList.contains("is-open")) return
     dropdown.style.translate = ""
@@ -77,8 +78,7 @@ export function initAreaSelector(signal: AbortSignal): void {
     ?? container.dataset.initialAreaId
     ?? (params.get("project") ? "" : undefined)
   if (requested !== undefined) {
-    const option = Array.from(dropdown.querySelectorAll<HTMLElement>("[data-area-id]"))
-      .find(item => item.dataset.areaId === requested)
+    const option = areaOptions().find(item => item.dataset.areaId === requested)
     if (option) {
       selectArea(requested, option.dataset.areaName ?? allGroups, option.dataset.areaIcon ?? "🗂")
     } else if (table || calendar || document.getElementById("kanban-shell")) {
@@ -87,7 +87,7 @@ export function initAreaSelector(signal: AbortSignal): void {
   } else if (!calendar) {
     const saved = loadSavedArea()
     if (saved.areaId) {
-      const option = [...dropdown.querySelectorAll<HTMLElement>("[data-area-id]")].find(option => option.dataset.areaId === saved.areaId)
+      const option = areaOptions().find(option => option.dataset.areaId === saved.areaId)
       if (option) selectArea(saved.areaId, option.dataset.areaName ?? allGroups, option.dataset.areaIcon ?? "🗂")
       else if (dropdown.dataset.areaCatalogReady === "false") selectArea(saved.areaId, unavailableGroup, "🗂")
     }
@@ -101,7 +101,7 @@ export function initAreaSelector(signal: AbortSignal): void {
         ? document.activeElement.closest<HTMLElement>("[data-area-id]")?.dataset.areaId : undefined
       dropdown.replaceChildren(...catalog.children)
       dropdown.dataset.areaCatalogReady = "true"
-      const options = [...dropdown.querySelectorAll<HTMLElement>("[data-area-id]")]
+      const options = areaOptions()
       const option = options.find(item => item.dataset.areaId === selected)
       selectArea(selected, option?.dataset.areaName ?? (selected ? unavailableGroup : allGroups), option?.dataset.areaIcon ?? "🗂")
       if (focused !== undefined) (options.find(item => item.dataset.areaId === focused) ?? trigger).focus()
@@ -109,8 +109,7 @@ export function initAreaSelector(signal: AbortSignal): void {
   } else if (calendar) {
     document.addEventListener(CALENDAR_AREA_APPLIED_EVENT, event => {
       const areaId = (event as CustomEvent<string>).detail
-      const option = [...dropdown.querySelectorAll<HTMLElement>("[data-area-id]")]
-        .find(item => item.dataset.areaId === areaId)
+      const option = areaOptions().find(item => item.dataset.areaId === areaId)
       if (option) {
         selectArea(areaId, option.dataset.areaName ?? allGroups, option.dataset.areaIcon ?? "🗂", "calendar")
       }
@@ -120,16 +119,14 @@ export function initAreaSelector(signal: AbortSignal): void {
   let catalogRequest: AbortController | undefined
   let nextCursor: string | null = null
   async function loadCatalog(after?: string) {
-    const restoreFocus = container!.contains(document.activeElement)
-    catalogRequest?.abort()
     const request = new AbortController()
     catalogRequest = request
     const status = container!.querySelector<HTMLElement>("[data-area-catalog-feedback]")
     const retry = container!.querySelector<HTMLButtonElement>("[data-area-catalog-retry]")
     const more = container!.querySelector<HTMLButtonElement>("[data-area-catalog-more]")
     if (status) { status.hidden = false; status.textContent = container!.dataset.areaLoadingLabel || "Loading Areas…" }
-    if (retry) retry.hidden = true
-    if (more) more.disabled = true
+    retry?.setAttribute("aria-disabled", "true")
+    more?.setAttribute("aria-disabled", "true")
     try {
       const endpoint = container!.dataset.areaEndpoint
       if (!endpoint) throw new Error("Choose a current Board to load Areas.")
@@ -143,10 +140,11 @@ export function initAreaSelector(signal: AbortSignal): void {
       const data = await response.json() as { items?: Array<{ id: string; name: string; icon?: string }>; selected?: { id: string; name: string; icon?: string } | null; next_cursor?: string | null }
       if (!Array.isArray(data.items)) throw new Error("Could not verify Areas.")
       if (request.signal.aborted || signal.aborted || !container!.isConnected) return
+      const focused = dropdown!.contains(document.activeElement) ? document.activeElement as HTMLElement : null
       if (!after) dropdown!.querySelectorAll<HTMLElement>('[data-area-id]:not([data-area-id=""])').forEach(option => option.remove())
       const choices = data.selected ? [data.selected, ...data.items] : data.items
       for (const area of choices) {
-        if (typeof area.id !== "string" || typeof area.name !== "string" || [...dropdown!.querySelectorAll<HTMLElement>("[data-area-id]")].some(option => option.dataset.areaId === area.id)) continue
+        if (typeof area.id !== "string" || typeof area.name !== "string" || areaOptions().some(option => option.dataset.areaId === area.id)) continue
         const option = document.createElement("button")
         option.type = "button"
         option.className = "area-selector__option"
@@ -160,22 +158,30 @@ export function initAreaSelector(signal: AbortSignal): void {
       dropdown!.dataset.areaCatalogReady = "true"
       nextCursor = typeof data.next_cursor === "string" ? data.next_cursor : null
       const selected = trigger!.dataset.selectedAreaId ?? ""
-      const option = [...dropdown!.querySelectorAll<HTMLElement>("[data-area-id]")].find(option => option.dataset.areaId === selected)
+      const options = areaOptions()
+      const option = options.find(option => option.dataset.areaId === selected)
       selectArea(selected, option?.dataset.areaName ?? (selected ? unavailableGroup : allGroups), option?.dataset.areaIcon ?? "🗂")
       if (status) status.hidden = true
+      if (retry) retry.hidden = true
+      if (more) more.hidden = !nextCursor
+      if (focused && (!focused.isConnected || focused.hidden) && dropdown!.classList.contains("is-open") &&
+        (document.activeElement === focused || document.activeElement === document.body)) {
+        (options.find(item => item.dataset.areaId === focused.dataset.areaId) ?? option ?? options[0] ?? trigger!).focus()
+      }
       document.dispatchEvent(new CustomEvent("meitheal:area-catalog-ready", { detail: { areaId: selected } }))
-      if (more) { more.hidden = !nextCursor; more.disabled = false }
-      if (restoreFocus) (dropdown!.querySelector<HTMLElement>('[aria-selected="true"]') ?? trigger!).focus()
     } catch {
       if (request.signal.aborted || signal.aborted || !container!.isConnected) return
       if (!after) dropdown!.dataset.areaCatalogReady = "false"
       if (status) { status.hidden = false; status.textContent = container!.dataset.areaFailedLabel || "Areas unavailable. Your selection is kept." }
       if (retry) retry.hidden = false
-      if (more) more.disabled = false
+    } finally {
+      catalogRequest = undefined
+      retry?.removeAttribute("aria-disabled")
+      more?.removeAttribute("aria-disabled")
     }
   }
   container.addEventListener("click", event => {
-    if (!(event.target instanceof Element)) return
+    if (catalogRequest || !(event.target instanceof Element)) return
     if (event.target.closest("[data-area-catalog-retry]")) void loadCatalog()
     if (event.target.closest("[data-area-catalog-more]") && nextCursor) void loadCatalog(nextCursor)
   }, { signal })
@@ -205,6 +211,34 @@ export function initAreaSelector(signal: AbortSignal): void {
     selectArea(areaId, areaName, areaIcon, "user")
     closeDropdown()
     trigger.focus()
+  }, { signal })
+
+  dropdown.addEventListener("keydown", event => {
+    if (event.altKey || event.ctrlKey || event.metaKey) return
+    const options = areaOptions()
+    const index = options.indexOf(event.target as HTMLButtonElement)
+    if (index < 0) return
+    const last = options.length - 1
+    let next: number
+    switch (event.key) {
+      case "ArrowUp":
+        next = Math.max(0, index - 1)
+        break
+      case "ArrowDown":
+        next = Math.min(last, index + 1)
+        break
+      case "Home":
+        next = 0
+        break
+      case "End":
+        next = last
+        break
+      default:
+        return
+    }
+    event.preventDefault()
+    event.stopPropagation()
+    options[next]?.focus()
   }, { signal })
 
   // Close on click outside
