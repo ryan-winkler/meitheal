@@ -894,7 +894,7 @@ const isChecklist = activeSpec.kind === "checklist"
         if (feedback) {
           feedback.textContent = ""
           const msg = document.createElement("span")
-          msg.textContent = `Saved offline: ${title} — will sync automatically when back online.`
+          msg.textContent = `Saved offline: ${title}. Open this Board when you're online to sync.`
           feedback.appendChild(msg)
           feedback.className = "new-pwa-feedback new-pwa-feedback--ok"
           feedback.hidden = false

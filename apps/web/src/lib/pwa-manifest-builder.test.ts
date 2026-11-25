@@ -17,7 +17,7 @@ describe("pwa-manifest-builder", () => {
     assert.equal(manifest.scope, "/")
     assert.equal(manifest.display, "standalone")
     assert.deepEqual(manifest.display_override, ["window-controls-overlay", "standalone"])
-    assert.equal(manifest.launch_handler.client_mode, "focus-existing")
+    assert.equal(manifest.launch_handler.client_mode, "navigate-new")
     assert.equal(manifest.share_target.action, "/new")
     assert.ok(manifest.shortcuts.some((s) => s.url === "/new?kind=standard_action"))
     assert.ok(manifest.shortcuts.some((s) => s.url === "/new?kind=shopping_item"))

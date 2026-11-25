@@ -10,7 +10,7 @@ Meitheal caches static assets such as scripts, CSS, fonts and icons. Work pages 
 
 The existing IndexedDB engine can retain supported task edits and pending operations for the verified account, installation and Board that created them. Switching accounts or Boards does not transfer a queue. Previously unpartitioned legacy browser data stays unclaimed for manual recovery; it is not automatically assigned to the next visitor.
 
-Open a task shortcut while connected to establish its Board context. If the connection drops while the form is open, task capture can save to that Board's outbox. Reconnect in the same context to replay the original attempt. Opening a shortcut from a closed app still requires a connection. The Routine shortcut opens the connected Routine editor.
+Open a task shortcut while connected to establish its Board context. In browsers that support opening a new app window, the shortcut opens its target there and preserves the current form. If the connection drops while the form is open, task capture can save to that Board's outbox. Reconnect in the same context to replay the original attempt. Opening a shortcut from a closed app still requires a connection. The Routine shortcut opens the connected Routine editor.
 
 Home Assistant ingress can open a shortcut directly in the browser. The form establishes the current Board and account before submission and requires current write permission when it saves.
 
