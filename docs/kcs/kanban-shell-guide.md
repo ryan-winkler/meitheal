@@ -24,7 +24,7 @@ Choose **Group by → By Area** to group the current page of cards within each l
 
 - Select the card's task key, such as **MTH-42**, to open the full task. With a task key focused, use Up and Down within a lane, Left and Right between lanes, and Enter or Space to open. Press N to open quick capture in that lane.
 - Open **⋯** at the top of a card and pick a lane under **Move to**. This works with keyboard, mouse, or touch. Escape closes the actions and returns focus to the card. To reverse a move, choose the previous lane.
-- You can also drag the card. On touch, swipe to scroll the board, or hold the card body until it lifts, then drag it to the destination lane. The card stays in its current lane while Meitheal saves. A rejected move leaves it in place.
+- You can also drag the card. On touch, swipe to scroll the board, or hold the card body until it lifts, then drag it into the destination list. The card previews its destination while Meitheal saves. A rejected move returns it to its original lane.
 
 The task key is part of the card button’s accessible name. When one quick action replaces another, only the current dialog accepts keyboard input.
 

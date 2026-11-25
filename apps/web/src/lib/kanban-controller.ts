@@ -189,6 +189,7 @@ export function initKanbanArea(
         : (typeGroup?.querySelector<HTMLElement>(".swimlane-cards") ?? lane.querySelector<HTMLElement>(".kanban-cards"))
 
       pendingMoves.set(card, lane)
+      card.setAttribute("aria-busy", "true")
       bumpKanbanMutationEpoch()
       if (!alreadyPlaced && targetContainer && prevParent !== targetContainer) {
         if (typeGroup) typeGroup.hidden = false
@@ -204,7 +205,7 @@ export function initKanbanArea(
       syncMoveStatus(lane)
 
       const rollbackMove = () => {
-        if (prevParent?.isConnected) prevParent.insertBefore(card, prevNext)
+        if (prevParent?.isConnected) prevParent.insertBefore(card, prevNext?.parentNode === prevParent ? prevNext : null)
         card.dataset.status = prevStatus
         card.dataset.taskType = prevType
         if (source !== lane) {
@@ -220,7 +221,10 @@ export function initKanbanArea(
           headers: ctx ? taskApiHeaders(ctx, { "content-type": "application/json" }) : { "content-type": "application/json" },
           body: JSON.stringify({ status, task_type: typeChanged ? newType : undefined }),
         })
-        if (__signal.aborted) return
+        if (__signal.aborted) {
+          if (res.ok) queueMoveRefresh()
+          return
+        }
         if (!res.ok) {
           rollbackMove()
           const problem = res.status === 409 ? await res.json().catch(() => null) : null
@@ -233,12 +237,12 @@ export function initKanbanArea(
 
         // The lane change is durable even if the separate order write is rejected.
         const orderSaved = !targetContainer || await persistRelativeOrder(card, targetContainer, status).catch(() => false)
+        queueMoveRefresh(restoreFocus && !__signal.aborted ? { taskId, lane: status } : undefined)
         if (__signal.aborted) return
         if (orderSaved) {
           const moved = window.mI18n?.get("kanban.moved_to") ?? "Moved to {lane}"
           showToast(moved.replace("{lane}", laneName))
         } else {
-          document.dispatchEvent(new CustomEvent("meitheal:tasks-changed", { detail: { id: taskId } }))
           showToast(window.mI18n?.get("kanban.reorder_failed") ?? "Couldn’t save the card order. Try again.", "warning")
         }
         if (!wasDone && isDoneStatus(status)) {
@@ -252,6 +256,7 @@ export function initKanbanArea(
         showToast(window.mI18n?.get("kanban.move_failed") ?? "Couldn’t move the task. Try again.", "error")
       } finally {
         pendingMoves.delete(card)
+        card.removeAttribute("aria-busy")
         syncMoveStatus(lane)
       }
     }
@@ -394,6 +399,7 @@ export function initKanbanArea(
           })
           sortableInstances.push(instance)
         }
+        board.dataset.sortingReady = "true"
       }).catch((err) => {
         log.warn("SortableJS init failed on Kanban", err)
       })

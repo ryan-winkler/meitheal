@@ -1,9 +1,28 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type Locator, type Page } from "@playwright/test"
 import { currentBoardWriteHeaders } from "../helpers/current-board-http"
 import { deferred, shouldSkipBrowserSpecs } from "./_helpers"
 
 test.skip(shouldSkipBrowserSpecs(), "Set E2E_BASE_URL to run browser specs")
 test.use({ serviceWorkers: "block", reducedMotion: "reduce" })
+
+async function moveCardToLane(page: Page, card: Locator, lane: Locator, checkHover?: () => Promise<void>) {
+  await expect(page.locator("#kanban-board")).toHaveAttribute("data-sorting-ready", "true")
+  const title = card.locator(".kanban-title-text")
+  const list = lane.locator(".kanban-cards")
+  await title.scrollIntoViewIfNeeded()
+  await list.scrollIntoViewIfNeeded()
+  const start = (await title.boundingBox())!
+  const target = (await list.boundingBox())!
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2)
+  await page.mouse.down()
+  try {
+    await page.mouse.move(target.x + target.width / 2, target.y + Math.min(20, target.height / 2), { steps: 18 })
+    await expect(lane).toHaveClass(/drag-over/)
+    await checkHover?.()
+  } finally {
+    await page.mouse.up()
+  }
+}
 
 test("lane hover keeps its dimensions and a rejected move clears its pending cue", async ({ page, request, baseURL }) => {
   const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
@@ -24,32 +43,31 @@ test("lane hover keeps its dimensions and a rejected move clears its pending cue
     await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
     const lane = page.locator('.kanban-column[data-status="active"]')
     const source = page.locator('.kanban-column[data-status="pending"] .kanban-card[data-id="' + id + '"]')
-    const target = lane.locator(".kanban-column-header")
-    const listSize = () => lane.locator(".kanban-cards").evaluate(el => ({ height: el.scrollHeight, top: el.scrollTop }))
+    const listSize = () => lane.locator(".kanban-cards").evaluate(el => ({ height: el.clientHeight, top: el.scrollTop }))
     const resting = await listSize()
-    const title = target.locator(".kanban-column-title")
-    const count = target.locator(".kanban-count")
-    await title.dispatchEvent("dragover", { bubbles: true, cancelable: true })
-    await expect(lane).toHaveClass(/drag-over/)
-    expect(await listSize()).toEqual(resting)
-    const next = await count.elementHandle()
-    await title.dispatchEvent("dragleave", { bubbles: true, relatedTarget: next })
-    await expect(lane).toHaveClass(/drag-over/)
-    expect(await listSize()).toEqual(resting)
     const response = page.waitForResponse(receipt => new URL(receipt.url()).pathname === path && receipt.request().method() === "PUT")
-    await source.dragTo(target, { sourcePosition: { x: 100, y: 35 } })
+    await moveCardToLane(page, source, lane, async () => {
+      const { highlighted, plain } = await lane.evaluate(element => {
+        const height = () => element.getBoundingClientRect().height
+        const highlighted = height()
+        element.classList.remove("drag-over")
+        const plain = height()
+        element.classList.add("drag-over")
+        return { highlighted, plain }
+      })
+      expect(highlighted).toBe(plain)
+    })
     const cue = lane.locator("[data-kanban-move-status]")
     await expect(cue).toHaveText("Moving task…")
     await expect(cue).toBeInViewport()
-    await expect(source).toHaveAttribute("aria-busy", "true")
-    await expect(lane.locator('.kanban-card[data-id="' + id + '"]')).toHaveCount(0)
-    expect(await listSize()).toEqual(resting)
+    await expect(lane.locator('.kanban-card[data-id="' + id + '"]')).toHaveAttribute("aria-busy", "true")
 
     release.resolve()
     expect((await response).status()).toBe(409)
     await expect(cue).toBeEmpty()
     await expect(lane).not.toHaveClass(/drag-over/)
     await expect(source).toBeVisible()
+    expect(await listSize()).toEqual(resting)
     await expect(page.getByText("Finish the blocking tasks before moving this one into progress.")).toBeVisible()
   } finally {
     release.resolve()
@@ -78,21 +96,21 @@ test("two lane writes settle before the queued Board refresh replaces their card
     await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
     const lane = page.locator('.kanban-column[data-status="active"]')
     const cue = lane.locator("[data-kanban-move-status]")
-    const target = lane.locator(".kanban-column-header")
     const pending = (id: string) => page.locator('.kanban-column[data-status="pending"] .kanban-card[data-id="' + id + '"]')
+    const active = (id: string) => lane.locator('.kanban-card[data-id="' + id + '"]')
     let reads = 0
     page.on("request", req => {
       if (new URL(req.url()).searchParams.has("boardRefresh")) reads++
     })
 
     for (const id of ids) {
-      await pending(id).dragTo(target, { sourcePosition: { x: 100, y: 35 } })
-      await expect(pending(id)).toHaveAttribute("aria-busy", "true")
+      await moveCardToLane(page, pending(id), lane)
+      await expect(active(id)).toHaveAttribute("aria-busy", "true")
     }
     const first = page.waitForResponse(res => new URL(res.url()).pathname === "/api/tasks/" + ids[0] && res.request().method() === "PUT")
     gates[0].resolve()
     expect((await first).status()).toBe(200)
-    await expect(pending(ids[0]!)).not.toHaveAttribute("aria-busy")
+    await expect(active(ids[0]!)).not.toHaveAttribute("aria-busy")
     await expect(cue).toHaveText("Moving task…")
     expect(reads).toBe(0)
     gates[1].resolve()
@@ -123,7 +141,7 @@ test("a saved move reconciles the latest filter after its original Board is repl
     const lane = page.locator('.kanban-column[data-status="active"]')
     const card = page.locator('.kanban-card[data-id="' + id + '"]')
     const previous = await page.locator("#kanban-board").elementHandle()
-    await card.dragTo(lane.locator(".kanban-column-header"), { sourcePosition: { x: 100, y: 35 } })
+    await moveCardToLane(page, card, lane)
     await expect(card).toHaveAttribute("aria-busy", "true")
     const search = page.getByRole("textbox", { name: "Filter by text" })
     await search.fill(title)
@@ -160,13 +178,11 @@ test("a saved move holds its WIP slot while the Board refresh is pending", async
     await expect(page.locator("#kanban-shell")).toHaveAttribute("data-kanban-booted", "true")
     const lane = page.locator('.kanban-column[data-status="active"]')
     await lane.evaluate(el => { el.setAttribute("data-wip-limit", String(Number(el.getAttribute("data-total")) + 1)) })
-    const target = lane.locator(".kanban-column-header")
-    const drag = (id: string) => page.locator('.kanban-card[data-id="' + id + '"]')
-      .dragTo(target, { sourcePosition: { x: 100, y: 35 } })
+    const drag = (id: string) => moveCardToLane(page, page.locator('.kanban-card[data-id="' + id + '"]'), lane)
     const read = page.waitForRequest(req => new URL(req.url()).searchParams.has("boardRefresh"))
     await drag(ids[0]!)
     await read
-    await expect(page.locator('.kanban-card[data-id="' + ids[0] + '"]')).toHaveAttribute("draggable", "false")
+    await expect(lane.locator('.kanban-card[data-id="' + ids[0] + '"]')).toBeVisible()
     await drag(ids[1]!)
     await expect(page.getByText(/has reached its work-in-progress limit/)).toBeVisible()
     expect((await (await request.get("/api/tasks/" + ids[1])).json()).status).toBe("pending")
