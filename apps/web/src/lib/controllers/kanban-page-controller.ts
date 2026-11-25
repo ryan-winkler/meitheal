@@ -17,13 +17,13 @@ export interface KanbanRefreshFocus {
   afterSave?: "status" | "lane-move" | "epic" | "board-group"
 }
 
-export function findGroupFocus(board: HTMLElement, group: HTMLElement) {
+export function findGroupFocus(board: HTMLElement, group: HTMLElement, selector = ".swimlane-header") {
   const laneId = group.closest<HTMLElement>(".kanban-column")?.dataset.laneId
   const key = group.dataset.swimlaneType
   const lane = laneId && board.querySelector(`.kanban-column[data-lane-id="${CSS.escape(laneId)}"]`)
   const target = lane && [...lane.querySelectorAll<HTMLElement>(".swimlane-group")]
     .find(candidate => key !== undefined && candidate.dataset.swimlaneType === key)
-  return (target && target.querySelector<HTMLElement>(".swimlane-header")) ||
+  return (target && target.querySelector<HTMLElement>(selector)) ||
     (lane || board).querySelector<HTMLElement>(".kanban-column-header")
 }
 
@@ -95,7 +95,7 @@ export function initKanbanPage(signal: AbortSignal): void {
   let queuedBackgroundRead: { focus: KanbanRefreshFocus | undefined; dataOnly: boolean } | undefined
 
   function boardInteractionActive() {
-    return board.querySelector('.kanban-inline-add, [contenteditable="true"], .kanban-card.dragging, .kanban-card[aria-busy="true"], [data-title-saving]') ||
+    return board.querySelector('.kanban-inline-add, [contenteditable="true"], .kanban-card.dragging, .kanban-card[aria-busy="true"], [data-title-saving], .kanban-sortable-chosen, .swimlane-order-chosen, .swimlane-order[open]') ||
       document.querySelector("#kanban-card-menu:not([hidden]), .quick-action-popover:not([inert])")
   }
 
@@ -112,7 +112,7 @@ export function initKanbanPage(signal: AbortSignal): void {
     if (!queuedBackgroundRead || !dataOnly) queuedBackgroundRead = { focus, dataOnly }
     interactionObserver.observe(document.body, {
       childList: true, subtree: true, attributes: true,
-      attributeFilter: ["hidden", "inert", "class", "aria-busy", "contenteditable", "data-title-saving"],
+      attributeFilter: ["hidden", "inert", "class", "aria-busy", "contenteditable", "data-title-saving", "open"],
     })
     queueMicrotask(resumeBackgroundRead)
   }
@@ -177,8 +177,8 @@ export function initKanbanPage(signal: AbortSignal): void {
       const nowFocused = document.activeElement
       const active = !focusMoved && (nowFocused === document.body || (nowFocused instanceof Element && nowFocused.closest("[data-board-verification]"))) ? requestedFocus : nowFocused
       const grouping = board.dataset.groupBy
-      const activeGroup = (grouping === "assigned" || grouping === "status" || grouping === "project") && board.contains(active) &&
-        active?.matches("button.swimlane-header") ? active.closest<HTMLElement>(".swimlane-group") : null
+      const activeGroup = board.contains(active) && active?.matches(".swimlane-header, .swimlane-grip")
+        ? active.closest<HTMLElement>(".swimlane-group") : null
       const activeInBoard = active instanceof HTMLElement && board.contains(active)
       const laneMove = focus?.afterSave === "lane-move"
       const focusMovedCard = laneMove && focus.taskId &&
@@ -250,7 +250,8 @@ export function initKanbanPage(signal: AbortSignal): void {
 
       const retainedControl = previousControl && findKanbanDetailFocus(board, previousControl)
       if (activeGroup && board.dataset.groupBy === grouping) {
-        findGroupFocus(board, activeGroup)?.focus({ preventScroll: true })
+        const selector = active?.matches(".swimlane-grip") ? ".swimlane-grip" : ".swimlane-header"
+        findGroupFocus(board, activeGroup, selector)?.focus({ preventScroll: true })
       } else if ((shouldFocus || (laneMove && retainedControl)) &&
         (retainedControl || focusMovedCard || (!dataOnly && (focus || active === retry)))) {
         const lane = focus?.lane ? board.querySelector<HTMLElement>(`.kanban-column[data-status="${CSS.escape(focus.lane)}"]`) : null

@@ -79,6 +79,8 @@ Use a swimlane’s group heading to show or hide its cards with a click, Enter, 
 
 After a keyboard move from a card’s action menu, focus follows the card. If the destination group is collapsed, focus lands on its heading so you can expand it.
 
+On a grouped board, drag a card to another workflow lane or choose a destination from its action menu. It keeps its grouping value and appears under the matching heading. Dropping on an explicit type group also selects that task type. Drag a heading’s grip to reorder groups within the lane, or open its menu and choose **Move up** or **Move down**. With the grip focused, **Alt+Up** and **Alt+Down** do the same. Group order is saved in this browser for each Board, grouping choice and workflow lane.
+
 Open **Group by** on Household or a named Board. **By Area** uses the task’s Area, including the Area inherited from its Project. **By Epic** groups an Epic card under its own name. Other cards use their nearest readable parent Epic, even outside the current filter or page. Cards without a readable Epic appear under **No Epic**. Epic headings sort by name and include the Board’s ticket key to distinguish matching names. Group counts reflect the current page of each lane. Close Details after changing a parent to see the card in its new group. Copy the Board URL to preserve the grouping. Switching between Kanban and Table preserves Epic grouping.
 
 The work-in-progress count uses all eligible cards in the lane. Reordering a card preserves the relative order of all other cards across area filters and overlapping custom lanes. After a move, the destination lane may show a different page from the one containing the moved card.
