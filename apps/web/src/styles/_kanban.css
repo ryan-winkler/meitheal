@@ -185,7 +185,6 @@
   padding-top: 14px;
   overflow-y: auto;
   overflow-x: visible;
-  overflow-anchor: none;
   min-height: 0; /* Allow flex child to shrink below content size for scroll */
 }
 

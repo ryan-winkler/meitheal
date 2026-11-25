@@ -60,6 +60,41 @@ test("card moves preserve the grouping even when the destination lane has no mat
   }
 })
 
+test("a Type group accepts a card immediately in an empty lane and restores it when the write fails", async ({ page, request, baseURL }) => {
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+  const response = await request.post("/api/tasks", { headers, data: { title: "Story for empty lane", task_type: "story" } })
+  expect(response.status()).toBe(201)
+  const { id } = await response.json() as { id: string }
+  const path = `/api/tasks/${id}`
+  try {
+    await page.goto("/tasks?view=kanban&groupBy=type#kanban")
+    const board = page.locator("#kanban-board")
+    await expect(board).toHaveAttribute("data-sorting-ready", "true")
+    const pending = board.locator('.kanban-column[data-status="pending"]')
+    const active = board.locator('.kanban-column[data-status="active"]')
+    const story = '.swimlane-group[data-swimlane-type="story"]'
+    const card = page.locator(`.kanban-card[data-id="${id}"]`)
+    await expect(active.locator(story)).toBeVisible()
+    await expect(active.locator(".kanban-card")).toHaveCount(0)
+    await drag(page, card.locator(".kanban-title-text"), pending.locator(".kanban-column-header"))
+    await expect(pending.locator(story).locator(card)).toBeVisible()
+    await expect(card).not.toHaveAttribute("aria-busy", "true")
+
+    await page.route(`**${path}`, async route => {
+      await expect(active.locator(story).locator(card)).toBeVisible()
+      await route.fulfill({ status: 409, json: { error: "Fixture rejected the move" } })
+    }, { times: 1 })
+    const rejected = page.waitForResponse(result => new URL(result.url()).pathname === path && result.request().method() === "PUT")
+    await drag(page, card.locator(".kanban-title-text"), active.locator(".kanban-column-header"))
+    expect((await rejected).status()).toBe(409)
+    await expect(pending.locator(story).locator(card)).toBeVisible()
+    await expect(active.locator(story).locator(".swimlane-count")).toHaveText("0")
+    expect(await (await request.get(path)).json()).toMatchObject({ status: "pending", task_type: "story" })
+  } finally {
+    await request.delete(path, { headers })
+  }
+})
+
 test("groups reorder by grip, menu and keyboard and keep their order after reload", async ({ page, request, baseURL }) => {
   const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
   const ids = []

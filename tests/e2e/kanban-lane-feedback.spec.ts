@@ -207,13 +207,16 @@ test("a lane menu move preserves focus and scroll on another destination card", 
     await read
 
     const otherCard = destination.locator('.kanban-card[data-id="' + ids[1] + '"] .card-open-btn')
-    await otherCard.focus()
-    const scrollBefore = await destinationList.evaluate(list => {
+    const scrollBefore = await otherCard.evaluate(control => {
+      const list = control.closest<HTMLElement>(".kanban-cards")!
+      control.focus({ preventScroll: true })
       list.scrollTop = 40
+      list.dataset.testBeforeRefresh = "true"
       return list.scrollTop
     })
     expect(scrollBefore).toBeGreaterThan(0)
     release.resolve()
+    await expect(destinationList).not.toHaveAttribute("data-test-before-refresh", "true")
     await expect(destination.locator(source)).toBeAttached()
     await expect(otherCard).toBeFocused()
     const scrollAfter = await destinationList.evaluate(list => list.scrollTop)

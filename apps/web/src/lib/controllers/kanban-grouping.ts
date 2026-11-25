@@ -124,6 +124,7 @@ function attachGroupOrderControl(board: HTMLElement, group: HTMLElement, header:
 /** Group the server-selected page without replacing authoritative lane totals. */
 export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal, canEdit: boolean) {
   const mode = board.dataset.groupBy ?? "none"
+  if (mode === "none") return destinationList
   let nextGroupId = 0
 
   function initGroup(group: HTMLElement) {
@@ -330,12 +331,14 @@ export function initKanbanGrouping(board: HTMLElement, signal: AbortSignal, canE
     restoreGroupOrder(list, groupOrderKey(board, lane))
   }
 
-  return function destinationList(
+  return destinationList
+
+  function destinationList(
     lane: HTMLElement, sourceGroup?: HTMLElement | null, typeGroup?: HTMLElement,
   ): HTMLElement | null {
     if (typeGroup) return typeGroup.querySelector<HTMLElement>(".swimlane-cards")
     const list = lane.querySelector<HTMLElement>(".kanban-cards")
-    if (!list || mode === "none" || !sourceGroup) return list
+    if (!list || !sourceGroup) return list
     const key = mode === "status" ? normalizeStatus(lane.dataset.status ?? STATUS.PENDING) : sourceGroup.dataset.swimlaneType
     const existing = visibleGroups(list).find(group => group.dataset.swimlaneType === key)
     if (existing) return existing.querySelector<HTMLElement>(".swimlane-cards")

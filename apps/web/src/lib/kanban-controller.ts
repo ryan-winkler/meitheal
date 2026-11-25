@@ -306,12 +306,12 @@ export function initKanbanArea(
       cardSortables.delete(list)
     }
 
-    function laneUnderPointer(event?: MouseEvent | TouchEvent): HTMLElement | null {
+    function targetUnderPointer(event?: MouseEvent | TouchEvent): Element | null {
       if (!event || event.type.endsWith("cancel")) return null
       const point = "changedTouches" in event ? event.changedTouches[0] : event
       if (!point) return null
-      const lane = document.elementFromPoint(point.clientX, point.clientY)?.closest<HTMLElement>(".kanban-column")
-      return lane && board.contains(lane) ? lane : null
+      const target = document.elementFromPoint(point.clientX, point.clientY)
+      return board.contains(target) ? target : null
     }
 
     if (canEditBoard) {
@@ -357,7 +357,8 @@ export function initKanbanArea(
               if (groupMode !== "none") {
                 dragLifetime?.abort()
                 dragLifetime = new AbortController()
-                const trackLane = (event: MouseEvent | TouchEvent) => setHoveredLane(laneUnderPointer(event))
+                const trackLane = (event: MouseEvent | TouchEvent) =>
+                  setHoveredLane(targetUnderPointer(event)?.closest<HTMLElement>(".kanban-column") ?? null)
                 const options = { signal: dragLifetime.signal, passive: true }
                 document.addEventListener("pointermove", trackLane, options)
                 document.addEventListener("mousemove", trackLane, options)
@@ -398,13 +399,16 @@ export function initKanbanArea(
               if (!targetLane || !card.dataset.id) return
 
               const release = (evt as Sortable.SortableEvent & { originalEvent?: MouseEvent | TouchEvent }).originalEvent
-              const pointerLane = groupMode === "none" ? null : laneUnderPointer(release)
+              const pointerTarget = groupMode === "none" ? null : targetUnderPointer(release)
+              const pointerLane = pointerTarget?.closest<HTMLElement>(".kanban-column")
+              const toGroup = toList.closest(".swimlane-group")
+              const missedGroup = toGroup && pointerTarget?.closest(".swimlane-group") !== toGroup
               const cancelled = release?.type.endsWith("cancel") || (groupMode !== "none" && release && !pointerLane)
-              if (cancelled || (pointerLane && pointerLane !== sourceLane && pointerLane !== targetLane)) {
+              if (cancelled || (pointerLane && (pointerLane !== targetLane || missedGroup))) {
                 // Drops on a lane heading or a lane without the matching group preserve the card's grouping.
                 const sourceCards = [...fromList.querySelectorAll<HTMLElement>(":scope > .kanban-card")].filter(candidate => candidate !== card)
                 fromList.insertBefore(card, sourceCards[oldIndex] ?? null)
-                if (!cancelled && pointerLane) await moveTask(card, pointerLane)
+                if (!cancelled && pointerLane && pointerLane !== sourceLane) await moveTask(card, pointerLane)
                 return
               }
 
