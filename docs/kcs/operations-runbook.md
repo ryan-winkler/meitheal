@@ -628,9 +628,14 @@ unchanged by this build-entry command.
 
 MCP completion acknowledgements require the expected task ID or exact ticket key and a completed native status. A JSON object alone does not prove completion. Empty acknowledgements remain valid for native operations such as deletion that deliberately return204/205; they do not fabricate a completed task result.
 
-### Local Feedback access and request failures
+### Help and support
 
-For Feedback 503, check the Home Assistant Core connection and current account availability before investigating local storage/quota.403 requires an active nonsystem account for submission and a current administrator for queue access. Reopen Settings after correcting permissions.408 indicates the 8KiB JSON body did not arrive within five seconds; retry the unchanged form to retain its submission receipt.499 indicates cancellation. Optional app-version context accepts the published 12-character lowercase Canary version or the existing bounded release-context format; source hash abbreviations/full hashes are rejected. Administrator review drafts remain local to the current Settings lifecycle and export previews must be prepared again after refresh.
+Use the GitHub links in **Settings → App & Companion → Help & Support** for new
+reports and questions. Earlier local reports stay in the installation database.
+If the existing local API returns 503, check connectivity to Home Assistant
+Core and current account availability before checking storage. A 403 indicates
+that the account lacks the role for that operation.
+[Feedback and support](feedback-and-support.md).
 
 Household task lists, task exports, Routine cleanup, Calendar and Todo matching, and due-date reminders operate on Household records. Today separately links authorized due work from named Boards. Named Board task and Routine endpoints check current grants, and their ticket links open the owning Board.
 
