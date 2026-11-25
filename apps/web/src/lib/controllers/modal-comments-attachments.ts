@@ -20,7 +20,7 @@ import { mountReactions } from "./modal-reactions"
 const log = createClientLogger("tasks", "comments-attachments")
 
 function attachCommentManagement(
-  wrapper: HTMLElement, body: HTMLElement, content: string, taskLabel: string, taskId: string, url: string, signal: AbortSignal,
+  wrapper: HTMLElement, bubble: HTMLElement, body: HTMLElement, content: string, taskLabel: string, taskId: string, url: string, signal: AbortSignal,
 ): void {
   const template = document.querySelector<HTMLTemplateElement>("#td-comment-management")
   if (!template) return
@@ -37,7 +37,7 @@ function attachCommentManagement(
   error.id = `${wrapper.id}-error`
   hint.id = `${wrapper.id}-reference-hint`
   input.setAttribute("aria-describedby", `${error.id} ${hint.id}`)
-  wrapper.append(controls)
+  bubble.append(controls)
 
   const isCurrent = () => !signal.aborted && wrapper.isConnected
   function endEdit() {
@@ -239,7 +239,7 @@ export async function loadComments(
       wrapper.setAttribute("aria-label", `${c.author}, ${timestamp}`)
       wrapper.setAttribute("aria-describedby", body.id)
       bubble.append(title, body, footer)
-      if (isMine) attachCommentManagement(bubble, body, c.content, taskLabel, taskId, `${url}/${c.id}`, signal)
+      if (isMine) attachCommentManagement(wrapper, bubble, body, c.content, taskLabel, taskId, `${url}/${c.id}`, signal)
       mountReactions(footer, `${url}/${c.id}/reactions`, signal)
 
       if (isMine) {

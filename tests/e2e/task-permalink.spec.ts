@@ -341,7 +341,7 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     await sourcePage.unroute(mutationUrl)
 
     await sourcePage.locator("#td-comment-input").fill("Posted while editing")
-    await sourcePage.getByRole("button", { name: "Post Comment" }).press("Enter")
+    await sourcePage.getByRole("button", { name: "Send", exact: true }).press("Enter")
     await expect(list.getByText("Posted while editing", { exact: true })).toBeVisible()
     await expect(editor).toHaveValue("Edited linked comment")
     await save.press("Enter")
@@ -430,7 +430,10 @@ test("a comment link focuses the edited comment through ingress and recovers aft
     await sourcePage.unroute(mutationUrl)
     const sibling = list.getByRole("article").filter({ hasText: "Posted while editing" })
     await remove.press("Enter")
+    const deleting = sourcePage.waitForResponse(response => response.url() === mutationUrl && response.request().method() === "DELETE", { timeout: 6000 })
     await confirmDelete.press("Space")
+    const deleted = await deleting
+    expect(deleted.status(), deleted.ok() ? undefined : await deleted.text()).toBe(204)
     await expect(authorRow).toHaveCount(0)
     await expect(sibling).toBeFocused()
     await page.goto(href)
