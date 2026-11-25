@@ -129,7 +129,7 @@ function buildRunnerSrcdoc(entryJs: string, token: string): string {
   });
   try{
 ${safeCode}
-  }catch(e){send({kind:"error",message:String(e)});}
+  }catch(e){send({kind:"error",message:String(e)});return;}
   send({kind:"runner_ready"});
 })();
 </script></head><body></body></html>`
