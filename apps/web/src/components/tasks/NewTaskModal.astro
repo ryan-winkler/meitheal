@@ -184,7 +184,7 @@ try {
           </div>
           <div id="nt-layout-panel" hidden>
             <h4 class="td-layout-title">{t("task_layout.layout", locale)}</h4>
-            <TaskDetailLayoutEditor locale={locale} scope="personal" serverLayoutJson={serverLayoutJson} showEntityForms={false} />
+            <TaskDetailLayoutEditor locale={locale} scope="personal" serverLayoutJson={serverLayoutJson} showEntityForms={false} fieldLayoutOnly />
           </div>
           <div class="nt-form-grid" data-layout-order="properties">
             <div class="nt-field nt-field--full" data-layout-item="status">
@@ -274,8 +274,8 @@ try {
               </select>
             </div>}
           </div>
-          <div id="nt-due-grid" class="nt-form-grid" data-layout-order="scheduling">
-            <div id="nt-ctx-due-row" class="nt-field" data-layout-item="due">
+          <div id="nt-due-grid" class="nt-form-grid" data-layout-order="scheduling" data-layout-group-label={t("task_modal.details_group", locale)}>
+            <div id="nt-ctx-due-row" class="nt-field" data-layout-item="due" data-layout-exclude-kind="calendar_event">
               <label id="nt-due-label" data-layout-field-label>{t("tasks.due_date", locale)}</label>
               <input type="hidden" id="nt-contextual-due" name="due_date" />
               <div id="nt-due-date-picker" class="nt-due-picker" role="group" aria-labelledby="nt-due-label" data-placeholder={t("task_modal.due_date_placeholder", locale)}></div>
@@ -296,7 +296,7 @@ try {
         <details class="nt-options" id="nt-options">
           <summary>{t("task_modal.more_options", locale)}</summary>
           <div class="nt-options-content">
-            <div class="nt-form-grid" data-layout-order="scheduling">
+            <div class="nt-form-grid" data-layout-order="scheduling" data-layout-group-label={t("task_modal.more_options", locale)}>
               {available("goals") && <div class="nt-field">
                 <label for="new-task-goal">{t("task_modal.goal_label", locale)}</label>
                 <select id="new-task-goal" name="goal_id" class="form-select"><option value="">{t("task_modal.goal_none", locale)}</option></select>
@@ -570,7 +570,6 @@ try {
     const checklistDiv = document.getElementById("nt-contextual-checklist");
     const shoppingDiv = document.getElementById("nt-contextual-shopping");
     const eventDiv = document.getElementById("nt-contextual-event");
-    const dueRow = document.getElementById("nt-ctx-due-row");
     const titleInput = document.getElementById("new-task-title-input") as HTMLTextAreaElement | null;
     const descInput = document.getElementById("new-task-desc-input") as HTMLTextAreaElement | null;
     const descEditor = enhanceDescriptionEditor(descInput, { signal });
@@ -728,13 +727,18 @@ try {
       const open = ntLayoutPanel.hidden
       if (open && !ntLayoutMounted) {
         const editor = ntLayoutPanel.querySelector<HTMLElement>("[data-task-layout-editor]")
-        if (editor) {
-          initTaskDetailLayoutEditor(editor, signal)
+        if (editor && ntSections) {
+          const supportedKinds = new Set([...kindTabs].map(tab => (tab as HTMLElement).dataset.kind))
+          editor.querySelectorAll<HTMLElement>("[data-layout-target]").forEach(tab => {
+            if (tab.dataset.layoutTarget !== "default" && !supportedKinds.has(tab.dataset.layoutTarget)) tab.remove()
+          })
+          initTaskDetailLayoutEditor(editor, signal, ntSections)
           ntLayoutMounted = true
         }
       }
       ntLayoutPanel.hidden = !open
       ntLayoutToggle.setAttribute("aria-expanded", String(open))
+      if (!open) updateNtLayout?.()
     }, { signal })
 
     const prioritySelect = overlay.querySelector<HTMLSelectElement>("#new-task-priority")
@@ -827,7 +831,6 @@ try {
       checklistDiv?.classList.toggle("hidden", !checklist)
       shoppingDiv?.classList.toggle("hidden", !shopping)
       eventDiv?.classList.toggle("hidden", !event)
-      dueRow?.classList.toggle("hidden", event)
       if (titleInput) {
         const labels = titleInput.dataset
         titleInput.placeholder = (shopping ? labels.placeholderShopping

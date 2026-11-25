@@ -31,6 +31,15 @@ function layoutItems(list: HTMLElement): HTMLElement[] {
   return Array.from(list.querySelectorAll<HTMLElement>(":scope > [data-layout-item]"))
 }
 
+function editorRows(list: HTMLElement): HTMLElement[] {
+  return layoutItems(list).filter(row => !row.hidden)
+}
+
+function ticketFieldLists(form: HTMLElement): HTMLElement[] {
+  return [...form.querySelectorAll<HTMLElement>("[data-layout-order]")]
+    .filter(list => !list.closest("[data-task-layout-editor]"))
+}
+
 function applyOrder(list: HTMLElement, order: readonly string[], attrName: "layoutItem" | "entityField" = "layoutItem"): void {
   const items = attrName === "layoutItem"
     ? layoutItems(list)
@@ -82,7 +91,7 @@ function setLabelText(labelEl: HTMLElement, text: string): void {
 }
 
 export function initTicketSectionOrder(sections: HTMLElement, signal: AbortSignal): () => void {
-  const lists = [sections, ...sections.querySelectorAll<HTMLElement>("[data-layout-order]")]
+  const lists = [sections, ...ticketFieldLists(sections)]
   const apply = () => {
     const serverDefault = readServerTaskDetailLayoutFromJson(sections.dataset.serverLayout)
     const taskKind = sections.dataset.taskKind || null
@@ -94,7 +103,8 @@ export function initTicketSectionOrder(sections: HTMLElement, signal: AbortSigna
       const isSection = group === "sections"
       for (const item of layoutItems(list)) {
         const id = item.dataset.layoutItem ?? ""
-        item.hidden = hidden.has(id) || (item.dataset.haAreaField === "edit" && !item.dataset.haAreaEndpoint)
+        item.hidden = hidden.has(id) || item.dataset.layoutExcludeKind === taskKind
+          || (item.dataset.haAreaField === "edit" && !item.dataset.haAreaEndpoint)
         const labelEl = getTicketLabelEl(item, isSection)
         if (labelEl) {
           if (labelEl.dataset.defaultLabel === undefined) {
@@ -209,28 +219,53 @@ function createEditorRow(
   return item
 }
 
-function populateLayoutEditor(root: HTMLElement): void {
-  const list = root.querySelector<HTMLOListElement>('[data-layout-order="sections"]')
+function populateLayoutEditor(root: HTMLElement, fieldHost?: HTMLElement): void {
+  const list = root.querySelector<HTMLOListElement>("[data-layout-sections-list]")
   const row = root.querySelector<HTMLTemplateElement>("template[data-layout-row]")?.content.firstElementChild
   const fields = root.querySelector<HTMLTemplateElement>("template[data-layout-fields]")?.content.firstElementChild
   if (!list || !row || !fields || list.childElementCount) return
 
   const sections: LayoutSection[] = JSON.parse(root.dataset.layoutSections ?? "[]")
+  const availableLists = fieldHost ? ticketFieldLists(fieldHost) : []
 
   const items = document.createDocumentFragment()
   for (const section of sections) {
+    const formLists = availableLists.filter(list => list.dataset.layoutOrder === section.id)
+    if (fieldHost && !formLists.length) continue
+
     const item = createEditorRow(root, row, section.id, section.label, section.icon)
-    if (section.fields) {
+    if (fieldHost) item.firstElementChild?.remove()
+    if (!section.fields) {
+      if (!fieldHost) items.append(item)
+      continue
+    }
+
+    for (const formList of fieldHost ? formLists : [null]) {
+      const availableFields = formList ? new Map(layoutItems(formList).map(field => [field.dataset.layoutItem, field])) : null
+      const fieldsInList = section.fields.filter(([id]) => !availableFields || availableFields.has(id))
+      if (!fieldsInList.length) continue
+
       const disclosure = fields.cloneNode(true) as HTMLDetailsElement
       const titleEl = disclosure.querySelector("[data-layout-fields-title]")
-      if (titleEl) titleEl.textContent = `${root.dataset.layoutFieldsLabel} · ${section.label}`
+      const subtitle = formList?.dataset.layoutGroupLabel
+      const title = subtitle ? `${section.label} · ${subtitle}` : section.label
+      if (titleEl) titleEl.textContent = formList ? title : `${root.dataset.layoutFieldsLabel} · ${section.label}`
       const fieldList = disclosure.querySelector("ol")!
       fieldList.dataset.layoutOrder = section.id
-      fieldList.setAttribute("aria-label", section.label)
-      fieldList.append(...section.fields.map(([id, label]) => createEditorRow(root, row, id, label)))
+      fieldList.setAttribute("aria-label", formList ? title : section.label)
+      const fieldRows = fieldsInList.map(([id, label]) => {
+        const editorRow = createEditorRow(root, row, id, label)
+        const excludeKind = availableFields?.get(id)?.dataset.layoutExcludeKind
+        if (excludeKind) editorRow.dataset.layoutExcludeKind = excludeKind
+        if (formList && fieldsInList.length === 1) {
+          editorRow.querySelectorAll("[data-layout-handle], [data-layout-move]").forEach(control => control.remove())
+        }
+        return editorRow
+      })
+      fieldList.append(...fieldRows)
       item.append(disclosure)
     }
-    items.append(item)
+    if (!fieldHost || item.childElementCount) items.append(item)
   }
   list.append(items)
 }
@@ -243,9 +278,9 @@ function cloneBaseConfig(base: TaskDetailLayoutBaseConfig): TaskDetailLayoutBase
   }
 }
 
-export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSignal): void {
-  populateLayoutEditor(root)
-  const sectionsList = root.querySelector<HTMLOListElement>('[data-layout-order="sections"]')
+export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSignal, fieldHost?: HTMLElement): void {
+  populateLayoutEditor(root, fieldHost)
+  const sectionsList = root.querySelector<HTMLOListElement>("[data-layout-sections-list]")
   const entityList = root.querySelector<HTMLOListElement>("[data-layout-entity-list]")
   const rowTemplate = root.querySelector<HTMLTemplateElement>("template[data-layout-row]")?.content.firstElementChild
   const lists = Array.from(root.querySelectorAll<HTMLElement>("[data-layout-order]"))
@@ -300,6 +335,14 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
       return draft.kinds[activeScope]!
     }
     return draft
+  }
+
+  function reorderTaskFields(config: TaskDetailLayoutBaseConfig, group: string, rows: HTMLElement[]): void {
+    const order = rows.map(row => row.dataset.layoutItem ?? "")
+    const shownIds = new Set(order)
+    let index = 0
+    // Keep unavailable fields at their saved positions for Details and other form groups.
+    config.orders[group] = (config.orders[group] ?? []).map(id => shownIds.has(id) ? order[index++]! : id)
   }
 
   function activeEntityConfig(scope: EntityFormLayoutScope): EntityFormLayoutConfig {
@@ -389,7 +432,7 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
     hidden: Set<string>,
     labels: Record<string, string>,
   ): { visibleCount: number; total: number } {
-    const items = layoutItems(list)
+    const items = editorRows(list)
     let visibleCount = 0
     for (const [index, item] of items.entries()) {
       const id = item.dataset.layoutItem ?? ""
@@ -410,6 +453,11 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
       }
       item.querySelector(':scope > .td-layout-editor__row [data-layout-move="up"]')?.setAttribute("aria-disabled", String(index === 0))
       item.querySelector(':scope > .td-layout-editor__row [data-layout-move="down"]')?.setAttribute("aria-disabled", String(index === items.length - 1))
+      if (fieldHost) {
+        item.querySelectorAll<HTMLElement>("[data-layout-handle], [data-layout-move]").forEach(control => {
+          control.hidden = items.length < 2
+        })
+      }
     }
     return { visibleCount, total: items.length }
   }
@@ -433,6 +481,9 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
       for (const list of lists) {
         const group = list.dataset.layoutOrder ?? ""
         applyOrder(list, config.orders[group] ?? [])
+        if (fieldHost) {
+          for (const item of layoutItems(list)) item.hidden = item.dataset.layoutExcludeKind === scope
+        }
         const { visibleCount, total } = renderRowStates(list, new Set(config.hidden[group] ?? []), config.labels)
         if (group !== "sections") {
           const countEl = list.closest("details")?.querySelector<HTMLElement>("[data-layout-fields-count]")
@@ -632,12 +683,12 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
 
     const direction = button.dataset.layoutMove
     if (!direction || button.getAttribute("aria-disabled") === "true" || dragging) return
-    const items = layoutItems(list)
+    const items = editorRows(list)
     const index = items.indexOf(item)
     items.splice(index, 1)
     items.splice(index + (direction === "up" ? -1 : 1), 0, item)
     const target = ensureMutableTaskConfig()
-    target.orders[group] = items.map((row) => row.dataset.layoutItem ?? "")
+    reorderTaskFields(target, group, items)
     const label = target.labels[id] ?? item.dataset.defaultLabel ?? id
     const msg = (root.dataset.moved ?? "")
       .replace("{item}", label)
@@ -655,7 +706,7 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
     for (const list of lists) {
       attachVerticalListDragReorder(list, {
         handle: "[data-layout-handle]",
-        item: "[data-layout-item]",
+        item: "[data-layout-item]:not([hidden])",
         ghostClass: "td-layout-editor__ghost",
         signal,
         onStart: () => { dragging = true },
@@ -664,9 +715,9 @@ export function initTaskDetailLayoutEditor(root: HTMLElement, signal: AbortSigna
           if (oldIndex === newIndex) { renderActiveScope(); return }
           const group = list.dataset.layoutOrder
           if (!group) return
-          const items = layoutItems(list)
+          const items = editorRows(list)
           const target = ensureMutableTaskConfig()
-          target.orders[group] = items.map((row) => row.dataset.layoutItem ?? "")
+          reorderTaskFields(target, group, items)
           const id = item.dataset.layoutItem ?? ""
           const label = target.labels[id] ?? item.dataset.defaultLabel ?? id
           commitDraft((root.dataset.moved ?? "")

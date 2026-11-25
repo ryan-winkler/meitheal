@@ -12,12 +12,14 @@ interface Props {
   serverLayoutJson?: string | null
   allowServerSave?: boolean
   showEntityForms?: boolean
+  fieldLayoutOnly?: boolean
 }
 const {
   locale,
   serverLayoutJson = null,
   allowServerSave = false,
   showEntityForms = true,
+  fieldLayoutOnly = false,
 } = Astro.props
 
 const organization = await organizationLabelsFor(Astro)
@@ -58,7 +60,9 @@ const entityForms = Object.values(entityFormLayouts).map(form => ({
 >
   <div class="td-layout-scope td-layout-scope--personal">
     <span class="td-layout-scope__badge" data-layout-scope-badge>Using server default</span>
-    <p>Changes here apply to this browser and override the server default. Customize all tasks, individual task kinds, or entity forms.</p>
+    <p>{fieldLayoutOnly
+      ? t("task_layout.create_fields_only", locale)
+      : "Changes here apply to this browser and override the server default. Customize all tasks, individual task kinds, or entity forms."}</p>
   </div>
 
   <div class="td-layout-scopes" data-layout-scope-switcher role="tablist" aria-label="Layout target">
@@ -100,7 +104,7 @@ const entityForms = Object.values(entityFormLayouts).map(form => ({
     )}
   </div>
 
-  <div class="td-layout-editor__intro">
+  {!fieldLayoutOnly && <div class="td-layout-editor__intro">
     <p data-layout-active-hint>{t("task_layout.instructions", locale)}</p>
     <div class="flex items-center gap-2 flex-wrap">
       <button type="button" class="btn btn-ghost btn-sm" data-layout-reset-scope hidden>
@@ -118,10 +122,10 @@ const entityForms = Object.values(entityFormLayouts).map(form => ({
         <span>{t("task_layout.reset", locale)}</span>
       </button>
     </div>
-  </div>
+  </div>}
   <p class="td-layout-editor__error" data-layout-error hidden></p>
   <p class="sr-only" role="status" data-layout-status></p>
-  <ol class="td-layout-editor__list" data-layout-order="sections" aria-label={t("task_layout.sections", locale)}></ol>
+  <ol class="td-layout-editor__list" data-layout-sections-list data-layout-order={fieldLayoutOnly ? undefined : "sections"} aria-label={t(fieldLayoutOnly ? "task_layout.fields" : "task_layout.sections", locale)}></ol>
   <ol class="td-layout-editor__list" data-layout-entity-list aria-label="Form fields" hidden></ol>
 
   <template data-layout-row>

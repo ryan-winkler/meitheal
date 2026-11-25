@@ -2156,6 +2156,7 @@
     "focus": "Focus mode",
     "exit_focus": "Exit Focus",
     "instructions": "Drag grips or use arrows to reorder, click the pencil to rename, or toggle the eye icon to show or hide sections and fields.",
+    "create_fields_only": "Customize the fields used in New Task. Changes are saved in this browser.",
     "sections": "Task detail sections",
     "fields": "Fields",
     "move_up": "Move up",
