@@ -259,21 +259,40 @@ export async function loadComments(
 
 let attachmentsLoadSeq = 0
 
+function replaceAttachmentContents(container: HTMLElement, contents: Node, anchor?: HTMLElement): void {
+  const scroller = anchor ? container.closest<HTMLElement>(".td-scroller") : null
+  const bounds = anchor && scroller?.contains(anchor) ? anchor.getBoundingClientRect() : undefined
+  const viewport = bounds ? scroller?.getBoundingClientRect() : undefined
+  const top = bounds && viewport && bounds.height > 0 && bounds.bottom > viewport.top && bounds.top < viewport.bottom
+    ? bounds.top
+    : undefined
+
+  container.replaceChildren(contents)
+
+  // Keep the visible trigger at its current position when Attachments grows above it.
+  if (anchor && scroller && top !== undefined) {
+    const shift = anchor.getBoundingClientRect().top - top
+    if (shift) scroller.scrollTop += shift
+  }
+}
+
 /**
  * Load and render image attachment thumbnails for a task.
  */
-export async function loadAttachments(taskId: string): Promise<void> {
+export async function loadAttachments(taskId: string, anchor?: HTMLElement): Promise<void> {
   const container = document.getElementById(
     "td-attachments",
   ) as HTMLElement
   if (!container) return
   const seq = ++attachmentsLoadSeq
+  if (!anchor || container.dataset.activeTaskId !== taskId) container.replaceChildren()
   container.dataset.activeTaskId = taskId
-  container.replaceChildren()
+  const isCurrent = () => seq === attachmentsLoadSeq && container.dataset.activeTaskId === taskId && container.isConnected
 
   try {
     const attachments = await getAttachmentsByTaskId(taskId)
-    if (seq !== attachmentsLoadSeq || container.dataset.activeTaskId !== taskId || !container.isConnected) return
+    if (!isCurrent()) return
+    const contents = document.createDocumentFragment()
     const SAFE_IMAGE_DATA_URL_RE = /^data:image\/(?:png|jpe?g|gif|webp|avif);base64,[A-Za-z0-9+/=]+$/i
 
     attachments.forEach((att) => {
@@ -356,19 +375,21 @@ export async function loadAttachments(taskId: string): Promise<void> {
 
       thumb.appendChild(img)
       thumb.appendChild(delOverlay)
-      container.appendChild(thumb)
+      contents.appendChild(thumb)
     })
-    if (!container.childElementCount) {
+    if (!contents.childElementCount) {
       const emptyLabel = document.createElement("span")
       emptyLabel.className = "text-[10px] text-text-muted italic"
       emptyLabel.textContent = attachments.length ? "There is no preview for the saved image format." : "No attachments."
-      container.appendChild(emptyLabel)
+      contents.appendChild(emptyLabel)
     }
+    replaceAttachmentContents(container, contents, anchor)
   } catch (e) {
+    if (!isCurrent()) return
     log.error("Failed to load attachments", e)
     const errLabel = document.createElement("span")
     errLabel.className = "text-xs text-danger"
     errLabel.textContent = "Failed to load attachments"
-    container.appendChild(errLabel)
+    replaceAttachmentContents(container, errLabel, anchor)
   }
 }

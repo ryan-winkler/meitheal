@@ -188,10 +188,10 @@ Activity Log starts closed and loads
 when you open it. If the request fails, use **Retry** in Activity Log.
 
 Select **Attach image** in Discussion or **Add image** in Attachments to choose
-a PNG, JPEG, GIF, WebP or AVIF file. The picker preserves your comment draft and
-the scroll position. After choosing a file, use **View image** in the confirmation
-to open its preview. The image is saved in this browser for the current Board and
-account.
+a PNG, JPEG, GIF, WebP or AVIF file. Updating the attachment list keeps the
+Discussion at your current position and preserves your draft. After choosing a
+file, use **View image** in the confirmation to open its preview. The image is
+saved in this browser for the current Board and account.
 
 Select **Focus mode** on desktop to expand the ticket over the app window. The
 **Boxed** appearance keeps the ticket centered, and **Fluid** uses the full

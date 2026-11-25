@@ -39,15 +39,40 @@ for (const width of [991, 390]) {
       const task = await created.json()
       await page.goto(base + "/tickets/" + task.ticket_key)
       await expect(page.locator("#td-title")).toHaveValue("Attachment fixture")
+      await expect(page.locator("#td-desc-preview")).toHaveText("Test a comment draft and image")
+      await expect(page.locator("#td-comments .td-chat-empty")).toBeVisible()
+      await expect(page.locator("#td-attachments")).toHaveText("No attachments.")
+      await page.evaluate(async () => { await document.fonts.ready })
+      await page.locator("#td-loaded-content").evaluate(scroller => {
+        // The app must preserve the viewport even when the browser does not anchor scrolling.
+        scroller.style.setProperty("overflow-anchor", "none")
+      })
       const composer = page.locator("#td-comment-input")
       const paperclip = page.getByRole("button", { name: "Attach image", exact: true })
       await composer.fill("Keep this comment draft")
       await paperclip.scrollIntoViewIfNeeded()
-      const position = () => paperclip.evaluate(button => ({
-        top: button.getBoundingClientRect().top,
-        detail: document.getElementById("td-loaded-content")?.scrollTop,
-        page: document.scrollingElement?.scrollTop,
+      const nextPaint = () => page.evaluate(() => new Promise<void>(resolve => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
       }))
+      await nextPaint()
+      const position = () => paperclip.evaluate(button => {
+        const clip = button.getBoundingClientRect()
+        const composer = button.closest(".td-chat-composer-wrap")!.getBoundingClientRect()
+        return {
+          clipLeft: clip.left,
+          clipTop: clip.top,
+          composerLeft: composer.left,
+          composerTop: composer.top,
+          detail: document.getElementById("td-loaded-content")!.scrollTop,
+          page: document.scrollingElement!.scrollTop,
+        }
+      })
+      const expectSameViewport = (previous: Awaited<ReturnType<typeof position>>, current: Awaited<ReturnType<typeof position>>) => {
+        expect(current.page).toBe(previous.page)
+        for (const axis of ["clipLeft", "clipTop", "composerLeft", "composerTop"] as const) {
+          expect(Math.abs(current[axis] - previous[axis]), `${axis} changed after the image saved`).toBeLessThanOrEqual(1)
+        }
+      }
       const before = await position()
       const open = async () => {
         const chooser = page.waitForEvent("filechooser", { timeout: 5000 })
@@ -68,13 +93,36 @@ for (const width of [991, 390]) {
       await expect(page.locator("#td-attachments img")).toHaveCount(0)
       expect(await position()).toEqual(before)
 
+      // On mobile, keep the selected file pending while the user scrolls the discussion.
+      const pausedRead = width < 500 ? await page.evaluateHandle(() => {
+        const read = FileReader.prototype.readAsDataURL
+        let resume: (() => void) | undefined
+        FileReader.prototype.readAsDataURL = function(blob) {
+          FileReader.prototype.readAsDataURL = read
+          resume = () => read.call(this, blob)
+        }
+        return { ready: () => resume !== undefined, finish: () => resume!() }
+      }) : undefined
       await (await open()).setFiles({ name: "example.png", mimeType: "image/png", buffer: image })
+      let beforeSave = before
+      if (pausedRead) {
+        await expect.poll(() => pausedRead.evaluate(read => read.ready())).toBe(true)
+        const hit = await paperclip.boundingBox()
+        expect(hit).not.toBeNull()
+        await page.mouse.move(hit!.x + hit!.width / 2, hit!.y + hit!.height / 2)
+        await page.mouse.wheel(0, -32)
+        await expect.poll(async () => (await position()).detail).toBeLessThan(before.detail)
+        await nextPaint()
+        beforeSave = await position()
+        expect(beforeSave.clipTop - before.clipTop).toBeGreaterThan(1)
+        await pausedRead.evaluate(read => read.finish())
+        await pausedRead.dispose()
+      }
       const confirmation = page.locator("#toast-container").getByText("Image attached to task", { exact: true })
       await expect(confirmation).toBeVisible()
       await expect(composer).toHaveValue("Keep this comment draft")
-      const afterSave = await position()
-      expect(afterSave.page).toBe(before.page)
-      expect(Math.abs(afterSave.top - before.top)).toBeLessThanOrEqual(1)
+      await nextPaint()
+      expectSameViewport(beforeSave, await position())
       await page.getByRole("button", { name: "View image", exact: true }).click()
       const preview = page.locator("dialog.m-attachment-lightbox")
       const displayedImage = preview.getByRole("img", { name: "example.png" })

@@ -2010,7 +2010,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
               mimeType: file.type, base64Data, createdAt: new Date().toISOString(),
             })
             if (!attachmentIsCurrent(picker)) return
-            await loadAttachments(picker.taskId)
+            await loadAttachments(picker.taskId, picker.trigger)
             if (!attachmentIsCurrent(picker)) return
             const preview = document.querySelector<HTMLElement>(`[data-attachment-id="${attachmentId}"]`)
             showToast("Image attached to task", "success", preview ? { action: {
