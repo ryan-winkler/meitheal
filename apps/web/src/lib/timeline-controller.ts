@@ -2437,6 +2437,13 @@ function renderGantt(
   }
 
   let lastWindowKey = ""
+  let latestScrollTop: number
+  let latestViewportHeight: number
+
+  function measureVirtualWindow() {
+    latestScrollTop = scrollWrapper.scrollTop
+    latestViewportHeight = scrollWrapper.clientHeight || 600
+  }
 
   function syncVirtualWindow(force = false) {
     if (totalRowCount === 0) {
@@ -2450,10 +2457,9 @@ function renderGantt(
       return
     }
 
-    const scrollTop = scrollWrapper.scrollTop
-    const viewportH = scrollWrapper.clientHeight > 0 ? scrollWrapper.clientHeight : 600
-    const startRow = useFlowLayout ? 0 : Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 8)
-    const endRow = useFlowLayout ? totalRowCount - 1 : Math.min(totalRowCount - 1, Math.ceil((scrollTop + viewportH) / ROW_HEIGHT) + 8)
+    if (force) measureVirtualWindow()
+    const startRow = useFlowLayout ? 0 : Math.max(0, Math.floor(latestScrollTop / ROW_HEIGHT) - 8)
+    const endRow = useFlowLayout ? totalRowCount - 1 : Math.min(totalRowCount - 1, Math.ceil((latestScrollTop + latestViewportHeight) / ROW_HEIGHT) + 8)
     const group = document.activeElement?.closest<HTMLElement>(GROUP_ROW_SELECTOR)
     const focusRow = group && sidebarTrack.contains(group)
       ? Number(group.dataset.rowIndex)
@@ -2711,6 +2717,9 @@ function renderGantt(
   let virtualRafId = 0
 
   function scheduleVirtualSync() {
+    // Measure before updating the sidebar, header or date label. The window
+    // update can then mount rows without a forced layout.
+    measureVirtualWindow()
     if (virtualRafId !== 0) return
     virtualRafId = requestAnimationFrame(() => {
       virtualRafId = 0
@@ -2719,14 +2728,15 @@ function renderGantt(
   }
 
   const visibleRangeEl = document.getElementById("timeline-visible-range")
-  function updateVisibleRangeLabel() {
+  function updateVisibleRangeLabel(scrollLeft = scrollWrapper.scrollLeft) {
     if (!visibleRangeEl) return
-    const vw = scrollWrapper.clientWidth || 600
-    const leftDays = Math.floor(scrollWrapper.scrollLeft / pxPerDay)
-    const rightDays = Math.max(leftDays, Math.floor((scrollWrapper.scrollLeft + vw) / pxPerDay))
+    const viewportWidth = scrollWrapper.clientWidth || 600
+    const leftDays = Math.floor(scrollLeft / pxPerDay)
+    const rightDays = Math.max(leftDays, Math.floor((scrollLeft + viewportWidth) / pxPerDay))
     const visStart = addDays(rangeStart, leftDays)
     const visEnd = addDays(rangeStart, rightDays)
-    visibleRangeEl.textContent = formatVisibleTimelineRange(visStart, visEnd)
+    const label = formatVisibleTimelineRange(visStart, visEnd)
+    if (visibleRangeEl.textContent !== label) visibleRangeEl.textContent = label
   }
 
   function panTimelineByPx(deltaPx: number, smooth = true) {
@@ -2755,10 +2765,11 @@ function renderGantt(
   }
 
   scrollWrapper.addEventListener("scroll", () => {
-    sidebarTrack.style.transform = `translateY(-${scrollWrapper.scrollTop}px)`
-    headerSvg.style.transform = `translateX(-${scrollWrapper.scrollLeft}px)`
-    updateVisibleRangeLabel()
     scheduleVirtualSync()
+    const scrollLeft = scrollWrapper.scrollLeft
+    updateVisibleRangeLabel(scrollLeft)
+    sidebarTrack.style.transform = `translateY(-${latestScrollTop}px)`
+    headerSvg.style.transform = `translateX(-${scrollLeft}px)`
     if (scrollSaveTimer) clearTimeout(scrollSaveTimer)
     scrollSaveTimer = setTimeout(() => {
       localStorage.setItem(`${SCROLL_KEY_PREFIX}${zoom}`, String(scrollWrapper.scrollLeft))
@@ -2806,8 +2817,8 @@ function renderGantt(
   if (typeof ResizeObserver !== "undefined") {
     resizeObserver = new ResizeObserver(() => {
       if (!signal.aborted) {
-        updateVisibleRangeLabel()
         scheduleVirtualSync()
+        updateVisibleRangeLabel()
       }
     })
     resizeObserver.observe(scrollWrapper)

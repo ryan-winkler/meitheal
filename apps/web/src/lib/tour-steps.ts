@@ -6,7 +6,6 @@
  */
 
 export const TOUR_STORAGE_KEY = "meitheal-function-tour-state:v1"
-export const TOUR_RESTORE_EVENT = "meitheal:tour-restore"
 export const TOUR_START_EVENT = "meitheal:tour-start"
 
 export type TourStatus = "available" | "dismissed" | "completed"
@@ -21,7 +20,7 @@ export interface TourStep {
   selector: string
   title: string
   description: string
-  placement?: "right" | "bottom" | "top" | "left" | "auto"
+  placement: "right" | "bottom"
 }
 
 export const CORE_TOUR_STEPS: readonly TourStep[] = [

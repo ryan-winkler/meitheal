@@ -13,7 +13,7 @@ import {
 const TOUR_HELPER_ID = "meitheal-function-tour"
 let activeCleanup: (() => void) | null = null
 
-const save = (action: "dismiss" | "complete" | "restore") => {
+const save = (action: "dismiss" | "complete") => {
   try { localStorage.setItem(TOUR_STORAGE_KEY, JSON.stringify(transitionTourState(action))) } catch { /* ignore */ }
 }
 
@@ -44,8 +44,6 @@ const place = (target: HTMLElement, step: TourStep, spot: HTMLElement, pop: HTML
   const pr = pop.getBoundingClientRect(), pw = pr.width || 320, ph = pr.height || 200
   let left = r.left, top = r.bottom + gap
   if (step.placement === "right" && r.right + gap + pw <= vw - m) { left = r.right + gap; top = r.top }
-  else if (step.placement === "left" && r.left - gap - pw >= m) { left = r.left - gap - pw; top = r.top }
-  else if (step.placement === "top" && r.top - gap - ph >= m) { top = r.top - gap - ph }
   else if (r.bottom + gap + ph > vh - m && r.top - gap - ph >= m) { top = r.top - gap - ph }
   else if (r.bottom + gap + ph > vh - m && r.right + gap + pw <= vw - m) { left = r.right + gap; top = m }
   pop.style.left = `${Math.round(Math.max(m, Math.min(left, vw - pw - m)))}px`
