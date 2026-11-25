@@ -54,7 +54,7 @@ The board remains usable when reaction counts are unavailable. A denied request 
 
 1. Open `Kanban`.
 2. Open **Lanes**. On a phone, open **Board actions** first.
-3. Keep the board visible while renaming/aliasing built-in or custom lanes, changing lane accent colors, reordering lanes, and editing WIP limits.
+3. Use the controls in each row to rename a lane, change its accent color, or edit its WIP limit. Drag the grip or focus it and press Alt+Up or Alt+Down to reorder lanes. The lane name and status are plain text. Saving a change leaves **Manage Swimlanes** open.
 
 ### Change card density without fighting the shell
 
@@ -80,6 +80,8 @@ Use a swimlane’s group heading to show or hide its cards with a click, Enter, 
 After a keyboard move from a card’s action menu, focus follows the card. If the destination group is collapsed, focus lands on its heading so you can expand it.
 
 On a grouped board, drag a card to a workflow lane heading or choose a lane from its action menu to keep the current grouping value. With **By Type**, drop the card on an Epic, Story, or Task group heading, its card area, or its **Add Task** row to change the task type. The confirmation names the new type and includes the destination lane when it changes. A group has a reorder grip when its lane has another visible group. Drag the grip to move the whole group within its lane or open the grip menu and choose an available direction. With the grip focused, **Alt+Up** and **Alt+Down** do the same. Group order is saved in this browser for each Board, grouping choice and workflow lane. The group surface uses your current theme, corner roundness, and panel style.
+
+Kanban moves use the task version shown on the card. If another person changes the task before your move saves, the Board shows a conflict and refreshes the card. Confirmed Type changes also update open Details and Strategic Lens without closing your draft. Editing Type in Timeline refreshes the schedule after the save succeeds.
 
 Open **Group by** on Household or a named Board. **By Area** uses the task’s Area, including the Area inherited from its Project. **By Epic** groups an Epic card under its own name. Other cards use their nearest readable parent Epic, even outside the current filter or page. Cards without a readable Epic appear under **No Epic**. Epic headings sort by name and include the Board’s ticket key to distinguish matching names. Group counts reflect the current page of each lane. Close Details after changing a parent to see the card in its new group. Copy the Board URL to preserve the grouping. Switching between Kanban and Table preserves Epic grouping.
 

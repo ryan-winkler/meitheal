@@ -89,19 +89,64 @@ test("two lane writes settle before the queued Board refresh replaces their card
       await moveCardToLane(page, pending(id), lane)
       await expect(active(id)).toHaveAttribute("aria-busy", "true")
     }
-    const first = page.waitForResponse(res => new URL(res.url()).pathname === "/api/tasks/" + ids[0] && res.request().method() === "PUT")
+    const firstTaskPath = "/api/tasks/" + ids[0]
+    const waitForFirstTaskWrite = () => page.waitForResponse(res =>
+      new URL(res.url()).pathname === firstTaskPath && res.request().method() === "PUT")
+    const first = waitForFirstTaskWrite()
     gates[0].resolve()
-    expect((await first).status()).toBe(200)
+    const saved = await first
+    expect(saved.status()).toBe(200)
     await expect(active(ids[0]!)).not.toHaveAttribute("aria-busy")
     await expect(cue).toHaveText("Moving task…")
     expect(reads).toBe(0)
+    const { task_version: version } = await saved.json()
+    await expect(active(ids[0]!)).toHaveAttribute("data-version", String(version))
+    const second = waitForFirstTaskWrite()
+    const todo = page.locator('.kanban-column[data-status="pending"]')
+    const todoName = (await todo.locator(".kanban-column-title").textContent())!.trim()
+    await active(ids[0]!).locator(".card-more-btn").press("Enter")
+    await page.getByRole("group", { name: "Task actions", exact: true })
+      .getByRole("button", { name: todoName, exact: true }).press("Enter")
+    const savedAgain = await second
+    expect(savedAgain.status()).toBe(200)
+    expect(savedAgain.request().postDataJSON().updated_at).toBe(version)
+    await expect(pending(ids[0]!)).toBeVisible()
+    expect(reads).toBe(0)
     gates[1].resolve()
-    for (const id of ids) await expect(lane.locator('.kanban-card[data-id="' + id + '"]')).toBeVisible()
+    await expect(active(ids[1]!)).toBeVisible()
     await expect(cue).toBeEmpty()
     expect(reads).toBe(1)
   } finally {
     for (const gate of gates) gate.resolve()
     for (const id of ids) await request.delete("/api/tasks/" + id, { headers, data: {} })
+  }
+})
+
+test("a stale lane move leaves the newer status in place", async ({ page, request, baseURL }) => {
+  const headers = await currentBoardWriteHeaders(request, "household", { origin: new URL(baseURL!).origin })
+  const created = await request.post("/api/tasks", { headers, data: { title: "Concurrent lane move", status: "pending" } })
+  expect(created.status()).toBe(201)
+  const { id } = await created.json()
+  const path = "/api/tasks/" + id
+  try {
+    await page.goto("/boards/household?view=kanban")
+    await expect(page.locator("#kanban-board")).toHaveAttribute("data-sorting-ready", "true")
+    const card = page.locator('.kanban-card[data-id="' + id + '"]')
+    const version = Number(await card.getAttribute("data-version"))
+    await page.route(url => url.pathname === path, async route => {
+      expect((await request.patch(path, { headers, data: { status: "backlog" } })).status()).toBe(200)
+      await route.continue()
+    }, { times: 1 })
+    const conflict = page.waitForResponse(res => new URL(res.url()).pathname === path && res.request().method() === "PUT")
+    await moveCardToLane(page, card, page.locator('.kanban-column[data-status="active"]'))
+    const rejected = await conflict
+    expect(rejected.status()).toBe(409)
+    expect(rejected.request().postDataJSON().updated_at).toBe(version)
+    await expect(page.getByRole("alert").filter({ hasText: "task was modified since your last read" })).toBeVisible()
+    await expect(page.locator('.kanban-column[data-status="backlog"]').locator(card)).toBeVisible()
+    expect(await (await request.get(path)).json()).toMatchObject({ status: "backlog" })
+  } finally {
+    await request.delete(path, { headers })
   }
 })
 

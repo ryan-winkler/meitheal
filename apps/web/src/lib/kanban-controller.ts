@@ -12,7 +12,7 @@ import { initKanbanGrouping, storeSwimlaneOrder } from "@lib/controllers/kanban-
 import { bumpKanbanMutationEpoch, type KanbanRefreshFocus } from "@lib/controllers/kanban-page-controller"
 import { isDoneStatus } from "@lib/status-config"
 import { currentTaskApiContext, taskApiHeaders } from "@lib/task-api"
-import { sameTaskApiContext, taskRecordVersion } from "@lib/task-api-client"
+import { publishTaskTypeChange, sameTaskApiContext, taskRecordVersion } from "@lib/task-api-client"
 import { openTaskDetailHandoff } from "@lib/task-detail-handoff"
 import { askAIForTask } from "@domains/ai/ai-context-service"
 import { confirmDialog } from "@lib/confirm-dialog"
@@ -173,14 +173,21 @@ export function initKanbanArea(
       if (!taskId || !status || pendingMoves.has(card) || (!laneChanged && !typeChanged)) return
 
       const laneName = lane.querySelector(".kanban-column-title")?.textContent?.trim() || status
+      const previousVersion = taskRecordVersion({ task_version: card.dataset.version })
+      const moveFailed = window.mI18n?.get("kanban.move_failed") ?? "Couldn’t move the task. Try again."
       const limit = Number(lane.dataset.wipLimit) || 0
       const incoming = [...pendingMoves].filter(([movingCard, destination]) =>
         destination === lane && movingCard.closest(".kanban-column") !== lane).length
-      if (laneChanged && limit > 0 && Number(lane.dataset.total) + incoming >= limit) {
+      if (previousVersion === null || (laneChanged && limit > 0 && Number(lane.dataset.total) + incoming >= limit)) {
         if (alreadyPlaced) {
           const fromCards = alreadyPlaced.fromContainer.querySelectorAll<HTMLElement>(":scope > .kanban-card")
           const refNode = fromCards[alreadyPlaced.oldIndex] ?? null
           alreadyPlaced.fromContainer.insertBefore(card, refNode)
+        }
+        if (previousVersion === null) {
+          queueMoveRefresh()
+          showToast(moveFailed, "error")
+          return
         }
         const message = window.mI18n?.get("kanban.lane_full") ?? "{lane} has reached its work-in-progress limit ({limit})."
         showToast(message.replace("{limit}", String(limit)).replace("{lane}", laneName), "warning")
@@ -195,7 +202,6 @@ export function initKanbanArea(
         : card.nextElementSibling
       const prevStatus = card.dataset.status ?? ""
       const prevType = card.dataset.taskType ?? ""
-      const previousVersion = typeChanged ? taskRecordVersion({ task_version: card.dataset.version }) : null
       const sourceGroup = prevParent?.closest<HTMLElement>(".swimlane-group")
       const placedGroup = alreadyPlaced?.toContainer.closest<HTMLElement>(".swimlane-group")
       const sameGroup = placedGroup?.dataset.swimlaneType === sourceGroup?.dataset.swimlaneType
@@ -244,7 +250,7 @@ export function initKanbanArea(
           body: JSON.stringify({
             status: laneChanged ? status : undefined,
             task_type: typeChanged ? newType : undefined,
-            updated_at: previousVersion ?? undefined,
+            updated_at: previousVersion,
           }),
         })
         if (__signal.aborted) {
@@ -254,29 +260,30 @@ export function initKanbanArea(
         if (!res.ok) {
           rollbackMove()
           const problem = typeChanged || res.status === 409 ? await res.json().catch(() => null) : null
+          if (problem?.errorCode === "TASK_VERSION_CONFLICT") queueMoveRefresh()
           const message = problem?.blocked_by?.length
             ? window.mI18n?.get("kanban.move_blocked") ?? "Finish the blocking tasks before moving this one into progress."
-            : problem?.error ?? window.mI18n?.get("kanban.move_failed") ?? "Couldn’t move the task. Try again."
+            : problem?.error ?? moveFailed
           showToast(message, "error")
           return
         }
 
         const completedNow = laneChanged && !wasDone && isDoneStatus(status)
-        const savedTask: (Record<string, unknown> & TaskCompletionResponse) | null = typeChanged || completedNow
-          ? await res.json().catch(() => null) : null
-        if (__signal.aborted || !board.isConnected) {
+        const savedTask: (Record<string, unknown> & TaskCompletionResponse) | null = await res.json().catch(() => null)
+        if (__signal.aborted || !board.isConnected || (ctx && !sameTaskApiContext(ctx, currentTaskApiContext()))) {
           queueMoveRefresh()
           return
         }
-        if (typeChanged && savedTask?.id === taskId && savedTask.task_type === newType &&
-          (!ctx || sameTaskApiContext(ctx, currentTaskApiContext()))) {
-          const version = taskRecordVersion(savedTask)
-          if (version !== null) {
-            card.dataset.version = String(version)
-            window.dispatchEvent(new CustomEvent("meitheal:task-type-changed", {
-              detail: { taskId, taskType: newType, version, previousVersion, status: savedTask.status },
-            }))
-          }
+        const version = savedTask?.id === taskId ? taskRecordVersion(savedTask) : null
+        if (version === null) {
+          delete card.dataset.version
+          queueMoveRefresh()
+          showToast(moveFailed, "error")
+          return
+        }
+        card.dataset.version = String(version)
+        if (typeChanged && newType && savedTask?.task_type === newType) {
+          publishTaskTypeChange({ taskId, taskType: newType, version, previousVersion, status: savedTask.status })
         }
 
         // The task update is durable even if the separate order write is rejected.
@@ -301,7 +308,7 @@ export function initKanbanArea(
         if (__signal.aborted) return
         rollbackMove()
         log.warn("Could not update the Kanban lane", error)
-        showToast(window.mI18n?.get("kanban.move_failed") ?? "Couldn’t move the task. Try again.", "error")
+        showToast(moveFailed, "error")
       } finally {
         pendingMoves.delete(card)
         card.removeAttribute("aria-busy")

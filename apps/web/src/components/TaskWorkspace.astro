@@ -447,7 +447,7 @@ if (groupByProject) {
           <div class="lane-mgmt-help-popover" id="lane-mgmt-help-popover" role="note" hidden>
             <Icon name="info-circle" size={15} sprite class="lane-mgmt-help-popover__icon" />
             <p class="lane-mgmt-help-popover__text">
-              <strong>Swimlanes &amp; Statuses stay in sync.</strong> Drag rows to reorder Kanban columns and status lists across every view. Renaming a built-in lane creates a display alias while keeping its system status intact for filters and automations.
+              <strong>Swimlanes &amp; Statuses stay in sync.</strong> Drag a grip to reorder Kanban columns and status lists across every view. Renaming a built-in lane creates a display alias while keeping its system status intact for filters and automations.
             </p>
           </div>
           <div class="table-responsive lane-mgmt-table-wrap">
@@ -1522,13 +1522,9 @@ if (groupByProject) {
   .lane-mgmt-table tbody tr.lane-item {
     border-bottom: 1px solid var(--border);
     background: var(--bg-card);
-    transition: background-color 140ms cubic-bezier(0.23, 1, 0.32, 1);
   }
   .lane-mgmt-table tbody tr.lane-item:last-child {
     border-bottom: none;
-  }
-  .lane-mgmt-table tbody tr.lane-item:hover {
-    background: var(--bg-hover);
   }
   .lane-mgmt-table tbody tr.lane-item--ghost {
     opacity: 0.38;

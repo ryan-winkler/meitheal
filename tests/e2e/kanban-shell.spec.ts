@@ -306,6 +306,55 @@ test.describe("Tasks Shell (Kanban)", () => {
     await expect(panel).toHaveClass(/hidden/)
   })
 
+  test("Manage Swimlanes labels stay on the board and lane controls still work", async ({ page }) => {
+    const lanes = [
+      { id: "fixture-pending", key: "pending", label: "Todo", builtIn: true, position: 0, wip_limit: 0 },
+      { id: "fixture-review", key: "review", label: "Review", builtIn: false, position: 1, wip_limit: 0 },
+    ]
+    await page.route("**/api/lanes", route => route.fulfill({ json: { lanes } }))
+    await page.route("**/api/lanes/fixture-pending", route => {
+      Object.assign(lanes[0]!, route.request().postDataJSON())
+      return route.fulfill({ json: lanes[0] })
+    })
+
+    const boardUrl = page.url()
+    await page.locator("#manage-lanes-btn").click()
+    const panel = page.getByRole("dialog", { name: "Manage Swimlanes" })
+    const lane = panel.getByRole("row").filter({ hasText: "Todo" })
+    const label = lane.getByText("Todo", { exact: true })
+    await expect(label).toBeVisible()
+    // The global task detail handler cancels activation for task rows.
+    expect(await label.evaluate(node => node.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })))).toBe(true)
+    await label.click()
+    await lane.getByText("status: pending", { exact: true }).click()
+    await expect(page).toHaveURL(boardUrl)
+    await expect(panel).toBeVisible()
+
+    const drag = lane.getByRole("button", { name: "Reorder Todo" })
+    const reordered = page.waitForRequest(request => request.method() === "PUT" && request.url().endsWith("/api/lanes"))
+    await drag.press("Alt+ArrowDown")
+    expect((await reordered).postDataJSON()).toEqual({ ordered_ids: ["fixture-review", "fixture-pending"] })
+    await expect(drag).toBeFocused()
+
+    const colorChanged = page.waitForRequest(request => request.method() === "PUT" && request.url().endsWith("/api/lanes/fixture-pending"))
+    await lane.getByLabel("Color for Todo").fill("#2563eb")
+    expect((await colorChanged).postDataJSON()).toEqual({ color: "#2563eb" })
+
+    const wip = lane.getByRole("spinbutton", { name: "WIP limit for Todo" })
+    const wipChanged = page.waitForRequest(request => request.method() === "PUT" && request.url().endsWith("/api/lanes/fixture-pending"))
+    await wip.fill("3")
+    await wip.press("Tab")
+    expect((await wipChanged).postDataJSON()).toEqual({ wip_limit: 3 })
+
+    await lane.getByRole("button", { name: "Rename Todo" }).click()
+    const alias = page.getByRole("dialog", { name: "Alias Built-in Lane" }).getByRole("textbox")
+    await expect(alias).toHaveValue("Todo")
+    await alias.fill("Ready")
+    await alias.press("Enter")
+    await expect(panel.getByText("Ready", { exact: true })).toBeVisible()
+    await expect(page).toHaveURL(boardUrl)
+  })
+
   test("custom lane labels remain text in the management panel", async ({ page }) => {
     const label = 'Review " data-lane-injection="yes <img data-lane-injection>'
     await page.route("**/api/lanes", route => route.fulfill({
@@ -314,7 +363,7 @@ test.describe("Tasks Shell (Kanban)", () => {
 
     await page.locator("#manage-lanes-btn").click()
 
-    const lane = page.locator('#lane-list .lane-item[data-id="fixture"]')
+    const lane = page.locator('#lane-list .lane-item[data-lane-id="fixture"]')
     await expect(lane.locator(".lane-visual-label")).toHaveText(label)
     await expect(lane.getByRole("button", { name: `Rename ${label}`, exact: true })).toHaveAttribute("data-label", label)
     await expect(page.locator("#lane-list [data-lane-injection]")).toHaveCount(0)

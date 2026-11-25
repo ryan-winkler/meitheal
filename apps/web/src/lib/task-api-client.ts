@@ -33,6 +33,18 @@ export function sameTaskApiContext(a: TaskApiContext | null, b: TaskApiContext |
   return Boolean(a && b && a.boardId === b.boardId && a.session === b.session && a.actorKey === b.actorKey)
 }
 
+export interface SavedTaskTypeChange {
+  taskId: string
+  taskType: string
+  version: number
+  previousVersion: number | null
+  status?: unknown
+}
+
+export function publishTaskTypeChange(detail: SavedTaskTypeChange): void {
+  document.dispatchEvent(new CustomEvent("meitheal:task-type-changed", { detail, bubbles: true }))
+}
+
 export function readTaskFrameworkPayload(task: unknown, id: string): Record<string, unknown> {
   if (!task || typeof task !== "object" || !("id" in task) || task.id !== id || !("framework_payload" in task)) {
     throw new Error("Invalid task metadata response")

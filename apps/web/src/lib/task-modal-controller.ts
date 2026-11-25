@@ -1,5 +1,5 @@
 import { currentTaskApiContext, taskApiHeaders } from "./task-api"
-import { deleteVersionedTask, saveVersionedTask, sameTaskApiContext, taskRecordVersion } from "./task-api-client"
+import { deleteVersionedTask, publishTaskTypeChange, saveVersionedTask, sameTaskApiContext, taskRecordVersion, type SavedTaskTypeChange } from "./task-api-client"
 import { formatTicketDisplay } from "./task-editor-fields"
 import { enhanceDescriptionEditor, renderMarkdownPreviewInto } from "./task-description-editor"
 import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
@@ -250,6 +250,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         const tdActions = document.getElementById("td-task-actions")
         const tdTitleInput = tdPanel?.querySelector<HTMLTextAreaElement>("#td-title")
         const statusSelect = document.querySelector<HTMLSelectElement>("#td-status")
+        const typeSelect = byId<HTMLSelectElement>("td-task-type")
         const doneButton = document.querySelector<HTMLButtonElement>("#td-toggle-done")
         const deleteButton = document.querySelector<HTMLButtonElement>("#td-delete")
         const tdError = byId("td-load-error")
@@ -620,6 +621,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         function syncTaskActionControls() {
           const editable = taskLoaded && !_isPopulating && currentTaskActions.has("edit")
           if (tdTitleInput) tdTitleInput.readOnly = !editable
+          if (typeSelect) typeSelect.disabled = !editable
           if (statusSelect) {
             statusSelect.disabled = !editable
             for (const option of statusSelect.options) option.disabled = !statusAllowed(option.value)
@@ -656,10 +658,9 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
         }, { signal: __signal })
 
         function renderSavedType(taskType: string) {
-          const select = byId<HTMLSelectElement>("td-task-type")
-          if (select) {
-            select.value = taskType
-            select.dataset.savedTaskType = taskType
+          if (typeSelect) {
+            typeSelect.value = taskType
+            typeSelect.dataset.savedTaskType = taskType
           }
           const icon = byId("td-type-icon")
           if (icon) {
@@ -668,10 +669,8 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           }
         }
 
-        window.addEventListener("meitheal:task-type-changed", event => {
-          const { taskId, taskType, version, previousVersion, status } = (event as CustomEvent<{
-            taskId: string; taskType: string; version?: number | null; previousVersion?: number | null; status?: string
-          }>).detail ?? {}
+        document.addEventListener("meitheal:task-type-changed", event => {
+          const { taskId, taskType, version, previousVersion, status } = (event as CustomEvent<SavedTaskTypeChange>).detail ?? {}
           if (!taskLoaded || boardWithheld || currentTaskId !== taskId ||
               typeof version !== "number" || version < (currentTaskVersion ?? 0)) return
 
@@ -1762,6 +1761,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           if (taskSaveConflict) { showTaskWriteConflict(); return false }
           const generation = detailGeneration
           const taskId = currentTaskId
+          const previousVersion = updatedAt ?? currentTaskVersion
           const search = searchSession
           const primaryValue = patch[primaryField]
           const completeDeferralWrite = deferral.nativeWrite(primaryField, primaryValue)
@@ -1769,16 +1769,14 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
           let saved = false
           setTicketSaveFeedback("saving", primaryField)
           try {
-            const result = await saveVersionedTask(taskId, patch, updatedAt ?? currentTaskVersion, undefined,
+            const result = await saveVersionedTask(taskId, patch, previousVersion, undefined,
               scopedWrite?.signal ?? AbortSignal.timeout(7_000))
             saved = result.ok
-            if (result.ok && generation === detailGeneration) currentTaskVersion = result.version
-            if (!result.ok && generation === detailGeneration && (result.errorCode === "conflict" || result.errorCode === "unconfirmed")) {
-              taskSaveConflict = true
-              showTaskWriteConflict()
-            }
-            if (saved) {
-              if (generation === detailGeneration) setTicketSaveFeedback("saved", primaryField)
+            if (result.ok) {
+              if (generation === detailGeneration) {
+                currentTaskVersion = result.version
+                setTicketSaveFeedback("saved", primaryField)
+              }
               if (Object.hasOwn(patch, "area_id")) {
                 changedAreaTask = taskId
                 if (!tdOverlay.classList.contains("active") ||
@@ -1787,29 +1785,37 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
                 }
               } else if (Object.hasOwn(patch, "parent_id") || Object.hasOwn(patch, "task_type") || Object.hasOwn(patch, "title")) {
                 epicGroupingDirty = true
-                if (typeof patch.task_type === "string" && generation === detailGeneration) renderSavedType(patch.task_type)
+                if (typeof patch.task_type === "string" && typeof result.task.task_type === "string") {
+                  publishTaskTypeChange({ taskId, taskType: result.task.task_type, version: result.version, previousVersion,
+                    status: result.task.status })
+                }
                 if (!tdOverlay.classList.contains("active")) reconcileEpicGrouping()
               }
               notifyInactivityTaskChanged(Object.hasOwn(patch, "status") ? undefined : taskId)
               if (Object.hasOwn(patch, "status")) {
-                const task = result.ok ? result.task : {}
+                const task = result.task
                 document.dispatchEvent(new CustomEvent("meitheal:task-status-saved", { detail: { id: taskId, status: task.status, deferred: task.deferred_at != null } }))
                 if (isDoneStatus(String(patch.status)) && (!search || generation === detailGeneration)) onTaskCompleted(task)
               }
               return Object.hasOwn(patch, "area_id") || !search || generation === detailGeneration
             }
-            if (!result.ok) {
-              if (generation === detailGeneration) setTicketSaveFeedback("idle")
-              log.warn(`Failed to save ${primaryField}:`, result.status)
-              if (Object.hasOwn(patch, "task_type") && generation === detailGeneration) {
-                const savedType = byId("td-task-type")?.dataset.savedTaskType
+            const needsReload = result.errorCode === "conflict" || result.errorCode === "unconfirmed"
+            if (generation === detailGeneration) {
+              if (needsReload) {
+                taskSaveConflict = true
+                showTaskWriteConflict()
+              }
+              setTicketSaveFeedback("idle")
+              if (Object.hasOwn(patch, "task_type")) {
+                const savedType = typeSelect?.dataset.savedTaskType
                 if (savedType) renderSavedType(savedType)
               }
-              if (result.message && result.errorCode !== "conflict" && result.errorCode !== "unconfirmed") {
-                const sessionBound = search || primaryField === "description"
-                if (!sessionBound || generation === detailGeneration) showToast(result.message, "error")
-                return false
-              }
+            }
+            log.warn(`Failed to save ${primaryField}:`, result.status)
+            if (result.message && !needsReload) {
+              const sessionBound = search || primaryField === "description"
+              if (!sessionBound || generation === detailGeneration) showToast(result.message, "error")
+              return false
             }
           } catch (err) {
             if (generation === detailGeneration) setTicketSaveFeedback("idle")
@@ -2064,17 +2070,7 @@ import { loadPillarPrinciplesOptions } from "./task-taxonomy-client"
             }
           }, { signal: __signal });
         // Phase 20: task_type auto-save
-        document
-          .getElementById("td-task-type")
-          ?.addEventListener("change", (e) => {
-            const tt = (e.target as HTMLSelectElement).value;
-            const typeIconEl = document.getElementById("td-type-icon");
-            if (typeIconEl) typeIconEl.replaceChildren(createTypeIconElement(tt, 16, currentTaskKind));
-            saveTaskField("task_type", tt);
-            window.dispatchEvent(new CustomEvent("meitheal:task-type-changed", {
-              detail: { taskId: currentTaskId, taskType: tt },
-            }));
-          }, { signal: __signal });
+        typeSelect?.addEventListener("change", () => void saveTaskField("task_type", typeSelect.value), { signal: __signal })
         byId("td-area")?.addEventListener("change", async event => {
           const select = event.currentTarget as HTMLSelectElement
           const modalSignal = _modalAbortController?.signal
