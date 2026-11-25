@@ -60,7 +60,7 @@ The board remains usable when reaction counts are unavailable. A denied request 
 
 1. Open **Fields**. On a phone, open **Board actions** first.
 2. Use the card customizer search input there to find any built-in or board custom field without expecting field toggles in the shell.
-3. Compact density hides secondary card rows such as description, metadata, labels, progress, and custom fields so dense boards stay scannable.
+3. Use **Compact**, **Comfortable**, or **Spacious** to change the padding and spacing. Checked fields show at every size when the task has a value. Select up to four Board custom fields, including Sprint and Story points.
 4. Close **Fields** to return to the board.
 
 ### Page through a large board

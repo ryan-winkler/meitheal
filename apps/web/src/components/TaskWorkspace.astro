@@ -28,7 +28,7 @@ import { formatRegionalDate } from "../lib/regional-date";
 import { formatTicketKey } from "../lib/ticket-key";
 import { taskSurface } from "../lib/task-surface"
 import { taskDescriptionPreview } from "../lib/task-description-preview"
-import { formatCardCustomFieldValue } from "../lib/custom-field-defs"
+import { boardCustomFieldsSettingKey, kanbanCardFieldNames, normalizeCustomFieldDefs } from "../lib/custom-field-defs"
 import { frameworkPayloadObject, readRiceInputs, riceLensScore } from "../lib/rice-lens"
 import { taskDetailPath } from "../lib/task-page-url"
 import {
@@ -120,11 +120,15 @@ const selectedProject = selectedProjectId ? await hierarchyRepo.findProjectById(
 let completedAutoHideDays = 30;
 // Backlog mode: visible (default) | hidden | disabled
 let backlogMode = "visible";
+let cardFieldNames = kanbanCardFieldNames([])
 try {
+  const cardFieldsKey = boardCustomFieldsSettingKey(boardId)
   const settings = renderedView === "kanban" ? await repo.getSettings([
     "completed_auto_hide_days",
     "backlog_mode",
+    cardFieldsKey,
   ]) : {};
+  cardFieldNames = kanbanCardFieldNames(normalizeCustomFieldDefs(settings[cardFieldsKey]))
   if (settings.completed_auto_hide_days) {
     const val = Number(JSON.parse(settings.completed_auto_hide_days));
     if (!isNaN(val) && val >= 0) completedAutoHideDays = val;
@@ -416,7 +420,7 @@ if (groupByProject) {
 
     <!-- Card field customizer panel (toggled by Fields toolbar icon) -->
     <div class="kanban-fields-panel hidden" id="kanban-fields-panel">
-      <CardCustomizer boardId={scope.boardId} />
+      <CardCustomizer {boardId} {cardFieldNames} />
     </div>
 
       <div class="lane-mgmt hidden" id="lane-mgmt" role="dialog" aria-modal="true" aria-labelledby="lane-mgmt-title">
@@ -661,6 +665,7 @@ if (groupByProject) {
                     dueStatus={dueStatus}
                     description={description}
                     rice={rice}
+                    {cardFieldNames}
                     childCount={childCount}
                     area={cardArea ?? null}
                     epicGroup={epicGroup}
@@ -1352,13 +1357,6 @@ if (groupByProject) {
   .kanban-board.density-compact .kanban-card-title {
     font-size: 0.8rem;
     line-height: 1.2;
-  }
-  .kanban-board.density-compact .kanban-card-meta,
-  .kanban-board.density-compact .kanban-card-desc,
-  .kanban-board.density-compact .kanban-progress,
-  .kanban-board.density-compact .label-badges,
-  .kanban-board.density-compact .kanban-custom-fields {
-    display: none;
   }
   .kanban-board.density-compact .kanban-cards {
     gap: 4px;

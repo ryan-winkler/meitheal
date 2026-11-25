@@ -369,33 +369,86 @@ test.describe("Tasks Shell (Kanban)", () => {
     await expect(page.locator("#lane-list [data-lane-injection]")).toHaveCount(0)
   })
 
-  test("compact card density applies to rendered card class names", async ({ page }) => {
-    const board = page.locator(".kanban-board")
+  test("named Board card field choices work at every size and after reload", async ({ page, request, baseURL }) => {
+    const origin = new URL(baseURL!).origin
+    const headers = await currentBoardWriteHeaders(request, "household", { origin })
+    const created = await request.post("/api/boards", { headers, data: { name: "Card Fields Board" } })
+    expect(created.status()).toBe(201)
+    const { id: boardId } = await created.json()
+    const scoped = await currentBoardWriteHeaders(request, boardId, { origin })
+    const taskIds: string[] = []
+    try {
+      const extraFields = Array.from({ length: 9 }, (_, i) => ({ name: `Extra field ${i + 1}`, type: "text" }))
+      const definitions = await request.put("/api/custom-fields", {
+        headers: scoped,
+        data: { fields: [{ name: "Reviewed", type: "checkbox" }, { name: "Missing", type: "text" }, ...extraFields] },
+      })
+      expect(definitions.status()).toBe(200)
+      for (const data of [{
+        title: "Populated card field fixture",
+        description: "Visible description",
+        labels: ["Fixture label"],
+        framework_payload: { rice: { reach: 10, impact: 2, confidence: 80, effort: 4, confidence_unit: "percent" } },
+        custom_fields: {
+          ...Object.fromEntries(extraFields.map(({ name }) => [name, "Extra value"])),
+          Sprint: "S8",
+          story_points: 0,
+          reviewed: true,
+          "Imported note": "Legacy value",
+        },
+      }, { title: "Empty card field fixture" }]) {
+        const result = await request.post("/api/tasks", { headers: scoped, data })
+        expect(result.status()).toBe(201)
+        taskIds.push((await result.json()).id)
+      }
 
-    await page.locator("#toggle-fields-btn").click()
-    await expect(page.locator("#kanban-fields-panel")).not.toHaveClass(/hidden/)
-    await page.locator('.card-density-btn[data-density="compact"]').click()
+      const board = page.locator("#kanban-board")
+      const card = (id: string) => board.locator(`.kanban-card[data-id="${id}"]`)
+      const populated = card(taskIds[0]!)
+      const empty = card(taskIds[1]!)
+      const picker = page.getByRole("region", { name: "Card Customization" })
+      await page.goto(`/boards/${boardId}?view=kanban#kanban`)
+      await page.locator("#toggle-fields-btn").click()
+      for (const field of ["Description", "Labels", "RICE Score", "Sprint", "Story points", "Reviewed", "Missing"]) {
+        await expect(picker.getByRole("checkbox", { name: field, exact: true })).toBeChecked()
+      }
+      const padding: number[] = []
+      for (const size of ["compact", "comfortable", "spacious"]) {
+        await picker.locator(`[data-density="${size}"]`).click()
+        await expect(board).toHaveClass(new RegExp(`density-${size}`))
+        for (const field of ["Visible description", "Fixture label", "RICE: 4", "Sprint: S8", "Story points: 0", "Reviewed: Yes", "Imported note: Legacy value"]) {
+          await expect(populated.getByText(field, { exact: true })).toBeVisible()
+        }
+        await expect(populated.getByText(/^Missing:/)).toHaveCount(0)
+        await expect(empty.locator(".kanban-card-desc, .label-badges, .kanban-rice-badge, .kanban-cf-chip")).toHaveCount(0)
+        padding.push(await populated.evaluate(element => Number.parseFloat(getComputedStyle(element).paddingTop)))
+      }
+      expect(padding[0]!).toBeLessThan(padding[1]!)
+      expect(padding[1]!).toBeLessThan(padding[2]!)
 
-    await expect(board).toHaveClass(/density-compact/)
-    await page.evaluate(() => {
-      const boardEl = document.querySelector(".kanban-board")
-      if (!boardEl) return
-      const card = document.createElement("div")
-      card.className = "kanban-card e2e-density-card"
-      card.innerHTML = `
-        <div class="kanban-card-title">Synthetic task</div>
-        <div class="kanban-card-desc">Description should collapse</div>
-        <div class="kanban-card-meta">Priority and due date</div>
-        <div class="kanban-progress">Progress</div>
-        <div class="label-badges">Labels</div>
-        <div class="kanban-custom-fields">Custom fields</div>
-      `
-      boardEl.appendChild(card)
-    })
-
-    await expect(page.locator(".e2e-density-card .kanban-card-meta")).toBeHidden()
-    await expect(page.locator(".e2e-density-card .kanban-card-desc")).toBeHidden()
-    await expect(page.locator(".e2e-density-card .label-badges")).toBeHidden()
+      await picker.locator('[data-density="compact"]').click()
+      await picker.getByRole("checkbox", { name: "Missing", exact: true }).uncheck()
+      await picker.getByRole("checkbox", { name: "Extra field 9", exact: true }).check()
+      await picker.getByRole("checkbox", { name: "Description", exact: true }).uncheck()
+      await expect(populated.getByText("Extra field 9: Extra value", { exact: true })).toBeVisible()
+      await expect(populated.getByText("Imported note: Legacy value", { exact: true })).toBeHidden()
+      await expect(populated.getByText("Visible description", { exact: true })).toBeHidden()
+      await page.reload()
+      await expect(board).toHaveClass(/density-compact/)
+      await expect(populated.getByText("Extra field 9: Extra value", { exact: true })).toBeVisible()
+      await expect(populated.getByText("Visible description", { exact: true })).toBeHidden()
+      await page.locator("#toggle-fields-btn").click()
+      await picker.getByRole("button", { name: "Reset Defaults" }).click()
+      await expect(board).toHaveClass(/density-comfortable/)
+      await expect(populated.getByText("Visible description", { exact: true })).toBeVisible()
+      await expect(populated.getByText("Extra field 9: Extra value", { exact: true })).toBeHidden()
+    } finally {
+      await Promise.all(taskIds.map(id => request.delete(`/api/tasks/${id}`, { headers: scoped })))
+      const current = await request.get(`/api/boards/${boardId}`, { headers: scoped })
+      const { board: { revision } } = await current.json()
+      const retired = await request.patch(`/api/boards/${boardId}`, { headers: scoped, data: { action: "retire", revision } })
+      expect(retired.status()).toBe(200)
+    }
   })
 
   test("mobile keeps task sub-view pills reachable by touch", async ({ page }) => {
