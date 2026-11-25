@@ -297,15 +297,15 @@ export class PluginService {
     }
 
     const existing = await this.repo.getStoredRecord(manifest.id)
-    const escalated = existing ? requiresPermissionReconsent(existing.manifest, manifest) : false
+    const needsReconsent = existing !== null && (existing.needsReconsent || requiresPermissionReconsent(existing.manifest, manifest))
     const now = new Date().toISOString()
 
     const nextRecord: PluginRecord = {
       id: manifest.id,
       source: "uploaded",
       // Newly uploaded plugins start disabled; upgrades with new permissions force re-consent.
-      enabled: existing ? (escalated ? false : existing.enabled) : false,
-      needsReconsent: existing ? escalated : false,
+      enabled: (existing?.enabled ?? false) && !needsReconsent,
+      needsReconsent,
       manifest,
       files,
       sha256: extracted.data.sha256,

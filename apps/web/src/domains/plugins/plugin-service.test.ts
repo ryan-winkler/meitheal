@@ -63,6 +63,10 @@ test("PluginService lifecycle: production connectors only, AI bundle install, ZI
     assert.equal(initial.fleetHealth.activeCount, 0)
     assert.equal(initial.fleetHealth.inactiveCount, 2)
     assert.equal(await service.hasActivePlugins(), false)
+    const gitea = initial.plugins.find((plugin) => plugin.id === "gitea-issues")
+    assert.equal(gitea?.health.operationalState, "disabled")
+    assert.equal(gitea?.health.securityTone, "warning")
+    assert.equal(gitea?.health.checks.find((check) => check.id === "network_ssrf")?.status, "warn")
 
     // 2. Pack standalone reference app via scripts/pack-plugin.mjs and install via ZIP pipeline
     const repoRoot = path.resolve(import.meta.dirname, "../../../../..")
@@ -188,6 +192,12 @@ test("PluginService lifecycle: production connectors only, AI bundle install, ZI
       assert.equal(installedV2.data.needsReconsent, true)
       assert.equal(installedV2.data.health.overall, "critical")
       assert.equal(installedV2.data.health.operationalState, "blocked_reconsent")
+    }
+    const reinstalledV2 = await service.installFromZip(v2Zip)
+    assert.equal(reinstalledV2.ok, true)
+    if (reinstalledV2.ok) {
+      assert.equal(reinstalledV2.data.needsReconsent, true)
+      assert.equal(reinstalledV2.data.health.operationalState, "blocked_reconsent")
     }
 
     const blockedEnable = await service.updatePlugin("focus-notes", { enabled: true })

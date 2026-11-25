@@ -1,18 +1,13 @@
 /**
- * Plugin Operational Health & Elephant-Goldfish Security Compliance Evaluator
- *
- * Pure, deterministic domain module evaluating each plugin across two axes:
- *   1. Operational State (active, paused in Safe Mode, missing config/secrets, blocked, error)
- *   2. Security Compliance based on the Elephant-Goldfish Model (EGM):
- *      - Goldfish checks (stateless execution isolation: opaque-origin sandbox, CSP, SSRF gateway)
- *      - Elephant checks (stateful persistence boundaries: permission re-consent, write-only secrets,
- *        declared outbound destinations, cryptographic package provenance)
+ * Plugin readiness and configuration checks. The catalog evaluates stored
+ * records without starting plugins, contacting endpoints, or certifying code.
  *
  * @domain plugins
- * @bounded-context plugins
  */
+import { PLUGIN_PERMISSION_CATALOG } from "./plugin-permissions"
 import type {
   PluginComplianceCheck,
+  PluginConnectorField,
   PluginFleetHealthSummary,
   PluginHealthReport,
   PluginHealthTone,
@@ -30,232 +25,167 @@ export interface PluginHealthEvaluationInput {
   runtimeError?: string | null
 }
 
-function hasValidApprovedServer(url: string | null): boolean {
-  if (!url) return false
-  try {
-    const parsed = new URL(url)
-    return parsed.protocol === "https:" || parsed.protocol === "http:"
-  } catch {
-    return false
+function isHttpUrl(value: unknown): boolean {
+  if (typeof value !== "string") return false
+  const url = URL.parse(value)
+  return Boolean(url && (url.protocol === "https:" || url.protocol === "http:") && !url.username && !url.password)
+}
+
+function isConfigured(field: PluginConnectorField, value: unknown): boolean {
+  if (field.type === "url") return isHttpUrl(value)
+  if (field.type === "boolean") return typeof value === "boolean" || value === "true" || value === "false"
+  if (field.type === "number") {
+    if (typeof value === "number") return Number.isFinite(value)
+    return typeof value === "string" && Boolean(value.trim()) && Number.isFinite(Number(value))
   }
+  return typeof value === "string" && Boolean(value.trim())
 }
 
 export function evaluatePluginHealth(input: PluginHealthEvaluationInput): PluginHealthReport {
   const { record, secrets, safeMode, runtimeError } = input
   const { manifest } = record
   const checks: PluginComplianceCheck[] = []
-
-  // 1. Goldfish: Opaque-origin sandbox isolation contract
-  const usesOpaqueSandbox = Boolean(record.files.entryJs || record.files.iframeHtml)
-  const hasCspEscapeRisk = Boolean(
-    record.files.iframeHtml &&
-      (/allow-same-origin/i.test(record.files.iframeHtml) ||
-        /<meta[^>]*http-equiv\s*=\s*["']?content-security-policy/i.test(record.files.iframeHtml) ||
-        /<script\b[^>]*\bsrc\s*=/i.test(record.files.iframeHtml)),
-  )
+  const permissions = new Set(manifest.permissions)
+  const unknownPermissions = manifest.permissions.some(permission => !Object.hasOwn(PLUGIN_PERMISSION_CATALOG, permission))
+  const hasEntry = Boolean(record.files.entryJs?.trim())
+  const hasPanel = Boolean(manifest.sidePanel && record.files.iframeHtml?.trim() && permissions.has("ui:side-panel"))
+  const missingUi = Boolean(manifest.entry && !hasEntry || manifest.sidePanel && !hasPanel)
+  const builtInConnector = record.source === "builtin" && manifest.type === "connector"
+  const missingExecutable = missingUi || (!hasEntry && !hasPanel && !builtInConnector)
   checks.push({
     id: "sandbox_isolation",
-    label: "Opaque-Origin Sandbox",
+    label: "Execution Boundary",
     category: "goldfish",
-    status: hasCspEscapeRisk ? "warn" : "pass",
-    detail: hasCspEscapeRisk
-      ? "Panel HTML contains a blocked external script or CSP override attempt (stripped by host sandbox)."
-      : usesOpaqueSandbox
-        ? "Runs in opaque-origin frames (origin: null, connect-src 'none') with zero cookie or HA token access."
-        : "Executes strictly through server-validated connector gateway contracts.",
+    status: missingExecutable ? "fail" : "pass",
+    detail: missingExecutable
+      ? "A declared script or panel is missing, or the panel permission is absent."
+      : hasEntry || hasPanel
+        ? "The host mounts plugin code in opaque-origin frames with browser network restrictions."
+        : "This built-in connector uses server-side actions and has no browser code to sandbox.",
   })
 
-  // 2. Elephant: Permission & upgrade re-consent integrity
   checks.push({
     id: "permission_consent",
-    label: "Permission & Re-Consent",
+    label: "Permissions & Re-Consent",
     category: "elephant",
-    status: record.needsReconsent ? "fail" : "pass",
+    status: record.needsReconsent || unknownPermissions ? "fail" : "pass",
     detail: record.needsReconsent
-      ? "Upgraded package requested new permissions or hosts and is blocked until admin re-approval."
-      : `All ${manifest.permissions.length} declared permission(s) approved and enforced at runtime.`,
+      ? "New permissions or outbound hosts need administrator approval before the plugin can be enabled."
+      : unknownPermissions
+        ? "The package declares a permission this app does not recognize."
+        : `The manifest requests ${permissions.size} supported permissions. There is no pending upgrade approval.`,
   })
 
-  // 3. Goldfish + Elephant: Outbound network & SSRF gateway compliance
   const declaredHosts = manifest.allowedHosts
-  const destinationHosts = new Set(manifest.dataSharing.destinations.map((d) => d.host))
-  const allHostsDisclosed = declaredHosts.every((h) => destinationHosts.has(h))
-  const hasHttpPerm = manifest.permissions.includes("http:outbound")
-  const usesUserServer = declaredHosts.includes("$userServer")
-  const userServerApproved = hasValidApprovedServer(record.approvedUserServer)
-
-  if (declaredHosts.length === 0) {
-    checks.push({
-      id: "network_ssrf",
-      label: "Outbound Network & SSRF",
-      category: "goldfish",
-      status: "pass",
-      detail: "Local-only isolation: zero external network hosts declared.",
-    })
-  } else if (!allHostsDisclosed || !hasHttpPerm) {
-    checks.push({
-      id: "network_ssrf",
-      label: "Outbound Network & SSRF",
-      category: "goldfish",
-      status: "fail",
-      detail: "Outbound host list does not match declared permissions or data-sharing destinations.",
-    })
-  } else if (usesUserServer && !userServerApproved) {
-    checks.push({
-      id: "network_ssrf",
-      label: "Outbound Network & SSRF",
-      category: "elephant",
-      status: record.enabled ? "warn" : "pass",
-      detail: record.enabled
-        ? "Requires administrator-approved self-hosted server URL before outbound requests succeed."
-        : "Self-hosted server host ($userServer) awaits administrator URL configuration.",
-    })
-  } else {
-    checks.push({
-      id: "network_ssrf",
-      label: "Outbound Network & SSRF",
-      category: "goldfish",
-      status: "pass",
-      detail: `Gateway-enforced allowlist (${declaredHosts.join(", ")}) with IPv4/IPv6 SSRF & redirect blocking.`,
-    })
-  }
-
-  // 4. Elephant: Write-only secret hygiene & SQLite export scrubbing
-  const secretMap = new Map(secrets.map((s) => [s.key, s.configured]))
-  const requiredSecretFields = (manifest.connector?.configFields ?? []).filter(
-    (f) => f.type === "secret" && f.required && f.secretKey,
+  const destinationHosts = new Set(manifest.dataSharing.destinations.map(destination => destination.host))
+  const inconsistentOutbound = declaredHosts.length > 0 && (
+    !manifest.dataSharing.outbound || !permissions.has("http:outbound") || declaredHosts.some(host => !destinationHosts.has(host))
   )
-  const missingSecrets = requiredSecretFields.filter((f) => !secretMap.get(f.secretKey!))
-  const usesSecrets = manifest.permissions.includes("secrets:use") || requiredSecretFields.length > 0
-
-  if (!usesSecrets) {
-    checks.push({
-      id: "secret_hygiene",
-      label: "Write-Only Secret Hygiene",
-      category: "elephant",
-      status: "pass",
-      detail: "No secrets declared; zero credential exposure surface.",
-    })
-  } else if (record.enabled && missingSecrets.length > 0) {
-    checks.push({
-      id: "secret_hygiene",
-      label: "Write-Only Secret Hygiene",
-      category: "elephant",
-      status: "warn",
-      detail: `Missing required write-only secret(s): ${missingSecrets.map((f) => f.secretKey).join(", ")}.`,
-    })
-  } else {
-    checks.push({
-      id: "secret_hygiene",
-      label: "Write-Only Secret Hygiene",
-      category: "elephant",
-      status: "pass",
-      detail: "Secrets stored write-only in plugin_secrets, injected server-side, and scrubbed from SQLite exports.",
-    })
-  }
-
-  // 5. Elephant: Package integrity & review provenance
-  const validDigest = SHA256_HEX_RE.test(record.sha256)
-  if (!validDigest) {
-    checks.push({
-      id: "provenance_integrity",
-      label: "Package Integrity & Provenance",
-      category: "elephant",
-      status: "fail",
-      detail: "Package SHA-256 integrity digest is missing or malformed.",
-    })
-  } else if (record.source === "uploaded" && manifest.dataSharing.outbound) {
-    checks.push({
-      id: "provenance_integrity",
-      label: "Package Integrity & Provenance",
-      category: "elephant",
-      status: "warn",
-      detail: `Unreviewed community ZIP (SHA-256 ${record.sha256.slice(0, 12)}) with outbound access — verify destinations.`,
-    })
-  } else {
-    checks.push({
-      id: "provenance_integrity",
-      label: "Package Integrity & Provenance",
-      category: "elephant",
-      status: "pass",
-      detail:
-        record.source === "builtin"
-          ? `First-party verified connector (SHA-256 ${record.sha256.slice(0, 12)}).`
-          : `Validated local-only community ZIP (SHA-256 ${record.sha256.slice(0, 12)}).`,
-    })
-  }
-
-  // Compute missing required non-secret connector config fields
-  const missingConfigFields = (manifest.connector?.configFields ?? []).filter((field) => {
-    if (!field.required || field.type === "secret") return false
-    const val = record.config[field.key]
-    return typeof val !== "string" || val.trim().length === 0
+  const missingAllowlist = declaredHosts.length === 0 && (manifest.dataSharing.outbound || destinationHosts.size > 0)
+  const usesUserServer = declaredHosts.includes("$userServer")
+  const missingServer = usesUserServer && !isHttpUrl(record.approvedUserServer)
+  checks.push({
+    id: "network_ssrf",
+    label: "Outbound Configuration",
+    category: "goldfish",
+    status: inconsistentOutbound ? "fail" : missingServer || missingAllowlist ? "warn" : "pass",
+    detail: inconsistentOutbound
+      ? "Allowed hosts require an outbound permission and a matching data-sharing disclosure."
+      : missingAllowlist
+        ? "The manifest declares outbound use but the gateway allowlist is empty."
+        : missingServer
+          ? "An administrator needs to configure a valid HTTP or HTTPS server URL."
+          : declaredHosts.length > 0
+            ? "The allowlist is configured. The gateway checks destinations and redirects when a request runs."
+            : "No outbound hosts are allowlisted for this plugin.",
   })
 
-  // Determine Security Compliance summary
-  const failCount = checks.filter((c) => c.status === "fail").length
-  const warnCount = checks.filter((c) => c.status === "warn").length
-  const passedChecks = checks.filter((c) => c.status === "pass").length
+  const configFields = manifest.connector?.configFields ?? []
+  const secretFields = configFields.filter(field => field.type === "secret")
+  const canUseSecrets = permissions.has("secrets:use")
+  const invalidSecretConfiguration = secretFields.some(field => !field.secretKey) || (secretFields.length > 0 && !canUseSecrets)
+  const configuredSecrets = new Set(secrets.filter(secret => secret.configured).map(secret => secret.key))
+  const requiredSecrets = secretFields.filter(field => field.required)
+  const missingSecrets = requiredSecrets.filter(field => !field.secretKey || !configuredSecrets.has(field.secretKey))
+  checks.push({
+    id: "secret_hygiene",
+    label: "Secret Configuration",
+    category: "elephant",
+    status: invalidSecretConfiguration ? "fail" : missingSecrets.length > 0 ? "warn" : "pass",
+    detail: invalidSecretConfiguration
+      ? "Secret fields require a valid secret key and the secrets:use permission."
+      : missingSecrets.length > 0
+        ? `Required secret values need configuration (${missingSecrets.map(field => field.label).join(", ")}).`
+        : requiredSecrets.length > 0
+          ? "Required secret values are configured. The catalog returns configuration status only."
+          : canUseSecrets
+            ? "The manifest can use saved secrets and declares no required secret fields."
+            : "The manifest does not request access to saved secrets.",
+  })
 
-  let securityTone: PluginHealthTone = "healthy"
-  let securityLabel = `Compliant (${passedChecks}/${checks.length})`
-  if (failCount > 0) {
-    securityTone = "critical"
-    securityLabel = record.needsReconsent ? "Blocked — Re-Consent" : `Non-Compliant (${failCount} failed)`
-  } else if (warnCount > 0) {
-    securityTone = "warning"
-    securityLabel = `Review (${passedChecks}/${checks.length})`
-  }
+  const validDigest = SHA256_HEX_RE.test(record.sha256)
+  const uploaded = record.source === "uploaded"
+  const uploadedOutbound = uploaded && (manifest.dataSharing.outbound || declaredHosts.length > 0)
+  checks.push({
+    id: "provenance_integrity",
+    label: "Package Digest",
+    category: "elephant",
+    status: !validDigest ? "fail" : uploadedOutbound ? "warn" : "pass",
+    detail: !validDigest
+      ? "The recorded SHA-256 digest is missing or malformed."
+      : uploadedOutbound
+        ? `Upload SHA-256 digest ${record.sha256.slice(0, 12)} is recorded. Review the disclosed destinations for outbound access.`
+        : uploaded
+          ? `Upload SHA-256 digest ${record.sha256.slice(0, 12)} is recorded. It identifies the original archive.`
+          : `Built-in SHA-256 digest ${record.sha256.slice(0, 12)} is recorded.`,
+  })
 
-  // Determine Operational State
+  const passedChecks = checks.filter(check => check.status === "pass").length
+  const failedChecks = checks.filter(check => check.status === "fail").length
+  const securityTone: PluginHealthTone = failedChecks > 0 ? "critical" : passedChecks < checks.length ? "warning" : "healthy"
+  const securityLabel = failedChecks > 0
+    ? `Checks failed (${failedChecks}/${checks.length})`
+    : passedChecks < checks.length
+      ? `Needs review (${passedChecks}/${checks.length} passed)`
+      : `Checks passed (${passedChecks}/${checks.length})`
+
+  const missingConfig = configFields.filter(field => field.required && field.type !== "secret" && !isConfigured(field, record.config[field.key]))
+  const needsConfig = missingConfig.length > 0 || missingSecrets.length > 0 || missingServer
+  const runtimeIssue = runtimeError?.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 180)
   let operationalState: PluginOperationalState = "disabled"
   let operationalLabel = "Disabled"
   let remediation: string | undefined
 
   if (record.needsReconsent) {
     operationalState = "blocked_reconsent"
-    operationalLabel = "Blocked (Re-Consent)"
-    remediation = "Open Details to review and approve the upgraded permissions."
-  } else if (!record.enabled) {
-    operationalState = "disabled"
-    operationalLabel = "Disabled"
-  } else if (safeMode) {
-    operationalState = "paused_safe_mode"
-    operationalLabel = "Paused (Safe Mode)"
-    remediation = "Disable Safe Mode to resume plugin execution."
-  } else if (runtimeError && runtimeError.trim()) {
-    operationalState = "error"
-    operationalLabel = "Runtime Error"
-    remediation = runtimeError.trim().slice(0, 180)
-  } else if (missingConfigFields.length > 0 || missingSecrets.length > 0 || (usesUserServer && !userServerApproved)) {
-    operationalState = "needs_config"
-    operationalLabel = "Needs Configuration"
-    const missingNames = [
-      ...missingConfigFields.map((f) => f.label),
-      ...missingSecrets.map((f) => f.label),
-    ]
-    remediation = missingNames.length > 0
-      ? `Open Details to configure: ${missingNames.join(", ")}.`
-      : "Open Details to approve the server URL."
-  } else {
-    operationalState = "operational"
-    operationalLabel = "Operational"
+    operationalLabel = "Approval required"
+    remediation = "Open Details to review the changed permissions and outbound hosts."
+  } else if (record.enabled) {
+    if (safeMode) {
+      operationalState = "paused_safe_mode"
+      operationalLabel = "Paused by Safe Mode"
+      remediation = "Turn off Safe Mode to let the plugin run."
+    } else if (runtimeIssue) {
+      operationalState = "error"
+      operationalLabel = "Runtime Error"
+      remediation = runtimeIssue
+    } else if (needsConfig) {
+      operationalState = "needs_config"
+      operationalLabel = "Needs Configuration"
+      const missingNames = [...missingConfig, ...missingSecrets].map(field => field.label)
+      if (missingServer && !missingConfig.some(field => field.bindUserServer)) missingNames.push("approved server URL")
+      remediation = `Open Details to configure ${missingNames.join(", ")}.`
+    } else {
+      operationalState = "operational"
+      operationalLabel = "Enabled"
+    }
   }
 
-  // Combine overall traffic-light tone
   let overall: PluginHealthTone = "inactive"
   if (operationalState === "blocked_reconsent" || operationalState === "error" || securityTone === "critical") {
     overall = "critical"
-  } else if (!record.enabled) {
-    overall = "inactive"
-  } else if (
-    operationalState === "paused_safe_mode" ||
-    operationalState === "needs_config" ||
-    securityTone === "warning"
-  ) {
-    overall = "warning"
-  } else {
-    overall = "healthy"
+  } else if (record.enabled) {
+    overall = operationalState === "paused_safe_mode" || needsConfig || securityTone === "warning" ? "warning" : "healthy"
   }
 
   return {
