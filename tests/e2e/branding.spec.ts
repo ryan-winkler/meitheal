@@ -65,7 +65,7 @@ test.describe("Branding — Color Tokens (Light)", () => {
       }
     })
     expect(tokens.bgPrimary).toBe("#f5faf7")
-    expect(tokens.accent).toBe("#059669")
+    expect(tokens.accent).toBe("#047857")
     expect(["#fff", "#ffffff"]).toContain(tokens.onAccent)
   })
 
