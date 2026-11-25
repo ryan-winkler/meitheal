@@ -133,6 +133,25 @@ test.describe("Responsive Navigation", () => {
     expect(await bottomNav.locator(".shortcut-badge").count()).toBe(0);
   });
 
+  test("Mobile: the Board Area picker stays on screen when the header wraps", async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 812 })
+    await page.goto("/boards/household?area=#kanban")
+    const trigger = page.getByRole("button", { name: "All Areas", exact: true })
+    const dropdown = page.getByRole("listbox", { name: "Available Areas" })
+    await trigger.press("Enter")
+    await expect(dropdown.getByRole("option", { selected: true })).toBeFocused()
+    for (const width of [320, 390]) {
+      await page.setViewportSize({ width, height: 812 })
+      await expect.poll(async () => {
+        const bounds = await dropdown.boundingBox()
+        return !!bounds && bounds.x >= 8 && bounds.x + bounds.width <= width - 8
+      }).toBe(true)
+    }
+    await dropdown.getByRole("option", { selected: true }).press("Escape")
+    await expect(dropdown).toBeHidden()
+    await expect(trigger).toBeFocused()
+  })
+
   test("Mobile: Calendar and Tasks tabs identify the active view on the Household Board", async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 812 })
     await page.goto("/", { waitUntil: "domcontentloaded" })
@@ -312,7 +331,14 @@ test.describe("Responsive Navigation", () => {
       const pinBtn = page.locator('#tasks-nav-submenu [data-task-view-pin="calendar"]');
       await pinBtn.click();
       await expect(pinBtn).toHaveAttribute("aria-pressed", "true");
-      await expect(page.locator('.nav-item--tasks ~ [data-sidebar-group="view-calendar"]')).toBeVisible();
+      const pinned = page.locator('.nav-item--tasks ~ [data-sidebar-group="view-calendar"]');
+      await expect(pinned).toBeVisible();
+      await expect(pinned.getByRole("button", { name: "Unpin Calendar from navigation", exact: true })).toHaveCount(1);
+      await page.reload({ waitUntil: "networkidle" });
+      const unpin = pinned.getByRole("button", { name: "Unpin Calendar from navigation", exact: true });
+      await expect(unpin).toBeVisible();
+      await unpin.click();
+      await expect(pinned).toBeHidden();
     } finally {
       await page.evaluate(() => localStorage.removeItem("meitheal-task-nav-prefs")).catch(() => {});
       await request.put("/api/settings", {
@@ -381,15 +407,12 @@ test.describe("Responsive Navigation", () => {
     await expect(page.locator("#settings-panels")).not.toHaveAttribute("inert", "");
 
     const navSection = page.locator("#navigation-settings");
-    const taskTypesDetails = navSection.locator("#nav-task-types-section");
-    await taskTypesDetails.locator(":scope > summary").click();
+    const taskTypes = navSection.locator("#nav-task-types-section > summary");
     const pinBtn = navSection.locator('[data-task-nav-pin="calendar_event"]');
     const pinnedRow = page.locator('#sidebar-task-types [data-task-nav-pinned-item="calendar_event"]');
-    // Task type pins live in the collapsed Task types accordion.
-    const taskTypes = page.locator("#nav-task-types-section > summary");
 
-    await expect(pinBtn).toHaveAttribute("aria-pressed", "false");
     await taskTypes.click();
+    await expect(pinBtn).toHaveAttribute("aria-pressed", "false");
     await pinBtn.click();
     await expect(pinBtn).toHaveAttribute("aria-pressed", "true");
     await expect(pinnedRow).toBeVisible();
@@ -398,12 +421,11 @@ test.describe("Responsive Navigation", () => {
     await expect(navSection.locator('[data-task-nav-mode="none"]')).toHaveAttribute("aria-pressed", "true");
 
     await page.reload({ waitUntil: "networkidle" });
-    await taskTypesDetails.locator(":scope > summary").click();
+    await taskTypes.click();
     await expect(pinBtn).toHaveAttribute("aria-pressed", "true");
     await expect(pinnedRow).toBeVisible();
     await expect(navSection.locator('[data-task-nav-mode="none"]')).toHaveAttribute("aria-pressed", "true");
 
-    if (!(await pinBtn.isVisible())) await taskTypes.click();
     await pinBtn.click();
     await expect(pinBtn).toHaveAttribute("aria-pressed", "false");
     await expect(pinnedRow).toBeHidden();
@@ -426,7 +448,6 @@ test.describe("Responsive Navigation", () => {
 
     try {
       await expect(pinBtn).toHaveAttribute("aria-pressed", "false");
-      await page.locator("#nav-task-types-section > summary").click();
       await pinBtn.click();
       await expect(pinBtn).toHaveAttribute("aria-pressed", "true");
       await expect(pinnedRow).toBeVisible();

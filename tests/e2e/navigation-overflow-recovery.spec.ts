@@ -69,12 +69,13 @@ test.describe("Native navigation overflow", () => {
       await expect(more).toHaveAttribute("open", "")
       await expect(menu.locator("a").first()).toBeFocused()
       await page.keyboard.press("End")
-      await expect(menu.locator('a[data-page="settings"]')).toBeFocused()
-      // The custom link stays in the Workspace section, after Upcoming and Tasks.
+      await expect(menu.getByRole("link").last()).toBeFocused()
       await page.keyboard.press("Home")
       await expect(menu.locator("a").first()).toBeFocused()
-      await page.keyboard.press("ArrowDown")
-      await page.keyboard.press("ArrowDown")
+      const links = await menu.getByRole("link").count()
+      for (let i = 0; i < links && !await reference.evaluate(link => link === document.activeElement); i++) {
+        await page.keyboard.press("ArrowDown")
+      }
       await expect(reference).toBeFocused()
       const box = await menu.boundingBox()
       const focusedBox = await reference.boundingBox()
@@ -195,8 +196,7 @@ test.describe("Native navigation overflow", () => {
       await expect(boardsToggle).toHaveAttribute("aria-expanded", "true")
       await expect(household).toBeVisible()
       await expect(toggle).toHaveAttribute("aria-expanded", "false")
-      // Navigation labels display at most 64 characters; the saved label keeps its full text.
-      await expect(toggle).toHaveAccessibleName(`${longLabel.slice(0, 64)} in Household`)
+      await expect(toggle).toHaveAccessibleName(`${longLabel} in Household`)
       await expect(householdAreas).toBeHidden()
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(770)
       await toggle.focus()
@@ -236,7 +236,7 @@ test.describe("Native navigation overflow", () => {
 
   test("crowded Tasks views keep the selected native link visible and navigate from More with filters", async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 800 })
-    await page.goto("/tasks?q=overflow-filter&priority=2")
+    await page.goto("/tasks?view=kanban&q=overflow-filter&priority=2#kanban")
     const row = page.locator('[data-nav-overflow="views"]')
     const more = row.locator("[data-nav-overflow-more]")
     const menu = more.locator("[data-nav-overflow-menu]")

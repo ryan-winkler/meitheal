@@ -273,10 +273,10 @@ test.describe("Task Experience Unification (R01-R20)", () => {
       const taskReactions = page.locator("#td-task-reactions")
       await expect(taskReactions).toBeVisible()
       await taskReactions.locator("summary").click()
-      await taskReactions.getByRole("button", { name: "👍", exact: true }).click()
       const reactionInput = taskReactions.getByRole("textbox", { name: "Emoji or short text" })
+      await expect(reactionInput).toBeEditable()
       const addPost = page.waitForResponse(r => r.request().method() === "POST" && new URL(r.url()).pathname.endsWith(`/api/tasks/${id}/reactions`))
-      await reactionInput.press("Enter")
+      await taskReactions.getByRole("button", { name: "👍", exact: true }).click()
       expect((await addPost).status()).toBe(201)
 
       const pill = taskReactions.locator('[data-reaction-groups] button[data-reaction-group="👍"]')
