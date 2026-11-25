@@ -43,10 +43,10 @@ Named Board grants govern access to the Board’s work. Administrators choose mo
 |------------|-----------|-------|
 | **Boards** | Household and accessible named Boards, then Areas and Projects | `/boards` |
 | **Tasks** | Kanban, Calendar, Table, Timeline | `/tasks?view=kanban` |
-| **Planning** | Eisenhower, Triage, RICE; the old Spaces bookmark opens Boards | `/planning#eisenhower` |
+| **Planning** | Boards, Eisenhower, Triage, RICE | `/planning#eisenhower` |
 | **Progress & Growth** | Pillars, Routines, Goals, Achievements | `/progress#pillars` |
 
-Existing `/areas/{id}` and `/projects/{id}` bookmarks open the matching Household Board context. Supported section fragments, including settings, are preserved. `/planning#spaces` opens `/boards` when Planning is available.
+Existing `/areas/{id}` and `/projects/{id}` bookmarks open the matching Household Board context. Supported section fragments, including settings, are preserved. When Planning is available, `/planning#spaces` opens its Boards section. Choose **Manage Boards** to open the full directory at `/boards`.
 
 ## Deprecated Terms
 

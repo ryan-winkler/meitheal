@@ -44,8 +44,11 @@ test.describe("Progress Parent Page — /progress", () => {
     const section = page.locator("#progress-section-routines")
     await expect(section).toBeVisible()
 
-    await expect(section.getByRole("link", { name: "New Routine" })).toHaveAttribute("href", "/habits?board_id=household&new=1")
-    await expect(section.getByRole("link", { name: "View Routines" })).toHaveAttribute("href", "/habits?board_id=household")
+    await expect(section.locator("#habits-shell")).toHaveAttribute("data-board-id", "household")
+    await expect(section.locator("#habits-library")).toContainText("Active routines")
+    const create = section.getByRole("button", { name: "New Routine", exact: true })
+    await create.click()
+    await expect(section.getByRole("dialog", { name: "New Routine" })).toBeVisible()
   })
 
   test("navigating to goals hash shows goals section", async ({ page }) => {
@@ -55,7 +58,8 @@ test.describe("Progress Parent Page — /progress", () => {
     await expect(goalsSection).toHaveAttribute("aria-hidden", "false")
     await expect(goalsSection).toBeVisible()
 
-    await expect(goalsSection.getByRole("button", { name: "+ New Goal" })).toBeVisible()
+    await goalsSection.getByRole("button", { name: "New Goal", exact: true }).click()
+    await expect(goalsSection.getByRole("heading", { name: "New Goal", exact: true })).toBeVisible()
   })
 
   test("navigating to achievements hash shows achievements section", async ({ page }) => {
@@ -108,6 +112,9 @@ test.describe("Planning Parent Page — /planning", () => {
 
   test("opens the Boards directory from a legacy Spaces bookmark", async ({ page }) => {
     await page.goto("/planning#spaces")
+    const spaces = page.locator("#planning-section-spaces")
+    await expect(spaces.getByRole("link", { name: "Household", exact: true })).toBeVisible()
+    await spaces.getByRole("link", { name: "Manage Boards", exact: true }).click()
     await expect(page).toHaveURL(/\/boards$/)
     await expect(page.getByRole("link", { name: "Household" }).first()).toBeVisible()
   })
