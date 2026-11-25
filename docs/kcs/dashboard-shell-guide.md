@@ -169,8 +169,8 @@ Custom choice in Settings still takes priority.
 
 Open the keyboard menu beside your profile and select **Interactive tour**.
 The tour explains the workspace controls available on the current page. Use
-**Skip tour**, Escape, or **Finish** to return to the same workspace. You can
-start the tour again from the keyboard menu.
+**Skip tour**, Escape, or **Finish** to return to the same workspace and
+scroll position. You can start the tour again from the keyboard menu.
 
 ## Task detail layout
 

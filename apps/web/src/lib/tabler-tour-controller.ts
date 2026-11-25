@@ -70,6 +70,7 @@ export function startFunctionTour(): void {
   const ctrl = new AbortController()
   const { signal } = ctrl
   const prevFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  const initialScroll = { left: scrollX, top: scrollY, behavior: "instant" } as const
 
   const root = mk("div", "tabler-tour-root")
   root.dataset.tablerTourRoot = "true"
@@ -121,13 +122,17 @@ export function startFunctionTour(): void {
     save(outcome)
     hidePrompt()
     cleanup()
+    scrollTo(initialScroll)
     showToast(outcome === "complete" ? "Tour complete" : "Tour dismissed", "info")
   }
   const render = () => {
     index = clampTourIndex(index, steps.length)
     const cur = steps[index]
     if (!cur) { cleanup(); return }
-    cur.target.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "nearest", inline: "nearest" })
+    const targetRect = cur.target.getBoundingClientRect()
+    if (targetRect.bottom <= 0 || targetRect.top >= innerHeight || targetRect.right <= 0 || targetRect.left >= innerWidth) {
+      cur.target.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "nearest", inline: "nearest" })
+    }
     prog.textContent = `Step ${index + 1} of ${steps.length}`
     title.textContent = cur.step.title
     desc.textContent = cur.step.description
